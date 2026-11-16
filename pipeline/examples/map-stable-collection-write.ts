@@ -1,5 +1,5 @@
 // A callback writing a `Map` it captures: `set` writes the collection's
-// internal slots, within `{value: any, store: keep}`, which keeps the
+// internal slots, within `{value: any, spine: keep}`, which keeps the
 // mapped array's dense prefixes, so the result is dense. The write shows: the
 // map holds each name afterwards.
 export function seen(names: string[], counts: Map<string, number>): string[] {

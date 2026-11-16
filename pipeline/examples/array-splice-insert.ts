@@ -1,5 +1,5 @@
 // Splice copies removed values, inserts evaluated arguments and changes only
-// its receiver's existing store. Offset conversion uses primitive numbers.
+// its receiver's existing spine. Offset conversion uses primitive numbers.
 export function insert(
   xs: string[],
   start: number,

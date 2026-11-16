@@ -2,7 +2,7 @@
 // filled at a table's first use (`graphemeRules[table] ??= …`,
 // `breakRules[table] = …`). The write at a string key copies the dictionary
 // with the key and rebinds the module's binding, a cell holding a value, so
-// each lookup is within {value: any, store: keep} and a caller's loop keeps
+// each lookup is within {value: any, spine: keep} and a caller's loop keeps
 // its bound across it.
 type Table = 'a' | 'b'
 type Rules = { n: number }

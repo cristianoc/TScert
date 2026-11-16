@@ -3,7 +3,7 @@
 // `(acc ??= []).push(g)` under a test, beside calls whose frames state
 // `values: "any"`. The slot holds `null` or an array the body allocates at
 // every point, a fact of the value that no call changes, so each `push`
-// grows a store none of the entry heap's, rebased to no region.
+// grows a spine none of the entry heap's, rebased to no region.
 type Runs = { /** @stable */ readonly open: number[] };
 
 function note(runs: Runs, n: number): Modifies<{ values: "any"; "runs.open[*]": "any" }, void> {

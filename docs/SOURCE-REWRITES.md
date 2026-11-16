@@ -237,20 +237,20 @@ shape independently before returning the text and its `printable` flag.
   actual printer with complete callable parts, either part absent and both
   parts absent, checking the full text and its completeness flag.
 
-### Part collection through a store-preserving traversal
+### Part collection through a spine-preserving traversal
 
 `tools/fragment-parts.mts#partsOf` collects direct parts by passing identity
 callbacks that append to a fresh array into a traversal. Its `map`
 parameter states `(m: PartMap) => Modifies<{ values: "any"; spines: "grow" }, unknown>`.
 The callers in `directParts` and `codeParts` supply `mapExprParts`,
 `mapStmtParts`, `mapPatternParts` and `mapFunctionParts` through closures.
-Each traversal carries the same store-preserving contract.
+Each traversal carries the same spine-preserving contract.
 
 The parameter retains the effect that these supplied traversals establish.
 The existing [stated-effect checks](SOURCE-ELABORATION.md#stated-effects)
 check each supplied closure and the collector's body. An ordinary function
 parameter permits shrinking shared arrays, which cannot establish the
-collector's written store-preserving effect.
+collector's written spine-preserving effect.
 
 The annotation is erased: calls, callback order, collected part identities,
 returns, exceptions and mutations agree for every internal caller.
@@ -536,7 +536,7 @@ signature's node did not meet it ("no rule derives this invoke" at
 
 ### The type reader's native collections typed as natives
 
-`visitType` in `tools/type-term.mts` states `{value: any, store: grow}` and
+`visitType` in `tools/type-term.mts` states `{value: any, spine: grow}` and
 extends the binder names in scope with `new Set([...bound, …])`; its
 `bound` parameter was a `ReadonlySet<string>`. `readTypeTerm` reads
 `scope.wildcard?.get(…)`, a `ReadonlyMap`. Each admits a program object
@@ -550,7 +550,7 @@ then for `readTypeTerm`).
   native set's iterator and a native map's `get` run no client code
   ([iteration intrinsics](../tools/intrinsics.mts),
   [collection overlays](../tools/array-prototype.mts)), within
-  `{value: any, store: keep}`. The `visit` callback still receives the set
+  `{value: any, spine: keep}`. The `visit` callback still receives the set
   as a `ReadonlySet<string>`. The annotations change no execution and add
   no assumption.
 - **Scope:** `set-spread-stated-footprint`; `invalid-readonly-set-has-effect`
@@ -595,7 +595,7 @@ kept by `parts.filter((p): p is TypeTerm => p !== null)`.
   signature.
 - **Commit:** the introducing commit.
 
-### Mapped arms with a store-preserving callback
+### Mapped arms with a spine-preserving callback
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
 with a `JsonValue` parameter and the result contract
@@ -617,7 +617,7 @@ uses it to retain readable array presence for reduction and iteration.
   before reading `map` runs no client code under the existing stable
   standard-object assumption.
 - **Scope:** `blocker-gap-round-captured-arms-reduction-preserving` checks
-  the full reduction, bounded iteration and final `flatMap` with a store-preserving
+  the full reduction, bounded iteration and final `flatMap` with a spine-preserving
   splitting function. `blocker-gap-round-captured-arms-reduction` retains the
   ordinary splitting signature: it permits removing a later input during
   `map`, leaving a hole that iteration visits as `undefined`. The repair
@@ -660,7 +660,7 @@ the existing [allocation and closure checks](SOURCE-CLAIMS.md).
   refusal. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
-### A forward visitor helper with a store-preserving contract
+### A forward visitor helper with a spine-preserving contract
 
 `letWrites` in `tools/fragment-expressions.mts` captures `outermostIs`
 before that helper is initialized. Its callable binding states
@@ -669,7 +669,7 @@ The existing [early-binding checks](SOURCE-ELABORATION.md#lexical-bindings-befor
 check initialization and reads at that storage contract, and the existing
 [closure checks](SOURCE-ELABORATION.md#stated-effects) certify its footprint.
 
-- **Repair:** the written callable contract retains the array-store
+- **Repair:** the written callable contract retains the array-spine
   preservation established by the helper body. A forward capture reads
   the storage contract; parameter and Boolean result annotations alone
   give it an unrestricted call effect. The helper assigns its local
@@ -780,7 +780,7 @@ fields twice: it amends callable contracts, then gives prototype slots an
 as `Modifies<{}, string>`. The declaration
 reader supplies a lookup over saved constants, followed by `String` on a
 number or string when no constant matches. The lookup reads its inputs
-and preserves values and array stores.
+and preserves values and array spines.
 
 - **Repair:** the field retains the supplied function's effect, and its
   definition in `tools/declaration-graph.mts` states the same effect. The
@@ -789,7 +789,7 @@ and preserves values and array stores.
   preserve the calls, receivers, results and exceptions.
 - **Scope:** `blocker-gap-round-graph-find` checks the field call in a
   `find` callback and a supplied lookup definition. Preserving the array
-  store keeps every visited position present. `invalid-graph-find-effect`
+  spine keeps every visited position present. `invalid-graph-find-effect`
   retains the ordinary-function contract, which permits an alias to shrink
   the array and requires the callback to accept `undefined`. The repair
   uses the existing effect and native `find` contracts and adds no external
@@ -846,7 +846,7 @@ so the destructured value's checked type includes `undefined`.
   checks remain before that read; member reconstruction, token lookup,
   reductions and source-argument mapping remain afterward.
   Repeated indexed truthiness would require checked knowledge connecting a
-  particular store position to its observed value. The existing linked-read
+  particular spine position to its observed value. The existing linked-read
   rule connects named fields; array reads use the required, optional and
   rest position rules. Narrowing a saved value uses the existing binding
   rule without strengthening the array's invariant storage contract.
@@ -1097,12 +1097,12 @@ left a frame with `this.typeParamScopes.shift()` and
 `this.resolutionScopes.shift()`, and `protocolForOf`
 (`tools/fragment-statements.mts`) handed `closeStatements` a site record
 whose `entry` and `span` were `entries.shift()` and `spans.shift()`. A
-`shift` of a store the call did not allocate changes it beyond `grow`, so a
-statement of `{value: any, store: grow}` on the gate's lowering code, which
+`shift` of a spine the call did not allocate changes it beyond `grow`, so a
+statement of `{value: any, spine: grow}` on the gate's lowering code, which
 `expr`'s contract closure needs
 ([the draft's §5](drafts/method-effects.md#5-what-a-statement-may-say)),
 does not hold of a body calling them, although no reader keeps either stack
-and no other code reaches the site lists. Showing that a shrinking store is
+and no other code reaches the site lists. Showing that a shrinking spine is
 unreachable from the caller is the
 [deferred precision](FOOTPRINTS.md#deferred-extra-precision). The rewrite
 is an exception to the stance above, approved by the owner for the
@@ -1117,7 +1117,7 @@ statements that need it (D5, 2026-10-23).
 - **Pattern:** a stack or queue whose holders read it only through one
   field is popped by writing the field with its remainder, and a list
   consumed in order is read at a counter; a field or cell write is within
-  `{value: any, store: keep}`.
+  `{value: any, spine: keep}`.
 - **Commit:** 84cb902 (`tools/fragment-parse.mts`,
   `tools/fragment-statements.mts`).
 
@@ -1494,7 +1494,7 @@ which only separating storage an unknown call cannot reach would show
 - **Pattern:** a field a guard tested is read into a constant before a call
   that changes storage, rather than read again after it.
 - **Functions:** `atomText`, and `typeText`, `printType` and the others
-  calling it; `liftClause`, whose store clause maps `required` and
+  calling it; `liftClause`, whose spine clause maps `required` and
   `optional` through `liftType`, which writes `types.lifted`, and the
   functions calling it (`liftLabels`, `treeAtom`, `liftSignatures`).
 - **Presence guards:** the array printer saves `atom.presence` immediately
@@ -2243,9 +2243,9 @@ of a union with the reader its alias application gives it,
 `kept.map(member => member.read(member.node))` in `distributed`, and
 passes the result to a union's `parts`. The readers were typed
 `(node: TypeNode) => TypeTerm`, which states no effect, so the `map`
-callback could change any store and its result could hold holes; the
+callback could change any spine and its result could hold holes; the
 union's record was refused at its `parts`. Every reader the evaluator
-receives is the type reader's, which grows stores and changes nothing else.
+receives is the type reader's, which grows spines and changes nothing else.
 
 - **Repair:** the readers are of the type `TypeReader`, `(node: TypeNode)
   => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>`, in
@@ -2291,9 +2291,9 @@ operations around an arbitrary callback, including a callback that shrinks array
 
 Set membership updates have the existing
 [native footprints](SOURCE-CONTRACTS.md#native-footprints): arbitrary value
-changes and preserved array stores. The helper statements are checked from
+changes and preserved array spines. The helper statements are checked from
 their bodies. `active-ledger-footprint` exercises these statements and a
-composition whose callback preserves stores on both normal and exceptional
+composition whose callback preserves spines on both normal and exceptional
 returns. The example states the callback's `onThrow` guarantee explicitly
 ([footprints](FOOTPRINTS.md)).
 
@@ -2330,7 +2330,7 @@ external assumption.
 The same repair passes `stated` and `classes` to
 `tools/declaration-graph.mts#externalStatements` as `Set<string>`: its sole
 caller builds both with `new Set`, and its `visitType` callback tests them
-with `has` inside the visitor's stated `{value: any, store: grow}`, which a
+with `has` inside the visitor's stated `{value: any, spine: grow}`, which a
 structural `has` stating no effect does not meet. The annotation is erased.
 
 ### A request's method named by converting an unknown argument
@@ -2511,7 +2511,7 @@ calls, `classBody`, which `classStmt` calls, and the declarations
 `errorOptions` (`tools/library-globals.mts`), `localClass`, which
 `classStmt` calls, and `Gate.moduleRestType` and `typeParameterMentioned`,
 which `functionDecl`'s `map` callback calls, which stated none. Each call
-was read at an unrestricted contract, so the caller's statement `{value: any, store: grow}`
+was read at an unrestricted contract, so the caller's statement `{value: any, spine: grow}`
 was refused ("the footprint claimed for … is not established by its body").
 
 - **Repair:** each function type states the footprint the functions passed
@@ -2535,12 +2535,12 @@ was refused ("the footprint claimed for … is not established by its body").
     it calls none of them.
   - `Gate.moduleRestType`: reads the parameter's syntax and types it
     through `typeOf`, `restType`, `typeParameterMentioned` and
-    `restPositions`, each stating `{value: any, store: grow}`, and `find`
+    `restPositions`, each stating `{value: any, spine: grow}`, and `find`
     at a callback that only reads; it writes nothing.
   - `classBody` (`tools/fragment-classes.mts`): its unit is refused at the
     footprint it states. Its body writes fields of records
     and arrays it allocates (`push`, field writes on fresh records), calls
-    gate methods stating `{value: any, store: grow}`, and reads the
+    gate methods stating `{value: any, spine: grow}`, and reads the
     compiler's nodes; the audit found no operation outside that footprint,
     which no accepted unit confirms.
 - **Behaviour:** the annotations are erased; every call, argument and
@@ -2581,13 +2581,13 @@ does not hold.
 `tools/syntax.mts#childOf` and `nameOf` read a child of a compiler node
 through kind tests, and `tools/fragment-support.mts#firstOptional` finds a
 parameter's index with `findIndex` over a field read; each stated
-`{value: any, store: grow}`. `staticPrivate` calls `nameOf` in a `find`
-callback, and `find` at a callback that may grow a store passes `undefined`
+`{value: any, spine: grow}`. `staticPrivate` calls `nameOf` in a `find`
+callback, and `find` at a callback that may grow a spine passes `undefined`
 past a shrunk length, outside the callback's `ClassElement` parameter;
 `lambda` calls `firstOptional` in a loop over its parameters, whose array a
-call that may grow stores does not keep as the loop's head states it.
+call that may grow spines does not keep as the loop's head states it.
 
-- **Repair:** each states `{value: keep, store: keep}`, which its body,
+- **Repair:** each states `{value: keep, spine: keep}`, which its body,
   kind tests, field reads and a `findIndex` at a callback within the same
   footprint, establishes: the units of `childOf` and `firstOptional` and
   the initialization of `tools/syntax.mts`, which certifies `nameOf`, are
@@ -2607,7 +2607,7 @@ its earlier test or construction no longer types it:
 
 - `binary`'s field write tested `node.left` against `PropertyAccessExpression`,
   then read `node.left` again after `gate.staticPrivate` and
-  `gate.memberKey`, calls within `{value: any, store: grow}`; the read was
+  `gate.memberKey`, calls within `{value: any, spine: grow}`; the read was
   not at the tested arm.
 - `lambda` read `defaults[i]` in `...(defaults[i] ? { default: defaults[i] }
   : {})`; an element read twice is two reads, the second not narrowed by
@@ -2825,7 +2825,7 @@ there requires ("the edge … does not establish the claims at this point").
   `collectFrom`.
 - **Commit:** the introducing commit.
 
-### A recursive declaration visitor's store contract
+### A recursive declaration visitor's spine contract
 
 The `reads` visitor in `tools/fragment-statements.mts#declarationsOf`
 checks an initializer for a reference to the declaration being bound.
@@ -2892,7 +2892,7 @@ returns `undefined` where serialization promises a string.
 
 `tools/compiler-api.mts#hostBrands` and its function and constructor helpers
 use `BrandPredicate`: a Boolean callback within
-`{ value: "any", store: "grow" }` on normal return. The recursive results
+`{ value: "any", spine: "grow" }` on normal return. The recursive results
 and local `go` closures state the same footprint. The existing
 [effect certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 checks their bodies before calls consume that guarantee; the native map
@@ -2941,22 +2941,22 @@ that checked contract.
   Definition lookup retains its growth guarantee.
 - **Commit:** the introducing commit.
 
-### A global declaration matcher's array-store footprint
+### A global declaration matcher's array-spine footprint
 
 `tools/library-globals.mts#globalEntry` searches the reviewed overlay with
 `find`. Its `GlobalSignatureMatcher` takes a signature string and returns a
-Boolean within `{ value: "any"; store: "keep" }` on normal return. The lookup
+Boolean within `{ value: "any"; spine: "keep" }` on normal return. The lookup
 retains the same normal-return footprint. The five providers in
 `tools/declaration-graph.mts` compare the argument to a captured declaration
 string with strict equality; their bodies establish the matcher contract.
 
-- **Repair:** the matcher contract retains the array-store guarantee of the
+- **Repair:** the matcher contract retains the array-spine guarantee of the
   supplied primitive comparisons at the helper's parameter and an owned
   lookup context. The existing callback definition checks certify each
   supplied function before its effect is consumed
   ([certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 - **Find:** the [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
-  requires `store: "keep"` to pass an element without adding `undefined`.
+  requires `spine: "keep"` to pass an element without adding `undefined`.
   The matcher leaves value changes unrestricted.
 - **Exceptions:** the guarantee concerns normal return. A throwing matcher
   may change the heap before it throws; the lookup propagates that exception.
@@ -3122,7 +3122,7 @@ construction; `newLedger` constructs a record without a stage key.
 
 `quantified` and `signatures` in `tools/type-term.mts` walked an array with
 its positions, `for (const [index, p] of xs.entries())`, inside the type
-reader's stated `{value: any, store: grow}`. The overlay reads
+reader's stated `{value: any, spine: grow}`. The overlay reads
 `ReadonlyArray.prototype.entries` as an `IterableIterator`, a structural
 iterator whose `next` states no effect, so the loop could change any
 location ("the footprint claimed for 'quantified' is not established by
@@ -3155,7 +3155,7 @@ after it, an early binding ([lexical bindings before
 initialization](SOURCE-ELABORATION.md#lexical-bindings-before-initialization)),
 whose contract is the arrow its annotations write, which states no effect.
 So `plain`, and `switchStmt`'s call of `clauses.every` with it, are within
-no footprint, and `switchStmt`'s statement `{value: any, store: grow}` is
+no footprint, and `switchStmt`'s statement `{value: any, spine: grow}` is
 refused.
 
 - **Avoided form and cost:** an early binding of a closure read by an
@@ -3216,7 +3216,7 @@ it selects the original type. `computedType` and
 `aliasApplication` reach this operation through their diagnostics.
 
 - **Avoided form and cost:** `parts.find(p => literalUnion(p, [0, 0]) === null)`
-  requires a callback whose calls preserve array stores. The imported
+  requires a callback whose calls preserve array spines. The imported
   `literalUnion` contract states no such effect, and its optional `unique`
   callback admits arbitrary effects. Supporting this call with that form
   requires a separate checked effect for the two-argument use and complete
@@ -3826,7 +3826,7 @@ spread checks establish the fresh array's element contract.
 
 `tools/fragment-statements.mts#functionDeclarations` receives the same map
 from its sole caller, `statements`, and reads it by `get` inside its
-statement `{value: any, store: grow}`.
+statement `{value: any, spine: grow}`.
 
 - **Repair:** its parameter states `Map<FunctionDeclaration, number>`. A
   structural `ReadonlyMap`'s `get` may be any client function, which states
@@ -3845,7 +3845,7 @@ statement `{value: any, store: grow}`.
 existing [footprint contract](FOOTPRINTS.md). Each arrow calls the captured
 native map's corresponding method with that map as its receiver. The
 [native collection contract](SOURCE-CONTRACTS.md#library-globals)
-establishes preservation of values and stores on normal return.
+establishes preservation of values and spines on normal return.
 
 - **Repair:** `openFrontEndCompiler` receives the native `Map` supplied by
   its callers and passes its checked read interface to `compilerFileSystem`.
@@ -3894,7 +3894,7 @@ array used by the [semantic contract key](#type-terms-compared-through-their-sem
 `base && base.proto && baseType` before allocating `baseProto`. The avoided
 form is `base?.proto && baseType`. In that form, the incoming-edge check
 receives a nullable temporary where the selected arm requires a string,
-even with the existing store-preserving contract of `Gate.span`.
+even with the existing spine-preserving contract of `Gate.span`.
 Supporting the form requires carrying the optional-chain result's
 truthiness through the conjunction's temporary claims. The supplied census
 sites are `classBody` and its caller `classStmt`, both containing this one
@@ -4000,14 +4000,14 @@ closure checks.
 
 ### A forward-captured helper without a stated effect
 
-The [forward visitor helper](#a-forward-visitor-helper-with-a-store-preserving-contract)
+The [forward visitor helper](#a-forward-visitor-helper-with-a-spine-preserving-contract)
 states its effect on its callable binding. An ordinary arrow signature
-with parameter and result types alone permits arbitrary store changes;
-a recursive visitor capturing that binding cannot establish store preservation.
+with parameter and result types alone permits arbitrary spine changes;
+a recursive visitor capturing that binding cannot establish spine preservation.
 
 - **Avoided form:** `const outermostIs = (top: Node, n: Node): boolean => …`
   captured before initialization by a recursive visitor whose caller requires
-  a store-preserving effect.
+  a spine-preserving effect.
 - **Equivalent form:** the binding states
   `(top: Node, n: Node) => Modifies<{ values: "any" }, boolean>`.
   The existing initialization and closure checks certify the definition.
@@ -4242,7 +4242,7 @@ guarantees (`EffectOptions`, an authoring type of its own); an omitted or
 builds an effect of the same exits and preconditions with a replacement
 promise, and `withConditions` one with further preconditions and further
 facts a normal return states. These constructors state checked
-normal-return preservation of values and stores: their bodies read metadata
+normal-return preservation of values and spines: their bodies read metadata
 and allocate fresh records through the existing footprint rules.
 
 A `CallEffect` has readonly fields. Such a record permits host values,
@@ -4336,10 +4336,10 @@ supplies the options object as its receiver.
 The avoided form creates a getter for every callback. Each getter selects
 its destination and returns a generic rest closure forwarding through
 `Reflect.apply(answer, options, args)`. An abstract argument pack describes
-lists of values; collecting those values into a fresh array needs a store
+lists of values; collecting those values into a fresh array needs a spine
 contract related to that pack. The existing rest-array allocation checks
 represent arrays and required-position tuples, while the abstract pack has
-no such store row ([calls](SOURCE-MODEL.md#calls)).
+no such spine row ([calls](SOURCE-MODEL.md#calls)).
 
 Request views retain property reads at their consumers. Each array read
 already supplies its `?? []` default there; an absent request creates the
@@ -4370,7 +4370,7 @@ does not meet `shown`'s `ReadonlyArray<JsonValue>`.
 - **Avoided form and cost:** support would state a literal written without
   holes as dense, a change to every unannotated array literal's contract.
 - **Equivalent form:** `[cell(types, first, depth - 1, views), ...rest.map(later)]`,
-  with `later` stating `{value: any, store: grow}`. `rest` is a
+  with `later` stating `{value: any, spine: grow}`. `rest` is a
   `readonly JsonValue[]`, whose readable elements exclude `undefined`, so it
   holds no hole; the cells are lifted in the same order with the same views,
   and the literal holds the same records. Returns, exceptions and mutations
@@ -4873,7 +4873,7 @@ existing checks and soundness theorems and adds no external assumption.
 `named` in `tools/compiler-channel.mts` is a module constant holding a
 one-parameter arrow that deduplicates two paths through a `Set` and
 returns `string[]`. Its closure's signatures include the one extended by a
-rest of `unknown` at the footprint `{ value: "any", store: "keep" }`, and
+rest of `unknown` at the footprint `{ value: "any", spine: "keep" }`, and
 `[launcher, directory].flatMap(named)` passes it where `flatMap`'s
 callback parameter expects a `sparse readonly string[]` result at each
 closed footprint ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
@@ -4882,7 +4882,7 @@ The callback's signature meets that parameter by
 (the receiver and leading parameters contravariant, extra target
 parameters against the source's variadic rest element, the result
 covariant), so the call selects the `flatMap` signature at
-`{ value: "any", store: "keep" }`. Lean checks the selected invocation and
+`{ value: "any", spine: "keep" }`. Lean checks the selected invocation and
 each of the closure's signatures.
 `blocker-prep-flat-map-module-function` exercises the deduplicating module
 arrow in `flatMap`, and `invalid-flat-map-module-function` requires a

@@ -1,7 +1,7 @@
-// A fresh store through one `@stable` field at a nullable position
+// A fresh spine through one `@stable` field at a nullable position
 // (FOOTPRINTS.md, "Fresh array storage"): `maybe` is `runs` or `null`. The
 // record's field is fresh, and `null` has no field, so the join keeps the
-// fact; where `maybe` is `null` the region selects no store.
+// fact; where `maybe` is `null` the region selects no spine.
 type Runs = { /** @stable */ readonly open: number[] };
 
 function step(runs: Runs | null, out: number[]): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, number> {

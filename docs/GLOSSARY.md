@@ -118,7 +118,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 ## Calculus and semantics
 
 - **activation**: one run of a function body, whose environment holds its slots ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)).
-- **array invariant**: every object owning an array store is a built-in array with `Array.prototype` and no own `constructor`, `then`, `toJSON` or `ArrayProto` key ([the array invariant](SEMANTICS.md#the-array-invariant)).
+- **array invariant**: every object owning an array spine is a built-in array with `Array.prototype` and no own `constructor`, `then`, `toJSON` or `ArrayProto` key ([the array invariant](SEMANTICS.md#the-array-invariant)).
 - **built-ins**: the objects and prototypes of the JavaScript global environment a program runs in ([arrays](SOURCE-MODEL.md#arrays)).
 - **cell**: a heap location holding a binding the closures capturing it share ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)).
 - **density** / **dense** / **readable** / **sparse**: an array contract's presence mode: every index present, every read typed, or holes admitted ([lasting decisions](DESIGN.md#lasting-decisions), [the fact](FOOTPRINTS.md#the-fact)).
@@ -129,7 +129,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **location**: an address in the heap, with a fixed storage contract in the world ([heap and contracts](SOURCE-MODEL.md#heap-and-contracts)).
 - **slot**: a binding held in its activation rather than on the heap, because no closure can observe a write to it ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)).
 - **storage contract**: the type every value written to a location or a mutable binding must meet ([types at program points](DESIGN.md#types-at-program-points), [heap and contracts](SOURCE-MODEL.md#heap-and-contracts)).
-- **store** (array store): the list of optional element locations an array holds under the reserved key `[]` ([the fact](FOOTPRINTS.md#the-fact)).
+- **spine** (array spine): the list of optional element locations an array holds under the reserved key `[]` ([the fact](FOOTPRINTS.md#the-fact)).
 - **tag test**: the calculus's primitive runtime test of a value's kind; every guard is one ([operational language](SEMANTICS.md#operational-language), [guards](SOURCE-ELABORATION.md#guards)).
 - **trusted step**: an operation assumed to return a value of its result type or throw, never a wrong value ([lasting decisions](DESIGN.md#lasting-decisions)).
 - **world**: the assignment of a storage contract to each allocated location; a heap satisfies it when every value meets its contract ([heap and contracts](SOURCE-MODEL.md#heap-and-contracts)).
@@ -164,7 +164,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **frame condition**: what a step may change, stated and checked by its footprint; a fact is preserved where the step leaves the locations it reads unchanged or changes them in the direction that preserves its inequality, as a `push` preserves a length's lower bounds ([frame conditions](PROGRAM-TYPING.md#frame-conditions)).
 - **guard**: a test that narrows a value's type on each edge; every guard is a tag test ([guards](SOURCE-ELABORATION.md#guards)).
 - **linear fact** / **linear certificate**: an integer inequality $`c\cdot x\le d`$ or disequality over terms (values, field paths, array and typed-array lengths), and the checked list of combination steps deriving one from known facts ([linear facts](ARITHMETIC.md#linear-facts)).
-- **locations a fact reads**: the field, store and typed-array-length locations a fact's terms read, which a step must preserve for the fact to hold after it ([linear facts](ARITHMETIC.md#linear-facts)).
+- **locations a fact reads**: the field, spine and typed-array-length locations a fact's terms read, which a step must preserve for the fact to hold after it ([linear facts](ARITHMETIC.md#linear-facts)).
 - **loop invariant**: the facts at a loop's head, inferred and checked by the pass on every incoming edge ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length)).
 - **narrowing** / **refinement**: the type a tested binding has on an edge, within its type and consistent with the observed outcome ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
 - **path**: a root binding followed by member reads, `x.f.g`, whose narrowing stable members keep ([stable members](HOST-FAMILIES.md#stable-members)).
@@ -179,10 +179,10 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 
 ## Effects and footprints
 
-- **change** (`keep`, `grow`, `any`): how a location's contents may change: unchanged, an array store only growing, or anyhow ([changes and footprints](FOOTPRINTS.md#changes-and-footprints)).
-- **closed footprint** / **footprint**: `{value: …, store: …}`, the change a call may make to locations holding values and to those holding array stores ([changes and footprints](FOOTPRINTS.md#changes-and-footprints)).
+- **change** (`keep`, `grow`, `any`): how a location's contents may change: unchanged, an array spine only growing, or anyhow ([changes and footprints](FOOTPRINTS.md#changes-and-footprints)).
+- **closed footprint** / **footprint**: `{value: …, spine: …}`, the change a call may make to locations holding values and to those holding array spines ([changes and footprints](FOOTPRINTS.md#changes-and-footprints)).
 - **effect-qualified signature**: a call signature carrying a guarantee about its effect (a footprint, a guard's promise) ([inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
-- **empty footprint**: `{value: keep, store: keep}`, which leaves every existing location's contents unchanged ([inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
+- **empty footprint**: `{value: keep, spine: keep}`, which leaves every existing location's contents unchanged ([inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 - **heap-preserving callback**: a callback certified within a footprint, so that a native relying on a heap fact (`map` on density) may call it ([the checked callback contract](FOOTPRINTS.md#the-checked-callback-contract)).
 - **inspection**: a node that reads, tests, computes or allocates and so preserves the heap ([the checked callback contract](FOOTPRINTS.md#the-checked-callback-contract)).
 - **native footprint**: the audited footprint of a library native such as `Array.prototype.map` ([native footprints](SOURCE-CONTRACTS.md#native-footprints)).

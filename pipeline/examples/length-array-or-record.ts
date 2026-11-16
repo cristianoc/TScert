@@ -1,5 +1,5 @@
 // `length` of a union of arrays and records naming it: `Array.isArray`
-// selects an array's length, its store's, and a record's field; a string's
+// selects an array's length, its spine's, and a record's field; a string's
 // own length is read before either. A record owning `length` is no array.
 type Named = { name: string; length: number };
 export function size(x: number[] | Named): number {

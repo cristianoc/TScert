@@ -1,7 +1,7 @@
 // `map` callbacks building arrays with spreads: of an array, which reads its
-// store; of a regex's matches, a set and a string, each through the host's
+// spine; of a regex's matches, a set and a string, each through the host's
 // iterator, which writes only its own position and allocates what it yields.
-// Each callback is within `{value: any, store: keep}`, so the results are
+// Each callback is within `{value: any, spine: keep}`, so the results are
 // dense.
 export function padded(rows: number[][]): number[][] {
   return rows.map((r: number[]): number[] => [0, ...r, 0]);

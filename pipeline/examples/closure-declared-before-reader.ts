@@ -1,6 +1,6 @@
 // Census functions: fragment-statements.mts#switchStmt,#statements.
 // A closure declared before the closure that calls it, inside a function
-// stating `{value: any, store: grow}`: each is a constant initialized
+// stating `{value: any, spine: grow}`: each is a constant initialized
 // before any call, so the caller reads the callee at the footprint its body
 // shows, and the function meets its statement.
 export function plainLabels(

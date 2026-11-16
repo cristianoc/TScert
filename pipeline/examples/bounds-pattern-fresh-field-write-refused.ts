@@ -1,7 +1,7 @@
 // Bounds pattern P3: a quantified fact across a write outside its array.
 // Fact: forall i in items: 0 <= items[i] < widths.length, kept across
 // `fragment.width = s`, a write of a field of a fresh object, whose location
-// is no element of `items` and no store of `widths`.
+// is no element of `items` and no spine of `widths`.
 // Pretext: rich-inline.ts createLine (12 sites), setEmptyObjectFacts (7).
 // Gap: a quantified fact is kept across a field write only where the written
 // value meets its body; the field's region being apart from the fact's

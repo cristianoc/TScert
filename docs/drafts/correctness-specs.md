@@ -76,8 +76,8 @@ region ::= field(x, "k")   x a parameter, "k" a string literal naming a field of
 
 read as $`(\mathsf{field}(x,\texttt{k}),\mathsf{any})`$, and as
 $`(\mathsf{field}(x,\texttt{[]}),\mathsf{any})`$ with
-$`(\mathsf{elems}(x),\mathsf{any})`$ (`[]` is `arrayStoreKey`: the array's
-store location and its element cells). Any other body is refused; the
+$`(\mathsf{cells}(x),\mathsf{any})`$ (`[]` is `arraySpineKey`: the array's
+spine location and its element cells). Any other body is refused; the
 `modifies` closure is never run, and lowers as ordinary code.
 
 ## 2. The source form
@@ -293,9 +293,9 @@ Contracts need four more atoms:
 **Support.** A helper atom survives a write or a call only by a **support
 certificate**: a footprint $`S_g`$ over $`g`$'s arguments covering every
 location of the entry heap that $`g`$'s run reads, its callees' reads
-included, checked from its graph. `sorted(xs)` reads `xs`'s store location
+included, checked from its graph. `sorted(xs)` reads `xs`'s spine location
 (its length and element list) and its element cells, so
-$`S=\{\mathsf{field}(xs,\texttt{[]}),\mathsf{elems}(xs)\}`$. A run may also
+$`S=\{\mathsf{field}(xs,\texttt{[]}),\mathsf{cells}(xs)\}`$. A run may also
 allocate (the empty footprint constrains only the entry heap's locations)
 and read what it allocated; those reads need no certificate. `support_sound`
 (new) preserves Boolean truth: if $`h_1`$ and $`h_2`$ agree on $`S_g`$ read
@@ -534,7 +534,7 @@ contract of `Number.isInteger`.
 | preserved by `lo = mid + 1` | the instance of `sorted-below` at `m = mid` |
 | preserved by `hi = mid` | the instance of `sorted-above` at `m = mid` |
 | `return -1` meets the `r === -1` arm | automatic: the false edge of `lo < hi` gives `hi ≤ lo`, and the ranges join |
-| `sorted(xs)` at every node | its support, `xs`'s store and elements, kept: the body writes nothing and calls only functions stating the empty footprint |
+| `sorted(xs)` at every node | its support, `xs`'s spine and elements, kept: the body writes nothing and calls only functions stating the empty footprint |
 
 A Lean proof of `sorted-below`, as pseudocode over the reified helpers and
 the model's order (`DLt`, `DLe`):

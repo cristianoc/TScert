@@ -1,6 +1,6 @@
 // Bounds pattern P4, the unsafe neighbour of
 // `bounds-pattern-grow-upper-refused`: with no separation stated and a frame
-// growing every store, `out` may be a.flags, whose growth breaks the upper
+// growing every spine, `out` may be a.flags, whose growth breaks the upper
 // bound a.flags.length <= a.starts.length (run under Node with out = a.flags:
 // NaN).
 export type Analysis = {

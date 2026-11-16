@@ -18,7 +18,7 @@ export function checked(vs: (string | number)[]): Presence[] {
   });
 }
 // A guard adding to a set it is given writes the set's internal slots, not a
-// store: its footprint keeps every dense prefix, and `map` stays dense.
+// spine: its footprint keeps every dense prefix, and `map` stays dense.
 function isText(v: string | number, seen: Set<string>): v is string {
   if (typeof v !== "string") return false;
   seen.add(v);

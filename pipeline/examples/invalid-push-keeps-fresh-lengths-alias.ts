@@ -1,5 +1,5 @@
 // A push into a constant that may hold an older array: only a constant
-// holding an array literal's object has its store field apart from the older
+// holding an array literal's object has its spine field apart from the older
 // arrays', and `texts`, initialized by a conditional, may be `flags` itself.
 // `texts.push(…)` then grows `flags`, so `other.length === flags.length` does
 // not survive and the read of `other` at `flags.length - 1` is refused. Under

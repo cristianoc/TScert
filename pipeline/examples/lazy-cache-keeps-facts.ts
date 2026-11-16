@@ -3,13 +3,13 @@
 // read by the line walkers between a record's facts and the reads they
 // bound. `??=` writes the binding's cell only where it holds `null` or
 // `undefined`, and `build` keeps the heap, so `getProfile` changes no
-// location holding an object, a number or a store: it is within
-// `{value: init, store: keep}` (PROGRAM-TYPING.md, "Frame conditions"). A
+// location holding an object, a number or a spine: it is within
+// `{value: init, spine: keep}` (PROGRAM-TYPING.md, "Frame conditions"). A
 // call at that footprint keeps every fact over a path's objects, numbers and
 // lengths: `walk` reads `prepared.segmentFlags[i]!` below
 // `prepared.widths.length` after the call, and `stepped` reads at a cursor's
 // field after one. `reset` writes the cell whatever it holds: its footprint
-// is `{value: any, store: keep}`, and claimed at `init` it is refused at the
+// is `{value: any, spine: keep}`, and claimed at `init` it is refused at the
 // write (a control in `pipeline/test.mts`).
 
 type Profile = { epsilon: number };

@@ -1,5 +1,5 @@
 // A `replace` callback popping the array the caller's loop reads: the
-// callback changes a store, so the call states no footprint, and the read
+// callback changes a spine, so the call states no footprint, and the read
 // below the loop's bound after it is refused. Run under Node, it reads
 // `undefined`.
 

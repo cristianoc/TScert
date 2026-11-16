@@ -1,5 +1,5 @@
-// A view of `length` admits an array, whose `length` is its store's: the read
-// tests the object, and reads an array's store length or another object's own
+// A view of `length` admits an array, whose `length` is its spine's: the read
+// tests the object, and reads an array's spine length or another object's own
 // `length`.
 export function lengthOf(x: { readonly length: number }): number {
   return x.length;

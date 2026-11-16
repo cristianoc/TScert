@@ -2,7 +2,7 @@
 // cache's field (`measurement.state.segments++`) and reads a module `let`
 // binding. Reading a module binding changes no location, and a field
 // update writes one location holding a number, so the function keeps every
-// store (`{value: any, store: keep}`) and a caller's loop keeps the length
+// spine (`{value: any, spine: keep}`) and a caller's loop keeps the length
 // its reads are bounded by.
 
 type State = { segments: number };

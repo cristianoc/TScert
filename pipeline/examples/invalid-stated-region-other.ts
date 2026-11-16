@@ -1,5 +1,5 @@
 // The step-frame rule's rebasing boundary (FOOTPRINTS.md, "Argument-path
-// store regions"): `scan` states the region of the array `runs.open` reads,
+// spine regions"): `scan` states the region of the array `runs.open` reads,
 // but calls `take` with a record built around `other`, an array its frame
 // does not name. The call's region reads a slot no entry path reaches, so
 // it is rebased to every location, and `scan`'s regional check refuses it.

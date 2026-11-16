@@ -49,8 +49,8 @@ The clauses, with what each denotes:
 
 | Clause | Denotes |
 | --- | --- |
-| `top` | every closed calculus value, including internal stores |
-| `source` | every closed JavaScript primitive or object; excludes internal stores |
+| `top` | every closed calculus value, including internal spines |
+| `source` | every closed JavaScript primitive or object; excludes internal spines |
 | `nul`, `undef` | exactly null; exactly undefined |
 | `bool`, `boolLit b` | true or false; exactly $`b`$ |
 | `num`, `numLit x` | any number; exactly the number with bit pattern $`x`$ |
@@ -177,10 +177,10 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
   the field's location with the contract $`C(j,U,v)\iff A(j,U,v)\land v=v_0`$,
   its type $`A`$ restricted to its initial value $`v_0`$, and the record
   holds the field as a view (`HasTyWith.alloc`, proved in `HasTyUsing.sound`).
-  An object holding an array store states no stable key.
+  An object holding an array spine states no stable key.
 - **`length`.** A view of `length` is also met by an object owning the array
-  store key $`\sigma`$, when every number is of its type: an array's
-  `length` is its store's length, which the store keeps, and `push` changes
+  spine key $`\sigma`$, when every number is of its type: an array's
+  `length` is its spine's length, which the spine keeps, and `push` changes
   it (`arrayLenT`, `viewsT`). Every other view, and every view a rule reads
   as a location (an optional field's slot, a key's field, a merge's source),
   is one of a key other than `length`.
@@ -310,7 +310,7 @@ A graph with arrays states its **built-ins** $`\mathcal B`$: the row of `ArrayPr
 `source` row) and the excluded keys ($`N_{\mathcal B}`$) (`NormalGraph.builtins`, set by
 `builtinsOf` where the store has an array type). In such a graph a label's
 record, dictionary or `source` clause means its members that are also arrays
-of the built-ins where they own the store key $`\sigma`$
+of the built-ins where they own the spine key $`\sigma`$
 ([SEMANTICS](SEMANTICS.md#the-array-invariant)):
 
 ```math
@@ -336,14 +336,14 @@ the graph's own assignment; `ArrayProto` reads no parameter row, and a rule
 relating the invariant to a type checks that (`builtinsFree`), and that
 $`U_{\mathcal B}`$ holds the `source` clause (`unknownTy`) or only it
 (`exactUnknown`). Every other clause (`top`, primitives, functions, classes,
-stores, packs) asks nothing more, its members being no plain objects but
+spines, packs) asks nothing more, its members being no plain objects but
 `top`'s (`semWithArgs_not_plain`), and a graph stating no built-ins asks nothing.
 Coverage keeps it (a record is covered by records only;
 `source` covers JavaScript values, none `top`, `CoversWith.not_top`,
 `builtinInvariant_of_member`), and so do meets (`meetLists_row`), renamings
 (`builtinInvariant_map`) and instance images (`clauseImg_row`).
 
-Lean: `ArrayBuiltins`, `builtinStoreT`, `arrayInvariant`, `builtinInvariant`,
+Lean: `ArrayBuiltins`, `builtinSpineT`, `arrayInvariant`, `builtinInvariant`,
 `builtinExc`, `rowSem` (`Types/PositiveGraphs.lean`).
 
 ### Arrays
@@ -354,7 +354,7 @@ required positions $`\vec R`$, optional positions $`\vec O`$, an optional rest
 $`E`$, a readonly flag, and a presence mode: **dense**, **readable**, or **sparse**.
 Length bounds and required positions are independent of this mode. Each
 present element has a location whose fixed contract agrees with its position's
-type, or implies it for a readonly view. Every contract constrains the same store.
+type, or implies it for a readonly view. Every contract constrains the same spine.
 
 Writing $`A_i`$ for the family at position $`i`$, the additional presence condition is
 
@@ -369,7 +369,7 @@ Writing $`A_i`$ for the family at position $`i`$, the additional presence condit
 \end{aligned}
 ```
 
-Thus the complete store interpretation at observation depth $`k`$ is
+Thus the complete spine interpretation at observation depth $`k`$ is
 
 ```math
 \mathsf{List}_\tau(k,W,\mathsf{arr}(\vec\ell))
@@ -383,12 +383,12 @@ $`\mathsf{Bounds}_\tau(\vec\ell)`$ states the lengths: at least the required
 positions, at most the required and optional ones without a rest, and at most
 $`2^{32}-1`$, the largest length ECMA-262 admits for an array (cited:
 [ECMA-262](REFERENCES.md#ecma-262), ArrayCreate and ArraySetLength). Every view
-of one store is a conjunction of such contracts, so every view carries the same
+of one spine is a conjunction of such contracts, so every view carries the same
 bound, and a heap meeting its contracts (`HeapOk`) holds no longer built-in
-store. The calculus keeps it: a literal of more values throws a `RangeError`
+spine. The calculus keeps it: a literal of more values throws a `RangeError`
 ([a literal with spreads](PROGRAM-TYPING.md#a-literal-with-spreads)), and a write grows a
-store at an index, below $`2^{32}-1`$ (`listT_alloc`, `listT_grow`). A native
-returning or growing a built-in store is trusted to keep it, as it is trusted
+spine at an index, below $`2^{32}-1`$ (`listT_alloc`, `listT_grow`). A native
+returning or growing a built-in spine is trusted to keep it, as it is trusted
 to keep `HeapOk`.
 
 Presence is guarded at the same depth as element contracts, preserving the
@@ -468,7 +468,7 @@ Every function and every class is covered by it, since
 TypeScript's `object` adds the objects with no invocation code, the record
 constraining no key, $`\mathsf{Ref}(\varepsilon;\varepsilon;\varepsilon;\varepsilon;\varepsilon)`$,
 whose meaning is $`v=\ell`$ for some $`\mathit{flds}`$ (arrays and instances
-included, their store and prototype being own keys it does not constrain);
+included, their spine and prototype being own keys it does not constrain);
 and `{}` adds every primitive but `null` and `undefined`
 ([library types](SOURCE-CONTRACTS.md#library-types)):
 
@@ -523,7 +523,7 @@ A label is one of four kinds of **row**:
 - a **parameter row** means what the graph's assignment `env` gives it,
   within its binder's sort. The assignment is a mixed family over values and
   argument lists; a row's kind selects the component and restricts it to the
-  binder's sort: source values for a value binder, stores for a store binder,
+  binder's sort: source values for a value binder, spines for a spine binder,
   lists of source values for a pack binder
   ([sorts](PROGRAM-TYPING.md#sorts-and-categories), `selectParameter`);
 - a **scheme row** $`(\vec p;\Sigma;\beta;\Sigma_\ldots)_\kappa`$ means one function
@@ -644,7 +644,7 @@ clauses,
 So everything reduces to the conjunction of two clauses:
 
 - `top` is the unit: $`\mathsf{top}\land c=c`$.
-- `source` meets `top` as `source`, a store or pack clause as bottom, and
+- `source` meets `top` as `source`, a spine or pack clause as bottom, and
   every other clause as that clause.
 - Clauses of **different shapes** meet as $`\bot`$: no value has two shapes.
 - **Primitives** follow their lattice: $`c\land c=c`$, a singleton meets its
@@ -764,8 +764,8 @@ operands, each target component is found in the source:
 
 An invariant field needs an equivalent invariant field. A view is met by any
 field whose type is within it, and a view of `length` whose type holds every
-number by a source naming the array store (`numIn`): its object's `length`
-is its store's. An optional field is met by a **slot** of the
+number by a source naming the array spine (`numIn`): its object's `length`
+is its spine's. An optional field is met by a **slot** of the
 source of the same key, an invariant field (mode $`\mathsf{w}`$), a view (mode
 $`\mathsf{ro}`$) or an optional field (its own mode), whose type is within the
 target's; a writable target also needs a writable slot of an equivalent type,
@@ -798,13 +798,13 @@ keys the target lists or the source excludes:
   \forall\kappa\in K.\;\kappa\in K'\lor\beta\nvDash\kappa.
 ```
 
-So a fresh array object, own keys among its store and prototype, is an array,
+So a fresh array object, own keys among its spine and prototype, is an array,
 own keys outside `ArrayProto`'s; and an array type is covered by another with
-the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($`\theta'\sqsubseteq\theta`$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [SOURCE-MODEL](SOURCE-MODEL.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($`\theta\between\theta'`$: the classes overlap; $`\theta'\ni_?\kappa`$: the class may admit the key), and every source own-key bound must **keep** its class: say no key of it absent. A bound listing keys keeps none; one excluding keys keeps a class that may admit none of them but the model's own prototype and store keys, which no code adds as a property (`KeyBound.keeps`, `KeepsKeys`). A writable index whose contract no value meets ($`\varnothing(C')`$: plain rows of no clause, `Uninhabited`) takes no key, so it needs no kept bound:
+the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($`\theta'\sqsubseteq\theta`$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [SOURCE-MODEL](SOURCE-MODEL.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($`\theta\between\theta'`$: the classes overlap; $`\theta'\ni_?\kappa`$: the class may admit the key), and every source own-key bound must **keep** its class: say no key of it absent. A bound listing keys keeps none; one excluding keys keeps a class that may admit none of them but the model's own prototype and spine keys, which no code adds as a property (`KeyBound.keeps`, `KeepsKeys`). A writable index whose contract no value meets ($`\varnothing(C')`$: plain rows of no clause, `Uninhabited`) takes no key, so it needs no kept bound:
 
 ```math
 b\ \mathsf{keeps}\ \theta\iff b=\mathsf{outside}\,N\land
-  \forall\kappa\in N.\;\kappa\in\{\mathsf{proto},\mathsf{store}\}\lor\theta\not\ni_?\kappa
+  \forall\kappa\in N.\;\kappa\in\{\mathsf{proto},\mathsf{spine}\}\lor\theta\not\ni_?\kappa
 ```
 
 ```math
@@ -1005,7 +1005,7 @@ so mutable arrays are invariant. A readonly target only reads each element
 present at its position's type, so it is covered as a pack is, below
 (`CoversTuple`): an element's location has the contract of its source
 position, which reads within the target position's type, and the list's
-length lies within the target's bounds. Both store rules additionally require
+length lies within the target's bounds. Both spine rules additionally require
 $`\mathsf{PresenceCovers}(\Delta,\tau,\tau')`$ (`CoversPresence`): dense covers
 all modes; every mode covers sparse; readable covers readable by the element
 coverage; sparse covers readable when each target position admits `undefined`;

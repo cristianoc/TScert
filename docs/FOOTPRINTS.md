@@ -38,25 +38,25 @@ is present and skips it when it is not, leaving a hole in its result
 dense when every index below `len` is present at each test.
 
 The calculus heap is a list of values indexed by locations. An array object
-holds its store under the key `[]`; the store location holds `.arr ls`, a
+holds its spine under the key `[]`; the spine location holds `.arr ls`, a
 list of optional element locations whose length is the array's length. The
-density fact `dense(x, n)` (`Dense`) says the store of `x` holds a list whose
+density fact `dense(x, n)` (`Dense`) says the spine of `x` holds a list whose
 first `n` indices are present:
 
 ```math
 D_n\,ls \iff n \le |ls| \land \forall i < n.\ ls[i] \ne \mathsf{none}
 ```
 
-It reads the store's location alone (proved: `dense_support`), and that
-location holds a store (proved: `dense_class`).
+It reads the spine's location alone (proved: `dense_support`), and that
+location holds a spine (proved: `dense_class`).
 
 ## Changes and footprints
 
 A **change** is a reflexive, transitive relation on a location's contents,
 parameterised by the length `b` of the heap it starts from. With
 $`\mathrm{init}(v,v')`$ an initialization, $`v`$ `null` or `undefined` and
-$`v'`$ no store, and $`\mathrm{scalar}(v,v')`$ a scalar's step, $`v`$ neither
-an object nor a store and $`v'`$ no store:
+$`v'`$ no spine, and $`\mathrm{scalar}(v,v')`$ a scalar's step, $`v`$ neither
+an object nor a spine and $`v'`$ no spine:
 
 ```math
 \begin{aligned}
@@ -71,26 +71,26 @@ an object nor a store and $`v'`$ no store:
 
 `init` lets a location holding `null` or `undefined` take a value, the change
 of a lazy initialization `x ??= e`; `scalar` lets a location holding neither an
-object nor a store take a value, the change of a `Map`'s `set` to its `size`;
-`grow` keeps every dense prefix, lists no old element location the store
-did not list, and leaves the store no shorter and at most $`2^{32}-1`$ long
+object nor a spine take a value, the change of a `Map`'s `set` to its `size`;
+`grow` keeps every dense prefix, lists no old element location the spine
+did not list, and leaves the spine no shorter and at most $`2^{32}-1`$ long
 (`maxArrayLength`) where it was (`LengthGrows`), or takes a scalar's step. The changes form the chain
 $`\mathsf{keep} \sqsubseteq \mathsf{init} \sqsubseteq \mathsf{scalar} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}`$
 (proved: `Change.Holds.refl`, `.mono`, `.trans`). A change other than `any`
 keeps an object, `keep` and `init` keep contents neither `null` nor
-`undefined`, and on a store `init` and `scalar` are `keep` (proved:
-`Change.Holds.object_kept`, `.defined_kept`, `.init_store`, `.scalar_store`).
+`undefined`, and on a spine `init` and `scalar` are `keep` (proved:
+`Change.Holds.object_kept`, `.defined_kept`, `.init_spine`, `.scalar_spine`).
 
 A **class region** $`\mathsf{cls}(S)`$ selects the locations whose contents
 have a category in the selector $`S`$, a set of the three categories value
-location, array store and view store (the note *Tolerant frames*, §3).
+location, array spine and view spine (the note *Tolerant frames*, §3).
 Selector inclusion and disjointness are the set operations on the three
 categories, and they give inclusion and disjointness of class regions
-(proved: `class_subset_sound`, `class_disjoint_sound`); $`\mathsf{stores}`$
-(array and view stores) and $`\mathsf{views}`$ overlap, so distinct
+(proved: `class_subset_sound`, `class_disjoint_sound`); $`\mathsf{spines}`$
+(array and view spines) and $`\mathsf{views}`$ overlap, so distinct
 selectors need not be disjoint. A class region selects a location whose
-contents' category (`contentsCategory`: `.arr` an array store, `.viewStore`
-a view store, anything else a value) its selector names; on a well-formed
+contents' category (`contentsCategory`: `.arr` an array spine, `.viewSpine`
+a view spine, anything else a value) its selector names; on a well-formed
 heap that category is the location's role's (proved: `Shaped.category`).
 The locations below a heap's length fall into three classes by their
 contents' category: `class(values)`, `class(arrays)` and `class(views)`. A
@@ -100,8 +100,8 @@ $`\Phi = \{\mathsf{values}{:}\,\delta_v,\ \mathsf{arrays}{:}\,\delta_a,\ \mathsf
 category: three components, each holding a change. Each component is read on
 its category (`Closed.normal`, proved: `Closed.post_normal`): on a value
 `grow` is `scalar` (`Change.onValue`), so a value's change is `keep`, `init`,
-`scalar` or `any`; on either kind of store `init` and `scalar` are `keep`
-(`Change.onStore`), so a store's change is `keep`, `grow` or `any`. Its
+`scalar` or `any`; on either kind of spine `init` and `scalar` are `keep`
+(`Change.onSpine`), so a spine's change is `keep`, `grow` or `any`. Its
 meaning relates the heap `h` a run starts in to a later heap `h'`:
 
 ```math
@@ -116,12 +116,12 @@ The order of the normalized components is exactly the semantic order
 (proved: `closed_order_exact`, with a one-location heap witnessing each
 failure; `Closed.Holds.mono`).
 
-A closed footprint stating one change for both stores,
-`Closed.ofStores δ_v δ_s`, is the footprint
-$`\{\mathsf{values}{:}\,\delta_v,\ \mathsf{stores}{:}\,\delta_s\}`$
-(proved: `Closed.ofStores_post_iff`). The change a closed footprint allows on
-the class `spines` is the larger of its two store components
-(`Closed.stores`). A footprint of class regions alone has an exact closed
+A closed footprint stating one change for both spines,
+`Closed.ofSpines δ_v δ_s`, is the footprint
+$`\{\mathsf{values}{:}\,\delta_v,\ \mathsf{spines}{:}\,\delta_s\}`$
+(proved: `Closed.ofSpines_post_iff`). The change a closed footprint allows on
+the class `spines` is the larger of its two spine components
+(`Closed.spines`). A footprint of class regions alone has an exact closed
 form (`Footprint.closed?`, proved: `Footprint.closed?_sound`); every
 footprint implies its closed bound, each category's largest change of an
 entry whose region may hold it (`Footprint.close`, `Region.cats`, proved:
@@ -130,13 +130,13 @@ entry whose region may hold it (`Footprint.close`, `Region.cats`, proved:
 **Call effects.** A call or construct signature's effect
 (`CallEffects.Effect`) is a closed footprint, an optional promise, a type
 guard's or an assertion function's, and two Booleans: a fresh result, and the
-receiver's store excepted ([fresh array storage](#fresh-array-storage)). A
+receiver's spine excepted ([fresh array storage](#fresh-array-storage)). A
 signature promises that its normal return meets the footprint from the heap
 the call starts in (`PromiseWith`, `ConstructPromise`). One signature covers another when its footprint is within
 the other's and their promises are equal (`Effect.covers`, proved:
 `Effect.covers_sound`); two signatures of one call meet at the meet of their
 footprints (proved: `Closed.holds_meet`). The wire spells a closed footprint
-`{"value": v, "store": s}`, the closed footprint `Closed.ofStores v s`
+`{"value": v, "spine": s}`, the closed footprint `Closed.ofSpines v s`
 ([source claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations),
 [request protocol](REQUEST-PROTOCOL.md#request-fields)).
 
@@ -193,18 +193,18 @@ region, but a first field $`c`$ states stable (`pathReads`):
 
 The class $`\sigma`$ is $`\mathsf{values}`$ where the read ends at a number,
 a string or an object, and $`\mathsf{all}`$ where it may end at any
-contents: a field location may hold a store. **Proved** (`pathReads_sound`):
+contents: a field location may hold a spine. **Proved** (`pathReads_sound`):
 where the support is kept and $`\sigma`$ selects the value read, the read
 reads it after the transition.
 
 A term $`t`$ (ARITHMETIC.md, [linear facts](ARITHMETIC.md#linear-facts))
-at the change $`\delta \in \{\mathsf{keep}, \mathsf{grow}\}`$ its store
+at the change $`\delta \in \{\mathsf{keep}, \mathsf{grow}\}`$ its spine
 tolerates has the support (`Term.support`): none for an entry term, which
 reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda,\mathsf{values}}`$ of its path,
 $`\lambda`$ `init` for a value or a string's length (a number or a string)
 and `grow` for a length or a typed array's length (an object), and for a
-length $`|x.\pi|`$ the store location of the array $`x.\pi`$ reads, where it
-holds a store, at $`\delta`$, each but where the context keeps it. A typed
+length $`|x.\pi|`$ the spine location of the array $`x.\pi`$ reads, where it
+holds a spine, at $`\delta`$, each but where the context keeps it. A typed
 array's length $`\mathrm{view}(x.\pi)`$ reads no further location: the
 length is part of the typed array's descriptor. **Proved** (`Term.support_sound`): where the support is kept, the term
 denotes what it denoted, and at $`\delta = \mathsf{grow}`$ a length denotes
@@ -215,14 +215,14 @@ $`\sum_t a_t\,t \le d`$ a term with $`a_t \le 0`$ at $`\mathsf{grow}`$, any
 other at $`\mathsf{keep}`$; in a disequality every term at $`\mathsf{keep}`$
 (proved: `linearSupport_supports`). An index fact's support
 (`IndexFact.support?`, proved: `IndexFact.support?_supports`): empty for a
-fact of slots' values; a length fact its store at $`\mathsf{keep}`$, a bound
-its store at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
+fact of slots' values; a length fact its spine at $`\mathsf{keep}`$, a bound
+its spine at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
 guard path's reads $`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$ and
-its body's; a store separation its two paths' reads
-$`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$; a region fact $`\mathrm{apart}(a, b)`$ the two store
+its body's; a spine separation its two paths' reads
+$`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$; a region fact $`\mathrm{apart}(a, b)`$ the two spine
 locations at `keep`; a quantified fact $`\mathrm{every}(x.\pi, t, \varphi)`$
 whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow},\mathsf{values}}(x.\pi)`$,
-the array's store location at either key an array or a typed array holds its
+the array's spine location at either key an array or a typed array holds its
 elements under, at `keep`, the locations of class value at `init` (an element
 the body reads is a number, which `init` keeps), and its bound's and its
 body's terms at `keep` (`everyCells`, `bodySupport`). An element fact, and a
@@ -242,15 +242,15 @@ sound wherever $`\Sigma`$ holds: `knowledgeQuery_sound`):
 
 - **by class**: the locations of a region in the class region of one
   selector and the class region of a disjoint selector;
-- **by a store separation**: each region lies in the store of the value a
-  path reads, $`x.\pi`$ and $`y.\pi'`$ (`storeSite`), and an unconditional
-  fact of $`\Sigma`$ states two paths' values' stores different, each path
+- **by a spine separation**: each region lies in the spine of the value a
+  path reads, $`x.\pi`$ and $`y.\pi'`$ (`spineSite`), and an unconditional
+  fact of $`\Sigma`$ states two paths' values' spines different, each path
   naming the same value as one of the two up to $`\Sigma`$'s links
-  (`pathViews`, `sameSite`). The facts that state it (`factSeps`): a store
+  (`pathViews`, `sameSite`). The facts that state it (`factSeps`): a spine
   separation $`P \mathrel{\#} Q`$, a region fact $`\mathrm{apart}(a, b)`$, and
   either guarded by $`z = \overline g`$ where one of its paths starts at an
   alias of $`z`$ (a tag's value reads no object, so that path selects no
-  store).
+  spine).
 
 A path's **views** are the paths reading the same value by alias and read
 links: $`x.f\pi`$ reads what $`y.\pi`$ reads where a read link of an alias of
@@ -259,15 +259,15 @@ $`x`$ through $`f`$ reaches $`y`$ (proved: `pathViews_read`).
 ### A call's effect at the caller
 
 A call's frame (`Effect.frame`: its closed bound, its receiver's entries and
-its argument store regions) is read at the call's positions. At the caller
+its argument spine regions) is read at the call's positions. At the caller
 it is read at the caller's slots: a position the call passes a slot at is
 that slot, and the regions at any other position widen to every location
 (`Region.renameM`, `PromiseCalls.callerFrame`; proved:
 `Post.renameM`, `callerFrame_post`). Across a call, the facts its frame
 keeps are those the survival check keeps under $`\Sigma`$'s query, its
-receiver's entries and store regions included (`PromiseCalls.frameKeeps`),
+receiver's entries and spine regions included (`PromiseCalls.frameKeeps`),
 beside those its exact postcondition keeps (`PromiseCalls.effectKept`). A closed bound's class
-entries are read as they act on their class: on a store `init` and `scalar`
+entries are read as they act on their class: on a spine `init` and `scalar`
 are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
 `Post.byClass`).
 The frame is the normal exit's frame of the signature's exit summary, whose
@@ -280,18 +280,18 @@ $`\top`$ otherwise
 A call's frame, read at the heap the call starts in, is compared with the
 invocation's bound on the locations below the invocation's mark $`b`$, the
 length of the heap the invocation started in (`Programs/FrameChecks.lean`).
-An entry whose region is the array store of a call position $`i \in P`$
-holding a store allocated at or after $`b`$ covers no such location and is
-discharged, the note's Fresh-Eff (`Region.freshStore`; proved:
-`Region.freshStore_mem`): the store field of $`i`$, the store field at the
-empty path from $`i`$ (an argument store region's entry), the selected
-store at the empty path, each possibly restricted to a class. A region
-reached through a nonempty path from $`i`$ stays, since a fresh store may
+An entry whose region is the array spine of a call position $`i \in P`$
+holding a spine allocated at or after $`b`$ covers no such location and is
+discharged, the note's Fresh-Eff (`Region.freshSpine`; proved:
+`Region.freshSpine_mem`): the spine field of $`i`$, the spine field at the
+empty path from $`i`$ (an argument spine region's entry), the selected
+spine at the empty path, each possibly restricted to a class. A region
+reached through a nonempty path from $`i`$ stays, since a fresh spine may
 list old cells. The closed bound of the remaining entries gives
 each category $`k`$ the largest change of an entry whose region may hold it:
 
 ```math
-\lfloor\Phi\rfloor_P(k) = \bigsqcup\,\{\delta \mid (R,\delta)\in\Phi,\ R\ \text{not a fresh store of}\ P,\ k\in\mathrm{cats}(R)\}
+\lfloor\Phi\rfloor_P(k) = \bigsqcup\,\{\delta \mid (R,\delta)\in\Phi,\ R\ \text{not a fresh spine of}\ P,\ k\in\mathrm{cats}(R)\}
 ```
 
 It bounds every location below $`b`$ (`Footprint.boundBelow`; proved:
@@ -330,27 +330,27 @@ checker's `GraphCode.throwsWithin` reads the normal frame and `onThrow`.
 
 ## The stable set for density
 
-Density reads only a store, and only a store change beyond `grow` can remove
+Density reads only a spine, and only a spine change beyond `grow` can remove
 a present index below `n`. The check `stableDenseClosed` accepts a closed
-footprint whose store components are at most `grow` (proved:
+footprint whose spine components are at most `grow` (proved:
 `stableDenseClosed_sound`); of the closed footprints the wire spells, those
-are the eight below, and each of the other four lets a non-empty dense store
+are the eight below, and each of the other four lets a non-empty dense spine
 become empty (controls in `FootprintControls.lean`):
 
 | Footprint | Keeps density |
 | --- | --- |
-| `{value: keep, store: keep}` | yes |
-| `{value: init, store: keep}` | yes |
-| `{value: scalar, store: keep}` | yes |
-| `{value: any, store: keep}` | yes |
-| `{value: keep, store: grow}` | yes |
-| `{value: init, store: grow}` | yes |
-| `{value: scalar, store: grow}` | yes |
-| `{value: any, store: grow}` | yes |
-| `{value: keep, store: any}` | no |
-| `{value: init, store: any}` | no |
-| `{value: scalar, store: any}` | no |
-| `{value: any, store: any}` | no |
+| `{value: keep, spine: keep}` | yes |
+| `{value: init, spine: keep}` | yes |
+| `{value: scalar, spine: keep}` | yes |
+| `{value: any, spine: keep}` | yes |
+| `{value: keep, spine: grow}` | yes |
+| `{value: init, spine: grow}` | yes |
+| `{value: scalar, spine: grow}` | yes |
+| `{value: any, spine: grow}` | yes |
+| `{value: keep, spine: any}` | no |
+| `{value: init, spine: any}` | no |
+| `{value: scalar, spine: any}` | no |
+| `{value: any, spine: any}` | no |
 
 `map` relies on density between callbacks. For callbacks each of whose
 normal returns meets a footprint of the stable set, density below the
@@ -371,26 +371,26 @@ locations below the heap the body started in; the runs compose by
 `TolerantFrames.footprintCheck_sound`, `nodeWithin_of_checked`) when it is:
 
 - an **inspection**: a read, test, arithmetic or allocation, an array
-  literal's spread parts included, which read their stores' elements in
-  place (an operand that is one of several arrays reads the store of the
+  literal's spread parts included, which read their spines' elements in
+  place (an operand that is one of several arrays reads the spine of the
   one its slot holds, the read derived at each alternative by `unionVar`:
-  `arrayStoreAt`), a merge, which reads its operands' own properties and steps to
+  `arraySpineAt`), a merge, which reads its operands' own properties and steps to
   the allocation of their copy, and a key's record (`makeKey`), which converts
   a primitive key and steps to the allocation of a record of the key, each
   preserving the heap (`ExpressionEffects.check`, `Purity.inspectTerm`;
   proved: `inspect_safe`, from `inspect_step`, whose merge case is
   `mergeParts_vals`: every copied value is a value). A write at a string key
   of a module binding holding a record lowers to these and the binding's
-  cell write, within `{value: any, store: keep}`
+  cell write, within `{value: any, spine: keep}`
   (`module-dictionary-keeps-lengths`);
 - a **typed write** of a field whose contract, at the written object's type,
-  admits only source values, within `{value: any, store: keep}`: the written
-  location holds no store, by its contract (`writeWithin`; proved:
+  admits only source values, within `{value: any, spine: keep}`: the written
+  location holds no spine, by its contract (`writeWithin`; proved:
   `write_within`, from `sourceField_sound`). A variable's cell is such a
   field, and so is a named field an assignment or a logical assignment
   writes (`field-write-refinement`);
-- an **element write** at a literal index, within `{value: any, store: grow}`,
-  or `{value: any, store: keep}` at a required position
+- an **element write** at a literal index, within `{value: any, spine: grow}`,
+  or `{value: any, spine: keep}` at a required position
   ([element writes](#element-writes));
 - a **selected call or construction** whose signature's frame is within
   $`\Phi`$, its operands values (`selectedWithinAt`; proved:
@@ -399,7 +399,7 @@ locations below the heap the body started in; the runs compose by
   and `CallEffects.construct_exits`, read at its heaps by
   `selectedExits_heldPost_call`): a fixed
   call, a variadic call and a construction, each at the signature the
-  evidence selects. A variadic call's evaluation reads its spreads' stores
+  evidence selects. A variadic call's evaluation reads its spreads' spines
   in the heap the call starts in and reaches an invocation at the expanded
   actuals (`spread_values_eval`, `spread_head_eval`). The call's guarantee
   is the signature's specification at the reached invocation's receiver and
@@ -412,8 +412,8 @@ locations below the heap the body started in; the runs compose by
   `Exits.forgetActuals_sound`), read as the signature
   `Effect.withoutActuals`. The check is the closed bound
   of the signature's frame below the invocation's mark within $`\Phi`$, an
-  entry on the store of a position whose operand is a slot holding a fresh
-  store discharged ([frame checks](#frame-checks); proved:
+  entry on the spine of a position whose operand is a slot holding a fresh
+  spine discharged ([frame checks](#frame-checks); proved:
   `GraphCode.selectedWithin_sound`);
 - a node **without a normal return**: its term, by the node's own checked
   ordinary typing, has a type no value meets, so its run is within every
@@ -482,9 +482,9 @@ entry (`PassUnitCodes.codeSpec_of_guarantee`), a class's construct signatures ag
 constructor's code (`ctorGraph`); a [statement](SOURCE-ELABORATION.md#stated-effects)
 in a definition's annotation is certified from its code at the definition. A callable value carries its footprint
 through ordinary signature checking, substitution and application; an unknown
-function states `{value: any, store: any}`.
+function states `{value: any, spine: any}`.
 
-An async definition's footprint is `{value: any, store: any}`. An async
+An async definition's footprint is `{value: any, spine: any}`. An async
 call returns a promise where its body throws, so a footprint its body meets
 on normal return bounds no run of the call; the model reads the body's
 throw as a throw ([async functions](SOURCE-CONTRACTS.md#async-functions-and-await)).
@@ -497,7 +497,7 @@ proved: `SourceExtraction.checkRequests_async`):
 
 ```math
 \frac{\mathrm{completion}(d)=\mathsf{async}\qquad \mathrm{claim}(d)=\Phi}
-     {\Phi=\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{any}\}}\ \textsf{async-effect}
+     {\Phi=\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{any}\}}\ \textsf{async-effect}
 ```
 
 The front proposes each footprint, untrusted (`PassProposals.proposals`,
@@ -534,35 +534,35 @@ every node.
 Each native signature states its closed footprint; the rows, with what is
 proved of each and what is audited, are
 [native footprints](SOURCE-CONTRACTS.md#native-footprints). Within the
-stable set are `push` and `unshift` (`{value: any, store: grow}`), `sort`
-at a comparator within one of its footprints (`{value: any, store: grow}`,
+stable set are `push` and `unshift` (`{value: any, spine: grow}`), `sort`
+at a comparator within one of its footprints (`{value: any, spine: grow}`,
 `sort_grow`), a native
 regex's members, the array iterator, `new Set` and `new Map`, and the
-collections' and dates' mutators (each at most `{value: any, store: keep}`,
-the mutators `{value: scalar, store: keep}`);
+collections' and dates' mutators (each at most `{value: any, spine: keep}`,
+the mutators `{value: scalar, spine: keep}`);
 outside it are `pop`, `shift`, `reverse`, `splice` and every native stated
 unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex`,
 `flatMap`, `reduce` and `reduceRight` have one signature per closed
 footprint stating `keep` or `any` for values, each within its callback's; a
 callback within `{value: init, …}` or `{value: scalar, …}` takes the one
 stating `any`.
-`pop`, `shift`, `reverse` and `splice` state `{value: any, store: keep}` with their
-receiver's store excepted, so outside a fresh receiver they bound a call by
+`pop`, `shift`, `reverse` and `splice` state `{value: any, spine: keep}` with their
+receiver's spine excepted, so outside a fresh receiver they bound a call by
 the footprint letting everything change; `filter`, `map`, `flatMap`, `flat`,
 `slice`, `splice` and a string's `split` state a fresh result.
 `map` has five signatures: one per footprint `ε` of the stable
 set stating `keep` or `any` for values, which takes a dense receiver and a callback within `ε`, gives a dense
 result and states `ε` as its own; and an unrestricted one, which takes any
 receiver and any callback, gives a result that may hold holes and states no
-footprint. So a callback changing stores beyond `grow`, such as one within
-`{value: keep, store: any}`, or a sparse receiver gives a `map` call with no
+footprint. So a callback changing spines beyond `grow`, such as one within
+`{value: keep, spine: any}`, or a sparse receiver gives a `map` call with no
 footprint.
 
 ## Fresh array storage
 
-A destructive operation on a store allocated after a run began changes no
-store the run's entry heap held. `GraphCode` tracks, at each node, the slots
-of the node's entry holding a value whose array store lies at or above the
+A destructive operation on a spine allocated after a run began changes no
+spine the run's entry heap held. `GraphCode` tracks, at each node, the slots
+of the node's entry holding a value whose array spine lies at or above the
 entry heap's length (`FreshAt`, `FreshOk`). The fact reads no heap: an
 object's fields are fixed at its allocation.
 
@@ -575,7 +575,7 @@ object's fields are fixed at its allocation.
   join keeps a fact where every incoming edge establishes it, and a slot a
   write changes is a cell, which holds no fact.
 - **Fresh-receiver calls.** A call at a signature excepting its receiver's
-  store, at a receiver holding a fresh store, is within the signature's
+  spine, at a receiver holding a fresh spine, is within the signature's
   footprint on the locations below the entry heap's length
   (`Closed.HoldsOn.below_fresh`); runs compose with the body's by
   `Closed.Holds.trans_on`.
@@ -585,8 +585,8 @@ object's fields are fixed at its allocation.
 `PassUnitCodes.codeSpec_of_guarantee`). A
   declaration states no fresh result.
 
-**In a regional body.** A body certified at stated store regions
-([argument-path store regions](#argument-path-store-regions)) tracks, at
+**In a regional body.** A body certified at stated spine regions
+([argument-path spine regions](#argument-path-spine-regions)) tracks, at
 each node, two lists of slots against $`b=|h_0|`$, the invocation's entry
 heap's length, fixed through the whole run, loops included: the slots $`F`$
 holding a fresh value and the slots $`C`$ holding a fresh cell
@@ -594,13 +594,13 @@ holding a fresh value and the slots $`C`$ holding a fresh cell
 
 ```math
 \begin{aligned}
-\mathrm{FreshValue}_b(v) &\iff \neg\,\mathrm{isArr}(v)\ \land\ \forall s.\ \mathrm{store}(v)=s \Rightarrow b\le s\\
+\mathrm{FreshValue}_b(v) &\iff \neg\,\mathrm{isArr}(v)\ \land\ \forall s.\ \mathrm{spine}(v)=s \Rightarrow b\le s\\
 \mathrm{CellFresh}_b(h,c) &\iff \exists\, l\,v.\ c.\mathtt{value}=l\ \land\ h[l]=v\ \land\ \mathrm{FreshValue}_b(v)
 \end{aligned}
 ```
 
-A fresh value is conditional: `null`, a number and an object with no store
-field meet it, and an array meets it where its store was allocated during
+A fresh value is conditional: `null`, a number and an object with no spine
+field meet it, and an array meets it where its spine was allocated during
 the run. It reads no heap. A fresh cell is an invariant of its contents,
 read at each heap: a cell is the object a `let` a closure writes lowers to
 ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)), its contents at its
@@ -635,18 +635,18 @@ $`i \in F`$ and $`j \in C`$:
 \frac{}{x.f := x_i\ \text{keeps}\ C}
 \qquad
 \frac{\mathrm{Post}\,\Psi\,\sigma\,h\,h' \qquad
-      \forall (r,\delta)\in\Psi.\ \delta=\mathsf{keep} \lor r \subseteq \mathsf{cls}\ \mathsf{store}}
+      \forall (r,\delta)\in\Psi.\ \delta=\mathsf{keep} \lor r \subseteq \mathsf{cls}\ \mathsf{spine}}
      {t\ \text{keeps}\ C}
 ```
 
 An inspection changes no old location; a write of a fresh value leaves a
 fresh value wherever it writes; and a frame whose every entry keeps its
-locations or holds only stores ($`\mathsf{cls}\ \mathsf{store}`$, a region's
-part of class store) changes no cell's contents, a value of no store
+locations or holds only spines ($`\mathsf{cls}\ \mathsf{spine}`$, a region's
+part of class spine) changes no cell's contents, a value of no spine
 (`keepsValues`, proved: `CellFresh.post`). `push`'s frame names its
-receiver's store at its part of class store, which `ReceiverGrows` states.
+receiver's spine at its part of class spine, which `ReceiverGrows` states.
 The allocation rule holds of a run of the allocation with any initializers
-or binding before it (`alloc_fresh`, from `alloc_step`: the store field's
+or binding before it (`alloc_fresh`, from `alloc_step`: the spine field's
 location is past the heap the allocation starts in); the others are
 `cellAlloc_fresh`, `cellRead_fresh` and `freshWrite_cells`. The facts along
 edges and handlers are GraphCode's (`edgesFresh`, `handlerFresh`, proved
@@ -657,8 +657,8 @@ catches, the thrown value never fresh, its cells kept on the node's throw.
 The entry has none. Lean infers the facts (`freshTables`, untrusted) and
 checks every node (`checkFresh_sound`) and every edge.
 
-A fresh value's store region rebases to no region of the entry
-([the step-frame rule](#argument-path-store-regions)), so a step growing or
+A fresh value's spine region rebases to no region of the entry
+([the step-frame rule](#argument-path-spine-regions)), so a step growing or
 popping an array the body allocated, directly or through a cell, needs no
 region of the stated frame (`stated-region-fresh`, `stated-region-lazy`).
 A fresh record holding the caller's array gives that array no fact; a slot
@@ -686,20 +686,20 @@ result promised; a pure graph; the pass's walk at the bound, node by node
 (`SinglePass.footprintCheck`); and, for a unit promising no fresh result, the
 regional check with no regions at $`\Phi_c`$ (`regionalChecked`), its
 throws bounded where the unit claims $`\Phi_c`$ on a throw. A frame stating
-a store region is `top` to the node-by-node check (`StatedEffect.footprint`); the
-regional check rebases its region on a store the body allocated to none, so
-a body changing such a store through a callee stays within $`\Phi_c`$
+a spine region is `top` to the node-by-node check (`StatedEffect.footprint`); the
+regional check rebases its region on a spine the body allocated to none, so
+a body changing such a spine through a callee stays within $`\Phi_c`$
 (`stated-fresh-direct`). With no regions the regional check's postcondition
 is the closed footprint itself:
 
 ```math
-\frac{\mathrm{ArgumentStoreRegionsWithin}\ \Phi\ [\,]\ \rho\ h_0\ h}{\Phi.\mathrm{Holds}\ h_0\ h}\ (\text{no-regions})
+\frac{\mathrm{ArgumentSpineRegionsWithin}\ \Phi\ [\,]\ \rho\ h_0\ h}{\Phi.\mathrm{Holds}\ h_0\ h}\ (\text{no-regions})
 ```
 
-(proved: `ArgumentStoreRegionsWithin.nil_holds`; acceptance:
+(proved: `ArgumentSpineRegionsWithin.nil_holds`; acceptance:
 `PassUnit.ordinary_requestSafe`). A unit an earlier
 certificate accepts runs no regional traversal. A record the body receives
-holds no fresh fact, so a region on its field is no store the body
+holds no fresh fact, so a region on its field is no spine the body
 allocated (`invalid-stated-fresh-parameter`, run under Node).
 
 **Fresh fields.** A regional body tracks a third list at each node, pairs
@@ -708,7 +708,7 @@ body's calls read through one field
 ([ArgumentRegionFresh.lean](../lean/Verification/Programs/ArgumentRegionFresh.lean)):
 
 ```math
-\mathrm{FieldFresh}_b(h,v,f) \iff \forall u.\ \mathrm{readPath}(h,v,[f]) = u \Rightarrow \forall s.\ \mathrm{store}(u)=s \Rightarrow b\le s
+\mathrm{FieldFresh}_b(h,v,f) \iff \forall u.\ \mathrm{readPath}(h,v,[f]) = u \Rightarrow \forall s.\ \mathrm{spine}(u)=s \Rightarrow b\le s
 ```
 
 A value with no field $`f`$, `null` and `undefined` included, meets it. A
@@ -729,7 +729,7 @@ slot types:
 ```
 
 A stable field's location has a stable contract in the world, which every
-heap a run reaches keeps, its throws included, and a store's location is
+heap a run reaches keeps, its throws included, and a spine's location is
 part of the value the field holds (proved: `fieldAlloc_fresh`,
 `fieldsHold_frame` from `stableLocations_exc`, `fieldOut_sound`,
 `fieldsCheck_sound`). The facts along edges and handlers follow the slot
@@ -739,14 +739,14 @@ region at a path of one field to no region where the step position's slot
 has that field fresh:
 
 ```math
-\frac{(s,f)\ \text{fresh at the step}}{\mathrm{rebase}(\mathsf{path}\ s\ [f]\ \mathsf{store}) = \varnothing}
+\frac{(s,f)\ \text{fresh at the step}}{\mathrm{rebase}(\mathsf{path}\ s\ [f]\ \mathsf{spine}) = \varnothing}
 ```
 
 (proved: `RebaseOk.fresh_path`, `rebase_sound`). Lean infers the pairs after
 the values and cells, apart from them (`freshTables`, untrusted; without a
 fixed point, none), and checks every node and edge (`checkNodes`). A body
 that allocates a record holding an array it allocates and passes it to a
-callee stating a region on that field changes no store of its entry heap
+callee stating a region on that field changes no spine of its entry heap
 through the call (`stated-fresh-field`, `stated-fresh-field-local`,
 `stated-fresh-field-nullable`, where the slot is the record or `null`;
 `stated-fresh-field-escape`, `stated-fresh-field-alias`,
@@ -762,9 +762,9 @@ fact retained across replacement of the mutable field by the parameter's
 array, also through a throwing call inside `try` and the subsequent
 `catch`.
 
-`pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
+`pop`, `shift`, `reverse` and `splice` change only their receiver's spine and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their
-result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
+result's spine (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
 Controls: `map-stable-fresh-store`'s negatives, an alias of the mapped
 array, a join of a fresh and an old array, a reassigned variable and a
 helper's parameter, each also at a result type admitting holes
@@ -779,30 +779,30 @@ result is dense (`map-fresh-handler-refused`, a gap).
 ## Element writes
 
 `a[b] = v`, at a literal index, lowers to one node whose operands are slots:
-`setElem` on the store the object in slot `a` holds at its store field, at
-the number `b`, of the value in slot `v`, then the write of the store it
+`setElem` on the spine the object in slot `a` holds at its spine field, at
+the number `b`, of the value in slot `v`, then the write of the spine it
 returns back to that field. The operands' own evaluation is earlier nodes,
 each checked within the footprint on its own. `setElem` steps only at an
 array index, a number `indexOfBits` reads as one: a finite integer from 0 to
 $`2^{32}-2`$, `-0` included as 0, as ECMAScript's array indices are. At an
-index the store lists, it writes `v` into the element's location, which
+index the spine lists, it writes `v` into the element's location, which
 holds a source value by the position's contract, a location of
-`class(value)`, and returns the store unchanged; at a hole or past the end
+`class(value)`, and returns the spine unchanged; at a hole or past the end
 it allocates a fresh location, at or above the entry heap's length, and
-returns the store with it listed there (`placeAt`). Either way every old
-dense prefix stays and the store lists no old element location it did not
+returns the spine with it listed there (`placeAt`). Either way every old
+dense prefix stays and the spine lists no old element location it did not
 list (proved: `placeAt_dense`, `placeAt_mem`).
 
 Lean accepts the node (`elemWriteWithin`) where the object's slot type gives
-its store field a tuple contract whose position at the index holds source
+its spine field a tuple contract whose position at the index holds source
 values:
 
 ```math
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad T_{b}\ \text{source-valued}}
-     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}\ \textsf{elem-write}
+     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{grow}\}}\ \textsf{elem-write}
 \qquad
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad b < |T.\mathsf{required}|\qquad T_{b}\ \text{source-valued}}
-     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{keep}\}}\ \textsf{elem-write-present}
+     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{keep}\}}\ \textsf{elem-write-present}
 ```
 
 The theorem (`elem_write_core`, through `elem_present_holds` and
@@ -810,10 +810,10 @@ The theorem (`elem_write_core`, through `elem_present_holds` and
 the node's type from an environment meeting its slot types and a heap
 meeting its world, and concludes the footprint of every heap the node
 returns in, and, in the calculus, of every heap it raises in: once its first
-step has read the store, no step of the term raises. A required position is
-listed in every store its contract admits, so the write there takes the
+step has read the spine, no step of the term raises. A required position is
+listed in every spine its contract admits, so the write there takes the
 present case. A length alone proves no presence, since a hole may lie below
-it, and no other presence evidence is read. A store write through any other
+it, and no other presence evidence is read. A spine write through any other
 operation (`length` assignment, `delete` of an element) is outside the
 rule.
 
@@ -825,7 +825,7 @@ every array the program writes is writable and extensible
 
 A write at a key the program computes, its index a slot
 ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)),
-is within the same `grow` footprint where every position of the store's
+is within the same `grow` footprint where every position of the spine's
 contract holds source values, a tuple of no required or optional position
 whose rest does (`elemVarWriteWithin`, proved: `elem_var_write_core`): where
 the write steps, its index decodes to some position, and the rest's contract
@@ -833,7 +833,7 @@ gives that position's.
 
 ```math
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(\langle[\,],[\,],E\rangle)\qquad E\ \text{source-valued}}
-     {o[k] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}\ \textsf{elem-write-slot}
+     {o[k] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{grow}\}}\ \textsf{elem-write-slot}
 ```
 
 Each rule's footprint is also the node's frame condition for index facts: the
@@ -842,7 +842,7 @@ lower bounds of every length, the written array's included
 ([index facts](#index-facts), `IndexWrites.growOutput`, proved:
 `ExpressionEffects.writeStep_grow`).
 
-The walk proposes `{value: any, store: grow}` for an element write
+The walk proposes `{value: any, spine: grow}` for an element write
 (`Synthesis.targetWrite`). `map-stable-element-write` is the case.
 
 ## Element regions
@@ -854,23 +854,23 @@ and framed by the same change $`\chi`$ of
 [frame conditions](PROGRAM-TYPING.md#frame-conditions).
 
 **Regions.** The region of a value in a heap $`h`$ is the set of locations
-its elements occupy: of a raw store $`\mathsf{arr}\,\ell`$, its listed cells;
-of an array object, the location $`s`$ of its store field and the cells
+its elements occupy: of a raw spine $`\mathsf{arr}\,\ell`$, its listed cells;
+of an array object, the location $`s`$ of its spine field and the cells
 $`h(s)`$ lists. A region fact $`\mathrm{apart}(x,y)`$ states that the
 regions of the values in slots $`x`$ and $`y`$ are disjoint
 (`IndexFact.apart`, `RegionsApart`). An array slot, one whose type is one
-record clause with a store field (written or read only) of one list
-contract, has its region in the heap: its store field's location and every
+record clause with a spine field (written or read only) of one list
+contract, has its region in the heap: its spine field's location and every
 listed cell are locations of the world (`arraySlot_region`, proved).
 
-**Rules.** An array literal's store, of slots, and the empty literal's object
+**Rules.** An array literal's spine, of slots, and the empty literal's object
 are apart from every array slot of the context; an array object built from
-the raw store in slot 0 is apart from every array slot that store is apart
+the raw spine in slot 0 is apart from every array slot that spine is apart
 from (`region-alloc`, `regionAtoms`, proved). A fact is kept by a change
-keeping every store ($`s=\mathsf{keep}`$), whose store cells hold the same
-stores. A write at a checked index of $`a`$'s store keeps a fact whose one
+keeping every spine ($`s=\mathsf{keep}`$), whose spine cells hold the same
+spines. A write at a checked index of $`a`$'s spine keeps a fact whose one
 side is $`a`$ and other an array slot apart from it, or both of whose sides
-are apart from it (`region-write`); a call growing its receiver's store
+are apart from it (`region-write`); a call growing its receiver's spine
 keeps a fact between two array slots (`region-grow`), each appended cell
 lying past the old heap ([native footprints](SOURCE-CONTRACTS.md#native-footprints),
 the append relation of `push`). Both proved (`writeAtoms_holds`,
@@ -882,11 +882,11 @@ the append relation of `push`). Both proved (`writeAtoms_holds`,
 ```
 
 **Quantified facts across a write.** A write at a checked index of $`a`$'s
-store keeps $`\mathrm{every}(z,t,\Phi)`$ where $`\mathrm{apart}(a,z)`$ and
+spine keeps $`\mathrm{every}(z,t,\Phi)`$ where $`\mathrm{apart}(a,z)`$ and
 the bound and every free body term read nothing of $`a`$'s region: a slot's
 value, a string's length, or the length of a slot $`w`$ with
 $`\mathrm{apart}(a,w)`$ (`every-apart-write`, proved: `writeAtoms_holds`, through
-`IndexFact.every_frame`). Across a growth of $`a`$'s store, the length of a
+`IndexFact.every_frame`). Across a growth of $`a`$'s spine, the length of a
 slot apart from $`a`$ is kept (`growFirst`), so `every-grow` keeps such a
 fact too.
 
@@ -897,7 +897,7 @@ fact too.
 
 The separations at a unit's loop heads are inferred (`freshApartAt`,
 `RegionInference.lean`): the pairs of slots whose regions an allocation
-states apart, a literal's store apart from every array slot, carried along
+states apart, a literal's spine apart from every array slot, carried along
 every edge to the slots whose mappings read them, those every predecessor
 carries; at each loop head, the pairs of array slots of an allocation whose
 array the loop writes an element of. Each is a proposal: Lean checks each
@@ -917,8 +917,8 @@ apart from itself (`TSCERT_FORCE=head-apart` over
 `quantified-freshness-builder`, `tests/single-pass-control-inputs.mts`) is
 refused at that unit.
 
-**Store fields apart.** A constant holding an array literal's object has
-its store field apart from the store field of every older slot's array, a
+**Spine fields apart.** A constant holding an array literal's object has
+its spine field apart from the spine field of every older slot's array, a
 [separation fact](PROGRAM-TYPING.md#separation-facts) the allocation
 establishes; the lengths a push into either keeps are
 [lengths kept across a push](ARITHMETIC.md#quantified-clauses).
@@ -932,19 +932,19 @@ on density, so `f` may take its parameter at `string`
 (`blocker-every-promise`, `every-elements-map-join`).
 
 **The fact.** $`\mathrm{elems}(x,R)`$ says that the array slot $`x`$ holds
-has a store, and that every element location the store lists holds a value
+has a spine, and that every element location the spine lists holds a value
 whose kind is in $`R`$, a set of the kinds null, undefined, boolean, number,
 string, bigint, symbol and object (`CallEffects.ElemsAt`,
 `CallEffects.ElemPred`):
 
 ```math
-\mathrm{elems}(x,R)(\rho,h)\iff\exists\,\ell\ ls.\ \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land\forall l.\ \mathsf{some}\,l\in ls\Rightarrow\exists v.\ h[l]=v\land v\in R
+\mathrm{elems}(x,R)(\rho,h)\iff\exists\,\ell\ ls.\ \mathrm{spine}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land\forall l.\ \mathsf{some}\,l\in ls\Rightarrow\exists v.\ h[l]=v\land v\in R
 ```
 
-A hole lists no location, so the fact is about present elements; the store
+A hole lists no location, so the fact is about present elements; the spine
 exists, so a heap extension keeps it (proved: `HeapKnowledge.elemsAt_extend`).
 It is a fact kind of the stability check (`FactKind.elems`), its support the
-store's location and the element locations, each kept (proved:
+spine's location and the element locations, each kept (proved:
 `elems_support`); a footprint keeping every location passes the check
 (`elemsCheck_stable`), so the fact holds at every visit of a native whose
 steps and callbacks keep the heap (proved: `elems_rely`, from `rely_chain`).
@@ -1022,8 +1022,8 @@ type).
 A third instance: footprints are how the frame conditions of index facts
 are stated and checked. An index fact (a length, a typed-array length, a
 field path's value) reads the locations its terms read, each holding an
-object, a store or a number. A closed footprint preserves the locations of
-the classes it keeps, and `grow` on a store leaves every length no smaller
+object, a spine or a number. A closed footprint preserves the locations of
+the classes it keeps, and `grow` on a spine leaves every length no smaller
 (`HeapKnowledge.Changes.ofClosed`, proved: `ofClosed_holds`). A call keeps
 the facts the survival check keeps ([support and respect](#support-and-respect));
 a fact with a non-positive coefficient on each length it reads, its other
@@ -1063,13 +1063,13 @@ without holes. Each is a pipeline case, with its Node run in
 
 | Program | Case | Outcome | Why |
 | --- | --- | --- | --- |
-| 1. a local counter in a loop | `map-stable-local-counter` | verified | variable writes, `{value: any, store: keep}` |
-| 2. a fresh array and `push` | `map-stable-push` | verified | `push`, `{value: any, store: grow}` |
-| 3. a global regex replacement | `map-stable-regexp-replace` | verified | `[Symbol.replace]` through the dispatch, `{value: any, store: keep}` |
-| 4. a fresh `Set` filled by `for...of` | `map-stable-set` | verified | `new Set`, the iterator's step and `add`, each within `{value: any, store: keep}` |
+| 1. a local counter in a loop | `map-stable-local-counter` | verified | variable writes, `{value: any, spine: keep}` |
+| 2. a fresh array and `push` | `map-stable-push` | verified | `push`, `{value: any, spine: grow}` |
+| 3. a global regex replacement | `map-stable-regexp-replace` | verified | `[Symbol.replace]` through the dispatch, `{value: any, spine: keep}` |
+| 4. a fresh `Set` filled by `for...of` | `map-stable-set` | verified | `new Set`, the iterator's step and `add`, each within `{value: any, spine: keep}` |
 | 5. a helper counting in a loop | `map-stable-helper` | verified | the declaration's checked footprint, consumed at its call |
-| 6. a captured outer counter | `map-stable-outer-cell` | verified | a cell holding a number, `{value: any, store: keep}` |
-| 7. `xs.pop()` on the mapped array | `invalid-map-unstable-pop` | refused | `pop`, `{value: any, store: any}`: only the signature with holes applies, refused at the return contract |
+| 6. a captured outer counter | `map-stable-outer-cell` | verified | a cell holding a number, `{value: any, spine: keep}` |
+| 7. `xs.pop()` on the mapped array | `invalid-map-unstable-pop` | refused | `pop`, `{value: any, spine: any}`: only the signature with holes applies, refused at the return contract |
 
 A footprint check that runs out of subtype rounds is reported as exhausted
 ("exhausted footprint check" in `tests/single-pass-controls.mts`).
@@ -1079,7 +1079,7 @@ A footprint check that runs out of subtype rounds is reported as exhausted
 `SourceClaimJson.PassUnit.mode8Accepted_sound` (`PassUnitRun.lean`) takes
 the condition under which mode 8 accepts a unit's group and concludes
 `PassUnitSafe` of the group: each member's request is safe, and, where its
-declaration claims a footprint other than `{value: any, store: any}`, an
+declaration claims a footprint other than `{value: any, spine: any}`, an
 on-throw bound or a fresh result, its graph, run from every entry meeting its
 inputs, returns with a heap its footprint relates to its entry heap and a
 value meeting its goal, a guard's promise included, and throws with a heap
@@ -1093,21 +1093,21 @@ and through trusted native contracts (audited).
 The rule separates arrays only by fresh storage, so it refuses safe
 callbacks that change another array beyond `grow`, such as `pop` on an array
 literal the callback allocated. Admitting them needs footprints over regions
-rooted at a call's operands (`own(x)`, `store(x)`, `elems(x)`), composed
+rooted at a call's operands (`fields(x)`, `spine(x)`, `cells(x)`), composed
 along a graph and framing the caller's knowledge; the regional lemmas are
 proved (`Post.compose_at`, `rebase_sound`,
 `stable_sound`, `frame_sound`, namespace `Footprints`).
 
-### Argument-path store regions
+### Argument-path spine regions
 
-This extends the receiver-store exception, stable field links and store
+This extends the receiver-spine exception, stable field links and spine
 separation. A region $`(i,p)`$ names a call position ($`0`$ is the receiver)
 and a path of own data fields. In the entry heap $`h_0`$, it selects the
-array store reached from that position's value. The footprint bounds every
+array spine reached from that position's value. The footprint bounds every
 other old location, including element cells. A failed path read selects no
-store. An empty receiver path has the receiver-store effect's scope.
+spine. An empty receiver path has the receiver-spine effect's scope.
 
-Writing $`R_{i,p}(h_0,\rho_0)`$ for that optional store location, the relation is:
+Writing $`R_{i,p}(h_0,\rho_0)`$ for that optional spine location, the relation is:
 
 ```math
 \begin{aligned}
@@ -1122,19 +1122,19 @@ The location is fixed at entry. A mutable path could later select a different
 array through an alias or a call. A path through required stable fields
 keeps its entry value by each field's singleton contract
 ([records](POSITIVE-TYPES.md#records)). This restricts the field references;
-the final array's store can change. External values need a checked boundary
+the final array's spine can change. External values need a checked boundary
 or an explicit contract establishing those same stable fields.
 
 **The step-frame rule.** A body certified at a stated frame $`\Phi`$ keeps
 the invariant $`\mathrm{Post}\,\Phi\,\rho_0\,h_0\,h`$ at every node, where
 $`\rho_0`$ and $`h_0`$ are the invocation's entry values and heap: $`\Phi`$
 is the closed bound's two class entries and an entry
-$`(\mathsf{path}\ x\ p\ \mathsf{store},\ \mathsf{any})`$ per region. Each
+$`(\mathsf{path}\ x\ p\ \mathsf{spine},\ \mathsf{any})`$ per region. Each
 step has a local effect, a frame $`\Psi`$ read at the step's own positions
 $`\sigma`$ in the heap $`h`$ it starts in: a call's is its signature's frame
 at the call's actuals (`Effect.within`), a step within the closed bound has
 the bound's two class entries, an element write has
-$`\{(\mathsf{cls}\ \mathsf{value},\mathsf{any}),\ (\mathsf{field}\ i\ \mathsf{store},\mathsf{any})\}`$
+$`\{(\mathsf{cls}\ \mathsf{value},\mathsf{any}),\ (\mathsf{field}\ i\ \mathsf{spine},\mathsf{any})\}`$
 at the array's slot $`i`$. The rule is
 
 ```math
@@ -1148,40 +1148,40 @@ where $`\sqsubseteq`$ is `Footprint.le`. The evidence $`\mathit{ev}`$ links a
 step position $`s`$ to an entry position and path $`(x,q)`$ with
 $`\mathrm{readPath}\,h_0\,(\rho_0\,x)\,q=\sigma\,s`$, and says which
 path $`p`$ read from $`\sigma\,s`$ at $`h`$ reads the same value at $`h_0`$
-(`RebaseOk`), and which paths of a position read a value whose store, where
+(`RebaseOk`), and which paths of a position read a value whose spine, where
 it has one, lies at or above $`|h_0|`$ ([fresh array
-storage](#fresh-array-storage)), at any path depth. Rebasing maps the store
+storage](#fresh-array-storage)), at any path depth. Rebasing maps the spine
 region of such a path, $`\mathsf{path}\ s\ p\ \mathtt{[]}`$, to no region:
 a location it selects is no location of $`h_0`$, so `rebase_sound`'s case of a
 location below $`|h_0|`$ contradicts the evidence. It maps
 $`\mathsf{field}\ s\ k`$ and $`\mathsf{path}\ s\ p\ k`$ to
-$`\mathsf{path}\ x\ (q\,p)\ k`$, $`\mathsf{own}`$ and $`\mathsf{pathOwn}`$
+$`\mathsf{path}\ x\ (q\,p)\ k`$, $`\mathsf{fields}`$ and $`\mathsf{pathFields}`$
 alike, a class or a cell to itself, and the part of a region of class $`c`$ to
 its image's part of class $`c`$. Without that evidence it widens a region to
 its class: a field at a nonempty path to the class its key demands
-(`keyClass`: `arrays` for the array store key, `values` otherwise) and element
-cells, $`\mathsf{elems}`$ and $`\mathsf{pathElems}`$, the cells of the store
-the `[]` slot names and of the view store a typed array's descriptor names
-(`storeElems`), to `values`. The
+(`keyClass`: `arrays` for the array spine key, `values` otherwise) and element
+cells, $`\mathsf{cells}`$ and $`\mathsf{pathCells}`$, the cells of the spine
+the `[]` slot names and of the view spine a typed array's descriptor names
+(`spineCells`), to `values`. The
 widening reads the step heap's contents categories (`HeapCategories`, which a
 well-formed heap has: `HeapOk.categories`): a value read at a nonempty path is
-held by the heap, so its fields' roles, its stores' cells' roles
-(`storeEntries`) and its descriptor's view store fix their contents' class; a location whose class differs at the entry heap is one an
+held by the heap, so its fields' roles, its spines' cells' roles
+(`spineEntries`) and its descriptor's view spine fix their contents' class; a location whose class differs at the entry heap is one an
 entry of $`\Phi`$ at `any` covers.
 
 Across an admissible transition, a class region selects an old location
 after it exactly when it did before, whatever the transition changed
 (proved: `Admissible.cls_mem`, from `Admissible.contentsCategory`); a post
 alone does not give this, a location an entry at `any` covers changing its
-contents' category. Fresh-store erasure removes the `[]` field location the
-evidence states fresh and nothing else: the store's cells, old ones among
+contents' category. Fresh-spine erasure removes the `[]` field location the
+evidence states fresh and nothing else: the spine's cells, old ones among
 them, rebase to `values`, and a class region, the all-views one among them,
-to itself (proved: `rebase_erases_store_only`).
+to itself (proved: `rebase_erases_spine_only`).
 
 Stated limit: a field of a position's own value, $`\mathsf{field}\ s\ k`$ or
 $`\mathsf{path}\ s\ []\ k`$, and own locations, without a link, rebase to
 $`\mathsf{all}`$. A position's value is not held by the heap, so its field map
-may name a store location under an ordinary key; widening it to its class
+may name a spine location under an ordinary key; widening it to its class
 needs the position's reference validity, which the step's run does not carry
 to the rebasing (the note's rebasing widens every other region to its
 class).
@@ -1198,33 +1198,33 @@ $`[f]`$ from a slot holding an entry value $`\rho_0\,x`$ agrees where
 $`(x,[f])`$ is a stated region, by the entry world's witness. The witness
 is conditional: where $`\rho_0\,x`$ has the field $`f`$, the field is
 stable and its read fixed; where it has none (`null`, `undefined`), no heap
-reads it, so the path selects no store. A parameter's type passes the entry
+reads it, so the path selects no spine. A parameter's type passes the entry
 check where every alternative a field read succeeds on states $`f`$ present
 and stable, and there is one (`entryField`).
 
 Push's step frame is the one `ReceiverGrows` gives on normal return, every
-old location kept but the receiver's store, which holds a store and which
-`grownFrame` names at `any`, as its part of class store; its signature's closed bound `{value: any, store: grow}` is its frame
+old location kept but the receiver's spine, which holds a spine and which
+`grownFrame` names at `any`, as its part of class spine; its signature's closed bound `{value: any, spine: grow}` is its frame
 on a throw. A destructuring read, `const { f } = x`, is a stable read: an
 empty frame and the result's provenance. A node's fresh positions are the
 slots its fresh facts name (`nodeFresh`).
 
-The semantic framing theorem requires separation from every selected store.
+The semantic framing theorem requires separation from every selected spine.
 Distinct slots or distinct field names do not establish that premise. With
-that separation, `store: keep` retains another array's exact length and
-`store: grow` retains its dense prefixes. An alias of the selected array
+that separation, `spine: keep` retains another array's exact length and
+`spine: grow` retains its dense prefixes. An alias of the selected array
 cannot meet the separation premise. Framing on a throw additionally requires
 a footprint guarantee on that throw.
 
 **Proof scope.**
-[`ArgumentStoreRegions.lean`](../lean/Verification/Semantics/ArgumentStoreRegions.lean)
-defines `ArgumentStoreRegionsWithin`, `StoreApart` and `StablePath`.
-Proved: `ArgumentStoreRegionsWithin.trans` composes at unchanged selected
-stores; `.nested` composes with a nested call's selected entry or fresh
-stores; `.receiver` embeds the receiver-store exception; `.frame_length`
+[`ArgumentSpineRegions.lean`](../lean/Verification/Semantics/ArgumentSpineRegions.lean)
+defines `ArgumentSpineRegionsWithin`, `SpineApart` and `StablePath`.
+Proved: `ArgumentSpineRegionsWithin.trans` composes at unchanged selected
+spines; `.nested` composes with a nested call's selected entry or fresh
+spines; `.receiver` embeds the receiver-spine exception; `.frame_length`
 and `.frame_densePrefix` give caller framing. `StablePath.transfer`, `.read`
 and `.frame` retain the path through world extension and safe execution,
-including a throw. `StoreApart.stable_path_frame` retains separation and
+including a throw. `SpineApart.stable_path_frame` retains separation and
 `.not_alias` excludes the alias case.
 
 [`ArgumentPathTracking.lean`](../lean/Verification/Programs/ArgumentPathTracking.lean)
@@ -1242,8 +1242,8 @@ throws; a caught throw requires a bound even without an exceptional guarantee
 on the enclosing invocation. `nodeWithin_of_step` is the step-frame rule at a
 node, its evidence from the node's facts (`nodeRebase_ok`).
 
-A caller's separation of a region's store from another array is a fact of
-its knowledge, a [store separation](ARITHMETIC.md#store-separation) or a
+A caller's separation of a region's spine from another array is a fact of
+its knowledge, a [spine separation](ARITHMETIC.md#spine-separation) or a
 region fact, which the caller's [separation query](#separation-queries)
 reads ([stated effects](SOURCE-ELABORATION.md#stated-effects)).
 
@@ -1255,7 +1255,7 @@ or a step whose local effect the common check `stepWithin` includes:
 `closedStep_ok`, `callStep_ok` (its frame, or `grownFrame` where the
 signature states `receiverGrows`) and `writeStep_ok` (from
 `writeStep_sound`, `ExpressionEffects.lean`, whose element-write cores
-state the written store, `StoreWrite`). Each node also passes its
+state the written spine, `SpineWrite`). Each node also passes its
 freshness check (`checkFresh_sound`, [fresh array
 storage](#fresh-array-storage)). `checkNodes_sound` discharges every
 node's obligation; `checkEntry_sound` proves the regional bound from the
@@ -1272,7 +1272,7 @@ conclusion), and a call effect carries them (`regions`).
 
 `GraphCodeSpec` states a code's specification on both exits
 (`Exits.exitPostW`, the note's Call) at the receiver and actuals matching
-its entry frame (`FrameValues`), including the optional rest-store slot.
+its entry frame (`FrameValues`), including the optional rest-spine slot.
 The invocation proofs supply that match (`graph_invoke`, `graph_invoke_at`,
 `graphRest_invoke`), and their conclusion is the condition a callable value
 meets at its signature (`PromiseWith`). A code's run establishes its
@@ -1285,7 +1285,7 @@ proposals and diagnosis by `codeObligations` and for module rows by
 each exit at every admissible state it reaches
 (`Exits.exitPost_of_established`, `exportsEstablished_sound`,
 `codeObligations_sound`).
-A code collecting a rest runs after the rest store's allocation; its exits
+A code collecting a rest runs after the rest spine's allocation; its exits
 from the heap that allocation leaves are exits from the call's entry
 (`Exits.AllocStable`, checked by `Exits.allocStable_of` through
 `Exits.compose_entry`: a frame whose regions read the heap at the location

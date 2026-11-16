@@ -1,5 +1,5 @@
 // A bound stated at a field, `cursor.at < flags.length`, kept across a call
-// whose stated effect may grow every store: the field holds a number, of
+// whose stated effect may grow every spine: the field holds a number, of
 // class `values`, which the effect on `spines` leaves alone, so the bound
 // still holds at the read.
 type Visitor = (w: number) => Modifies<{ values: "keep"; spines: "grow" }, void>;

@@ -1,5 +1,5 @@
 // A module dictionary filled at a key, beside a pop of a module array the
-// caller reads: the lookup changes a store, so past its call the caller's
+// caller reads: the lookup changes a spine, so past its call the caller's
 // bound is lost. Under Node the second call empties `seen`, and `seen[0]!`
 // reads `undefined`.
 type Table = 'a' | 'b'

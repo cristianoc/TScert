@@ -83,7 +83,7 @@ cases (33 with an exact case, 31 with a close one, 6 with none), read on
   `shrink(xs)`, so `xs[0]` is refused.
 - The typed-array example's field claim: `o.n ≐ 1` is kept across `b[0] = 7`
   by field support.
-- An iterator's own region: `it.next() : {it.own : any}`.
+- An iterator's own region: `it.next() : {it.fields : any}`.
 - A write through a fresh typed array keeps its entry `views: grow`.
 - The limit "derived effects are bounds".
 - The limit on transfer at regional effects.

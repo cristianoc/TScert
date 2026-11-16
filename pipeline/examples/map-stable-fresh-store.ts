@@ -1,8 +1,8 @@
 // `map` callbacks removing from arrays they allocated: through a constant
 // whose code returns `filter`'s fresh result, from `split` and from `map`.
-// `shift`, `pop` and `reverse` change only their receiver's store beside
-// element contents, and each receiver's store was allocated after the
-// callback began, so each callback is within `{value: any, store: keep}`
+// `shift`, `pop` and `reverse` change only their receiver's spine beside
+// element contents, and each receiver's spine was allocated after the
+// callback began, so each callback is within `{value: any, spine: keep}`
 // and every result is dense.
 const parts = (line: string): string[] =>
   line

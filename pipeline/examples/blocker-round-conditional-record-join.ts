@@ -1,5 +1,5 @@
 // An explicit receiver test before a conditional record allocation.
-// The call preserves the store, as Gate.span does at the census sites.
+// The call preserves the spine, as Gate.span does at the census sites.
 // Census functions:
 // fragment-classes.mts#classStmt
 // fragment-classes.mts#classBody

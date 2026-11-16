@@ -15,8 +15,8 @@ differences in the model's states and transitions themselves are listed in
 
 ## Well-formed states
 
-- **Class evidence.** A field of source-value type holds a value, not a store,
-  and a store field of a `.list` type holds a store, at every heap meeting the
+- **Class evidence.** A field of source-value type holds a value, not a spine,
+  and a spine field of a `.list` type holds a spine, at every heap meeting the
   world (proved: `valueClass_ok`, `storeClass_ok`); law (c) for footprints
   compared through that evidence then holds from every typed state (proved:
   `action_le_valueClass`).
@@ -29,7 +29,7 @@ differences in the model's states and transitions themselves are listed in
 
 ## The atoms
 
-- **(Init)** $`a(|\pi|)\vdash\Box_{\{\mathsf{values}:\mathsf{init},\ \mathsf{stores}:\mathsf{keep}\}}\,a(|\pi|)`$
+- **(Init)** $`a(|\pi|)\vdash\Box_{\{\mathsf{values}:\mathsf{init},\ \mathsf{spines}:\mathsf{keep}\}}\,a(|\pi|)`$
   holds for every linear fact whose current terms are integers, array lengths
   and view lengths at any paths, with no condition on the fields $`\pi`$
   passes, its entry terms of any kind (proved: `init_box`, `init_path`): a
@@ -53,10 +53,10 @@ differences in the model's states and transitions themselves are listed in
 - **Alloc.** The allocated array is fresh against the heap it is allocated
   in, of length 0, and apart from every older array (proved: `alloc_post`,
   from the well-formed heap it is allocated in). The separations are facts of the state after the
-  allocation: freshness of $`x`$ does not keep them, a change of $`x`$'s store
+  allocation: freshness of $`x`$ does not keep them, a change of $`x`$'s spine
   alone at $`\mathsf{any}`$ making it list $`y`$'s cell (false as a modal
   consequence of $`\mathrm{fresh}(x)`$: `apart_not_kept_fresh`); a growth of
-  $`x`$'s store keeps them (proved: `apart_grow_keep`,
+  $`x`$'s spine keeps them (proved: `apart_grow_keep`,
   `apart_grow_keep_typed`).
 - **Seq-Eff.** The inclusion $`\Phi\cup\Psi'\sqsubseteq\Phi`$ is
   $`\Phi\cup\Psi'\le_{cl}\Phi`$ with the class evidence $`cl`$ holding at the
@@ -67,11 +67,11 @@ differences in the model's states and transitions themselves are listed in
   step's well-formed heap (`HeapOk.categories`). A field of a position's own
   value without a link, and own locations without one, widen to every
   location: a position's references are not vouched for by its heap.
-- **Fresh-Eff.** An entry $`x.\mathsf{store}:\delta`$ of a step's effect, with
-  $`x`$'s store at or past $`b`$, covers no location below $`b`$: the step is
+- **Fresh-Eff.** An entry $`x.\mathsf{spine}:\delta`$ of a step's effect, with
+  $`x`$'s spine at or past $`b`$, covers no location below $`b`$: the step is
   within the rest of its effect there (proved: `fresh_eff`), so a closed bound
   from the invocation's entry heap survives it (proved: `fresh_eff_bound`).
-  The rule erases the store only: a fresh store may list old cells, and a
+  The rule erases the spine only: a fresh spine may list old cells, and a
   change of them is a change of the entry heap (proved:
   `fresh_cells_not_erased`).
 
@@ -87,8 +87,8 @@ differences in the model's states and transitions themselves are listed in
   0\le \mathit{from}\ \wedge\ \mathit{to}\le|\mathit{xs}|\ \wedge\ \mathit{xs},\ \mathit{out}\ \text{arrays of source values}
   ```
 
-  where an array of source values is an object whose store field's location
-  has the contract of a store every listed cell of which holds source values
+  where an array of source values is an object whose spine field's location
+  has the contract of a spine every listed cell of which holds source values
   (`arrayF`); a state with $`\mathit{xs}=\mathit{out}`$ meets it at every
   positive budget (proved: `alias_entry`, `alias_loop_safe`).
 - **Row 3, the read $`\mathit{xs}[j]`$**, needs no bound: an index at a

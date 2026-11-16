@@ -2,7 +2,7 @@
 // `RegExp` and `ReadonlyMap` whose initializers make a regex literal and a
 // `Map`, read at the native objects they hold, and a locale tag cut down by
 // `lastIndexOf` and `slice` while a lookup misses. Each call is within a
-// footprint keeping stores, so a loop's `tags[i]!` keeps its bound across
+// footprint keeping spines, so a loop's `tags[i]!` keeps its bound across
 // them.
 const kanaPairRe: RegExp = /[ぁ-ヿ]{2}/
 const families: { [tag: string]: readonly number[] } = { 'zh': [1, 2], 'ja': [3] }

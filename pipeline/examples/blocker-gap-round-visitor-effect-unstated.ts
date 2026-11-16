@@ -1,4 +1,4 @@
-// A forward-captured visitor helper states its store-preserving effect.
+// A forward-captured visitor helper states its spine-preserving effect.
 // Census functions:
 // fragment-expressions.mts#knownLocal
 // fragment-expressions.mts#localArrow

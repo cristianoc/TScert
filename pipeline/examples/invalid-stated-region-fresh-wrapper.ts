@@ -1,6 +1,6 @@
 // Fresh array storage's boundary (FOOTPRINTS.md, "Fresh array storage"): a
 // fresh record holding an old array. The record `box` is allocated in
-// `drain`, but the array its field holds is the caller's `xs`, whose store
+// `drain`, but the array its field holds is the caller's `xs`, whose spine
 // is no fresh location, so `drain`'s pop is refused at its regional check
 // under a frame naming only `runs.open`. Run under Node, `total([1, 2, 3])`
 // reads past the end of the array the call empties and returns `NaN`.

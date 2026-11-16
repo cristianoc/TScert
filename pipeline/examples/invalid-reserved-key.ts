@@ -1,4 +1,4 @@
-// A literal owning the key the model keeps an array's store under would be
+// A literal owning the key the model keeps an array's spine under would be
 // an array to the model's `Array.isArray` (and `in`), though JavaScript's
 // says no: with a claim dropping that arm on the failed test, `h` would
 // return the object as a number. The key is refused wherever a source

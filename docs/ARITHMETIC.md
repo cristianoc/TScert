@@ -64,7 +64,7 @@ bounds a read at $`e`$.
 $`\mathrm{linear}(F)`$. The variables of a linear fact are **terms**: a root
 slot $`x`$, a **path** $`p`$ of named data fields read from its value in turn,
 and what the term reads of the value $`v`$ the path ends at: $`x.p`$, the
-safe integer $`v`$ is; $`|x.p|`$, the length of $`v`$'s array store, where
+safe integer $`v`$ is; $`|x.p|`$, the length of $`v`$'s array spine, where
 that is at most $`2^{32}-1`$; and $`\mathrm{view}(x.p)`$, the **typed-array
 length** of $`v`$, the fixed length its descriptor holds, where that is a
 safe integer; and $`\mathrm{strLength}(x.p)`$,
@@ -79,7 +79,7 @@ $`\mathrm{strLength}(x)`$:
 \mathrm{read}(\rho,h,x.p.f) &= v \iff \mathrm{read}(\rho,h,x.p)=\mathsf{objAt}\,fs\,c\,i\land fs(f)=\ell\land h(\ell)=v\\
 \mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
 ⟦x.p⟧_{\rho,h} &= i \iff \exists b.\ \mathrm{read}(\rho,h,x.p)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
-⟦|x.p|⟧_{\rho,h} &= n \iff \mathrm{store}(\mathrm{read}(\rho,h,x.p))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
+⟦|x.p|⟧_{\rho,h} &= n \iff \mathrm{spine}(\mathrm{read}(\rho,h,x.p))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
 ⟦\mathrm{view}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{viewAt}\,fs\,i\,s\,t\,n\land n<2^{53}\\
 ⟦\mathrm{strLength}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{str}\,s\land n=|\mathit{units}(s)|\le 2^{53}-1\\
 \mathrm{linear}(F)(\rho,h) &\iff (\forall t\in\mathrm{vars}(F).\ ⟦t⟧_{\rho,h}\ \text{is defined})\land F\ \text{holds at}\ t\mapsto⟦t⟧_{\rho,h}
@@ -98,7 +98,7 @@ and no step copies the key; that its location holds the typed array's length
 is the host's trust ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)).
 
 **The locations a fact reads.** A term reads the location of each field its
-path reads, then, for a length, the location of the store's elements, and for
+path reads, then, for a length, the location of the spine's elements, and for
 a typed-array length, the location of the view's length; a string's length
 reads no location past its path, a string being a value. A fact reads the
 locations its terms read; a fact of slots' values and slots' strings'
@@ -249,11 +249,11 @@ $`\mathrm{int}(x)`$, the same facts (proved, from the same two theorems):
 
 so `i === 0 || xs[i - 1]!` under $`0\le i\le|\mathit{xs}|`$ reads below the
 length: `strengthen` turns $`i\ne 0`$ into $`1\le i`$. `length-range` reads
-the store contract's bound ([arrays](POSITIVE-TYPES.md#arrays)). Proved, from
+the spine contract's bound ([arrays](POSITIVE-TYPES.md#arrays)). Proved, from
 the exactness of safe-integer addition and subtraction and the order of two
 doubles that are safe integers. A length atom $`\mathrm{length}(x,n)`$ also
-states the store's length at most $`2^{32}-1`$, which `length-observed` reads
-from the store contract. `string-length` holds on the read's normal return:
+states the spine's length at most $`2^{32}-1`$, which `length-observed` reads
+from the spine contract. `string-length` holds on the read's normal return:
 a string longer than $`2^{53}-1`$ code units throws there
 ([strings](SEMANTICS.md#operational-language)), and the length of any other
 is a safe integer. The lowering reads `length` of a value whose type answers
@@ -529,7 +529,7 @@ each side exactly, so the comparison of the two safe integers answers as the
 fact states: the facts imply the clause's value under the
 [operational semantics](SEMANTICS.md#operational-language). An atom
 $`P\ \texttt{!==}\ Q`$ of two paths whose types are arrays elaborates to a
-[store separation](#store-separation); one of a path whose type may be a
+[spine separation](#spine-separation); one of a path whose type may be a
 typed array, or is no array, is refused.
 
 **Integrality.** A value term is an integer only where a clause states it:
@@ -801,7 +801,7 @@ $`t`$ reads,
 ```math
 \frac{\delta\ \text{keeps}\ t}{[\![t]\!]_{\mathrm{after}}=[\![t]\!]_{\mathrm{before}}}
 \qquad
-\frac{t=|p|\qquad\delta\ \text{keeps the path}\ p\ \text{and grows every store}}
+\frac{t=|p|\qquad\delta\ \text{keeps the path}\ p\ \text{and grows every spine}}
 {[\![t]\!]_{\mathrm{before}}\le[\![t]\!]_{\mathrm{after}}}
 ```
 
@@ -813,7 +813,7 @@ the caller's slots respects the term's support at `keep` or at `grow`
 `Term.support_sound`); elsewhere the change is the growth of the receiver at
 a push, or a growing write at the length; and the same context
 composes every linear and every other post fact (`callContext`). From
-$`|w|\le|s|`$ before a call growing every store whose post states
+$`|w|\le|s|`$ before a call growing every spine whose post states
 $`|w|=\mathrm{old}(|w|)+2`$, the caller reads $`|w|-2\le|s|`$ after it:
 `two-state-effect-relation`, and its unsafe neighbour
 `invalid-two-state-effect-relation`.
@@ -878,7 +878,7 @@ each a property of the fact composed:
 - *A value no slot holds.* A post term reading a position whose value no
   caller slot holds (the receiver of a call on a computed receiver) has no
   term of the caller's; a fact reading it composes to nothing.
-- *Separations at an absent position.* A region or store separation
+- *Separations at an absent position.* A region or spine separation
   reading a position the call passes nothing at, and an element fact whose
   value is that position, compose to nothing; every other form reads it as
   `undefined` (the draft
@@ -905,10 +905,10 @@ facts discharge** (here `0 <= lists.widths.length`). In the present model
 it does not follow from the inputs' types, because a value meets its type
 only to the depth of the budget. A counter-model: at budget 1, an input
 `lists : {widths: number[]}` holds an object whose `widths` field holds an
-array object at level 0, and that object's store location, under an
+array object at level 0, and that object's spine location, under an
 unconstrained level-0 contract, holds a number, so
 $`|\mathit{lists}.\mathit{widths}|`$ denotes no integer; the entry facts hold
-at every budget. The intended design places the finite field-and-store
+at every budget. The intended design places the finite field-and-spine
 shape a type demands in the unindexed structural part of heap
 well-formedness, preserved by allocation, writes, truncation and calls;
 the location-kinds work (branch `location-kinds`) extends well-formedness
@@ -1316,7 +1316,7 @@ indices of an array or a typed array a path reads, `forall x in P: B` of
 paths, the index `x`, the element `P[x]`, its data paths and their array,
 typed-array or string lengths. An element is named in a comparison only
 where the body states it a safe integer, as a path is. Its meaning is one
-index fact: the path reads a value whose store of elements holds locations
+index fact: the path reads a value whose spine of elements holds locations
 $`\ell`$, the bound term denotes $`n`$, and for every index below it each
 body fact holds, its variables denoting, the element only where it is
 present and a safe integer:
@@ -1326,12 +1326,12 @@ present and a safe integer:
 \forall i<n.\ \forall F\in\Phi.\ F\ \text{holds at}\ (i,\ \ell_i,\ ⟦\cdot⟧_{\rho,h})
 ```
 
-with $`\mathrm{elems}(v)`$ an array's store, or, of a typed array, the view
-store its descriptor names ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)),
-and $`\mathrm{entries}`$ the cells a store lists, an array's
-$`\mathsf{arr}\,\ell`$ as $`\ell`$ and a view store's
-$`\mathsf{viewStore}\,t\,\langle c_0,\ldots\rangle`$ with every index present
-(`storeEntries`). A
+with $`\mathrm{elems}(v)`$ an array's spine, or, of a typed array, the view
+spine its descriptor names ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)),
+and $`\mathrm{entries}`$ the cells a spine lists, an array's
+$`\mathsf{arr}\,\ell`$ as $`\ell`$ and a view spine's
+$`\mathsf{viewSpine}\,t\,\langle c_0,\ldots\rangle`$ with every index present
+(`spineEntries`). A
 clause `forall x in P: B` elaborates to it with $`t=|P|`$ of an array,
 $`t=\mathrm{view}(P)`$ of a typed array, each comparison
 of the body to a linear fact over the index, the element and terms, its
@@ -1353,12 +1353,12 @@ value. Length paths are terms too, and in a postcondition `old(P)` or
 **Reading an element.** The bounded signature of
 $`\%\mathsf{ElementAt}\%`$ ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length))
 states in its postcondition the element fact $`\mathrm{element}(0,2,3)`$: the
-result is what the store of the array at position 2 holds at the index at
+result is what the spine of the array at position 2 holds at the index at
 position 3, below its length, the present element's value or `undefined` at
 a hole. That is the read's meaning in JavaScript on an ordinary array, whose
 element read runs no code ([trust surface](DESIGN.md#trust-surface)), stated
 in the intrinsic's trusted signature; `%ByteAt%`'s bounded signature states
-the same of a typed array's element store ([typed arrays](PROGRAM-TYPING.md#typed-arrays)). Where a call's postcondition states an
+the same of a typed array's element spine ([typed arrays](PROGRAM-TYPING.md#typed-arrays)). Where a call's postcondition states an
 element fact $`\mathrm{element}(r,a,k)`$ and the knowledge states a
 quantified fact over an array of $`a`$'s alias class, each body fact holds of
 $`k`$ and $`r`$ (proved):
@@ -1395,7 +1395,7 @@ refuse these bodies.
 
 A quantified fact and an element fact read the heap: a
 step leaving the heap unchanged preserves them; a growth of a receiver's
-store preserves a quantified fact as below, an exact element write of a
+spine preserves a quantified fact as below, an exact element write of a
 typed array as below, and a write at a checked index one over an array whose
 [element region](FOOTPRINTS.md#element-regions) is apart from the written
 one (`every-apart-write`); a scalar field write preserves a quantified fact
@@ -1432,18 +1432,18 @@ defined and at most zero; array lengths are nonnegative.
 
 An array literal without spreads states its result's length equal to its
 number of elements (proved: `IndexWrites.literalArrayAtoms_holds`). Its
-lowering evaluates each element once, in source order, then the store and
+lowering evaluates each element once, in source order, then the spine and
 the object holding it in one inspection. The postcondition records the
 length and the allocation's fresh locations. An empty literal therefore
 states zero length. Each edge into a loop head checks the head's quantified
 invariant, written or proposed, including the entry from the empty literal.
 
-**Empty prefixes.** An existing quantified fact witnesses the element store
+**Empty prefixes.** An existing quantified fact witnesses the element spine
 of its array or view. Together with a defined bound at most zero, it
 establishes any quantified body at that bound (proved by
 `elementsKnown_sound` and `linearFollows_sound`). The numeric typed-array
 constructor's contract states a quantified fact with an empty body over its
-result, witnessing the store that represents the freshly allocated view.
+result, witnessing the spine that represents the freshly allocated view.
 
 **Linear facts across a push.** For value actuals, the append relation
 states exactly $`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+n`$, where
@@ -1457,7 +1457,7 @@ state no count (proved: `PromiseCalls.appended_length`,
 its two inequalities, including the builder invariant `out.length === i`.
 
 **Lengths kept across a push.** A constant holding an array literal's object has
-its store field apart from the store field of every older slot's array, a
+its spine field apart from the spine field of every older slot's array, a
 fresh constant's among them: a [separation fact](PROGRAM-TYPING.md#separation-facts)
 the allocation establishes and each cut restates (`separationFacts`), which
 names no heap and so survives every heap change, a typed array's write and
@@ -1477,7 +1477,7 @@ pushed around a typed array's write stay equally long); negative
 conditional initializes may hold the older array).
 
 **Across a push.** A normal return of `push` changes no old location but its
-receiver's store, which it extends: the old elements keep their indices, and
+receiver's spine, which it extends: the old elements keep their indices, and
 the $`j`$-th actual, where the actuals are values, is the present element at
 the old length plus $`j`$ (the append relation of `push`'s trusted contract,
 [native footprints](SOURCE-CONTRACTS.md#native-footprints)). So a
@@ -1497,7 +1497,7 @@ apart. Two rules follow (proved):
 ```
 
 with $`\mathrm{kept}_\chi(t)`$ of a length $`|z|`$ holding where
-$`\mathrm{first}(z,[\,])`$, a separation fact keeping $`z`$'s store apart
+$`\mathrm{first}(z,[\,])`$, a separation fact keeping $`z`$'s spine apart
 from the receiver's. So `itemSegments.push(widths.length)` extends
 `forall i in itemSegments: … itemSegments[i] <= widths.length`, and a push of
 a value the body excludes, or into an array no separation keeps apart from
@@ -1510,10 +1510,10 @@ view's element type's range (from $`0`$ to $`255`$ of a `Uint8Array`, to
 $`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
 `Int32Array`, any of a `Float64Array`) is `%ByteSet%`'s exact signature
 ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)): the view's element
-store lists the same entries after it but at $`k`$, where it lists a location
+spine lists the same entries after it but at $`k`$, where it lists a location
 holding the element type's conversion of $`v`$, a number denoting $`v`$'s
-integer, and every other location holding no store keeps its value, every
-store its length. So each index but $`k`$ keeps its element, and the
+integer, and every other location holding no spine keeps its value, every
+spine its length. So each index but $`k`$ keeps its element, and the
 element at $`k`$ denotes $`v`$'s integer, which every body fact reads
 (proved):
 
@@ -1526,7 +1526,7 @@ element at $`k`$ denotes $`v`$'s integer, which every body fact reads
 with the terms of $`t`$ and $`\Phi`$ kept by the write
 ($`\chi=(\bot,\bot,\mathsf{length})`$, which keeps every term). A quantified
 fact over any other array or view is dropped: views over one buffer share its
-bytes, and the model holds each view's elements as a store of its own, so a
+bytes, and the model holds each view's elements as a spine of its own, so a
 fact over a view does not transfer to a `subarray` of it either
 (`typed-array-subarray-facts-gap`, a stated limit). An array's length is at
 most $`2^{32}-1`$, so a value bounded by one alone is not known to fit an
@@ -1540,7 +1540,7 @@ below $`m`$ is either $`k`$, holding the written value, or below $`n`$,
 holding its previous element (proved: `PromiseCalls.every_written_prefix`).
 The checker proposes a known term equal to $`k+1`$ as the extended bound.
 
-**Across a scalar field write.** A field write that keeps stores preserves
+**Across a scalar field write.** A field write that keeps spines preserves
 a prefix with a stable bound when its body does not name the index and the
 new field value satisfies the body. Every unchanged element keeps its
 value; an element location equal to the written location holds the new
@@ -1567,7 +1567,7 @@ cell and the element locations, a stated limit.
 `Bound.elem` and `Bound.free`. The element fact is `IndexFact.element`,
 stated in `tools/intrinsics.mts`; `every-read` is
 `HeapKnowledge.instantiateEvery`, applied by `PromiseCalls.withEnsures`
-(proved: `instantiateEvery_holds`, `withElements_holds`); the store of
+(proved: `instantiateEvery_holds`, `withElements_holds`); the spine of
 elements is `HeapKnowledge.elementsOf`. Preservation is
 `IndexFact.keptBy`; the edge rule is `HeapKnowledge.boundFollows` and
 `bodyFactFollows` (proved: `every_follows`); the read's restatement is
@@ -1575,7 +1575,7 @@ elements is `HeapKnowledge.elementsOf`. Preservation is
 `bridgeReads_path` and `bridgeReads_term`). The append relation is
 `CallEffects.ReceiverAppends`, beside `ReceiverGrows`, read from the
 normal exit's postconditions (`Effect.callPost_appends`,
-`Effect.callPost_storeGrows`);
+`Effect.callPost_spineGrows`);
 `every-grow` and `every-push` are `PromiseCalls.everyGrown`, with
 `HeapKnowledge.bodyKeptBy` and `appendedBody`, added by `appendKept` in
 `withEnsures` (proved: `every_grown`, `every_appended`, from
@@ -1622,7 +1622,7 @@ quantified fact; a gap, `typed-array-subarray-facts-gap`. Controls
 `bounds-quantified-invariant`'s loop heads with their proposed quantified
 fact forced false (`head-every`), refused at the head, and
 `bounds-quantified-invariant`'s fragment without its quantified
-precondition, refused. An array with a hole reaches no `number[]`: a readable store
+precondition, refused. An array with a hole reaches no `number[]`: a readable spine
 holds a hole only where `undefined` meets its element type, and the fragment
 makes none.
 
@@ -1675,25 +1675,25 @@ head decides, whatever the proposed candidates.
 (`tests/single-pass-controls.mts`): a false fact written into
 `bounds-cell-invariant`'s loop invariant, refused.
 
-## Store separation
+## Spine separation
 
-A **store separation** $`P\mathrel{\#}Q`$ states that the arrays the paths
-$`P = x.p`$ and $`Q = y.q`$ read hold different stores (`IndexFact.storeApart`,
-`PathStoresApart`):
+A **spine separation** $`P\mathrel{\#}Q`$ states that the arrays the paths
+$`P = x.p`$ and $`Q = y.q`$ read hold different spines (`IndexFact.spineApart`,
+`PathSpinesApart`):
 
 ```math
 h,\rho\models P\mathrel{\#}Q \iff \exists u\,w.\ \mathrm{read}_h(\rho\,x,p)=u \wedge \mathrm{read}_h(\rho\,y,q)=w \wedge
-  \forall s\,t.\ \mathrm{store}(u)=s \wedge \mathrm{store}(w)=t \Rightarrow s\ne t
+  \forall s\,t.\ \mathrm{spine}(u)=s \wedge \mathrm{spine}(w)=t \Rightarrow s\ne t
 ```
 
-For two arrays it is `Footprints.StoreApart`. It is the clause atom
+For two arrays it is `Footprints.SpineApart`. It is the clause atom
 `P !== Q` of two paths whose types are arrays: an array's identity is its
-store location ($`\mathrm{store}`$ reads the array object's own store field,
-fixed at its allocation), so two distinct arrays never share a store. A
+spine location ($`\mathrm{spine}`$ reads the array object's own spine field,
+fixed at its allocation), so two distinct arrays never share a spine. A
 typed array is refused: two views are distinct objects that may share one
 buffer. A precondition stating it lets a body keep facts across a call whose
-frame changes one of the two stores
-([store regions](SOURCE-ELABORATION.md#stated-effects); the central
+frame changes one of the two spines
+([spine regions](SOURCE-ELABORATION.md#stated-effects); the central
 example of [stated effects](drafts/stated-effects.md#61-the-central-example)):
 
 ```ts
@@ -1702,7 +1702,7 @@ function measure(flags: number[], runs: Runs): number { … }
 ```
 
 **Establishing it.** A call establishes a precondition's separation from
-its knowledge (`call-requires`, `HeapKnowledge.storeFollows`): each of the
+its knowledge (`call-requires`, `HeapKnowledge.spineFollows`): each of the
 target's paths shares a site with one side of a separation the knowledge
 states, a region fact ([element regions](FOOTPRINTS.md#element-regions))
 being the separation of its two slots' empty paths:
@@ -1719,7 +1719,7 @@ $`z.r`$ reads (`pathSites`, proved: `pathSites_read`). A fresh array literal is 
 from every older array (`region-alloc`), so `{ openBrackets: [] }` gives
 its field's array a separation from every array parameter. Where a slot
 leaves the knowledge, a region fact or a separation naming it is restated
-through the read links from a kept slot (`restateStores`, beside the linear
+through the read links from a kept slot (`restateSpines`, beside the linear
 facts' `restateReads`).
 
 **Keeping it.** A separation reads no heap where both paths are empty
@@ -1764,7 +1764,7 @@ where every predecessor's facts entail it (`SinglePass.mergeState`,
 \frac{\Sigma\vdash P\mathrel{\#}Q}{\Sigma\vdash z=\overline g\lor P\mathrel{\#}Q}\ \textsf{guard-body}
 ```
 
-**Consuming it.** A store separation, a region fact, and either guarded
+**Consuming it.** A spine separation, a region fact, and either guarded
 by a slot's tag where one of its paths starts at that slot, answer the
 separation query of a step's prestate
 ([separation queries](FOOTPRINTS.md#separation-queries)); a fact survives a
@@ -1773,17 +1773,17 @@ step whose effect respects its support under that query
 
 **Implementation.** The front end elaborates `P !== Q`
 (`elaborateRequires`, `tools/bound-annotations.mts`) to
-`{"storeApart": {slot, path, other, otherPath}}`, inside a guarded fact
+`{"spineApart": {slot, path, other, otherPath}}`, inside a guarded fact
 under guards. A loop head's proposed separation
 (`HeadInference.Fact.apart`, with its guards) is a candidate; Lean retains
 it where every incoming edge establishes it. Proved:
-`storeFollows_sound`, `guardBodyFollows_sound`, `factFollows_sound`,
-`restateStores_holds`, `stableFirst_frame`, `knowledgeQuery_sound`,
+`spineFollows_sound`, `guardBodyFollows_sound`, `factFollows_sound`,
+`restateSpines_holds`, `stableFirst_frame`, `knowledgeQuery_sound`,
 `effectKept_holds`.
 
 **Cases.** Positive: `stated-argument-path` (`measure` and its caller),
 `stated-local-runs` (the array allocated in the looping function),
-`stated-region-grow-keeps-lengths` (a frame growing stores) and
+`stated-region-grow-keeps-lengths` (a frame growing spines) and
 `stated-region-stable-apart-writes` (a separation kept across an element
 write and a field write) and `stated-region-nullable-apart` (a guarded
 separation at a region position holding a record or `null`),

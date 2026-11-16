@@ -11,7 +11,7 @@ callers establish parameter facts; bodies establish result and retained-paramete
 [Type invariants and sealed handles](../ARITHMETIC.md#type-invariants)
 supply the same interpretation for records and their opaque handles.
 The proposal extends regional footprints, separation facts and checked default binding.
-`receiverOwn`, `freshObject` and fresh-store tracking provide existing special cases;
+`receiverFields`, `freshObject` and fresh-spine tracking provide existing special cases;
 the regional composition and framing lemmas exist, but their general integration is deferred.
 
 ## Target and evidence
@@ -31,12 +31,12 @@ allocation during the invocation may additionally supply fresh locations.
 “Module-owned” abbreviates a certified region with stated separation, never allocation provenance alone.
 A caller may pass back an object obtained from a cache, and two arguments may alias.
 The preservation judgment therefore checks every location the fact reads against every write region.
-Those locations include intermediate field cells, terminal stores or number cells, and guard reads.
+Those locations include intermediate field cells, terminal spines or number cells, and guard reads.
 A preserved root field alone does not protect the array or record reached through it.
 Where a region overlaps those locations, the existing change relation may still prove stability;
 otherwise the fact expires and must be re-established at its next boundary.
 
-Use `receiverOwn` directly when all modeled writes belong to that receiver.
+Use `receiverFields` directly when all modeled writes belong to that receiver.
 Generalize its region representation only for summaries needing multiple roots or module cells.
 `freshObject` states freshness of a result's own locations, not of everything reachable from it.
 Similarly, freshness relative to a helper's entry permits writes during that invocation;
@@ -47,7 +47,7 @@ Root substitution, path reads and joins must preserve or check the region's inte
 
 For `getEngineProfile`, the proposed summary writes `cachedEngineProfile`'s binding cell
 and locations freshly allocated by `buildEngineProfile`, subject to auditing its host reads.
-Prove the private binding cell apart from source objects' field and store locations.
+Prove the private binding cell apart from source objects' field and spine locations.
 Returning the profile does not expose that binding cell; subsequent profile-field writes would need their own region.
 Certification follows the graph, including initialization, transitive calls and exceptional handlers.
 The producer proposes summaries; Lean checks writes and selected callee summaries at every node.
@@ -55,8 +55,8 @@ Recursive summaries require mutually checked bodies; imports transport the certi
 
 For `Map.set`, audit the standard operation as changing its table and observable size.
 The current model exposes `size`, so the WeakMap empty-footprint argument does not transfer.
-Use `receiverOwn` only after the model represents all affected locations as receiver-owned
-and establishes their separation from ordinary record fields and array stores.
+Use `receiverFields` only after the model represents all affected locations as receiver-owned
+and establishes their separation from ordinary record fields and array spines.
 An existing broad numeric view of `size` does not itself establish that separation.
 Keys and stored values remain aliases; inserting an array does not write that array.
 Model internal-state separation explicitly and record its native correspondence as reviewed trust.

@@ -23,7 +23,7 @@ Each claim is labelled **proved** (with its Lean name on `main`),
   $`\chi`$ and local evidence (`fact-kept`, `fact-grown`, `stable-first`,
   `view-stable`; proved: `keptIndicesWith_holds`).
 - [Separation facts](../PROGRAM-TYPING.md#separation-facts),
-  [store separation](../ARITHMETIC.md#store-separation) and
+  [spine separation](../ARITHMETIC.md#spine-separation) and
   [element regions](../FOOTPRINTS.md#element-regions) own the forms of
   disjointness knowledge.
 
@@ -42,7 +42,7 @@ hold after a step that writes the heap.
 for (let j = from; j < to; j++) out[j] = xs[j]!;   // needs to <= xs.length; out may be xs
 ```
 
-An element write never shortens a store, so the bound survives a write
+An element write never shortens a spine, so the bound survives a write
 that may hit `xs` itself (`element-write-keeps-lengths`; an upper bound of
 a length is lost, `invalid-element-write-upper-bound`).
 
@@ -58,7 +58,7 @@ function measure(flags: number[], runs: Runs): number {
 ```
 
 `readRuns` splices `runs.openBrackets`, which may shorten it. The bound
-`i < flags.length` survives because the spliced store is another store
+`i < flags.length` survives because the spliced spine is another spine
 (`stated-argument-path`; `invalid-stated-alias` reads `undefined` under
 Node).
 
@@ -93,7 +93,7 @@ equal at the loop head (`push-keeps-apart-lengths`;
 
 **P9. Facts and effects through a field.** `to <= analysis.flags.length`
 across helpers that write other fields and other arrays; an effect
-`"runs.openBrackets[*]"` naming a store through a field. Both need the
+`"runs.openBrackets[*]"` naming a spine through a field. Both need the
 field to denote one array throughout the invocation.
 
 **P10. A length no step changes.** `i < widths.length` for a typed array.
@@ -144,7 +144,7 @@ Kripke model of general references
 ([SEMANTICS](../SEMANTICS.md#computations-and-recursive-types); cited:
 [Ahmed 2004](../REFERENCES.md#ahmed-2004)). Three consequences of fixed contracts are used below:
 
-- a location's class, `store` or `value`, is fixed;
+- a location's class, `spine` or `value`, is fixed;
 - a location whose contract admits one value holds it in every reachable
   heap (a `@stable` field);
 - an object's own keys and their locations are fixed at its allocation.
@@ -167,8 +167,8 @@ permission.
 An **observation** is a partial function
 $`o : \mathit{Env}\times\mathit{Heap}\rightharpoonup D_o`$ with a preorder
 $`\preceq_o`$ on $`D_o`$, its **tolerance**: a slot's value (equality), the
-value a path of fields reads (equality), a store's length (equality, or
-$`\le`$), a store's dense prefix ($`\le`$), a typed array's length
+value a path of fields reads (equality), a spine's length (equality, or
+$`\le`$), a spine's dense prefix ($`\le`$), a typed array's length
 (equality), whether a cell's kind lies in a set $`R`$ (equality of the
 Boolean). An observation is **bounded** across $`(\rho,h)\leadsto h'`$
 when $`o(\rho,h){\downarrow}`$ implies $`o(\rho,h'){\downarrow}`$ and
@@ -204,7 +204,7 @@ particular fact $`5\le|x|`$ survives a change of length from 10 to 9; the
 kind "lower bound of a length" states $`\le`$, sound for every constant.
 
 Some preservation is not a conjunction of bounds on single observations.
-$`\mathrm{apart}(x,y)`$ survives the growth of one store by fresh cells
+$`\mathrm{apart}(x,y)`$ survives the growth of one spine by fresh cells
 and not the growth of both, which may list the same fresh cell
 (`grownRegions_holds`); and $`\mathrm{every}(x,|x|,\Phi)`$ across an
 append needs the old instances bounded and the new index established
@@ -246,15 +246,15 @@ different precision:
 ```math
 \textit{footprints:}\quad \mathsf{keep} \sqsubseteq \mathsf{init} \sqsubseteq \mathsf{scalar} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}
 \qquad\qquad
-\textit{arithmetic, on a store:}\quad \mathsf{keep} \sqsubseteq \mathsf{length} \sqsubseteq \mathsf{grow}^{a} \sqsubseteq \mathsf{any}
+\textit{arithmetic, on a spine:}\quad \mathsf{keep} \sqsubseteq \mathsf{length} \sqsubseteq \mathsf{grow}^{a} \sqsubseteq \mathsf{any}
 ```
 
 `init` is the write-once protocol of a nullable cell. The footprint's
-`grow` keeps every dense prefix, shortens no store, keeps the bound
+`grow` keeps every dense prefix, shortens no spine, keeps the bound
 $`2^{32}-1`$ and lists as new element cells only locations at or above
 $`b`$. The arithmetic $`\mathsf{grow}^{a}`$ states that the length does not
 decrease and stays within $`2^{32}-1`$ where it was, and `length` that it
-is equal. On stores $`\mathsf{grow}\sqsubseteq\mathsf{grow}^{a}`$, and the
+is equal. On spines $`\mathsf{grow}\sqsubseteq\mathsf{grow}^{a}`$, and the
 footprint's `grow` and `length` are incomparable. The first chain is proved a chain of
 preorders (`Change.Holds.refl`, `.mono`, `.trans`); a footprint's change
 maps to an arithmetic one by a proved weakening (`Changes.ofClosed`,
@@ -269,7 +269,7 @@ the named elements.
 A **region** $`r`$ denotes a set of locations $`r(\rho,h)`$, taken here
 within the allocated ones, $`l<|h|`$ (Lean's `all` is every index, and
 `Post` and `Supported` restrict to allocated locations): a field of a slot's object, an
-object's own locations, the cells a store lists, the locations of a class,
+object's own locations, the cells a spine lists, the locations of a class,
 a path of fields from a slot. It is read in the heap a step starts in, as
 a dynamic frame is (cited: [Kassios 2006](../REFERENCES.md#kassios-2006)). A **footprint** $`\Phi`$ is a
 finite set of pairs $`(r,\delta)`$ and denotes an **action**:
@@ -297,10 +297,10 @@ $`R^S_\rho`$ bounds $`o`$. The proved supports
 (`FactKind.support_sound`): a slot's value and an alias link,
 $`\emptyset`$; a cell's kind and a read link,
 $`(\mathsf{field}\,x\,f,\mathsf{keep})`$; a dense prefix,
-$`(\mathsf{store}\,x,\mathsf{grow})`$; the kinds of an array's elements,
-$`(\mathsf{store}\,x,\mathsf{keep}),(\mathsf{elems}\,x,\mathsf{keep})`$.
+$`(\mathsf{spine}\,x,\mathsf{grow})`$; the kinds of an array's elements,
+$`(\mathsf{spine}\,x,\mathsf{keep}),(\mathsf{cells}\,x,\mathsf{keep})`$.
 For a length $`|x.p|`$ the support is the fields of $`p`$ at `keep` and
-the store at $`\mathsf{grow}^{a}`$ or `length` by its tolerance
+the spine at $`\mathsf{grow}^{a}`$ or `length` by its tolerance
 (conjectured as a support; proved as `Term.grownBy`, `termValue_grown`).
 
 ### 3.3 The tolerant frame theorem
@@ -341,11 +341,11 @@ a step's class-level change, direct evidence that one read location holds
 the same value after the step (`FirstKept`). Its sources:
 the field is `@stable`, an invariant; the step is a field write and the
 read field is apart from it or a sibling; the step changes only its
-receiver's own locations (`call-own`) or its receiver's store
+receiver's own locations (`call-own`) or its receiver's spine
 (`receiverGrows`) and the read location is apart from that region. The
 field write and the receiver-local calls are instances of the corollary
 at the region the step states (the written field, the receiver's own
-locations, the receiver's store) in place of the class-level footprint (conjectured as a derivation; proved directly:
+locations, the receiver's spine) in place of the class-level footprint (conjectured as a derivation; proved directly:
 `keptIndicesWith_holds`).
 
 **Reliance over many steps.** A construct that relies on a fact while it
@@ -386,11 +386,11 @@ function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void>
 function f(): number { const xs = [1]; shrink(xs); return xs[0]!; }
 ```
 
-`xs` is allocated after `f`'s entry, so the call's store region rebases
+`xs` is allocated after `f`'s entry, so the call's spine region rebases
 to nothing: for `f`'s callers the pop does not exist, and `f`'s effect
 keeps of the call only its `values: any`. Inside `f`, the
 fact $`0<|\mathit{xs}|`$ is an observation of the current heap, and the
-call's footprint, read at the call, covers its store at `any`. The
+call's footprint, read at the call, covers its spine at `any`. The
 corollary does not apply, and the fact is lost, as it must be. Rebasing
 serves section 4; the frame of section 3 is always read at the step.
 
@@ -410,7 +410,7 @@ bounds and loses its equalities.
 A write that redirects a path, `x.f = ys`, is of this kind for the facts
 that read through `x.f`: they are facts of the new referent only where
 the post's read link and the facts of `ys` re-derive them. Framing the
-old referent's store says nothing of the new one.
+old referent's spine says nothing of the new one.
 
 ## 6. Separation in use
 
@@ -420,9 +420,9 @@ regions. The forms $`K`$ states:
 | Form | Statement | Used for |
 | --- | --- | --- |
 | field locations | two objects' field locations differ (`HeapSeparation`) | cell facts and read links across a field write |
-| stores | $`P\mathrel{\#}Q`$: the arrays two paths read hold different stores (`StoreApart`) | length facts across a call or write changing a store (P2, P7, P8, P9) |
-| element regions | $`\mathrm{apart}(x,y)`$: two arrays share neither store nor cell (`RegionsApart`) | facts reading element contents (P6) |
-| classes | a location of class `store` is no location of class `value` (layer 1) | every length fact against `values: any` |
+| spines | $`P\mathrel{\#}Q`$: the arrays two paths read hold different spines (`SpineApart`) | length facts across a call or write changing a spine (P2, P7, P8, P9) |
+| element regions | $`\mathrm{apart}(x,y)`$: two arrays share neither spine nor cell (`RegionsApart`) | facts reading element contents (P6) |
+| classes | a location of class `spine` is no location of class `value` (layer 1) | every length fact against `values: any` |
 
 **Depth.** The fact language has no recursively defined predicate. Each
 formula traverses paths of a length fixed by the formula, at an index
@@ -431,7 +431,7 @@ locations a fact reads are given by finitely many path schemas, each
 instantiated at the indices below a stop, together with class regions.
 Their number depends on the state; their depth does not. No pattern asks
 for the disjointness of two reachability closures. P13 needs a region the
-present forms lack, a path from each object a store lists.
+present forms lack, a path from each object a spine lists.
 
 **Separation facts are facts**, with dependencies of their own:
 
@@ -441,8 +441,8 @@ present forms lack, a path from each object a store lists.
   through `@stable` fields it is bounded by layer 1 (`stable-first`);
 - a guarded separation has the conditional dependency of section 2.2;
   where the guard reads a slot alone, only the body needs a bound (P8);
-- $`\mathrm{apart}(x,y)`$ reads the cells the two stores list. Its
-  proved support keeps both stores; its useful preservation is the joint
+- $`\mathrm{apart}(x,y)`$ reads the cells the two spines list. Its
+  proved support keeps both spines; its useful preservation is the joint
   one of section 2.2 (`grownRegions_holds`, from `ReceiverGrows` with
   `ReceiverAppends`; `writeAtoms_holds` at a checked index).
 
@@ -453,7 +453,7 @@ establishes (`call-requires`, `store-apart-links`), and module cells,
 apart by construction. P12 is the case where allocation is not enough:
 the separation must be re-established for a new object on each back edge.
 
-**Cost of the pairwise form.** $`n`$ mutually distinct stores are
+**Cost of the pairwise form.** $`n`$ mutually distinct spines are
 $`n(n-1)/2`$ facts. Two compact forms: an $`n`$-ary atom
 $`\mathrm{distinct}(P_1,\ldots,P_n)`$ of the same meaning (conjectured),
 and separation by allocation order, one slot's storage lying after a heap
@@ -465,15 +465,15 @@ reached from no source request).
 
 | Pattern | Observation at its tolerance | The step | Source of the bound |
 | --- | --- | --- | --- |
-| P1 | $`|\mathit{xs}|`$ at $`\le`$ | `out[j] = v` : every store at `grow` | frame, $`\mathsf{grow}\sqsubseteq\mathsf{grow}^{a}`$; no separation |
-| P2 | $`|\mathit{flags}|`$ at $`\le`$ | `readRuns(runs)` : `values: any`, the store of `runs.openBrackets` at `any` | frame, $`K\vdash\mathit{flags}\mathrel{\#}\mathit{runs}.\mathit{openBrackets}`$ |
+| P1 | $`|\mathit{xs}|`$ at $`\le`$ | `out[j] = v` : every spine at `grow` | frame, $`\mathsf{grow}\sqsubseteq\mathsf{grow}^{a}`$; no separation |
+| P2 | $`|\mathit{flags}|`$ at $`\le`$ | `readRuns(runs)` : `values: any`, the spine of `runs.openBrackets` at `any` | frame, $`K\vdash\mathit{flags}\mathrel{\#}\mathit{runs}.\mathit{openBrackets}`$ |
 | P3 | a caller's observation | a body writing storage it allocated : $`\emptyset`$ after rebasing | frame, no pair to check |
-| P4 | a length, a path | `cached ??= build()` : `values: init` | a bound by contents: `init` alters no location holding an object, a number or a store. The pairwise test of section 3.3 does not give it ($`\mathsf{init}\not\sqsubseteq\mathsf{keep}`$ at an overlapping region); the arithmetic change, which classifies a location by what it holds, does (`Changes.ofClosed`) |
-| P5 | $`x`$'s dense prefix at $`\le`$ | each callback : stores at most `grow` | frame, at each return (`rely_chain`) |
-| P6 | the elements of $`z`$ below $`t`$ | `a[k] = v` : $`a`$'s store and cells | frame, $`K\vdash\mathrm{apart}(a,z)`$ |
-| P7 | $`|\mathit{flags}|`$ at equality | `texts.push(…)` : the store of `texts` | frame, $`K\vdash\mathit{texts}\mathrel{\#}\mathit{flags}`$ |
+| P4 | a length, a path | `cached ??= build()` : `values: init` | a bound by contents: `init` alters no location holding an object, a number or a spine. The pairwise test of section 3.3 does not give it ($`\mathsf{init}\not\sqsubseteq\mathsf{keep}`$ at an overlapping region); the arithmetic change, which classifies a location by what it holds, does (`Changes.ofClosed`) |
+| P5 | $`x`$'s dense prefix at $`\le`$ | each callback : spines at most `grow` | frame, at each return (`rely_chain`) |
+| P6 | the elements of $`z`$ below $`t`$ | `a[k] = v` : $`a`$'s spine and cells | frame, $`K\vdash\mathrm{apart}(a,z)`$ |
+| P7 | $`|\mathit{flags}|`$ at equality | `texts.push(…)` : the spine of `texts` | frame, $`K\vdash\mathit{texts}\mathrel{\#}\mathit{flags}`$ |
 | P8 | an observation of `xs` | a call with region `chosen.open[*]` | frame, by cases on the guard |
-| P9 | $`|a.\mathit{flags}|`$ at $`\le`$ | a helper : `values: any`, `stores: grow` | invariant for the path, frame for the store |
+| P9 | $`|a.\mathit{flags}|`$ at $`\le`$ | a helper : `values: any`, `spines: grow` | invariant for the path, frame for the spine |
 | P10 | a view's length | any step | invariant |
 | P11 | any | a call that throws | frame at the effect's bound on a throw, where it states one |
 | P12 | the separation of `r` from the iterator | the back edge | establishment by allocation on each pass; open |
@@ -485,14 +485,14 @@ reached from no source request).
 $`\mathit{out}\mapsto\_`$ frames a fact of $`\mathit{xs}`$ only where the
 two are separated, or after a case split on their equality. The program
 provides neither. The bound is closed under everything the write can do
-to any store, so the frame asks nothing about aliasing.
+to any spine, so the frame asks nothing about aliasing.
 
 **P2 in full.** The body's entry carries $`i<|\mathit{flags}|`$ and
 $`K=\{\mathit{flags}\mathrel{\#}\mathit{runs}.\mathit{openBrackets}\}`$.
 `openBrackets` is `@stable`, so the path is bounded by an invariant across
 the call, and with it $`K`$. The observation $`|\mathit{flags}|`$ has
-support $`(\mathsf{store}\,\mathit{flags},\mathsf{grow}^{a})`$. Against
-the call's entry $`(\mathsf{store\ of}\ \mathit{runs}.\mathit{openBrackets},\mathsf{any})`$
+support $`(\mathsf{spine}\,\mathit{flags},\mathsf{grow}^{a})`$. Against
+the call's entry $`(\mathsf{spine\ of}\ \mathit{runs}.\mathit{openBrackets},\mathsf{any})`$
 the pair is decided by $`K`$; against
 $`(\mathsf{cls\ value},\mathsf{any})`$ by the classes. The caller
 establishes the precondition from `region-alloc` at
@@ -503,7 +503,7 @@ $`|a.\mathit{flags}|`$ reads the field's location at equality, and a
 helper stating `values: any` covers that location at `any`: the pair is
 neither within tolerance nor separated, and the fact is lost. With
 `@stable` the field's read is an invariant, the observation reduces to a
-length of a fixed store, and `stores: grow` is within its tolerance. The
+length of a fixed spine, and `spines: grow` is within its tolerance. The
 annotation moves one observation from the frame to the invariant layer;
 nothing else in the derivation changes.
 
@@ -631,7 +631,7 @@ conjectured.
 | Statement | Status |
 | --- | --- |
 | The footprint changes; actions; supports; the tolerant frame theorem; the supports of value, cell, link, density and element-kind facts | proved (`Change.Holds.*`, `Post`, `Supported`, `stable_sound`, `frame_sound`, `FactKind.support_sound`) |
-| Composition with rebasing; stable paths; store freshness | proved (`Post.compose_at`, `rebase_sound`, `StablePath.*`, `checkFresh_sound`) |
+| Composition with rebasing; stable paths; spine freshness | proved (`Post.compose_at`, `rebase_sound`, `StablePath.*`, `checkFresh_sound`) |
 | Reliance during callbacks | proved (`rely_chain`, `map_rely`, `elems_rely`) |
 | Preservation of index facts, quantified facts and separations, from a class-level change and local evidence | proved (`keptIndicesWith_holds`, `termValue_grown`, `stableFirst_frame`, `writeAtoms_holds`, `grownRegions_holds`) |
 | Transformer soundness as one statement over one definition of derivation, with both mechanisms as instances | conjectured |

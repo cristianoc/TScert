@@ -1,5 +1,5 @@
-// A function stating {value: any, store: grow} that sorts with a comparator
-// popping another array: the comparator changes a store beyond `grow`, so
+// A function stating {value: any, spine: grow} that sorts with a comparator
+// popping another array: the comparator changes a spine beyond `grow`, so
 // `sort` at it states no footprint and the statement is not established. A
 // `map` calling the function would leave a hole in its result.
 function sorted(

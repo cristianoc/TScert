@@ -1,6 +1,6 @@
 // pretext's `getCanvasFont`: a string's `replace` at a regex literal and a
-// callback reading an array. The callback keeps every store, so the call is
-// within `{value: any, store: keep}`, the regex's `lastIndex` its one write,
+// callback reading an array. The callback keeps every spine, so the call is
+// within `{value: any, spine: keep}`, the regex's `lastIndex` its one write,
 // and a loop calling the function keeps its bound.
 
 const keywords: readonly string[] = ["serif", "monospace"];

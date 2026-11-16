@@ -1,5 +1,5 @@
 // A memoizing lifter of JSON rows in the forms claim-text.mts writes it: each
-// function states that it only grows the store, so `map` over a dense
+// function states that it only grows the spine, so `map` over a dense
 // receiver keeps its result dense; the first, possibly absent, row is lifted
 // apart from the rest, a JSON array whose elements are never absent; the
 // lifted record states its index signature; the table's names are a native

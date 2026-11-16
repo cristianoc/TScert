@@ -148,7 +148,7 @@ never holds is its other arm:
 \frac{\mathrm{old}(m)\le 0\ \lor\ r\le 0\qquad [\![m]\!]=\mathtt{undefined}}{r\le 0}
 ```
 
-A region or store separation reading it, and an element fact whose value
+A region or spine separation reading it, and an element fact whose value
 is it, state nothing after the call. A before-variable is a logical name
 inside one composition, no slot of any environment. The caller's facts
 after the call are composed, all at the caller's own fixed
@@ -284,6 +284,6 @@ input types in the present model, because a value meets its type only to
 the depth of the budget: `recT`'s field contracts agree only below the
 level and `HeapOk` constrains a location only below it, while `EntryHolds`
 holds at every budget. The counter-model and the intended design (the
-finite field-and-store shape a type demands in the unindexed structural
+finite field-and-spine shape a type demands in the unindexed structural
 part of heap well-formedness) are stated
 [there](../ARITHMETIC.md#two-state-postconditions).

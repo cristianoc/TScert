@@ -1,6 +1,6 @@
 // The central example's precondition refused where a caller cannot establish
 // it (docs/drafts/stated-effects.md, §6.1): `measure` keeps
-// `i < flags.length` across `readRuns`, whose frame changes the store
+// `i < flags.length` across `readRuns`, whose frame changes the spine
 // `runs.openBrackets` holds, only where `flags !== runs.openBrackets`. Here
 // the caller passes the same array as both, so the call is refused at its
 // precondition. Run under Node, `aliased([1, 2, 3])` returns `NaN`: each

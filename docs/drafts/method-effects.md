@@ -106,12 +106,12 @@ written in place whose members are `value` and `store`, each at a string
 literal type, and optionally `onThrow?: true`:
 
 ```math
-\frac{⟦\vec A⟧=\vec P\qquad ⟦T⟧=B\qquad F=\{\mathsf{value}{:}\,v,\ \mathsf{store}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}}
+\frac{⟦\vec A⟧=\vec P\qquad ⟦T⟧=B\qquad F=\{\mathsf{value}{:}\,v,\ \mathsf{spine}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}}
      {⟦(\vec x:\vec A)\Rightarrow\mathtt{Within}\langle F,T\rangle⟧=\mathcal F_{\epsilon(F)}(R,\vec P,B)}\ \textsf{stated-effect}
 ```
 
 with $`\epsilon(F)`$ the effect of the closed footprint $`\{v,s\}`$,
-`onThrow` as written, no promise, no fresh result, no receiver-store
+`onThrow` as written, no promise, no fresh result, no receiver-spine
 exception. The written signatures are those of a function declaration, a
 class's instance or static method, an object literal's method, an arrow, a
 function expression, a function type, and an interface's or a type
@@ -128,7 +128,7 @@ signature's result (`signatures` in `tools/type-term.mts`).
   refuses a reference resolving to `Within` or `Footprint` wherever it
   resolves one, so no reader can read `Within` as the alias it is;
 - $`F`$ other than a type literal of that shape (an alias of one included);
-- a statement whose footprint is `{value: any, store: any}`, with or
+- a statement whose footprint is `{value: any, spine: any}`, with or
   without `onThrow`: it states nothing the ordinary effect does not, a
   throw's heap being unconstrained by that footprint too;
 - a statement on any signature of an overloaded declaration, the
@@ -270,19 +270,19 @@ bound a body:
 
 | Body operation | Footprint (existing rule) |
 | --- | --- |
-| write of a variable's cell, or of a field holding a source value | `{value: any, store: keep}` (`write_within`; proved) |
-| `push`/`unshift` on any array | `{value: any, store: grow}` (audited native row) |
-| `Map`/`Set` mutators | at most `{value: any, store: keep}` (audited) |
-| `pop`/`shift`/`reverse` on a store the call did not allocate | `top` (receiver-store exception; cited) |
+| write of a variable's cell, or of a field holding a source value | `{value: any, spine: keep}` (`write_within`; proved) |
+| `push`/`unshift` on any array | `{value: any, spine: grow}` (audited native row) |
+| `Map`/`Set` mutators | at most `{value: any, spine: keep}` (audited) |
+| `pop`/`shift`/`reverse` on a spine the call did not allocate | `top` (receiver-spine exception; cited) |
 | allocation, reads, tests | empty (`inspect_safe`; proved) |
 | a call | its callee's signature's effect (`selected_sound`; proved), empty on normal return at a callee result no value meets (`no-return`; proved) |
 
 So `Gate`'s members that only read, write fields and cells, set maps and
-push stay within `{value: any, store: grow}`, in the stable set for
+push stay within `{value: any, spine: grow}`, in the stable set for
 density.
 
 **Reachability stays deferred (D5).** Showing that a call whose footprint
-lets stores change beyond `grow` cannot reach a given local array is the
+lets spines change beyond `grow` cannot reach a given local array is the
 [deferred precision](../FOOTPRINTS.md#deferred-extra-precision). The
 operations outside `grow` among `Gate`'s lowering code are, by a search of
 `tools/fragment-*.mts` for `shift`, `pop`, `splice`, `reverse`, `sort`,
@@ -301,7 +301,7 @@ exception to the no-rewrite rule approved for the statements that need it
 - `this.typeParamScopes.shift()` and `this.resolutionScopes.shift()` become
   `this.typeParamScopes = this.typeParamScopes.slice(1)` and the same for
   `resolutionScopes`, whose fields lose `readonly`: a field write of the
-  remaining list, `{value: any, store: keep}`. Every reader reads the stacks
+  remaining list, `{value: any, spine: keep}`. Every reader reads the stacks
   through `this` (`hasTypeParam`, `typeParamName`, the resolution scope),
   and no reader keeps either outer array (the resolution scope keeps inner
   entries, which `slice(1)` preserves), so replacing the array is
@@ -367,7 +367,7 @@ fields hold their initialisers.
 
 - **L1 (decoding).** The Fragment's `stated` decodes to a closed footprint
   and a flag, exactly; the declaration document's effect decodes as for
-  natives. The parser never writes a promise, `fresh` or `receiverStore`
+  natives. The parser never writes a promise, `fresh` or `receiverSpine`
   into a statement, and `stated` has no field for them.
 - **L2 (stated-signature obligation).** For a unit, `checkRequestsResult`
   requires the coverage of §4.1 (and, for an async unit, no statement)
@@ -404,9 +404,9 @@ added, and four extend existing rows.
 | *(changed, assumed values)* An imported value meets its declaration, a guard's declared promise **and a stated effect (`Within`) included**; … (rest unchanged). A statement occurs only in program modules' declarations; whether the exporting module's run certifies it is not a premise of the importer's acceptance (§6), and that the linked program meets every statement rests on module composition, an open theorem. | `IMPORT` in SOURCE-CONTRACTS; `Within` in `tools/resolvable.d.ts` |
 | *(added, assumed of the host)* External code preserves every effect-bearing contract of the program's values it holds or returns: it writes no function field of a program value with a function outside the field's statement, creates no own member on a program class's instance that shadows a prototype member, deletes no such member, writes no member of a program class's prototype or static method binding, replaces no instance's prototype, and passes to verified code no instance of a subclass whose override exceeds the base's statement. Conforming to a program type means TScert's contract, statements included, not TypeScript's assignability, which erases `Within`. | `EnvOk` over the input types; the caller contract row; the class lowering in `tools/fragment-classes.mts` |
 | *(extended, the parser row)* The parser reads `Within` (§3) and refuses it where §3 does. | `tools/type-term.mts` (`signatures`), `tools/declaration-graph.mts`, `tools/fragment-expressions.mts` (`lambda`), `fragment-statements.mts` (`functionDecl`) |
-| *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` is the next row's. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, spine: keep}` with `onThrow`; `forEachChild` is the next row's. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
 | *(extended, T3 of the compiler API, D7)* `forEachChild` runs no code of the program but its visitors, so a call of it whose visitors are within a closed footprint $`\varepsilon`$ is within $`\varepsilon`$; it is read with one signature per closed footprint (§12). | `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
-| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks, the `toJSON` methods of what they return, and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` in `tools/compiler-api.mts`, where those six carry no `request` mark; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
+| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks, the `toJSON` methods of what they return, and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, spine: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` in `tools/compiler-api.mts`, where those six carry no `request` mark; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
 
 Inference gains no trust: a forged statement claim fails at the first
 node outside it.
@@ -422,7 +422,7 @@ refused in search.
 
 Positive:
 
-- `method-effect-map`: a class method stated `{value: any, store: grow}`
+- `method-effect-map`: a class method stated `{value: any, spine: grow}`
   that pushes onto a field, a `map` callback calling it, dense result;
 - `method-effect-field`: a method field `f: typeof g = g`, `g` a stated
   module function, called in a `map` callback;
@@ -508,14 +508,14 @@ that statement's definition is certified by a verified slice.
   (in `classBody`, `neverAssigned` and `moduleFunction`):
   `span`, `local` and `hasTypeParam`, each reading the node's position
   (`getStart`, D4), a `Map` (`get`, `has`) or an array (`some`), at
-  `{value: keep, store: keep}`, and `typeParamName`, iterating an array, at
-  `{value: any, store: keep}`; `fail` is typed `never` and needs none;
+  `{value: keep, spine: keep}`, and `typeParamName`, iterating an array, at
+  `{value: any, spine: keep}`; `fail` is typed `never` and needs none;
 - the method fields' module functions `patternDefaults` and `inert`
-  (`{value: keep, store: keep}`: reads, guards, `flatMap`/`every` callbacks
-  calling themselves) and `steppedPattern` (`{value: any, store: keep}`:
+  (`{value: keep, spine: keep}`: reads, guards, `flatMap`/`every` callbacks
+  calling themselves) and `steppedPattern` (`{value: any, spine: keep}`:
   its `forEach` callback writes a captured cell);
 - `expr`'s contract closure (§12): every function `expr` and the gate's
-  `TermScope` object reach, at `{value: any, store: grow}` unless a smaller
+  `TermScope` object reach, at `{value: any, spine: grow}` unless a smaller
   footprint holds, with D5's rewrite of the `shift`s in that closure
   (`enterTypeParams`, `leaveTypeParams`, `protocolForOf`). The closure
   crosses two host boundaries, `forEachChild` (D7) and the checker's
@@ -572,7 +572,7 @@ native-contract audit, under T3 and T4 (cited, [COMPILER-API](../COMPILER-API.md
   receiver, in the package's child order; the traversal reads only the
   buffer, so the children passed are fixed whatever a visitor does;
 - *aliases:* a visitor may write the client's storage, never a host object
-  (stable members are readonly views, T1); a node list's store never changes
+  (stable members are readonly views, T1); a node list's spine never changes
   (T4), so no visitor changes what a later visit is passed;
 - *result:* the first truthy result, else `undefined`, at the declared
   `T | undefined`;
@@ -598,7 +598,7 @@ instance's callbacks and their results' serialization, and the contract
 bounds those:
 
 - *The statement.* Each request whose arguments are primitives and host
-  objects is read at `{value: any, store: grow}`; the six that may receive
+  objects is read at `{value: any, spine: grow}`; the six that may receive
   an object of the program (`API.updateSnapshot`,
   `Snapshot.getDefaultProjectForFile`, `Program.getSourceFile`,
   `Program.getSemanticDiagnostics`, `Program.getSyntacticDiagnostics` and
@@ -627,9 +627,9 @@ bounds those:
   writes), and `kept` writes the module cell `queryFailure`;
   `openCompiler`'s wrappers write its document maps; `unchecked.mts`'s read
   library files. None pops, shifts, splices, truncates, sorts or reverses a
-  store it did not allocate, and each returns a string, a Boolean,
+  spine it did not allocate, and each returns a string, a Boolean,
   `undefined`, `null` or a fresh list of names, a JSON value whose
-  serialization runs no code: within `{value: any, store: grow}`.
+  serialization runs no code: within `{value: any, spine: grow}`.
 
 **Fixed and substitutable callees.** The contract-closure rule (§10)
 distinguishes two kinds of call. A *substitutable* callee is read off a
@@ -646,7 +646,7 @@ supplying it, and recurses through its dependencies.
 
 **`TermScope`'s statements and every value of it.** `TermScope`'s function
 members, and the `read` callbacks `named` and `computed` take, state
-`{value: any, store: grow}`. Its values are object literals:
+`{value: any, spine: grow}`. Its values are object literals:
 
 - the gate's `termScope` (`fragment-parse.mts`): closures reading the gate's
   maps and arrays, calling `fail` (typed `never`) and `declaredReference`;
@@ -663,17 +663,17 @@ members, and the `read` callbacks `named` and `computed` take, state
   `declarationOf` and `computedContext.annotation`) and whose every supplier
   is a closure pushing onto a list its caller allocated (`(d) => seen.push(d)`
   in `pipeline/parse-stage.mts` and `fragment-parse.mts`'s command line;
-  every other caller passes none), within `{value: any, store: grow}` on
+  every other caller passes none), within `{value: any, spine: grow}` on
   normal return and on a throw; the audit recurses through them into
   `computed-types.mts`, `type-probe.mts` and `written-applications.mts`;
 - the scopes of `array-prototype.mts` and `library-globals.mts`' overlays:
   closures reading the reviewed entries.
 
-By a search of these modules, every store-shrinking operation (`pop`,
+By a search of these modules, every spine-shrinking operation (`pop`,
 `shift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`, a `length` write)
 acts on an array the code allocated (`[...list].sort`, `pending.pop()` of a
 local worklist, `work.pop()` of `externalStatements`' local), and the
-collections' mutators (`Map.set`, `clear`) are within `{value: any, store:
+collections' mutators (`Map.set`, `clear`) are within `{value: any, spine:
 keep}`. By the [caller contract](../DESIGN.md#trust-surface), a value
 meeting a structural type is a plain data object: every field it owns,
 stated or not, is a data property, so a spread, a field read or
@@ -691,20 +691,20 @@ only where its exception escapes. The closure's catches (`parseModules`,
 the declaration reader's refusal handlers turning a failure into a refusal,
 `aliasOf`, which returns `null` where `lookup` throws, so after `clean` and
 its `seen` callback, and `kept`'s rethrow) resume after code whose every operation, failing
-or not, is within `{value: any, store: grow}`, by the search above: a throw
+or not, is within `{value: any, spine: grow}`, by the search above: a throw
 leaves the heap within the statement of the entry heap, so resuming keeps it.
 
 **The statements, a reviewable inventory.** Every function `expr` reaches
 through `Gate`'s fields and members and by direct call states
-`{value: any, store: grow}` unless a smaller footprint holds; the inventory
+`{value: any, spine: grow}` unless a smaller footprint holds; the inventory
 the scan of §10 generates gives each callee its basis: a stated contract (a `Gate` member
 or field, a `TermScope` member, the claim-site record `{ entry(): number;
 span(): Span }` of `sites`, `closeStatements` and `Gate.hoist`,
 `enterTypeParams`' `rename`), a certified claim (its slice verifies), an
 audited fixed implementation, or a host contract (the node methods (D4),
 `forEachChild` (D7), the host guards, the reviewed overlays of natives and
-library globals). With D5's rewrite (§5) the closure holds no store-shrinking
-operation on a store it did not allocate. A generic definition in the
+library globals). With D5's rewrite (§5) the closure holds no spine-shrinking
+operation on a spine it did not allocate. A generic definition in the
 closure states nothing (§3).
 
 **Certifying the bodies.** Each stated function is certified where a slice

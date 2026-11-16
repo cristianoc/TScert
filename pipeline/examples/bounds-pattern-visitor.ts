@@ -1,5 +1,5 @@
 // Bounds pattern P1, the supported neighbours of `bounds-pattern-visitor-refused`:
-// a visitor whose type states its effect (`Modifies<{ values: "any"; stores:
+// a visitor whose type states its effect (`Modifies<{ values: "any"; spines:
 // "grow" }, void>`), a walker with no visitor, and a typed array's length,
 // which no visitor changes, read below a count taken at entry.
 // Pretext: line-break.ts walkPreparedComplexLines and its callers.

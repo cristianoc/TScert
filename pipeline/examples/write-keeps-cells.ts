@@ -2,7 +2,7 @@
 // that may alias it where every value the write may leave meets it
 // (`weak-update`, `HeapExpressionRules.keptCells`): a field write of a
 // number into a record that may be the same, an element write at a
-// literal index, and a push, which replaces a store by a store.
+// literal index, and a push, which replaces a spine by a spine.
 export type Box = { v: number | null };
 
 export function fieldWrite(a: Box, b: Box): number {

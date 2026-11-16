@@ -1,5 +1,5 @@
 // `getProfile` caches its object with `??=`, but its initializer first pops
-// the record's flags: the call changes a store, so it is no initialization
+// the record's flags: the call changes a spine, so it is no initialization
 // of the cell alone, and the walker's read at the last index after the call
 // is refused. Run under Node, the read gives `undefined`.
 

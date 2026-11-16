@@ -1,4 +1,4 @@
-// A call that may shorten a store keeps no bound of a length, in a
+// A call that may shorten a spine keeps no bound of a length, in a
 // declaration as in a statement of its own (run under Node:
 // `declared([5], 0)` returns `NaN`).
 function drop(xs: number[]): number {

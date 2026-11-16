@@ -24,7 +24,7 @@ annotations' types; its footprint is the one its declaration writes
 effect. Another function, and an import, is read at that signature; an
 import at its declared type, at the footprint its module establishes
 where one does ("Imports" below). A function literal whose body the walk sees
-change nothing states the footprint keeping values and stores.
+change nothing states the footprint keeping values and spines.
 
 ## Types
 
@@ -90,7 +90,7 @@ A source function's unbounded binder inferred directly from its actuals
 widens primitive literal candidates when its result does not return that
 binder bare, within the other actuals' and expected result's constraints. Written bounds, explicit seeds and callback-only
 candidates retain their types. The instance precedes result allocation;
-each existing argument keeps its store contract.
+each existing argument keeps its spine contract.
 An ordinary generic constructor supplies its construct signatures at fresh
 binders; its actuals supply their instance as for a function call.
 A packed generic class's construction reads written callback parameters
@@ -184,10 +184,10 @@ it writes (`Modifies<…>`); else the projection of its body's per-exit
 summary ([definition and application rules](SOURCE-ELABORATION.md#definition-and-application-rules)):
 each write at the grade its rule accepts (an assignment of a binding it does
 not declare or a field write the values, `x ??= v` of such a binding whose
-`v` changes nothing `init`; an element write the values and a store's
+`v` changes nothing `init`; an element write the values and a spine's
 growth; an array's `length` both), each call at its instance's per-exit
-contract read below the call's entry, the store of a constant holding a
-store the run allocated (one initialized by a call whose instance states a
+contract read below the call's entry, the spine of a constant holding a
+spine the run allocated (one initialized by a call whose instance states a
 fresh result, or by such a constant) discharged; a `for...of` each step of
 its stepper's first signature, its receiver the iterator the call made
 (`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal);
@@ -202,7 +202,7 @@ receiver its written `this`, an arrow's every value; its parameters and
 result as written, a defaulted parameter with `undefined`, an array rest
 its element; its effect its written one, else, for an expression body
 that with its defaults calls nothing (`Synthesis.mayCall`), keeping values
-and stores and bounding its throws, else the ordinary effect. Its scheme row and binder
+and spines and bounding its throws, else the ordinary effect. Its scheme row and binder
 rows are `Scheme.closureRows`', so its annotations, and its body's walk,
 read each binder as a rigid row; the walk states it at that scheme where
 its body's effect is within the scheme's, and states a call of a local
@@ -213,7 +213,7 @@ binders' types' clauses with the row's own (`SchemeInstances.meetOk`), and
 elsewhere a meet naming several binders at the type every other's labels
 include; a scheme's rest is stated at the argument pack of its positions
 read at the binders, a binder's meet row there at the binder's type
-itself, the labels a spread's store must hold (`SpreadsInto`). An unwritten result whose parameters contain no nested scheme is
+itself, the labels a spread's spine must hold (`SpreadsInto`). An unwritten result whose parameters contain no nested scheme is
 proposed by a preliminary body walk
 , then checked at the scheme’s rigid
 rows with the body. A result that this walk cannot determine supplies no
@@ -250,7 +250,7 @@ off the callback's other returns. A written type
 guard or assertion is stated with its promise, its result the guarded
 type, and also at its own parameters. A constant holding a function
 literal that reads it is walked with the constant at its written type,
-else at its written signature keeping values and stores and bounding its
+else at its written signature keeping values and spines and bounding its
 throws, raised to the type the walk gives the literal until the two
 agree, at most four rounds. Its self reads offer the literal longer signatures as any read
 of a constant holding a literal does; where the walk
@@ -361,7 +361,7 @@ of the footprints of the signatures of the checked type of the value each
 of its returns returns, as the footprint of the function it returns; its
 callers read it, its returns establish it
 (`resultWithFootprint`); `TSCERT_FORCE=results` proposes it keeping values
-and stores, the adversarial proposal (the controls
+and spines, the adversarial proposal (the controls
 `returned-closure-footprint` `countLetters`, accepted unforced, and
 `invalid-returned-closure-footprint` `lastRead`). Where the initialization
 calls a function so proposed, the proposals are computed once more, the
@@ -377,7 +377,7 @@ establishes it.
 
 An import of one fixed signature whose
 declared result is the empty type, stating no promise, is read at the
-footprint keeping values and stores (`Front.withNeverImports`): it has no
+footprint keeping values and spines (`Front.withNeverImports`): it has no
 normal return, so its normal return meets every footprint; its throws
 stay unbounded. The reading rests on the declared result, as every read
 of the import does. An intrinsic (`%…%`) keeps its reviewed contract.
@@ -410,7 +410,7 @@ run nor checked for the selected units. Before the modules are planned,
 the reads are resolved from the importer down, a round at a time, each
 module's front built once and kept for its plans (`Front.withQualified`):
 a function read whose walk with every import at the least footprint
-(keeping values and stores, bounding its throws) proposes the ordinary
+(keeping values and spines, bounding its throws) proposes the ordinary
 effect is at the ordinary effect, and its module is planned for it no
 further, nor are the modules only its code reads (first its own walk with
 every module value at that footprint, then the walks of what it reaches, each function
@@ -436,7 +436,7 @@ proposal is the ordinary effect or is not established, is at its declared
 type with the ordinary effect (but the reading of an import that never
 returns). The declared type is what the importer reads in every case;
 only the effect rests on the module's check. `TSCERT_FORCE=imports` proposes
-every function read keeping values and stores and bounding its throws,
+every function read keeping values and spines and bounding its throws,
 the adversarial proposal: the controls `certified-value-import`
 `tallies` (accepted unforced) and `invalid-certified-write-value-import`
 `zeros` are refused under it, each at its module's refusal of `tally`
@@ -498,7 +498,7 @@ completes, these are at the empty type.
 
 ## Regions
 
-A function whose statement states store regions is
+A function whose statement states spine regions is
 proposed at `top`; the regional check of its own regions certifies the
 statement.
 
@@ -543,7 +543,7 @@ static field) reads the class at an instance, each binder at its bound
 a bound reading another binder is not handled there.
 A fresh call bound to an unannotated constant and followed by an alias
 or a mutating member use selects a matching overload whose result has no
-required array positions, where one exists. The call creates that store contract;
+required array positions, where one exists. The call creates that spine contract;
 later uses retain it. Other uses retain their existing result proposal.
 A member `o.m` of a union of objects each stating it at the same signatures
 (a host family's node kinds, each its own receiver) is that member with
@@ -607,7 +607,7 @@ its first signature of no promise binding keeps, where all take the same
 parameters at the same effect, at any receiver taking them at the effect
 binding keeps, returning the union of their results (the lowering splits the host's slot, `unionVar`, and binds
 each arm's member, `bindMember`); `TSCERT_FORCE=binds`
-states it keeping values and stores, the adversarial proposal.
+states it keeping values and spines, the adversarial proposal.
 `f.apply(o, list)` and
 `Reflect.apply(f, o, list)` are the target's one signature's result, the
 call at its effect, for a list that is null, undefined or a tuple of
@@ -631,13 +631,13 @@ stepper held at the loop's head and its `value` the element.
 
 ## Expected types
 
-A store's contract is fixed where the store is made;
-a read is a copy, an upcast of an immutable value, or an upcast of a store
+A spine's contract is fixed where the spine is made;
+a read is a copy, an upcast of an immutable value, or an upcast of a spine
 to a readonly view of it. An annotated declaration holds an object it is
 initialized with at the members of its declared type the object is
 within (a primitive, nullish or callable value as an assignment narrows
 it; an early binding at its written contract), never at the exact type of
-the store it was made from; an object literal assigned to a binding a
+the spine it was made from; an object literal assigned to a binding a
 slot holds likewise. So a value is made at the type its position
 expects: a return's, an annotated declaration's, an assignment's (also
 `??=`, `||=`, `&&=`), a field write's field, an element write's contents,
@@ -843,9 +843,9 @@ component. The initialization’s code body and each use check this proposal.
 ## Write footprints
 
 A compound write at a numeric literal index proposes
-value `any`, store `grow`. A logical
+value `any`, spine `grow`. A logical
 write to a required writable field of source values proposes value `any`,
-store `keep`; the receiver
+spine `keep`; the receiver
 is a binding or a path with known contents. `ExpressionEffects.sourceField`
 checks the principal invariant operand. Each proposal is checked against
 the body by the pass's footprint check ([a footprint](SINGLE-PASS.md#a-footprint)).

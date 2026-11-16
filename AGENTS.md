@@ -462,9 +462,9 @@ separate review obligations, even when every Lean proof and suite passes.
 
 Array presence is separate from read/write capability
 ([density belongs to a contract](docs/DESIGN.md#lasting-decisions)). Never
-special-case `unknown[]` by spelling; never let an existing writable store
+special-case `unknown[]` by spelling; never let an existing writable spine
 location change its contract; preserve the presence mode through every
-graph/claim mapping, and distinguish array-store metadata from argument
+graph/claim mapping, and distinguish array-spine metadata from argument
 packs, which hold values and have no holes.
 
 For inferred callable effects, follow the

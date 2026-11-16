@@ -57,7 +57,7 @@ The correspondence theorem packages:
 
 Modal statements quantify over the existing indexed states. They hold at fixed environments; fresh operational bindings are connected by substitution and scope evidence. No statement identifies environment extension with equality of the pass’s de Bruijn slot numbers.
 
-Region interpretation is heap-only. A location's contents decide its category: an array store, a view store (the tagged contents of I3), or a value location. The connecting theorem gives the note's role-based meaning: under `HeapOk n W h`, every allocated location's contents category equals its role's category, and under `Admissible` an old location keeps its contents category. Roles remain in the world, admissibility, contracts, valid-reference proofs and assertion-level separation evidence; no region predicate takes a role map.
+Region interpretation is heap-only. A location's contents decide its category: an array spine, a view spine (the tagged contents of I3), or a value location. The connecting theorem gives the note's role-based meaning: under `HeapOk n W h`, every allocated location's contents category equals its role's category, and under `Admissible` an old location keeps its contents category. Roles remain in the world, admissibility, contracts, valid-reference proofs and assertion-level separation evidence; no region predicate takes a role map.
 
 ```lean
 namespace Verification
@@ -92,7 +92,7 @@ def Selector.disjoint : Selector → Selector → Bool
 def Selector.values : Selector
 def Selector.arrays : Selector
 def Selector.views : Selector
-def Selector.stores : Selector
+def Selector.spines : Selector
 def Selector.all : Selector
 
 /-- NEW: whether a class region selects a location holding `v`, by the
@@ -108,29 +108,29 @@ theorem HeapOk.category {n : Nat} {W : WorldT n} {h : Heap}
 end Verification.Footprints
 ```
 
-`Role.field`, `.cell`, `.elem`, and `.identity` belong to `value`; `.store .array` belongs to `array`; every `.store (.view …)` belongs to `view`.
+`Role.field`, `.cell`, `.elem`, and `.identity` belong to `value`; `.spine .array` belongs to `array`; every `.spine (.view …)` belongs to `view`.
 
-`stores` selects `array ∪ view`. `values`, `arrays`, and `views` are pairwise disjoint. `stores` and `views` overlap. Inclusion and disjointness inspect the three category bits; unequal selector names prove nothing.
+`spines` selects `array ∪ view`. `values`, `arrays`, and `views` are pairwise disjoint. `spines` and `views` overlap. Inclusion and disjointness inspect the three category bits; unequal selector names prove nothing.
 
 ### Regions
 
-Keep the existing region constructors, replacing `Cls` by `Selector`. Add an explicit selected-store constructor so typed stores need no fake field:
+Keep the existing region constructors, replacing `Cls` by `Selector`. Add an explicit selected-spine constructor so typed spines need no fake field:
 
 ```lean
 namespace Verification.Footprints
 
-/-- CHANGED: `cls` and `inCls` take selectors; `store` selects
-an ordinary or typed store independently of its representation. -/
+/-- CHANGED: `cls` and `inCls` take selectors; `spine` selects
+an ordinary or typed spine independently of its representation. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)
-  | own (x : Nat)
-  | elems (x : Nat)
+  | fields (x : Nat)
+  | cells (x : Nat)
   | cls (c : Selector)
   | all
   | path (x : Nat) (p : List String) (k : PropKey)
-  | pathOwn (x : Nat) (p : List String)
-  | pathElems (x : Nat) (p : List String)
-  | store (x : Nat) (p : List String)
+  | pathFields (x : Nat) (p : List String)
+  | pathCells (x : Nat) (p : List String)
+  | spine (x : Nat) (p : List String)
   | cell (binding : String)
   | inCls (r : Region) (c : Selector)
   deriving DecidableEq, Repr
@@ -143,29 +143,29 @@ def Region.mem :
 /-- UNCHANGED: an effect is a finite list of region/change entries. -/
 abbrev Footprint := List (Region × Change)
 
-/-- NEW: the note's store-plus-cells region, represented without
+/-- NEW: the note's spine-plus-cells region, represented without
 a second region interpreter. -/
 def storeAndCells (x : Nat) (p : List String)
     (δ : Change) : Footprint
 ```
 
-`storeAndCells x p δ` expands to `[(.store x p, δ), (.pathElems x p, δ)]`. The note’s `x[*]` always includes the store.
+`storeAndCells x p δ` expands to `[(.spine x p, δ), (.pathElems x p, δ)]`. The note’s `x[*]` always includes the spine.
 
 Mapping of existing constructors:
 
 | Existing form | Interpretation |
 |---|---|
 | `field`, `path` | The selected own location; failed paths select nothing. |
-| `own`, `pathOwn` | The object’s own locations under the existing object interpretation. |
-| `elems`, `pathElems` | Cells listed by the selected store; they exclude the store location. |
+| `fields`, `pathFields` | The object’s own locations under the existing object interpretation. |
+| `cells`, `pathCells` | Cells listed by the selected spine; they exclude the spine location. |
 | `cls .value` | `cls Selector.values`. |
-| `cls .store` | `cls Selector.stores`. |
+| `cls .spine` | `cls Selector.spines`. |
 | `all` | Every location (`Region.all.mem` holds outside the heap too); `Post` and `Supported` constrain only the entry heap's allocated locations. |
 | `inCls r c` | Intersection with the class region the selector selects from the entry heap's contents. |
 | `cell binding` | Its existing conservative value-category meaning. Exact module-cell selection is separate work. |
-| `path x p arrayStoreKey` used as a store selector | `store x p`. Ordinary field access to an actual field retains `path`. |
+| `path x p arraySpineKey` used as a spine selector | `spine x p`. Ordinary field access to an actual field retains `path`. |
 
-Both ordinary and typed store selectors use one `storeOf` observation. A non-store endpoint selects no store. Array-separation assertions separately require array endpoints; empty regions do not establish that assertion.
+Both ordinary and typed spine selectors use one `spineOf` observation. A non-spine endpoint selects no spine. Array-separation assertions separately require array endpoints; empty regions do not establish that assertion.
 
 ### Effect action and evidence
 
@@ -246,7 +246,7 @@ theorem Post.empty_iff {ρ h h'} :
 end Verification.Footprints
 ```
 
-General inclusion and disjointness use finite certificates, interpreted under entry knowledge. Their constructors are reflexivity, selector inclusion/disjointness, intersection, field/own inclusion, store/cell category facts, path equality, failed-path emptiness, and proved store/cell separation. These are instances of semantic membership inclusion or exclusion.
+General inclusion and disjointness use finite certificates, interpreted under entry knowledge. Their constructors are reflexivity, selector inclusion/disjointness, intersection, field/own inclusion, spine/cell category facts, path equality, failed-path emptiness, and proved spine/cell separation. These are instances of semantic membership inclusion or exclusion.
 
 ```lean
 namespace Verification.Footprints
@@ -275,7 +275,7 @@ def EffectIncluded (K : TolerantFrames.Assertion)
 end Verification.Footprints
 ```
 
-Rigidity evidence checks the **whole effect**. Class entries require only contents-category stability on admissible states (`category_admissible`). Raw `Post` on arbitrary heaps permits category changes under `any`, so class transport is proved on admissible states, or under a heap-category-stability premise, never unconditionally on raw heaps. A selected-store entry requires that its path selects the same store under every action of the whole effect. A store-and-cells entry does not acquire rigidity merely from a rigid object path.
+Rigidity evidence checks the **whole effect**. Class entries require only contents-category stability on admissible states (`category_admissible`). Raw `Post` on arbitrary heaps permits category changes under `any`, so class transport is proved on admissible states, or under a heap-category-stability premise, never unconditionally on raw heaps. A selected-spine entry requires that its path selects the same spine under every action of the whole effect. A spine-and-cells entry does not acquire rigidity merely from a rigid object path.
 
 The checked evidence and its theorem are specified in I5. `Closed` meet and order operate pointwise on the three categories. `Closed.fp` has one equivalence theorem to `Post`; its implementation is a computational normalization, not a second effect semantics.
 
@@ -316,11 +316,11 @@ end Verification.CallEffects
 
 `SharedEffect` is the frame/post field of `Effect`, not a second public effect type. The wire stores these fields directly in `Effect`; it has no wrapper discriminator.
 
-The migration removes `closed`, `regions`, `receiverStore`, `receiverOwn`, `receiverGrows`, `elementWrite`, and `onThrow` as independent frame specifications:
+The migration removes `closed`, `regions`, `receiverSpine`, `receiverFields`, `receiverGrows`, `elementWrite`, and `onThrow` as independent frame specifications:
 
 - Closed grades compile to category entries.
-- Receiver-store and receiver-own bounds become ordinary region entries.
-- Argument-store regions become `.store` entries at the stated change.
+- Receiver-spine and receiver-own bounds become ordinary region entries.
+- Argument-spine regions become `.spine` entries at the stated change.
 - `receiverGrows` contributes its proved frame and its ordinary append post.
 - Primitive exact writes come from I3, never a signature flag.
 - A former `onThrow = true` supplies the former frame to the exceptional exit.
@@ -484,7 +484,7 @@ Storage layout, hash-consing and compression remain open performance choices. Th
 operations specified by the note's rules View-Length, View-Read and
 View-Write: the reduction stays deterministic, and the write's rule is
 assumed of the host as a call's contract is. The representation of this
-section (descriptor, tagged view store, formats, the canonical contract)
+section (descriptor, tagged view spine, formats, the canonical contract)
 stands. Its operational rules, the eight primitive theorems and the
 nondeterministic write are withdrawn; what remains of them is the
 specification the three native operations state: the effect
@@ -493,13 +493,13 @@ of each format.
 
 ### The existing mechanism this extends
 
-This interface extends `Tm`, `Step`, `StoreForm`, `Cat`, `RefsOk` and `HeapOk`. It replaces the production roles of `ElementWrite`, `ExactWrite`, `ViewWrite`, `ViewWriteOf`, and `Effect.viewPost`.
+This interface extends `Tm`, `Step`, `SpineForm`, `Cat`, `RefsOk` and `HeapOk`. It replaces the production roles of `ElementWrite`, `ExactWrite`, `ViewWrite`, `ViewWriteOf`, and `Effect.viewPost`.
 
 [Element writes](../FOOTPRINTS.md#element-writes) owns the primitive boundary. The note counterpart is W2–W4 and View-Length, View-Read and View-Write.
 
 ### Representation
 
-Use tagged primitive stores. Operational execution identifies a view by its value and store tags, without inspecting a proof world or a callable signature.
+Use tagged primitive spines. Operational execution identifies a view by its value and spine tags, without inspecting a proof world or a callable signature.
 
 ```lean
 namespace Verification
@@ -514,10 +514,10 @@ inductive ViewFormat where
   deriving DecidableEq, Repr
 
 /-- NEW Tm constructors, added to the existing mutual declaration:
-a source-level view object, and an internal dense store value. -/
+a source-level view object, and an internal dense spine value. -/
 -- Tm.viewAt (fields : List (PropKey × Nat))
---   (identity store : Nat) (format : ViewFormat) (length : Nat)
--- Tm.viewStore (format : ViewFormat) (cells : List Nat)
+--   (identity spine : Nat) (format : ViewFormat) (length : Nat)
+-- Tm.viewSpine (format : ViewFormat) (cells : List Nat)
 
 /-- NEW operational expressions; operands evaluate left to right. -/
 -- Tm.viewLength (receiver : Tm)
@@ -525,7 +525,7 @@ a source-level view object, and an internal dense store value. -/
 -- Tm.viewWrite (receiver index value : Tm)
 
 /-- CHANGED: view roles include the immutable format and length. -/
-inductive StoreForm where
+inductive SpineForm where
   | array
   | view (format : ViewFormat) (length : Nat)
   deriving DecidableEq, Repr
@@ -543,27 +543,27 @@ def viewIndex (length : Nat) (bits : UInt64) : Option Nat
 end Verification
 ```
 
-`viewAt` has ordinary own fields and an identity in addition to its immutable primitive descriptor. Its view store is not an ordinary writable field. `fieldsOf`, object identity, property reads, source-value classification and reference traversal handle both ordinary objects and views.
+`viewAt` has ordinary own fields and an identity in addition to its immutable primitive descriptor. Its view spine is not an ordinary writable field. `fieldsOf`, object identity, property reads, source-value classification and reference traversal handle both ordinary objects and views.
 
-A view store contains a `List Nat`, so holes are unrepresentable. Its role requires the stored format and list length to match the descriptor. Every listed cell has element role and holds a number admitted by the format.
+A view spine contains a `List Nat`, so holes are unrepresentable. Its role requires the stored format and list length to match the descriptor. Every listed cell has element role and holds a number admitted by the format.
 
-The primitive store contract admits every dense, length-preserving replacement using cells of that format. Writable aliases cannot strengthen it to a particular value range narrower than the format. Such refinements are assertions subject to effect checking.
+The primitive spine contract admits every dense, length-preserving replacement using cells of that format. Writable aliases cannot strengthen it to a particular value range narrower than the format. Such refinements are assertions subject to effect checking.
 
-This contract condition is enforced for every view store in an admitted world, including imported and allocated views. It is necessary because a write may affect a view other than its receiver.
+This contract condition is enforced for every view spine in an admitted world, including imported and allocated views. It is necessary because a write may affect a view other than its receiver.
 
 ```lean
 namespace Verification
 
-/-- NEW: the canonical contract for a view store.
-It admits exactly the represented fixed-length format stores, with
+/-- NEW: the canonical contract for a view spine.
+It admits exactly the represented fixed-length format spines, with
 valid element references at each inspected world. -/
-def viewStoreCtr (k : Nat) (format : ViewFormat) (length : Nat) : Ctr k
+def viewSpineCtr (k : Nat) (format : ViewFormat) (length : Nat) : Ctr k
 
-/-- NEW: every view-store role has the primitive replacement contract.
+/-- NEW: every view-spine role has the primitive replacement contract.
 Equality is extensional at all levels the entry can inspect. -/
 def ViewWorld {k : Nat} (W : WorldT k) : Prop
 
-/-- CHANGED: view stores satisfy their tag, length and dense shape. -/
+/-- CHANGED: view spines satisfy their tag, length and dense shape. -/
 def Cat : Role → Val → Prop
 
 end Verification
@@ -598,29 +598,29 @@ The three operations use the existing small-step evaluator.
 
 A valid write may also replace observations of other views. The abstract machine makes this conservative overlap behavior explicit:
 
-- Scan old locations tagged `viewStore`.
-- For the receiver store, retain every other cell reference and replace precisely the selected one.
-- For every other view store, choose a vector of format-admitted numbers of its existing length and allocate fresh cells for that vector.
-- Replace those view-store contents with their resulting dense vectors.
+- Scan old locations tagged `viewSpine`.
+- For the receiver spine, retain every other cell reference and replace precisely the selected one.
+- For every other view spine, choose a vector of format-admitted numbers of its existing length and allocate fresh cells for that vector.
+- Replace those view-spine contents with their resulting dense vectors.
 - Preserve every old non-view location, including every old element cell.
 
 A finite `ViewChoices` value supplies these vectors; an operational predicate checks their lengths and numeric formats against the runtime tags. It mentions neither worlds nor `HeapOk`. The transition relation ranges over all valid choices.
 
-This is an abstraction of overlapping storage. It permits unrelated views to change, while preserving the exact receiver update. Same-store aliases observe the receiver update. An unchanged observation of another view is represented by choosing its old values.
+This is an abstraction of overlapping storage. It permits unrelated views to change, while preserving the exact receiver update. Same-spine aliases observe the receiver update. An unchanged observation of another view is represented by choosing its old values.
 
 ```lean
 namespace Verification
 
-/-- NEW: finite operational choices for other old view stores. -/
+/-- NEW: finite operational choices for other old view spines. -/
 abbrev ViewChoices := List (Nat × List UInt64)
 
-/-- NEW: checked solely against runtime store tags and numeric formats. -/
-def ViewChoices.Valid (h : Heap) (receiverStore : Nat)
+/-- NEW: checked solely against runtime spine tags and numeric formats. -/
+def ViewChoices.Valid (h : Heap) (receiverSpine : Nat)
     (choices : ViewChoices) : Prop
 
-/-- NEW: constructs fresh cells and replaces view-store vectors.
+/-- NEW: constructs fresh cells and replaces view-spine vectors.
 It never consults a world or a desired postcondition. -/
-def writeViews (h : Heap) (receiverStore index : Nat)
+def writeViews (h : Heap) (receiverSpine index : Nat)
     (value : UInt64) (choices : ViewChoices) : Heap
 
 end Verification
@@ -628,7 +628,7 @@ end Verification
 
 The extra choices make view writes nondeterministic in the abstract machine. Existing proofs that use determinism, including the route through `TolerantFramesRuns.graph_run`, must use universal safety over operational successors. Leg 3 owns this proof migration. No second evaluator supplies a deterministic “checking meaning.”
 
-`Change.Holds .grow` is extended through a common store observation covering `.arr` and `.viewStore`. Its mathematical conditions remain dense-prefix preservation, nondecreasing length, the array-length bound where applicable, and old-or-fresh listed cells. For views, the unchanged role additionally fixes length and format.
+`Change.Holds .grow` is extended through a common spine observation covering `.arr` and `.viewSpine`. Its mathematical conditions remain dense-prefix preservation, nondecreasing length, the array-length bound where applicable, and old-or-fresh listed cells. For views, the unchanged role additionally fixes length and format.
 
 ### The eight primitive theorems
 
@@ -712,7 +712,7 @@ Here `s` is an `IndexedHeap`; implicit variables in these theorem signatures hav
 
 ### Metadata and host boundary
 
-Delete `viewLengthKey`, `viewElementsKey`, `LengthMeta`, and the view-specific part of `ViewMetaOk` after their producers and observations use the primitive descriptor. Length is an immutable descriptor component. The operational store tag identifies its format.
+Delete `viewLengthKey`, `viewElementsKey`, `LengthMeta`, and the view-specific part of `ViewMetaOk` after their producers and observations use the primitive descriptor. Length is an immutable descriptor component. The operational spine tag identifies its format.
 
 `hostKey` remains for unrelated host objects. It has no role in validating primitive view access. `Buffer` and imported typed arrays enter through an explicit primitive-view representation boundary; arbitrary user records cannot acquire primitive status by matching a field or signature shape.
 
@@ -813,9 +813,9 @@ Interpretation is compositional:
 - Density requires an ordinary array and a natural prefix bound.
 - `every` requires the bounded cells to be present and their scalar bodies to hold.
 - Element equality observes a present typed-array element and a defined witness.
-- `separated` requires two ordinary arrays with different stores.
+- `separated` requires two ordinary arrays with different spines.
 - `apart` additionally requires disjoint element-cell sets.
-- `fresh` requires a selected store at or above the invocation mark.
+- `fresh` requires a selected spine at or above the invocation mark.
 - `box Φ A` quantifies over every `Action Φ` at the same environment and mark.
 - `guarded g A` means `g ∨ A`; well-formed use includes checked invariance of `g`.
 
@@ -936,7 +936,7 @@ Notation:
 | `tolerantFrame` | Support, respect and the I5 modal-context certificate give `K ∧ A ⊢ box Φ A`. |
 | `grow` | The note’s lower-bound axiom, with a fixed logical scalar bound and defined ordinary-array length. |
 | `dense` | Dynamic density enters the grow modality; its bound is a fixed scalar during the action. |
-| `sep` | Store separation frames any selected atom whose heap observations are confined to the displayed length. Observation evidence checks that property. |
+| `sep` | Spine separation frames any selected atom whose heap observations are confined to the displayed length. Observation evidence checks that property. |
 | `every` | `apart(x,z)` frames the scalar bounded quantification under `x[*]:any`; bound and scalar parameters are fixed. |
 | `init` | Any selected atom whose heap observations are the displayed path length enters `values:init`. Definedness of the path is a premise. |
 | `rigidPath` | Open the rigid-path value witness, apply the fresh-variable atom derivation, then substitute back using I5. |
@@ -945,9 +945,9 @@ Notation:
 | `frame` | `old(box Φ A) ∧ tr Φ` gives `now A`, with the environment/scope transport. |
 | `framePlus` | The preceding premises plus rigidity give `now(box Φ A)`. |
 | `call` | Instantiate either completion’s checked call specification, including result/thrown binding and freshness-mark evidence. |
-| `alloc` | An actual ordinary-array allocation gives emptiness, selected-store freshness and apartness from every array in the preallocation scope. |
+| `alloc` | An actual ordinary-array allocation gives emptiness, selected-spine freshness and apartness from every array in the preallocation scope. |
 | `seqEffect` | Compose actions through certified rebasing and inclusion. |
-| `freshEffect` | Erase only a selected store proved outside the earlier entry domain. |
+| `freshEffect` | Erase only a selected spine proved outside the earlier entry domain. |
 | `reliance` | A box and a certified respecting prefix yield its body at that prefix. Repeated use additionally requires the recorded composition/rigidity evidence. |
 | `transfer` | A derivation of the substituted target assertion plus I5 substitution evidence establishes target knowledge. |
 | `linear` | Existing `Linear.check` over explicitly defined before/after observations. |
@@ -1055,7 +1055,7 @@ A dependency change invalidates the certificate that uses it. Removing a frame f
 
 Leg 4 owns the assertion arena, checked derivations, arithmetic rules and their soundness. It migrates `IndexFact`, `Knowledge`, `StepRelation` and `Composer` consumers to projections or instances of this semantics.
 
-The selected preservation roles of `keptBy`, `keptIndicesWith`, `guardKept`, `stableIndices`, `regionFirst`, `regionSep`, `storeHeld`, append-specific filtering and typed-write filtering are deleted when their precision is represented by these derivations.
+The selected preservation roles of `keptBy`, `keptIndicesWith`, `guardKept`, `stableIndices`, `regionFirst`, `regionSep`, `spineHeld`, append-specific filtering and typed-write filtering are deleted when their precision is represented by these derivations.
 
 Leg 5 owns command composition and edge use. Leg 6 owns full shared-loop-frame integration.
 
@@ -1092,7 +1092,7 @@ def Rebased (Φ Ψ : Footprint)
 structure RebaseEvidence where
   links : List (Nat × Nat × List String)
   agreements : List (Nat × List String)
-  freshStores : List (Nat × List String)
+  freshSpines : List (Nat × List String)
   classes : List (Region × Selector)
 
 /-- CHANGED: interprets all evidence against the two entry contexts. -/
@@ -1116,7 +1116,7 @@ end Verification.Footprints
 
 - Each link identifies the later root with the value of the recorded earlier path.
 - Each agreement identifies the relevant path’s result at both states, including failure where equality is required.
-- Each fresh-store fact puts every selected store outside the earlier heap domain.
+- Each fresh-spine fact puts every selected spine outside the earlier heap domain.
 - Each class fact proves membership inclusion for every selected location.
 
 The executable evidence constructors are:
@@ -1126,22 +1126,22 @@ The executable evidence constructors are:
 | `class` | Contents-category evidence at the step heap, moved to the entry by the first action's bound (an `any` entry covers a changed category). |
 | `path` | Root link plus arbitrary-depth path agreement. |
 | `rigidPath` | A rigid-path witness and admissibility establish the agreement. |
-| `freshStore` | The selected store’s location is at least the earlier entry length. |
+| `freshSpine` | The selected spine’s location is at least the earlier entry length. |
 | `widen` | Proved category inclusion. |
 | `intersection` | Preserve the intersecting selector while rebasing its region. |
 | `append` | Combine entrywise coverage. |
 
 Default widening is determined by the region’s semantic category:
 
-- Selected ordinary store: arrays.
-- Selected typed store: views.
-- Selected store without a form proof: stores.
+- Selected ordinary spine: arrays.
+- Selected typed spine: views.
+- Selected spine without a form proof: spines.
 - Element cells: values.
 - Ordinary source fields and module cells: values.
 - Own-location sets: the proved union of their categories.
 - An unrestricted internal region: all categories.
 
-A store-and-cells footprint rebases its entries separately. Fresh-store erasure deletes only its store entry. Its old cells remain covered. An all-views entry always rebases to all-views, even when the receiver is fresh.
+A spine-and-cells footprint rebases its entries separately. Fresh-spine erasure deletes only its spine entry. Its old cells remain covered. An all-views entry always rebases to all-views, even when the receiver is fresh.
 
 Sequential composition has the signature:
 
@@ -1197,7 +1197,7 @@ theorem rigidity_sound
 end Verification.Parity
 ```
 
-`RigidityProof` has class, selected-store, union and weakening-by-proved-equivalence constructors. The union constructor checks stability of every selected region under the **union effect**, not merely under its own entry. It has no general store-and-cells rigidity constructor.
+`RigidityProof` has class, selected-spine, union and weakening-by-proved-equivalence constructors. The union constructor checks stability of every selected region under the **union effect**, not merely under its own entry. It has no general spine-and-cells rigidity constructor.
 
 ### Substitution and marks
 
@@ -1246,7 +1246,7 @@ Freshness transport is directional:
 ```lean
 namespace Verification.Parity
 
-/-- NEW: a store fresh for a later callee mark is fresh for the caller.
+/-- NEW: a spine fresh for a later callee mark is fresh for the caller.
 The reverse implication is unavailable without stronger evidence. -/
 theorem fresh_mark_mono
     (hm : caller ≤ callee)
@@ -1324,7 +1324,7 @@ For a repeated frame use, the certificate also carries the stable-domain evidenc
 
 The existing `ReadContext.Holds` becomes one supported context instance. A proof of `ReadContext.Holds` for one observed write can justify an actual-step consequence through Entry. It cannot construct `ContextThroughout` without the universal evidence above.
 
-Both alternative supports for `apart` are available: grow/keep and keep/grow over the complete store-plus-cells regions. Grow/grow is rejected as a general support.
+Both alternative supports for `apart` are available: grow/keep and keep/grow over the complete spine-plus-cells regions. Grow/grow is rejected as a general support.
 
 ### Migration and open work
 
@@ -1359,7 +1359,7 @@ The declaration order is:
 1. **Pure vocabulary and algebra:** `ViewFormat`, categories/selectors, selector laws, path/substitution data, exit products and typed reference identifiers. These can land without changing accepted behavior.
 2. **Common region semantics:** heap-only `Region.mem` over contents categories with the connecting theorem to roles, action, inclusion/disjointness and closed normalization; the three-category split after I3's tags. Migrate existing consumers in the same buildable series. There is one authoritative interpretation.
 3. **Assertion arena and semantic evidence:** nodes, scope validity, `Sat`, substitution, rebasing and support meanings, with basic interpretation lemmas. They can be unused by acceptance while proved.
-4. **Primitive representation:** runtime tags, total conversion, store invariants and operational rules, with preservation. Metadata is removed as its consumers migrate.
+4. **Primitive representation:** runtime tags, total conversion, spine invariants and operational rules, with preservation. Metadata is removed as its consumers migrate.
 5. **Checked derivations and local records:** finite proof datatypes precede their soundness proofs. Primitive and call rules produce records; edges consume the common consequence checker.
 6. **Behavioral integration:** general signature wire, actual visit composition, removal of the replaced preservation and reconstruction paths.
 
@@ -1375,9 +1375,9 @@ The following changes are within the agreed scope.
 
 3. **View conversion and assignment.** State the four admitted formats, total numeric conversion, numeric `-0`, invalid-index behavior, and the assignment result. Exact equality for floating-point observations must not assert NaN-payload preservation.
 
-4. **View contracts.** The world condition for mutable view stores must admit all format-valid replacement contents. Arbitrary stronger element refinements are assertions, not permanent writable-store contracts.
+4. **View contracts.** The world condition for mutable view spines must admit all format-valid replacement contents. Arbitrary stronger element refinements are assertions, not permanent writable-spine contracts.
 
-5. **Overlap abstraction.** State that another view’s observations may change conservatively while the receiver’s other indices remain exact. Store separation of two views does not establish byte separation.
+5. **Overlap abstraction.** State that another view’s observations may change conservatively while the receiver’s other indices remain exact. Spine separation of two views does not establish byte separation.
 
 6. **Contextual support.** A context valid for one actual transition proves only that transition’s consequence. Modal introduction and repeated use require context evidence over the quantified domain.
 

@@ -1,5 +1,5 @@
 // Rule Call's relational context includes the callee's effect: `measure`
-// grows every store (`spines: "grow"`), so `segs` is at least as long after
+// grows every spine (`spines: "grow"`), so `segs` is at least as long after
 // the call as before it, and its post states the list 2 longer. From
 // `|lists.widths| <= |segs|` before the call, the caller reads
 // `|lists.widths| - 2 <= |segs|` after it, and `segs[n - 3]` is present.

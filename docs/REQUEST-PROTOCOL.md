@@ -249,7 +249,7 @@ recursion.
 | Clause                                                                                                                                                                                                                                                                                                                                                                                    | JSON                                                                                          |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Top: every value, permitting no operation                                                                                                                                                                                                                                                                                                                                                 | `"top"`                                                                                       |
-| Every closed JavaScript value, internal stores excluded                                                                                                                                                                                                                                                                                                                                   | `"source"`                                                                                    |
+| Every closed JavaScript value, internal spines excluded                                                                                                                                                                                                                                                                                                                                   | `"source"`                                                                                    |
 | Null; undefined                                                                                                                                                                                                                                                                                                                                                                           | `"nul"`; `"undef"`                                                                            |
 | Booleans; one Boolean                                                                                                                                                                                                                                                                                                                                                                     | `"bool"`; `{"boolLit":{"value":true}}`                                                        |
 | Numbers; one number, by the bit pattern of its double as an unsigned 64-bit decimal string; a tag set of numbers                                                                                                                                                                                                                                                                          | `"num"`; `{"numLit":{"bits":"4607182418800017408"}}`; `{"numIn":{"bits":["…","…"]}}`          |
@@ -266,7 +266,7 @@ recursion.
 | Intersection of callable contracts, fixed and variadic                                                                                                                                                                                                                                                                                                                                   | `{"arrs":{"arrows":[contract, …]}}`                                                           |
 | Callable object: invariant bag contracts `first` and `rest`, fixed and variadic signatures, and methods as a record's                                                                                                                                                                                                                                                                     | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[contract, …]}}`                     |
 | Class value: construct signatures, receiver `{}`, which `new` meets and no call does; variadic ones; its static fields as invariant `first` and `rest` and readonly `views`                                                                                                                                                                                                              | `{"ctors":{"signatures":[contract, …]}}`                                                      |
-| Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                                                                                                                                                                                                                                            | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
+| Array spine: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                                                                                                                                                                                                                                            | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                                                                                                                                                                                                                                    | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
 
 The rows marked as a record's fields are fields of `refs` and of `dict`. A
@@ -318,12 +318,12 @@ type Change = "keep" | "init" | "scalar" | "grow" | "any";
 type Key = string | { symbol: Nat };
 type Selector = { value: boolean; array: boolean; view: boolean };
 type Region =
-  | { field: { x: Nat; key: Key } } | { own: { x: Nat } } | { elems: { x: Nat } }
+  | { field: { x: Nat; key: Key } } | { fields: { x: Nat } } | { cells: { x: Nat } }
   | { cls: Selector } | "all"
   | { path: { x: Nat; fields: string[]; key: Key } }
-  | { pathOwn: { x: Nat; fields: string[] } } | { pathElems: { x: Nat; fields: string[] } }
+  | { pathFields: { x: Nat; fields: string[] } } | { pathCells: { x: Nat; fields: string[] } }
   | { cell: { name: string } } | { inCls: { region: Region; selector: Selector } }
-  | { store: { x: Nat; fields: string[] } };
+  | { spine: { x: Nat; fields: string[] } };
 type Frame = { region: Region; change: Change }[];
 type Path = { root: Nat; fields: string[] };
 type Literal = "null" | "undefined" | "true" | "false"
@@ -347,7 +347,7 @@ type IndexFact = { index: { slot: Nat } } | { int: { slot: Nat } } | { pastSafe:
   | { element: { value: Nat; array: Nat; index: Nat } }
   | { every: { slot: Nat; path: string[]; stop: LinearTerm; body: Clause<BodyVariable>[] } }
   | { apart: { slot: Nat; other: Nat } }
-  | { storeApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
+  | { spineApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
 type ElementKinds = ("null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object")[];
 type OperationPost =
   | { arith: { op: Arith; left: Witness; right: Witness; result: Path } }
@@ -356,9 +356,9 @@ type OperationPost =
   | { lengthsKept: { x: Nat; exit: Nat } } | { boundedWrite: { x: Nat; i: Nat; exit: Nat } }
   | { push: { x: Nat; exit: Nat; args: WitnessSeq } }
   | { fact: { phase: "before" | "after"; lift: Nat; fact: IndexFact } }
-  | { freshStore: { x: Nat } } | { freshObject: { x: Nat } }
+  | { freshSpine: { x: Nat } } | { freshObject: { x: Nat } }
   | { elementsWhen: { x: Nat; value: Literal; y: Nat; predicate: ElementKinds } }
-  | { storeExtends: { x: Nat } }
+  | { spineExtends: { x: Nat } }
   | { viewWrite: { x: Nat; i: Nat; v: Nat; format: "uint8" | "uint16" | "int32" | "float64" | null } };
 type Formula = { transition: { effect: Frame } } | { operation: { post: OperationPost } }
   | { linear: { fact: LinearFact<StepVar> } } | { defined: { v: StepVar } }
@@ -379,7 +379,7 @@ assertion-arena node: a contract states no assertion
 ([self-contained formulas](../lean/Verification/Semantics/ExitSchemas.lean)).
 A literal is one of the eight primitive constants of the calculus, a
 number by its double's bits and a symbol by its identity: no object
-identity, store or executable term is a literal. An integer is a JSON
+identity, spine or executable term is a literal. An integer is a JSON
 number in the safe range and a decimal string, with no leading zero, plus
 sign or negative zero, outside it; a bigint literal is always its decimal
 string.
@@ -391,7 +391,7 @@ exits `0` is the returned or thrown value, `1` the receiver and `i + 2` the
 `i`-th actual. A promise's `param` is the actual's index. Frames and
 transitions read entry positions; arithmetic and string posts, freshness and
 `elementsWhen` exit positions; `push` reads its sequence at the entry, `x`
-at the entry and `exit` at the exit; `storeExtends` and `viewWrite` entry
+at the entry and `exit` at the exit; `spineExtends` and `viewWrite` entry
 positions. A fact's positions are those of its phase raised by `lift`, its
 entry terms the invocation's entry; a `StepVar` names its phase, so its term
 has no `atEntry`. `restFrom first` is the supplied actual positions from
@@ -472,17 +472,17 @@ writing `t` for a nested term:
 | $`\mathsf{test}_k(t)`$                                                  | `{"test":{"k":"isNul","a":t}}`                           |
 | $`\mathsf{if}\;t\;t\;t`$                                                | `{"ite":{"c":t,"t":t,"e":t}}`                            |
 | binary operator                                                         | `{"arith":{"op":"add","a":t,"b":t}}`                     |
-| array store with initial elements                                       | `{"arrLit":{"inits":[t]}}`                               |
+| array spine with initial elements                                       | `{"arrLit":{"inits":[t]}}`                               |
 | element at a numeric index                                              | `{"elemAt":{"a":t,"i":t}}`                               |
-| store with an element set                                               | `{"setElem":{"a":t,"i":t,"v":t}}`                        |
-| length of a store or a string                                           | `{"lenOf":{"a":t}}`                                      |
+| spine with an element set                                               | `{"setElem":{"a":t,"i":t,"v":t}}`                        |
+| length of a spine or a string                                           | `{"lenOf":{"a":t}}`                                      |
 | spread actual                                                           | `{"spread":{"a":t}}`                                     |
 | throw                                                                   | `{"throw":{"a":t}}`                                      |
 
 A field key is a string or `{"symbol":i}`. The operators (`Arith`) are
 `add`, `sub`, `mul`, `div`, `pow`, `xor`, `rem`, `bitAnd`, `bitOr`, `shl`,
 `shr`, `ushr`, `lt`, `le`, `gt`, `ge`, `eq` (strict equality) and `looseEq`
-(abstract equality). `objAt` (an object identity), `arr` (a store's
+(abstract equality). `objAt` (an object identity), `arr` (a spine's
 locations), `goto` and `frame` (a running graph code) are runtime forms: no
 evidence rule types them, so no supplied program holds one, in unused
 branches and closure bodies included, and a location never appears in a
@@ -496,7 +496,7 @@ The tests (`Tag`) are:
 | a Boolean; a number; a string; a bigint; a symbol      | `"isBool"`; `"isNum"`; `"isStr"`; `"isBigint"`; `"isSymbol"` |
 | an object; an object with call code (`"function"`)     | `"isRef"`; `"isFun"`                       |
 | `typeof v === "object"`: null, or an object without call code | `"typeofObject"`                    |
-| `Array.isArray`: an object owning the store key        | `"isArray"`                                |
+| `Array.isArray`: an object owning the spine key        | `"isArray"`                                |
 | JavaScript's `ToBoolean`                               | `"truthy"`                                 |
 | equality with one number, string, Boolean or bigint    | `{"numEq":{"bits":"…"}}`, `{"strEq":{"value":"a"}}`, `{"boolEq":{"value":true}}`, `{"bigintEq":{"value":5}}` |
 | `key in v`: an own key or one the prototype chain reaches | `{"hasKey":{"key":"k"}}`                |
@@ -543,17 +543,17 @@ A descriptor `c` is the call code an allocation gives its object:
 Invocation starts graph code at `start` in the environment
 `[this, parameter_0, …, parameter_{arity-1}] ++ captures ++ [self]`, self
 the invoked object; `new` passes `undefined` for `this`. Code with a rest
-first allocates the store of the actuals past its parameters, found in slot
+first allocates the spine of the actuals past its parameters, found in slot
 zero, before the receiver. The node expressions are scoped by that
 environment alone. Every closure a source program creates is graph code.
 
 ### Code requests
 
 A request's `codes` lists the graph code its program creates, one
-`{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...], "async": b}`
+`{"entry": {"arity","exprs","conts","start","captures","row","spine"}, "claims": [...], "async": b}`
 per code and signature, nested code before the code creating it: `captures`
 the captured values' types, `row` the signature as a contract record,
-`store`, for code with a rest, the rest-store type its frame starts with
+`spine`, for code with a rest, the rest-spine type its frame starts with
 (`null` otherwise), `claims` one point claim per node of the code's
 graph, as `claims` is for the program, and `async` whether the source
 declares the function `async`.
@@ -565,8 +565,8 @@ of node evidence per program node, and, when the request has codes,
 `"codes"`: one such list per code request, in its order; and, when its
 derivations use any, `"readSummaries"`, the request's
 [read summaries](#read-summaries). The summaries are checked first, each
-once; the codes then, in order, each at its entry `[store, receiver,
-parameters…, captures…]` (no store without a rest) and its row's result,
+once; the codes then, in order, each at its entry `[spine, receiver,
+parameters…, captures…]` (no spine without a rest) and its row's result,
 each seeing the codes before it; the program is then checked seeing them
 all. The request's expression obligations in the
 unit use the same summaries.
@@ -636,12 +636,12 @@ inductive's constructors and a rule added there extends the protocol;
   `sub` with its subtype proof; `throw`, whose one premise types the thrown
   operand.
 - **Objects.** `alloc` at a record type, whose fields, where one is the
-  array store key, are an array of the graph's built-ins (`allocBuiltins`),
+  array spine key, are an array of the graph's built-ins (`allocBuiltins`),
   and whose stable keys are among its fields, held as views, with no array
-  store beside them ([stable keys](POSITIVE-TYPES.md#records));
+  spine beside them ([stable keys](POSITIVE-TYPES.md#records));
   at a dictionary type the typing rule `allocDict`, a literal allocated at a
   dictionary with no own-key bound, naming neither the prototype key nor
-  the store key; `merge`, an allocation from parts, whose two premises type
+  the spine key; `merge`, an allocation from parts, whose two premises type
   the accumulator and the source
   ([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts));
   `makeKey`, whose two premises type the key and the initializer
@@ -664,14 +664,14 @@ inductive's constructors and a rule added there extends the protocol;
   family of its result kind; `test`, a tag test whose answer the operand's
   type does not settle, as a Boolean holding both literals, for `ifBool` to
   branch on.
-- **Arrays and strings.** On a store, the value an array object holds in its
-  store field: `arrLit` allocates one location per element under the
+- **Arrays and strings.** On a spine, the value an array object holds in its
+  spine field: `arrLit` allocates one location per element under the
   positions of a tuple contract; `elem` reads a required position named by a
   literal index at its contract, `elemOpt` (with `undef`) an optional or rest
   position at its contract or `undefined`, and `elemAny` (with `undef`) any
   numeric index into a homogeneous array at the element contract or
   `undefined`, independently of readonly and presence mode; `setElem` writes
-  a named position, into its location or a fresh one the store records;
+  a named position, into its location or a fresh one the spine records;
   `len` reads the length as a number. `lenStr` reads a string's length, and
   `elemStr` (with `str` and `undef`) a string's code unit at any numeric
   index or `undefined`. `arrParts` (with `elem` and `spreads`) names the
@@ -689,7 +689,7 @@ inductive's constructors and a rule added there extends the protocol;
   receiver, fixed parameters and result, in that order, each offering at
   least the code's arity. Code with a rest offers the variadic signatures
   only, each taking exactly the code's parameters, and `arrays` name their
-  rest-store types in order, each the `store` of that signature's entry. At
+  rest-spine types in order, each the `spine` of that signature's entry. At
   a scheme row the signatures are the scheme's. `funGraphSelf` creates a
   recursive closure of fixed arity at an arrow type, as `funGraph`, each
   entry's capture types followed by the created type, the self entry's.
@@ -711,11 +711,11 @@ inductive's constructors and a rule added there extends the protocol;
   `fixed`, `omitted`, `spreads` and `rest`) carries the callee premise, the
   receiver premise, one premise per fixed actual, one `undefined` premise per
   fixed position the call omits, then one per further part: the actual at
-  the element type, or, for a spread, the store it reads, at a type whose
+  the element type, or, for a spread, the spine it reads, at a type whose
   elements that element type admits. `callPacked` (with `effect`, `fixed`,
   `packed` and `rest`) names how many actuals are fixed, the packed binder
   and the rest type, with premises for the callee, the receiver, each fixed
-  actual and the value whose store the last actual spreads. `construct`
+  actual and the value whose spine the last actual spreads. `construct`
   (with `effect`, which is plain) takes the constructor's premise, then one
   per actual and one `undefined` premise per position the signature declares
   and the construction omits. `constructRest` (with `fixed`, `spreads` and

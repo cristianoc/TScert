@@ -1,5 +1,5 @@
 // An interface member stating the empty footprint: an object literal's
-// method meets it, and a `findIndex` callback calling it changes no store,
+// method meets it, and a `findIndex` callback calling it changes no spine,
 // so each visit reads an element of the array's contract (`T`, not
 // `T | undefined`).
 export interface Limit {

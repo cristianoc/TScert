@@ -1,4 +1,4 @@
-// `push` of spread arrays: a readable or dense store passes its elements at
+// `push` of spread arrays: a readable or dense spine passes its elements at
 // their type, so the call is at the receiver's own element type.
 type Stmt = { k: "let"; name: string } | { k: "expr"; value: number };
 

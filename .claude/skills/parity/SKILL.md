@@ -153,11 +153,11 @@ asks.
   how `await`, `push` and the typed array's read, write and length are
   modelled. No nondeterministic reduction rule is introduced.
 - **A typed array is a primitive in its storage** (a descriptor with format
-  and fixed length, and a tagged view store without holes) **and its three
+  and fixed length, and a tagged view spine without holes) **and its three
   steps are specified axiomatically** by the note's rules View-Length,
   View-Read and View-Write. The model has no buffer.
 - **Regions are interpreted from the heap alone.** A location's class (value
-  location, array store, view store) is decided by its contents; one theorem
+  location, array spine, view spine) is decided by its contents; one theorem
   connects this to the kinds the world records. Kinds are used in worlds,
   contracts, reference validity and separation evidence.
 - **Arithmetic in scope:** linear arithmetic over safe integers; what passing

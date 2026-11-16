@@ -15,7 +15,7 @@ const TESTS = [lazyRegExp("^\\p{M}$", "u"), lazyRegExp("^\\p{N}$", "u")];
 
 let marked: number = 0;
 
-/** Counts a text having the property: within `{value: any, store: keep}`. */
+/** Counts a text having the property: within `{value: any, spine: keep}`. */
 export function mark(text: string, property: number): void {
   if ((TESTS[property] ?? letter)().test(text)) marked += 1;
 }

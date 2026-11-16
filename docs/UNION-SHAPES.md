@@ -34,12 +34,12 @@ clause of $`A`$ is covered by some clause of $`B`$.
 
 Every closed value $`v`$ has one **outer shape** $`\sigma(v)`$: null,
 boolean, plain object, function, undefined, number, string, internal element
-store, bigint, symbol or class (`valueShape`). Every clause $`c`$ other than
+spine, bigint, symbol or class (`valueShape`). Every clause $`c`$ other than
 `top` and `source` has one shape $`\sigma(c)`$ (`shape`): `refs` and `dict`
 are plain objects, `arrs` and `callable` are functions, a literal shares its
-family's shape. A JavaScript array is a plain object owning the store key
+family's shape. A JavaScript array is a plain object owning the spine key
 ([the array shape](POSITIVE-TYPES.md#records)); the clause `list` describes
-the internal store, and `arrs` describes call signatures. The outer shapes
+the internal spine, and `arrs` describes call signatures. The outer shapes
 partition the values: $`\sigma`$ is a function on values.
 
 ### 1.2 Cells
@@ -90,7 +90,7 @@ analysis on the clause (sketched).
 
 A record clause **fixes** a key $`f`$ through an invariant field or a
 readonly view at $`f`$, `length` excepted (a `length` view is also met
-through the array store). An optional field does not fix $`f`$, and records
+through the array spine). An optional field does not fix $`f`$, and records
 are open: a clause naming no entry at $`f`$ may own $`f`$ at any value. The
 **literals** $`L(A)`$ of a type are its literal clauses' values; each is a
 member of $`⟦A⟧`$ at every level and world.
@@ -236,7 +236,7 @@ Each entry states its eligibility, its exclusion and its selection lemma.
   dictionary target fixing $`f`$ is covered by a record or dictionary source
   only if the source holds a field or a view at $`f`$, whatever the table.
   Callable clauses are not selected by R4. This is where a Term arm meets an array arm: an array holds no
-  `kind`, and a Term arm holds no store.
+  `kind`, and a Term arm holds no spine.
 
 ### R5. The dictionary bound
 
@@ -367,7 +367,7 @@ Laws that hold:
 - **Different shapes meet at bottom:** $`\sigma(c)\ne\sigma(d)\Rightarrow c\land d=\bot`$
   for $`c,d\notin\{\mathsf{top},\mathsf{source}\}`$. Proved (`meet_sound`).
 - **The universes are units:** $`\mathsf{top}\land c=c`$, and
-  $`\mathsf{source}\land c=c`$ for $`c`$ neither a store nor a pack clause.
+  $`\mathsf{source}\land c=c`$ for $`c`$ neither a spine nor a pack clause.
   Proved (`meet_sound`).
 - **A cell inside a wider arm is absorbed:** $`⟦c⟧\subseteq⟦d⟧\Rightarrow c\lor d\equiv d`$,
   so $`\mathsf{strLit}\,s\lor\mathsf{str}\equiv\mathsf{str}`$ and

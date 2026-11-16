@@ -7,7 +7,7 @@
 // rich-inline.ts#narrowsLine.
 // A non-null assertion of an array's element read inside its length,
 // `widths[i]!` with `i < widths.length`: the test states that `i` is an index
-// below the length of `widths`' store, which reaches the read; there
+// below the length of `widths`' spine, which reaches the read; there
 // `%ElementAt%`'s signature at an index below the length gives the element,
 // and `number[]` is readable (a hole only where the element admits
 // `undefined`), so the read is a number.

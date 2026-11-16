@@ -1,5 +1,5 @@
-// A frame stating a store region beside `spines: "grow"` keeps a lower
-// bound of the length of a store apart from the region (`region-call-grow`):
+// A frame stating a spine region beside `spines: "grow"` keeps a lower
+// bound of the length of a spine apart from the region (`region-call-grow`):
 // `step` pops the array `runs.open` reads, its region, and pushes onto
 // `out`, within grow outside the region. `get` allocates the record, so its
 // literal's array is apart from `xs`, and `i < xs.length`, established

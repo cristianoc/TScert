@@ -1,5 +1,5 @@
 // Census functions: fragment-statements.mts#declarationsOf,#statements.
-// A recursive visitor inside map must preserve the receiver's array stores.
+// A recursive visitor inside map must preserve the receiver's array spines.
 import * as ts from "typescript/unstable/ast";
 type Gate = {
   local: (n: ts.Identifier) => Modifies<{}, string>;

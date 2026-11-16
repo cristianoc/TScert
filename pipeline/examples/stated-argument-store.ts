@@ -1,8 +1,8 @@
-// Frames stating a parameter's store region (docs/drafts/stated-effects.md,
+// Frames stating a parameter's spine region (docs/drafts/stated-effects.md,
 // §4): `shrink` pops and splices the array it is handed and `trim` pops its
-// second parameter's, each changing value locations and that store alone, so
+// second parameter's, each changing value locations and that spine alone, so
 // each states `values: "any"` and the parameter's region `"xs[*]": "any"`,
-// every other store kept. A `this` parameter names the receiver's store.
+// every other spine kept. A `this` parameter names the receiver's spine.
 export function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void> {
   xs.pop();
   xs.splice(0, 1);

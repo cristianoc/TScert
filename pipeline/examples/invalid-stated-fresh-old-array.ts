@@ -1,6 +1,6 @@
 // A fresh record holding an old array (FOOTPRINTS.md, "Fresh array
 // storage"): `drain` allocates `runs`, but its field holds the caller's
-// `xs`, so the region `step` states on it is a store of the entry heap and
+// `xs`, so the region `step` states on it is a spine of the entry heap and
 // `drain`'s `spines: "grow"` is refused at the call. Run under Node,
 // `total([1, 2, 3])` relies on that statement to keep `i < xs.length`,
 // reads past the end of the array the calls empty and returns `NaN`.

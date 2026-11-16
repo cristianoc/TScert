@@ -1,6 +1,6 @@
-// A body allocating a fresh store and catching a throw: the handler binds
+// A body allocating a fresh spine and catching a throw: the handler binds
 // the thrown value, never fresh, beside the slots the throwing node held,
-// which keep their freshness, so the store `split` allocated may still be
+// which keep their freshness, so the spine `split` allocated may still be
 // written in the handler.
 function checked(x: number): number {
   if (x < 0) throw Error(`negative: ${x}`);

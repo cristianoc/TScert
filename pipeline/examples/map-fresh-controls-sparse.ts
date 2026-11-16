@@ -2,7 +2,7 @@
 // pops the mapped array through an alias, a join of a fresh and the mapped
 // array, a reassigned variable, or a helper's parameter, so `map` takes its
 // signature with holes, which `(string | undefined)[]` admits. A callback
-// claimed within `{value: any, store: keep}` is refused at each.
+// claimed within `{value: any, spine: keep}` is refused at each.
 function drop(a: string[]): void {
   a.pop();
 }

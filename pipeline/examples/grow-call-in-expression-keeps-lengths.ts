@@ -1,4 +1,4 @@
-// A call within `{value: any, store: grow}` keeps a lower bound of a length
+// A call within `{value: any, spine: grow}` keeps a lower bound of a length
 // wherever it stands: in a declaration, in an assignment, in a test, as the
 // right side of `x ??= …` and of a field's `o.f ??= …`.
 type Cache = { last: number[] | null };

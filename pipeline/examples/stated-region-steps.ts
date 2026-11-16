@@ -1,7 +1,7 @@
-// The step-frame rule (FOOTPRINTS.md, "Argument-path store regions"): each
+// The step-frame rule (FOOTPRINTS.md, "Argument-path spine regions"): each
 // step's frame, read at its own positions, is rebased to the enclosing
 // entry through the slot it reads and included in the stated frame.
-// `note`'s `push` changes the store of the array `runs.open` reads (the
+// `note`'s `push` changes the spine of the array `runs.open` reads (the
 // narrower frame `ReceiverGrows` states, every other old location kept);
 // `scan` changes it only by calling `note` with its own `runs`, whose
 // frame rebases to `scan`'s region through the stable field. `measure`

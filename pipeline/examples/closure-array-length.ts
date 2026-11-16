@@ -1,5 +1,5 @@
 // An array's `length` read in a closed expression (an arrow's expression
-// body, a condition's operands) is its store's, read as a number, as a
+// body, a condition's operands) is its spine's, read as a number, as a
 // statement reads it.
 export function counts(): number {
   const f = (...rest: number[]): number => rest.length;

@@ -1,5 +1,5 @@
-// A frame stating a store region beside `spines: "grow"` keeps no fact
-// about the region's own store: `open` is the array `runs.open` reads, which
+// A frame stating a spine region beside `spines: "grow"` keeps no fact
+// about the region's own spine: `open` is the array `runs.open` reads, which
 // `step` pops, so `0 < open.length` is lost and `open[0]` is refused (run
 // under Node: `first()` returns `undefined`).
 type Runs = { /** @stable */ readonly open: number[] };

@@ -76,7 +76,7 @@ check is written twice. Neither language contains the other:
 | Quantified facts over typed arrays, with offsets | no | yes |
 | Unrestricted disjunction, guards that read the heap | no | yes |
 | A quantified fact requires each element present | yes | no |
-| Store separation asserts both arrays exist | yes | only if both values have stores |
+| Spine separation asserts both arrays exist | yes | only if both values have spines |
 
 **Several decisions try two routes in turn.** `effectKept` is `postKeeps`
 or `frameKeeps`; `callKeeps` and `callGrown` each tried a change read from
@@ -167,7 +167,7 @@ new check, else the old decider".
 | 1 | The untagged supports of path reads | Frame; the class of each read | measured: one refusal becomes a verification, 3417 cases unchanged |
 | 2 | The route by `callChanges` in `callKeeps` and `callGrown` | Frame alone for a term across a call | measured: none change on 3414 cases and five pretext files |
 | 3 | The duplicate respect check and the two separate frame theorems | one support relation, one respect check; B's supports as evidence in it | intended none |
-| 4 | Disjointness answered case by case (`classQuery`, `storeSite`, `SepKnowledge.apart₁`) | Alloc and (Sep): one disjointness evidence, with the bound of a region by role classes, and the separations of allocation and provenance carried through renaming | the third row above verifies; intended none lost |
+| 4 | Disjointness answered case by case (`classQuery`, `spineSite`, `SepKnowledge.apart₁`) | Alloc and (Sep): one disjointness evidence, with the bound of a region by role classes, and the separations of allocation and provenance carried through renaming | the third row above verifies; intended none lost |
 | 5 | A function's effect as the closed bound of its steps' frames only | Seq-Eff and Fresh-Eff: a native step has the paper's regional effect and its exact postcondition, and effects compose through a function's interface on both exits | the fourth row above verifies; wrappers of `push` gain |
 | 6 | `postKeeps`, then the alternative in `effectKept` | Frame for an unchanged fact; Entry with the exact postcondition of Push for a changed length; (View) | the 11 cases and 6 units are re-established before the deletion |
 | 7 | `cellKept`, `fieldEvery`, `everyGrown`, `appendKept`, `everyWritten`, `writtenPrefix`, `writeKept`, `writeAtoms`, and the arithmetic deciders, as acceptors of their own | Write-In, Write-End, View-Write, (Every), the arithmetic rules; a rule form for each update the paper's rules justify | intended none, family by family |
@@ -181,8 +181,8 @@ interface: only an effect does.
 
 ### Step 4: a region is bounded by role classes
 
-A *role class* is one of field, cell, element cell, array store, view
-store, identity: the roles of `Worlds.lean` without their parameters. It
+A *role class* is one of field, cell, element cell, array spine, view
+spine, identity: the roles of `Worlds.lean` without their parameters. It
 projects to the paper's five kinds and to the three categories of
 `Selector`; neither of those refines the other.
 
@@ -191,11 +191,11 @@ of every allocated location in it, in a well-formed state.
 
 | Region | Bound |
 |---|---|
-| `field x k`, `path x p k` at a key other than the store key | field, cell; one of the two where the object's roles say which |
-| `field x k`, `path x p k` at the store key | array store |
-| `store x p` | array store, view store |
-| `elems x`, `pathElems x p` | element cell |
-| `own x`, `pathOwn x p` | field, cell, array store |
+| `field x k`, `path x p k` at a key other than the spine key | field, cell; one of the two where the object's roles say which |
+| `field x k`, `path x p k` at the spine key | array spine |
+| `spine x p` | array spine, view spine |
+| `cells x`, `pathCells x p` | element cell |
+| `fields x`, `pathFields x p` | field, cell, array spine |
 | `cls c` | the role classes of the categories `c` selects |
 | `inCls r c` | the bound of `r`, restricted to the role classes of `c` |
 | `cell b`, `all` | every role class |
@@ -210,20 +210,20 @@ theorem Region.bound_sound {n : Nat} {W : WorldT n} {ρ : Env} {h : Heap}
 Two regions are disjoint when their bounds are disjoint, or when the
 state's knowledge separates them. `SepQuery.Sound` is stated over allocated
 locations, the ones `Post` and `Supported` constrain. A path that ends at
-the store key reads a store: step 1 leaves the last read of a guard and of
-a store separation unmarked for that reason, and the bound above marks it.
+the spine key reads a spine: step 1 leaves the last read of a guard and of
+a spine separation unmarked for that reason, and the bound above marks it.
 
 Three region forms differ from the paper's and are brought to it here:
-`own` includes the object's store slot where the paper's
-$`\pi.\mathsf{own}`$ is its value fields; `cell b` selects every value
+`fields` includes the object's spine slot where the paper's
+$`\pi.\mathsf{fields}`$ is its value fields; `cell b` selects every value
 location; `all` selects unallocated locations.
 
 ### Step 6: what `push` and a typed-array write need
 
 For an equality of lengths across `texts.push(v)` where `texts` is another
 array: the effect of `push` is
-$`\{\mathit{texts}.\mathsf{store} : \mathsf{grow}\}`$, the fact's support
-keeps the other array's store, and respect needs the two stores disjoint,
+$`\{\mathit{texts}.\mathsf{spine} : \mathsf{grow}\}`$, the fact's support
+keeps the other array's spine, and respect needs the two spines disjoint,
 which Alloc states for a fresh array and step 4 makes available to the
 check.
 
@@ -246,7 +246,7 @@ programs it affects, when its step is reached.
 - **Facts the acceptance path has and the paper's language lacks:**
   quantified facts over typed arrays; a quantified fact that does not
   require each element present; disjunction in general; guards that read
-  the heap; store separation of two values that need not both be arrays.
+  the heap; spine separation of two values that need not both be arrays.
   Each either enters the paper's assertion language or is translated into
   it by a proved translation.
 - **Rules Lean states and the paper does not:** introduction and
@@ -263,7 +263,7 @@ programs it affects, when its step is reached.
 ## Costs and risks
 
 - **A translation can strengthen a fact.** The two meanings of a
-  quantified fact and of store separation differ. Each translation is a
+  quantified fact and of spine separation differ. Each translation is a
   theorem with the premises it needs, and one definition remains.
 - **Native precision can be lost at a wrapper.** Step 5 is before step 6
   for this reason. The exceptional exit of a native keeps its own effect.

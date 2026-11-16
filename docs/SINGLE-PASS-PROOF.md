@@ -66,20 +66,20 @@ The model's worlds are the note's kinded ones (§§2–3 of the
 [Tolerant frames note](REFERENCES.md#the-tolerant-frames-note)). A world
 entry is a role and a contract
 ([Worlds](../lean/Verification/Semantics/Worlds.lean)): a field F, a cell C,
-an element cell E, an array's store or a view store of a fixed format and
+an element cell E, an array's spine or a view spine of a fixed format and
 length S, an object's identity I. Extension keeps every entry and truncation
 every role. A term's references are valid (`RefsOk`) when every location it
-names has the role its position demands: an identity under an object, a store
+names has the role its position demands: an identity under an object, a spine
 under `[]`, a field or a cell under any other key, an element cell in a
-store, and, under a typed array's descriptor, a view store of its format and
+spine, and, under a typed array's descriptor, a view spine of its format and
 length. A heap meets a world (`HeapOk`,
 [Heaps](../lean/Verification/Semantics/Heaps.lean)) in its contracts below
 the level and in its shapes at every level, zero included: each location
 holds contents of its role's category (a source value in F, C and E, an
-array's store in an array store, in a view store of form `view_N` a view
-store of its format listing `N` cells, so with no hole, `null` in I) with
+array's spine in an array spine, in a view spine of form `view_N` a view
+spine of its format listing `N` cells, so with no hole, `null` in I) with
 valid references (`Shaped`). The category of a location's contents read from
-the contents alone, an array's store, a view store or a value
+the contents alone, an array's spine, a view spine or a value
 (`contentsCategory`), is its role's (`Shaped.category`), so it is kept by
 every admissible transition (`Admissible.contentsCategory`).
 
@@ -95,8 +95,8 @@ the role of the location their key finds (`RoleIn`; `recT`, `optT`,
 The typing rules supply what the steps do not: an allocation's and a write's
 payload has its role's category (`Payload`), each allocated key fits its
 stated role (`StorageRole.fitsKey`), a typed allocation names no view
-metadata key, a typed write targets no view store, and a rest store's
-elements are source values (`RestStore`). Typed-step preservation is
+metadata key, a typed write targets no view spine, and a rest spine's
+elements are source values (`RestSpine`). Typed-step preservation is
 `HasTyUsing.sound` (induction on the typing derivation), over a term whose
 references are valid in the entry world; graph safety is
 `ControlFlow.state_progress` and `state_safe` (induction on the budget over
@@ -126,7 +126,7 @@ $`\top`$ (`action_throw_top`). The graph machine is deterministic
 in an admissible state (`graph_run`).
 
 One expression end to end, proved: a typed field write
-(`ExpressionEffects.fieldWriteWithin` with $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$),
+(`ExpressionEffects.fieldWriteWithin` with $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$),
 safe at $`s`$, run with budget left to a value or a raise, ends in a state an
 action of that effect reaches, with the residual budget, the result's type or
 the raised value's family, and every bound $`y\le|x|`$ that held at $`s`$
@@ -177,7 +177,7 @@ $`0\le j`$ and $`\mathit{to}\le|\mathit{xs}|`$, `out` possibly `xs`, proved at
 two edges:
 
 - the aliasing element write: its local judgment within
-  $`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+  $`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
   (`grow_write_judgment`, from `ExpressionEffects.write_within_exc`, which
   covers an element write at a run-time index whatever array it writes), and
   its obligations toward the increment, $`\mathit{to}\le|\mathit{xs}|`$ by
@@ -205,7 +205,7 @@ form `NodesChecked` asks, its judgment and its back edge's obligations
 together (`increment_checked`). The loop's initialisation, guard and read
 nodes are not proved: a closed instance of `graph_safe` for the loop needs
 their judgments (the comparison `j < to` as a Boolean, the read
-$`\mathit{xs}[j]`$ within the array's store contract) and a concrete world
+$`\mathit{xs}[j]`$ within the array's spine contract) and a concrete world
 for $`\mathit{xs}`$ and $`\mathit{out}`$. Both edges take the escaping
 throw's obligation from the node's exception family one level up (`hΞ`).
 
@@ -231,7 +231,7 @@ heap $`h_0`$, and each exit composes the node's effect onto it, proved:
 
 - a closed node effect $`c_n\le c`$ (`bound_step`, from
   `Closed.Holds.trans_on`), the handler's exceptional effect alike;
-- the fresh-store exemption: a node effect within $`c`$ on the locations below
+- the fresh-spine exemption: a node effect within $`c`$ on the locations below
   $`|h_0|`$ only (`bound_step_fresh`);
 - the administrative transitions keep the heap, so the bound conjoined to the
   node assertions keeps `AdminClosed` (`adminClosed_bound`);
@@ -254,7 +254,7 @@ heap $`h_0`$, and each exit composes the node's effect onto it, proved:
 (`Action`, `Box`): the name valuation $`\rho`$ and the entry mark $`m`$ are
 fixed across it. An assertion $`g`$ is invariant when every admissible
 transition keeps it (`Invariant`); this is $`g\vdash\Box_\top g`$ for
-$`\top=\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{any}\}`$
+$`\top=\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{any}\}`$
 (proved: `invariant_iff_top`). An effect is rigid at $`\rho`$ when its
 action is transitive (`Rigid`). The laws, proved:
 
@@ -272,20 +272,20 @@ Inclusion of actions, proved: a footprint within another by
 (`action_le_closed`).
 
 Rigidity, proved: every closed footprint is rigid (`closed_rigid`, from
-`Closed.Holds.trans_on`); the store of $`x`$ with the cells it lists, both
+`Closed.Holds.trans_on`); the spine of $`x`$ with the cells it lists, both
 at $`\mathsf{any}`$, is not, by a three-location witness in which a first
-action makes the store list an old cell and a second changes that cell
-(`elems_not_rigid`). A stable path is rigid under every effect: its value is
+action makes the spine list an old cell and a second changes that cell
+(`cells_not_rigid`). A stable path is rigid under every effect: its value is
 read in every state an action reaches (`stable_rigid`), and the path's
 stability is invariant (`stableAt_invariant`), so the witness of
-$`\mathrm{rigid}(\pi)`$ is a fact of the world. Freshness of a store against
+$`\mathrm{rigid}(\pi)`$ is a fact of the world. Freshness of a spine against
 the entry mark reads no heap and is invariant (`fresh_invariant`).
 
 Rigidity on a domain, proved. $`\Phi`$ is rigid on $`D`$ at $`\rho`$ when its
 action is transitive from every state where $`D`$ holds (`RigidOn`); then
 $`D\wedge\Box_\Phi F\vdash\Box_\Phi\Box_\Phi F`$ (`box_idem_on`), and an invariant
 $`D`$ holds at every state an action reaches (`rigidOn_domain`), so
-idempotence iterates. A store region at a path,
+idempotence iterates. A spine region at a path,
 $`\{x.p.k:\delta\}`$, is rigid on the domain of the path's stability,
 $`\mathrm{StableAt}\ x\ p\ v`$, whatever $`\delta`$ (`path_rigid_on`): the region
 reads the same locations at every heap where the path reads $`v`$
@@ -297,7 +297,7 @@ The tolerant frame theorem, proved: a fact kind whose support the effect
 respects under separation knowledge $`K`$ holding at $`s`$ enters
 $`\Box_\Phi`$ (`tolerant_frame`), and an index fact a closed footprint's
 change keeps enters its modality (`kept_box`). The atoms, proved, with
-$`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$:
+$`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$:
 
 ```math
 y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
@@ -305,7 +305,7 @@ y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
 \mathrm{dense}(x,k) \;\vdash\; \Box_G\,\mathrm{dense}(x,k)
 ```
 
-(`grow`, `dense`), for variables $`x`$, $`y`$ and a fixed prefix $`k`$. Density here is physical presence of the first $`k`$ store entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
+(`grow`, `dense`), for variables $`x`$, $`y`$ and a fixed prefix $`k`$. Density here is physical presence of the first $`k`$ spine entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
 Along a stable path $`p`$, $`y\le|x.p|\vdash\Box_G(y\le|x.p|)`$
 (`grow_path`): the note's (Rigid) with (Grow), the rigidity supplied by the
 world. $`y\le|x.p|`$ is the pass's linear index fact over the value of $`y`$
@@ -333,7 +333,7 @@ holds at $`\eta`$ and the state's heap. Proved:
   links, separation, and index facts with $`\mathrm{envOnly}`$; a fact reads
   only its names' values (`atomHolds_congr`), so naming a step's result $`r`$,
   fresh for $`S`$, keeps $`S`$ (`named_set`);
-- (Keep) for $`c\le\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
+- (Keep) for $`c\le\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$,
   $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
   (`named_keep_box`); for $`S`$ heap-free,
   $`\mathrm{Named}\ S\ \eta\vdash\Box_\Phi\,\mathrm{Named}\ S\ \eta`$ for every
@@ -351,7 +351,7 @@ holds at $`\eta`$ and the state's heap. Proved:
   `inspect_frame`), a call `keepsCall` accepts (`keepsCall_keeps`, from
   `selectedCall_sound` at the empty footprint) and a call `freshCall` accepts
   (`freshCall_keeps`, from `keepsHeap_prefix`) have their normal exit within
-  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. At a
+  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. At a
   node whose step `keepsCall` accepts, both exits together
   (`keepsCall_frame`): the normal return exposes the rule's output
   $`\mathrm{shift}\ k`$ for the handed facts $`k`$ and every fact of $`S`$,
@@ -364,7 +364,7 @@ holds in the named invariant and enters no target assertion until a slot
 holds its names.
 
 Every `preserving` case of the pass has its normal exit within
-$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$: the four
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$: the four
 call layers through `keepsHeap` (proved for `keepsCall` and `freshCall`;
 `elementsCall` and `requiresCall` test the same `keepsHeap` of the selected
 effect), and the other step kinds through their terms (proved for
@@ -372,7 +372,7 @@ inspections; the term shapes `created`, the reads and `knownValue` require are
 not connected here). The frame consumes no class evidence: `keepsHeap`
 compares the closed bound of the selected exit's frame with the empty one
 ([frame checks](FOOTPRINTS.md#frame-checks)). Two conditions are outside it: the result's name
-is fresh for the store (a premise, `hr`), and the output the pass applies is
+is fresh for the spine (a premise, `hr`), and the output the pass applies is
 the checked rule's (`Checker.select` agreeing with `run`).
 
 ### The preserving steps through their checked rules
@@ -383,7 +383,7 @@ find keeping the heap (`callKeepsHeap`), or
 a step of a kind other than `ordinary`, `written` and `boundedWrite`
 (`kindPreserving`); `passPreserving` is their disjunction.
 $`\mathrm{KeepsPost}`$ is the normal exit within
-$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
 
 - the base rule (`checkStepUsing`) of each preserving kind fixes the term's
   shape (`base_shape`): `pure` and `reading` an inspection by their checked
@@ -404,7 +404,7 @@ $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
 - both exits (`preserving_step_frame` for any checker given $`\mathrm{KeepsPost}`$,
   `pass_preserving_frame` at `Checker.ordinary`): from `run`'s output
   $`\mathit{out}`$ over the handed facts, a normal return is an action of
-  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$ with
+  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$ with
   $`n'+k=n`$, the result's type, $`\mathit{out}`$ at $`\mathrm{push}\ v\ \rho`$ and
   $`\mathrm{Named}\ S\ \eta[r\mapsto v]`$; a throw is an action of $`\top`$ with
   the raised value closed and of the exception family and the heap-free part
@@ -512,8 +512,8 @@ no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
 - (Keep by atom) a kept fact survives every action of its effect
   (`atom_kept`), so $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
   for $`S`$ kept by $`c`$ (`named_kept_box`); a length lower bound over names
-  is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
-  and by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$
+  is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
+  and by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
   (`lowerBound_keptBy_grow`, `lowerBound_keptBy_field`);
 - a run only grows the heap: a normal-only judgment holds on both exits with
   each exit's heap at least as long (`safePost_grow`);
@@ -521,11 +521,11 @@ no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
   $`\mathit{out}`$ on the normal exit (`judgment_with_output`): a write the
   pass's footprint check admits within $`c`$ (`write_judgment`, from
   `writeWithin`), a typed field write within
-  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$
+  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
   (`field_write_judgment`), an element write within
-  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
   (`element_write_judgment`), a step the pass frames, an allocation among them,
-  normal exit within $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
+  normal exit within $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$
   and throw within $`\top`$ (`preserving_judgment`), and an ordinary call or
   expression within $`\top`$ on both exits (`top_judgment`);
 - both exits (`writing_frame`): from such a judgment, a normal return is an
@@ -543,26 +543,26 @@ an effect keeps are [below](#element-facts-under-an-effect).
 Module `lean/Verification/Programs/TolerantFramesElems.lean`.
 `Atom.keptByElems c` extends `Atom.keptBy c` by two cases: an index atom whose
 fact $`c`$'s change keeps as a quantified element fact
-(`IndexFact.everyKept`: stores kept, no number changed, its length path, stop
+(`IndexFact.everyKept`: spines kept, no number changed, its length path, stop
 and body terms kept), and an elements atom (`.elem`, `ElemsAt`: every present
-element of the store meets the predicate) under
-$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
+element of the spine meets the predicate) under
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
 
 - `keptBy_keptByElems`: it decides at least what `keptBy` decides;
 - `atom_keptByElems`, `named_keptByElems_box`: a fact it keeps survives every
   action of $`c`$, so $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
   for $`S`$ kept by $`c`$;
-- `every_keptBy_init`: a quantified element fact over a slot's store with a
+- `every_keptBy_init`: a quantified element fact over a slot's spine with a
   slot's value as its stop and a body of kept terms is kept by the
-  initialisation write's $`\{\mathsf{values}:\mathsf{init},\ \mathsf{stores}:\mathsf{keep}\}`$
+  initialisation write's $`\{\mathsf{values}:\mathsf{init},\ \mathsf{spines}:\mathsf{keep}\}`$
   (`initEffect`); `elem_keptByElems_empty`: an elements atom by
-  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$.
+  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$.
 
-A dense prefix is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+A dense prefix is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
 (`dense`); it is a semantic atom, not one of the pass's atoms. Under
-$`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$ and
-$`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$ neither
-element fact is kept by its effect alone: a `grow` change admits a fresh store
+$`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$ and
+$`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$ neither
+element fact is kept by its effect alone: a `grow` change admits a fresh spine
 entry, a `values: any` change any element value (observed in the definitions
 of `Change.Holds`; no counter-model is formalized). The element writes and
 field writes keep them through their rules' outputs (`IndexWrites.writeAtoms`,
@@ -609,21 +609,21 @@ What the check does not give:
    judgment has is $`\Phi`$; a fact $`\Phi`$ does not tolerate is kept across
    a writing step only through the rule's output over every fact. A per-step
    effect tighter than the bound (a field write's
-   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$, an
-   element write's $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$)
+   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$, an
+   element write's $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$)
    would need the pass to evaluate `fieldWriteWithin` or `writeWithin` at that
    effect for the step, beside the bound check.
 2. Where no bound is stated (`bound = none`) the pass checks no footprint; a
    writing step's judgment is then `top_judgment`'s.
 3. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
-   holding stores allocated at or after the invocation's entry, is a premise
+   holding spines allocated at or after the invocation's entry, is a premise
    of these lemmas; `footprintCheck_sound` discharges it ([the step](#the-step)).
 
 **The facts a writing step is not handed.** A step that may write
 materializes every fact (`materialize … true`), and a
 fact naming a name no slot holds fails to rename and is not among `pairs`.
 Before the step's delta the pass removes each such fact that reads the heap
-and keeps the heap-free ones (`Store.dropHeap`, the handler's filter): a
+and keeps the heap-free ones (`Spine.dropHeap`, the handler's filter): a
 writing step's effect does not tolerate a heap fact it is not handed (a cell
 fact over a name fails after an action of $`\top`$, proved:
 `slotless_not_framed`).
@@ -632,24 +632,24 @@ fact over a name fails after an action of $`\top`$, proved:
 
 Module `lean/Verification/Semantics/TolerantFramesCells.lean`. A root's
 allocated cells, $`\mathrm{cells}(x)`$ read at the heap, is
-`HeapKnowledge.ElementsBelow` of the store $`x`$'s store location holds:
+`HeapKnowledge.ElementsBelow` of the spine $`x`$'s spine location holds:
 every listed cell below the heap's length (`RootCells`). It holds at every
-state (`rootCells_holds`): a well-formed heap's stores have valid references,
+state (`rootCells_holds`): a well-formed heap's spines have valid references,
 so every cell they list is an element cell of the world, a location of the
-heap (`HeapOk.store_cells`). So $`\mathrm{cells}(x)`$ is invariant
+heap (`HeapOk.spine_cells`). So $`\mathrm{cells}(x)`$ is invariant
 (`rootCells_invariant`) and holds after every action of every footprint
 (`rootCells_box`), with no premise.
 
 Separation, proved:
 
-- allocation: a store whose location and cells are at or past a
-  well-formed heap's end is apart from a store of that heap a later heap
+- allocation: a spine whose location and cells are at or past a
+  well-formed heap's end is apart from a spine of that heap a later heap
   keeps, whose cells lie below its end because it is well-formed
   (`alloc_apart`; with both bounds stated, `apart_of_mark`);
   freshness against the entry mark (`FreshAt`) is the location half;
 
 The third atom, (Apart, one-sided), proved (`apart_grow_keep`), with
-$`\Phi_x=\{\mathsf{values}:\mathsf{any},\ x.\mathsf{store}:\mathsf{grow}\}`$
+$`\Phi_x=\{\mathsf{values}:\mathsf{any},\ x.\mathsf{spine}:\mathsf{grow}\}`$
 (`growOne`) and $`y`$ an array object:
 
 ```math
@@ -658,9 +658,9 @@ $`\Phi_x=\{\mathsf{values}:\mathsf{any},\ x.\mathsf{store}:\mathsf{grow}\}`$
 
 ($`\mathrm{cells}(y)`$ holds at every state: `rootCells_holds`.)
 
-$`y`$'s store location is not $`x`$'s, so it is kept (`growOne_keeps_store`),
-and $`x`$'s store gains only cells at or past the heap's end, beyond $`y`$'s
-allocated cells and store location. Both stores growing is not covered: their
+$`y`$'s spine location is not $`x`$'s, so it is kept (`growOne_keeps_spine`),
+and $`x`$'s spine gains only cells at or past the heap's end, beyond $`y`$'s
+allocated cells and spine location. Both spines growing is not covered: their
 new cells may coincide.
 
 ## The pass's named state
@@ -668,7 +668,7 @@ new cells may coincide.
 Module `lean/Verification/Programs/TolerantFramesState.lean`. The pass's state
 at a point (`SinglePass.State`) is its slots'
 names $`N`$, a store $`S`$ of facts over names (`Store`) and the
-names $`F`$ holding stores the invocation allocated; the walk keeps the
+names $`F`$ holding spines the invocation allocated; the walk keeps the
 implications $`I`$ over names beside it. The store's facts
 are its live set's and those its index by name lists
 ($`\mathrm{all}(S)`$, `storeAll`).
@@ -765,7 +765,7 @@ facts its worklist collects. Proved:
 - the alias links between slots holding one name hold (`aliasLinksOf_holds`);
 - the facts derived for names no slot holds, restated through read links and
   eliminated, hold at $`\eta`$ (`derivedOf_holds`, from `restateReads_holds`,
-  `restateStores_holds`, `eliminateIndices_holds`);
+  `restateSpines_holds`, `eliminateIndices_holds`);
 - `ofAtoms` of holding facts at slots holds, its separation read at depth
   $`d`$ (`ofAtoms_holds`); a knowledge's facts hold as `atomsOf` lists them
   (`atomsOf_holds`);
@@ -888,13 +888,13 @@ by unfolding the `let`s); the merge theorem reads it there.
   evidence holds (`action_le`); law (c) for those footprints is
   $`K\wedge\Box_\Psi F\vdash\Box_\Phi F`$.
 - **Rigidity is a property of the effect and of the state.** Closed
-  footprints are rigid at every state; a store region at a path composes
-  only where the path resolves to the same store in both heaps
-  (`ArgumentStoreRegionsWithin.trans`'s premise), and element regions at
+  footprints are rigid at every state; a spine region at a path composes
+  only where the path resolves to the same spine in both heaps
+  (`ArgumentSpineRegionsWithin.trans`'s premise), and element regions at
   $`\mathsf{any}`$ are not rigid (proved).
-- **Allocated cells are a consequence of well-formedness.** A store a
+- **Allocated cells are a consequence of well-formedness.** A spine a
   well-formed heap holds lists only element cells of the heap
-  (`HeapOk.store_cells`), so the support of $`\mathrm{apart}(x,y)`$ needs no
+  (`HeapOk.spine_cells`), so the support of $`\mathrm{apart}(x,y)`$ needs no
   further premise ([allocated cells](#allocated-cells-and-separation)).
 - **A typed array's length is part of the value.** Its descriptor holds it,
   so (View) holds after every admissible transition (`view_box`).
@@ -960,9 +960,9 @@ closed effects $`c_n,c_e`$ (`StepParts`, `StepExits`):
   family, and $`\mathrm{StateHolds}\ \langle\mathit{st}_0.\mathrm{names},\ \mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ \bot,\ \mathit{st}_0.\mathrm{fresh}\rangle`$
   at $`\rho`$, the store a handler edge starts from.
 
-The effects are $`c_n=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
+The effects are $`c_n=\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$,
 $`c_e=\top`$ at a preserving step, $`c_n=c_e=\top`$ at a writing step, and
-$`c_n=c_e=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
+$`c_n=c_e=\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$
 at a copy. The footprint check gives a writing step's bound.
 
 **Returns, footprints and reads at a step** (proved):
@@ -974,7 +974,7 @@ at a copy. The footprint check gives a writing step's bound.
   at the result and the invocation's entry values;
 - `footprintCheck_sound`, `footprint_exits`, `pass_footprint_exits`: where
   `footprintCheck` accepts the node, the receiver slots it records fresh
-  hold stores allocated at or past the mark (`FreshOk`, `freshOk_recv`),
+  hold spines allocated at or past the mark (`FreshOk`, `freshOk_recv`),
   and each run with budget left keeps the normal bound $`\Phi`$ from the
   invocation's entry heap to the heap of its normal exit and of a throw a
   live handler catches, and the exceptional bound $`\Psi`$, where it is not
@@ -1094,7 +1094,7 @@ below (`OnPath.entailed_ok_checked`); the guarded facts hold
 passes `indicesCheckWith` against every predecessor's view, among them
 $`p`$'s, through `guardReads_path`, `lowerRead_holds`, `lowerGuards_holds`,
 `check_holds`, `OnPath.projection_holds`); the fresh names hold fresh
-stores (`OnPath.fresh_ok`).
+spines (`OnPath.fresh_ok`).
 
 **The entailed bounds' check.** A term denotes what its kind reads of the
 value its path reads from its slot (`termValue`); no term is defined at
@@ -1318,7 +1318,7 @@ at `passPreU`:
 | `safe` | `graph_safe_at` | none |
 | `bounded` | `keeps_postExc` | `FootprintKept`: `NodesKeep` at `passPreT` with $`X`$ the label in the region `dead` or $`\Phi`$ from $`h_0`$, $`Q`$ $`\Phi`$ with the value fresh where `fresh`, $`R`$ $`\Phi`$ where `onThrow` |
 | `ensured` | `keeps_postExc` | `ReturnsEnsured`: `NodesKeep` at `passPreT` with $`Q`$ `EnsuresAt ensures h (push v ρ0)` |
-| `regionally` | `keeps_postExc` | `RegionsKeptS`: `NodesKeep` at `passPreS` (`passPreT` and `StableNow`) with the regional facts $`X`$, holding at the start, and $`Q`$, $`R`$ `ArgumentStoreRegionsWithin Φ regions ρ0 h0` |
+| `regionally` | `keeps_postExc` | `RegionsKeptS`: `NodesKeep` at `passPreS` (`passPreT` and `StableNow`) with the regional facts $`X`$, holding at the start, and $`Q`$, $`R`$ `ArgumentSpineRegionsWithin Φ regions ρ0 h0` |
 | `asserted` | `reached_pre`, `holds_of_assertsAt` | `labelled` |
 
 **The per-node hypotheses from the pass's checks**, proved over
@@ -1329,7 +1329,7 @@ at `passPreU`:
   `CallFreshBelow` at every visited node ∧ `CodesSound` ∧
   `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹ `FootprintKept`;
   `CallFreshBelow`: where `outFresh` reads a fresh result off the
-  derivation's selected effect, every run within the budget returns a store
+  derivation's selected effect, every run within the budget returns a spine
   allocated at or past the mark; (`callFresh_of_checked`) the derivation
   passing `passDerivChecked` gives it, the mark at most the heap's length;
 - (`returnsEnsured_of`) `NodeAccepted` ∧ `ReturnChecked` at every visited

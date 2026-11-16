@@ -1,4 +1,4 @@
-// The array shrinks between the test and the read: `pop` changes the store's
+// The array shrinks between the test and the read: `pop` changes the spine's
 // length, so the bound is gone (run under Node: `last([1])` returns
 // `undefined` as a `number`).
 export function last(xs: number[]): number {

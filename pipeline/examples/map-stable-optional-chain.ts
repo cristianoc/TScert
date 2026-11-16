@@ -1,6 +1,6 @@
 // A callback scanning back over trailing spaces through an optional chain,
 // as `record-render.mts`'s `mathRoles` does: the chain reads, so the callback
-// is within `{value: any, store: keep}` and the result is dense.
+// is within `{value: any, spine: keep}` and the result is dense.
 type Token = { kind: string; text: string };
 export function lastWords(lines: Token[][]): number[] {
   return lines.map((ts: Token[]): number => {

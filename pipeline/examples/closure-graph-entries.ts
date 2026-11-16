@@ -1,6 +1,6 @@
 // Closures that collect a rest, take a default, are generic, construct an
 // instance or initialize a callable object are graph code as any other: a
-// rest's store, a default and the parameters are bound at the code's entry,
+// rest's spine, a default and the parameters are bound at the code's entry,
 // and loops, `switch`, `try` and mutable locals run inside.
 function sumRest(seed: number): number {
   const sum = (first: number, ...rest: number[]): number => {

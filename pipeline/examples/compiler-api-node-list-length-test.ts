@@ -1,7 +1,7 @@
 // A node list or a fresh empty array, `alias.typeParameters ?? []`, its
 // `length` compared in a branch test, as `readTypeTerm`'s associated-result
 // alias check has it: each member of the union is one array contract, whose
-// `length` is its store's (PROGRAM-TYPING.md, the `len` rule of a union of
+// `length` is its spine's (PROGRAM-TYPING.md, the `len` rule of a union of
 // arrays).
 import * as ts from "typescript/unstable/ast";
 

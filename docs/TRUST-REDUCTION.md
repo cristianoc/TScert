@@ -97,7 +97,7 @@ using it from Lean means importing or re-stating its fragment in Lean. JSCert
 Coq alternative, for ECMAScript 5, before promises. M is related to calculus
 states by a relation R on values (primitives, including `numberToString`'s
 spelling of property keys), objects (own keys, `[[Prototype]]`, data
-properties), the calculus's reserved keys (the array store `[]`,
+properties), the calculus's reserved keys (the array spine `[]`,
 `[[proto]]`, the class brand) and built-in objects (`Array.prototype`,
 `Promise`, …).
 

@@ -57,7 +57,7 @@ The design has three parts, in the terms of
 
 A value set has one component per kind of value the calculus has (`isVal`:
 null, undefined, Booleans, numbers, strings, bigints, symbols, objects,
-element stores):
+element spines):
 
 ```math
 V \;=\; \langle\, \mathit{nul}, \mathit{undef}, \mathit{sym}, \mathit{arr} : \mathsf{Bool};\ \
