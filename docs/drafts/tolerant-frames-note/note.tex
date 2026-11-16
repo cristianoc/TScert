@@ -624,7 +624,7 @@ reads: $(\pi.\kw{fields})(\rho,h)=\mathit{fields}(v)$ if $v$ is an object.
 It is a set of value locations. Example: $o.\kw{fields}$ denotes $\{0,1\}$. It
 covers the fields a type of $v$ does not list, which no finite set of
 regions $\pi.f$ does. By (T3) the object $v$ fixes this set
-\status{Lean: the regions \lean{fields} and \lean{pathFields}, which also contain the spine location of an array}.
+\status{Lean: the regions \lean{fields} and \lean{pathFields}}.
 \end{description}
 \noindent
 We write $\pi[\ast]$ for the spine location together with the cells:
@@ -718,7 +718,7 @@ states the effect judgment as displayed}.
 \item[Rigid: the fields at a rigid path] $\{\pi.\kw{fields}:\delta\}$ is
 rigid on the states where $\pi$ is rigid: by (T3) the path then reads an
 object with the same field locations in $h$ and in $h'$
-\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound}, for the region \lean{pathFields}, which also contains the spine location of an array}.
+\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound}, for the region \lean{pathFields}}.
 \item[Not rigid: cells of a spine changed at $\any$]
 $\{x[\ast]:\any\}$ is not rigid. A first change may make the spine of
 $x$ list an element cell that existed before and that it did not list,
@@ -1406,7 +1406,7 @@ it read at the entry, and the effect of \code{f} at its entry is
 $\{o.\mathit{items}.\kw{spine}:\grow\}$. With a call between the read
 and the push that may write the field \code{items}, the path is evidence
 only if it is rigid; otherwise the effect widens to $\{\st:\grow\}$
-\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens a region it cannot place at an entry path: to its class for a spine at a path, and to every location for a field with no recorded link to an entry path, for a selected spine with no entry path and for the own fields of an object}.
+\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens a region it cannot place at an entry path: to its class for a spine at a path, and to every location for a field with no recorded link to an entry path, for a selected spine with no entry path and for the fields of an object}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
 Let \code{shrink(xs)} pop its argument,
