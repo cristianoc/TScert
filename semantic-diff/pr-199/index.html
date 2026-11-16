@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-199"><code>de40292bbf100e5e55bf0698d7afb3633fd717b0..pr-199</code></a><ul><li>1 commit</li><li>changes: 2 Docs</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-199"><code>de40292bbf100e5e55bf0698d7afb3633fd717b0..pr-199</code></a><ul><li>2 commits</li><li>changes: 3 Docs</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
 <h2 id="g-pr-199"><code>de40292bbf100e5e55bf0698d7afb3633fd717b0..pr-199</code></h2><article class="card" id="c-65dab789c"><header><div><div class="sha">65dab789c · Cristiano Calcagno · Nov 16, 05:01</div><h3>Draft: the paper's definitions and rules as the mechanism of acceptance</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Acceptance applies Call and Conj as the paper states them and every other rule through a separate decider, and it decides the disjointness of regions by a table of cases where the paper uses location kinds. A seven-line program is refused by the verifier and verifies by the paper for that reason.</p></div>
 <h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/rules-as-mechanism.md</span></h4><div class="prose"><p>A design in five parts: regions have kinds; one rule keeps a fact, with the present deciders producing checked derivations; Transfer, Loop and composition by their rules; the Lean statements weaker than the paper's; the paper's section on what verifies. With the order of work, costs and three decisions for the owner.</p></div>
@@ -101,6 +101,13 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
 <details><summary>2 files changed, 276 insertions(+), 4 deletions(-)</summary><pre class="code"> docs/drafts/rules-as-mechanism.md  | 273 +++++++++++++++++++++++++++++++++++++
  docs/drafts/rules-at-acceptance.md |   7 +-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-a1950303c"><header><div><div class="sha">a1950303c · Cristiano Calcagno · Nov 16, 05:08</div><h3>Draft: correct the design by the designer's review</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The review found the diagnosis of the witness incomplete, the theorem of the first part false as written, and the mapping of deciders to rules imprecise.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/rules-as-mechanism.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>one cause stated for the witness; regions bounded by five kinds; a two-way split of the facts no rule derives</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the observations and the two obstacles the review traced, with the cause marked not established; regions bounded by role classes, with the corrected theorem and the three region forms that differ from the paper's; a call edge by checked transfer as the first part; six deciders listed with a three-way split; a fourth decision, on the effect of a native step</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
+<details><summary>1 file changed, 296 insertions(+), 179 deletions(-)</summary><pre class="code"> docs/drafts/rules-as-mechanism.md | 475 ++++++++++++++++++++++++--------------</pre></details>
 <div class="sha">with Claude Fable 5.2</div>
 </article>
 </main></body></html>
