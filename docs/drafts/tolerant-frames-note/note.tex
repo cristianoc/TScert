@@ -747,7 +747,7 @@ an atom, $v$ and $w$ stand for a scalar literal or a logical variable.
 \text{bodies} & \varphi &::=& \psi \mid \varphi\wedge\varphi\qquad\psi\ ::=\ e\le e \mid \psi\vee\psi\\[2pt]
 \text{body terms} & u &::=& i \mid z[i] \mid z[i+d] \mid z[i].\vec f \mid \len{z[i].\vec f}\\
  & &\mid& \kw{view}(z[i].\vec f) \mid \slen(z[i].\vec f) \mid \slen(z[i]) \mid t\\[2pt]
-\text{assertions} & F,G &::=& a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
+\text{assertions} & F,G &::=& \kw{true} \mid \kw{false} \mid a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
  & &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
 \text{postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q
 \end{array}
@@ -755,7 +755,12 @@ an atom, $v$ and $w$ stand for a scalar literal or a logical variable.
 The linear combinations of a body are over body terms $u$ in place of
 terms $t$. In a body term, $d\ge 0$ is a literal and a term $t$ does
 not mention the index $i$. The other comparisons are written with
-$\le$: $e=e'$ is $e\le e'\wedge e'\le e$, and $e<e'$ is $e+1\le e'$. A
+$\le$: $e=e'$ is $e\le e'\wedge e'\le e$, and $e<e'$ is $e+1\le e'$. We
+write $\pi\notin V$ for $\pi\in V'$, where $V'$ is the complement of
+$V$. The language has no negation. We write $\neg a$ only for a tested
+condition $a$, in the rules \textsc{If}, \textsc{Test} and \textsc{Loop}
+and in the table of Example~\ref{ex:full}, and it stands for the
+assertion that rule \textsc{Test} gives on the false branch. A
 postcondition is an assertion of two states (Section~6). In it $j$
 ranges over indices, and a term may be $\old(t)$, the value of $t$ at
 the entry. Every rule of this paper has its premises and its conclusions
@@ -1016,6 +1021,7 @@ $x.f_1\ldots f_{k-1}$ at $\grow$, which keeps the object each holds, and
 the last, $x.f_1\ldots f_k$, at $\delta$.
 \[
 \begin{array}{ll}
+\kw{true},\ \kw{false} & \emptyset\\[2pt]
 \text{a literal or a variable} & \emptyset\\[2pt]
 \text{a number }\pi,\ \slen(\pi) & \mathrm{reads}_{\init}(\pi)\\[2pt]
 \kw{view}(\pi) & \mathrm{reads}_{\grow}(\pi)\\[2pt]
@@ -1408,11 +1414,12 @@ binding (Definition~\ref{def:cmd}). The assertions that stand for $a$
 and $\neg a$ on the two branches of \code{if (y)} depend on the step
 that bound $y$:
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[A comparison of two terms] The step is \code{y = a1 < a2}, or the
-same with \code{<=}, \code{>}, \code{>=}, \code{===} or \code{!==}, and
-both operands are terms known to be defined. The true branch has the
-comparison of the two terms, and the false branch has its negation, the
-converse comparison.
+\item[A comparison of two terms] The step compares two operands $a_1$ and $a_2$
+that are terms known to be defined. For \code{y = a1 < a2} the true
+branch has $a_1<a_2$ and the false branch has $a_2\le a_1$, and likewise
+for \code{<=}, \code{>} and \code{>=}. For \code{y = a1 === a2} the true
+branch has $a_1=a_2$ and the false branch has $a_1<a_2\vee a_2<a_1$. For
+\code{y = a1 !== a2} the two branches are exchanged.
 \item[A comparison with \code{null} or \code{undefined}] The step is
 \code{y = }$\pi$\code{ === null} or \code{y = }$\pi$\code{ !== null}. One
 branch has $\pi\doteq\code{null}$ and the other has
@@ -1431,7 +1438,10 @@ has the facts of both false branches.
 \item[Any other test] Neither branch has a fact. This is the case of a
 boolean variable that none of the steps above bound, of a number, of a
 string, and of a comparison one of whose operands is not known to be a
-defined term.
+defined term. It is also the case of a \code{===} or \code{!==} whose
+operands are not both terms of the grammar, such as two object
+references, two strings or two booleans, other than the comparison with
+\code{null} or \code{undefined} above.
 \end{description}
 \noindent
 Example: let $i$ and $n$ be known to be defined. After
