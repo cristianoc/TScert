@@ -458,20 +458,18 @@ theorem array_native_post {ρ x s h h' ls ls'} (hs : (fieldsOf (ρ x)).lookup ar
 
 /-! ## Relies -/
 
-/-- The separation knowledge a density fact supplies about its own spine. -/
-def denseK (x : Nat) : SepKnowledge :=
-  { cl := denseClass x, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
+/-- The separation evidence a density fact supplies about its own spine. -/
+def denseK (x : Nat) : SepEvidence := { cl := denseClass x }
 
 theorem denseK_holds {x n ρ h} (hd : Dense x n ρ h) : (denseK x).Holds id ρ h :=
   ⟨dense_classOk hd, ⟨fun _ _ h => by simp [denseK] at h, fun _ _ h => by simp [denseK] at h⟩,
-    fun _ _ h => h, fun _ h => by simp [denseK] at h, fun _ h => by simp [denseK] at h,
-    fun _ h => by simp [denseK] at h⟩
+    fun _ _ h => h, fun _ h => by simp [denseK] at h, fun _ h => by simp [denseK] at h⟩
 
 /-- **The closed check of `map`'s bound is the stability check**, with the
-knowledge density gives about its own spine. -/
+evidence density gives about its own spine. -/
 theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed Φ = true) :
     stable (denseK x) (FactKind.dense x n).support Φ = true := by
-  simp only [stable, respects, SepKnowledge.query, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, List.all_eq_true]
+  simp only [stable, respects, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, List.all_eq_true]
   intro e he
   have := List.all_eq_true.mp hc e he
   simp only [Bool.or_eq_true, beq_iff_eq] at this
@@ -479,64 +477,70 @@ theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed �
   · rcases e with ⟨r, δ⟩
     simp only at hcls
     subst hcls
-    simp [SepKnowledge.apart, SepKnowledge.apart₁, SepKnowledge.otherClass, denseK, denseClass]
-    right; rfl
+    have hq : (denseK x).query.disjoint (.field x arraySpineKey) (.cls .values) = true :=
+      SepEvidence.query_field_class _ (c' := .spines) (by simp [denseK, denseClass]) rfl
+        (fun cl h => by simpa [SepEvidence.bound, Region.bound] using h)
+    simp only [hq, Bool.or_true]
   · simp [hle]
 
 /-- **A rely holds across a sequence of steps** each of whose footprints the
-stability check accepts for the fact, with knowledge holding where the step
-starts: the native's own steps and its callbacks alike. -/
+stability check accepts for the fact, from a well-formed state with
+evidence holding where the step starts: the native's own steps and its
+callbacks alike. -/
 theorem rely_chain {F : FactKind} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footprint)
-    (K : Nat → SepKnowledge) (μ : Nat → Nat → Nat) (m : Nat)
+    (K : Nat → SepEvidence) (μ : Nat → Nat → Nat) (m : Nat)
     (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ stable (K i) F.support (Φ i) = true ∧
-      (F.Holds ρ (H i) → (K i).Holds (μ i) ρ (H i)))
+      (F.Holds ρ (H i) → (K i).Holds (μ i) ρ (H i)) ∧ ∃ n W, HeapOk n W (H i) ∧ RootsOk W ρ)
     (h0 : F.Holds ρ (H 0)) : ∀ i, i ≤ m → F.Holds ρ (H i) := by
   intro i
   induction i with
   | zero => intro _; exact h0
   | succ i ih =>
     intro hi
-    obtain ⟨hp, hs, hk⟩ := hstep i (by omega)
+    obtain ⟨hp, hs, hk, n, W, hok, hρ⟩ := hstep i (by omega)
     have hF := ih (by omega)
-    exact FactKind.frame_step hs (hk hF) hp hF
+    exact FactKind.frame_step hs (hk hF) hok hρ hp hF
 
 /-- **`map`'s rely.** If the receiver is dense below its length at entry, and
 every step until the last presence test (callbacks and `map`'s own steps)
-has a footprint the closed check of `bound(dense)` accepts, the receiver is
-dense below that length at every test. -/
+starts at a well-formed state and has a footprint the closed check of
+`bound(dense)` accepts, the receiver is dense below that length at every
+test. -/
 theorem map_rely {x n : Nat} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footprint) (m : Nat)
-    (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ stableDenseClosed (Φ i) = true)
+    (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ stableDenseClosed (Φ i) = true ∧
+      ∃ n W, HeapOk n W (H i) ∧ RootsOk W ρ)
     (h0 : Dense x n ρ (H 0)) : ∀ i, i ≤ m → Dense x n ρ (H i) :=
   rely_chain (F := .dense x n) H Φ (fun _ => denseK x) (fun _ => id) m
-    (fun i hi => ⟨(hstep i hi).1, denseCheck_stable (hstep i hi).2, denseK_holds⟩) h0
+    (fun i hi => ⟨(hstep i hi).1, denseCheck_stable (hstep i hi).2.1, denseK_holds, (hstep i hi).2.2⟩) h0
 
-/-- No separation knowledge: what the elements fact's check needs, its
+/-- No separation evidence: what the elements fact's check needs, its
 support kept by every footprint it is checked under. -/
-def noSep : SepKnowledge :=
-  { cl := fun _ _ => none, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
+def noSep : SepEvidence := {}
 
 theorem noSep_holds (ρ : Env) (h : Heap) : noSep.Holds id ρ h :=
   ⟨fun _ _ _ _ h => by simp [noSep] at h, ⟨fun _ _ h => by simp [noSep] at h, fun _ _ h => by simp [noSep] at h⟩,
-    fun _ _ h => h, fun _ h => by simp [noSep] at h, fun _ h => by simp [noSep] at h,
-    fun _ h => by simp [noSep] at h⟩
+    fun _ _ h => h, fun _ h => by simp [noSep] at h, fun _ h => by simp [noSep] at h⟩
 
 /-- **The stable set for the elements fact**: a footprint keeping every
 location it names, the empty footprint among them, passes the stability
 check for it. -/
 theorem elemsCheck_stable {x : Nat} {R : CallEffects.ElemPred} {Φ : Footprint}
     (hc : Φ.all (·.2 == .keep) = true) : stable noSep (FactKind.elems x R).support Φ = true := by
-  simp only [stable, respects, SepKnowledge.query, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true,
+  simp only [stable, respects, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true,
     List.all_eq_true]
   have hk : ∀ f ∈ Φ, f.2 = .keep := fun f hf => by simpa using List.all_eq_true.mp hc f hf
   exact ⟨fun f hf => by simp [hk f hf, Change.le], fun f hf => by simp [hk f hf, Change.le]⟩
 
 /-- **`map`'s rely on the elements fact.** If the receiver's present elements
-satisfy `R` at entry, and every step until the last visit keeps every
-location it names, they satisfy `R` at every visit. -/
+satisfy `R` at entry, and every step until the last visit starts at a
+well-formed state and keeps every location it names, they satisfy `R` at
+every visit. -/
 theorem elems_rely {x : Nat} {R : CallEffects.ElemPred} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footprint)
-    (m : Nat) (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ (Φ i).all (·.2 == .keep) = true)
+    (m : Nat) (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ (Φ i).all (·.2 == .keep) = true ∧
+      ∃ n W, HeapOk n W (H i) ∧ RootsOk W ρ)
     (h0 : CallEffects.ElemsAt R (ρ x) (H 0)) : ∀ i, i ≤ m → CallEffects.ElemsAt R (ρ x) (H i) :=
   rely_chain (F := .elems x R) H Φ (fun _ => noSep) (fun _ => id) m
-    (fun i hi => ⟨(hstep i hi).1, elemsCheck_stable (hstep i hi).2, fun _ => noSep_holds ρ (H i)⟩) h0
+    (fun i hi => ⟨(hstep i hi).1, elemsCheck_stable (hstep i hi).2.1, fun _ => noSep_holds ρ (H i),
+      (hstep i hi).2.2⟩) h0
 
 end Verification.Footprints

@@ -452,13 +452,13 @@ theorem path_rigid_on (x : Nat) (p : List String) (k : PropKey) (δ : Change) (v
 /-! ## Entering the modality -/
 
 /-- **The tolerant frame theorem as a modal law**, for a fact kind: a fact
-whose support the effect respects, under knowledge holding at the state,
-holds after every action of the effect (`FactKind.frame_step`, an instance
-of `frame_step`). -/
-theorem tolerant_frame {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {μ : Nat → Nat} {ρ : Env}
+whose support the effect respects, under evidence holding at the state with
+valid roots, holds after every action of the effect (`FactKind.frame_step`,
+an instance of `frame_step`). -/
+theorem tolerant_frame {K : SepEvidence} {F : FactKind} {Φ : Footprint} {μ : Nat → Nat} {ρ : Env}
     {m : Nat} {s : IndexedHeap} (hc : stable K F.support Φ = true) (hK : K.Holds μ ρ s.h)
-    (hF : F.Holds ρ s.h) : Box Φ (fun ρ _ s => F.Holds ρ s.h) ρ m s :=
-  fun _ ha => FactKind.frame_step hc hK ha.2 hF
+    (hρ : RootsOk s.W ρ) (hF : F.Holds ρ s.h) : Box Φ (fun ρ _ s => F.Holds ρ s.h) ρ m s :=
+  fun _ ha => FactKind.frame_step hc hK s.ok hρ ha.2 hF
 
 open HeapKnowledge in
 /-- **An index fact a closed footprint's change keeps holds after every

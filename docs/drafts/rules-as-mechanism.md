@@ -230,13 +230,23 @@ state's knowledge separates them. `SepQuery.Sound` and the paper layer's
 `DisjointUnder` are stated over allocated locations, the ones `Post` and
 `Supported` constrain.
 
-The acceptance path decides disjointness by bounds with the query
-`boundQuery` (`RegionBounds.lean`), $`r \mathrel{\#} s`$ when
-$`\mathrm{bound}(r) \cap \mathrm{bound}(s) = \emptyset`$, sound by
-`Region.apart_of_bound` (`boundQuery_sound`); `knowledgeQuery` is
-`boundQuery` or a spine separation of the knowledge. Every pair a class
-answers, the part `inCls r c` of a region against `cls c'` with `c` and
-`c'` disjoint, it answers too (`boundQuery_inCls_cls`). It also separates a
+Disjointness is one check of separation evidence (`SepEvidence.query`,
+`SeparationEvidence.lean`, [separation queries](../FOOTPRINTS.md#separation-queries)):
+$`r \mathrel{\#} s`$ when the bounds of the two regions under the evidence
+hold no class in common (a field's bound narrowed by its class evidence),
+by freshness against the stamps, or by a separation fact whose sites are the
+two regions': a spine separation, an apartness of two arrays, two different
+field locations. It is sound at a well-formed state where the evidence holds
+(`SepEvidence.query_sound`). `knowledgeQuery` is the check of the evidence
+a state's knowledge holds, its index facts' separations and its
+allocations' (`HeapSeparation`) among them; the stability check of the
+fact kinds (`stable`, `FootprintStability.lean`) is the check of the
+evidence its caller gives. Every pair a class answers, the part `inCls r c`
+of a region against `cls c'` with `c` and `c'` disjoint, the bounds answer
+too (`boundQuery_inCls_cls`), and the check answers every pair any of its
+parts answers (`SepEvidence.query_of_bound`, `query_inCls_left`,
+`query_field_class`, `query_fresh`, `query_locs`, `query_spines`,
+`query_pathCells_field`, `query_pathCells_cls`). The bounds also separate a
 field or a cell from an array or view spine and from an element cell: the
 pipeline case `field-index-kept-by-role` keeps `cursor.at < flags.length`
 across a call whose stated effect changes the spine of another array,

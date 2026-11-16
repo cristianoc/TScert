@@ -175,10 +175,10 @@ transition is admissible and meets $`C`$ and $`\mathrm{Post}(\Phi)`$, and
 $`P`$ holds at $`h`$, then $`P`$ holds at $`h'`$. Its modal form
 (`frame_box`): where $`C`$ holds of every action of $`\Phi`$ from a state of
 an assertion $`K`$ and $`q`$ is sound at every state of $`K`$,
-$`K \wedge P \vdash \Box_\Phi P`$. Separation knowledge (`SepKnowledge`: class
-evidence, provenance stamps, distinct pairs) is one sound query
-(`SepKnowledge.query_sound`), and the five fact kinds' supports below are
-supports in every context (`FactKind.supports`).
+$`K \wedge P \vdash \Box_\Phi P`$. Separation evidence answers one query,
+sound at a well-formed state ([separation queries](#separation-queries)),
+and the five fact kinds' supports below are supports in every context
+(`FactKind.supports`).
 
 ### Supports of index facts
 
@@ -253,30 +253,51 @@ sound.
 
 ### Separation queries
 
-The query a state's knowledge $`\Sigma`$ answers (`knowledgeQuery`, proved
-sound wherever $`\Sigma`$ holds at a heap meeting its world, `HeapOk`, with
-valid roots, `RootsOk`: `knowledgeQuery_sound`; the acceptance path reaches
-every use with both, the expression checkers' soundness, `Checker.sound`,
-and a node's, `ExpressionOk`, carrying the environment's `RootsOk`):
+Two regions are disjoint by one check (`SepEvidence.query`,
+`Semantics/SeparationEvidence.lean`) of a state's **separation evidence**:
+class evidence of fields, provenance stamps against marks, links, and
+separation facts. It is proved sound wherever the evidence holds at a heap
+meeting its world, `HeapOk`, with valid roots, `RootsOk`
+(`SepEvidence.query_sound`). Two regions are disjoint
 
-- **by bounds** (`boundQuery`): the bounds of the two regions hold no role
-  class in common. A region's bound (`Region.bound`) is a set of the role
-  classes field, cell, element cell, array spine, view spine and identity
-  holding the role of each of its allocated locations at a heap meeting
-  its world with valid roots (proved: `Region.bound_sound`,
-  `Region.apart_of_bound`). It answers each pair of a region's part in one
-  class and a class region of a disjoint selector
+- **by bounds**: the bounds of the two regions under the evidence hold no
+  role class in common. A region's bound (`Region.bound`) is a set of the
+  role classes field, cell, element cell, array spine, view spine and
+  identity holding the role of each of its allocated locations at a heap
+  meeting its world with valid roots (proved: `Region.bound_sound`,
+  `Region.apart_of_bound`); a field's bound under the evidence is narrowed
+  to the classes of the category its class evidence gives
+  (`SepEvidence.bound`). The bounds answer each pair of a region's part in
+  one class and a class region of a disjoint selector
   (`boundQuery_inCls_cls`), and a field or cell against a spine or an
   element cell;
-- **by a spine separation**: each region lies in the spine of the value a
-  path reads, $`x.\pi`$ and $`y.\pi'`$ (`spineSite`), and an unconditional
-  fact of $`\Sigma`$ states two paths' values' spines different, each path
-  naming the same value as one of the two up to $`\Sigma`$'s links
-  (`pathViews`, `sameSite`). The facts that state it (`factSeps`): a spine
-  separation $`P \mathrel{\#} Q`$, a region fact $`\mathrm{apart}(a, b)`$, and
-  either guarded by $`z = \overline g`$ where one of its paths starts at an
-  alias of $`z`$ (a tag's value reads no object, so that path selects no
-  spine).
+- **by freshness**, $`\mathrm{fresh}(r)`$: every own location of the value
+  one region reads lies at or above a mark, and the other is a typed field
+  of a slot whose typed fields lie below a mark no later
+  (`SepEvidence.fresh`);
+- **by a separation fact** (`SepFact`) whose sites are those of the two
+  regions, either way round: a spine separation
+  $`\pi \mathrel{\#} \pi'`$ for two regions within the `[]` slots of the
+  values two paths read (`spineSite`); an apartness $`\mathrm{apart}(x, y)`$
+  for two regions within the arrays, spine or cells, two paths read
+  (`arraySite`; `RegionsApart`); and two different field locations, the
+  separation an allocation states (`HeapSeparation`), for two regions within
+  the fields of two slots (`fieldSite`). Each path names the same value as
+  the fact's up to the links (`pathViews`, `sameSite`, `slotsOf`).
+
+The query a state's knowledge $`\Sigma`$ answers (`knowledgeQuery`) is
+this check of the evidence $`\Sigma`$ holds (`knowledgeEvidence`): its
+links, the separations of its unconditional facts (`factSeps`: a spine
+separation $`P \mathrel{\#} Q`$, a region fact $`\mathrm{apart}(a, b)`$, and
+either guarded by $`z = \overline g`$ where one of its paths starts at an
+alias of $`z`$, a tag's value reading no object, so that path selects no
+location), and the separations of its allocations (`separationFacts`). It
+is sound wherever $`\Sigma`$ holds at a well-formed state
+(`knowledgeQuery_sound`); the acceptance path reaches every use with both
+premises, the expression checkers' soundness, `Checker.sound`, and a
+node's, `ExpressionOk`, carrying the environment's `RootsOk`. The
+stability check of the fact kinds is the same check of the evidence its
+caller gives (`stable`).
 
 A path's **views** are the paths reading the same value by alias and read
 links: $`x.f\pi`$ reads what $`y.\pi`$ reads where a read link of an alias of

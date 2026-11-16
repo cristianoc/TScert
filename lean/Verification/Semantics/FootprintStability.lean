@@ -1,19 +1,17 @@
-import Verification.Semantics.FootprintProvenance
-import Verification.Semantics.HeapLinks
-import Verification.Semantics.Support
+import Verification.Semantics.SeparationEvidence
 
 /-! # The stability check
 
 A **fact kind** has a meaning at a heap and a **support**: the regions it
 reads, each with the largest change it tolerates. Its support lemma says that
 it survives every change within its support. **Separation** of a support
-region from a footprint region is derived from three sources of knowledge:
-the class of a field's contents, provenance stamps, and distinct pairs. The
+region from a footprint region is the one disjointness check of separation
+evidence (`SepEvidence.query`, `Semantics/SeparationEvidence.lean`). The
 **stability check** of a fact under a footprint accepts when every footprint
 entry either changes the support's regions within their tolerance or is
 apart from them; its soundness theorem gives the support's premise from the
-footprint's postcondition, and the **frame** keeps exactly the facts that
-pass it. -/
+footprint's postcondition at a well-formed state, and the **frame** keeps
+exactly the facts that pass it. -/
 namespace Verification.Footprints
 
 /-! ## Fact kinds -/
@@ -121,188 +119,11 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
         simp only [Change.Holds] at hk
         exact ⟨flds, c, oid, l, hx, hl, by rw [← hk]; exact hv'⟩
 
-/-! ## Separation -/
-
-/-- What separation may use: the class of fields' contents, provenance
-stamps, and distinct field pairs; the paths whose spine location differs from
-a slot's spine location (`spineApart`, the chain1 `SpineApart`), and the
-paths whose spine lists only cells holding no spine (`elemsValue`). -/
-structure SepKnowledge where
-  cl : ClassEvidence
-  stamps : Stamps
-  typed : Nat → List PropKey
-  distinct : List (Nat × PropKey × Nat × PropKey)
-  spineApart : List (Nat × List String × Nat) := []
-  elemsValue : List (Nat × List String) := []
-
-def SepKnowledge.Holds (K : SepKnowledge) (μ : Nat → Nat) (ρ : Env) (h : Heap) : Prop :=
-  ClassOk K.cl ρ h ∧ StampsHold K.stamps K.typed μ ρ ∧ (∀ i j, i ≤ j → μ i ≤ μ j) ∧
-    (∀ d ∈ K.distinct, ∀ l l', (fieldsOf (ρ d.1)).lookup d.2.1 = some l →
-      (fieldsOf (ρ d.2.2.1)).lookup d.2.2.2 = some l' → l ≠ l') ∧
-    (∀ a ∈ K.spineApart, ∀ l, (Region.path a.1 a.2.1 arraySpineKey).mem ρ h l = true →
-      (Region.field a.2.2 arraySpineKey).mem ρ h l = false) ∧
-    (∀ a ∈ K.elemsValue, ∀ l, (Region.pathCells a.1 a.2).mem ρ h l = true →
-      (Region.cls .values).mem ρ h l = true)
-
-/-- Own locations of `x` against typed field `k` of `y`, by stamps. -/
-def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool :=
-  (K.typed y).contains k && match K.stamps.after x, K.stamps.before y with
-    | some m, some m' => decide (m' ≤ m)
-    | _, _ => false
-
-def SepKnowledge.linked (K : SepKnowledge) (x : Nat) (k : PropKey) (y : Nat) (k' : PropKey) : Bool :=
-  K.distinct.contains (x, k, y, k') || K.distinct.contains (y, k', x, k)
-
-/-- Whether a field's location lies, by class evidence, in a class region
-disjoint from that of `c`. -/
-def SepKnowledge.otherClass (K : SepKnowledge) (x : Nat) (k : PropKey) (c : Selector) : Bool :=
-  match K.cl x k with
-  | some c' => c'.disjoint c
-  | none => false
-
-/-- One orientation of separation. -/
-def SepKnowledge.apart₁ (K : SepKnowledge) : Region → Region → Bool
-  | .field x k, .cls c => K.otherClass x k c
-  | .field x k, .field y k' => K.provenance x y k' || K.provenance y x k || K.linked x k y k'
-  | .fields x, .field y k' => K.provenance x y k'
-  | .field x k, .cell _ => K.otherClass x k .values
-  | .field x k, .inCls _ c => K.otherClass x k c
-  | .path x p k, .field y k' => k == arraySpineKey && k' == arraySpineKey &&
-      K.spineApart.contains (x, p, y)
-  | .pathCells x p, .field y k => K.elemsValue.contains (x, p) && K.cl y k == some .spines
-  | .pathCells x p, .cls c => K.elemsValue.contains (x, p) && Selector.values.disjoint c
-  | .inCls _ c, .cls c' => c.disjoint c'
-  | .inCls r _, s => K.apart₁ r s
-  | _, _ => false
-
-def SepKnowledge.apart (K : SepKnowledge) (r s : Region) : Bool := K.apart₁ r s || K.apart₁ s r
-
-private theorem cls_disjoint {c c' : Selector} (hd : c.disjoint c' = true) {v : Val}
-    (h₁ : c.selects v = true) (h₂ : c'.selects v = true) : False := by
-  rw [Selector.selects_disjoint hd h₁] at h₂; cases h₂
-
-private theorem provenance_sound {K : SepKnowledge} {μ ρ h x y k l l'} (hK : K.Holds μ ρ h)
-    (hp : K.provenance x y k = true) (hl : l ∈ (fieldsOf (ρ x)).map Prod.snd)
-    (hl' : (fieldsOf (ρ y)).lookup k = some l') : l ≠ l' := by
-  simp only [SepKnowledge.provenance, Bool.and_eq_true, List.contains_iff_mem] at hp
-  obtain ⟨hk, hm⟩ := hp
-  cases ha : K.stamps.after x with
-  | none => simp [ha] at hm
-  | some m =>
-    cases hb : K.stamps.before y with
-    | none => simp [ha, hb] at hm
-    | some m' =>
-      simp only [ha, hb, decide_eq_true_eq] at hm
-      exact stamps_separate (r := .fields x) (h := h) hK.2.1 hK.2.2.1 ha hb hm (.inr rfl)
-        (by simpa [Region.mem] using hl) hk hl'
-
-/-- A field whose contents have, by class evidence, a class other than `c`
-holds no contents of class `c`. -/
-private theorem otherClass_sound {K : SepKnowledge} {μ ρ h x k c l} (hK : K.Holds μ ρ h)
-    (ho : K.otherClass x k c = true) (hr : (Region.field x k).mem ρ h l = true)
-    (hs : (Region.cls c).mem ρ h l = true) : False := by
-  unfold SepKnowledge.otherClass at ho
-  cases hc : K.cl x k with
-  | none => simp [hc] at ho
-  | some c' =>
-    simp only [hc] at ho
-    simp only [Region.mem, beq_iff_eq] at hr
-    simp only [Region.mem] at hs
-    split at hs
-    · rename_i v hv
-      have hlt := (List.getElem?_eq_some_iff.mp hv).1
-      have hc' := hK.1 x k c' l hc hr hlt
-      simp only [Region.mem, hv] at hc'
-      exact cls_disjoint ho hc' hs
-    · cases hs
-
-private theorem inCls_cls {ρ h r c l} (hm : (Region.inCls r c).mem ρ h l = true) :
-    r.mem ρ h l = true ∧ (Region.cls c).mem ρ h l = true := by
-  simp only [Region.mem, Bool.and_eq_true] at hm
-  exact ⟨hm.1, by simpa [Region.mem] using hm.2⟩
-
-private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ ρ h) :
-    ∀ {r s : Region}, K.apart₁ r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False := by
-  intro r
-  induction r with
-  | inCls r c ih =>
-    intro s ha hr hs
-    obtain ⟨hr, hc⟩ := inCls_cls hr
-    cases s
-    case cls c' =>
-      simp only [SepKnowledge.apart₁] at ha
-      simp only [Region.mem] at hc hs
-      split at hc
-      · rename_i v hv; rw [hv] at hs; exact cls_disjoint ha hc hs
-      · cases hc
-    all_goals exact ih (by simpa [SepKnowledge.apart₁] using ha) hr hs
-  | field x k =>
-    intro s ha hr hs
-    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
-    case cls c => exact otherClass_sound hK ha hr hs
-    case cell b => exact otherClass_sound hK ha hr (by simpa [Region.mem] using hs)
-    case inCls r c => exact otherClass_sound hK ha hr (inCls_cls hs).2
-    case field y k' =>
-      simp only [Bool.or_eq_true] at ha
-      simp only [Region.mem, beq_iff_eq] at hr hs
-      rcases ha with (ha | ha) | ha
-      · exact provenance_sound hK ha (lookup_mem_snd hr) hs rfl
-      · exact provenance_sound hK ha (lookup_mem_snd hs) hr rfl
-      · simp only [SepKnowledge.linked, Bool.or_eq_true, List.contains_iff_mem] at ha
-        rcases ha with ha | ha
-        · exact hK.2.2.2.1 _ ha l l hr hs rfl
-        · exact hK.2.2.2.1 _ ha l l hs hr rfl
-  | fields x =>
-    intro s ha hr hs
-    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
-    case field y k' =>
-      simp only [Region.mem, beq_iff_eq] at hs
-      exact provenance_sound hK ha (by simpa [Region.mem] using hr) hs rfl
-  | path x p k =>
-    intro s ha hr hs
-    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
-    case field y k' =>
-      simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at ha
-      obtain ⟨⟨rfl, rfl⟩, ha⟩ := ha
-      have := hK.2.2.2.2.1 _ ha l hr
-      rw [hs] at this; cases this
-  | pathCells x p =>
-    intro s ha hr hs
-    have hv := fun hm => hK.2.2.2.2.2 (x, p) hm l hr
-    cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
-    case field y k =>
-      simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at ha
-      exact otherClass_sound (c := .values) hK (by simp [SepKnowledge.otherClass, ha.2]; rfl) hs (hv ha.1)
-    case cls c =>
-      simp only [Bool.and_eq_true, List.contains_iff_mem] at ha
-      have h₁ := hv ha.1
-      simp only [Region.mem] at h₁ hs
-      split at h₁
-      · rename_i v hv'; rw [hv'] at hs; exact cls_disjoint ha.2 h₁ hs
-      · cases h₁
-  | cells | cls | all | pathFields | cell | spine =>
-    intro s ha
-    simp [SepKnowledge.apart₁] at ha
-
-/-- **Separation is sound**: apart regions share no location. -/
-theorem Sep.sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
-    (ha : K.apart r s = true) (hr : r.mem ρ h l = true) (hs : s.mem ρ h l = true) : False := by
-  simp only [SepKnowledge.apart, Bool.or_eq_true] at ha
-  rcases ha with ha | ha
-  · exact apart₁_sound hK ha hr hs
-  · exact apart₁_sound hK ha hs hr
-
 /-! ## The tolerant frame
 
 The note's Theorem *Tolerant frame* is `frame_step` (`Semantics/Support.lean`),
 over any assertion (FOOTPRINTS.md, "Support and respect"); the fact kinds and
 the stability check below are its instances. -/
-
-/-- Separation knowledge answers a query (`Sep.sound`). -/
-def SepKnowledge.query (K : SepKnowledge) : SepQuery := ⟨K.apart⟩
-
-theorem SepKnowledge.query_sound {K : SepKnowledge} {μ ρ h} (hK : K.Holds μ ρ h) : K.query.Sound ρ h :=
-  fun _ _ _ _ hd hr hs => Sep.sound hK hd hr hs
 
 /-- Each fact kind's support supports it, in every context
 (`FactKind.support_sound`). -/
@@ -311,29 +132,32 @@ theorem FactKind.supports (F : FactKind) : Supports (fun _ _ _ => True) F.Holds 
 
 /-! ## The check and the frame -/
 
-/-- **The stability check**: respect under separation knowledge. -/
-def stable (K : SepKnowledge) (S Φ : Footprint) : Bool := respects K.query S Φ
+/-- **The stability check**: respect under the one disjointness check of
+separation evidence. -/
+def stable (K : SepEvidence) (S Φ : Footprint) : Bool := respects K.query S Φ
 
-theorem stable_sound {K : SepKnowledge} {S Φ μ ρ h h'} (hc : stable K S Φ = true)
-    (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' :=
-  respect_sound (q := K.query) hc (SepKnowledge.query_sound hK) hp
+theorem stable_sound {K : SepEvidence} {S Φ μ ρ h h'} {n : Nat} {W : WorldT n} (hc : stable K S Φ = true)
+    (hK : K.Holds μ ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ) (hp : Post Φ ρ h h') : Supported S ρ h h' :=
+  respect_sound (q := K.query) hc (SepEvidence.query_sound hK hok hρ) hp
 
 /-- **A fact kind the stability check keeps holds after the transition**
-(`frame_step`, `FactKind.supports`). -/
-theorem FactKind.frame_step {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {μ ρ h h'}
-    (hc : stable K F.support Φ = true) (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') (hF : F.Holds ρ h) :
-    F.Holds ρ h' :=
-  Footprints.frame_step (D := heaps) (m := 0) F.supports hc (SepKnowledge.query_sound hK) hp trivial trivial hF
+from a well-formed state (`frame_step`, `FactKind.supports`). -/
+theorem FactKind.frame_step {K : SepEvidence} {F : FactKind} {Φ : Footprint} {μ ρ h h'} {n : Nat}
+    {W : WorldT n} (hc : stable K F.support Φ = true) (hK : K.Holds μ ρ h) (hok : HeapOk n W h)
+    (hρ : RootsOk W ρ) (hp : Post Φ ρ h h') (hF : F.Holds ρ h) : F.Holds ρ h' :=
+  Footprints.frame_step (D := heaps) (m := 0) F.supports hc (SepEvidence.query_sound hK hok hρ) hp trivial
+    trivial hF
 
 /-- The facts the check keeps across a footprint. -/
-def frame (K : SepKnowledge) (fs : List FactKind) (Φ : Footprint) : List FactKind :=
+def frame (K : SepEvidence) (fs : List FactKind) (Φ : Footprint) : List FactKind :=
   fs.filter fun F => stable K F.support Φ
 
-theorem frame_sound {K : SepKnowledge} {fs Φ μ ρ h h'} (hK : K.Holds μ ρ h)
-    (hf : ∀ F ∈ fs, F.Holds ρ h) (hp : Post Φ ρ h h') : ∀ F ∈ frame K fs Φ, F.Holds ρ h' := by
+theorem frame_sound {K : SepEvidence} {fs Φ μ ρ h h'} {n : Nat} {W : WorldT n} (hK : K.Holds μ ρ h)
+    (hok : HeapOk n W h) (hρ : RootsOk W ρ) (hf : ∀ F ∈ fs, F.Holds ρ h) (hp : Post Φ ρ h h') :
+    ∀ F ∈ frame K fs Φ, F.Holds ρ h' := by
   intro F hF
   obtain ⟨hm, hs⟩ := List.mem_filter.mp hF
-  exact FactKind.frame_step hs hK hp (hf F hm)
+  exact FactKind.frame_step hs hK hok hρ hp (hf F hm)
 
 /-! ## A callee's frame at the caller's slots -/
 
@@ -353,12 +177,12 @@ theorem Post.rename {Φ : Footprint} {σ : Nat → Nat} {ρ env : Env} {h h' : H
 /-- **Keeping a fact across a call.** A call meeting its frame at its
 positions' values, each the value of a caller slot, keeps every fact whose
 support passes the stability check against the renamed frame under the
-caller's separation knowledge. -/
-theorem keep_across_call {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {σ : Nat → Nat}
-    {μ : Nat → Nat} {ρ env : Env} {h h' : Heap}
-    (hσ : ∀ i, ρ (σ i) = env i) (hp : Post Φ env h h') (hK : K.Holds μ ρ h)
-    (hs : stable K F.support (Φ.rename σ) = true) (hF : F.Holds ρ h) : F.Holds ρ h' :=
-  FactKind.frame_step hs hK (Post.rename hσ hp) hF
+caller's separation evidence, at a well-formed state. -/
+theorem keep_across_call {K : SepEvidence} {F : FactKind} {Φ : Footprint} {σ : Nat → Nat}
+    {μ : Nat → Nat} {ρ env : Env} {h h' : Heap} {n : Nat} {W : WorldT n}
+    (hσ : ∀ i, ρ (σ i) = env i) (hp : Post Φ env h h') (hK : K.Holds μ ρ h) (hok : HeapOk n W h)
+    (hρ : RootsOk W ρ) (hs : stable K F.support (Φ.rename σ) = true) (hF : F.Holds ρ h) : F.Holds ρ h' :=
+  FactKind.frame_step hs hK hok hρ (Post.rename hσ hp) hF
 
 /-- The class evidence a density fact supplies: its spine holds a spine. -/
 def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arraySpineKey then some .spines else none

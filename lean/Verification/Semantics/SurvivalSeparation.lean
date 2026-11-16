@@ -1,105 +1,52 @@
 import Verification.Semantics.Survival
 import Verification.Semantics.HeapKnowledge
-import Verification.Semantics.RegionBounds
 
 /-! # Separation queries from knowledge
 
 The separation query a state's knowledge answers (FOOTPRINTS.md, "Separation
-queries"): two regions are disjoint by their bounds (`boundQuery`: no role
-class of a location in both, `Semantics/RegionBounds.lean`), or each selects the spine of
-the value a path reads, and an unconditional fact of the knowledge states
-those two values' spines different. A path is read up to the knowledge's
-alias links and read links (`pathViews`): every view of it reads the same
-value. The query is built from the prestate's knowledge and is sound where
-that knowledge holds (`knowledgeQuery_sound`). -/
+queries") is the one disjointness check (`SepEvidence.query`,
+`Semantics/SeparationEvidence.lean`) of the evidence the knowledge holds: its
+links, which read a path up to aliases and read links; the separations its
+unconditional facts state, a spine separation of two paths and a region
+fact of two arrays; and the separations its allocations state
+(`HeapSeparation`). The query is built from the prestate's knowledge and is
+sound where that knowledge holds, at a well-formed state
+(`knowledgeQuery_sound`). -/
 namespace Verification.Footprints
 open HeapKnowledge
 
-/-! ## Views of a path -/
-
-/-- The paths that read what the path `p` from slot `x` reads, by the
-knowledge's links: the path itself, and for a first field `f` that a
-non-optional read link from an alias of `x` reads into a slot `y`, the views
-of the rest from `y`. -/
-def pathViews (ls : HeapLinks.Links) : Nat → List String → List (Nat × List String)
-  | x, [] => [(x, [])]
-  | x, f :: q => (x, f :: q) :: ls.flatMap fun g =>
-      if !g.alias && !g.optional && g.field == .str f && (HeapLinks.aliases ls x).contains g.cell
-      then pathViews ls g.value q else []
-
-/-- **Every view of a path reads what it reads.** -/
-theorem pathViews_read {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h) :
-    ∀ (p : List String) (x : Nat) {z : Nat} {r : List String}, (z, r) ∈ pathViews ls x p →
-      readPath h (ρ z) r = readPath h (ρ x) p := by
-  intro p
-  induction p with
-  | nil => intro x z r hm; simp only [pathViews, List.mem_singleton, Prod.mk.injEq] at hm; obtain ⟨rfl, rfl⟩ := hm; rfl
-  | cons f q ih =>
-    intro x z r hm
-    simp only [pathViews, List.mem_cons, Prod.mk.injEq, List.mem_flatMap] at hm
-    rcases hm with ⟨rfl, rfl⟩ | ⟨g, hg, hm⟩
-    · rfl
-    · split at hm
-      · rename_i hc
-        simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.contains_iff_mem] at hc
-        obtain ⟨⟨⟨ha, ho⟩, hf⟩, hal⟩ := hc
-        rw [ih g.value hm]
-        have hx : ρ g.cell = ρ x := HeapLinks.aliases_eq hl hal
-        have hlink := hl g hg
-        simp only [ha, ho, Bool.false_eq_true, if_false] at hlink
-        obtain ⟨flds, c, oid, l, hobj, hlook, hv⟩ := hlink
-        rw [← hx, hobj]
-        simp only [readPath]
-        rw [hf] at hlook
-        simp [hlook, hv]
-      · cases hm
-
-/-- Two paths name the same site where a view of one is a view of the other
-up to an alias of its root. -/
-def sameSite (ls : HeapLinks.Links) (X A : List (Nat × List String)) : Bool :=
-  X.any fun x => A.any fun a => x.2 == a.2 && (HeapLinks.aliases ls x.1).contains a.1
-
-theorem sameSite_read {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
-    {x a : Nat} {p q : List String} (hs : sameSite ls (pathViews ls x p) (pathViews ls a q) = true) :
-    readPath h (ρ x) p = readPath h (ρ a) q := by
-  obtain ⟨⟨z, r⟩, hz, hm⟩ := List.any_eq_true.mp hs
-  obtain ⟨⟨w, r'⟩, hw, hm⟩ := List.any_eq_true.mp hm
-  simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hm
-  obtain ⟨rfl, hal⟩ := hm
-  rw [← pathViews_read hl p x hz, ← pathViews_read hl q a hw, HeapLinks.aliases_eq hl hal]
-
 /-! ## Spine separations the knowledge states -/
 
-/-- A separation the knowledge states: the spines of the values the two
-paths read differ, or one of the paths selects no spine. -/
-structure SpineSep where
-  a : Nat × List String
-  b : Nat × List String
+/-- The sites a separation fact names, when it names two. -/
+def SepFact.sites : SepFact → Option ((Nat × List String) × (Nat × List String))
+  | .spines a b | .arrays a b => some (a, b)
+  | .locs .. => none
 
-/-- The two paths' values hold different spines. -/
-def SpineSep.Holds (e : SpineSep) (ρ : Env) (h : Heap) : Prop :=
-  ∀ u w l, readPath h (ρ e.a.1) e.a.2 = some u → readPath h (ρ e.b.1) e.b.2 = some w →
-    spineOf u = some l → spineOf w = some l → False
-
-/-- The separations an unconditional fact states: a spine separation, a
-region fact (its two values' spines), and either guarded by a slot's value
-being a guard's tag where one of its paths starts at that slot: there it
-reads no object, so it selects no spine. -/
-def factSeps (ls : HeapLinks.Links) : IndexFact → List SpineSep
-  | .spineApart a p b q => [⟨(a, p), (b, q)⟩]
-  | .apart a b => [⟨(a, []), (b, [])⟩]
-  | .guarded g [] _ B => (factSeps ls B).filter fun e =>
-      (HeapLinks.aliases ls g).contains e.a.1 || (HeapLinks.aliases ls g).contains e.b.1
+/-- The separations an unconditional fact states: a spine separation
+($`\pi \mathrel{\#} \pi'`$), a region fact ($`\mathrm{apart}(x, y)`$), and
+either guarded by a slot's value being a guard's tag where one of its paths
+starts at that slot: there it reads no object, so it selects no location. -/
+def factSeps (ls : HeapLinks.Links) : IndexFact → List SepFact
+  | .spineApart a p b q => [.spines (a, p) (b, q)]
+  | .apart a b => [.arrays (a, []) (b, [])]
+  | .guarded g [] _ B => (factSeps ls B).filter fun e => match e.sites with
+    | some (a, b) => (HeapLinks.aliases ls g).contains a.1 || (HeapLinks.aliases ls g).contains b.1
+    | none => false
   | _ => []
 
-private theorem tag_reads_none {t : GuardTag} {h : Heap} {p : List String} {u : Val} {l : Nat}
-    (hu : readPath h t.val p = some u) (hl : spineOf u = some l) : False := by
+/-- A guard's tag is no object: a path from it reads the tag itself. -/
+private theorem tag_reads {t : GuardTag} {h : Heap} {p : List String} {u : Val}
+    (hu : readPath h t.val p = some u) : u = t.val := by
   cases p with
-  | nil =>
-    simp only [readPath, Option.some.injEq] at hu
-    subst hu
-    cases t <;> simp [GuardTag.val, spineOf, fieldsOf] at hl
+  | nil => simp only [readPath, Option.some.injEq] at hu; exact hu.symm
   | cons f q => cases t <;> simp [GuardTag.val, readPath] at hu
+
+private theorem tag_spine (t : GuardTag) : spineOf t.val = none := by
+  cases t <;> simp [GuardTag.val, spineOf, fieldsOf]
+
+private theorem tag_array {t : GuardTag} {h : Heap} {l : Nat} (ha : ArrayPart h t.val l) : False := by
+  rcases ha with ha | ha <;> cases t <;>
+    simp [GuardTag.val, elementsOf, spineCells, entriesAt, descriptorSpine, fieldsOf] at ha
 
 theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h) :
     ∀ (F : IndexFact), F.HoldsAt ε ρ h → ∀ e ∈ factSeps ls F, e.Holds ρ h := by
@@ -118,29 +65,43 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
     intro hF e he
     simp only [factSeps, List.mem_singleton] at he
     subst he
-    intro u w l hu hw hsu hsw
+    intro u w l hu hw hpu hpw hul hwl
     simp only [readPath, Option.some.injEq] at hu hw
     subst hu; subst hw
-    exact regionsApart_spines hF l l hsu hsw rfl
+    exact regionsApart_arrays hF hpu hpw hul hwl
   | guarded g p tag B ih =>
     intro hF e he
     cases p with
     | cons _ _ => simp [factSeps] at he
     | nil =>
-      simp only [factSeps, List.mem_filter, Bool.or_eq_true, List.contains_iff_mem] at he
+      simp only [factSeps, List.mem_filter] at he
       obtain ⟨he, hroot⟩ := he
       obtain ⟨v, hv, hor⟩ := hF
       simp only [readGuard, Option.some.injEq] at hv
       rcases hor with htag | hB
-      · intro u w l hu hw hsu hsw
-        rcases hroot with hr | hr
-        · rw [HeapLinks.aliases_eq hl hr, hv, htag] at hu; exact tag_reads_none hu hsu
-        · rw [HeapLinks.aliases_eq hl hr, hv, htag] at hw; exact tag_reads_none hw hsw
+      · have tagAt : ∀ {z : Nat}, z ∈ HeapLinks.aliases ls g → ∀ {q : List String} {u : Val},
+            readPath h (ρ z) q = some u → u = tag.val := by
+          intro z hz q u hu
+          rw [HeapLinks.aliases_eq hl hz, hv, htag] at hu; exact tag_reads hu
+        cases e with
+        | spines a b =>
+          simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
+          intro u w l hu hw hsu hsw
+          rcases hroot with hr | hr
+          · rw [tagAt hr hu, tag_spine] at hsu; cases hsu
+          · rw [tagAt hr hw, tag_spine] at hsw; cases hsw
+        | arrays a b =>
+          simp only [SepFact.sites, Bool.or_eq_true, List.contains_iff_mem] at hroot
+          intro u w l hu hw _ _ hul hwl
+          rcases hroot with hr | hr
+          · rw [tagAt hr hu] at hul; exact tag_array hul
+          · rw [tagAt hr hw] at hwl; exact tag_array hwl
+        | locs => simp [SepFact.sites] at hroot
       · exact ih hB e he
   | _ => intro _ e he; simp [factSeps] at he
 
 /-- The separations of a state's unconditional facts. -/
-def knowledgeSeps (k : Knowledge) : List SpineSep :=
+def knowledgeSeps (k : Knowledge) : List SepFact :=
   k.indices.flatMap fun a => if a.cond.isNone then factSeps k.links a.fact else []
 
 theorem knowledgeSeps_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
@@ -156,88 +117,54 @@ theorem knowledgeSeps_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnow
 
 /-! ## The query -/
 
-/-- The spine site a region selects within: the spine of the value a path
-reads. -/
-def spineSite : Region → Option (Nat × List String)
-  | .path x p k => if k == arraySpineKey then some (x, p) else none
-  | .field x k => if k == arraySpineKey then some (x, []) else none
-  | .inCls r _ => spineSite r
-  | _ => none
+/-- **The separation evidence a state's knowledge holds**: its links, the
+separations of its unconditional facts, and those of its allocations
+(`HeapSeparation`). -/
+def knowledgeEvidence (k : Knowledge) : SepEvidence :=
+  { links := k.links, facts := knowledgeSeps k ++ separationFacts k.separation }
 
-theorem spineSite_mem {ρ : Env} {h : Heap} {l : Nat} :
-    ∀ {r : Region} {x : Nat} {p : List String}, spineSite r = some (x, p) → r.mem ρ h l = true →
-      ∃ u, readPath h (ρ x) p = some u ∧ spineOf u = some l := by
-  intro r
-  induction r with
-  | path y q k =>
-    intro x p hs hm
-    simp only [spineSite] at hs
-    split at hs
-    · rename_i hk
-      simp only [Option.some.injEq, Prod.mk.injEq] at hs
-      obtain ⟨rfl, rfl⟩ := hs
-      simp only [beq_iff_eq] at hk
-      subst hk
-      simp only [Region.mem] at hm
-      split at hm
-      · rename_i u hu; exact ⟨u, hu, by simpa [spineOf] using hm⟩
-      · cases hm
-    · cases hs
-  | field y k =>
-    intro x p hs hm
-    simp only [spineSite] at hs
-    split at hs
-    · rename_i hk
-      simp only [Option.some.injEq, Prod.mk.injEq] at hs
-      obtain ⟨rfl, rfl⟩ := hs
-      simp only [beq_iff_eq] at hk
-      subst hk
-      exact ⟨_, rfl, by simpa [Region.mem, spineOf] using hm⟩
-    · cases hs
-  | inCls r c ih =>
-    intro x p hs hm
-    simp only [Region.mem, Bool.and_eq_true] at hm
-    exact ih hs hm.1
-  | _ => intro x p hs; simp [spineSite] at hs
+theorem knowledgeEvidence_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
+    (knowledgeEvidence k).Holds id ρ h := by
+  refine ⟨fun _ _ _ _ hc => by simp [knowledgeEvidence] at hc,
+    ⟨fun _ _ hc => by simp [knowledgeEvidence] at hc, fun _ _ hc => by simp [knowledgeEvidence] at hc⟩,
+    fun _ _ hij => hij, hk.2.2.1, fun e he => ?_⟩
+  simp only [knowledgeEvidence, List.mem_append] at he
+  rcases he with he | he
+  · exact knowledgeSeps_holds hk e he
+  · exact separationFacts_holds hk.2.2.2.1 e he
 
-/-- Two spine sites the separations place apart, either way round. -/
-def sitesApart (ls : HeapLinks.Links) (seps : List SpineSep) (x y : Nat × List String) : Bool :=
-  let X := pathViews ls x.1 x.2
-  let Y := pathViews ls y.1 y.2
-  seps.any fun e =>
-    (sameSite ls X (pathViews ls e.a.1 e.a.2) && sameSite ls Y (pathViews ls e.b.1 e.b.2)) ||
-    (sameSite ls X (pathViews ls e.b.1 e.b.2) && sameSite ls Y (pathViews ls e.a.1 e.a.2))
-
-/-- **The query a state's knowledge answers**: by the regions' bounds, or
-by a spine separation between the two regions' spine sites. -/
-def knowledgeQuery (k : Knowledge) : SepQuery :=
-  let seps := knowledgeSeps k
-  boundQuery.or ⟨fun r s => match spineSite r, spineSite s with
-    | some x, some y => sitesApart k.links seps x y
-    | _, _ => false⟩
+/-- **The query a state's knowledge answers**: the one disjointness check
+of its separation evidence. -/
+def knowledgeQuery (k : Knowledge) : SepQuery := (knowledgeEvidence k).query
 
 /-- **The knowledge's query is sound** wherever the knowledge holds, at a
 heap meeting its world with valid roots. -/
 theorem knowledgeQuery_sound {k : Knowledge} {ρ : Env} {h : Heap} {n : Nat} {W : WorldT n}
     (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ) :
-    (knowledgeQuery k).Sound ρ h := by
-  refine SepQuery.or_sound (boundQuery_sound hok hρ) ?_
-  intro r s l _ hd hr hs
-  simp only at hd
-  split at hd
-  · rename_i x y hx hy
-    obtain ⟨u, hu, hul⟩ := spineSite_mem hx hr
-    obtain ⟨w, hw, hwl⟩ := spineSite_mem hy hs
-    obtain ⟨e, he, hm⟩ := List.any_eq_true.mp hd
-    have hl := hk.2.2.1
-    have hsep := knowledgeSeps_holds hk e he
-    simp only [Bool.or_eq_true, Bool.and_eq_true] at hm
-    rcases hm with ⟨h1, h2⟩ | ⟨h1, h2⟩
-    · rw [sameSite_read hl h1] at hu; rw [sameSite_read hl h2] at hw
-      exact hsep u w l hu hw hul hwl
-    · rw [sameSite_read hl h1] at hu; rw [sameSite_read hl h2] at hw
-      exact hsep w u l hw hu hwl hul
-  · cases hd
+    (knowledgeQuery k).Sound ρ h :=
+  SepEvidence.query_sound (knowledgeEvidence_holds hk) hok hρ
+
+/-- **Every pair the bounds separate, the knowledge's query separates.** -/
+theorem knowledgeQuery_bound (k : Knowledge) {r s : Region} (hd : boundQuery.disjoint r s = true) :
+    (knowledgeQuery k).disjoint r s = true :=
+  SepEvidence.query_of_bound _ hd
+
+/-- **Every pair of spine sites an unconditional fact separates, the
+knowledge's query separates**: a spine separation, or a region fact, whose
+sites are the two regions' spine sites, through the links. -/
+theorem knowledgeQuery_spines (k : Knowledge) {e : SepFact} (he : e ∈ knowledgeSeps k) {r s : Region}
+    {x y : Nat × List String} (hx : spineSite r = some x) (hy : spineSite s = some y)
+    (hm : e.sites.any fun ab =>
+      sameSite k.links (pathViews k.links x.1 x.2) (pathViews k.links ab.1.1 ab.1.2) &&
+      sameSite k.links (pathViews k.links y.1 y.2) (pathViews k.links ab.2.1 ab.2.2)) :
+    (knowledgeQuery k).disjoint r s = true := by
+  refine SepEvidence.query_fact _ (f := e) (by simp [knowledgeEvidence, he]) ?_
+  cases e with
+  | spines a b => simpa [SepEvidence.byFact, hx, hy, knowledgeEvidence, SepFact.sites] using hm
+  | arrays a b =>
+    simpa [SepEvidence.byFact, arraySite_of_spineSite hx, arraySite_of_spineSite hy, knowledgeEvidence,
+      SepFact.sites] using hm
+  | locs => simp [SepFact.sites] at hm
 
 end Verification.Footprints
 

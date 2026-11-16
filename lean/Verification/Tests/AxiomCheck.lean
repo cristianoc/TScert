@@ -270,7 +270,16 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.init_asserted
   check ``Verification.Footprints.class_subset_sound
   check ``Verification.Footprints.class_disjoint_sound
-  check ``Verification.Footprints.Sep.sound
+  check ``Verification.Footprints.SepEvidence.query_sound
+  check ``Verification.Footprints.SepEvidence.query_of_bound
+  check ``Verification.Footprints.SepEvidence.query_inCls_left
+  check ``Verification.Footprints.SepEvidence.query_field_class
+  check ``Verification.Footprints.SepEvidence.query_fact
+  check ``Verification.Footprints.SepEvidence.query_fresh
+  check ``Verification.Footprints.SepEvidence.query_locs
+  check ``Verification.Footprints.SepEvidence.query_spines
+  check ``Verification.Footprints.SepEvidence.query_pathCells_field
+  check ``Verification.Footprints.SepEvidence.query_pathCells_cls
   check ``Verification.Footprints.Post.mono
   check ``Verification.Footprints.keep_across_call
   check ``Verification.CallEffects.Exits.compose_entry
@@ -458,7 +467,8 @@ run_cmd do
   check ``Verification.Parity.tolerant_frame
   check ``Verification.Footprints.respect_sound
   check ``Verification.Footprints.FactKind.supports
-  check ``Verification.Footprints.SepKnowledge.query_sound
+  check ``Verification.Footprints.knowledgeQuery_bound
+  check ``Verification.Footprints.knowledgeQuery_spines
   check ``Verification.Footprints.IndexFact.support?_supports
   check ``Verification.Footprints.IndexFact.keeps_sound
   check ``Verification.Footprints.linearSupport_supports
