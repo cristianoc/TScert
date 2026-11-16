@@ -214,6 +214,33 @@ Gate on executed/replayed units, distinct processed identities, preparation exec
 
 Required edit experiments: unchanged request executes zero units; unchanged-interface body edit executes one; unrelated same-file edit leaves other keys stable; declaration/interface change invalidates exactly its recorded readers; a diamond processes its shared dependency once; a killed unit preserves completed siblings; a cycle uses conservative views without iteration.
 
+### Interface demand in a prepared worker
+
+The existing planner's known-proposal list can state that a function has no
+extra inferred interface. This preserves its written declaration and leaves its
+body check intact. A prepared worker computes interface demand over the existing
+reachable group dependency graph, once for its selected roots. It uses that
+planner entry for a group with no reachable consumer, provided the group has no
+recursive reference or written effect contract and no proposal control is forced.
+An incomplete demand walk conservatively demands all groups. Dependencies retain
+their proposals, and module-interface publication uses its separate full planner.
+The demand set is scoped to that prepared file and selection; it is not a cache
+of body results across changing invariants, summaries or stores.
+
+Verifier CPU, median of three serial uncached pairs per root over identical
+frozen parser documents and imported interfaces, 2026-11-16, before at
+`ceade5ed` (the proposal worklists with a reuse of settled loop-head
+proposals the line does not keep), on pretext `9268edb1`:
+
+| Root | Before, CPU seconds | Demand-based, CPU seconds |
+| --- | --- | --- |
+| `measureAnalysis` | 13.128 | 13.125 |
+| `prepareRichInline` | 36.629 | 16.503 |
+| `walkPreparedComplexLines` | 16.538 | 3.930 |
+
+The 18 verdict outputs are identical; `measureAnalysis`, refused, keeps
+inference by its written effect contract.
+
 ### Accounting
 
 The instrument for "every item processed once" is the [work table](../SINGLE-PASS.md#work) of a profiled request (`TSCERT_PROFILE=<directory>`) and its report, `node dev/work-report.mts report <directory>`, a function of the directory alone. Profiling sets `TSCERT_PROFILE=1` in each verifier stage's environment and adds the output `work.jsonl`, so a profiled stage's key differs from the unprofiled one; an unprofiled request's keys and verdicts are those of a request with no accounting.
