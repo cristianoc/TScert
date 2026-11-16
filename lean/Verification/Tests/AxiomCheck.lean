@@ -1839,3 +1839,7 @@ run_cmd do
   check ``Verification.TolerantFrames.passRunChecker_normal
   check ``Verification.Footprints.Term.supports_keep
   check ``Verification.Footprints.Term.supports_grow
+  check ``Verification.IndexWrites.apartGrow_supports
+  check ``Verification.IndexWrites.apartGrow_supports_mirror
+  check ``Verification.IndexWrites.receiverGrowAt_post
+  check ``Verification.IndexWrites.grownRegions_holds

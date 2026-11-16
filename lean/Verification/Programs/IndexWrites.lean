@@ -3157,66 +3157,117 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
   exact writeAtoms_holds he hk hh hρ hoi hfl hl hval hsafe
 
+/-- **The note's support of a region fact** `apart(x, y)` (the note, §5,
+after Definition "Support": $`\{x[\ast]{:}\,\mathsf{grow},\ y[\ast]{:}\,\mathsf{keep}\}`$):
+`x`'s array spine at `grow`, which lists only its old cells and cells past
+the heap's end, and `y`'s at `keep`. -/
+def apartGrowSupport (x y : Nat) : Footprints.Footprint :=
+  [((Footprints.Region.field x arraySpineKey).inCls .arrays, .grow),
+    ((Footprints.Region.field y arraySpineKey).inCls .arrays, .keep)]
+
+/-- The effect of a call growing the array spine of its receiver, the slot
+`r`: the note's Push, `{r.spine: grow}` (`CallEffects.receiverGrowFrame` at
+the caller's slot). -/
+def receiverGrowAt (r : Nat) : Footprints.Footprint :=
+  [((Footprints.Region.field r arraySpineKey).inCls .arrays, .grow)]
+
 /-- The region facts a call growing its receiver's spine keeps
-(`region-grow`): each between two array slots, whose regions lie in the old
-heap, so the cells the call appends, past its end, are apart from either. -/
+(`region-grow`), between two array slots: each whose support
+(`apartGrowSupport`, or its mirror) the call's effect (`receiverGrowAt`)
+respects under the knowledge's query, the note's Frame. -/
 def grownRegions (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
-  | .invoke _ _ args => match slotVars args with
+  | .invoke _ (.var r) args => match slotVars args with
     | some is => if is.all (· < Γ.length) then
         k.indices.filter fun a => a.cond.isNone && match a.fact with
-          | .apart x y => arraySlot G Γ x && arraySlot G Γ y
+          | .apart x y => arraySlot G Γ x && arraySlot G Γ y &&
+              (Footprints.respects (Footprints.knowledgeQuery k) (apartGrowSupport x y) (receiverGrowAt r) ||
+                Footprints.respects (Footprints.knowledgeQuery k) (apartGrowSupport y x) (receiverGrowAt r))
           | _ => false
       else []
     | none => []
   | _ => []
 
-/-- The audited append relation puts every appended cell beyond the input
-heap. Together with the unchanged prefix, this supplies the cell premise
-of a grown region's separation. -/
-theorem appended_cells {r : Tm} {args : List Tm} {h h' : Heap} {s xs ys}
-    (ha : CallEffects.ReceiverAppends r args h h')
-    (hv : ∀ a ∈ args, isVal a = true)
-    (hs : Footprints.spineOf r = some s) (hx : h[s]? = some (.arr xs))
-    (hy : h'[s]? = some (.arr ys)) (hp : xs <+: ys) :
-    ∀ l, some l ∈ ys → some l ∈ xs ∨ h.length ≤ l := by
-  obtain ⟨ys', hy', hlen, hel⟩ := ha hv s xs hs hx
-  rw [hy] at hy'; cases hy'
-  intro l hl
-  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hl
-  by_cases hold : i < xs.length
-  · left
-    obtain ⟨tail, rfl⟩ := hp
-    rw [List.getElem?_append_left hold] at hi
-    exact List.mem_of_getElem? hi
-  · right
-    have hil : i < ys.length := (List.getElem?_eq_some_iff.mp hi).1
-    have hj : i - xs.length < args.length := by omega
-    obtain ⟨cell, hcell, _, hfresh⟩ := hel (i - xs.length) args[i - xs.length]
-      (List.getElem?_eq_getElem hj)
-    have heq : xs.length + (i - xs.length) = i := by omega
-    rw [heq, hi] at hcell
-    cases hcell
-    exact hfresh
+/-- A value's region lies in the heap: its array spine's location and the
+cells it lists below the heap's length. -/
+def RegionBelow (h : Heap) (v : Val) : Prop :=
+  ∃ st ls, Footprints.spineOf v = some st ∧ h[st]? = some (.arr ls) ∧ st < h.length ∧ ElementsBelow h.length ls
 
-/-- An array slot's region after a growth of the receiver's spine: the same,
-or, where it is the receiver's spine, its old cells and appended ones past the
-old heap. -/
-theorem grown_region {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h h'} {r : Tm} {args : List Tm} {z : Nat}
-    (hc : arraySlot G Γ z = true) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
-    (hg : CallEffects.ReceiverGrows r h h') (ha : CallEffects.ReceiverAppends r args h h')
-    (hv : ∀ a ∈ args, isVal a = true) :
-    ∃ sz zs zs', Footprints.spineOf (ρ z) = some sz ∧ h[sz]? = some (.arr zs) ∧ sz < h.length ∧
-      ElementsBelow h.length zs ∧ h'[sz]? = some (.arr zs') ∧
-      (zs' = zs ∨ (Footprints.spineOf r = some sz ∧ ∀ l, some l ∈ zs' → some l ∈ zs ∨ h.length ≤ l)) := by
-  obtain ⟨sz, zs, hst, hzs, hlt, hbelow⟩ := arraySlot_region hc he hh
-  rcases hg sz _ hzs with hk | ⟨hr, ls, ls', he', hls', hp, -⟩
-  · exact ⟨sz, zs, zs, hst, hzs, hlt, hbelow, hk, .inl rfl⟩
-  · cases he'
-    exact ⟨sz, zs, ls', hst, hzs, hlt, hbelow, hls', .inr ⟨hr,
-      appended_cells ha hv hr hzs hls' hp⟩⟩
+theorem regionsApart_symm {h : Heap} {u v : Val} (hp : RegionsApart h u v) : RegionsApart h v u := by
+  obtain ⟨sa, xs, sb, ys, hu, hv, hsep⟩ := hp
+  exact ⟨sb, ys, sa, xs, hv, hu, fun l hl m hm he => hsep m hm l hl he.symm⟩
 
+/-- **`apartGrowSupport x y` supports `apart(x, y)`** where `y`'s region lies
+in the heap: `x`'s spine gains only cells past the heap's end, and `y`'s is
+kept. -/
+theorem apartGrow_supports (x y : Nat) :
+    Footprints.Supports (fun ρ h _ => RegionBelow h (ρ y)) (fun ρ h => RegionsApart h (ρ x) (ρ y))
+      (apartGrowSupport x y) := by
+  refine Footprints.Supports.intro fun ρ h h' hc hA hs => ?_
+  obtain ⟨sy, ys, hsy, hys, hylt, hyb⟩ := hc
+  obtain ⟨sa, xs, sb, ys0, hra, hrb, hsep⟩ := hA
+  obtain ⟨rfl, rfl⟩ := regionOf_unique hrb (.inr ⟨sy, rfl, hsy, hys⟩)
+  have hmy : ((Footprints.Region.field y arraySpineKey).inCls .arrays).mem ρ h sy = true := by
+    simp [Footprints.Region.mem, Footprints.spineOf_lookup hsy, hys, Footprints.Selector.selects]; rfl
+  obtain ⟨vy, hvy, hky⟩ := hs ((Footprints.Region.field y arraySpineKey).inCls .arrays, .keep)
+    (by simp [apartGrowSupport]) sy _ hmy hys
+  simp only [Footprints.Change.Holds] at hky
+  subst hky
+  have hx' : ∃ sa' xs', RegionOf h' (ρ x) sa' xs' ∧
+      ∀ l, InRegion sa' xs' l → InRegion sa xs l ∨ h.length ≤ l := by
+    rcases hra with ⟨rfl, hv⟩ | ⟨sx, rfl, hsx, hxs⟩
+    · exact ⟨none, xs, .inl ⟨rfl, hv⟩, fun l hl => .inl hl⟩
+    · have hmx : ((Footprints.Region.field x arraySpineKey).inCls .arrays).mem ρ h sx = true := by
+        simp [Footprints.Region.mem, Footprints.spineOf_lookup hsx, hxs, Footprints.Selector.selects]; rfl
+      obtain ⟨vx, hvx, hkx⟩ := hs ((Footprints.Region.field x arraySpineKey).inCls .arrays, .grow)
+        (by simp [apartGrowSupport]) sx _ hmx hxs
+      rcases hkx with rfl | ⟨ls, ls', heq, rfl, -, hnew, -⟩ | hsc | ⟨f, cs, cs', hvw, -⟩
+      · exact ⟨some sx, xs, .inr ⟨sx, rfl, hsx, hvx⟩, fun l hl => .inl hl⟩
+      · cases heq
+        refine ⟨some sx, ls', .inr ⟨sx, rfl, hsx, hvx⟩, fun l hl => ?_⟩
+        rcases hl with hl | hl
+        · exact .inl (.inl hl)
+        · exact (hnew l hl).imp .inr id
+      · simp [Footprints.ScalarStep, Footprints.isArr] at hsc
+      · cases hvw
+  obtain ⟨sa', xs', hra', hgrow⟩ := hx'
+  refine ⟨sa', xs', some sy, _, hra', .inr ⟨sy, rfl, hsy, hvy⟩, fun l hl m hm => ?_⟩
+  have hmb : m < h.length := by
+    rcases hm with hm | hm
+    · cases hm; exact hylt
+    · exact hyb m hm
+  rcases hgrow l hl with hl | hl
+  · exact hsep l hl m hm
+  · omega
+
+/-- **The mirror support** `apartGrowSupport y x` supports `apart(x, y)`
+where `x`'s region lies in the heap. -/
+theorem apartGrow_supports_mirror (x y : Nat) :
+    Footprints.Supports (fun ρ h _ => RegionBelow h (ρ x)) (fun ρ h => RegionsApart h (ρ x) (ρ y))
+      (apartGrowSupport y x) :=
+  Footprints.Supports.intro fun _ _ _ hc hA hs =>
+    regionsApart_symm ((apartGrow_supports y x).apply hc (regionsApart_symm hA) hs)
+
+/-- A growth of the receiver's spine at the callee's positions is one at the
+caller's slot holding the receiver. -/
+theorem receiverGrowAt_post {env ρ : Env} {r : Nat} {h h' : Heap}
+    (hp : Footprints.Post CallEffects.receiverGrowFrame env h h') (hr : env 0 = ρ r) :
+    Footprints.Post (receiverGrowAt r) ρ h h' := by
+  refine ⟨hp.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with h | ⟨e, he, hm, hh⟩
+  · exact .inl h
+  · simp only [CallEffects.receiverGrowFrame, List.mem_singleton] at he
+    subst he
+    exact .inr ⟨_, List.mem_singleton_self _, by simpa [Footprints.Region.mem, hr] using hm, hh⟩
+
+/-- **The region facts a growing call keeps hold after it**: the tolerant
+frame at each one's support (`apartGrow_supports` or its mirror), which the
+call's effect `receiverGrowAt r` respects under the knowledge's query
+(`frame_step`); the support's condition, the other array's region in the
+heap, from the array slot's type (`arraySlot_region`). -/
 theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm} {ρ n W h h'}
-    (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h) (hk : Holds k ε ρ h)
+    (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h) (hk : Holds k ε ρ h) (hρ : RootsOk W ρ)
     (hg : CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (ha : CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
@@ -3234,13 +3285,25 @@ theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
   simp only [List.all_eq_true, decide_eq_true_eq] at hlt
   have hes := slotVars_eq his
   subst hes
-  have hv : ∀ a ∈ ExpressionEffects.actualsOf (instantiate 0 ρ (.invoke f r (is.map Tm.var))), isVal a = true := by
+  have hv : ∀ a ∈ ExpressionEffects.actualsOf (instantiate 0 ρ (.invoke f (.var r) (is.map Tm.var))),
+      isVal a = true := by
     intro a hm
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs_eq_map, List.map_map,
       List.mem_map, Function.comp_apply] at hm
     obtain ⟨i, hi, rfl⟩ := hm
     simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
     exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (hlt i hi)))).1
+  have hlen : h.length ≤ h'.length := by
+    cases hl : h.length with
+    | zero => exact Nat.zero_le _
+    | succ m =>
+      have hm : m < h.length := by omega
+      rcases hg m h[m] (List.getElem?_eq_getElem hm) with hk' | ⟨-, -, ls', -, hk', -⟩ <;>
+        exact (List.getElem?_eq_some_iff.mp hk').1
+  have hp : Footprints.Post (receiverGrowAt r) ρ h h' :=
+    receiverGrowAt_post (CallEffects.receiverGrowFrame_post (args := []) hlen hg hv ha)
+      (by simp [CallEffects.callEnv, ExpressionEffects.receiverOf, instantiate])
+  have hq := Footprints.knowledgeQuery_sound hk hh hρ
   intro a hm hcond
   obtain ⟨hmem, hsel⟩ := List.mem_filter.mp hm
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hsel
@@ -3249,52 +3312,15 @@ theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
   cases hfact : a.fact
   case apart x y =>
     rw [hfact] at hsel hat
-    simp only [Bool.and_eq_true] at hsel
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at hsel
+    obtain ⟨⟨hx, hy⟩, hr⟩ := hsel
     show RegionsApart h' (ρ x) (ρ y)
-    obtain ⟨sx, xs, xs', hsx, hxs, hxlt, hxb, hxs', hxg⟩ := grown_region hsel.1 he hh hg ha hv
-    obtain ⟨sy, ys, ys', hsy, hys, hylt, hyb, hys', hyg⟩ := grown_region hsel.2 he hh hg ha hv
-    obtain ⟨sa, xs0, sb, ys0, hra, hrb, hsep⟩ := hat
-    obtain ⟨e1, e2⟩ := regionOf_unique hra (.inr ⟨sx, rfl, hsx, hxs⟩)
-    obtain ⟨e3, e4⟩ := regionOf_unique hrb (.inr ⟨sy, rfl, hsy, hys⟩)
-    rw [e1, e2, e3, e4] at hsep
-    refine ⟨some sx, xs', some sy, ys', .inr ⟨sx, rfl, hsx, hxs'⟩, .inr ⟨sy, rfl, hsy, hys'⟩,
-      fun l hl m hm => ?_⟩
-    -- Each new cell is an old one or lies past the old heap, where neither
-    -- old region reaches.
-    have hxl : InRegion (some sx) xs l ∨ h.length ≤ l := by
-      rcases hl with hl | hl
-      · exact .inl (.inl hl)
-      · rcases hxg with rfl | ⟨-, hc⟩
-        · exact .inl (.inr hl)
-        · exact (hc l hl).imp .inr id
-    have hym : InRegion (some sy) ys m ∨ h.length ≤ m := by
-      rcases hm with hm | hm
-      · exact .inl (.inl hm)
-      · rcases hyg with rfl | ⟨-, hc⟩
-        · exact .inl (.inr hm)
-        · exact (hc m hm).imp .inr id
-    have below : ∀ s cells q, s < h.length → ElementsBelow h.length cells →
-        InRegion (some s) cells q → q < h.length := by
-      intro s cells q hs hb hq
-      rcases hq with hq | hq
-      · cases hq; exact hs
-      · exact hb q hq
-    rcases hxl with hxl | hxl <;> rcases hym with hym | hym
-    · exact hsep l hxl m hym
-    · have := below sx xs l hxlt hxb hxl; omega
-    · have := below sy ys m hylt hyb hym; omega
-    · -- Both appended to: both spines the receiver's, the same location.
-      rcases hxg with rfl | ⟨hrx, -⟩
-      · rcases hl with hl | hl
-        · cases hl; omega
-        · have := hxb l hl; omega
-      rcases hyg with rfl | ⟨hry, -⟩
-      · rcases hm with hm | hm
-        · cases hm; omega
-        · have := hyb m hm; omega
-      rw [hrx] at hry
-      cases hry
-      exact absurd rfl (hsep sx (.inl rfl) sx (.inl rfl))
+    have below : ∀ z, arraySlot G Γ z = true → RegionBelow h (ρ z) := fun z hz => arraySlot_region hz he hh
+    rcases hr with hr | hr
+    · exact Footprints.frame_step (D := Footprints.heaps) (m := 0) (apartGrow_supports x y) hr hq hp trivial
+        (below y hy) hat
+    · exact Footprints.frame_step (D := Footprints.heaps) (m := 0) (apartGrow_supports_mirror x y) hr hq hp trivial
+        (below x hx) hat
   all_goals (rw [hfact] at hsel; simp at hsel)
 
 end Verification.IndexWrites

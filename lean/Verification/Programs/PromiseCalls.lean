@@ -4013,7 +4013,7 @@ other step is `base`'s. -/
       exact HeapObservations.weaken (fun h' v hq' => let hq := hq'.1; PromiseCalls.withGrown_holds
         (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk
           hh hρ hq.2 hq'.2)
-        (fun hgr => IndexWrites.grownRegions_holds he hh hk (PromiseCalls.withGrown_grows hgr hq.2)
+        (fun hgr => IndexWrites.grownRegions_holds he hh hk hρ (PromiseCalls.withGrown_grows hgr hq.2)
           (PromiseCalls.withGrown_appends hgr hq.2)))
         (HeapExpressionRules.stableFirst_frame he hw hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))

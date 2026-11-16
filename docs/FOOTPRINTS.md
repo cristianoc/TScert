@@ -1001,10 +1001,15 @@ separating each of $`a`$'s spine field and cells from each of $`w`$'s
 (`apartFrom`); with both slots arrays it gives the two regions apart
 (`apartFrom_sound`), and every region fact $`\mathrm{apart}(a',w)`$,
 $`a'`$ an alias of $`a`$, makes the check answer it (`apartFrom_of_atom`).
-A call growing its receiver's spine
-keeps a fact between two array slots (`region-grow`), each appended cell
-lying past the old heap ([native footprints](SOURCE-CONTRACTS.md#native-footprints),
-the append relation of `push`). Both proved (`writeAtoms_holds`,
+A call growing its receiver $`r`$'s spine has the effect
+$`\{r.\mathsf{spine}{:}\,\mathsf{grow}\}`$ (`receiverGrowAt`, from the append
+relation of `push`, [native footprints](SOURCE-CONTRACTS.md#native-footprints)),
+and keeps a fact $`\mathrm{apart}(x,y)`$ between two array slots by the
+tolerant frame at the note's support
+$`\{x[\ast]{:}\,\mathsf{grow},\ y[\ast]{:}\,\mathsf{keep}\}`$ or its mirror
+(`apartGrowSupport`; proved: `apartGrow_supports`, under the condition that
+the other array's region lies in the heap), where the effect respects it
+under $`\Sigma`$'s query (`region-grow`). Both proved (`writeAtoms_holds`,
 `grownRegions_holds`):
 
 ```math
