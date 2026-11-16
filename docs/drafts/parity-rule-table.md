@@ -5,16 +5,16 @@ A map: for each rule of the note
 statement and the mechanism the pass's acceptance applies. Read by
 gpt-6-astra from the sources at commit `81d7f232` on 2026-11-15, with no
 build or suite run; "proved" names a proof declaration read in the source.
-The goal is the [parity skill](../../.claude/skills/parity/SKILL.md)'s:
-an agent with only the note and the verifier give each example of the note
-the same verdict. The work list is in [WORK.md](../../WORK.md#status) and
+The goal is the [parity skill](../../.claude/skills/parity/SKILL.md#the-goal)'s:
+each rule of the note is the rule acceptance applies. The work list is in
+[WORK.md](../../WORK.md#status) and
 [the note's rules at acceptance](rules-at-acceptance.md).
 
 A mechanism is **separate** when acceptance applies its own decision,
 proved sound by its own theorem, and that decision establishes no
 derivation in the note's checker (`checkDerivation`, `checkScoped`). A
-separate mechanism is sound by its theorem; a row is work where the note
-and that mechanism can give an example different verdicts.
+separate mechanism is sound by its theorem and does not meet the goal: each
+row whose mechanism is separate, or absent, is work.
 
 ## The rules
 
