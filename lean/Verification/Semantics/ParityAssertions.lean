@@ -99,21 +99,6 @@ theorem EffectAction.regions_mono {Ψ : Footprint} (hle : Footprint.le (fun _ _ 
     (ha : EffectAction Φ η s s') : EffectAction Ψ η s s' :=
   ⟨ha.1, Post.mono hle (fun _ _ _ _ hc => by cases hc) ha.2⟩
 
-/-- **A transition within an effect is within a support whose every entry
-each effect entry either changes less than, or misses** (the note, §5, the
-proof of Theorem "Tolerant frame"). -/
-theorem supported_of_pairs {S : Footprint} (ha : EffectAction Φ η s s')
-    (hp : ∀ e ∈ S, ∀ e' ∈ Φ, e'.2.le e.2 = true ∨ ∀ l, e.1.mem η s.h l = true → e'.1.mem η s.h l = false) :
-    SupportedBy S η s s' := by
-  intro e he l v hl hv
-  obtain ⟨v', hv', hal⟩ := ha.2.2 l v hv
-  refine ⟨v', hv', ?_⟩
-  rcases hal with rfl | ⟨e', he', hm, hc⟩
-  · exact Change.Holds.refl _ _ _
-  · rcases hp e he e' he' with hle | hd
-    · exact hc.mono hle
-    · rw [hd l hl] at hm; cases hm
-
 /-- **An effect whose regions read the same locations at both states of a
 first action composes with a second** (the note, §3, "Order, top,
 rigidity"): two actions in sequence are one. The changes of two entries

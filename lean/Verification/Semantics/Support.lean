@@ -9,7 +9,10 @@ constraints, met by a transition (`Supported`), keep `A` along it. A domain
 gives the heap a state's regions are read at and the transitions it admits.
 Both assertion languages read support through this relation: the acceptance
 path over arbitrary heaps (`heaps`, `Footprints.Supports`), the paper layer
-over indexed states (`Parity.Supports`). -/
+over indexed states (`Parity.Supports`). The note's Definition *Respect* is
+one check, `respects`, of a support against an effect under a separation
+query, sound by `respect_sound`; both languages run it, each with its own
+query. -/
 namespace Verification.Footprints
 
 /-- **A domain of states for support**: the heap each state's regions are
@@ -99,5 +102,51 @@ theorem Supports.apply {C : Env → Heap → Heap → Prop} {P : Env → Heap �
     (hs : Supports C P S) {ρ : Env} {h h' : Heap} (hc : C ρ h h') (hP : P ρ h) (hS : Supported S ρ h h') :
     P ρ h' :=
   hs ρ 0 h h' trivial hc hP hS
+
+/-! ## Separation queries and respect -/
+
+/-- **A separation query**: whether two regions denote disjoint sets. Its
+meaning is `SepQuery.Sound`, stated of a prestate: wherever the evidence
+the query was built from holds, a positive answer means the two regions
+share no location there. -/
+structure SepQuery where
+  disjoint : Region → Region → Bool
+
+/-- The query is sound at the state `(ρ, h)`. -/
+def SepQuery.Sound (q : SepQuery) (ρ : Env) (h : Heap) : Prop :=
+  ∀ r s l, q.disjoint r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False
+
+/-- Two queries, either of which may answer. -/
+def SepQuery.or (q q' : SepQuery) : SepQuery := ⟨fun r s => q.disjoint r s || q'.disjoint r s⟩
+
+theorem SepQuery.or_sound {q q' : SepQuery} {ρ h} (hq : q.Sound ρ h) (hq' : q'.Sound ρ h) :
+    (q.or q').Sound ρ h := by
+  intro r s l hd hr hs
+  simp only [SepQuery.or, Bool.or_eq_true] at hd
+  rcases hd with hd | hd
+  · exact hq r s l hd hr hs
+  · exact hq' r s l hd hr hs
+
+/-- **Respect** (the note's Definition): every pair `r : δ` of the support
+and every entry `r' : γ` of the effect have `γ ⊑ δ`, or the query answers
+that `r` and `r'` are disjoint. Change order is compared first; the query is
+asked only where it fails. -/
+def respects (q : SepQuery) (S Φ : Footprint) : Bool :=
+  S.all fun e => Φ.all fun f => f.2.le e.2 || q.disjoint e.1 f.1
+
+/-- **Respect is sound**: an effect respecting a support under a query
+sound at the prestate changes each support region within its change. -/
+theorem respect_sound {q : SepQuery} {S Φ ρ h h'} (hc : respects q S Φ = true)
+    (hq : q.Sound ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' := by
+  intro e he l v hm hv
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with rfl | ⟨f, hf, hfm, hh⟩
+  · exact Change.Holds.refl _ _ _
+  · have := List.all_eq_true.mp (List.all_eq_true.mp hc e he) f hf
+    simp only [Bool.or_eq_true] at this
+    rcases this with hle | hap
+    · exact hh.mono hle
+    · exact (hq e.1 f.1 l hap hm hfm).elim
 
 end Verification.Footprints

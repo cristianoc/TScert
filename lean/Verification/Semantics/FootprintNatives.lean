@@ -471,7 +471,7 @@ theorem denseK_holds {x n ρ h} (hd : Dense x n ρ h) : (denseK x).Holds id ρ h
 knowledge density gives about its own spine. -/
 theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed Φ = true) :
     stable (denseK x) (FactKind.dense x n).support Φ = true := by
-  simp only [stable, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, List.all_eq_true]
+  simp only [stable, respects, SepKnowledge.query, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, List.all_eq_true]
   intro e he
   have := List.all_eq_true.mp hc e he
   simp only [Bool.or_eq_true, beq_iff_eq] at this
@@ -525,7 +525,7 @@ location it names, the empty footprint among them, passes the stability
 check for it. -/
 theorem elemsCheck_stable {x : Nat} {R : CallEffects.ElemPred} {Φ : Footprint}
     (hc : Φ.all (·.2 == .keep) = true) : stable noSep (FactKind.elems x R).support Φ = true := by
-  simp only [stable, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true,
+  simp only [stable, respects, SepKnowledge.query, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true,
     List.all_eq_true]
   have hk : ∀ f ∈ Φ, f.2 = .keep := fun f hf => by simpa using List.all_eq_true.mp hc f hf
   exact ⟨fun f hf => by simp [hk f hf, Change.le], fun f hf => by simp [hk f hf, Change.le]⟩

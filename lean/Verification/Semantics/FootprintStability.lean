@@ -292,55 +292,11 @@ theorem Sep.sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
   · exact apart₁_sound hK ha hr hs
   · exact apart₁_sound hK ha hs hr
 
-/-! ## Separation queries and respect
+/-! ## The tolerant frame at a transition
 
-The note's Definition *Respect* and its Theorem *Tolerant frame*, over any
-assertion (FOOTPRINTS.md, "Support and respect"); its Definition *Support*
-is `Supports` (`Semantics/Support.lean`). -/
-
-/-- **A separation query**: whether two regions denote disjoint sets. Its
-meaning is `SepQuery.Sound`, stated of a prestate: wherever the evidence
-the query was built from holds, a positive answer means the two regions
-share no location there. -/
-structure SepQuery where
-  disjoint : Region → Region → Bool
-
-/-- The query is sound at the state `(ρ, h)`. -/
-def SepQuery.Sound (q : SepQuery) (ρ : Env) (h : Heap) : Prop :=
-  ∀ r s l, q.disjoint r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False
-
-/-- Two queries, either of which may answer. -/
-def SepQuery.or (q q' : SepQuery) : SepQuery := ⟨fun r s => q.disjoint r s || q'.disjoint r s⟩
-
-theorem SepQuery.or_sound {q q' : SepQuery} {ρ h} (hq : q.Sound ρ h) (hq' : q'.Sound ρ h) :
-    (q.or q').Sound ρ h := by
-  intro r s l hd hr hs
-  simp only [SepQuery.or, Bool.or_eq_true] at hd
-  rcases hd with hd | hd
-  · exact hq r s l hd hr hs
-  · exact hq' r s l hd hr hs
-
-/-- **Respect** (the note's Definition): every pair `r : δ` of the support
-and every entry `r' : γ` of the effect have `γ ⊑ δ`, or the query answers
-that `r` and `r'` are disjoint. Change order is compared first; the query is
-asked only where it fails. -/
-def respects (q : SepQuery) (S Φ : Footprint) : Bool :=
-  S.all fun e => Φ.all fun f => f.2.le e.2 || q.disjoint e.1 f.1
-
-/-- **Respect is sound**: an effect respecting a support under a query
-sound at the prestate changes each support region within its change. -/
-theorem respect_sound {q : SepQuery} {S Φ ρ h h'} (hc : respects q S Φ = true)
-    (hq : q.Sound ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' := by
-  intro e he l v hm hv
-  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-  refine ⟨v', hv', ?_⟩
-  rcases ha with rfl | ⟨f, hf, hfm, hh⟩
-  · exact Change.Holds.refl _ _ _
-  · have := List.all_eq_true.mp (List.all_eq_true.mp hc e he) f hf
-    simp only [Bool.or_eq_true] at this
-    rcases this with hle | hap
-    · exact hh.mono hle
-    · exact (hq e.1 f.1 l hap hm hfm).elim
+The note's Theorem *Tolerant frame*, over any assertion (FOOTPRINTS.md,
+"Support and respect"); its Definitions *Support* and *Respect* are
+`Supports` and `respects` (`Semantics/Support.lean`). -/
 
 /-- **The tolerant frame, at a transition**: an assertion with a support
 the effect respects under a query sound at the prestate holds after every
@@ -363,12 +319,8 @@ theorem FactKind.supports (F : FactKind) : Supports (fun _ _ _ => True) F.Holds 
 
 /-! ## The check and the frame -/
 
-/-- **The stability check**: respect under separation knowledge
-(`stable_eq_respects`). -/
-def stable (K : SepKnowledge) (S Φ : Footprint) : Bool :=
-  S.all fun e => Φ.all fun f => f.2.le e.2 || K.apart e.1 f.1
-
-theorem stable_eq_respects (K : SepKnowledge) (S Φ : Footprint) : stable K S Φ = respects K.query S Φ := rfl
+/-- **The stability check**: respect under separation knowledge. -/
+def stable (K : SepKnowledge) (S Φ : Footprint) : Bool := respects K.query S Φ
 
 theorem stable_sound {K : SepKnowledge} {S Φ μ ρ h h'} (hc : stable K S Φ = true)
     (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' :=

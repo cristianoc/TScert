@@ -68,8 +68,10 @@ respects its support" exists as:
 
 They share regions, changes, effects, `Supported` and the support relation
 `SupportDomain.Supports` (`Semantics/Support.lean`), read over arbitrary
-heaps by B and over indexed states by A. The pairwise respect check is
-written twice. Neither language contains the other:
+heaps by B and over indexed states by A, and the one respect check
+`respects`, sound by `respect_sound`: B asks it under `knowledgeQuery`, A
+under the query its disjointness certificates answer. Neither language
+contains the other:
 
 | | A | B |
 |---|---|---|
