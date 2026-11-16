@@ -249,7 +249,6 @@ def rebase (ev : RebaseEvidence) : Region → List Region
     | some (x, q) => [.pathFields x q]
     | none => [.all]
   | .cls c => [.cls c]
-  | .cell b => [.cell b]
   | .inCls r c => (rebase ev r).map (·.inCls c)
   | .cells _ => [.cls .values]
   | .pathCells _ _ => [.cls .values]
@@ -385,12 +384,6 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
     intro hm
     rcases cls_back (ρ := ρ₀) hp hl (by simpa [Region.mem] using hm) with h | h
     · exact .inl ⟨.cls c, by simp [rebase], h⟩
-    · exact .inr h
-  | cell b =>
-    intro hm
-    have hv : (Region.cls .values).mem ρ₀ h l = true := by simpa [Region.mem] using hm
-    rcases cls_back hp hl hv with h | h
-    · exact .inl ⟨.cell b, by simp [rebase], by simpa [Region.mem] using h⟩
     · exact .inr h
   | inCls r c ih =>
     intro hm

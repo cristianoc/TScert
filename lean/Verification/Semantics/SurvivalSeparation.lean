@@ -184,7 +184,6 @@ def Region.renameM (σ : Nat → Option Nat) : Region → Region
   | .pathCells x p => match σ x with | some y => .pathCells y p | none => .all
   | .cls c => .cls c
   | .all => .all
-  | .cell b => .cell b
   | .inCls r c => .inCls (r.renameM σ) c
   | .spine x p => match σ x with | some y => .spine y p | none => .all
 
@@ -197,7 +196,7 @@ theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {
     intro hm
     simp only [Region.renameM, Region.mem, Bool.and_eq_true] at hm ⊢
     exact ⟨ih hm.1, hm.2⟩
-  | cls | all | cell => intro hm; exact hm
+  | cls | all => intro hm; exact hm
   | _ =>
     intro hm
     simp only [Region.renameM]

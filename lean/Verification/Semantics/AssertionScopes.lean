@@ -25,7 +25,6 @@ def Region.rename (σ : Nat → Nat) : Region → Region
   | .path x p k => .path (σ x) p k
   | .pathFields x p => .pathFields (σ x) p
   | .pathCells x p => .pathCells (σ x) p
-  | .cell b => .cell b
   | .inCls r c => .inCls (r.rename σ) c
   | .spine x p => .spine (σ x) p
 
@@ -51,7 +50,7 @@ def Path.var (x : Nat) : Path := ⟨x, []⟩
 /-- The slots a region reads its roots at. -/
 def regionRoots : Region → List Nat
   | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => [x]
-  | .cls _ | .all | .cell _ => []
+  | .cls _ | .all => []
   | .inCls r _ => regionRoots r
 
 /-- An effect reading runtime slots below `n` alone. -/
@@ -84,7 +83,7 @@ private theorem region_mem_congr {r : Region} {η η' : Env} (he : ∀ x ∈ reg
     (l : Nat) : r.mem η hp l = r.mem η' hp l := by
   induction r with
   | inCls r _ ih => simp only [Region.mem, ih (by simpa [regionRoots] using he)]
-  | cls _ | all | cell _ => rfl
+  | cls _ | all => rfl
   | _ => simp only [regionRoots, List.mem_singleton, forall_eq] at he; simp only [Region.mem, he]
 
 /-- **An effect acts alike at valuations agreeing on its roots.** -/

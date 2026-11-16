@@ -270,7 +270,7 @@ const grammar: { readonly [name: string]: Shape } = {
     field: { record: { x: "nat", key: { ref: "keyOf" } } }, fields: { record: { x: "nat" } }, cells: { record: { x: "nat" } },
     cls: { ref: "selector" }, path: { record: { x: "nat", fields: strings, key: { ref: "keyOf" } } },
     pathFields: { record: { x: "nat", fields: strings } }, pathCells: { record: { x: "nat", fields: strings } },
-    cell: { record: { name: "string" } }, inCls: { record: { region: { ref: "region" }, selector: { ref: "selector" } } },
+    inCls: { record: { region: { ref: "region" }, selector: { ref: "selector" } } },
     spine: { record: { x: "nat", fields: strings } } }, names: ["all"] },
   frame: { list: { record: { region: { ref: "region" }, change: { names: ["keep", "init", "scalar", "grow", "any"] } } } },
   path: { record: { root: "nat", fields: strings } },

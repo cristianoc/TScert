@@ -597,11 +597,8 @@ is the class region of the selector `S`, read from the contents. A path
 `path x p k` is the own field `k` of the object it reads, `pathFields x p` that
 object's field locations and `pathCells x p` the element cells its spine
 lists; a read that fails denotes no location, and at the empty path they are
-`field`, `fields` and `cells`. `cell b` is a module cell's location, read at the
-class its contents have: a cell holds a source value, never a spine, so it
-denotes the locations of class `value` (the exact cell needs module-cell
-agreement, a step of the stated-effects design). `inCls r S` is the locations
-of `r` in the class region of `S`. -/
+`field`, `fields` and `cells`. `inCls r S` is the locations of `r` in the
+class region of `S`. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)
   | fields (x : Nat)
@@ -611,7 +608,6 @@ inductive Region where
   | path (x : Nat) (p : List String) (k : PropKey)
   | pathFields (x : Nat) (p : List String)
   | pathCells (x : Nat) (p : List String)
-  | cell (b : String)
   | inCls (r : Region) (c : Selector)
   /-- The spine location of the value the path reads (parity-interfaces I1,
   the selected spine): an array's or a typed array's
@@ -636,9 +632,6 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | none => false
   | .pathCells x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => (spineCells h v).contains (some l)
-    | none => false
-  | .cell _, l => match h[l]? with
-    | some v => Selector.values.selects v
     | none => false
   | .inCls r c, l => r.mem ρ h l && match h[l]? with
     | some v => c.selects v
@@ -753,8 +746,8 @@ def ClassOk (cl : ClassEvidence) (ρ : Env) (h : Heap) : Prop :=
 /-- The inclusions read without recursion: equal regions, every region in
 `all`, a field under a key other than the spine key among its object's
 field locations and in the class its contents have by class evidence, such
-a path's field among the path object's field locations, and a cell among
-the locations of class `value`. -/
+a path's field among the path object's field locations, and a class region
+in a larger one. -/
 def Region.subBase (cl : ClassEvidence) (r s : Region) : Bool :=
   r == s || s == .all || match r, s with
     | .field x k, .fields y => x == y && k != arraySpineKey
@@ -763,7 +756,6 @@ def Region.subBase (cl : ClassEvidence) (r s : Region) : Bool :=
       | none => false
     | .cls a, .cls b => a.sub b
     | .path x p k, .pathFields y q => x == y && p == q && k != arraySpineKey
-    | .cell _, .cls c => Selector.values.sub c
     | _, _ => false
 
 /-- Region inclusion: `subBase`, and the part of `r` of class `c` in `s`
@@ -821,11 +813,6 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
         simp only [beq_iff_eq] at hm
         simpa using lookup_mem_fieldLocs hm hk
       · cases hm
-    case cell.cls b c =>
-      simp only [Region.mem] at hm ⊢
-      split at hm
-      · exact Selector.selects_sub hs hm
-      · cases hm
 
 theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
     (hs : Region.sub cl r s = true) (hc : ClassOk cl ρ h) (hl : l < h.length)
@@ -851,7 +838,7 @@ theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
         · exact Selector.selects_sub hs.1 hm'.2
         · cases hm'.2
     · exact Region.subBase_mem hs hc hl hm
-  | field | fields | cells | cls | all | path | pathFields | pathCells | cell | spine =>
+  | field | fields | cells | cls | all | path | pathFields | pathCells | spine =>
     exact Region.subBase_mem (by simpa [Region.sub] using hs) hc hl hm
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/

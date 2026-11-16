@@ -104,7 +104,7 @@ const equationReaders = [
     types.indexOf("/** What a typed array's element write keeps")));
   const graph = read("tools/type-graph.mts");
   const grammarText = graph.slice(graph.indexOf("const strings: Shape"), graph.indexOf("\n};", graph.indexOf("const grammar:")))
-    .replace("const grammar:", "").replace(/\b\w+\??: Shape\b/g, "");
+    .replace("const grammar:", "").replace(/\[name: string\]: Shape\b/, "").replace(/\b\w+\??: Shape\b/g, "");
   const shapeWords = ["record", "optional", "union", "names", "list", "pair", "nullable", "ref"];
   const grammarNames = new Set([...declared([], undefined, grammarText)].filter((n) => !shapeWords.includes(n)));
   // An index fact, its terms and a linear fact are the effect's own types

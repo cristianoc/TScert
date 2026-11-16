@@ -33,10 +33,10 @@ every support through `SupportedBy`. -/
 abbrev SupportedBy (S : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
   Footprints.Supported S η s.h s'.h
 
-/-- A region read without the name valuation: classes, every location, a
-module cell and their intersections with a class. -/
+/-- A region read without the name valuation: classes, every location and
+their intersections with a class. -/
 def regionEnvFree : Region → Bool
-  | .cls _ | .all | .cell _ => true
+  | .cls _ | .all => true
   | .inCls r _ => regionEnvFree r
   | _ => false
 
@@ -69,7 +69,6 @@ private theorem region_mem_envFree {r : Region} (hr : regionEnvFree r = true) (h
   | inCls r _ ih => simp only [Region.mem, ih hr]
   | cls _ => rfl
   | all => rfl
-  | cell _ => rfl
   | _ => simp [regionEnvFree] at hr
 
 /-- An effect read without the name valuation acts alike at every valuation. -/
@@ -131,7 +130,7 @@ own fields, and a selected spine or field at a path whose read is fixed. A
 spine's cells (`cells`, `pathCells`) are not: a spine may come to list other
 cells (the note, §3, "Not rigid"). -/
 def stableRegion (paths : List (Nat × List String)) : Region → Bool
-  | .cls _ | .all | .cell _ | .field _ _ | .fields _ => true
+  | .cls _ | .all | .field _ _ | .fields _ => true
   | .inCls r _ => stableRegion paths r
   | .spine x p | .path x p _ | .pathFields x p => paths.contains (x, p)
   | .cells _ | .pathCells _ _ => false
@@ -141,7 +140,6 @@ theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s
     ∀ {r : Region}, stableRegion paths r = true → ∀ l, l < s.h.length → r.mem η s'.h l = r.mem η s.h l
   | .cls c, _, l, hl => ha.cls_mem hl η c
   | .all, _, _, _ => rfl
-  | .cell _, _, l, hl => ha.cls_mem hl η .values
   | .field _ _, _, _, _ => rfl
   | .fields _, _, _, _ => rfl
   | .inCls r c, h, l, hl => by
@@ -167,7 +165,7 @@ spine's listed cells (values: element cells hold no spine,
 `HeapCategories.cells`). -/
 def regionClass : Region → Option Selector
   | .cls a | .inCls _ a => some a
-  | .cell _ | .cells _ | .pathCells _ _ => some .values
+  | .cells _ | .pathCells _ _ => some .values
   | _ => none
 
 theorem spineCells_values {s : IndexedHeap} {v : Val} {l : Nat}
@@ -201,7 +199,6 @@ theorem regionClass_sound {s : IndexedHeap} {r : Region} {a : Selector} (hr : re
     cases hr
     simp only [Region.mem, Bool.and_eq_true] at hm ⊢
     exact hm.2
-  | cell _ => cases hr; exact hm
   | cells x => cases hr; exact spineCells_values hm
   | pathCells x p =>
     cases hr

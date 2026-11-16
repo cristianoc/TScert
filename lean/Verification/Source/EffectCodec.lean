@@ -601,7 +601,6 @@ def regionJ : Region → Json
   | .path x p k => tagged "path" (obj ["x", "fields", "key"] [natJ x, strsJ p, keyJ k])
   | .pathFields x p => tagged "pathFields" (obj ["x", "fields"] [natJ x, strsJ p])
   | .pathCells x p => tagged "pathCells" (obj ["x", "fields"] [natJ x, strsJ p])
-  | .cell b => tagged "cell" (obj ["name"] [Json.str b])
   | .inCls r c => tagged "inCls" (obj ["region", "selector"] [regionJ r, selectorJ c])
   | .spine x p => tagged "spine" (obj ["x", "fields"] [natJ x, strsJ p])
 
@@ -634,9 +633,6 @@ def regionOf : Nat → Json → Except String Region
     | "pathCells" => do
       let [x, p] ← fields v ["x", "fields"] | throw "pathCells"
       pure (.pathCells (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
-    | "cell" => do
-      let [b] ← fields v ["name"] | throw "cell"
-      pure (.cell (← under "name" (strOf b)))
     | "inCls" => do
       let [r, c] ← fields v ["region", "selector"] | throw "inCls"
       pure (.inCls (← under "region" (regionOf n r)) (← under "selector" (selectorOf c)))
