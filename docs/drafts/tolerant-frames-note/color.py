@@ -72,8 +72,8 @@ for n in ['keep', 'init', 'grow', 'any']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\chg{%s}}' % (n, n))
 for n in ['rigid', 'fresh', 'old', 'dense', 'every', 'apart']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\asr{%s}}' % (n, n))
-rep(r'\newcommand{\val}{\kw{all\text{-}values}}', r'\newcommand{\val}{\reg{all\text{-}values}}')
-rep(r'\newcommand{\st}{\kw{all\text{-}spines}}', r'\newcommand{\st}{\reg{all\text{-}spines}}')
+rep(r'\newcommand{\val}{\kw{values}}', r'\newcommand{\val}{\reg{values}}')
+rep(r'\newcommand{\st}{\kw{spines}}', r'\newcommand{\st}{\reg{spines}}')
 t = t.replace(r'\kw{scalar}', r'\chg{scalar}').replace(r'\kw{spine}', r'\reg{spine}').replace(r'\kw{view}', r'\asr{view}')
 rep(r'\newcommand{\code}[1]{\texttt{#1}}', r'\newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}')
 rep(r'\newcommand{\lean}[1]{\texttt{\small #1}}', r'\newcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}')
