@@ -25,7 +25,7 @@
 \newcommand{\grow}{\kw{grow}}
 \newcommand{\any}{\kw{any}}
 \newcommand{\val}{\kw{all\text{-}values}}
-\newcommand{\st}{\kw{all\text{-}stores}}
+\newcommand{\st}{\kw{all\text{-}spines}}
 \newcommand{\vw}{\kw{all\text{-}views}}
 \newcommand{\slen}{\kw{strlen}}
 \newcommand{\LV}{\mathit{Loc}_{\mathsf{view}}}
@@ -41,7 +41,7 @@
 \newcommand{\hoare}[3]{\{#1\}\;#2\;\{#3\}}
 \newcommand{\hoarex}[4]{\{#1\}\;#2\;\{#3\mid #4\}}
 \newcommand{\code}[1]{\texttt{#1}}
-\newcommand{\kF}{\mathsf{field}}\newcommand{\kC}{\mathsf{cell}}\newcommand{\kE}{\mathsf{elem}}\newcommand{\kS}{\mathsf{store}}\newcommand{\kI}{\mathsf{id}}
+\newcommand{\kF}{\mathsf{field}}\newcommand{\kC}{\mathsf{cell}}\newcommand{\kE}{\mathsf{elem}}\newcommand{\kS}{\mathsf{spine}}\newcommand{\kI}{\mathsf{id}}
 \newcommand{\LF}{\mathit{Loc}_{\kF}}\newcommand{\LC}{\mathit{Loc}_{\kC}}\newcommand{\LE}{\mathit{Loc}_{\kE}}\newcommand{\LS}{\mathit{Loc}_{\kS}}\newcommand{\LI}{\mathit{Loc}_{\kI}}
 \newcommand{\lean}[1]{\texttt{\small #1}}
 \newcommand{\status}[1]{\textsf{\small[#1]}}
@@ -92,7 +92,7 @@ no disjointness is available, and none is required. What the two share is
 that the step's \emph{effect} is known and the fact is closed under it.
 The language below makes that the primitive.
 
-\section{What exists: variables, locations, stores}\label{sec:model}
+\section{What exists: variables, locations, spines}\label{sec:model}
 
 
 \paragraph{Variables and heap objects.} Let $\mathit{Var}$ be the set of variables, ranged over by $x,y$, and
@@ -157,7 +157,7 @@ location is ever removed. The locations of a heap $h$ are of five kinds, by what
 $\kF$, $\kC$, $\kE$, $\kS$ and $\kI$. Write $\mathit{Loc}_\kappa$ for the
 set of its locations of kind $\kappa$; the five sets
 partition its domain, $\mathrm{dom}\,h=\LF\uplus\LC\uplus\LE\uplus\LS\uplus\LI$. A location's kind is fixed for its life. Each kind belongs to one of two
-classes, \emph{value} or \emph{store}; effects refer to locations by
+classes, \emph{value} or \emph{spine}; effects refer to locations by
 class.
 
 \begin{description}[leftmargin=1.5em,style=nextline]
@@ -176,27 +176,27 @@ with no element is a \emph{hole}. This array has two element cells,
 $l_0$ holding 10 and $l_2$ holding 30; the hole at index 1 has no
 location. \code{a[0] = 11} changes what
 $l_0$ holds. Class: \emph{value}.
-\item[Store location, kind $\kS$] One for each array. It holds the array's
-\emph{store}: the sequence, in index order, of the array's element cells
-and holes. For \code{a} above the store is
+\item[Spine location, kind $\kS$] One for each array. It holds the array's
+\emph{spine}: the sequence, in index order, of the array's element cells
+and holes. For \code{a} above the spine is
 $\langle l_0,\circ,l_2\rangle$. \code{a.push(40)} allocates an element
-cell $l_3$ and changes the store to $\langle l_0,\circ,l_2,l_3\rangle$;
+cell $l_3$ and changes the spine to $\langle l_0,\circ,l_2,l_3\rangle$;
 \code{a.length = 1} changes it to $\langle l_0\rangle$. Class:
-\emph{store}.
+\emph{spine}.
 
-A store location has one of two \emph{forms}, fixed with its kind. An
-\emph{array store} belongs to an ordinary array, and its length may
-change, as above. A \emph{view store} belongs to a typed array. We
+A spine location has one of two \emph{forms}, fixed with its kind. An
+\emph{array spine} belongs to an array, and its length may
+change, as above. A \emph{view spine} belongs to a typed array. We
 write the forms $\mathsf{array}$ and $\mathsf{view}_N$, and
-$\LV\subseteq\LS$ for the set of view stores.
+$\LV\subseteq\LS$ for the set of view spines.
 
 A \emph{typed array}, such as a \code{Uint8Array}, is an object with a
-fixed element format $t$ that has, besides its fields, a view store
-location, of form $\mathsf{view}_N$ with $N\le 2^{53}-1$. Its store has the
+fixed element format $t$ that has, besides its fields, a view spine
+location, of form $\mathsf{view}_N$ with $N\le 2^{53}-1$. Its spine has the
 fixed length $N$ and no hole: it lists $N$ element cells, each holding a
 number of the format $t$, which is what the typed array reads at that
-index. The contract of a view store admits every such store. Distinct
-typed arrays have distinct view stores. Typed arrays are created by
+index. The contract of a view spine admits every such spine. Distinct
+typed arrays have distinct view spines. Typed arrays are created by
 library calls: \code{new Uint8Array(4)} returns a new typed array of
 length 4 whose elements are 0, and, for integers $0\le p\le q$ with $q$ at most the length of
 \code{b}, \code{b.subarray(p, q)} returns a new typed
@@ -207,9 +207,9 @@ So typed arrays may share bytes. After
 \code{const c = b.subarray(0, 2);} the write \code{b[0] = 7} changes
 what \code{c[0]} reads. The model states this without a buffer: among
 the locations that exist before a write through a typed array, only
-view stores change. At each index whose reading changes, in any view
-store, the store comes to list a new cell that holds the new reading.
-Here the view stores of \code{b} and of \code{c} each list a new cell
+view spines change. At each index whose reading changes, in any view
+spine, the spine comes to list a new cell that holds the new reading.
+Here the view spines of \code{b} and of \code{c} each list a new cell
 holding 7 at index 0.
 \item[Identity location, kind $\kI$] One for each object, allocated with it.
 It holds \code{null}, and its contract admits \code{null} alone. Two
@@ -219,16 +219,16 @@ location beside its two field locations. Class: \emph{value}.
 \end{description}
 
 \noindent
-So a heap maps a location to a value or to a store:
+So a heap maps a location to a value or to a spine:
 $h(l)\in\mathit{Val}$ for $l\in\LF\cup\LC\cup\LE\cup\LI$, and
-$h(l)\in\mathit{Store}$ for $l\in\LS$. Here
-$\mathit{Store}=(\mathit{Loc}\uplus\{\circ\})^{*}$ is the set of finite
+$h(l)\in\mathit{Spine}$ for $l\in\LS$. Here
+$\mathit{Spine}=(\mathit{Loc}\uplus\{\circ\})^{*}$ is the set of finite
 sequences whose entries are locations or the hole $\circ$, and
-$\mathit{Loc}=\mathbb{N}$. For a store
+$\mathit{Loc}=\mathbb{N}$. For a spine
 $\sigma=\langle c_0,\ldots,c_{n-1}\rangle$ we write $\len\sigma=n$ for
 its length and $\mathit{cells}(\sigma)=\{c_i\mid c_i\ne\circ\}$ for the
 set of locations it lists. In one line,
-$h:\mathit{Loc}\rightharpoonup\mathit{Val}\uplus\mathit{Store}$.
+$h:\mathit{Loc}\rightharpoonup\mathit{Val}\uplus\mathit{Spine}$.
 
 A value in $\mathit{Val}$ is a scalar or an object. A function is an object that also carries code. A
 \emph{scalar} is \code{null}, \code{undefined}, a number, a string, a
@@ -238,13 +238,16 @@ own keys to field locations, together with an identity location in $\LI$;
 both are fixed when the object is allocated. We write
 $\mathit{fields}(v)=\{v(f)\mid f\in\mathrm{dom}\,v\}$ for the set of the
 field locations of an object $v$. The
-read of a field $f$ of $v$ in a heap $h$ is $h(v(f))$. What changes is $h$ at the locations $v(f)$. An array is an object that has, besides its fields, a
-\emph{store location} $s\in\LS$. We write $\mathit{st}(v)$ for the
-store location of an array or a typed array $v$. Its \emph{store} is the
-sequence $h(s)=\langle c_0,\dots,c_{n-1}\rangle\in\mathit{Store}$, where
-$c_i\in\LE$ if index $i$ is present and $c_i=\circ$ if it is a hole. The
-array's length is $n$, and its element at a present index $i$ is
-$h(c_i)$. For \code{const a = [10, , 30];} the store is
+read of a field $f$ of $v$ in a heap $h$ is $h(v(f))$. What changes is $h$ at the locations $v(f)$. 
+
+An \emph{indexed collection}, or \emph{collection}, is an object that
+has, besides its fields, a \emph{spine location} $s\in\LS$. A collection
+is an array or a typed array. We write $\mathit{sp}(v)$ for the spine
+location of a collection $v$. The spine of the collection is the
+sequence $h(s)=\langle c_0,\dots,c_{n-1}\rangle\in\mathit{Spine}$, where
+$c_i\in\LE$ if index $i$ is present and $c_i=\circ$ if it is a hole. The collection's length is
+$n$, and its element at a present index $i$ is $h(c_i)$. An object that
+is not a collection is an \emph{ordinary object}. For \code{const a = [10, , 30];} the spine is
 $h(s)=\langle l_0,\circ,l_2\rangle$, the length is 3, $h(l_0)=10$ and
 $h(l_2)=30$. 
 \paragraph{Why distinguish fields from cells?}
@@ -267,7 +270,7 @@ code increments \code{r.value}. Number their locations as follows:
 0 & \kF & 1 & \text{the field \code{n} of \code{o}}\\
 1 & \kF & 2 & \text{the field \code{m} of \code{o}}\\
 2 & \kC & 0 & \text{the field \code{value} of the private cell \code{r}}\\
-3 & \kS & \langle 4,\circ,5\rangle & \text{the store of \code{a}}\\
+3 & \kS & \langle 4,\circ,5\rangle & \text{the spine of \code{a}}\\
 4 & \kE & 10 & \text{the element \code{a[0]}}\\
 5 & \kE & 30 & \text{the element \code{a[2]}}\\
 6,7,8,9 & \kI & \code{null} & \text{the identity locations of \code{o}, \code{r}, \code{inc} and \code{a}}
@@ -278,8 +281,8 @@ $\LS=\{3\}$, $\LE=\{4,5\}$ and $\LI=\{6,7,8,9\}$.
 The object \code{o} is the map $\{\code{n}\mapsto 0,\ \code{m}\mapsto 1\}$:
 \code{o.n} is read as $h(0)$ and \code{o.m} as $h(1)$.
 The cell \code{r} is the object $\{\code{value}\mapsto 2\}$, so
-\code{r.value} is read as $h(2)$. The array \code{a} has store location 3.
-So $\mathit{fields}(o)=\{0,1\}$ and $\mathit{st}(a)=3$.
+\code{r.value} is read as $h(2)$. The array \code{a} has spine location 3.
+So $\mathit{fields}(o)=\{0,1\}$ and $\mathit{sp}(a)=3$.
 The environment $\rho$ holds \code{o}, \code{r}, \code{inc} and \code{a}.
 A call \code{inc()} changes $h(2)$ to 1 and leaves the other existing
 locations unchanged; \code{o.m = 7} changes $h(1)$ to 7 and leaves the others
@@ -297,20 +300,19 @@ operation & writes & class written\\
 \code{r.value = a}, \code{r} a private cell & the cell\textquotesingle s contents location & \emph{value}\\
 \code{o.f = e} & the field location & \emph{value}\\
 \code{a[i] = e}, index present & the element cell & \emph{value}\\
-\code{a[i] = e} at a hole or past the end; \code{push} & the store (longer or filled), and a new cell & \emph{store}\\
-\code{pop}, \code{splice}, \code{a.length = n} & the store (possibly shorter) & \emph{store}\\
-\code{b[i] = e}, \code{b} a typed array & view stores (same lengths), and new cells & \emph{store}\\
+\code{a[i] = e} at a hole or past the end; \code{push} & the spine (longer or filled), and a new cell & \emph{spine}\\
+\code{pop}, \code{splice}, \code{a.length = n} & the spine (possibly shorter) & \emph{spine}\\
+\code{b[i] = e}, \code{b} a typed array & view spines (same lengths), and new cells & \emph{spine}\\
 \bottomrule
 \end{tabular}
 \medskip
 
 \noindent
 The \emph{value} class is thus ``contents'': every location that holds
-something other than a store. The \emph{store} class is ``shape'': which
+something other than a spine. The \emph{spine} class is ``shape'': which
 elements an array has and how many. A fact about a length or about
-presence reads a store; a fact about what a field or an element contains
-reads a value location. A fact about an element of an array or of a
-typed array reads both: the store, for the cell at the index, and the
+presence reads a spine; a fact about what a field or an element contains
+reads a value location. A fact about an element of a collection reads both: the spine, for the cell at the index, and the
 cell.
 
 \paragraph{Which locations can change.} A location never moves or
@@ -336,7 +338,7 @@ change. The second is an identity
 location. Both belong to the value
 class, and no admissible transition (Definition~\ref{def:adm}) changes them.
 A typed array's length is fixed too, by the form $\mathsf{view}_N$ of
-its store.
+its spine.
 
 \section{Model}
 
@@ -357,7 +359,7 @@ $l\in\mathrm{dom}\,W$.
 \end{definition}
 \noindent
 Example: for the heap of Section~2, $W(0)=(\kF,\code{number})$,
-$W(3)=(\kS\ \mathsf{array},\text{stores of number cells})$ and $W(6)=(\kI,\{\code{null}\})$.
+$W(3)=(\kS\ \mathsf{array},\text{spines of number cells})$ and $W(6)=(\kI,\{\code{null}\})$.
 After \code{a.push(40)} the world is $W$ with one more entry,
 $10\mapsto(\kE,\code{number})$, and it extends $W$.
 
@@ -368,12 +370,12 @@ when:
 \begin{description}[leftmargin=1.5em,style=sameline]
 \item[(W1) one domain] $\mathrm{dom}\,h=\mathrm{dom}\,W$.
 \item[(W2) contents by kind] For every $l$ with $W(l)=(\kappa,T)$:
-$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a store when $\kappa=\kS$, of length $N$ and without holes when its
+$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a spine when $\kappa=\kS$, of length $N$ and without holes when its
 form is $\mathsf{view}_N$, and \code{null} when $\kappa=\kI$.
-\item[(W3) valid references] Every cell that a store of $h$ lists is a
+\item[(W3) valid references] Every cell that a spine of $h$ lists is a
 location of kind $\kE$. For every object that occurs in $h$ or in $\rho$,
 each field location is of kind $\kF$ or $\kC$ and its identity location
-is of kind $\kI$; the store location of an array is of kind $\kS$ and
+is of kind $\kI$; the spine location of an array is of kind $\kS$ and
 form $\mathsf{array}$, and that of a typed array of length $N$ of form
 $\mathsf{view}_N$.
 \item[(W4) contracts] $h(l)$ is within $T$ for every $l$ with
@@ -425,8 +427,9 @@ So what is proved below of every admissible transition holds of every
 step, call and callback of typed code. Host and library code is modelled
 by declared contracts; that a model is accurate is audited, not proved.
 
-This paper takes three things from the type system, which is specified
-apart from it: the contract of each location, fixed at its allocation;
+This paper takes four things from the type system, which is specified
+apart from it: the type of each variable and of each field; the contract
+of each location, fixed at its allocation;
 that each write is within the contract of the location it writes; and
 the safety of each step that needs no fact about the heap, such as the
 read of a field that the object's type has.
@@ -452,7 +455,7 @@ contract of $l$ admits the single value $u$, then $h(l)=h'(l)=u$
 \end{description}
 
 \paragraph{Changes.} A \emph{change} bounds how the contents of one
-location may differ between two heaps. One of the changes below, $\grow$, must say that the cells a store
+location may differ between two heaps. One of the changes below, $\grow$, must say that the cells a spine
 newly lists are \emph{new} locations. So a change takes a parameter $b$,
 a heap length: a location is new when it is at or above $b$. Formally a
 change $\delta$ is a family of preorders $\delta_b$ on contents, one for
@@ -469,11 +472,11 @@ Write $N$ for the maximal array length. For contents $u,u'$:
 \keep_b(u,u') &\iff& u'=u\\[2pt]
 \init_b(u,u') &\iff& u'=u\ \vee\ (u\in\{\code{null},\code{undefined}\}\wedge u'\in\mathit{Val})\\[2pt]
 \kw{scalar}_b(u,u') &\iff& u'=u\ \vee\ (u\in\mathit{Val}\setminus\mathit{Obj}\wedge u'\in\mathit{Val})\\[2pt]
-\grow_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ (u,u'\in\mathit{Store}\wedge u\preceq_b u')\\[2pt]
+\grow_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ (u,u'\in\mathit{Spine}\wedge u\preceq_b u')\\[2pt]
 \any_b(u,u') &\iff& \kw{true}
 \end{array}
 \]
-where, for two stores, $\sigma\preceq_b\sigma'$ (read: $\sigma'$ is a
+where, for two spines, $\sigma\preceq_b\sigma'$ (read: $\sigma'$ is a
 \emph{growth} of $\sigma$ at $b$) is the conjunction of four conditions:
 \[
 \begin{array}{ll}
@@ -500,7 +503,7 @@ assignment in \code{c ??= build()} changes the contents of $l$ from
 \code{undefined} to the value $v$ that \code{build()} returns, and
 $\init_b(\code{undefined},v)$ holds. The assignment \code{o.n = 3}
 changes the contents of the field location of \code{n} from 1 to 3, and
-$\kw{scalar}_b(1,3)$ holds. With $b=10$, $\grow_{10}$ relates the store
+$\kw{scalar}_b(1,3)$ holds. With $b=10$, $\grow_{10}$ relates the spine
 $\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,10\rangle$ (a
 \code{push}) and to $\langle 4,10,5\rangle$ (a write at the hole). It
 does not relate it to $\langle 4\rangle$, which fails (i), nor to
@@ -519,7 +522,7 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 \node[anchor=west] at (-1.9,0) {heap $h$};
 \node[anchor=west] at (-1.9,-1.05) {kind};
 \node[anchor=west] at (-1.9,-2.2) {region};
-\foreach \i/\c/\k/\n in {0/1/field/{\code{o.n}},1/2/field/{\code{o.m}},2/0/cell/{\code{r.value}},3/{$\langle 4,\circ,5\rangle$}/store/{store of \code{a}},4/10/elem/{\code{a[0]}},5/30/elem/{\code{a[2]}}}{
+\foreach \i/\c/\k/\n in {0/1/field/{\code{o.n}},1/2/field/{\code{o.m}},2/0/cell/{\code{r.value}},3/{$\langle 4,\circ,5\rangle$}/spine/{spine of \code{a}},4/10/elem/{\code{a[0]}},5/30/elem/{\code{a[2]}}}{
   \node at (\i,0.75) {\i};
   \node[cell] (c\i) at (\i,0) {\c};
   \node at (\i,-1.05) {$\k$};
@@ -532,17 +535,17 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 \draw[->] (a) -- (2.7,0.42);
 \draw[->] ([xshift=-2pt]c3.south) to[out=-70,in=-110,looseness=0.9] (c4.south);
 \draw[->] ([xshift=2pt]c3.south) to[out=-60,in=-120,looseness=0.7] (c5.south);
-\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{fields}$}/{0,1},-3.4/{$a.\kw{store}$}/{3},-3.8/{$a.\kw{cells}$}/{4,5},-4.2/{$a[\ast]$}/{3,4,5},-4.6/{$\st$}/{3},-5.0/{$\val$}/{0,1,2,4,5}}{
+\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{fields}$}/{0,1},-3.4/{$a.\kw{spine}$}/{3},-3.8/{$a.\kw{cells}$}/{4,5},-4.2/{$a[\ast]$}/{3,4,5},-4.6/{$\st$}/{3},-5.0/{$\val$}/{0,1,2,4,5}}{
   \node[anchor=east] at (-0.55,\y) {\name};
   \foreach \j in \cells { \ifnum\j=3 \node[sbar] at (\j,\y) {}; \else \node[bar] at (\j,\y) {}; \fi }
 }
 \end{tikzpicture}
 \caption{The nonidentity locations of the heap of Section~2 and the portions of each region on them. Identity locations 6--9 are omitted. Top:
 the object \code{o} points to its two field locations, and the array
-\code{a} to its store location. Middle: the six depicted locations with their
-contents and kinds; the store at location 3 lists the element cells 4
+\code{a} to its spine location. Middle: the six depicted locations with their
+contents and kinds; the spine at location 3 lists the element cells 4
 and 5, with a hole between them. Bottom: each bar marks a depicted location the
-region denotes; store locations are drawn lighter.}\label{fig:heap}
+region denotes; spine locations are drawn lighter.}\label{fig:heap}
 \end{figure}
 
 A \emph{path} $\pi=x.f_1\ldots f_k$ is a variable
@@ -558,35 +561,59 @@ field:
 Example: in the heap of Section~2, $\mathit{read}(o.n,\rho,h)=h(0)=1$,
 and $\mathit{read}(o.n.k,\rho,h)=\bot$, since 1 is not an object.
 
+The \emph{type} of a path is the type of its variable or of its last
+field. Where the type of a path is a union, a further field is read at
+the members of the union that are object types, and the members
+\code{null} and \code{undefined} are skipped. A path is a
+\emph{collection path} when every member of its type is a collection
+type, \code{null} or \code{undefined}. A path is an \emph{object path}
+when every member of its type is an object type, \code{null} or
+\code{undefined}; a collection type is an object type. Example: with
+\code{xs: number[]}, \code{z: \{ open: number[] \} | null} and
+\code{u: number[] | string}, the paths $\mathit{xs}$ and
+$z.\mathit{open}$ are collection paths, $z$ is an object path, and $u$
+is neither.
+
 A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
 of $h$. A class region reads the kinds and forms of those locations,
 which the world of the state records (Definition~\ref{def:world}); the
-other regions read $\rho$ and $h$. There are seven forms. In the four
-forms at a path $\pi$, $v$ stands for $\mathit{read}(\pi,\rho,h)$, and
-the region denotes $\emptyset$ where the stated condition on $v$ does
-not hold.
+other regions read $\rho$ and $h$. There are seven forms: three class
+regions and four regions at a path $\pi$.
+
+A region at a path is \emph{well-formed} under a condition on the
+path. The regions $\pi.\kw{spine}$ and $\pi.\kw{cells}$ are well-formed
+where $\pi$ is a collection path. The region $\pi.\kw{fields}$ is
+well-formed where $\pi$ is an object path. The region $\pi.f$ is
+well-formed where $\pi$ is an object path and every object member of
+its type has the field $f$, required or optional. An effect, a support
+and an annotation contain well-formed regions only
+\status{Lean: the regions \lean{store}, \lean{pathElems}, \lean{path} and \lean{pathOwn} are defined at every path and denote the empty set at a value of another kind; no kinding of regions is checked}.
+
+In the four forms at a path, $v$ stands for $\mathit{read}(\pi,\rho,h)$.
+The region denotes $\emptyset$ when the read fails, when $v$ is
+\code{null} or \code{undefined}, and, for $\pi.f$, when the object $v$
+has no key $f$, as for an optional field that is absent.
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[{$\st$}] Every location of class store:
+\item[{$\st$}] Every location of class spine:
 $\st(\rho,h)=\LS$. In the heap of Section~2 it denotes $\{3\}$.
-\item[{$\vw$}] Every view store: $\vw(\rho,h)=\LV$, a subset of
+\item[{$\vw$}] Every view spine: $\vw(\rho,h)=\LV$, a subset of
 $\st(\rho,h)$. The heap of Section~2 has no typed array, so there it
 denotes $\emptyset$.
 \item[{$\val$}] Every location of class value:
 $\val(\rho,h)=\LF\cup\LC\cup\LE\cup\LI$. In the heap of Section~2 it denotes
 $\{0,1,2,4,5,6,7,8,9\}$.
-\item[{$\pi.\kw{store}$}] The store location of the array or typed
-array that $\pi$ reads:
-$(\pi.\kw{store})(\rho,h)=\{\mathit{st}(v)\}$ if $v$ is an array or a
-typed array. Example: $a.\kw{store}$ denotes $\{3\}$.
-\item[{$\pi.\kw{cells}$}] The element cells that the store of that array
-or typed array lists in $h$:
-$(\pi.\kw{cells})(\rho,h)=\mathit{cells}(h(\mathit{st}(v)))$ if $v$ is
-an array or a typed array. It is a set of value locations. After a
-change of the store, the region denotes the cells that the new store
+\item[{$\pi.\kw{spine}$}] The spine location of the collection that
+$\pi$ reads: $(\pi.\kw{spine})(\rho,h)=\{\mathit{sp}(v)\}$ if $v$ is a
+collection. Example: $a.\kw{spine}$ denotes $\{3\}$.
+\item[{$\pi.\kw{cells}$}] The element cells that the spine of that
+collection lists in $h$:
+$(\pi.\kw{cells})(\rho,h)=\mathit{cells}(h(\mathit{sp}(v)))$ if $v$ is
+a collection. It is a set of value locations. After a
+change of the spine, the region denotes the cells that the new spine
 lists. Example: $a.\kw{cells}$ denotes $\{4,5\}$
 \status{Lean: the regions \lean{elems} and \lean{pathElems}}.
 \item[{$\pi.f$}] The field location for the key $f$ of the object that
-$\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$ if $v$ is an object and
+$\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$ if $v$ is an object with
 $f\in\mathrm{dom}\,v$. Examples: $o.n$ denotes $\{0\}$ and $o.m$
 denotes $\{1\}$.
 \item[{$\pi.\kw{fields}$}] Every field location of the object that $\pi$
@@ -594,26 +621,31 @@ reads: $(\pi.\kw{fields})(\rho,h)=\mathit{fields}(v)$ if $v$ is an object.
 It is a set of value locations. Example: $o.\kw{fields}$ denotes $\{0,1\}$. It
 covers the fields a type of $v$ does not list, which no finite set of
 regions $\pi.f$ does. By (T3) the object $v$ fixes this set
-\status{Lean: the regions \lean{own} and \lean{pathOwn}, which also contain the store location of an array}.
+\status{Lean: the regions \lean{own} and \lean{pathOwn}, which also contain the spine location of an array}.
 \end{description}
 \noindent
-We write $\pi[\ast]$ for the store location together with the cells:
-$(\pi[\ast])(\rho,h)=(\pi.\kw{store})(\rho,h)\cup(\pi.\kw{cells})(\rho,h)$.
+We write $\pi[\ast]$ for the spine location together with the cells:
+$(\pi[\ast])(\rho,h)=(\pi.\kw{spine})(\rho,h)\cup(\pi.\kw{cells})(\rho,h)$.
 A pair $\pi[\ast]:\delta$, in an effect or in a support, stands for the
-two pairs $\pi.\kw{store}:\delta$ and $\pi.\kw{cells}:\delta$. Example:
+two pairs $\pi.\kw{spine}:\delta$ and $\pi.\kw{cells}:\delta$, so it
+is well-formed where $\pi$ is a collection path. Example:
 $a[\ast]$ denotes $\{3,4,5\}$.
 
-The first three regions are named for what they cover: all the stores
-of the heap, its view stores, and all its value locations. They are the
-\emph{class regions}. Value locations, array stores and view stores
+The first three regions are named for what they cover: all the spines
+of the heap, its view spines, and all its value locations. They are the
+\emph{class regions}. Value locations, array spines and view spines
 partition the locations of $h$; $\st$ is the union of the last two. A
 location keeps its kind and form (T2), so a class region denotes, among
 the locations of $h$, the same set in every heap reached from $h$; and
-the store of an ordinary array, at $\pi.\kw{store}$ or in $\pi[\ast]$,
+the spine of an array, at $\pi.\kw{spine}$ or in $\pi[\ast]$,
 is disjoint from $\vw$. In TScert's \code{Modifies}
-annotation $\st$ and $\val$ are written \code{stores} and \code{values}. For
-example, if \code{z} is \code{null}, then the read of $z.\mathit{open}$
-fails and $z.\mathit{open}.\kw{store}$ denotes $\emptyset$.
+annotation $\st$ and $\val$ are written \code{spines} and \code{values}. 
+
+Two examples of regions at a path, with the declarations above. If
+\code{z} is \code{null}, then the read of $z.\mathit{open}$ fails and
+$z.\mathit{open}.\kw{spine}$ denotes $\emptyset$. The path $u$, of type
+\code{number[] | string}, has no spine region, and a function with such
+a parameter states its effect on it with a class region.
 
 \paragraph{Effects.} An \emph{effect} says where a step may change the
 heap and by how much. It is a finite set of entries $r:\delta$, each a
@@ -621,7 +653,7 @@ region and a change:
 \[
 \begin{array}{rcl}
 \Phi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[3pt]
-r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{fields}\\[3pt]
+r &::=& \st \mid \vw \mid \val \mid \pi.\kw{spine} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{fields}\\[3pt]
 \delta &::=& \keep\mid\init\mid\kw{scalar}\mid\grow\mid\any
 \end{array}
 \]
@@ -631,11 +663,11 @@ which element of a typed array was written or to what. Those are
 postconditions (Section~6).
 
 Two examples. The effect $\{\val:\any,\ \st:\grow\}$ reads: every
-location that is not a store may change arbitrarily, and every array may
+location that is not a spine may change arbitrarily, and every array may
 grow and none may shrink. It is the effect of an element write
 \code{out[j] = v} whose target array is unknown. The effect
-$\{\val:\any,\ y.\kw{store}:\any\}$ reads: every location that is not a
-store may change arbitrarily, the one array $y$ may change arbitrarily,
+$\{\val:\any,\ y.\kw{spine}:\any\}$ reads: every location that is not a
+spine may change arbitrarily, the one array $y$ may change arbitrarily,
 and every other array is unchanged. It is the effect of a call that may
 shorten $y$, as \code{y.splice(...)} does.
 
@@ -652,9 +684,9 @@ New locations are constrained by admissibility alone.
 For example, let $h$ be the heap of Section~2 and let $h'$ be $h$ after
 \code{a.push(40)}: $h'(3)=\langle 4,\circ,5,10\rangle$, $h'(10)=40$, and $h'$ agrees with $h$ on every location of $h$ but 3. Then $h\tr{\{\st:\grow\}}_\rho h'$:
 location 3 is in $\st(\rho,h)$ and changed within $\grow_{10}$, the other locations of $h$ are unchanged, and 10 is new. After
-\code{a.length = 1} the store is $\langle 4\rangle$, a change that is
+\code{a.length = 1} the spine is $\langle 4\rangle$, a change that is
 not within $\grow$; that transition is bounded by
-$\{a.\kw{store}:\any\}$ and is not bounded by $\{\st:\grow\}$.
+$\{a.\kw{spine}:\any\}$ and is not bounded by $\{\st:\grow\}$.
 
 \paragraph{Order, top, rigidity.} We write $\Phi\sqsubseteq\Psi$ when
 the action of $\Phi$ is included in the action of $\Psi$, for every
@@ -669,17 +701,17 @@ change bounded by $\Phi$ survive any number of them.
 \item[Rigid: class regions] An effect whose regions are $\st$, $\vw$ and
 $\val$ is rigid at every named change. A change below $\any$ keeps each
 location in its class, and $\any$ absorbs any change that follows it.
-\item[Rigid: a store at a rigid path] $\{\pi.\kw{store}:\delta\}$ is
+\item[Rigid: a spine at a rigid path] $\{\pi.\kw{spine}:\delta\}$ is
 rigid on the states where $\pi$ is rigid (Section~4): the path then
-reads the same store in $h$ and in $h'$.
+reads the same spine in $h$ and in $h'$.
 \item[The fields at a path] $\{\pi.\kw{fields}:\delta\}$ is the effect of a method that changes only its
 receiver's fields. An iterator \code{it} whose \code{next} has that
 specification gives
 $\code{it.next()}:\{\mathit{it}.\kw{fields}:\any\}$
 \status{Lean: \lean{ownCall\_sound}, for a call whose normal effect has
 an entry at the receiver's own fields and keeps every other location}.
-\item[Not rigid: cells of a store changed at $\any$]
-$\{x[\ast]:\any\}$ is not rigid. A first change may make the store of
+\item[Not rigid: cells of a spine changed at $\any$]
+$\{x[\ast]:\any\}$ is not rigid. A first change may make the spine of
 $x$ list an element cell that existed before and that it did not list,
 such as a cell $l$ of another array. A second change, whose region is
 read in the new heap, may then change $l$, which the region read in $h$
@@ -717,7 +749,7 @@ A literal $n$, a safe integer, denotes itself. A variable $x$ and a path $\pi$ d
 the number they hold or read. $\len\pi$ is the length of the array that
 $\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
 $\slen(\pi)$ the length of the string. $z[t]$ is the number that the
-array or typed array $z$ holds at the index $t$, and $z[t].\pi$ the
+collection $z$ holds at the index $t$, and $z[t].\pi$ the
 number read from the element at $t$ along the fields of $\pi$, which
 here stands for a sequence of field names alone. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
@@ -750,14 +782,14 @@ The set is a finite union of kinds of value (a number, a string, an
 object, \code{null}, \code{undefined}, a boolean), possibly with
 literals added or excluded. Examples: $x.f\in\mathit{number}$, and
 $x.f\notin\{\code{null}\}$, the values other than \code{null}.
-\item[Element $z{[i]}\doteq v$] The array or typed array $z$ reads $v$
+\item[Element $z{[i]}\doteq v$] The collection $z$ reads $v$
 at the index $i$: the term $i$ is defined with $0\le i$ and $i$ below
-the length of $z$, and $v$ is the value of the element cell the store
+the length of $z$, and $v$ is the value of the element cell the spine
 lists at $i$, or \code{undefined} where an array has a hole at $i$.
 Examples: for \code{a = [10, , 30]}, $a[0]\doteq 10$ and
 $a[1]\doteq\code{undefined}$; for a typed array, $b[1]\doteq 4$.
 \item[Bounded quantification $\every(z,t,\varphi)$] The path $z$ reads
-an array or a typed array, the bound $t$, a linear combination of
+a collection, the bound $t$, a linear combination of
 terms, is defined, and the body
 $\varphi$ holds at each index $i$ with $0\le i<t$. The body is a
 conjunction of disjunctions of linear inequalities over the index $i$
@@ -785,7 +817,7 @@ elements are in order.
 \end{description}
 We write $\varphi(v)$ for a body over the one term $z[i]$, named $v$:
 $\every(a,1,v>0)$
-\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the four kinds of reading, and whether it is read at the entry; an element term occurs only in a body, and the bound of $\every$ is one term. The derivation system \lean{Parity.Derivation} states $\every$ for an ordinary array with each index below $t$ present, and the element atom for a typed array}.
+\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the four kinds of reading, and whether it is read at the entry; an element term occurs only in a body, and the bound of $\every$ is one term. The derivation system \lean{Parity.Derivation} states $\every$ for an array with each index below $t$ present, and the element atom for a typed array}.
 
 \paragraph{Satisfaction.} An assertion is interpreted at a state
 $s=(\rho,h,W,k)$ and an \emph{entry mark} $m$; we write
@@ -797,17 +829,17 @@ the invocation has allocated. Atoms read
 $\rho$ and $h$ only, and the connectives $\wedge$, $\vee$, $\exists$
 have their usual meaning: a disjunction holds where one of its two
 assertions holds, whatever the other reads. We write $\fresh(x)$ for
-$\fresh(x.\kw{store})$, and $\fresh(x.\kw{fields})$ says that the fields of
+$\fresh(x.\kw{spine})$, and $\fresh(x.\kw{fields})$ says that the fields of
 the object $x$ were allocated by this invocation. The other four forms are:
 \[
 \begin{array}{lcl}
-\rho,m,h\models\pi\sep\pi' &\iff& \pi,\pi'\text{ are defined, and if both read arrays their stores differ},\\[2pt]
-\rho,m,h\models\apart(x,y) &\iff& x\text{ and }y\text{ read arrays whose stores differ and list no common element cell},\\[2pt]
+\rho,m,h\models\pi\sep\pi' &\iff& \pi,\pi'\text{ are defined, and if both read arrays their spines differ},\\[2pt]
+\rho,m,h\models\apart(x,y) &\iff& x\text{ and }y\text{ read arrays whose spines differ and list no common element cell},\\[2pt]
 \rho,m,h\models\fresh(r) &\iff& \text{every location of }r(\rho,h)\text{ is at or above }m,\\[2pt]
 \rho,m,h\models\bx{\Phi}F &\iff& \text{for all }h'\text{, if }h\tr{\Phi}_\rho h'\text{ then }\rho,m,h'\models F .
 \end{array}
 \]
-\status{Lean: \lean{PathStoresApart} for $\sep$ as stated; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for the freshness of the store of a path that reads an array, and of the fields of one that reads an object. The derivation system \lean{Parity.Derivation} states $\sep$ of two ordinary arrays.}
+\status{Lean: \lean{PathStoresApart} for $\sep$ as stated; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for the freshness of the spine of a path that reads an array, and of the fields of one that reads an object. The derivation system \lean{Parity.Derivation} states $\sep$ of two arrays.}
 So $\bx{\Phi}F$ says: $F$ holds in every state reached from here by a
 change bounded by $\Phi$. The states reached are those admissible from
 $s$, so the modality reads the world of $s$, and it is the one form that
@@ -818,12 +850,12 @@ particular that $F$ holds here.
 
 Two examples, in the heap $h$ of Section~2, where $\len a=3$. First,
 $\rho,m,h\models\bx{\val:\any,\ \st:\grow}(3\le\len a)$: a change bounded
-by this effect leaves the store of $a$ or grows it, so its length stays
+by this effect leaves the spine of $a$ or grows it, so its length stays
 at least 3. Second,
-$\rho,m,h\not\models\bx{a.\kw{store}:\any}(3\le\len a)$: the heap after
+$\rho,m,h\not\models\bx{a.\kw{spine}:\any}(3\le\len a)$: the heap after
 \code{a.length = 1} is reached by a change bounded by this effect, and
 there $\len a=1$. In a function \code{f() \{ const xs = [1]; \ldots \}},
-$\fresh(\mathit{xs})$ holds after the declaration: the store of
+$\fresh(\mathit{xs})$ holds after the declaration: the spine of
 \code{xs} was allocated by this invocation.
 
 Assertions describe the whole heap. They can be duplicated, and holding
@@ -837,7 +869,7 @@ F\text{ is \emph{invariant}}\ \triangleq\ F\vdash\bx{\top}F
 \]
 An invariant assertion, once true, is true after every admissible
 transition. A fact about variables alone, such as $i<n$, is invariant.
-So is $x\sep y$ for two variables: an array's store location is fixed
+So is $x\sep y$ for two variables: an array's spine location is fixed
 when the array is allocated. A path is rigid when it reads the same
 value after every admissible transition. A path through fields whose
 contracts admit one value is rigid: \code{runs.openBrackets} is rigid
@@ -867,9 +899,9 @@ stabilisation~\cite{wickerson}, at a rely denoted by an effect.
 \noindent
 Law (a) follows from reflexivity; (b), (c) and (d) from the definitions;
 (e) from transitivity. For class regions, transitivity is
-\lean{Closed.Holds.trans\_on}; for a store at a path it is
+\lean{Closed.Holds.trans\_on}; for a spine at a path it is
 \lean{ArgumentStoreRegionsWithin.trans}, provided the path resolves to
-the same store in both heaps.
+the same spine in both heaps.
 
 \begin{proposition}[Guards and quantified facts]\label{prop:every}
 For terms $t,t',k$ and a body $\varphi$:
@@ -885,7 +917,7 @@ In \textsc{(Guard)} the path may end at an optional field. In
 \textsc{(Inst)} the instance $\varphi[k/i]$ has the element at $k$ for
 $z[i]$: after a read \code{v = z[k]}, it is $\varphi$ of $v$. In
 \textsc{(Empty)} $\len z$ may be $\kw{view}(z)$
-\status{The four rules follow from the definition of satisfaction. Lean proves instances of them: \lean{unguardIndices\_holds} and \lean{releaseEither\_holds}, for a guard whose path was read and for alternatives refuted by a linear fact; \lean{instantiateEvery\_holds} and \lean{elementInstances\_holds}, at an index whose element was read; \lean{everyPrefix\_sound}; \lean{Derivation.everyEmpty}, for an ordinary array known dense}.
+\status{The four rules follow from the definition of satisfaction. Lean proves instances of them: \lean{unguardIndices\_holds} and \lean{releaseEither\_holds}, for a guard whose path was read and for alternatives refuted by a linear fact; \lean{instantiateEvery\_holds} and \lean{elementInstances\_holds}, at an index whose element was read; \lean{everyPrefix\_sound}; \lean{Derivation.everyEmpty}, for an array known dense}.
 \end{proposition}
 \noindent
 Example: with $\every(\mathit{items},n,\ 0\le z[i].\mathit{at}<\len{\mathit{widths}})$
@@ -915,13 +947,13 @@ holds.
 \end{definition}
 
 \noindent
-For example $\{x.\kw{store}:\grow\}$ supports $n\le\len x$: the fact
-reads the store of $x$ and nothing else in the heap, and it tolerates
-any growth of that store. A condition lets a support leave out what the
+For example $\{x.\kw{spine}:\grow\}$ supports $n\le\len x$: the fact
+reads the spine of $x$ and nothing else in the heap, and it tolerates
+any growth of that spine. A condition lets a support leave out what the
 transitions at hand do not change. Let $C$ say that the field $x.f$
-keeps its contents. Then $\{x.f.\kw{store}:\grow\}$ supports
+keeps its contents. Then $\{x.f.\kw{spine}:\grow\}$ supports
 $n\le\len{x.f}$ under $C$: the array that $x.f$ reads is the same before
-and after, so its store is all the fact depends on.
+and after, so its spine is all the fact depends on.
 
 Support quantifies over every admissible transition that meets its
 condition. Evidence that one particular transition preserves $F$
@@ -940,9 +972,9 @@ A sufficient condition: for every pair
 $(r:\delta)\in S$ and every entry $(r':\gamma)\in\Phi$, either
 $\gamma\sqsubseteq\delta$, or $K$ entails that $r$ and $r'$ denote
 disjoint sets. For example $\{\val:\any,\ \st:\grow\}$ respects
-$\{x.\kw{store}:\grow\}$ under $\kw{true}$. The entry $\st:\grow$ meets
+$\{x.\kw{spine}:\grow\}$ under $\kw{true}$. The entry $\st:\grow$ meets
 the first alternative, $\grow\sqsubseteq\grow$. The entry $\val:\any$
-meets the second: a store location is no location of class value. The
+meets the second: a spine location is no location of class value. The
 condition is sufficient because a location of a region of $S$ either
 keeps its contents, and every change is reflexive, or lies in a region
 $r'$ of an entry of $\Phi$ that bounds its change by $\gamma$; then $r$
@@ -975,10 +1007,10 @@ the last, $x.f_1\ldots f_k$, at $\delta$.
 \text{a literal or a variable} & \emptyset\\[2pt]
 \text{a number }\pi,\ \slen(\pi) & \mathrm{reads}_{\init}(\pi)\\[2pt]
 \kw{view}(\pi) & \mathrm{reads}_{\grow}(\pi)\\[2pt]
-\len\pi & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{store}:\delta\}\\[2pt]
+\len\pi & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{spine}:\delta\}\\[2pt]
 \text{an inequality} & \text{the supports of its terms}\\[2pt]
 \pi\doteq v,\ \pi\in V & \mathrm{reads}_{\keep}(\pi)\\[2pt]
-\dense(x,n) & \{x.\kw{store}:\grow\}\\[2pt]
+\dense(x,n) & \{x.\kw{spine}:\grow\}\\[2pt]
 z[t]\doteq v,\ \every(z,t,\varphi) & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
 F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
 \pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')
@@ -998,7 +1030,7 @@ and $\mathrm{supp}(\varphi)$ is the support of those terms.
 \noindent
 Example: $\mathrm{supp}(c.\mathit{at}<\kw{view}(\mathit{flags}))$ is
 $\{c.\mathit{at}:\init\}$, the one field the fact reads. An effect that
-grows stores respects it, since a field location is no store
+grows spines respects it, since a field location is no spine
 \status{Lean: \lean{Term.support\_sound}, \lean{IndexFact.support?\_supports}: the support supports the fact, where Lean computes a support. It computes none for an element fact; \lean{Parity.SupportEvidence} has one for the element of a typed array}.
 
 The theorem has two known rules as its extreme cases. When every change
@@ -1010,12 +1042,12 @@ The theorem chooses between the two at each pair.
 
 A fact may have several supports, with no one of them weaker than the others. The fact
 $\apart(x,y)$ is supported by
-$\{x[\ast]:\grow,\ y[\ast]:\keep\}$: a store that grows lists only the
+$\{x[\ast]:\grow,\ y[\ast]:\keep\}$: a spine that grows lists only the
 cells it listed and new ones. It is also supported by the mirror image,
 $\{x[\ast]:\keep,\ y[\ast]:\grow\}$. It is not supported by
-$\{x[\ast]:\grow,\ y[\ast]:\grow\}$: both stores may come to list the
+$\{x[\ast]:\grow,\ y[\ast]:\grow\}$: both spines may come to list the
 same new cell
-\status{Lean: \lean{apart\_grow\_keep}, the instance of the first support where every other store is kept; conj. for the mirror image and for the failure of the third}.
+\status{Lean: \lean{apart\_grow\_keep}, the instance of the first support where every other spine is kept; conj. for the mirror image and for the failure of the third}.
 
 \begin{proposition}[Axioms of the atoms]\label{prop:axioms}
 For variables $x,y,z,w$, any effect $\Phi$, and $a$ an
@@ -1024,7 +1056,7 @@ atom that reads, besides variables, only what is displayed:
 \begin{array}{ll}
 \textsc{(Grow)} & n\le\len x\ \vdash\ \bx{\val:\any,\ \st:\grow}\,(n\le\len x)\\[2pt]
 \textsc{(Dense)} & \dense(x,n)\ \vdash\ \bx{\val:\any,\ \st:\grow}\,\dense(x,n)\\[2pt]
-\textsc{(Sep)} & x\sep y\wedge a(\len x)\ \vdash\ \bx{\val:\any,\ y.\kw{store}:\any}\ a(\len x)\\[2pt]
+\textsc{(Sep)} & x\sep y\wedge a(\len x)\ \vdash\ \bx{\val:\any,\ y.\kw{spine}:\any}\ a(\len x)\\[2pt]
 \textsc{(Every)} & \apart(x,z)\wedge\every(z,t,\varphi)\ \vdash\ \bx{x[\ast]:\any}\,\every(z,t,\varphi)\quad t\text{ a variable, }\varphi\text{ over scalars}\\[2pt]
 \textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\ a(\len\pi)\\[2pt]
 \textsc{(Rigid)} & \rigid(\pi)\wedge a(\len{\pi})\ \vdash\ \bx{\Phi}\,a(\len\pi)\quad\text{if } a(\len y)\vdash\bx{\Phi}\,a(\len y)\text{ for a fresh }y\\[2pt]
@@ -1040,18 +1072,18 @@ that only grows arrays. It mentions no separation: it is
 Example~\ref{ex:alias}. Lean: \lean{grow}.
 \item[\textsc{(Dense)}] A dense prefix survives any change that only
 grows arrays. Lean: \lean{dense\_support}, the statement that
-$\{x.\kw{store}:\grow\}$ supports $\dense(x,n)$; the axiom follows by
+$\{x.\kw{spine}:\grow\}$ supports $\dense(x,n)$; the axiom follows by
 Theorem~\ref{thm:frame}.
 \item[\textsc{(Sep)}] A fact about the length of $x$ survives an
 arbitrary change of another array $y$. It is Example~\ref{ex:sep}.
 \status{Lean: \lean{RawDerivation.sep}, \lean{checkScoped\_sound}, for $a$ a linear
-fact over variables and the length of $x$, where both $x$ and $y$ read arrays}. Where $y$ reads no array its store region is empty, and the fact is invariant.
+fact over variables and the length of $x$, where both $x$ and $y$ read arrays}. Where $y$ reads \code{null} or \code{undefined} its spine region is empty, and the fact is invariant.
 \item[\textsc{(Every)}] A fact about each element of $z$ survives an
 arbitrary change of an array $x$ that shares no element cell with $z$.
-\status{Lean: \lean{RawDerivation.everyFrame}, \lean{checkScoped\_sound}, for an ordinary array $z$ and $\varphi$ a conjunction of disjunctions of linear facts over the index, the element as a safe integer, the element's string length and scalar parameters}.
+\status{Lean: \lean{RawDerivation.everyFrame}, \lean{checkScoped\_sound}, for an array $z$ and $\varphi$ a conjunction of disjunctions of linear facts over the index, the element as a safe integer, the element's string length and scalar parameters}.
 \item[\textsc{(Init)}] A fact about a length survives a change that only
 initialises: $\init$ changes no location that holds an object, a number
-or a store, and a defined read of a path passes only fields that hold
+or a spine, and a defined read of a path passes only fields that hold
 objects. Lean: \lean{init\_box}, \lean{init\_path}, for linear facts
 over integers, array lengths and typed-array lengths at any paths.
 \item[\textsc{(Rigid)}] A fact that holds of an array named by a
@@ -1062,7 +1094,7 @@ rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
 \lean{stable\_rigid}), and the instance for \textsc{(Grow)} is
 \lean{grow\_path\_typed}.
 \item[\textsc{(View)}] A fact about a typed array's length survives
-every change: the typed array's store location and its form
+every change: the typed array's spine location and its form
 $\mathsf{view}_N$ are fixed, by (T2). Lean: \lean{view\_box},
 \lean{viewLength\_invariant}, for linear facts over variables and
 typed-array lengths; the Lean reads the length from the typed array's
@@ -1141,7 +1173,7 @@ over the variables in scope before $c$ is unaffected by the binding.
 \and
 \inferrule*[left=Seq-Eff]{c_1:\Phi \\ c_2:\Psi \\ \Psi\rightsquigarrow^{\Phi}_{\mathit{ev}}\Psi' \\ \Phi\cup\Psi'\sqsubseteq\Phi}{c_1;c_2:\Phi}
 \and
-\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{x.\kw{store}:\delta\} \\ \fresh(x)\text{ holds before }c}{c:\Phi\ \text{ on the locations below the mark}}
+\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{x.\kw{spine}:\delta\} \\ \fresh(x)\text{ holds before }c}{c:\Phi\ \text{ on the locations below the mark}}
 \end{mathpar}
 
 \noindent
@@ -1222,8 +1254,8 @@ allocate in the same way:
 \]
 These separations are
 facts of the state after the step. Later steps keep or lose them like
-any other fact: a growth of the new array's store keeps them, and an
-arbitrary change of that store does not, since it may make the store
+any other fact: a growth of the new array's spine keeps them, and an
+arbitrary change of that spine does not, since it may make the spine
 list a cell of $y$. Lean: \lean{alloc\_post}, \lean{alloc\_apart}, for the empty array; \lean{literalArrayAtoms\_holds} for the length of an array literal; the elements and the density of an array literal, and the postcondition of an object literal, are conjectures; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
 \item[\textsc{Seq-Eff}] The effect of a sequence, stated at the entry of
 the sequence. The effect $\Psi$ of the second command is read where that
@@ -1237,11 +1269,11 @@ the sequence of the exceptional effect of \code{c} and the normal effect
 of \code{d}; a throw of \code{d} is an exceptional exit, bounded
 likewise with the exceptional effect of \code{d}
 \status{Lean: \lean{Post.compose\_rebases}, \lean{CommandSummary.seq\_sound}, \lean{CommandSummary.handle\_sound}, with evidence for the rebasing and a checked inclusion of effects}.
-\item[\textsc{Fresh-Eff}] The store of a fresh array is at or above the
+\item[\textsc{Fresh-Eff}] The spine of a fresh array is at or above the
 mark, so a change to it is no change of a location the invocation
 started with: on those locations the command is bounded by the rest of
 its effect. The conclusion is about the command $c$ alone; what ran
-before it is composed by \textsc{Seq-Eff}. A fresh store may list a
+before it is composed by \textsc{Seq-Eff}. A fresh spine may list a
 cell from below the mark, and a change of that cell is part of the
 effect.
 \end{description}
@@ -1295,26 +1327,26 @@ postcondition of the command shows it.
 
 \noindent
 Four sufficient cases follow from the definition. A class region rebases to itself,
-and so does a store or a field at a rigid path. The store of an array
+and so does a spine or a field at a rigid path. The spine of an array
 allocated after the entry heap is no location of that heap, so its entry
 rebases to nothing: this is what \textsc{Fresh-Eff} states for the entry
-of an invocation. It applies to the one new store: a write through a new
+of an invocation. It applies to the one new spine: a write through a new
 typed array keeps its entry $\vw:\grow$, since it may change an older
-view store. The region $\pi.\kw{cells}$ at a rigid path rebases to itself where the
-command before changes the store of $\pi$ by at most $\grow$: the cells
-a grown store adds are new, so each of its cells from the entry heap was
-one it listed. Any other region, and the cells of a new store, widen to
+view spine. The region $\pi.\kw{cells}$ at a rigid path rebases to itself where the
+command before changes the spine of $\pi$ by at most $\grow$: the cells
+a grown spine adds are new, so each of its cells from the entry heap was
+one it listed. Any other region, and the cells of a new spine, widen to
 their class. For
 example, in \code{f(o) \{ const xs = o.items; xs.push(1); \}} the push
-has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
+has the effect $\{\mathit{xs}.\kw{spine}:\grow\}$ where it starts. If
 $o.\mathit{items}$ is rigid, the effect of \code{f} at its entry is
-$\{o.\mathit{items}.\kw{store}:\grow\}$. Otherwise it widens to
+$\{o.\mathit{items}.\kw{spine}:\grow\}$. Otherwise it widens to
 $\{\st:\grow\}$
-\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens a region it cannot place at an entry path: to its class for a store at a path, and to every location for a field with no recorded link to an entry path, for a selected store with no entry path and for the own fields of an object}.
+\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens a region it cannot place at an entry path: to its class for a spine at a path, and to every location for a field with no recorded link to an entry path, for a selected spine with no entry path and for the own fields of an object}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
 Let \code{shrink(xs)} pop its argument,
-$\code{shrink}:\{\val:\any,\ \mathit{xs}.\kw{store}:\any\}$, and
+$\code{shrink}:\{\val:\any,\ \mathit{xs}.\kw{spine}:\any\}$, and
 \code{f() \{ const xs = [1]; shrink(xs); return xs[0]; \}}.
 By \textsc{Fresh-Eff}, $\code{f}:\{\val:\any\}$: a caller of \code{f}
 sees no change to any array. Inside \code{f} the fact
@@ -1400,13 +1432,13 @@ where $Q_{<}$ says that the elements below the old length read what
 they read before:
 $\forall j<\old(\len x).\ \forall u.\ \old(x[j]\doteq u)\Rightarrow x[j]\doteq u$.
 As effects, \textsc{Write-In} is bounded by
-$\{x.\kw{store}:\grow,\ x.\kw{cells}:\any\}$, and
-\textsc{Write-End} and \textsc{Push} by $\{x.\kw{store}:\grow\}$; the
+$\{x.\kw{spine}:\grow,\ x.\kw{cells}:\any\}$, and
+\textsc{Write-End} and \textsc{Push} by $\{x.\kw{spine}:\grow\}$; the
 postconditions say more than these bounds. At a present index the write
-of \textsc{Write-In} changes one element cell and no store. At a hole
-below the length it makes the store list a new cell, which is a growth.
+of \textsc{Write-In} changes one element cell and no spine. At a hole
+below the length it makes the spine list a new cell, which is a growth.
 \textsc{Write-In} keeps the length of every array, not of $x$ alone: a
-write at an index below the length changes no store's length, so the
+write at an index below the length changes no spine's length, so the
 bound $n\le\len y$ and the equality $\len y=n$ both survive it, whether
 or not $y$ is $x$.
 For example, a loop that fills \code{widths[at] = w} with \code{at} the
@@ -1415,7 +1447,7 @@ current length keeps $\mathit{at}=\len{\mathit{widths}}$ by
 \textsc{Write-In} holds also where the write fills a hole. At the
 maximal length \code{push} throws, so its premise is not needed for a
 postcondition on normal return
-\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}: every store keeps its length across a typed write at an index below the length; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth, the appended element and the kept prefix are the assumed contract \lean{ReceiverAppends} with \lean{ReceiverGrows}. The Lean states the effects of these steps over classes, $\{\val:\any,\ \st:\grow\}$, with the receiver's store in their postconditions}.
+\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}: every spine keeps its length across a typed write at an index below the length; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth, the appended element and the kept prefix are the assumed contract \lean{ReceiverAppends} with \lean{ReceiverGrows}. The Lean states the effects of these steps over classes, $\{\val:\any,\ \st:\grow\}$, with the receiver's spine in their postconditions}.
 
 \paragraph{Writes that keep or extend a fact.} \textsc{Frame} keeps a
 fact across a write that cannot reach what the fact reads. Three rules
@@ -1449,15 +1481,15 @@ when it holds of the written value at each location of the family the
 write can reach
 \status{Lean: \lean{keptCells\_holds}; \lean{every\_appended} with \lean{appendKept\_holds}, for an appended safe integer; \lean{every\_written}, \lean{every\_written\_prefix} with \lean{writeKept\_holds}, for an integer the format stores unchanged. The principle has no theorem of its own}.
 
-A growth of a store does not in general keep a quantified fact about
-elements: a store that grows may list other cells at its old indices
+A growth of a spine does not in general keep a quantified fact about
+elements: a spine that grows may list other cells at its old indices
 (Section~3). Across
 \code{x.push(v)} a fact $\every(x,t,\varphi)$ with $t\le\old(\len x)$
 is kept by the postcondition $Q_{<}$ of \textsc{Push}, where the bound
 and the other terms of the body are kept. Across a field write, a fact
 over an array held in a variable, with a bound the write keeps and a
 body over the element alone, is kept by Theorem~\ref{thm:frame}: its
-support is the store and the cells of the array at $\keep$, and a field
+support is the spine and the cells of the array at $\keep$, and a field
 location is neither. A body that reads a
 field of each element, such as $z[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
@@ -1574,15 +1606,15 @@ $\every(\mathit{xs},3,v>0)$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
 $b[1]\doteq 4$ and $c[1]\doteq 5$ hold. After the write:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[$3\le\len{\mathit{xs}}$ and $\every(\mathit{xs},3,v>0)$ hold]
-Their supports lie in $\mathit{xs}[\ast]$: an array store, disjoint
+Their supports lie in $\mathit{xs}[\ast]$: an array spine, disjoint
 from $\vw$, and element cells, which are value locations. So
 $\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
 \item[$o.n\doteq 1$ holds] Its support is a field location.
 \item[$2\le\kw{view}(c)$ holds] By \textsc{(View)}.
 \item[{$b[1]\doteq 4$ holds}] It gives $1<\kw{view}(b)$, so the
 precondition of the write at index 0 holds; by the postcondition of \textsc{View-Write}.
-\item[{$c[1]\doteq 5$ may fail}] Its support holds the view store of
-\code{c} at $\keep$, and the effect lets that store change. Let \code{c}
+\item[{$c[1]\doteq 5$ may fail}] Its support holds the view spine of
+\code{c} at $\keep$, and the effect lets that spine change. Let \code{c}
 be a \code{Uint8Array} of length 3 and \code{b} be
 \code{c.subarray(1, 3)}: the write makes $c[1]$ read 7.
 \end{description}
@@ -1661,7 +1693,7 @@ value is rigid.
 \end{description}
 Two regions are disjoint, for the sufficient condition of respect, when
 no kind of location belongs to both, or when a separation at hand says
-so: $\pi\sep\pi'$ for $\pi.\kw{store}$ and $\pi'.\kw{store}$,
+so: $\pi\sep\pi'$ for $\pi.\kw{spine}$ and $\pi'.\kw{spine}$,
 $\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and $\fresh(r)$ for $r$ and
 any region of locations below the mark.
 \end{definition}
@@ -1696,7 +1728,7 @@ edge. Loop-head knowledge is supplied.
 Derivations are those of Definition~\ref{def:deriv}. Modal elimination
 is the entailment in \textsc{Frame}. This system is sound for semantic
 entailment
-\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv} over the assertions the Lean derivation system represents: its quantified facts are over ordinary arrays, with each index present and a body over scalars, and its arithmetic steps carry a certificate that Lean checks}. It is not claimed complete.
+\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv} over the assertions the Lean derivation system represents: its quantified facts are over arrays, with each index present and a body over scalars, and its arithmetic steps carry a certificate that Lean checks}. It is not claimed complete.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
@@ -1723,13 +1755,13 @@ The effect in row 5 permits growth beyond $n$, so that effect alone
 does not preserve the bound. The write itself keeps $\len{\mathit{xs}}$:
 if \code{out} is \code{xs}, then $j<\len{\mathit{xs}}$ by row 4, and the
 write is at an index below the length, where \textsc{Write-In} keeps
-every length; if it is not, the store of \code{xs} is not written. So
+every length; if it is not, the spine of \code{xs} is not written. So
 the bound holds after the write. Deriving it takes a case distinction on
 whether two arrays are the same, for which the derivation system has no
 rule.
 
 The regional effect
-$\{\val:\any,\ \mathit{out}.\kw{store}:\grow\}$ preserves the upper bound
+$\{\val:\any,\ \mathit{out}.\kw{spine}:\grow\}$ preserves the upper bound
 under $\mathit{out}\sep\mathit{xs}$, by \textsc{(Sep)} and law (c).
 This separation is an obligation of rows 1 and 7.
 \end{example}
@@ -1740,13 +1772,13 @@ This separation is an obligation of rows 1 and 7.
 \begin{tabular}{@{}p{0.25\textwidth}p{0.71\textwidth}@{}}
 \toprule
 Lower bound under aliasing (Ex.~\ref{ex:alias}) & $\mathit{to}\le\len{\mathit{xs}}\vdash\bx{\val:\any,\,\st:\grow}(\mathit{to}\le\len{\mathit{xs}})$\hfill\textsc{(Grow)}\\[2pt]
-Bound across a rewriting call (Ex.~\ref{ex:sep}) & $\mathit{flags}\sep y\wedge i<\len{\mathit{flags}}\vdash\bx{\val:\any,\,y.\kw{store}:\any}(i<\len{\mathit{flags}})$, $y$ standing for the rigid $\mathit{runs}.\mathit{openBrackets}$\hfill\textsc{(Sep)}, \textsc{(Rigid)}\\[2pt]
-Fresh array store & a change of its store is no part of the effect below the mark; right after the allocation, $\apart(x,y)$ for each older array $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
+Bound across a rewriting call (Ex.~\ref{ex:sep}) & $\mathit{flags}\sep y\wedge i<\len{\mathit{flags}}\vdash\bx{\val:\any,\,y.\kw{spine}:\any}(i<\len{\mathit{flags}})$, $y$ standing for the rigid $\mathit{runs}.\mathit{openBrackets}$\hfill\textsc{(Sep)}, \textsc{(Rigid)}\\[2pt]
+Fresh array spine & a change of its spine is no part of the effect below the mark; right after the allocation, $\apart(x,y)$ for each older array $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
 Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{\val:\init\}}\,a$, by Theorem~\ref{thm:frame} at a support respected by $\Phi_{\mathit{build}}$ and tolerating $\init$\hfill\textsc{(Init)}\\[2pt]
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$\hfill Prop.~\ref{prop:rely}\\[2pt]
 Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$, $t$ a variable, $\varphi$ over scalars\hfill\textsc{(Every)}\\[2pt]
 Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$\hfill postcondition, \textsc{(Sep)}\\[2pt]
-Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{store}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
+Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{spine}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
 Index from a shift or a mask & $0\le c<2^{31}\vdash 0\le(c\gg d)\wedge 2^{d}(c\gg d)\le c$; $0\le(c\mathbin{\&}m)\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
@@ -1778,7 +1810,7 @@ for $\init$ and $\grow$, which here are enforced by the effect judgment
 and by no resource discipline.
 
 \paragraph{How much separation.} In these patterns: pairwise
-disjointness of single stores ($\sep$), and of a store with its cells
+disjointness of single spines ($\sep$), and of a spine with its cells
 ($\apart$) where a fact reads element contents, each established by
 allocation or assumed at a function's entry. Seven of the thirteen
 obligations use none; the cache row depends on the support that the
@@ -1814,13 +1846,13 @@ $h$ and in $h'$.
 \item[A fact about a field of each element, across a change of such fields] Example:
 $\every(\mathit{rows},t,\ z[i].n\ge 0)$ across a write of a field
 \code{n}. The fact is expressible. Keeping it needs a region
-$z[\ast].n$, a path from each element cell the store lists, for its
+$z[\ast].n$, a path from each element cell the spine lists, for its
 support and for the effect of the write.
 \item[Elements of one typed array across a write through another]
 Example: $c[1]=5$ across \code{b[0] = 7} when \code{b} and \code{c} are
 over disjoint bytes (Example~\ref{ex:view}). Distinct typed arrays have
-distinct view stores whether or not they share bytes, so $\sep$ on
-their stores says nothing about their elements. It needs regions of
+distinct view spines whether or not they share bytes, so $\sep$ on
+their spines says nothing about their elements. It needs regions of
 buffer cells with offsets.
 \item[A callback that writes what it captured] Example:
 \code{walk(xs, v => out.push(v))}. Each call of \code{walk} has a closed effect. A

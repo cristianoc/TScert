@@ -73,8 +73,8 @@ for n in ['keep', 'init', 'grow', 'any']:
 for n in ['rigid', 'fresh', 'old', 'dense', 'every', 'apart']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\asr{%s}}' % (n, n))
 rep(r'\newcommand{\val}{\kw{all\text{-}values}}', r'\newcommand{\val}{\reg{all\text{-}values}}')
-rep(r'\newcommand{\st}{\kw{all\text{-}stores}}', r'\newcommand{\st}{\reg{all\text{-}stores}}')
-t = t.replace(r'\kw{scalar}', r'\chg{scalar}').replace(r'\kw{store}', r'\reg{store}').replace(r'\kw{view}', r'\asr{view}')
+rep(r'\newcommand{\st}{\kw{all\text{-}spines}}', r'\newcommand{\st}{\reg{all\text{-}spines}}')
+t = t.replace(r'\kw{scalar}', r'\chg{scalar}').replace(r'\kw{spine}', r'\reg{spine}').replace(r'\kw{view}', r'\asr{view}')
 rep(r'\newcommand{\code}[1]{\texttt{#1}}', r'\newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}')
 rep(r'\newcommand{\lean}[1]{\texttt{\small #1}}', r'\newcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}')
 rep(r'\newcommand{\status}[1]{\textsf{\small[#1]}}',
@@ -130,7 +130,7 @@ rep(r'bar/.style={fill=black!55,minimum width=1.35cm,minimum height=0.16cm,inner
 rep(r'sbar/.style={bar,fill=black!25,draw=black!70}]', r'sbar/.style={bar,fill=storec}]')
 rep(r'\node[cell] (c\i) at (\i,0) {\c};',
     r'\ifnum\i=3 \node[cell,draw=storec,line width=1pt,fill=storec!8] (c\i) at (\i,0) {\c}; \else \node[cell,draw=valc,fill=valc!6] (c\i) at (\i,0) {\c}; \fi')
-rep(r'region denotes; store locations are drawn lighter.', r'region denotes; value locations are blue and store locations orange.')
+rep(r'region denotes; spine locations are drawn lighter.', r'region denotes; value locations are blue and spine locations orange.')
 
 open('note-color.tex', 'w').write(t)
 print('ok')
