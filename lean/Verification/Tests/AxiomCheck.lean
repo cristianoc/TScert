@@ -44,6 +44,7 @@ import Verification.Types.StoreMapsBuiltins
 import Verification.Source.Claims.PassUnitInit
 import Verification.Semantics.ArgumentSpineRegions
 import Verification.Semantics.FootprintNatives
+import Verification.Semantics.RegionBounds
 import Verification.Semantics.Survival
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
@@ -137,7 +138,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
   the file-level theorem `SourceClaimJson.PassUnit.passFile_safe` and the
   modules' linking theorems;
 - the regional footprint's rebasing and composition, class-region inclusion
-  and disjointness, cell provenance, and the
+  and disjointness, the bound of a region by role classes and the
+  disjointness of regions with no role class in common, cell provenance, and the
   argument-spine region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
   atom theorems (`Verification.TolerantFrames`);
@@ -197,6 +199,8 @@ run_cmd do
   check ``Verification.ProgramTyping.exportsEstablished_sound
   check ``Verification.ProgramTyping.Exits.exitPost_of_established
   check ``Verification.Footprints.Footprint.classBound_sound
+  check ``Verification.Footprints.Region.bound_sound
+  check ``Verification.Footprints.Region.apart_of_bound
   check ``Verification.ProgramTyping.SafePostExc.grow
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk
   check ``Verification.SourceClaimJson.PassUnit.approx_meets

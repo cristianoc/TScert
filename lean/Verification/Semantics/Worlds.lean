@@ -86,6 +86,111 @@ theorem Role.category_spine {r : Role} : r.kind = .spine ↔ r.category ≠ .val
   | spine f => cases f <;> simp [Role.kind, Role.category]
   | _ => simp [Role.kind, Role.category]
 
+/-! ## Role classes
+
+A **role class** is a role without its parameters: field, cell, element
+cell, array spine, view spine, identity. It refines both the five kinds
+(`Role.kind`) and the three categories (`Role.category`). A region's bound
+is a set of role classes (`Region.bound`, `Semantics/RegionBounds.lean`). -/
+
+/-- The six classes of role. -/
+inductive RoleClass where
+  | field | cell | elem | arraySpine | viewSpine | identity
+  deriving DecidableEq, Repr
+
+/-- A role's class: a view spine's format and length are dropped. -/
+def Role.cls : Role → RoleClass
+  | .field => .field
+  | .cell => .cell
+  | .elem => .elem
+  | .spine .array => .arraySpine
+  | .spine (.view ..) => .viewSpine
+  | .identity => .identity
+
+/-- A role class's category. -/
+def RoleClass.category : RoleClass → Category
+  | .arraySpine => .array
+  | .viewSpine => .view
+  | .field | .cell | .elem | .identity => .value
+
+/-- **A role's category is its class's.** -/
+@[simp] theorem Role.cls_category (r : Role) : r.cls.category = r.category := by
+  cases r with
+  | spine f => cases f <;> rfl
+  | _ => rfl
+
+/-- A set of role classes, one bit per class. -/
+structure RoleSet where
+  field : Bool
+  cell : Bool
+  elem : Bool
+  arraySpine : Bool
+  viewSpine : Bool
+  identity : Bool
+  deriving DecidableEq, Repr
+
+/-- Whether a set holds a class. -/
+def RoleSet.contains (s : RoleSet) : RoleClass → Bool
+  | .field => s.field
+  | .cell => s.cell
+  | .elem => s.elem
+  | .arraySpine => s.arraySpine
+  | .viewSpine => s.viewSpine
+  | .identity => s.identity
+
+/-- The classes in both sets. -/
+def RoleSet.inter (a b : RoleSet) : RoleSet :=
+  ⟨a.field && b.field, a.cell && b.cell, a.elem && b.elem, a.arraySpine && b.arraySpine,
+    a.viewSpine && b.viewSpine, a.identity && b.identity⟩
+
+/-- The classes in either set. -/
+def RoleSet.union (a b : RoleSet) : RoleSet :=
+  ⟨a.field || b.field, a.cell || b.cell, a.elem || b.elem, a.arraySpine || b.arraySpine,
+    a.viewSpine || b.viewSpine, a.identity || b.identity⟩
+
+/-- Whether a set holds no class. -/
+def RoleSet.isEmpty (s : RoleSet) : Bool :=
+  !(s.field || s.cell || s.elem || s.arraySpine || s.viewSpine || s.identity)
+
+/-- Every class. -/
+def RoleSet.all : RoleSet := ⟨true, true, true, true, true, true⟩
+
+/-- The classes whose category a predicate on categories admits. -/
+def RoleSet.ofCategories (has : Category → Bool) : RoleSet :=
+  ⟨has .value, has .value, has .value, has .array, has .view, has .value⟩
+
+@[simp] theorem RoleSet.contains_inter (a b : RoleSet) (c : RoleClass) :
+    (a.inter b).contains c = (a.contains c && b.contains c) := by
+  cases c <;> rfl
+
+@[simp] theorem RoleSet.contains_union (a b : RoleSet) (c : RoleClass) :
+    (a.union b).contains c = (a.contains c || b.contains c) := by
+  cases c <;> rfl
+
+@[simp] theorem RoleSet.contains_all (c : RoleClass) : RoleSet.all.contains c = true := by
+  cases c <;> rfl
+
+@[simp] theorem RoleSet.contains_ofCategories (has : Category → Bool) (c : RoleClass) :
+    (RoleSet.ofCategories has).contains c = has c.category := by
+  cases c <;> rfl
+
+/-- **A set is empty exactly when it holds no class.** -/
+theorem RoleSet.isEmpty_iff {s : RoleSet} : s.isEmpty = true ↔ ∀ c, s.contains c = false := by
+  rcases s with ⟨a, b, c, d, e, f⟩
+  constructor
+  · intro h x; cases a <;> cases b <;> cases c <;> cases d <;> cases e <;> cases f <;>
+      cases x <;> simp_all [RoleSet.isEmpty, RoleSet.contains]
+  · intro h
+    have := h .field; have := h .cell; have := h .elem; have := h .arraySpine
+    have := h .viewSpine; have := h .identity
+    simp_all [RoleSet.isEmpty, RoleSet.contains]
+
+/-- **Sets with an empty intersection hold no class in common.** -/
+theorem RoleSet.inter_isEmpty {a b : RoleSet} (h : (a.inter b).isEmpty = true) {c : RoleClass}
+    (ha : a.contains c = true) : b.contains c = false := by
+  have := RoleSet.isEmpty_iff.mp h c
+  simpa [ha] using this
+
 /-! ## Kinded worlds -/
 
 /-- A kinded world at level `k`: each location's role and its contract, which
