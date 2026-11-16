@@ -228,8 +228,11 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
           simp [IndexFact.HoldsAt, Linear.Fact.vars, Linear.Fact.Holds, Linear.Form.eval, termValuation, hl]
       · refine ⟨HeapSeparation.allocate_holds hk.2.2.2.1
           (HeapExpressionRules.fresh_apart_from he hh (by simp [heap])), ?_⟩
-        exact indexHolds_extend [.nul] (indexHolds_extend [spine, (push spine ρ) proto]
-          (indexHolds_extend vs (shift_holds hk).2.2.2.2.2))
+        -- The allocation's effect is empty: the tolerant frame at `all`.
+        have hkx : Holds k ε ρ (heap ++ [spine, (push spine ρ) proto] ++ [.nul]) := by
+          refine Footprints.knowledge_frame_empty hk (Footprints.Closed.holds_empty.mpr ?_)
+          simp only [heap, List.append_assoc]; exact List.prefix_append _ _
+        exact (shift_holds hkx).2.2.2.2.2
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
   · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
 

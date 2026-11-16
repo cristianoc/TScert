@@ -898,6 +898,14 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
   have hshift := HeapKnowledge.shift_holds
     (v := Tm.objAt (slots h.length (parts.map Prod.fst)) code
       (h.length + (parts.map fun p => ρ p.2).length)) hk
+  -- The allocation's effect is empty: the tolerant frame at `all` keeps
+  -- every fact of the entry.
+  have hkx : HeapKnowledge.Holds k ε ρ (h ++ (parts.map fun p => ρ p.2) ++ [.nul]) := by
+    simpa only [List.append_assoc] using
+      Footprints.knowledge_frame_empty hk (Footprints.Closed.holds_empty.mpr (List.prefix_append h _))
+  have hshiftx := HeapKnowledge.shift_holds
+    (v := Tm.objAt (slots h.length (parts.map Prod.fst)) code
+      (h.length + (parts.map fun p => ρ p.2).length)) hkx
   -- Field `p.1` of the fresh object is at its `i`-th location, which holds
   -- slot `p.2`'s value.
   have hfield : ∀ i (hi : i < parts.length),
@@ -930,15 +938,12 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
         simp only [Nat.add_sub_cancel_left]
         rw [List.getElem?_eq_getElem (by simpa using hi)]
         simp [hpi]
-    · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-      obtain ⟨flds,c,oid,v,hl,hrd,hv'⟩ := hk.1 g hg
-      exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,hv'⟩
+    · exact hshiftx.1 f hf
   · simp only [allocLinked, allocOutput]
     refine ⟨fun g hg => ?_, HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
-      HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2.1),
-      HeapKnowledge.indexHolds_extend _ (HeapKnowledge.indexHolds_extend _ hshift.2.2.2.2.2)⟩
+      hshiftx.2.2.2.2.1, hshiftx.2.2.2.2.2⟩
     rcases List.mem_append.mp hg with hg | hg
-    · exact HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2.1) g hg
+    · exact hshiftx.2.2.1 g hg
     · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hg
       obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
       obtain ⟨hl, hv⟩ := hfield i hi
@@ -953,16 +958,17 @@ theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
     (ns : List PropKey) (vs : List Val) (code : CallCode) :
     HeapKnowledge.Holds (allocOutput k [] Γ.length (contractFields G Γ))
       ε (push (.objAt (slots h.length ns) code oid) ρ) (h ++ vs ++ [.nul]) := by
-  have hshift := HeapKnowledge.shift_holds (v := Tm.objAt (slots h.length ns) code oid) hk
-  refine ⟨?_, hshift.2.1, HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames vs hshift.2.2.1),
-    HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
-    HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2.1),
-    HeapKnowledge.indexHolds_extend _ (HeapKnowledge.indexHolds_extend _ hshift.2.2.2.2.2)⟩
+  -- The allocation's effect is empty: the tolerant frame at `all` keeps
+  -- every fact of the entry.
+  have hkx : HeapKnowledge.Holds k ε ρ (h ++ vs ++ [.nul]) := by
+    simpa only [List.append_assoc] using
+      Footprints.knowledge_frame_empty hk (Footprints.Closed.holds_empty.mpr (List.prefix_append h _))
+  have hshift := HeapKnowledge.shift_holds (v := Tm.objAt (slots h.length ns) code oid) hkx
+  refine ⟨?_, hshift.2.1, hshift.2.2.1, HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
+    hshift.2.2.2.2.1, hshift.2.2.2.2.2⟩
   intro f hf
   simp only [allocOutput, List.map_nil, List.nil_append] at hf
-  obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-  obtain ⟨flds,c,oid,v,hl,hrd,hv'⟩ := hk.1 g hg
-  exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,hv'⟩
+  exact hshift.1 f hf
 
 /-- A merge of two values reads the heap and allocates a fresh object: what
 was known of the heap stays known, and the new object's fields are distinct
