@@ -1307,10 +1307,8 @@ each key's reading by `StableAt`. `stableKeysT_at` supplies the object and
 its reading, `StableAt.present` a present key's stable contract;
 `stableKeysT_adm`, `stableKeysT_weaken` and `stableKeysT_append` prove
 admissibility, forgetting keys and conjunction.
-`Admissible.readGave` in
-[TolerantFrames.lean](../lean/Verification/Semantics/TolerantFrames.lean)
-proves that a read of a stated key gives the same after every admissible
-transition. A record or
+`HeapExpressionRules.stableContext_holds` proves that every admissible
+transition keeps the contents of a stated key's location. A record or
 dictionary clause states its stable keys (`Clause.refs`'s last part), whose
 meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
 an object term states them as `"stable": [key, …]`, nonempty, which
@@ -1357,28 +1355,27 @@ every term $`t`$, a call, a write or a closure's run, on the term's normal
 return. A claim with an arm that does not state $`f`$ stable keeps no link
 through $`f`$.
 
-It is sound by the empty support of such a read (the note's Definition
-"Support" and (T4) "Immutable locations",
-[the note](REFERENCES.md#the-tolerant-frames-note)). An absent stable key
-of an object without a prototype reads `undefined` from the object's value
-alone, so its read gives `undefined` in every heap. A present one is a
-location whose contract is stable at a value $`v_0`$ in the world $`W`$ of
-the transition's first state; an admissible transition reaches a world
-extending $`W`$ truncated to its level, whose contract at that location is
-the same restricted, so both heaps hold $`v_0`$ there. So the read link and
-the cell fact have the empty support under the condition that the key is
-stable in the first state's world (`FactKind.supportsBy` at the evidence
-`stableKey`, from `Admissible.readGave`, in
-[TolerantFrames.lean](../lean/Verification/Semantics/TolerantFrames.lean)).
-The empty support is respected by every effect, in particular by $`\top`$,
-the effect bounding every admissible transition, so the tolerant frame
+It is sound by the empty support of such a read in the step's read
+context (the note's Definition "Support", "Supports of the atoms" and (T4)
+"Immutable locations", [the note](REFERENCES.md#the-tolerant-frames-note)).
+The keys every clause of a slot's type states stable form a read context
+(`HeapExpressionRules.stableContext`), whose condition every admissible
+transition meets: a present stable key is a location whose contract is
+stable at a value $`v_0`$ in the world $`W`$ of the transition's first
+state; an admissible transition reaches a world extending $`W`$ truncated
+to its level, whose contract at that location is the same restricted, so
+both heaps hold $`v_0`$ there (`stableContext_holds`). The support of a read
+link or a cell fact in that context leaves the key's location out
+(`FactKind.supportIn`), so it is empty; an absent key reads `undefined`
+from the object's value alone. $`\top`$, the effect bounding every
+admissible transition, respects the empty support, so the tolerant frame
 ([support and respect](FOOTPRINTS.md#support-and-respect)) keeps the fact
 from a step's first state to its normal exit, through the worlds the
 step's safety derivation reaches (`TolerantFrames.frame_run_top`). The
 checker applies it to every step: each step's output keeps the input's
-read links and cell facts through a member every clause of the receiver's
-type states stable (`HeapExpressionRules.withStable`, `stableLinks` and
-`stableCells`, proved by `withStable_sound`), the one place every
+read links, cell facts and index facts whose support in the context is
+empty (`HeapExpressionRules.withStable`, `stableLinks`, `stableCells` and
+`stableIndices`, proved by `withStable_sound`), the one place every
 expression checker passes through (`Checker.keepingStable`).
 
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it

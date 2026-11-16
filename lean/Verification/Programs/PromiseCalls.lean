@@ -2149,7 +2149,7 @@ caller's slots (`callerFrame`) respects under the query of the call's entry
 the evidence is missing the check fails. -/
 def frameKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge)
     (a : HeapKnowledge.IndexAtom) : Bool :=
-  a.fact.keeps (Footprints.knowledgeQuery k) { stable } (callerFrame eff t)
+  a.fact.keeps (Footprints.knowledgeQuery k) (.ofFirst stable) (callerFrame eff t)
 
 /-- **A call's cell facts kept by its frame** (the note's Frame, at cell
 facts): those of the call's entry whose support, the field location they
@@ -2299,7 +2299,7 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
     simp only [Bool.and_eq_true] at hkeep
     have hF := hk.2.2.2.2.2 a ha hcd
     exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk hok hρ)
-        (callerFrame_post hw) hst hF
+        (callerFrame_post hw) (Footprints.ReadContext.ofFirst_holds hst) hF
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
 
@@ -3203,7 +3203,7 @@ open HeapKnowledge in
 the caller's slots respects the term's support at `keep` under the query of
 the call's entry (`Term.support`, `respects`, the note's Frame). -/
 def callKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Bool :=
-  Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .keep) (callerFrame eff t)
+  Footprints.respects (Footprints.knowledgeQuery k) (u.support (.ofFirst stable) .keep) (callerFrame eff t)
 
 open HeapKnowledge in
 /-- A term of the caller the call keeps, read after the return one slot
@@ -3215,7 +3215,7 @@ open HeapKnowledge in
 /-- A term of the caller the call grows: its frame respects the term's
 support at `grow`; read after the return one slot higher. -/
 def callGrown (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Option Term :=
-  if Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .grow) (callerFrame eff t)
+  if Footprints.respects (Footprints.knowledgeQuery k) (u.support (.ofFirst stable) .grow) (callerFrame eff t)
   then some (u.mapM' (· + 1)) else none
 
 open HeapKnowledge in
@@ -3231,7 +3231,7 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
     cases hu
     rw [termValue_mapM' fun _ => rfl]
     unfold callKeeps at hc
-    obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inl rfl)
+    obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := .ofFirst stable) (Footprints.ReadContext.ofFirst_holds hst) (.inl rfl)
       (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
     rw [h3 rfl] at h1; exact h1
   · cases hu
@@ -3249,7 +3249,7 @@ theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : T
   · rename_i hc
     cases hu
     rw [termValue_mapM' fun _ => rfl]
-    obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inr rfl)
+    obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := .ofFirst stable) (Footprints.ReadContext.ofFirst_holds hst) (.inr rfl)
       (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
     exact ⟨n', h1, h2⟩
   · cases hu

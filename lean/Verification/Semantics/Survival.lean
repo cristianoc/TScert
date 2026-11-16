@@ -15,21 +15,82 @@ namespace Verification.Footprints
 open HeapKnowledge
 
 /-- The certified evidence a support may rely on besides its regions: the
-first fields of slots' objects whose contents a transition keeps (`stable`,
-`FirstKept`). `Holds` is the condition `C` of a support under a condition
-(the note, §5, Definition "Support"): a field it keeps is left out of the
-reads (`keyRead`), and the support is then under it. -/
+keys of slots' objects whose contents a transition keeps (`stable`). `Holds`
+is the condition `C` of a support under a condition (the note, §5,
+Definition "Support", and "Supports of the atoms": a field a condition says
+keeps its contents is left out of the reads, `fieldRead`), and the support is
+then under it. -/
 structure ReadContext where
-  stable : Nat → String → Bool := fun _ _ => false
+  stable : Nat → PropKey → Bool := fun _ _ => false
 
+/-- **A transition keeps the context's keys**: the location of each key the
+context states of a slot's object holds its contents. -/
 def ReadContext.Holds (c : ReadContext) (ρ : Env) (h h' : Heap) : Prop :=
-  FirstKept c.stable ρ h h'
+  ∀ x k fs cd o l v, c.stable x k = true → ρ x = .objAt fs cd o → fs.lookup k = some l →
+    h[l]? = some v → h'[l]? = some v
+
+/-- The context keeping the first fields `first` states, string keys. -/
+def ReadContext.ofFirst (first : Nat → String → Bool) : ReadContext where
+  stable x k := match k with
+    | .str g => first x g
+    | .sym _ => false
+
+theorem ReadContext.ofFirst_holds {first : Nat → String → Bool} {ρ : Env} {h h' : Heap}
+    (hf : FirstKept first ρ h h') : (ReadContext.ofFirst first).Holds ρ h h' := by
+  intro x k fs cd o l v hs hx hl hv
+  cases k with
+  | str g => exact hf x g fs cd o l v hs hx hl hv
+  | sym _ => cases hs
+
+/-- **The read of the key `k` of slot `x`'s object, at the change `δ`**:
+the region `r` holding its location, left out where the context keeps the
+key. -/
+def fieldRead (c : ReadContext) (x : Nat) (k : PropKey) (r : Region) (δ : Change) : Footprint :=
+  if c.stable x k then [] else [(r, δ)]
 
 /-- The location of the key `k` of the object the path `p` reads from slot
 `x`, at the change `δ`, where the context does not keep it: a first field the
-context states stable (`p` empty) needs no region. -/
+context states stable (`p` empty) needs no region (`fieldRead`). -/
 def keyRead (c : ReadContext) (x : Nat) (p : List String) (k : String) (r : Region) (δ : Change) : Footprint :=
-  if p.isEmpty && c.stable x k then [] else [(r, δ)]
+  if p.isEmpty then fieldRead c x (.str k) r δ else [(r, δ)]
+
+/-- A field read the context keeps, or whose region is supported, changes
+the field's location of slot `x`'s object within `δ`. -/
+theorem fieldRead_supported {c : ReadContext} {x : Nat} {k : PropKey} {δ : Change} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds ρ h h') (hs : Supported (fieldRead c x k (.field x k) δ) ρ h h') :
+    Supported [(.field x k, δ)] ρ h h' := by
+  unfold fieldRead at hs
+  split at hs
+  · rename_i hk
+    intro e he l v hm hv
+    simp only [List.mem_singleton] at he
+    subst he
+    refine ⟨v, ?_, Change.Holds.refl _ _ _⟩
+    simp only [Region.mem, beq_iff_eq] at hm
+    cases hx : ρ x with
+    | objAt fs cd o => rw [hx] at hm; exact hc x k fs cd o l v hk hx (by simpa [fieldsOf] using hm) hv
+    | _ => rw [hx] at hm; simp [fieldsOf] at hm
+  · exact hs
+
+/-- **A fact kind's support in a context** (the note, §5, "Supports of the
+atoms"): its kind's support (`FactKind.support`), each field of a slot's
+object the context keeps left out (`fieldRead`). -/
+def _root_.Verification.Footprints.FactKind.supportIn (c : ReadContext) (F : FactKind) : Footprint :=
+  F.support.flatMap fun e => match e.1 with
+    | .field x k => fieldRead c x k e.1 e.2
+    | _ => [e]
+
+/-- **A fact kind's support in a context supports it** under the context's
+condition (`FactKind.support_sound`, `fieldRead_supported`). -/
+theorem FactKind.supportsIn (c : ReadContext) (F : FactKind) : Supports c.Holds F.Holds (F.supportIn c) := by
+  refine Supports.intro fun ρ h h' hc hF hs => FactKind.support_sound hF ?_
+  rintro ⟨r, δ⟩ he l v hm hv
+  cases r
+  case field x k =>
+    have hsub : Supported (fieldRead c x k (.field x k) δ) ρ h h' := fun e' he' =>
+      hs e' (List.mem_flatMap.mpr ⟨_, he, by simpa using he'⟩)
+    exact fieldRead_supported hc hsub _ (List.mem_singleton_self _) l v hm hv
+  all_goals exact hs _ (List.mem_flatMap.mpr ⟨_, he, by simp⟩) l v hm hv
 
 /-- The field locations a path's read passes, after the prefix `pre`, each
 in the class of the contents the read finds there: each location the read
@@ -68,13 +129,17 @@ private theorem keyRead_kept {c : ReadContext} {x : Nat} {pre : List String} {k 
     {u : Val} (hc : c.Holds ρ h h') (hs : Supported (keyRead c x pre k r δ) ρ h h') (hδ : Keeps δ u)
     (hv : readPath h (ρ x) pre = some v) (hobj : v = .objAt fs cd o) (hl : fs.lookup (.str k) = some l)
     (hu : h[l]? = some u) (hm : r.mem ρ h l = true) : h'[l]? = some u := by
-  unfold keyRead at hs
+  unfold keyRead fieldRead at hs
   split at hs
-  · rename_i hst
-    simp only [Bool.and_eq_true, List.isEmpty_iff] at hst
-    obtain ⟨rfl, hst⟩ := hst
-    simp only [readPath, Option.some.injEq] at hv
-    exact hc x k fs cd o l u hst (hv.trans hobj) hl hu
+  · rename_i hp
+    simp only [List.isEmpty_iff] at hp
+    subst hp
+    split at hs
+    · rename_i hst
+      simp only [readPath, Option.some.injEq] at hv
+      exact hc x _ fs cd o l u hst (hv.trans hobj) hl hu
+    · obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l u hm hu
+      rw [← hδ _ _ hk]; exact hv'
   · obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l u hm hu
     rw [← hδ _ _ hk]; exact hv'
 
@@ -207,11 +272,11 @@ theorem spineRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Chan
     (hs : Supported (spineRead c x p δ) ρ h h') (hw : readPath h (ρ x) p = some w)
     (hst : spineOf w = some s) (hls : h[s]? = some (.arr ls)) :
     ∃ ls', h'[s]? = some (.arr ls') ∧ LengthGrows ls ls' ∧ (δ = .keep → ls' = ls) := by
-  unfold spineRead keyRead at hs
-  split at hs
-  · rename_i hk
-    simp only [Bool.and_eq_true, List.isEmpty_iff] at hk
-    obtain ⟨rfl, hk⟩ := hk
+  unfold spineRead keyRead fieldRead at hs
+  by_cases hk : p.isEmpty = true ∧ c.stable x (.str "[]") = true
+  · obtain ⟨hp, hk⟩ := hk
+    simp only [List.isEmpty_iff] at hp
+    subst hp
     simp only [readPath, Option.some.injEq] at hw
     subst hw
     cases hρ : ρ x with
@@ -220,7 +285,15 @@ theorem spineRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Chan
       have hl : fs.lookup (.str "[]") = some s := by simpa [fieldsOf, arraySpineKey] using spineOf_lookup hst
       exact ⟨ls, hc x "[]" fs cd o s _ hk hρ hl hls, LengthGrows.refl ls, fun _ => rfl⟩
     | _ => rw [hρ] at hst; simp [spineOf, fieldsOf] at hst
-  · have hm : (Region.inCls (.path x p arraySpineKey) .arrays).mem ρ h s = true := by
+  · have hs : Supported [(Region.inCls (.path x p arraySpineKey) .arrays, δ)] ρ h h' := by
+      split at hs
+      · rename_i hp
+        split at hs
+        · rename_i hst'
+          exact absurd ⟨hp, hst'⟩ hk
+        · exact hs
+      · exact hs
+    have hm : (Region.inCls (.path x p arraySpineKey) .arrays).mem ρ h s = true := by
       simp only [Region.mem, hw, hls, Bool.and_eq_true]
       refine ⟨?_, rfl⟩
       simpa using spineOf_lookup hst

@@ -180,25 +180,26 @@ sound at a well-formed state ([separation queries](#separation-queries)),
 and the five fact kinds' supports below are supports in every context
 (`FactKind.supports`).
 
-A fact kind's support rests on evidence (`FactEvidence`,
-`FactKind.supportBy`, proved: `FactKind.supportsBy`, over indexed states):
-the locations it reads at the change it tolerates, or, for a cell fact or a
-read link through a key the first state's world states stable, the empty
-support under that condition (the note's (T4) "Immutable locations",
-`Admissible.readGave`). A step with no stated effect is bounded by
-$`\top`$, every allocated location at `any`, whose postcondition every
-admissible transition meets (`action_top`); the tolerant frame at $`\top`$
-along a step's run keeps every fact whose support $`\top`$ respects, the
-empty support among them (proved: `TolerantFrames.frame_run_top`). It keeps
-the stable links, the cell facts of stable reads and the linear facts of
-slots' values and typed-array lengths at every step
+A fact kind's support in a read context $`c`$ (below) leaves out each field
+of a slot's object $`c`$ keeps (`FactKind.supportIn`, `fieldRead`; proved:
+`FactKind.supportsIn`, under $`c`$'s condition), as an index fact's does.
+A step with no stated effect is bounded by $`\top`$, every allocated
+location at `any`, whose postcondition every admissible transition meets
+(`action_top`); the tolerant frame at $`\top`$ along a step's run keeps
+every fact whose support $`\top`$ respects, the empty support, where the
+support's condition holds of every admissible transition from the step's
+first state (proved: `TolerantFrames.frame_run_top`). The keys every clause
+of a slot's type states stable are such a context (the note's (T4)
+"Immutable locations"): the pass keeps at every step each cell fact, read
+link and index fact whose support in it is empty
 ([stable links](HOST-FAMILIES.md#stable-links)).
 
 ### Supports of index facts
 
 The context of an index fact's support is a **read context** $`c`$: the
-first fields of slots' objects whose contents the transition keeps
-($`c.\mathrm{stable}`$, `FirstKept`) (`ReadContext`); a typed array's
+keys of slots' objects whose contents the transition keeps
+($`c.\mathrm{stable}`$, its condition `ReadContext.Holds`; `ReadContext`,
+built from first fields by `ReadContext.ofFirst`); a typed array's
 length is its descriptor's, part of the value. A path $`x.f_1\ldots f_n`$ reads the field location of
 $`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$. Each
 location the read passes on from holds an object, of class

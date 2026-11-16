@@ -2314,44 +2314,62 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 
 /-! ### Stable links (HOST-FAMILIES.md, "Stable links")
 
-A fact with the empty support (the note, §5, Definition "Support") holds
-through every step: `⊤`, the effect bounding every admissible transition,
-respects it, and the tolerant frame keeps it from the step's first state to
-its normal exit (`TolerantFrames.frame_run_top`). Three kinds of fact have
-it: a read link and a cell fact of a read through a member every clause of
-the receiver's type states stable, whose key reads one way for the object's
-life (the note, (T4)
-"Immutable locations", `FactKind.supportsBy` at `stableKey`); a linear fact
-whose every term is a slot's own value or the length of the typed array a
-slot holds (the note, rule (View); `IndexFact.support?`, empty for such a
-fact). -/
+A step's context keeps the keys every clause of a slot's type states stable
+(`stableContext`): an admissible transition keeps their contents (the note,
+(T4) "Immutable locations"). A fact whose support in that context (the
+note, §5, "Supports of the atoms": a field the condition keeps is left out
+of the reads) `⊤` respects, the effect bounding every admissible transition,
+holds through every step: the tolerant frame keeps it from the step's first
+state to its normal exit (`TolerantFrames.frame_run_top`). These are the
+cell facts and read links whose support in the context is empty
+(`FactKind.supportIn`), and the index facts whose produced support in the
+context is (`IndexFact.keeps`). -/
 
-/-- The read links a step keeps through its every effect: those through a
-member every clause of the receiver's type states stable (its evidence
-`stableKey`), whose empty support `⊤` respects, optional links among them.
-An alias link reads no key. -/
+/-- **The keys a step keeps**: those every clause of a slot's type states
+stable (`stableField`). -/
+def stableContext (G : NormalGraph ι) (Γ : List (Ty ι)) : Footprints.ReadContext where
+  stable x k := match Γ[x]? with
+    | some A => stableField G A k
+    | none => false
+
+/-- **An admissible transition keeps the stable keys** (the note, (T4)): a
+present stable key's location holds its contract's one value in both
+states. -/
+theorem stableContext_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env}
+    {s s' : TolerantFrames.IndexedHeap} (he : EnvOk G Γ ρ s.n s.W) (ha : TolerantFrames.Admissible s s') :
+    (stableContext G Γ).Holds ρ s.h s'.h := by
+  intro x k fs cd o l v hst hx hl hv
+  simp only [stableContext] at hst
+  split at hst
+  · rename_i A hA
+    obtain ⟨flds, oid, hx', hS⟩ := stableField_at hst (he.2 x A hA)
+    rw [hx] at hx'
+    cases hx'
+    obtain ⟨c, value, hw, hc⟩ := hS.present hl
+    rw [s.stable_value hw hc] at hv
+    rw [← Option.some.inj hv]
+    exact ha.stable_value hw hc
+  · cases hst
+
+/-- The read links a step keeps through its every effect: those whose
+support in the step's context `⊤` respects with no separation evidence. -/
 def stableLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : HeapLinks.Links :=
-  k.links.filter fun g => !g.alias &&
-    (match Γ[g.cell]? with
-      | some A => stableField G A g.field
-      | none => false) &&
-    Footprints.respects .empty ((Footprints.FactKind.link g).supportBy .stableKey) Footprints.Closed.top.fp
+  k.links.filter fun g =>
+    Footprints.respects .empty ((Footprints.FactKind.link g).supportIn (stableContext G Γ))
+      Footprints.Closed.top.fp
 
-/-- The cell facts a step keeps through its every effect: those of a read
-through a member every clause of the receiver's type states stable (its
-evidence `stableKey`), whose empty support `⊤` respects. -/
+/-- The cell facts a step keeps through its every effect: those whose
+support in the step's context `⊤` respects with no separation evidence. -/
 def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts :=
   k.cells.filter fun f =>
-    (match Γ[f.slot]? with
-      | some A => stableField G A f.field
-      | none => false) &&
-    Footprints.respects .empty ((Footprints.FactKind.cell f).supportBy .stableKey) Footprints.Closed.top.fp
+    Footprints.respects .empty ((Footprints.FactKind.cell f).supportIn (stableContext G Γ))
+      Footprints.Closed.top.fp
 
 /-- The index facts a step keeps through its every effect: those whose
-produced support (`IndexFact.support?`) `⊤` respects with no separation
-evidence (`IndexFact.keeps`), the empty support. -/
-def stableIndices (k : Knowledge) : List IndexAtom :=
-  k.indices.filter fun a => a.fact.keeps .empty {} Footprints.Closed.top.fp
+produced support in the step's context (`IndexFact.support?`) `⊤` respects
+with no separation evidence (`IndexFact.keeps`). -/
+def stableIndices (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List IndexAtom :=
+  k.indices.filter fun a => a.fact.keeps .empty (stableContext G Γ) Footprints.Closed.top.fp
 
 /-- A step's output with the input's stable links, stable cell facts and
 stable index facts, past the result slot, each once. -/
@@ -2362,42 +2380,31 @@ def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Kn
     links := out.links ++
       (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g
     indices := out.indices ++
-      (mapIndices (fun i => some (i+1)) (stableIndices k)).filter fun a => !out.indices.contains a }
+      (mapIndices (fun i => some (i+1)) (stableIndices G Γ k)).filter fun a => !out.indices.contains a }
 
 /-- The stable cell facts and read links, as fact kinds. -/
 def stableKinds (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List Footprints.FactKind :=
   (stableCells G Γ k).map .cell ++ (stableLinks G Γ k).map .link
 
-/-- A stable fact kind reads a key the world states stable, and its empty
-support `⊤` respects. -/
-private theorem stableKinds_mem {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ}
-    {s : TolerantFrames.IndexedHeap} (he : EnvOk G Γ ρ s.n s.W) {F : Footprints.FactKind}
-    (hF : F ∈ stableKinds G Γ k) :
-    F.ReadsStable ρ s ∧
-      Footprints.respects .empty (F.supportBy .stableKey) Footprints.Closed.top.fp = true ∧
+/-- A stable fact kind's support in the step's context `⊤` respects, and it
+is a fact of the knowledge. -/
+private theorem stableKinds_mem {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge}
+    {F : Footprints.FactKind} (hF : F ∈ stableKinds G Γ k) :
+    Footprints.respects .empty (F.supportIn (stableContext G Γ)) Footprints.Closed.top.fp = true ∧
       ((∃ f ∈ k.cells, F = .cell f) ∨ (∃ g ∈ k.links, F = .link g)) := by
-  have hstable : ∀ x fld, (match Γ[x]? with | some A => stableField G A fld | none => false) = true →
-      ∀ flds c oid, ρ x = .objAt flds c oid → Verification.StableAt s.W flds fld := by
-    intro x fld hx flds c oid hcell
-    split at hx
-    · rename_i A hA
-      obtain ⟨flds', oid', hcell', hst⟩ := stableField_at hx (he.2 x A hA)
-      rw [hcell] at hcell'
-      cases hcell'
-      exact hst
-    · cases hx
   rcases List.mem_append.mp hF with hF | hF
   · obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hF
-    simp only [stableCells, List.mem_filter, Bool.and_eq_true] at hf
-    exact ⟨hstable f.slot f.field hf.2.1, hf.2.2, .inl ⟨f, hf.1, rfl⟩⟩
+    obtain ⟨hm, hr⟩ := List.mem_filter.mp hf
+    exact ⟨hr, .inl ⟨f, hm, rfl⟩⟩
   · obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hF
-    simp only [stableLinks, List.mem_filter, Bool.and_eq_true] at hg
-    exact ⟨hstable g.cell g.field hg.2.1.2, hg.2.2, .inr ⟨g, hg.1, rfl⟩⟩
+    obtain ⟨hm, hr⟩ := List.mem_filter.mp hg
+    exact ⟨hr, .inr ⟨g, hm, rfl⟩⟩
 
 /-- **Stable facts survive every step.** Whatever a step's postcondition,
 its input's stable links, stable cell facts and stable index facts hold of
-every heap it returns in: each has the empty support, which `⊤` respects
-(`TolerantFrames.frame_run_top`). -/
+every heap it returns in: each has a support in the step's context that
+`⊤` respects, and every admissible transition keeps the context
+(`stableContext_holds`, `TolerantFrames.frame_run_top`). -/
 theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowledge} {ρ n W h t} {T : Fam}
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h t) :
@@ -2406,28 +2413,32 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
   | zero => exact hs
   | succ n =>
   let s : TolerantFrames.IndexedHeap := ⟨n + 1, W, h, Nat.succ_pos n, hw, hh⟩
+  have hctx : ∀ s', TolerantFrames.Admissible s s' → (stableContext G Γ).Holds ρ s.h s'.h :=
+    fun _ ha => stableContext_holds (s := s) he ha
   have hkinds := TolerantFrames.frame_run_top (s := s) (m := 0) (q := .empty)
     (I := fun F => F ∈ stableKinds G Γ k) (P := fun F => F.Holds)
-    (C := fun F => F.conditionBy .stableKey) (S := fun F => F.supportBy .stableKey)
-    (fun F _ => F.supportsBy .stableKey) (fun F hF => (stableKinds_mem (s := s) he hF).2.1)
-    (Footprints.SepQuery.empty_sound _ _) (fun F hF _ _ => (stableKinds_mem (s := s) he hF).1)
+    (C := fun _ ρ _ s s' => (stableContext G Γ).Holds ρ s.h s'.h)
+    (S := fun F => F.supportIn (stableContext G Γ))
+    (fun F _ => (Footprints.FactKind.supportsIn _ F).pullback TolerantFrames.indexed)
+    (fun F hF => (stableKinds_mem hF).1)
+    (Footprints.SepQuery.empty_sound _ _) (fun _ _ s' ha => hctx s' ha)
     (fun F hF => by
-      rcases (stableKinds_mem (s := s) he hF).2.2 with ⟨f, hf, rfl⟩ | ⟨g, hg, rfl⟩
+      rcases (stableKinds_mem hF).2 with ⟨f, hf, rfl⟩ | ⟨g, hg, rfl⟩
       · intro f' hf'; rw [List.mem_singleton.mp hf']; exact hk.1 f hf
       · intro g' hg'; rw [List.mem_singleton.mp hg']; exact hk.2.2.1 g hg)
     (TolerantFrames.WorldReach.refl W) hw hh hs
   have hidx := TolerantFrames.frame_run_top (s := s) (m := 0) (q := .empty)
-    (I := fun a => a ∈ stableIndices k ∧ ∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated)
+    (I := fun a => a ∈ stableIndices G Γ k ∧ ∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated)
     (P := fun a ρ h => a.fact.HoldsAt ε ρ h)
-    (C := fun _ ρ _ s s' => Footprints.ReadContext.Holds {} ρ s.h s'.h)
-    (S := fun a => (a.fact.support? {}).getD [])
+    (C := fun _ ρ _ s s' => (stableContext G Γ).Holds ρ s.h s'.h)
+    (S := fun a => (a.fact.support? (stableContext G Γ)).getD [])
     (fun a ha => by
       have hkeep := (List.mem_filter.mp ha.1).2
       unfold IndexFact.keeps at hkeep
       split at hkeep
       · rename_i S hS
         rw [hS]
-        exact (Footprints.IndexFact.support?_supports {} _ hS).pullback TolerantFrames.indexed
+        exact (Footprints.IndexFact.support?_supports _ _ hS).pullback TolerantFrames.indexed
       · cases hkeep)
     (fun a ha => by
       have hkeep := (List.mem_filter.mp ha.1).2
@@ -2437,8 +2448,7 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
         rw [hS]
         exact hkeep
       · cases hkeep)
-    (Footprints.SepQuery.empty_sound _ _)
-    (fun _ _ _ _ => fun _ _ _ _ _ _ _ hst => by cases hst)
+    (Footprints.SepQuery.empty_sound _ _) (fun _ _ s' ha => hctx s' ha)
     (fun a ha => hk.2.2.2.2.2 a (List.mem_filter.mp ha.1).1 ha.2)
     (TolerantFrames.WorldReach.refl W) hw hh hkinds
   refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_) hidx
@@ -2450,7 +2460,7 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
   have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
     (fun i j hj => by simp at hj; subst hj; rfl)
   have hshift := HeapFacts.shift_holds (v := v) hcells
-  have hidx' : IndexHolds ε (stableIndices k) ρ h' := fun a ha hc => hI a ⟨ha, hc⟩
+  have hidx' : IndexHolds ε (stableIndices G Γ k) ρ h' := fun a ha hc => hI a ⟨ha, hc⟩
   have hmap := mapIndices_holds (f := fun i => some (i+1)) (ρ' := push v ρ)
     (fun s t hst => by simp only [Option.some.injEq] at hst; subst hst; rfl) hidx'
   refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_, hout.2.2.2.1, hout.2.2.2.2.1, fun a ha => ?_⟩

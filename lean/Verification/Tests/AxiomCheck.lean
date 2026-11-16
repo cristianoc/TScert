@@ -434,8 +434,7 @@ run_cmd do
   check ``Verification.TolerantFrames.Admissible.trans
   check ``Verification.TolerantFrames.Admissible.length_le
   check ``Verification.TolerantFrames.Admissible.stable_value
-  check ``Verification.TolerantFrames.Admissible.readGave
-  check ``Verification.Footprints.FactKind.supportsBy
+  check ``Verification.Footprints.FactKind.supportsIn
   check ``Verification.TolerantFrames.frame_run_top
   check ``Verification.HeapExpressionRules.withStable_sound
   check ``Verification.TolerantFrames.Admissible.readPath

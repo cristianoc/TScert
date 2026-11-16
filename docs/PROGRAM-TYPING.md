@@ -1844,8 +1844,10 @@ Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
 **Index facts of the empty support through every step.** Every step
 preserves, beside its own output, an index fact whose produced support
 (`IndexFact.support?`, [supports of index facts](FOOTPRINTS.md#supports-of-index-facts))
-$`\top`$ respects with no separation evidence (`IndexFact.keeps`): the
-tolerant frame at $`\top`$ keeps it (proved):
+in the read context of the slots' stable keys (`stableContext`, as for
+[stable links](HOST-FAMILIES.md#stable-links)) $`\top`$ respects with no
+separation evidence (`IndexFact.keeps`): the tolerant frame at $`\top`$
+keeps it (proved):
 
 ```math
 \frac{F\in\Sigma\qquad \top\ \text{respects}\ \mathrm{support}(F)}
@@ -1853,12 +1855,13 @@ tolerant frame at $`\top`$ keeps it (proved):
 ```
 
 on the step's normal return. Its support is empty: such a fact reads no
-location. They are the facts of slots' values (`index`, `int`, `pastSafe`);
-a linear fact whose every term has the empty support (`Term.support`): an
-entry term `old(t)` at any path, a slot's value, a slot's string length, or
-the length of the typed array a slot holds, which is its descriptor's, part
-of the value (the note's rule (View)); a disjunction of two such facts; and
-a guard on a slot's own value of one. So a write of a number field, a call
+location but stable keys. They include the facts of slots' values (`index`,
+`int`, `pastSafe`); a linear fact whose every term has the empty support
+(`Term.support`): an entry term `old(t)` at any path, or a term whose path
+is empty or one stable key, a value, a string length or the length of a
+typed array, which is its descriptor's, part of the value (the note's rule
+(View)); a disjunction of two such facts; and a guard of one on a slot's
+own value or a stable key's. So a write of a number field, a call
 and an element write preserve `i < b.length` alike, for a typed array `b`.
 
 A field write or a call also preserves the typed-array length of a view read through
@@ -4934,15 +4937,15 @@ It computes a guaranteed output, not an assumed postcondition:
 Every step keeps, past its result, the read links and cell facts of its
 input through a member every clause of the receiver's type states a stable
 key ([stable keys](POSITIVE-TYPES.md#records)), optional links among them,
-whatever the step: a call, a write, a closure's run. A present key's
-location holds its one value in every state an admissible transition
-reaches, and an absent key of an object without a prototype reads
-`undefined` in every heap (`TolerantFrames.Admissible.readGave`), so the link
-and the fact have the empty support, under the condition that the key is
-stable in the first state's world (`FactKind.supportsBy` at `stableKey`);
-$`\top`$ respects it, and the tolerant frame keeps them to the step's normal
-return (`TolerantFrames.frame_run_top`,
-[support and respect](FOOTPRINTS.md#support-and-respect)):
+whatever the step: a call, a write, a closure's run. The stable keys of
+the slots' types form a read context (`stableContext`) every admissible
+transition keeps (`stableContext_holds`: a present key's location holds
+its one value), and a link's or a cell fact's support in it leaves the key
+out (`FactKind.supportIn`): it is empty, $`\top`$ respects it, and the
+tolerant frame keeps the fact to the step's normal return
+(`TolerantFrames.frame_run_top`,
+[support and respect](FOOTPRINTS.md#support-and-respect)). An alias link,
+whose support is empty in every context, is kept likewise:
 
 ```math
 \frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad
