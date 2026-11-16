@@ -34,7 +34,8 @@ is within the stated frame when its frame, rebased to the invocation's entry
 through the tracked slots (`Footprints.rebase`), is included in the stated
 frame (`Footprint.le`); `Post.compose_at` composes the two. It is one rule
 for every step: a call at its signature's frame (`callStep`), an element
-write (`writeStep`), a step within the closed bound (`closedStep`), each
+write (`writeStep`), a field write (`fieldStepEffect`), a step within the
+closed bound (`closedStep`), each
 only extracting the step's frame (FOOTPRINTS.md, "Argument-path spine
 regions"). -/
 

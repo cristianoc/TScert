@@ -1310,9 +1310,11 @@ checks a provenance table at entry, every normal edge and every handler.
 A node is a provenance step, a slot copy (`checkCopy_sound`) or a read
 through a `@stable` field the slot's type states present (`checkRead_sound`),
 or a step whose local effect the common check `stepWithin` includes:
-`closedStep_ok`, `callStep_ok` (its signature's frames) and `writeStep_ok` (from
+`closedStep_ok`, `callStep_ok` (its signature's frames), `writeStep_ok` (from
 `writeStep_sound`, `ExpressionEffects.lean`, whose element-write cores
-state the written spine, `SpineWrite`). Each node also passes its
+state the written spine, `SpineWrite`) and `fieldStep_ok` (a typed field
+write's frame, the note's Field-Write $`\{x.f:\mathsf{any}\}`$ at the node's
+slots, from `fieldWriteStep_sound`). Each node also passes its
 freshness check (`checkFresh_sound`, [fresh array
 storage](#fresh-array-storage)). `checkNodes_sound` discharges every
 node's obligation; `checkEntry_sound` proves the regional bound from the
