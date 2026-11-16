@@ -86,8 +86,7 @@ contains the other:
 | A quantified fact requires each element present | yes | no |
 | Spine separation asserts both arrays exist | yes | only if both values have spines |
 
-**Several decisions try two routes in turn.** `effectKept` is `postKeeps`
-or `frameKeeps`; `callKeeps` and `callGrown` each tried a change read from
+**Several decisions try two routes in turn.** `callKeeps` and `callGrown` each tried a change read from
 the call and then respect of the support; the deciders for writes,
 elements and cells have the same shape (`keptIndices`, `Atom.keptBy`,
 `everyGrown`, `writeKept`, `keepsLengths`, `writeAtoms`, `cellKept`,

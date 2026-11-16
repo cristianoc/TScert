@@ -21,7 +21,7 @@ row whose mechanism is separate, or absent, is work.
 | Rule | Lean statement | Mechanism acceptance applies |
 |---|---|---|
 | Entry | `CommandSummary.Sound` and `ExitSpec.facts` state a command's exit postconditions together with its transition `tr` | separate: `PromiseCalls.withEnsures`, `ensuresComposed`, `callKept`, `Composer.fact` |
-| Frame | `Derivation.frame`: elimination of the modality, with checked substitution and transport | separate: `effectKept`, `frameKeeps`, `IndexFact.keeps`, `postKeeps`; at a handler edge `edgeStoreOf` keeps no heap fact |
+| Frame | `Derivation.frame`: elimination of the modality, with checked substitution and transport | separate: `effectKept`, `frameKeeps`, `IndexFact.keeps`; at a handler edge `edgeStoreOf` keeps no heap fact |
 | Frame+ | `Derivation.framePlus`, with certified rigidity on an invariant domain | none: acceptance keeps no fact under the modality |
 | Loop | `LoopEvidence.prefix_sound`, `frame_at_head`, `frame_at_exit`, `reliance_at_prefix`: the parts of the rule, with the note's agreement of valuations at a prefix | separate: `headExit` checks supplied head facts, closed by induction over the graph |
 | Call | `call_exits_exact`, the schema's instantiation, substitution and transport of the mark: instantiation per exit, rest actuals included | Call itself, at the selected signature; the facts a caller derives from it go through the separate Entry and Frame mechanisms above |
