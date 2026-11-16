@@ -181,19 +181,26 @@ first fields of slots' objects whose contents the transition keeps
 ($`c.\mathrm{stable}`$, `FirstKept`) (`ReadContext`); a typed array's
 length is its descriptor's, part of the value. A path $`x.f_1\ldots f_n`$ reads the field location of
 $`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$. Each
-location the read passes on from holds an object, which every change but
-`any` keeps; the last holds the value the read ends at, at a change $`\lambda`$
-keeping it. The support reads each location, but a first field $`c`$ states
-stable (`pathReads`):
+location the read passes on from holds an object, of class
+$`\mathsf{values}`$, which every change but `any` keeps; the last holds the
+value the read ends at, of a class $`\sigma`$ selecting it, at a change
+$`\lambda`$ keeping it. The support reads each location within its class
+region, but a first field $`c`$ states stable (`pathReads`):
 
 ```math
-\mathrm{reads}_c^{\lambda}(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i : (i < n\ ?\ \mathsf{grow} : \lambda) \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
+\mathrm{reads}_c^{\lambda,\sigma}(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i \cap \mathsf{cls}(i < n\ ?\ \mathsf{values} : \sigma) : (i < n\ ?\ \mathsf{grow} : \lambda) \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
 ```
+
+The class $`\sigma`$ is $`\mathsf{values}`$ where the read ends at a number,
+a string or an object, and $`\mathsf{all}`$ where it may end at any
+contents: a field location may hold a store. **Proved** (`pathReads_sound`):
+where the support is kept and $`\sigma`$ selects the value read, the read
+reads it after the transition.
 
 A term $`t`$ (ARITHMETIC.md, [linear facts](ARITHMETIC.md#linear-facts))
 at the change $`\delta \in \{\mathsf{keep}, \mathsf{grow}\}`$ its store
 tolerates has the support (`Term.support`): none for an entry term, which
-reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda}`$ of its path,
+reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda,\mathsf{values}}`$ of its path,
 $`\lambda`$ `init` for a value or a string's length (a number or a string)
 and `grow` for a length or a typed array's length (an object), and for a
 length $`|x.\pi|`$ the store location of the array $`x.\pi`$ reads, where it
@@ -210,10 +217,11 @@ other at $`\mathsf{keep}`$; in a disequality every term at $`\mathsf{keep}`$
 (`IndexFact.support?`, proved: `IndexFact.support?_supports`): empty for a
 fact of slots' values; a length fact its store at $`\mathsf{keep}`$, a bound
 its store at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
-guard path's reads and its body's; a store separation its two paths' reads
-(each at `keep` last); a region fact $`\mathrm{apart}(a, b)`$ the two store
+guard path's reads $`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$ and
+its body's; a store separation its two paths' reads
+$`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$; a region fact $`\mathrm{apart}(a, b)`$ the two store
 locations at `keep`; a quantified fact $`\mathrm{every}(x.\pi, t, \varphi)`$
-whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow}}(x.\pi)`$,
+whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow},\mathsf{values}}(x.\pi)`$,
 the array's store location at either key an array or a typed array holds its
 elements under, at `keep`, the locations of class value at `init` (an element
 the body reads is a number, which `init` keeps), and its bound's and its
