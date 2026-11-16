@@ -303,7 +303,9 @@ region of values.
 
 For an equality of lengths across `texts.push(v)` where `texts` is another
 array: the effect of `push` is
-$`\{\mathit{texts}.\mathsf{spine} : \mathsf{grow}\}`$, the fact's support
+$`\{\mathit{texts}.\mathsf{spine} : \mathsf{grow}\}`$, the normal frame its
+contract states, which its growth and append postconditions imply
+(`Effect.callPost_receiverGrowFrame`); the fact's support
 keeps the other array's spine, and respect needs the two spines disjoint,
 which Alloc states for a fresh array and step 2 makes available to the
 check.

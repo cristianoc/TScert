@@ -120,6 +120,14 @@ export const topFrame: Frame = classFrame(topFootprint);
 export const viewWriteFrame: Frame = [
   { region: { cls: valuesClass }, change: "keep" }, { region: { cls: arraysClass }, change: "keep" },
   { region: { cls: viewsClass }, change: "grow" }];
+/** **The frame of a growth of the receiver's spine** (the note *Tolerant
+ * frames*, Push, `{x.spine: grow}`): the receiver's spine, its `[]` slot
+ * holding a spine, at `grow`, every other location kept; the frame the
+ * growth's postconditions imply (`CallEffects.receiverGrowFrame`,
+ * `Effect.callPost_receiverGrowFrame`). */
+export const receiverGrowFrame: Frame = [
+  { region: { inCls: { region: { field: { x: 0, key: "[]" } }, selector: { value: false, array: true, view: false } } },
+    change: "grow" }];
 /** **An exit's guarantee**: its frame and its postconditions (`ExitSchema`). */
 export const exitSchema = (frame: Frame, ensures: readonly Formula[] = []): Modifies<{}, ExitSchema> =>
   ({ frame, ensures });
