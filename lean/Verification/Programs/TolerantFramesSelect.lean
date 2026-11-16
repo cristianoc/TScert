@@ -312,7 +312,7 @@ pass's tree check holds. -/
   run := fun j k e codes sums =>
     if passTreeOk G images k codes sums e then checkStepResult G images j k e codes sums (tree := false) else failure
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href _
     split at hc
     · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh href
     · cases hc
@@ -357,10 +357,10 @@ theorem ordinary_select_sound {G : NormalGraph ι} {images : InstanceImageCheck 
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (href : RefsOk W (instantiate 0 ρ j.term)) (hρ : RootsOk W ρ) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) :=
-  (passOrdinary G images).sound (select_run hok hsel) hcodes hsums he hk hw hh href
+  (passOrdinary G images).sound (select_run hok hsel) hcodes hsums he hk hw hh href hρ
 
 /-- **A qualified body's `select` is its `run`** (`selectChecks`, line 1276). -/
 theorem withSubtyping_select {G : NormalGraph ι} {images : InstanceImageCheck G} (subtyping : BodySubtyping G)
@@ -424,10 +424,10 @@ theorem passSteps_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
-  have hs := erase ((passSteps G images).sound hc hcodes hsums he hk hw hh href)
   simp only [passSteps] at hc
   split at hc
   · rename_i hok
+    have hs := erase (passSteps_sound hok hc hcodes hsums he hk hw hh href)
     rcases passSteps_value hok hc with hu | ⟨p, rfl, -⟩ | ⟨i, p, fld, Ref, rfl, -, ht, hi, -⟩
     · exact base_keeps hu hp hcodes hsums he hk hw hh href
     · cases hp
@@ -467,7 +467,7 @@ theorem pass_preserving_frame_select {G : NormalGraph ι} {images : InstanceImag
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
     (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
-    (href : RefsOk s.W (instantiate 0 ρ j.term))
+    (href : RefsOk s.W (instantiate 0 ρ j.term)) (hρ : RootsOk s.W ρ)
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -475,7 +475,7 @@ theorem pass_preserving_frame_select {G : NormalGraph ι} {images : InstanceImag
         HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
-  preserving_step_frame (passOrdinary G images) (select_run hok hsel) hcodes hsums he hkE
+  preserving_step_frame (passOrdinary G images) (select_run hok hsel) hcodes hsums he hkE hρ
     (passPreserving_keeps_select hpres hok hsel hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 /-- **A step the pass frames, at its selected output**: `preserving_judgment`
@@ -489,13 +489,13 @@ theorem preserving_judgment_select {G : NormalGraph ι} {images : InstanceImageC
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (hρ : RootsOk W ρ) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
     (passPreserving_keeps_select hpres hok hsel hcodes hsums he hk hw hh href)
-    (ordinary_select_sound hok hsel hcodes hsums he hk hw hh href)
+    (ordinary_select_sound hok hsel hcodes hsums he hk hw hh href hρ)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 
@@ -623,10 +623,10 @@ theorem pass_select_sound {pc : SinglePass.PassChecker G images} {j : Sequent ι
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (href : RefsOk W (instantiate 0 ρ j.term)) (hρ : RootsOk W ρ) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) :=
-  (passRunChecker pc).sound (pass_select_run hok hsel) hcodes hsums he hk hw hh href
+  (passRunChecker pc).sound (pass_select_run hok hsel) hcodes hsums he hk hw hh href hρ
 
 /-- **Every step the pass classifies preserving keeps the heap**, at either
 checker's selected output. -/
@@ -659,7 +659,7 @@ theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
     (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
-    (href : RefsOk s.W (instantiate 0 ρ j.term))
+    (href : RefsOk s.W (instantiate 0 ρ j.term)) (hρ : RootsOk s.W ρ)
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -667,7 +667,7 @@ theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
         HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
-  preserving_step_frame (passRunChecker pc) (pass_select_run hok hsel) hcodes hsums he hkE
+  preserving_step_frame (passRunChecker pc) (pass_select_run hok hsel) hcodes hsums he hkE hρ
     (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 /-- **A step the pass frames, at either checker's selected output**: normal
@@ -682,13 +682,13 @@ theorem preserving_judgment_pass {pc : SinglePass.PassChecker G images}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (hρ : RootsOk W ρ) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
     (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hk hw hh href)
-    (pass_select_sound hok hsel hcodes hsums he hk hw hh href)
+    (pass_select_sound hok hsel hcodes hsums he hk hw hh href hρ)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 

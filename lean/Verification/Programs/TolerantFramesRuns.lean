@@ -200,7 +200,7 @@ and exit obligations from every state where the assertion holds. -/
 def NodesChecked (P : Program) (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m : Nat) :
     Prop :=
   ∀ l ρ (s : IndexedHeap), pre l ρ m s → ∃ node, P[l]? = some node ∧
-    (RefsOk s.W (instantiate 0 ρ node.expression) →
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -262,7 +262,7 @@ theorem graph_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Q
     have hpre₀ := hdown l ρ ⟨n + 1, W, h, Nat.zero_lt_succ n, ha, ho⟩ s₀ ⟨Nat.le_succ n, WExt_refl _⟩ rfl hpre
     obtain ⟨node', hP', hck⟩ := hnodes l ρ s₀ hpre₀
     rw [hP] at hP'; cases hP'
-    obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, hobl⟩ := hck hnr
+    obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, hobl⟩ := hck hnr (fun i => RefsOk_trunc _ (hr i))
     exact ⟨s₀, Ξ, T, cn, ce, Qn, Qe, ⟨Nat.le_refl _, by rw [trunc_id]; exact WExt_refl _⟩, hsafe, hobl⟩
   | eval t ρ k x =>
     obtain ⟨htr, hρr⟩ := hr

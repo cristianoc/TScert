@@ -302,7 +302,7 @@ the stability check below are its instances. -/
 def SepKnowledge.query (K : SepKnowledge) : SepQuery := ⟨K.apart⟩
 
 theorem SepKnowledge.query_sound {K : SepKnowledge} {μ ρ h} (hK : K.Holds μ ρ h) : K.query.Sound ρ h :=
-  fun _ _ _ hd hr hs => Sep.sound hK hd hr hs
+  fun _ _ _ _ hd hr hs => Sep.sound hK hd hr hs
 
 /-- Each fact kind's support supports it, in every context
 (`FactKind.support_sound`). -/

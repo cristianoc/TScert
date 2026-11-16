@@ -466,7 +466,7 @@ def FreshWithin [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t :
     (outF outC thr : Bool) : Prop :=
   ∀ ε n W h ρ (b : Nat), b ≤ h.length → FreshHold F C b ρ h →
     EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => (outF = true → FreshValue b v) ∧ (outC = true → CellFresh b h' v) ∧ CellsHold C b ρ h')
       (fun h' => thr = true → CellsHold C b ρ h') n W h (instantiate 0 ρ t)

@@ -27,7 +27,7 @@ private theorem cls_disjoint {c c' : Selector} (hd : c.disjoint c' = true) {v : 
   rw [Selector.selects_disjoint hd h₁] at h₂; cases h₂
 
 theorem classQuery_sound (ρ : Env) (h : Heap) : classQuery.Sound ρ h := by
-  intro r s l hd hr hs
+  intro r s l _ hd hr hs
   have key : ∀ {r c c'}, c.disjoint c' = true → (Region.inCls r c).mem ρ h l = true →
       (Region.cls c').mem ρ h l = true → False := by
     intro r c c' hne hr hs
@@ -241,10 +241,11 @@ def knowledgeQuery (k : Knowledge) : SepQuery :=
     | _, _ => false⟩
 
 /-- **The knowledge's query is sound** wherever the knowledge holds. -/
-theorem knowledgeQuery_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
+theorem knowledgeQuery_sound {k : Knowledge} {ρ : Env} {h : Heap} {n : Nat} {W : WorldT n}
+    (hk : HeapKnowledge.Holds k ε ρ h) (_hok : HeapOk n W h) (_hρ : RootsOk W ρ) :
     (knowledgeQuery k).Sound ρ h := by
   refine SepQuery.or_sound (classQuery_sound ρ h) ?_
-  intro r s l hd hr hs
+  intro r s l _ hd hr hs
   simp only at hd
   split at hd
   · rename_i x y hx hy

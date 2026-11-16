@@ -61,7 +61,7 @@ obligation. -/
 def NodesKeep (P : Program) (pre : Nat → Assertion) (X : Nat → Env → Heap → Prop) (Q : Heap → Tm → Prop)
     (R : Heap → Prop) (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), pre l ρ m s → X l ρ s.h → ∃ node, P[l]? = some node ∧
-    (RefsOk s.W (instantiate 0 ρ node.expression) →
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
       EvalKeeps X Q R s.n s.h (instantiate 0 ρ node.expression) ρ node.continuation node.handler)
 
 /-- **One transition keeps the run property.** -/
@@ -83,7 +83,7 @@ theorem keeps_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Q
       have hpre₀ := hdown l ρ ⟨n + 2, W, h, Nat.zero_lt_succ _, ha, ho⟩ s₀ ⟨Nat.le_succ _, WExt_refl _⟩ rfl hpre
       obtain ⟨node', hP, hk⟩ := hkeep l ρ s₀ hpre₀ hb
       rw [hn] at hP; cases hP
-      exact hk (RefsOk_trunc _ (node_refs (hPr _ (List.mem_of_getElem? hn)) hsr))
+      exact hk (RefsOk_trunc _ (node_refs (hPr _ (List.mem_of_getElem? hn)) hsr)) (fun i => RefsOk_trunc _ (hsr i))
   | expr st => exact fun j h'' t'' hs hj => hb (j + 1) h'' t'' (.next st hs) (by omega)
   | ret hv => exact (hb 0 _ _ .refl (Nat.zero_lt_succ _)).1 hv
   | bind hv => exact (hb 0 _ _ .refl (Nat.zero_lt_succ _)).1 hv

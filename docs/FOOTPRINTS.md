@@ -159,7 +159,8 @@ supports (`Supports.and`, `Supports.or`).
 
 A **separation query** $`q`$ answers whether two regions are disjoint. It is
 **sound** at a state $`(\rho, h)`$ when every positive answer names two
-regions sharing no location of $`h`$ (`SepQuery.Sound`); each query is built
+regions sharing no allocated location of $`h`$ (`SepQuery.Sound`), the
+locations $`\mathrm{Post}`$ and support constrain; each query is built
 from evidence holding at the step's prestate, and its soundness is proved
 from that evidence. An effect $`\Phi`$ **respects** $`S`$ under $`q`$ when
 
@@ -253,7 +254,10 @@ sound.
 ### Separation queries
 
 The query a state's knowledge $`\Sigma`$ answers (`knowledgeQuery`, proved
-sound wherever $`\Sigma`$ holds: `knowledgeQuery_sound`):
+sound wherever $`\Sigma`$ holds at a heap meeting its world, `HeapOk`, with
+valid roots, `RootsOk`: `knowledgeQuery_sound`; the acceptance path reaches
+every use with both, the expression checkers' soundness, `Checker.sound`,
+and a node's, `ExpressionOk`, carrying the environment's `RootsOk`):
 
 - **by class**: the locations of a region in the class region of one
   selector and the class region of a disjoint selector;

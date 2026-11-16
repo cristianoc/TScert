@@ -226,8 +226,20 @@ A field's bound holds both field and cell: which of the two a slot is
 depends on the object's roles, which region-kind evidence carries.
 
 Two regions are disjoint when their bounds are disjoint, or when the
-state's knowledge separates them. `SepQuery.Sound` is stated over allocated
-locations, the ones `Post` and `Supported` constrain. A path that ends at
+state's knowledge separates them. `SepQuery.Sound` and the paper layer's
+`DisjointUnder` are stated over allocated locations, the ones `Post` and
+`Supported` constrain.
+
+The acceptance path proves a query sound with both premises of
+`Region.bound_sound` at hand: `knowledgeQuery_sound` takes `HeapOk n W h`
+and `RootsOk W ρ`, and so do the call rules that ask it
+(`PromiseCalls.effectKept_holds`, `callKept_sound`, `callGrown_sound`,
+`callContext_holds`, `ensuresComposed_holds`, `withEnsures_holds`). The
+roots come from the graph state's references (`StateRefs`) through the
+judgments a node's check is read by: `Checker.sound`, `ControlFlow.ExpressionOk`,
+`GraphCode.NodeWithin`, the argument-region obligations and the tolerant
+frames' node judgments (`NodesChecked`, `NodesKeep`, `StepParts`) each take
+`RootsOk W ρ` beside the term's `RefsOk`. A path that ends at
 the spine key reads a spine: step 1 leaves the last read of a guard and of
 a spine separation unmarked for that reason, and the bound above marks it.
 

@@ -58,7 +58,7 @@ structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageC
   sound : ∀ {j k e out codes sums}, (run j k e codes sums).value = some out →
     CodesSound G codes → SummariesSound G images sums → ∀ {ε ρ n W h},
     EnvOk G j.context ρ n W → HeapKnowledge.Holds k ε ρ h →
-    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ j.term) →
+    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ j.term) → RootsOk W ρ →
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h')
       n W h (instantiate 0 ρ j.term)
@@ -2530,10 +2530,10 @@ stable cell facts. -/
   run := fun j k e codes sums => (base.run j k e codes sums).map (withStable G j.context k)
   select := fun j k e codes sums => (base.select j k e codes sums).map (withStable G j.context k)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, h0, rfl⟩ := hc
-    exact withStable_sound he hk hh (base.sound h0 hcodes hsums he hk hw hh href)
+    exact withStable_sound he hk hh (base.sound h0 hcodes hsums he hk hw hh href hρ)
 
 /-- The steps' own rules, without the stable links every step keeps. -/
 @[nospecialize] def Checker.steps [DecidableEq ι] (G : NormalGraph ι)
@@ -2541,7 +2541,7 @@ stable cell facts. -/
   run := fun j k e codes sums => checkStepResult G images j k e codes sums
   select := fun j k e codes sums => checkStepResult G images j k e codes sums (tree := false)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href _
     exact checkStep_sound hc hcodes hsums he hk hw hh href
 
 
@@ -2559,7 +2559,7 @@ admits (`ordinary`). -/
         checkTreeWith G images subtyping.check e codes sums)).bind fun _ => pure (ordinaryOutput k)
     | step => checkStepResult G images j k step codes sums
   sound := by
-    intro j k step out codes sums checked hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k step out codes sums checked hcodes hsums ε ρ n W h he hk hw hh href _
     cases step with
     | ordinary e =>
       simp only [CheckResult.value_bind_const, CheckResult.accepted_ofBool] at checked

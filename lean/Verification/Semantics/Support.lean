@@ -125,24 +125,25 @@ structure SupportLanguage {State : Type} (D : SupportDomain State) where
 /-- **A separation query**: whether two regions denote disjoint sets. Its
 meaning is `SepQuery.Sound`, stated of a prestate: wherever the evidence
 the query was built from holds, a positive answer means the two regions
-share no location there. -/
+share no allocated location there, the locations `Post` and `Supported`
+constrain. -/
 structure SepQuery where
   disjoint : Region → Region → Bool
 
 /-- The query is sound at the state `(ρ, h)`. -/
 def SepQuery.Sound (q : SepQuery) (ρ : Env) (h : Heap) : Prop :=
-  ∀ r s l, q.disjoint r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False
+  ∀ r s l, l < h.length → q.disjoint r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False
 
 /-- Two queries, either of which may answer. -/
 def SepQuery.or (q q' : SepQuery) : SepQuery := ⟨fun r s => q.disjoint r s || q'.disjoint r s⟩
 
 theorem SepQuery.or_sound {q q' : SepQuery} {ρ h} (hq : q.Sound ρ h) (hq' : q'.Sound ρ h) :
     (q.or q').Sound ρ h := by
-  intro r s l hd hr hs
+  intro r s l hl hd hr hs
   simp only [SepQuery.or, Bool.or_eq_true] at hd
   rcases hd with hd | hd
-  · exact hq r s l hd hr hs
-  · exact hq' r s l hd hr hs
+  · exact hq r s l hl hd hr hs
+  · exact hq' r s l hl hd hr hs
 
 /-- **Respect** (the note's Definition): every pair `r : δ` of the support
 and every entry `r' : γ` of the effect have `γ ⊑ δ`, or the query answers
@@ -164,7 +165,7 @@ theorem respect_sound {q : SepQuery} {S Φ ρ h h'} (hc : respects q S Φ = true
     simp only [Bool.or_eq_true] at this
     rcases this with hle | hap
     · exact hh.mono hle
-    · exact (hq e.1 f.1 l hap hm hfm).elim
+    · exact (hq e.1 f.1 l (List.getElem?_eq_some_iff.mp hv).1 hap hm hfm).elim
 
 /-! ## The tolerant frame -/
 

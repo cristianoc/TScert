@@ -97,7 +97,7 @@ def StepEdgesSoundAt (pre : Nat → Assertion) (P : ControlFlow.Program) (G : No
     (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
     (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → ∃ node, P[l]? = some node ∧
-    (RefsOk s.W (instantiate 0 ρ node.expression) →
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -110,7 +110,7 @@ by the initial heap. -/
     (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
     (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → m ≤ s.h.length → ∃ node, P[l]? = some node ∧
-    (RefsOk s.W (instantiate 0 ρ node.expression) →
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -137,10 +137,10 @@ theorem stepEdgesSound_of_checkedAt {pre : Nat → Assertion} {G : NormalGraph �
   obtain ⟨na, hm⟩ := hacc l hp.1.1
   have hS := hm.entered ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
-  refine ⟨na.node, na.hP, fun hr => ?_⟩
+  refine ⟨na.node, na.hP, fun hr hρ => ?_⟩
   obtain ⟨-, -, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
   obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := pre) (Ξres := excOf G)
-    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he hr
+    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he hr hρ
     (fun j U v hv => hm.shape (j + 1) U v hv)
     (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hmem => hm.exits t p o q hmem ρ) hm.ret
       (fun _ => trivial) s' v hv hF he' (hm.shape _ _ v (he'.2 0 _ rfl)))

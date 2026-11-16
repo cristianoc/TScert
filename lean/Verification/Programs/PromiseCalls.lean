@@ -2449,7 +2449,7 @@ def effectKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : H
     !a.fact.envOnly && (postKeeps stable eff t k a || frameKeeps stable eff t k a))
 
 theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hk : HeapKnowledge.Holds k ε ρ h)
+    {nw : Nat} {W : WorldT nw} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : HeapKnowledge.FirstKept stable ρ h h') :
     HeapKnowledge.IndexHolds ε (effectKept stable eff t k) (push v ρ) h' := by
@@ -2477,7 +2477,7 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
         rcases Bool.or_eq_true_iff.mp hwk with hkb | hkb
         · exact HeapKnowledge.IndexFact.holdsAt_keptWith hc hst hkb hF
         · exact HeapKnowledge.IndexFact.everyKept_sound hc hst hkb hF
-    · exact Footprints.IndexFact.keeps_sound hframe (Footprints.knowledgeQuery_sound hk)
+    · exact Footprints.IndexFact.keeps_sound hframe (Footprints.knowledgeQuery_sound hk hok hρ)
         (callerFrame_post hw) hst hF
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
@@ -3361,7 +3361,7 @@ def callGrown (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Kn
 
 open HeapKnowledge in
 theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hk : Holds k ε ρ h)
+    {nw : Nat} {W : WorldT nw} (hk : Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : FirstKept stable ρ h h') :
     ∀ u u' n, callKept stable eff t k u = some u' → termValue ε ρ h u = some n → termValue ε (push v ρ) h' u' = some n := by
@@ -3373,13 +3373,13 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
     rw [termValue_mapM' fun _ => rfl]
     unfold callKeeps at hc
     obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inl rfl)
-      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
+      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
     rw [h3 rfl] at h1; exact h1
   · cases hu
 
 open HeapKnowledge in
 theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hk : Holds k ε ρ h)
+    {nw : Nat} {W : WorldT nw} (hk : Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : FirstKept stable ρ h h') :
     ∀ u u' n, callGrown stable eff t k u = some u' → termValue ε ρ h u = some n →
@@ -3391,7 +3391,7 @@ theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : T
     cases hu
     rw [termValue_mapM' fun _ => rfl]
     obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inr rfl)
-      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
+      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
     exact ⟨n', h1, h2⟩
   · cases hu
 
@@ -3405,11 +3405,11 @@ def callContext (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 :
 
 open HeapKnowledge in
 theorem callContext_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
-    {h h' : Heap} {v : Tm} (hk0 : Holds k0 ε ρ h)
+    {h h' : Heap} {v : Tm} {nw : Nat} {W : WorldT nw} (hk0 : Holds k0 ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : FirstKept stable ρ h h') :
     (callContext stable eff t k0).Holds ε ρ h (push v ρ) h' :=
-  StepRelation.join_holds (callRelation_holds fun _ hF => CallEffects.Effect.callPost_ensures hF hq) (growth_holds (callGrown_sound hk0 hq hstable))
+  StepRelation.join_holds (callRelation_holds fun _ hF => CallEffects.Effect.callPost_ensures hF hq) (growth_holds (callGrown_sound hk0 hok hρ hq hstable))
 
 open HeapKnowledge in
 /-- **Rule Call's composition in the caller**: the caller's facts after the
@@ -3435,7 +3435,7 @@ def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (
 
 open HeapKnowledge in
 theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
-    {h h' : Heap} {v : Tm} (hk0 : Holds k0 ε ρ h)
+    {h h' : Heap} {v : Tm} {nw : Nat} {W : WorldT nw} (hk0 : Holds k0 ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : FirstKept stable ρ h h') :
     IndexHolds ε (ensuresComposed stable eff t k0) (push v ρ) h' := by
@@ -3446,7 +3446,7 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
     · cases ha
     · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
       exact compose_holds (IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2)
-        (callKept_sound hk0 hq hstable) (callContext_holds hk0 hq hstable) F hF
+        (callKept_sound hk0 hok hρ hq hstable) (callContext_holds hk0 hok hρ hq hstable) F hF
   · split at ha
     · rename_i recv slots hs
       obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
@@ -3456,8 +3456,8 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
           ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
           ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
             (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
-        ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hq hstable,
-          callContext_holds hk0 hq hstable, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
+        ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hok hρ hq hstable,
+          callContext_holds hk0 hok hρ hq hstable, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
           fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
       exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
     · cases ha
@@ -3473,7 +3473,8 @@ def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t :
 
 theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hv : ∀ i, i < n → isVal (ρ i) = true)
-    (hk : HeapKnowledge.Holds k ε (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ε ρ h)
+    (hk : HeapKnowledge.Holds k ε (push v ρ) h') {nw : Nat} {W : WorldT nw} (hk0 : HeapKnowledge.Holds k0 ε ρ h)
+    (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
     HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
@@ -3487,11 +3488,11 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
               · exact hk.2.2.2.2.2 a ha hc
               · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp
                 (CallEffects.Effect.callPost_ensures hF hq)) a ha hc
-            · exact effectKept_holds hk0 hq hstable a ha hc
+            · exact effectKept_holds hk0 hok hρ hq hstable a ha hc
           · exact appendKept_holds hk0 hq a ha hc
         · exact writeKept_holds hk0 hq a ha hc
       · exact linearAppendKept_holds hv hk0 hq a ha hc
-    · exact ensuresComposed_holds hk0 hq hstable a ha hc⟩
+    · exact ensuresComposed_holds hk0 hok hρ hq hstable a ha hc⟩
 
 /-- Knowledge with the region facts a call growing its receiver's spine keeps
 (`IndexWrites.grownRegions`) and the cell facts its change respects (`cells`,
@@ -3799,12 +3800,12 @@ every step is otherwise `base`'s. -/
             indices := out.indices ++ PromiseCalls.negatedIndices k x }
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i x hx
       simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
-      have hs := base.sound hrun hcodes hsums he hk hw hh href
+      have hs := base.sound hrun hcodes hsums he hk hw hh href hρ
       have hterm : (j.term = .ite (.var x) .fls .tru ∨ j.term = .ite (.test .truthy (.var x)) .fls .tru) ∧
           x < j.context.length := by
         unfold PromiseCalls.negationOf at hx
@@ -3844,7 +3845,7 @@ every step is otherwise `base`'s. -/
           rw [ht]; simp [instantiate]
         rw [hinst] at hs ⊢
         exact HeapObservations.weaken (fun h' u hq => finish h' u hq) (PromiseCalls.negation_test_run hxv hs)
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 
 /-- A checker whose ordinary steps that are calls keeping the heap keep every
@@ -3857,12 +3858,12 @@ heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
   select := fun j k e codes sums =>
     if PromiseCalls.keepsCall G images j e codes sums then pure (HeapKnowledge.shift k) else base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i hkeep
       cases hc
       exact PromiseCalls.keepsCall_sound hkeep hcodes hsums he hk hw hh href
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 /-- A checker whose ordinary steps that are calls keeping the heap and
 allocating their result keep every heap fact of their entry and separate the
@@ -3877,12 +3878,12 @@ other step is `base`'s. -/
     if PromiseCalls.freshCall G images j e codes sums then pure (PromiseCalls.freshOutput G j.context k)
     else base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i hfresh
       cases hc
       exact PromiseCalls.freshCall_sound hfresh hcodes hsums he hk hw hh href
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 /-- A checker whose ordinary steps that are calls changing only their
 receiver's own locations keep the heap facts separated from them
@@ -3898,12 +3899,12 @@ receiver's own locations keep the heap facts separated from them
     | some i => pure (PromiseCalls.ownOutput k i)
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i i hown
       cases hc
       exact PromiseCalls.ownCall_sound hown hcodes hsums he hk hw hh href
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 /-- A checker whose ordinary steps that are calls promising their receiver's
 elements add that atom (`PromiseCalls.elementsCall`); every other step is
@@ -3919,12 +3920,12 @@ elements add that atom (`PromiseCalls.elementsCall`); every other step is
     | some (x, R) => pure (PromiseCalls.elementsOutput k x R)
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i x R hel
       cases hc
       exact PromiseCalls.elementsCall_sound hel hcodes hsums he hk hw hh href
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 /-- A checker whose ordinary steps that are calls at a precondition on their
 receiver's elements are checked against the entry's atoms
@@ -3938,12 +3939,12 @@ receiver's elements are checked against the entry's atoms
     if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput e k)
     else base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i hreq
       cases hc
       exact PromiseCalls.requiresCall_sound hreq hcodes hsums he hk hw hh href
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 /-- A checker whose ordinary steps that are calls stating a postcondition add
 their atoms to what `base` gives the step (`PromiseCalls.ensuresCall`); every
@@ -3963,7 +3964,7 @@ other step is `base`'s. -/
         (HeapExpressionRules.keptCells (fun _ => true) none k.cells)
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · rename_i eff hens
       simp only [CheckResult.map, Option.map_eq_some_iff] at hc
@@ -3971,11 +3972,11 @@ other step is `base`'s. -/
       cases n with
       | zero => exact href
       | succ n =>
-      have hs := base.sound hrun hcodes hsums he hk hw hh href
+      have hs := base.sound hrun hcodes hsums he hk hw hh href hρ
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh href
       exact HeapObservations.weaken (fun h' v hq' => let hq := hq'.1; PromiseCalls.withGrown_holds
         (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk
-          hq.2 hq'.2)
+          hh hρ hq.2 hq'.2)
         (fun hgr => IndexWrites.grownRegions_holds he hh hk (PromiseCalls.withGrown_grows hgr hq.2)
           (PromiseCalls.withGrown_appends hgr hq.2))
         (fun hgr => HeapExpressionRules.keptCells_holds hk.1
@@ -3983,7 +3984,7 @@ other step is `base`'s. -/
           (fun _ _ _ _ _ _ _ _ _ hf => hf)))
         (HeapExpressionRules.stableFirst_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
-    · exact base.sound hc hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own

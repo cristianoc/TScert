@@ -965,7 +965,7 @@ theorem return_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 
 def ExpressionOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
   ∀ ε n W h ρ, EnvOk G (entry c) ρ n W → ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
-    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
     HeapObservations.SafePost (excOf G) (fun k U u => meaning G (result c) k U u ∧ YieldsOk G c.yields ρ k U u)
       (fun h' v => HeapKnowledge.Holds (outFacts G c) ε (push v ρ) h') n W h (instantiate 0 ρ t)
 
@@ -992,7 +992,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     ∀ ε ρ h, HeapKnowledge.Holds (entryFacts G c) ε ρ h → HandlerOk G C (entry c) c.implies c.arguments ε ρ node.handler := by
   simp only [checkNodeUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at hc
   refine ⟨?_, ?_, fun ε ρ h hk => handler_sound hc.1.1.1.1.2 hk⟩
-  · intro ε n W h ρ he hi hf hw hh href
+  · intro ε n W h ρ he hi hf hw hh href hρ
     have hterm := hc.1.1.1.1.1
     have href' : RefsOk W (instantiate 0 ρ (claim c.expression).term) := by
       rw [hterm]; exact href
@@ -1027,7 +1027,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
         · cases hany
         · exact ⟨_, rfl, hany⟩
       have ht := HeapObservations.weaken (fun _ _ ho => outFacts_holds he (outputFits_sound hfit he ho))
-        (checker.sound hrun hcodes hsums he hf hw hh href')
+        (checker.sound hrun hcodes hsums he hf hw hh href' hρ)
       have ht' := PromiseCalls.yieldFollows_sound hy he hi hh hf.2.2.1 ht
       simpa only [entry, result, hterm] using ht'
   · have hk := hc.2
@@ -1233,7 +1233,7 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
       · cases hal
     exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
       ⟨⟨hexpr, fun i => RefsOk_trunc _ (hρr i)⟩, entry c, result c, (outFacts G c), c.implies, c.yields, c.arguments, _, he', hi', ha, hal,
-        ht ε n U h ρ he' hi' (entryFacts_holds he' hf) hw' hh' hexpr, hk, hx ε ρ h (entryFacts_holds he' hf)⟩⟩
+        ht ε n U h ρ he' hi' (entryFacts_holds he' hf) hw' hh' hexpr (fun i => RefsOk_trunc _ (hρr i)), hk, hx ε ρ h (entryFacts_holds he' hf)⟩⟩
   | done v => exact Or.inl (Or.inl ⟨v, rfl, hs.2⟩)
   | raised v => exact Or.inl (Or.inr ⟨v, rfl, hs.2⟩)
   | eval t ρ k x =>

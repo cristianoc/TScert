@@ -3278,10 +3278,10 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
-    have hs := base.sound hrun hcodes hsums he hk hw hh href
+    have hs := base.sound hrun hcodes hsums he hk hw hh href hρ
     refine weaken (fun _ _ hr =>
       let hq := hr.1; ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
       hq.1.2.2.2.2.1, indexHolds_append (indexHolds_append (indexHolds_append hq.1.2.2.2.2.2 hq.2.1) ?_) hr.2⟩)
@@ -3309,10 +3309,10 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
         IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term) }
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
-    have hs := base.emptyArrays.sound hrun hcodes hsums he hk hw hh href
+    have hs := base.emptyArrays.sound hrun hcodes hsums he hk hw hh href hρ
     exact weaken (fun h' u hq => ⟨hq.1.1.1.1, hq.1.1.1.2.1, hq.1.1.1.2.2.1, hq.1.1.1.2.2.2.1, hq.1.1.1.2.2.2.2.1,
       indexHolds_append hq.1.1.1.2.2.2.2.2 (indexHolds_append (indexHolds_append hq.1.1.2 hq.1.2) hq.2)⟩)
       (IndexWrites.lengthAtoms_holds he hk (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs)))
@@ -3344,7 +3344,7 @@ every other step is `base`'s. -/
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
     · split at hc
       · rename_i hck
@@ -3360,6 +3360,6 @@ every other step is `base`'s. -/
       · cases hc
     · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
-      exact IndexWrites.growOutput_sound he hk hw hh (base.sound hrun hcodes hsums he hk hw hh href)
+      exact IndexWrites.growOutput_sound he hk hw hh (base.sound hrun hcodes hsums he hk hw hh href hρ)
 
 end Verification.HeapExpressionRules

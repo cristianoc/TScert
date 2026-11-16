@@ -587,7 +587,7 @@ def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed) (c
     (F : List Nat) (out thr : Bool) : Prop :=
   ∀ ε n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
     EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
-    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => Φ.HoldsOn (· < b) h h' ∧ (out = true → FreshAt b v))
       (fun h' => thr = true → Φ.HoldsOn (· < b) h h') n W h (instantiate 0 ρ t)
@@ -695,7 +695,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
             (fun _ _ _ hu => hu.1) (fun _ _ h => h)
             (hterm ε n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
               (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
-              (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh) hexpr))
+              (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh) hexpr (fun i => RefsOk_trunc _ (hρr i))))
           exact returnsPost_of_safePost (ExpressionEffects.noReturn_sound hempty hsafe)
         · intro k h' v hk run hv
           exact .inl hcont
@@ -708,7 +708,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
       have hrun := ht ε n _ h _ initial.length (Footprints.Closed.holds_iff.mp hp.1).1 hp.2
         (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
         (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
-        (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh) hexpr
+        (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh) hexpr (fun i => RefsOk_trunc _ (hρr i))
       have hraises : ((!deadHandler dead node.handler) || exc) = true →
           RaisesPost (Φ.Holds initial) n h (instantiate 0 ρ node.expression) := by
         intro hthr k h'' t'' v hk run hr
@@ -1135,7 +1135,7 @@ theorem ensures_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     have hrun := hterm ε n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
-      (RefsOk_trunc _ (node_refs (hP node (List.mem_of_getElem? hn)) hρr))
+      (RefsOk_trunc _ (node_refs (hP node (List.mem_of_getElem? hn)) hρr)) (fun i => RefsOk_trunc _ (hρr i))
     simp only [returnOk, hk, htl, Bool.or_eq_true] at hret
     rcases hret with (hu | hempty) | hr
     · exact (unreachableEntry_sound hu he).elim
@@ -1279,13 +1279,13 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
       EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
-      WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+      WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
       HeapObservations.SafePost (excOf G) (meaning G (result c))
         (fun h' v => Φ.HoldsOn (· < b) h h' ∧ ((varFresh F t || callFresh G images sums c t) = true → FreshAt b v))
         n W h (instantiate 0 ρ t) := by
-  intro j V h' ρ b hb hF henv himp hknowledge hworld hheap href
+  intro j V h' ρ b hb hF henv himp hknowledge hworld hheap href hρ
   have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-    (hterm ε j V h' ρ henv himp hknowledge hworld hheap href))
+    (hterm ε j V h' ρ henv himp hknowledge hworld hheap href hρ))
   -- A slot copy returns the slot's value.
   by_cases hvar : varFresh F t = true
   · cases t <;> simp only [varFresh, reduceCtorEq] at hvar
@@ -1372,12 +1372,12 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
       EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
-      WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+      WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
       HeapObservations.SafePostExc (excOf G) (meaning G (result c)) (fun _ _ => True)
         (fun h' => Φ.HoldsOn (· < b) h h') n W h (instantiate 0 ρ t) := by
-  intro j V h' ρ b _ hF henv himp hknowledge hworld hheap href
+  intro j V h' ρ b _ hF henv himp hknowledge hworld hheap href hρ
   have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-    (hterm ε j V h' ρ henv himp hknowledge hworld hheap href))
+    (hterm ε j V h' ρ henv himp hknowledge hworld hheap href hρ))
   simp only [throwsWithin, Bool.or_eq_true] at hthrows
   rcases hthrows with ((hexpr | hwrite) | hcall) | hempty
   rotate_right
@@ -1426,13 +1426,13 @@ theorem nodeWithin_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : In
     (hthrows : thr = true → throwsWithin G images sums Φ F c t = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     NodeWithin G Φ c t F (varFresh F t || callFresh G images sums c t) thr := by
-  intro ε j V h' ρ b hb hF henv himp hknowledge hworld hheap href
-  have hpost := nodePost_of_checked hscope hcases hterm hsums j V h' ρ b hb hF henv himp hknowledge hworld hheap href
+  intro ε j V h' ρ b hb hF henv himp hknowledge hworld hheap href hρ
+  have hpost := nodePost_of_checked hscope hcases hterm hsums j V h' ρ b hb hF henv himp hknowledge hworld hheap href hρ
   cases thr with
   | false =>
     exact HeapObservations.SafePostExc.of_post (fun _ h => absurd h (by simp)) hpost
   | true =>
-    have hexc := throwsWithin_sound hscope (hthrows rfl) hterm hsums j V h' ρ b hb hF henv himp hknowledge hworld hheap href
+    have hexc := throwsWithin_sound hscope (hthrows rfl) hterm hsums j V h' ρ b hb hF henv himp hknowledge hworld hheap href hρ
     have hboth := HeapObservations.SafePostExc.cross_upto j (fun _ _ _ _ _ _ _ _ hu _ => hu) V V h' _ hheap hheap
       (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hpost) hexc
     exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq _ => hq.2) hboth

@@ -18,7 +18,7 @@ def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     ArgumentSpineRegionsWithin Φ regions entry initial h → ArgumentPathTracking.Holds facts ρ entry initial →
     (∀ i ∈ F, FreshValue initial.length (ρ i)) → FieldsHold Fs initial.length ρ h →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
     (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => ArgumentSpineRegionsWithin Φ regions entry initial h' ∧
@@ -52,7 +52,7 @@ step starts in. -/
 def StepOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (se : StepEffect) (thr : Bool) :
     Prop :=
   ∀ ε n W h ρ, EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
     ∃ σ : Env, (∀ p s, se.slot p = some s → σ p = ρ s) ∧
       HeapObservations.SafePostExc (excOf G) (meaning G (result c))
         (fun h' _ => Post se.normal σ h h') (fun h' => thr = true → Post se.raised σ h h')
@@ -166,12 +166,12 @@ theorem nodeWithin_of_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprint
     {thr : Bool}
     (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts F Fs se thr = true) :
     NodeWithin G Φ regions c t facts F Fs [] thr := by
-  intro ε n W h ρ initial entry hb hf hF hFs he hi hk hw hh href hst
+  intro ε n W h ρ initial entry hb hf hF hFs he hi hk hw hh href hρ hst
   cases n with
   | zero => exact href
   | succ n =>
     simp only [stepWithin, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
-    obtain ⟨σ, hσ, hrun⟩ := hs ε (n + 1) W h ρ he hi hk hw hh href
+    obtain ⟨σ, hσ, hrun⟩ := hs ε (n + 1) W h ρ he hi hk hw hh href hρ
     have hp := ArgumentSpineRegionsWithin.iff_post.mp hb
     have hok := nodeRebase_ok (regions := regions) hσ hf hF hFs (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
     apply HeapObservations.SafePostExc.weaken _ _ hrun
@@ -249,7 +249,7 @@ def FieldsWithin [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t 
     (Fs : List (Nat × String)) (out : List String) : Prop :=
   ∀ ε n W h ρ (b : Nat), b ≤ h.length → (∀ i ∈ F, FreshValue b (ρ i)) → FieldsHold Fs b ρ h →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => FieldsHold Fs b ρ h' ∧ ∀ f ∈ out, FieldFresh b h' v f)
       (fun h' => FieldsHold Fs b ρ h') n W h (instantiate 0 ρ t)
@@ -327,12 +327,12 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     have hk := entryFacts_holds he hf
     have hh' := HeapOk_trunc n W h hh
     have hrun := ht ε n _ h ρ initial entry hp.1 hp.2.1 hp.2.2.1.values hp.2.2.2 he' hi' hk
-      (WorldAdm_trunc _ hw) hh' hexpr
+      (WorldAdm_trunc _ hw) hh' hexpr (fun i => RefsOk_trunc _ (hρr i))
       (fun _ => (hst (Nat.succ_pos n)).transfer (Nat.le_succ n) (WExt_refl _))
     have hfresh := hfr ε n _ h ρ initial.length (ArgumentSpineRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1 he' hi' hk
-      (WorldAdm_trunc _ hw) hh' hexpr
+      (WorldAdm_trunc _ hw) hh' hexpr (fun i => RefsOk_trunc _ (hρr i))
     have hfld := hfl ε n _ h ρ initial.length (ArgumentSpineRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1.values
-      hp.2.2.2 he' hi' hk (WorldAdm_trunc _ hw) hh' hexpr
+      hp.2.2.2 he' hi' hk (WorldAdm_trunc _ hw) hh' hexpr (fun i => RefsOk_trunc _ (hρr i))
     have hboth0 := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
       hrun hfresh
     have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
