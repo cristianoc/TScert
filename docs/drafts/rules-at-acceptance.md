@@ -31,8 +31,8 @@ sound.
 
 **B. Checked transfer by derivation.** The existing deciders (frame
 keeping, Entry, arithmetic, allocation) emit derivations that
-B is what the goal requires of the rules that keep and establish
-facts. Its design is
+`checkScoped` checks at every edge, merge and loop head. B is what the
+goal requires of the rules that keep and establish facts. Its design is
 [the paper's definitions and rules as the mechanism of acceptance](rules-as-mechanism.md).
 
 **C. Rule Loop with its frame.**
