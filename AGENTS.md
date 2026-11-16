@@ -82,7 +82,7 @@ that covers what changed, and the wider tier once before committing:
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
 | Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases (cases whose file names contain the pattern) | `make test` (the pipeline cases, and the controls: forged fragments and forced proposals no case can make) |
 | Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript and Lean use the same JSON field names), then `run-cases.mts` | `make test` |
-| Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | before merging to `single-pass`, `make test-pretext PRETEXT=<checkout>`; the wide suite and the census run in CI on `single-pass` |
+| Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | before merging to `single-pass`, `make test-pretext PRETEXT=<checkout>`; the wide suite and the census run in CI on `single-pass`, and CI's `pretext` job runs the tier at its pinned pretext commit on each pull request |
 
 `run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
 2026-10-16) and is `make test-cases` after its build. Cases run in one worker
@@ -191,7 +191,9 @@ GitHub requires one check before a merge, `render`, the Semantic Diff job
 commit records, checks each with the `commit-msg` hook, and builds every
 changed deck. The suites gate nothing on GitHub. The CI workflow's `test`
 job ([ci.yml](.github/workflows/ci.yml)) runs `make test` on each pull
-request and on each push to `main`, and the census runs on each push to
+request and on each push to `main`, its `pretext` job runs
+`make test-pretext` there on a checkout of `cristianoc/pretext` at the
+commit the job pins, and the census runs on each push to
 `main`; a pull request, auto-merged once `render` passes, can land before
 `test` finishes or after it fails. So a merged pull request is not
 evidence that its suites passed: whoever reports a change as tested names

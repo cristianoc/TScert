@@ -28,7 +28,13 @@ mechanism it stands for, and the functions of the checkout's `src/` files,
 each file checked unit by unit, against
 [`pretext-tier-expected.json`](pretext-tier-expected.json), the record for
 the checkout's commit: a function recorded verified and refused here fails
-the tier, and `UPDATE=1` records the functions for the commit.
+the tier, and `UPDATE=1` records the functions for the commit. The tier
+reads the checkout's `src/` through a project of its own, which extends the
+checkout's `tsconfig.json` with no type package, so a fresh clone of
+pretext needs no install. CI's `pretext` job
+([ci.yml](../.github/workflows/ci.yml)) runs the tier on each pull request
+and each push to `main`, at the pretext commit it pins and with a stage
+limit of 180 s.
 
 A case naming a project reads its imports and declarations from it:
 
