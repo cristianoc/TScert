@@ -262,20 +262,22 @@ theorem element_holds_no_spine :
 /-! ## The stability check
 
 A cell fact about `x.k` survives a write to `class(value)` only where the
-field's class is known to be another one, and never a write to the field
-itself. -/
+field's class is known to be another one, a write to the spines (no field
+is a spine, by the bounds), and never a write to the field itself. A field
+under a key other than the spine key whose class evidence is the spines
+selects no location of a well-formed state: its bound under the evidence
+is empty. -/
 
-private def noKnowledge : SepKnowledge :=
-  { cl := fun _ _ => none, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
-private def spineK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .spines else none }
+private def noKnowledge : SepEvidence := {}
+private def spineK : SepEvidence := { cl := fun x k => if x = 0 ∧ k = "k" then some .spines else none }
 private def cellK : FactKind := .cell ⟨0, { nul := true }, "k"⟩
 
 #guard !stable noKnowledge cellK.support [(.cls .values, .any)]
+#guard stable noKnowledge cellK.support [(.cls .spines, .any)]
+#guard !stable noKnowledge cellK.support [(.field 0 "k", .any)]
+#guard stable noKnowledge cellK.support [(.field 0 "k", .keep)]
 #guard stable spineK cellK.support [(.cls .values, .any)]
--- `spines` and `views` overlap: a spine field is not apart from the views.
-#guard !stable spineK cellK.support [(.cls .views, .any)]
-#guard !stable spineK cellK.support [(.field 0 "k", .any)]
-#guard stable spineK cellK.support [(.field 0 "k", .keep)]
+#guard stable spineK cellK.support [(.field 0 "k", .any)]
 
 /-! ## Array mutators
 
@@ -332,22 +334,21 @@ run_cmd do
 The central example: `readRuns(runs)` states `value: any, spine: keep` and
 `runs.openBrackets[*]: any`; the caller keeps a density fact of `flags`
 (slot 0) where `runs` (slot 1) reaches its array apart from `flags`'s spine
-and that array's cells hold no spine. -/
+and that array's cells are element cells. -/
 
 private def runsFrame : Footprint :=
   [(.cls .values, .any), (.cls .spines, .keep),
    (.path 1 ["openBrackets"] arraySpineKey, .any), (.pathCells 1 ["openBrackets"], .any)]
 private def flagsSpine : ClassEvidence := fun x k => if x = 0 ∧ k = arraySpineKey then some .spines else none
-private def runsK : SepKnowledge :=
-  { noKnowledge with
-    cl := flagsSpine
-    spineApart := [(1, ["openBrackets"], 0)]
-    elemsValue := [(1, ["openBrackets"])] }
+private def runsK : SepEvidence :=
+  { cl := flagsSpine
+    facts := [.spines (1, ["openBrackets"]) (0, [])] }
 
 #guard stable runsK (FactKind.dense 0 1).support runsFrame
 -- Without spine separation the path's spine may be `flags`'s.
-#guard !stable { runsK with spineApart := [] } (FactKind.dense 0 1).support runsFrame
--- Without the element-class premise the cells may include `flags`'s spine.
-#guard !stable { runsK with elemsValue := [] } (FactKind.dense 0 1).support runsFrame
+#guard !stable { runsK with facts := [] } (FactKind.dense 0 1).support runsFrame
+-- The cells are element cells and `flags`'s spine an array spine: their
+-- bounds are apart, and the class evidence adds nothing.
+#guard stable { runsK with cl := fun _ _ => none } (FactKind.dense 0 1).support runsFrame
 
 end Verification.Footprints.Controls

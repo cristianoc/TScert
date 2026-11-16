@@ -51,14 +51,14 @@ way.
 
 ## Separation knowledge
 
-`map_rely` and the stability lemmas take `SepKnowledge`, whose provenance
+`map_rely` and the stability lemmas take `SepEvidence`, whose provenance
 stamps (`FootprintProvenance.lean`: marks, `after` and `before` stamps, the
 mark-renaming edge check) no checker uses and no work item plans beyond
 [deferred precision](../FOOTPRINTS.md#deferred-extra-precision). The
-implementation of this design removes the stamps from `SepKnowledge` (its
-class evidence and distinct pairs remain), with the stamp controls of
-`FootprintControls.lean`, and FOOTPRINTS's deferred section names the commit
-that held them.
+implementation of this design removes the stamps from `SepEvidence` (its
+class evidence, links and separation facts remain), with the stamp controls
+of `FootprintControls.lean`, and FOOTPRINTS's deferred section names the
+commit that held them.
 
 ## Cost
 
