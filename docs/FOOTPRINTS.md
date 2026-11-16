@@ -204,9 +204,9 @@ reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda,\mathsf{values}}`$ 
 $`\lambda`$ `init` for a value or a string's length (a number or a string)
 and `grow` for a length or a typed array's length (an object), and for a
 length $`|x.\pi|`$ the store location of the array $`x.\pi`$ reads, where it
-holds a store, at $`\delta`$, for a typed array's length $`\mathrm{view}(x.\pi)`$
-its length location, holding a number, at `init`, each but where the context
-keeps it. **Proved** (`Term.support_sound`): where the support is kept, the term
+holds a store, at $`\delta`$, each but where the context keeps it. A typed
+array's length $`\mathrm{view}(x.\pi)`$ reads no further location: the
+length is part of the typed array's descriptor. **Proved** (`Term.support_sound`): where the support is kept, the term
 denotes what it denoted, and at $`\delta = \mathsf{grow}`$ a length denotes
 at least as much, at most $`2^{32}-1`$.
 
