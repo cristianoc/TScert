@@ -1650,9 +1650,8 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     simpa [instantiate,pureOutput] using
       refine_value hv.1 (copyValue_holds he hk) (show Safe (excOf G) (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
   all_goals first
-    | exact pure_frame hs hpClosed (fun _ hpre _ => by
-        obtain ⟨vs, rfl⟩ := hpre
-        exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk))
+    | exact pure_frame hs hpClosed (fun _ hpre _ => HeapKnowledge.shift_holds
+        (Footprints.knowledge_frame_empty hk (Footprints.Closed.holds_empty.mpr hpre)))
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) rfl) hs
     | exact refine_value rfl (HeapKnowledge.shift_holds hk) hs
 
@@ -1751,11 +1750,11 @@ theorem inspect_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → Purity.inspec
     · obtain ⟨hpre, hp'⟩ := Purity.inspect_step step hp (heap_values hw hh)
       exact Or.inr ⟨U,h',t',hx,hu,step,hh',ih hs hp' hu hh' (fun h'' v he => hq h'' v (hpre.trans he))⟩
 
-/-- Every heap fact survives an extension of the heap. -/
+/-- **Every heap fact survives a step whose effect is empty**: the tolerant
+frame at the support `all` (`Footprints.knowledge_frame_empty`). -/
 theorem knowledge_extend {k : Knowledge} {ρ h h'} (hk : HeapKnowledge.Holds k ε ρ h)
-    (hpre : h.IsPrefix h') : HeapKnowledge.Holds k ε ρ h' := by
-  obtain ⟨vs, rfl⟩ := hpre
-  exact HeapKnowledge.alloc_frames vs hk
+    (hpre : h.IsPrefix h') : HeapKnowledge.Holds k ε ρ h' :=
+  Footprints.knowledge_frame_empty hk (Footprints.Closed.holds_empty.mpr hpre)
 
 theorem reading_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images Γ t A) (hp : Purity.inspectTerm t = true)
@@ -1792,7 +1791,8 @@ theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     · simp only [instantiate, instantiateArgs_eq_map, List.map] at step hs' ⊢
       obtain ⟨rfl,rfl⟩ := makeFn_step_inv rfl step
       exact Or.inr ⟨U,_,_,hx,hu,step,hh',
-        refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame (HeapKnowledge.alloc_frame hk))) hs'⟩
+        refine_value rfl (HeapKnowledge.shift_holds (knowledge_extend hk
+          ⟨_, (List.append_assoc h [_] [_]).symm⟩)) hs'⟩
 
 /-- The field an operation names, read off the term rather than supplied by the
 producer, so evidence cannot claim a fact about a field the program never
@@ -1845,7 +1845,7 @@ theorem spine_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
       n W h (.arrLit vs) := by
   by_cases hmax : vs.length ≤ maxArrayLength
   · exact one_step rfl rfl (.arrAlloc hvals hmax)
-      (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)) hs
+      (HeapKnowledge.shift_holds (knowledge_extend hk (List.prefix_append h _))) hs
   · exact one_step_throw rfl rfl (.arrAllocThrow hvals (by omega)) hs
 
 theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :

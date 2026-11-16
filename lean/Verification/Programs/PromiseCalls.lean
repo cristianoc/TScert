@@ -917,8 +917,7 @@ theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ 
   unfold promiseOutput
   split
   · rename_i hkeep
-    obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hp
-    exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
+    exact HeapKnowledge.shift_holds (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep hp))
   · exact HeapExpressionRules.ordinaryOutput_holds hk v h'
 
 /-- What the ordinary output states holds wherever a promise call's output
@@ -1136,8 +1135,7 @@ theorem keepsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     obtain ⟨⟨⟨rfl, hsel⟩, -⟩, ht⟩ := hc
     refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
       (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh href)
-    obtain ⟨vs, rfl⟩ := Footprints.Closed.holds_empty.mp hq
-    exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
+    exact HeapKnowledge.shift_holds (Footprints.knowledge_frame_empty hk hq)
   · contradiction
 
 /-! ### A call allocating its result (PROGRAM-TYPING.md, "A call allocating its result")
@@ -1203,8 +1201,8 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
         (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
       have hfresh := Effect.callPost_freshObject hfo hq
-      obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep (Effect.callPost_within hq)
-      have hshift := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
+      have hshift := HeapKnowledge.shift_holds (v := v)
+        (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep (Effect.callPost_within hq)))
       refine ⟨?_, hshift.2.1, hshift.2.2.1,
         HeapSeparation.allocate_holds hk.2.2.2.1 (freshObject_apart he hh hfresh), hshift.2.2.2.2⟩
       simpa [freshOutput, HeapExpressionRules.allocOutput, HeapKnowledge.shift] using hshift.1
@@ -1493,8 +1491,8 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
             refine post_with_type (fun m U h' v hT hq => ?_)
               (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
             have hb := onlyBool_sound hbool hT
-            obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep (Effect.callPost_within hq)
-            have hs := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
+            have hs := HeapKnowledge.shift_holds (v := v)
+              (HeapExpressionRules.knowledge_extend hk (keepsHeap_prefix hkeep (Effect.callPost_within hq)))
             refine ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2.1, ?_, hs.2.2.2.2.2⟩
             intro a ha hcond
             rcases List.mem_cons.mp ha with rfl | ha

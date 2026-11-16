@@ -337,7 +337,9 @@ relates its subject's fields to its partners' at names. Its meaning needs no
 slot. $`\mathrm{Named}\ S\ \eta`$ holds at a state when every fact of $`S`$
 holds at $`\eta`$ and the state's heap. Proved:
 
-- every named fact survives an extension of the heap (`atomHolds_extend`), a
+- every named fact survives an extension of the heap (`atomHolds_extend`),
+  which proves its support `all` (`atom_supports_all`), so it survives every
+  action of the empty effect (`atom_frame_empty`, the tolerant frame); a
   fact reading no heap has the empty support (`atom_heapFree_supports`) and so
   holds in every heap (`atomHolds_heapFree`, the tolerant frame at the empty
   support), where

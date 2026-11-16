@@ -475,6 +475,9 @@ run_cmd do
   check ``Verification.Footprints.IndexFact.support?_envOnly
   check ``Verification.Footprints.heapFree_supports
   check ``Verification.Footprints.heapFree_frame
+  check ``Verification.Footprints.Closed.empty_of_supported
+  check ``Verification.Footprints.knowledge_supports_all
+  check ``Verification.Footprints.knowledge_frame_empty
   check ``Verification.HeapExpressionRules.ordinaryOutput_holds
   check ``Verification.Footprints.linearSupport_supports
   check ``Verification.Footprints.knowledgeQuery_sound
@@ -485,6 +488,8 @@ run_cmd do
   check ``Verification.TolerantFrames.grow_path
   check ``Verification.TolerantFrames.field_write_keeps_bound
   check ``Verification.TolerantFrames.atomHolds_extend
+  check ``Verification.TolerantFrames.atom_supports_all
+  check ``Verification.TolerantFrames.atom_frame_empty
   check ``Verification.TolerantFrames.atom_heapFree_supports
   check ``Verification.TolerantFrames.atomHolds_heapFree
   check ``Verification.TolerantFrames.atomHolds_congr

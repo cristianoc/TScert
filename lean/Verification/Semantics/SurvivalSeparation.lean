@@ -403,4 +403,39 @@ theorem heapFree_frame {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge
     HeapKnowledge.Holds k.heapFree ε ρ h' :=
   frame_nil (D := heaps) (m := 0) (heapFree_supports (ε := ε) k) trivial trivial (heapFree_le hk)
 
+/-! ## The support `all`
+
+The note, §5, Definition "Supports of the atoms", its last paragraph: every
+assertion without a modality has the support
+$`\mathrm{all} = \{\mathsf{val}{:}\,\mathsf{keep},\ \mathsf{st}{:}\,\mathsf{keep}\}`$,
+the closed footprint `Closed.empty`: it reads the valuation, the mark and
+locations below the heap's length (W3), which a transition keeping every one
+of them keeps. The empty effect respects it, so a step whose normal effect is
+empty keeps every fact by it. -/
+
+/-- **The empty effect respects every support**: its every entry is at
+`keep`, which every change tolerates. -/
+theorem respects_empty (q : SepQuery) (S : Footprint) : respects q S Closed.empty.fp = true := by
+  simp only [respects, List.all_eq_true]
+  intro ⟨r, δ⟩ _ f hf
+  simp only [Closed.fp, Closed.empty, List.mem_cons, List.not_mem_nil, or_false] at hf
+  rcases hf with rfl | rfl | rfl <;> cases δ <;> rfl
+
+/-- **Every represented fact has the support `all`**: where `all` is
+supported the heap only grows (`Closed.empty_of_supported`), and every fact
+holds after an extension of the heap (`HeapKnowledge.alloc_frames`). -/
+theorem knowledge_supports_all (k : Knowledge) :
+    Supports (fun _ _ _ => True) (fun ρ h => HeapKnowledge.Holds k ε ρ h) Closed.empty.fp :=
+  Supports.intro fun _ _ _ _ hk hs => by
+    obtain ⟨vs, rfl⟩ := Closed.holds_empty.mp (Closed.empty_of_supported hs)
+    exact HeapKnowledge.alloc_frames vs hk
+
+/-- **The tolerant frame at the empty effect**: every fact, by the support
+`all`, which the empty effect respects (`respects_empty`). -/
+theorem knowledge_frame_empty {k : Knowledge} {ρ : Env} {h h' : Heap} (hk : HeapKnowledge.Holds k ε ρ h)
+    (hp : Closed.empty.Holds h h') : HeapKnowledge.Holds k ε ρ h' :=
+  Footprints.frame_step (D := heaps) (m := 0) (knowledge_supports_all k) (respects_empty .empty _)
+    (SepQuery.empty_sound ρ h) (Closed.post_iff.mpr (Closed.holds_iff.mp hp)) trivial trivial hk
+
+
 end Verification.Footprints

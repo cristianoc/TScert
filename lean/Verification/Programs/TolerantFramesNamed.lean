@@ -150,15 +150,32 @@ theorem named_set {S : List Atom} {η : Env} {r : Nat} (v : Tm) (hr : ∀ a ∈ 
 
 /-! ## The frame of the facts not handed to a step -/
 
+/-- **Every named fact has the support `all`** (the note, §5, Definition
+"Supports of the atoms", its last paragraph), whether or not its names have
+slots: where `all` is supported the heap only grows
+(`Closed.empty_of_supported`), and every named fact survives an extension
+(`atomHolds_extend`). -/
+theorem atom_supports_all (a : Atom) :
+    Footprints.Supports (fun _ _ _ => True) (fun η h => AtomHolds ε a η h) Footprints.Closed.empty.fp :=
+  Footprints.Supports.intro fun _ _ _ _ ha hs => by
+    obtain ⟨vs, rfl⟩ := Footprints.Closed.holds_empty.mp (Footprints.Closed.empty_of_supported hs)
+    exact atomHolds_extend vs ha
+
+/-- **The tolerant frame at the empty effect, for a named fact**: its support
+`all`, which the empty effect respects. -/
+theorem atom_frame_empty {a : Atom} {η : Env} {h h' : Heap} (hp : Footprints.Closed.empty.Holds h h')
+    (hA : AtomHolds ε a η h) : AtomHolds ε a η h' :=
+  Footprints.frame_step (D := heaps) (m := 0) (atom_supports_all a) (Footprints.respects_empty .empty _)
+    (SepQuery.empty_sound η h) (Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hp)) trivial trivial hA
+
 /-- **(Keep) Every named fact survives every action of an effect within
-`{values: keep, spines: keep}`**, its names held by slots or not. -/
+`{values: keep, spines: keep}`**, its names held by slots or not: the
+tolerant frame at the support `all` (`atom_frame_empty`). -/
 theorem named_keep_box {c : Footprints.Closed} (hle : c.le Footprints.Closed.empty = true) {S : List Atom}
     {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s := by
   intro s' ha a hm
   have hc : c.Holds s.h s'.h := Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2)
-  obtain ⟨vs, hvs⟩ := Footprints.Closed.holds_empty.mp (hc.mono hle)
-  rw [← hvs]
-  exact atomHolds_extend vs (hS a hm)
+  exact atom_frame_empty (hc.mono hle) (hS a hm)
 
 /-- **The facts reading no heap survive every admissible transition**:
 under the effect `{values: any, spines: any}` of an exceptional exit. Their
@@ -306,8 +323,7 @@ theorem keepsCall_frame {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
   obtain ⟨s', ha, he', hn, hT, -, hS'⟩ := preserving_normal (Footprints.Closed.empty_le _) hj hst hv hk hS hr
   have hc' : Footprints.Closed.empty.Holds s.h h' := by
     rw [← he']; exact Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2)
-  obtain ⟨vs, rfl⟩ := Footprints.Closed.holds_empty.mp hc'
-  exact ⟨s', ha, he', hn, hT, HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hkn), hS'⟩
+  exact ⟨s', ha, he', hn, hT, HeapKnowledge.shift_holds (Footprints.knowledge_frame_empty hkn hc'), hS'⟩
 
 end Calls
 

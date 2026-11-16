@@ -59,9 +59,7 @@ theorem atom_keptByElems {c : Footprints.Closed} {a : Atom} (hk : a.keptByElems 
     have he : c = Footprints.Closed.empty := by
       cases c; simp only at hv hs hw; subst hv; subst hs; subst hw; rfl
     subst he
-    obtain ⟨vs, hvs⟩ := Footprints.Closed.holds_empty.mp hc
-    rw [← hvs]
-    exact atomHolds_extend vs ha
+    exact atom_frame_empty hc ha
   | _ => exact atomHolds_heapFree (by simpa only [Atom.keptByElems] using hk) ha s'.h
 
 /-- **(Keep by atom), element facts included**: `Named ε S η ⊢ □_c Named ε S η`

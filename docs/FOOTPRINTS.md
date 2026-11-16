@@ -213,6 +213,20 @@ knowledge past its result's slot (`HeapExpressionRules.ordinaryOutput`;
 proved: `ordinaryOutput_holds`), as is what a throw keeps
 (`ControlFlow.handlerFacts`).
 
+Every fact the knowledge represents also has the support
+$`\mathrm{all} = \{\mathsf{val}{:}\,\mathsf{keep},\ \mathsf{st}{:}\,\mathsf{keep}\}`$,
+the closed footprint `Closed.empty` (the note's last paragraph of
+"Supports of the atoms": it reads locations below the heap's length, by
+(W3)). Where `all` is supported the heap only grows (proved:
+`Closed.empty_of_supported`), and every fact holds after an extension
+(`HeapKnowledge.alloc_frames`, `atomHolds_extend`), which proves the support
+(proved: `knowledge_supports_all`, `atom_supports_all`). The empty effect
+respects every support (proved: `respects_empty`), so a step whose normal
+effect is empty keeps every fact by the tolerant frame at `all` (proved:
+`knowledge_frame_empty`, `atom_frame_empty`): an inspection, an allocation
+and a call whose checked effect is empty (PROGRAM-TYPING.md,
+"A call that keeps the heap").
+
 ### Supports of index facts
 
 The context of an index fact's support is a **read context** $`c`$: the

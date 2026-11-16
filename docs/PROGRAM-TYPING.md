@@ -4679,9 +4679,13 @@ The rule applies where the frame's closed bound
 ([frame checks](FOOTPRINTS.md#frame-checks)) is empty
 (`PromiseCalls.keepsHeap`). The signature's postcondition makes
 the heap a normal return leaves an extension of the one the call started in
-(`Footprint.keepsHeap_prefix`), and every
-atom of $`\Sigma`$ holds of an extension (`HeapKnowledge.alloc_frames`);
-`PromiseCalls.keepsCall_sound` proves the rule from `selectedCall_sound`. A
+(`Footprint.keepsHeap_prefix`): the call's normal effect is empty. Every
+atom of $`\Sigma`$ has the support
+$`\mathrm{all}=\{\mathsf{val}{:}\,\mathsf{keep},\ \mathsf{st}{:}\,\mathsf{keep}\}`$,
+which the empty effect respects, and the tolerant frame keeps it
+([support and respect](FOOTPRINTS.md#support-and-respect),
+`Footprints.knowledge_frame_empty`); `PromiseCalls.keepsCall_sound` proves
+the rule from `selectedCall_sound`. A
 throw keeps nothing. A call at a promise signature (a type guard's, an
 assertion function's) keeps $`\Sigma`$ where that signature's effect meets
 the same condition, and gives its actual the promise's type

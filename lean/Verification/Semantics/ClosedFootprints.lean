@@ -332,6 +332,33 @@ theorem Closed.holds_empty {h h' : Heap} : Closed.empty.Holds h h' ↔ h.IsPrefi
     exists_congr fun _ => and_congr Iff.rfl ?_)
   simp [Closed.at_empty, Allowed, Change.Holds]
 
+/-- **Where `{val: keep, st: keep}` is supported, the heap only grows**: every
+location of the first heap is of one of the three classes, and keeps its
+contents. -/
+theorem Closed.empty_of_supported {ρ : Env} {h h' : Heap} (hs : Supported Closed.empty.fp ρ h h') :
+    Closed.empty.Holds h h' := by
+  have hkeep : ∀ (l : Nat) (v : Val), h[l]? = some v → h'[l]? = some v := by
+    intro l v hv
+    have hc : ∃ e ∈ Closed.empty.fp, e.1.mem ρ h l = true := by
+      cases hcat : contentsCategory v
+      · exact ⟨(.cls .values, .keep), by simp [Closed.fp, Closed.empty], by rw [cls_mem hv, hcat]; rfl⟩
+      · exact ⟨(.cls .arrays, .keep), by simp [Closed.fp, Closed.empty], by rw [cls_mem hv, hcat]; rfl⟩
+      · exact ⟨(.cls .views, .keep), by simp [Closed.fp, Closed.empty], by rw [cls_mem hv, hcat]; rfl⟩
+    obtain ⟨e, he, hm⟩ := hc
+    obtain ⟨v', hv', hk⟩ := hs e he l v hm hv
+    have h2 : e.2 = .keep := by
+      simp only [Closed.fp, Closed.empty, List.mem_cons, List.not_mem_nil, or_false] at he
+      rcases he with rfl | rfl | rfl <;> rfl
+    rw [h2] at hk
+    simp only [Change.Holds] at hk
+    rw [hk] at hv'; exact hv'
+  refine Closed.holds_iff.mpr ⟨?_, fun l v hv => ⟨v, hkeep l v hv, by rw [Closed.at_empty]; exact Change.Holds.refl _ _ _⟩⟩
+  cases hlen : h.length with
+  | zero => exact Nat.zero_le _
+  | succ n =>
+    have hn : n < h.length := by omega
+    exact (List.getElem?_eq_some_iff.mp (hkeep n h[n] (List.getElem?_eq_getElem hn))).1
+
 /-- **The closed footprint letting everything change is growth**, which every
 run meets (`Closed.top_safe`). -/
 theorem Closed.holds_top {h h' : Heap} : Closed.top.Holds h h' ↔ h.length ≤ h'.length := by
