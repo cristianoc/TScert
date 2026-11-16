@@ -767,18 +767,33 @@ theorem kindValue_nonNullish {h : Heap} {k : Term.Kind} {v : Val} (hk : (kindVal
     nullish v = false := by
   cases k <;> cases v <;> simp_all [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, nullish, spineOf, fieldsOf]
 
-/-- The scalar-length terms of a linear support at variables: each term
-reads a variable, of a heap-free kind or the length of the array a
-`keep` entry of `S` keeps. -/
+/-- **A fact stays true when the term increases** (the note, §5, Definition
+"Support", the row of a length in an inequality: `δ` is `grow` where the
+inequality stays true when the length increases): a `≤` fact each of
+whose coefficients of the term is at most zero. -/
+def growsWith (F : Linear.Fact Term) (t : Term) : Bool :=
+  match F with
+  | .le f _ => f.all fun e => e.1 != t || decide (e.2 ≤ 0)
+  | .ne _ _ => false
+
+/-- The scalar-length terms of a linear support at variables (the note, §5,
+Definition "Support", the rows of an inequality): each term reads a
+variable, of a heap-free kind or the length of the array an entry of `S`
+changes at most by the length's change, `keep`, or `grow` where the fact
+stays true when the length increases (`growsWith`). -/
 def lengthsSupported (F : Linear.Fact Term) (S : Footprint) : Bool :=
   F.vars.all fun t => !t.atEntry && t.path.isEmpty &&
-    (t.kind != .length || S.contains (.spine t.slot [], .keep))
+    (t.kind != .length || S.contains (.spine t.slot [], .keep) ||
+      (growsWith F t && S.contains (.spine t.slot [], .grow)))
 
 /-- **Support of an assertion in a context, by certificate** (the note, §5,
 Definition "Support"):
 - an invariant assertion, by any `S`;
-- a linear fact at variables, by the `keep` of the spines whose lengths it
-  reads (`{x.spine: keep}` supports `n ≤ |x|`, the note's example);
+- a linear fact at variables, by the spines whose lengths it reads, each
+  at `keep`, or at `grow` where the fact stays true when the length
+  increases (`{x.spine: grow}` supports `n ≤ |x|`, the note's example);
+- `dense(z, n)` at a variable `z`, `n` heap-free, by `{z.spine: grow}`
+  (the row of `dense(x, n)`);
 - `every(z, t, φ)` at a variable `z`, `t` heap-free and `φ` over scalars, by
   `{z.spine: keep, z[cells]: keep}`;
 - `x.f ≐ v` for a literal `v`, by `{x.f: keep}`;
@@ -796,6 +811,7 @@ Definition "Support"):
 inductive SupportEvidence where
   | invariant
   | lengths
+  | dense
   | everyCells
   | field
   | init
@@ -807,6 +823,10 @@ def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footp
   | .invariant => invNode arena.nodes A.index
   | .lengths => match arena.nodes[A.index]? with
     | some (.atom (.linear F)) => lengthsSupported F S
+    | _ => false
+  | .dense => match arena.nodes[A.index]? with
+    | some (.atom (.dense z n)) => z.fields.isEmpty && !n.atEntry && n.path.isEmpty && n.kind != .length &&
+        S.contains (.spine z.root [], .grow)
     | _ => false
   | .everyCells => match arena.nodes[A.index]? with
     | some (.atom (.every z n body)) => z.fields.isEmpty && !n.atEntry && n.path.isEmpty && n.kind != .length &&
@@ -830,21 +850,66 @@ def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footp
         | none => false
     | _ => false
 
-private theorem lengths_term {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS : SupportedBy S η s s') {t : Term}
-    (ht : (!t.atEntry && t.path.isEmpty && (t.kind != .length || S.contains (.spine t.slot [], .keep))) = true)
-    {n : Int} (hn : termAt η s.h t = some n) : termAt η s'.h t = some n := by
+/-- A term of a linear support at variables reads the same value along a
+transition within `S`, or, its length at `grow`, a value no smaller where
+the fact stays true when it increases. -/
+private theorem lengths_term {F : Linear.Fact Term} {S : Footprint} {η : Env} {s s' : IndexedHeap}
+    (hS : SupportedBy S η s s') {t : Term}
+    (ht : (!t.atEntry && t.path.isEmpty && (t.kind != .length || S.contains (.spine t.slot [], .keep) ||
+      (growsWith F t && S.contains (.spine t.slot [], .grow)))) = true)
+    {n : Int} (hn : termAt η s.h t = some n) :
+    termAt η s'.h t = some n ∨ (growsWith F t = true ∧ ∃ n', termAt η s'.h t = some n' ∧ n ≤ n') := by
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, List.contains_iff_mem, List.isEmpty_iff] at ht
   obtain ⟨⟨-, hp⟩, hk⟩ := ht
   rw [termAt_var hp] at hn ⊢
-  rcases hk with hk | hk
-  · rw [kindValue_heapFree hk s'.h s.h]; exact hn
-  · by_cases hl : t.kind = .length
-    · rw [hl] at hn ⊢
-      obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hn
-      have hin : (Region.spine t.slot []).mem η s.h st = true := by
-        simp [Region.mem, readPath, elementsOf_spine hst]
-      exact lengthOf_of_spine hst (kept_of_supported hS hk hin hls) hm
-    · rw [kindValue_heapFree hl s'.h s.h]; exact hn
+  by_cases hl : t.kind = .length
+  · rw [hl] at hn ⊢
+    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hn
+    have hin : (Region.spine t.slot []).mem η s.h st = true := by
+      simp [Region.mem, readPath, elementsOf_spine hst]
+    rcases hk with (hk | hk) | ⟨hg, hk⟩
+    · exact absurd hl hk
+    · exact .inl (lengthOf_of_spine hst (kept_of_supported hS hk hin hls) hm)
+    · obtain ⟨v', hv', hh⟩ := hS _ hk st _ hin hls
+      obtain ⟨ls', rfl, -, hlen⟩ := grow_arr hh
+      exact .inr ⟨hg, _, lengthOf_of_spine hst hv' (hlen.2 hm), by have := hlen.1; omega⟩
+  · rw [kindValue_heapFree hl s'.h s.h]; exact .inl hn
+
+/-- A form is no larger where each entry's product is no larger. -/
+private theorem form_eval_le {f : Linear.Form Term} {g g' : Term → Int}
+    (h : ∀ e ∈ f, e.2 * g' e.1 ≤ e.2 * g e.1) : Linear.Form.eval g' f ≤ Linear.Form.eval g f := by
+  induction f with
+  | nil => exact Int.le_refl _
+  | cons e f ih =>
+    obtain ⟨x, c⟩ := e
+    exact Int.add_le_add (h (x, c) (List.mem_cons_self ..)) (ih fun e he => h e (List.mem_cons_of_mem _ he))
+
+/-- **A linear fact holds where each of its terms reads the same value, or
+a value no smaller where the fact stays true when it increases.** -/
+private theorem factAt_grows {F : Linear.Fact Term} {val val' : Term → Option Int} (hF : FactAt val F)
+    (ht : ∀ t ∈ F.vars, ∀ n, val t = some n →
+      val' t = some n ∨ (growsWith F t = true ∧ ∃ n', val' t = some n' ∧ n ≤ n')) : FactAt val' F := by
+  have hval : ∀ t ∈ F.vars, ∃ n, val t = some n := fun t h => Option.isSome_iff_exists.mp (hF.1 t h)
+  cases F with
+  | ne f d =>
+    refine factAt_congr (fun t h => ?_) hF
+    obtain ⟨n, hn⟩ := hval t h
+    rcases ht t h n hn with h' | ⟨hg, -⟩
+    · rw [h', hn]
+    · simp [growsWith] at hg
+  | le f d =>
+    refine ⟨fun t h => ?_, Int.le_trans (form_eval_le fun e he => ?_) hF.2⟩
+    · obtain ⟨n, hn⟩ := hval t h
+      rcases ht t h n hn with h' | ⟨-, n', h', -⟩ <;> simp [h']
+    · have hev : e.1 ∈ (Linear.Fact.le f d).vars := List.mem_map_of_mem he
+      obtain ⟨n, hn⟩ := hval e.1 hev
+      rcases ht e.1 hev n hn with h' | ⟨hg, n', h', hle⟩
+      · simp only [h', hn, Int.le_refl]
+      · have hc : e.2 ≤ 0 := by
+          simp only [growsWith, List.all_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hg
+          exact (hg e he).resolve_left (fun h => h rfl)
+        simp only [h', hn, Option.getD_some]
+        exact Int.mul_le_mul_of_nonpos_left hc hle
 
 /-- A path read through locations holding values other than `null` and
 `undefined` reads the same along a transition changing value locations at
@@ -898,10 +963,27 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
     split at h
     · rename_i F hn
       intro η m s s' _ _ hA hS
-      have hF := (sat_atom hn).mp hA
-      refine (sat_atom hn).mpr (factAt_congr (fun t ht => ?_) hF)
-      obtain ⟨n, hn'⟩ := Option.isSome_iff_exists.mp (hF.1 t ht)
-      rw [hn', lengths_term hS (List.all_eq_true.mp h t ht) hn']
+      exact (sat_atom hn).mpr (factAt_grows ((sat_atom hn).mp hA) fun t ht _ hn' =>
+        lengths_term hS (List.all_eq_true.mp h t ht) hn')
+    · cases h
+  | .dense, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i z n hn
+      simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, List.isEmpty_iff,
+        List.contains_iff_mem] at h
+      obtain ⟨⟨⟨⟨hz, -⟩, hnp⟩, hnk⟩, hst⟩ := h
+      intro η m s s' _ _ hA hS
+      obtain ⟨w, st, ls, k, hw, hsto, hls, hk, h0, hd⟩ := (sat_atom hn).mp hA
+      have hzw : η z.root = w := by
+        simp only [Path.read, hz, readPath, Option.some.injEq] at hw; exact hw
+      have hin : (Region.spine z.root []).mem η s.h st = true := by
+        simp [Region.mem, readPath, hzw, elementsOf_spine hsto]
+      obtain ⟨v', hv', hh⟩ := hS _ hst st _ hin hls
+      obtain ⟨ls', rfl, hdp, -⟩ := grow_arr hh
+      have hk' : termAt η s'.h n = some k := by
+        rw [termAt_var hnp] at hk ⊢; rwa [kindValue_heapFree hnk s'.h s.h]
+      exact (sat_atom hn).mpr ⟨w, st, ls', k, by rw [← hw, Path.read_heap hz], hsto, hv', hk', h0, hdp _ hd⟩
     · cases h
   | .everyCells, h => by
     simp only [SupportEvidence.check] at h

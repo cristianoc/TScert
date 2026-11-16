@@ -770,7 +770,6 @@ run_cmd do
   -- (Semantics/TolerantFrames, Programs/TolerantFramesModel*). Roots of
   -- their own, kept whether or not the verifier reaches them.
   -- (Dense)
-  check ``Verification.TolerantFrames.dense
   -- (View)
   check ``Verification.TolerantFrames.view_box
   -- (Init)

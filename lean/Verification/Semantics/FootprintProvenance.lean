@@ -72,50 +72,25 @@ theorem dense_class {x n ρ h l} (hd : Dense x n ρ h)
   rw [hs] at hm; cases hm
   simp [Region.mem, hv, isArr]
 
-/-- **The support lemma of `Dense`.** It depends only on its spine's
-location, and survives any change of it by `grow`. -/
+/-- **A change within `grow` of an array spine** (`Change.Holds`, `grow`):
+an array spine keeping every dense prefix, its length growing. -/
+theorem grow_arr {b : Nat} {ls : List (Option Nat)} {v' : Val} (hh : Change.grow.Holds b (.arr ls) v') :
+    ∃ ls', v' = .arr ls' ∧ (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ LengthGrows ls ls' := by
+  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -, hl⟩ | hi | ⟨_, _, _, he, -⟩
+  · exact ⟨ls, rfl, fun _ h => h, LengthGrows.refl ls⟩
+  · cases h₁; exact ⟨ls', rfl, hd, hl⟩
+  · exact absurd hi.2.1 (by simp [isArr])
+  · cases he
+
+/-- **The support lemma of `Dense`** (the note, §5, Definition "Support",
+the row of `dense(x, n)`: `{x.spine: grow}`). It depends only on its
+spine's location, and survives any change of it by `grow`. -/
 theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
     (hs : Supported [(.field x arraySpineKey, .grow)] ρ h h') : Dense x n ρ h' := by
   obtain ⟨s, ls, hsl, hv, hn⟩ := hd
   obtain ⟨v', hv', hh⟩ := hs _ (List.mem_singleton_self _) s _ (by simp [Region.mem, hsl]) hv
-  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩ | hi | ⟨_, _, _, he, -⟩
-  · exact ⟨s, ls, hsl, hv', hn⟩
-  · cases h₁; exact ⟨s, ls', hsl, hv', hd n hn⟩
-  · exact absurd hi.2.1 (by simp [isArr])
-  · cases he
-
-/-- A footprint whose entries covering the spine change it at most by `grow`
-supports `Dense`. -/
-theorem dense_stable {x n ρ h h' Φ} (hd : Dense x n ρ h) (hp : Post Φ ρ h h')
-    (hΦ : ∀ e ∈ Φ, ∀ l, (Region.field x arraySpineKey).mem ρ h l = true → e.1.mem ρ h l = true →
-      e.2.le .grow = true) : Dense x n ρ h' := by
-  refine dense_support hd fun e he l v hm hv => ?_
-  simp only [List.mem_singleton] at he
-  subst he
-  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-  refine ⟨v', hv', ?_⟩
-  rcases ha with rfl | ⟨f, hf, hfm, hh⟩
-  · exact Change.Holds.refl _ _ _
-  · exact hh.mono (hΦ f hf l hm hfm)
-
-/-- The stability check of `Dense` under a closed footprint with no
-knowledge: `class(value)` entries are apart from the spine by class, every
-other entry must change at most by `grow`. -/
-def stableDenseClosed (Φ : Footprint) : Bool :=
-  Φ.all fun e => e.1 == .cls .values || e.2.le .grow
-
-theorem stableDenseClosed_sound {x n ρ h h' Φ} (hc : stableDenseClosed Φ = true)
-    (hd : Dense x n ρ h) (hp : Post Φ ρ h h') : Dense x n ρ h' := by
-  refine dense_stable hd hp fun e he l hsm hem => ?_
-  have := List.all_eq_true.mp hc e he
-  simp only [Bool.or_eq_true, beq_iff_eq] at this
-  rcases this with hcls | hle
-  · have hst := dense_class hd hsm
-    rw [hcls] at hem
-    obtain ⟨s, ls, hs, hv, -⟩ := hd
-    simp only [Region.mem] at hst hem
-    split at hst <;> simp_all
-  · exact hle
+  obtain ⟨ls', rfl, hd, -⟩ := grow_arr hh
+  exact ⟨s, ls', hsl, hv', hd n hn⟩
 
 /-! ## Elements -/
 

@@ -141,8 +141,8 @@ const receiverSpineEffect: CallEffect = footprintEffect({ value: "any", spine: "
  * changes element contents. */
 const sortGrowEffect: CallEffect = footprintEffect({ value: "any", spine: "grow" });
 /** The closed footprints that keep an array's dense prefixes: those whose
- * change to array spines is at most `grow` (`stableDenseClosed`), smallest
- * first. */
+ * change to array spines is at most `grow`, smallest first
+ * (FOOTPRINTS.md, "The stable set for density"). */
 const stableForDensity = closedFootprints.filter((f) => f.spine !== "any");
 /** A callback member's signatures, one per closed footprint `ε`: called at a
  * callback within `ε`, the member is within `ε`, since besides the callback
@@ -178,7 +178,7 @@ export const overlay: readonly OverlayEntry[] = [
     // `map` relies on every index below the length it captured staying
     // present until it tests it. A callback whose footprint changes array
     // spines at most by `grow` keeps that fact (FOOTPRINTS.md, "Natives":
-    // `map_rely`, `denseCheck_stable`), so at each such footprint a dense
+    // `map_rely`), so at each such footprint a dense
     // receiver gives a dense result, and the call's own footprint is the
     // callback's: `map` reads the receiver and allocates its result, a fresh
     // array, whose spine its result is (each signature states it). Any

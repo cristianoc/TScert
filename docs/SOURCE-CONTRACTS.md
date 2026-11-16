@@ -3094,7 +3094,7 @@ receiver's length stays as it was, so they pass `T` (`find-stable-counter`);
 at any other a spine may shrink, and they pass `T | undefined`
 (`invalid-native-find-mutation`). `map` relies on every index below the length it captured staying
 present until it tests it, a fact every closed footprint whose change to spines
-is at most `grow` keeps (`map_rely`, `denseCheck_stable`): at each such
+is at most `grow` keeps (`map_rely`): at each such
 footprint $`\varepsilon`$, a dense receiver and a callback within
 $`\varepsilon`$ give a dense result, and the call is within $`\varepsilon`$,
 since beside the callback `map` reads the receiver and allocates its result.

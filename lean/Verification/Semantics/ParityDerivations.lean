@@ -141,7 +141,7 @@ def av (p : Path) : StepVar := .after (p.term .value)
 /-- The UTF-16 length of the string a path reads at the exit. -/
 def alen (p : Path) : StepVar := .after (p.term .strLength)
 
-/-- The note's (Grow) atom `y ≤ |x|` (`TolerantFrames.lowerBoundFact`). -/
+/-- The note's (Grow) atom `y ≤ |x|`. -/
 def lowerFact (y x : Nat) : Linear.Fact Term := .le [(Term.value y, 1), (Term.length x, -1)] 0
 
 /-- A linear fact over current terms read at the exit. -/
@@ -465,14 +465,6 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (d : Derivation arena Γ (.at p a)) (dk : Derivation arena Γ (.linear (tagFact p (.le [(k, -1)] 0))))
       (dlt : Derivation arena Γ (.linear (tagFact p (.le [(k, 1), (n, -1)] (-1))))) :
       Derivation arena Γ (.linear (tagFact p G))
-  /-- (Grow): `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)`. -/
-  | grow {Γ p a b} (y x : Nat) (ha : arena.nodes[a.index]? = some (.atom (.linear (lowerFact y x))))
-      (hb : arena.nodes[b.index]? = some (.box growEffect.fp a)) (d : Derivation arena Γ (.at p a)) :
-      Derivation arena Γ (.at p b)
-  /-- (Dense): `dense(x, k) ⊢ □_{values: any, spines: grow} dense(x, k)`. -/
-  | dense {Γ p a b} (x k : Nat) (ha : arena.nodes[a.index]? = some (.atom (.dense (Path.var x) (Term.value k))))
-      (hb : arena.nodes[b.index]? = some (.box growEffect.fp a)) (d : Derivation arena Γ (.at p a)) :
-      Derivation arena Γ (.at p b)
   /-- Frame (the note, §6): `old(□_Φ A) ∧ tr_Φ` gives `A` at the exit, its
   names transported by `θ`. -/
   | frame {Γ a b c Φ} (θ : Substitution) (ha : arena.nodes[a.index]? = some (.box Φ b))
@@ -968,15 +960,33 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
     | none => .error "everyElim: goal is no instance of the body"
   | .grow y x a d => match goal with
     | .at p b => do
-      let ⟨ha⟩ ← node? arena a (.atom (.linear (lowerFact y x)))
+      -- (Grow), the note's Proposition "Axioms of the atoms": the tolerant
+      -- frame at the support `{x.spine: grow}` of `y ≤ |x|`, respected by
+      -- `{values: any, spines: grow}` since `x` reads an array.
+      let ⟨_⟩ ← node? arena a (.atom (.linear (lowerFact y x)))
+      let S : Footprint := [(.spine x [], .grow)]
+      let rev : RespectEvidence := ⟨[.classes (.arrayAt a) .intrinsic]⟩
+      let ⟨hs⟩ ← req (SupportEvidence.lengths.check arena a S = true) "grow: no support"
+      let ⟨hr⟩ ← req (rev.check arena a S growEffect.fp = true) "grow: the effect does not respect the support"
+      let ⟨hc⟩ ← req (ContextEvidence.truth.check arena a = true) "grow: no context"
       let ⟨hb⟩ ← node? arena b (.box growEffect.fp a)
-      pure (.grow y x ha hb (← checkDerivation arena premises (.at p a) d))
+      let d ← checkDerivation arena premises (.at p a) d
+      pure (.tolerantFrame S .lengths rev .truth hs hr hc hb (.assumption (List.mem_singleton.mpr rfl)) d d)
     | _ => .error "grow: goal is no assertion"
   | .dense x k a d => match goal with
     | .at p b => do
-      let ⟨ha⟩ ← node? arena a (.atom (.dense (Path.var x) (Term.value k)))
+      -- (Dense), the note's Proposition "Axioms of the atoms": the tolerant
+      -- frame at the support `{x.spine: grow}` of `dense(x, k)`, respected
+      -- by `{values: any, spines: grow}` since `x` reads an array.
+      let ⟨_⟩ ← node? arena a (.atom (.dense (Path.var x) (Term.value k)))
+      let S : Footprint := [(.spine x [], .grow)]
+      let rev : RespectEvidence := ⟨[.classes (.arrayAt a) .intrinsic]⟩
+      let ⟨hs⟩ ← req (SupportEvidence.dense.check arena a S = true) "dense: no support"
+      let ⟨hr⟩ ← req (rev.check arena a S growEffect.fp = true) "dense: the effect does not respect the support"
+      let ⟨hc⟩ ← req (ContextEvidence.truth.check arena a = true) "dense: no context"
       let ⟨hb⟩ ← node? arena b (.box growEffect.fp a)
-      pure (.dense x k ha hb (← checkDerivation arena premises (.at p a) d))
+      let d ← checkDerivation arena premises (.at p a) d
+      pure (.tolerantFrame S .dense rev .truth hs hr hc hb (.assumption (List.mem_singleton.mpr rfl)) d d)
     | _ => .error "dense: goal is no assertion"
   | .frame Φ a b θ d dt dθ => match goal with
     | .at .after c => do
@@ -1518,38 +1528,6 @@ end Arithmetic
 
 /-! ## The common consequence theorem -/
 
-/-- The atom `y ≤ |x|` is the index fact of (Grow) (`TolerantFrames.LowerBound`). -/
-theorem lowerFact_iff (ε : EntryState) (η : Env) (h : Heap) (y x : Nat) :
-    (Atom.linear (lowerFact y x)).Holds η h ↔ (lowerBoundFact y x).HoldsAt ε η h := by
-  simp only [Atom.Holds, lowerBoundFact, lowerFact, IndexFact.HoldsAt, FactAt]
-  have hv : ∀ t ∈ (Linear.Fact.le [(Term.value y, 1), (Term.length x, -1)] 0).vars,
-      termValue ε η h t = termAt η h t := by
-    intro t ht
-    simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at ht
-    rcases ht with rfl | rfl <;> rfl
-  constructor
-  · rintro ⟨hd, hh⟩
-    refine ⟨fun t ht => by rw [hv t ht]; exact hd t ht, ?_⟩
-    refine (Linear.Fact.holds_congr fun t ht => ?_).mp hh
-    simp only [termValuation, hv t ht]
-  · rintro ⟨hd, hh⟩
-    refine ⟨fun t ht => by rw [← hv t ht]; exact hd t ht, ?_⟩
-    refine (Linear.Fact.holds_congr fun t ht => ?_).mp hh
-    simp only [termValuation, hv t ht]
-
-/-- The atom `dense(x, k)` is `DenseAt x k` at the value `k` holds. -/
-theorem dense_iff {η : Env} {h : Heap} {x k : Nat} :
-    (Atom.dense (Path.var x) (Term.value k)).Holds η h ↔
-      ∃ n : Int, intValue (η k) = some n ∧ 0 ≤ n ∧ Dense x n.toNat η h := by
-  simp only [Atom.Holds]
-  constructor
-  · rintro ⟨w, st, ls, n, hw, hs, hl, hn, h0, hd⟩
-    simp only [Path.read, Path.var, readPath, Option.some.injEq] at hw
-    subst hw
-    exact ⟨n, hn, h0, st, ls, hs, hl, hd⟩
-  · rintro ⟨n, hn, h0, st, ls, hs, hl, hd⟩
-    exact ⟨η x, st, ls, n, rfl, hs, hl, hn, h0, hd⟩
-
 theorem stepValue_shiftVar (s : TwoState) (p : Phase) (x : Val) (v : StepVar) :
     stepValue (s.withEnv p (push x (s.env p))) (shiftVar p v) = stepValue s v := by
   cases p <;> cases v <;> rfl
@@ -1865,17 +1843,6 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
         cases hy; rw [hkv]; simp only [scalarValue]; congr 1; omega
       | free t => cases hy; rfl
       | _ => cases hy
-  | @grow Γ p a b y x ha hb _ ih =>
-    intro s hΓ
-    refine (sat_box hv hb).mpr fun s' act => ?_
-    have h0 := (lowerFact_iff ⟨s.env p, (s.state p).h⟩ _ _ y x).mp ((sat_atom ha).mp (ih s hΓ))
-    exact (sat_atom ha).mpr ((lowerFact_iff ⟨s.env p, (s.state p).h⟩ _ _ y x).mpr
-      (TolerantFrames.grow (m := s.mark) h0 s' act))
-  | dense x k ha hb _ ih =>
-    intro s hΓ
-    refine (sat_box hv hb).mpr fun s' act => ?_
-    obtain ⟨n, hn, h0, hd⟩ := dense_iff.mp ((sat_atom ha).mp (ih s hΓ))
-    exact (sat_atom ha).mpr (dense_iff.mpr ⟨n, hn, h0, TolerantFrames.dense (m := s.mark) hd s' act⟩)
   | frame θ ha hc _ _ _ ih iht ihθ =>
     intro s hΓ
     have hb := (sat_box hv ha).mp (ih s hΓ) s.after (iht s hΓ)

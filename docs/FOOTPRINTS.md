@@ -16,7 +16,7 @@ Each claim is labelled **proved** (with its Lean name), **audited** (with
 its row in [native footprints](SOURCE-CONTRACTS.md#native-footprints)) or
 **conjectured**. The lemmas of `FootprintNatives.lean` (`Arr.push_grow`,
 `Arr.unshift_grow`, `Arr.setLength_grow`, `sort_grow`, `array_native_post`,
-`map_rely`, `denseCheck_stable`, `elems_rely`) are proved in a model of the
+`map_rely`, `elems_rely`) are proved in a model of the
 natives' specification steps and read by no acceptance theorem; the native
 footprints they argue for are trusted input. The lemmas are in `lean/Verification/Semantics/`
 (`Footprints.lean`, `ClosedFootprints.lean`, `FootprintProvenance.lean`,
@@ -398,10 +398,12 @@ checker's `GraphCode.throwsWithin` reads the normal frame and `onThrow`.
 ## The stable set for density
 
 Density reads only a spine, and only a spine change beyond `grow` can remove
-a present index below `n`. The check `stableDenseClosed` accepts a closed
-footprint whose spine components are at most `grow` (proved:
-`stableDenseClosed_sound`); of the closed footprints the wire spells, those
-are the eight below, and each of the other four lets a non-empty dense spine
+a present index below `n`. The stability check accepts the density's
+support `{x.spine: grow}` under a closed footprint whose spine components
+are at most `grow`, the class `values` apart from `x`'s spine by the class
+evidence density gives (`denseK`; proved: `FactKind.frame_step`,
+`dense_support`); of the closed footprints the wire spells, those are the
+eight below, and each of the other four lets a non-empty dense spine
 become empty (controls in `FootprintControls.lean`):
 
 | Footprint | Keeps density |
@@ -422,8 +424,8 @@ become empty (controls in `FootprintControls.lean`):
 `map` relies on density between callbacks. For callbacks each of whose
 normal returns meets a footprint of the stable set, density below the
 captured length holds at every presence test (proved: `map_rely`, from
-`rely_chain`; `denseCheck_stable` shows the set to be the general stability
-check's instance for density, `stable_sound`). A reentrant call is part of
+`rely_chain`, each step's footprint checked by the stability check,
+`stable_sound`). A reentrant call is part of
 the callback, a throw leaves `map`, and an async callback's continuation runs
 at a later `%Await%`, never inside the synchronous `map`. That `map` observes
 presence only between callbacks is audited.

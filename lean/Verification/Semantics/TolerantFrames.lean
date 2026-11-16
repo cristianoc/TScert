@@ -17,8 +17,8 @@ meet `Post Φ ρ`, and `Box Φ F` holds where `F` holds after every action of
 `Φ`: the weakest liberal precondition of one arbitrary such action. The name
 valuation and the entry mark are parameters of every assertion and stay fixed
 across the modality. A fact whose support an effect respects enters the
-modality (`tolerant_frame`), and two atoms, a length lower bound and density,
-enter that of `{values: any, spines: grow}`. -/
+modality (`tolerant_frame`), and a length lower bound, at a variable and at
+a rigid path, enters that of `{values: any, spines: grow}`. -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
@@ -511,7 +511,7 @@ theorem frame_run_top {Ξ T : Fam} {Q : Post} {E : Heap → Prop} {α : Type} {I
     · exact .inl (.inr ⟨hth, hE, hexit⟩)
     · exact .inr ⟨U, h', t', hx, hu, st, hh, ih (hreach.trans ⟨Nat.le_succ n, hx⟩) hu hh hs'⟩
 
-/-! ## Two atoms -/
+/-! ## A length lower bound -/
 
 /-- `{values: any, spines: grow}`: the effect of an element write whose
 target is unknown. -/
@@ -524,7 +524,8 @@ def lowerBoundFact (y x : Nat) : IndexFact := .linear (.le [(.value y, 1), (.len
 /-- `y ≤ |x|` as an assertion. -/
 def LowerBound (ε : HeapKnowledge.EntryState) (y x : Nat) : Assertion := fun ρ _ s => (lowerBoundFact y x).HoldsAt ε ρ s.h
 
-/-- **(Grow)** `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)`. -/
+/-- `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)` as the acceptance
+path's index fact (`kept_box`), for the loop of `loop_back_edge`. -/
 theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound ε y x ρ m s) :
     Box growEffect.fp (LowerBound ε y x) ρ m s :=
   kept_box growEffect rfl hb
@@ -585,13 +586,5 @@ theorem grow_path_fact {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : N
     (hp : StableAt x p v ρ m s) (hb : (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) :
     Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) ρ m s :=
   fun s' ha => pathLowerBound_iff.mp (grow_path hp (pathLowerBound_iff.mpr hb) s' ha)
-
-/-- `dense(x, k)`: the first `k` indices of `x`'s spine are present. -/
-def DenseAt (x k : Nat) : Assertion := fun ρ _ s => Dense x k ρ s.h
-
-/-- **(Dense)** `dense(x, k) ⊢ □_{values: any, spines: grow} dense(x, k)`. -/
-theorem dense {x k : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hd : DenseAt x k ρ m s) :
-    Box growEffect.fp (DenseAt x k) ρ m s :=
-  fun _ ha => stableDenseClosed_sound (by decide) hd ha.2
 
 end Verification.TolerantFrames

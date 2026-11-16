@@ -23,7 +23,7 @@ changes the fact's support within its tolerance or is apart from it
 [index facts](FOOTPRINTS.md#index-facts)). The modality below quantifies
 over the transitions those footprints bound; its atom theorems are the
 support and stability lemmas (`stable_sound`, `holdsAt_kept`,
-`stableDenseClosed_sound`) stated against that quantifier.
+`dense_support`) stated against that quantifier.
 
 ## States and admissible transitions
 
@@ -300,7 +300,10 @@ The tolerant frame theorem, proved: a fact kind whose support the effect
 respects under separation knowledge $`K`$ holding at $`s`$ enters
 $`\Box_\Phi`$ (`tolerant_frame`), and an index fact a closed footprint's
 change keeps enters its modality (`kept_box`). The atoms, proved, with
-$`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$:
+$`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$,
+each an instance of the tolerant frame theorem at the support
+$`\{x.\mathsf{spine}:\mathsf{grow}\}`$, which $`G`$ respects since $`x`$
+reads an array:
 
 ```math
 y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
@@ -308,7 +311,10 @@ y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
 \mathrm{dense}(x,k) \;\vdash\; \Box_G\,\mathrm{dense}(x,k)
 ```
 
-(`grow`, `dense`), for variables $`x`$, $`y`$ and a fixed prefix $`k`$. Density here is physical presence of the first $`k`$ spine entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
+(`RawDerivation.grow`, `RawDerivation.dense`, through `tolerantFrame`, with
+`SupportEvidence.lengths` and `SupportEvidence.dense`), for variables $`x`$,
+$`y`$ and a fixed prefix $`k`$; `grow` states the first for the acceptance
+path's index fact (`kept_box`). Density here is physical presence of the first $`k`$ spine entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
 Along a stable path $`p`$, $`y\le|x.p|\vdash\Box_G(y\le|x.p|)`$
 (`grow_path`): the note's (Rigid) with (Grow), the rigidity supplied by the
 world. $`y\le|x.p|`$ is the pass's linear index fact over the value of $`y`$

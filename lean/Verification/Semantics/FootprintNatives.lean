@@ -16,8 +16,9 @@ element contents, is the audited part of each native's row; `array_native_post`
 turns it, with the proved spine relation, into the footprint's postcondition.
 
 `map` relies on density between callbacks: `rely_chain` is the one framing
-mechanism applied to a sequence of steps, and `denseCheck_stable` shows the
-closed check of `map`'s bound to be an instance of the stability check. -/
+mechanism applied to a sequence of steps, each step's footprint checked
+against the density's support by the stability check under the evidence
+density gives about its own spine. -/
 namespace Verification.Footprints
 
 /-! ## Spines and their steps -/
@@ -465,24 +466,6 @@ theorem denseK_holds {x n ρ h} (hd : Dense x n ρ h) : (denseK x).Holds id ρ h
   ⟨dense_classOk hd, ⟨fun _ _ h => by simp [denseK] at h, fun _ _ h => by simp [denseK] at h⟩,
     fun _ _ h => h, fun _ h => by simp [denseK] at h, fun _ h => by simp [denseK] at h⟩
 
-/-- **The closed check of `map`'s bound is the stability check**, with the
-evidence density gives about its own spine. -/
-theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed Φ = true) :
-    stable (denseK x) (FactKind.dense x n).support Φ = true := by
-  simp only [stable, respects, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, List.all_eq_true]
-  intro e he
-  have := List.all_eq_true.mp hc e he
-  simp only [Bool.or_eq_true, beq_iff_eq] at this
-  rcases this with hcls | hle
-  · rcases e with ⟨r, δ⟩
-    simp only at hcls
-    subst hcls
-    have hq : (denseK x).query.disjoint (.field x arraySpineKey) (.cls .values) = true :=
-      SepEvidence.query_field_class _ (c' := .spines) (by simp [denseK, denseClass]) rfl
-        (fun cl h => by simpa [SepEvidence.bound, Region.bound] using h)
-    simp only [hq, Bool.or_true]
-  · simp [hle]
-
 /-- **A rely holds across a sequence of steps** each of whose footprints the
 stability check accepts for the fact, from a well-formed state with
 evidence holding where the step starts: the native's own steps and its
@@ -503,15 +486,15 @@ theorem rely_chain {F : FactKind} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Fo
 
 /-- **`map`'s rely.** If the receiver is dense below its length at entry, and
 every step until the last presence test (callbacks and `map`'s own steps)
-starts at a well-formed state and has a footprint the closed check of
-`bound(dense)` accepts, the receiver is dense below that length at every
-test. -/
+starts at a well-formed state and has a footprint respecting the density's
+support `{x.spine: grow}` under the evidence density gives about its own
+spine, the receiver is dense below that length at every test. -/
 theorem map_rely {x n : Nat} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footprint) (m : Nat)
-    (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ stableDenseClosed (Φ i) = true ∧
+    (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ stable (denseK x) (FactKind.dense x n).support (Φ i) = true ∧
       ∃ n W, HeapOk n W (H i) ∧ RootsOk W ρ)
     (h0 : Dense x n ρ (H 0)) : ∀ i, i ≤ m → Dense x n ρ (H i) :=
   rely_chain (F := .dense x n) H Φ (fun _ => denseK x) (fun _ => id) m
-    (fun i hi => ⟨(hstep i hi).1, denseCheck_stable (hstep i hi).2.1, denseK_holds, (hstep i hi).2.2⟩) h0
+    (fun i hi => ⟨(hstep i hi).1, (hstep i hi).2.1, denseK_holds, (hstep i hi).2.2⟩) h0
 
 /-- No separation evidence: what the elements fact's check needs, its
 support kept by every footprint it is checked under. -/

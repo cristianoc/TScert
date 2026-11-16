@@ -29,8 +29,8 @@ row whose mechanism is separate, or absent, is work.
 | Seq-Eff | `Post.compose_rebases`, `ThenEvidence.sound`, `CommandSummary.seq_sound`, `CommandSummary.handle_sound`: composition relative to the entry, on both exits | separate: `footprintCheck` and `StepGrades.admits`, over closed bounds along the walk |
 | Fresh-Eff | `rebaseAll_fresh_eff`, `Post.fresh_eff`, `ThenEvidence.into_fresh`: rebasing erases the fresh spine's entry alone | separate: the fresh positions' projection in `StepCertificate.grades` and `Footprint.boundBelow`, and the regional checks |
 | Conj | `SafePostExcV.cross_independent`, `PromiseWith.conj`, `Exits.exitPost_meet`, with the world-independence condition | Conj itself: `Effect.meetCovers` checks the rule's conditions |
-| Grow | `Derivation.grow` | separate: support, and the preservation deciders of writes and calls |
-| Dense | `Derivation.dense`, for a prefix bounded by a variable | separate: the density and type checks and the callback contracts |
+| Grow | `RawDerivation.grow`, through `tolerantFrame`, at the support `{x.spine: grow}` | separate: support, and the preservation deciders of writes and calls |
+| Dense | `RawDerivation.dense`, through `tolerantFrame`, at the support `{x.spine: grow}`, for a prefix bounded by a variable | separate: the density and type checks and the callback contracts |
 | Sep | `RawDerivation.sep`, through `tolerantFrame`, for linear length atoms | separate: `frameKeeps` and the separation queries |
 | Every | `RawDerivation.everyFrame`, through support and respect, for ordinary arrays and the represented scalar predicates | separate: `everyKept`, `writeAtoms`, and the append and write rules |
 | Init | `RawDerivation.init`, through support and respect, for linear atoms at a path | separate: the kept terms and the initialization checks |

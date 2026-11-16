@@ -237,7 +237,7 @@ claimed signature by the member's, effects included, and `field-call`
 gives $`B\;!\;\epsilon`$ for the field's contract. A callback whose calls
 are all within $`\Phi`$ is within $`\Phi`$ (`selected_sound`; proved), and
 the natives' per-footprint signatures follow: `map` dense for $`\Phi`$ in
-the stable set (`map_rely`, `stableDenseClosed_sound`; proved),
+the stable set (`map_rely`; proved),
 `find`/`findIndex` at `T` for the empty footprint.
 
 **Which receivers qualify.** Every receiver whose type states the
