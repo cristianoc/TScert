@@ -1085,6 +1085,22 @@ and $\mathrm{supp}(\varphi)$ is the support of those terms. A
 quantified fact whose body has another body term has no support by this
 definition.
 
+Some atoms depend on the heap only through the values their paths read.
+Such an atom stays true as long as each of its paths reads the same
+value, so it is supported by the locations along its paths, kept:
+$\bigcup_i\mathrm{reads}_{\keep}(\pi_i)$ for its paths
+$\pi_1,\ldots,\pi_k$. The rows of $\pi\doteq v$, $\pi\in V$ and
+$\pi\sep\pi'$ are of this kind. So is $\fresh(r)$ where $r$ is
+$\pi.\kw{spine}$, $\pi.\kw{fields}$ or $\pi.f$: the value that $\pi$
+reads fixes the locations of $r$ (T3), and the mark does not change. For
+$\fresh(\pi.\kw{cells})$ the support also keeps $\pi.\kw{spine}$, since
+the cells are those the spine lists. Example: $\fresh(c.\mathit{value}.\kw{spine})$
+says that the array a binding cell $c$ holds was allocated by this
+invocation; its support is $\{c.\mathit{value}:\keep\}$, so it stays true
+while the cell holds the same array. For a variable $x$, $\fresh(x)$ has
+the support $\emptyset$
+\status{Lean: \lean{cellsHold\_supports}, the support $\{\val:\keep\}$, which contains $\{c.\mathit{value}:\keep\}$, of $\fresh(c.\mathit{value}.\kw{spine})$; conj. for the general statement}.
+
 Besides $\mathrm{supp}(F)$, every assertion $F$ without a modality has
 the support $\mathrm{all}=\{\val:\keep,\ \st:\keep\}$, which keeps every
 location below $\len h$. Such an assertion reads $\rho$, the mark and
@@ -1830,7 +1846,19 @@ no kind of location belongs to both, or when a separation at hand says
 so: $\pi\sep\pi'$ for $\pi.\kw{spine}$ and $\pi'.\kw{spine}$ where
 the types of the two paths have no typed-array member,
 $\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and $\fresh(r)$ for $r$ and
-any region of locations below the mark. The separation $\pi\sep\pi'$
+any region of locations below the mark.
+
+The locations below the mark are those that existed at the entry. A
+region $\pi.f$, $\pi.\kw{fields}$ or $\pi.\kw{spine}$ is below the mark
+when the value that $\pi$ reads existed at the entry: its locations
+existed with it (W3), and it keeps them (T3). Two kinds of path read such
+a value: a variable that still holds its value from the entry, as a
+parameter the body never assigns does, and a rigid path from such a
+variable. Example: in \code{function count(node) \{ ... \}}, the body
+does not assign \code{node}, so $\mathit{node}.\mathit{statement}$ is
+below the mark; an iterator the body allocates is fresh, so a step that
+changes only the iterator's fields keeps what
+$\mathit{node}.\mathit{statement}$ holds. The separation $\pi\sep\pi'$
 says nothing of a typed array: $b\sep b$ holds of a typed array $b$.
 \end{definition}
 
