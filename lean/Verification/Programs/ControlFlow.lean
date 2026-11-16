@@ -1016,7 +1016,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
           (ho out hout)
         simpa only [entry, result, hterm] using hs'
       · have hs' := HeapExpressionRules.withStable_sound (Γ := entry c) (out := out)
-          he hf hh (by simpa only [entry] using ho out hout)
+          he hf hw hh (by simpa only [entry] using ho out hout)
         have hs'' := HeapObservations.weaken (fun _ _ hq => outFacts_holds he (outputFits_sound hstable he hq)) hs'
         simpa only [entry, result, hterm] using hs''
     · have hany := hc.1.1.2

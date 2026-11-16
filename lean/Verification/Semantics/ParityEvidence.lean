@@ -193,10 +193,6 @@ theorem sat_rigid_iff {arena : AssertionArena} (hv : arena.Valid) {a b c : Asser
 endpoints of a transition. -/
 abbrev SupportContext := Env → Nat → IndexedHeap → IndexedHeap → Prop
 
-/-- **Indexed states**, the admissible transitions between them: the domain
-the note's assertions are read in. -/
-abbrev indexed : SupportDomain IndexedHeap := ⟨IndexedHeap.h, Admissible⟩
-
 /-- **`S` supports `A` in the context `C`** (the note, §5, Definition
 "Support", read in a context; I5, `Supports`): `SupportDomain.Supports`
 over indexed states, of `A`'s satisfaction. -/

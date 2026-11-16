@@ -1842,9 +1842,12 @@ added by `Checker.ensuringCalls` through `withEnsures`).
 Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
 
 **Typed-array lengths through every step.** A typed array's length is its
-descriptor's, part of the value. So every step preserves a linear fact whose
-every term is a slot's value or the typed-array length $`\mathrm{view}(x)`$
-of a slot $`x`$, beside the step's own output (proved):
+descriptor's, part of the value (the note's rule (View)). So a linear fact
+whose every term is a slot's value or the typed-array length
+$`\mathrm{view}(x)`$ of a slot $`x`$ has the empty support
+(`IndexFact.support?`), which $`\top`$ respects (`IndexFact.keeps`), and
+every step preserves it, beside the step's own output, by the tolerant
+frame (proved):
 
 ```math
 \frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ t=x\lor t=\mathrm{view}(x)}
@@ -1917,7 +1920,8 @@ bound (`range-text-branch-bound`, pretext's `buildRangeText`, and
 `invalid-range-text-argument-write`). Lean checks the selected call against
 the declaration (`PromiseCalls.keepsCall_sound`).
 `view-stable` is `HeapExpressionRules.stableIndices`, added by `withStable`
-and applied by `Checker.keepingStable` (proved: `withStable_sound`);
+and applied by `Checker.keepingStable` (proved: `withStable_sound`, by
+`TolerantFrames.frame_run_top`);
 `view-path-stable` is `Term.viewFramed`, with `IndexFact.keptWith` and
 `HeapKnowledge.keptIndicesWith` (proved in `write_sound`, from
 `termValue_viewFramed`).
@@ -4926,11 +4930,15 @@ It computes a guaranteed output, not an assumed postcondition:
 Every step keeps, past its result, the read links and cell facts of its
 input through a member every clause of the receiver's type states a stable
 key ([stable keys](POSITIVE-TYPES.md#records)), optional links among them,
-whatever the step: a call, a write, a closure's run. On normal return a
-present key's location holds its one value in every heap a run reaches
-(`stable_frame`), and an absent key of an object without a prototype reads
-`undefined` in every heap (`ReadGave.stable_frame`), so the link and the
-fact hold there:
+whatever the step: a call, a write, a closure's run. A present key's
+location holds its one value in every state an admissible transition
+reaches, and an absent key of an object without a prototype reads
+`undefined` in every heap (`TolerantFrames.Admissible.readGave`), so the link
+and the fact have the empty support, under the condition that the key is
+stable in the first state's world (`FactKind.supportsBy` at `stableKey`);
+$`\top`$ respects it, and the tolerant frame keeps them to the step's normal
+return (`TolerantFrames.frame_run_top`,
+[support and respect](FOOTPRINTS.md#support-and-respect)):
 
 ```math
 \frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad

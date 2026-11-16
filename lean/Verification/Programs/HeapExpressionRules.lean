@@ -1,6 +1,8 @@
 import Verification.Semantics.Purity
 import Verification.Semantics.HeapKnowledge
 import Verification.Semantics.LinkClasses
+import Verification.Semantics.TolerantFrames
+import Verification.Semantics.Survival
 
 /-! Checked expression rules with primitive state postconditions. Ordinary evidence
 retains only immutable-value facts; special rules justify stronger heap facts.
@@ -2312,40 +2314,48 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 
 /-! ### Stable links (HOST-FAMILIES.md, "Stable links")
 
-A read link through a member every clause of its receiver's type states a
-stable key holds through every step: the key reads one way for the object's
-life, a location whose contract admits one value, which every heap a run
-reaches holds there, or an absent key of an object without a prototype. -/
+A fact with the empty support (the note, §5, Definition "Support") holds
+through every step: `⊤`, the effect bounding every admissible transition,
+respects it, and the tolerant frame keeps it from the step's first state to
+its normal exit (`TolerantFrames.frame_run_top`). Three kinds of fact have
+it: a read link and a cell fact of a read through a member every clause of
+the receiver's type states stable, whose key reads one way for the object's
+life (the note, (T4)
+"Immutable locations", `FactKind.supportsBy` at `stableKey`); a linear fact
+whose every term is a slot's own value or the length of the typed array a
+slot holds (the note, rule (View); `IndexFact.support?`, empty for such a
+fact). -/
 
 /-- The read links a step keeps through its every effect: those through a
-member every clause of the receiver's type states stable, optional links
-among them. -/
+member every clause of the receiver's type states stable (its evidence
+`stableKey`), whose empty support `⊤` respects, optional links among them.
+An alias link reads no key. -/
 def stableLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : HeapLinks.Links :=
   k.links.filter fun g => !g.alias &&
-    match Γ[g.cell]? with
-    | some A => stableField G A g.field
-    | none => false
+    (match Γ[g.cell]? with
+      | some A => stableField G A g.field
+      | none => false) &&
+    Footprints.respects .empty ((Footprints.FactKind.link g).supportBy .stableKey) Footprints.Closed.top.fp
 
 /-- The cell facts a step keeps through its every effect: those of a read
-through a member every clause of the receiver's type states stable, whose
-reading the object keeps for its life. -/
+through a member every clause of the receiver's type states stable (its
+evidence `stableKey`), whose empty support `⊤` respects. -/
 def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts :=
   k.cells.filter fun f =>
-    match Γ[f.slot]? with
-    | some A => stableField G A f.field
-    | none => false
-
-/-- A term a step keeps through its every effect: a slot's own value, or the
-length of the typed array a slot holds (ARITHMETIC.md, "Linear facts"),
-which the typed array's descriptor holds. -/
-def stableTerm (t : Term) : Bool :=
-  t.envOnly || (t.kind == .view && t.path.isEmpty)
+    (match Γ[f.slot]? with
+      | some A => stableField G A f.field
+      | none => false) &&
+    Footprints.respects .empty ((Footprints.FactKind.cell f).supportBy .stableKey) Footprints.Closed.top.fp
 
 /-- The index facts a step keeps through its every effect: the linear facts
-whose every term is stable. -/
+whose produced support `⊤` respects with no separation evidence
+(`IndexFact.keeps`), those whose every term is a slot's own value or the
+length of the typed array a slot holds (ARITHMETIC.md, "Linear facts"). It
+keeps the linear facts the rule `view-stable` states (PROGRAM-TYPING.md,
+"Typed-array lengths through every step"). -/
 def stableIndices (k : Knowledge) : List IndexAtom :=
   k.indices.filter fun a => match a.fact with
-    | .linear F => F.vars.all stableTerm
+    | .linear _ => a.fact.keeps .empty {} Footprints.Closed.top.fp
     | _ => false
 
 /-- A step's output with the input's stable links, stable cell facts and
@@ -2359,159 +2369,101 @@ def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Kn
     indices := out.indices ++
       (mapIndices (fun i => some (i+1)) (stableIndices k)).filter fun a => !out.indices.contains a }
 
-/-- What a kept link says of a heap: a read link's meaning in `HeapLinks.Holds`. -/
-private def LinkAt (ρ : Env) (h : Heap) (g : HeapLinks.Link) : Prop :=
-  if g.optional then ∃ flds c oid, ρ g.cell = .objAt flds c oid ∧ ReadGave flds g.field h (ρ g.value)
-  else ∃ flds c oid l, ρ g.cell = .objAt flds c oid ∧ flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value)
+/-- The stable cell facts and read links, as fact kinds. -/
+def stableKinds (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List Footprints.FactKind :=
+  (stableCells G Γ k).map .cell ++ (stableLinks G Γ k).map .link
 
-/-- Either form of a read link is a read the object gave. -/
-private theorem LinkAt.read {ρ h g} (hg : LinkAt ρ h g) :
-    ∃ flds c oid, ρ g.cell = .objAt flds c oid ∧ ReadGave flds g.field h (ρ g.value) := by
-  unfold LinkAt at hg
-  split at hg
-  · exact hg
-  · obtain ⟨flds, c, oid, l, hcell, hl, hv⟩ := hg
-    exact ⟨flds, c, oid, hcell, ReadGave.present hl hv⟩
-
-private theorem LinkAt.of_read {ρ h g flds c oid} (hcell : ρ g.cell = .objAt flds c oid)
-    (hr : ReadGave flds g.field h (ρ g.value)) (hpresent : g.optional = false → (flds.lookup g.field).isSome) :
-    LinkAt ρ h g := by
-  unfold LinkAt
-  split
-  · exact ⟨flds, c, oid, hcell, hr⟩
-  · rename_i ho
-    have hs := hpresent (by simpa using ho)
-    cases hl : flds.lookup g.field with
-    | none => rw [hl] at hs; cases hs
-    | some l =>
-      have hv : h[l]? = some (ρ g.value) := by simpa [ReadGave, hl] using hr
-      exact ⟨flds, c, oid, l, hcell, hl, hv⟩
-
-private theorem stable_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ n W h t}
-    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h) :
-    ∀ (S : HeapLinks.Links), (∀ g ∈ S, g ∈ stableLinks G Γ k) →
-      SafePost (excOf G) T Q n W h t →
-      SafePost (excOf G) T (fun h' v => Q h' v ∧ ∀ g ∈ S, LinkAt ρ h' g) n W h t := by
-  intro S
-  induction S with
-  | nil =>
-    intro _ hs
-    exact consequence (fun _ _ _ h => h) (fun _ _ hq => ⟨hq, fun _ hg => by cases hg⟩) hs
-  | cons g S ih =>
-    intro hS hs
-    have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
-    have hg := hS g List.mem_cons_self
-    simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg
-    obtain ⟨hmem, ha, hty⟩ := hg
-    have hlink : LinkAt ρ h g := by
-      have := hk.2.2.1 g hmem
-      simp only [ha, Bool.false_eq_true, if_false] at this
-      unfold LinkAt
-      exact this
-    obtain ⟨flds, c, oid, hcell, hr⟩ := hlink.read
-    have hpresent : g.optional = false → (flds.lookup g.field).isSome := by
-      intro ho
-      unfold LinkAt at hlink
-      simp only [ho, Bool.false_eq_true, if_false] at hlink
-      obtain ⟨flds', c', oid', l, hcell', hl, -⟩ := hlink
-      rw [hcell] at hcell'
-      cases hcell'
-      simp [hl]
-    split at hty
+/-- A stable fact kind reads a key the world states stable, and its empty
+support `⊤` respects. -/
+private theorem stableKinds_mem {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ}
+    {s : TolerantFrames.IndexedHeap} (he : EnvOk G Γ ρ s.n s.W) {F : Footprints.FactKind}
+    (hF : F ∈ stableKinds G Γ k) :
+    F.ReadsStable ρ s ∧
+      Footprints.respects .empty (F.supportBy .stableKey) Footprints.Closed.top.fp = true ∧
+      ((∃ f ∈ k.cells, F = .cell f) ∨ (∃ g ∈ k.links, F = .link g)) := by
+  have hstable : ∀ x fld, (match Γ[x]? with | some A => stableField G A fld | none => false) = true →
+      ∀ flds c oid, ρ x = .objAt flds c oid → Verification.StableAt s.W flds fld := by
+    intro x fld hx flds c oid hcell
+    split at hx
     · rename_i A hA
-      obtain ⟨flds', oid', hcell', hst⟩ := stableField_at hty (he.2 g.cell A hA)
+      obtain ⟨flds', oid', hcell', hst⟩ := stableField_at hx (he.2 x A hA)
       rw [hcell] at hcell'
       cases hcell'
-      refine consequence (fun _ _ _ h => h) (fun h' u hq => ?_)
-        (ReadGave.stable_frame hst hh hr rest)
-      obtain ⟨⟨hq, hall⟩, hr'⟩ := hq
-      refine ⟨hq, fun x hx => ?_⟩
-      rcases List.mem_cons.mp hx with rfl | hx
-      · exact LinkAt.of_read hcell hr' hpresent
-      · exact hall x hx
-    · cases hty
+      exact hst
+    · cases hx
+  rcases List.mem_append.mp hF with hF | hF
+  · obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hF
+    simp only [stableCells, List.mem_filter, Bool.and_eq_true] at hf
+    exact ⟨hstable f.slot f.field hf.2.1, hf.2.2, .inl ⟨f, hf.1, rfl⟩⟩
+  · obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hF
+    simp only [stableLinks, List.mem_filter, Bool.and_eq_true] at hg
+    exact ⟨hstable g.cell g.field hg.2.1.2, hg.2.2, .inr ⟨g, hg.1, rfl⟩⟩
 
-private theorem stable_cell_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ n W h t}
-    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h) :
-    ∀ (S : Facts), (∀ f ∈ S, f ∈ stableCells G Γ k) →
-      SafePost (excOf G) T Q n W h t →
-      SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapFacts.Holds S ρ h') n W h t := by
-  intro S
-  induction S with
-  | nil =>
-    intro _ hs
-    exact consequence (fun _ _ _ h => h) (fun _ _ hq => ⟨hq, fun _ hf => by cases hf⟩) hs
-  | cons f S ih =>
-    intro hS hs
-    have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
-    have hf := hS f List.mem_cons_self
-    simp only [stableCells, List.mem_filter] at hf
-    obtain ⟨hmem, hty⟩ := hf
-    obtain ⟨flds, c, oid, u, hcell, hr, hatom⟩ := hk.1 f hmem
-    split at hty
-    · rename_i A hA
-      obtain ⟨flds', oid', hcell', hst⟩ := stableField_at hty (he.2 f.slot A hA)
-      rw [hcell] at hcell'
-      cases hcell'
-      refine consequence (fun _ _ _ h => h) (fun h' _ hq => ?_)
-        (ReadGave.stable_frame hst hh hr rest)
-      obtain ⟨⟨hq, hall⟩, hr'⟩ := hq
-      refine ⟨hq, fun x hx => ?_⟩
-      rcases List.mem_cons.mp hx with rfl | hx
-      · exact ⟨flds, _, oid, u, hcell, hr', hatom⟩
-      · exact hall x hx
-    · cases hty
-
-/-- A stable term denotes, in every heap, what it denoted in any other: a
-slot's value, or the length its typed array's descriptor holds. -/
-private theorem stableTerm_eq {ρ : Env} {h h' : Heap} {t : Term} (ht : stableTerm t = true) :
-    termValue ε ρ h' t = termValue ε ρ h t := by
-  simp only [stableTerm, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
-  rcases ht with ht | ⟨hk, hp⟩
-  · exact termValue_envOnly ht
-  · obtain ⟨k, s, p, a⟩ := t
-    cases a
-    case true => exact termValue_entry_invariant rfl
-    simp only at hk hp
-    subst hk; subst hp
-    simp only [termValue_nil, kindValue]
-
-/-- **Stable links survive every step.** Whatever a step's postcondition, its
-input's stable links, stable cell facts and stable index facts hold of every
-heap it returns in. -/
+/-- **Stable facts survive every step.** Whatever a step's postcondition,
+its input's stable links, stable cell facts and stable index facts hold of
+every heap it returns in: each has the empty support, which `⊤` respects
+(`TolerantFrames.frame_run_top`). -/
 theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowledge} {ρ n W h t} {T : Fam}
-    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h t) :
     SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds (withStable G Γ k out) ε (push v ρ) h') n W h t := by
-  refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_)
-    (stable_cell_frames he hk hh (stableCells G Γ k) (fun _ hf => hf)
-      (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs))
-  obtain ⟨⟨hout, hall⟩, hcells⟩ := hq
-  have hS : HeapLinks.Holds (stableLinks G Γ k) ρ h' := by
-    intro g hg
-    have hg' := hg
-    simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg'
-    obtain ⟨-, ha, -⟩ := hg'
-    simp only [ha, Bool.false_eq_true, if_false]
-    have := hall g hg
-    unfold LinkAt at this
-    exact this
+  cases n with
+  | zero => exact hs
+  | succ n =>
+  let s : TolerantFrames.IndexedHeap := ⟨n + 1, W, h, Nat.succ_pos n, hw, hh⟩
+  have hkinds := TolerantFrames.frame_run_top (s := s) (m := 0) (q := .empty)
+    (I := fun F => F ∈ stableKinds G Γ k) (P := fun F => F.Holds)
+    (C := fun F => F.conditionBy .stableKey) (S := fun F => F.supportBy .stableKey)
+    (fun F _ => F.supportsBy .stableKey) (fun F hF => (stableKinds_mem (s := s) he hF).2.1)
+    (Footprints.SepQuery.empty_sound _ _) (fun F hF _ _ => (stableKinds_mem (s := s) he hF).1)
+    (fun F hF => by
+      rcases (stableKinds_mem (s := s) he hF).2.2 with ⟨f, hf, rfl⟩ | ⟨g, hg, rfl⟩
+      · intro f' hf'; rw [List.mem_singleton.mp hf']; exact hk.1 f hf
+      · intro g' hg'; rw [List.mem_singleton.mp hg']; exact hk.2.2.1 g hg)
+    (TolerantFrames.WorldReach.refl W) hw hh hs
+  have hidx := TolerantFrames.frame_run_top (s := s) (m := 0) (q := .empty)
+    (I := fun a => a ∈ stableIndices k ∧ ∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated)
+    (P := fun a ρ h => a.fact.HoldsAt ε ρ h)
+    (C := fun _ ρ _ s s' => Footprints.ReadContext.Holds {} ρ s.h s'.h)
+    (S := fun a => (a.fact.support? {}).getD [])
+    (fun a ha => by
+      have hkeep := (List.mem_filter.mp ha.1).2
+      split at hkeep
+      · rename_i F hF
+        unfold IndexFact.keeps at hkeep
+        split at hkeep
+        · rename_i S hS
+          rw [hS]
+          exact (Footprints.IndexFact.support?_supports {} _ hS).pullback TolerantFrames.indexed
+        · cases hkeep
+      · cases hkeep)
+    (fun a ha => by
+      have hkeep := (List.mem_filter.mp ha.1).2
+      split at hkeep
+      · rename_i F hF
+        unfold IndexFact.keeps at hkeep
+        split at hkeep
+        · rename_i S hS
+          rw [hS]
+          exact hkeep
+        · cases hkeep
+      · cases hkeep)
+    (Footprints.SepQuery.empty_sound _ _)
+    (fun _ _ _ _ => fun _ _ _ _ _ _ _ hst => by cases hst)
+    (fun a ha => hk.2.2.2.2.2 a (List.mem_filter.mp ha.1).1 ha.2)
+    (TolerantFrames.WorldReach.refl W) hw hh hkinds
+  refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_) hidx
+  obtain ⟨⟨hout, hall⟩, hI⟩ := hq
+  have hcells : HeapFacts.Holds (stableCells G Γ k) ρ h' := fun f hf =>
+    hall (.cell f) (List.mem_append_left _ (List.mem_map_of_mem hf)) f (List.mem_singleton_self _)
+  have hS : HeapLinks.Holds (stableLinks G Γ k) ρ h' := fun g hg =>
+    hall (.link g) (List.mem_append_right _ (List.mem_map_of_mem hg)) g (List.mem_singleton_self _)
   have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
     (fun i j hj => by simp at hj; subst hj; rfl)
   have hshift := HeapFacts.shift_holds (v := v) hcells
-  have hidx : IndexHolds ε (stableIndices k) ρ h' := by
-    intro a ha hc
-    simp only [stableIndices, List.mem_filter] at ha
-    obtain ⟨hmem, hall⟩ := ha
-    have hold := hk.2.2.2.2.2 a hmem hc
-    split at hall
-    · rename_i F hF
-      rw [hF] at hold ⊢
-      exact IndexFact.holdsAt_linear_terms
-        (fun t ht => stableTerm_eq (List.all_eq_true.mp hall t ht)) hold
-    · cases hall
+  have hidx' : IndexHolds ε (stableIndices k) ρ h' := fun a ha hc => hI a ⟨ha, hc⟩
   have hmap := mapIndices_holds (f := fun i => some (i+1)) (ρ' := push v ρ)
-    (fun s t hst => by simp only [Option.some.injEq] at hst; subst hst; rfl) hidx
+    (fun s t hst => by simp only [Option.some.injEq] at hst; subst hst; rfl) hidx'
   refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_, hout.2.2.2.1, hout.2.2.2.2.1, fun a ha => ?_⟩
   · rcases List.mem_append.mp hf with hf | hf
     · exact hout.1 f hf
@@ -2533,7 +2485,7 @@ stable cell facts. -/
     intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, h0, rfl⟩ := hc
-    exact withStable_sound he hk hh (base.sound h0 hcodes hsums he hk hw hh href hρ)
+    exact withStable_sound he hk hw hh (base.sound h0 hcodes hsums he hk hw hh href hρ)
 
 /-- The steps' own rules, without the stable links every step keeps. -/
 @[nospecialize] def Checker.steps [DecidableEq ι] (G : NormalGraph ι)

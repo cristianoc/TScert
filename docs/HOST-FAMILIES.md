@@ -1307,9 +1307,10 @@ each key's reading by `StableAt`. `stableKeysT_at` supplies the object and
 its reading, `StableAt.present` a present key's stable contract;
 `stableKeysT_adm`, `stableKeysT_weaken` and `stableKeysT_append` prove
 admissibility, forgetting keys and conjunction.
-`ReadGave.stable_frame` in
-[HeapFacts.lean](../lean/Verification/Semantics/HeapFacts.lean) frames what a
-read of a stated key gives on normal return. A record or
+`Admissible.readGave` in
+[TolerantFrames.lean](../lean/Verification/Semantics/TolerantFrames.lean)
+proves that a read of a stated key gives the same after every admissible
+transition. A record or
 dictionary clause states its stable keys (`Clause.refs`'s last part), whose
 meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
 an object term states them as `"stable": [key, …]`, nonempty, which
@@ -1356,31 +1357,28 @@ every term $`t`$, a call, a write or a closure's run, on the term's normal
 return. A claim with an arm that does not state $`f`$ stable keeps no link
 through $`f`$.
 
-It is sound by a frame property of stable keys. An absent stable key of an
-object without a prototype reads `undefined` from the object's value
+It is sound by the empty support of such a read (the note's Definition
+"Support" and (T4) "Immutable locations",
+[the note](REFERENCES.md#the-tolerant-frames-note)). An absent stable key
+of an object without a prototype reads `undefined` from the object's value
 alone, so its read gives `undefined` in every heap. A present one is a
-location whose contract is stable: let $`c`$ be stable at
-$`v_0`$ in $`W`$ at level $`n+1`$. A heap meeting $`W`$ holds $`v_0`$ at
-$`c`$'s location; every state an execution reaches at a positive remaining
-level $`m`$ meets a world extending $`W`$ truncated to $`m`$, whose
-contract at that location is $`c`$ restricted to the levels below $`m`$, so
-its heap holds $`v_0`$ there too:
-
-```math
-\frac{\mathrm{lookup}(W,\ell)=c\quad c\ \text{stable at}\ v_0\quad \mathrm{HeapOk}(n{+}1,W,h)\quad \mathrm{SafePost}(T,Q,n{+}1,W,h,t)}
-     {\mathrm{SafePost}(T,\ \lambda h'\,v.\ Q(h',v)\land h'(\ell)=v_0,\ n{+}1,W,h,t)}\ \textsf{stable-frame}
-```
-
-The semantic lemmas are
-`HeapObservations.stable_frame` in
-[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
-and `ReadGave.stable_frame` in
-[HeapFacts.lean](../lean/Verification/Semantics/HeapFacts.lean), which
-frames a read's result, present or absent. The checker applies the rule to
-every step: each step's output keeps the input's read links and cell facts
-through a member every clause of the receiver's type states stable
-(`HeapExpressionRules.withStable`, `stableLinks` and `stableCells`, proved
-by `withStable_sound` from `ReadGave.stable_frame`), the one place every
+location whose contract is stable at a value $`v_0`$ in the world $`W`$ of
+the transition's first state; an admissible transition reaches a world
+extending $`W`$ truncated to its level, whose contract at that location is
+the same restricted, so both heaps hold $`v_0`$ there. So the read link and
+the cell fact have the empty support under the condition that the key is
+stable in the first state's world (`FactKind.supportsBy` at the evidence
+`stableKey`, from `Admissible.readGave`, in
+[TolerantFrames.lean](../lean/Verification/Semantics/TolerantFrames.lean)).
+The empty support is respected by every effect, in particular by $`\top`$,
+the effect bounding every admissible transition, so the tolerant frame
+([support and respect](FOOTPRINTS.md#support-and-respect)) keeps the fact
+from a step's first state to its normal exit, through the worlds the
+step's safety derivation reaches (`TolerantFrames.frame_run_top`). The
+checker applies it to every step: each step's output keeps the input's
+read links and cell facts through a member every clause of the receiver's
+type states stable (`HeapExpressionRules.withStable`, `stableLinks` and
+`stableCells`, proved by `withStable_sound`), the one place every
 expression checker passes through (`Checker.keepingStable`).
 
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it

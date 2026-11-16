@@ -180,6 +180,20 @@ sound at a well-formed state ([separation queries](#separation-queries)),
 and the five fact kinds' supports below are supports in every context
 (`FactKind.supports`).
 
+A fact kind's support rests on evidence (`FactEvidence`,
+`FactKind.supportBy`, proved: `FactKind.supportsBy`, over indexed states):
+the locations it reads at the change it tolerates, or, for a cell fact or a
+read link through a key the first state's world states stable, the empty
+support under that condition (the note's (T4) "Immutable locations",
+`Admissible.readGave`). A step with no stated effect is bounded by
+$`\top`$, every allocated location at `any`, whose postcondition every
+admissible transition meets (`action_top`); the tolerant frame at $`\top`$
+along a step's run keeps every fact whose support $`\top`$ respects, the
+empty support among them (proved: `TolerantFrames.frame_run_top`). It keeps
+the stable links, the cell facts of stable reads and the linear facts of
+slots' values and typed-array lengths at every step
+([stable links](HOST-FAMILIES.md#stable-links)).
+
 ### Supports of index facts
 
 The context of an index fact's support is a **read context** $`c`$: the

@@ -68,6 +68,28 @@ theorem IndexedHeap.stable_value (s : IndexedHeap) {l : Nat} {c : Ctr s.n} {v : 
     (hl : lookup s.W l = some c) (hc : CtrStable c v) : s.h[l]? = some v :=
   s.ok.stable_value s.pos hl hc
 
+/-- **A read of a stable key gives the same after every admissible
+transition** (the note, (T4) "Immutable locations"): a present key's location
+holds its contract's one value in both states; an absent key of an object
+without a prototype reads `undefined` from the object alone. -/
+theorem Admissible.readGave {s s' : IndexedHeap} (ha : Admissible s s') {flds : List (PropKey × Nat)}
+    {k : PropKey} {v : Val} (hs : Verification.StableAt s.W flds k) (hr : HeapFacts.ReadGave flds k s.h v) :
+    HeapFacts.ReadGave flds k s'.h v := by
+  unfold HeapFacts.ReadGave at hr ⊢
+  cases hl : flds.lookup k with
+  | none => rw [hl] at hr; exact hr
+  | some l =>
+    rw [hl] at hr
+    simp only at hr ⊢
+    obtain ⟨c, value, hw, hc⟩ := hs.present hl
+    rw [s.stable_value hw hc] at hr
+    rw [← Option.some.inj hr]
+    exact ha.stable_value hw hc
+
+/-- **Indexed states**, the admissible transitions between them: the domain
+the note's assertions are read in. -/
+abbrev indexed : SupportDomain IndexedHeap := ⟨IndexedHeap.h, Admissible⟩
+
 /-! ## Adequacy: safe runs are admissible -/
 
 /-- **A run that a safety derivation covers, with budget left, ends in a
@@ -470,6 +492,110 @@ theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s
   have hc : (Changes.ofClosed c).Holds s.h s'.h :=
     Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
   exact IndexFact.holdsAt_kept hc (fun _ _ _ _ _ _ _ hf => by simp at hf) hk hF
+
+/-! ## The empty support of a read of a stable key
+
+The note's Definition "Support" lets a fact have several supports. Besides
+the locations a fact kind reads at the change it tolerates
+(`FactKind.support`), a read through a key the state's world states stable
+has the empty support (the note, (T4) "Immutable locations"): every
+admissible transition keeps it, under the condition that the key is stable
+at the transition's first state. -/
+
+/-- **The evidence a fact kind's support rests on**: the locations its kind
+reads (`reads`, `FactKind.support`), or the stability of the key it reads
+(`stableKey`), whose support is empty. -/
+inductive _root_.Verification.Footprints.FactEvidence where
+  | reads
+  | stableKey
+  deriving DecidableEq, Repr
+
+/-- A fact kind reads a key its state's world states stable: a cell fact or
+a read link whose slot holds an object whose key the read names is stable
+there (`Verification.StableAt`). An alias link reads no key. -/
+def _root_.Verification.Footprints.FactKind.ReadsStable : FactKind → Env → IndexedHeap → Prop
+  | .cell f, ρ, s => ∀ flds c oid, ρ f.slot = .objAt flds c oid → Verification.StableAt s.W flds f.field
+  | .link g, ρ, s => ∀ flds c oid, ρ g.cell = .objAt flds c oid → Verification.StableAt s.W flds g.field
+  | _, _, _ => False
+
+/-- The support each evidence gives a fact kind. -/
+def _root_.Verification.Footprints.FactKind.supportBy (F : FactKind) : FactEvidence → Footprint
+  | .reads => F.support
+  | .stableKey => []
+
+/-- The condition each evidence's support rests on: none for the locations
+read; for a stable key, that the fact reads a stable key at the first state. -/
+def _root_.Verification.Footprints.FactKind.conditionBy (F : FactKind) : FactEvidence → ConditionOn IndexedHeap
+  | .reads => fun _ _ _ _ => True
+  | .stableKey => fun ρ _ s _ => F.ReadsStable ρ s
+
+/-- **Each evidence's support supports the fact kind** over indexed states
+(the note, §5, Definition "Support"): the locations read by
+`FactKind.supports`; the empty support of a read of a stable key by
+`Admissible.readGave`. -/
+theorem _root_.Verification.Footprints.FactKind.supportsBy (F : FactKind) (ev : FactEvidence) :
+    indexed.Supports (F.conditionBy ev) (fun ρ _ s => F.Holds ρ s.h) (F.supportBy ev) := by
+  cases ev with
+  | reads => exact (SupportDomain.Supports.pullback indexed F.supports).weaken fun _ _ _ _ _ => trivial
+  | stableKey =>
+    refine SupportDomain.Supports.of_invariant fun ρ _ s s' ha hc hF => ?_
+    cases F with
+    | cell f =>
+      intro f' hf'
+      simp only [List.mem_singleton] at hf'
+      subst hf'
+      obtain ⟨flds, c, oid, v, hx, hr, hv⟩ := hF f' (List.mem_singleton_self _)
+      exact ⟨flds, c, oid, v, hx, ha.readGave (hc flds c oid hx) hr, hv⟩
+    | link g =>
+      intro g' hg'
+      simp only [List.mem_singleton] at hg'
+      subst hg'
+      have hg := hF g' (List.mem_singleton_self _)
+      by_cases hal : g'.alias = true
+      · simpa [hal] using hg
+      · simp only [hal, if_false, Bool.false_eq_true] at hg ⊢
+        by_cases ho : g'.optional = true
+        · simp only [ho, if_true] at hg ⊢
+          obtain ⟨flds, c, oid, hx, hr⟩ := hg
+          exact ⟨flds, c, oid, hx, ha.readGave (hc flds c oid hx) hr⟩
+        · simp only [ho, if_false, Bool.false_eq_true] at hg ⊢
+          obtain ⟨flds, c, oid, l, hx, hl, hv⟩ := hg
+          have hr := ha.readGave (hc flds c oid hx) (HeapFacts.ReadGave.present hl hv)
+          simp only [HeapFacts.ReadGave, hl] at hr
+          exact ⟨flds, c, oid, l, hx, hl, hr⟩
+    | value | dense | elems => exact hc.elim
+
+/-! ## A run keeps what every transition keeps -/
+
+/-- **The tolerant frame along a run, at `⊤`** (the note, §5, Theorem
+"Tolerant frame", at the effect bounding every admissible transition,
+`Footprints.Closed.top.fp`, `action_top`): from a state `s`, a safe run's
+normal exit keeps every assertion of a family whose support `⊤` respects
+under a query sound at `s`, where each support's condition holds of every
+admissible transition from `s` (`frame_step` at the transition from `s` to
+the exit). The run's intermediate worlds are those the safety derivation
+supplies. -/
+theorem frame_run_top {Ξ T : Fam} {Q : Post} {α : Type} {I : α → Prop} {P : α → Env → Heap → Prop}
+    {C : α → ConditionOn IndexedHeap} {S : α → Footprint} {q : SepQuery} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hs : ∀ i, I i → indexed.Supports (C i) (fun ρ _ s => P i ρ s.h) (S i))
+    (hr : ∀ i, I i → respects q (S i) Footprints.Closed.top.fp = true) (hq : q.Sound ρ s.h)
+    (hc : ∀ i, I i → ∀ s', Admissible s s' → C i ρ m s s') (hP : ∀ i, I i → P i ρ s.h) :
+    ∀ {n} {W : WorldT n} {h t}, WorldReach s.W W → WorldAdm W → HeapOk n W h → SafePost Ξ T Q n W h t →
+      SafePost Ξ T (fun h' v => Q h' v ∧ ∀ i, I i → P i ρ h') n W h t := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ _ _ hsafe; exact hsafe
+  | succ n ih =>
+    intro W h t hreach hadm hok hsafe
+    obtain ⟨hrf, hsafe⟩ := hsafe
+    refine ⟨hrf, ?_⟩
+    rcases hsafe with (⟨hv, hT, hQ⟩ | hth) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
+    · let s' : IndexedHeap := ⟨n + 1, W, h, Nat.succ_pos n, hadm, hok⟩
+      have ha : Admissible s s' := hreach
+      exact .inl (.inl ⟨hv, hT, hQ, fun i hi =>
+        frame_step (D := indexed) (hs i hi) (hr i hi) hq (action_top ha).2 ha (hc i hi s' ha) (hP i hi)⟩)
+    · exact .inl (.inr hth)
+    · exact .inr ⟨U, h', t', hx, hu, st, hh, ih (hreach.trans ⟨Nat.le_succ n, hx⟩) hu hh hs'⟩
 
 /-! ## Two atoms -/
 

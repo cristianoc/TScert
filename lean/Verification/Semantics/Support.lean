@@ -134,6 +134,12 @@ structure SepQuery where
 def SepQuery.Sound (q : SepQuery) (ρ : Env) (h : Heap) : Prop :=
   ∀ r s l, l < h.length → q.disjoint r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False
 
+/-- The query of no separation evidence: it answers no two regions disjoint. -/
+def SepQuery.empty : SepQuery := ⟨fun _ _ => false⟩
+
+theorem SepQuery.empty_sound (ρ : Env) (h : Heap) : SepQuery.empty.Sound ρ h :=
+  fun _ _ _ _ hd => by cases hd
+
 /-- Two queries, either of which may answer. -/
 def SepQuery.or (q q' : SepQuery) : SepQuery := ⟨fun r s => q.disjoint r s || q'.disjoint r s⟩
 
