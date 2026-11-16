@@ -1841,21 +1841,25 @@ Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
 added by `Checker.ensuringCalls` through `withEnsures`).
 Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
 
-**Typed-array lengths through every step.** A typed array's length is its
-descriptor's, part of the value (the note's rule (View)). So a linear fact
-whose every term is a slot's value or the typed-array length
-$`\mathrm{view}(x)`$ of a slot $`x`$ has the empty support
-(`IndexFact.support?`), which $`\top`$ respects (`IndexFact.keeps`), and
-every step preserves it, beside the step's own output, by the tolerant
-frame (proved):
+**Index facts of the empty support through every step.** Every step
+preserves, beside its own output, an index fact whose produced support
+(`IndexFact.support?`, [supports of index facts](FOOTPRINTS.md#supports-of-index-facts))
+$`\top`$ respects with no separation evidence (`IndexFact.keeps`): the
+tolerant frame at $`\top`$ keeps it (proved):
 
 ```math
-\frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ t=x\lor t=\mathrm{view}(x)}
-     {\Gamma;\Sigma\vdash r\leftarrow e\dashv\Sigma',\ F}\ \textsf{view-stable}
+\frac{F\in\Sigma\qquad \top\ \text{respects}\ \mathrm{support}(F)}
+     {\Gamma;\Sigma\vdash r\leftarrow e\dashv\Sigma',\ F}\ \textsf{empty-support}
 ```
 
-on the step's normal return. A write of a number field, a call and an element
-write preserve `i < b.length` alike.
+on the step's normal return. Its support is empty: such a fact reads no
+location. They are the facts of slots' values (`index`, `int`, `pastSafe`);
+a linear fact whose every term has the empty support (`Term.support`): an
+entry term `old(t)` at any path, a slot's value, a slot's string length, or
+the length of the typed array a slot holds, which is its descriptor's, part
+of the value (the note's rule (View)); a disjunction of two such facts; and
+a guard on a slot's own value of one. So a write of a number field, a call
+and an element write preserve `i < b.length` alike, for a typed array `b`.
 
 A field write or a call also preserves the typed-array length of a view read through
 one field $`g`$ of a slot $`z`$, where the write preserves the field's
@@ -1919,7 +1923,7 @@ states, composed with the receiver's and arguments' effects: a string's
 bound (`range-text-branch-bound`, pretext's `buildRangeText`, and
 `invalid-range-text-argument-write`). Lean checks the selected call against
 the declaration (`PromiseCalls.keepsCall_sound`).
-`view-stable` is `HeapExpressionRules.stableIndices`, added by `withStable`
+`empty-support` is `HeapExpressionRules.stableIndices`, added by `withStable`
 and applied by `Checker.keepingStable` (proved: `withStable_sound`, by
 `TolerantFrames.frame_run_top`);
 `view-path-stable` is `Term.viewFramed`, with `IndexFact.keptWith` and

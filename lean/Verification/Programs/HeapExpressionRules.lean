@@ -2347,16 +2347,11 @@ def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts
       | none => false) &&
     Footprints.respects .empty ((Footprints.FactKind.cell f).supportBy .stableKey) Footprints.Closed.top.fp
 
-/-- The index facts a step keeps through its every effect: the linear facts
-whose produced support `⊤` respects with no separation evidence
-(`IndexFact.keeps`), those whose every term is a slot's own value or the
-length of the typed array a slot holds (ARITHMETIC.md, "Linear facts"). It
-keeps the linear facts the rule `view-stable` states (PROGRAM-TYPING.md,
-"Typed-array lengths through every step"). -/
+/-- The index facts a step keeps through its every effect: those whose
+produced support (`IndexFact.support?`) `⊤` respects with no separation
+evidence (`IndexFact.keeps`), the empty support. -/
 def stableIndices (k : Knowledge) : List IndexAtom :=
-  k.indices.filter fun a => match a.fact with
-    | .linear _ => a.fact.keeps .empty {} Footprints.Closed.top.fp
-    | _ => false
+  k.indices.filter fun a => a.fact.keeps .empty {} Footprints.Closed.top.fp
 
 /-- A step's output with the input's stable links, stable cell facts and
 stable index facts, past the result slot, each once. -/
@@ -2428,25 +2423,19 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
     (S := fun a => (a.fact.support? {}).getD [])
     (fun a ha => by
       have hkeep := (List.mem_filter.mp ha.1).2
+      unfold IndexFact.keeps at hkeep
       split at hkeep
-      · rename_i F hF
-        unfold IndexFact.keeps at hkeep
-        split at hkeep
-        · rename_i S hS
-          rw [hS]
-          exact (Footprints.IndexFact.support?_supports {} _ hS).pullback TolerantFrames.indexed
-        · cases hkeep
+      · rename_i S hS
+        rw [hS]
+        exact (Footprints.IndexFact.support?_supports {} _ hS).pullback TolerantFrames.indexed
       · cases hkeep)
     (fun a ha => by
       have hkeep := (List.mem_filter.mp ha.1).2
+      unfold IndexFact.keeps at hkeep
       split at hkeep
-      · rename_i F hF
-        unfold IndexFact.keeps at hkeep
-        split at hkeep
-        · rename_i S hS
-          rw [hS]
-          exact hkeep
-        · cases hkeep
+      · rename_i S hS
+        rw [hS]
+        exact hkeep
       · cases hkeep)
     (Footprints.SepQuery.empty_sound _ _)
     (fun _ _ _ _ => fun _ _ _ _ _ _ _ hst => by cases hst)
