@@ -4954,7 +4954,7 @@ tolerant frame keeps the fact to the step's normal return
 whose support is empty in every context, is kept likewise:
 
 ```math
-\frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\lor c\in\{\mathsf{null},\mathsf{undefined}\}\quad
+\frac{x.f\mapsto y\in\Sigma\quad \exists c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\lor c\in\{\mathsf{null},\mathsf{undefined}\}\quad
       \Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\Sigma'}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\ \Sigma',\ x.f\mapsto y}\ \textsf{stable-link}
 ```

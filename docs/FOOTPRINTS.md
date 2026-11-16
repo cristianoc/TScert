@@ -1318,8 +1318,7 @@ spines; `.nested` composes with a nested call's selected entry or fresh
 spines; `.receiver` embeds the receiver-spine exception; `.frame_length`
 and `.frame_densePrefix` give caller framing. `StablePath.transfer` and `.read`
 retain the path through world extension and read it at a heap meeting the
-world; along a run, a stable location is kept by the tolerant frame at
-$`\top`$ ([support and respect](#support-and-respect)).
+world.
 
 [`ArgumentPathTracking.lean`](../lean/Verification/Programs/ArgumentPathTracking.lean)
 proves entry, slot-map, normal-edge and handler checks sound

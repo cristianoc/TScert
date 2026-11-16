@@ -1184,8 +1184,8 @@ theorem stableFieldPresent_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {
     | simp [Clause.stableKeys] at hk
 
 /-- The slots and fields of a context whose field's location a step keeps:
-each clause of the slot's type states the field stable, or is `null` or
-`undefined` (`stableFieldPresent`). -/
+some clause of the slot's type states the field stable, and each other
+clause states it stable or is `null` or `undefined` (`stableFieldPresent`). -/
 def stableFirst (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) : Bool :=
   match Γ[s]? with
   | some A => stableFieldPresent G A (.str g)
