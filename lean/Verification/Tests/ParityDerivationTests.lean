@@ -125,7 +125,8 @@ private def arena : AssertionArena := ⟨#[
   .atom (.linear (.le [(Term.value 1, 1), (Term.now .length 4 ["f"], -1)] 0)), -- 14 n ≤ |p.f|
   .box grow (r 14),                                                     -- 15 (Rigid) with (Grow)
   .atom (.linear (.le [(Term.value 1, 1), (Term.length 2, -1)] 0)),      -- 16 n ≤ |y|
-  .box [(.cls .values, .any), (.spine 2 [], .any)] (r 16)]⟩             -- 17
+  .box [(.cls .values, .any), (.spine 2 [], .any)] (r 16),              -- 17
+  .box [(.cls .views, .grow)] (r 14)]⟩                                    -- 18 n ≤ |p.f| across {views: grow}
 
 #guard arena.check
 private def sc : Scope := ⟨5, 5⟩
@@ -151,6 +152,17 @@ private def sc : Scope := ⟨5, 5⟩
 #guard errorOf (checkScoped arena sc [.at .before (r 13), .at .before (r 14)] (.at .before (r 15))
   (.rigidSubst ⟨4, ["f"]⟩ 5 (r 13) (r 12) (r 14) (r 13) (.grow 2 0 (r 12) .assumption) .assumption .assumption)) =
   "rigidSubst: no rigidity of the path"
+-- `n ≤ |p.f|` across `{views: grow}`: the support the acceptance path
+-- produces (`p.f` at `grow`, the array spine `p.f` reads at `grow`) is
+-- respected by change order alone; the coarse `{values: init, spines: keep}`
+-- is not, a view spine being a spine.
+private def pathSupport : Footprint :=
+  (HeapKnowledge.IndexFact.support? {} (.linear (.le [(Term.value 1, 1), (Term.now .length 4 ["f"], -1)] 0))).getD []
+#guard isOk (checkScoped arena sc [.at .before (r 14)] (.at .before (r 18))
+  (.tolerantFrame pathSupport .paths ⟨[]⟩ .truth (r 14) (r 14) .assumption .assumption .assumption))
+#guard errorOf (checkScoped arena sc [.at .before (r 14)] (.at .before (r 18))
+  (.tolerantFrame [(.cls .values, .init), (.cls .spines, .keep)] .init ⟨[]⟩ .truth (r 14) (r 14) .assumption
+    .assumption .assumption)) = "tolerantFrame: the effect does not respect the support"
 end Axioms
 
 /-! ## A path image under a box
