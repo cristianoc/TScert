@@ -2,7 +2,7 @@ import Verification.Semantics.ExceptionalPosts
 import Verification.Semantics.Purity
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.IndexFacts
-import Verification.Semantics.StoreRegions
+import Verification.Semantics.SpineRegions
 import Verification.Semantics.ElementWrites
 import Verification.Semantics.StepRelations
 
@@ -52,20 +52,20 @@ def ElemPred.le (a b : ElemPred) : Bool :=
   (!a.nul || b.nul) && (!a.undef || b.undef) && (!a.bool || b.bool) && (!a.num || b.num) &&
     (!a.str || b.str) && (!a.big || b.big) && (!a.sym || b.sym) && (!a.obj || b.obj)
 
-/-- **The elements fact** of a value `r` at a heap: `r`'s array store exists
+/-- **The elements fact** of a value `r` at a heap: `r`'s array spine exists
 and every element location it lists holds a value meeting `R`. A hole lists
 no location, so the fact is about present elements. -/
 def ElemsAt (R : ElemPred) (r : Tm) (h : Heap) : Prop :=
-  ∃ s ls, Footprints.storeOf r = some s ∧ h[s]? = some (.arr ls) ∧
+  ∃ s ls, Footprints.spineOf r = some s ∧ h[s]? = some (.arr ls) ∧
     ∀ l, some l ∈ ls → ∃ v, h[l]? = some v ∧ R.mem v = true
 
 /-- A change from `before` to `after` appending the actuals `args`, where each
-is a value, to the receiver `r`'s store: the store it held holds one longer
+is a value, to the receiver `r`'s spine: the spine it held holds one longer
 by the actuals' number, whose element at the old length plus `j` is present
 and holds the `j`-th actual at a location beyond the input heap: `Array.prototype.push` on an ordinary array
 (SOURCE-CONTRACTS.md, "Native footprints"). -/
 def ReceiverAppends (r : Tm) (args : List Tm) (before after : Heap) : Prop :=
-  (∀ a ∈ args, isVal a = true) → ∀ s ls, Footprints.storeOf r = some s → before[s]? = some (.arr ls) →
+  (∀ a ∈ args, isVal a = true) → ∀ s ls, Footprints.spineOf r = some s → before[s]? = some (.arr ls) →
     ∃ ls', after[s]? = some (.arr ls') ∧ ls'.length = ls.length + args.length ∧
       ∀ j a, args[j]? = some a → ∃ l, ls'[ls.length + j]? = some (some l) ∧ after[l]? = some a ∧ before.length ≤ l
 
@@ -138,13 +138,13 @@ def EffectAction (Φ : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
   TolerantFrames.Action Φ η s s'
 
 /-- **The cells a typed array lists** (the note, §4, "Atoms", the element
-of a typed array): the entries of the view store its descriptor names
-(`HeapKnowledge.descriptorStore`, `storeEntries`), of a value owning no
-array store, which every well-formed typed array is
+of a typed array): the entries of the view spine its descriptor names
+(`HeapKnowledge.descriptorSpine`, `spineEntries`), of a value owning no
+array spine, which every well-formed typed array is
 (`HeapKnowledge.RefsOk.view_selects`). An ordinary array lists none here. -/
 def viewCells (h : Heap) (v : Val) : Option (List (Option Nat)) :=
-  match storeOf v, HeapKnowledge.descriptorStore v with
-  | none, some s => h[s]?.bind storeEntries
+  match spineOf v, HeapKnowledge.descriptorSpine v with
+  | none, some s => h[s]?.bind spineEntries
   | _, _ => none
 
 /-- A reference to an arena node. -/
@@ -177,7 +177,7 @@ def Witness.value (η : Env) (h : Heap) : Witness → Option Val
   | .path p => p.read η h
   | .literal v => some v
 
-/-- What a scalar variable denotes at index `i` of the store listing `ls`:
+/-- What a scalar variable denotes at index `i` of the spine listing `ls`:
 the index, the present element's safe integer, the present element's string
 length, or the parameter's value. -/
 def scalarValue (η : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
@@ -210,10 +210,10 @@ where every path it reads is defined). -/
 def Atom.Holds (η : Env) (h : Heap) : Atom → Prop
   | .linear F => FactAt (termAt η h) F
   | .equal p w => ∃ v, p.read η h = some v ∧ w.value η h = some v
-  | .dense p n => ∃ w s ls k, p.read η h = some w ∧ storeOf w = some s ∧ h[s]? = some (.arr ls) ∧
+  | .dense p n => ∃ w s ls k, p.read η h = some w ∧ spineOf w = some s ∧ h[s]? = some (.arr ls) ∧
       termAt η h n = some k ∧ 0 ≤ k ∧ DensePrefix k.toNat ls
   | .contents p R => ∃ v, p.read η h = some v ∧ R.mem v = true
-  | .every p n body => ∃ w s ls k, p.read η h = some w ∧ storeOf w = some s ∧ h[s]? = some (.arr ls) ∧
+  | .every p n body => ∃ w s ls k, p.read η h = some w ∧ spineOf w = some s ∧ h[s]? = some (.arr ls) ∧
       termAt η h n = some k ∧ ∀ i : Nat, (i : Int) < k →
         (∃ l, ls[i]? = some (some l)) ∧ ∀ F ∈ body, F.HoldsAt (scalarValue η h ls i)
   | .element p t w => ∃ u ls k l v, p.read η h = some u ∧ viewCells h u = some ls ∧
@@ -222,24 +222,24 @@ def Atom.Holds (η : Env) (h : Heap) : Atom → Prop
   | .safeInt p => ∃ v, p.read η h = some v ∧ (intValue v).isSome
   | .pastSafe p => p.read η h = some (.num SafeIntegers.pastSafeBits)
 
-/-- **An ordinary array's store** (the note, §2, "Arrays"): the value's `[]`
-slot names a location holding an array store listing `xs`, and the value
-names no typed array's store, so the store it owns is that one alone. -/
-def ArrayStore (h : Heap) (u : Val) (s : Nat) (xs : List (Option Nat)) : Prop :=
-  storeOf u = some s ∧ descriptorStore u = none ∧ h[s]? = some (.arr xs)
+/-- **An ordinary array's spine** (the note, §2, "Arrays"): the value's `[]`
+slot names a location holding an array spine listing `xs`, and the value
+names no typed array's spine, so the spine it owns is that one alone. -/
+def ArraySpine (h : Heap) (u : Val) (s : Nat) (xs : List (Option Nat)) : Prop :=
+  spineOf u = some s ∧ descriptorSpine u = none ∧ h[s]? = some (.arr xs)
 
 /-- `π # π'` (the note, §4, "Satisfaction"): the two paths read ordinary
-arrays, with different store locations. -/
+arrays, with different spine locations. -/
 def Separated (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArrayStore h u s xs ∧ ArrayStore h w t ys ∧ s ≠ t
+  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArraySpine h u s xs ∧ ArraySpine h w t ys ∧ s ≠ t
 
-/-- `apart(π, π')` (the note, §4, "Satisfaction"): `π # π'`, and the stores
+/-- `apart(π, π')` (the note, §4, "Satisfaction"): `π # π'`, and the spines
 of the two arrays list no common element cell. -/
 def Apart (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArrayStore h u s xs ∧ ArrayStore h w t ys ∧
+  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArraySpine h u s xs ∧ ArraySpine h w t ys ∧
     s ≠ t ∧ ∀ l, some l ∈ xs → some l ∉ ys
 
-/-- `fresh(π)` (the note, §4, "Satisfaction"): the store of the array the
+/-- `fresh(π)` (the note, §4, "Satisfaction"): the spine of the array the
 path reads is at or above the entry mark. -/
 def FreshPath (η : Env) (m : Nat) (h : Heap) (p : Path) : Prop :=
   ∃ v, p.read η h = some v ∧ FreshAt m v
@@ -416,13 +416,13 @@ inductive OperationPostF (Seq : Type) where
   | arith (op : Arith) (left right : Witness) (result : Path)
   | stringLength (string result : Path)
   | stringRead (string : Path) (index : Witness) (result : Path)
-  /-- A write keeping every array store's length, the array at entry slot
+  /-- A write keeping every array spine's length, the array at entry slot
   `x` and exit slot `x'` (`ExpressionEffects.elem_var_write_length`). -/
   | lengthsKept (x x' : Nat)
   /-- A write at the index in entry slot `i` of the array at entry slot `x`
-  (exit slot `x'`): the index is below the store's new length, the length
+  (exit slot `x'`): the index is below the spine's new length, the length
   grows to at most `index + 1`, by one where the index was at or past it
-  (`IndexWrites.boundedWrite_store`). -/
+  (`IndexWrites.boundedWrite_spine`). -/
   | boundedWrite (x i x' : Nat)
   /-- An append of the argument values to the array at entry slot `x`
   (exit slot `x'`): the assumed contract `CallEffects.ReceiverAppends`. -/
@@ -431,19 +431,19 @@ inductive OperationPostF (Seq : Type) where
   `phase`, its slot `i` that phase's slot `i + lift`, its entry terms at the
   entry. -/
   | fact (phase : Phase) (lift : Nat) (F : IndexFact)
-  /-- The array store of the value at exit slot `x` was allocated after the
+  /-- The array spine of the value at exit slot `x` was allocated after the
   entry: its location is at or beyond the entry heap's length
   (`Footprints.FreshAt`). -/
-  | freshStore (x : Nat)
+  | freshSpine (x : Nat)
   /-- The value at exit slot `x` is an object every own location of which
   was allocated after the entry (`Footprints.FreshObjectAt`). -/
   | freshObject (x : Nat)
   /-- Where exit slot `x` holds `v`, every present element of the array at
   exit slot `y` meets `R` (`CallEffects.ElemsAt`). -/
   | elementsWhen (x : Nat) (v : Val) (y : Nat) (R : CallEffects.ElemPred)
-  /-- The store of the array at entry slot `x` keeps its contents, or holds
-  an array store its entry list is a prefix of, at most `2^32 − 1` long. -/
-  | storeExtends (x : Nat)
+  /-- The spine of the array at entry slot `x` keeps its contents, or holds
+  an array spine its entry list is a prefix of, at most `2^32 − 1` long. -/
+  | spineExtends (x : Nat)
   /-- View-Write (the note *Tolerant frames*): the write of the number at
   entry slot `v` at the index at entry slot `i` of the typed array at entry
   slot `x` (`CallEffects.WriteAt`), at the format `f`, or at the typed
@@ -470,17 +470,17 @@ def OperationPostF.Holds (s : TwoState) : OperationPost → Prop
   | .stringRead x i y => ∃ str b, x.read s.afterEnv s.after.h = some (.str str) ∧
       i.value s.afterEnv s.after.h = some (.num b) ∧ y.read s.afterEnv s.after.h = some (codeUnitAt str b)
   | .lengthsKept x x' => (⟨true, true, .length⟩ : Changes).Holds s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
-  | .boundedWrite x i x' => (∃ st ls ls' b idx, storeOf (s.beforeEnv x) = some st ∧ s.before.h[st]? = some (.arr ls) ∧
+  | .boundedWrite x i x' => (∃ st ls ls' b idx, spineOf (s.beforeEnv x) = some st ∧ s.before.h[st]? = some (.arr ls) ∧
       s.after.h[st]? = some (.arr ls') ∧ s.beforeEnv i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
       ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1)) ∧
       s.afterEnv x' = s.beforeEnv x
   | .push x x' args => ∃ vs, args.mapM (·.value s.beforeEnv s.before.h) = some vs ∧ (∀ a ∈ vs, isVal a = true) ∧
       CallEffects.ReceiverAppends (s.beforeEnv x) vs s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
   | .fact p l F => F.HoldsAt ⟨s.beforeEnv, s.before.h⟩ (fun i => s.env p (i + l)) (s.state p).h
-  | .freshStore x => FreshAt s.before.h.length (s.afterEnv x)
+  | .freshSpine x => FreshAt s.before.h.length (s.afterEnv x)
   | .freshObject x => FreshObjectAt s.before.h.length (s.afterEnv x)
   | .elementsWhen x v y R => s.afterEnv x = v → CallEffects.ElemsAt R (s.afterEnv y) s.after.h
-  | .storeExtends x => ∀ st v, storeOf (s.beforeEnv x) = some st → s.before.h[st]? = some v →
+  | .spineExtends x => ∀ st v, spineOf (s.beforeEnv x) = some st → s.before.h[st]? = some v →
       s.after.h[st]? = some v ∨ ∃ ls ls', v = .arr ls ∧ s.after.h[st]? = some (.arr ls') ∧ ls <+: ls' ∧
         ls'.length ≤ maxArrayLength
   | .viewWrite x i v f => ∀ g, writeFormats (s.beforeEnv x) f g →

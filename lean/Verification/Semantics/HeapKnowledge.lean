@@ -111,7 +111,7 @@ theorem empty (ρ h) : Holds {} ε ρ h :=
   ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds],HeapSeparation.empty_holds ρ,elemsHolds_nil ρ h,
     indexHolds_nil ρ h⟩
 
-/-- A heap extension keeps an elements fact: the store and every element
+/-- A heap extension keeps an elements fact: the spine and every element
 location lie in the old heap. -/
 theorem elemsAt_extend {R : CallEffects.ElemPred} {r : Tm} {h : Heap} (vs : List Val)
     (he : CallEffects.ElemsAt R r h) : CallEffects.ElemsAt R r (h ++ vs) := by
@@ -363,7 +363,7 @@ def factFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : IndexFact →
   | .apart a b, .apart a' b' =>
     (M (PointClaims.slot m a')).contains a && (M (PointClaims.slot m b')).contains b ||
       (M (PointClaims.slot m a')).contains b && (M (PointClaims.slot m b')).contains a
-  | .storeApart a p b q, .storeApart a' p' b' q' =>
+  | .spineApart a p b q, .spineApart a' p' b' q' =>
     (M (PointClaims.slot m a')).contains a && p == p' && (M (PointClaims.slot m b')).contains b && q == q' ||
       (M (PointClaims.slot m a')).contains b && p' == q && (M (PointClaims.slot m b')).contains a && q' == p
   | .guarded s p g B, .guarded s' p' g' B' =>
@@ -442,7 +442,7 @@ theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t 
     rcases hf with ⟨⟨⟨ha, rfl⟩, hb⟩, rfl⟩ | ⟨⟨⟨ha, rfl⟩, hb⟩, rfl⟩
     · simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ ha, hM _ _ hb] using hs
     · simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ ha, hM _ _ hb] using
-        PathStoresApart.symm hs
+        PathSpinesApart.symm hs
 
 /-- Whether a source atom's condition holds wherever a target's does: the
 source is unconditional, or conditional on a slot of the class of the
@@ -475,7 +475,7 @@ condition is none or the mapped one's, at the same answer. -/
 def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAtom) : Bool :=
   factFollows M m s.fact t.fact && condFollows M m s t
 
-/-- A store's length lies between `0` and `maxArrayLength`. -/
+/-- A spine's length lies between `0` and `maxArrayLength`. -/
 def lengthRange (t : Term) : List (Linear.Fact Term) :=
   [.le [(t, -1)] 0, .le [(t, 1)] (maxArrayLength : Int)]
 
@@ -550,7 +550,7 @@ theorem lengthRange_holds {ρ h} {t : Term} (hk : t.kind = .length) (hx : (termV
     ∀ F ∈ lengthRange t, F.Holds (termValuation ε ρ h) := by
   obtain ⟨H, v, n, hkv, hn⟩ := termValue_kind hx
   rw [hk] at hkv
-  obtain ⟨s, ls, -, -, rfl, hm⟩ := lengthOf_store (h := H) (v := v) hkv
+  obtain ⟨s, ls, -, -, rfl, hm⟩ := lengthOf_spine (h := H) (v := v) hkv
   have hv : termValuation ε ρ h t = ls.length := by simp [termValuation, hn]
   have hm' : (ls.length : Int) ≤ (maxArrayLength : Int) := by exact_mod_cast hm
   intro F hF
@@ -607,7 +607,7 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
     · exact termRange_holds (hf.1 _ ht) F hF
   | length x n =>
     obtain ⟨s, ls, hs, hl, hnv, hm⟩ := hf
-    have hlen : termValue ε ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
+    have hlen : termValue ε ρ h (.length x) = some (ls.length : Int) := lengthOf_of_spine hs hl hm
     have hval : termValue ε ρ h (.value n) = some (ls.length : Int) := by
       simp only [termValue_value, hnv, intValue_length hm]
     have v1 : termValuation ε ρ h (.length x) = ls.length := by simp [termValuation, hlen]
@@ -617,7 +617,7 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
     · exact lengthRange_holds rfl (by rw [hlen]; rfl) F hF
-  | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => simp [factLinear] at hF
+  | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => simp [factLinear] at hF
 
 theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
     ∀ F ∈ linearFacts as, F.Holds (termValuation ε ρ h) := by
@@ -645,7 +645,7 @@ theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds ε as ρ h
     obtain ⟨_, ls, -, -, hnv, hm⟩ := hat
     rw [hnv, intValue_length hm]; rfl
   | linear G => rw [hfa] at hf hat; exact hat.1 (.value s) (List.contains_iff_mem.mp hf)
-  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfa] at hf; cases hf
+  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfa] at hf; cases hf
 
 theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) {t : Term}
     (ht : termDefined as t = true) : (termValue ε ρ h t).isSome := by
@@ -671,8 +671,8 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ
       | length y n =>
         rw [hfa] at hf hat; simp only [beq_iff_eq] at hf; subst hf
         obtain ⟨s, ls, hs, hl, -, hm⟩ := hat
-        simp only [termValue_nil, kindValue, lengthOf_of_store hs hl hm, Option.isSome_some]
-      | linear _ | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfa] at hf; cases hf
+        simp only [termValue_nil, kindValue, lengthOf_of_spine hs hl hm, Option.isSome_some]
+      | linear _ | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfa] at hf; cases hf
     | view | strLength => cases ht
   · obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp ht
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -680,7 +680,7 @@ theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ
     have hat := he a ha fun b hb => by rw [hn] at hb; cases hb
     cases hfa : a.fact with
     | linear G => rw [hfa] at hf hat; exact hat.1 t (List.contains_iff_mem.mp hf)
-    | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfa] at hf; cases hf
+    | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfa] at hf; cases hf
 
 /-- The terms the unconditional atoms state defined: each term of a linear
 fact, a safe integer's slot's value, a length atom's length and value. -/
@@ -705,9 +705,9 @@ theorem definedTerms_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as �
       obtain ⟨s, ls, hs, hl, hnv, hmx⟩ := hat
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
       rcases hm with rfl | rfl
-      · simp only [termValue_length, lengthOf_of_store hs hl hmx, Option.isSome_some]
+      · simp only [termValue_length, lengthOf_of_spine hs hl hmx, Option.isSome_some]
       · simp only [termValue_value, hnv, intValue_length hmx, Option.isSome_some]
-    | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfa] at hm; cases hm
+    | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
 /-- The safe-integer range of each value term the unconditional atoms state
@@ -790,7 +790,7 @@ theorem pickTerm_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List I
   exact termValue_mapM' fun _ => by rw [pick_eq hM]; rfl
 
 /-- Whether the source's facts `K` (`knownOf a`) bound slot `k` by the length
-of the store of `x`'s class (`M`): `k` stated a safe integer, the facts
+of the spine of `x`'s class (`M`): `k` stated a safe integer, the facts
 entailing `0 ≤ k` and `k ≤ maxArrayLength - 1`, and, for a slot of the class
 whose length is defined, `k ≤ length` (`k < length` where `strict`). -/
 def lengthBoundIn (K : Linear.Known Term) (M : List Nat) (a : List IndexAtom) (k : Nat) (strict : Bool) : Bool :=
@@ -819,7 +819,7 @@ theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeIntegers.SafeInt b j) 
 theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool}
     {ρ h} {v : Val} (hK : K.Holds (termValuation ε ρ h))
     (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBoundIn K M a k strict = true) (ha : IndexHolds ε a ρ h) :
-    ∃ s ls b idx, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
+    ∃ s ls b idx, Footprints.spineOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   simp only [lengthBoundIn, Bool.and_eq_true] at hc
   obtain ⟨⟨⟨hi, e1⟩, e3⟩, hany⟩ := hc
@@ -831,7 +831,7 @@ theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List Ind
   have f3 := Linear.Known.entails_sound hK e3
   simp only [Linear.Fact.Holds, Linear.Form.eval] at f1 f2 f3
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (termDefined_sound ha hd)
-  obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_store hn
+  obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_spine hn
   have hvn : termValuation ε ρ h (.length y) = ls.length := by simp [termValuation, hn]
   obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp (intSlot_sound ha hi)
   obtain ⟨b, hb, hsafe⟩ := intValue_safe hj
@@ -843,7 +843,7 @@ theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List Ind
 
 theorem lengthBound_sound {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool} {ρ h} {v : Val}
     (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBound M a k strict = true) (ha : IndexHolds ε a ρ h) :
-    ∃ s ls b idx, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
+    ∃ s ls b idx, Footprints.spineOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length :=
   lengthBoundIn_sound (knownOf_holds ha) hM hc ha
 
@@ -863,7 +863,7 @@ theorem condFacts_holds {as : List IndexAtom} {c : Nat} {neg : Bool} {ρ h} (he 
     have hat := he a ha fun c' hc' => by rw [hk.1] at hc'; cases hc'; rw [hk.2]; exact hc
     cases hfa : a.fact with
     | linear G => rw [hfa] at hm hat; cases hm; exact hat.2
-    | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfa] at hm; cases hm
+    | index _ | length _ _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfa] at hm; cases hm
   · cases hm
 
 /-! ## Read bridges
@@ -907,7 +907,7 @@ theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.
       simp only [termValue, termAt, Bool.false_eq_true, if_false, hnone, Option.bind_none, hr.2]
       cases p with
       | nil => cases k <;> simp [readPath, kindValue, intValue, lengthOf, viewLengthOf, strLengthOf,
-          Footprints.storeOf, Footprints.fieldsOf]
+          Footprints.spineOf, Footprints.fieldsOf]
       | cons q p => simp [readPath]
 
 /-- The read links a bridge follows, as `(cell, field, value)`: the reads of
@@ -1350,7 +1350,7 @@ def lengthBoundVia (c : Term → Term) (M : List Nat) (a : List IndexAtom) (k : 
 theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool}
     {ρ h} {v : Val} (hc : ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t)
     (hM : ∀ y ∈ M, ρ y = v) (hb : lengthBoundVia c M a k strict = true) (ha : IndexHolds ε a ρ h) :
-    ∃ s ls b idx, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
+    ∃ s ls b idx, Footprints.spineOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   simp only [lengthBoundVia, Bool.and_eq_true] at hb
   obtain ⟨⟨⟨hi, e1⟩, e3⟩, hany⟩ := hb
@@ -1367,7 +1367,7 @@ theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexA
   rw [hc] at hdn
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hdn
   simp only [termValue_length] at hn
-  obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_store hn
+  obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_spine hn
   have hvn : termValuation ε ρ h (c (.length y)) = ls.length := by simp [termValuation, hc, hn]
   have hdi := bridgedDefined_sound hc ha hi
   rw [hc] at hdi
@@ -1396,7 +1396,7 @@ def linearEntailed (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List In
         Linear.entailsWith (bridgeFacts c known) (bridgeFacts c (rangesRaw a)) F'
     | none => false
 
-/-- A quantified atom witnesses its array's element store, independently of
+/-- A quantified atom witnesses its array's element spine, independently of
 its bound and body. -/
 def elementsKnown (M : Nat → List Nat) (m : PointClaims.Mapping) (as : List IndexAtom)
     (s : Nat) (p : List String) : Bool :=
@@ -1409,7 +1409,7 @@ theorem elementsKnown_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {as
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (ha : IndexHolds ε as ρ h)
     (hk : elementsKnown M m as s p = true) :
     ∃ w sto ls, readPath h (PointClaims.mapEnv m ρ s) p = some w ∧
-      elementsOf w = some sto ∧ h[sto]?.bind storeEntries = some ls := by
+      elementsOf w = some sto ∧ h[sto]?.bind spineEntries = some ls := by
   obtain ⟨a, hm, ha0⟩ := List.any_eq_true.mp hk
   simp only [Bool.and_eq_true] at ha0
   obtain ⟨hc, hf⟩ := ha0
@@ -1539,7 +1539,7 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
   | bound x k st =>
     rw [ht] at hf
     simp only [Bool.and_eq_true, Bool.or_eq_true] at hf
-    obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ : ∃ s ls b idx, Footprints.storeOf (PointClaims.mapEnv m ρ x) = some s ∧
+    obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ : ∃ s ls b idx, Footprints.spineOf (PointClaims.mapEnv m ρ x) = some s ∧
         h[s]? = some (.arr ls) ∧ ρ (pickSlot M m a k) = .num b ∧ indexOfBits b = some idx ∧
         idx + (if st then 1 else 0) ≤ ls.length := by
       rcases hf.2 with hb | hb
@@ -1560,10 +1560,10 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
       have hlin := linearEntailed_sound hM hB hf ha hK (linearRaw_holds ha)
       have hd := hlin.1 (HeapKnowledge.Term.now .length s p) (by simp [Linear.Fact.vars])
       obtain ⟨w, n, hw, hn, hterm⟩ := termValue_isSome hd rfl
-      obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_store hn
+      obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_spine hn
       have hle := hlin.2
       simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hterm, Option.getD_some, Int.one_mul, Int.add_zero] at hle
-      refine ⟨w, sto, ls, ls.length, hw, elementsOf_store hsto, by rw [hls]; rfl, hterm, ?_⟩
+      refine ⟨w, sto, ls, ls.length, hw, elementsOf_spine hsto, by rw [hls]; rfl, hterm, ?_⟩
       intro i hi
       omega
     · simp only [Bool.and_eq_true] at hf
@@ -1574,7 +1574,7 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
       have hle := hlin.2
       simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn, Option.getD_some] at hle
       exact ⟨w, sto, ls, n, hp, hs, hl, hn, fun i hi => by omega⟩
-  | index _ | length _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [ht] at hf; cases hf
+  | index _ | length _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [ht] at hf; cases hf
 
 theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
     {B : Option (Term → Term)} {t : IndexAtom} {ρ h}
@@ -1849,7 +1849,7 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
     have hat := ha a haa fun b hb => by rw [hm.1] at hb; cases hb
     rw [hm.2] at hat
     exact hat
-  | index _ | length _ _ | bound _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ =>
+  | index _ | length _ _ | bound _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ =>
     intro as hf; exact hbase as _ (by simpa [guardEntails] using hf)
 
 /-- Whether an unconditional atom states that a slot holds the double `2^53`
@@ -1927,18 +1927,18 @@ theorem caseEntails_sound {check : List IndexAtom → IndexFact → Bool} {ρ : 
         · exact ih _ F hB (extend B hB')
       · cases ht
 
-/-- Two regions apart hold different stores. -/
-theorem regionsApart_stores {h : Heap} {u w : Val} (ha : RegionsApart h u w) :
-    ∀ s t, Footprints.storeOf u = some s → Footprints.storeOf w = some t → s ≠ t := by
+/-- Two regions apart hold different spines. -/
+theorem regionsApart_spines {h : Heap} {u w : Val} (ha : RegionsApart h u w) :
+    ∀ s t, Footprints.spineOf u = some s → Footprints.spineOf w = some t → s ≠ t := by
   intro s t hs ht
   obtain ⟨sa, xs, sb, ys, hu, hw, hne⟩ := ha
   have hsa : sa = some s := by
     rcases hu with ⟨-, rfl⟩ | ⟨st, hst, hst', -⟩
-    · simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+    · simp [Footprints.spineOf, Footprints.fieldsOf] at hs
     · rw [hs] at hst'; cases hst'; exact hst
   have hsb : sb = some t := by
     rcases hw with ⟨-, rfl⟩ | ⟨st, hst, hst', -⟩
-    · simp [Footprints.storeOf, Footprints.fieldsOf] at ht
+    · simp [Footprints.spineOf, Footprints.fieldsOf] at ht
     · rw [ht] at hst'; cases hst'; exact hst
   exact hne s (.inl hsa) t (.inl hsb)
 
@@ -1989,32 +1989,32 @@ theorem sitesMeet_read {M : Nat → List Nat} {ls : HeapLinks.Links} {ρ : Env} 
   obtain ⟨rfl, hc⟩ := hm
   rw [← pathSites_read hM hl p x hz, ← pathSites_read hM hl q y hw, hM _ _ hc]
 
-/-- The two sites an unconditional atom states the stores of apart: a region
-fact's slots, or a store separation's paths. -/
-def storeSites : IndexFact → Option ((Nat × List String) × (Nat × List String))
+/-- The two sites an unconditional atom states the spines of apart: a region
+fact's slots, or a spine separation's paths. -/
+def spineSites : IndexFact → Option ((Nat × List String) × (Nat × List String))
   | .apart u w => some ((u, []), (w, []))
-  | .storeApart u p w q => some ((u, p), (w, q))
+  | .spineApart u p w q => some ((u, p), (w, q))
   | _ => none
 
-theorem storeSites_holds {F : IndexFact} {u w : Nat} {p q : List String} {ρ h}
-    (hs : storeSites F = some ((u, p), (w, q))) (hF : F.HoldsAt ε ρ h) : PathStoresApart h (ρ u) p (ρ w) q := by
-  cases F <;> simp only [storeSites, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at hs
+theorem spineSites_holds {F : IndexFact} {u w : Nat} {p q : List String} {ρ h}
+    (hs : spineSites F = some ((u, p), (w, q))) (hF : F.HoldsAt ε ρ h) : PathSpinesApart h (ρ u) p (ρ w) q := by
+  cases F <;> simp only [spineSites, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at hs
   · obtain ⟨⟨rfl, rfl⟩, rfl, rfl⟩ := hs
-    exact ⟨_, _, rfl, rfl, regionsApart_stores hF⟩
+    exact ⟨_, _, rfl, rfl, regionsApart_spines hF⟩
   · obtain ⟨⟨rfl, rfl⟩, rfl, rfl⟩ := hs
     exact hF
 
-/-- Whether an unconditional store separation, a target atom, follows from an
-unconditional source atom stating two stores apart (`storeSites`) whose sites
+/-- Whether an unconditional spine separation, a target atom, follows from an
+unconditional source atom stating two spines apart (`spineSites`) whose sites
 the target's paths share through the source's read links (`pathSites`,
 `store-apart-links`). -/
-def storeFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLinks.Links)
+def spineFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLinks.Links)
     (a : List IndexAtom) (t : IndexAtom) : Bool :=
   t.cond.isNone && match t.fact with
-  | .storeApart x p y q =>
+  | .spineApart x p y q =>
     let X := pathSites M ls (PointClaims.slot m x) p
     let Y := pathSites M ls (PointClaims.slot m y) q
-    a.any fun s => s.cond.isNone && match storeSites s.fact with
+    a.any fun s => s.cond.isNone && match spineSites s.fact with
       | some ((u, p'), (w, q')) =>
         let U := pathSites M ls u p'
         let W := pathSites M ls w q'
@@ -2022,12 +2022,12 @@ def storeFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLink
       | none => false
   | _ => false
 
-theorem storeFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls : HeapLinks.Links}
+theorem spineFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls : HeapLinks.Links}
     {a : List IndexAtom} {t : IndexAtom} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
-    (hf : storeFollows M m ls a t = true) (ha : IndexHolds ε a ρ h) :
+    (hf : spineFollows M m ls a t = true) (ha : IndexHolds ε a ρ h) :
     t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
-  simp only [storeFollows, Bool.and_eq_true] at hf
+  simp only [spineFollows, Bool.and_eq_true] at hf
   obtain ⟨-, hf⟩ := hf
   split at hf
   case h_2 => cases hf
@@ -2039,9 +2039,9 @@ theorem storeFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
   have hat := ha s hs fun b hb => by rw [hn] at hb; cases hb
   split at hm
   · rename_i u p' w q' hsf
-    obtain ⟨u', w', hu, hw, hne⟩ := storeSites_holds hsf hat
+    obtain ⟨u', w', hu, hw, hne⟩ := spineSites_holds hsf hat
     simp only [Bool.or_eq_true, Bool.and_eq_true] at hm
-    show PathStoresApart h (ρ (PointClaims.slot m x)) p (ρ (PointClaims.slot m y)) q
+    show PathSpinesApart h (ρ (PointClaims.slot m x)) p (ρ (PointClaims.slot m y)) q
     rcases hm with ⟨hx, hy⟩ | ⟨hx, hy⟩
     · exact ⟨u', w', (sitesMeet_read hM hl hx).trans hu, (sitesMeet_read hM hl hy).trans hw, hne⟩
     · exact ⟨w', u', (sitesMeet_read hM hl hx).trans hw, (sitesMeet_read hM hl hy).trans hu,
@@ -2049,10 +2049,10 @@ theorem storeFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
   · cases hm
 
 /-- A fact follows from the atoms, read at their own slots: an unconditional
-atom it follows from (`factFollows`), or a store separation the atoms state
-at sites its paths share (`storeFollows`). -/
+atom it follows from (`factFollows`), or a spine separation the atoms state
+at sites its paths share (`spineFollows`). -/
 def baseFollows (M : Nat → List Nat) (ls : HeapLinks.Links) (as : List IndexAtom) (F : IndexFact) : Bool :=
-  as.any (fun s => s.cond.isNone && factFollows M none s.fact F) || storeFollows M none ls as { fact := F }
+  as.any (fun s => s.cond.isNone && factFollows M none s.fact F) || spineFollows M none ls as { fact := F }
 
 theorem baseFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {as : List IndexAtom} {F : IndexFact} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
@@ -2061,7 +2061,7 @@ theorem baseFollows_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {as : Li
   · obtain ⟨s, hs, hm⟩ := List.any_eq_true.mp hf
     simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
     exact factFollows_sound (m := none) hM hm.2 (ha s hs fun b hb => by rw [hm.1] at hb; cases hb)
-  · exact storeFollows_sound (m := none) hM hl hf ha
+  · exact spineFollows_sound (m := none) hM hl hf ha
 
 /-- Whether a guarded target atom, unconditional, follows: its fact renamed
 into the source's slots (`pickSlot`), entailed by the source's atoms with its
@@ -2223,7 +2223,7 @@ def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat
   let B := bridgeOf ls a b
   let K := Thunk.mk fun _ => knownOf a
   b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollowsIn K.get M m a B t || guardFollows M m ls tags a t ||
-    storeFollows M m ls a t || guardBodyFollows M m a t || everyPrefix K.get M m a t
+    spineFollows M m ls a t || guardBodyFollows M m a t || everyPrefix K.get M m a t
 
 /-- Whether a value set holds the value a guard's tag names alone. -/
 def onlyTag (V : ValueSets.ValueSet) : GuardTag → Bool
@@ -2311,7 +2311,7 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hgb
   case inr => exact guardBodyFollows_sound hM hgb ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hst
-  case inr => exact storeFollows_sound hM hl hst ha
+  case inr => exact spineFollows_sound hM hl hst ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hg
   case inr => exact guardFollows_sound hM hl htags hg ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hlin
@@ -2342,7 +2342,7 @@ def IndexFact.envOnly : IndexFact → Bool
   | .length _ _ | .bound _ _ _ | .element _ _ _ | .every _ _ _ _ | .apart _ _ => false
   | .either A B => A.envOnly && B.envOnly
   | .guarded _ p _ B => p.isEmpty && B.envOnly
-  | .storeApart _ p _ q => p.isEmpty && q.isEmpty
+  | .spineApart _ p _ q => p.isEmpty && q.isEmpty
 
 /-- A fact reading the environment alone holds in every heap. -/
 theorem IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap} (henv : F.envOnly = true)
@@ -2354,7 +2354,7 @@ theorem IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap} (henv : 
   | linear F => exact IndexFact.holdsAt_linear_heap henv hF
   | index _ | int _ | pastSafe _ => exact hF
   | length _ _ | bound _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [IndexFact.envOnly] at henv
-  | storeApart a p b q =>
+  | spineApart a p b q =>
     simp only [IndexFact.envOnly, Bool.and_eq_true, List.isEmpty_iff] at henv
     obtain ⟨rfl, rfl⟩ := henv
     obtain ⟨u, w, hu, hw, hne⟩ := hF
@@ -2513,7 +2513,7 @@ theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
   | linear G => simp only [atomLinear, List.mem_singleton] at hF; subst hF; exact hf
   | length x n =>
     obtain ⟨s, ls, hs, hl, hnv, hm⟩ := hf
-    have hlen : termValue ε ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
+    have hlen : termValue ε ρ h (.length x) = some (ls.length : Int) := lengthOf_of_spine hs hl hm
     have hval : termValue ε ρ h (.value n) = some (ls.length : Int) := by
       simp only [termValue_value, hnv, intValue_length hm]
     have v1 : termValuation ε ρ h (.length x) = ls.length := by simp [termValuation, hlen]
@@ -2530,7 +2530,7 @@ theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
         by simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega⟩
     · exact ⟨fun t ht => hdef t (by simpa [Linear.Fact.vars, or_comm] using ht),
         by simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega⟩
-  | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => simp [atomLinear] at hF
+  | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => simp [atomLinear] at hF
 
 /-- A term rooted at a dropped slot restated by reads toward a kept root:
 while its root is dropped, where a read gives the root's value as field `f`
@@ -2643,41 +2643,41 @@ theorem liftPath_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env} {
       · cases ht
     · cases ht; rfl
 
-/-- The store separations of unconditional atoms naming a dropped slot,
+/-- The spine separations of unconditional atoms naming a dropped slot,
 restated where plain reads give the slot's value as fields read in turn from
-a kept slot (`liftPath`): a region fact's slots hold different stores
-(`regionsApart_stores`). -/
-def restateStores (ls : HeapLinks.Links) (dropped : Nat → Bool) (as : List IndexAtom) : List IndexAtom :=
+a kept slot (`liftPath`): a region fact's slots hold different spines
+(`regionsApart_spines`). -/
+def restateSpines (ls : HeapLinks.Links) (dropped : Nat → Bool) (as : List IndexAtom) : List IndexAtom :=
   let reads := (plainReads ls).filter fun g => dropped g.2.2
   if reads.isEmpty then [] else
   let lift (a b : Nat × List String) : Option IndexAtom :=
     if dropped a.1 || dropped b.1 then do
       let (x, p) ← liftPath dropped reads reads.length a
       let (y, q) ← liftPath dropped reads reads.length b
-      pure { fact := .storeApart x p y q }
+      pure { fact := .spineApart x p y q }
     else none
   as.filterMap fun a => if a.cond.isNone then match a.fact with
     | .apart u w => lift (u, []) (w, [])
-    | .storeApart u p w q => lift (u, p) (w, q)
+    | .spineApart u p w q => lift (u, p) (w, q)
     | _ => none
     else none
 
-theorem restateStores_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {ρ h}
-    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (restateStores ls dropped as) ρ h := by
-  simp only [restateStores]
+theorem restateSpines_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {ρ h}
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (restateSpines ls dropped as) ρ h := by
+  simp only [restateSpines]
   split
   · intro a ha; cases ha
   · intro a ha _
     obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
     have hreads : ∀ g ∈ (plainReads ls).filter (fun g => dropped g.2.2), g ∈ plainReads ls :=
       fun g hg => (List.mem_filter.mp hg).1
-    have lift : ∀ (u w : Nat) (p q : List String), PathStoresApart h (ρ u) p (ρ w) q →
+    have lift : ∀ (u w : Nat) (p q : List String), PathSpinesApart h (ρ u) p (ρ w) q →
         ∀ c, (if dropped (u, p).1 || dropped (w, q).1 then do
           let (x, p) ← liftPath dropped ((plainReads ls).filter fun g => dropped g.2.2)
             ((plainReads ls).filter fun g => dropped g.2.2).length (u, p)
           let (y, q) ← liftPath dropped ((plainReads ls).filter fun g => dropped g.2.2)
             ((plainReads ls).filter fun g => dropped g.2.2).length (w, q)
-          pure ({ fact := .storeApart x p y q } : IndexAtom)
+          pure ({ fact := .spineApart x p y q } : IndexAtom)
           else none) = some c → c.fact.HoldsAt ε ρ h := by
       intro u w p q hap c hc
       split at hc
@@ -2694,7 +2694,7 @@ theorem restateStores_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as 
       split at hab
       · rename_i u w hf
         rw [hf] at hbh
-        exact lift u w [] [] ⟨ρ u, ρ w, rfl, rfl, regionsApart_stores hbh⟩ a hab
+        exact lift u w [] [] ⟨ρ u, ρ w, rfl, rfl, regionsApart_spines hbh⟩ a hab
       · rename_i u p w q hf
         rw [hf] at hbh
         exact lift u w p q hbh a hab
@@ -2704,7 +2704,7 @@ theorem restateStores_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as 
 /-- Atoms about slots below the dropped slot 0, restated one lower; an atom
 naming slot 0 is first restated on a slot the links relate to it. -/
 def dropIndices (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
-  let as := eliminateIndices [0] (as ++ restateReads ls (· == 0) as ++ restateStores ls (· == 0) as)
+  let as := eliminateIndices [0] (as ++ restateReads ls (· == 0) as ++ restateSpines ls (· == 0) as)
   let restated := match HeapLinks.neighbors ls 0 with
     | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
     | [] => as
@@ -2713,11 +2713,11 @@ def dropIndices (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
 theorem dropIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h v}
     (hl : HeapLinks.Holds ls (push v ρ) h) (he : IndexHolds ε as (push v ρ) h) :
     IndexHolds ε (dropIndices ls as) ρ h := by
-  have he := eliminateIndices_holds (drop := [0]) (as := as ++ restateReads ls (· == 0) as ++ restateStores ls (· == 0) as)
+  have he := eliminateIndices_holds (drop := [0]) (as := as ++ restateReads ls (· == 0) as ++ restateSpines ls (· == 0) as)
     fun a ha => (List.mem_append.mp ha).elim
-      (fun ha => (List.mem_append.mp ha).elim (he a) (restateReads_holds hl he a)) (restateStores_holds hl he a)
+      (fun ha => (List.mem_append.mp ha).elim (he a) (restateReads_holds hl he a)) (restateSpines_holds hl he a)
   unfold dropIndices
-  generalize eliminateIndices [0] (as ++ restateReads ls (· == 0) as ++ restateStores ls (· == 0) as) = as at he ⊢
+  generalize eliminateIndices [0] (as ++ restateReads ls (· == 0) as ++ restateSpines ls (· == 0) as) = as at he ⊢
   have hr : IndexHolds ε (match HeapLinks.neighbors ls 0 with
       | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
       | [] => as) (push v ρ) h := by
@@ -2916,7 +2916,7 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
     -- A term rooted at a dropped slot is first restated through a read from a
     -- kept slot, where a read link gives one (`restateReads`).
     let indices := k.indices ++ restateReads k.links (fun s => (target s).isNone) k.indices ++
-      restateStores k.links (fun s => (target s).isNone) k.indices
+      restateSpines k.links (fun s => (target s).isNone) k.indices
     mapIndices target (eliminateIndices dropped indices)⟩
 
 /-! ## Queries by class
@@ -3731,7 +3731,7 @@ def offsetSlot (as : List IndexAtom) (cls : List Nat) (k d : Nat) : Option Nat :
 theorem offsetSlot_value {as : List IndexAtom} {cls : List Nat} {k d r x sto i : Nat}
     {ls : List (Option Nat)} {ρ : Env} {h : Heap}
     (ha : IndexHolds ε as ρ h) (hcls : ∀ y ∈ cls, ρ y = ρ x)
-    (hsto : elementsOf (ρ x) = some sto) (hls : h[sto]?.bind storeEntries = some ls)
+    (hsto : elementsOf (ρ x) = some sto) (hls : h[sto]?.bind spineEntries = some ls)
     (hki : intValue (ρ k) = some (i : Int)) (hm : offsetSlot as cls k d = some r) :
     termValue ε ρ h (.value r) = elementInt h ls (i + d) := by
   simp only [offsetSlot, Option.bind_eq_bind, Option.bind_eq_some_iff] at hm
@@ -3916,7 +3916,7 @@ theorem releaseEither_holds {as : List IndexAtom} {a : IndexAtom} {ρ : Env} {h 
   | ⟨.index _, _, _⟩ | ⟨.length _ _, _, _⟩ | ⟨.bound _ _ _, _, _⟩
   | ⟨.int _, _, _⟩ | ⟨.pastSafe _, _, _⟩ | ⟨.linear _, _, _⟩ | ⟨.guarded _ _ _ _, _, _⟩
   | ⟨.element _ _ _, _, _⟩ | ⟨.every _ _ _ _, _, _⟩ | ⟨.apart _ _, _, _⟩
-  | ⟨.storeApart _ _ _ _, _, _⟩ => simp [releaseEither, IndexHolds]
+  | ⟨.spineApart _ _ _ _, _, _⟩ => simp [releaseEither, IndexHolds]
 
 def withElements (k : Knowledge) : Knowledge :=
   let k := elementInstances k

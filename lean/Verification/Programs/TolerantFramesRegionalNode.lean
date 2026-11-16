@@ -22,7 +22,7 @@ variable {ι : Type} [DecidableEq ι]
 
 /-- **A node's regional obligation** at label `l` over the tables: the
 conjunct of `NodesWithin` at one node. -/
-def NodeWithinAt (G : NormalGraph ι) (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+def NodeWithinAt (G : NormalGraph ι) (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool) (l : Nat) (node : Node)
     (c : NodeEvidence ι) : Prop :=
   ∃ origins outF outC outFs,
@@ -50,7 +50,7 @@ regional bound and the result's origins (`checkCopy_sound`,
 fresh fields (`fieldsCheck_sound`), and the tables' transfer along the
 node's edges and handler. -/
 theorem checkNode_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+    {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {table : List (List ArgumentPathTracking.Fact)} {ft : FreshTables} {exc : Bool} {l : Nat} {node : Node}
     {c : NodeEvidence ι}
     (hp : checkNode G images sums Φ regions table ft exc l node c = true)
@@ -96,7 +96,7 @@ theorem all_sub {α : Type} {xs ys : List α} {p : α → Bool} (hs : ∀ x ∈ 
   List.all_eq_true.mpr fun x hx => List.all_eq_true.mp h x (hs x hx)
 
 theorem checkEdges_mono {T T' : List (List ArgumentPathTracking.Fact)} {facts : List ArgumentPathTracking.Fact}
-    {origins : List ArgumentStoreRegion} {k : Continuation}
+    {origins : List ArgumentSpineRegion} {k : Continuation}
     (hs : ∀ t ∈ successors k, ∀ f ∈ ArgumentPathTracking.atLabel T' t.label, f ∈ ArgumentPathTracking.atLabel T t.label)
     (h : ArgumentPathTracking.checkEdges T facts origins k = true) :
     ArgumentPathTracking.checkEdges T' facts origins k = true := by
@@ -160,7 +160,7 @@ structure TablesAgree (T T' : List (List ArgumentPathTracking.Fact)) (ft ft' : F
 where the tables agree (`TablesAgree`), `checkNode` accepting over the
 node's tables accepts over the graph's. -/
 theorem checkNode_mono {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+    {sums : List (ProgramCertificates.ReadSummary ι)} {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {T T' : List (List ArgumentPathTracking.Fact)} {ft ft' : FreshTables} {exc : Bool} {l : Nat} {node : Node}
     {c : NodeEvidence ι} (ha : TablesAgree T T' ft ft' l node)
     (h : checkNode G images sums Φ regions T ft exc l node c = true) :

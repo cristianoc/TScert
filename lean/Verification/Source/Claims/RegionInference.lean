@@ -8,7 +8,7 @@ given file states them: the slots holding entry argument paths
 greatest fixed point the existing search computes from its certificate
 (`regionalGiven`), here over the evidence each node's claim gives
 (`claimedCertificate`). The field
-names are those the unit's callees' store regions read through one field.
+names are those the unit's callees' spine regions read through one field.
 Each table reaches the pass as a proposal: the regional check
 (`ArgumentRegionGraph.checkNode`) checks a loop head's entries on every edge
 into it. -/
@@ -73,7 +73,7 @@ keep is an entry the edge into the head does not establish. -/
     let next := claimedFreshPass G images Φ nodes tables
     if next = tables then some tables else claimedFreshIterate G images Φ nodes fuel next
 
-/-- The field names the store regions of a unit's callees read through one
+/-- The field names the spine regions of a unit's callees read through one
 field: the effects each call node's context types state, read from their
 normal frames (`regionNames` over a certificate's selected effects). -/
 def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :=
@@ -91,7 +91,7 @@ def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :
 establishes (a fresh value, a fresh cell, an argument path or a fresh field,
 by its kind), the adversarial proposal the pass's edge check refuses. -/
 def regionalInferred (r : SourceExtraction.SourceRequest σ ι) (Φ : Footprints.Closed)
-    (regions : List Footprints.ArgumentStoreRegion) (force : Option String := none) : Json :=
+    (regions : List Footprints.ArgumentSpineRegion) (force : Option String := none) : Json :=
   let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
   let C := claimedCertificate r
   let G := RequestJson.graph r.toRequest
@@ -129,7 +129,7 @@ def regionalInferred (r : SourceExtraction.SourceRequest σ ι) (Φ : Footprints
     ("cells", Lean.toJson (cs ++ extra "head-region-cells" cs l)),
     ("fields", Lean.toJson fsF)]).toArray)]
 
-/-- A unit's inferred regional lines: its store regions' (`regional`) and its
+/-- A unit's inferred regional lines: its spine regions' (`regional`) and its
 footprint's regional fallback's (`footprintRegional`), as `givenLines`
 writes them. -/
 def regionalLines (r : SourceExtraction.SourceRequest σ ι) (force : Option String := none) : List (String × Json) :=
@@ -138,8 +138,8 @@ def regionalLines (r : SourceExtraction.SourceRequest σ ι) (force : Option Str
     | none => []) ++
   (if !r.fresh && r.footprint != Footprints.Closed.top then [("footprintRegional", regionalInferred r r.footprint [] force)] else [])
 
-/-- The slot whose array store a node writes an element of
-(`a[k] = v`: a write of the store field through a slot). -/
+/-- The slot whose array spine a node writes an element of
+(`a[k] = v`: a write of the spine field through a slot). -/
 def elementWritten : Tm → Option Nat
   | .writeAt (.str "[]") (.var w) _ => some w
   | _ => none
@@ -219,7 +219,7 @@ def carryForward (P : ControlFlow.Program) (start : Nat) (width : Nat → Nat)
 
 /-- **The region separations at a unit's loop heads**: the pairs of slots
 whose regions an allocation states apart (`IndexWrites.regionAtoms`, a
-literal's store apart from every array slot), each with its allocation,
+literal's spine apart from every array slot), each with its allocation,
 carried along every edge to the slots whose mappings read them, those every
 predecessor carries; at each loop head, the pairs of array slots
 (`IndexWrites.arraySlot`) of an allocation whose array the loop writes an

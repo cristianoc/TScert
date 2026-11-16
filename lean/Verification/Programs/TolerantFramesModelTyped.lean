@@ -12,8 +12,8 @@ every state (`rootCells_holds`):
   `stableAt_of_stableFirst`), and paths compose through a slot holding the
   intermediate value (`stableAt_cons`);
 - **class evidence** (`ClassOk`): a field of source-value type holds a value,
-  not a store (`valueClass_ok`), and a store field of a `.list` type holds a
-  store (`storeClass_ok`), at every heap meeting the world. -/
+  not a spine (`valueClass_ok`), and a spine field of a `.list` type holds a
+  spine (`spineClass_ok`), at every heap meeting the world. -/
 namespace Verification.TolerantFrames
 open Verification Footprints ProgramTyping PositiveGraphs PositiveRules PositiveNormalization
 open ExpressionEffects HeapExpressionRules
@@ -23,25 +23,25 @@ variable {ι : Type}
 
 /-! ## Allocated cells -/
 
-/-- A type of one `.list` clause: an array store under tuple contracts. -/
-def storeListTy (G : NormalGraph ι) (L : Ty ι) : Bool :=
+/-- A type of one `.list` clause: an array spine under tuple contracts. -/
+def spineListTy (G : NormalGraph ι) (L : Ty ι) : Bool :=
   match expand G L with
   | [.list _ []] => true
   | _ => false
 
 /-- Every alternative is a record whose first invariant operand has the
-field `fld`, at a type `storeListTy` accepts in each. -/
-def storeListField (G : NormalGraph ι) (cs : List (Clause (Ty ι))) (fld : PropKey) : Bool :=
+field `fld`, at a type `spineListTy` accepts in each. -/
+def spineListField (G : NormalGraph ι) (cs : List (Clause (Ty ι))) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeListTy G p.2.2)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || spineListTy G p.2.2)
     | none => false
 
-theorem storeListField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} {fld : PropKey} {n : Nat}
+theorem spineListField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} {fld : PropKey} {n : Nat}
     {W : WorldT n} {v : Val}
-    (hr : storeListField G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ B s L, (fld, s, L) ∈ B ∧ storeListTy G L = true ∧
+    (hr : spineListField G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ B s L, (fld, s, L) ∈ B ∧ spineListTy G L = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
-  simp only [storeListField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+  simp only [spineListField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
   have hp : G.plainTy Ref = true := by
     obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
@@ -57,34 +57,34 @@ theorem storeListField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι}
     obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
-    have hsrc : storeListTy G El = true := (hall _ hmem).resolve_left (by simp)
+    have hsrc : spineListTy G El = true := (hall _ hmem).resolve_left (by simp)
   · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
-/-- A member of a type of one `.list` clause is a store under a tuple
+/-- A member of a type of one `.list` clause is a spine under a tuple
 contract. -/
-theorem storeListTy_listT {G : NormalGraph ι} {L : Ty ι} (hL : storeListTy G L = true) {n : Nat}
+theorem spineListTy_listT {G : NormalGraph ι} {L : Ty ι} (hL : spineListTy G L = true) {n : Nat}
     {W : WorldT n} {u : Val} (hu : meaning G L n W u) : ∃ T, listT T n W u := by
-  unfold storeListTy at hL
+  unfold spineListTy at hL
   split at hL
   · rename_i T hexp
     exact ⟨_, (represents_raw (show Represents G L (.list T []) from hexp) n W u hu).1⟩
   · cases hL
 
-/-- The store field of a slot whose type `storeListField` accepts: the
+/-- The spine field of a slot whose type `spineListField` accepts: the
 object's field location, its contract agreeing with a type of one `.list`
 clause. -/
-theorem storeListField_at [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat}
+theorem spineListField_at [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat}
     {W : WorldT n} {x : Nat} {Ref : Ty ι} (he : EnvOk G Γ ρ n W) (hx : Γ[x]? = some Ref)
-    (hs : storeListField G (expand G Ref) arrayStoreKey = true) :
-    ∃ (L : Ty ι) (st : Nat) (c : Ctr n), storeListTy G L = true ∧ storeOf (ρ x) = some st ∧
+    (hs : spineListField G (expand G Ref) arraySpineKey = true) :
+    ∃ (L : Ty ι) (st : Nat) (c : Ctr n), spineListTy G L = true ∧ spineOf (ρ x) = some st ∧
       lookup W st = some c ∧ ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ meaning G L j U u := by
-  obtain ⟨B, _, L, hmem, hL, hbag⟩ := storeListField_sound hs (he.2 x Ref hx)
+  obtain ⟨B, _, L, hmem, hL, hbag⟩ := spineListField_sound hs (he.2 x Ref hx)
   obtain ⟨flds, code, oid, hv, -, hrec⟩ := hbag
   obtain ⟨flds1, fl, c, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
   cases hproj
-  refine ⟨L, fl, c, hL, by simp [storeOf, fieldsOf, hv, hfd], hlookup, hagree⟩
+  refine ⟨L, fl, c, hL, by simp [spineOf, fieldsOf, hv, hfd], hlookup, hagree⟩
 
 /-! ## Stable paths -/
 
@@ -144,7 +144,7 @@ theorem stableAt_cons {x y : Nat} {f : String} {q : List String} {v : Val} {ρ :
   | cons hf hl hc hp => cases hp; exact .cons hf hl hc h₂
 
 /-- (Grow) at a typed stable path: `y ≤ |x.f|` survives every action of
-`{values: any, stores: grow}` where `f` is a field every clause of `x`'s type
+`{values: any, spines: grow}` where `f` is a field every clause of `x`'s type
 states stable. -/
 theorem grow_path_typed {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {x y : Nat} {A : Ty ι} {f : String} (he : EnvOk G Γ ρ s.n s.W) (hx : Γ[x]? = some A)
@@ -155,7 +155,7 @@ theorem grow_path_typed {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {m :
 
 /-! ## Class evidence -/
 
-/-- The evidence that `x`'s field `k` holds a value, not a store. -/
+/-- The evidence that `x`'s field `k` holds a value, not a spine. -/
 def valueClass (x : Nat) (k : PropKey) : ClassEvidence := fun y k' =>
   if y = x ∧ k' = k then some .values else none
 
@@ -186,11 +186,11 @@ theorem valueClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
     cases w <;> simp_all [isSourceVal, isArr]
   · cases hc
 
-/-- **A store field of a `.list` type holds a store**: the store-class
+/-- **A spine field of a `.list` type holds a spine**: the spine-class
 evidence (`denseClass`) from typing, without a density fact. -/
-theorem storeClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat}
+theorem spineClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat}
     {W : WorldT (n + 1)} {h : Heap} {x : Nat} {Ref : Ty ι} (he : EnvOk G Γ ρ (n + 1) W)
-    (hx : Γ[x]? = some Ref) (hs : storeListField G (expand G Ref) arrayStoreKey = true)
+    (hx : Γ[x]? = some Ref) (hs : spineListField G (expand G Ref) arraySpineKey = true)
     (hh : HeapOk (n + 1) W h) : ClassOk (denseClass x) ρ h := by
   intro y k' c l hc hl _
   unfold denseClass at hc
@@ -198,14 +198,14 @@ theorem storeClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
   · rename_i hyk
     obtain ⟨rfl, rfl⟩ := hyk
     cases hc
-    obtain ⟨L, st, cc, hL, hst, hlookup, hagree⟩ := storeListField_at he hx hs
+    obtain ⟨L, st, cc, hL, hst, hlookup, hagree⟩ := spineListField_at he hx hs
     have hl' : st = l := by
-      simp only [storeOf] at hst
+      simp only [spineOf] at hst
       rw [hst] at hl
       exact Option.some.inj hl
     subst hl'
     obtain ⟨u, hu, hcu⟩ := hh.1.2 st cc hlookup
-    obtain ⟨T, hT⟩ := storeListTy_listT hL ((hagree 0 (by omega) _ u).mp (hcu 0 (by omega)))
+    obtain ⟨T, hT⟩ := spineListTy_listT hL ((hagree 0 (by omega) _ u).mp (hcu 0 (by omega)))
     obtain ⟨ls, rfl, -⟩ := hT
     simp [Region.mem, hu, isArr]
   · cases hc

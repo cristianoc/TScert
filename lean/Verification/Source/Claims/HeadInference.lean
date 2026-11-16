@@ -49,7 +49,7 @@ inductive Fact where
   | lin (l : Lin)
   | int (name : String)
   /-- Unless a guard's path of its binding holds its tag, the arrays two
-  paths read are different stores (`IndexFact.storeApart`, guarded). -/
+  paths read are different spines (`IndexFact.spineApart`, guarded). -/
   | apart (guards : List (String × List String × HeapKnowledge.GuardTag)) (a : String) (pa : List String)
       (b : String) (pb : List String)
   /-- Of each index below `stop` of the array the path from `a` reads, the
@@ -88,8 +88,8 @@ def Fact.everyClaim : Fact → Option SourceClaims.EveryClaim
     some ((a, pa), stop, body.map fun (ts, d) => .linear (ts.map fun (v, c) => (ref v, c)) d)
   | _ => none
 
-/-- The store separation the producer would write for the fact. -/
-def Fact.storesClaim : Fact → Option SourceClaims.StoresApartClaim
+/-- The spine separation the producer would write for the fact. -/
+def Fact.spinesClaim : Fact → Option SourceClaims.SpinesApartClaim
   | .apart gs a pa b pb => some (gs, (a, pa), (b, pb))
   | _ => none
 
@@ -385,7 +385,7 @@ structure Rules where
   kind : String → HeapKnowledge.Term.Kind := fun _ => .length
   counters : Bool := true
   carried : Bool := true
-  /-- Store separations: of a fresh empty array field, carried, copied. -/
+  /-- Spine separations: of a fresh empty array field, carried, copied. -/
   separations : Bool := true
   /-- The bindings that may hold arrays, a fresh field's separations' other side. -/
   arrays : List String := []
@@ -408,7 +408,7 @@ structure Rules where
   pass's edge check refuses. -/
   falseCarried : Bool := false
   /-- Forced (`TSCERT_FORCE=head-separations`): each carried separation's
-  first store also stated apart from itself (`x.f !== x.f`), the adversarial
+  first spine also stated apart from itself (`x.f !== x.f`), the adversarial
   proposal the pass's edge check refuses. -/
   falseSeparations : Bool := false
   /-- Forced (`TSCERT_FORCE=head-kinds`): each string's or typed array's
@@ -494,7 +494,7 @@ array's length where no expression may resize it (`touched`); of a field
 path where every expression is quiet. -/
 partial def Fact.keptAcross (es : List Expr) : Fact → Bool
   | .int _ => true
-  -- A separation of stores: kept unless a field its paths read is written
+  -- A separation of spines: kept unless a field its paths read is written
   -- (`linear_facts.ml:skept`, a path's identity changed only by a write).
   | .apart _ _ pa _ pb => !es.any fun
     | .write _ (.str f) _ _ => pa.contains f || pb.contains f
@@ -617,7 +617,7 @@ value in the current state: an entry term `old(t)` has no name, and a fact
 naming one has no form here. -/
 partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFact → Option Fact
   | .int p => (nameAt p).map .int
-  | .storeApart a pa b pb => do pure (.apart [] (← nameAt a) pa (← nameAt b) pb)
+  | .spineApart a pa b pb => do pure (.apart [] (← nameAt a) pa (← nameAt b) pb)
   | .guarded g p t body => do
     match ← ofIndexFact nameAt body with
     | .apart gs a pa b pb => pure (.apart ((← nameAt g, p, t) :: gs) a pa b pb)
@@ -681,7 +681,7 @@ def constructedLength (K : String → HeapKnowledge.Term.Kind) (x : String) : Ex
 
 /-- The separations a declaration of `x` states (`linear_facts.ml:sstatement`):
 an object literal's field holding a fresh empty array (`{ f: [] }`) apart from
-every array binding of `arrays` (an array binding's store is never the fresh
+every array binding of `arrays` (an array binding's spine is never the fresh
 one); a copy (`const x = o`) each of `o`'s separations at `x`; a choice of `o`
 and `null` (`c ? o : null`) each guarded by `x === null`. -/
 def separations (arrays : List String) (ctx : Ctx) (x : String) : Expr → List Fact

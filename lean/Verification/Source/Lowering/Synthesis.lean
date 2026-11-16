@@ -230,7 +230,7 @@ structure Walk where
   each standing for no type yet (the producer's `with_holes`,
   expression_support.ml:124-139). -/
   holes : List Tree := []
-  /-- The constants holding a store the run allocated: each initialized by
+  /-- The constants holding a spine the run allocated: each initialized by
   a call whose instance states a fresh result, or by such a constant (the
   producer's `fresh_expr`); and whether the last call's
   instance states one. -/
@@ -487,8 +487,8 @@ def assigned (D A : Ty Tree) : Compiler (Ty Tree) := do
 
 /-- The type an annotated declaration at `D` holds from an initializer of
 type `A`: a primitive, nullish or callable member of `A` as `assigned`
-gives it, a class value too, any other object at the members of `D` it is within (a store's contract is fixed
-where it is made: it is never held at the exact type of the store it was
+gives it, a class value too, any other object at the members of `D` it is within (a spine's contract is fixed
+where it is made: it is never held at the exact type of the spine it was
 initialized from, which another alias may grow or write). -/
 def declaredAt (D A : Ty Tree) : Compiler (Ty Tree) := do
   let G ← graphNow
@@ -618,7 +618,7 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
       out := out ++ plan.type
   return norm out
 
-/-- The positions of an array's store: the type at index `k`, where the key
+/-- The positions of an array's spine: the type at index `k`, where the key
 is that one index, with `undefined` past the required positions; any
 position's with `undefined` otherwise (an index read past the end). -/
 def elementAt (A : Ty Tree) (index : Option Nat) (missing : Bool := true) : Compiler (Ty Tree) := do
@@ -634,7 +634,7 @@ def elementAt (A : Ty Tree) (index : Option Nat) (missing : Bool := true) : Comp
     if shapeOf G l == some .isStr then
       out := out ++ (← prim .str) ++ (if missing then [Labels.undef] else [])
       continue
-    match storeOf G [l] with
+    match spineOf G [l] with
     | some S =>
       match PositiveRules.expand G S with
       | [.list t []] =>
@@ -817,7 +817,7 @@ states `k` of each. -/
 def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compiler (Option (Ty Tree × Ty Tree)) := do
   let G ← graphNow
   -- A dictionary retains its index contracts when a write establishes a
-  -- named key; no store is upcast.
+  -- named key; no spine is upcast.
   if !O.isEmpty && O.all (fun l => match PositiveRules.expand G [l] with | [.dict _ [] ..] => true | _ => false) then
     let rows := O.filterMap fun l => match PositiveRules.expand G [l] with
       | [.dict fs [] vs ix os ms bs cells st] => some (fs, vs, ix, os, ms, bs, cells, st)
@@ -842,7 +842,7 @@ def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compile
       List (MethodMembers.Sig (Ty Tree)) × List KeyBound × List PropKey) := []
   for l in O do
     let [.refs fs [] vs os ms bs st] := PositiveRules.expand G [l] | return none
-    if fs.any (·.1 == SourceTypes.storeField) || fs.any (·.1 == SourceTypes.protoField) then return none
+    if fs.any (·.1 == SourceTypes.spineField) || fs.any (·.1 == SourceTypes.protoField) then return none
     if os.any (fun o => o.key == k && o.readonly) || bs.any (fun b => !b.among && b.keys.contains k) then return none
     arms := arms ++ [(fs, vs, os, ms, bs, st)]
   if arms.isEmpty then return none
@@ -1271,7 +1271,7 @@ def packedCallee (g : Generic) (As : List (Option (Ty Tree))) (spreads : List Na
   for (A, i) in As.zipIdx do
     if spreads.contains i then
       let [l] := A | return none
-      let some S := storeOf G [l] | return none
+      let some S := spineOf G [l] | return none
       let [.list t []] := PositiveRules.expand G S | return none
       if !t.optional.isEmpty || t.rest.isSome then return none
       for E in t.required do Es := Es ++ [← widen E]
@@ -1481,7 +1481,7 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
         if let some B ← tryCatch (some <$> read) (fun _ => pure none) then
           if let some C ← matchBinder b Q B (fuel - 1) vars then return some C
     return none
-  if let some S := storeOf G [l] then
+  if let some S := spineOf G [l] then
     if let [.list t []] := PositiveRules.expand G S then
       if !t.required.isEmpty || !t.optional.isEmpty then
         let positions := (t.required ++ t.optional).zipIdx
@@ -1587,7 +1587,7 @@ bound function at any receiver taking them, at the effect binding keeps
 (`Effect.drop`), returning the union of their results (the producer's
 `Bind` of a union of hosts, `bound_union`;
 the lowering splits the host's slot, `unionVar`, and binds each arm's
-member, `bindMember`). `forced` states it keeping values and stores. -/
+member, `bindMember`). `forced` states it keeping values and spines. -/
 def boundUnion (M : Ty Tree) (forced : Bool) : Compiler (Option (Ty Tree)) := do
   let G ← graphNow
   if M.length < 2 then return none
@@ -1682,7 +1682,7 @@ arm its keys and literal members select (type_queries.ml:769-789,
 820-830). Several compatible arms supply no allocation contract. -/
 def recordContext (P : Ty Tree) (names : List PropKey) (es : List Expr) : Compiler (Option (Ty Tree)) := do
   let G ← graphNow
-  let arms := P.filter fun l => (storeOf G [l]).isNone && match PositiveRules.expand G [l] with
+  let arms := P.filter fun l => (spineOf G [l]).isNone && match PositiveRules.expand G [l] with
     | [.refs _ [] ..] | [.dict _ [] ..] => true
     | _ => false
   if let [l] := arms then return some [l]
@@ -1726,7 +1726,7 @@ partial def copyLiteral : Expr → Bool
 
 /-- The array members of an expected type. -/
 def arrayArms (G : PositiveGraphs.NormalGraph Tree) (P : Ty Tree) : List Tree :=
-  P.filter fun l => (storeOf G [l]).isSome
+  P.filter fun l => (spineOf G [l]).isSome
 
 /-- What an iterable other than an array yields, where `P` is expected:
 for each member of `P` stating a method of a symbol key (its
@@ -1736,7 +1736,7 @@ def iteratedElement (P : Ty Tree) : Compiler (Option (Ty Tree)) := do
   let G ← graphNow
   let mut out : Ty Tree := []
   for l in P do
-    if (storeOf G [l]).isSome then continue
+    if (spineOf G [l]).isSome then continue
     let [.refs _ [] _ _ ms _ _] := PositiveRules.expand G [l] | continue
     let some m := ms.find? (fun m => match m.key with | .sym _ => true | _ => false) | continue
     let some a := m.calls.head? | continue
@@ -1776,12 +1776,12 @@ def positionExpected (P : Ty Tree) (i : Nat) : Compiler (Option (Ty Tree)) := do
 
 /-- A call's fresh result (its signature stating `fresh`) where `H` is
 expected: the first array member of `H` whose elements the result's are
-within, the store the call allocates taking any contract
+within, the spine the call allocates taking any contract
 (`HasTyUsing.alloc`'s bound at a fresh result). -/
 def freshAt (H R : Ty Tree) : Compiler (Option (Ty Tree)) := do
   let T ← table
   let G := SourceTypes.graph T
-  if (storeOf G R).isNone then return none
+  if (spineOf G R).isNone then return none
   let E ← elementAt R none (missing := false)
   for l in arrayArms G H do
     if within T R [l] then return none
@@ -1833,10 +1833,10 @@ def meets (op : ClassSummary) : W Unit := do
   if op.normal.any (·.value != .keep) then modify fun w => { w with valueWrites := w.valueWrites + 1 }
 
 /-- The walk meets a write returning within the grade its typed-write rule
-accepts (`ExpressionEffects.writeGrades`: `value` on values, `store` on both
-kinds of store), and never throwing. -/
-def wrote (value store : Footprints.Change := .any) : W Unit :=
-  meets (.ofClosed (.ofStores value store))
+accepts (`ExpressionEffects.writeGrades`: `value` on values, `spine` on both
+kinds of spine), and never throwing. -/
+def wrote (value spine : Footprints.Change := .any) : W Unit :=
+  meets (.ofClosed (.ofSpines value spine))
 
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`, of its values (`value`: an initializing
@@ -1887,7 +1887,7 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
   -- lists, after the fixed actuals: one spread, the last actual, of a value
   -- of that binder, at its own type (the producer's pack rest call,
   -- expression_calls.ml:607-616; the lowering's `callPacked`,
-  -- Atoms.lean:220-224, checks the operand's store is one of its lists).
+  -- Atoms.lean:220-224, checks the operand's spine is one of its lists).
   if c.binders.isEmpty && c.fixed.isEmpty && spreads == [args.length - 1] then
     if let ([r], some (some A)) := (c.rests, As.getLast?) then
       if r.arguments.1.length + 1 == args.length &&
@@ -1912,7 +1912,7 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
     -- call writes)
     let placeholder := Expr.var x.span "%spread%"
     let tuple : Option (List (Ty Tree)) := match A with
-      | [l] => match storeOf G [l] with
+      | [l] => match spineOf G [l] with
         | some S => match PositiveRules.expand G S with
           | [.list t []] => if t.optional.isEmpty && t.rest.isNone then some t.required else none
           | _ => none
@@ -1923,7 +1923,7 @@ def spreadCall (args : List Expr) (As : List (Option (Ty Tree))) (spreads : List
       outArgs := outArgs ++ ps.map fun _ => placeholder
       outAs := outAs ++ ps.map some
     | none =>
-      if !A.all fun l => (storeOf G [l]).isSome then throw "a spread of what is no array"
+      if !A.all fun l => (spineOf G [l]).isSome then throw "a spread of what is no array"
       if variadicAt.isNone then variadicAt := some outArgs.length
       outArgs := outArgs ++ [placeholder]
       outAs := outAs ++ [some (← elementAt A none (missing := false))]
@@ -1970,7 +1970,7 @@ def checkCopyFields (cs : List (PositiveNormalization.Clause (Ty Tree))) : Compi
 as `Object.assign`'s target), one per label (`object_spread.ml`,
 `alternatives_of`): nothing from a primitive other than a string, its own
 keys exactly; no stated key from a string or a function, and no bound; a
-record's fields, but its store, its prototype link (a target's kept) and a
+record's fields, but its spine, its prototype link (a target's kept) and a
 key it also states as a method, which may sit on the prototype, its
 optional ones optional, its own keys exactly where it bounds them; a class
 value's static fields, with no bound. `force` (`TSCERT_FORCE=spreads`):
@@ -1995,7 +1995,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
           | _ => false
       if indexed.length > 1 && !(PositiveRules.expand G [l]).isEmpty then
         throw (refusalMark ++ "copy: a spread of an intersection of two operands with index signatures is outside the fragment")
-    if let some S := storeOf G [l] then
+    if let some S := spineOf G [l] then
       if target then throw "a copy onto an array"
       if let [.list t []] := PositiveRules.expand G S then
         out := out ++ [{ exact := false, numeric := some (norm (t.required.flatten ++ t.optional.flatten ++ (t.rest.getD []))) }]
@@ -2015,7 +2015,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     for c in clauses do checkCopyFields [c]
     match clauses with
     | [.refs fs [] vs os ms bs _] =>
-      let named := ((Stored.views fs ++ vs).filter fun (f, _) => f != SourceTypes.storeField &&
+      let named := ((Stored.views fs ++ vs).filter fun (f, _) => f != SourceTypes.spineField &&
           (target || f != SourceTypes.protoField) && (force || !ms.any (·.key == f))).map fun (f, B) => (f, false, B)
       -- A key an intersection's operands state twice: at the field within
       -- the others (`object_spread.ml`, `field_meet`), else the first.
@@ -2026,7 +2026,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
         | none => acc ++ [(f, o, B)]) []
       let opt := (os.filter fun o => !named.any (·.1 == o.key)).map fun o => (o.key, !force, o.type)
       -- (an array's own keys are its elements' too, which no field states)
-      let array := (Stored.views fs ++ vs).any (·.1 == SourceTypes.storeField)
+      let array := (Stored.views fs ++ vs).any (·.1 == SourceTypes.spineField)
       out := out ++ [{ fields := named ++ opt, exact := force || (bs.any (·.among) && !array), excluded := if target then (bs.filter (!·.among)).flatMap (·.keys) else [] }]
     | [.dict fs [] vs ix os ms _ _ _] =>
       let fields := ((Stored.views fs ++ vs).filter fun (k, _) =>
@@ -2173,7 +2173,7 @@ def keyedRead (vars : List (String × Ty Tree)) (O K : Ty Tree) (missing : Bool)
   let names ← keyNames K
   let mut out : Ty Tree := []
   for l in O do
-    let elementLike := shapeOf G l == some .isStr || (storeOf G [l]).isSome
+    let elementLike := shapeOf G l == some .isStr || (spineOf G [l]).isSome
     match elementLike, names, PositiveRules.expand G [l] with
     | true, _, _ => out := out ++ (← elementAt [l] index missing)
     | false, some ks, [.refs ..] | false, some ks, [.dict ..] =>
@@ -2431,7 +2431,7 @@ partial def decidedTest (c : Expr) (q : Bool) : W Bool := do
 through at most `depth` arrays (the producer's `places`,
 expression_support.ml:128-135). -/
 partial def placesHoles (G : PositiveGraphs.NormalGraph Tree) (free : List Tree) (depth : Nat) (P : Ty Tree) : Bool :=
-  depth > 0 && (arrayArms G P).any fun l => match storeOf G [l] with
+  depth > 0 && (arrayArms G P).any fun l => match spineOf G [l] with
     | some S => match PositiveRules.expand G S with
       | [.list t []] => (t.required ++ t.optional).any (fun D => free.any fun b => D.any (occurs b)) ||
           t.rest.any (placesHoles G free (depth - 1))
@@ -2439,12 +2439,12 @@ partial def placesHoles (G : PositiveGraphs.NormalGraph Tree) (free : List Tree)
     | none => false
 
 /-- Fresh array literals at generic tuple positions retain those positions,
-with each value widened, recursively through an array of tuples. Existing stores keep their contracts. -/
+with each value widened, recursively through an array of tuples. Existing spines keep their contracts. -/
 partial def tupleActual (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty Tree)) := do
   let .arrayLit _ es [] := x | return A
   let G ← StateT.lift graphNow
   let target ← match arrayArms G P with
-    | [l] => pure ((storeOf G [l]).bind fun S => match PositiveRules.expand G S with
+    | [l] => pure ((spineOf G [l]).bind fun S => match PositiveRules.expand G S with
         | [.list t []] => some t
         | _ => none)
     | _ => do
@@ -2495,7 +2495,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     | some A', some B' => record x (← StateT.lift (tryCatch (.ok <$> joinTy A' B') fun m => pure (.error m)))
     | _, _ => return A
   | .arrayLit _ [] _ =>
-    -- A fresh empty array has its store and the standard prototype only.
+    -- A fresh empty array has its spine and the standard prototype only.
     -- An array-like host value may require additional fields (NodeArray's
     -- `pos` and `end`), and a tuple may require occupied positions.
     for l in arrayArms G P do
@@ -2504,7 +2504,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       -- make the array at: the literal keeps its own, the producer's
       -- `never[]`)
       if (← get).pending.any (occurs · l) then continue
-      let some S := storeOf G [l] | continue
+      let some S := spineOf G [l] | continue
       let [.list t []] := PositiveRules.expand G S | continue
       if !t.required.isEmpty then continue
       let O ← StateT.lift (arrayObject S)
@@ -2603,11 +2603,11 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     return some A
   | .arrayLit _ es [] =>
     -- The one array member of `P` whose positions admit the elements, each
-    -- element made at its position: the store's contract (positions, rest,
+    -- element made at its position: the spine's contract (positions, rest,
     -- `readonly`, presence) is that member's.
     let some A := A | return none
     for l in arrayArms G P do
-      let some S := storeOf G [l] | continue
+      let some S := spineOf G [l] | continue
       let [.list t []] := PositiveRules.expand G S | continue
       let n := es.length
       if !(t.required.length ≤ n && (n ≤ t.required.length + t.optional.length || t.rest.isSome)) then continue
@@ -2634,14 +2634,14 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
         if within (← StateT.lift table) R P then return ← record x (.ok R)
     return some A
   | .arrayLit _ es spreads =>
-    -- An array literal containing spreads is a fresh store. At an array
+    -- An array literal containing spreads is a fresh spine. At an array
     -- contract with no fixed positions, each item or spread element must
-    -- fit its rest contract; existing operands retain their store types.
+    -- fit its rest contract; existing operands retain their spine types.
     let some A := A | return none
-    -- `array-spreads` proposes the expected store even for incompatible items.
+    -- `array-spreads` proposes the expected spine even for incompatible items.
     let forced := (← get).force.contains "array-spreads"
     for l in arrayArms G P do
-      let some S := storeOf G [l] | continue
+      let some S := spineOf G [l] | continue
       let [.list t []] := PositiveRules.expand G S | continue
       if !t.required.isEmpty || !t.optional.isEmpty then continue
       let some E := t.rest | continue
@@ -2657,7 +2657,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
             let G ← graphNow
             if !arraysOnly G B then return none
             let H ← elementAt B none (missing := false)
-            let sparse := B.any fun l => (storeOf G [l]).any fun S =>
+            let sparse := B.any fun l => (spineOf G [l]).any fun S =>
               match PositiveRules.expand G S with
               | [.list t []] => t.presence == .sparse
               | _ => false
@@ -2864,8 +2864,8 @@ partial def useIn (env : Env) (n : String) (e : Expr) (P : Option (Ty Tree)) : W
       let D ← if spreads.contains i then StateT.lift (tryCatch (do
           let some P := P | return none
           let E ← elementAt P none (missing := false)
-          let store ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .readable⟩ []))
-          some <$> lower (do return [← SourceTypes.use (SourceTypes.arrayOf (← get) store false)])) fun _ => pure none)
+          let spine ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .readable⟩ []))
+          some <$> lower (do return [← SourceTypes.use (SourceTypes.arrayOf (← get) spine false)])) fun _ => pure none)
         else pure none
       uses := uses ++ (← useIn env n e D)
     return uses
@@ -2950,8 +2950,8 @@ partial def declarationHint (env : Env) (b : Binding) (mutable_ : Bool)
     let A := if w.force.contains "evolving" then [] else (w.assumed.lookup b.init.span).getD []
     if array then
       return some (← StateT.lift (lower do
-        let store ← SourceTypes.use (.list ⟨[], [], some A, false, .readable⟩ [])
-        return [← SourceTypes.use (SourceTypes.arrayOf (← get) store false)]))
+        let spine ← SourceTypes.use (.list ⟨[], [], some A, false, .readable⟩ [])
+        return [← SourceTypes.use (SourceTypes.arrayOf (← get) spine false)]))
     let uses := (← useHints env b.name (← get).following false).eraseDups
     if let [U] := uses then modify fun w => { w with evolvedUses := upd w.evolvedUses b.init.span U }
     return written
@@ -2963,7 +2963,7 @@ partial def declarationHint (env : Env) (b : Binding) (mutable_ : Bool)
     if fresh then
       if let some H := (← useHints env b.name (← get).following).head? then
         let G ← StateT.lift graphNow
-        if !H.isEmpty && H.all (fun l => (storeOf G [l]).isSome) then return some H
+        if !H.isEmpty && H.all (fun l => (spineOf G [l]).isSome) then return some H
   return written
 
 /-- Each binder in `lambdaBinders` (a callback literal's parameter) that an
@@ -3004,7 +3004,7 @@ def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (T
 /-- What a call at instance `inst` changes, recorded for a function
 literal's effect: the walk meets an operation whose summary is the
 instance's per-exit contract, each exit's frame read in the closed language
-below the call's entry with a fresh receiver's store discharged
+below the call's entry with a fresh receiver's spine discharged
 (`ClassSummary.ofEffect`, Fresh-Eff); its fresh result, a postcondition of
 its normal exit (`ExitSchema.freshResult`); whether its normal exit's frame
 may change a value location of the heap at its entry
@@ -3208,7 +3208,7 @@ def calleeAtCall (c : Callee) (σ : List (Tree × Ty Tree)) (inst : CallEffects.
     -- A scheme's rest at the instance: the argument pack of its positions
     -- read at the binders, a binder's meet row at the binder's type itself
     -- (the row the claims state, `Scheme.closureRows`' instances,
-    -- Schemes.lean:627-660): a spread's store spreads into the pack whose
+    -- Schemes.lean:627-660): a spread's spine spreads into the pack whose
     -- element holds its positions' labels (`VariadicTyping.SpreadsInto`).
     let r' := r.map sub
     let G ← graphNow
@@ -3326,7 +3326,7 @@ def generalArrayCallee (c : Callee) (As : List (Option (Ty Tree))) : Compiler Ca
   let T ← table
   let G := SourceTypes.graph T
   let required (a : CallEffects.Arrow (Ty Tree)) : Bool :=
-    match (storeOf G a.result).map (PositiveRules.expand G) with
+    match (spineOf G a.result).map (PositiveRules.expand G) with
     | some [.list t []] => !t.required.isEmpty
     | _ => false
   let matching := c.fixed.filter fun a =>
@@ -3400,7 +3400,7 @@ mutual
 /-- An expression's type, recorded at its occurrence, and the environment
 after it; where a type `exp` is expected of its value (a return's, an
 annotated declaration's, an assignment's, a field's, a parameter's), a
-literal, a function literal or a fresh store made at it (`fit`), and each
+literal, a function literal or a fresh spine made at it (`fit`), and each
 part of it walked at the part's expected type. -/
 partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Option (Ty Tree) × Env) := do
   let before := (← get).pathEnds.length
@@ -3588,7 +3588,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       let (A, e') ← expr e1 y D
       -- An ordinary nested allocation without a field context is made at
       -- its own open record (expression_objects.ml:46-54, 83-97). Only the
-      -- fresh child is retyped: an existing value's store is unchanged.
+      -- fresh child is retyped: an existing value's spine is unchanged.
       let A ← match D, y, A with
         | none, .alloc _ ks _, some A => do
           if ks.contains SourceTypes.protoField || (← get).exactAt.contains y.span then pure (some A) else do
@@ -3764,7 +3764,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     return (r, e2)
   | .elemWrite p recv key rhs => expr env (.indexWrite p none recv key rhs)
   | .indexWrite _ field recv key rhs =>
-    -- An element write changes values and grows stores (`writeWithinAt`).
+    -- An element write changes values and grows spines (`writeWithinAt`).
     wrote .any .grow
     let (O, e1) ← expr env recv
     let (K, e2) ← expr e1 key
@@ -3834,9 +3834,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
           match D with
           | none => return none
           | some E => some <$> lower do
-            let store ← SourceTypes.use (.list ⟨[], [], some E, true, .readable⟩ [])
+            let spine ← SourceTypes.use (.list ⟨[], [], some E, true, .readable⟩ [])
             let T ← get
-            return [← SourceTypes.use (SourceTypes.arrayOf T store true)]
+            return [← SourceTypes.use (SourceTypes.arrayOf T spine true)]
         | none => pure none
       let (A, e') ← expr e1 y D
       As := As ++ [A]
@@ -3897,7 +3897,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       if !slice && A.isSome then
         if let some D := restType then
           let G ← StateT.lift graphNow
-          if (storeOf G D).isSome then recordAt rp "other" (.ok D)
+          if (spineOf G D).isSome then recordAt rp "other" (.ok D)
     let names := targets.filterMap (·.target.targetLocal) ++ (rest.bind fun r => r.2.2.target.targetLocal).toList
     -- Each name the pattern assigns at its declared type, and no path
     -- through it narrowed, from the first target's assignment on (a later
@@ -4040,8 +4040,8 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         let D := (e1.decl.lookup n).getD A
         -- A slot assigned an object literal holds it at its contract's
         -- members it is within (the producer's `slot_holds`,
-        -- type_queries.ml:1133-1140): a store's contract is fixed where it
-        -- is made, so the slot is never at the exact type of the store.
+        -- type_queries.ml:1133-1140): a spine's contract is fixed where it
+        -- is made, so the slot is never at the exact type of the spine.
         let w ← get
         let fresh := match rhs with | .alloc .. | .build .. => true | _ => false
         let slot := fresh && (w.slots.get.contains n || w.literalSlots.contains n)
@@ -4277,7 +4277,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     -- receiver and the list in order, then the target called with the list's
     -- positions (the lowering's, Atoms.lean:832-918): a tuple of required
     -- positions, else, for a target of one variadic signature taking only a
-    -- rest, its store's positions (holes read as `undefined`); a null or
+    -- rest, its spine's positions (holes read as `undefined`); a null or
     -- undefined list gives none. The value is the target's one signature's
     -- result (`expression_values.ml`, `Apply`), the call at its effect.
     let (F, e1) ← expr env callee
@@ -4292,7 +4292,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
         let listed := match Lt with
           | none => some false
           | some T => if nullishList G T then some false else
-            match storeOf G T with
+            match spineOf G T with
             | some S => match PositiveRules.expand G S with
               | [.list t []] =>
                 if t.optional.isEmpty && t.rest.isNone then some false
@@ -4342,7 +4342,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       -- its parameters promising
       -- (`expression_values.ml`, `Bind`), which the lowering selects among
       -- the member's (`bindMember`); as the general form below.
-      -- `TSCERT_FORCE=binds` states it keeping values and stores, the
+      -- `TSCERT_FORCE=binds` states it keeping values and spines, the
       -- adversarial proposal.
       let forced := (← get).force.contains "binds"
       let r ← match r with
@@ -4456,7 +4456,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
           let some i ← (match K with | some K => keyIndex K | none => pure none)
             | throw "a method of a computed key"
           let R := present (← graphNow) (← need O "the receiver")
-          if (storeOf (← graphNow) R).isNone then throw "a method of a computed key"
+          if (spineOf (← graphNow) R).isNone then throw "a method of a computed key"
           let F ← elementAt R (some i)
           return Except.ok (← spreadCall args As spreads (← calleeOf F R typeArgs))
         -- A nullish receiver throws before its method is read (the
@@ -4661,7 +4661,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       let arms := PositiveRules.expand G B
       let guided := match x with
         | .alloc .. => arms.any fun | .dict .. => true | _ => false
-        | .arrayLit _ _ [] => B.any fun l => match storeOf G [l] with
+        | .arrayLit _ _ [] => B.any fun l => match spineOf G [l] with
           | some S => match PositiveRules.expand G S with
             | [.list t []] => t.rest.isNone
             | _ => false
@@ -4931,7 +4931,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       match PositiveRules.expand G P, A with
       | [.dict [] [] [] ix [] [] _ _ _], some A =>
         ix.any (fun (_, E) => isBinder b E) && !A.isEmpty && A.all fun l =>
-          (storeOf G [l]).isNone && match PositiveRules.expand G [l] with
+          (spineOf G [l]).isNone && match PositiveRules.expand G [l] with
             | [.refs _ [] ..] => true
             | _ => false
       | _, _ => false
@@ -5055,7 +5055,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       if restPack == some none then
         let G ← StateT.lift graphNow
         if let some [l] := A then
-          if let some S := storeOf G [l] then
+          if let some S := spineOf G [l] then
             if let [.list t []] := PositiveRules.expand G S then
               if t.optional.isEmpty && t.rest.isNone then
                 restPack := none
@@ -5087,7 +5087,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with summary := ClassSummary.skip, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
   -- The contextual result guides async resolution calls as well as ordinary
-  -- returns, before their stores are made.
+  -- returns, before their spines are made.
   modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -5134,12 +5134,12 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let S := (← get).summary.close
   let S := if async then S.settle else S
   -- An expression body calling a function whose instance states a fresh
-  -- result returns a fresh store (the producer's `fresh_result`,
+  -- result returns a fresh spine (the producer's `fresh_result`,
   -- source.ml:1230): a postcondition established apart from the summary.
   let freshResult := (match body with | .call .. | .invoke .. => true | _ => false) && (← get).lastFresh
   let proposal := fun (bounded : Bool) =>
     CallEffects.Effect.ofStated (S.format bounded).1 none (S.format bounded).2 freshResult [] [] []
-  -- A body whose proposal keeps both values and stores: the footprint its
+  -- A body whose proposal keeps both values and spines: the footprint its
   -- calls are checked at.
   let kept := proposal true
   let pure_ := kept.changeBound == .empty
@@ -5324,13 +5324,13 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree))
               -- The rest is a fresh ordinary object: role `field`.
               Except.ok <$> prim (.refs (withRole .field (Stored.views (fs.filter fun (k, _) => !named.contains k))) [] [])
             | [.refs fs [] vs [] ms _ _] =>
-              if (Stored.views fs ++ vs).any (·.1 == SourceTypes.storeField) then
+              if (Stored.views fs ++ vs).any (·.1 == SourceTypes.spineField) then
                 let cs ← copiesOf A forced
                 let Rs ← cs.mapM copyType
                 return .ok (norm Rs.flatten)
               let named := props.map fun (k, _, _) => PropKey.str k
               let fields := (Stored.views fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
-                f != SourceTypes.storeField && !ms.any (·.key == f) && !named.contains f
+                f != SourceTypes.spineField && !ms.any (·.key == f) && !named.contains f
               Except.ok <$> prim (.refs (withRole .field fields) [] [] [] [] [])
             | _ =>
               -- Any other value: the copies it gives as a spread's operand
@@ -5378,7 +5378,7 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
         let G ← graphNow
         let mut Es : List (Ty Tree) := []
         for l in A do
-          let some S := storeOf G [l] | return none
+          let some S := spineOf G [l] | return none
           let [.list t []] := PositiveRules.expand G S | return none
           Es := Es ++ t.required.drop k ++ (t.optional.drop (k - t.required.length)).map (· ++ [Labels.undef]) ++ t.rest.toList
         pure (some (norm Es.flatten))) fun _ => pure none)
@@ -5394,7 +5394,7 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
     return ((·.2) <$> r).toOption
   let r ← StateT.lift (tryCatch (do
       let G ← graphNow
-      let some S := storeOf G A | throw "a rest of a value that is no array"
+      let some S := spineOf G A | throw "a rest of a value that is no array"
       let [.list t []] := PositiveRules.expand G S | throw "an array of more than one tuple contract"
       let Es := t.required.drop k
       let Os := t.optional.drop (k - t.required.length)
@@ -5433,7 +5433,7 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
           Bd.all (fun l => !(ProgramTyping.callSigs G [l]).isEmpty) then
         return (some Bd, (join (some env) (some e1)).getD e1)
       -- An object literal default at the part's members it is within: a
-      -- store's contract is fixed where it is made (`declaredAt`; the
+      -- spine's contract is fixed where it is made (`declaredAt`; the
       -- producer binds a defaulted parameter at its annotation).
       let D ← match d with
         | .alloc .. | .build .. => if Bd.isEmpty then pure D else StateT.lift (declaredAt Bd D)
@@ -5781,7 +5781,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           A₀ := some L'
       let A := A₀
       modify fun w => { w with freshClass := false }
-      -- A constant holding a store the run allocated.
+      -- A constant holding a spine the run allocated.
       let w ← get
       let fresh := match b.init with
         | .var _ m => w.freshConsts.contains m
@@ -5978,7 +5978,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- For a declaration's footprint, the iteration is the operation its
     -- intrinsic's call states (`applyCall`) and each step of the stepper it
     -- gives: an operation of the step's per-exit contract, its receiver the
-    -- iterator the call made, a fresh store (`ClassSummary.ofEffect` at
+    -- iterator the call made, a fresh spine (`ClassSummary.ofEffect` at
     -- position `0`, Fresh-Eff); an iteration whose stepper the walk does not
     -- determine may change anything.
     if !(← get).force.contains "steps" then

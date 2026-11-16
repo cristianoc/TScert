@@ -17,34 +17,34 @@ closed-footprint theorems (their composition below a cutoff,
 `AxiomCheck.lean` also checks. -/
 namespace Verification.Footprints.Controls
 
-/-- Slot 0 holds an array whose store is location 0. -/
-private def arr0 : Env := fun i => if i = 0 then .objAt [(arrayStoreKey, 0)] .absent 9 else .undef
+/-- Slot 0 holds an array whose spine is location 0. -/
+private def arr0 : Env := fun i => if i = 0 then .objAt [(arraySpineKey, 0)] .absent 9 else .undef
 
 /-! ## Union is not composition
 
-`Φ` changes `x`'s store and its listed elements. Location 2 is listed only
+`Φ` changes `x`'s spine and its listed elements. Location 2 is listed only
 after the first step, so `Φ` read at `h₀` does not cover the second step's
-write. Rebasing the second step's `elems` to the entry (`all`) does. -/
+write. Rebasing the second step's `cells` to the entry (`all`) does. -/
 
-private def Φelems : Footprint := [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
+private def Φcells : Footprint := [(.field 0 arraySpineKey, .any), (.cells 0, .any)]
 private def h₀ : Heap := [.arr [some 1], .nul, .nul]
 private def h₁ : Heap := [.arr [some 2], .nul, .nul]
 private def h₂ : Heap := [.arr [some 2], .nul, .tru]
 /-- The step's slot 0 is the entry's slot 0. -/
 private def sameSlots : RebaseEvidence := { link := fun s => some (s, []), agree := fun _ _ => false }
 
-#guard postB (Φelems ++ rebaseAll sameSlots Φelems) arr0 h₀ h₂
+#guard postB (Φcells ++ rebaseAll sameSlots Φcells) arr0 h₀ h₂
 
 /-- The two-step rule without rebasing is false. -/
 theorem union_composition_false :
     ¬ ∀ (Φ : Footprint) (ρ : Env) (a b c : Heap), Post Φ ρ a b → Post Φ ρ b c → Post Φ ρ a c := by
   intro H
-  have h := H Φelems arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
+  have h := H Φcells arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Inclusion needs evidence valid at the entry heap
 
-At `g` the field holds a value, at `g₀` a store. Class evidence true at `g`
+At `g` the field holds a value, at `g₀` a spine. Class evidence true at `g`
 justifies the inclusion of `Φp` in `Φq`, and the composed claim fails. -/
 
 private def fieldK : Env := fun i => if i = 0 then .objAt [("k", 0)] .absent 9 else .undef
@@ -56,7 +56,7 @@ private def valueK : ClassEvidence := fun x k => if x = 0 ∧ k = "k" then some 
 /-- Rebasing evidence stating nothing. -/
 private def noLinks : RebaseEvidence := { link := fun _ => none, agree := fun _ _ => false }
 
-/-- `g` holds no object and no store: its contents categories hold. -/
+/-- `g` holds no object and no spine: its contents categories hold. -/
 private theorem g_categories : HeapCategories g where
   fields l₀ v _ _ _ hv hl _ := by
     have : v = .nul := by
@@ -66,7 +66,7 @@ private theorem g_categories : HeapCategories g where
     subst this; simp [fieldsOf] at hl
   cells s ls _ _ hs _ _ := by
     cases s with
-    | zero => simp [g, storeEntries] at hs
+    | zero => simp [g, spineEntries] at hs
     | succ n => simp [g] at hs
   views l₀ _ _ _ _ _ _ hv _ := by
     cases l₀ with
@@ -120,13 +120,13 @@ theorem compose_needs_entry_evidence :
     (noLinks_ok _ _ _) hle hc
   exact absurd (postB_iff.mpr h) (by decide)
 
-/-! ## Freshness of a store says nothing of its elements
+/-! ## Freshness of a spine says nothing of its elements
 
 Slot 0's own location is 5, at least mark 1; slot 1's typed field `f` is
-location 1, below mark 1. The store at 5 lists location 1. -/
+location 1, below mark 1. The spine at 5 lists location 1. -/
 
 private def apart : Env := fun i =>
-  if i = 0 then .objAt [(arrayStoreKey, 5)] .absent 9
+  if i = 0 then .objAt [(arraySpineKey, 5)] .absent 9
   else if i = 1 then .objAt [("f", 1)] .absent 9 else .undef
 private def heap5 : Heap := [.nul, .nul, .nul, .nul, .nul, .arr [some 1]]
 private def apartStamps : Stamps :=
@@ -150,24 +150,24 @@ theorem apart_stamps_hold : StampsHold apartStamps typedF μ5 apart := by
 
 /-- Separation by `after` of every region rooted at a slot, its listed
 elements included, is false. -/
-theorem elems_separation_false :
+theorem cells_separation_false :
     ¬ ∀ (st : Stamps) (typed : Nat → List PropKey) (μ : Nat → Nat) (ρ : Env) (h : Heap)
         (x y m m' l : Nat) (k : PropKey) (l' : Nat),
       StampsHold st typed μ ρ → (∀ i j, i ≤ j → μ i ≤ μ j) → st.after x = some m →
-      st.before y = some m' → m' ≤ m → (Region.elems x).mem ρ h l = true → k ∈ typed y →
+      st.before y = some m' → m' ≤ m → (Region.cells x).mem ρ h l = true → k ∈ typed y →
       (fieldsOf (ρ y)).lookup k = some l' → l ≠ l' := by
   intro H
   exact H apartStamps typedF μ5 apart heap5 0 1 1 1 1 "f" 1 apart_stamps_hold
     (fun i j hij => by simp only [μ5]; split <;> split <;> omega) rfl rfl (Nat.le_refl _)
     (by decide) (by simp [typedF]) (by simp [apart, fieldsOf]) rfl
 
-/-- `stamps_separate`'s region premise must exclude `elems`: on the witness,
+/-- `stamps_separate`'s region premise must exclude `cells`: on the witness,
 slot 0's listed element and slot 1's typed field are one location, so the
 theorem's conclusion fails there; were its premise to admit `elems 0`, this
 would prove `False`. -/
-theorem stamps_separate_excludes_elems
-    (hr : (∃ k, Region.elems 0 = Region.field 0 k) ∨ Region.elems 0 = Region.own 0) : False :=
-  stamps_separate (x := 0) (y := 1) (m := 1) (m' := 1) (r := .elems 0) (h := heap5) (l := 1) (k := "f")
+theorem stamps_separate_excludes_cells
+    (hr : (∃ k, Region.cells 0 = Region.field 0 k) ∨ Region.cells 0 = Region.fields 0) : False :=
+  stamps_separate (x := 0) (y := 1) (m := 1) (m' := 1) (r := .cells 0) (h := heap5) (l := 1) (k := "f")
     (l' := 1) apart_stamps_hold
     (fun i j hij => by simp only [μ5]; split <;> split <;> omega) rfl rfl (Nat.le_refl _) hr
     (by decide) (by simp [typedF]) (by simp [apart, fieldsOf]) rfl
@@ -210,32 +210,32 @@ theorem merged_marks_unsound :
   · have := h.1 0 1 rfl 7 (by simp [shared7, fieldsOf])
     exact absurd this (by decide)
 
-/-! ## Density depends on its store alone
+/-! ## Density depends on its spine alone
 
-Every slot names store location 0. Location 1 shrinks; every region that
+Every slot names spine location 0. Location 1 shrinks; every region that
 covers it also covers location 0, so no footprint keeping location 0 within
 `grow` states the change, and density survives it. -/
 
-private def store0 : Env := fun _ => .objAt [(arrayStoreKey, 0)] .absent 9
+private def spine0 : Env := fun _ => .objAt [(arraySpineKey, 0)] .absent 9
 
 theorem dense_survives_outside_support :
-    Dense 0 1 store0 [.arr [some 2], .arr [some 2], .nul] ∧
-      Dense 0 1 store0 [.arr [some 2], .arr [], .nul] := by
-  have hd : Dense 0 1 store0 [.arr [some 2], .arr [some 2], .nul] :=
-    ⟨0, [some 2], by simp [store0, fieldsOf], rfl,
+    Dense 0 1 spine0 [.arr [some 2], .arr [some 2], .nul] ∧
+      Dense 0 1 spine0 [.arr [some 2], .arr [], .nul] := by
+  have hd : Dense 0 1 spine0 [.arr [some 2], .arr [some 2], .nul] :=
+    ⟨0, [some 2], by simp [spine0, fieldsOf], rfl,
       ⟨by simp, fun i hi => by cases i with | zero => simp | succ i => omega⟩⟩
   refine ⟨hd, dense_support hd fun e he l v hm hv => ?_⟩
   simp only [List.mem_singleton] at he
   subst he
-  simp only [Region.mem, store0, fieldsOf, List.lookup, beq_self_eq_true, beq_iff_eq,
+  simp only [Region.mem, spine0, fieldsOf, List.lookup, beq_self_eq_true, beq_iff_eq,
     Option.some.injEq] at hm
   subst hm
   exact ⟨v, by simpa using hv, Change.Holds.refl _ _ _⟩
 
 /-! ## Classes need contracts -/
 
-/-- `nonNull` holds of a store: a `cell` fact alone gives no class. -/
-theorem nonNull_admits_store : HeapFacts.Atom.holds .nonNull (.arr []) := by
+/-- `nonNull` holds of a spine: a `cell` fact alone gives no class. -/
+theorem nonNull_admits_spine : HeapFacts.Atom.holds .nonNull (.arr []) := by
   simp [HeapFacts.Atom.holds, isVal]
 
 /-- A source value may name any location, one the heap does not have
@@ -246,10 +246,10 @@ theorem source_names_any_location (n : Nat) (W : WorldT n) :
   refine ⟨⟨rfl, ?_⟩, by simp⟩
   simp [Scoped]
 
-/-- **An element location holds no store**, at any level: a store's
+/-- **An element location holds no spine**, at any level: a spine's
 references give its element locations the element role, whose contents are
 source values. -/
-theorem element_holds_no_store :
+theorem element_holds_no_spine :
     ¬ ∃ (n : Nat) (W : WorldT n) (h : Heap), HeapOk n W h ∧
       h[0]? = some (.arr [some 1]) ∧ h[1]? = some (.arr []) := by
   rintro ⟨n, W, h, hok, h0, h1⟩
@@ -267,15 +267,15 @@ itself. -/
 
 private def noKnowledge : SepKnowledge :=
   { cl := fun _ _ => none, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
-private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .stores else none }
+private def spineK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .spines else none }
 private def cellK : FactKind := .cell ⟨0, { nul := true }, "k"⟩
 
 #guard !stable noKnowledge cellK.support [(.cls .values, .any)]
-#guard stable storeK cellK.support [(.cls .values, .any)]
--- `stores` and `views` overlap: a store field is not apart from the views.
-#guard !stable storeK cellK.support [(.cls .views, .any)]
-#guard !stable storeK cellK.support [(.field 0 "k", .any)]
-#guard stable storeK cellK.support [(.field 0 "k", .keep)]
+#guard stable spineK cellK.support [(.cls .values, .any)]
+-- `spines` and `views` overlap: a spine field is not apart from the views.
+#guard !stable spineK cellK.support [(.cls .views, .any)]
+#guard !stable spineK cellK.support [(.field 0 "k", .any)]
+#guard stable spineK cellK.support [(.field 0 "k", .keep)]
 
 /-! ## Array mutators
 
@@ -299,10 +299,10 @@ private def grows (a : Arr) (f : Arr → Arr) : Bool := Change.grow.holdsB a.nex
 #guard present (Arr.unshift ⟨[some 0, none], 2⟩).ls 0 && present (Arr.unshift ⟨[some 0, none], 2⟩).ls 1
 #guard !present (Arr.unshift ⟨[some 0, none], 2⟩).ls 2
 #guard grows ⟨[some 0, none], 2⟩ Arr.unshift
--- sort's writeback, judged from the entry store, after a comparator that removed both indices
+-- sort's writeback, judged from the entry spine, after a comparator that removed both indices
 #guard Change.grow.holdsB 2 (.arr [some 0, some 1])
   (.arr ((Arr.mk [] 2).writeback (itemCount [some 0, some 1] 2) 2).ls)
--- and the step from the comparator's store is no `grow` of the entry store's prefix after a
+-- and the step from the comparator's spine is no `grow` of the entry spine's prefix after a
 -- comparator that filled a hole the writeback deletes: [3, 1, hole, 2] sorted keeps 3 values
 #guard !present ((Arr.mk [some 0, some 1, some 5, some 3] 6).writeback
   (itemCount [some 0, some 1, none, some 3] 4) 4).ls 3
@@ -329,25 +329,25 @@ run_cmd do
 
 /-! ## Keeping a length across an argument-path frame
 
-The central example: `readRuns(runs)` states `value: any, store: keep` and
+The central example: `readRuns(runs)` states `value: any, spine: keep` and
 `runs.openBrackets[*]: any`; the caller keeps a density fact of `flags`
-(slot 0) where `runs` (slot 1) reaches its array apart from `flags`'s store
-and that array's cells hold no store. -/
+(slot 0) where `runs` (slot 1) reaches its array apart from `flags`'s spine
+and that array's cells hold no spine. -/
 
 private def runsFrame : Footprint :=
-  [(.cls .values, .any), (.cls .stores, .keep),
-   (.path 1 ["openBrackets"] arrayStoreKey, .any), (.pathElems 1 ["openBrackets"], .any)]
-private def flagsStore : ClassEvidence := fun x k => if x = 0 ∧ k = arrayStoreKey then some .stores else none
+  [(.cls .values, .any), (.cls .spines, .keep),
+   (.path 1 ["openBrackets"] arraySpineKey, .any), (.pathCells 1 ["openBrackets"], .any)]
+private def flagsSpine : ClassEvidence := fun x k => if x = 0 ∧ k = arraySpineKey then some .spines else none
 private def runsK : SepKnowledge :=
   { noKnowledge with
-    cl := flagsStore
-    storeApart := [(1, ["openBrackets"], 0)]
+    cl := flagsSpine
+    spineApart := [(1, ["openBrackets"], 0)]
     elemsValue := [(1, ["openBrackets"])] }
 
 #guard stable runsK (FactKind.dense 0 1).support runsFrame
--- Without store separation the path's store may be `flags`'s.
-#guard !stable { runsK with storeApart := [] } (FactKind.dense 0 1).support runsFrame
--- Without the element-class premise the cells may include `flags`'s store.
+-- Without spine separation the path's spine may be `flags`'s.
+#guard !stable { runsK with spineApart := [] } (FactKind.dense 0 1).support runsFrame
+-- Without the element-class premise the cells may include `flags`'s spine.
 #guard !stable { runsK with elemsValue := [] } (FactKind.dense 0 1).support runsFrame
 
 end Verification.Footprints.Controls

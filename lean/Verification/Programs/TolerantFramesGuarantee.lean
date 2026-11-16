@@ -37,7 +37,7 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
     (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
-    (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) : Prop where
+    (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)) : Prop where
   safe : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign G η)) P (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at start ρ)
@@ -59,8 +59,8 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
-      (fun h' => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' => exc = true → Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       n W h (.goto E K start L d)
   asserted : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
@@ -75,7 +75,7 @@ the heap is within `Φ` from `h₀`. -/
 def BoundX (Φ : Footprints.Closed) (h₀ : Heap) (dead : List Bool) : Nat → Env → Heap → Prop :=
   fun l _ h => GraphCode.deadAt dead l = true ∨ Φ.Holds h₀ h
 
-/-- A return under the bound: within `Φ` from `h₀`, the value's store fresh
+/-- A return under the bound: within `Φ` from `h₀`, the value's spine fresh
 where the bound states a fresh result. -/
 def BoundQ (Φ : Footprints.Closed) (h₀ : Heap) (fresh : Bool) : Heap → Tm → Prop :=
   fun h v => Φ.Holds h₀ h ∧ (fresh = true → Footprints.FreshAt h₀.length v)
@@ -108,14 +108,14 @@ def ReturnsEnsured (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames 
   NodesKeep P (passPreT G w startNames ε ctx) (fun _ _ _ => True) (EnsuresQ ens ε) (fun _ => True) m
 
 /-- A return within the regional bound from the entry heap `h₀`. -/
-def RegionQ (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (ε : HeapKnowledge.EntryState) (h₀ : Heap) :
+def RegionQ (Φ : Footprints.Closed) (regions : List Footprints.ArgumentSpineRegion) (ε : HeapKnowledge.EntryState) (h₀ : Heap) :
     Heap → Tm → Prop :=
-  fun h _ => Footprints.ArgumentStoreRegionsWithin Φ regions ε.env h₀ h
+  fun h _ => Footprints.ArgumentSpineRegionsWithin Φ regions ε.env h₀ h
 
 /-- An escaping throw within the regional bound where it covers throws. -/
-def RegionR (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (ε : HeapKnowledge.EntryState) (h₀ : Heap)
+def RegionR (Φ : Footprints.Closed) (regions : List Footprints.ArgumentSpineRegion) (ε : HeapKnowledge.EntryState) (h₀ : Heap)
     (exc : Bool) : Heap → Prop :=
-  fun h => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions ε.env h₀ h
+  fun h => exc = true → Footprints.ArgumentSpineRegionsWithin Φ regions ε.env h₀ h
 
 omit [Hashable ι] in
 /-- **The start entered, typed**: `start_passPre` with the start's context

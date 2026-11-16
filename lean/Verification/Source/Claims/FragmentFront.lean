@@ -46,7 +46,7 @@ result as written or proposed by the body walk, a defaulted parameter with `unde
 element (`ClosureSetup.lambdaSetup`'s own signature); its effect the one it
 writes, else, for an expression body that, with its defaults, calls nothing
 (`Synthesis.mayCall`),
-keeping values and stores and bounding its throws, else the ordinary effect;
+keeping values and spines and bounding its throws, else the ordinary effect;
 the walk checks its body's effect within it (`Synthesis.walkLambda`). The
 scheme row and the binders its body reads as rigid rows are then
 `Scheme.closureRows`'s, as for a producer's scheme claim
@@ -143,7 +143,7 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
   let functions := all.map fun (f, _) =>
     let (footprint, onThrow, resultFootprint) := match standIns.functions.find? (·.name == f.name), f.stated with
       | some s, _ => (s.footprint, s.onThrow, s.resultFootprint)
-      -- A statement with store regions proposes `top`, the regional check
+      -- A statement with spine regions proposes `top`, the regional check
       -- of its own regions certifying the statement.
       | none, some s => if s.regions.isEmpty then (s.closed, s.onThrow, Footprints.Closed.top)
           else (.top, false, .top)
@@ -206,7 +206,7 @@ partial def earlyNames (ss : List Fragment.Stmt) : List String :=
 
 /-- The kind of the `length` of a value of a type in claim form, its labels
 read in the store `T`: a string's where each of its clauses but `null` and
-`undefined` is a string, an array's where each holds an array store, a typed
+`undefined` is a string, an array's where each holds an array spine, a typed
 array's where each is a typed array's (`Clause.view`); a type in the
 parser's form by its written type (`HeadInference.kindOfType`). -/
 def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Term.Kind :=
@@ -219,7 +219,7 @@ def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Ter
       | .nul | .undef => none
       | .str | .strLit _ | .strIn _ => some (some HeapKnowledge.Term.Kind.strLength)
       | .refs fs _ vs .. =>
-        some (if field fs vs SourceTypes.storeField then some .length else none)
+        some (if field fs vs SourceTypes.spineField then some .length else none)
       | .view .. => some (some .view)
       | _ => some none
     match kinds with
@@ -287,7 +287,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       -- (the parameters are the body's ambient bindings, in no node's scope)
       let inScope := fun (n : String) =>
         (node.scope.any (·.name == n) || f.params.any (·.name == n)) && !early.contains n
-      -- (a store separation names value bindings alone: no cell; and a
+      -- (a spine separation names value bindings alone: no cell; and a
       -- binding it names whole, a value its type at the loop's entry makes
       -- an array, where the walk types it: no string, no null)
       let typed := (envMap.get? pos).getD []
@@ -297,7 +297,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
             ((Stored.views fs).lookup k <|> vs.lookup k).isSome
           let cs := PositiveRules.expand (SourceTypes.graph T) A
           !cs.isEmpty && cs.all fun
-            | .refs fs _ vs .. => field fs vs SourceTypes.storeField
+            | .refs fs _ vs .. => field fs vs SourceTypes.spineField
             | .view .. => true
             | _ => false
         | _ => true
@@ -361,7 +361,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         | some (_, cs), _ | none, some cs => [(node.source.1, cs)]
         | none, none => []
       entryFacts := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.claim)
-      entryStoresApart := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.storesClaim)
+      entrySpinesApart := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.spinesClaim)
       entryEvery := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim) }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
@@ -372,8 +372,8 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         envs := r.envs ++ row.envs.filter (fun (pos, _) => !r.envs.any (·.1 == pos))
         entryCurrent := r.entryCurrent ++ row.entryCurrent.filter (fun (pos, _) => !r.entryCurrent.any (·.1 == pos))
         entryFacts := r.entryFacts ++ row.entryFacts.filter (fun (pos, _) => !r.entryFacts.any (·.1 == pos))
-        entryStoresApart := r.entryStoresApart ++
-          row.entryStoresApart.filter (fun (pos, _) => !r.entryStoresApart.any (·.1 == pos)) }
+        entrySpinesApart := r.entrySpinesApart ++
+          row.entrySpinesApart.filter (fun (pos, _) => !r.entrySpinesApart.any (·.1 == pos)) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   -- Its own footprint the one its callers read (`fragmentClaims`): written,
@@ -494,7 +494,7 @@ def withStandIns (claims : Json) (sis : List StandIn) : Json :=
     | none => j))
 
 /-- The front with each import that never returns read at the footprint
-keeping values and stores: an import of one fixed signature whose declared
+keeping values and spines: an import of one fixed signature whose declared
 result is the empty type and that states no promise; an intrinsic is no
 import. Its normal return
 meets every footprint, having none; its throws stay unbounded. The reading

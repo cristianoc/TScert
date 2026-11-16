@@ -40,7 +40,7 @@ theorem fieldTarget_role {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {
 `writeAt f o v ⟶ null`, writing `o`'s location `l` under `f`).
 
 Typing premise: `v` has the category of `l`'s role (`Cat`): a source value
-where `l` is a field or a cell, a store where it is a store. The step admits
+where `l` is a field or a cell, a spine where it is a spine. The step admits
 any machine value. -/
 theorem writeField_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)}
     {c : CallCode} {oid : Nat} {f : PropKey} {l : Nat} {v : Val}
@@ -52,13 +52,13 @@ theorem writeField_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKe
   obtain ⟨r, hr, -⟩ := fieldTarget_role hobj hl
   exact ⟨Shaped_set hsh hr ⟨hcat r hr, hv⟩, fun _ h => by simp [refs] at h⟩
 
-/-- An ordinary property's write, under a key other than the store slot:
+/-- An ordinary property's write, under a key other than the spine slot:
 its target is a field or a cell, so a source value is the payload's
 category. -/
 theorem writeOrdinary_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)}
     {c : CallCode} {oid : Nat} {f : PropKey} {l : Nat} {v : Val}
     (hsh : Shaped W h) (href : RefsOk W (.writeAt f (.objAt fs c oid) v)) (hl : fs.lookup f = some l)
-    (hkey : f ≠ arrayStoreKey) (hsrc : isSourceVal v = true) :
+    (hkey : f ≠ arraySpineKey) (hsrc : isSourceVal v = true) :
     Shaped W (h.set l v) := by
   have hobj : RefsOk W (.objAt fs c oid) := fun r hr => href r (by simp [refs, hr])
   refine (writeField_shaped hsh href hl fun r hr => ?_).1
@@ -66,7 +66,7 @@ theorem writeOrdinary_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (Pro
   rw [hr] at hr'; cases hr'
   cases r with
   | field | cell | elem => exact hsrc
-  | store fm => cases fm <;> simp only [SlotRole] at hs <;> simp_all
+  | spine fm => cases fm <;> simp only [SlotRole] at hs <;> simp_all
   | identity => simp [SlotRole] at hs
 
 /-- **A binding update** writes a binding cell's location, a cell; a
@@ -75,29 +75,29 @@ theorem bindingWrite_shaped {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {v : V
     (hsh : Shaped W h) (hr : roleAt W l = some .cell) (hv : RefsOk W v) (hsrc : isSourceVal v = true) :
     Shaped W (h.set l v) := Shaped_set hsh hr ⟨hsrc, hv⟩
 
-/-- **A store write** writes an array's store slot `[]`, an array store;
-a store is its category, and its cells are element cells because the
-written term's are. This covers the writeback of a grown store and the
-store a length write computes (`RefsOk_arr_of_subset`). -/
-theorem storeWrite_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)}
+/-- **A spine write** writes an array's spine slot `[]`, an array spine;
+a spine is its category, and its cells are element cells because the
+written term's are. This covers the writeback of a grown spine and the
+spine a length write computes (`RefsOk_arr_of_subset`). -/
+theorem spineWrite_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)}
     {c : CallCode} {oid : Nat} {l : Nat} {ls : List (Option Nat)}
-    (hsh : Shaped W h) (href : RefsOk W (.writeAt arrayStoreKey (.objAt fs c oid) (.arr ls)))
-    (hl : fs.lookup arrayStoreKey = some l) : Shaped W (h.set l (.arr ls)) := by
+    (hsh : Shaped W h) (href : RefsOk W (.writeAt arraySpineKey (.objAt fs c oid) (.arr ls)))
+    (hl : fs.lookup arraySpineKey = some l) : Shaped W (h.set l (.arr ls)) := by
   have hobj : RefsOk W (.objAt fs c oid) := fun r hr => href r (by simp [refs, hr])
   refine (writeField_shaped hsh href hl fun r hr => ?_).1
   obtain ⟨r', hr', hs⟩ := fieldTarget_role hobj hl
   rw [hr] at hr'; cases hr'
   cases r with
-  | store fm =>
+  | spine fm =>
     cases fm with
     | array => exact ⟨ls, rfl⟩
     | view fm N => simp [SlotRole] at hs
   | field | cell => simp [SlotRole] at hs
   | elem | identity => simp [SlotRole] at hs
 
-/-- A length write's store lists cells of the old store: shortened, or
+/-- A length write's spine lists cells of the old spine: shortened, or
 padded with holes. -/
-theorem lengthStore_refs {k : Nat} {W : WorldT k} {ls : List (Option Nat)} (n : Nat)
+theorem lengthSpine_refs {k : Nat} {W : WorldT k} {ls : List (Option Nat)} (n : Nat)
     (h : RefsOk W (.arr ls)) :
     RefsOk W (.arr (if n ≤ ls.length then ls.take n else ls ++ List.replicate (n - ls.length) none)) := by
   refine RefsOk_arr_of_subset (fun l hl => ?_) h
@@ -118,7 +118,7 @@ theorem elemLoc_mem {ls : List (Option Nat)} {b : UInt64} {l : Nat} (h : elemLoc
   | some m => cases hl; exact List.mem_of_getElem? ho
 
 /-- **A present element's write preserves kinds** (`Step.setPresent`): the
-target is an element cell the store lists. Typing premise: `v` is a source
+target is an element cell the spine lists. Typing premise: `v` is a source
 value. -/
 theorem setPresent_shaped {k : Nat} {W : WorldT k} {h : Heap} {ls : List (Option Nat)} {i v : Tm}
     {b : UInt64} {l : Nat} (hsh : Shaped W h) (href : RefsOk W (.setElem (.arr ls) i v))
@@ -138,7 +138,7 @@ theorem mem_placeAt {ls : List (Option Nat)} {k m l : Nat} (h : some l ∈ place
   · cases h; exact .inr rfl
 
 /-- **A hole's or past-the-end write preserves kinds** (`Step.setGrow`): the
-fresh location is an element cell the returned store lists beside the old
+fresh location is an element cell the returned spine lists beside the old
 ones. Typing premise: `v` is a source value. -/
 theorem setGrow_shaped {k : Nat} {W : WorldT k} {h : Heap} {ls : List (Option Nat)} {i v : Tm}
     {kk : Nat} (c : Ctr k) (hlen : h.length = (entries W).length) (hsh : Shaped W h)
@@ -309,7 +309,7 @@ theorem mergeParts_vals {h : Heap} {d : List PropKey} {a b : Tm} {ps : List (Pro
         · simp only [List.mem_map, List.mem_filter] at he
           obtain ⟨x, -, rfl⟩ := he
           exact .inl ⟨x.2, rfl⟩
-        · unfold storeData at he
+        · unfold spineData at he
           split at he
           · split at he
             · simp only [List.mem_filterMap] at he
@@ -408,7 +408,7 @@ theorem step_refs' {k : Nat} {W : WorldT k} {h h' : Heap} {t t' : Tm} (hs : Step
     have hl := congrArg List.length heq
     simp only [List.length_append, Nat.add_eq_left, List.length_eq_zero_iff] at hl
     subst hl
-    simp [refs, storeRefs, elemSlots] at hm
+    simp [refs, spineRefs, elemSlots] at hm
   case readField hv =>
     intro _ hlen hsh r hm; exact .inr (heap_refs hlen hsh hv r hm)
   case readProto hv =>
@@ -486,7 +486,7 @@ theorem step_refs {k : Nat} {W : WorldT k} {h : Heap} {t t' : Tm} (hs : Step h t
 
 /-! ## Copies -/
 
-theorem toString_ne_store (n : Nat) : toString n ≠ "[]" := by
+theorem toString_ne_spine (n : Nat) : toString n ≠ "[]" := by
   intro h
   have := congrArg String.toList h
   simp [toString, Nat.repr] at this
@@ -505,7 +505,7 @@ theorem heapVal_src {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {r : Role}
 
 theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)} {c : CallCode}
     {oid : Nat} (hsh : Shaped W h) (ho : RefsOk W (.objAt fs c oid)) {p : PropKey × Nat} (hp : p ∈ fs)
-    (h1 : p.1 ≠ arrayStoreKey) : isSourceVal (heapVal h p.2) = true := by
+    (h1 : p.1 ≠ arraySpineKey) : isSourceVal (heapVal h p.2) = true := by
   have := ho (.slot p.1 p.2) (by
     rw [refs_objAt]; exact List.mem_append_left _
       (by simp only [objRefs, List.mem_cons, List.mem_map]; exact .inr ⟨p, hp, rfl⟩))
@@ -519,7 +519,7 @@ theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)
     | cell => exact .inr (.inl rfl)
     | elem => cases this
     | identity => cases this
-    | store fm => cases fm <;> simp [SlotRole] at this <;> simp_all
+    | spine fm => cases fm <;> simp [SlotRole] at this <;> simp_all
 
 /-- **A copy allocates source values under ordinary keys**: every property a
 merge reads is under a key other than `[]`, and holds a source value. Its
@@ -527,10 +527,10 @@ source copies no internal key (`copiedKey`). -/
 theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a b : Tm}
     {ps : List (PropKey × Tm)} (hsh : Shaped W h)
     (ha : RefsOk W a) (hb : RefsOk W b) (hm : mergeParts h d a b = some ps) :
-    ∀ p ∈ ps, p.1 ≠ arrayStoreKey ∧ isSourceVal p.2 = true := by
+    ∀ p ∈ ps, p.1 ≠ arraySpineKey ∧ isSourceVal p.2 = true := by
   simp only [mergeParts, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at hm
   obtain ⟨p, hp, q, hq, rfl⟩ := hm
-  have hown : ∀ e ∈ p, e.1 ≠ arrayStoreKey ∧ isSourceVal e.2 = true := by
+  have hown : ∀ e ∈ p, e.1 ≠ arraySpineKey ∧ isSourceVal e.2 = true := by
     intro e he
     unfold ownAll at hp
     split at hp
@@ -542,7 +542,7 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
         obtain ⟨x, ⟨hx, hk⟩, rfl⟩ := this
         exact ⟨hk, slot_src hsh ha hx hk⟩
     · cases hp
-  have hdata : ∀ e ∈ q, e.1 ≠ arrayStoreKey ∧ isSourceVal e.2 = true := by
+  have hdata : ∀ e ∈ q, e.1 ≠ arraySpineKey ∧ isSourceVal e.2 = true := by
     intro e he
     unfold ownData at hq
     split at hq
@@ -555,14 +555,14 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
         · simp only [List.mem_map, List.mem_filter] at he
           obtain ⟨x, ⟨hx, hk⟩, rfl⟩ := he
           obtain ⟨k1, l1⟩ := x
-          have hne : k1 ≠ arrayStoreKey := by
+          have hne : k1 ≠ arraySpineKey := by
             cases k1 with
             | sym _ => simp [copiedKey] at hk
             | str s =>
               simp only [copiedKey, Bool.and_eq_true, bne_iff_ne, ne_eq] at hk
               intro h; cases h; simp_all
           exact ⟨hne, slot_src hsh hb hx hne⟩
-        · unfold storeData at he
+        · unfold spineData at he
           split at he
           · rename_i ls0 hls0
             split at he
@@ -575,12 +575,12 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
               | some m =>
                 simp only [Option.map_some, Option.some.injEq] at hxe
                 subst hxe
-                refine ⟨fun h => toString_ne_store i (PropKey.str.inj h), ?_⟩
-                -- the store slot is an array store, whose cells are element cells
-                have hst := hb (.slot arrayStoreKey ls0) (by
+                refine ⟨fun h => toString_ne_spine i (PropKey.str.inj h), ?_⟩
+                -- the spine slot is an array spine, whose cells are element cells
+                have hst := hb (.slot arraySpineKey ls0) (by
                   rw [refs_objAt]; exact List.mem_append_left _
                     (by simp only [objRefs, List.mem_cons, List.mem_map]
-                        exact .inr ⟨(arrayStoreKey, ls0), lookup_mem hls0, rfl⟩))
+                        exact .inr ⟨(arraySpineKey, ls0), lookup_mem hls0, rfl⟩))
                 simp only [RefOk] at hst
                 rcases hr : roleAt W ls0 with _ | r
                 · rw [hr] at hst; cases hst
@@ -596,7 +596,7 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
       have := mem_firstKeys he
       simp only [stringData, List.mem_map] at this
       obtain ⟨x, -, rfl⟩ := this
-      exact ⟨fun h => toString_ne_store x.2 (PropKey.str.inj h), rfl⟩
+      exact ⟨fun h => toString_ne_spine x.2 (PropKey.str.inj h), rfl⟩
     all_goals (first | (simp only [Option.some.injEq] at hq; subst hq; simp at he) | cases hq)
   intro e he
   simp only [mergeData, List.mem_append, List.mem_filter] at he

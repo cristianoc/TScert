@@ -33,9 +33,9 @@ set_option maxHeartbeats 1000000
 /-- One graph a closure's code runs, at one of its signatures, into a program
 of its own. Its entry is the frame the signature describes (`codeFrame`: the
 receiver, the parameters the code takes, the captures, and, for code
-collecting a rest, the store of the further actuals first); a prologue binds
+collecting a rest, the spine of the further actuals first); a prologue binds
 the source's parameters from it, then the body runs, compiled as a function
-body is. The prologue, in order: a rest's array, allocated around the store
+body is. The prologue, in order: a rest's array, allocated around the spine
 the call collected, or from the positions of its tuple contract, as a
 function's rest array is at its entry; an expression body's defaults
 (`defaultEntry`; a block body's are its first statements already); and a
@@ -48,10 +48,10 @@ state resume afterwards. -/
     (answers : Bool) (selfEntry : Option (ScopeBinding Tree × Ty Tree) := none) :
     Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph <| withAnswers answers <|
     -- The entry frame (`codeFrame`): the receiver at slot 0, each parameter
-    -- after it, past the store of the further actuals where the code collects
+    -- after it, past the spine of the further actuals where the code collects
     -- a rest into one.
     withEntryFrame ((List.range (params.length + 1)).map fun p =>
-      some (match rest with | some (_, .store _ _) => p + 1 | _ => p)) do
+      some (match rest with | some (_, .spine _ _) => p + 1 | _ => p)) do
   -- The layout the rest's array is bound in: the receiver, the parameters,
   -- the array, then the captures. While an expression body has defaults, its
   -- parameters are named where the schedule reaches them.
@@ -111,12 +111,12 @@ state resume afterwards. -/
   let f := params.length
   let (frameScope, frameInputs) ← match rest with
     | none => pure (layout, inputs)
-    | some (_, .store S restTy) => do
+    | some (_, .spine S restTy) => do
       let frameScope := held ⟨"", some pos⟩ :: receiver :: paramScope ++ captures
       let frameInputs := S :: Rt :: params.map Prod.snd ++ Cs
       let proto ← liftSource (prototypeSlot frameScope)
       let _ ← arrayObject S
-      -- Past the binding: the array, the store, the receiver, the parameters,
+      -- Past the binding: the array, the spine, the receiver, the parameters,
       -- the captures.
       let mapping := (first.mapping.getD (List.range layout.length)).map fun j =>
         if j == 0 then 2 else if j ≤ f then j + 2 else if j == f + 1 then 0 else j + 1
@@ -130,7 +130,7 @@ state resume afterwards. -/
       let objectScope := held ⟨"", some pos⟩ :: frameScope
       let proto ← liftSource (prototypeSlot objectScope)
       let _ ← arrayObject S
-      -- Past the object's binding: the array, the store, the receiver, the
+      -- Past the object's binding: the array, the spine, the receiver, the
       -- parameters, the positions, the captures.
       let mapping := (first.mapping.getD (List.range layout.length)).map fun j =>
         if j == 0 then 2 else if j ≤ f then j + 2 else if j == f + 1 then 0 else j + 1 + e
@@ -164,7 +164,7 @@ signature's frame, whose certificate the unit's code table records. -/
     self.map fun name => ({ source := ⟨name, some s.pos⟩ }, A)
   let Cs := s.capSlots.map Prod.fst
   let mut code : Option (Program × Nat) := none
-  for ((sig, store, restTy), i) in s.rows.zipIdx do
+  for ((sig, spine, restTy), i) in s.rows.zipIdx do
     let ⟨Rt, Di, Ri, effect⟩ := sig
     -- A promise signature's result operand is the promise's type; its body
     -- returns a type guard's Boolean, an assertion function's `undefined`.
@@ -178,10 +178,10 @@ signature's frame, whose certificate the unit's code table records. -/
     let receiver : ScopeBinding Tree := { source := ⟨s.receiverName, some s.pos⟩, fixed := some Rt }
     let ps := (s.fixedParams.map Prod.fst).zip (Di.take s.fixedParams.length)
     let restEntry : Option (String × (RestEntry Tree)) ← s.restParam.mapM fun (name, _) => do
-      match store with
-      | some S => pure (name, .store S restTy)
+      match spine with
+      | some S => pure (name, .spine S restTy)
       | none =>
-        let some S := storeOf (SourceTypes.graph (← table)) restTy
+        let some S := spineOf (SourceTypes.graph (← table)) restTy
           | throw "a rest parameter needs an array contract"
         pure (name, .tuple ((Di.drop s.fixedParams.length).take s.restElements) S restTy)
     let (P, start, claims, source) ←
@@ -193,7 +193,7 @@ signature's frame, whose certificate the unit's code table records. -/
         throw s!"a closure's body lowers differently under one of its signatures at [{s.pos.1},{s.pos.2})"
     | none => code := some (P, start)
     let entry : CodeEntry Tree := ⟨s.arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
-      start, Cs ++ (selfEntry.map Prod.snd).toList, sig, store⟩
+      start, Cs ++ (selfEntry.map Prod.snd).toList, sig, spine⟩
     recordCode ⟨entry, claims, async⟩ source
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression

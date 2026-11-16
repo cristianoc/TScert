@@ -66,7 +66,7 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
       n W h (instantiate 0 ρ t) :=
   inspect_safe (List.prefix_refl h) (HeapExpressionRules.inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
-/-- A type every member of which is a source value: no store and no `top`. -/
+/-- A type every member of which is a source value: no spine and no `top`. -/
 def sourceTy (G : NormalGraph ι) (A : Ty ι) : Bool :=
   G.plainTy A && (expand G A).all PositiveNormalization.sourceClause
 
@@ -108,7 +108,7 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- A write of a field of the object in a slot whose type gives it a type of
-source values: it changes one location, which holds a value, not a store. -/
+source values: it changes one location, which holds a value, not a spine. -/
 def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match HeapExpressionRules.writeSlots t with
   | some (f, i, k) => Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ && decide (k < Γ.length) && match Γ[i]? with
@@ -116,7 +116,7 @@ def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.C
     | none => false
   | none => false
 
-/-- **A typed field write is within `{value: any, store: keep}`.** -/
+/-- **A typed field write is within `{value: any, spine: keep}`.** -/
 theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
     (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
@@ -174,7 +174,7 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
 
 `x ??= e` writes its location only where it holds `null` or `undefined`
 (PROGRAM-TYPING.md, "Frame conditions"): where the knowledge at a field write
-states its location so, the write is within `{value: init, store: keep}`. -/
+states its location so, the write is within `{value: init, spine: keep}`. -/
 
 /-- `null` and `undefined`. -/
 def nullishSet : ValueSets.ValueSet := { nul := true, undef := true }
@@ -229,7 +229,7 @@ def initWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.
       | none => false
   | none => false
 
-/-- **An initializing write is within `{value: init, store: keep}`.** -/
+/-- **An initializing write is within `{value: init, spine: keep}`.** -/
 theorem init_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ n W h}
     (hc : initWriteWithin G Γ k Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hk : HeapKnowledge.Holds k ε ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
@@ -321,7 +321,7 @@ theorem init_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T
           · exact False.elim (value_no_step rfl step')
   · contradiction
 
-/-- A spread's operand: a value, or a field read of one, the store a spread
+/-- A spread's operand: a value, or a field read of one, the spine a spread
 reads where it is written. -/
 def readOperand : Tm → Bool
   | .readAt _ t => valueTerm t
@@ -414,7 +414,7 @@ termination_by sizeOf e
 /-- A selected call's operands. All actual evaluation has already been
 lowered to earlier graph nodes; omitted arguments are the ordinary evidence's
 explicit `undefined` premises; a variadic call's spreads read their operands'
-stores in place. Subsumption may retain the postcondition while changing the
+spines in place. Subsumption may retain the postcondition while changing the
 result type. -/
 def selectedOperands : Evidence ι → Bool
   | .node _ (.app _) ps =>
@@ -808,7 +808,7 @@ theorem spread_head_eval {S : Fam} {E : (n : Nat) → WorldT n → Heap → Tm �
 /-- **The evaluation of parts after the fixed actuals, every one ready or a
 read** (the note's Call: evaluation, spread expansion included, precedes
 invocation): each plain part a value at the element contract `E`, each
-spread a read of a store at a type that spreads into `E`, read where it is
+spread a read of a spine at a type that spreads into `E`, read where it is
 written. The call steps through the spreads in the heap it starts in, so its
 evaluation reaches an invocation at the fixed actuals followed by values at
 `E`, at an admissible extension of the world, or throws a spread's throw in
@@ -1204,7 +1204,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
         (fun p hp => typed p (by simp [List.mem_of_mem_take hp]))
         hfixedv he hw hh (fun p hp => refsOf p (by simp [List.mem_of_mem_take hp]))
       exact hAll
-    -- The parts: each spread at its store type, each plain part at the element.
+    -- The parts: each spread at its spine type, each plain part at the element.
     let parts : List (Option Fam × Tm) := (flags.zip (jas.drop k)).map fun q =>
       ((if q.1 then some (meaning G q.2.type) else none), instantiate 0 ρ q.2.term)
     have hterm : instantiate 0 ρ (.invoke f r args) = .invoke (instantiate 0 ρ jf.term) (instantiate 0 ρ jr.term)
@@ -1333,7 +1333,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
 consequence): the call is safe at its evidence's exits (`selectedExits`) at
 its receiver and its actuals followed by the `undefined` of the positions a
 construction omits, from an entry held from the call's; the receiver owns no
-store where positions are omitted. -/
+spine where positions are omitted. -/
 theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
@@ -1342,7 +1342,7 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧
-      (pad = [] ∨ Footprints.storeOf (receiverOf (instantiate 0 ρ (claim e).term)) = none) ∧
+      (pad = [] ∨ Footprints.spineOf (receiverOf (instantiate 0 ρ (claim e).term)) = none) ∧
       SafePostExcV (excOf G) (meaning G (claim e).type)
         (x.heldPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term) ++ pad) W h)
         (x.heldExc (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term) ++ pad) W h)
@@ -1442,7 +1442,7 @@ deciders read (`selectedEffect`): its exits, entailed by the selected ones
 (`selectedExits_entails`), at heaps (`Effect.heldPosts_call`). -/
 theorem selectedExits_heldPost_call {Ξ T : Fam} {x : CallEffects.Exits CallEffects.ExitSchema}
     {eff : CallEffects.Effect} (ev : Evidence ι) (hx : selectedExits ev = some x) (he : selectedEffect ev = some eff)
-    {r : Tm} {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef) (hrecv : pad = [] ∨ Footprints.storeOf r = none)
+    {r : Tm} {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef) (hrecv : pad = [] ∨ Footprints.spineOf r = none)
     {n : Nat} {W : WorldT n} {h : Heap} {t : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : SafePostExcV Ξ T (x.heldPost r (args ++ pad) W h) (x.heldExc r (args ++ pad) W h) n W h t) :
     SafePostExc Ξ T (eff.callPost r args h) (eff.callExc r args h) n W h t := by
@@ -1607,16 +1607,16 @@ theorem field_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T 
 
 /-! ### Element writes
 
-`o[b] = v` lowers to one node: the store `o` holds at its store field, the
-value written at index `b` (`setElem`), and the store it yields put back.
-At a listed index the element's location takes the value and the store is
+`o[b] = v` lowers to one node: the spine `o` holds at its spine field, the
+value written at index `b` (`setElem`), and the spine it yields put back.
+At a listed index the element's location takes the value and the spine is
 unchanged; at a hole or past the end a fresh location is listed. Either way
 every old dense prefix stays and no old location is newly listed: within
-`{value: any, store: grow}`, and `{value: any, store: keep}` where the
-index is a required position of the store's tuple contract
+`{value: any, spine: grow}`, and `{value: any, spine: keep}` where the
+index is a required position of the spine's tuple contract
 (FOOTPRINTS.md, "Element writes"). -/
 
-/-- The slots of an element write: the object's, its store field, the index
+/-- The slots of an element write: the object's, its spine field, the index
 and the written value's. -/
 def elemWriteSlots : Tm → Option (PropKey × Nat × UInt64 × Nat)
   | .writeAt f (.var i) (.setElem (.readAt f' (.var i')) (.num b) (.var k)) =>
@@ -1637,9 +1637,9 @@ theorem elemWriteSlots_eq {t f i b k} (h : elemWriteSlots t = some (f, i, b, k))
     · contradiction
   · contradiction
 
-/-- A store type whose position `idx` holds source values, a required one
+/-- A spine type whose position `idx` holds source values, a required one
 where `present` asks for it. -/
-def storeTy (G : NormalGraph ι) (L : Ty ι) (idx : Nat) (present : Bool) : Bool :=
+def spineTy (G : NormalGraph ι) (L : Ty ι) (idx : Nat) (present : Bool) : Bool :=
   match expand G L with
   | [.list T []] =>
     (match positionTy T idx with
@@ -1648,18 +1648,18 @@ def storeTy (G : NormalGraph ι) (L : Ty ι) (idx : Nat) (present : Bool) : Bool
   | _ => false
 
 /-- Every alternative is a record whose first invariant operand has the field
-`fld`, at a store type `storeTy` accepts in each. -/
-def storeField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey)
+`fld`, at a spine type `spineTy` accepts in each. -/
+def spineField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey)
     (idx : Nat) (present : Bool) : Bool :=
   !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTy G p.2.2 idx present)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || spineTy G p.2.2 idx present)
     | none => false
 
-theorem storeField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx present n W v}
-    (hr : storeField G (expand G Ref) fld idx present = true) (hv : meaning G Ref n W v) :
-    ∃ B s L, (fld, s, L) ∈ B ∧ storeTy G L idx present = true ∧
+theorem spineField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx present n W v}
+    (hr : spineField G (expand G Ref) fld idx present = true) (hv : meaning G Ref n W v) :
+    ∃ B s L, (fld, s, L) ∈ B ∧ spineTy G L idx present = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
-  simp only [storeField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+  simp only [spineField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
   have hp : G.plainTy Ref = true := by
     obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
@@ -1675,11 +1675,11 @@ theorem storeField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx pres
     obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
-    have hsrc : storeTy G El idx present = true := (hall _ hmem).resolve_left (by simp)
+    have hsrc : spineTy G El idx present = true := (hall _ hmem).resolve_left (by simp)
   · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
-/-- A listed position of a store under a tuple contract has a location whose
+/-- A listed position of a spine under a tuple contract has a location whose
 contract implies the position's family. -/
 theorem listT_slot {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat} {A : Fam}
     (h : listT T k W (.arr ls)) (hl : ls[i]? = some (some l)) (hA : positionFam T i = some A) :
@@ -1736,19 +1736,19 @@ theorem placeAt_mem {ls : List (Option Nat)} {k l x : Nat} (hm : some x ∈ plac
   · exact .inr (Option.some.inj hm)
 
 /-- **An element write's change**: within the closed bound `c`, and every
-location but the written object's field `f`, where its store is, within
-`{value: any, store: keep}`. The second part is the write's step frame
-(FOOTPRINTS.md, "Argument-path store regions"); the first, its closed
+location but the written object's field `f`, where its spine is, within
+`{value: any, spine: keep}`. The second part is the write's step frame
+(FOOTPRINTS.md, "Argument-path spine regions"); the first, its closed
 weakening. -/
-def StoreWrite (f : PropKey) (o : Tm) (c : Footprints.Closed) (h h' : Heap) : Prop :=
+def SpineWrite (f : PropKey) (o : Tm) (c : Footprints.Closed) (h h' : Heap) : Prop :=
   c.Holds h h' ∧ ∀ fl, (Footprints.fieldsOf o).lookup f = some fl →
     Footprints.Closed.HoldsOn ⟨.any, .keep, .keep⟩ (fun l => l ≠ fl) h h'
 
-theorem StoreWrite.refl (f : PropKey) (o : Tm) (c : Footprints.Closed) (h : Heap) : StoreWrite f o c h h :=
+theorem SpineWrite.refl (f : PropKey) (o : Tm) (c : Footprints.Closed) (h : Heap) : SpineWrite f o c h h :=
   ⟨Footprints.Closed.Holds.refl c h, fun _ _ => (Footprints.Closed.Holds.refl _ h).on _⟩
 
 /-- The heap after a write taking a fresh location keeps every location but
-the store's. -/
+the spine's. -/
 theorem elem_grow_kept {h : Heap} {fl : Nat} {v : Val} {ls' : List (Option Nat)} :
     Footprints.Closed.HoldsOn ⟨.any, .keep, .keep⟩ (fun l => l ≠ fl) h ((h ++ [v]).set fl (.arr ls')) := by
   refine ⟨by simp, fun l' w hf hw => ?_⟩
@@ -1756,8 +1756,8 @@ theorem elem_grow_kept {h : Heap} {fl : Nat} {v : Val} {ls' : List (Option Nat)}
   refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
   rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
 
-/-- The heap after a write at a listed location of the store at `fl`, that
-store put back. -/
+/-- The heap after a write at a listed location of the spine at `fl`, that
+spine put back. -/
 theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Option Nat)}
     (hfl : h[fl]? = some (.arr ls)) (hl : h[l]? = some u) (hu : Footprints.isArr u = false) :
     Footprints.Closed.Holds ⟨.any, .keep, .keep⟩ h ((h.set l v).set fl (.arr ls)) := by
@@ -1780,7 +1780,7 @@ theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Optio
       rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_set_ne (Ne.symm hll), hw]
 
 /-- The heap after a write taking a fresh location at an array index, the
-store recording it put back. -/
+spine recording it put back. -/
 theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat)}
     (hfl : h[fl]? = some (.arr ls)) (hk : k < maxArrayLength) :
     Footprints.Closed.Holds ⟨.any, .grow, .grow⟩ h ((h ++ [v]).set fl (.arr (placeAt ls k h.length))) := by
@@ -1845,7 +1845,7 @@ theorem write_values_not_thrown {f : PropKey} {o u : Tm} {k W} (ho : isVal o = t
   | writeC1 r => rw [raises_not_val r] at ho; contradiction
   | writeC2 _ r => rw [raises_not_val r] at hu; contradiction
 
-/-- The last step of an element write puts the store back; the heap it
+/-- The last step of an element write puts the spine back; the heap it
 ends in is the one `P` holds of. -/
 theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid fl : Nat}
     {ls' : List (Option Nat)} {P : Heap → Prop} {T : Fam} {n U h2}
@@ -1874,19 +1874,19 @@ theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCo
       · exact absurd hr (val_not_thrown rfl)
       · exact False.elim (value_no_step rfl st')
 
-/-- **An element write is within its store's change**, `keep` at a required
+/-- **An element write is within its spine's change**, `keep` at a required
 position and `grow` otherwise, on its normal return and where it raises. -/
 theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i k : Nat}
     {b : UInt64} {idx : Nat} {Ref : Ty ι} {present : Bool} {T : Fam} {ρ n W h}
     (hk : k < Γ.length) (hi : Γ[i]? = some Ref) (hidx : indexOfBits b = some idx)
-    (hst : storeField G (expand G Ref) f idx present = true)
+    (hst : spineField G (expand G Ref) f idx present = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) (.ofStores .any (if present then .keep else .grow)) h h')
-      (fun h' => StoreWrite f (ρ i) (.ofStores .any (if present then .keep else .grow)) h h') n W h
+    SafePostExc Ξ T (fun h' _ => SpineWrite f (ρ i) (.ofSpines .any (if present then .keep else .grow)) h h')
+      (fun h' => SpineWrite f (ρ i) (.ofSpines .any (if present then .keep else .grow)) h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
-  obtain ⟨B, _, L, hmem, hstore, hbag⟩ := storeField_sound hst (he.2 i Ref hi)
+  obtain ⟨B, _, L, hmem, hspine, hbag⟩ := spineField_sound hst (he.2 i Ref hi)
   obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -1901,13 +1901,13 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
   | zero => assumption
   | succ n2 =>
-  -- The store field's contents meet its store type.
+  -- The spine field's contents meet its spine type.
   obtain ⟨u0, hu0, hcu⟩ := hh.1.2 fl cfl hlookup
   rw [hfu] at hu0; cases hu0
   have hmL : meaning G L 1 (trunc 1 (by omega) W) u := (hagree 1 (by omega) _ u).mp (hcu 1 (by omega))
@@ -1916,18 +1916,18 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
   obtain ⟨b', ls, hb', rfl, hcase⟩ := elem_set_inv rfl huv rfl hvv step2
   cases hb'
-  unfold storeTy at hstore
-  split at hstore
+  unfold spineTy at hspine
+  split at hspine
   case h_2 => contradiction
   rename_i Tup hexp
   have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
-  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hstore
-  obtain ⟨hpos, hpresent⟩ := hstore
+  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hspine
+  obtain ⟨hpos, hpresent⟩ := hspine
   rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
-  · -- A listed position: its location held a source value, which is no store.
+  · -- A listed position: its location held a source value, which is no spine.
     have hlk : ls[idx]? = some (some l) := by
       simp only [elemLoc, hidx, Option.bind_some] at hl
       cases hls : ls[idx]? with
@@ -1967,15 +1967,15 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       exact elem_grow_kept
 
 
-/-- An element write within `Φ`: at a store type whose position holds source
-values, `{value: any, store: keep}` at a required position, else
-`{value: any, store: grow}`. -/
+/-- An element write within `Φ`: at a spine type whose position holds source
+values, `{value: any, spine: keep}` at a required position, else
+`{value: any, spine: grow}`. -/
 def elemWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match elemWriteSlots t with
   | some (f, i, b, k) => decide (k < Γ.length) && match Γ[i]?, indexOfBits b with
     | some Ref, some idx =>
-      (storeField G (expand G Ref) f idx true && Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ) ||
-      (storeField G (expand G Ref) f idx false && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ)
+      (spineField G (expand G Ref) f idx true && Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ) ||
+      (spineField G (expand G Ref) f idx false && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ)
     | _, _ => false
   | none => false
 
@@ -2003,13 +2003,13 @@ theorem elem_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T �
 /-! ### Element writes at a run-time index
 
 `o[k] = v` with `k` a slot (FOOTPRINTS.md, "Element writes"): where every
-position of the store's tuple contract holds source values, a tuple of no
+position of the spine's tuple contract holds source values, a tuple of no
 required or optional position whose rest does, the write is within
-`{value: any, store: grow}` whatever index the slot holds, as a literal
+`{value: any, spine: grow}` whatever index the slot holds, as a literal
 index's write is (`elem_write_core`). -/
 
 /-- The slots of an element write at a run-time index: the object's, its
-store field, the index's and the written value's. -/
+spine field, the index's and the written value's. -/
 def elemVarWriteSlots : Tm → Option (PropKey × Nat × Nat × Nat)
   | .writeAt f (.var i) (.setElem (.readAt f' (.var i')) (.var j) (.var k)) =>
     if f' = f ∧ i' = i then some (f, i, j, k) else none
@@ -2026,33 +2026,33 @@ theorem elemVarWriteSlots_eq {t f i j k} (h : elemVarWriteSlots t = some (f, i, 
     · cases h
   · cases h
 
-/-- A store type every position of which holds source values: a tuple of no
+/-- A spine type every position of which holds source values: a tuple of no
 required or optional position whose rest holds them. -/
-def storeTyEvery (G : NormalGraph ι) (L : Ty ι) : Bool :=
+def spineTyEvery (G : NormalGraph ι) (L : Ty ι) : Bool :=
   match expand G L with
   | [.list ⟨[], [], some A, _, _⟩ []] => sourceTy G A
   | _ => false
 
-theorem storeTyEvery_at {G : NormalGraph ι} {L : Ty ι} (h : storeTyEvery G L = true) (idx : Nat) :
-    storeTy G L idx false = true := by
-  unfold storeTyEvery at h
+theorem spineTyEvery_at {G : NormalGraph ι} {L : Ty ι} (h : spineTyEvery G L = true) (idx : Nat) :
+    spineTy G L idx false = true := by
+  unfold spineTyEvery at h
   split at h
   · rename_i A ro pr hexp
-    simp [storeTy, hexp, positionTy, h]
+    simp [spineTy, hexp, positionTy, h]
   · cases h
 
 /-- Every alternative is a record whose first invariant operand has the field
-`fld`, at a store type `storeTyEvery` accepts in each. -/
-def storeFieldEvery (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Bool :=
+`fld`, at a spine type `spineTyEvery` accepts in each. -/
+def spineFieldEvery (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTyEvery G p.2.2)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || spineTyEvery G p.2.2)
     | none => false
 
-theorem storeFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
-    (hr : storeFieldEvery G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ B s L, (fld, s, L) ∈ B ∧ storeTyEvery G L = true ∧
+theorem spineFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : spineFieldEvery G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ B s L, (fld, s, L) ∈ B ∧ spineTyEvery G L = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
-  simp only [storeFieldEvery, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+  simp only [spineFieldEvery, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
   have hp : G.plainTy Ref = true := by
     obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
@@ -2068,26 +2068,26 @@ theorem storeFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
     obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
-    have hsrc : storeTyEvery G El = true := (hall _ hmem).resolve_left (by simp)
+    have hsrc : spineTyEvery G El = true := (hall _ hmem).resolve_left (by simp)
   · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
-/-- **An element write at a run-time index is within its store's change**,
+/-- **An element write at a run-time index is within its spine's change**,
 `grow`, on its normal return and where it raises. The index decodes, where
-the write steps, to some position of the store, which every position the
-store's contract holds source values at. -/
+the write steps, to some position of the spine, which every position the
+spine's contract holds source values at. -/
 theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i j k : Nat}
     {Ref : Ty ι} {T : Fam} {ρ n W h}
     (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
-    (hst : storeFieldEvery G (expand G Ref) f = true)
+    (hst : spineFieldEvery G (expand G Ref) f = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h')
-      (fun h' => StoreWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h') n W h
+    SafePostExc Ξ T (fun h' _ => SpineWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h')
+      (fun h' => SpineWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
-  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
+  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := spineFieldEvery_sound hst (he.2 i Ref hi)
   obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -2103,7 +2103,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
@@ -2117,23 +2117,23 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
   obtain ⟨b, ls, rfl, rfl, hcase⟩ := elem_set_inv rfl huv hjv hvv step2
   rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
-  · -- A listed position: its location held a source value, which is no store.
+  · -- A listed position: its location held a source value, which is no spine.
     obtain ⟨idx, hidx⟩ : ∃ idx, indexOfBits b = some idx := by
       simp only [elemLoc] at hl
       cases hb : indexOfBits b with
       | none => simp [hb] at hl
       | some idx => exact ⟨idx, rfl⟩
-    have hstore := storeTyEvery_at hevery idx
-    unfold storeTy at hstore
-    split at hstore
+    have hspine := spineTyEvery_at hevery idx
+    unfold spineTy at hspine
+    split at hspine
     case h_2 => contradiction
     rename_i Tup hexp
     have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
-    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hstore
-    obtain ⟨hpos, -⟩ := hstore
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hspine
+    obtain ⟨hpos, -⟩ := hspine
     have hlk : ls[idx]? = some (some l) := by
       simp only [elemLoc, hidx, Option.bind_some] at hl
       cases hls : ls[idx]? with
@@ -2164,15 +2164,15 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
 theorem Changes.length_refl (h : Heap) : (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h :=
   ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩, fun hg => by simp at hg⟩
 
-/-- **An element write below its store's length keeps every store's
+/-- **An element write below its spine's length keeps every spine's
 length** (ARITHMETIC.md, "Linear facts"): it writes a listed element's
-location, which held a source value and no store, and the store back
-unchanged, or, at a hole, a store of the same length (`placeAt_length`). -/
+location, which held a source value and no spine, and the spine back
+unchanged, or, at a hole, a spine of the same length (`placeAt_length`). -/
 theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i j k : Nat}
     {Ref : Ty ι} {T : Fam} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid fl : Nat}
     {ls0 : List (Option Nat)} {b0 : UInt64} {idx : Nat}
     (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
-    (hst : storeFieldEvery G (expand G Ref) f = true)
+    (hst : spineFieldEvery G (expand G Ref) f = true)
     (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup f = some fl) (hls0 : h[fl]? = some (.arr ls0))
     (hb0 : ρ j = .num b0) (hidx : indexOfBits b0 = some idx) (hlt : idx < ls0.length)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
@@ -2182,7 +2182,7 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
-  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
+  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := spineFieldEvery_sound hst (he.2 i Ref hi)
   obtain ⟨flds0, code, oid0, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl1, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -2219,15 +2219,15 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
   cases hbb; cases hls
   have hflt := (List.getElem?_eq_some_iff.mp hls0).1
   rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
-  · -- A listed position: its location held a source value, which is no store.
-    have hstore := storeTyEvery_at hevery idx
-    unfold storeTy at hstore
-    split at hstore
+  · -- A listed position: its location held a source value, which is no spine.
+    have hspine := spineTyEvery_at hevery idx
+    unfold spineTy at hspine
+    split at hspine
     case h_2 => contradiction
     rename_i Tup hexp
     have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
-    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hstore
-    obtain ⟨hpos, -⟩ := hstore
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hspine
+    obtain ⟨hpos, -⟩ := hspine
     have hlk : ls0[idx]? = some (some l) := by
       simp only [elemLoc, hidx, Option.bind_some] at hl
       cases hls : ls0[idx]? with
@@ -2269,12 +2269,12 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
       rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls').1]
       exact hls'
 
-/-- An element write at a run-time index within `Φ`: at a store type every
-position of which holds source values, `{value: any, store: grow}`. -/
+/-- An element write at a run-time index within `Φ`: at a spine type every
+position of which holds source values, `{value: any, spine: grow}`. -/
 def elemVarWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match elemVarWriteSlots t with
   | some (f, i, j, k) => decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
-    | some Ref => storeFieldEvery G (expand G Ref) f && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ
+    | some Ref => spineFieldEvery G (expand G Ref) f && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ
     | none => false
   | none => false
 
@@ -2320,19 +2320,19 @@ theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
 /-! ### An element write's step frame
 
 The write of an array's element changes value-class locations and the
-array's store alone (`StoreWrite`): its step frame, read at the node's slots,
-is `{value: any}` with the written slot's store at `any`
-(FOOTPRINTS.md, "Argument-path store regions"). -/
+array's spine alone (`SpineWrite`): its step frame, read at the node's slots,
+is `{value: any}` with the written slot's spine at `any`
+(FOOTPRINTS.md, "Argument-path spine regions"). -/
 
-/-- An element write's step frame: every value-class location, and the store
+/-- An element write's step frame: every value-class location, and the spine
 of the array slot `i` holds. -/
 def writeFrame (i : Nat) : Footprints.Footprint :=
-  Footprints.Closed.fp ⟨.any, .keep, .keep⟩ ++ [(.field i arrayStoreKey, .any)]
+  Footprints.Closed.fp ⟨.any, .keep, .keep⟩ ++ [(.field i arraySpineKey, .any)]
 
-/-- A write of the store an array value holds is within its step frame. -/
-theorem storeWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : Heap}
-    (hfl : (Footprints.fieldsOf (ρ i)).lookup arrayStoreKey = some fl)
-    (hw : StoreWrite arrayStoreKey (ρ i) c h h') : Footprints.Post (writeFrame i) ρ h h' := by
+/-- A write of the spine an array value holds is within its step frame. -/
+theorem spineWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : Heap}
+    (hfl : (Footprints.fieldsOf (ρ i)).lookup arraySpineKey = some fl)
+    (hw : SpineWrite arraySpineKey (ρ i) c h h') : Footprints.Post (writeFrame i) ρ h h' := by
   obtain ⟨hlen, hon⟩ := hw.2 fl hfl
   refine ⟨hlen, fun l v hv => ?_⟩
   by_cases hl : l = fl
@@ -2340,7 +2340,7 @@ theorem storeWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : 
     obtain ⟨v', hv'⟩ : ∃ v', h'[l]? = some v' := by
       have := (List.getElem?_eq_some_iff.mp hv).1
       exact ⟨h'[l], List.getElem?_eq_getElem (by omega)⟩
-    exact ⟨v', hv', .inr ⟨(.field i arrayStoreKey, .any), by simp [writeFrame],
+    exact ⟨v', hv', .inr ⟨(.field i arraySpineKey, .any), by simp [writeFrame],
       by simp [Footprints.Region.mem, hfl], trivial⟩⟩
   · obtain ⟨v', hv', hch⟩ := hon l v hl hv
     refine ⟨v', hv', ?_⟩
@@ -2360,19 +2360,19 @@ theorem bag_lookup {G : NormalGraph ι} {B : List (Stored (Ty ι))} {s : Storage
 
 /-- The typing an element write at a run-time index needs for its change. -/
 def varWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i j k : Nat) : Bool :=
-  decide (f = arrayStoreKey) && decide (k < Γ.length) && decide (j < Γ.length) &&
+  decide (f = arraySpineKey) && decide (k < Γ.length) && decide (j < Γ.length) &&
     (match Γ[i]? with
-      | some Ref => storeFieldEvery G (expand G Ref) f
+      | some Ref => spineFieldEvery G (expand G Ref) f
       | none => false)
 
 /-- The typing an element write at a literal index needs for its change. -/
 def litWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i : Nat) (b : UInt64) (k : Nat) : Bool :=
-  decide (f = arrayStoreKey) && decide (k < Γ.length) &&
+  decide (f = arraySpineKey) && decide (k < Γ.length) &&
     (match Γ[i]?, indexOfBits b with
-      | some Ref, some idx => storeField G (expand G Ref) f idx true || storeField G (expand G Ref) f idx false
+      | some Ref, some idx => spineField G (expand G Ref) f idx true || spineField G (expand G Ref) f idx false
       | _, _ => false)
 
-/-- The array slot an element write of its store writes, where the write's
+/-- The array slot an element write of its spine writes, where the write's
 typing gives its change (`elem_write_core`, `elem_var_write_core`). -/
 def writeStep (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Option Nat :=
   match elemVarWriteSlots t with
@@ -2398,10 +2398,10 @@ theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
       split at hsel
       · rename_i Ref hi
-        obtain ⟨B, _, L, hmem, -, hbag⟩ := storeFieldEvery_sound hsel (he.2 _ Ref hi)
+        obtain ⟨B, _, L, hmem, -, hbag⟩ := spineFieldEvery_sound hsel (he.2 _ Ref hi)
         obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
         rw [elemVarWriteSlots_eq hw] at hs ⊢
-        exact SafePostExc.weaken (fun _ _ hq => storeWrite_post hfl hq) (fun _ hq => storeWrite_post hfl hq)
+        exact SafePostExc.weaken (fun _ _ hq => spineWrite_post hfl hq) (fun _ hq => spineWrite_post hfl hq)
           (elem_var_write_core hk hj hi hsel he hh hs)
       · cases hsel
     · cases hc
@@ -2417,17 +2417,17 @@ theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
           rw [elemWriteSlots_eq hw] at hs ⊢
           rcases Bool.or_eq_true_iff.mp hsel with hst | hst
           all_goals
-            obtain ⟨B, _, L, hmem, -, hbag⟩ := storeField_sound hst (he.2 _ Ref hi)
+            obtain ⟨B, _, L, hmem, -, hbag⟩ := spineField_sound hst (he.2 _ Ref hi)
             obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
-            exact SafePostExc.weaken (fun _ _ hq => storeWrite_post hfl hq) (fun _ hq => storeWrite_post hfl hq)
+            exact SafePostExc.weaken (fun _ _ hq => spineWrite_post hfl hq) (fun _ hq => spineWrite_post hfl hq)
               (elem_write_core hk hi hidx hst he hh hs)
         · cases hsel
       · cases hc
     · cases hc
 
-/-- **An element write grows the stores** (ARITHMETIC.md, "Linear facts"):
-whatever its index, it is within `{value: any, store: grow}`, so it alters
-locations holding objects and numbers and leaves every store no shorter and
+/-- **An element write grows the spines** (ARITHMETIC.md, "Linear facts"):
+whatever its index, it is within `{value: any, spine: grow}`, so it alters
+locations holding objects and numbers and leaves every spine no shorter and
 within `maxArrayLength` where it was (`HeapKnowledge.Changes.ofClosed`). -/
 theorem writeStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
     {T : Fam} {ρ n W h} (hc : writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
@@ -2493,13 +2493,13 @@ def writeGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List Footpri
   (match elemWriteSlots t with
     | some (f, i, b, k) => match Γ[i]?, indexOfBits b with
         | some Ref, some idx =>
-          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx true) ⟨.any, .keep, .keep⟩ ++
-          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx false) ⟨.any, .grow, .grow⟩
+          grantIf (decide (k < Γ.length) && spineField G (expand G Ref) f idx true) ⟨.any, .keep, .keep⟩ ++
+          grantIf (decide (k < Γ.length) && spineField G (expand G Ref) f idx false) ⟨.any, .grow, .grow⟩
         | _, _ => []
     | none => []) ++
   (match elemVarWriteSlots t with
     | some (f, i, j, k) => grantIf (decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
-        | some Ref => storeFieldEvery G (expand G Ref) f
+        | some Ref => spineFieldEvery G (expand G Ref) f
         | none => false) ⟨.any, .grow, .grow⟩
     | none => [])
 

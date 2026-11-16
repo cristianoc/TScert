@@ -107,7 +107,7 @@ theorem OnPath.guarded_ok (P : OnPath preds width fresh0 p ε ρ η h) (hguard :
   intro x hx a hr
   exact atomHolds_rename (fun i y hy => (P.slotsNamed i y hy).symm) hr (hguard x hx)
 
-/-- **The merged fresh names hold fresh stores** on the path: each is a
+/-- **The merged fresh names hold fresh spines** on the path: each is a
 fresh name of `p` or a fresh name `p` renames one to. -/
 theorem OnPath.fresh_ok (P : OnPath preds width fresh0 p ε ρ η h) {mark : Nat}
     (hfb : ∀ x ∈ (preds[p]'P.hp).fresh, x < fresh0) (hf : ∀ x ∈ (preds[p]'P.hp).fresh, FreshAt mark (η x)) :

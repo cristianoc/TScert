@@ -17,15 +17,15 @@ variable {ι : Type} [Labels ι]
 
 /-- How a closure's frame binds its rest parameter (`closureCode`). -/
 inductive RestEntry (ι : Type) where
-  /-- Code collecting a rest: the store of the further actuals, in the frame's
+  /-- Code collecting a rest: the spine of the further actuals, in the frame's
   slot 0, at `S`, and the array wrapping it, at `array`. -/
-  | store (S array : Ty ι)
+  | spine (S array : Ty ι)
   /-- A rest standing for the required positions of its tuple contract, taken
-  as parameters at `elements`: the store of them at `S`, the array at `array`. -/
+  as parameters at `elements`: the spine of them at `S`, the array at `array`. -/
   | tuple (elements : List (Ty ι)) (S array : Ty ι)
 
 @[nospecialize] def RestEntry.array : RestEntry ι → Ty ι
-  | .store _ a | .tuple _ _ a => a
+  | .spine _ a | .tuple _ _ a => a
 
 /-- Which signatures a lambda's code is checked at (`lambdaCode`): a
 function's claim, a class value's construct signatures with the `undefined`
@@ -37,7 +37,7 @@ inductive CodeMode (ι : Type) where
 
 /-- A lambda's checked graph code, as its creation names it: the code, the
 captured slots with the types it was checked with, whether it collects a rest
-and the rest-store type at each signature, and the type the code offers. -/
+and the rest-spine type at each signature, and the type the code offers. -/
 structure LambdaCode (ι : Type) where
   arity : Nat
   exprs : List Tm
@@ -87,7 +87,7 @@ saved slot on its edge, and a slice within the returned read's own claim. -/
   return some (ds, K, read, tested, e, rp)
 
 /-- What a lambda's graph code is checked with (`lambdaSetup`): the
-signatures, each with the store its rest is collected into and its rest's
+signatures, each with the spine its rest is collected into and its rest's
 array type; the captured slots; the parameters and the entry schedule. -/
 structure LambdaSetup (ι : Type) where
   pos : Span
@@ -154,7 +154,7 @@ by subtyping; or a scheme row's variadic signatures. -/
   let fixedParams := if hasRest then params.dropLast else params
   let restParam := if hasRest then params.getLast? else none
   -- A rest whose contract is an array collects any number of actuals: the
-  -- code collects them into a store (`rest`). Any other rest stands for the
+  -- code collects them into a spine (`rest`). Any other rest stands for the
   -- required positions of its tuple contract, which the code takes as
   -- parameters and allocates the array from at entry.
   let arrayRest := restParam.bind fun (_, j) => Fragment.arrayElement j (readonly := true)
@@ -180,7 +180,7 @@ by subtyping; or a scheme row's variadic signatures. -/
   let restAt : Compiler (Ty Tree) := do
     let some (_, ty) := restParam | pure []
     lower (Fragment.translate ty)
-  -- The rows the code is checked at, each with the store it collects its rest
+  -- The rows the code is checked at, each with the spine it collects its rest
   -- into and its rest's array type, and the type the code offers them at.
   let (rows, offered) ← match arrayRest with
     | some elementJson => do
@@ -193,7 +193,7 @@ by subtyping; or a scheme row's variadic signatures. -/
         let E ← lower (Fragment.callableType elementJson)
         -- An omitted result is a proposal from the claim. The code request
         -- checks the body against it, with the source's parameter types and
-        -- rest store, just as it checks a written result.
+        -- rest spine, just as it checks a written result.
         let R ← match ret with
           | some ret => lower (Fragment.callableType ret)
           | none => match PositiveRules.expand G A with
@@ -234,17 +234,17 @@ by subtyping; or a scheme row's variadic signatures. -/
     throw (match mode with
       | .ctor _ => "construct signature claim is outside the source annotation"
       | _ => "closure claim must name a source arrow")
-  -- Each arrow's rest: its array type, and, for code collecting it, the store
+  -- Each arrow's rest: its array type, and, for code collecting it, the spine
   -- the call collects its further actuals into, which the arrow's rest pack
-  -- must fit (`RestStore`).
+  -- must fit (`RestSpine`).
   let restTy ← restAt
   let restTys := rows.map fun _ => restTy
-  let stores ← (rows.zip restTys).mapM fun ((_, P), restTy) => do
+  let spines ← (rows.zip restTys).mapM fun ((_, P), restTy) => do
     let some P := P | pure none
     let G := SourceTypes.graph (← table)
-    let some S := storeOf G restTy | throw "a rest parameter needs an array contract"
-    if !decide (ProgramTyping.RestStore G S P) then
-      throw "a closure collecting a rest array is claimed at a signature its store does not meet"
+    let some S := spineOf G restTy | throw "a rest parameter needs an array contract"
+    if !decide (ProgramTyping.RestSpine G S P) then
+      throw "a closure collecting a rest array is claimed at a signature its spine does not meet"
     recordHints (restTy ++ S)
     pure (some S)
   let rows := rows.map Prod.fst
@@ -354,7 +354,7 @@ by subtyping; or a scheme row's variadic signatures. -/
     | .ok order => pure order
     | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
   let receiverName := if ctorReceiver.isSome then "" else receiverName
-  let signatures := ((rows.zip stores).zip restTys).map fun ((r, S), t) => (r, S, t)
+  let signatures := ((rows.zip spines).zip restTys).map fun ((r, S), t) => (r, S, t)
   let capSlots := (caps.zip Cs).map fun ((_, i), C) => (C, i)
   return ⟨pos, body, receiverName, kind, fixedParams, restParam, restElements.length, defaults, order,
     signatures, overlays, captures, capSlots, arity, arrayRest.isSome, offered⟩

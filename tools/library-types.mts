@@ -65,7 +65,7 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  *
  * The declaration's `view` field is the explicit representation boundary
  * (parity-interfaces I3): the type is the typed arrays of that format, values
- * a view descriptor makes typed arrays, naming their view store, format and
+ * a view descriptor makes typed arrays, naming their view spine, format and
  * fixed length (Lean's `CallCode.view`, `Clause.view`), and no field or
  * signature shape makes one. Each standard name denotes a type of its own,
  * its format by `viewKinds`: `Uint8Array` and `Buffer` at "uint8",
@@ -78,7 +78,7 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  * host's [[Get]] and [[Set]] of an integer-indexed exotic object at a
  * canonical numeric key, which never read the prototype chain, and
  * `%TypedArray%.prototype`'s `length` getter. A typed array's elements are
- * its view store's cells, which only those intrinsics' and the methods'
+ * its view spine's cells, which only those intrinsics' and the methods'
  * contracts read and write: a typed array refuses the operations copying its
  * own properties or exposing their values, `Object.keys` and `Object.hasOwn`
  * answer strings and Booleans no type tells, and no record type admits one.
@@ -96,10 +96,10 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  * throw no `RangeError`; `set` throws a `RangeError`, writing nothing,
  * where its offset is negative or the source does not fit from it. None
  * states a guarantee of a throw (no `onThrow`). `fill`, `copyWithin` and
- * `set` replace the written entries of the view store of every typed array
+ * `set` replace the written entries of the view spine of every typed array
  * over the written bytes by fresh cells holding what each now reads there,
- * within the store-growth footprint: every location but a view store keeps
- * its contents, and each view store keeps its format and length, every cell
+ * within the spine-growth footprint: every location but a view spine keeps
+ * its contents, and each view spine keeps its format and length, every cell
  * it newly lists fresh, the effect `{all-views: grow}` of a write through a
  * typed array on a normal return (`elementWrite`,
  * `Kinds.ViewWrite.frame_iff`): `fill` and `copyWithin` at numbers, `set`
@@ -118,10 +118,10 @@ export const float64: TypeTerm = named(float64Identity);
 /** Every view of bytes, of any element type. */
 export const views: TypeTerm = { k: "union", parts: [bytes, uint16, int32, float64], span: at };
 const optionalNumber = union(atom("number"), atom("undefined"));
-/** What a write of a view's elements changes: the view stores of the typed
+/** What a write of a view's elements changes: the view spines of the typed
  * arrays over the written bytes, each entry it writes a fresh location
  * (`%ByteSet%`, `intrinsics.mts`). */
-const elementsWritten: CallEffect = footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" });
+const elementsWritten: CallEffect = footprintEffect({ value: "keep", spine: "grow" }, { elementWrite: "spines" });
 /** The members of `%TypedArray%.prototype` a view states, each returning
  * `self` where it returns the receiver or a view of its kind. */
 const viewMethods = (self: TypeTerm): Field[] => [
@@ -170,7 +170,7 @@ export const viewKinds: readonly { name: string; type: TypeTerm; range: [number,
  * any view. Under the host assumption that these members are the host's
  * own (SOURCE-CONTRACTS.md, "Stated library types"), none runs code of the
  * client's, and none writes a location the model holds but the element
- * stores `fill`, `copyWithin` and `set` write, as a view's. A `Buffer` is a
+ * spines `fill`, `copyWithin` and `set` write, as a view's. A `Buffer` is a
  * `Uint8Array`: a typed array of its format with its methods and more. */
 const bufferIdentity = identity("Buffer");
 export const buffer: TypeTerm = named(bufferIdentity);

@@ -42,31 +42,31 @@ export type Labels<L = number> = L[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
 /** The footprint letting every location change: an ordinary arrow's. */
-export const topFootprint: ClosedFootprint = { value: "any", store: "any" };
+export const topFootprint: ClosedFootprint = { value: "any", spine: "any" };
 /** The footprint letting no location change: heap preservation. */
-export const emptyFootprint: ClosedFootprint = { value: "keep", store: "keep" };
+export const emptyFootprint: ClosedFootprint = { value: "keep", spine: "keep" };
 /** The six closed footprints, each after every one within it. */
 export const closedFootprints: readonly ClosedFootprint[] = [
-  { value: "keep", store: "keep" }, { value: "any", store: "keep" },
-  { value: "keep", store: "grow" }, { value: "any", store: "grow" },
-  { value: "keep", store: "any" }, { value: "any", store: "any" },
+  { value: "keep", spine: "keep" }, { value: "any", spine: "keep" },
+  { value: "keep", spine: "grow" }, { value: "any", spine: "grow" },
+  { value: "keep", spine: "any" }, { value: "any", spine: "any" },
 ];
-/** A store region of a written frame: the store the value at the call
+/** A spine region of a written frame: the spine the value at the call
  * position `position` (`0` the receiver) selects through the fields `path`
- * at the call's entry (`Footprints.ArgumentStoreRegion`). */
-export type StoreRegion = { readonly position: number; readonly path: readonly string[] };
+ * at the call's entry (`Footprints.ArgumentSpineRegion`). */
+export type SpineRegion = { readonly position: number; readonly path: readonly string[] };
 /** A written statement's frame (`Modifies<P, T>`, `Fresh<T>`,
  * SOURCE-ELABORATION.md, "Stated effects"), an authoring form: its closed
- * footprint, off the stores its `regions` select, which may change
+ * footprint, off the spines its `regions` select, which may change
  * arbitrarily; whether it holds on a throw; whether the result is fresh.
  * The Fragment states its exits (`statedExits`). */
-export type StatedFrame = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean; regions: StoreRegion[] };
+export type StatedFrame = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean; regions: SpineRegion[] };
 /** The guarantees a footprint's signature states beside its footprint, an
  * authoring form of an effect (`footprintEffect` builds the effect): its
  * promise, whether its footprint also bounds a throw (`onThrow`), whether
- * its result's array store or every own location of its result is fresh,
- * whether it excepts its receiver's store or own locations, whether it
- * grows its receiver's store and appends its actuals, its precondition on
+ * its result's array spine or every field of its result is fresh,
+ * whether it excepts its receiver's spine or fields, whether it
+ * grows its receiver's spine and appends its actuals, its precondition on
  * the receiver's elements and its elements promise, its preconditions and
  * the facts a normal return states, and its element write. Never
  * serialized. */
@@ -75,8 +75,8 @@ export type EffectOptions = {
   readonly onThrow?: boolean;
   readonly fresh?: boolean;
   readonly freshObject?: boolean;
-  readonly receiverStore?: boolean;
-  readonly receiverOwn?: boolean;
+  readonly receiverSpine?: boolean;
+  readonly receiverFields?: boolean;
   readonly receiverGrows?: boolean;
   readonly requires?: ElementKinds | null;
   readonly elements?: ElementKinds | null;
@@ -107,10 +107,10 @@ const valuesClass: Selector = { value: true, array: false, view: false };
 const arraysClass: Selector = { value: false, array: true, view: false };
 const viewsClass: Selector = { value: false, array: false, view: true };
 /** **A closed footprint's frame** (`Closed.fp`): one entry per content class,
- * its store change on both store classes (`Closed.ofStores`). */
+ * its spine change on both spine classes (`Closed.ofSpines`). */
 export const classFrame = (c: ClosedFootprint): Modifies<{}, Frame> => [
-  { region: { cls: valuesClass }, change: c.value }, { region: { cls: arraysClass }, change: c.store },
-  { region: { cls: viewsClass }, change: c.store }];
+  { region: { cls: valuesClass }, change: c.value }, { region: { cls: arraysClass }, change: c.spine },
+  { region: { cls: viewsClass }, change: c.spine }];
 /** The frame letting every location change: the note's `⊤`. */
 export const topFrame: Frame = classFrame(topFootprint);
 /** **An exit's guarantee**: its frame and its postconditions (`ExitSchema`). */
@@ -143,17 +143,17 @@ const writtenResult: TransportSchema = { shift: 1, overrides: [[3, { path: { roo
  * its format, the facts its precondition gives, and the result. */
 function writePosts(w: ElementWrite): Modifies<{}, Formula[]> {
   const grow: Formula = { transition: { effect: [{ region: { cls: viewsClass }, change: "grow" }] } };
-  if (w === "stores") return [grow];
+  if (w === "spines") return [grow];
   if (w === "assign") return [grow, operation({ viewWrite: { x: 1, i: 2, v: 3, format: null } }), transportPost(writtenResult)];
   return [grow, operation({ viewWrite: { x: 1, i: 2, v: 3, format: formatOfWrite(w) } }),
     ...exactWritePre(w).map(f => factPost("before", 0, f)), transportPost(writtenResult)];
 }
-/** The receiver's store entry of a frame: its array store at `any`. */
-const receiverStoreEntry: Frame[number] = { region: { field: { x: 0, key: "[]" } }, change: "any" };
+/** The receiver's spine entry of a frame: its array spine at `any`. */
+const receiverSpineEntry: Frame[number] = { region: { field: { x: 0, key: "[]" } }, change: "any" };
 /** **A signature effect of a footprint and its options**, the exits it
  * states (`Exits`): the normal frame the footprint's class entries, then the
- * receiver's own locations (else its store) at `any`; the normal
- * postconditions the fresh result store and object, the receiver's
+ * receiver's fields (else its spine) at `any`; the normal
+ * postconditions the fresh result spine and object, the receiver's
  * elements where the result is `true`, the facts after, the receiver's growth
  * and append, and the element write's; the exceptional exit the same frame
  * where `onThrow`, `⊤` otherwise, with no postcondition. An exact element
@@ -164,29 +164,29 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
   const pre = options?.pre ?? [];
   if (isExactWrite(elementWrite) && !exactWritePre(elementWrite).every(f => pre.some(g => canonicalText(g) === canonicalText(f))))
     throw Error(`an exact element write '${elementWrite}' states its range among its preconditions`);
-  const receiver: Frame = options?.receiverOwn
-    ? [{ region: { inCls: { region: { own: { x: 0 } }, selector: valuesClass } }, change: "any" }]
-    : options?.receiverStore ? [receiverStoreEntry] : [];
+  const receiver: Frame = options?.receiverFields
+    ? [{ region: { inCls: { region: { fields: { x: 0 } }, selector: valuesClass } }, change: "any" }]
+    : options?.receiverSpine ? [receiverSpineEntry] : [];
   const frame: Frame = [...classFrame(footprint), ...receiver];
   const elements = options?.elements ?? null;
   const ensures: Formula[] = [
-    ...(options?.fresh ? [operation({ freshStore: { x: 0 } })] : []),
+    ...(options?.fresh ? [operation({ freshSpine: { x: 0 } })] : []),
     ...(options?.freshObject ? [operation({ freshObject: { x: 0 } })] : []),
     ...(elements === null ? [] : [operation({ elementsWhen: { x: 0, value: "true", y: 1, predicate: elements } })]),
     ...(options?.ensures ?? []).map(f => factPost("after", 0, f)),
-    ...(options?.receiverGrows ? [{ transition: { effect: [receiverStoreEntry] } }, operation({ storeExtends: { x: 0 } }),
+    ...(options?.receiverGrows ? [{ transition: { effect: [receiverSpineEntry] } }, operation({ spineExtends: { x: 0 } }),
       pushPost(0, 1, { restFrom: { first: 1 } })] : []),
     ...(elementWrite === null ? [] : writePosts(elementWrite))];
   return effect({ normal: exitSchema(frame, ensures), exceptional: options?.onThrow ? exitSchema(frame) : exitSchema(topFrame) },
     { promise: options?.promise ?? null, requires: options?.requires ?? null, pre });
 };
 /** **A statement's exits** (`Exits.ofStated`): the closed footprint's frame
- * and the store regions at `any`, a fresh result store where it states one,
+ * and the spine regions at `any`, a fresh result spine where it states one,
  * and on a throw the same frame where it states `onThrow`, `⊤` otherwise. */
 export const statedExits = (s: StatedFrame): Modifies<{}, Exits<ExitSchema>> => {
   const frame: Frame = [...classFrame(s.footprint),
     ...s.regions.map((r): Frame[number] => ({ region: { path: { x: r.position, fields: r.path, key: "[]" } }, change: "any" }))];
-  return { normal: exitSchema(frame, s.fresh ? [operation({ freshStore: { x: 0 } })] : []),
+  return { normal: exitSchema(frame, s.fresh ? [operation({ freshSpine: { x: 0 } })] : []),
     exceptional: s.onThrow ? exitSchema(frame) : exitSchema(topFrame) };
 };
 /** An effect with a replacement promise and every other guarantee retained. */
@@ -256,11 +256,11 @@ const grammar: { readonly [name: string]: Shape } = {
   selector: { record: { value: "bool", array: "bool", view: "bool" } },
   symbolKey: { record: { symbol: "nat" } },
   region: { union: {
-    field: { record: { x: "nat", key: { ref: "keyOf" } } }, own: { record: { x: "nat" } }, elems: { record: { x: "nat" } },
+    field: { record: { x: "nat", key: { ref: "keyOf" } } }, fields: { record: { x: "nat" } }, cells: { record: { x: "nat" } },
     cls: { ref: "selector" }, path: { record: { x: "nat", fields: strings, key: { ref: "keyOf" } } },
-    pathOwn: { record: { x: "nat", fields: strings } }, pathElems: { record: { x: "nat", fields: strings } },
+    pathFields: { record: { x: "nat", fields: strings } }, pathCells: { record: { x: "nat", fields: strings } },
     cell: { record: { name: "string" } }, inCls: { record: { region: { ref: "region" }, selector: { ref: "selector" } } },
-    store: { record: { x: "nat", fields: strings } } }, names: ["all"] },
+    spine: { record: { x: "nat", fields: strings } } }, names: ["all"] },
   frame: { list: { record: { region: { ref: "region" }, change: { names: ["keep", "init", "scalar", "grow", "any"] } } } },
   path: { record: { root: "nat", fields: strings } },
   literal: { union: { num: { record: { bits: "bits" } }, str: { record: { value: "string" } },
@@ -286,7 +286,7 @@ const grammar: { readonly [name: string]: Shape } = {
     element: { record: { value: "nat", array: "nat", index: "nat" } },
     every: { record: { slot: "nat", path: strings, stop: termShape, body: { list: { ref: "clause" } } } },
     apart: { record: { slot: "nat", other: "nat" } },
-    storeApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } } } },
+    spineApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } } } },
   kinds: { list: { names: elementKindOrder } },
   post: { union: {
     arith: { record: { op: { names: ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
@@ -296,9 +296,9 @@ const grammar: { readonly [name: string]: Shape } = {
     lengthsKept: { record: { x: "nat", exit: "nat" } }, boundedWrite: { record: { x: "nat", i: "nat", exit: "nat" } },
     push: { record: { x: "nat", exit: "nat", args: { ref: "seq" } } },
     fact: { record: { phase: { names: ["before", "after"] }, lift: "nat", fact: { ref: "fact" } } },
-    freshStore: { record: { x: "nat" } }, freshObject: { record: { x: "nat" } },
+    freshSpine: { record: { x: "nat" } }, freshObject: { record: { x: "nat" } },
     elementsWhen: { record: { x: "nat", value: { ref: "literal" }, y: "nat", predicate: { ref: "kinds" } } },
-    storeExtends: { record: { x: "nat" } },
+    spineExtends: { record: { x: "nat" } },
     viewWrite: { record: { x: "nat", i: "nat", v: "nat", format: { nullable: { names: ["uint8", "uint16", "int32", "float64"] } } } } } },
   formula: { union: {
     transition: { record: { effect: { ref: "frame" } } }, operation: { record: { post: { ref: "post" } } },
@@ -412,9 +412,9 @@ type MethodRestArrow<L = number> = CallContract<Record<string, never>, [Labels<L
  * row lists them. Fields a contract does not name are unconstrained. */
 type Fields<L = number> = [name: PropertyKey, labels: Labels<L>][];
 /** The role a storage position's location was allocated with: an ordinary
- * property, a binding's cell or an array's store. */
-type StorageRole = "field" | "cell" | "arrayStore";
-const storageRoles: readonly StorageRole[] = ["field", "cell", "arrayStore"];
+ * property, a binding's cell or an array's spine. */
+type StorageRole = "field" | "cell" | "arraySpine";
+const storageRoles: readonly StorageRole[] = ["field", "cell", "arraySpine"];
 /** An object contract's storage positions: one per named field, with the
  * role its location was allocated with and its label list, in the order the
  * row lists them. */
@@ -495,7 +495,7 @@ export type Clause<L = number> =
         stable?: PropertyKey[];
       };
     }
-  /** A tuple contract on an array store: required positions, optional
+  /** A tuple contract on an array spine: required positions, optional
    * positions, and the rest, or null when no further position may exist. */
   | { list: { first: Tuple<L>; rest: Tuple<L>[] } }
   /** An argument list under tuple contracts: what a rest parameter's type
@@ -543,7 +543,7 @@ export type Row<L = number> = Clause<L>[];
  * callable meeting its signatures at every instance of its binders, or a
  * meet, a value parameter within clauses (`V & DepSafe`)
  * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
-type ParamRow = { kind: "value" | "arguments" | "packed" | "store"; name: string; param: number };
+type ParamRow = { kind: "value" | "arguments" | "packed" | "spine"; name: string; param: number };
 export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
   bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[];
   resolution?: { input: number; observation: number; result: number | null }[];
@@ -632,7 +632,7 @@ function isIndexClass(v: unknown): v is IndexClass {
   return v === "strings" || v === "numeric" || v === "symbols";
 }
 function isParamKind(v: unknown): v is ParamRow["kind"] {
-  return v === "value" || v === "arguments" || v === "packed" || v === "store";
+  return v === "value" || v === "arguments" || v === "packed" || v === "spine";
 }
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 const keyText = (name: PropertyKey): string =>

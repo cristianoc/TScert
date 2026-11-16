@@ -314,7 +314,7 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
   -- (a regional check's own refusal: a refusal stating the facts an edge
   -- lacks is that edge's, whichever route's run made it, the regional
   -- fallback's included, and is the next branch's)
-  else if w.2.isNone && ((w.1.dropPrefix "footprint by store regions: ").toString.startsWith "store regions") then
+  else if w.2.isNone && ((w.1.dropPrefix "footprint by spine regions: ").toString.startsWith "spine regions") then
     if fixed then none else do
     let g ← given.bind (withoutRegional · (f.fr.unitId i))
     pure (f, some g, ["inferred heads: dropped the regional tables"], 0)
@@ -325,11 +325,11 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
       | _ => []
     let held := (candidates.filter (·.1 == l)).flatMap (·.2)
     let kept := (protect.filter (·.1 == l)).flatMap (·.2)
-    -- (forced: the adversarial fact, a term at most `-1`, a store or a
+    -- (forced: the adversarial fact, a term at most `-1`, a spine or a
     -- region apart from itself or every element at most `-1`, kept)
     let forced := fun (a : HeapKnowledge.IndexAtom) => fixed && match a.fact with
       | .linear (.le [(_, 1)] (-1)) => true
-      | .storeApart a p b q => a == b && p == q
+      | .spineApart a p b q => a == b && p == q
       | .apart a b => a == b
       | .every _ _ _ [.atom (.le [(.elem, 1)] (-1))] => true
       | _ => false

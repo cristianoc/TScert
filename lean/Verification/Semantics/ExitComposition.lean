@@ -192,13 +192,13 @@ theorem Exits.compose_entry {x y : Exits ExitSchema} {c : Completion} {r : Tm} {
 /-! ## An exit across an allocation before the call -/
 
 /-- **Whether a region's membership of a location reads the heap at that
-location alone**: a field, the own locations or the store of a call
+location alone**: a field, the field locations or the spine of a call
 position, a class region, a module cell, or such a region in a class. A
-region reading a path through the heap, or a store's element cells, reads
+region reading a path through the heap, or a spine's element cells, reads
 other locations. -/
 def _root_.Verification.Footprints.Region.atLocation : Region → Bool
-  | .field .. | .own _ | .cls _ | .all | .cell _ => true
-  | .path _ [] _ | .pathOwn _ [] | .store _ [] => true
+  | .field .. | .fields _ | .cls _ | .all | .cell _ => true
+  | .path _ [] _ | .pathFields _ [] | .spine _ [] => true
   | .inCls r _ => r.atLocation
   | _ => false
 
@@ -210,13 +210,13 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
     obtain ⟨t, rfl⟩ := hp
     exact List.getElem?_append_left hl
   induction R with
-  | field | own | all => rfl
+  | field | fields | all => rfl
   | cls _ | cell _ => simp only [Region.mem, hgl]
   | path _ p _ => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
-  | pathOwn _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
-  | store _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
+  | pathFields _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
+  | spine _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | inCls r _ ih => simp only [Region.atLocation] at hR; simp only [Region.mem, ih hR, hgl]
-  | elems | pathElems => simp [Region.atLocation] at hR
+  | cells | pathCells => simp [Region.atLocation] at hR
 
 /-- **An allocation alone meets an exceptional exit stating no
 postcondition** (proved): it keeps every old location (`Post.of_prefix`),
@@ -250,7 +250,7 @@ earlier entry's lower mark keeps (`FreshAt.lower`), and the exceptional
 exit states none (`Exits.exitPost_exceptional_prefix`). -/
 theorem Exits.allocStable_of {x : Exits ExitSchema}
     (hfr : ∀ c, (x.get c).frame.all (·.1.atLocation) = true)
-    (hens : ∀ c, ∀ F ∈ (x.get c).ensures, F = .operation (.freshStore 0)) (he : x.exceptional.ensures = []) :
+    (hens : ∀ c, ∀ F ∈ (x.get c).ensures, F = .operation (.freshSpine 0)) (he : x.exceptional.ensures = []) :
     x.AllocStable := by
   refine ⟨fun c r args s₀ s₁ s₂ v hadm hprefix h => ?_,
     fun r args s₀ s₁ v hadm hprefix => Exits.exitPost_exceptional_prefix he hadm hprefix⟩

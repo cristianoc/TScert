@@ -775,7 +775,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
       result: array({ k: "tuple", presence: "dense", readonly: false, required: [atom("string"), binder("T")], optional: [],
         rest: null, span: at }) } },
   // A test of the array's identity, which the calculus makes itself
-  // (`Tag.isArray`): true of exactly the objects that own an array store,
+  // (`Tag.isArray`): true of exactly the objects that own an array spine,
   // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
   // is not read: Lean narrows by the clauses of the tested value's type.
   { host: contract, global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
@@ -949,7 +949,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // forms are stated at either declaration, since the host takes the same
   // steps whichever TypeScript resolves.
   ...["from<T>(arrayLike: ArrayLike<T>): T[];", "from<T>(iterable: Iterable<T> | ArrayLike<T>): T[];"].map(
-    (signature): GlobalEntry => ({ host: transparent("the array's store: a node list's table"), global: "Array",
+    (signature): GlobalEntry => ({ host: transparent("the array's spine: a node list's table"), global: "Array",
       member: "from", signature, effect: emptyEffect,
       forms: [{ binders: ["T"], params: [readonlyArray(binder("T"))], result: array(binder("T")) },
         { binders: ["T"], params: [atom("string")], result: array(atom("string")) }] })),
@@ -1044,10 +1044,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // is the untampered `Set.prototype`. It reads `s` and allocates.
   // A further form admits an array or the host view at one element type,
   // including a host set with an empty-array fallback.
-  { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
+  { host: transparent("the array's spine: a node list's table"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
     stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
       result: library("Set", [binder("T")]) }) },
-  { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
+  { host: transparent("the array's spine: a node list's table"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
     forms: (library, view) => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
       { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) },
@@ -1146,7 +1146,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     intrinsic: newPromiseName },
 ];
 
-/** A declaration-text matcher preserves array stores on normal return. */
+/** A declaration-text matcher preserves array spines on normal return. */
 export type GlobalSignatureMatcher = (signature: string) =>
   Modifies<{ values: "any" }, boolean>;
 

@@ -32,9 +32,9 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
   | "reference" => reference ctx term
   | "array" | "tuple" =>
     let readonly ← bool term "readonly"
-    let store ← occurrence ctx "store" term (job := fun h c => .store h c term)
+    let spine ← occurrence ctx "spine" term (job := fun h c => .spine h c term)
     let proto ← protoLabel
-    return [mkApp (← arrayHead readonly proto) [[store]]]
+    return [mkApp (← arrayHead readonly proto) [[spine]]]
   | "function" | "constructor" | "object" =>
     return [← occurrence ctx "literal" term (job := fun h c => .term h c term)]
   | "callable" =>
@@ -636,7 +636,7 @@ partial def claimCmp (a b : Json) : Ordering :=
   | r, s => compare r s
 
 /-- A source-claims label: a `decl` application (arity full), a `meet`, an
-`array` of its store, or a `binder`: the binder `scope` gives the name, else
+`array` of its spine, or a `binder`: the binder `scope` gives the name, else
 its name placeholder. A `types` row index is the producer's row, which the
 claims map in the same scope (`rowLabel`). -/
 partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union := do
@@ -668,8 +668,8 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
       meetOf parts (parts.all (·.all fun t => !treeOpen t && !hasRigid t))
     else if let some s := get? "array" then
       fieldsExactly j ["array", "readonly"]
-      let store ← claimUnion scope s
-      return [mkApp (← arrayHead (← bool j "readonly") (← protoLabel)) [store]]
+      let spine ← claimUnion scope s
+      return [mkApp (← arrayHead (← bool j "readonly") (← protoLabel)) [spine]]
     else if let some n := get? "binder" then
       fieldsExactly j ["binder"]
       let n ← n.getStr?
@@ -703,7 +703,7 @@ partial def runJob (job : Job) : M Unit := do
   let row ← match job with
     | .declaration h i => declarationRow h i
     | .term _ ctx term => termRow ctx term
-    | .store _ ctx term =>
+    | .spine _ ctx term =>
       let readonly ← bool term "readonly"
       let presence : ArrayPresence ← fromJson? (← field term "presence")
       if kindOf term == some "array" then

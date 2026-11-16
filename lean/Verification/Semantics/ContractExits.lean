@@ -180,16 +180,16 @@ theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
 /-- **A call's normal completion read at heaps** (the note's Call, at the
 evaluated actuals): the normal exit of the signature's schema at the
 receiver and the actuals followed by the `undefined` of the positions a
-construction omits, the receiver then owning no store, at some indexed
+construction omits, the receiver then owning no spine, at some indexed
 states with these heaps (`Exits.heapPost`). Each consequence a pass decision
 reads is derived from the exit's frame or one of its postconditions
 (`Effect.callPost_within`, `Effect.callPost_fresh`,
 `Effect.callPost_freshObject`, `Effect.callPost_elements`,
-`Effect.callPost_ensures`, `Effect.callPost_storeGrows`,
+`Effect.callPost_ensures`, `Effect.callPost_spineGrows`,
 `Effect.callPost_appends`, `Effect.callPost_viewGrowth`,
 `Effect.callPost_exactWrite`). -/
 def Effect.callPost (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Post :=
-  fun after v => ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
+  fun after v => ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.spineOf r = none) ∧
     e.schema.heapPost .normal r (args ++ pad) before after v
 
 /-- **A call's throw read at heaps**: the exceptional exit at the actuals
@@ -206,7 +206,7 @@ variable {e : Effect} {r : Tm} {args : List Tm} {before after : Heap} {v : Tm}
 evaluated actuals followed by the omitted positions' `undefined`, at indexed
 states with the call's heaps. -/
 theorem Effect.callPost_holds (hp : e.callPost r args before after v) :
-    ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
+    ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.spineOf r = none) ∧
       ∃ s s' : IndexedHeap, s.h = before ∧ s'.h = after ∧ Admissible s s' ∧
         ∀ F ∈ e.schema.normal.ensures, Parity.Holds AssertionArena.empty
           (callState r (args ++ pad) v before.length s s')
@@ -221,12 +221,12 @@ theorem Effect.callPost_within (hp : e.callPost r args before after v) : e.withi
   change Post e.schema.normal.frame (callEnv r (args ++ pad)) s.h s'.h at hf
   rwa [callEnv_pad r args hpad] at hf
 
-/-- **A fresh result store**, where the normal exit states one
+/-- **A fresh result spine**, where the normal exit states one
 (`ExitSchema.freshResult`). -/
 theorem Effect.callPost_fresh (hf : e.schema.normal.freshResult = true) (hp : e.callPost r args before after v) :
     Footprints.FreshAt before.length v := by
   obtain ⟨pad, -, -, s, s', rfl, -, -, hH⟩ := Effect.callPost_holds hp
-  exact hH (.operation (.freshStore 0)) (by simpa [ExitSchema.freshResult] using hf)
+  exact hH (.operation (.freshSpine 0)) (by simpa [ExitSchema.freshResult] using hf)
 
 /-- **A fresh result object**, where the normal exit states one
 (`ExitSchema.freshObjectResult`). -/
@@ -255,10 +255,10 @@ theorem Effect.callPost_ensures {F : HeapKnowledge.IndexFact} (hF : F ∈ e.sche
   rwa [he, callEnv_pad r args hpad] at h
 
 /-- **The receiver's growth**, where the normal exit states the frame
-`{receiver store: any}` and the store's extension (`receiverGrows_iff`). -/
-theorem Effect.callPost_storeGrows
-    (h1 : (.transition [(.field 0 arrayStoreKey, .any)] : FormulaSchema) ∈ e.schema.normal.ensures)
-    (h2 : (.operation (.storeExtends 0) : FormulaSchema) ∈ e.schema.normal.ensures)
+`{receiver spine: any}` and the spine's extension (`receiverGrows_iff`). -/
+theorem Effect.callPost_spineGrows
+    (h1 : (.transition [(.field 0 arraySpineKey, .any)] : FormulaSchema) ∈ e.schema.normal.ensures)
+    (h2 : (.operation (.spineExtends 0) : FormulaSchema) ∈ e.schema.normal.ensures)
     (hp : e.callPost r args before after v) : ReceiverGrows r before after := by
   obtain ⟨pad, -, -, s, s', rfl, rfl, hadm, hH⟩ := Effect.callPost_holds hp
   exact (receiverGrows_iff (args := args ++ pad) hadm).mp ⟨hH _ h1, hH _ h2⟩
@@ -275,19 +275,19 @@ theorem Effect.callPost_appends
   rcases hrecv with rfl | hr
   · simp only [List.append_nil] at hF
     exact (receiverAppends_iff (by simpa using hv)).mp hF hv
-  · exact ReceiverAppends.of_no_store hr hv
+  · exact ReceiverAppends.of_no_spine hr hv
 
 /-- **An element write's coarse change**, where the normal exit states the
 views' growth `{all-views: grow}` (`Kinds.ViewWrite.frame_iff`,
 `Kinds.ViewWrite.changes`). -/
 theorem Effect.callPost_viewGrowth
     (hg : (.transition [(.cls .views, .grow)] : FormulaSchema) ∈ e.schema.normal.ensures)
-    (hp : e.callPost r args before after v) : ElementWrite.stores.changes.Holds before after := by
+    (hp : e.callPost r args before after v) : ElementWrite.spines.changes.Holds before after := by
   obtain ⟨pad, -, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
   have hF := hH _ hg
   have hw : Kinds.ViewWrite s.W s.h s'.W s'.h :=
     (Kinds.ViewWrite.frame_iff s.ok (callEnv r (args ++ pad))).mpr ⟨hF.1, s'.ok, hF.2⟩
-  exact hw.changes s.ok .stores
+  exact hw.changes s.ok .spines
 
 /-- **An exact element write**, where the normal exit states View-Write at
 the element type's format and the facts of its precondition
@@ -322,7 +322,7 @@ theorem Effect.callExc_frame (n : Nat) (hp : e.callExc r args before after) :
 /-- A call read at heaps from exits held from its entry: its normal and
 exceptional exits at heaps (`SafePostExcV.heldPosts`). -/
 theorem Effect.heldPosts_call {Ξ T : Fam} {pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef)
-    (hrecv : pad = [] ∨ Footprints.storeOf r = none) {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
+    (hrecv : pad = [] ∨ Footprints.spineOf r = none) {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : SafePostExcV Ξ T (e.schema.heldPost r (args ++ pad) W h) (e.schema.heldExc r (args ++ pad) W h) n W h t) :
     SafePostExc Ξ T (e.callPost r args h) (e.callExc r args h) n W h t :=

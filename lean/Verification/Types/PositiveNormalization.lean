@@ -90,13 +90,13 @@ inductive Clause (α : Type) where
   reads, calls or tests through it without a narrowing fact. `unknown`
   denotes it. Source `void` denotes the union of primitives and objects. -/
   | top
-  /-- Every closed JavaScript value, excluding internal stores. -/
+  /-- Every closed JavaScript value, excluding internal spines. -/
   | source
   /-- Strings, and one string; appended last so every earlier case order holds. -/
   | str
   | strLit (value : String)
-  /-- An array store under one or more tuple contracts. The array object
-  holds the store in its store field; the contracts describe the store. -/
+  /-- An array spine under one or more tuple contracts. The array object
+  holds the spine in its spine field; the contracts describe the spine. -/
   | list (first : Tuple α) (rest : List (Tuple α))
   /-- Bigints and symbols; appended last so every earlier case order holds. -/
   | bigint
@@ -147,22 +147,22 @@ def sourceT : Fam := fun _ _ v => isSourceVal v = true ∧ Scoped 0 v
 
 /-! ### The semantic sorts
 
-The Tolerant frames note, §2: a value is a scalar or an object; a store is
+The Tolerant frames note, §2: a value is a scalar or an object; a spine is
 not a value. Field, cell and element locations hold source values (`V`),
-store locations hold element stores (`S`), and an argument list is a list of
+spine locations hold element spines (`S`), and an argument list is a list of
 source values (`L = V*`). A family is valid at a sort when it is admissible
 and holds members of the sort only (`PositiveGraphs.SortValid`). -/
 
-/-- The two sorts of runtime contents: source values `V` and element stores `S`. -/
+/-- The two sorts of runtime contents: source values `V` and element spines `S`. -/
 inductive ValueSort where
   | source
-  | store
+  | spine
   deriving DecidableEq, Repr
 
-/-- The members of a sort: closed scalars and objects, or closed element stores. -/
+/-- The members of a sort: closed scalars and objects, or closed element spines. -/
 def ValueSort.Holds : ValueSort → Val → Prop
   | .source, v => isSourceVal v = true ∧ Scoped 0 v
-  | .store, v => (∃ ls, v = .arr ls) ∧ Scoped 0 v
+  | .spine, v => (∃ ls, v = .arr ls) ∧ Scoped 0 v
 
 /-- The sort `L`: lists of source values. -/
 def SourceList (vs : List Val) : Prop := ∀ v ∈ vs, ValueSort.source.Holds v
@@ -171,12 +171,12 @@ def SourceList (vs : List Val) : Prop := ∀ v ∈ vs, ValueSort.source.Holds v
 theorem ValueSort.source_iff {n : Nat} {W : WorldT n} {v : Val} :
     ValueSort.source.Holds v ↔ sourceT n W v := Iff.rfl
 
-/-- **A closed machine value is of one sort or a view store**: `topT` is
-`V ∪ S` with the typed arrays' view stores, which no type's sort holds, and
+/-- **A closed machine value is of one sort or a view spine**: `topT` is
+`V ∪ S` with the typed arrays' view spines, which no type's sort holds, and
 `V` and `S` are disjoint (`ValueSort.disjoint`). -/
 theorem topT_iff_sort {n : Nat} {W : WorldT n} {v : Val} :
-    topT n W v ↔ (ValueSort.source.Holds v ∨ ValueSort.store.Holds v) ∨
-      ∃ f cs, v = .viewStore f cs := by
+    topT n W v ↔ (ValueSort.source.Holds v ∨ ValueSort.spine.Holds v) ∨
+      ∃ f cs, v = .viewSpine f cs := by
   constructor
   · rintro ⟨hv, hs⟩
     cases v <;> simp_all [isVal, isSourceVal, ValueSort.Holds]
@@ -185,7 +185,7 @@ theorem topT_iff_sort {n : Nat} {W : WorldT n} {v : Val} :
     · exact ⟨rfl, hs⟩
     · exact ⟨rfl, trivial⟩
 
-theorem ValueSort.disjoint {v : Val} (h : ValueSort.source.Holds v) : ¬ ValueSort.store.Holds v := by
+theorem ValueSort.disjoint {v : Val} (h : ValueSort.source.Holds v) : ¬ ValueSort.spine.Holds v := by
   rintro ⟨⟨ls, rfl⟩, -⟩
   simp [ValueSort.Holds, isSourceVal] at h
 
@@ -492,14 +492,14 @@ def numericFirst (ix : List (IndexKeys × α)) : List (IndexKeys × α) :=
   ix.filter (·.1 == .numeric) ++ ix.filter (·.1 != .numeric)
 
 /-- **The array shape**, the one definition every layer reads arrays from: an
-object holding its store under the store key, invariantly or, readonly, as a
+object holding its spine under the spine key, invariantly or, readonly, as a
 view; holding `Array.prototype` as a view under the prototype key; and owning
 none of `excluded`, the keys the prototype provides, so a read of one of them
 continues at the prototype. Any other own key it may have: an array may carry
 further keys, such as a runtime's hidden marker. -/
-def arrayClauseOf (store proto : α) (excluded : List PropKey) (readonly : Bool) : Clause α :=
-  .refs (if readonly then [] else [(CallArguments.arrayStoreField, .arrayStore, store)]) []
-    ((if readonly then [(CallArguments.arrayStoreField, store)] else []) ++
+def arrayClauseOf (spine proto : α) (excluded : List PropKey) (readonly : Bool) : Clause α :=
+  .refs (if readonly then [] else [(CallArguments.arraySpineField, .arraySpine, spine)]) []
+    ((if readonly then [(CallArguments.arraySpineField, spine)] else []) ++
       [(CallArguments.protoField, proto)])
     [] [] [⟨false, excluded⟩]
 
@@ -635,7 +635,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; rfl
   | view f ms => obtain ⟨⟨_, _, _, _, rfl⟩, -⟩ := h; rfl
 
-/-- Every inhabited clause other than calculus top or an element-store clause
+/-- Every inhabited clause other than calculus top or an element-spine clause
 contains only JavaScript values. Argument-pack clauses have no term members. -/
 theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (ht : c ≠ .top) (hl : ∀ a bs, c ≠ .list a bs)
@@ -703,18 +703,18 @@ theorem sourceClause_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} 
   apply semWithArgs_source (by intro e; subst c; cases hc) (by intros a bs e; subst c; cases hc) h
 
 /-- **A clause's category**: its members are of sort `q`. A source clause's
-are source values; a store clause's (`list`) are stores; a pack clause has
+are source values; a spine clause's (`list`) are spines; a pack clause has
 no value members; `top` holds both sorts. -/
 def clauseIn : ValueSort → Clause α → Bool
   | .source, c => sourceClause c
-  | .store, .list .. | .store, .pack .. => true
-  | .store, _ => false
+  | .spine, .list .. | .spine, .pack .. => true
+  | .spine, _ => false
 
 theorem clauseIn_sound {X : α → Fam} {P : α → ArgFam} {q : ValueSort} {c : Clause α} {n W v}
     (hc : clauseIn q c = true) (h : semWithArgs Ξ X P c n W v) : q.Holds v := by
   cases q with
   | source => exact sourceClause_sound hc h
-  | store =>
+  | spine =>
     cases c <;> simp [clauseIn] at hc
     · obtain ⟨ls, rfl, -⟩ := h.1
       exact ⟨⟨ls, rfl⟩, (semWithArgs_value h).2⟩
@@ -962,7 +962,7 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       · subst hab; simp [singleton_sem, semWithArgs, interT]
       · simp [semList, setSem, semWithArgs, interT, hab]
         intro hv; subst hv; simp [hab]
-    · -- list ∩ list: every contract of both, on the one store
+    · -- list ∩ list: every contract of both, on the one spine
       simp only [singleton_sem, semWithArgs, List.mem_append, List.mem_cons, or_imp, forall_and,
         forall_eq, interT]
       exact ⟨fun ⟨ha, hb, hc, hd⟩ => ⟨⟨ha, hb⟩, hc, hd⟩, fun ⟨⟨ha, hb⟩, hc, hd⟩ => ⟨ha, hb, hc, hd⟩⟩
@@ -1244,14 +1244,14 @@ theorem clauseArguments_congr (X Y : α → Fam) (c : Clause α) (n : Nat) (W : 
   rename_i a bs
   exact forall_congr' fun t => forall_congr' fun _ => arguments_congr X Y t n h vs
 
-theorem storePresence_congr (X Y : α → Fam) (t : Tuple α) (j : Nat)
+theorem spinePresence_congr (X Y : α → Fam) (t : Tuple α) (j : Nat)
     (h : ∀ a (U : WorldT j), X a j U .undef ↔ Y a j U .undef) (ls : List (Option Nat)) :
-    StorePresence (tupleFams X t) ls j ↔ StorePresence (tupleFams Y t) ls j := by
+    SpinePresence (tupleFams X t) ls j ↔ SpinePresence (tupleFams Y t) ls j := by
   cases ht : t.presence with
-  | dense => simp [StorePresence, tupleFams, ht]
-  | sparse => simp [StorePresence, tupleFams, ht]
+  | dense => simp [SpinePresence, tupleFams, ht]
+  | sparse => simp [SpinePresence, tupleFams, ht]
   | readable =>
-    simp only [StorePresence, show (tupleFams X t).presence = .readable from ht,
+    simp only [SpinePresence, show (tupleFams X t).presence = .readable from ht,
       show (tupleFams Y t).presence = .readable from ht, positionFam_tupleFams]
     constructor
     · intro hp i hi A hA U
@@ -1271,7 +1271,7 @@ theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
       Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢ <;>
     refine ⟨ls, rfl, ?_, hlen, hmax, hbound, ?_, ?_, ?_⟩
   · intro j hj
-    exact (storePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mp (hd j hj)
+    exact (spinePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mp (hd j hj)
   · rintro i A ⟨a, ha, rfl⟩
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i (X a) ⟨a, ha, rfl⟩
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u)⟩
@@ -1282,7 +1282,7 @@ theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
     obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l hi hl
     exact ⟨Y e, c, ⟨e, he, rfl⟩, hw, fun j hj W' u => (hag j hj W' u).congr (h e j hj W' u)⟩
   · intro j hj
-    exact (storePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mpr (hd j hj)
+    exact (spinePresence_congr X Y t j (fun a U => h a j hj U .undef) ls).mpr (hd j hj)
   · rintro i A ⟨a, ha, rfl⟩
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i (Y a) ⟨a, ha, rfl⟩
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u).symm⟩
@@ -1442,7 +1442,7 @@ theorem top_of_meet {a b : Clause α} (h : Clause.top ∈ meet a b) : a = .top �
       | (rcases mem_strSet h with ⟨_, he⟩ | ⟨_, he⟩ <;> cases he)
 
 /-- A member of a clause other than top that the built-ins' invariant does not
-apply to is no plain object: its shape is a primitive's, a store's or a
+apply to is no plain object: its shape is a primitive's, a spine's or a
 callable's. -/
 theorem semWithArgs_not_plain {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : c ≠ .top) (hr : c.carriesInvariant = false) (h : semWithArgs Ξ X P c n W v) :

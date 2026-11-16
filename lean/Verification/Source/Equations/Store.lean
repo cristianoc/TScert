@@ -77,9 +77,9 @@ def grow (s : State) (m : M Tree) : State × Tree :=
   | .ok (t, s) => (s, t)
   | .error _ => (s, .argument 0)
 
-/-- Whether a clause is an array's: it owns the array store. -/
+/-- Whether a clause is an array's: it owns the array spine. -/
 def arrayShaped (c : Clause (List Tree)) : Bool :=
-  c.presentKeys.contains CallArguments.arrayStoreField
+  c.presentKeys.contains CallArguments.arraySpineField
 
 def intern (s : State) (cs : List (Clause (List Tree))) : State × Tree :=
   let s := if cs.any arrayShaped then { s with arrays := true } else s

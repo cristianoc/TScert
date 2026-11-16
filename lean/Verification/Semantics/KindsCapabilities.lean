@@ -15,7 +15,7 @@ A family of pairs lets one capability range over roles. The three
 constructions of the calculus's one object allocation are capabilities that
 differ in their role: an object literal's property is a field
 (`Capability.field`), a binding cell's is a cell (`Capability.binding`), an
-array's store slot is an array store (`Capability.arrayStore`). Each holds of
+array's spine slot is an array spine (`Capability.arraySpine`). Each holds of
 the object its allocation makes (`Capability.holds_alloc`), a lookup exposes
 the target's role (`Capability.Holds.role`), a write of contents of that
 role's shape and type keeps the heap well-formed (`Capability.At.write`), and
@@ -119,8 +119,8 @@ def field (f : PropKey) (A : Fam) : Capability := ⟨f, fun r T => r = .field �
 key. -/
 def binding (A : Fam) : Capability := ⟨valueField, fun r T => r = .cell ∧ T = A⟩
 
-/-- An ordinary array's store, of the store type `A`. -/
-def arrayStore (A : Fam) : Capability := ⟨arrayStoreKey, fun r T => r = .store .array ∧ T = A⟩
+/-- An ordinary array's spine, of the spine type `A`. -/
+def arraySpine (A : Fam) : Capability := ⟨arraySpineKey, fun r T => r = .spine .array ∧ T = A⟩
 
 theorem objectEntries_snd {k : Nat} {rs : List Role} {cs : List (Ctr k)}
     (h : rs.length = cs.length) : (objectEntries rs cs).map Prod.snd = cs ++ [idCtr] := by
@@ -160,11 +160,11 @@ theorem binding_holds_cell {k : Nat} (W : WorldT k) (A : Fam) :
   holds_alloc W (ns := [valueField]) (rs := [.cell]) (As := [A])  (by simp) rfl rfl
     (i := 0) (by simp) rfl ⟨rfl, rfl⟩
 
-/-- **An array's store slot is an array store.** -/
-theorem arrayStore_holds_array {k : Nat} (W : WorldT k) (A : Fam) :
-    (arrayStore A).Holds (appendWs W (objectEntries [.store .array] [res A]))
-      [(arrayStoreKey, (entries W).length)] :=
-  holds_alloc W (ns := [arrayStoreKey]) (rs := [.store .array]) (As := [A])  (by simp) rfl rfl
+/-- **An array's spine slot is an array spine.** -/
+theorem arraySpine_holds_array {k : Nat} (W : WorldT k) (A : Fam) :
+    (arraySpine A).Holds (appendWs W (objectEntries [.spine .array] [res A]))
+      [(arraySpineKey, (entries W).length)] :=
+  holds_alloc W (ns := [arraySpineKey]) (rs := [.spine .array]) (As := [A])  (by simp) rfl rfl
     (i := 0) (by simp) rfl ⟨rfl, rfl⟩
 
 /-- A field write's target is a field location, a binding write's a cell. -/
@@ -196,7 +196,7 @@ def ofRole (s : StorageRole) (k : PropKey) (A : Fam) : Capability :=
 /-- The constructions are the capabilities of their tags. -/
 theorem ofRole_field (f : PropKey) (A : Fam) : ofRole .field f A = field f A := rfl
 theorem ofRole_cell (A : Fam) : ofRole .cell valueField A = binding A := rfl
-theorem ofRole_arrayStore (A : Fam) : ofRole .arrayStore arrayStoreKey A = arrayStore A := rfl
+theorem ofRole_arraySpine (A : Fam) : ofRole .arraySpine arraySpineKey A = arraySpine A := rfl
 
 /-- **A storage position's lookup exposes a role its tag names.** -/
 theorem ofRole_role {s : StorageRole} {key : PropKey} {A : Fam} {k : Nat} {W : WorldT k}
@@ -286,10 +286,10 @@ world entry the allocation appends records the tag's role where the
 allocated contents are of its category (`StorageRole.concrete`). -/
 
 /-- **The contents a tag's location holds**, by category: a source value
-under a field or a cell, a store under a store slot. -/
+under a field or a cell, a spine under a spine slot. -/
 def _root_.Verification.StorageRole.Holds : StorageRole → Val → Prop
   | .field, v | .cell, v => isSourceVal v = true
-  | .arrayStore, v => ∃ ls, v = .arr ls
+  | .arraySpine, v => ∃ ls, v = .arr ls
 
 /-- **The role an allocation records** for a location whose position
 states the tag `s`, allocated holding `v`: the tag's role; none where `v` is
@@ -297,7 +297,7 @@ not of the tag's category. -/
 def _root_.Verification.StorageRole.concrete : StorageRole → Val → Option Role
   | .field, v => if isSourceVal v = true then some .field else none
   | .cell, v => if isSourceVal v = true then some .cell else none
-  | .arrayStore, .arr _ => some (.store .array)
+  | .arraySpine, .arr _ => some (.spine .array)
   | _, _ => none
 
 /-- **Tag to role**: the recorded role is one the tag names. -/
@@ -325,9 +325,9 @@ theorem _root_.Verification.StorageRole.concrete_cat {s : StorageRole} {v : Val}
   · cases h; exact ⟨_, rfl⟩
   · cases h
 
-/-- **A recorded role is no view store.** -/
+/-- **A recorded role is no view spine.** -/
 theorem _root_.Verification.StorageRole.concrete_plain {s : StorageRole} {v : Val} {r : Role}
-    (h : s.concrete v = some r) : ∀ f N, r ≠ .store (.view f N) := by
+    (h : s.concrete v = some r) : ∀ f N, r ≠ .spine (.view f N) := by
   intro f N hr; subst hr
   unfold StorageRole.concrete at h
   split at h
@@ -342,7 +342,7 @@ theorem _root_.Verification.StorageRole.concrete_of_holds {s : StorageRole} {v :
   cases s with
   | field => exact ⟨.field, by simp [StorageRole.concrete, show isSourceVal v = true from h]⟩
   | cell => exact ⟨.cell, by simp [StorageRole.concrete, show isSourceVal v = true from h]⟩
-  | arrayStore => obtain ⟨ls, rfl⟩ := h; exact ⟨_, rfl⟩
+  | arraySpine => obtain ⟨ls, rfl⟩ := h; exact ⟨_, rfl⟩
 
 /-- **A write's payload category.** Contents of a tag's category have the
 category of every role the tag names. -/
@@ -351,7 +351,7 @@ theorem _root_.Verification.StorageRole.cat_of_holds {s : StorageRole} {r : Role
   cases s with
   | field => simp only [StorageRole.permits] at hp; subst hp; exact h
   | cell => simp only [StorageRole.permits] at hp; subst hp; exact h
-  | arrayStore => simp only [StorageRole.permits] at hp; subst hp; exact h
+  | arraySpine => simp only [StorageRole.permits] at hp; subst hp; exact h
 
 /-- **A write through a storage position** has the category of the role the
 world records at the position's location. -/
@@ -363,14 +363,14 @@ theorem _root_.Verification.RoleIn.cat {s : StorageRole} {k : Nat} {W : WorldT k
   rw [hl] at hr'; cases hr'
   exact StorageRole.cat_of_holds hp h
 
-/-- **Key fit** of a tag: an array store under `[]`, a field or a cell under
+/-- **Key fit** of a tag: an array spine under `[]`, a field or a cell under
 every other key. -/
 def _root_.Verification.StorageRole.fitsKey (s : StorageRole) (key : PropKey) : Bool :=
-  if key = arrayStoreKey then s == .arrayStore
+  if key = arraySpineKey then s == .arraySpine
   else s == .field || s == .cell
 
-/-- An ordinary property fits every key but the store slot's. -/
-theorem _root_.Verification.StorageRole.fitsKey_field {key : PropKey} (h1 : key ≠ arrayStoreKey) :
+/-- An ordinary property fits every key but the spine slot's. -/
+theorem _root_.Verification.StorageRole.fitsKey_field {key : PropKey} (h1 : key ≠ arraySpineKey) :
     StorageRole.field.fitsKey key = true := by
   simp [StorageRole.fitsKey, h1]
 
@@ -378,9 +378,9 @@ theorem _root_.Verification.StorageRole.fitsKey_field {key : PropKey} (h1 : key 
 theorem _root_.Verification.StorageRole.slotRole_of_fitsKey {s : StorageRole} {key : PropKey} {r : Role}
     (hf : s.fitsKey key = true) (hp : s.permits r) : SlotRole key (some r) := by
   unfold StorageRole.fitsKey at hf
-  by_cases h1 : key = arrayStoreKey
+  by_cases h1 : key = arraySpineKey
   · rw [if_pos h1] at hf
-    have hs : s = .arrayStore := by simpa using hf
+    have hs : s = .arraySpine := by simpa using hf
     subst hs
     simp only [StorageRole.permits] at hp
     subst hp
@@ -419,9 +419,9 @@ theorem concreteRoles_spec : ∀ {ss : List StorageRole} {vs : List Val} {rs : L
     | zero => simp at hs hv; subst hs hv; exact ⟨r, rfl, hr⟩
     | succ i => simpa using h3 i s' v' (by simpa using hs) (by simpa using hv)
 
-/-- **Recorded roles are no view stores.** -/
+/-- **Recorded roles are no view spines.** -/
 theorem concreteRoles_plain {ss : List StorageRole} {vs : List Val} {rs : List Role}
-    (h : concreteRoles ss vs = some rs) : ∀ r ∈ rs, ∀ f N, r ≠ .store (.view f N) := by
+    (h : concreteRoles ss vs = some rs) : ∀ r ∈ rs, ∀ f N, r ≠ .spine (.view f N) := by
   intro r hr f N
   obtain ⟨hl, hrl, hall⟩ := concreteRoles_spec h
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr

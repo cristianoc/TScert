@@ -233,18 +233,18 @@ rest. -/
     if let some T := (← executionType name) then return T
   claimAt fc e.span
 
-/-- The store type of an array claim: the type of its store field, held
+/-- The spine type of an array claim: the type of its spine field, held
 invariantly or as a view. -/
-@[nospecialize] def storeOf (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option (Ty ι) :=
+@[nospecialize] def spineOf (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option (Ty ι) :=
   match PositiveRules.expand G A with
-  | [.refs fs [] vs _ _ _ _] => (Stored.views fs).lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
+  | [.refs fs [] vs _ _ _ _] => (Stored.views fs).lookup SourceTypes.spineField <|> vs.lookup SourceTypes.spineField
   | _ => none
 
-/-- A union of arrays: every clause of the type holds a store. -/
+/-- A union of arrays: every clause of the type holds a spine. -/
 @[nospecialize] def arraysOnly (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
   let cs := PositiveRules.expand G A
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs fs [] vs _ _ _ _ => ((Stored.views fs).lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
+    | .refs fs [] vs _ _ _ _ => ((Stored.views fs).lookup SourceTypes.spineField <|> vs.lookup SourceTypes.spineField).isSome
     | _ => false
 
 /-- A source numeric key must denote one valid array index. The two runtime
@@ -261,14 +261,14 @@ zeros name the same property although their numeric values remain distinct. -/
 
 def arrayPrototypeName : String := SourceTypes.arrayPrototypeName
 
-/-- A fresh array object's type: its store and prototype as fields, and its own
+/-- A fresh array object's type: its spine and prototype as fields, and its own
 keys bounded to them, the type `alloc` gives before it is read as an array.
-The array's allocation gives its store slot the role `arrayStore` and its
+The array's allocation gives its spine slot the role `arraySpine` and its
 prototype slot, an ordinary own key, the role `field`. -/
 @[nospecialize] def arrayObject (S : Ty Tree) : Compiler (Ty Tree) := do
-  let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, .arrayStore, S),
+  let label ← lower (SourceTypes.use (.refs [(SourceTypes.spineField, .arraySpine, S),
     (SourceTypes.protoField, .field, [StoreView.arrayProto (← table)])] [] [] [] []
-    [⟨true, [SourceTypes.storeField, SourceTypes.protoField]⟩]))
+    [⟨true, [SourceTypes.spineField, SourceTypes.protoField]⟩]))
   recordHints [label]
   return [label]
 
@@ -278,10 +278,10 @@ prototype slot, an ordinary own key, the role `field`. -/
   | some (i, .value) => pure i
   | _ => throw "an array needs Array.prototype, which this unit does not see"
 
-/-- Allocate the array object holding the store in slot 0, with the prototype
+/-- Allocate the array object holding the spine in slot 0, with the prototype
 from slot `proto`. -/
 def arrayTerm (proto : Nat) : Tm :=
-  .makeAt .absent [SourceTypes.storeField, SourceTypes.protoField] [.var 0, .var proto]
+  .makeAt .absent [SourceTypes.spineField, SourceTypes.protoField] [.var 0, .var proto]
 
 /-- The literal index of one position, interned like any other number the
 program mentions. -/
@@ -427,7 +427,7 @@ def typeofTerm (slot : Nat) : Tm :=
 
 /-- What a computed key names, by its claimed type: a field for a string
 singleton, a dictionary lookup for a broad string, or an element of the
-array's store for a number. On a receiver that is only records and
+array's spine for a number. On a receiver that is only records and
 dictionaries, a number singleton names the field its `ToString` spells
 (`ToPropertyKey`), as `o[0]` reads `o["0"]`, both zeros spelling `0`; and a
 broad number or symbol is a dictionary lookup, through an index over its keys.
@@ -440,14 +440,14 @@ inductive KeyKind where
   | element
 
 /-- Whether an expression is claimed only at records and dictionaries: no
-array store, no primitive, nothing else. Such an object's property named by a
-number is the field its `ToString` spells; an array's is its store's
+array spine, no primitive, nothing else. Such an object's property named by a
+number is the field its `ToString` spells; an array's is its spine's
 element. -/
 @[nospecialize] def recordReceiver (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler Bool := do
   let G := SourceTypes.graph (← table)
   let R ← exprType fc e
   let cs := PositiveRules.expand G R
-  return !cs.isEmpty && (storeOf G R).isNone && cs.all fun
+  return !cs.isEmpty && (spineOf G R).isNone && cs.all fun
     | .refs .. | .dict .. => true | _ => false
 
 /-- Whether an expression is claimed only at dictionaries, whose indexes a
@@ -477,7 +477,7 @@ def runtimeNumberKey (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
   !cs.isEmpty && cs.all fun c => match c with | .num | .numLit _ => true | _ => false
 
 /-- Whether an expression is claimed at a homogeneous writable array, whose
-store a write at a `number` key may write (`IndexWrites.writableElement`). -/
+spine a write at a `number` key may write (`IndexWrites.writableElement`). -/
 @[nospecialize] def writableReceiver (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler Bool := do
   return (IndexWrites.writableElement (SourceTypes.graph (← table)) (← exprType fc e)).isSome
 
@@ -807,7 +807,7 @@ a rest parameter is code that discards the actuals past its parameters, so it
 also meets its signature extended by a rest of `unknown` elements: the
 further actuals a caller writes may be any values. -/
 def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThrow : Bool := false)
-    (fresh : Bool := false) (regions : List Footprints.ArgumentStoreRegion := []) : Except String Json := do
+    (fresh : Bool := false) (regions : List Footprints.ArgumentSpineRegion := []) : Except String Json := do
   let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   let (receiver, params) := match g.params with
     | p :: ps => if p.name == "this" then (p.ty, ps) else (top, g.params)

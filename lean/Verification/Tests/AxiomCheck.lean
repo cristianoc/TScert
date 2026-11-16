@@ -1,4 +1,4 @@
-import Verification.Semantics.ViewStores
+import Verification.Semantics.ViewSpines
 import Verification.Source.EffectCodec
 import Verification.Semantics.CallEffects
 import Verification.Semantics.ExitSummaries
@@ -42,7 +42,7 @@ import Verification.Source.Claims.PassUnitMemberRun
 import Verification.Source.Claims.PassUnitVerdict
 import Verification.Types.StoreMapsBuiltins
 import Verification.Source.Claims.PassUnitInit
-import Verification.Semantics.ArgumentStoreRegions
+import Verification.Semantics.ArgumentSpineRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Semantics.Survival
 import Verification.Programs.ArgumentPathTracking
@@ -138,7 +138,7 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
   modules' linking theorems;
 - the regional footprint's rebasing and composition, class-region inclusion
   and disjointness, cell provenance, and the
-  argument-store region composition, framing and stable separation theorems;
+  argument-spine region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
   atom theorems (`Verification.TolerantFrames`);
 - each `@[csimp]` lemma of the project's modules the verifier imports
@@ -274,7 +274,7 @@ run_cmd do
   check ``Verification.Footprints.Closed.post_extra_any
   check ``Verification.Footprints.closed_order_exact
   check ``Verification.Footprints.Closed.post_normal
-  check ``Verification.Footprints.Closed.ofStores_post_iff
+  check ``Verification.Footprints.Closed.ofSpines_post_iff
   check ``Verification.Footprints.Footprint.closed?_sound
   check ``Verification.Footprints.Footprint.close_sound
   -- exit summaries: the elaboration of a signature and its equivalences
@@ -360,11 +360,11 @@ run_cmd do
   check ``Verification.Parity.OperationPostF.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
-  check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post
-  check ``Verification.Footprints.ArgumentStoreRegionsWithin.trans
-  check ``Verification.Footprints.StoreApart.stable_frame
+  check ``Verification.Footprints.ArgumentSpineRegionsWithin.iff_post
+  check ``Verification.Footprints.ArgumentSpineRegionsWithin.trans
+  check ``Verification.Footprints.SpineApart.stable_frame
   check ``Verification.Footprints.StablePath.frame
-  check ``Verification.Footprints.StoreApart.stable_path_frame
+  check ``Verification.Footprints.SpineApart.stable_path_frame
   check ``Verification.GraphCode.ArgumentPathTracking.checkEntry_sound
   check ``Verification.GraphCode.ArgumentPathTracking.checkEdges_sound
   check ``Verification.GraphCode.ArgumentPathTracking.checkHandler_sound
@@ -382,9 +382,9 @@ run_cmd do
   check ``Verification.PromiseCalls.exactWriteOf_exact
   check ``Verification.PromiseCalls.exactWriteOf_requires
   check ``Verification.CallEffects.Effect.exactWrite_pre
-  check ``Verification.PromiseCalls.storeHeld_sound
-  check ``Verification.HeapKnowledge.storeFollows_sound
-  check ``Verification.HeapKnowledge.restateStores_holds
+  check ``Verification.PromiseCalls.spineHeld_sound
+  check ``Verification.HeapKnowledge.spineFollows_sound
+  check ``Verification.HeapKnowledge.restateSpines_holds
   check ``Verification.HeapKnowledge.indicesCheckWith_sound
   check ``Verification.HeapKnowledge.lowerAtoms_holds
   check ``Verification.KnowledgeExpand.released_holds
@@ -433,7 +433,7 @@ run_cmd do
   check ``Verification.TolerantFrames.box_idem
   check ``Verification.TolerantFrames.invariant_iff_top
   check ``Verification.TolerantFrames.closed_rigid
-  check ``Verification.TolerantFrames.elems_not_rigid
+  check ``Verification.TolerantFrames.cells_not_rigid
   check ``Verification.TolerantFrames.action_normal
   check ``Verification.TolerantFrames.action_throw
   check ``Verification.TolerantFrames.stable_rigid
@@ -479,7 +479,7 @@ run_cmd do
   check ``Verification.TolerantFrames.rootCells_invariant
   check ``Verification.TolerantFrames.alloc_apart
   check ``Verification.TolerantFrames.apart_of_mark
-  check ``Verification.TolerantFrames.growOne_keeps_store
+  check ``Verification.TolerantFrames.growOne_keeps_spine
   check ``Verification.TolerantFrames.apart_grow_keep
   check ``Verification.TolerantFrames.graph_step
   check ``Verification.TolerantFrames.graph_inv_run
@@ -577,7 +577,7 @@ run_cmd do
   check ``Verification.CallEffects.Effect.callPost_elements
   check ``Verification.CallEffects.Effect.callPost_ensures
   check ``Verification.CallEffects.Effect.callPost_holds
-  check ``Verification.CallEffects.Effect.callPost_storeGrows
+  check ``Verification.CallEffects.Effect.callPost_spineGrows
   check ``Verification.CallEffects.Effect.callPost_appends
   check ``Verification.CallEffects.Effect.callPost_viewGrowth
   check ``Verification.CallEffects.Effect.callPost_exactWrite
@@ -764,7 +764,7 @@ run_cmd do
   check ``Verification.TolerantFrames.fresh_invariant
   -- well-formed states and law (c) from a typed state
   check ``Verification.TolerantFrames.valueClass_ok
-  check ``Verification.TolerantFrames.storeClass_ok
+  check ``Verification.TolerantFrames.spineClass_ok
   check ``Verification.TolerantFrames.action_le_valueClass
   -- Call
   check ``Verification.TolerantFrames.call_rule
@@ -774,7 +774,7 @@ run_cmd do
   -- Seq-Eff
   check ``Verification.TolerantFrames.seq_eff
   check ``Verification.TolerantFrames.rebaseAll_labels
-  check ``Verification.TolerantFrames.rebase_elems
+  check ``Verification.TolerantFrames.rebase_cells
   -- Fresh-Eff
   check ``Verification.TolerantFrames.fresh_eff
   check ``Verification.TolerantFrames.fresh_eff_bound
@@ -843,8 +843,8 @@ run_cmd do
   check ``Verification.TolerantFrames.checkedStep_ok
   check ``Verification.TolerantFrames.stateHolds_pushed
   check ``Verification.TolerantFrames.stateHolds_throw
-  check ``Verification.TolerantFrames.preserving_store
-  check ``Verification.TolerantFrames.writing_store
+  check ``Verification.TolerantFrames.preserving_spine
+  check ``Verification.TolerantFrames.writing_spine
   check ``Verification.TolerantFrames.preserving_judgment_two
   check ``Verification.TolerantFrames.stepExits_of
   check ``Verification.TolerantFrames.checkedStep_sound
@@ -903,7 +903,7 @@ run_cmd do
   check ``Verification.TolerantFrames.eliminateLinear_named
   check ``Verification.TolerantFrames.eliminateIndices_named
   check ``Verification.TolerantFrames.restateReads_named
-  check ``Verification.TolerantFrames.restateStores_named
+  check ``Verification.TolerantFrames.restateSpines_named
   check ``Verification.TolerantFrames.dropDerived_below
   check ``Verification.TolerantFrames.keptAliasOf_named
   check ``Verification.TolerantFrames.drop_below
@@ -1649,7 +1649,7 @@ run_cmd do
   check ``Verification.Kinds.arrAlloc_shaped
   check ``Verification.Kinds.arrayObject_shaped
   check ``Verification.Kinds.typedArray_shaped
-  check ``Verification.Kinds.viewStore_shaped
+  check ``Verification.Kinds.viewSpine_shaped
   check ``Verification.Cat.category
   check ``Verification.Shaped.category
   check ``Verification.TolerantFrames.Admissible.contentsCategory
@@ -1658,9 +1658,9 @@ run_cmd do
   check ``Verification.HeapKnowledge.RefsOk.view_selects
   check ``Verification.Kinds.slots_lookup_isNone
   check ``Verification.TolerantFrames.Admissible.cls_mem
-  check ``Verification.Footprints.rebase_erases_store_only
-  check ``Verification.viewStoreCtr_adm
-  check ``Verification.viewStoreCtr_admits
+  check ``Verification.Footprints.rebase_erases_spine_only
+  check ``Verification.viewSpineCtr_adm
+  check ``Verification.viewSpineCtr_admits
   check ``Verification.viewCellCtr_adm
   check ``Verification.ViewWorld.trunc
   check ``Verification.ViewWorld.appendWs
@@ -1678,8 +1678,8 @@ run_cmd do
   check ``Verification.Kinds.writeField_shaped
   check ``Verification.Kinds.writeOrdinary_shaped
   check ``Verification.Kinds.bindingWrite_shaped
-  check ``Verification.Kinds.storeWrite_shaped
-  check ``Verification.Kinds.lengthStore_refs
+  check ``Verification.Kinds.spineWrite_shaped
+  check ``Verification.Kinds.lengthSpine_refs
   check ``Verification.Kinds.setPresent_shaped
   check ``Verification.Kinds.setGrow_shaped
   -- natives, copies, contracts and administrative steps
@@ -1708,7 +1708,7 @@ run_cmd do
   -- (View): a typed array's length is immutable
   check ``Verification.TolerantFrames.viewLength_invariant
   -- allocated cells at every budget and state
-  check ``Verification.HeapOk.store_cells
+  check ``Verification.HeapOk.spine_cells
   check ``Verification.TolerantFrames.Admissible.elem_kept
   check ``Verification.TolerantFrames.rootCells_holds
   -- allocation separation from a well-formed entry heap
@@ -1723,7 +1723,7 @@ run_cmd do
   check ``Verification.Kinds.Capability.holds_alloc
   check ``Verification.Kinds.Capability.field_holds_literal
   check ``Verification.Kinds.Capability.binding_holds_cell
-  check ``Verification.Kinds.Capability.arrayStore_holds_array
+  check ``Verification.Kinds.Capability.arraySpine_holds_array
   check ``Verification.Kinds.Capability.binding_not_field
   check ``Verification.Kinds.Capability.binding_not_le_field
   check ``Verification.PositiveNormalization.storage_map
@@ -1753,7 +1753,7 @@ run_cmd do
   check ``Verification.Thrown.refs
   check ``Verification.CallEffects.NativeContract.run
   check ``Verification.Kinds.ViewWrite.keeps_array
-  check ``Verification.Kinds.ViewWrite.view_store
+  check ``Verification.Kinds.ViewWrite.view_spine
   check ``Verification.Kinds.ViewWrite.changes
   check ``Verification.Kinds.ViewWriteOf.holds
   check ``Verification.Kinds.viewWrite_overlap

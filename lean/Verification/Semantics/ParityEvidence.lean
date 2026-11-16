@@ -145,7 +145,7 @@ structure MarkEvidence where
   callee : Nat
   ordered : caller ≤ callee
 
-/-- **Freshness transport is directional** (I5, `fresh_mark_mono`): a store
+/-- **Freshness transport is directional** (I5, `fresh_mark_mono`): a spine
 fresh for a later callee mark is fresh for the caller. -/
 theorem fresh_mark_mono {caller callee : Nat} (hm : caller ≤ callee) {v : Val} (hf : FreshAt callee v) :
     FreshAt caller v :=
@@ -319,7 +319,7 @@ def Included (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) : P
 /-! ### The class a region lies in -/
 
 /-- A node stating that the path reads an ordinary array: a dense prefix, a
-bounded quantification, a linear fact reading its length, a store
+bounded quantification, a linear fact reading its length, a spine
 separation or an apartness naming it. -/
 def arrayNode (n : AssertionNode) (π : Path) : Bool :=
   match n with
@@ -331,7 +331,7 @@ def arrayNode (n : AssertionNode) (π : Path) : Bool :=
 theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : AssertionNode}
     (hn : arena.nodes[c.index]? = some n) {π : Path} (ha : arrayNode n π = true) {η : Env} {m : Nat}
     {s : IndexedHeap} (hs : Sat arena η m s c) :
-    ∃ u st ls, π.read η s.h = some u ∧ storeOf u = some st ∧ s.h[st]? = some (.arr ls) := by
+    ∃ u st ls, π.read η s.h = some u ∧ spineOf u = some st ∧ s.h[st]? = some (.arr ls) := by
   cases n with
   | atom a =>
     have hs' := (sat_atom hn).mp hs
@@ -340,7 +340,7 @@ theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : Asserti
       obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hs'.1 _ (List.contains_iff_mem.mp ha))
       rw [Path.termAt_term] at hn
       obtain ⟨u, hu, hl⟩ := Option.bind_eq_some_iff.mp hn
-      obtain ⟨st, ls, hst, hls, -, -⟩ := lengthOf_store hl
+      obtain ⟨st, ls, hst, hls, -, -⟩ := lengthOf_spine hl
       exact ⟨u, st, ls, hu, hst, hls⟩
     · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
     · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
@@ -359,9 +359,9 @@ theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : Asserti
   | _ => simp [arrayNode] at ha
 
 /-- **Evidence of the class a region's locations lie in** under `K` (the
-note, §3, "Regions": value locations, array stores and view stores partition
+note, §3, "Regions": value locations, array spines and view spines partition
 the heap): the class every well-formed state gives it (`regionClass`); the
-store at a path a conjunct of `K` shows an ordinary array's (arrays); the
+spine at a path a conjunct of `K` shows an ordinary array's (arrays); the
 field at a path a conjunct of `K` shows holding a value (values). -/
 inductive ClassWitness where
   | intrinsic
@@ -374,7 +374,7 @@ def ClassWitness.selector (arena : AssertionArena) (K : AssertionRef) (r : Regio
   | .arrayAt c =>
     if (conjuncts arena.nodes K.index).contains c.index then
       match r, arena.nodes[c.index]? with
-      | .store x p, some n => if arrayNode n ⟨x, p⟩ then some .arrays else none
+      | .spine x p, some n => if arrayNode n ⟨x, p⟩ then some .arrays else none
       | _, _ => none
     else none
   | .fieldAt c =>
@@ -416,7 +416,7 @@ theorem ClassWitness.sound {arena : AssertionArena} {K : AssertionRef} {r : Regi
           simp only [Region.mem] at hl
           simp only [Path.read] at hu
           rw [hu] at hl
-          simp only [elementsOf_store hst, beq_iff_eq, Option.some.injEq] at hl
+          simp only [elementsOf_spine hst, beq_iff_eq, Option.some.injEq] at hl
           subst hl
           simp [Region.mem, hls, Selector.selects, contentsCategory, Selector.has]
         · cases h
@@ -572,7 +572,7 @@ theorem rigidPathOf_sound {arena : AssertionArena} (hv : arena.Valid) {c : Asser
 /-- Finite evidence of rigidity: a closed effect, on an invariant domain;
 and an effect whose every region reads the same locations along its
 actions (`stableRegion`), the paths it reads at rigid by conjuncts of the
-invariant domain (the note, §3, "Rigid: a store at a rigid path"). -/
+invariant domain (the note, §3, "Rigid: a spine at a rigid path"). -/
 inductive RigidityEvidence where
   | closed (c : Footprints.Closed)
   | stable (rigid : List AssertionRef)
@@ -642,11 +642,11 @@ def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : 
 
 /-- Finite evidence of disjointness under `K`: regions of disjoint classes
 (`Selector.disjoint`, `class_disjoint_sound`), each class by a witness; the
-stores of two paths a conjunct separates (`π # π'` or `apart`); the cells of
+spines of two paths a conjunct separates (`π # π'` or `apart`); the cells of
 two paths a conjunct states apart; and either of these in the other order. -/
 inductive DisjointEvidence where
   | classes (a b : ClassWitness)
-  | stores (c : AssertionRef)
+  | spines (c : AssertionRef)
   | cells (c : AssertionRef)
   | swap (d : DisjointEvidence)
   deriving DecidableEq, Repr
@@ -660,11 +660,11 @@ def DisjointEvidence.check (arena : AssertionArena) (K : AssertionRef) (r r' : R
   | .classes a b => match a.selector arena K r, b.selector arena K r' with
     | some x, some y => x.disjoint y
     | _, _ => false
-  | .stores c => (conjuncts arena.nodes K.index).contains c.index && match separatedPaths arena.nodes[c.index]? with
-    | some (q, q') => r == .store q.root q.fields && r' == .store q'.root q'.fields
+  | .spines c => (conjuncts arena.nodes K.index).contains c.index && match separatedPaths arena.nodes[c.index]? with
+    | some (q, q') => r == .spine q.root q.fields && r' == .spine q'.root q'.fields
     | none => false
   | .cells c => (conjuncts arena.nodes K.index).contains c.index && match arena.nodes[c.index]? with
-    | some (.apart q q') => r == .pathElems q.root q.fields && r' == .pathElems q'.root q'.fields
+    | some (.apart q q') => r == .pathCells q.root q.fields && r' == .pathCells q'.root q'.fields
     | _ => false
   | .swap d => d.check arena K r' r
 
@@ -681,7 +681,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
         have h2 := b.sound hy η m s hK l hm
         rw [class_disjoint_sound h h1] at h2; cases h2
     · cases h
-  | r, r', .stores c, h => by
+  | r, r', .spines c, h => by
     simp only [DisjointEvidence.check, Bool.and_eq_true] at h
     obtain ⟨hc, h⟩ := h
     split at h
@@ -690,8 +690,8 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
       obtain ⟨rfl, rfl⟩ := h
       intro η m s hK l hl
       have hcs := conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
-      have hsep : ∃ u w st t, q.read η s.h = some u ∧ q'.read η s.h = some w ∧ storeOf u = some st ∧
-          storeOf w = some t ∧ st ≠ t := by
+      have hsep : ∃ u w st t, q.read η s.h = some u ∧ q'.read η s.h = some w ∧ spineOf u = some st ∧
+          spineOf w = some t ∧ st ≠ t := by
         unfold separatedPaths at hqq
         split at hqq
         · rename_i _ _ hn; cases hqq
@@ -703,7 +703,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
         · cases hqq
       obtain ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩ := hsep
       simp only [Path.read] at hu hw
-      simp only [Region.mem, hu, hw, elementsOf_store hsu, elementsOf_store htw, beq_iff_eq,
+      simp only [Region.mem, hu, hw, elementsOf_spine hsu, elementsOf_spine htw, beq_iff_eq,
         Option.some.injEq] at hl ⊢
       subst hl
       simpa using hne.symm
@@ -721,7 +721,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
       have hcells := (cells_disjoint_iff hau haw).mpr hlist
       simp only [Path.read] at hu hw
       simp only [Region.mem, hu, hw, List.contains_iff_mem] at hl ⊢
-      cases hm : (storeElems s.h w).contains (some l)
+      cases hm : (spineCells s.h w).contains (some l)
       · rfl
       · exact absurd (List.contains_iff_mem.mp hm) (hcells l hl)
     · cases h
@@ -787,27 +787,27 @@ theorem termAt_var {η : Env} {h : Heap} {t : Term} (ht : t.path = []) :
 /-- A defined term reads a value neither `null` nor `undefined`. -/
 theorem kindValue_nonNullish {h : Heap} {k : Term.Kind} {v : Val} (hk : (kindValue h k v).isSome) :
     nullish v = false := by
-  cases k <;> cases v <;> simp_all [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, nullish, storeOf, fieldsOf]
+  cases k <;> cases v <;> simp_all [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, nullish, spineOf, fieldsOf]
 
 /-- The scalar-length terms of a linear support at variables: each term
 reads a variable, of a heap-free kind or the length of the array a
 `keep` entry of `S` keeps. -/
 def lengthsSupported (F : Linear.Fact Term) (S : Footprint) : Bool :=
   F.vars.all fun t => !t.atEntry && t.path.isEmpty &&
-    (t.kind != .length || S.contains (.store t.slot [], .keep))
+    (t.kind != .length || S.contains (.spine t.slot [], .keep))
 
 /-- **Support of an assertion in a context, by certificate** (the note, §5,
 Definition "Support"):
 - an invariant assertion, by any `S`;
-- a linear fact at variables, by the `keep` of the stores whose lengths it
-  reads (`{x.store: keep}` supports `n ≤ |x|`, the note's example);
+- a linear fact at variables, by the `keep` of the spines whose lengths it
+  reads (`{x.spine: keep}` supports `n ≤ |x|`, the note's example);
 - `every(z, t, φ)` at a variable `z`, `t` heap-free and `φ` over scalars, by
-  `{z.store: keep, z[cells]: keep}`;
+  `{z.spine: keep, z[cells]: keep}`;
 - `x.f ≐ v` for a literal `v`, by `{x.f: keep}`;
-- a linear fact at any paths, by `{values: init, stores: keep}`: `init`
+- a linear fact at any paths, by `{values: init, spines: keep}`: `init`
   changes no location holding an object, a number or a string;
 - a typed array's element `b[i] ≐ ℓ` at a variable `b`, `i` heap-free and
-  `ℓ` a literal, by `{b.store: keep, b[cells]: keep}` (the note, §6,
+  `ℓ` a literal, by `{b.spine: keep, b[cells]: keep}` (the note, §6,
   Example "A write through a typed array"). -/
 inductive SupportEvidence where
   | invariant
@@ -825,22 +825,22 @@ def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footp
     | _ => false
   | .everyCells => match arena.nodes[A.index]? with
     | some (.atom (.every z n body)) => z.fields.isEmpty && !n.atEntry && n.path.isEmpty && n.kind != .length &&
-        scalarBody body && S.contains (.store z.root [], .keep) && S.contains (.pathElems z.root [], .keep)
+        scalarBody body && S.contains (.spine z.root [], .keep) && S.contains (.pathCells z.root [], .keep)
     | _ => false
   | .field => match arena.nodes[A.index]? with
     | some (.atom (.equal ⟨x, [f]⟩ (.literal _))) => S.contains (.path x [] (.str f), .keep)
     | _ => false
   | .init => match arena.nodes[A.index]? with
     | some (.atom (.linear F)) => F.vars.all (fun t => !t.atEntry) &&
-        S.contains (.cls .values, .init) && S.contains (.cls .stores, .keep)
+        S.contains (.cls .values, .init) && S.contains (.cls .spines, .keep)
     | _ => false
   | .viewElement => match arena.nodes[A.index]? with
     | some (.atom (.element b t (.literal _))) => b.fields.isEmpty && !t.atEntry && t.path.isEmpty &&
-        t.kind != .length && S.contains (.store b.root [], .keep) && S.contains (.pathElems b.root [], .keep)
+        t.kind != .length && S.contains (.spine b.root [], .keep) && S.contains (.pathCells b.root [], .keep)
     | _ => false
 
 private theorem lengths_term {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS : SupportedBy S η s s') {t : Term}
-    (ht : (!t.atEntry && t.path.isEmpty && (t.kind != .length || S.contains (.store t.slot [], .keep))) = true)
+    (ht : (!t.atEntry && t.path.isEmpty && (t.kind != .length || S.contains (.spine t.slot [], .keep))) = true)
     {n : Int} (hn : termAt η s.h t = some n) : termAt η s'.h t = some n := by
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, List.contains_iff_mem, List.isEmpty_iff] at ht
   obtain ⟨⟨-, hp⟩, hk⟩ := ht
@@ -849,17 +849,17 @@ private theorem lengths_term {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS
   · rw [kindValue_heapFree hk s'.h s.h]; exact hn
   · by_cases hl : t.kind = .length
     · rw [hl] at hn ⊢
-      obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hn
-      have hin : (Region.store t.slot []).mem η s.h st = true := by
-        simp [Region.mem, readPath, elementsOf_store hst]
-      exact lengthOf_of_store hst (kept_of_supported hS hk hin hls) hm
+      obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hn
+      have hin : (Region.spine t.slot []).mem η s.h st = true := by
+        simp [Region.mem, readPath, elementsOf_spine hst]
+      exact lengthOf_of_spine hst (kept_of_supported hS hk hin hls) hm
     · rw [kindValue_heapFree hl s'.h s.h]; exact hn
 
 /-- A path read through locations holding values other than `null` and
 `undefined` reads the same along a transition changing value locations at
-most by `init` and keeping stores. -/
+most by `init` and keeping spines. -/
 private theorem readPath_init {η : Env} {s s' : IndexedHeap} (hS : SupportedBy [(.cls .values, .init),
-    (.cls .stores, .keep)] η s s') :
+    (.cls .spines, .keep)] η s s') :
     ∀ {p : List String} {v w : Val} (k : Term.Kind), readPath s.h v p = some w → (kindValue s.h k w).isSome →
       readPath s'.h v p = some w
   | [], _, _, _, h, _ => h
@@ -881,13 +881,13 @@ private theorem readPath_init {η : Env} {s s' : IndexedHeap} (hS : SupportedBy 
               cases p with
               | nil =>
                 simp only [readPath, Option.some.injEq] at h; subst h
-                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, storeOf, fieldsOf] at hk
+                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, spineOf, fieldsOf] at hk
               | cons g p => simp [readPath] at h
-            | viewStore _ _ =>
+            | viewSpine _ _ =>
               cases p with
               | nil =>
                 simp only [readPath, Option.some.injEq] at h; subst h
-                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, storeOf, fieldsOf] at hk
+                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, spineOf, fieldsOf] at hk
               | cons g p => simp [readPath] at h
             | _ => simp [Region.mem, hu, Selector.selects, contentsCategory, Selector.has]
           obtain ⟨u', hu', hc⟩ := hS _ (List.mem_cons_self ..) l u hin hu
@@ -923,15 +923,15 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
       obtain ⟨w, st, ls, k, hw, hsto, hls, hk, hall⟩ := (sat_atom hn).mp hA
       have hzw : η z.root = w := by
         simp only [Path.read, hz, readPath, Option.some.injEq] at hw; exact hw
-      have hin : (Region.store z.root []).mem η s.h st = true := by
-        simp [Region.mem, readPath, hzw, elementsOf_store hsto]
+      have hin : (Region.spine z.root []).mem η s.h st = true := by
+        simp [Region.mem, readPath, hzw, elementsOf_spine hsto]
       have hls' := kept_of_supported hS hst hin hls
       have hcells : ∀ (i l : Nat), ls[i]? = some (some l) → ∀ u, s.h[l]? = some u → s'.h[l]? = some u := by
         intro i l hi u hu
-        have hsto' : (fieldsOf w).lookup arrayStoreKey = some st := hsto
-        have hmem : (Region.pathElems z.root []).mem η s.h l = true := by
-          simp only [Region.mem, readPath, hzw, storeElems, entriesAt, hsto', hls, Option.bind_some,
-            storeEntries, Option.getD_some, List.contains_iff_mem, List.mem_append]
+        have hsto' : (fieldsOf w).lookup arraySpineKey = some st := hsto
+        have hmem : (Region.pathCells z.root []).mem η s.h l = true := by
+          simp only [Region.mem, readPath, hzw, spineCells, entriesAt, hsto', hls, Option.bind_some,
+            spineEntries, Option.getD_some, List.contains_iff_mem, List.mem_append]
           exact .inl (List.mem_of_getElem? hi)
         exact kept_of_supported hS hcl hmem hu
       have hk' : termAt η s'.h n = some k := by
@@ -1005,20 +1005,20 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
         have hel : elementsOf u = some st := by
           cases u with
           | objAt fs cd oid =>
-            simp only [descriptorStore] at hds
+            simp only [descriptorSpine] at hds
             split at hds
             · rename_i heq
               cases hds
-              simp only [storeOf, fieldsOf] at hso
+              simp only [spineOf, fieldsOf] at hso
               cases heq
               simp [elementsOf, hso]
             · cases hds
-          | _ => simp [descriptorStore] at hds
-        have hin : (Region.store b.root []).mem η s.h st = true := by
+          | _ => simp [descriptorSpine] at hds
+        have hin : (Region.spine b.root []).mem η s.h st = true := by
           simp [Region.mem, readPath, hub, hel]
         have hc0' := kept_of_supported hS hst hin hc0
-        have hmem : (Region.pathElems b.root []).mem η s.h l = true := by
-          simp only [Region.mem, readPath, hub, storeElems, List.contains_iff_mem, List.mem_append]
+        have hmem : (Region.pathCells b.root []).mem η s.h l = true := by
+          simp only [Region.mem, readPath, hub, spineCells, List.contains_iff_mem, List.mem_append]
           refine .inr ?_
           simp only [hds, entriesAt, hc0, Option.bind_some, hent, Option.getD_some]
           exact List.mem_of_getElem? hl
@@ -1037,7 +1037,7 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
       simp only [Bool.and_eq_true, List.contains_iff_mem] at h
       obtain ⟨⟨_, hv⟩, hst⟩ := h
       intro η m s s' _ _ hA hS
-      have hS' : SupportedBy [(.cls .values, .init), (.cls .stores, .keep)] η s s' := by
+      have hS' : SupportedBy [(.cls .values, .init), (.cls .spines, .keep)] η s s' := by
         intro e he
         simp only [List.mem_cons, List.not_mem_nil, or_false] at he
         rcases he with rfl | rfl
@@ -1053,10 +1053,10 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
       cases hkd : t.kind with
       | length =>
         rw [hkd] at hk
-        obtain ⟨st, ls, hsto, hls, rfl, hm⟩ := lengthOf_store hk
-        have hin : (Region.cls .stores).mem η s.h st = true := by
+        obtain ⟨st, ls, hsto, hls, rfl, hm⟩ := lengthOf_spine hk
+        have hin : (Region.cls .spines).mem η s.h st = true := by
           simp [Region.mem, hls, Selector.selects, contentsCategory, Selector.has]
-        exact lengthOf_of_store hsto (kept_of_supported hS hst hin hls) hm
+        exact lengthOf_of_spine hsto (kept_of_supported hS hst hin hls) hm
       | _ => rw [hkd] at hk; rwa [kindValue_heapFree (by decide) s'.h s.h]
     · cases h
 

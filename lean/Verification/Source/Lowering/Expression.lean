@@ -253,7 +253,7 @@ slots are introduced only after the operand supplying their type is checked. -/
           throw "an allocation's key bound must admit every key it allocates"
         if !V.all (fun v => st.contains v.1) || !st.all (fun k => V.any (·.1 == k)) then
           throw "an allocation's claim states a view other than a stable key"
-        if !st.isEmpty && ns.contains CallArguments.arrayStoreField then
+        if !st.isEmpty && ns.contains CallArguments.arraySpineField then
           throw "an array literal states no stable key"
         let all ← ns.mapM fun name => do
           let some D := (Stored.views B ++ V).lookup name | throw "allocation claim names different fields"
@@ -331,7 +331,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     else
       let K := a.type :: Γ
       let arms ← primitiveArms (held ⟨"",some receiver.span⟩ :: scope) K a.type fld
-      -- An array's `length` is its store's, read as a number, as the graph
+      -- An array's `length` is its spine's, read as a number, as the graph
       -- reads it, of one array contract or of each of a union's. A read
       -- refused is refused at the member access.
       if arms.isEmpty && fld == "length" && arraysOnly G a.type then locatedRead e.span (arrayLength G Γ a)
@@ -461,9 +461,9 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- Reading a spread operand's elements is an array operation, which a
     -- closed expression does not have.
     if !spreads.isEmpty then throw "an array literal spread inside a closed expression is outside the fragment"
-    -- The elements, in order, fill a fresh store, and the array object holds
+    -- The elements, in order, fill a fresh spine, and the array object holds
     -- it with the prototype from its slot, then reads as the claimed array.
-    let some S := storeOf G A | throw "an array literal needs an array claim"
+    let some S := spineOf G A | throw "an array literal needs an array claim"
     let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
     let proto ← prototypeSlot scope
     let some P := Γ[proto]? | throw "internal prototype slot mismatch"
@@ -471,14 +471,14 @@ slots are introduced only after the operand supplying their type is checked. -/
     let casts ← ps.zipIdx.mapM fun (p, i) => do
       let some D := ProgramTyping.positionTy T i | throw "an array literal has more elements than its claim"
       pure (DirectProof.cast Γ D p)
-    let store := DirectProof.node Γ (.arrLit (ps.map (·.term))) S .arrLit casts
+    let spine := DirectProof.node Γ (.arrLit (ps.map (·.term))) S .arrLit casts
     let O ← arrayObject S
-    let object := DirectProof.node Γ (.makeAt .absent [SourceTypes.storeField, SourceTypes.protoField]
-      [store.term, .var proto]) O .alloc [store, DirectProof.var Γ proto P]
+    let object := DirectProof.node Γ (.makeAt .absent [SourceTypes.spineField, SourceTypes.protoField]
+      [spine.term, .var proto]) O .alloc [spine, DirectProof.var Γ proto P]
     pure (DirectProof.cast Γ A object)
   | .elemAt _ receiver key => do
     -- The receiver, then the key, both saved; the element is read from the
-    -- receiver's store at the key's one index, or a string's code unit at
+    -- receiver's spine at the key's one index, or a string's code unit at
     -- the key's number.
     let r ← closureExpr recursive fc scope Γ receiver
     let k ← closureExpr recursive fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
@@ -636,7 +636,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- A method the object does not hold, such as an array's, is read from its
     -- prototype (`readCell`, `readProto`) at the member's scheme, and the claim
     -- at the call's instance is below it. An element as the method, or a
-    -- spread's store, stays outside a closed expression.
+    -- spread's spine, stays outside a closed expression.
     if !spreads.isEmpty then throw "a spread argument inside a closed expression is outside the fragment"
     let (o, fld, key) ← match callee with
       | .read _ fld o => pure (o, fld, none)

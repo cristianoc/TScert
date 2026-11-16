@@ -92,7 +92,7 @@ theorem factAt_tag (s : TwoState) (p : Phase) (F : Linear.Fact Term) :
 
 /-- Whether a post reads the entry state. -/
 def OperationPostF.readsBefore : OperationPost → Bool
-  | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .storeExtends .. | .viewWrite .. => true
+  | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .spineExtends .. | .viewWrite .. => true
   | _ => false
 
 /-- The conjunction of a list of formulas. -/
@@ -298,10 +298,10 @@ def OperationPostF.shift : OperationPost → OperationPost
   | .boundedWrite x i x' => .boundedWrite x i (x' + 1)
   | .push x x' args => .push x (x' + 1) args
   | .fact p l F => .fact p (if p = .after then l + 1 else l) F
-  | .freshStore x => .freshStore (x + 1)
+  | .freshSpine x => .freshSpine (x + 1)
   | .freshObject x => .freshObject (x + 1)
   | .elementsWhen x v y R => .elementsWhen (x + 1) v (y + 1) R
-  | .storeExtends x => .storeExtends x
+  | .spineExtends x => .spineExtends x
   | .viewWrite x i v f => .viewWrite x i v f
 
 /-- **`F'` is `F` with the valuation of phase `p` read one slot further**:
@@ -465,11 +465,11 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (d : Derivation arena Γ (.at p a)) (dk : Derivation arena Γ (.linear (tagFact p (.le [(k, -1)] 0))))
       (dlt : Derivation arena Γ (.linear (tagFact p (.le [(k, 1), (n, -1)] (-1))))) :
       Derivation arena Γ (.linear (tagFact p G))
-  /-- (Grow): `y ≤ |x| ⊢ □_{values: any, stores: grow} (y ≤ |x|)`. -/
+  /-- (Grow): `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)`. -/
   | grow {Γ p a b} (y x : Nat) (ha : arena.nodes[a.index]? = some (.atom (.linear (lowerFact y x))))
       (hb : arena.nodes[b.index]? = some (.box growEffect.fp a)) (d : Derivation arena Γ (.at p a)) :
       Derivation arena Γ (.at p b)
-  /-- (Dense): `dense(x, k) ⊢ □_{values: any, stores: grow} dense(x, k)`. -/
+  /-- (Dense): `dense(x, k) ⊢ □_{values: any, spines: grow} dense(x, k)`. -/
   | dense {Γ p a b} (x k : Nat) (ha : arena.nodes[a.index]? = some (.atom (.dense (Path.var x) (Term.value k))))
       (hb : arena.nodes[b.index]? = some (.box growEffect.fp a)) (d : Derivation arena Γ (.at p a)) :
       Derivation arena Γ (.at p b)
@@ -587,7 +587,7 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (dx : Derivation arena Γ (.linear (.le [(alen x, -1)] 0)))
       (dz : Derivation arena Γ (.linear (.le [(alen z, -1)] 0))) : Derivation arena Γ (concatFacts x z y)
   /-- **Write-In** (the note, §6, "Exact postconditions"): a write keeping
-  the stores' lengths gives `|x| = old(|x|)`. -/
+  the spines' lengths gives `|x| = old(|x|)`. -/
   | writeIn {Γ} (x x' : Nat) (dop : Derivation arena Γ (.operation (.lengthsKept x x')))
       (dl : Derivation arena Γ (.defined (lenB x))) : Derivation arena Γ (lengthStep x x' 0)
   /-- **Write-End** (the note, §6, "Exact postconditions"), its length:
@@ -890,10 +890,10 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
     | .at p b => do
       match arena.nodes[b.index]? with
       | some (.box Φ A) => do
-        let ⟨_⟩ ← req (Φ = [(.cls .values, .any), (.store y [], .any)]) "sep: the effect is not {values: any, y.store: any}"
+        let ⟨_⟩ ← req (Φ = [(.cls .values, .any), (.spine y [], .any)]) "sep: the effect is not {values: any, y.spine: any}"
         let ⟨_⟩ ← node? arena K (.separated (.var x) (.var y))
-        let S : Footprint := [(.store x [], .keep)]
-        let rev : RespectEvidence := ⟨[(0, 0, .classes (.arrayAt K) .intrinsic), (0, 1, .stores K)]⟩
+        let S : Footprint := [(.spine x [], .keep)]
+        let rev : RespectEvidence := ⟨[(0, 0, .classes (.arrayAt K) .intrinsic), (0, 1, .spines K)]⟩
         let ⟨hs⟩ ← req (SupportEvidence.lengths.check arena A S = true) "sep: the atom reads more than |x| and variables"
         let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "sep: the effect does not respect the support"
         let ⟨hc⟩ ← req (ContextEvidence.truth.check arena K = true) "sep: no context"
@@ -907,9 +907,9 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       match arena.nodes[b.index]?, arena.nodes[K.index]? with
       | some (.box Φ A), some (.apart q z) => do
         let ⟨_⟩ ← req (q = .var x ∧ z.fields = []) "everyFrame: the separation is not apart(x, z)"
-        let ⟨_⟩ ← req (Φ = [(.store x [], .any), (.pathElems x [], .any)]) "everyFrame: the effect is not {x[*]: any}"
-        let S : Footprint := [(.store z.root [], .keep), (.pathElems z.root [], .keep)]
-        let rev : RespectEvidence := ⟨[(0, 0, .swap (.stores K)), (0, 1, .classes (.arrayAt K) .intrinsic),
+        let ⟨_⟩ ← req (Φ = [(.spine x [], .any), (.pathCells x [], .any)]) "everyFrame: the effect is not {x[*]: any}"
+        let S : Footprint := [(.spine z.root [], .keep), (.pathCells z.root [], .keep)]
+        let rev : RespectEvidence := ⟨[(0, 0, .swap (.spines K)), (0, 1, .classes (.arrayAt K) .intrinsic),
           (1, 0, .classes .intrinsic (.arrayAt K)), (1, 1, .swap (.cells K))]⟩
         let ⟨hs⟩ ← req (SupportEvidence.everyCells.check arena A S = true)
           "everyFrame: the atom is no every(z, t, φ) at a variable bound over scalars"
@@ -925,7 +925,7 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       match arena.nodes[b.index]? with
       | some (.box Φ A) => do
         let ⟨_⟩ ← req (Φ = [(.cls .values, .init)]) "init: the effect is not {values: init}"
-        let S : Footprint := [(.cls .values, .init), (.cls .stores, .keep)]
+        let S : Footprint := [(.cls .values, .init), (.cls .spines, .keep)]
         let rev : RespectEvidence := ⟨[(1, 0, .classes .intrinsic .intrinsic)]⟩
         let ⟨hs⟩ ← req (SupportEvidence.init.check arena A S = true) "init: the atom is no linear fact"
         let ⟨hr⟩ ← req (rev.check arena A S Φ = true) "init: the effect does not respect the support"
@@ -1571,10 +1571,10 @@ theorem OperationPostF.holds_shift (s : TwoState) (x : Val) (q : OperationPost) 
     · simp only [OperationPostF.shift, OperationPostF.Holds, TwoState.withEnv, TwoState.env, TwoState.state]
       exact Iff.of_eq (congrArg (fun η => F.HoldsAt _ η _) (funext fun i => by
         simp only [Verification.push]; rfl))
-  | freshStore _ => rfl
+  | freshSpine _ => rfl
   | freshObject _ => rfl
   | elementsWhen _ _ _ _ => rfl
-  | storeExtends _ => rfl
+  | spineExtends _ => rfl
   | viewWrite _ _ _ _ => rfl
 
 theorem OperationPostF.holds_before (s : TwoState) (η : Env) {q : OperationPost} (hq : q.readsBefore = false) :
@@ -2029,11 +2029,11 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     obtain ⟨hc, hx'⟩ := ihop s hΓ
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (ihl s hΓ)
     have hn' : lengthOf s.before.h (s.beforeEnv x) = some n := hn
-    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hn'
+    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hn'
     obtain ⟨ls', hls', hlen⟩ := hc.2.1 rfl st ls hls
     refine lengthStep_of (L := ls.length) hn ?_
     show lengthOf s.after.h (s.afterEnv x') = _
-    rw [hx', lengthOf_of_store hst hls' (by omega), hlen]; simp
+    rw [hx', lengthOf_of_spine hst hls' (by omega), hlen]; simp
   | writeEnd x i x' _ _ ihop ihe =>
     intro s hΓ
     obtain ⟨⟨st, ls, ls', b, idx, hst, hls, hls', hb, hidx, hlt, hmx, hgrow⟩, hx'⟩ := ihop s hΓ
@@ -2047,7 +2047,7 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     have e3 := h3.2
     simp only [Linear.Fact.Holds, Linear.Form.eval, hk, hn, Option.getD_some] at e1 e2 e3
     have hn' : lengthOf s.before.h (s.beforeEnv x) = some n := hn
-    obtain ⟨st', ls0, hst', hls0, rfl, -⟩ := lengthOf_store hn'
+    obtain ⟨st', ls0, hst', hls0, rfl, -⟩ := lengthOf_spine hn'
     rw [hst] at hst'; cases hst'
     rw [hls] at hls0; cases hls0
     have hk' : intValue (s.beforeEnv i) = some k := hk
@@ -2058,20 +2058,20 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     have hl' := hgrow (by omega)
     refine lengthStep_of (L := ls.length) hn ?_
     show lengthOf s.after.h (s.afterEnv x') = _
-    rw [hx', lengthOf_of_store hst hls' (by simp [maxArrayLength] at e3 ⊢; omega), hl']; simp
+    rw [hx', lengthOf_of_spine hst hls' (by simp [maxArrayLength] at e3 ⊢; omega), hl']; simp
   | pushPost x x' args _ _ _ ihop ihl ihm =>
     intro s hΓ
     obtain ⟨vs, hvs, hval, happ, hx'⟩ := ihop s hΓ
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (ihl s hΓ)
     have hn' : lengthOf s.before.h (s.beforeEnv x) = some n := hn
-    obtain ⟨st, ls, hst, hls, rfl, -⟩ := lengthOf_store hn'
+    obtain ⟨st, ls, hst, hls, rfl, -⟩ := lengthOf_spine hn'
     obtain ⟨ls', hls', hlen, -⟩ := happ hval st ls hst hls
     have hm := (ihm s hΓ).2
     simp only [Linear.Fact.Holds, Linear.Form.eval, hn, Option.getD_some] at hm
     have hvl := mapM_length hvs
     refine lengthStep_of (L := ls.length) hn ?_
     show lengthOf s.after.h (s.afterEnv x') = _
-    rw [hx', lengthOf_of_store hst hls' (by simp [maxArrayLength] at hm ⊢; omega), hlen, hvl]; simp
+    rw [hx', lengthOf_of_spine hst hls' (by simp [maxArrayLength] at hm ⊢; omega), hlen, hvl]; simp
 
 /-! ## The validated boundary -/
 

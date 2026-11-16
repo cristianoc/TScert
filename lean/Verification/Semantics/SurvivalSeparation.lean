@@ -4,9 +4,9 @@ import Verification.Semantics.HeapKnowledge
 /-! # Separation queries from knowledge
 
 The separation query a state's knowledge answers (FOOTPRINTS.md, "Separation
-queries"): two regions are disjoint by class, or each selects the store of
+queries"): two regions are disjoint by class, or each selects the spine of
 the value a path reads, and an unconditional fact of the knowledge states
-those two values' stores different. A path is read up to the knowledge's
+those two values' spines different. A path is read up to the knowledge's
 alias links and read links (`pathViews`): every view of it reads the same
 value. The query is built from the prestate's knowledge and is sound where
 that knowledge holds (`knowledgeQuery_sound`). -/
@@ -92,44 +92,44 @@ theorem sameSite_read {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLin
   obtain ⟨rfl, hal⟩ := hm
   rw [← pathViews_read hl p x hz, ← pathViews_read hl q a hw, HeapLinks.aliases_eq hl hal]
 
-/-! ## Store separations the knowledge states -/
+/-! ## Spine separations the knowledge states -/
 
-/-- A separation the knowledge states: the stores of the values the two
-paths read differ, or one of the paths selects no store. -/
-structure StoreSep where
+/-- A separation the knowledge states: the spines of the values the two
+paths read differ, or one of the paths selects no spine. -/
+structure SpineSep where
   a : Nat × List String
   b : Nat × List String
 
-/-- The two paths' values hold different stores. -/
-def StoreSep.Holds (e : StoreSep) (ρ : Env) (h : Heap) : Prop :=
+/-- The two paths' values hold different spines. -/
+def SpineSep.Holds (e : SpineSep) (ρ : Env) (h : Heap) : Prop :=
   ∀ u w l, readPath h (ρ e.a.1) e.a.2 = some u → readPath h (ρ e.b.1) e.b.2 = some w →
-    storeOf u = some l → storeOf w = some l → False
+    spineOf u = some l → spineOf w = some l → False
 
-/-- The separations an unconditional fact states: a store separation, a
-region fact (its two values' stores), and either guarded by a slot's value
+/-- The separations an unconditional fact states: a spine separation, a
+region fact (its two values' spines), and either guarded by a slot's value
 being a guard's tag where one of its paths starts at that slot: there it
-reads no object, so it selects no store. -/
-def factSeps (ls : HeapLinks.Links) : IndexFact → List StoreSep
-  | .storeApart a p b q => [⟨(a, p), (b, q)⟩]
+reads no object, so it selects no spine. -/
+def factSeps (ls : HeapLinks.Links) : IndexFact → List SpineSep
+  | .spineApart a p b q => [⟨(a, p), (b, q)⟩]
   | .apart a b => [⟨(a, []), (b, [])⟩]
   | .guarded g [] _ B => (factSeps ls B).filter fun e =>
       (HeapLinks.aliases ls g).contains e.a.1 || (HeapLinks.aliases ls g).contains e.b.1
   | _ => []
 
 private theorem tag_reads_none {t : GuardTag} {h : Heap} {p : List String} {u : Val} {l : Nat}
-    (hu : readPath h t.val p = some u) (hl : storeOf u = some l) : False := by
+    (hu : readPath h t.val p = some u) (hl : spineOf u = some l) : False := by
   cases p with
   | nil =>
     simp only [readPath, Option.some.injEq] at hu
     subst hu
-    cases t <;> simp [GuardTag.val, storeOf, fieldsOf] at hl
+    cases t <;> simp [GuardTag.val, spineOf, fieldsOf] at hl
   | cons f q => cases t <;> simp [GuardTag.val, readPath] at hu
 
 theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h) :
     ∀ (F : IndexFact), F.HoldsAt ε ρ h → ∀ e ∈ factSeps ls F, e.Holds ρ h := by
   intro F
   induction F with
-  | storeApart a p b q =>
+  | spineApart a p b q =>
     intro hF e he
     simp only [factSeps, List.mem_singleton] at he
     subst he
@@ -145,7 +145,7 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
     intro u w l hu hw hsu hsw
     simp only [readPath, Option.some.injEq] at hu hw
     subst hu; subst hw
-    exact regionsApart_stores hF l l hsu hsw rfl
+    exact regionsApart_spines hF l l hsu hsw rfl
   | guarded g p tag B ih =>
     intro hF e he
     cases p with
@@ -164,7 +164,7 @@ theorem factSeps_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
   | _ => intro _ e he; simp [factSeps] at he
 
 /-- The separations of a state's unconditional facts. -/
-def knowledgeSeps (k : Knowledge) : List StoreSep :=
+def knowledgeSeps (k : Knowledge) : List SpineSep :=
   k.indices.flatMap fun a => if a.cond.isNone then factSeps k.links a.fact else []
 
 theorem knowledgeSeps_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
@@ -180,22 +180,22 @@ theorem knowledgeSeps_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnow
 
 /-! ## The query -/
 
-/-- The store site a region selects within: the store of the value a path
+/-- The spine site a region selects within: the spine of the value a path
 reads. -/
-def storeSite : Region → Option (Nat × List String)
-  | .path x p k => if k == arrayStoreKey then some (x, p) else none
-  | .field x k => if k == arrayStoreKey then some (x, []) else none
-  | .inCls r _ => storeSite r
+def spineSite : Region → Option (Nat × List String)
+  | .path x p k => if k == arraySpineKey then some (x, p) else none
+  | .field x k => if k == arraySpineKey then some (x, []) else none
+  | .inCls r _ => spineSite r
   | _ => none
 
-theorem storeSite_mem {ρ : Env} {h : Heap} {l : Nat} :
-    ∀ {r : Region} {x : Nat} {p : List String}, storeSite r = some (x, p) → r.mem ρ h l = true →
-      ∃ u, readPath h (ρ x) p = some u ∧ storeOf u = some l := by
+theorem spineSite_mem {ρ : Env} {h : Heap} {l : Nat} :
+    ∀ {r : Region} {x : Nat} {p : List String}, spineSite r = some (x, p) → r.mem ρ h l = true →
+      ∃ u, readPath h (ρ x) p = some u ∧ spineOf u = some l := by
   intro r
   induction r with
   | path y q k =>
     intro x p hs hm
-    simp only [storeSite] at hs
+    simp only [spineSite] at hs
     split at hs
     · rename_i hk
       simp only [Option.some.injEq, Prod.mk.injEq] at hs
@@ -204,39 +204,39 @@ theorem storeSite_mem {ρ : Env} {h : Heap} {l : Nat} :
       subst hk
       simp only [Region.mem] at hm
       split at hm
-      · rename_i u hu; exact ⟨u, hu, by simpa [storeOf] using hm⟩
+      · rename_i u hu; exact ⟨u, hu, by simpa [spineOf] using hm⟩
       · cases hm
     · cases hs
   | field y k =>
     intro x p hs hm
-    simp only [storeSite] at hs
+    simp only [spineSite] at hs
     split at hs
     · rename_i hk
       simp only [Option.some.injEq, Prod.mk.injEq] at hs
       obtain ⟨rfl, rfl⟩ := hs
       simp only [beq_iff_eq] at hk
       subst hk
-      exact ⟨_, rfl, by simpa [Region.mem, storeOf] using hm⟩
+      exact ⟨_, rfl, by simpa [Region.mem, spineOf] using hm⟩
     · cases hs
   | inCls r c ih =>
     intro x p hs hm
     simp only [Region.mem, Bool.and_eq_true] at hm
     exact ih hs hm.1
-  | _ => intro x p hs; simp [storeSite] at hs
+  | _ => intro x p hs; simp [spineSite] at hs
 
-/-- Two store sites the separations place apart, either way round. -/
-def sitesApart (ls : HeapLinks.Links) (seps : List StoreSep) (x y : Nat × List String) : Bool :=
+/-- Two spine sites the separations place apart, either way round. -/
+def sitesApart (ls : HeapLinks.Links) (seps : List SpineSep) (x y : Nat × List String) : Bool :=
   let X := pathViews ls x.1 x.2
   let Y := pathViews ls y.1 y.2
   seps.any fun e =>
     (sameSite ls X (pathViews ls e.a.1 e.a.2) && sameSite ls Y (pathViews ls e.b.1 e.b.2)) ||
     (sameSite ls X (pathViews ls e.b.1 e.b.2) && sameSite ls Y (pathViews ls e.a.1 e.a.2))
 
-/-- **The query a state's knowledge answers**: by class, or by a store
-separation between the two regions' store sites. -/
+/-- **The query a state's knowledge answers**: by class, or by a spine
+separation between the two regions' spine sites. -/
 def knowledgeQuery (k : Knowledge) : SepQuery :=
   let seps := knowledgeSeps k
-  classQuery.or ⟨fun r s => match storeSite r, storeSite s with
+  classQuery.or ⟨fun r s => match spineSite r, spineSite s with
     | some x, some y => sitesApart k.links seps x y
     | _, _ => false⟩
 
@@ -248,8 +248,8 @@ theorem knowledgeQuery_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKno
   simp only at hd
   split at hd
   · rename_i x y hx hy
-    obtain ⟨u, hu, hul⟩ := storeSite_mem hx hr
-    obtain ⟨w, hw, hwl⟩ := storeSite_mem hy hs
+    obtain ⟨u, hu, hul⟩ := spineSite_mem hx hr
+    obtain ⟨w, hw, hwl⟩ := spineSite_mem hy hs
     obtain ⟨e, he, hm⟩ := List.any_eq_true.mp hd
     have hl := hk.2.2.1
     have hsep := knowledgeSeps_holds hk e he
@@ -272,16 +272,16 @@ position `σ` maps to a slot is that slot, a position it maps to none
 widens to every location. -/
 def Region.renameM (σ : Nat → Option Nat) : Region → Region
   | .field x k => match σ x with | some y => .field y k | none => .all
-  | .own x => match σ x with | some y => .own y | none => .all
-  | .elems x => match σ x with | some y => .elems y | none => .all
+  | .fields x => match σ x with | some y => .fields y | none => .all
+  | .cells x => match σ x with | some y => .cells y | none => .all
   | .path x p k => match σ x with | some y => .path y p k | none => .all
-  | .pathOwn x p => match σ x with | some y => .pathOwn y p | none => .all
-  | .pathElems x p => match σ x with | some y => .pathElems y p | none => .all
+  | .pathFields x p => match σ x with | some y => .pathFields y p | none => .all
+  | .pathCells x p => match σ x with | some y => .pathCells y p | none => .all
   | .cls c => .cls c
   | .all => .all
   | .cell b => .cell b
   | .inCls r c => .inCls (r.renameM σ) c
-  | .store x p => match σ x with | some y => .store y p | none => .all
+  | .spine x p => match σ x with | some y => .spine y p | none => .all
 
 theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l : Nat}
     (hσ : ∀ i j, σ i = some j → ρ j = env i) :
@@ -321,11 +321,11 @@ end Verification.Footprints
 namespace Verification.Footprints
 
 /-- **A footprint's class entries as they act on their class**: on a
-selector of store categories alone `init` and `scalar` are `keep`, on one of
-the value category alone `grow` is `scalar` (`Change.onStore`,
+selector of spine categories alone `init` and `scalar` are `keep`, on one of
+the value category alone `grow` is `scalar` (`Change.onSpine`,
 `Change.onValue`); a selector of both kinds keeps its change. -/
 def Footprint.byClass (Φ : Footprint) : Footprint := Φ.map fun e => match e.1 with
-  | .cls c => if !c.value then (e.1, e.2.onStore)
+  | .cls c => if !c.value then (e.1, e.2.onSpine)
       else if !c.array && !c.view then (e.1, e.2.onValue) else e
   | _ => e
 
@@ -347,7 +347,7 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
       · simp only [hcv, Bool.not_false, if_true]
         have harr : isArr v = true := Selector.selects_noValue hcv hsel
         refine ⟨hm, ?_⟩
-        cases δ <;> simp only [Change.onStore]
+        cases δ <;> simp only [Change.onSpine]
         · exact hh
         · exact hh.init_isArr harr
         · exact hh.scalar_isArr harr

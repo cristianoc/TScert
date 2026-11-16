@@ -21,9 +21,9 @@ form `slotForm F` over the exit's terms.
 - The length read of a string is `stringLengthRead`'s facts.
 
 And the exact postconditions of writes hold of the calculus's runs: a normal
-run of an element write below its store's length meets `lengthsKept`
+run of an element write below its spine's length meets `lengthsKept`
 (`ExpressionEffects.elem_var_write_length`, the note's Write-In), and one of
-a checked write meets `boundedWrite` (`IndexWrites.boundedWrite_store`,
+a checked write meets `boundedWrite` (`IndexWrites.boundedWrite_spine`,
 Write-End's length). -/
 namespace Verification.Parity.Bridges
 open Verification HeapKnowledge IndexWrites
@@ -185,12 +185,12 @@ theorem post_of_run {Ξ T : Fam} {Q : Post} {R : Heap → Prop} {s : IndexedHeap
 
 open TolerantFrames ExpressionEffects in
 /-- **Write-In's post of the calculus's run**: a normal run of an element
-write below its store's length ends where `lengthsKept` holds. -/
+write below its spine's length ends where `lengthsKept` holds. -/
 theorem lengthsKept_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey}
     {i j k : Nat} {Ref : Ty ι} {Ξ T : Fam} {ρ : Env} {s : IndexedHeap} {flds : List (PropKey × Nat)}
     {cd : CallCode} {oid fl : Nat} {ls0 : List (Option Nat)} {b0 : UInt64} {idx : Nat}
     (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
-    (hst : storeFieldEvery G (expand G Ref) f = true)
+    (hst : spineFieldEvery G (expand G Ref) f = true)
     (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup f = some fl) (hls0 : s.h[fl]? = some (.arr ls0))
     (hb0 : ρ j = .num b0) (hidx : indexOfBits b0 = some idx) (hlt : idx < ls0.length)
     (he : EnvOk G Γ ρ s.n s.W)
@@ -215,7 +215,7 @@ theorem boundedWrite_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {i
     (hu : isVal u = true) (hb : steps < s.n) {x' : Nat} {η' : Env} {m : Nat} (hη : η' x' = ρ a) :
     ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPostF.boundedWrite a i x').Holds ⟨ρ, η', m, s, s'⟩ := by
   obtain ⟨s', ha, hh, hq⟩ := post_of_run (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
-    (boundedWrite_store hc he hk s.adm s.ok href)) hrun hu hb
+    (boundedWrite_spine hc he hk s.adm s.ok href)) hrun hu hb
   exact ⟨s', ha, hh, by subst hh; exact hq, hη⟩
 
 end Verification.Parity.Bridges

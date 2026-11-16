@@ -10,7 +10,7 @@ a world contract) is below mark `m`. Two slots are apart when `after` of one
 is at least `before` of the other, and only in the regions those stamps
 cover: the own locations of the first, the typed fields of the second. An
 array's listed element locations are not own locations of the array, and a
-fresh store may list old element locations.
+fresh spine may list old element locations.
 
 An edge renames marks by a map from target marks to source marks. A target
 valuation is the source's composed with that map. The map must fix mark 0
@@ -19,7 +19,7 @@ its direction: `after` may only weaken toward an earlier source mark,
 `before` only toward a later one.
 
 The **classes** of contents follow from world contracts, at a positive step
-index, and an element location's class from its store's contract one level
+index, and an element location's class from its spine's contract one level
 deeper. -/
 namespace Verification.Footprints
 
@@ -37,11 +37,11 @@ def StampsHold (st : Stamps) (typed : Nat → List PropKey) (μ : Nat → Nat) (
 /-- **Provenance separation**, for the regions the stamps cover. -/
 theorem stamps_separate {st typed μ ρ h x y m m' r l k l'} (hs : StampsHold st typed μ ρ)
     (hμ : ∀ i j, i ≤ j → μ i ≤ μ j) (ha : st.after x = some m) (hb : st.before y = some m')
-    (hm : m' ≤ m) (hr : (∃ k, r = Region.field x k) ∨ r = .own x) (hrm : r.mem ρ h l = true)
+    (hm : m' ≤ m) (hr : (∃ k, r = Region.field x k) ∨ r = .fields x) (hrm : r.mem ρ h l = true)
     (hk : k ∈ typed y) (hl' : (fieldsOf (ρ y)).lookup k = some l') : l ≠ l' := by
-  have hown : (Region.own x).mem ρ h l = true := by
+  have hown : (Region.fields x).mem ρ h l = true := by
     rcases hr with ⟨k, rfl⟩ | rfl
-    · exact field_mem_own hrm
+    · exact field_mem_fields hrm
     · exact hrm
   have h₁ := hs.1 x m ha l (by simpa [Region.mem] using hown)
   have h₂ := hs.2 y m' hb k hk l' hl'
@@ -61,21 +61,21 @@ def markAt : List Nat → Nat → Nat
 
 /-! ## Classes of contents -/
 
-/-- `x`'s store holds an array whose first `n` indices are present. -/
+/-- `x`'s spine holds an array whose first `n` indices are present. -/
 def Dense (x n : Nat) (ρ : Env) (h : Heap) : Prop :=
-  ∃ s ls, (fieldsOf (ρ x)).lookup arrayStoreKey = some s ∧ h[s]? = some (.arr ls) ∧ DensePrefix n ls
+  ∃ s ls, (fieldsOf (ρ x)).lookup arraySpineKey = some s ∧ h[s]? = some (.arr ls) ∧ DensePrefix n ls
 
 theorem dense_class {x n ρ h l} (hd : Dense x n ρ h)
-    (hm : (Region.field x arrayStoreKey).mem ρ h l = true) : (Region.cls .stores).mem ρ h l = true := by
+    (hm : (Region.field x arraySpineKey).mem ρ h l = true) : (Region.cls .spines).mem ρ h l = true := by
   obtain ⟨s, ls, hs, hv, -⟩ := hd
   simp only [Region.mem, beq_iff_eq] at hm
   rw [hs] at hm; cases hm
   simp [Region.mem, hv, isArr]
 
-/-- **The support lemma of `Dense`.** It depends only on its store's
+/-- **The support lemma of `Dense`.** It depends only on its spine's
 location, and survives any change of it by `grow`. -/
 theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
-    (hs : Supported [(.field x arrayStoreKey, .grow)] ρ h h') : Dense x n ρ h' := by
+    (hs : Supported [(.field x arraySpineKey, .grow)] ρ h h') : Dense x n ρ h' := by
   obtain ⟨s, ls, hsl, hv, hn⟩ := hd
   obtain ⟨v', hv', hh⟩ := hs _ (List.mem_singleton_self _) s _ (by simp [Region.mem, hsl]) hv
   rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩ | hi | ⟨_, _, _, he, -⟩
@@ -84,10 +84,10 @@ theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
   · exact absurd hi.2.1 (by simp [isArr])
   · cases he
 
-/-- A footprint whose entries covering the store change it at most by `grow`
+/-- A footprint whose entries covering the spine change it at most by `grow`
 supports `Dense`. -/
 theorem dense_stable {x n ρ h h' Φ} (hd : Dense x n ρ h) (hp : Post Φ ρ h h')
-    (hΦ : ∀ e ∈ Φ, ∀ l, (Region.field x arrayStoreKey).mem ρ h l = true → e.1.mem ρ h l = true →
+    (hΦ : ∀ e ∈ Φ, ∀ l, (Region.field x arraySpineKey).mem ρ h l = true → e.1.mem ρ h l = true →
       e.2.le .grow = true) : Dense x n ρ h' := by
   refine dense_support hd fun e he l v hm hv => ?_
   simp only [List.mem_singleton] at he
@@ -99,7 +99,7 @@ theorem dense_stable {x n ρ h h' Φ} (hd : Dense x n ρ h) (hp : Post Φ ρ h h
   · exact hh.mono (hΦ f hf l hm hfm)
 
 /-- The stability check of `Dense` under a closed footprint with no
-knowledge: `class(value)` entries are apart from the store by class, every
+knowledge: `class(value)` entries are apart from the spine by class, every
 other entry must change at most by `grow`. -/
 def stableDenseClosed (Φ : Footprint) : Bool :=
   Φ.all fun e => e.1 == .cls .values || e.2.le .grow

@@ -18,7 +18,7 @@ values `run` computes there, its `outFresh` restated as `passOutFreshChecked`
 (a copy of a slot holding a fresh name, or a call stating a fresh result
 whose derivation `derivChecked` accepts). `callFresh_of_checked` proves the
 call disjunct gives every run of the node's term to a value within the
-state's budget a store allocated at or past the mark, the mark at most the
+state's budget a spine allocated at or past the mark, the mark at most the
 heap's length; outside `dead` the heap is within `Φ` from `h₀`, so at least
 as long as `h₀`. `footprintKept_of` composes these with the step theorem
 (`stepChecked_parts`) into `FootprintKept`; `BoundChecked.reassign` carries
@@ -74,7 +74,7 @@ provable): where the selected effect states a fresh result
 (`passCallFresh`) and `passDerivChecked` accepts the derivation at the
 node's term and context (its tree, or `requiresTree` at the step's
 knowledge, which holds), every run of the node's term to a value within
-the budget returns a store allocated at or past the heap's length, hence
+the budget returns a spine allocated at or past the heap's length, hence
 at or past any mark below it. -/
 theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {kS : HeapKnowledge.Knowledge} {c : PointClaim ι} {node : Node}

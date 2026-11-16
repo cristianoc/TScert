@@ -45,10 +45,10 @@ def regionEnvFree : Region → Bool
 /-- An effect every region of which is read without the name valuation. -/
 def effectEnvFree (Φ : Footprint) : Bool := Φ.all fun e => regionEnvFree e.1
 
-/-- **An ordinary array store stays one** along every admissible
-transition: its contents keep their category, an array store
+/-- **An ordinary array spine stays one** along every admissible
+transition: its contents keep their category, an array spine
 (`Admissible.contentsCategory`). -/
-theorem _root_.Verification.TolerantFrames.Admissible.arrayStore {s s' : IndexedHeap} (ha : Admissible s s')
+theorem _root_.Verification.TolerantFrames.Admissible.arraySpine {s s' : IndexedHeap} (ha : Admissible s s')
     {l : Nat} {xs : List (Option Nat)} (hl : s.h[l]? = some (.arr xs)) : ∃ ys, s'.h[l]? = some (.arr ys) := by
   have hl' : l < s'.h.length := Nat.lt_of_lt_of_le (List.getElem?_eq_some_iff.mp hl).1 ha.length_le
   obtain ⟨u, hu⟩ : ∃ u, s'.h[l]? = some u := ⟨_, List.getElem?_eq_getElem hl'⟩
@@ -56,7 +56,7 @@ theorem _root_.Verification.TolerantFrames.Admissible.arrayStore {s s' : Indexed
   cases u <;> simp [contentsCategory] at hc
   exact ⟨_, hu⟩
 
-theorem viewCells_ordinary {h : Heap} {v : Val} {s : Nat} (hs : storeOf v = some s) : viewCells h v = none := by
+theorem viewCells_ordinary {h : Heap} {v : Val} {s : Nat} (hs : spineOf v = some s) : viewCells h v = none := by
   simp [viewCells, hs]
 
 section Action
@@ -144,14 +144,14 @@ theorem EffectAction.trans_stable
 /-- A region reading the same locations at every state an admissible
 transition reaches, given the paths it reads at `paths`: classes (their
 locations keep their category), every location, module cells, a variable's
-own fields, and a selected store or field at a path whose read is fixed. A
-store's cells (`elems`, `pathElems`) are not: a store may come to list other
+own fields, and a selected spine or field at a path whose read is fixed. A
+spine's cells (`cells`, `pathCells`) are not: a spine may come to list other
 cells (the note, §3, "Not rigid"). -/
 def stableRegion (paths : List (Nat × List String)) : Region → Bool
-  | .cls _ | .all | .cell _ | .field _ _ | .own _ => true
+  | .cls _ | .all | .cell _ | .field _ _ | .fields _ => true
   | .inCls r _ => stableRegion paths r
-  | .store x p | .path x p _ | .pathOwn x p => paths.contains (x, p)
-  | .elems _ | .pathElems _ _ => false
+  | .spine x p | .path x p _ | .pathFields x p => paths.contains (x, p)
+  | .cells _ | .pathCells _ _ => false
 
 theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s s')
     (hp : ∀ xp ∈ paths, readPath s'.h (η xp.1) xp.2 = readPath s.h (η xp.1) xp.2) :
@@ -160,43 +160,43 @@ theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s
   | .all, _, _, _ => rfl
   | .cell _, _, l, hl => ha.cls_mem hl η .values
   | .field _ _, _, _, _ => rfl
-  | .own _, _, _, _ => rfl
+  | .fields _, _, _, _ => rfl
   | .inCls r c, h, l, hl => by
     have := region_mem_stable ha hp (r := r) h l hl
     have hc := ha.cls_mem hl η c
     simp only [Region.mem] at hc ⊢
     rw [this, hc]
-  | .store x p, h, _, _ => by
+  | .spine x p, h, _, _ => by
     simp only [stableRegion, List.contains_iff_mem] at h
     simp only [Region.mem, hp _ h]
   | .path x p _, h, _, _ => by
     simp only [stableRegion, List.contains_iff_mem] at h
     simp only [Region.mem, hp _ h]
-  | .pathOwn x p, h, _, _ => by
+  | .pathFields x p, h, _, _ => by
     simp only [stableRegion, List.contains_iff_mem] at h
     simp only [Region.mem, hp _ h]
-  | .elems _, h, _, _ => by simp [stableRegion] at h
-  | .pathElems _ _, h, _, _ => by simp [stableRegion] at h
+  | .cells _, h, _, _ => by simp [stableRegion] at h
+  | .pathCells _ _, h, _, _ => by simp [stableRegion] at h
 
 /-- The category class a region's locations lie in at every well-formed
 state, whatever the valuation: a class, a module cell (values), and a
-store's listed cells (values: element cells hold no store,
+spine's listed cells (values: element cells hold no spine,
 `HeapCategories.cells`). -/
 def regionClass : Region → Option Selector
   | .cls a | .inCls _ a => some a
-  | .cell _ | .elems _ | .pathElems _ _ => some .values
+  | .cell _ | .cells _ | .pathCells _ _ => some .values
   | _ => none
 
-theorem storeElems_values {s : IndexedHeap} {v : Val} {l : Nat}
-    (hm : (storeElems s.h v).contains (some l) = true) : (Region.cls .values).mem η s.h l = true := by
-  simp only [storeElems, List.contains_iff_mem, List.mem_append] at hm
+theorem spineCells_values {s : IndexedHeap} {v : Val} {l : Nat}
+    (hm : (spineCells s.h v).contains (some l) = true) : (Region.cls .values).mem η s.h l = true := by
+  simp only [spineCells, List.contains_iff_mem, List.mem_append] at hm
   have key : ∀ o : Option Nat, some l ∈ entriesAt s.h o → (Region.cls .values).mem η s.h l = true := by
     intro o ho
     cases o with
     | none => simp [entriesAt] at ho
     | some st =>
       simp only [entriesAt] at ho
-      cases he : s.h[st]?.bind storeEntries with
+      cases he : s.h[st]?.bind spineEntries with
       | none => rw [he] at ho; simp at ho
       | some ls =>
         rw [he] at ho
@@ -219,12 +219,12 @@ theorem regionClass_sound {s : IndexedHeap} {r : Region} {a : Selector} (hr : re
     simp only [Region.mem, Bool.and_eq_true] at hm ⊢
     exact hm.2
   | cell _ => cases hr; exact hm
-  | elems x => cases hr; exact storeElems_values hm
-  | pathElems x p =>
+  | cells x => cases hr; exact spineCells_values hm
+  | pathCells x p =>
     cases hr
     simp only [Region.mem] at hm
     split at hm
-    · exact storeElems_values hm
+    · exact spineCells_values hm
     · cases hm
   | _ => cases hr
 
@@ -338,18 +338,18 @@ theorem Atom.holds_envOnly {a : Atom} (ha : a.envOnly = true) {η : Env} {h h' :
 /-! ## Separation and freshness -/
 
 /-- An ordinary array's cells, as the region `π[∗]` selects them
-(`storeElems`), are its store's listing. -/
-theorem ArrayStore.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)} (ha : ArrayStore h u s xs) :
-    storeElems h u = xs := by
+(`spineCells`), are its spine's listing. -/
+theorem ArraySpine.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)} (ha : ArraySpine h u s xs) :
+    spineCells h u = xs := by
   obtain ⟨hs, hd, hx⟩ := ha
-  have hs' : (fieldsOf u).lookup arrayStoreKey = some s := hs
-  simp [storeElems, entriesAt, hs', hd, hx, storeEntries]
+  have hs' : (fieldsOf u).lookup arraySpineKey = some s := hs
+  simp [spineCells, entriesAt, hs', hd, hx, spineEntries]
 
 /-- **The cells of two ordinary arrays are disjoint as regions exactly where
-their store listings are** (the note's `apart` and the regions `π[∗]`). -/
+their spine listings are** (the note's `apart` and the regions `π[∗]`). -/
 theorem cells_disjoint_iff {h : Heap} {u w : Val} {s t : Nat} {xs ys : List (Option Nat)}
-    (hu : ArrayStore h u s xs) (hw : ArrayStore h w t ys) :
-    (∀ l, some l ∈ storeElems h u → some l ∉ storeElems h w) ↔ (∀ l, some l ∈ xs → some l ∉ ys) := by
+    (hu : ArraySpine h u s xs) (hw : ArraySpine h w t ys) :
+    (∀ l, some l ∈ spineCells h u → some l ∉ spineCells h w) ↔ (∀ l, some l ∈ xs → some l ∉ ys) := by
   rw [hu.cells, hw.cells]
 
 /-! ## The arena
@@ -428,8 +428,8 @@ theorem invNode_sound (nodes : Array AssertionNode) :
     rw [hn] at hs ⊢
     simp only [Bool.and_eq_true, List.isEmpty_iff] at hi
     obtain ⟨u, w, a, b, xs, ys, hu, hw, ⟨hsa, hda, hxa⟩, ⟨hsb, hdb, hyb⟩, hne⟩ := hs
-    obtain ⟨xs', hx'⟩ := ha.arrayStore hxa
-    obtain ⟨ys', hy'⟩ := ha.arrayStore hyb
+    obtain ⟨xs', hx'⟩ := ha.arraySpine hxa
+    obtain ⟨ys', hy'⟩ := ha.arraySpine hyb
     exact ⟨u, w, a, b, xs', ys', by rw [Path.read_heap hi.1]; exact hu, by rw [Path.read_heap hi.2]; exact hw,
       ⟨hsa, hda, hx'⟩, ⟨hsb, hdb, hy'⟩, hne⟩
   · rename_i p hn

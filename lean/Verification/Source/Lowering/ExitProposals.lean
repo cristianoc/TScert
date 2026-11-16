@@ -14,7 +14,7 @@ frames*, §6:
 - **an operation's summary** (`ClassSummary.ofEffect`): a call's is its
   instance's per-exit contract (`CallEffects.Effect.summary`), each exit's
   frame read in the closed language below the call's entry mark
-  (`Footprint.boundBelow`), the positions the walk knows to hold a fresh store
+  (`Footprint.boundBelow`), the positions the walk knows to hold a fresh spine
   discharged (Fresh-Eff); a write's is the grade its typed-write rule
   accepts; a `throw` returns never and leaves the heap it starts in;
 - **sequence on both exits** (`ClassSummary.seq`, Seq-Eff at two exits,
@@ -112,7 +112,7 @@ def close (S : ClassSummary) : ClassSummary :=
   ⟨S.normal, alt S.exceptional (andThen S.exceptional S.normal)⟩
 
 /-- **The summary of an operation of a callable contract**, the positions `P`
-holding stores allocated after the call's entry (Fresh-Eff): each exit's
+holding spines allocated after the call's entry (Fresh-Eff): each exit's
 frame of the instance's specification schema (`Effect.schema`, whose frames
 read no arity), read in the closed language below the entry mark
 (`Footprint.boundBelow`); the normal exit unreached where the result is

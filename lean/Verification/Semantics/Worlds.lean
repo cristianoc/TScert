@@ -5,7 +5,7 @@ import Verification.Semantics.SafeIntegers
 A **world** says what each location is *for*: each location has a **role**,
 fixed for its life, and a **contract**. The model of the note *Tolerant
 frames* (§§2–3) partitions a heap's locations by kind (field locations F,
-cells C, element cells E, store locations S, identity locations I): the role
+cells C, element cells E, spine locations S, identity locations I): the role
 refines the kind, and a location receives it when the typing rule that
 justifies its allocation extends the world (docs/drafts/location-kinds.md).
 
@@ -27,7 +27,7 @@ role and contract.
 
 Not every contract is a type. `CtrAdm` requires a contract to survive the
 world growing, and `WorldAdm` lifts that to a world, where besides every view
-store has the canonical contract of its format and length (`ViewWorld`).
+spine has the canonical contract of its format and length (`ViewWorld`).
 
 The second half states **reference validity** (`RefsOk`): every location a
 term refers to has the role its position demands, and the **shape** each role
@@ -39,13 +39,13 @@ namespace Verification
 
 /-- The five kinds of location. -/
 inductive Kind where
-  | field | cell | elem | store | identity
+  | field | cell | elem | spine | identity
   deriving DecidableEq, Repr
 
-/-- The two forms of a store location (the note *Tolerant frames*, §2,
-`array` and `view_N`): an ordinary array's store, or a typed array's view
-store, whose format and length are fixed. -/
-inductive StoreForm where
+/-- The two forms of a spine location (the note *Tolerant frames*, §2,
+`array` and `view_N`): an ordinary array's spine, or a typed array's view
+spine, whose format and length are fixed. -/
+inductive SpineForm where
   | array
   | view (format : ViewFormat) (length : Nat)
   deriving DecidableEq, Repr
@@ -53,7 +53,7 @@ inductive StoreForm where
 /-- A location's role, fixed when the world is extended at its allocation. -/
 inductive Role where
   | field | cell | elem
-  | store (form : StoreForm)
+  | spine (form : SpineForm)
   | identity
   deriving DecidableEq, Repr
 
@@ -61,12 +61,12 @@ def Role.kind : Role → Kind
   | .field => .field
   | .cell => .cell
   | .elem => .elem
-  | .store _ => .store
+  | .spine _ => .spine
   | .identity => .identity
 
 /-- The three categories of a location (the note *Tolerant frames*, §3, the
 class regions): value locations (field, cell, element and identity
-locations), array stores and view stores. They partition the locations: a
+locations), array spines and view spines. They partition the locations: a
 role has exactly one, fixed with the role. -/
 inductive Category where
   | value
@@ -76,14 +76,14 @@ inductive Category where
 
 /-- A role's category, independent of the location's contents. -/
 def Role.category : Role → Category
-  | .store .array => .array
-  | .store (.view ..) => .view
+  | .spine .array => .array
+  | .spine (.view ..) => .view
   | .field | .cell | .elem | .identity => .value
 
-/-- A store location's category is a store's: an array's or a view's. -/
-theorem Role.category_store {r : Role} : r.kind = .store ↔ r.category ≠ .value := by
+/-- A spine location's category is a spine's: an array's or a view's. -/
+theorem Role.category_spine {r : Role} : r.kind = .spine ↔ r.category ≠ .value := by
   cases r with
-  | store f => cases f <;> simp [Role.kind, Role.category]
+  | spine f => cases f <;> simp [Role.kind, Role.category]
   | _ => simp [Role.kind, Role.category]
 
 /-! ## Kinded worlds -/
@@ -305,14 +305,14 @@ theorem lookup_appendWs_ge {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) 
   rw [List.getElem?_append_right (by simp)]
   simp
 
-/-! ## The canonical contract of a view store
+/-! ## The canonical contract of a view spine
 
-A typed array's view store lists one element cell per index (`Cat`,
-`StoreForm.view`). Its cells hold numbers of the store's format, and its
+A typed array's view spine lists one element cell per index (`Cat`,
+`SpineForm.view`). Its cells hold numbers of the spine's format, and its
 contract admits every replacement a write through any typed array may make:
-every view store of its format and length whose cells are such cells (the
-note *Tolerant frames*, (W2): "the contract of a view store admits every
-such store"). A world whose every view-store location has this canonical
+every view spine of its format and length whose cells are such cells (the
+note *Tolerant frames*, (W2): "the contract of a view spine admits every
+such spine"). A world whose every view-spine location has this canonical
 contract is a **view world** (`ViewWorld`); an admissible world is one
 (`WorldAdm.view`). -/
 
@@ -332,7 +332,7 @@ def ViewFormat.Stored (f : ViewFormat) (v : Val) : Prop :=
 theorem ViewFormat.Stored.isVal {f : ViewFormat} {v : Val} (h : f.Stored v) : isVal v = true := by
   obtain ⟨b, rfl, -⟩ := h; rfl
 
-/-- A cell of a view store of format `f` in `U`: an element cell whose
+/-- A cell of a view spine of format `f` in `U`: an element cell whose
 contract admits exactly the values `f` stores, at every level it inspects. -/
 def ViewCell {j : Nat} (U : WorldT j) (f : ViewFormat) (c : Nat) : Prop :=
   roleAt U c = some .elem ∧
@@ -348,21 +348,21 @@ theorem ViewCell.trunc {k j : Nat} (hj : j ≤ k) {W : WorldT k} {f : ViewFormat
   obtain ⟨hr, d, hd, hiff⟩ := h
   exact ⟨by simpa using hr, _, lookup_trunc hj W c d hd, fun i hi U' u => hiff i _ U' u⟩
 
-/-- **The canonical contract of a view store** of format `f` and length `N`:
-every view store of that format and length whose cells are cells of the
+/-- **The canonical contract of a view spine** of format `f` and length `N`:
+every view spine of that format and length whose cells are cells of the
 format. -/
-def viewStoreCtr (k : Nat) (f : ViewFormat) (N : Nat) : Ctr k :=
-  fun _ _ U v => ∃ cs, v = .viewStore f cs ∧ cs.length = N ∧ ∀ c ∈ cs, ViewCell U f c
+def viewSpineCtr (k : Nat) (f : ViewFormat) (N : Nat) : Ctr k :=
+  fun _ _ U v => ∃ cs, v = .viewSpine f cs ∧ cs.length = N ∧ ∀ c ∈ cs, ViewCell U f c
 
-/-- A contract is the canonical one of a view store of format `f` and length
+/-- A contract is the canonical one of a view spine of format `f` and length
 `N`, at every level it inspects. -/
 def CanonicalView {k : Nat} (c : Ctr k) (f : ViewFormat) (N : Nat) : Prop :=
-  ∀ j (hj : j < k) U v, c j hj U v ↔ viewStoreCtr k f N j hj U v
+  ∀ j (hj : j < k) U v, c j hj U v ↔ viewSpineCtr k f N j hj U v
 
-/-- **A view world**: every view-store location has the canonical contract
+/-- **A view world**: every view-spine location has the canonical contract
 of its format and length. -/
 def ViewWorld {k : Nat} (W : WorldT k) : Prop :=
-  ∀ l f N, roleAt W l = some (.store (.view f N)) → ∃ c, lookup W l = some c ∧ CanonicalView c f N
+  ∀ l f N, roleAt W l = some (.spine (.view f N)) → ∃ c, lookup W l = some c ∧ CanonicalView c f N
 
 theorem ViewWorld.trunc {k j : Nat} (hj : j ≤ k) {W : WorldT k} (hW : ViewWorld W) :
     ViewWorld (Verification.trunc j hj W) := by
@@ -370,10 +370,10 @@ theorem ViewWorld.trunc {k j : Nat} (hj : j ≤ k) {W : WorldT k} (hW : ViewWorl
   obtain ⟨c, hc, hiff⟩ := hW l f N (by simpa using hr)
   exact ⟨_, lookup_trunc hj W l c hc, fun i hi U v => hiff i _ U v⟩
 
-/-- **Extension keeps a view world** where each appended view-store entry
+/-- **Extension keeps a view world** where each appended view-spine entry
 has the canonical contract. -/
 theorem ViewWorld.appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)} (hW : ViewWorld W)
-    (hes : ∀ e ∈ es, ∀ f N, e.1 = .store (.view f N) → CanonicalView e.2 f N) :
+    (hes : ∀ e ∈ es, ∀ f N, e.1 = .spine (.view f N) → CanonicalView e.2 f N) :
     ViewWorld (Verification.appendWs W es) := by
   intro l f N hr
   by_cases hl : l < (entries W).length
@@ -388,15 +388,15 @@ theorem ViewWorld.appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)} 
     refine ⟨e.2, ?_, hes e (List.mem_of_getElem? he) f N hef⟩
     rw [lookup_appendWs_ge]; simp [he]
 
-/-- Entries none of which is a view store keep a view world. -/
+/-- Entries none of which is a view spine keep a view world. -/
 theorem ViewWorld.appendWs_plain {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)} (hW : ViewWorld W)
-    (hes : ∀ e ∈ es, ∀ f N, e.1 ≠ .store (.view f N)) : ViewWorld (Verification.appendWs W es) :=
+    (hes : ∀ e ∈ es, ∀ f N, e.1 ≠ .spine (.view f N)) : ViewWorld (Verification.appendWs W es) :=
   hW.appendWs fun e he f N h => absurd h (hes e he f N)
 
 /-! ## Which worlds are admissible -/
 
 /-- **An admissible world**: every contract survives the world growing and
-admits only machine values (`CtrAdm`), and every view store has the
+admits only machine values (`CtrAdm`), and every view spine has the
 canonical contract of its format and length (`ViewWorld`, the note
 *Tolerant frames*, (W2)). It reads as its contracts' admissibility where a
 function is expected. -/
@@ -415,10 +415,10 @@ theorem WorldAdm_trunc {k j : Nat} (h : j ≤ k) {W : WorldT k} (hA : WorldAdm W
     fun i hi U v hv => (hA l c hc).2 i (Nat.lt_of_lt_of_le hi h) U v hv⟩
 
 /-- **Extension keeps an admissible world** where each appended contract is
-admissible and each appended view store's contract is canonical. -/
+admissible and each appended view spine's contract is canonical. -/
 theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
     (hW : WorldAdm W) (hc : ∀ e ∈ es, CtrAdm e.2)
-    (hv : ∀ e ∈ es, ∀ f N, e.1 = .store (.view f N) → CanonicalView e.2 f N) : WorldAdm (appendWs W es) := by
+    (hv : ∀ e ∈ es, ∀ f N, e.1 = .spine (.view f N) → CanonicalView e.2 f N) : WorldAdm (appendWs W es) := by
   refine ⟨fun l d hl => ?_, hW.view.appendWs hv⟩
   simp only [lookup, toList, entries_appendWs, List.map_append] at hl
   by_cases hlt : l < (entries W).length
@@ -430,24 +430,24 @@ theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
       simpa using this
     exact hc e he
 
-/-- Extension by entries none of which is a view store keeps an admissible
+/-- Extension by entries none of which is a view spine keeps an admissible
 world where each appended contract is admissible. -/
 theorem WorldAdm_appendWs_plain {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
-    (hW : WorldAdm W) (hc : ∀ e ∈ es, CtrAdm e.2) (hp : ∀ e ∈ es, ∀ f N, e.1 ≠ .store (.view f N)) :
+    (hW : WorldAdm W) (hc : ∀ e ∈ es, CtrAdm e.2) (hp : ∀ e ∈ es, ∀ f N, e.1 ≠ .spine (.view f N)) :
     WorldAdm (appendWs W es) :=
   WorldAdm_appendWs hW hc fun e he f N h => absurd h (hp e he f N)
 
 /-! ## References and their validity -/
 
 /-- A location reference a term holds: an object's identity, an object's slot
-under a key, a store's element cell, or a typed array's view store of its
+under a key, a spine's element cell, or a typed array's view spine of its
 format and length. -/
 inductive Ref where
   | ident (l : Nat)
   | slot (key : PropKey) (l : Nat)
   | elem (l : Nat)
-  /-- A typed array's view store, and whether the typed array owns no
-  array-store slot (`arrayStoreKey`): a typed array has one store, the
+  /-- A typed array's view spine, and whether the typed array owns no
+  array-spine slot (`arraySpineKey`): a typed array has one spine, the
   one its descriptor names. -/
   | view (l : Nat) (format : ViewFormat) (length : Nat) (plain : Bool)
 
@@ -455,13 +455,13 @@ inductive Ref where
 def objRefs (fs : List (PropKey × Nat)) (i : Nat) : List Ref :=
   .ident i :: fs.map (fun p => .slot p.1 p.2)
 
-/-- The element cells a store lists. -/
-def storeRefs (ls : List (Option Nat)) : List Ref :=
+/-- The element cells a spine lists. -/
+def spineRefs (ls : List (Option Nat)) : List Ref :=
   ls.filterMap (fun o => o.map Ref.elem)
 
 mutual
 /-- Every location reference a term holds: objects' identities and slots, the
-cells of stores, and those of the call descriptors' targets, receivers,
+cells of spines, and those of the call descriptors' targets, receivers,
 prefixes, captures and node expressions. -/
 def refs : Tm → List Ref
   | .var _ => []
@@ -477,11 +477,11 @@ def refs : Tm → List Ref
   | .bigint _ => []
   | .sym _ => []
   | .objAt fs .absent i => objRefs fs i
-  | .objAt fs (.view s f n) i => objRefs fs i ++ [.view s f n (fs.lookup arrayStoreKey).isNone]
+  | .objAt fs (.view s f n) i => objRefs fs i ++ [.view s f n (fs.lookup arraySpineKey).isNone]
   | .objAt fs (.bound t r pre) i => objRefs fs i ++ (refs t ++ refs r ++ refsArgs pre)
   | .objAt fs (.graph _ E _ _ caps _ _) i => objRefs fs i ++ (refsArgs E ++ refsArgs caps)
   | .makeAt .absent _ xs => refsArgs xs
-  | .makeAt (.view s f n) ns xs => .view s f n (!ns.contains arrayStoreKey) :: refsArgs xs
+  | .makeAt (.view s f n) ns xs => .view s f n (!ns.contains arraySpineKey) :: refsArgs xs
   | .makeAt (.bound t r pre) _ xs => (refs t ++ refs r ++ refsArgs pre) ++ refsArgs xs
   | .makeAt (.graph _ E _ _ caps _ _) _ xs => (refsArgs E ++ refsArgs caps) ++ refsArgs xs
   | .readAt _ a => refs a
@@ -490,8 +490,8 @@ def refs : Tm → List Ref
   | .test _ a => refs a
   | .ite c a b => refs c ++ refs a ++ refs b
   | .arith _ a b => refs a ++ refs b
-  | .arr ls => storeRefs ls
-  | .viewStore _ cs => cs.map Ref.elem
+  | .arr ls => spineRefs ls
+  | .viewSpine _ cs => cs.map Ref.elem
   | .arrLit xs => refsArgs xs
   | .elemAt a i => refs a ++ refs i
   | .setElem a i v => refs a ++ refs i ++ refs v
@@ -513,25 +513,25 @@ end
 @[simp] theorem refsArgs_eq (xs : List Tm) : refsArgs xs = xs.flatMap refs := by
   induction xs <;> simp_all [refsArgs]
 
-/-- The role a slot under `key` must have: an array store under `[]`, and a
-field or a cell under every other key. No slot holds a view store: a typed
-array names its view store by its descriptor (`Ref.view`). -/
+/-- The role a slot under `key` must have: an array spine under `[]`, and a
+field or a cell under every other key. No slot holds a view spine: a typed
+array names its view spine by its descriptor (`Ref.view`). -/
 def SlotRole (key : PropKey) : Option Role → Prop
-  | some (.store .array) => key = arrayStoreKey
-  | some .field => key ≠ arrayStoreKey
-  | some .cell => key ≠ arrayStoreKey
+  | some (.spine .array) => key = arraySpineKey
+  | some .field => key ≠ arraySpineKey
+  | some .cell => key ≠ arraySpineKey
   | _ => False
 
 /-- A reference's validity (the note *Tolerant frames*, (W3)): an identity
 is an identity location, a slot a location of its key's role, a listed cell
-an element cell, and a typed array's view store a view store of the
-typed array's format and length, of a typed array owning no array-store
+an element cell, and a typed array's view spine a view spine of the
+typed array's format and length, of a typed array owning no array-spine
 slot. -/
 def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
   | .ident l => roleAt W l = some .identity
   | .slot key l => SlotRole key (roleAt W l)
   | .elem l => roleAt W l = some .elem
-  | .view l f n plain => plain = true ∧ roleAt W l = some (.store (.view f n))
+  | .view l f n plain => plain = true ∧ roleAt W l = some (.spine (.view f n))
 
 /-- **Reference validity**: every location a term refers to has the role its
 position demands. It reads the world only, never the heap. -/
@@ -543,13 +543,13 @@ holds has the role its position demands. A graph state's environment is
 def RootsOk {k : Nat} (W : WorldT k) (ρ : Env) : Prop := ∀ x, RefsOk W (ρ x)
 
 /-- What each role's contents are (the note *Tolerant frames*, (W2)): a
-source value in F, C and E; an array's store in an array store; in a view
-store of form `view_N`, a view store of its format listing a cell at each of
+source value in F, C and E; an array's spine in an array spine; in a view
+spine of form `view_N`, a view spine of its format listing a cell at each of
 its `N` indices, so with no hole; `null` in I. -/
 def Cat : Role → Val → Prop
   | .field, v | .cell, v | .elem, v => isSourceVal v = true
-  | .store .array, v => ∃ ls, v = .arr ls
-  | .store (.view f N), v => ∃ cs, v = .viewStore f cs ∧ cs.length = N
+  | .spine .array, v => ∃ ls, v = .arr ls
+  | .spine (.view f N), v => ∃ cs, v = .viewSpine f cs ∧ cs.length = N
   | .identity, v => v = .nul
 
 /-- **The shape a role demands** of the contents of its location. -/
@@ -564,17 +564,17 @@ def Shaped {k : Nat} (W : WorldT k) (h : Heap) : Prop :=
 
 /-- **The category of a location's contents** (the note *Tolerant frames*,
 §3, the class regions; parity-interfaces I1), read from the contents alone:
-an array's store, a view store, or any other value. Total on contents. -/
+an array's spine, a view spine, or any other value. Total on contents. -/
 def contentsCategory : Val → Category
   | .arr _ => .array
-  | .viewStore .. => .view
+  | .viewSpine .. => .view
   | _ => .value
 
-/-- The entries a store lists, in index order, an array's or a view
-store's, a view store's every one present. -/
-def storeEntries : Val → Option (List (Option Nat))
+/-- The entries a spine lists, in index order, an array's or a view
+spine's, a view spine's every one present. -/
+def spineEntries : Val → Option (List (Option Nat))
   | .arr ls => some ls
-  | .viewStore _ cs => some (cs.map some)
+  | .viewSpine _ cs => some (cs.map some)
   | _ => none
 
 /-- **Contents of a role's category**: what a role's shape admits is of the
@@ -583,7 +583,7 @@ theorem Cat.category {r : Role} {u : Val} (h : Cat r u) : contentsCategory u = r
   cases r with
   | field | cell | elem => cases u <;> simp_all [Cat, isSourceVal, contentsCategory, Role.category]
   | identity => subst h; rfl
-  | store f =>
+  | spine f =>
     cases f with
     | array => obtain ⟨ls, rfl⟩ := h; rfl
     | view => obtain ⟨cs, rfl, -⟩ := h; rfl
@@ -702,7 +702,7 @@ theorem codeUnitAt_refs (s : String) (b : UInt64) : refs (codeUnitAt s b) = [] :
   unfold codeUnitAt; split <;> rfl
 
 theorem WorldAdm_append {k : Nat} {W : WorldT k} {r : Role} {c : Ctr k}
-    (hW : WorldAdm W) (hc : CtrAdm c) (hr : ∀ f N, r ≠ .store (.view f N)) : WorldAdm (appendW W r c) := by
+    (hW : WorldAdm W) (hc : CtrAdm c) (hr : ∀ f N, r ≠ .spine (.view f N)) : WorldAdm (appendW W r c) := by
   have : appendW W r c = appendWs W [(r, c)] := rfl
   rw [this]; exact WorldAdm_appendWs_plain hW (by simpa using hc) (by simpa using hr)
 

@@ -278,7 +278,7 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
     d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos
   let returning (g : Fragment.Fn) : Except String Fragment.Fn := do
     return { g with ret := ← resultWithFootprint d.types g.ret (((claimOf g).map (·.resultFootprint)).getD .top) }
-  -- A statement with store regions is certified by its unit's regional
+  -- A statement with spine regions is certified by its unit's regional
   -- check (`regionalResult`): the slot states it.
   let slotOf (u : Fragment.Fn) : Except String Json := do
     let r ← returning u

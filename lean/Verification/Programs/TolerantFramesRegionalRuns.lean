@@ -31,16 +31,16 @@ variable {ι : Type}
 /-- **The regional facts at a node entry**: the regions within `Φ` from the
 invocation's entry heap `h₀` at the entry values `ε.env`, and the graph's
 tables at the label holding. -/
-def RegionX (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+def RegionX (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : ArgumentRegionFresh.FreshTables) (ε : HeapKnowledge.EntryState) (h₀ : Heap) :
     Nat → Env → Heap → Prop :=
-  fun l ρ h => ArgumentStoreRegionsWithin Φ regions ε.env h₀ h ∧ LabelHolds table ft l ρ ε.env h₀ h
+  fun l ρ h => ArgumentSpineRegionsWithin Φ regions ε.env h₀ h ∧ LabelHolds table ft l ρ ε.env h₀ h
 
 /-- **The node assertion with the traversed fields fixed**: `passPreT` and
 the regions' single-field paths of the entry values fixed in the current
 world (`StableNow`), the premise every node's regional obligation reads. -/
 def passPreS (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι))
-    (regions : List ArgumentStoreRegion) (h₀ : Heap) : Nat → Assertion :=
+    (regions : List ArgumentSpineRegion) (h₀ : Heap) : Nat → Assertion :=
   fun l ρ m s => passPreT G w startNames ε ctx l ρ m s ∧
     ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ε.env h₀ s.W
 
@@ -48,7 +48,7 @@ def passPreS (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : He
 assertion with the fields fixed**: `RegionsKept` at `passPreS`. -/
 def RegionsKeptS (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState)
     (ctx : Nat → List (Ty ι)) (X : Nat → Env → Heap → Prop) (Φ : Footprints.Closed)
-    (regions : List ArgumentStoreRegion) (h₀ : Heap) (exc : Bool) : Prop :=
+    (regions : List ArgumentSpineRegion) (h₀ : Heap) (exc : Bool) : Prop :=
   NodesKeep P (passPreS G w startNames ε ctx regions h₀) X (RegionQ Φ regions ε h₀)
     (RegionR Φ regions ε h₀ exc) h₀.length
 
@@ -64,7 +64,7 @@ node, the evidence `run` checks it at (`cEv`), the node's regional
 obligation over the graph's tables, and the evidence's entry (context,
 implications, facts) holding where the node assertion does. -/
 structure RegionNodeOk [DecidableEq ι] (G : NormalGraph ι) (P : Program) (w : Walk ι) (startNames : List Nat)
-    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : ArgumentRegionFresh.FreshTables) (exc : Bool) (m : Nat)
     (l : Nat) where
   node : Node
@@ -82,7 +82,7 @@ the evidence typed (`RegionalTyped`), the summaries checked and the
 evidence's entry holding where the node assertion does. -/
 def RegionNodeOk.ofCheck [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ReadSummary ι)}
     {P : Program} {w : Walk ι} {startNames : List Nat} {ctx : Nat → List (Ty ι)}
-    {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+    {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {T table : List (List ArgumentPathTracking.Fact)} {ft ft' : ArgumentRegionFresh.FreshTables} {exc : Bool}
     {m l : Nat} {node : Node} (hP : P[l]? = some node) {c : NodeEvidence ι}
     (hc : checkNode G images sums Φ regions T ft exc l node c = true) (ha : TablesAgree T table ft ft' l node)
@@ -96,10 +96,10 @@ def RegionNodeOk.ofCheck [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
 /-- **A continuation's obligation from the targets' tables**: the regions
 within and every successor's tables holding at its environment give
 `ContKeeps` of `RegionX`. -/
-theorem contKeeps_regionX {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+theorem contKeeps_regionX {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {table : List (List ArgumentPathTracking.Fact)} {ft : ArgumentRegionFresh.FreshTables} {h₀ : Heap}
     {ρ : Env} {v : Tm} {h : Heap} {k : Continuation}
-    (hw : ArgumentStoreRegionsWithin Φ regions ε.env h₀ h)
+    (hw : ArgumentSpineRegionsWithin Φ regions ε.env h₀ h)
     (ht : ∀ target ∈ successors k, LabelHolds table ft target.label
       (PointClaims.mapEnv target.mapping (if pushes k then push v ρ else ρ)) ε.env h₀ h) :
     ContKeeps (RegionX Φ regions table ft ε h₀) (RegionQ Φ regions ε h₀) ρ v h k := by
@@ -130,7 +130,7 @@ throw the handler's tables (`checkHandler_sound`, `handlerFresh_holds`,
 `handlerFields_holds`) or, escaping, the regions within where the bound
 covers throws. -/
 theorem regionsKept_of {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} 
-    {ctx : Nat → List (Ty ι)} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+    {ctx : Nat → List (Ty ι)} {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {table : List (List ArgumentPathTracking.Fact)} {ft : ArgumentRegionFresh.FreshTables} {exc : Bool}
     {h₀ : Heap}
     (hacc : ∀ l, w.visited l →
@@ -142,13 +142,13 @@ theorem regionsKept_of {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNa
   obtain ⟨he, hi, hk⟩ := na.entry ρ s hpT
   obtain ⟨origins, outF, outC, outFs, ht, hedge, hhandler, hfr, hef, hec, hfl, hefl, hhf⟩ := na.within
   have hrun := ht ε s.n s.W s.h ρ h₀ ε.env hX.1 hX.2.1 hX.2.2.1.values hX.2.2.2 he hi hk s.adm s.ok hr (fun _ => hst)
-  have hfresh := hfr ε s.n s.W s.h ρ h₀.length (ArgumentStoreRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1 he hi hk
+  have hfresh := hfr ε s.n s.W s.h ρ h₀.length (ArgumentSpineRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1 he hi hk
     s.adm s.ok hr
-  have hfld := hfl ε s.n s.W s.h ρ h₀.length (ArgumentStoreRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1.values
+  have hfld := hfl ε s.n s.W s.h ρ h₀.length (ArgumentSpineRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1.values
     hX.2.2.2 he hi hk s.adm s.ok hr
   have hboth0 := SafePostExc.cross_upto s.n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ s.h _ s.ok s.ok hrun hfresh
   have hboth := SafePostExc.cross_upto s.n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ s.h _ s.ok s.ok hboth0 hfld
-  have hret : ReturnsPost (fun h' v => ArgumentStoreRegionsWithin Φ regions ε.env h₀ h' ∧
+  have hret : ReturnsPost (fun h' v => ArgumentSpineRegionsWithin Φ regions ε.env h₀ h' ∧
       ∀ target ∈ successors na.node.continuation, LabelHolds table ft target.label
         (PointClaims.mapEnv target.mapping (if pushes na.node.continuation then push v ρ else ρ)) ε.env h₀ h')
       s.n s.h (instantiate 0 ρ na.node.expression) := returnsPost_of_safePost (HeapObservations.weaken
@@ -186,7 +186,7 @@ def passRegionalEvidence (c : PointClaim ι) (node : Node) (stepDeriv : Option (
 
 /-- **The derivation's tree check gives the regional evidence's typing**
 (`RegionalTyped`): with the step's derivation `d` accepted by `run`'s
-check under store regions (`SinglePass.regionalDerivChecked`: claimed at
+check under spine regions (`SinglePass.regionalDerivChecked`: claimed at
 the node's term and context) and its tree accepted by `checkTreeUsing`
 (`htree`: the check's first disjunct; the second, `requiresTree`, reads the
 step's facts, which the regional evidence's entry does not state: a pass
@@ -265,7 +265,7 @@ theorem regionNodeEntry_of [Hashable ι] {G : NormalGraph ι} {w : Walk ι} {sta
 /-- **The start's regional facts**: where the start's table holds each
 region's own position (`checkEntry`) and no fresh value, cell or field, the
 regional facts hold at the entry values and heap. -/
-theorem regionX_start {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+theorem regionX_start {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {table : List (List ArgumentPathTracking.Fact)} {ft : ArgumentRegionFresh.FreshTables} {start : Nat}
     (hstart : ArgumentPathTracking.checkEntry (ArgumentPathTracking.atLabel table start) = true)
     (hfresh : ((factsAt ft.values start).isEmpty && (factsAt ft.cells start).isEmpty) = true)

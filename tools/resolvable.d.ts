@@ -14,11 +14,11 @@ type Awaitable = unknown;
 // previously allocated location keeps its contents but those `P` names,
 // each changed at most as `P` says: `values` the locations holding a value
 // (`init` only those holding `null` or `undefined`, `scalar` only those
-// holding neither an object nor a store), `spines` those holding an array
-// store, and a quoted location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`)
+// holding neither an object nor a spine), `spines` those holding an array
+// spine, and a quoted location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`)
 // the locations it names (SOURCE-ELABORATION.md, "Stated effects"). As a
 // type it is `T`; the verifier certifies the statement from the definition's
-// code. `Fresh<T>` states that a normal return's value holds an array store
+// code. `Fresh<T>` states that a normal return's value holds an array spine
 // the call allocated; as a type it is `T`.
 type Modifies<
   P extends {

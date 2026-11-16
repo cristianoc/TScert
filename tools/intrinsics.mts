@@ -280,7 +280,7 @@ const step: Signature = stepOf(binder);
  * footprint. A step, and a spread, which steps to the end, write only the
  * iterator's own position and, for a match iterator, its clone's
  * `lastIndex`, each a number, and allocate what they yield:
- * `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
+ * `{value: any, spine: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
  * `view` gives a host collection's reading view at arguments,
  * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
@@ -319,7 +319,7 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
   const element = only ? only[2] : either(...parts.map(([, , e]) => e));
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
-  const changesValues = footprintEffect({ value: "any", store: "keep" });
+  const changesValues = footprintEffect({ value: "any", spine: "keep" });
   return { name, typeParams, type: spread
     ? { ...fn([param], { k: "array", presence: "dense", readonly: false, element, span }), effect: changesValues }
     : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect } };
@@ -332,7 +332,7 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
  * union intrinsic takes the union of the kinds' parameters, each kind's
  * binders apart, and steps what the value is as that kind's intrinsic does,
  * yielding the union of their elements; none has a `return`. Its step states
- * the weakest of the kinds' effects, `{value: any, store: keep}`. */
+ * the weakest of the kinds' effects, `{value: any, spine: keep}`. */
 export const unionIterationName = (kinds: readonly string[]): string => kinds.join("|");
 /** The kinds of a union's iteration, or `undefined` for one kind's. */
 export function unionIterationKinds(name: string): string[] | undefined {
@@ -546,10 +546,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // held at its own locations. Each step, called with the iterator as its
     // receiver, reads the array's current length and an element, and
     // changes no old location but the iterator's own: the empty footprint
-    // with `receiverOwn` (SOURCE-CONTRACTS.md, "Native footprints").
+    // with `receiverFields` (SOURCE-CONTRACTS.md, "Native footprints").
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }],
-        { ...step, effect: footprintEffect(emptyFootprint, { receiverOwn: true }) }), effect: footprintEffect(emptyFootprint, { freshObject: true }) } }),
+        { ...step, effect: footprintEffect(emptyFootprint, { receiverFields: true }) }), effect: footprintEffect(emptyFootprint, { freshObject: true }) } }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: promise(binder), span }],
         promise({ k: "array", presence: "dense", readonly: false, element: binder, span })) }),
@@ -629,7 +629,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       ] }) } }),
     // A fresh array whose every index below the length holds the value: it
     // stores the value without reading it, and writes nothing it did not
-    // allocate; its store is the call's.
+    // allocate; its spine is the call's.
     [arrayFilledName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([atom("number"), binder], { k: "array", presence: "dense", readonly: false, element: binder, span }),
         effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
@@ -682,10 +682,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // result the element the view's elements hold at the index
     // (`IndexFact.element`, at the return's positions: 0 the result, 2 the
     // view, 3 the index): a typed array's elements are the cells its view
-    // store lists, the view store its descriptor names, one per index below
+    // spine lists, the view spine its descriptor names, one per index below
     // its fixed length, each holding the element (DESIGN.md, "Trust
     // surface"); that the element is a number of the format follows from
-    // the view store's canonical contract (`HeapOk.view_cell_stored`).
+    // the view spine's canonical contract (`HeapOk.view_cell_stored`).
     [byteAtName]: () => {
       const params = [views, atom("number")];
       return { typeParams: [], type: { k: "intersection", span, parts: [
@@ -724,12 +724,12 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // every other index of the view reading what it read; at a number that
     // is no valid index no element changes. It throws nothing and answers
     // the number, the value the assignment is. Each typed array's elements
-    // are its view store's cells, and the views over one buffer share its
-    // bytes: a write sets the element's entry of the view store of every
+    // are its view spine's cells, and the views over one buffer share its
+    // bytes: a write sets the element's entry of the view spine of every
     // typed array over the written bytes to a fresh location holding what
-    // that view now reads there, which changes view stores alone and keeps
+    // that view now reads there, which changes view spines alone and keeps
     // their lengths: the effect `{all-views: grow}` (`elementWrite`,
-    // `Kinds.ViewWrite.frame_iff`), within the store-growth footprint. Its
+    // `Kinds.ViewWrite.frame_iff`), within the spine-growth footprint. Its
     // first signature states this of every element assignment, with the
     // element write at the view's own format and the value as the result
     // (`"assign"`, `CallEffects.ViewAssign`).
@@ -749,9 +749,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1), { int: { slot: 3 } }];
       return { typeParams: [], type: { k: "intersection", span, parts: [
         { ...fn([views, atom("number"), atom("number")], atom("number")),
-          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "assign" }) },
+          effect: footprintEffect({ value: "keep", spine: "grow" }, { elementWrite: "assign" }) },
         ...viewKinds.map(({ type, range, write }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
-          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: write, pre: [...index,
+          effect: footprintEffect({ value: "keep", spine: "grow" }, { elementWrite: write, pre: [...index,
             ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])] }) })),
       ] } };
     },
@@ -781,10 +781,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     ...Object.fromEntries(canvasSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
       type: { ...fn([canvasContext, s.value], s.value), effect: emptyEffect } })])),
     // Two signatures: any read, an element or `undefined`; and a read at an
-    // index below the length of the array's store, the element at that
-    // index, which a readable store holds at its element type, a hole only
-    // where the element type admits `undefined` (`Types.StorePresence`). The
-    // second states its result the value the store holds at the index, the
+    // index below the length of the array's spine, the element at that
+    // index, which a readable spine holds at its element type, a hole only
+    // where the element type admits `undefined` (`Types.SpinePresence`). The
+    // second states its result the value the spine holds at the index, the
     // present element's or `undefined` at a hole (`IndexFact.element`, at the
     // return's positions: 0 the result, 2 the array, 3 the index): an
     // ordinary array's element read runs no code (DESIGN.md, "Trust surface").

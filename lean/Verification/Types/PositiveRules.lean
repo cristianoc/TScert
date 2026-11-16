@@ -682,7 +682,7 @@ implies it: an invariant field or a view, either way a sound upper bound. -/
 abbrev CoversViews (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (source : List (List (Stored (List ι)))) (views target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, (∃ p ∈ Stored.views source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2) ∨
-    (q.1 = lengthKey ∧ ((Stored.views source.flatten ++ views).any (·.1 == arrayStoreKey) &&
+    (q.1 = lengthKey ∧ ((Stored.views source.flatten ++ views).any (·.1 == arraySpineKey) &&
       numIn G q.2) = true)
 
 /-- A class value's readonly static field is covered by a source static
@@ -1555,8 +1555,8 @@ theorem covers_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
   · simp only at hfl
     simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at hst
     obtain ⟨⟨p, hp, hpσ⟩, hnum⟩ := hst
-    -- The object owns the store: a field or a view names it.
-    have hown : ∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup arrayStoreKey).isSome = true := by
+    -- The object owns the spine: a field or a view names it.
+    have hown : ∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup arraySpineKey).isSome = true := by
       rcases List.mem_append.mp hp with hp | hp
       · obtain ⟨flds, l, -, oid, he, hf, -⟩ := field p hp
         exact ⟨flds, oid, he, by rw [← hpσ, hf]; rfl⟩
@@ -2887,8 +2887,8 @@ theorem covers_presence_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (ls : List (Option Nat))
     (hb : p.rest = none → ls.length ≤ p.required.length + p.optional.length)
-    (hd : ∀ j, j < n → StorePresence (tupleFams (mixedValues G η) p) ls j) :
-    ∀ j, j < n → StorePresence (tupleFams (mixedValues G η) q) ls j := by
+    (hd : ∀ j, j < n → SpinePresence (tupleFams (mixedValues G η) p) ls j) :
+    ∀ j, j < n → SpinePresence (tupleFams (mixedValues G η) q) ls j := by
   have named : ∀ i, ls[i]? = some none → ∃ A, p.position i = some A := by
     intro i hi
     cases ha : p.position i with
@@ -2901,37 +2901,37 @@ theorem covers_presence_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
   intro j hj
   have hd := hd j hj
   cases hq : q.presence with
-  | sparse => simp [StorePresence, tupleFams, hq]
+  | sparse => simp [SpinePresence, tupleFams, hq]
   | dense =>
     simp only [CoversPresence, hq] at hc
-    simp only [StorePresence, tupleFams, hq]
+    simp only [SpinePresence, tupleFams, hq]
     rcases hc with hp | ⟨hp, hex⟩
-    · simpa [StorePresence, tupleFams, hp] using hd
+    · simpa [SpinePresence, tupleFams, hp] using hd
     · intro hm
       obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hm
       obtain ⟨A, ha⟩ := named i hi
-      simp only [StorePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
+      simp only [SpinePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
       have hs := hd i hi _ (by rw [positionFam_tupleFams, ha]; rfl)
       exact excludesUndefined_sound (hex A (Tuple.position_mem ha)) j (ofEntries []) (hs (ofEntries []))
   | readable =>
     simp only [CoversPresence, hq] at hc
     rcases hc with hp | ⟨hp, hc⟩ | ha
-    · exact StorePresence.of_dense (by simpa [StorePresence, tupleFams, hp] using hd) j
-    · simp only [StorePresence, show (tupleFams (mixedValues G η) q).presence = .readable from hq]
+    · exact SpinePresence.of_dense (by simpa [SpinePresence, tupleFams, hp] using hd) j
+    · simp only [SpinePresence, show (tupleFams (mixedValues G η) q).presence = .readable from hq]
       intro i hi B hB U
       obtain ⟨A, hA⟩ := named i hi
       obtain ⟨b, hb, hab⟩ := CoversPack.position hc i A hA
       rw [positionFam_tupleFams, hb] at hB
       cases hB
-      simp only [StorePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
+      simp only [SpinePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
       exact hr j hj A b hab U .undef (hd i hi _ (by rw [positionFam_tupleFams, hA]; rfl) U)
-    · simp only [StorePresence, show (tupleFams (mixedValues G η) q).presence = .readable from hq]
+    · simp only [SpinePresence, show (tupleFams (mixedValues G η) q).presence = .readable from hq]
       intro i hi B hB U
       rw [positionFam_tupleFams] at hB
       obtain ⟨b,hb,rfl⟩ := Option.map_eq_some_iff.mp hB
       exact admitsUndefined_sound (ha b (Tuple.position_mem hb)) j U
 
-/-- A same-shape covered tuple contract holds of the same store: every
+/-- A same-shape covered tuple contract holds of the same spine: every
 position's location carries a contract both families identify. -/
 theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hc : CoversShape R p q) (hpresence : CoversPresence G R p q) (n : Nat)
@@ -2974,7 +2974,7 @@ theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
         fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hx.1 W' u) (fun hro => hr j hj _ _ (hx.2 hro) W' u)⟩
 
 /-- A readonly tuple contract covered position by position holds of the same
-store: each element present is at a position of the source, whose contract
+spine: each element present is at a position of the source, whose contract
 reads within the target's position, and the target only reads. -/
 theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hro : q.readonly = true) (hc : CoversPack R p q) (hpresence : CoversPresence G R p q) (n : Nat)
@@ -3045,7 +3045,7 @@ theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     rw [Tuple.position_beyond (by omega)] at hb
     exact ⟨mixedValues G η b, c, ⟨b, hb, rfl⟩, hw, slot hab hag⟩
 
-/-- A covered tuple contract holds of the same store. -/
+/-- A covered tuple contract holds of the same spine. -/
 theorem covers_tuple_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hc : CoversTuple G R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
@@ -3698,8 +3698,8 @@ theorem sourceTy_tyIn {G : NormalGraph ι} {A : List ι} (h : sourceTy G A = tru
 /-- A one-row graph: a value binder. -/
 def valueParamGraph : NormalGraph Nat := { rows := fun _ => [], parameterKinds := fun _ => some .value }
 
-/-- An array object whose store key names a location no world holds. -/
-def danglingArray : Val := .objAt [(CallArguments.arrayStoreField, 0)] .absent 0
+/-- An array object whose spine key names a location no world holds. -/
+def danglingArray : Val := .objAt [(CallArguments.arraySpineField, 0)] .absent 0
 
 /-- The assignment giving every binder the one dangling array. -/
 def danglingAssignment : MixedAssignment Nat :=
@@ -3710,7 +3710,7 @@ def danglingAssignment : MixedAssignment Nat :=
 /-- **Counter-model: the category `V` does not give the exception
 guarantee.** A value binder at a sorted assignment is in `V` (`tyIn`), but
 its member need not meet the built-ins' invariant: a source value that owns
-the store key at a location no world holds. So `sourceTy_exc` is false of a
+the spine key at a location no world holds. So `sourceTy_exc` is false of a
 classification admitting parameter rows, and the category is a separate
 check. -/
 theorem sourceCategory_not_exc :
@@ -3748,9 +3748,9 @@ elements are at the tuples' positions; a parameter row's lists are its binder's.
   G.hasKind k U && (match k.valueSort with | some q => tyIn G q U | none => true) &&
     (!k.lists || listsIn G U)
 
-/-- A store type is refused at a value binder and admitted at a store binder. -/
-theorem sortTy_store_type : sortTy emptyStoreGraph .value [0] = false ∧
-    sortTy emptyStoreGraph .store [0] = true := by decide
+/-- A spine type is refused at a value binder and admitted at a spine binder. -/
+theorem sortTy_spine_type : sortTy emptySpineGraph .value [0] = false ∧
+    sortTy emptySpineGraph .spine [0] = true := by decide
 
 theorem sortTy_hasKind {G : NormalGraph ι} {k : ParameterKind} {U : List ι}
     (h : sortTy G k U = true) : G.hasKind k U = true := by

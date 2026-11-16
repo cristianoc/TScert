@@ -112,7 +112,7 @@ def objParts : Clause α → Option (List (List (Stored α)) × List (PropKey ×
   | _ => none
 
 /-- The keys a target object clause requires: its fields, and its views but
-`length`, which the array store also meets. -/
+`length`, which the array spine also meets. -/
 def fixedOf (c : Clause α) : List (PropKey × α) :=
   match objParts c with
   | some (F, V) => Stored.views F.flatten ++ V.filter (·.1 != lengthKey)

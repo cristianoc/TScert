@@ -2,35 +2,35 @@ import Verification.Semantics.TolerantFrames
 
 /-! # Tolerant frames: allocated cells and separation
 
-A well-formed heap's stores list only element cells, locations of the heap
-(`HeapOk.store_cells`), so a root's **allocated cells** (`RootCells`: every
-cell its store lists is below the heap's length,
+A well-formed heap's spines list only element cells, locations of the heap
+(`HeapOk.spine_cells`), so a root's **allocated cells** (`RootCells`: every
+cell its spine lists is below the heap's length,
 `HeapKnowledge.ElementsBelow`) hold at every state (`rootCells_holds`) and
 after every action (`rootCells_box`). Roles and valid references are kept by
 every admissible transition, and so is the category of every old location's
 contents (`Admissible.contentsCategory`); a typed array's length is its
 descriptor's, so what it reads is immutable (`viewLength_invariant`).
 
-With allocated cells, two separations hold: a store allocated past a mark is
-apart from an old store whose cells lie below it (`alloc_apart`), and two
-apart arrays stay apart when one's store grows and the other's is kept
+With allocated cells, two separations hold: a spine allocated past a mark is
+apart from an old spine whose cells lie below it (`alloc_apart`), and two
+apart arrays stay apart when one's spine grows and the other's is kept
 (`apart_grow_keep`, the third atom). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.HeapKnowledge (ElementsBelow ElementsAbove RegionOf RegionsApart InRegion)
 
-/-- `x`'s store lists only allocated cells: the review's relevant-root
+/-- `x`'s spine lists only allocated cells: the review's relevant-root
 `ElementsBelow`. -/
 def RootCells (x : Nat) : Assertion := fun ρ _ s =>
-  ∀ st ls, storeOf (ρ x) = some st → s.h[st]? = some (.arr ls) → ElementsBelow s.h.length ls
+  ∀ st ls, spineOf (ρ x) = some st → s.h[st]? = some (.arr ls) → ElementsBelow s.h.length ls
 
 /-! ## Structural consequences of a well-formed heap -/
 
-/-- A store a well-formed heap holds lists locations of the heap, at every
+/-- A spine a well-formed heap holds lists locations of the heap, at every
 budget. -/
 theorem _root_.Verification.HeapOk.elementsBelow {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h)
     {s : Nat} {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) : ElementsBelow h.length ls :=
-  fun _ hl => (hok.store_cells hs hl).2
+  fun _ hl => (hok.spine_cells hs hl).2
 
 /-- **Roles are fixed**: every location keeps its role along an admissible
 transition. -/
@@ -47,7 +47,7 @@ theorem Admissible.refsOk {s s' : IndexedHeap} (ha : Admissible s s') {t : Tm} (
 
 /-- **Contents keep their category** (parity-interfaces I1): an old
 location's contents after an admissible transition are of the category its
-contents had before, an array's store, a view store or a value, since its
+contents had before, an array's spine, a view spine or a value, since its
 role is kept and a well-formed heap's contents are of their role's category
 (`Shaped.category`). -/
 theorem Admissible.contentsCategory {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} {u u' : Val}
@@ -73,7 +73,7 @@ theorem Admissible.cls_mem {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat}
 /-- A listed cell stays an element cell after every admissible transition. -/
 theorem Admissible.elem_kept {s s' : IndexedHeap} (ha : Admissible s s') {st : Nat}
     {ls : List (Option Nat)} (hs : s.h[st]? = some (.arr ls)) {l : Nat} (hl : some l ∈ ls) :
-    Verification.roleAt s'.W l = some .elem := ha.roleAt (s.ok.store_cells hs hl).1
+    Verification.roleAt s'.W l = some .elem := ha.roleAt (s.ok.spine_cells hs hl).1
 
 /-- **Admissibility keeps the roots valid.** -/
 theorem _root_.Verification.RootsOk.admissible {s s' : IndexedHeap} (ha : Admissible s s') {ρ : Env}
@@ -88,7 +88,7 @@ theorem viewLength_invariant (w : Nat) (n : Option Int) :
 
 /-! ## Allocated cells hold at every state -/
 
-/-- **Every state's roots list allocated cells**: a store the heap holds has
+/-- **Every state's roots list allocated cells**: a spine the heap holds has
 valid references, so each cell it lists has the element role, a location of
 the world and so of the heap. -/
 theorem rootCells_holds (x : Nat) (ρ : Env) (m : Nat) (s : IndexedHeap) : RootCells x ρ m s := by
@@ -108,13 +108,13 @@ theorem rootCells_box {Φ : Footprint} (x : Nat) (ρ : Env) (m : Nat) (s : Index
 
 /-! ## Allocation separation -/
 
-/-- **Two stores on either side of a mark are apart**: `x`'s store
-location and cells at or past `b`, `y`'s store location and cells below
+/-- **Two spines on either side of a mark are apart**: `x`'s spine
+location and cells at or past `b`, `y`'s spine location and cells below
 `b`, both bounds stated. `alloc_apart` derives the second from a
 well-formed heap. -/
 theorem apart_of_mark {h : Heap} {u w : Val} {sx sy b : Nat} {xs ys : List (Option Nat)}
-    (hx : storeOf u = some sx) (hxv : h[sx]? = some (.arr xs)) (hbx : b ≤ sx) (hax : ElementsAbove b xs)
-    (hy : storeOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hby : sy < b) (hay : ElementsBelow b ys) :
+    (hx : spineOf u = some sx) (hxv : h[sx]? = some (.arr xs)) (hbx : b ≤ sx) (hax : ElementsAbove b xs)
+    (hy : spineOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hby : sy < b) (hay : ElementsBelow b ys) :
     RegionsApart h u w := by
   refine ⟨some sx, xs, some sy, ys, .inr ⟨sx, rfl, hx, hxv⟩, .inr ⟨sy, rfl, hy, hyv⟩, ?_⟩
   intro l hl l' hl' he
@@ -129,32 +129,32 @@ theorem apart_of_mark {h : Heap} {u w : Val} {sx sy b : Nat} {xs ys : List (Opti
     · exact hay l hl'
   omega
 
-/-- **A store allocated past a well-formed heap is apart from an old one**:
+/-- **A spine allocated past a well-formed heap is apart from an old one**:
 `h` is the entry heap, meeting a world at any budget, `h'` a later heap;
-`u`'s store location and its cells are at or past `h`'s end, `w`'s store is a
-store of `h` that `h'` keeps, whose cells are below `h`'s end because `h` is
+`u`'s spine location and its cells are at or past `h`'s end, `w`'s spine is a
+spine of `h` that `h'` keeps, whose cells are below `h`'s end because `h` is
 well-formed. -/
 theorem alloc_apart {n : Nat} {W : WorldT n} {h h' : Heap} (hok : HeapOk n W h) {u w : Val}
     {sx sy : Nat} {xs ys : List (Option Nat)}
-    (hx : storeOf u = some sx) (hxv : h'[sx]? = some (.arr xs)) (hbx : h.length ≤ sx)
+    (hx : spineOf u = some sx) (hxv : h'[sx]? = some (.arr xs)) (hbx : h.length ≤ sx)
     (hax : ElementsAbove h.length xs)
-    (hy : storeOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hkeep : h'[sy]? = some (.arr ys)) :
+    (hy : spineOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hkeep : h'[sy]? = some (.arr ys)) :
     RegionsApart h' u w :=
   apart_of_mark hx hxv hbx hax hy hkeep (List.getElem?_eq_some_iff.mp hyv).1 (hok.elementsBelow hyv)
 
 /-! ## The third atom: one array grows, the other is kept -/
 
-/-- `x`'s store may grow and every location holding a value may change; every
-other store is kept. -/
-def growOne (x : Nat) : Footprint := [(.cls .values, .any), (.field x arrayStoreKey, .grow)]
+/-- `x`'s spine may grow and every location holding a value may change; every
+other spine is kept. -/
+def growOne (x : Nat) : Footprint := [(.cls .values, .any), (.field x arraySpineKey, .grow)]
 
 /-- `apart(x, y)`: the regions of `x` and `y` share no location. -/
 def ApartAt (x y : Nat) : Assertion := fun ρ _ s => RegionsApart s.h (ρ x) (ρ y)
 
-/-- A store location not `x`'s is kept by an action of `growOne x`. -/
-theorem growOne_keeps_store {x : Nat} {ρ : Env} {h h' : Heap} {st : Nat} {ls : List (Option Nat)}
+/-- A spine location not `x`'s is kept by an action of `growOne x`. -/
+theorem growOne_keeps_spine {x : Nat} {ρ : Env} {h h' : Heap} {st : Nat} {ls : List (Option Nat)}
     (hp : Post (growOne x) ρ h h') (hst : h[st]? = some (.arr ls))
-    (hne : (fieldsOf (ρ x)).lookup arrayStoreKey ≠ some st) : h'[st]? = some (.arr ls) := by
+    (hne : (fieldsOf (ρ x)).lookup arraySpineKey ≠ some st) : h'[st]? = some (.arr ls) := by
   obtain ⟨v', hv', ha⟩ := hp.2 st _ hst
   rcases ha with rfl | ⟨e, he, hm, -⟩
   · exact hv'
@@ -164,11 +164,11 @@ theorem growOne_keeps_store {x : Nat} {ρ : Env} {h h' : Heap} {st : Nat} {ls : 
     · simp [Region.mem] at hm; exact absurd hm hne
 
 /-- **(Apart, one-sided)** `apart(x, y) ⊢ □_{growOne x} apart(x, y)`,
-for `y` an array object: `x`'s store gains only cells at or past the heap's
-end, beyond every cell `y`'s kept store lists (`cells(y)`, which every
-state's heap gives: `rootCells_holds`) and beyond `y`'s store location. -/
+for `y` an array object: `x`'s spine gains only cells at or past the heap's
+end, beyond every cell `y`'s kept spine lists (`cells(y)`, which every
+state's heap gives: `rootCells_holds`) and beyond `y`'s spine location. -/
 theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hys : (storeOf (ρ y)).isSome = true) (hap : ApartAt x y ρ m s) :
+    (hys : (spineOf (ρ y)).isSome = true) (hap : ApartAt x y ρ m s) :
     Box (growOne x) (ApartAt x y) ρ m s := by
   intro s' ha
   obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hap
@@ -176,12 +176,12 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
   obtain ⟨sty, hsty⟩ := Option.isSome_iff_exists.mp hys
   have hyr : sb = some sty ∧ s.h[sty]? = some (.arr ys) := by
     rcases hy with ⟨rfl, hv⟩ | ⟨st, rfl, hst, hv⟩
-    · rw [hv] at hsty; simp [storeOf, fieldsOf] at hsty
+    · rw [hv] at hsty; simp [spineOf, fieldsOf] at hsty
     · rw [hsty] at hst; cases hst; exact ⟨rfl, hv⟩
   obtain ⟨rfl, hyv⟩ := hyr
   have hylt : sty < s.h.length := (List.getElem?_eq_some_iff.mp hyv).1
   have hycells := rootCells_holds y ρ m s sty ys hsty hyv
-  -- `x`'s region at `s'`: the old one, or its store grown by cells past the heap's end.
+  -- `x`'s region at `s'`: the old one, or its spine grown by cells past the heap's end.
   have xNew : ∃ xs', RegionOf s'.h (ρ x) sa xs' ∧
       ∀ l, InRegion sa xs' l → InRegion sa xs l ∨ s.h.length ≤ l := by
     rcases hx with ⟨rfl, hv⟩ | ⟨st, rfl, hst, hv⟩
@@ -207,8 +207,8 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
         · exact .inl (.inr h1)
         · exact .inr h1
   obtain ⟨xs', hx', hxnew⟩ := xNew
-  -- `y`'s store location is not `x`'s, so it is kept.
-  have hne : (fieldsOf (ρ x)).lookup arrayStoreKey ≠ some sty := by
+  -- `y`'s spine location is not `x`'s, so it is kept.
+  have hne : (fieldsOf (ρ x)).lookup arraySpineKey ≠ some sty := by
     intro he
     have hsa : InRegion sa xs sty := by
       rcases hx with ⟨rfl, hv⟩ | ⟨st, rfl, hst, -⟩
@@ -216,7 +216,7 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
       · have : st = sty := Option.some.inj (hst.symm.trans he)
         exact .inl (by rw [this])
     exact hab sty hsa sty (.inl rfl) rfl
-  have hy' : RegionOf s'.h (ρ y) (some sty) ys := .inr ⟨sty, rfl, hsty, growOne_keeps_store hp hyv hne⟩
+  have hy' : RegionOf s'.h (ρ y) (some sty) ys := .inr ⟨sty, rfl, hsty, growOne_keeps_spine hp hyv hne⟩
   refine ⟨sa, xs', some sty, ys, hx', hy', fun l hl l' hl' he => ?_⟩
   subst he
   rcases hxnew l hl with hold | hge

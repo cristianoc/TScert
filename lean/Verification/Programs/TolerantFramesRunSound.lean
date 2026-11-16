@@ -41,7 +41,7 @@ theorem GraphGuarantee.toTarget {G : NormalGraph ι} {admits : MixedAssignment �
     {start : Nat} {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation}
     {idx : List HeapKnowledge.IndexAtom} {assertions : List (Nat × HeapKnowledge.Knowledge)}
     {bound : Option RunBound} {ensures : List HeapKnowledge.IndexFact}
-    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
+    {regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)}
     (hsrc : P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
     (g : GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional) :
     Target.GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional where
@@ -177,7 +177,7 @@ theorem StartEntered.entered {G : NormalGraph ι} {I : InstanceImageCheck G} {c 
 omit [Labels ι] in
 /-- The entry fields check at a reassigned graph. -/
 theorem checkEntryFields_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (inputs : List (Ty ι)) (regions : List Footprints.ArgumentStoreRegion) :
+    (inputs : List (Ty ι)) (regions : List Footprints.ArgumentSpineRegion) :
     GraphCode.ArgumentPathTracking.checkEntryFields (reassign G η) inputs regions =
       GraphCode.ArgumentPathTracking.checkEntryFields G inputs regions := rfl
 

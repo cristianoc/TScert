@@ -18,16 +18,16 @@ namespace Verification.Footprints
 the caller's slot `σ i`. -/
 def Region.rename (σ : Nat → Nat) : Region → Region
   | .field x k => .field (σ x) k
-  | .own x => .own (σ x)
-  | .elems x => .elems (σ x)
+  | .fields x => .fields (σ x)
+  | .cells x => .cells (σ x)
   | .cls c => .cls c
   | .all => .all
   | .path x p k => .path (σ x) p k
-  | .pathOwn x p => .pathOwn (σ x) p
-  | .pathElems x p => .pathElems (σ x) p
+  | .pathFields x p => .pathFields (σ x) p
+  | .pathCells x p => .pathCells (σ x) p
   | .cell b => .cell b
   | .inCls r c => .inCls (r.rename σ) c
-  | .store x p => .store (σ x) p
+  | .spine x p => .spine (σ x) p
 
 theorem Region.mem_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) (l : Nat) :
     ∀ r : Region, (r.rename σ).mem ρ h l = r.mem (fun i => ρ (σ i)) h l := by
@@ -50,7 +50,7 @@ def Path.var (x : Nat) : Path := ⟨x, []⟩
 
 /-- The slots a region reads its roots at. -/
 def regionRoots : Region → List Nat
-  | .field x _ | .own x | .elems x | .path x _ _ | .pathOwn x _ | .pathElems x _ | .store x _ => [x]
+  | .field x _ | .fields x | .cells x | .path x _ _ | .pathFields x _ | .pathCells x _ | .spine x _ => [x]
   | .cls _ | .all | .cell _ => []
   | .inCls r _ => regionRoots r
 
@@ -696,9 +696,9 @@ def OperationPostF.scoped (sc : Scope) : OperationPost → Bool
   | .boundedWrite x i x' => decide (x < sc.before) && decide (i < sc.before) && decide (x' < sc.after)
   | .push x x' args => decide (x < sc.before) && decide (x' < sc.after) && args.all (Witness.scoped sc.before)
   | .fact p l F => F.slots.all (fun i => decide (i + l < sc.count p)) && F.entrySlots.all (fun i => decide (i < sc.before))
-  | .freshStore x | .freshObject x => decide (x < sc.after)
+  | .freshSpine x | .freshObject x => decide (x < sc.after)
   | .elementsWhen x _ y _ => decide (x < sc.after) && decide (y < sc.after)
-  | .storeExtends x => decide (x < sc.before)
+  | .spineExtends x => decide (x < sc.before)
   | .viewWrite x i v _ => decide (x < sc.before) && decide (i < sc.before) && decide (v < sc.before)
 
 /-- **A formula reads runtime slots within its scope**: assertions by the

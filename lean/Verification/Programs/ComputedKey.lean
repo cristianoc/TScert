@@ -24,12 +24,12 @@ open PositiveNormalization PositiveGraphs PositiveRules Tower
 variable {ι : Type}
 
 /-- The keys the model keeps for itself that a dictionary's bound excludes:
-the array store's and the prototype's, which no key of a class added by code
+the array spine's and the prototype's, which no key of a class added by code
 holding the object can be (`KeyBound.keeps`). -/
-def modelKeys : List PropKey := [arrayStoreKey, CallArguments.protoField]
+def modelKeys : List PropKey := [arraySpineKey, CallArguments.protoField]
 
 /-- The dictionary over the class `K`, writable at `A`, owning neither the
-array store nor a prototype, of no other part: its locations ordinary
+array spine nor a prototype, of no other part: its locations ordinary
 properties, role `field`. -/
 def classDict (K : IndexKeys) (A : List ι) : Clause (List ι) :=
   .dict [] [] [] [(K, A)] [] [] [⟨false, modelKeys⟩] [(K, .field, A)]
@@ -87,9 +87,9 @@ theorem numberToString_unreserved (b : UInt64) : reservedSpelling (numberToStrin
   · exact digitLead_unreserved h
 
 /-- A key the model does not keep for itself: not the prototype's, the array
-store's or the host classification's. -/
+spine's or the host classification's. -/
 def Unreserved (f : PropKey) : Prop :=
-  (f ≠ CallArguments.protoField ∧ f ≠ CallArguments.arrayStoreField) ∧ f ≠ hostKey
+  (f ≠ CallArguments.protoField ∧ f ≠ CallArguments.arraySpineField) ∧ f ≠ hostKey
 
 theorem unreserved_str {s : String} (h : reservedSpelling s.toList = false) : Unreserved (.str s) := by
   refine ⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩
@@ -97,7 +97,7 @@ theorem unreserved_str {s : String} (h : reservedSpelling s.toList = false) : Un
       simpa [CallArguments.protoField] using he
     subst hs; exact absurd h (by decide)
   · have hs : s = "[]" := by
-      simpa [CallArguments.arrayStoreField, arrayStoreKey] using he
+      simpa [CallArguments.arraySpineField, arraySpineKey] using he
     subst hs; exact absurd h (by decide)
   · have hs : s = "[[host]]" := by
       simpa [hostKey] using he
@@ -106,7 +106,7 @@ theorem unreserved_str {s : String} (h : reservedSpelling s.toList = false) : Un
 theorem unreserved_sym (i : Nat) : Unreserved (.sym i) := by
   refine ⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩
   · simp [CallArguments.protoField] at he
-  · simp [CallArguments.arrayStoreField, arrayStoreKey] at he
+  · simp [CallArguments.arraySpineField, arraySpineKey] at he
   · simp [hostKey] at he
 
 /-- Where a value of the key's clause converts to, and that the keyed object
@@ -189,7 +189,7 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
       cases i with
       | zero =>
         simp at hs hk; subst hs hk
-        exact StorageRole.fitsKey_field (fun he => hns (by simpa [CallArguments.arrayStoreField] using he))
+        exact StorageRole.fitsKey_field (fun he => hns (by simpa [CallArguments.arraySpineField] using he))
       | succ i => simp at hs)
     hmref
   intro j hj U hx hrec
@@ -202,12 +202,12 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
     exact ⟨.field, meaning G A, by simp⟩
   have hproto := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.protoField)
     (by simp only [List.mem_singleton]; exact fun he => hnp he.symm)
-  have hstore := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.arrayStoreField)
+  have hspine := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.arraySpineField)
     (by simp only [List.mem_singleton]; exact fun he => hns he.symm)
   have hhost := slots_lookup_none (base := h.length) (ns := [f]) (f := hostKey)
     (by simp only [List.mem_singleton]; exact fun he => hnh he.symm)
   refine (expand_sem G R (plain_of_mem_expand hdR) j U _).mpr
-    ⟨d, hdR, ?_, builtinInvariant_of_lookup hstore⟩
+    ⟨d, hdR, ?_, builtinInvariant_of_lookup hspine⟩
   rcases hshape with rfl | ⟨K, rfl, hKf⟩
   · simp only [oneField, semWithArgs]
     refine ⟨⟨by simpa [ReferenceConjunctions.famsOf, mapStored] using hrec, by simp,
@@ -239,7 +239,7 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
       refine ownKeysT_slots fun g hg => ?_
       simp only [List.mem_singleton] at hg
       subst hg
-      have h1 : g ≠ arrayStoreKey := hns
+      have h1 : g ≠ arraySpineKey := hns
       have h2 : g ≠ CallArguments.protoField := hnp
       simp [KeyBound.admits, modelKeys, h1, h2]
 

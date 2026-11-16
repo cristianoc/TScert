@@ -133,12 +133,12 @@ listed slot's fields, addressed by level at the context's depth. -/
           else []
         if fields.isEmpty then none else some (depth - 1 - j, fields)⟩]
     | .value | .slot _ =>
-      -- An iterator's own locations differ from the fields older slots'
+      -- An iterator's field locations differ from the fields older slots'
       -- records named when it was created. A constant holding an object it
       -- allocated is left out: the edge from a key-adding write to it does
       -- not carry that separation (`blocker-loop-key-adding-write`). A
-      -- constant holding an array literal's object keeps its store field
-      -- apart from the store fields of the older slots' arrays no write
+      -- constant holding an array literal's object keeps its spine field
+      -- apart from the spine fields of the older slots' arrays no write
       -- replaces, a fresh one's among them.
       let array := b.fresh && !b.iterator
       if !(b.iterator || array) || depth ≤ i then [] else
@@ -146,12 +146,12 @@ listed slot's fields, addressed by level at the context's depth. -/
       | none => []
       | some older =>
         let olders := (older.map commonFields).toArray
-        [⟨depth - 1 - i, if array then some [arrayStoreKey] else none, indices.filterMap fun j =>
+        [⟨depth - 1 - i, if array then some [arraySpineKey] else none, indices.filterMap fun j =>
           if j ≤ i || (!array && slots[j]?.any (·.fresh)) then none else
           -- An array constant's partners are values no write replaces.
           if array && !(slots[j]?.any fun o => match o.storage with | .value => true | _ => false) then none else
           let fields := shared olders j (j - i - 1)
-          let fields := if array then fields.filter (· == arrayStoreKey) else fields
+          let fields := if array then fields.filter (· == arraySpineKey) else fields
           if fields.isEmpty then none else some (depth - 1 - j, fields)⟩]
 
 /-- `separationFacts` at the store, each type's common fields computed once
@@ -217,11 +217,11 @@ the refinement the edge's observation establishes. -/
   if kept.length == sliced.length then sliced else kept ++ R
 
 /-- The built-in `readonly unknown[]`: the array shape over a possibly sparse
-store of `unknown`. -/
+spine of `unknown`. -/
 @[nospecialize] def builtinArrayTy : Compiler (Ty Tree) := do
   let u ← lower (SourceTypes.use .source)
-  let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
-  return [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
+  let spine ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
+  return [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) spine true))]
 
 /-- The labels of the kinds of a JavaScript value (`sourceKinds`), where a
 slot of `Γ` holds `unknown`, whose tests keep its kinds; none otherwise. -/

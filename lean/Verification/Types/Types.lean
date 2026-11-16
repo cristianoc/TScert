@@ -638,10 +638,10 @@ theorem ownKeysT_admits {b : KeyBound} {k : Nat} {W : WorldT k}
     cases hl
   · rfl
 
-/-- A key the model keeps for itself: the prototype and the array store. No
+/-- A key the model keeps for itself: the prototype and the array spine. No
 code adds one as a property; an object owning a property JavaScript spells so
 is not one the model represents. -/
-def modelKey (k : PropKey) : Bool := k == CallArguments.protoField || k == arrayStoreKey
+def modelKey (k : PropKey) : Bool := k == CallArguments.protoField || k == arraySpineKey
 
 /-- A bound keeps a class's keys: a key of the class added to an object
 leaves the bound true of it. A bound listing keys keeps none (it excludes every
@@ -839,15 +839,15 @@ theorem viewT_append (A B : Views) (k : Nat) (W : WorldT k) (v : Val) :
   simp only [viewT, List.mem_append, or_imp, forall_and]
 
 /-- The key of an array's `length`, a property the model keeps in the array's
-store rather than at a location. -/
+spine rather than at a location. -/
 def lengthKey : PropKey := .str "length"
 
 /-- **An array's `length`, read through a view.** An object owning the array
-store has its `length`, an own data property in JavaScript, in its store: a
+spine has its `length`, an own data property in JavaScript, in its spine: a
 view of `length` at `T` admits it where every possible length is in `T`,
 read below the level, since `push` and `pop` change it. -/
 def arrayLenT (T : Fam) : Fam := fun k _ v =>
-  (∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup arrayStoreKey).isSome = true) ∧
+  (∃ flds oid, v = .objAt flds .absent oid ∧ (flds.lookup arraySpineKey).isSome = true) ∧
     ∀ (j : Nat), j < k → ∀ (W' : WorldT j) (b : UInt64), T j W' (.num b)
 
 /-- **A record's read capabilities**: each a view (`viewT`), and a view of
@@ -877,10 +877,10 @@ theorem viewsT_at {fs : Views} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs) (hf 
   · exact viewT_at (List.mem_singleton_self _) h
   · exact absurd rfl hf
 
-/-- A view of an object owning no array store is at a location. -/
+/-- A view of an object owning no array spine is at a location. -/
 theorem viewsT_at_plain {fs : Views} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {flds : List (PropKey × Nat)} {oid : Nat}
-    (hs : flds.lookup arrayStoreKey = none) (h : viewsT fs k W (.objAt flds .absent oid)) :
+    (hs : flds.lookup arraySpineKey = none) (h : viewsT fs k W (.objAt flds .absent oid)) :
     ∃ (flds' : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid' : Nat),
       Tm.objAt flds .absent oid = .objAt flds' .absent oid' ∧ flds'.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
@@ -892,7 +892,7 @@ theorem viewsT_append (A B : Views) (k : Nat) (W : WorldT k) (v : Val) :
     viewsT (A ++ B) k W v ↔ viewsT A k W v ∧ viewsT B k W v := by
   simp only [viewsT, List.mem_append, or_imp, forall_and]
 
-/-- A tuple contract on an array store: the required positions' families, the
+/-- A tuple contract on an array spine: the required positions' families, the
 optional positions', and what any further position must hold, if any may. -/
 inductive ArrayPresence where
   | dense | readable | sparse
@@ -915,28 +915,28 @@ def positionFam (T : TupleF) (i : Nat) : Option Fam :=
     | none => if T.required.length + T.optional.length ≤ i then T.rest else none
 
 /-- Presence is observed at the same depth as the element contract. Readable
-stores may have a hole exactly where reading `undefined` meets that contract. -/
-def StorePresence (T : TupleF) (ls : List (Option Nat)) (j : Nat) : Prop :=
+spines may have a hole exactly where reading `undefined` meets that contract. -/
+def SpinePresence (T : TupleF) (ls : List (Option Nat)) (j : Nat) : Prop :=
   match T.presence with
   | .dense => none ∉ ls
   | .sparse => True
   | .readable => ∀ i, ls[i]? = some none → ∀ A, positionFam T i = some A →
       ∀ U : WorldT j, A j U .undef
 
-theorem StorePresence.of_dense {T : TupleF} {ls : List (Option Nat)}
-    (h : none ∉ ls) (j : Nat) : StorePresence T ls j := by
+theorem SpinePresence.of_dense {T : TupleF} {ls : List (Option Nat)}
+    (h : none ∉ ls) (j : Nat) : SpinePresence T ls j := by
   cases hp : T.presence with
-  | dense => simpa [StorePresence, hp] using h
-  | sparse => simp [StorePresence, hp]
+  | dense => simpa [SpinePresence, hp] using h
+  | sparse => simp [SpinePresence, hp]
   | readable =>
-    simp only [StorePresence, hp]
+    simp only [SpinePresence, hp]
     intro i hi
     exact False.elim (h (List.mem_of_getElem? hi))
 
-/-- **A store under a tuple contract.** Every required position has a location
+/-- **A spine under a tuple contract.** Every required position has a location
 under its family (or implying it for a readonly contract); an optional
 position is a location under the same capability; a further position exists
-only under a rest family, and holds a location under it. `StorePresence`
+only under a rest family, and holds a location under it. `SpinePresence`
 distinguishes physical density, safe hole reads, and unconstrained holes.
 At depth zero no element can be observed; presence is guarded at the same
 depth as the element families.
@@ -944,7 +944,7 @@ Required positions always exist. Lengths follow: at least the required
 positions, at most `maxArrayLength`, and no more than the optional ones
 without a rest. -/
 def listT (T : TupleF) : Fam := fun k W v =>
-  ∃ ls : List (Option Nat), v = .arr ls ∧ (∀ j, j < k → StorePresence T ls j) ∧ T.required.length ≤ ls.length ∧
+  ∃ ls : List (Option Nat), v = .arr ls ∧ (∀ j, j < k → SpinePresence T ls j) ∧ T.required.length ≤ ls.length ∧
     ls.length ≤ maxArrayLength ∧
     (T.rest = none → ls.length ≤ T.required.length + T.optional.length) ∧
     (∀ (i : Nat) (A : Fam), T.required[i]? = some A → ∃ (l : Nat) (c : Ctr k),
@@ -1013,8 +1013,8 @@ theorem placeAt_getElem? (ls : List (Option Nat)) (k m i : Nat) :
       · simp only [hk, if_true]; simp; omega
       · simp only [hk, if_false]; simp; omega
 
-/-- Placing at most at the end leaves a dense store dense: every position is
-the placed one, or one the store already had. -/
+/-- Placing at most at the end leaves a dense spine dense: every position is
+the placed one, or one the spine already had. -/
 theorem placeAt_dense {ls : List (Option Nat)} {k m : Nat} (hd : none ∉ ls) (hk : k ≤ ls.length) :
     none ∉ placeAt ls k m := by
   intro hm
@@ -1028,13 +1028,13 @@ theorem placeAt_dense {ls : List (Option Nat)} {k m : Nat} (hd : none ∉ ls) (h
       · rename_i h1 h2 h3; omega
       · cases hi
 
-theorem StorePresence.grow {T : TupleF} {ls : List (Option Nat)} {k m j : Nat}
-    (h : StorePresence T ls j) (hk : k ≤ ls.length) : StorePresence T (placeAt ls k m) j := by
+theorem SpinePresence.grow {T : TupleF} {ls : List (Option Nat)} {k m j : Nat}
+    (h : SpinePresence T ls j) (hk : k ≤ ls.length) : SpinePresence T (placeAt ls k m) j := by
   cases hp : T.presence with
-  | dense => simpa [StorePresence, hp] using placeAt_dense (m := m) (by simpa [StorePresence, hp] using h) hk
-  | sparse => simp [StorePresence, hp]
+  | dense => simpa [SpinePresence, hp] using placeAt_dense (m := m) (by simpa [SpinePresence, hp] using h) hk
+  | sparse => simp [SpinePresence, hp]
   | readable =>
-    simp only [StorePresence, hp] at h ⊢
+    simp only [SpinePresence, hp] at h ⊢
     intro i hi A hA U
     rw [placeAt_getElem?] at hi
     split at hi
@@ -1052,8 +1052,8 @@ theorem placeAt_length (ls : List (Option Nat)) (k m : Nat) :
     (placeAt ls k m).length = ls.length + (k + 1 - ls.length) := by
   simp [placeAt, List.length_set, List.length_append, List.length_replicate]
 
-/-- **The store a literal allocates.** Each position's location holds the
-contract of its family, in order, so the store meets any tuple contract whose
+/-- **The spine a literal allocates.** Each position's location holds the
+contract of its family, in order, so the spine meets any tuple contract whose
 positions those families are, and whose bounds the count respects. -/
 theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base : Nat}
     (hreq : T.required.length ≤ As.length) (hmax : As.length ≤ maxArrayLength)
@@ -1063,7 +1063,7 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
     listT T n W (.arr (elemSlots base As.length)) := by
   have hpos' : ∀ (i : Nat) (hi : i < As.length), positionFam T i = some (As[i]'hi) :=
     fun i hi => hpos i _ (List.getElem?_eq_some_iff.mpr ⟨hi, rfl⟩)
-  refine ⟨_, rfl, (fun j _ => StorePresence.of_dense (elemSlots_dense _ _) j), by simp [elemSlots, hreq],
+  refine ⟨_, rfl, (fun j _ => SpinePresence.of_dense (elemSlots_dense _ _) j), by simp [elemSlots, hreq],
     by simp [elemSlots, hmax], fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
   · intro i A hA
     have hi : i < As.length := by
@@ -1097,10 +1097,10 @@ theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base 
       exact ⟨_, res (As[i]'hlt), this, hl i hlt, fun _ _ _ _ => SlotContract.refl _ _⟩
     · contradiction
 
-/-- **A grown store.** Placing a fresh location under the position's family at
+/-- **A grown spine.** Placing a fresh location under the position's family at
 the end keeps the tuple contract: every other position is as before, the
 bounds still hold because the position is one the contract names, and the
-store stays dense because nothing is skipped. -/
+spine stays dense because nothing is skipped. -/
 theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)} {k m : Nat} {A : Fam}
     (h : listT T n W (.arr ls)) (hpos : positionFam T k = some A)
     (hhole : (ls[k]?).bind id = none) (hk : k ≤ ls.length) (hkmax : k < maxArrayLength)
@@ -1118,7 +1118,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
       · split at hpos
         · rw [hn] at hpos; cases hpos
         · cases hpos
-  refine ⟨_, rfl, (fun j hj => StorePresence.grow (hd j hj) hk), by rw [placeAt_length]; omega,
+  refine ⟨_, rfl, (fun j hj => SpinePresence.grow (hd j hj) hk), by rw [placeAt_length]; omega,
     by rw [placeAt_length]; omega, fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
   · intro i A' hA
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i A' hA

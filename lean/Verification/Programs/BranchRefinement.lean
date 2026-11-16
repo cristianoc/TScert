@@ -1403,12 +1403,12 @@ theorem presentKey_sound {t : Tag} {q : Bool} {check : PropKey → Bool}
 
 /-! ### A built-in array
 
-`Array.isArray` finds that an object owns the store key. A record or
+`Array.isArray` finds that an object owns the spine key. A record or
 dictionary type is of objects meeting the built-in array invariant
-(`PositiveGraphs.builtinInvariant`): one owning the store key holds a possibly sparse store
+(`PositiveGraphs.builtinInvariant`): one owning the spine key holds a possibly sparse spine
 and the built-in prototype and owns no key it provides. So where the test holds,
 a member of such a type is a member of the built-in `sparse ReadonlyArray<unknown>`, the
-array shape over a store of values (`builtinArrayLabel`). -/
+array shape over a spine of values (`builtinArrayLabel`). -/
 
 /-- A type every JavaScript value meets. -/
 def valuesTy [DecidableEq ι] (G : NormalGraph ι) (T : Ty ι) : Bool :=
@@ -1423,16 +1423,16 @@ theorem valuesTy_sound [DecidableEq ι] {G : NormalGraph ι} {T : Ty ι} (h : va
   · exact ⟨.top, h, ⟨sourceVal_isVal hv.1.1, hv.1.2⟩, builtinInvariant_of_withoutInvariant rfl n W v⟩
   · exact ⟨.source, h, hv⟩
 
-/-- A type holding every possibly sparse store of values: a readonly array store at a
+/-- A type holding every possibly sparse spine of values: a readonly array spine at a
 type every value meets. -/
-def storeOfValues [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
+def spineOfValues [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
   S.any fun s => G.plain s && (G s).any fun c => match c with
     | .list ⟨[], [], some T, true, .sparse⟩ [] => valuesTy G T
     | _ => false
 
-theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S U : Ty ι}
-    (h : storeOfValues G S = true) (hu : exactUnknown G U = true) {n W v}
-    (hv : builtinStoreT (builtinValues G U) n W v) : meaning G S n W v := by
+theorem spineOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S U : Ty ι}
+    (h : spineOfValues G S = true) (hu : exactUnknown G U = true) {n W v}
+    (hv : builtinSpineT (builtinValues G U) n W v) : meaning G S n W v := by
   obtain ⟨s, hs, hp⟩ := List.any_eq_true.mp h
   simp only [Bool.and_eq_true, List.any_eq_true] at hp
   obtain ⟨hplain, c, hc, hcv⟩ := hp
@@ -1453,19 +1453,19 @@ theorem storeOfValues_sound [DecidableEq ι] {G : NormalGraph ι} {S U : Ty ι}
     · cases hcv
 
 /-- The built-in `readonly unknown[]`: a clause row holding the array shape
-over a store of values, `ArrayProto` read at a type without parameters, and
+over a spine of values, `ArrayProto` read at a type without parameters, and
 the keys that prototype provides. -/
 def builtinArrayLabel [DecidableEq ι] (G : NormalGraph ι) (L : ι) : Bool :=
   match G.builtins with
   | none => false
   | some r => builtinsFree G r.proto && exactUnknown G r.unknown && G.plain L && match G L with
     | [.refs [] [] [(k, S), (p, P)] [] [] [K]] =>
-      k == CallArguments.arrayStoreField && p == CallArguments.protoField && P == r.proto &&
-        K == ⟨false, r.keys⟩ && storeOfValues G S
+      k == CallArguments.arraySpineField && p == CallArguments.protoField && P == r.proto &&
+        K == ⟨false, r.keys⟩ && spineOfValues G S
     | _ => false
 
 /-- **A built-in array.** A member of a record or dictionary clause that
-owns the store key is a member of the built-in `sparse ReadonlyArray<unknown>`. -/
+owns the spine key is a member of the built-in `sparse ReadonlyArray<unknown>`. -/
 theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
     (hL : builtinArrayLabel G L = true) {c : Clause (Ty ι)} (hc : c.carriesInvariant = true) {n W v}
     (hinv : builtinInvariant G (builtinValues G) c n W v) (ha : tagHolds .isArray v = true) :
@@ -1481,13 +1481,13 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
     · rename_i k S p P K hGL
       simp only [Bool.and_eq_true, beq_iff_eq] at hrow
       obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hS⟩ := hrow
-      -- The tested value is a plain object owning the store key.
+      -- The tested value is a plain object owning the spine key.
       obtain ⟨flds, oid, rfl, hst⟩ : ∃ flds oid, v = .objAt flds .absent oid ∧
-          (flds.lookup CallArguments.arrayStoreField).isSome = true := by
+          (flds.lookup CallArguments.arraySpineField).isSome = true := by
         cases v with
         | objAt fs code oid =>
           cases code <;> simp [tagHolds] at ha
-          exact ⟨fs, oid, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
+          exact ⟨fs, oid, rfl, by simpa [CallArguments.arraySpineField] using ha⟩
         | _ => simp [tagHolds] at ha
       have hinv' := hinv
       unfold builtinInvariant at hinv'
@@ -1495,7 +1495,7 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       simp only [hc, ite_true] at hinv'
       obtain ⟨hview, hkeys, -⟩ := hinv' flds oid rfl hst
       refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
-        ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
+        ⟨.refs [] [] [(CallArguments.arraySpineField, S), (CallArguments.protoField, r.proto)] [] []
           [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩
       · refine ⟨⟨⟨flds, oid, rfl, fun f s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm,
             fun f s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm⟩, by simp,
@@ -1505,10 +1505,10 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
         · simp only [ReferenceConjunctions.viewsOf, List.map_cons, List.map_nil, List.mem_cons,
             Prod.mk.injEq, List.not_mem_nil, or_false] at hm
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-          · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField
-              (builtinStoreT (builtinValues G r.unknown)) (by simp)
+          · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.arraySpineField
+              (builtinSpineT (builtinValues G r.unknown)) (by simp)
             exact .inl (viewT_single ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
-              storeOfValues_sound hS hunk (hag j hj W' u hu)⟩)
+              spineOfValues_sound hS hunk (hag j hj W' u hu)⟩)
           · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.protoField (builtinValues G r.proto) (by simp)
             exact .inl (viewT_single ⟨flds', l, c', oid', he, hl, hw, fun j hj W' u hu =>
               (builtinsFree_meaning hfree j W' u).mpr (hag j hj W' u hu)⟩)
@@ -1525,7 +1525,7 @@ def indexedDict : Clause α → Bool
   | _ => false
 
 /-- **No array is a dictionary.** Where the graph states the built-ins, a
-member of a clause owning the store key owns the prototype key
+member of a clause owning the spine key owns the prototype key
 (`arrayInvariant`), which a member of an indexed dictionary clause does not. -/
 theorem not_array_of_indexed {G : NormalGraph ι} {c : Clause (Ty ι)} (hb : G.builtins.isSome = true)
     (hi : indexedDict c = true) {Ξ : Fam} {X : Ty ι → Fam} {P : Ty ι → ArgFam} {n W v}
@@ -1535,11 +1535,11 @@ theorem not_array_of_indexed {G : NormalGraph ι} {c : Clause (Ty ι)} (hb : G.b
   | dict a bs vs ds os ms ks cs =>
     obtain ⟨-, -, ⟨hds, hcs⟩, -⟩ := hcv
     obtain ⟨flds, oid, hv, hst⟩ : ∃ flds oid, v = .objAt flds .absent oid ∧
-        (flds.lookup CallArguments.arrayStoreField).isSome = true := by
+        (flds.lookup CallArguments.arraySpineField).isSome = true := by
       cases v with
       | objAt fs code oid =>
         cases code <;> simp [tagHolds] at ha
-        exact ⟨fs, oid, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
+        exact ⟨fs, oid, rfl, by simpa [CallArguments.arraySpineField] using ha⟩
       | _ => simp [tagHolds] at ha
     have hnone : flds.lookup CallArguments.protoField = none := by
       simp only [indexedDict, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at hi

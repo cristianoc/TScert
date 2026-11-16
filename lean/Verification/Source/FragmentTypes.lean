@@ -125,7 +125,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
         statics.filterMap fun (k, r, t) => if r then none else some (k, .field, t)
       let views := statics.filterMap fun (k, r, t) => if r then some (k, t) else none
       return [← SourceTypes.use (.ctors (parts.map (·.1)) [] fields [] views)]
-    else if ["array", "store"].contains (← jStr (← jField atom "a")) then
+    else if ["array", "spine"].contains (← jStr (← jField atom "a")) then
       return [← arrayType atom]
     else if (← jStr (← jField atom "a")) == "record" &&
         (atom.getObjVal? "indexSignature").toOption.isSome then
@@ -137,8 +137,8 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       let fields ← (← jArr atom "fields").mapM fun field => do
         fieldsExactly field ["name", "optional", "read", "write"]
         let name ← jStr (← jField field "name")
-        if name == SourceTypes.storeField then
-          throw "the array store is internal, not a source property"
+        if name == SourceTypes.spineField then
+          throw "the array spine is internal, not a source property"
         if ← (← jField field "optional").getBool? then
           throw "optional named fields with a string index signature are not yet in the source fragment"
         let read ← callableType (← jField field "read")
@@ -198,7 +198,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       SourceTypes.translateArm (← CellClaims.primitive single)
   return arms.flatten.mergeSort Labels.le |>.eraseDups
 
-/-- An array type: a tuple contract on a store, held by an object in its store
+/-- An array type: a tuple contract on a spine, held by an object in its spine
 field, invariantly or, for a readonly array, as a view. Element types are
 lowered as callable operands are. -/
 partial def arrayType (atom : Json) : SourceTypes.Lowering Tree := do
@@ -209,9 +209,9 @@ partial def arrayType (atom : Json) : SourceTypes.Lowering Tree := do
   let rest ← if restJson == .null then pure none else do pure (some (← callableType restJson))
   let readonly ← (← jField atom "readonly").getBool?
   let presence ← fromJson? (← jField atom "presence")
-  let store ← SourceTypes.use (.list ⟨required, optional, rest, readonly, presence⟩ [])
-  if (← jStr (← jField atom "a")) == "store" then pure store
-  else SourceTypes.use (SourceTypes.arrayOf (← get) store readonly)
+  let spine ← SourceTypes.use (.list ⟨required, optional, rest, readonly, presence⟩ [])
+  if (← jStr (← jField atom "a")) == "spine" then pure spine
+  else SourceTypes.use (SourceTypes.arrayOf (← get) spine readonly)
 
 /-- A record with optional fields. A field whose read and write agree is
 writable under that one contract; any other is readonly, read at its read
@@ -327,7 +327,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       return [label]
     | "callable" => return [← callableObject atom]
     | "constructor" => callableType single
-    | "array" | "store" => return [← arrayType atom]
+    | "array" | "spine" => return [← arrayType atom]
     | "function" => callableType single
     -- A number or string arm is interned, so `1` and `number` are separate
     -- labels and the singleton is below the family by the ordinary clause rules.

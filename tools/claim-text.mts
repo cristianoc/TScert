@@ -126,7 +126,7 @@ function bareAtomText(
   if (primitive !== undefined && Object.keys(atom).join() === "a")
     return primitive;
   if (
-    (atom.a === "array" || atom.a === "store") &&
+    (atom.a === "array" || atom.a === "spine") &&
     isJsonList(atom.required) &&
     isJsonList(atom.optional)
   ) {
@@ -145,7 +145,7 @@ function bareAtomText(
       (required.length === 0 && optional.length === 0 && rest !== null
         ? `${atom.readonly ? "ReadonlyArray" : "Array"}<${rest}>`
         : `${atom.readonly ? "readonly " : ""}[${[...required, ...optional, ...(rest === null ? [] : [`...Array<${rest}>`])].join(", ")}]`);
-    return atom.a === "store" ? `Store<${text}>` : text;
+    return atom.a === "spine" ? `Spine<${text}>` : text;
   }
   if (atom.a === "param" && typeof atom.name === "string") return atom.name;
   if (atom.a === "alias" && typeof atom.name === "string" && isJsonList(atom.args))
@@ -554,7 +554,7 @@ function liftClause(
     if (list.rest.length || !isJsonList(required) || !isJsonList(optional))
       return encoding(clause);
     return {
-      a: "store",
+      a: "spine",
       required: required.map((a) => liftType(types, a, depth - 1)),
       optional: optional.map((a) => liftType(types, a, depth - 1)),
       rest: t.rest === null ? null : liftType(types, t.rest, depth - 1),
@@ -580,15 +580,15 @@ function liftClause(
     if (only === undefined || cells.length !== 1) return shown(cells);
     const [f] = only.fields;
     if (f !== undefined && only.fields.length === 1) {
-      const store = f.read.atoms[0];
+      const spine = f.read.atoms[0];
       if (
         f.name === "[]" &&
-        isJsonObject(store) &&
-        store.a === "store" &&
-        ((same(f.read, f.write) && store.readonly === false) ||
-          (f.write.atoms.length === 0 && store.readonly === true))
+        isJsonObject(spine) &&
+        spine.a === "spine" &&
+        ((same(f.read, f.write) && spine.readonly === false) ||
+          (f.write.atoms.length === 0 && spine.readonly === true))
       )
-        return { ...store, a: "array" };
+        return { ...spine, a: "array" };
     }
     return only;
   }
@@ -830,7 +830,7 @@ function liftLabels(
 }
 
 // A label tree names a row only the verifier builds, so it is
-// shown by what it names: a binder by its name, an array over its store, an
+// shown by what it names: a binder by its name, an array over its spine, an
 // application by its declaration's position and its arguments, and an
 // intersection as text, as an intersection of contracts is.
 function treeAtom(
@@ -843,8 +843,8 @@ function treeAtom(
   if (typeof label.binder === "string")
     return { a: "param", name: label.binder };
   if (isJsonList(label.array)) {
-    const store = liftType(types, label.array, depth).atoms[0];
-    if (isJsonObject(store) && store.a === "store") return { ...store, a: "array" };
+    const spine = liftType(types, label.array, depth).atoms[0];
+    if (isJsonObject(spine) && spine.a === "spine") return { ...spine, a: "array" };
   }
   if (typeof label.decl === "number")
     return (

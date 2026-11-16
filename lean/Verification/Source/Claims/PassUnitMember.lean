@@ -31,7 +31,7 @@ def mainBound (r : SourceRequest σ ι) : Option RunBound :=
 "regional"`): their bound and regions, a throw bounded where the stated
 effect bounds one. -/
 def regionalSpec (r : SourceRequest σ ι) :
-    Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool) :=
+    Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool) :=
   r.regional.map fun (Φ, regions) => (Φ, regions, r.stated.any (·.onThrow))
 
 /-- The read summaries a run leaves, checked as `passGroup` checks them

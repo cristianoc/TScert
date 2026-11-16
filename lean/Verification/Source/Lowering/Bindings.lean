@@ -142,7 +142,7 @@ set_option maxHeartbeats 1000000
     let (i,T) ← LoweringExecution.executionSaved scope Γ array
     let R ← tryCatch (positionRead (SourceTypes.graph (← table)) T index) fun reason => do
       throw (locatedRefusal (← table) source .bindingAnnotation reason)
-    save source value R (.elemAt (.readAt SourceTypes.storeField (.var i)) (.num (bitsOfNat index))) next
+    save source value R (.elemAt (.readAt SourceTypes.spineField (.var i)) (.num (bitsOfNat index))) next
   | .objectRest source receiver drop value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ receiver
     let E ← groupType [] []
@@ -154,14 +154,14 @@ set_option maxHeartbeats 1000000
     if slice then
       save source value (← claimAt fc source) (← sliceCall scope i start) next
     else
-      let (store,S,R) ← restArray fc T i start source
+      let (spine,S,R) ← restArray fc T i start source
       let stored := held ⟨"",some source⟩ :: scope
       let bound : ScopeBinding Tree := { source := ⟨value.name,some value.source⟩, fixed := some R }
       let target ← withExecutionType value.name R
         (executeBindingPlan recursive fc original wanted (bound::stored) (R::S::Γ) next k)
       let proto ← prototypeSlot stored
       let object ← emitAt source (arrayTerm proto) (.bind target) (S::Γ) R "pattern-rest" (scope := stored)
-      emitAt source store (.bind object) Γ S "pattern-rest" (scope := scope)
+      emitAt source spine (.bind object) Γ S "pattern-rest" (scope := scope)
   | .defaultValue value result fallback next =>
     let (i,R) ← LoweringExecution.executionSaved scope Γ value
     let R ← byClause R

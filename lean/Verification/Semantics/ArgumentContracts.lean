@@ -7,7 +7,7 @@ namespace Verification.ArgumentContracts
 /-- A contract on an actual list; grouping values spends no execution step. -/
 abbrev Family := ArgFam
 
-/-- The same tuple shape as a store, interpreted on values at this level. -/
+/-- The same tuple shape as a spine, interpreted on values at this level. -/
 def Fits (T : TupleF) : Family := fun n W vs =>
   TupleFits (fun A v => A n W v) T vs
 

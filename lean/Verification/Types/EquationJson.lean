@@ -15,13 +15,13 @@ private def kindName : ParameterKind → String
   | .value => "value"
   | .arguments => "arguments"
   | .packed => "packed"
-  | .store => "store"
+  | .spine => "spine"
 
 private def kindOf : String → Except String ParameterKind
   | "value" => .ok .value
   | "arguments" => .ok .arguments
   | "packed" => .ok .packed
-  | "store" => .ok .store
+  | "spine" => .ok .spine
   | k => .error s!"unknown parameter kind '{k}'"
 
 mutual

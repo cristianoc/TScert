@@ -44,7 +44,7 @@ structure CodeObligations where
 its bound states one, and the index facts `facts` a run is checked to return
 with (a module row's stated postcondition). -/
 def codeEstablished (fresh : Bool) (facts : List HeapKnowledge.IndexFact) : List FormulaSchema :=
-  (if fresh then [.operation (.freshStore 0)] else []) ++ facts.map fun F => .operation (.fact .after 0 F)
+  (if fresh then [.operation (.freshSpine 0)] else []) ++ facts.map fun F => .operation (.fact .after 0 F)
 
 /-- **What a run establishes holds at its exit** (proved): a fresh result
 where it is checked for one, and each of `facts` at the call's positions. -/
@@ -166,12 +166,12 @@ def codeRunBound (c : CodeEntry ι) : Option RunBound :=
 signature's scope at its arity (`Effect.belowRow`), no precondition beyond
 its promise, every postcondition its signature exports on either exit
 established by its run (`exportsEstablished`), and its frames reading the
-heap at each location alone where it allocates a rest store
+heap at each location alone where it allocates a rest spine
 (`framesAtLocation`, so that a body run after allocating its rest meets them
 from the invocation's entry); then its run's bounds and fresh result. -/
 def codeObligations (c : CodeEntry ι) : Option CodeObligations :=
   if decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity && c.row.effect.requires.isNone &&
-      exportsEstablished c.row.effect [] && (c.store.isNone || framesAtLocation c.row.effect) then
+      exportsEstablished c.row.effect [] && (c.spine.isNone || framesAtLocation c.row.effect) then
     some ⟨runBounds c, c.row.effect.schema.normal.freshResult⟩
   else none
 
@@ -194,10 +194,10 @@ theorem codeBound_eq {c : CodeEntry ι} (h : codeConditions c = true) : codeBoun
 
 /-- **What the conditions give**: the arity, the scope, no precondition,
 every exported postcondition established by the run, and, where it
-allocates a rest store, the frames read at each location alone. -/
+allocates a rest spine, the frames read at each location alone. -/
 theorem codeConditions_spec {c : CodeEntry ι} (h : codeConditions c = true) :
     c.arity ≤ c.row.arguments.length ∧ c.row.effect.belowRow c.arity = true ∧ c.row.effect.requires = none ∧
-      exportsEstablished c.row.effect [] = true ∧ (c.store.isSome → framesAtLocation c.row.effect = true) := by
+      exportsEstablished c.row.effect [] = true ∧ (c.spine.isSome → framesAtLocation c.row.effect = true) := by
   unfold codeConditions at h
   obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp h
   unfold codeObligations at ho

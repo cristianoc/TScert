@@ -23,14 +23,14 @@ instances, needs. -/
 
 /-- Semantic binders distinguish a runtime value from an argument list. A
 packed binder is both: a value binder whose values are arrays, and the
-argument lists their elements form (`Packable`). A store binder is an
-internal one whose values are element stores: the store an array type is
+argument lists their elements form (`Packable`). A spine binder is an
+internal one whose values are element spines: the spine an array type is
 applied to (`Interning.arrayHead`); no source binder is one. -/
 inductive ParameterKind where
   | value
   | arguments
   | packed
-  | store
+  | spine
   deriving DecidableEq, BEq, Repr, Inhabited
 
 deriving instance ReflBEq for ParameterKind
@@ -38,7 +38,7 @@ deriving instance LawfulBEq for ParameterKind
 
 /-- **Machine closedness**: a closed term that is a value, of either sort
 (`topT_iff_sort`: `V ∪ S`). It is the closedness of every type's meaning,
-store types' included (`mixedMeaning_not_sourceValid`), so it is the shared
+spine types' included (`mixedMeaning_not_sourceValid`), so it is the shared
 carrier's; a binder's own sort is its kind's (`ParameterKind.MixedSort`). -/
 abbrev MachineClosed (v : Val) : Prop := isVal v = true ∧ Scoped 0 v
 
@@ -48,17 +48,17 @@ def ParameterKind.valueSort : ParameterKind → Option ValueSort
   | .value => some .source
   | .arguments => none
   | .packed => some .source
-  | .store => some .store
+  | .spine => some .spine
 
 /-- The kinds whose binders observe argument lists. -/
 def ParameterKind.lists : ParameterKind → Bool
   | .arguments | .packed => true
-  | .value | .store => false
+  | .value | .spine => false
 
 /-- The kinds whose binders observe a runtime value and no argument list: the
 outer sort of a type of clause rows other than packs (`valued_iff`). -/
 @[simp] def ParameterKind.valued : ParameterKind → Bool
-  | .value | .store => true
+  | .value | .spine => true
   | .arguments | .packed => false
 
 theorem ParameterKind.valued_iff (k : ParameterKind) :
@@ -72,16 +72,16 @@ def ParameterKind.MixedSort (k : ParameterKind) : Val ⊕ List Val → Prop
   | .inl v => ∃ q, k.valueSort = some q ∧ q.Holds v
   | .inr vs => k.lists = true ∧ SourceList vs
 
-/-- **Packable values.** Arrays whose elements, read from the store any
+/-- **Packable values.** Arrays whose elements, read from the spine any
 satisfying heap of any future world holds, form a list `P` admits two levels
-down, its contents being typed one level down: reading the store and
+down, its contents being typed one level down: reading the spine and
 spreading it are a step each. A packed binder's
 values are its value component's members that are packable by its list
 component, so a spread of one is a list of the binder (PROGRAM-TYPING.md,
 "Packed binders"). -/
 def Packable (P : WorldFamily (List Val)) : Fam := fun n W v =>
   ∀ j (hj : j + 1 ≤ n) (U : WorldT (j + 1)), WExt (trunc (j + 1) hj W) U → ∀ h, HeapOk (j + 1) U h →
-    ∃ fs c oid l ls vs, v = .objAt fs c oid ∧ fs.lookup CallArguments.arrayStoreField = some l ∧
+    ∃ fs c oid l ls vs, v = .objAt fs c oid ∧ fs.lookup CallArguments.arraySpineField = some l ∧
       h[l]? = some (.arr ls) ∧ readElems h ls = some vs ∧
       ∀ i (hi : i + 1 ≤ j), P i (trunc i (by omega) U) vs
 
@@ -119,7 +119,7 @@ abbrev ParameterSpace.arguments : ParameterSpace := ⟨List Val, fun vs => ∀ v
 
 /-- A semantic sum, not a calculus value constructor. It permits a single
 substitution to contain both ordinary types and whole argument-list types,
-and its value component holds every type's members, sources and stores alike;
+and its value component holds every type's members, sources and spines alike;
 the sort a binder observes is its kind's (`ParameterKind.MixedSort`). -/
 abbrev ParameterSpace.mixed : ParameterSpace :=
   ⟨Val ⊕ List Val, fun
@@ -134,14 +134,14 @@ def ParameterValid (k : ParameterSpace) (A : WorldFamily k.Carrier) : Prop :=
 /-- **Validity at a sort** `q`: `Valid_q(A) ⟺ Adm(A) ∧ ∀ n W x, A n W x → q x`. -/
 abbrev SortValid {α : Type} (q : α → Prop) (A : WorldFamily α) : Prop := ParameterValid ⟨α, q⟩ A
 
-/-- The family of empty stores. -/
-def emptyStores : WorldFamily Val := fun _ _ v => v = .arr []
+/-- The family of empty spines. -/
+def emptySpines : WorldFamily Val := fun _ _ v => v = .arr []
 
-/-- **Counter-model: a value binder's family may hold stores.** A `.value`
-family is machine-closed (`isVal`), and the empty store is closed, so
+/-- **Counter-model: a value binder's family may hold spines.** A `.value`
+family is machine-closed (`isVal`), and the empty spine is closed, so
 validity at `.value` does not give the sort `V`. -/
 theorem valueValid_not_source :
-    ParameterValid .value emptyStores ∧ ¬ SortValid ValueSort.source.Holds emptyStores := by
+    ParameterValid .value emptySpines ∧ ¬ SortValid ValueSort.source.Holds emptySpines := by
   refine ⟨⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ v h => by subst h; exact ⟨rfl, by simp [Scoped]⟩⟩, ?_⟩
   rintro ⟨-, h⟩
   have := (h 0 (ofEntries []) (.arr []) rfl).1
@@ -185,7 +185,7 @@ def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
 
 /-- **A binder observes its family restricted to its sort**
 (`ParameterKind.MixedSort`): a value binder the source values of its value
-component, a store binder the stores, an argument binder the lists of source
+component, a spine binder the spines, an argument binder the lists of source
 values of its list component, a packed binder both, its values packable by
 its lists (`Packable`). The other component of a mixed semantic family
 cannot constrain its meaning. A binder of kind `k` so ranges over exactly the
@@ -235,7 +235,7 @@ theorem selectParameter_sorted {k : ParameterKind} {A : WorldFamily ParameterSpa
   cases hk
   exact hs
 
-/-- A family in a value, store or argument binder's sort is its own selection. -/
+/-- A family in a value, spine or argument binder's sort is its own selection. -/
 theorem selectParameter_self {k : ParameterKind} (hk : k ≠ .packed)
     {A : WorldFamily ParameterSpace.mixed.Carrier} (h : ∀ n W x, A n W x → k.MixedSort x) :
     selectParameter (some k) A = A := by
@@ -516,7 +516,7 @@ instance : CoeFun (NormalGraph ι) (fun _ => ι → List (Clause (List ι))) := 
 
 /-- The outer sort of a type reference comes from its parameter or clause rows:
 a parameter row's is its kind, a scheme, meet or non-pack clause row's is
-valued (`ParameterKind.valued`: a value or a store binder's), a pack row's an
+valued (`ParameterKind.valued`: a value or a spine binder's), a pack row's an
 argument binder's. The empty union is bottom at every sort; a union cannot mix
 value and pack rows. This checks only the outer sort, not the category of the
 members (`tyIn`) nor recursive operand well-formedness. -/
@@ -541,25 +541,25 @@ def NormalGraph.plainTy (G : NormalGraph ι) (S : List ι) : Bool := S.all G.pla
 
 /-! ## The array invariant
 
-An object owning the array store key is a built-in array: its store may have holes, it holds `Array.prototype` under the prototype key, and it owns no key
+An object owning the array spine key is a built-in array: its spine may have holes, it holds `Array.prototype` under the prototype key, and it owns no key
 that prototype provides. Every array a program allocates is one; every object
 it receives at a record or dictionary type is assumed to be one (the
-environment premise, through `meaning`). The store key is a key no source
+environment premise, through `meaning`). The spine key is a key no source
 spells and no step adds, so the invariant is a fact of the object's identity:
 it reads the world's contracts only, never the heap. -/
 
-/-- The store a built-in array holds: possibly sparse, each element a
+/-- The spine a built-in array holds: possibly sparse, each element a
 value of `U`, the built-ins' `unknown`. -/
-def builtinStoreT (U : Fam) : Fam := listT ⟨[], [], some U, true, .sparse⟩
+def builtinSpineT (U : Fam) : Fam := listT ⟨[], [], some U, true, .sparse⟩
 
-/-- A store under a tuple contract whose positions are within `U` is a store
+/-- A spine under a tuple contract whose positions are within `U` is a spine
 of the built-ins. -/
-theorem listT_builtinStore {U : Fam} {T : TupleF}
+theorem listT_builtinSpine {U : Fam} {T : TupleF}
     (hT : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
       ∀ j (W : WorldT j) u, A j W u → U j W u)
-    {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : builtinStoreT U k W v := by
+    {k : Nat} {W : WorldT k} {v : Val} (h : listT T k W v) : builtinSpineT U k W v := by
   obtain ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩ := h
-  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
+  refine ⟨ls, rfl, (by simp [SpinePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
   refine ⟨U, ?_⟩
   simp only [true_and]
@@ -581,11 +581,11 @@ theorem listT_builtinStore {U : Fam} {T : TupleF}
       exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hT _ (.inr (.inr hE)) j W' u
         ((hag j hj W' u).1 hu), fun h => nomatch h⟩⟩
 
-/-- A store of the built-ins reads its element type below the level. -/
-theorem builtinStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
-    builtinStoreT U n W v → builtinStoreT U' n W v := by
+/-- A spine of the built-ins reads its element type below the level. -/
+theorem builtinSpineT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : WorldT n) (v : Val) :
+    builtinSpineT U n W v → builtinSpineT U' n W v := by
   rintro ⟨ls, rfl, hd, hlen, hmax, hbound, hreq, hopt, hrest⟩
-  refine ⟨ls, rfl, (by simp [StorePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
+  refine ⟨ls, rfl, (by simp [SpinePresence]), by simp, hmax, by simp, by simp, by simp, ?_⟩
   intro i l hi hl
   obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
   cases hE
@@ -594,15 +594,15 @@ theorem builtinStoreT_congr {U U' : Fam} {n : Nat} (h : Agree U U' n) (W : World
 /-- **An array's own fields at canonical numeric keys hold its elements'
 type**, as `Array<T>`'s declared `[n: number]: T` says: a value such a
 field's contract admits at a level is in every family `A` such that the
-store's contract, one level up, is within the possibly sparse stores of `A`
-(an element's contract at a level is stated by the store's one level up).
-So an array of a type whose store holds `T` holds `T` there too, below the
+spine's contract, one level up, is within the possibly sparse spines of `A`
+(an element's contract at a level is stated by the spine's one level up).
+So an array of a type whose spine holds `T` holds `T` there too, below the
 level (`numeric_of_inv`). It reads the world's contracts only. -/
 def numericOwn (k : Nat) (W : WorldT k) (flds : List (PropKey × Nat)) : Prop :=
-  ∃ (ls : Nat) (cs : Ctr k), flds.lookup CallArguments.arrayStoreField = some ls ∧ lookup W ls = some cs ∧
+  ∃ (ls : Nat) (cs : Ctr k), flds.lookup CallArguments.arraySpineField = some ls ∧ lookup W ls = some cs ∧
     ∀ key l, IndexKeys.numeric.Admits key → flds.lookup key = some l → ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j + 1 < k) (U : WorldT j) (u : Val), c j (by omega) U u →
-        ∀ A : Fam, (∀ (U' : WorldT (j + 1)) (s : Val), cs (j + 1) hj U' s → builtinStoreT A (j + 1) U' s) →
+        ∀ A : Fam, (∀ (U' : WorldT (j + 1)) (s : Val), cs (j + 1) hj U' s → builtinSpineT A (j + 1) U' s) →
           A j U u
 
 theorem numericOwn_down {n : Nat} {W : WorldT (n + 1)} {flds : List (PropKey × Nat)}
@@ -623,21 +623,21 @@ theorem numericOwn_mono {n : Nat} {W W' : WorldT n} (hx : WExt W W') {flds : Lis
 /-- An object owning no field at a canonical numeric key states nothing
 there. -/
 theorem numericOwn_of_none {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)} {ls : Nat}
-    {cs : Ctr k} (hs : flds.lookup CallArguments.arrayStoreField = some ls) (hcs : lookup W ls = some cs)
+    {cs : Ctr k} (hs : flds.lookup CallArguments.arraySpineField = some ls) (hcs : lookup W ls = some cs)
     (hn : ∀ key, IndexKeys.numeric.Admits key → flds.lookup key = none) : numericOwn k W flds :=
   ⟨ls, cs, hs, hcs, fun key l hkey hl => by rw [hn key hkey] at hl; cases hl⟩
 
-/-- The values a store location holds: lists. -/
+/-- The values a spine location holds: lists. -/
 def listValT : Fam := fun _ _ u => ∃ ls, u = .arr ls
 
-/-- **An array's store is a list**: an object owning the store key holds a
-list under it. Every array of a builtins meets it (`builtinStoreT` is of lists);
+/-- **An array's spine is a list**: an object owning the spine key holds a
+list under it. Every array of a builtins meets it (`builtinSpineT` is of lists);
 without a builtins, it is all the graph asks of an array. -/
-def storeListT : Fam := fun k W v =>
-  ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
-    viewT [(CallArguments.arrayStoreField, listValT)] k W v
+def spineListT : Fam := fun k W v =>
+  ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arraySpineField).isSome = true →
+    viewT [(CallArguments.arraySpineField, listValT)] k W v
 
-theorem storeListT_adm : Adm storeListT := by
+theorem spineListT_adm : Adm spineListT := by
   constructor
   · intro n W v h flds oid hv hs
     exact (viewT_adm _).down n W v (h flds oid hv hs)
@@ -648,8 +648,8 @@ theorem storeListT_adm : Adm storeListT := by
 `unknown`, the type of an array's elements, and `N` the keys the prototype
 provides. -/
 def arrayInvariant (P U : Fam) (N : List PropKey) : Fam := fun k W v =>
-  ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arrayStoreField).isSome = true →
-    viewT [(CallArguments.arrayStoreField, builtinStoreT U), (CallArguments.protoField, P)] k W v ∧
+  ∀ flds oid, v = .objAt flds .absent oid → (flds.lookup CallArguments.arraySpineField).isSome = true →
+    viewT [(CallArguments.arraySpineField, builtinSpineT U), (CallArguments.protoField, P)] k W v ∧
       ownKeysT ⟨false, N⟩ k W v ∧ numericOwn k W flds
 
 /-- What a row asks of the members of one of its clauses beyond the clause:
@@ -658,7 +658,7 @@ applies to (`Clause.carriesInvariant`: a record, a dictionary, `source`). -/
 def builtinInvariant (G : NormalGraph ι) (X : List ι → Fam) (c : Clause (List ι)) : Fam :=
   match G.builtins with
   | some r => if c.carriesInvariant then arrayInvariant (X r.proto) (X r.unknown) r.keys else fun _ _ _ => True
-  | none => if c.carriesInvariant then storeListT else fun _ _ _ => True
+  | none => if c.carriesInvariant then spineListT else fun _ _ _ => True
 
 /-- **The graph's exception family**: the values of the built-ins' `unknown`,
 JavaScript values meeting what the built-ins asks of a `source` clause, its
@@ -694,9 +694,9 @@ theorem arrayInvariant_congr {P Q U U' : Fam} (N : List PropKey) {n : Nat} (h : 
     refine ⟨fun f T hm => ?_, h2, h3⟩
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
     rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.arrayStoreField (builtinStoreT U) (by simp)
+    · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.arraySpineField (builtinSpineT U) (by simp)
       exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu' =>
-        builtinStoreT_congr (fun m hm W'' w => hu m (by omega) W'' w) W' u (hag j hj W' u hu')⟩
+        builtinSpineT_congr (fun m hm W'' w => hu m (by omega) W'' w) W' u (hag j hj W' u hu')⟩
     · obtain ⟨flds', l, c, oid', he', hf, hl, hag⟩ := h1 CallArguments.protoField P (by simp)
       exact ⟨flds', l, c, oid', he', hf, hl, fun j hj W' u hu => (h j hj W' u).mp (hag j hj W' u hu)⟩
   exact ⟨side P Q U U' h hu, side Q P U' U (fun j hj W' u => (h j hj W' u).symm)
@@ -709,7 +709,7 @@ theorem builtinInvariant_adm (G : NormalGraph ι) (X : List ι → Fam) (c : Cla
   | none =>
     cases c.carriesInvariant
     · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-    · exact storeListT_adm
+    · exact spineListT_adm
   | some r =>
     cases c.carriesInvariant
     · exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -726,12 +726,12 @@ theorem builtinInvariant_congr (G : NormalGraph ι) (X Y : List ι → Fam) (n :
     · exact Iff.rfl
     · exact arrayInvariant_congr _ (h _) (h _) W v
 
-/-- **An array's store is a list**, in every graph: a member of a clause the
-invariant applies to that owns the store key holds a list under it. -/
-theorem builtinInvariant_store {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
+/-- **An array's spine is a list**, in every graph: a member of a clause the
+invariant applies to that owns the spine key holds a list under it. -/
+theorem builtinInvariant_spine {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
     (hc : c.carriesInvariant = true) {n W flds oid} (h : builtinInvariant G X c n W (.objAt flds .absent oid))
-    (hs : (flds.lookup CallArguments.arrayStoreField).isSome = true) :
-    ∃ (l : Nat) (c' : Ctr n), flds.lookup CallArguments.arrayStoreField = some l ∧ lookup W l = some c' ∧
+    (hs : (flds.lookup CallArguments.arraySpineField).isSome = true) :
+    ∃ (l : Nat) (c' : Ctr n), flds.lookup CallArguments.arraySpineField = some l ∧ lookup W l = some c' ∧
       ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c' j hj W' u → ∃ ls, u = .arr ls := by
   unfold builtinInvariant at h
   cases hr : G.builtins with
@@ -802,9 +802,9 @@ theorem setSem_row_plain {G : NormalGraph ι} {A X : List ι → Fam} {P : List 
   · rintro ⟨c, hm, hv, -⟩; exact ⟨c, hm, hv⟩
   · rintro ⟨c, hm, hv⟩; exact ⟨c, hm, hv, builtinInvariant_of_withoutInvariant (hc c hm) n W v⟩
 
-/-- An object that does not own the store key meets the invariant. -/
+/-- An object that does not own the spine key meets the invariant. -/
 theorem arrayInvariant_of_lookup {P U : Fam} {N : List PropKey} {n W flds code}
-    (h : flds.lookup CallArguments.arrayStoreField = none) :
+    (h : flds.lookup CallArguments.arraySpineField = none) :
     arrayInvariant P U N n W (.objAt flds code oid) := by
   intro flds' oid' he hs
   cases he
@@ -815,10 +815,10 @@ theorem arrayInvariant_of_not_plain {P U : Fam} {N : List PropKey} {n W v}
     (h : ∀ flds oid, v ≠ .objAt flds .absent oid) : arrayInvariant P U N n W v :=
   fun flds oid he _ => absurd he (h flds oid)
 
-/-- A row's clause without the store key, or not a plain object, asks nothing
+/-- A row's clause without the spine key, or not a plain object, asks nothing
 it does not already have. -/
 theorem builtinInvariant_of_lookup {G : NormalGraph ι} {X : List ι → Fam} {c : Clause (List ι)}
-    {n W flds code} (h : flds.lookup CallArguments.arrayStoreField = none) :
+    {n W flds code} (h : flds.lookup CallArguments.arraySpineField = none) :
     builtinInvariant G X c n W (.objAt flds code oid) := by
   unfold builtinInvariant
   cases G.builtins with
@@ -1516,30 +1516,30 @@ theorem mixedMeaning_valid (G : NormalGraph ι) (η : MixedAssignment ι) (S : L
   | inl v => exact (hX S).2 n W v h
   | inr vs => exact (graphArguments_valid G η X hX S).2 n W vs h
 
-/-- A graph of one row, the empty-store type: a store clause with no position. -/
-def emptyStoreGraph : NormalGraph Nat := { rows := fun _ => [.list ⟨[], [], none, false, .dense⟩ []] }
+/-- A graph of one row, the empty-spine type: a spine clause with no position. -/
+def emptySpineGraph : NormalGraph Nat := { rows := fun _ => [.list ⟨[], [], none, false, .dense⟩ []] }
 
-/-- **Counter-model: a type's meaning may hold stores**, so the shared
-carrier's value component is machine-closed: a store type's meaning holds the
-empty store, and `mixedMeaning_valid` is false under a source-only closedness. -/
+/-- **Counter-model: a type's meaning may hold spines**, so the shared
+carrier's value component is machine-closed: a spine type's meaning holds the
+empty spine, and `mixedMeaning_valid` is false under a source-only closedness. -/
 theorem mixedMeaning_not_sourceValid :
     ¬ ∀ (G : NormalGraph Nat) (η : MixedAssignment Nat) (S : List Nat),
       SortValid (fun x : Val ⊕ List Val => match x with
         | .inl v => ValueSort.source.Holds v | .inr vs => SourceList vs) (mixedMeaning G η S) := by
   intro h
-  have hm : mixedMeaning emptyStoreGraph (ParameterAssignment.empty .mixed) [0] 0 (ofEntries [])
+  have hm : mixedMeaning emptySpineGraph (ParameterAssignment.empty .mixed) [0] 0 (ofEntries [])
       (.inl (.arr [])) := by
     refine ⟨0, List.mem_singleton_self _, ?_⟩
     show qDenoteWithArgs _ _ _ _ _ _
     rw [qDenoteWithArgs_unfold]
-    simp only [qLayerWithArgs, NormalGraph.params, emptyStoreGraph, Option.isSome_none,
+    simp only [qLayerWithArgs, NormalGraph.params, emptySpineGraph, Option.isSome_none,
       Bool.false_eq_true]
     refine ⟨.list ⟨[], [], none, false, .dense⟩ [], by simp [NormalGraph.clauses, NormalGraph.plain,
       NormalGraph.params], ⟨⟨[], rfl, fun _ h => absurd h (Nat.not_lt_zero _), by simp [tupleFams],
       by simp [maxArrayLength], by simp [tupleFams], by simp [tupleFams], by simp [tupleFams],
       by simp [tupleFams]⟩, by simp⟩, ?_⟩
     simp [builtinInvariant, Clause.carriesInvariant]
-  have := ((h emptyStoreGraph _ [0]).2 0 (ofEntries []) _ hm).1
+  have := ((h emptySpineGraph _ [0]).2 0 (ofEntries []) _ hm).1
   simp [isSourceVal] at this
 
 /-- A parameter's two-component row meaning is exactly its selected component,
@@ -1591,7 +1591,7 @@ theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
         (fun c => match c with | .pack .. => true | _ => false) = true by simpa [hp, hq, hm, (show (ParameterKind.arguments == ParameterKind.value) = false from rfl)] using hk) c hr
       cases c <;> simp_all [rowSem, semWithArgs]
 
-/-- A type of a valued sort (a value or store type) cannot contribute
+/-- A type of a valued sort (a value or spine type) cannot contribute
 argument-list members. -/
 theorem mixedMeaning_noArguments_of (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
     {kind : ParameterKind} (hval : kind.valued = true)

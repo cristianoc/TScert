@@ -190,7 +190,7 @@ carrying those fields, a `callable`, and that a key one operand states as a
 method is a method of the meet (`methodKeysOnly`). -/
 def sourceMeetLists [BEq α] (A B : List (Clause α)) : Except String (List (Clause α)) := do
   let plainRecord (c : Clause α) : Bool := match c with
-    | .refs .. => !c.presentKeys.contains CallArguments.arrayStoreField
+    | .refs .. => !c.presentKeys.contains CallArguments.arraySpineField
     | .dict .. => true
     | _ => false
   let calls (c : Clause α) : Bool := match c with
@@ -305,7 +305,7 @@ def arrayHead (readonly : Bool) (proto : Tree) : M Nat := do
   -- The built-ins' `unknown`, the type of an array's elements.
   let _ ← ground "unknown" [.source]
   alloc s!"array|{readonly}"
-    { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.store],
+    { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.spine],
       body := some (.clauses [arrayClauseOf [.argument 0] [proto] excluded readonly]) } fun _ => none
 
 /-! ### Heads added after the declarations

@@ -314,8 +314,8 @@ theorem makeFn_rule {A Q : Fam} (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : Wor
     href
     (fun j hj U hx _ => result j hj U hx)
 
-/-- **A literal allocates a store.** One fresh location per element, each
-under its family and the role of an element cell, and the store meets the
+/-- **A literal allocates a spine.** One fresh location per element, each
+under its family and the role of an element cell, and the spine meets the
 claimed tuple contract by `listT_alloc`; the continuation sees it at the
 extended world. The allocation is a step, so the elements need their
 families below the budget only. Each element is a source value (its
@@ -424,7 +424,7 @@ theorem elem_absent_rule {ls : List (Option Nat)} {b : UInt64} {Q : Fam}
     exact pure_step hadm hok href (.elemAbsent hn) (value_safe _ _ _ _ _ rfl (hq _ _) RefsOk_undef)
 
 /-- **A write to a present element.** As a field write: the location's contract
-admits the value, and the store, unchanged, is what the write yields. The
+admits the value, and the spine, unchanged, is what the write yields. The
 location is an element cell, so the value is a source value. -/
 theorem set_present_rule {ls : List (Option Nat)} {b : UInt64} {A Q : Fam}
     (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
@@ -457,8 +457,8 @@ theorem set_present_rule {ls : List (Option Nat)} {b : UInt64} {A Q : Fam}
         exact ⟨w', by rwa [List.getElem?_set_ne (fun hc => hkl hc.symm)], hmem⟩
     · exact value_safe _ _ _ _ _ rfl (hq p (by omega) _ (WExt_refl _)) hsh.2
 
-/-- **A write that grows the store.** A fresh element cell under the
-position's family takes the value; the store the write yields records it. -/
+/-- **A write that grows the spine.** A fresh element cell under the
+position's family takes the value; the spine the write yields records it. -/
 theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam}
     (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (v : Tm) (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h)

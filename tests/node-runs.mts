@@ -29,7 +29,7 @@ assert.equal(runExample("invalid-two-state-ensures-body", "(() => { const l = { 
 assert.equal(runExample("invalid-two-state-invariant-after-statement", "(() => { const p = { widths: [] }; measure(0, 2, p); return p.widths.length; })()"), 3,
   "after the statement before the loop, the body grows the list by 3 where its postcondition states old(length) + 2");
 assert.equal(runExample("invalid-two-state-effect-relation", 'typeof lastBefore({ widths: [1] }, ["s"])'), "undefined",
-  "a grown store bounds the list's old length only: segs[n - 1] reads past it");
+  "a grown spine bounds the list's old length only: segs[n - 1] reads past it");
 assert.equal(runExample("invalid-two-state-guarded-call", "typeof lastAppended([], false)"), "undefined",
   "without the branch on its guard the caller reads an empty array at -1");
 assert.equal(runExample("invalid-two-state-every-call", "typeof pickOne([1], 1, 0, [5])"), "undefined",
@@ -1085,7 +1085,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     `JSON.stringify([orZero([1, -1]), halvesOrSelf([4, 3]), relayedOrOne([-2, 2]), largest(1, 2)])`),
     "[[1,0],[2,3],[1,2],2]", "exceptional-footprint-handler: each handler's value");
   assert.equal(runExample("exceptional-footprint-fresh", `JSON.stringify(counts(["a,b", "c"], 2))`), "[0,2]",
-    "exceptional-footprint-fresh: the handler pushes onto the fresh store");
+    "exceptional-footprint-fresh: the handler pushes onto the fresh spine");
   assert.equal(runExample("invalid-exceptional-handler-fact", `wrong({ v: "x" })`), undefined,
     "invalid-exceptional-handler-fact: the handler reads the field the throwing call cleared");
   assert.equal(runExample("invalid-sort-comparator-shrink", "(r => r.length === 3 && !(2 in r))(wrong([1, 2, 3]))"), true,
@@ -1558,7 +1558,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // A complete `ReadonlySet<string>` and `ReadonlyMap<string, number>`,
   // each answering values of its declared types, whose iterator, or an entry's
   // getter, pops a separate array: the copy holds strings, and the call
-  // changed the store.
+  // changed the spine.
   assert.equal(runExample("invalid-set-from-readonly-set",
     `(() => { const xs = [1, 2]; const inner = new Set(["a"]); const names = { get size() { return inner.size; }, has: (k) => inner.has(k), forEach(f, t) { inner.forEach((v) => f.call(t, v, v, names)); }, entries: () => inner.entries(), keys: () => inner.keys(), values: () => inner.values(), [Symbol.iterator]() { xs.pop(); return inner.values(); } }; return [xs.length, typeof [...copy(names)][0], xs.length].join(); })()`),
     "2,string,1", "invalid-set-from-readonly-set: new Set runs the set's iterator, which pops another array");
@@ -1900,7 +1900,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // an empty one has none.
   assert.equal(runExample("invalid-length-array-or-dictionary", "size({})"), undefined,
     "invalid-length-array-or-dictionary: the actual source returns undefined despite its number contract");
-  // A view of `length` reads an array's store length, after a push too.
+  // A view of `length` reads an array's spine length, after a push too.
   assert.equal(runExample("length-view", "lengths([4]) + grown(0)"), 9,
     "length-view: one, three, two and one, then two after the push");
   // A mutable tuple's `length` grows past its arity.
@@ -2894,7 +2894,7 @@ for (const [file, call] of [
 }
 // A retained `fs` callback of the sync API popping an array the program
 // holds: the request after the construction calls it, and the array
-// shrinks, beyond the requests' `{value: any, store: grow}`; a verified
+// shrinks, beyond the requests' `{value: any, spine: grow}`; a verified
 // program makes no instance (`invalid-compiler-api-retained-fs` is refused
 // at the constructor's declaration).
 {
@@ -3196,16 +3196,16 @@ for (const [file, call] of [
   assert.equal(runNode(negative("invalid-async-return-literal-thenable"), "adopt().then((v) => console.log(v));").stdout, "42",
     "the async function's promise adopts the literal's then");
 
-  // Footprints a callback or handler breaks: a shrunk store, a hole.
+  // Footprints a callback or handler breaks: a shrunk spine, a hole.
   for (const c of ["catch", "finally"])
     assert.deepEqual(runPlain(negative(`invalid-normal-return-${c}`), "(() => { const xs = [1]; return [wrong(xs), xs.length]; })()"),
-      [0, 0], `a ${c} returns normally after the store shrinks`);
+      [0, 0], `a ${c} returns normally after the spine shrinks`);
   assert.deepEqual(runPlain(negative("invalid-normal-return-nested"),
     "(() => { const xs = [1]; return [wrong(xs, () => { throw 1; }), xs.length]; })()"), [0, 0],
-    "the outer catch returns normally after the inner handler shrinks the store");
+    "the outer catch returns normally after the inner handler shrinks the spine");
   assert.equal(runExample(negative("invalid-normal-return-onthrow"),
     "(() => { const xs = [1]; try { wrong(xs, () => { throw 1; }); } catch {} return xs.length; })()"), 0,
-    "the rethrowing handler shrinks the store");
+    "the rethrowing handler shrinks the spine");
   assert.deepEqual(runPlain(negative("invalid-json-stringify-sparse-hook"),
     hole('(() => { const xs = [1, 2]; return wrong(xs, [[{ toJSON() { xs.pop(); return "x"; } }]]); })()')), [2, false],
     "the nested hook shrinks the mapped array: the result has a hole");

@@ -105,16 +105,16 @@ theorem dropDerived_holds {indices : List HeapKnowledge.IndexAtom} {links : Heap
     {isOut : Nat → Bool} {D : List Nat} {η : Env} {h : Heap}
     (hi : HeapKnowledge.IndexHolds ε indices η h) (hl : HeapLinks.Holds links η h) :
     HeapKnowledge.IndexHolds ε ((HeapKnowledge.eliminateIndices D (indices ++
-      HeapKnowledge.restateReads links isOut indices ++ HeapKnowledge.restateStores links isOut indices)).drop
+      HeapKnowledge.restateReads links isOut indices ++ HeapKnowledge.restateSpines links isOut indices)).drop
         indices.length) η h := by
   have hr : HeapKnowledge.IndexHolds ε (indices ++ HeapKnowledge.restateReads links isOut indices ++
-      HeapKnowledge.restateStores links isOut indices) η h := by
+      HeapKnowledge.restateSpines links isOut indices) η h := by
     intro a ha
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
       · exact hi a ha
       · exact HeapKnowledge.restateReads_holds hl hi a ha
-    · exact HeapKnowledge.restateStores_holds hl hi a ha
+    · exact HeapKnowledge.restateSpines_holds hl hi a ha
   intro a ha
   exact HeapKnowledge.eliminateIndices_holds hr a (List.mem_of_mem_drop ha)
 
@@ -128,7 +128,7 @@ fact of `s` holds at `η` and `h`, every fact of `s.drop D` does. The removed
 facts leave; a separation fact keeps the partners outside `D`; a fact over a
 dropped name restated at the name an alias link relates it to holds by the
 link; the derived facts hold by `eliminateIndices_holds`, `restateReads_holds`
-and `restateStores_holds` over the facts naming `D` and their linear and link
+and `restateSpines_holds` over the facts naming `D` and their linear and link
 neighbours, all facts of `s`. -/
 theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
     StoreOk ε (s.drop D) η h := by
@@ -173,7 +173,7 @@ theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreO
   have hd := dropDerived_holds (D := D) (isOut := fun n => dset.contains n) hi hl
   generalize (List.drop indices.length (HeapKnowledge.eliminateIndices D (indices ++
     HeapKnowledge.restateReads links (fun n => dset.contains n) indices ++
-      HeapKnowledge.restateStores links (fun n => dset.contains n) indices))) = derived at hd ⊢
+      HeapKnowledge.restateSpines links (fun n => dset.contains n) indices))) = derived at hd ⊢
   have hk := keptAliasOf_eq (isOut := fun n => dset.contains n) hl
   unfold keptAliasOf at hk
   generalize (List.foldl _ (∅ : Std.HashMap Nat Nat) links) = keptAlias at hk ⊢

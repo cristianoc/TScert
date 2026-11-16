@@ -15,7 +15,7 @@ def roles (Es : List (StorageRole × Fam)) (vs : List Val) : Option (List Role) 
 
 /-- The allocation's entries, a role and a contents type per field, determine
 the successor world: each field's entry is its tag's concrete role at the
-value allocated there (`roles`), a view store's of that store's length, with
+value allocated there (`roles`), a view spine's of that spine's length, with
 its type as the contract; the identity follows (`Kinds.objectEntries`). The
 result bound Q does not participate in the choice. Where a value is not of
 its tag's category no entry is recorded and the configuration is left as it

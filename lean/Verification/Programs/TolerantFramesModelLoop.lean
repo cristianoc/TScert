@@ -6,8 +6,8 @@ The loop `for (j = from; j < to; j++) out[j] = xs[j]` as a graph of six
 nodes (`loopGraph`): the initialisation `j = from`, the guard `j < to`, the
 read `xs[j]`, the element write `out[j] = v`, the increment `j + 1` and the
 exit. `xs` and `out` are arrays of source values (`arrayF`): objects whose
-array-store field holds a store under the tuple contract every position of
-which, required or not, holds a source value (`storeF`); nothing relates
+array-spine field holds a spine under the tuple contract every position of
+which, required or not, holds a source value (`spineF`); nothing relates
 `xs` and `out`, so they may be one object. Every node is checked here from the
 semantics alone, and `loop_safe` is `graph_safe` with no premise about the
 graph: from every state where `0 ≤ from`, `to ≤ |xs|` and `xs`, `out` are
@@ -19,7 +19,7 @@ open Verification Footprints HeapObservations ControlFlow PointClaims
 
 /-! ## The world of the loop: arrays of source values -/
 
-/-- The source values: every value but an array store. -/
+/-- The source values: every value but an array spine. -/
 def srcF : Fam := fun _ _ v => isSourceVal v = true
 
 theorem srcF_adm : Adm srcF := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -30,21 +30,21 @@ theorem srcF_valOnly : ValOnly srcF := fun _ _ v h => by
 theorem srcF_not_arr {n : Nat} {W : WorldT n} {v : Val} (h : srcF n W v) : isArr v = false := by
   cases v <;> simp_all [srcF, isSourceVal, isArr]
 
-/-- The tuple contract of a store of source values: no required or optional
+/-- The tuple contract of a spine of source values: no required or optional
 position, every position under the rest, holes allowed. -/
 def anyTuple : TupleF := { required := [], optional := [], rest := some srcF, presence := .sparse }
 
-/-- A store every listed cell of which holds source values, its contract
+/-- A spine every listed cell of which holds source values, its contract
 exactly theirs. -/
-def storeF : Fam := listT anyTuple
+def spineF : Fam := listT anyTuple
 
-/-- An array of source values: an object whose array-store field's location,
-an array store, has the store contract `storeF`. -/
-def arrayF : Fam := recT [(arrayStoreKey, .arrayStore, storeF)]
+/-- An array of source values: an object whose array-spine field's location,
+an array spine, has the spine contract `spineF`. -/
+def arrayF : Fam := recT [(arraySpineKey, .arraySpine, spineF)]
 
-/-- A listed cell of such a store has the contract of the source values. -/
-theorem storeF_cell {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat}
-    (h : storeF k W (.arr ls)) (hl : ls[i]? = some (some l)) :
+/-- A listed cell of such a spine has the contract of the source values. -/
+theorem spineF_cell {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat}
+    (h : spineF k W (.arr ls)) (hl : ls[i]? = some (some l)) :
     ∃ c : Ctr k, lookup W l = some c ∧ ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
       c j hj W' u ↔ srcF j W' u := by
   obtain ⟨ls', he, -, -, -, -, -, -, hrest⟩ := h
@@ -54,15 +54,15 @@ theorem storeF_cell {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat
   subst hE
   exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).1, (hag j hj W' u).2 rfl⟩⟩
 
-/-- **A store of source values grown at any index** below the most elements a
-store holds, a fresh cell of the source values' contract listed there; holes
+/-- **A spine of source values grown at any index** below the most elements a
+spine holds, a fresh cell of the source values' contract listed there; holes
 may open before it. -/
-theorem storeF_grow {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i m : Nat}
-    (h : storeF k W (.arr ls)) (hi : i < maxArrayLength) (hm : lookup W m = some (res srcF)) :
-    storeF k W (.arr (placeAt ls i m)) := by
+theorem spineF_grow {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i m : Nat}
+    (h : spineF k W (.arr ls)) (hi : i < maxArrayLength) (hm : lookup W m = some (res srcF)) :
+    spineF k W (.arr (placeAt ls i m)) := by
   obtain ⟨ls', he, -, -, hmax, -, -, -, hrest⟩ := h
   cases he
-  refine ⟨_, rfl, fun _ _ => by simp [StorePresence, anyTuple], by simp [anyTuple],
+  refine ⟨_, rfl, fun _ _ => by simp [SpinePresence, anyTuple], by simp [anyTuple],
     by rw [placeAt_length]; omega, fun hn => by simp [anyTuple] at hn, fun i A hA => by simp [anyTuple] at hA,
     fun i A l hA => by simp [anyTuple] at hA, ?_⟩
   intro i' l hi' hl
@@ -74,12 +74,12 @@ theorem storeF_grow {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i m : Nat
     · exact hrest i' l hi' hl
     · split at hl <;> cases hl
 
-/-- An array of source values exposes its store field's location and the
-store contract it has. -/
+/-- An array of source values exposes its spine field's location and the
+spine contract it has. -/
 theorem arrayF_at {k : Nat} {W : WorldT k} {v : Val} (h : arrayF k W v) :
     ∃ (flds : List (PropKey × Nat)) (fl : Nat) (c : Ctr k) (oid : Nat),
-      v = .objAt flds .absent oid ∧ flds.lookup arrayStoreKey = some fl ∧ lookup W fl = some c ∧
-      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ storeF j W' u :=
+      v = .objAt flds .absent oid ∧ flds.lookup arraySpineKey = some fl ∧ lookup W fl = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ spineF j W' u :=
   recT_at (List.mem_singleton_self _) h
 
 /-! ## The assertions -/
@@ -133,28 +133,28 @@ theorem pure_refs {n : Nat} {W : WorldT n} {h : Heap} {t t' : Tm} (ho : HeapOk n
     (hr : RefsOk W t) : RefsOk W t' :=
   Kinds.step_refs hst (by simpa using ho.1.1) ho.2 hr
 
-/-- The store an array of source values holds: at its store field's location,
-a store under `storeF` at every level below the budget. -/
-theorem arrayF_store {n : Nat} {W : WorldT (n + 1)} {h : Heap} {v : Val} (ho : HeapOk (n + 1) W h)
+/-- The spine an array of source values holds: at its spine field's location,
+a spine under `spineF` at every level below the budget. -/
+theorem arrayF_spine {n : Nat} {W : WorldT (n + 1)} {h : Heap} {v : Val} (ho : HeapOk (n + 1) W h)
     (hv : arrayF (n + 1) W v) :
     ∃ (flds : List (PropKey × Nat)) (fl : Nat) (c : Ctr (n + 1)) (oid : Nat) (ls : List (Option Nat)),
-      v = .objAt flds .absent oid ∧ flds.lookup arrayStoreKey = some fl ∧ lookup W fl = some c ∧
-      (∀ (j : Nat) (hj : j < n + 1) (W' : WorldT j) (u : Val), c j hj W' u ↔ storeF j W' u) ∧
+      v = .objAt flds .absent oid ∧ flds.lookup arraySpineKey = some fl ∧ lookup W fl = some c ∧
+      (∀ (j : Nat) (hj : j < n + 1) (W' : WorldT j) (u : Val), c j hj W' u ↔ spineF j W' u) ∧
       h[fl]? = some (.arr ls) ∧
-      ∀ (j : Nat) (hj : j < n + 1), storeF j (trunc j (Nat.le_of_lt hj) W) (.arr ls) := by
+      ∀ (j : Nat) (hj : j < n + 1), spineF j (trunc j (Nat.le_of_lt hj) W) (.arr ls) := by
   obtain ⟨flds, fl, c, oid, rfl, hfd, hc, hag⟩ := arrayF_at hv
   obtain ⟨u, hu, hcu⟩ := ho.1.2 fl c hc
   obtain ⟨ls, rfl, -⟩ := (hag 0 (by omega) _ u).mp (hcu 0 (by omega))
   exact ⟨flds, fl, c, oid, ls, rfl, hfd, hc, hag, hu, fun j hj => (hag j hj _ _).mp (hcu j hj)⟩
 
-/-- A listed cell of a store of source values, at a positive budget, holds a
+/-- A listed cell of a spine of source values, at a positive budget, holds a
 source value, and its contract is theirs. -/
 theorem cell_src {k : Nat} {W : WorldT (k + 1)} {h : Heap} {ls : List (Option Nat)} {i l : Nat}
-    (ho : HeapOk (k + 1) W h) (hs : storeF (k + 1) W (.arr ls)) (hl : ls[i]? = some (some l)) :
+    (ho : HeapOk (k + 1) W h) (hs : spineF (k + 1) W (.arr ls)) (hl : ls[i]? = some (some l)) :
     ∃ (c : Ctr (k + 1)) (w : Val), lookup W l = some c ∧
       (∀ (j : Nat) (hj : j < k + 1) (W' : WorldT j) (u : Val), c j hj W' u ↔ srcF j W' u) ∧
       h[l]? = some w ∧ isSourceVal w = true := by
-  obtain ⟨c, hc, hag⟩ := storeF_cell hs hl
+  obtain ⟨c, hc, hag⟩ := spineF_cell hs hl
   obtain ⟨w, hw, hcw⟩ := ho.1.2 l c hc
   exact ⟨c, w, hc, hag, hw, (hag 0 (by omega) _ w).mp (hcw 0 (by omega))⟩
 
@@ -171,21 +171,21 @@ theorem elemLoc_some {ls : List (Option Nat)} {b : UInt64} {l : Nat} (h : elemLo
 
 `out` in slot 4, `j` in slot 1, `v` in slot 0, as the pass lowers an element
 write at a run-time index (`ExpressionEffects.elemVarWriteSlots`). Three steps:
-the store is read, the element written (a listed cell takes the value, or a
-fresh cell is listed), the store put back. -/
+the spine is read, the element written (a listed cell takes the value, or a
+fresh cell is listed), the spine put back. -/
 
 /-- The write's term. -/
 def writeTerm : Tm :=
-  .writeAt arrayStoreKey (.var 4) (.setElem (.readAt arrayStoreKey (.var 4)) (.var 1) (.var 0))
+  .writeAt arraySpineKey (.var 4) (.setElem (.readAt arraySpineKey (.var 4)) (.var 1) (.var 0))
 
 theorem writeTerm_inst (ρ : Env) : instantiate 0 ρ writeTerm =
-    .writeAt arrayStoreKey (ρ 4) (.setElem (.readAt arrayStoreKey (ρ 4)) (ρ 1) (ρ 0)) := by
+    .writeAt arraySpineKey (ρ 4) (.setElem (.readAt arraySpineKey (ρ 4)) (ρ 1) (ρ 0)) := by
   simp [writeTerm, instantiate]
 
 /-- **The element write's local judgment, from the semantics**: where slot 4
 holds an array of source values, slot 0 a source value and slot 1 a valid
 array index, the write takes three steps to `null`, raising nothing, within
-`{values: any, stores: grow}` from its first heap. Nothing is assumed of the
+`{values: any, spines: grow}` from its first heap. Nothing is assumed of the
 array read in slot 3: it may be `out`. -/
 theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt64} {k : Nat}
     (hv : isSourceVal (ρ 0) = true) (hb : ρ 1 = .num b) (hidx : indexOfBits b = some k) :
@@ -200,26 +200,26 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
   cases n with
   | zero => exact href
   | succ n1 =>
-  obtain ⟨flds, fl, cfl, oid, ls, ho4, hfd, hcfl, hagf, hfl, hst⟩ := arrayF_store ho hout
+  obtain ⟨flds, fl, cfl, oid, ls, ho4, hfd, hcfl, hagf, hfl, hst⟩ := arrayF_spine ho hout
   rw [ho4] at hout href ⊢
-  have hrfl : roleAt W fl = some (.store .array) := by
+  have hrfl : roleAt W fl = some (.spine .array) := by
     obtain ⟨r, hr, hp⟩ := recT_role (List.mem_singleton_self _) hout hfd
     simp only [StorageRole.permits] at hp; subst hp; exact hr
   have hvr : RefsOk W v := href.sub (fun r hr => by simp [refs, hr])
   have hls : RefsOk W (.arr ls) := ho.refs_at hfl
-  have st1 : Step h (.writeAt arrayStoreKey (.objAt flds .absent oid)
-      (.setElem (.readAt arrayStoreKey (.objAt flds .absent oid)) (.num b) v)) h
-      (.writeAt arrayStoreKey (.objAt flds .absent oid) (.setElem (.arr ls) (.num b) v)) :=
+  have st1 : Step h (.writeAt arraySpineKey (.objAt flds .absent oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds .absent oid)) (.num b) v)) h
+      (.writeAt arraySpineKey (.objAt flds .absent oid) (.setElem (.arr ls) (.num b) v)) :=
     .writeC2 rfl (.setC1 (.readField hfd hfl))
   have hr1 := pure_refs ho st1 href
-  -- the store is read
+  -- the spine is read
   refine pure_step ha ho href st1 ?_
   cases n1 with
   | zero => exact RefsOk_trunc _ hr1
   | succ n2 =>
   have ha1 := WorldAdm_trunc (Nat.le_succ (n2 + 1)) ha
   have ho1 := HeapOk_trunc (n2 + 1) W h ho
-  have hst1 : storeF (n2 + 1) (trunc (n2 + 1) (Nat.le_succ _) W) (.arr ls) := hst (n2 + 1) (by omega)
+  have hst1 : spineF (n2 + 1) (trunc (n2 + 1) (Nat.le_succ _) W) (.arr ls) := hst (n2 + 1) (by omega)
   have hflt : fl < h.length := (List.getElem?_eq_some_iff.mp hfl).1
   have hobj : RefsOk W (.objAt flds .absent oid) := href.sub (fun r hr => by simp [refs] at hr ⊢; grind)
   cases hloc : elemLoc ls b with
@@ -229,22 +229,22 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
     obtain ⟨c, w, hc, hagc, hw, hws⟩ := cell_src ho1 hst1 hli
     have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hw).1
     have hnarr : isArr w = false := srcF_not_arr (n := 0) (W := trunc 0 (Nat.zero_le _) W) hws
-    have hrl : roleAt W l = some .elem := (ho.store_cells hfl (List.mem_of_getElem? hli)).1
+    have hrl : roleAt W l = some .elem := (ho.spine_cells hfl (List.mem_of_getElem? hli)).1
     have ho2 : HeapOk n2 (trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W)) (h.set l v) :=
       write_sound n2 _ h l _ .elem v (HeapOk_trunc n2 _ h ho1) (lookup_trunc (Nat.le_succ n2) _ l c hc)
         (by simpa using hrl) (fun j hj => (hagc j (by omega) _ v).mpr hv)
         ⟨hv, RefsOk_trunc _ (RefsOk_trunc _ hvr)⟩
-    have hr2 : RefsOk W (.writeAt arrayStoreKey (.objAt flds .absent oid) (.arr ls)) :=
+    have hr2 : RefsOk W (.writeAt arraySpineKey (.objAt flds .absent oid) (.arr ls)) :=
       hr1.sub (fun r hr => by simp [refs] at hr ⊢; grind)
     refine ⟨RefsOk_trunc _ hr1, .inr ⟨_, h.set l v, _, WExt_refl _, WorldAdm_trunc _ ha1,
       .writeC2 rfl (.setPresent hval hloc hlt), ho2, ?_⟩⟩
     cases n2 with
     | zero => exact RefsOk_trunc _ (RefsOk_trunc _ hr2)
     | succ n3 =>
-    -- the store is put back, unchanged
+    -- the spine is put back, unchanged
     have hcfl2 := lookup_trunc (Nat.le_succ (n3 + 1)) _ fl _
       (lookup_trunc (Nat.le_succ (n3 + 2)) W fl cfl hcfl)
-    have ho3 := write_sound n3 _ (h.set l v) fl _ (.store .array) (.arr ls) (HeapOk_trunc n3 _ _ ho2)
+    have ho3 := write_sound n3 _ (h.set l v) fl _ (.spine .array) (.arr ls) (HeapOk_trunc n3 _ _ ho2)
       (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (by simpa using hrfl) (fun j hj => by
         show cfl j _ _ (.arr ls)
         simp only [trunc_trunc]
@@ -287,10 +287,10 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
       rw [RefsOk_arr_iff]
       intro l hl
       rcases Kinds.mem_placeAt hl with hl | rfl
-      · exact WExt_roleAt hx2 (by simpa [W1] using (ho.store_cells hfl hl).1)
+      · exact WExt_roleAt hx2 (by simpa [W1] using (ho.spine_cells hfl hl).1)
       · exact hnewr
     have hobj2 : RefsOk W2 (.objAt flds .absent oid) := RefsOk_mono hx2 (RefsOk_trunc _ (RefsOk_trunc _ hobj))
-    have hr2 : RefsOk W2 (.writeAt arrayStoreKey (.objAt flds .absent oid) (.arr (placeAt ls k h.length))) :=
+    have hr2 : RefsOk W2 (.writeAt arraySpineKey (.objAt flds .absent oid) (.arr (placeAt ls k h.length))) :=
       fun r hr => by
         simp only [refs, List.mem_append] at hr
         rcases hr with hr | hr
@@ -302,12 +302,12 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
     | succ n3 =>
     have hcfl2 := WExt_lookup hx2 (lookup_trunc (Nat.le_succ (n3 + 1)) _ fl _
       (lookup_trunc (Nat.le_succ (n3 + 2)) W fl cfl hcfl))
-    have hrfl2 : roleAt W2 fl = some (.store .array) := WExt_roleAt hx2 (by simpa [W1] using hrfl)
-    have ho3 := write_sound n3 _ (h ++ [v]) fl _ (.store .array) (.arr (placeAt ls k h.length))
+    have hrfl2 : roleAt W2 fl = some (.spine .array) := WExt_roleAt hx2 (by simpa [W1] using hrfl)
+    have ho3 := write_sound n3 _ (h ++ [v]) fl _ (.spine .array) (.arr (placeAt ls k h.length))
       (HeapOk_trunc n3 _ _ ho2)
       (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (by simpa using hrfl2) (fun j hj => by
         show cfl j _ _ _
-        refine (hagf j (by omega) _ _).mpr (storeF_grow ?_ (indexOfBits_lt hidx) ?_)
+        refine (hagf j (by omega) _ _).mpr (spineF_grow ?_ (indexOfBits_lt hidx) ?_)
         · refine (listT_adm anyTuple).mono j _ _ ?_ _ (hst j (by omega))
           rw [trunc_trunc]
           have := WExt_trunc (Nat.le_of_lt hj) (WExt_trunc (Nat.le_succ n3) hx2)
@@ -327,7 +327,7 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
 def guardTerm : Tm := .arith .lt (.var 0) (.var 1)
 
 /-- The read's term: `xs[j]`, `xs` in slot 2, `j` in slot 0. -/
-def readTerm : Tm := .elemAt (.readAt arrayStoreKey (.var 2)) (.var 0)
+def readTerm : Tm := .elemAt (.readAt arraySpineKey (.var 2)) (.var 0)
 
 theorem num_of_intValue {v : Val} {a : Int} (h : HeapKnowledge.intValue v = some a) :
     ∃ x, v = .num x ∧ SafeIntegers.SafeInt x a := by
@@ -383,15 +383,15 @@ theorem read_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ :
       SafePostExc Ξ srcF (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) (fun h' => ce.Holds h h' ∧ Qe h')
         n W h (instantiate 0 ρ readTerm) := by
   intro n W h ha ho hxs href
-  have hinst : instantiate 0 ρ readTerm = .elemAt (.readAt arrayStoreKey (ρ 2)) (.num x) := by
+  have hinst : instantiate 0 ρ readTerm = .elemAt (.readAt arraySpineKey (ρ 2)) (.num x) := by
     simp [readTerm, instantiate, hj]
   rw [hinst] at href ⊢
   cases n with
   | zero => exact href
   | succ n1 =>
-  obtain ⟨flds, fl, cfl, oid, ls, ho2, hfd, -, -, hfl, hst⟩ := arrayF_store ho hxs
+  obtain ⟨flds, fl, cfl, oid, ls, ho2, hfd, -, -, hfl, hst⟩ := arrayF_spine ho hxs
   rw [ho2] at href ⊢
-  have st1 : Step h (.elemAt (.readAt arrayStoreKey (.objAt flds .absent oid)) (.num x)) h
+  have st1 : Step h (.elemAt (.readAt arraySpineKey (.objAt flds .absent oid)) (.num x)) h
       (.elemAt (.arr ls) (.num x)) := .elemC1 (.readField hfd hfl)
   have hr1 := pure_refs ho st1 href
   refine pure_step ha ho href st1 ?_
@@ -415,7 +415,7 @@ theorem read_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ :
 /-! ## The graph, its assertions and its nodes checked -/
 
 /-- `y ≤ |x|` as integers: the integer slot `y` holds is at most the length of
-the store slot `x` holds. -/
+the spine slot `x` holds. -/
 theorem lowerBound_iff {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} :
     LowerBound ε y x ρ m s ↔ ∃ a len, HeapKnowledge.intValue (ρ y) = some a ∧
       HeapKnowledge.lengthOf s.h (ρ x) = some len ∧ a ≤ len := by
@@ -470,7 +470,7 @@ def loopPre (ε : HeapKnowledge.EntryState) : Nat → Assertion
   | _ => fun _ _ _ => False
 
 /-- The head's facts survive every action of an effect within
-`{values: any, stores: grow}`. -/
+`{values: any, spines: grow}`. -/
 theorem headAt_action {c : Footprints.Closed} (hc : c.le growEffect = true) {ρ : Env} {m : Nat}
     {s₀ s : IndexedHeap} (ha : Action c.fp ρ s₀ s) (h : HeadAt ε ρ m s₀) : HeadAt ε ρ m s :=
   ⟨h.1, grow h.2.1 s (action_le_closed hc ha), arrAt_invariant 2 ρ m s₀ s ha.1 h.2.2.1,
@@ -553,7 +553,7 @@ theorem loop_checked (m : Nat) :
     rw [ha] at ha'; cases ha'
     obtain ⟨b', len, hb', hlen, hle⟩ := lowerBound_iff.mp hlb
     rw [hb] at hb'; cases hb'
-    obtain ⟨st, ls, -, -, rfl, hmax⟩ := HeapKnowledge.lengthOf_store hlen
+    obtain ⟨st, ls, -, -, rfl, hmax⟩ := HeapKnowledge.lengthOf_spine hlen
     obtain ⟨x, hx, hsx⟩ := num_of_intValue ha
     have hidx := HeapKnowledge.indexOfBits_safe hsx h0 (by omega)
     refine ⟨_, rfl, fun hr => ?_⟩
@@ -623,23 +623,23 @@ theorem loop_no_raise (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε �
 /-! ## An aliased entry state
 
 The entry assertion is met where `xs` and `out` are one array: a world of
-three locations, a store listing one cell, that cell, and the array's
+three locations, a spine listing one cell, that cell, and the array's
 identity, at every positive budget. So `loop_safe` covers an aliased run, not
 only a vacuous one. -/
 
 /-- The contract of an identity location: `null`. -/
 def idCtr {n : Nat} : Ctr n := fun _ _ _ u => u = .nul
 
-/-- The world: location 0 a store of source values, location 1 its cell,
+/-- The world: location 0 a spine of source values, location 1 its cell,
 location 2 the array's identity. -/
 def aliasWorld (n : Nat) : WorldT n :=
-  ofEntries [(.store .array, res storeF), (.elem, res srcF), (.identity, idCtr)]
+  ofEntries [(.spine .array, res spineF), (.elem, res srcF), (.identity, idCtr)]
 
-/-- The heap: the store listing location 1, which holds `0`; the identity's `null`. -/
+/-- The heap: the spine listing location 1, which holds `0`; the identity's `null`. -/
 def aliasHeap : Heap := [.arr [some 1], .num (bitsOfNat 0), .nul]
 
-/-- The one array, its store field at location 0, its identity location 2. -/
-def aliasArray : Val := .objAt [(arrayStoreKey, 0)] .absent 2
+/-- The one array, its spine field at location 0, its identity location 2. -/
+def aliasArray : Val := .objAt [(arraySpineKey, 0)] .absent 2
 
 /-- `from = 0`, `to = 1`, `xs` and `out` the same array. -/
 def aliasEnv : Env
@@ -649,7 +649,7 @@ def aliasEnv : Env
   | 3 => aliasArray
   | _ => .undef
 
-theorem storeF_valOnly : ValOnly storeF := fun _ _ _ h => by
+theorem spineF_valOnly : ValOnly spineF := fun _ _ _ h => by
   obtain ⟨ls, rfl, -⟩ := h
   rfl
 
@@ -657,7 +657,7 @@ theorem res_ctrAdm {k : Nat} {A : Fam} (hA : Adm A) (hV : ValOnly A) : CtrAdm (r
   ⟨fun i _ U U' hx w hw => hA.mono i U U' hx w hw, fun i _ U w hw => hV i U w hw⟩
 
 theorem aliasWorld_lookup {n l : Nat} {c : Ctr n} (hl : lookup (aliasWorld n) l = some c) :
-    (l = 0 ∧ c = res storeF) ∨ (l = 1 ∧ c = res srcF) ∨ (l = 2 ∧ c = idCtr) := by
+    (l = 0 ∧ c = res spineF) ∨ (l = 1 ∧ c = res srcF) ∨ (l = 2 ∧ c = idCtr) := by
   simp only [lookup, aliasWorld, toList, entries_ofEntries] at hl
   rcases l with _ | _ | _ | l <;> simp at hl
   · exact .inl ⟨rfl, hl.symm⟩
@@ -665,7 +665,7 @@ theorem aliasWorld_lookup {n l : Nat} {c : Ctr n} (hl : lookup (aliasWorld n) l 
   · exact .inr (.inr ⟨rfl, hl.symm⟩)
 
 theorem aliasWorld_roleAt {n l : Nat} {r : Role} (hl : roleAt (aliasWorld n) l = some r) :
-    (l = 0 ∧ r = .store .array) ∨ (l = 1 ∧ r = .elem) ∨ (l = 2 ∧ r = .identity) := by
+    (l = 0 ∧ r = .spine .array) ∨ (l = 1 ∧ r = .elem) ∨ (l = 2 ∧ r = .identity) := by
   simp only [roleAt, roles, aliasWorld, entries_ofEntries] at hl
   rcases l with _ | _ | _ | l <;> simp at hl
   · exact .inl ⟨rfl, hl.symm⟩
@@ -675,13 +675,13 @@ theorem aliasWorld_roleAt {n l : Nat} {r : Role} (hl : roleAt (aliasWorld n) l =
 theorem aliasWorld_adm (n : Nat) : WorldAdm (aliasWorld n) := by
   refine ⟨fun l c hl => ?_, fun l f N hr => ?_⟩
   · rcases aliasWorld_lookup hl with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩
-    · exact res_ctrAdm (listT_adm _) storeF_valOnly
+    · exact res_ctrAdm (listT_adm _) spineF_valOnly
     · exact res_ctrAdm srcF_adm srcF_valOnly
     · exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ v hv => by simp only [idCtr] at hv; subst hv; rfl⟩
   · rcases aliasWorld_roleAt hr with ⟨-, h⟩ | ⟨-, h⟩ | ⟨-, h⟩ <;> cases h
 
-theorem aliasStore (n : Nat) : storeF n (aliasWorld n) (.arr [some 1]) := by
-  refine ⟨_, rfl, fun _ _ => by simp [StorePresence, anyTuple], by simp [anyTuple], by decide,
+theorem aliasSpine (n : Nat) : spineF n (aliasWorld n) (.arr [some 1]) := by
+  refine ⟨_, rfl, fun _ _ => by simp [SpinePresence, anyTuple], by simp [anyTuple], by decide,
     fun hn => by simp [anyTuple] at hn, fun i A hA => by simp [anyTuple] at hA,
     fun i A l hA => by simp [anyTuple] at hA, ?_⟩
   intro i l _ hl
@@ -701,11 +701,11 @@ theorem aliasHeap_ok (n : Nat) : HeapOk n (aliasWorld n) aliasHeap := by
   refine ⟨⟨by simp [aliasHeap, aliasWorld, toList], fun l c hl => ?_⟩, fun l r hl => ?_⟩
   · rcases aliasWorld_lookup hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
     · refine ⟨_, rfl, fun j hj => ?_⟩
-      have h := aliasStore j
+      have h := aliasSpine j
       have e : trunc j (Nat.le_of_lt hj) (aliasWorld n) = aliasWorld j := by
         simp only [trunc, aliasWorld, entries_ofEntries, List.map_cons, List.map_nil]
         rfl
-      show storeF j _ _
+      show spineF j _ _
       rw [e]
       exact h
     · exact ⟨_, rfl, fun _ _ => rfl⟩
@@ -725,7 +725,7 @@ def aliasState (n : Nat) : IndexedHeap :=
   ⟨n + 1, aliasWorld (n + 1), aliasHeap, Nat.zero_lt_succ n, aliasWorld_adm _, aliasHeap_ok _⟩
 
 theorem aliasArray_arrayF (n : Nat) : arrayF n (aliasWorld n) aliasArray := by
-  refine ⟨[(arrayStoreKey, 0)], 2, rfl, fun f s T hm l hl g hg => ?_, fun f s T hm => ?_⟩
+  refine ⟨[(arraySpineKey, 0)], 2, rfl, fun f s T hm l hl g hg => ?_, fun f s T hm => ?_⟩
   · simp only [List.mem_singleton, Prod.mk.injEq] at hm
     obtain ⟨rfl, -⟩ := hm
     simp only [List.lookup] at hg
@@ -735,15 +735,15 @@ theorem aliasArray_arrayF (n : Nat) : arrayF n (aliasWorld n) aliasArray := by
     · cases hg
   · simp only [List.mem_singleton, Prod.mk.injEq] at hm
     obtain ⟨rfl, rfl, rfl⟩ := hm
-    exact ⟨0, res storeF, by simp [List.lookup], by simp [lookup, aliasWorld, toList],
-      ⟨.store .array, by simp [roleAt, roles, aliasWorld], rfl⟩, fun _ _ _ _ => Iff.rfl⟩
+    exact ⟨0, res spineF, by simp [List.lookup], by simp [lookup, aliasWorld, toList],
+      ⟨.spine .array, by simp [roleAt, roles, aliasWorld], rfl⟩, fun _ _ _ _ => Iff.rfl⟩
 
 /-- **The entry assertion holds with `xs` and `out` aliased.** -/
 theorem alias_entry (m n : Nat) : HeadAt ε aliasEnv m (aliasState n) ∧ aliasEnv 2 = aliasEnv 3 := by
   have zero : SafeIntegers.SafeInt (bitsOfNat 0) 0 := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
   refine ⟨⟨⟨0, HeapKnowledge.intValue_num zero, Int.le_refl _⟩, ?_, aliasArray_arrayF _, aliasArray_arrayF _⟩, rfl⟩
   refine lowerBound_iff.mpr ⟨1, 1, HeapKnowledge.intValue_num oneBits_safe, ?_, Int.le_refl _⟩
-  exact HeapKnowledge.lengthOf_of_store (s := 0) (ls := [some 1]) (by show List.lookup arrayStoreKey [(arrayStoreKey, 0)] = some 0; simp [List.lookup])
+  exact HeapKnowledge.lengthOf_of_spine (s := 0) (ls := [some 1]) (by show List.lookup arraySpineKey [(arraySpineKey, 0)] = some 0; simp [List.lookup])
     rfl (by decide)
 
 /-- The entry environment refers to valid locations. -/

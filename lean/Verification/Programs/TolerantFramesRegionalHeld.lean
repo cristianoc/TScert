@@ -22,7 +22,7 @@ variable {ι : Type} [DecidableEq ι]
 `checkNodes_reassign` for the graph). -/
 theorem checkNode_reassign (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι)) (η : MixedAssignment ι) (Φ : Footprints.Closed)
-    (regions : List ArgumentStoreRegion) (table : List (List ArgumentPathTracking.Fact))
+    (regions : List ArgumentSpineRegion) (table : List (List ArgumentPathTracking.Fact))
     (ft : ArgumentRegionFresh.FreshTables) (exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
     checkNode (reassign G η) (images.reassign η) sums Φ regions table ft exc l node c =
       checkNode G images sums Φ regions table ft exc l node c := by

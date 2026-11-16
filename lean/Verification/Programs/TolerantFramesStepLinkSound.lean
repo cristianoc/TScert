@@ -125,7 +125,7 @@ theorem materialize_table (st : SinglePass.State) (d : Nat) (ms : List Nat) (who
 /-- **A preserving step's store holds after the step**: every fact of the
 entry's store holds after an action keeping the heap, at the valuation naming
 the result; the delta adds the rule's output read back to names. -/
-theorem preserving_store {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
+theorem preserving_spine {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
     {ρ η : Env} {h' : Heap} {r : Nat} {v : Tm} {d : Nat} {ms : List Nat} {whole : Bool}
     {out : HeapKnowledge.Knowledge} (hn : SlotsNamed st.names ρ η) (hk : NamesBelow st I start r ∨ η r = v)
     (hS : StoreOk ε st.store η h') (hout : HeapKnowledge.Holds out ε (push v ρ) h') :
@@ -141,7 +141,7 @@ theorem preserving_store {st : SinglePass.State} {I : List (PromiseCalls.Implica
 /-- **A writing step's store holds after the step**: the entry's heap-free
 facts hold in every heap, the handed facts by the rule's output over every
 fact (`applyDelta_dropHeap`). -/
-theorem writing_store {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
+theorem writing_spine {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
     {ρ η : Env} {h h' : Heap} {r : Nat} {v : Tm} {d : Nat} {ms : List Nat}
     {out : HeapKnowledge.Knowledge} (w : StoreWF st.store) (hn : SlotsNamed st.names ρ η)
     (hk : NamesBelow st I start r ∨ η r = v)
@@ -417,7 +417,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
         rw [hO] at hout
-        exact preserving_store hn (hkv k h' v hsteps)
+        exact preserving_spine hn (hkv k h' v hsteps)
           (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
     · have hpf : passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes
@@ -431,7 +431,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
         rw [hO] at hout
-        exact writing_store w hn (hkv k h' v hsteps) hst (hh ▸ hout)
+        exact writing_spine w hn (hkv k h' v hsteps) hst (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
 
 omit [Instantiates ι] in
@@ -466,7 +466,7 @@ node's obligations read). Where `checkedStep` accepts node `l` (its claim
 `c.context`) with its store well-formed and every name it mentions below the
 next fresh name: the summary table stays checked; the step's knowledge
 `st.stepK` holds; the result is a name of the entry or the fresh one; and
-there are closed effects `cn`, `ce` (`{values: keep, stores: keep}` and
+there are closed effects `cn`, `ce` (`{values: keep, spines: keep}` and
 `top` for a preserving step, `top` for both at a writing step) with the
 node's local judgment and, on the normal exit with value `v`, the action of
 `cn`, the residual budget, `v`'s type, the rule's output `st.stepOut` at

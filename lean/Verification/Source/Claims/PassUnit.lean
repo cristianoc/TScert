@@ -82,9 +82,9 @@ def RegionalClause (r : SourceRequest σ ι) : Prop :=
       (envOf L d) n W h → RootsOk W (envOf L d) →
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       (fun h' => r.stated.any (·.onThrow) = true →
-        Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
+        Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       n W h (gotoOf r.program r.start L d)
 
 /-- Each stated assertion of the graph true at every state reached at its

@@ -38,7 +38,7 @@
 // below `p.length`, of its element `p[i]` and of the clause's other terms
 // (ARITHMETIC.md, "Quantified clauses"; `IndexFact.every`). `p !== q` of two
 // paths whose types are arrays states that their arrays hold different
-// stores (ARITHMETIC.md, "Store separation"; `IndexFact.storeApart`); a path
+// spines (ARITHMETIC.md, "Spine separation"; `IndexFact.spineApart`); a path
 // that may be a typed array, or is no array, is refused. Every other
 // form of the draft's grammar (`old`, computed keys) is refused with the clause's location, as is a path whose field no type
 // resolves. A postcondition uses the same language with `result` at position
@@ -59,7 +59,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { BodyFact, BodyVariable, GuardTag, IndexFact, LinearFact, LinearTerm } from "./declaration-types.mts";
 
-/** What a path's type names: an array, whose `length` is its store's length;
+/** What a path's type names: an array, whose `length` is its spine's length;
  * a typed array, whose `length` is its typed-array length (`view`); a string,
  * whose `length` is its count of code units (`string`); a record or any other
  * value (`other`); or no type a field resolves (`null`). */
@@ -342,7 +342,7 @@ class Parser {
       this.expect(")");
       return { k: "safeInteger", of };
     }
-    // `p !== q` of two array paths (ARITHMETIC.md, "Store separation").
+    // `p !== q` of two array paths (ARITHMETIC.md, "Spine separation").
     if (t && t.k === "name") {
       const saved = this.at;
       const left = this.variable();
@@ -473,7 +473,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("bound" in f) return [f.bound.array, f.bound.index];
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
   if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
-  if ("storeApart" in f) return [f.storeApart.slot, f.storeApart.other];
+  if ("spineApart" in f) return [f.spineApart.slot, f.spineApart.other];
   if ("apart" in f) return [f.apart.slot, f.apart.other];
   const F = f.linear.fact;
   return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
@@ -661,8 +661,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         compared.push(wrap({ linear: { fact } }));
       };
       compareAtoms(atoms, lessEq);
-      // `p !== q` (ARITHMETIC.md, "Store separation"): the arrays the two
-      // paths read hold different stores. Each side's type is an array: a
+      // `p !== q` (ARITHMETIC.md, "Spine separation"): the arrays the two
+      // paths read hold different spines. Each side's type is an array: a
       // typed array's view may share its buffer with another view.
       for (const a of atoms) {
         if (a.k !== "distinct") continue;
@@ -674,7 +674,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           return { slot: p.position, path: fields };
         };
         const l = side(a.left), r = side(a.right);
-        compared.push(wrap({ storeApart: { slot: l.slot, path: l.path, other: r.slot, otherPath: r.path } }));
+        compared.push(wrap({ spineApart: { slot: l.slot, path: l.path, other: r.slot, otherPath: r.path } }));
       }
       // `forall i in p: C` (ARITHMETIC.md, "Quantified clauses"): for
       // every index of the array or typed array `p` reads, below its length

@@ -29,7 +29,7 @@ def CodeRunAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceR
     (table : List (CodeEntry ι)) (q : CodeRequest ι) (ci : Nat) (a a' : Answered G) : Prop :=
   codeConditions q.entry = true ∧ RequestJson.asyncAdmits q.async q.entry.row.effect = true ∧
   ∃ c : RunCall G I, c.P = (codeRequest r q).program ∧ c.claims = q.claims ∧ c.start = q.entry.start ∧
-    c.inputs = codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store ∧ c.goal = q.entry.goal ∧ c.assertions = (codeHintsAt r ci).requirements ∧
+    c.inputs = codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.spine ∧ c.goal = q.entry.goal ∧ c.assertions = (codeHintsAt r ci).requirements ∧
     c.entryIndices = GraphCode.codeEntryIndices q.entry ∧ c.codes = GraphCode.admits table ∧
     c.passChecker = .ordinary ∧ c.answers = a ∧ c.bound = codeBound q.entry ∧ c.ensures = [] ∧
     c.entrySeparation = {} ∧ c.regional = none ∧ c.Accepts a'
@@ -52,18 +52,18 @@ variable {ι : Type}
 promise included (as in `GraphCode.codeChecked_sound`). -/
 theorem code_goal (G : NormalGraph ι) (c : CodeEntry ι) (L : List Tm) :
     GoalHolds G c.goal (c.goal.argument (envOf L .nul)) =
-      c.row.effect.result (meaning G c.row.result) (framePromised c.row.effect (frameOffset c.store) L) := by
+      c.row.effect.result (meaning G c.row.result) (framePromised c.row.effect (frameOffset c.spine) L) := by
   rcases hpr : c.row.effect.promise with _ | (p | p)
   · have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
     rw [hg, CallEffects.Effect.result_none hpr]
     rfl
-  · have hg : c.goal = .guards c.row.result (frameOffset c.store + p) := by
+  · have hg : c.goal = .guards c.row.result (frameOffset c.spine + p) := by
       simp [CodeEntry.goal, hpr]
     rw [hg]
     simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
       CallEffects.TypePromise.param]
     rfl
-  · have hg : c.goal = .asserts c.row.result (frameOffset c.store + p) := by
+  · have hg : c.goal = .asserts c.row.result (frameOffset c.spine + p) := by
       simp [CodeEntry.goal, hpr]
     rw [hg]
     simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
@@ -84,31 +84,31 @@ bound of `⊤` met by the heap's growth. The
 step shared by code requests (`codeSpec_of_clauses`) and module rows
 (`rowSpec_of_clauses`). -/
 theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
-    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
+    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
       (GraphCode.codeEntryIndices c) ρ n W h →
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
-      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
-    ∀ η n W heap L, EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W →
-      WorldAdm W → HeapOk n W heap → RefsOk W (.goto c.exprs c.conts c.start L .nul) → CallArguments.Values L → PreAt c.row.effect c.store L heap →
+    ∀ η n W heap L, EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W →
+      WorldAdm W → HeapOk n W heap → RefsOk W (.goto c.exprs c.conts c.start L .nul) → CallArguments.Values L → PreAt c.row.effect c.spine L heap →
       HeapSeparation.Holds sep (envOf L .nul) →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (c.row.effect.result (meaning (reassign G η) c.row.result)
-          (framePromised c.row.effect (frameOffset c.store) L))
+          (framePromised c.row.effect (frameOffset c.spine) L))
         (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
           (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
         (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') n W heap
         (.goto c.exprs c.conts c.start L .nul) := by
   intro η n W heap L he hw hh href hvalues hpre hsep
-  have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
+  have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
       (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
     ⟨he, hsep, GraphCode.codeEntryIndices_holds hpre, hw, hh⟩
   have hgraph := hsafeG η n W heap (envOf L .nul) hentry (GraphCode.program_refs (GraphCode.goto_refs href).1)
@@ -117,7 +117,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       n W heap (.goto c.exprs c.conts c.start L .nul) :=
     GraphCode.safe_of_sim n W heap .goto (GraphCode.goto_refs href).1 hgraph
   have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
-      (framePromised c.row.effect (frameOffset c.store) L)) n W heap
+      (framePromised c.row.effect (frameOffset c.spine) L)) n W heap
       (.goto c.exprs c.conts c.start L .nul) := code_goal (reassign G η) c L ▸ hs
   by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
       !c.row.effect.schema.normal.freshResult) = true
@@ -164,13 +164,13 @@ separation) establishes every postcondition its signature exports on both
 exits (`codeObligations_sound`). -/
 theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     (hcond : codeConditions c = true)
-    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {}
+    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) {}
       (GraphCode.codeEntryIndices c) ρ n W h →
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ Ψ fresh, codeBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
-      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c)
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) {} (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
@@ -204,7 +204,7 @@ theorem codeSpec_of_guarantee {G : NormalGraph ι} {c : CodeEntry ι}
     {assertions : List (Nat × HeapKnowledge.Knowledge)}
     (hcond : codeConditions c = true)
     (hg : GraphGuarantee G (fun _ => True) (GraphCode.program c.exprs c.conts) c.start c.goal
-      (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c) assertions
+      (codeFrame c.arity c.row c.captures c.spine) {} (GraphCode.codeEntryIndices c) assertions
       (codeBound c) [] none) :
     ∀ η, c.Spec (reassign G η) :=
   codeSpec_of_clauses hcond (fun η => hg.safe η trivial)
@@ -286,7 +286,7 @@ theorem codesAccepted_guarantees {G : NormalGraph ι} {I : InstanceImageCheck G}
       (∀ s ∈ a'.summaries.toList, s ∈ final) →
       ProgramCertificates.CodesSound G (GraphCode.admits table) →
       ∀ p ∈ rest, GraphGuarantee G (fun _ => True) (GraphCode.program p.1.entry.exprs p.1.entry.conts)
-        p.1.entry.start p.1.entry.goal (codeFrame p.1.entry.arity p.1.entry.row p.1.entry.captures p.1.entry.store)
+        p.1.entry.start p.1.entry.goal (codeFrame p.1.entry.arity p.1.entry.row p.1.entry.captures p.1.entry.spine)
         {} (GraphCode.codeEntryIndices p.1.entry) (codeHintsAt r p.2).requirements (codeBound p.1.entry) [] none
   | _, [], _, _, _, _, _ => fun _ hp => nomatch hp
   | table, (q, ci) :: rest, a, a', h, hsub, ht => by

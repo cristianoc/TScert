@@ -10,7 +10,7 @@ receiver slots, the step's derivation and the handler's liveness. This
 module restates `run`'s local bindings there (`passRecvFresh`,
 `passDerivOf`, `passLiveHandler`, `passCallFresh`, `passDeadEvidence`) and
 proves what the state gives of them: the fresh receiver slots hold fresh
-stores (`freshOk_recv`), a copy of a fresh slot returns a fresh store
+spines (`freshOk_recv`), a copy of a fresh slot returns a fresh spine
 (`copyFresh`). `TolerantFramesNodeCallFresh` composes them into
 `FootprintKept`. -/
 namespace Verification.TolerantFrames
@@ -68,9 +68,9 @@ end Values
 section Bound
 variable {ι : Type}
 
-/-- **The fresh receiver slots hold fresh stores**: a slot `passRecvFresh`
+/-- **The fresh receiver slots hold fresh spines**: a slot `passRecvFresh`
 lists holds a fresh name of the entry state, whose value the state gives a
-store allocated at or past the mark. -/
+spine allocated at or past the mark. -/
 theorem freshOk_recv {G : NormalGraph ι} {node : Node} {entry : SinglePass.State}
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G entry I start ε ρ m s) : GraphCode.FreshOk (passRecvFresh node entry) m ρ := by
@@ -87,9 +87,9 @@ theorem freshOk_recv {G : NormalGraph ι} {node : Node} {entry : SinglePass.Stat
     · cases hi
   · cases hi
 
-/-- **A copy of a fresh slot returns a fresh store**: where the term is a
+/-- **A copy of a fresh slot returns a fresh spine**: where the term is a
 slot holding a fresh name, every run of it to a value returns that slot's
-value, whose store the state gives fresh at the mark. -/
+value, whose spine the state gives fresh at the mark. -/
 theorem copyFresh {G : NormalGraph ι} {node : Node} {entry : SinglePass.State}
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {Γ : List (Ty ι)} (hS : StateHolds G entry I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W)

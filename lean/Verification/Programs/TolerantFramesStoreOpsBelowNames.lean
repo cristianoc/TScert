@@ -30,11 +30,11 @@ theorem namedIn_below {as : List IndexAtom} {next : Nat} (ha : ∀ a ∈ as, Ato
 /-- **The facts `drop` derives name below the counter** where its index
 facts and links do: the eliminations name their inputs' names
 (`eliminateIndices_named`) and the restatements their inputs' names or a
-link's (`restateReads_named`, `restateStores_named`). -/
+link's (`restateReads_named`, `restateSpines_named`). -/
 theorem dropDerived_below {indices : List IndexAtom} {links : HeapLinks.Links} {isOut : Nat → Bool} {D : List Nat}
     {next : Nat} (hi : ∀ a ∈ indices, AtomBelow next (.index a)) (hl : ∀ g ∈ links, AtomBelow next (.link g)) :
     ∀ b ∈ (eliminateIndices D (indices ++ restateReads links isOut indices ++
-      restateStores links isOut indices)).drop indices.length, AtomBelow next (.index b) := by
+      restateSpines links isOut indices)).drop indices.length, AtomBelow next (.index b) := by
   intro b hb x hx
   have hr := eliminateIndices_named (List.mem_of_mem_drop hb) hx
   rcases namedIn_append.mp hr with hr | ⟨c, hc, hxc⟩
@@ -43,7 +43,7 @@ theorem dropDerived_below {indices : List IndexAtom} {links : HeapLinks.Links} {
     · rcases restateReads_named hc hxc with h | h
       · exact namedIn_below hi h
       · exact linkNamed_below hl h
-  · rcases restateStores_named hc hxc with h | h
+  · rcases restateSpines_named hc hxc with h | h
     · exact namedIn_below hi h
     · exact linkNamed_below hl h
 
@@ -130,7 +130,7 @@ theorem drop_below {s : Store} {D : List Nat} {next : Nat} (hs : FactsBelow s ne
   have hd := dropDerived_below (D := D) (isOut := fun n => dset.contains n) hi hl
   generalize (List.drop indices.length (HeapKnowledge.eliminateIndices D (indices ++
     HeapKnowledge.restateReads links (fun n => dset.contains n) indices ++
-      HeapKnowledge.restateStores links (fun n => dset.contains n) indices))) = derived at hd ⊢
+      HeapKnowledge.restateSpines links (fun n => dset.contains n) indices))) = derived at hd ⊢
   have hk := keptAliasOf_named (isOut := fun n => dset.contains n) (links := links)
   unfold keptAliasOf at hk
   generalize (List.foldl _ (∅ : Std.HashMap Nat Nat) links) = keptAlias at hk ⊢

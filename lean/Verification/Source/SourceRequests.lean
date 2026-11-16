@@ -53,14 +53,14 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   graph must establish as well. -/
   onThrow : Bool := false
   /-- Whether the declaration promises a fresh result: each normal return's
-  value has an array store the run allocated, which its graph must establish
+  value has an array spine the run allocated, which its graph must establish
   (`effectResult`). -/
   fresh : Bool := false
-  /-- The bound and the store regions the declaration's stated frame lets
+  /-- The bound and the spine regions the declaration's stated frame lets
   change, each an input slot and a path of fields read from it
   (`"x[*]": "any"`, `"x.f[*]": "any"`), which its graph must establish off
-  those stores (`regionalResult`). -/
-  regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion) := none
+  those spines (`regionalResult`). -/
+  regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion) := none
   /-- The facts the declaration states at its returns (`Fragment.Fn.ensures`),
   position `0` the result and `q + 1` input slot `q`'s entry value, which
   each return of its graph must establish (`ensuresResult`). -/
@@ -89,7 +89,7 @@ consumer still checks against the complete graph and the exact request. -/
     -- claims mention is part of it (a generic closure's binder rows).
     r.codes.flatMap (fun (q : RequestJson.CodeRequest ι) => q.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten)) ++
     r.obligations.flatMap (fun (o : ExpressionClaims.Required ι) => o.sequent.type ++ o.sequent.context.flatten)
-  -- Readonly array coercions depend on the store's element unions two levels
+  -- Readonly array coercions depend on the spine's element unions two levels
   -- below the object. Close the vocabulary over the reachable graph,
   -- stopping at the fixpoint, where a step adds no label, or at the store's
   -- bound on labels: an equation graph's rows reach infinitely many. Each
@@ -146,12 +146,12 @@ structure Bundle (ι : Type) where
   functions : List (Response ι)
   obligations : List (List (ProgramCertificates.Evidence ι))
 
-/-- Candidate provenance of the store regions a unit's statement excepts, read
+/-- Candidate provenance of the spine regions a unit's statement excepts, read
 by no proof: at its entry each region's input slot holds it; elsewhere every
 slot may hold any region; each pass removes a fact no incoming edge or
 handler establishes, until none does. `ArgumentRegionGraph.checkNodes`
 decides whether the result holds on every edge. -/
-@[nospecialize] def regionPass (regions : List Footprints.ArgumentStoreRegion)
+@[nospecialize] def regionPass (regions : List Footprints.ArgumentSpineRegion)
     (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat))
     (table : Array (List GraphCode.ArgumentPathTracking.Fact)) : Array (List GraphCode.ArgumentPathTracking.Fact) :=
   nodes.foldr (fun ((node, _), l) table =>
@@ -165,7 +165,7 @@ decides whether the result holds on every edge. -/
         (GraphCode.ArgumentPathTracking.shift F).contains { f with slot := PointClaims.slot t.mapping f.slot }
     | none => table) table
 
-@[nospecialize] def regionIterate (regions : List Footprints.ArgumentStoreRegion)
+@[nospecialize] def regionIterate (regions : List Footprints.ArgumentSpineRegion)
     (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat)) :
     Nat → Array (List GraphCode.ArgumentPathTracking.Fact) → Option (Array (List GraphCode.ArgumentPathTracking.Fact))
   | 0, _ => none
@@ -174,10 +174,10 @@ decides whether the result holds on every edge. -/
     if next = table then some table else regionIterate regions nodes fuel next
 
 @[nospecialize] def regionTable (P : ControlFlow.Program) (C : ControlFlow.Certificate ι) (start : Nat)
-    (regions : List Footprints.ArgumentStoreRegion) : List (List GraphCode.ArgumentPathTracking.Fact) :=
+    (regions : List Footprints.ArgumentSpineRegion) : List (List GraphCode.ArgumentPathTracking.Fact) :=
   let nodes := (P.zip C).zipIdx
   -- Each region's root, its position's own value, and the region itself.
-  let roots := (regions.map fun r => (⟨r.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups
+  let roots := (regions.map fun r => (⟨r.position, []⟩ : Footprints.ArgumentSpineRegion)).eraseDups
   let candidates := (roots ++ regions).eraseDups
   let init := (nodes.map fun ((_, c), l) =>
     if l = start then roots.map fun r => ⟨r.position, r⟩
@@ -283,14 +283,14 @@ destination what its edge does not establish. -/
     ⟨values.toList, cells.toList, fields, names⟩
   | none => ⟨[], [], [], []⟩
 
-/-- **The regional check** of a unit's graph, at a bound `Φ` and store
+/-- **The regional check** of a unit's graph, at a bound `Φ` and spine
 regions, each an input slot and a path: its runs stay within `Φ` off the
-stores the regions select at entry, on a throw too where `exc`
+spines the regions select at entry, on a throw too where `exc`
 (`ArgumentRegionGraph.checkNodes`), its provenance table and fresh facts
 inferred (`regionTable`, `freshTables`), none of them at the entry. With no
 regions it is a second certificate of a claimed footprint (`effectResult`). -/
 @[nospecialize] def regionalChecked (r : SourceRequest σ ι) (c : Response ι) (Φ : Footprints.Closed)
-    (regions : List Footprints.ArgumentStoreRegion) (exc : Bool) : Bool :=
+    (regions : List Footprints.ArgumentSpineRegion) (exc : Bool) : Bool :=
   let P := GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
   let table := regionTable P c.certificate r.start regions
   let ft := freshTables (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries Φ P
@@ -312,7 +312,7 @@ pure nodes, which preserves the heap, for a unit returning a plain result
 under the ordinary checker. A fresh result is established node by node
 whatever the footprint.
 Where those refuse, a unit promising no fresh result is checked by the
-regional check with no regions (`regionalChecked`), whose stores the body
+regional check with no regions (`regionalChecked`), whose spines the body
 allocated rebase to none. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint &&
@@ -325,10 +325,10 @@ allocated rebase to none. -/
       (ProgramTyping.RunBound.ofRequest r.footprint r.onThrow r.fresh) r.start r.program c.certificate).orElse fun _ =>
     ProgramCertificates.CheckResult.ofBool (!r.fresh && regionalChecked r c r.footprint [] r.onThrow)
 
-/-- The store regions a unit's statement excepts (`"x[*]": "any"`), each an
-input slot's own store: none, or a graph of a unit that is neither generic,
+/-- The spine regions a unit's statement excepts (`"x[*]": "any"`), each an
+input slot's own spine: none, or a graph of a unit that is neither generic,
 async, nor promising a fresh result, all of whose runs stay within the
-statement's bound off the stores those slots hold at entry, on a throw too
+statement's bound off the spines those slots hold at entry, on a throw too
 where the statement says so (`regionalChecked`). -/
 @[nospecialize] def regionalResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   match r.regional with

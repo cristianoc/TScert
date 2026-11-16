@@ -87,10 +87,10 @@ def OperationPostF.map {S S' : Type} (f : S → S') : OperationPostF S → Opera
   | .boundedWrite x i x' => .boundedWrite x i x'
   | .push x x' args => .push x x' (f args)
   | .fact p l F => .fact p l F
-  | .freshStore x => .freshStore x
+  | .freshSpine x => .freshSpine x
   | .freshObject x => .freshObject x
   | .elementsWhen x v y R => .elementsWhen x v y R
-  | .storeExtends x => .storeExtends x
+  | .spineExtends x => .spineExtends x
   | .viewWrite x i v g => .viewWrite x i v g
 
 /-- A formula with its appends' arguments and its transports mapped. -/

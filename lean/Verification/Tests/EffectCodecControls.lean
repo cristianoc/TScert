@@ -23,7 +23,7 @@ past its scope or reading through a path).
 - An exceptional postcondition and an exit position past the arity, at a
   code's obligations (`exportsEstablished`, `Effect.belowRow`): a code's
   signature is read from a statement or a claim, whose readers admit closed
-  frames, store regions and a fresh result (`freshStore 0`) alone. -/
+  frames, spine regions and a fresh result (`freshSpine 0`) alone. -/
 namespace Verification.Tests.EffectCodecControls
 open Lean Verification CallEffects
 
@@ -41,8 +41,8 @@ private def withExceptional (ensures : String) : String :=
     "}},\"promise\":null,\"requires\":null,\"pre\":[]}"
 
 private def stableImage : String := withNormal "[]" "[{\"and\":{\"left\":\"truth\",\"right\":{\"transport\":{\"shift\":1,\"overrides\":[],\"boxed\":true,\"stable\":[1]}}}}]"
-private def thrownPost : String := withExceptional "[{\"operation\":{\"post\":{\"freshStore\":{\"x\":0}}}}]"
-private def farExit : String := withNormal "[]" "[{\"operation\":{\"post\":{\"freshStore\":{\"x\":4}}}}]"
+private def thrownPost : String := withExceptional "[{\"operation\":{\"post\":{\"freshSpine\":{\"x\":0}}}}]"
+private def farExit : String := withNormal "[]" "[{\"operation\":{\"post\":{\"freshSpine\":{\"x\":4}}}}]"
 
 -- A second signature whose exit certifies an image stable reads its world:
 -- the conjunction refuses it, at any nesting.

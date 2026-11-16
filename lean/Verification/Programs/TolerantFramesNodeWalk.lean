@@ -29,7 +29,7 @@ theorem envOk_tail {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty ι)} {v : Tm}
 (`ExitDelivers`), at every environment: the walk records the state
 `edgeTransfer` builds (`hrec`); the mapped names are the mapping's
 (`MapNamesSound`); the step's yields hold of its value on a pushed edge
-(`hY`); a fresh result holds a fresh store (`hfo`); the edge's type check
+(`hY`); a fresh result holds a fresh spine (`hfo`); the edge's type check
 gives the target's types (`htc`). -/
 theorem exitDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List (Ty ι)} {A : Ty ι}
     {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width : Nat} {pushed outFresh : Bool}

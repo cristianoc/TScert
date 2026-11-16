@@ -7,12 +7,12 @@ facts and the index facts its change keeps. This module adds the element
 facts:
 
 - a quantified element fact (`IndexFact.every`: every element below a stop
-  meets a body) is kept by a change keeping stores and numbers
+  meets a body) is kept by a change keeping spines and numbers
   (`IndexFact.everyKept`), among the closed effects the initialisation
-  write's `{values: init, stores: keep}` (`every_keptBy_init`);
-- an elements atom (`.elem`: every present element of a store meets a
-  predicate, `CallEffects.ElemsAt`) is kept by `{values: keep, stores: keep}`;
-- a dense prefix (`DenseAt`) is kept by `{values: any, stores: grow}`
+  write's `{values: init, spines: keep}` (`every_keptBy_init`);
+- an elements atom (`.elem`: every present element of a spine meets a
+  predicate, `CallEffects.ElemsAt`) is kept by `{values: keep, spines: keep}`;
+- a dense prefix (`DenseAt`) is kept by `{values: any, spines: grow}`
   (`dense`, in `TolerantFrames`).
 
 `Atom.keptByElems` is `Atom.keptBy` with the first two; `atom_keptByElems`
@@ -22,7 +22,7 @@ open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
 
 /-- The initialisation write's closed effect: values from absent to present,
-stores kept (`ExpressionEffects.initWriteWithin`). -/
+spines kept (`ExpressionEffects.initWriteWithin`). -/
 def initEffect : Footprints.Closed := ⟨.init, .keep, .keep⟩
 
 /-- A named fact every action of `c` keeps: `Atom.keptBy`'s, a quantified
@@ -70,13 +70,13 @@ theorem named_keptByElems_box {c : Footprints.Closed} {S : List Atom} (hk : ∀ 
     {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s :=
   fun _ ha a hm => atom_keptByElems (hk a hm) ha (hS a hm)
 
-/-- An elements atom is kept by `{values: keep, stores: keep}`. -/
+/-- An elements atom is kept by `{values: keep, spines: keep}`. -/
 theorem elem_keptByElems_empty (e : HeapKnowledge.ElemAtom) :
     (Atom.elem e).keptByElems Footprints.Closed.empty = true := rfl
 
-/-- A quantified element fact over a slot's store, its stop a slot's value,
+/-- A quantified element fact over a slot's spine, its stop a slot's value,
 its body reading the elements: kept by the initialisation write's effect,
-which keeps stores and numbers. -/
+which keeps spines and numbers. -/
 theorem every_keptBy_init (x y : Nat) (body : List (HeapKnowledge.LinearClause HeapKnowledge.Bound))
     (hb : body.all (fun F => F.vars.all fun b => match b with
         | .free t => t.keptBy (HeapKnowledge.Changes.ofClosed initEffect) (fun _ _ => false)

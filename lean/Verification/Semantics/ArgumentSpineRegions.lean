@@ -1,21 +1,21 @@
-import Verification.Semantics.StoreRegions
+import Verification.Semantics.SpineRegions
 import Verification.Semantics.IndexFacts
 import Verification.Semantics.ExceptionalPosts
 import Verification.Semantics.FootprintStability
 
-/-! Store regions read from entry values through data-field paths. A region
-excepts the store location alone. Element locations remain subject to the
+/-! Spine regions read from entry values through data-field paths. A region
+excepts the spine location alone. Element locations remain subject to the
 closed footprint. -/
 namespace Verification.Footprints
 
-/-- Separation of a path's selected store from another value's store.
-Undefined stores give no separation witness. -/
-def StoreApart (h : Heap) (x : Val) (path : List String) (y : Val) : Prop :=
-  ∃ v s t, HeapKnowledge.readPath h x path = some v ∧ storeOf v = some s ∧
-    storeOf y = some t ∧ s ≠ t
+/-- Separation of a path's selected spine from another value's spine.
+Undefined spines give no separation witness. -/
+def SpineApart (h : Heap) (x : Val) (path : List String) (y : Val) : Prop :=
+  ∃ v s t, HeapKnowledge.readPath h x path = some v ∧ spineOf v = some s ∧
+    spineOf y = some t ∧ s ≠ t
 
 /-- Every location on a path has a contract fixing the value read there.
-The final value may have a mutable array store. -/
+The final value may have a mutable array spine. -/
 inductive StablePath {n : Nat} (W : WorldT n) : Val → List String → Val → Prop where
   | nil : StablePath W v [] v
   | cons {fs code oid field l c v path result} :
@@ -75,26 +75,26 @@ theorem Closed.HoldsOn.trans_on {c : Closed} {P : Nat → Prop} {h₀ h h' : Hea
     rw [heq] at hc₂
     exact hc₁.trans h₁.1 hc₂
 
-/-- A nested call composes when its selected stores agree with entry's.
+/-- A nested call composes when its selected spines agree with entry's.
 The agreement is an obligation on paths, independent of the footprint. -/
-theorem ArgumentStoreRegionsWithin.trans {c : Closed} {regions : List ArgumentStoreRegion}
+theorem ArgumentSpineRegionsWithin.trans {c : Closed} {regions : List ArgumentSpineRegion}
     {ρ : Env} {entry middle after : Heap}
-    (h₁ : ArgumentStoreRegionsWithin c regions ρ entry middle)
-    (h₂ : ArgumentStoreRegionsWithin c regions ρ middle after)
+    (h₁ : ArgumentSpineRegionsWithin c regions ρ entry middle)
+    (h₂ : ArgumentSpineRegionsWithin c regions ρ middle after)
     (hs : ∀ r ∈ regions, r.resolve ρ middle = r.resolve ρ entry) :
-    ArgumentStoreRegionsWithin c regions ρ entry after := by
+    ArgumentSpineRegionsWithin c regions ρ entry after := by
   apply h₁.trans_on
   exact h₂.weaken (fun l hl r hr => by rw [hs r hr]; exact hl.2 r hr)
 
-/-- A stable path retains store separation on normal and exceptional returns.
+/-- A stable path retains spine separation on normal and exceptional returns.
 Preservation of another fact additionally needs the call's footprint there. -/
-theorem StoreApart.stable_path_frame {Ξ T Q R x path v y s t n W h term}
-    (hp : StablePath W x path v) (hs : storeOf v = some s) (ht : storeOf y = some t)
+theorem SpineApart.stable_path_frame {Ξ T Q R x path v y s t n W h term}
+    (hp : StablePath W x path v) (hs : spineOf v = some s) (ht : spineOf y = some t)
     (hne : s ≠ t) (hh : HeapOk n W h)
     (hr : HeapObservations.SafePostExc Ξ T Q R n W h term) :
     HeapObservations.SafePostExc Ξ T
-      (fun h' u => Q h' u ∧ StoreApart h' x path y)
-      (fun h' => R h' ∧ StoreApart h' x path y) n W h term := by
+      (fun h' u => Q h' u ∧ SpineApart h' x path y)
+      (fun h' => R h' ∧ SpineApart h' x path y) n W h term := by
   apply HeapObservations.SafePostExc.weaken _ _ (hp.frame hh hr)
   · intro h' u hq
     exact ⟨hq.1, v, s, t, hq.2, hs, ht, hne⟩
@@ -102,13 +102,13 @@ theorem StoreApart.stable_path_frame {Ξ T Q R x path v y s t n W h term}
     exact ⟨hq.1, v, s, t, hq.2, hs, ht, hne⟩
 
 /-- A stable own field keeps separation on every normal return. -/
-theorem StoreApart.stable_frame {Ξ T Q} {fs : List (PropKey × Nat)} {code : CallCode}
+theorem SpineApart.stable_frame {Ξ T Q} {fs : List (PropKey × Nat)} {code : CallCode}
     {oid l : Nat} {field : String} {v y : Val} {s t : Nat} {n W h term} {c : Ctr n}
     (hf : fs.lookup (.str field) = some l) (hl : lookup W l = some c) (hc : CtrStable c v)
-    (hs : storeOf v = some s) (ht : storeOf y = some t) (hne : s ≠ t)
+    (hs : spineOf v = some s) (ht : spineOf y = some t) (hne : s ≠ t)
     (hh : HeapOk n W h) (hr : HeapObservations.SafePost Ξ T Q n W h term) :
     HeapObservations.SafePost Ξ T
-      (fun h' u => Q h' u ∧ StoreApart h' (.objAt fs code oid) [field] y) n W h term := by
+      (fun h' u => Q h' u ∧ SpineApart h' (.objAt fs code oid) [field] y) n W h term := by
   apply HeapObservations.weaken _ (HeapObservations.stable_frame hl hc hh hr)
   intro h' u hp
   exact ⟨hp.1, v, s, t, by simp [HeapKnowledge.readPath, hf, hp.2], hs, ht, hne⟩

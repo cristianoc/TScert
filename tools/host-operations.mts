@@ -92,8 +92,8 @@ export const obligated = (operands: string, why: string): HostClass => ({ k: "ob
 
 const value = transparent("binds, passes or tests a value; observes no member");
 const read = transparent("a stated member's value, a view of the record the model reads");
-const store = transparent("a node list's store: its table, by T4");
-const writes = transparent("writes an invariant field or a writable store, whose families admit no host object");
+const spine = transparent("a node list's spine: its table, by T4");
+const writes = transparent("writes an invariant field or a writable spine, whose families admit no host object");
 const calls = transparent("a call: the callee's contract; a callback keeps its own");
 
 export const expressionForms: { readonly [K in Expr["k"]]: HostClass } = {
@@ -103,14 +103,14 @@ export const expressionForms: { readonly [K in Expr["k"]]: HostClass } = {
   ctor: transparent("allocates an ordinary class value"),
   build: obligated("each spread operand", "a fresh record of the operand's members as own keys"),
   read, index: read,
-  arrayLit: store,
-  arrayAssign: store,
+  arrayLit: spine,
+  arrayAssign: spine,
   indexWrite: writes, write: writes, update: writes, logicalAssign: writes,
   bin: value, arith: value, unary: value,
   withValue: transparent("allocates an ordinary callable object"),
   objectAssign: obligated("the target and each source", "copies each source's own keys onto the target"),
   typeofTest: transparent("the type tag: \"object\" for every host value"),
-  arrayTest: transparent("the store: true exactly of node lists among host values"),
+  arrayTest: transparent("the spine: true exactly of node lists among host values"),
   inTest: transparent("HasProperty over own fields and the prototype chain, as at run time (T4)"),
   instanceTest: transparent("a client class's key, which no host prototype owns"),
   tagMember: transparent("the name, or its tag field, a stated member read once, compared with each tag"),
@@ -128,7 +128,7 @@ export const statementForms: { readonly [K in Stmt["k"]]: HostClass } = {
 
 export const patternForms: { readonly [K in PatternAst["k"]]: HostClass } = {
   name: value,
-  array: store,
+  array: spine,
   object: obligated("the source, where the pattern has a rest", "a rest is a fresh record of the source's other members"),
 };
 
@@ -157,20 +157,20 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [importMetaResolveName]: value, [urlHrefName]: value, [pathToFileHrefName]: value,
   [arrayLengthName]: value,
   [arrayFilledName]: transparent("stores the value in a fresh array without reading it"),
-  [iterateName]: store,
+  [iterateName]: spine,
   [iterateStringName]: value, [iterateSetName]: value, [iterateMapName]: value, [iterateIteratorName]: value,
   [iterateRegExpStringName]: value, [iterateSegmentsName]: value,
   "|": transparent("a union's iteration, `%Iterate:K%|…`: the step of the iterable's kind, each classified above"),
   [forInName]: transparent("strings, which is all its contract states"),
   [iterateForInName]: transparent("over a dictionary, whose family admits no host object"),
   [hasPropertyName]: transparent("HasProperty over own fields and the prototype chain, as at run time (T4)"),
-  [elementAtName]: store,
+  [elementAtName]: spine,
   [byteAtName]: transparent("an element of a view of bytes, a number, as its stated library type gives it; a node is no byte view"),
   [byteLengthName]: transparent("the length of a view of bytes, a number, as its stated library type gives it"),
   [byteSetName]: transparent("an element of a view of bytes written with a number, as its stated library type gives it; a node is no byte view"),
   [throwUninitializedName]: transparent("throws a `ReferenceError`; observes no value"),
   "%Spread:": transparent("a string, Set, Map or iterator: no host value"),
-  "%RestFrom:": store,
+  "%RestFrom:": spine,
   "%Freeze:": transparent("a fresh object literal, no host value"),
   "%Enum:": transparent("allocates the file's enum object from its members' values"),
   "%TypeOf:": transparent("the type tag of a DOM global or of no binding; observes no member"),

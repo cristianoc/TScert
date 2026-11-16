@@ -9,7 +9,7 @@ import { statesTag } from "./bound-annotations.mts";
 import { childrenOf, isTypeAlias, unparenthesized } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
 import { withPromise, footprintEffect, ordinaryEffect, promiseEffect, sameEffect } from "./type-graph.mts";
-import type { CallEffect, CallPromise, StatedFrame, StoreRegion } from "./type-graph.mts";
+import type { CallEffect, CallPromise, StatedFrame, SpineRegion } from "./type-graph.mts";
 
 /** The projections a resolvable parameter owns: its observation and its
  * result. */
@@ -1186,12 +1186,12 @@ export const WITHIN_PLACE = "`Modifies` states a written signature's effect, at 
 export const FRESH_PLACE = "`Fresh` states a written signature's fresh result, at its result annotation only, or as `Modifies<P, Fresh<T>>`";
 
 /** The call effect a statement gives its signature: its footprint, on-throw
- * flag and fresh result, no promise, no receiver-store exception. A
- * statement with store regions gives its frame's closed approximation,
+ * flag and fresh result, no promise, no receiver-spine exception. A
+ * statement with spine regions gives its frame's closed approximation,
  * letting every location change (`StatedEffect.footprint`): the
  * regions are read only from a unit's own statement. */
 export const statedEffect = (stated: StatedFrame): Modifies<{ values: "any"; spines: "grow" }, CallEffect> =>
-  (footprintEffect(stated.regions.length ? { value: "any", store: "any" } : stated.footprint,
+  (footprintEffect(stated.regions.length ? { value: "any", spine: "any" } : stated.footprint,
     { onThrow: stated.onThrow, fresh: stated.fresh }));
 
 /** A result annotation's statement of its signature's frame,
@@ -1216,7 +1216,7 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
   placed(scope, node, at, modifies ? "Modifies" : "Fresh");
   if (fresh) {
     if (predicate) return scope.fail(node, "`Fresh` on a guard's promise states nothing: its result is a Boolean");
-    return { stated: { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true, regions: [] }, result: freshResult(scope, node) };
+    return { stated: { footprint: { value: "any", spine: "any" }, onThrow: false, fresh: true, regions: [] }, result: freshResult(scope, node) };
   }
   const [footprint, type, ...others] = node.typeArguments ?? [];
   if (!footprint || !type || others.length)
@@ -1229,9 +1229,9 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
     return scope.fail(inner, "`Fresh` on a guard's promise states nothing: its result is a Boolean");
   const stated = { ...frame, fresh: withFresh };
   if (withFresh && stated.regions.length)
-    return scope.fail(footprint, "a fresh result beside store regions is outside the fragment: a frame with store regions states no fresh result");
-  if (stated.footprint.value === "any" && stated.footprint.store === "any" && !stated.fresh)
-    return scope.fail(footprint, "`Modifies` letting every value and every store change states nothing: a throw's heap is as unconstrained by it as a normal return's");
+    return scope.fail(footprint, "a fresh result beside spine regions is outside the fragment: a frame with spine regions states no fresh result");
+  if (stated.footprint.value === "any" && stated.footprint.spine === "any" && !stated.fresh)
+    return scope.fail(footprint, "`Modifies` letting every value and every spine change states nothing: a throw's heap is as unconstrained by it as a normal return's");
   return { stated, result: predicate ? result : withFresh && ts.isTypeReferenceNode(inner) ? freshResult(scope, inner) : type };
 }
 
@@ -1272,11 +1272,11 @@ const CHANGES: readonly string[] = ["keep", "init", "scalar", "grow", "any"];
 const isChange = (text: string | null): text is Change => text !== null && CHANGES.includes(text);
 
 /** A class key's change on the locations holding a value: `grow` is
- * `scalar` there, since a value is no store. */
+ * `scalar` there, since a value is no spine. */
 const onValue = (c: Change): ClosedFootprint["value"] => c === "grow" ? "scalar" : c;
-/** A class key's change on the locations holding a store: `init` and
- * `scalar` keep a store. */
-const onStore = (c: Change): ClosedFootprint["store"] => c === "init" || c === "scalar" ? "keep" : c;
+/** A class key's change on the locations holding a spine: `init` and
+ * `scalar` keep a spine. */
+const onSpine = (c: Change): ClosedFootprint["spine"] => c === "init" || c === "scalar" ? "keep" : c;
 
 /** Whether a location key is one of the written form's: `cell(b)`, `R.f`,
  * `R[*]` or `R.*`, `R` a name or `this` followed by `.f` steps. */
@@ -1288,7 +1288,7 @@ const locationKey = (key: string): boolean => {
 
 /** A statement's frame `P`, written in place as a type literal: `values`
  * and `spines` at a change, unquoted, `onThrow: true`, and quoted location
- * keys. An omitted class key is `keep`. A store region `"x[*]": "any"` or
+ * keys. An omitted class key is `keep`. A spine region `"x[*]": "any"` or
  * `"x.f[*]": "any"` of a function declaration's parameter `x` (`this` its
  * receiver parameter) is read as `x`'s call position (`regionPosition`) and
  * the path `[f]`, the field's stability decided by the unit's regional check;
@@ -1300,9 +1300,9 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
   const shape = "a frame is written in place as a type literal `{ values?: c; spines?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"grow\", \"any\"";
   if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);
   let value: ClosedFootprint["value"] = "keep";
-  let store: ClosedFootprint["store"] = "keep";
+  let spine: ClosedFootprint["spine"] = "keep";
   let onThrow = false;
-  const regions: StoreRegion[] = [];
+  const regions: SpineRegion[] = [];
   const seen = new Set<string>();
   for (const member of node.members) {
     if (!ts.isPropertySignatureDeclaration(member) || member.modifiers?.length || !member.type ||
@@ -1315,7 +1315,7 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
     const literal = ts.isLiteralTypeNode(type) ? type.literal : null;
     const text = literal && ts.isStringLiteral(literal) ? literal.text : null;
     if (ts.isIdentifier(member.name) && key === "values" && isChange(text)) value = onValue(text);
-    else if (ts.isIdentifier(member.name) && key === "spines" && isChange(text)) store = onStore(text);
+    else if (ts.isIdentifier(member.name) && key === "spines" && isChange(text)) spine = onSpine(text);
     else if (ts.isIdentifier(member.name) && key === "onThrow" && literal?.kind === ts.SyntaxKind.TrueKeyword) onThrow = true;
     else if (ts.isStringLiteral(member.name) && locationKey(key)) {
       const classMap = ts.isTypeLiteralNode(type) && type.members.every(m =>
@@ -1324,20 +1324,20 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
         isChange(literalText(unwrap(m.type))));
       if (!isChange(text) && !classMap)
         return scope.fail(member, `a location key's change is one of "keep", "init", "scalar", "grow", "any", or a class map \`{ values?: c; spines?: c }\``);
-      const store = /^([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))?\[\*\]$/.exec(key);
-      if (store?.[1] !== undefined && text === "any")
-        regions.push({ position: regionPosition(scope, member, store[1], at), path: store[2] === undefined ? [] : [store[2]] });
-      else if (store) return scope.fail(member, `a store region "${key}" is stated at "any": its store and cells may change arbitrarily`);
-      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`spines\`, \`onThrow\` and a parameter's store region \`"x[*]"\` or \`"x.f[*]"\``);
+      const spine = /^([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))?\[\*\]$/.exec(key);
+      if (spine?.[1] !== undefined && text === "any")
+        regions.push({ position: regionPosition(scope, member, spine[1], at), path: spine[2] === undefined ? [] : [spine[2]] });
+      else if (spine) return scope.fail(member, `a spine region "${key}" is stated at "any": its spine and cells may change arbitrarily`);
+      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`spines\`, \`onThrow\` and a parameter's spine region \`"x[*]"\` or \`"x.f[*]"\``);
     } else if (ts.isIdentifier(member.name) && (key === "value" || key === "store"))
       return scope.fail(member, `\`${key}\` is no key of a frame: the class keys are \`values\` and \`spines\`, and a module cell is written \`"cell(${key})"\``);
     else if (!ts.isIdentifier(member.name) || key === "values" || key === "spines" || key === "onThrow") return scope.fail(member, shape);
     else return scope.fail(member, `\`${key}\` is no key of a frame: a location is a quoted key (\`"x.f"\`, \`"x[*]"\`, \`"x.*"\`), and a module cell is written \`"cell(${key})"\``);
   }
-  return { footprint: { value, store }, onThrow, fresh: false, regions };
+  return { footprint: { value, spine }, onThrow, fresh: false, regions };
 }
 
-/** The call position of a store region's root: a parameter of the function
+/** The call position of a spine region's root: a parameter of the function
  * declaration stating it, `0` a `this` parameter, the others in order from
  * `1`. Refused: a statement at no function declaration, whose unit is no
  * region's check; a name no parameter declares; a parameter with a default,
@@ -1345,13 +1345,13 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
  * call's. */
 function regionPosition(scope: TermScope, member: Node, root: string, at: Node | null): number {
   if (!at || !ts.isFunctionDeclaration(at))
-    return scope.fail(member, "a store region is stated on a function declaration, whose unit checks it");
+    return scope.fail(member, "a spine region is stated on a function declaration, whose unit checks it");
   const params = at.parameters;
   const index = params.findIndex(p => ts.isIdentifier(p.name) && p.name.text === root);
   const param = params[index];
-  if (!param) return scope.fail(member, `a store region's root \`${root}\` is a parameter of the declaration`);
+  if (!param) return scope.fail(member, `a spine region's root \`${root}\` is a parameter of the declaration`);
   if (param.initializer || param.dotDotDotToken)
-    return scope.fail(member, `a store region's root \`${root}\` is a parameter without a default and no rest parameter: its value in the body is the call's`);
+    return scope.fail(member, `a spine region's root \`${root}\` is a parameter without a default and no rest parameter: its value in the body is the call's`);
   const receiver = params[0] !== undefined && ts.isIdentifier(params[0].name) && params[0].name.text === "this";
   return receiver ? index : index + 1;
 }

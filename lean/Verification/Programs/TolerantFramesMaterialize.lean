@@ -43,7 +43,7 @@ def derivedOf (indices : List HeapKnowledge.IndexAtom) (links : HeapLinks.Links)
   if out.isEmpty || indices.isEmpty then [] else
     let isOut := fun s => !table.contains s
     let restated := indices ++ HeapKnowledge.restateReads links isOut indices ++
-      HeapKnowledge.restateStores links isOut indices
+      HeapKnowledge.restateSpines links isOut indices
     (HeapKnowledge.eliminateIndices out restated).drop indices.length
 
 open SinglePass HeapKnowledge in
@@ -163,13 +163,13 @@ theorem derivedOf_holds {indices : List HeapKnowledge.IndexAtom} {links : HeapLi
   split
   · exact HeapKnowledge.indexHolds_nil η h
   · have hr : HeapKnowledge.IndexHolds ε (indices ++ HeapKnowledge.restateReads links (fun s => !table.contains s) indices ++
-        HeapKnowledge.restateStores links (fun s => !table.contains s) indices) η h := by
+        HeapKnowledge.restateSpines links (fun s => !table.contains s) indices) η h := by
       intro a ha
       rcases List.mem_append.mp ha with ha | ha
       · rcases List.mem_append.mp ha with ha | ha
         · exact hi a ha
         · exact HeapKnowledge.restateReads_holds hl hi a ha
-      · exact HeapKnowledge.restateStores_holds hl hi a ha
+      · exact HeapKnowledge.restateSpines_holds hl hi a ha
     intro a ha
     exact HeapKnowledge.eliminateIndices_holds hr a (List.mem_of_mem_drop ha)
 

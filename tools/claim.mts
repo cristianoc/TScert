@@ -57,11 +57,11 @@ export type Atom =
   | { a: "constructor"; params: ClaimType[]; result: ClaimType }
   /* A `void` result: no usable guarantee about the value. */
   | { a: "void" }
-  /* An array: a tuple contract on its store. `required` positions are
+  /* An array: a tuple contract on its spine. `required` positions are
      present; `optional` ones may be holes; `rest` types any further position,
      or null when none may exist. `readonly` makes it a view. */
   | {
-      a: "array" | "store";
+      a: "array" | "spine";
       required: ClaimType[];
       optional: ClaimType[];
       rest: ClaimType | null;
@@ -208,7 +208,7 @@ function functionAtom(v: JsonObject): FunctionAtom {
  * has, does not compile. */
 const ATOM_KINDS = [
   "null", "undefined", "boolean", "string", "number", "bigint", "symbol", "void",
-  "constructor", "array", "store", "stringlit", "numberlit", "booleanlit", "bigintlit",
+  "constructor", "array", "spine", "stringlit", "numberlit", "booleanlit", "bigintlit",
   "param", "alias", "record", "function", "callable",
 ] as const;
 type Covers<Missing extends never> = Missing;
@@ -239,7 +239,7 @@ function atom(v: JsonRead): Atom {
       keys(o, ["a"]);
       return { a };
     case "array":
-    case "store": {
+    case "spine": {
       keys(o, ["a", "required", "optional", "rest", "readonly", "presence"]);
       const required = claimTypes(o.required);
       const optional = claimTypes(o.optional);

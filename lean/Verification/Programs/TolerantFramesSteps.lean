@@ -45,7 +45,7 @@ def kindPreserving : StepEvidence ι → Bool
 /-- The calls the pass frames (`SinglePass.lean` lines 1289–1296): one
 promising its receiver's elements, one at a precondition whose selected
 signature keeps the heap, one allocating its result, else one keeping the heap
-that changes no receiver's own locations. -/
+that changes no receiver's field locations. -/
 def callKeepsHeap (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι) (kE : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
   match e with
@@ -62,7 +62,7 @@ def passPreserving (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Seq
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
   callKeepsHeap G images j kE e codes sums || kindPreserving e
 
-/-- The step's normal exit is within `{values: keep, stores: keep}` from `h`. -/
+/-- The step's normal exit is within `{values: keep, spines: keep}` from `h`. -/
 def KeepsPost (G : NormalGraph ι) (j : Sequent ι) (ρ : Env) (n : Nat) (W : WorldT n) (h : Heap) : Prop :=
   SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
     (instantiate 0 ρ j.term)
@@ -232,7 +232,7 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
           · rename_i hq
             obtain ⟨-, -, hin⟩ := hq
             refine .inl ?_
-            rw [storeSlots_eq hs]
+            rw [spineSlots_eq hs]
             simp only [instantiate, instantiateArgs_eq_map, Purity.inspectTerm, List.map_map, List.all_eq_true,
               List.mem_map]
             rintro _ ⟨i, hi, rfl⟩
@@ -412,9 +412,9 @@ theorem passPreserving_keeps {G : NormalGraph ι} {images : InstanceImageCheck G
 normal exit keeps the heap (`KeepsPost`) and whose checker's `run` accepted
 it with output `out`, from the facts `k` handed to its rule and the store's
 facts `S` at the name valuation `η`: a normal return is an action of
-`{values: keep, stores: keep}` with the residual budget, the result's type,
+`{values: keep, spines: keep}` with the residual budget, the result's type,
 the rule's output, and every fact of `S`, handed or not, at `η[r ↦ v]`; a
-throw is an action of `{values: any, stores: any}` with the raised value
+throw is an action of `{values: any, spines: any}` with the raised value
 closed and of the exception family and the facts of `S` reading no heap. -/
 theorem preserving_step_frame {G : NormalGraph ι} {images : InstanceImageCheck G} (checker : Checker G images)
     {j : Sequent ι} {kn out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}

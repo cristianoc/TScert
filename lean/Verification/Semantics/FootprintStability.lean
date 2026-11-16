@@ -25,9 +25,9 @@ inductive FactKind where
   | link (g : HeapLinks.Link)
   /-- A primitive predicate of a slot's value. -/
   | value (f : HeapFacts.Fact)
-  /-- The first `n` indices of `x`'s store are present. -/
+  /-- The first `n` indices of `x`'s spine are present. -/
   | dense (x n : Nat)
-  /-- Every present element of `x`'s store satisfies `R` (`CallEffects.ElemsAt`). -/
+  /-- Every present element of `x`'s spine satisfies `R` (`CallEffects.ElemsAt`). -/
   | elems (x : Nat) (R : CallEffects.ElemPred)
 
 def FactKind.Holds : FactKind → Env → Heap → Prop
@@ -41,17 +41,17 @@ def FactKind.support : FactKind → Footprint
   | .cell f => [(.field f.slot f.field, .keep)]
   | .link g => if g.alias then [] else [(.field g.cell g.field, .keep)]
   | .value _ => []
-  | .dense x _ => [(.field x arrayStoreKey, .grow)]
-  | .elems x _ => [(.field x arrayStoreKey, .keep), (.elems x, .keep)]
+  | .dense x _ => [(.field x arraySpineKey, .grow)]
+  | .elems x _ => [(.field x arraySpineKey, .keep), (.cells x, .keep)]
 
-/-- The elements fact survives every change keeping its store's location and
-each element location the store lists. -/
+/-- The elements fact survives every change keeping its spine's location and
+each element location the spine lists. -/
 theorem elems_support {x : Nat} {R : CallEffects.ElemPred} {ρ : Env} {h h' : Heap}
     (hF : CallEffects.ElemsAt R (ρ x) h)
-    (hs : Supported [(.field x arrayStoreKey, .keep), (.elems x, .keep)] ρ h h') :
+    (hs : Supported [(.field x arraySpineKey, .keep), (.cells x, .keep)] ρ h h') :
     CallEffects.ElemsAt R (ρ x) h' := by
   obtain ⟨s, ls, hst, hl, hall⟩ := hF
-  have hkeep : ∀ e ∈ [((Region.field x arrayStoreKey), Change.keep), (Region.elems x, Change.keep)],
+  have hkeep : ∀ e ∈ [((Region.field x arraySpineKey), Change.keep), (Region.cells x, Change.keep)],
       ∀ l v, e.1.mem ρ h l = true → h[l]? = some v → h'[l]? = some v := by
     intro e he l v hm hv
     obtain ⟨v', hv', hk⟩ := hs e he l v hm hv
@@ -61,15 +61,15 @@ theorem elems_support {x : Nat} {R : CallEffects.ElemPred} {ρ : Env} {h h' : He
     rw [hk'] at hk
     simp only [Change.Holds] at hk
     rw [← hk]; exact hv'
-  have hfield : (Region.field x arrayStoreKey).mem ρ h s = true := by
-    simpa [Region.mem] using Footprints.storeOf_lookup hst
+  have hfield : (Region.field x arraySpineKey).mem ρ h s = true := by
+    simpa [Region.mem] using Footprints.spineOf_lookup hst
   refine ⟨s, ls, hst, hkeep _ (List.mem_cons_self ..) s _ hfield hl, fun l hm => ?_⟩
   obtain ⟨v, hv, hr⟩ := hall l hm
-  have hel : (Region.elems x).mem ρ h l = true := by
-    simp only [Region.mem, List.contains_iff_mem, storeElems]
+  have hel : (Region.cells x).mem ρ h l = true := by
+    simp only [Region.mem, List.contains_iff_mem, spineCells]
     refine List.mem_append_left _ ?_
-    simpa [entriesAt, Footprints.storeOf_lookup hst, hl, storeEntries] using hm
-  exact ⟨v, hkeep (Region.elems x, .keep) (by simp) l v hel hv, hr⟩
+    simpa [entriesAt, Footprints.spineOf_lookup hst, hl, spineEntries] using hm
+  exact ⟨v, hkeep (Region.cells x, .keep) (by simp) l v hel hv, hr⟩
 
 /-- A field's contents are unchanged where the support keeps them. -/
 theorem readGave_support {flds : List (PropKey × Nat)} {k : PropKey} {h h' : Heap} {v : Val}
@@ -123,24 +123,24 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
 /-! ## Separation -/
 
 /-- What separation may use: the class of fields' contents, provenance
-stamps, and distinct field pairs; the paths whose store location differs from
-a slot's store location (`storeApart`, the chain1 `StoreApart`), and the
-paths whose store lists only cells holding no store (`elemsValue`). -/
+stamps, and distinct field pairs; the paths whose spine location differs from
+a slot's spine location (`spineApart`, the chain1 `SpineApart`), and the
+paths whose spine lists only cells holding no spine (`elemsValue`). -/
 structure SepKnowledge where
   cl : ClassEvidence
   stamps : Stamps
   typed : Nat → List PropKey
   distinct : List (Nat × PropKey × Nat × PropKey)
-  storeApart : List (Nat × List String × Nat) := []
+  spineApart : List (Nat × List String × Nat) := []
   elemsValue : List (Nat × List String) := []
 
 def SepKnowledge.Holds (K : SepKnowledge) (μ : Nat → Nat) (ρ : Env) (h : Heap) : Prop :=
   ClassOk K.cl ρ h ∧ StampsHold K.stamps K.typed μ ρ ∧ (∀ i j, i ≤ j → μ i ≤ μ j) ∧
     (∀ d ∈ K.distinct, ∀ l l', (fieldsOf (ρ d.1)).lookup d.2.1 = some l →
       (fieldsOf (ρ d.2.2.1)).lookup d.2.2.2 = some l' → l ≠ l') ∧
-    (∀ a ∈ K.storeApart, ∀ l, (Region.path a.1 a.2.1 arrayStoreKey).mem ρ h l = true →
-      (Region.field a.2.2 arrayStoreKey).mem ρ h l = false) ∧
-    (∀ a ∈ K.elemsValue, ∀ l, (Region.pathElems a.1 a.2).mem ρ h l = true →
+    (∀ a ∈ K.spineApart, ∀ l, (Region.path a.1 a.2.1 arraySpineKey).mem ρ h l = true →
+      (Region.field a.2.2 arraySpineKey).mem ρ h l = false) ∧
+    (∀ a ∈ K.elemsValue, ∀ l, (Region.pathCells a.1 a.2).mem ρ h l = true →
       (Region.cls .values).mem ρ h l = true)
 
 /-- Own locations of `x` against typed field `k` of `y`, by stamps. -/
@@ -163,13 +163,13 @@ def SepKnowledge.otherClass (K : SepKnowledge) (x : Nat) (k : PropKey) (c : Sele
 def SepKnowledge.apart₁ (K : SepKnowledge) : Region → Region → Bool
   | .field x k, .cls c => K.otherClass x k c
   | .field x k, .field y k' => K.provenance x y k' || K.provenance y x k || K.linked x k y k'
-  | .own x, .field y k' => K.provenance x y k'
+  | .fields x, .field y k' => K.provenance x y k'
   | .field x k, .cell _ => K.otherClass x k .values
   | .field x k, .inCls _ c => K.otherClass x k c
-  | .path x p k, .field y k' => k == arrayStoreKey && k' == arrayStoreKey &&
-      K.storeApart.contains (x, p, y)
-  | .pathElems x p, .field y k => K.elemsValue.contains (x, p) && K.cl y k == some .stores
-  | .pathElems x p, .cls c => K.elemsValue.contains (x, p) && Selector.values.disjoint c
+  | .path x p k, .field y k' => k == arraySpineKey && k' == arraySpineKey &&
+      K.spineApart.contains (x, p, y)
+  | .pathCells x p, .field y k => K.elemsValue.contains (x, p) && K.cl y k == some .spines
+  | .pathCells x p, .cls c => K.elemsValue.contains (x, p) && Selector.values.disjoint c
   | .inCls _ c, .cls c' => c.disjoint c'
   | .inCls r _, s => K.apart₁ r s
   | _, _ => false
@@ -192,7 +192,7 @@ private theorem provenance_sound {K : SepKnowledge} {μ ρ h x y k l l'} (hK : K
     | none => simp [ha, hb] at hm
     | some m' =>
       simp only [ha, hb, decide_eq_true_eq] at hm
-      exact stamps_separate (r := .own x) (h := h) hK.2.1 hK.2.2.1 ha hb hm (.inr rfl)
+      exact stamps_separate (r := .fields x) (h := h) hK.2.1 hK.2.2.1 ha hb hm (.inr rfl)
         (by simpa [Region.mem] using hl) hk hl'
 
 /-- A field whose contents have, by class evidence, a class other than `c`
@@ -251,7 +251,7 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ �
         rcases ha with ha | ha
         · exact hK.2.2.2.1 _ ha l l hr hs rfl
         · exact hK.2.2.2.1 _ ha l l hs hr rfl
-  | own x =>
+  | fields x =>
     intro s ha hr hs
     cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
     case field y k' =>
@@ -265,7 +265,7 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ �
       obtain ⟨⟨rfl, rfl⟩, ha⟩ := ha
       have := hK.2.2.2.2.1 _ ha l hr
       rw [hs] at this; cases this
-  | pathElems x p =>
+  | pathCells x p =>
     intro s ha hr hs
     have hv := fun hm => hK.2.2.2.2.2 (x, p) hm l hr
     cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
@@ -279,7 +279,7 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ �
       split at h₁
       · rename_i v hv'; rw [hv'] at hs; exact cls_disjoint ha.2 h₁ hs
       · cases h₁
-  | elems | cls | all | pathOwn | cell | store =>
+  | cells | cls | all | pathFields | cell | spine =>
     intro s ha
     simp [SepKnowledge.apart₁] at ha
 
@@ -445,8 +445,8 @@ theorem keep_across_call {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {σ 
     (hs : stable K F.support (Φ.rename σ) = true) (hF : F.Holds ρ h) : F.Holds ρ h' :=
   FactKind.support_sound hF (stable_sound hs hK (Post.rename hσ hp))
 
-/-- The class evidence a density fact supplies: its store holds a store. -/
-def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arrayStoreKey then some .stores else none
+/-- The class evidence a density fact supplies: its spine holds a spine. -/
+def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arraySpineKey then some .spines else none
 
 theorem dense_classOk {x n ρ h} (hd : Dense x n ρ h) : ClassOk (denseClass x) ρ h := by
   intro y k c l hc hl _

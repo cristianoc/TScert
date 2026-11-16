@@ -15,7 +15,7 @@ A signature's effect (`Effect`) states its exits as a schema
 (`Effect.schema`), the same for every arity (the note's Call); at a call of
 `n` actuals it is its summary (`Effect.summary`, `Exits.atArity`). A
 guarantee stated beside the frame, such as the receiver's growth `{receiver
-store: any}` or a typed array's element write `{all-views: grow}`, is a
+spine: any}` or a typed array's element write `{all-views: grow}`, is a
 postcondition `.transition Φ`, conjoined with the frame: the two hold of one
 transition. This module holds the readers of postconditions by their
 formulas, the meaning of the formulas the library's contracts state
@@ -47,7 +47,7 @@ assignment View-Write at the typed array's format and the result the value
 written, for the exact form View-Write at the element type's format, the
 facts its precondition gives and the result. -/
 def ElementWrite.schemaPosts : ElementWrite → List FormulaSchema
-  | .stores => [.transition [(.cls .views, .grow)]]
+  | .spines => [.transition [(.cls .views, .grow)]]
   | .assign => [.transition [(.cls .views, .grow)], .operation (.viewWrite 1 2 3 none), .transport writtenResultSchema]
   | .exact k => .transition [(.cls .views, .grow)] :: .operation (.viewWrite 1 2 3 (some k.format)) ::
       ((k.preFacts.map fun F => .operation (.fact .before 0 F)) ++ [.transport writtenResultSchema])
@@ -68,10 +68,10 @@ theorem restFrom_one (n : Nat) : (WitnessSeq.restFrom 1).instantiate n = actualW
 section Equivalence
 variable {arena : AssertionArena} {r : Tm} {args : List Tm} {v : Tm} {m : Nat} {s s' : IndexedHeap}
 
-/-- **The receiver's growth is its frame and the store's extension.** -/
+/-- **The receiver's growth is its frame and the spine's extension.** -/
 theorem receiverGrows_iff (hadm : Admissible s s') :
-    (Parity.Holds arena (callState r args v m s s') (.transition [(.field 0 arrayStoreKey, .any)]) ∧
-      Parity.Holds arena (callState r args v m s s') (.operation (.storeExtends 0))) ↔
+    (Parity.Holds arena (callState r args v m s s') (.transition [(.field 0 arraySpineKey, .any)]) ∧
+      Parity.Holds arena (callState r args v m s s') (.operation (.spineExtends 0))) ↔
       ReceiverGrows r s.h s'.h := by
   simp only [Parity.Holds, OperationPostF.Holds, callState, EffectAction, TolerantFrames.Action]
   have h0 : callEnv r args 0 = r := rfl
@@ -83,8 +83,8 @@ theorem receiverGrows_iff (hadm : Admissible s s') :
     · exact .inl hu'
     · simp only [List.mem_singleton] at he
       subst he
-      have hst : storeOf r = some l := by
-        simpa [Region.mem, h0, storeOf] using hm
+      have hst : spineOf r = some l := by
+        simpa [Region.mem, h0, spineOf] using hm
       rcases hx l u hst hu with hk | ⟨ls, ls', rfl, hls', hpre, hlen⟩
       · exact .inl hk
       · exact .inr ⟨hst, ls, ls', rfl, hls', hpre, hlen⟩
@@ -93,7 +93,7 @@ theorem receiverGrows_iff (hadm : Admissible s s') :
     · rcases hg l u hu with hk | ⟨hst, ls, ls', rfl, hls', -⟩
       · exact ⟨u, hk, .inl rfl⟩
       · refine ⟨_, hls', .inr ⟨_, List.mem_singleton_self _, ?_, trivial⟩⟩
-        simpa [Region.mem, h0, storeOf] using hst
+        simpa [Region.mem, h0, spineOf] using hst
     · rcases hg st u hu with hk | ⟨-, ls, ls', rfl, hls', hpre, hlen⟩
       · exact .inl hk
       · exact .inr ⟨ls, ls', rfl, hls', hpre, hlen⟩
@@ -205,8 +205,8 @@ def _root_.Verification.Footprints.Footprint.regionFields (Φ : Footprint) : Lis
     | _ => none
 
 /-- **Whether an exit states a fresh result**: its postcondition that the
-result's store is allocated during the call (`freshStore 0`). -/
-def ExitSchema.freshResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshStore 0) ∈ q.ensures)
+result's spine is allocated during the call (`freshSpine 0`). -/
+def ExitSchema.freshResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshSpine 0) ∈ q.ensures)
 
 /-- **Whether an exit states a fresh result object**: its postcondition that
 every own location of the result was allocated during the call
@@ -274,20 +274,20 @@ theorem Effect.ofClosed_schema (c : Footprints.Closed) (bounded : Bool) :
     (Effect.ofClosed c bounded).schema = Exits.ofClosed c bounded := rfl
 
 /-- **The exits a declaration states**: on a normal return the closed frame
-`c` and the store regions `regions` at `any`, a fresh result where `fresh`
+`c` and the spine regions `regions` at `any`, a fresh result where `fresh`
 and the index facts `ensures` of the result and the call's positions; on a
 throw the same frame where `bounded`, `⊤` otherwise. -/
 def Exits.ofStated (c : Footprints.Closed) (bounded fresh : Bool) (ensures : List HeapKnowledge.IndexFact)
-    (regions : List Footprints.ArgumentStoreRegion) : Exits ExitSchema :=
+    (regions : List Footprints.ArgumentSpineRegion) : Exits ExitSchema :=
   let frame := c.fp ++ regions.map regionEntry
-  ⟨⟨frame, (if fresh then [.operation (.freshStore 0)] else []) ++
+  ⟨⟨frame, (if fresh then [.operation (.freshSpine 0)] else []) ++
       ensures.map fun F => .operation (.fact .after 0 F)⟩,
     if bounded then ⟨frame, []⟩ else ⟨topEffect, []⟩⟩
 
 /-- **An effect a declaration states** (`Exits.ofStated`), with its promise
 and its precondition `pre`. -/
 def Effect.ofStated (c : Footprints.Closed) (promise : Option TypePromise) (bounded fresh : Bool)
-    (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentStoreRegion) : Effect :=
+    (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentSpineRegion) : Effect :=
   ⟨Exits.ofStated c bounded fresh ensures regions, promise, none, pre⟩
 
 /-- **A frame with its class entries those of `c`**: `c`'s class entries,

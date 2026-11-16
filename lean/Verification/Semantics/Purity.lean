@@ -12,7 +12,7 @@ def pureTerm : Tm → Bool
   | .ite c t e => pureTerm c && pureTerm t && pureTerm e
   | .arith _ a b => pureTerm a && pureTerm b
   | .throw a => pureTerm a
-  /- A length reads the store it is given, or a string's code units, and
+  /- A length reads the spine it is given, or a string's code units, and
   gives a number: it changes no heap. -/
   | .lenOf a => pureTerm a
   | t => isVal t
@@ -135,7 +135,7 @@ theorem PureRun.step {h t h' t'} (hp : PureRun t) (hs : Step h t h' t') :
     | frameRaise hr =>
       exact ⟨List.prefix_refl _, .term (by simpa [pureTerm] using pure_value (raises_val hr))⟩
 
-/-- A rest-collecting entry allocates a fresh store before running the
+/-- A rest-collecting entry allocates a fresh spine before running the
 body. This is compatible with preserving the input heap: fresh locations are
 allowed. Values and scope are checked separately, so substitution cannot turn
 a saved argument into executable code. -/
@@ -148,7 +148,7 @@ inductive CollectingRun : Tm → Prop where
   | collected : (∀ e ∈ E, pureTerm e = true) →
       (∀ v ∈ L, isVal v = true) → (∀ v ∈ L, Scoped 0 v) →
       CollectingRun (.letE (.arr ls) (.goto E K start (.var 0 :: L) .nul))
-  /-- A pack of more elements than a store holds throws its `RangeError`. -/
+  /-- A pack of more elements than a spine holds throws its `RangeError`. -/
   | refused : CollectingRun (.letE (.throw (thrownError l)) b)
 
 theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' t') :
@@ -214,8 +214,8 @@ def operandTerm : Tm → Bool
   | .var _ => true
   | t => isVal t
 
-/-- A store initializer an inspection admits: an operand, or a spread of a
-read, whose store's elements the literal reads in place of it. -/
+/-- A spine initializer an inspection admits: an operand, or a spread of a
+read, whose spine's elements the literal reads in place of it. -/
 def initTerm : Tm → Bool
   | .spread a => readTerm a
   | t => operandTerm t
@@ -324,7 +324,7 @@ theorem operand_no_step {a : Tm} (ho : operandTerm a = true) {h h' a'} : ¬ Step
   cases a <;> simp only [operandTerm, isVal, Bool.false_eq_true] at ho <;>
     first | cases st | exact value_no_step (by simp [isVal]) st
 
-/-- The elements a store's locations hold are values, when the heap holds
+/-- The elements a spine's locations hold are values, when the heap holds
 only values. -/
 theorem readElems_values {h : Heap} : ∀ {ls : List (Option Nat)} {vs : List Tm},
     readElems h ls = some vs → (∀ (l : Nat) (v : Tm), h[l]? = some v → isVal v = true) →

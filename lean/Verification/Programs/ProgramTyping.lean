@@ -58,7 +58,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- **Graph code.** A function whose body is a control-flow graph, as a
   function body is: the code meets each signature it offers (`CodeOffers`:
   each checked by the graph checker, `GraphCodeSpec`; with a rest, from the
-  frame holding the store of the further actuals), with its captures, slots
+  frame holding the spine of the further actuals), with its captures, slots
   of this context, at the types the code was checked with. Its kind binds
   the receivers of every signature it offers (`KindOffers`): sloppy code
   offers signatures whose receivers are objects. -/
@@ -89,7 +89,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- **A generic closure.** The code meets each signature at every permitted
   assignment of the scheme's binders. Its captures are slots whose types read
   none of those binders (`FreeOk`), so they mean the same at every instantiation.
-  Arity and rest-store formation are checked independently of the assignment. -/
+  Arity and rest-spine formation are checked independently of the assignment. -/
   | funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)} :
@@ -209,12 +209,12 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   keys are exactly those names, so any bound admitting them holds of it. A
   field among the stable keys `st` is allocated with a contract admitting
   only its initial value: the clause states it a view and a stable key
-  (POSITIVE-TYPES.md, "Records"). Such an object holds no array store.
+  (POSITIVE-TYPES.md, "Records"). Such an object holds no array spine.
   Every allocation of named locations is this one rule: an object literal, a
   binding's cell and its uninitialized marker, an array object with its
-  store slot. The clause states each field's storage position (`fs`), the
+  spine slot. The clause states each field's storage position (`fs`), the
   key and contract of a part with the role the claim gives its location,
-  which fits the part's key (`StorageRole.fitsKey`: the array store's role
+  which fits the part's key (`StorageRole.fitsKey`: the array spine's role
   under `[]`, a field's or a cell's under any other key). -/
   | alloc {parts : List (PropKey × Ty ι × Tm)} {fs : List (Stored (Ty ι))} {ks : List KeyBound}
       {st : List PropKey} :
@@ -224,7 +224,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       Represents G RefT (.refs fs [] (stablePart st true (parts.map fun p => (p.1, p.2.1))) [] [] ks st) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       allocBuiltins G (parts.map fun p => (p.1, p.2.1)) = true →
-      (st = [] ∨ CallArguments.arrayStoreField ∉ parts.map Prod.fst) →
+      (st = [] ∨ CallArguments.arraySpineField ∉ parts.map Prod.fst) →
       (∀ k ∈ st, k ∈ parts.map Prod.fst) →
       (∀ p ∈ parts, Payload G (.stored (allocRole fs p.1)) p.2.1) →
       (∀ p ∈ parts, (allocRole fs p.1).fitsKey p.1 = true) →
@@ -245,7 +245,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {ix : List (IndexKeys × Ty ι)} {cs : List (IndexKeys × StorageRole × Ty ι)}
       {os : List (OptionalField (Ty ι))} :
       (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
-      CallArguments.arrayStoreField ∉ parts.map Prod.fst → hostKey ∉ parts.map Prod.fst →
+      CallArguments.arraySpineField ∉ parts.map Prod.fst → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Stored.views fs = parts.map (fun p => (p.1, p.2.1)) →
       Represents G RefT (.dict fs [] [] ix os [] [] cs) →
@@ -266,8 +266,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | readView : HasTyWith G images subtyping Γ a RefT → Represents G RefT c → namedMembers c = some (fs, vs) →
       (f, A) ∈ vs → (f ≠ lengthKey ∨ lengthExcluded G A = true) → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- **`length` through a view.** A view of `length` admits an array, whose
-  `length` is its store's: the read tests the slot's value, and reads an
-  array's store length, a number the view's type holds, or any other object's
+  `length` is its spine's: the read tests the slot's value, and reads an
+  array's spine length, a number the view's type holds, or any other object's
   own `length` location. -/
   | lenView {Γ : List (Ty ι)} {i : Nat} {Ref A : Ty ι} {c : Clause (Ty ι)} {fs : List (Stored (Ty ι))}
       {vs : List (PropKey × Ty ι)} :
@@ -320,8 +320,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   the result's value is not typed. -/
   | arith : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping Γ b B → OperatorTypes G op A B N →
       HasTyWith G images subtyping Γ (.arith op a b) N
-  /-- A literal allocates a store: one fresh location per element, each
-  under the position's contract of the tuple the store is claimed at, whose
+  /-- A literal allocates a spine: one fresh location per element, each
+  under the position's contract of the tuple the spine is claimed at, whose
   bounds the typed-array length respects. -/
   | arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} :
       Represents G L (.list T []) → T.required.length ≤ xs.length →
@@ -345,9 +345,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ a L → Represents G L (.list ⟨[], [], some E, ro, presence⟩ []) → HasTyWith G images subtyping Γ i I →
       Answers G I .isNum true → Represents G U .undef → HasTyWith G images subtyping Γ (.elemAt a i) (E ++ U)
   /-- A write at a literal index into a position the contract names keeps the
-  contract: into the element's location, or a fresh one the store records.
+  contract: into the element's location, or a fresh one the spine records.
   The index is at most the required length, so the write is in bounds or
-  appends at the end: it never leaves a hole, and the store stays dense. -/
+  appends at the end: it never leaves a hole, and the spine stays dense. -/
   | setElem {Γ : List (Ty ι)} {a i v : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} :
       HasTyWith G images subtyping Γ a L → Represents G L (.list T []) → HasTyWith G images subtyping Γ i I → Represents G I (.numLit b) →
       indexOfBits b = some k → positionTy T k = some A → k ≤ T.required.length →
@@ -384,10 +384,10 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   tag set's members are its elements' labels (`members`). -/
   | unionVar : Γ[i]? = some C →
       (∀ a ∈ members G C, HasTyWith G images subtyping (Γ.set i [a]) t A) → HasTyWith G images subtyping Γ t A
-  /-- **A literal with spreads.** `[a, ...s, b]` allocates a fresh store of
+  /-- **A literal with spreads.** `[a, ...s, b]` allocates a fresh spine of
   its parts' values in order: each plain part at the element type `E`, each
-  spread the elements of the store it evaluates to, read where it is written,
-  which spread into `E`. The store's length is not known, so its contract is
+  spread the elements of the spine it evaluates to, read where it is written,
+  which spread into `E`. The spine's length is not known, so its contract is
   `E` at every position. -/
   | arrParts {Γ : List (Ty ι)} {T E : Ty ι} {ro : Bool} {presence : ArrayPresence}
       {parts : List (Bool × Ty ι × Tm)} :
@@ -411,7 +411,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   /-- **A spread of a packed value.** A call at a variadic signature whose
   rest admits a packed binder `t`'s argument lists, after its fixed actuals,
-  spreads the store of a value of `t`, or of a meet row of it: its elements
+  spreads the spine of a value of `t`, or of a meet row of it: its elements
   are one of `t`'s lists. -/
   | callPacked {effect : Effect} {Γ : List (Ty ι)} {f r a : Tm} {F Rt A B P : Ty ι}
       {xs : List (Ty ι × Tm)} {t : ι} :
@@ -419,7 +419,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       t ∈ P → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → HasTyWith G images subtyping Γ a A → PackedBy G A t →
       effect.plain = true → HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++
-        [.spread (.readAt CallArguments.arrayStoreField a)])) B
+        [.spread (.readAt CallArguments.arraySpineField a)])) B
   /-- **A bound function.** `.bind` saved its target, receiver and prefix in
   slots; allocation stores those values, as they are, in a forwarding
   descriptor with no fields. The result takes the positions the target's
@@ -554,12 +554,12 @@ theorem captures_sem {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Na
   exact hcapv c (List.mem_of_getElem? hc)
 
 omit [DecidableEq ι] in
-/-- **A write into a store at an index no greater than its length.** The
-store `ls` meets the list contract `L`; the write lands on a present element's
-location or a fresh one the new store records, holes filling no gap, so the
-store it yields meets `L` again. The literal-index rule `setElem` and the
-bounded write of heap knowledge both reach the store this way. -/
-theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tuple (Ty ι)} {ls : List (Option Nat)}
+/-- **A write into a spine at an index no greater than its length.** The
+spine `ls` meets the list contract `L`; the write lands on a present element's
+location or a fresh one the new spine records, holes filling no gap, so the
+spine it yields meets `L` again. The literal-index rule `setElem` and the
+bounded write of heap knowledge both reach the spine this way. -/
+theorem setElem_spine_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tuple (Ty ι)} {ls : List (Option Nat)}
     {b : UInt64} {k p : Nat} {X : WorldT p} {heap'' : Heap} {vv : Tm}
     (hr : Represents G L (.list T [])) (hro : T.readonly = false) (hA : positionTy T k = some A)
     (hk : indexOfBits b = some k) (hkls : k ≤ ls.length)
@@ -1228,7 +1228,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok) hbody
-  | @alloc Γ Ref parts fs ks st hnd hhostp hp hfs hr hbound hreal hstore hst hpay hfit ih =>
+  | @alloc Γ Ref parts fs ks st hnd hhostp hp hfs hr hbound hreal hspine hst hpay hfit ih =>
     intro n W h ρ he hw hh href
     have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at href ⊢
@@ -1374,7 +1374,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       refine ⟨flds, oid, he', ?_⟩
       simp only [StableAt, hl]
       exact ⟨c, v, hw', fun i hi W' u hc => ((hag i hi W' u).mp hc).2⟩
-    · rcases hstore with rfl | hstore
+    · rcases hspine with rfl | hspine
       · have hfam : (parts.zip args).map (fun q => (role q, fam q)) =
             parts.map fun p => (allocRole fs p.1, meaning G p.2.1) := by
           have : (parts.zip args).map (fun q => (role q, fam q)) =
@@ -1390,8 +1390,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           (base := heap.length) (k := k) (V := V)
           (by simpa [List.map_map, Function.comp_def] using hrecZ)
         simpa [List.map_map, Function.comp_def] using hinv
-      · exact builtinInvariant_of_lookup (slots_lookup_none hstore)
-  | @allocDict Γ Ref parts fs ix cs os hnd hproto hstore hhostp hp hfs hr hix habs _ hfrole _ hpay hfit ih =>
+      · exact builtinInvariant_of_lookup (slots_lookup_none hspine)
+  | @allocDict Γ Ref parts fs ix cs os hnd hproto hspine hhostp hp hfs hr hix habs _ hfrole _ hpay hfit ih =>
     intro n W h ρ he hw hh href
     have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at href ⊢
@@ -1501,7 +1501,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl
         cases hl⟩, MethodMembers.methodT_nil _ _ _,
-      fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
+      fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, builtinInvariant_of_lookup (slots_lookup_none hspine)⟩
   | @read Γ a Ref c fs vs f _ A ha hr hc hm ih =>
     intro n W h ρ he hw hh href
     apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
@@ -1554,25 +1554,25 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         obtain ⟨hrec, hviews⟩ := namedMembers_sem hr hc hv
         obtain ⟨flds, oid, hρ, -⟩ := hrec
         apply ite_test_rule .isArray (ρ i) hval _ _ k W h hw hh href
-        · -- An array: its store is a list, whose length the view's type holds.
+        · -- An array: its spine is a list, whose length the view's type holds.
           intro ht
           rw [hρ] at ht hρk ⊢
-          have hst : (flds.lookup CallArguments.arrayStoreField).isSome = true := ht
+          have hst : (flds.lookup CallArguments.arraySpineField).isSome = true := ht
           have hinv' := hinv
           rw [hρ] at hinv'
-          obtain ⟨l, c', hf, hl, hag⟩ := builtinInvariant_store (namedMembers_carriesInvariant hc) hinv' hst
+          obtain ⟨l, c', hf, hl, hag⟩ := builtinInvariant_spine (namedMembers_carriesInvariant hc) hinv' hst
           apply Safe_bind Tm.lenOf Step.lenC Raises.lenC (by ctx_refs) k _ h _ hw' hh' (by simp [RefsOk, refs])
             (read_view_rule (A := fun _ _ u => ∃ ls, u = .arr ls) (fun _ _ _ ⟨ls, he⟩ => by subst he; rfl)
               k _ h l hw' hh' hf hl hag (code := .absent) (oid := oid) hρk)
           intro j _ U _ hu heap av hok _ ⟨ls, hav⟩ hvr
           subst hav
           exact len_rule j U heap hu hok (fun m U' => numIn_sound hnum G.env _) hvr
-        · -- Any other object: no store, so the view is at its own location.
+        · -- Any other object: no spine, so the view is at its own location.
           intro hf
           rw [hρ] at hf hρk ⊢
-          have hf2 : (flds.lookup CallArguments.arrayStoreField).isSome = false := hf
-          have hns : flds.lookup CallArguments.arrayStoreField = none := by
-            cases hl : flds.lookup CallArguments.arrayStoreField with
+          have hf2 : (flds.lookup CallArguments.arraySpineField).isSome = false := hf
+          have hns : flds.lookup CallArguments.arraySpineField = none := by
+            cases hl : flds.lookup CallArguments.arraySpineField with
             | none => rfl
             | some l => rw [hl] at hf2; cases hf2
           rw [hρ] at hviews
@@ -1843,7 +1843,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hb : iv = .num b := (meaning_adm G I).mono p _ X hz iv ((meaning_adm G I).down_le m p hp V iv hi')
       |> (represents_raw hI p X iv)
     subst hb
-    exact setElem_store_safe hr hro hA hk (by omega) hav' hxw hok'' hvval hv' (hpe.element hv') hfin
+    exact setElem_spine_safe hr hro hA hk (by omega) hav' hxw hok'' hvval hv' (hpe.element hv') hfin
   | @len Γ a L N T ha hr hn ih =>
     intro n W h ρ he hw hh href
     have hC : CtxRefs Tm.lenOf := by ctx_refs
@@ -2099,7 +2099,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro p _
       rcases p with ⟨_ | _, A, t⟩ <;> rfl
     rw [hterm] at href ⊢
-    apply RestCalls.store_parts_safe (meaning_adm G E) (meaning_valOnly G E) _ n W h
+    apply RestCalls.spine_parts_safe (meaning_adm G E) (meaning_valOnly G E) _ n W h
       (by
         intro q hq S hS
         obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
@@ -2121,7 +2121,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         · exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp'))))
     intro j _ U _ hu heap extra hok hex hre
     apply Safe_mono j _ U heap _
-      (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok (builtinExc_errors G _) hex
+      (fresh_spine_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok (builtinExc_errors G _) hex
         (fun v hv => hpe.element (hex v hv)) hre)
     intro k _ V v hv
     exact (represents_back hr k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
@@ -2132,10 +2132,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (by simpa [RestArrow.mapWith, Contract.map] using hplain)
         (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh (by sub_refs href))
     have hterm : instantiate 0 ρ (.invoke f r (xs.map Prod.snd ++
-          [.spread (.readAt CallArguments.arrayStoreField a)])) =
+          [.spread (.readAt CallArguments.arraySpineField a)])) =
         .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
           ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
-            [.spread (.readAt CallArguments.arrayStoreField (instantiate 0 ρ a))]) := by
+            [.spread (.readAt CallArguments.arraySpineField (instantiate 0 ρ a))]) := by
       simp [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     rw [hterm] at href ⊢
     apply packed_call_safe (Rc := meaning G Rt) (Ps := (xs.map Prod.fst).map (meaning G))

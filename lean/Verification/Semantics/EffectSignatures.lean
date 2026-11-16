@@ -3,7 +3,7 @@ import Verification.Semantics.ExceptionalPosts
 import Verification.Semantics.Purity
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.IndexFacts
-import Verification.Semantics.StoreRegions
+import Verification.Semantics.SpineRegions
 import Verification.Semantics.ElementWrites
 
 /-! Call postconditions qualify the same receiver/arguments/result contract
@@ -52,7 +52,7 @@ predicate in the heap the call starts in (`ElemsAt`); `pre` one on the
 call's values: each index fact holds of them in the heap the call starts
 in, read at the call's positions (`callEnv`: 0 the receiver, `i + 1` the
 `i`-th actual), such as `bound(1, 2, true)`, the second actual an index
-below the length of the first actual's store. -/
+below the length of the first actual's spine. -/
 structure Effect where
   exits : Exits ExitSchema
   promise : Option TypePromise
@@ -242,13 +242,13 @@ def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments
 
 
 /-- A change from `before` to `after` that alters no old location but the
-receiver `r`'s store, which, where it changes, held a store and holds one
+receiver `r`'s spine, which, where it changes, held a spine and holds one
 extending it, its old elements at their indices, at most `2^32 - 1` long:
 `Array.prototype.push` on an ordinary array (SOURCE-CONTRACTS.md, "Native
 footprints"). -/
 def ReceiverGrows (r : Tm) (before after : Heap) : Prop :=
   ∀ l v, before[l]? = some v → after[l]? = some v ∨
-    (Footprints.storeOf r = some l ∧ ∃ ls ls', v = .arr ls ∧ after[l]? = some (.arr ls') ∧
+    (Footprints.spineOf r = some l ∧ ∃ ls ls', v = .arr ls ∧ after[l]? = some (.arr ls') ∧
       ls <+: ls' ∧ ls'.length ≤ maxArrayLength)
 
 /-- An append to a heap extending `before` is one to `before`. -/
@@ -264,9 +264,9 @@ theorem ReceiverAppends.prefix_left {r : Tm} {args : List Tm} {before middle aft
   obtain ⟨l, hl, hv, hfresh⟩ := hel j a hj
   exact ⟨l, hl, hv, by simp only [List.length_append] at hfresh; omega⟩
 
-/-- A receiver holding no store has nothing appended. -/
-theorem ReceiverAppends.of_no_store {r : Tm} {args : List Tm} {before after : Heap}
-    (h : Footprints.storeOf r = none) : ReceiverAppends r args before after := by
+/-- A receiver holding no spine has nothing appended. -/
+theorem ReceiverAppends.of_no_spine {r : Tm} {args : List Tm} {before after : Heap}
+    (h : Footprints.spineOf r = none) : ReceiverAppends r args before after := by
   intro _ s ls hs
   rw [h] at hs
   cases hs
@@ -280,9 +280,9 @@ theorem ReceiverGrows.prefix_left {r : Tm} {before middle after : Heap} (hg : Re
   rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
 
 
-/-- An argument store region's entry of a frame: the store location the
+/-- An argument spine region's entry of a frame: the spine location the
 region selects at the call's entry, at `any`. -/
-def regionEntry (r : Footprints.ArgumentStoreRegion) : Footprints.Region × Footprints.Change := r.entry
+def regionEntry (r : Footprints.ArgumentSpineRegion) : Footprints.Region × Footprints.Change := r.entry
 
 /-- **The frame** of a signature: its normal exit's, read at the call's
 positions (`callEnv`). It is the one statement of what a normal return may
@@ -539,7 +539,7 @@ theorem Effect.ensures_frame {n : Nat} {F : HeapKnowledge.IndexFact} (hsl : ∀ 
 
 
 /-- A postcondition at actuals padded with `undefined` is the one at the
-actuals, of a receiver holding no store. -/
+actuals, of a receiver holding no spine. -/
 theorem ElementWrite.holds_pad {w : ElementWrite} {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef)
     {before after : Heap} (h : w.Holds (args ++ pad) before after) : w.Holds args before after := by
   obtain ⟨hc, hx, ha⟩ := h

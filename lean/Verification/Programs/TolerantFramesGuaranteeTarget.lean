@@ -69,7 +69,7 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
     (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
-    (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) : Prop where
+    (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)) : Prop where
   /-- The graph's node expressions mention no location
   (`ObjectCoherence.sourceTerm`): their references are valid in every world
   (`ControlFlow.program_source_refsOk`). -/
@@ -95,8 +95,8 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
-      (fun h' => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' => exc = true → Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       n W h (.goto E K start L d)
   asserted : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
@@ -160,7 +160,7 @@ def RunCall.Accepts {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall
 
 /-- A regional option's bound, regions and throw flag. -/
 def regionOf (rg : Option SinglePass.Regional) :
-    Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool) :=
+    Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool) :=
   rg.map fun g => (g.Φ, g.regions, g.exc)
 
 /-- **The graph-level hypothesis** (the tolerant-frames lane's target): an

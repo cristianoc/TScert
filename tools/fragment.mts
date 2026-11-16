@@ -70,12 +70,12 @@ export type Expr =
   | { k: "index"; pos: Span; e: Expr; key: Expr }
   /* An array literal: one element per initializer, in source order.
      `spreads` are the indices of the elements written with `...`: each
-     stands for the elements of its operand's store, read where it is
+     stands for the elements of its operand's spine, read where it is
      written. */
   | { k: "arrayLit"; pos: Span; elems: Expr[]; spreads?: number[] }
   /* `[a, o.f = d, ...r] = rhs`: the right side once, then each target, a
      mutable local or a field, in turn: its reference (receiver, then key),
-     then its position of the store, or its default when that read is
+     then its position of the spine, or its default when that read is
      undefined, written to it; the rest's target takes the fresh array of the
      positions from its index on, claimed at the rest's span; a `slice` rest, which TypeScript
      types as no one tuple of required positions, is collected by

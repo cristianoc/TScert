@@ -4,11 +4,11 @@ import Verification.Programs.TolerantFramesNamed
 
 The single pass's state at a program point (`SinglePass.State`) is a list of
 names, one per slot, a store of facts over names (`SinglePass.Store`) and the
-names holding stores the invocation allocated; beside it the walk keeps the
+names holding spines the invocation allocated; beside it the walk keeps the
 implications over names. This module states what such a state means
 (`StateHolds`): there is a valuation `η` of the names under which each slot
 holds its name's value, every stored fact holds, every implication holds,
-every fresh name holds a store allocated at or after the invocation's mark,
+every fresh name holds a spine allocated at or after the invocation's mark,
 and the start's names hold the invocation's entry values. The valuation is
 existential per state: a loop head's names denote new values on each visit.
 
@@ -93,7 +93,7 @@ mark `m` and the state `s`: there is a valuation `η` of the names under which
 each slot holds its name's value, every fact the store holds holds
 (`Named`), every implication holds (`PromiseCalls.ImpliesOk`: where the
 test's name holds `true`, the target's value has the type), every name of
-`st.fresh` holds a store at or past the mark, and each start name `start[q]`
+`st.fresh` holds a spine at or past the mark, and each start name `start[q]`
 holds the invocation's entry value `ε.env q`, its facts read at the
 invocation's entry state `ε`. -/
 def StateHolds (G : NormalGraph ι) (st : State) (implies : List (PromiseCalls.Implication ι)) (start : List Nat)

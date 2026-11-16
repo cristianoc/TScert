@@ -53,10 +53,10 @@ export function indexFact(f: JsonRead, name: (slot: number) => string): string {
     return `${at("element", "value")} === ${at("element", "array")}[${at("element", "index")}]`;
   const apart = field(f, "apart");
   if (apart !== undefined) return `apart(${at("apart", "slot")}, ${at("apart", "other")})`;
-  const storeApart = field(f, "storeApart");
-  if (storeApart !== undefined) {
-    const a = [at("storeApart", "slot"), ...list(field(storeApart, "path")).map(str)].join(".");
-    const b = [at("storeApart", "other"), ...list(field(storeApart, "otherPath")).map(str)].join(".");
+  const spineApart = field(f, "spineApart");
+  if (spineApart !== undefined) {
+    const a = [at("spineApart", "slot"), ...list(field(spineApart, "path")).map(str)].join(".");
+    const b = [at("spineApart", "other"), ...list(field(spineApart, "otherPath")).map(str)].join(".");
     return `apart(${a}, ${b})`;
   }
   const every = field(f, "every");

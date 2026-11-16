@@ -7,7 +7,7 @@ A variadic signature (`restsT`) says only which actual lists a caller may
 write, so one value may also meet fixed signatures (`Safety`, call
 contracts). What code collecting a rest promises is proved where graph code is
 created (`ProgramTyping.restsT_of_graphRest`). Here: eliminating a variadic
-signature, allocating a rest store, and spreading actuals.
+signature, allocating a rest spine, and spreading actuals.
 -/
 namespace Verification.RestCalls
 
@@ -30,8 +30,8 @@ theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam ×
   · exact ArgsT_values hAv ha a hm
   · exact hev a hm
 
-/-- **Allocating a rest store.** Actuals meeting a tuple contract at the
-current level, as a fresh store, meet it as a writable store. The allocation
+/-- **Allocating a rest spine.** Actuals meeting a tuple contract at the
+current level, as a fresh spine, meet it as a writable spine. The allocation
 step, rather than tuple membership, consumes an approximation level. -/
 theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
     (hTv : ∀ i A, positionFam T i = some A → ValOnly A)
@@ -87,18 +87,18 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
 
 /-! ## Spread actuals
 
-A spread actual evaluates to a store, and the call then reads the store's
-elements in its place, before any later actual runs. A store family spreads
+A spread actual evaluates to a spine, and the call then reads the spine's
+elements in its place, before any later actual runs. A spine family spreads
 into `E` when every element it may hold reads at `E`: through its location's
 contract one budget down, or as `undefined` at a hole. -/
 
-/-- Reading the elements of a store the heap satisfies yields members of `E`. -/
+/-- Reading the elements of a spine the heap satisfies yields members of `E`. -/
 def Spreads (S E : Fam) : Prop :=
   ∀ n W (h : Heap) v, HeapOk n W h → S n W v →
     ∃ ls vs, v = .arr ls ∧ readElems h ls = some vs ∧
       ∀ e ∈ vs, ∀ (j : Nat) (hj : j < n), E j (trunc j (Nat.le_of_lt hj) W) e
 
-/-- Every location a store names has a contract implying `E`, and a hole is
+/-- Every location a spine names has a contract implying `E`, and a hole is
 allowed only where `E` admits `undefined`: then the elements read at `E`. -/
 theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk n W h) :
     ∀ ls : List (Option Nat),
@@ -128,7 +128,7 @@ theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk 
     · exact he e hm j hj
 
 /-- A tuple contract spreads into `E` when every position's family implies
-`E`, and `E` admits `undefined` if the store may have a hole: at an optional
+`E`, and `E` admits `undefined` if the spine may have a hole: at an optional
 position or among the rest. -/
 theorem listT_spreads {T : TupleF} {E : Fam}
     (hpos : ∀ i A, positionFam T i = some A → FamLe A E)
@@ -159,7 +159,7 @@ theorem listT_spreads {T : TupleF} {E : Fam}
   have hnone : none ∈ ls → ∀ j, j < n → ∀ (U : WorldT j), E j U .undef := by
     intro hm j hj U
     cases hT : T.presence with
-    | dense => exact False.elim ((show none ∉ ls by simpa [StorePresence, hT] using hd j hj) hm)
+    | dense => exact False.elim ((show none ∉ ls by simpa [SpinePresence, hT] using hd j hj) hm)
     | sparse => exact hhole hT j U
     | readable =>
       obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hm
@@ -170,7 +170,7 @@ theorem listT_spreads {T : TupleF} {E : Fam}
         | some _ => right; rfl
       obtain ⟨A, hA⟩ := Option.isSome_iff_exists.mp hs
       have ha := hd j hj
-      simp only [StorePresence, hT] at ha
+      simp only [SpinePresence, hT] at ha
       exact hpos i A hA j U .undef (ha i hi A hA U)
   obtain ⟨vs, hr, he⟩ := readElems_ok hh ls hsome hnone
   exact ⟨ls, vs, rfl, hr, he⟩
@@ -222,11 +222,11 @@ theorem listCtx {C : List Tm → Tm}
 
 /-- **Parts in a list context.** In a context `C` over a list of terms that
 evaluates its entries left to right (`lift`, `raise`) and replaces a spread
-of a ready store by the store's elements once every earlier entry is a value
-(`spread`), as an argument list (`Step.callSpread`) and a store literal
+of a ready spine by the spine's elements once every earlier entry is a value
+(`spread`), as an argument list (`Step.callSpread`) and a spine literal
 (`Step.arrSpread`) do: each part is a plain entry at `E` or a spread of a
-store in a family that spreads into `E`; they run left to right, each spread
-read as soon as its store is ready, and the continuation receives every
+spine in a family that spreads into `E`; they run left to right, each spread
+read as soon as its spine is ready, and the continuation receives every
 element and entry at `E`, the whole list's references valid. The context's
 references are its frame's and its entries' (`hC`). -/
 theorem parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) (C : List Tm → Tm)
@@ -389,8 +389,8 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
       simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap, List.flatMap_nil,
         List.append_nil])
 
-/-- **The parts of a store literal**, evaluated as actuals are. -/
-theorem store_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) :
+/-- **The parts of a spine literal**, evaluated as actuals are. -/
+theorem spine_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) :
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap →

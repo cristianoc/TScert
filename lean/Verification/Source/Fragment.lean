@@ -17,9 +17,9 @@ namespace Verification.Fragment
 open Lean
 
 /-- Whether a source key is one the model's representation of keys moves
-(`escapedSpelling`): an array's store, an object's prototype and a class's
+(`escapedSpelling`): an array's spine, an object's prototype and a class's
 prototype object's own key (`classKeyOf`) live under keys no source property
-may name, the store's `[]` and every name in double brackets, and a key
+may name, the spine's `[]` and every name in double brackets, and a key
 beginning with the escape `[!` is where the representation puts a key so
 spelled. A source key is refused where its representation (`escapeKey`) is
 not itself, so that a key the source spells and the same key computed at run
@@ -97,7 +97,7 @@ def inKeyRefusal (key : String) : Option String :=
   else if objectKeys.contains key then some "every object inherits it from Object.prototype"
   else if arrayKeys.contains key then some "an array owns it or inherits it from Array.prototype"
   else if !key.isEmpty && key.all Char.isDigit && (key == "0" || key.front != '0') then
-    some "an array index names an element, which the model keeps in the array's store"
+    some "an array index names an element, which the model keeps in the array's spine"
   else none
 
 /-- A unary numeric operator: `-e`, `+e` and `~e`; and `typeof e`, the string
@@ -275,17 +275,17 @@ inductive Expr where
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
   /-- An array literal: one element per initializer, in source order.
   `spreads` are the positions of the elements written with `...`, in
-  order: each stands for the elements of its operand's store, read where it
+  order: each stands for the elements of its operand's spine, read where it
   is written. -/
   | arrayLit (pos : Span) (elems : List Expr) (spreads : List Nat)
   /-- `[a, b = d, ...r] = rhs`: the right side once, then, for each target
   in turn, its reference (a field's receiver, then its key), then its
-  position of the store, or its default when that read is undefined, written
+  position of the spine, or its default when that read is undefined, written
   to the reference; the rest's target takes the fresh array of the positions
   after them, claimed at the rest's span; the value is the right side. -/
   | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rest : Option (Span × Bool × ArrayElem Expr))
       (rhs : Expr)
-  /-- `e[key]` with a numeric key: an element read of the array's store, and
+  /-- `e[key]` with a numeric key: an element read of the array's spine, and
   its assignment; resolved from `index` and `indexWrite` by the key's claim. -/
   | elemAt (pos : Span) (e key : Expr)
   | elemWrite (pos : Span) (receiver key rhs : Expr)
@@ -835,7 +835,7 @@ def decodeCompletion (j : Json) : Except String Bool := do
 
 /-- The effect a definition's result annotation states, its exits in the
 serialized effect's form (`EffectCodec.decodeExits`), or none: a closed
-frame with the store regions the frame lets change arbitrarily
+frame with the spine regions the frame lets change arbitrarily
 (`"x[*]": "any"`, `"x.f[*]": "any"`), on a throw the same frame or `⊤`,
 and a fresh result (`EffectJson.StatedEffect.ofExits`). A statement of
 `top` without a fresh result states nothing, and is refused. With regions,
@@ -850,7 +850,7 @@ def decodeStated : Json → Except String (Option EffectJson.StatedEffect)
       pure (some s)
     else
       if s.closed == .top || s.fresh || !s.regions.Nodup then
-        throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
+        throw "a stated effect with spine regions states a bound below `top` off them, distinct positions and no fresh result"
       pure (some s)
 
 /-- A guard's promise as the Fragment states it, or none. -/
