@@ -67,7 +67,7 @@ tolerates; or the invariant annotations on a type fix what the fact reads. Thirt
 patterns from a TypeScript code base become one-line annotations, and
 four more show a form or a derivation it still lacks. Every statement carries one of three marks. \status{Lean} names the theorem
 of the TScert development that proves the statement's content, and gives
-that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture, and \status{assumed} a specification assumed of the host.
+that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture, and \status{assumed} a specification assumed of the host. A mark states what is proved of the model; it does not say that a tool applies the rule.
 \end{abstract}
 
 \section{The problem}
@@ -638,10 +638,7 @@ location in its class, and $\any$ absorbs any change that follows it.
 \item[Rigid: a store at a rigid path] $\{\pi.\kw{store}:\delta\}$ is
 rigid on the states where $\pi$ is rigid (Section~4): the path then
 reads the same store in $h$ and in $h'$.
-\item[Rigid: the own fields at a rigid path] $\{\pi.\kw{own}:\delta\}$
-is rigid on the states where $\pi$ is rigid: by (T3) the path then reads
-an object with the same field locations in $h$ and in $h'$
-\status{conj.}. It is the effect of a method that changes only its
+\item[The own fields at a path] $\{\pi.\kw{own}:\delta\}$ is the effect of a method that changes only its
 receiver's fields, as \code{it.next()} does for an iterator \code{it}:
 $\code{it.next()}:\{\mathit{it}.\kw{own}:\any\}$
 \status{Lean: \lean{ownCall\_sound}, for a call whose normal effect has
@@ -661,7 +658,8 @@ $h'$, then $h\tr{\Phi^{e}}_\rho h'$. We write $c:\Phi$ when $\Phi^{e}$ is
 $\top$. A throw that $c$ itself catches is no exit of $c$: the normal
 bound of \code{try c catch (x) d} covers a return of \code{c}, and a
 throw of \code{c} followed by a return of \code{d}. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
-judgment is what a \code{Modifies} annotation states. Definition~\ref{def:given} says for which functions the verifier infers an effect, and for which calls it uses $\top$
+judgment is what a \code{Modifies} annotation states and what an effect
+system derives
 \status{Lean: \lean{Post}; for graph code \lean{run\_sound\_single\_pass}, whose guarantee states the bound over class regions and the regional bound of an accepted function}.
 
 \section{The assertion language}
@@ -696,7 +694,7 @@ does not.
 such as a number or an object. Example: the contents of $x.f$ are a
 number.
 \item[Bounded quantification $\every(z,t,\varphi)$] Each element of the
-array or typed array $z$ at an index below $t$ satisfies $\varphi$. For
+array $z$ at an index below $t$ satisfies $\varphi$. For
 \code{a = [10, , 30]}, $\every(a,1,v>0)$ holds.
 \item[Element of a typed array $b{[i]}\doteq v$] The cell that the view
 store of the typed array $b$ lists at index $i$ holds $v$; false when
@@ -941,7 +939,7 @@ over the variables in scope before $c$ is unaffected by the binding.
 \and
 \inferrule*[left=Call]{\hoare{P}{y=f(\vec p)}{Q} \\ y=f(\vec p):\Phi}{\hoare{P[\vec x/\vec p]}{y=f(\vec x)}{Q[\vec x/\vec p]}\qquad y=f(\vec x):\Phi[\vec x/\vec p]}
 \and
-\inferrule*[left=Alloc]{x\text{ fresh} \\ y\text{ ranges over the variables in scope that hold arrays}}{\hoare{\kw{true}}{x=\code{[]}}{\fresh(x)\wedge\len x=0\wedge\textstyle\bigwedge_y\apart(x,y)}}
+\inferrule*[left=Alloc]{x\text{ fresh} \\ y\text{ ranges over the arrays in scope}}{\hoare{\kw{true}}{x=\code{[]}}{\fresh(x)\wedge\len x=0\wedge\textstyle\bigwedge_y\apart(x,y)}}
 \and
 \inferrule*[left=Seq-Eff]{c_1:\Phi \\ c_2:\Psi \\ \Psi\rightsquigarrow_{\mathit{ev}}\Psi' \\ \Phi\cup\Psi'\sqsubseteq\Phi}{c_1;c_2:\Phi}
 \and
@@ -991,12 +989,8 @@ substitutes the evaluated sequence, including spread expansion. In
 checking a function body, that sequence equals the initial contents of
 the freshly allocated rest array.
 Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
-\item[\textsc{Alloc}] A new array is fresh, empty, and apart from the
-array held by each variable $y$ in scope. The new store and its cells
-are allocated at or above the length the heap had before the step. So
-the new array is apart from every array that existed before the step,
-including one reached only through fields; the rule states the
-separation for variables only. These separations are
+\item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
+array $y$ that exists before the step. These separations are
 facts of the state after the step. Later steps keep or lose them like
 any other fact: a growth of the new array's store keeps them, and an
 arbitrary change of that store does not, since it may make the store
@@ -1117,19 +1111,17 @@ maximal array length and $i$ an integer:
 \[
 \begin{array}{ll}
 \textsc{Write-In} & \hoare{0\le i<\len x}{\code{x[i] = v}}{\len x=\old(\len x)}\\[3pt]
-\textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1\wedge x[i]\doteq v}\\[3pt]
-\textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1\wedge y=\len x}
+\textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1}\\[3pt]
+\textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1}
 \end{array}
 \]
-\textsc{Write-End} also extends a dense prefix:
-$\old(\dense(x,i))\Rightarrow\dense(x,i+1)$.
 For example, a loop that fills \code{widths[at] = w} with \code{at} the
 current length keeps $\mathit{at}=\len{\mathit{widths}}$ by
 \textsc{Write-End} and the increment of \code{at}
 \textsc{Write-In} holds also where the write fills a hole. At the
 maximal length \code{push} throws, so its premise is not needed for a
 postcondition on normal return
-\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth is the assumed contract \lean{ReceiverAppends}. The density implication and $y=\len x$ have no theorem}.
+\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth is the assumed contract \lean{ReceiverAppends}}.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
 operands and the empty effect. Let $x,x'$ be safe integers and $c$ a
@@ -1162,7 +1154,7 @@ and an integer $i$:
 \]
 A read \code{y = s[i]} has no rule (Section~\ref{sec:future}). The postcondition of \textsc{Concat} is for a
 normal return
-\status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; the pass applies them through \lean{bitAtoms}, \lean{smallOperand}, \lean{concatAtoms} and, for the sum past the range, \lean{stringLengthPlusOne} and \lean{pastSafeAtoms} (\lean{linearAtoms\_holds}).}.
+\status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
@@ -1209,13 +1201,14 @@ unchanged}.
 
 \begin{example}[A write through a typed array]\label{ex:view}
 Let \code{xs} be an array, \code{o} an object, and \code{b} and \code{c}
-typed arrays. Before \code{b[0] = 7} let $3\le\len{\mathit{xs}}$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
+typed arrays. Before \code{b[0] = 7} let $3\le\len{\mathit{xs}}$,
+$\every(\mathit{xs},3,v>0)$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
 $b[1]\doteq 4$ and $c[1]\doteq 5$ hold. After the write:
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[$3\le\len{\mathit{xs}}$ holds]
-Its support is the store of $\mathit{xs}$: an array store, disjoint
-from $\vw$. So $\{\vw:\grow\}$ respects it, and
-Theorem~\ref{thm:frame} applies.
+\item[$3\le\len{\mathit{xs}}$ and $\every(\mathit{xs},3,v>0)$ hold]
+Their supports lie in $\mathit{xs}[\ast]$: an array store, disjoint
+from $\vw$, and element cells, which are value locations. So
+$\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
 \item[$o.n\doteq 1$ holds] Its support is a field location.
 \item[$2\le\kw{view}(c)$ holds] By \textsc{(View)}.
 \item[{$b[1]\doteq 4$ holds}] It gives $1<\kw{view}(b)$, so the
@@ -1226,642 +1219,6 @@ be a \code{Uint8Array} of length 3 and \code{b} be
 \code{c.subarray(1, 3)}: the write makes $c[1]$ read 7.
 \end{description}
 \end{example}
-
-\section{What verifies}\label{sec:verifies}
-
-The sections above define the logic. This section states how the
-verifier uses it: which programs this paper covers, what the verifier
-must prove at each point of a program, and which facts it has at that
-point. A proof written by hand from this paper is intended to succeed
-exactly when the verifier accepts the program.
-
-\begin{definition}[Scope]\label{def:scope}
-This paper covers a function written with the following constructs:
-\begin{itemize}[leftmargin=1.5em,itemsep=1pt,topsep=2pt]
-\item module functions and function literals whose parameters have
-types;
-\item variables and private cells;
-\item records with named fields, created by object literals, and read
-and written by field name;
-\item arrays, tuples indexed by literals, the four typed arrays and
-strings, with the operations this section names;
-\item numbers, with the arithmetic this section names;
-\item \code{if}, conditional expressions, \code{for}, \code{while},
-\code{do}, \code{for...of} over an array, \code{try}, \code{catch},
-\code{throw} and \code{return};
-\item calls of functions defined in the analysed files, calls of
-parameters and fields of function type, and calls of the library
-functions that Definition~\ref{def:obl} names.
-\end{itemize}
-The facts it covers are linear facts over integers and lengths, facts
-about the contents of a field (the field equals a given value, is
-\code{null}, is \code{undefined}, or has a given type), separations,
-freshness and quantified facts.
-
-A function that uses another construct, or whose proof needs another
-kind of fact, is outside the scope: this paper does not say whether the
-verifier accepts it. Constructs outside the scope include index
-signatures and computed keys, parameter defaults, spread arguments,
-destructuring other than \code{const \{ f \} = x}, classes and
-interfaces with methods, promises and \code{async}, objects and type
-tests of imported libraries, host globals, library functions that
-Definition~\ref{def:obl} does not name, overloads, and callbacks that
-narrow a type.
-\end{definition}
-\noindent
-Example: \code{return Object.keys(o);} is outside the scope.
-
-\begin{definition}[Verdict]\label{def:verdict}
-The \emph{known facts} at a program point are the facts the verifier
-has there: the knowledge $\Sigma$ of Section~\ref{sec:transfer}. The rest of
-this section defines them. A function
-\emph{verifies} when two conditions hold. First, its control-flow
-graph, annotated at each point with the known facts, is sound
-(Section~\ref{sec:transfer}). Second, at each point the known facts
-entail every obligation of that point (Definition~\ref{def:obl}). A
-file verifies when every function in it verifies. When a function does
-not verify, the verifier refuses it and reports the first obligation,
-in program order, that the known facts do not entail.
-\end{definition}
-\noindent
-Example: assume $\len{\mathit{other}}=\len{\mathit{flags}}\ge 1$. The
-body \code{texts.push(0); return other[flags.length - 1]!;} is refused
-at the read. The array \code{texts} may be the array \code{flags}, so
-the push may lengthen \code{flags}, and the index may then lie past the
-end of \code{other}.
-
-\paragraph{The surface syntax.} A program states its specification in
-its types and in comments.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[\code{Modifies<\{ r: "c"; ... \}, T>} as a result type]
-It states the effect $\Phi$ of the function; \code{T} is the type of
-the result. Each entry \code{r: "c"} names a region and the change
-allowed in it. The region \code{values} is $\val$, the region
-\code{stores} is $\st$, and \code{"p[*]"} is $p[\ast]$ for a path $p$
-that starts at a parameter or at \code{this}. The change \code{c} is
-\code{keep}, \code{init}, \code{scalar}, \code{grow} or \code{any}.
-With the entry \code{onThrow: true}, the effect at the exceptional exit
-is $\Phi^{e}=\Phi$. Without it, $\Phi^{e}=\top$.
-\item[\code{Fresh<T>} as a result type]
-It states $\fresh(\mathit{result})$ at each return.
-\item[\code{@requires C} and \code{@ensures C}]
-They state the precondition and the postcondition. In \code{@ensures},
-\code{result} names the returned value and \code{old(e)} names the
-value of \code{e} at entry. For a path \code{p} from a parameter,
-\code{old(p)} and \code{old(p.length)} are accepted only when a
-precondition mentions the same term; otherwise the function is refused
-at its entry. \code{@ensures} is accepted only on a synchronous module
-function declaration that has one signature and does not assign to its
-parameters.
-\item[\code{@invariant C} before a loop]
-A comment immediately before a \code{for}, \code{while} or \code{do}
-states an invariant of that loop. The clause may mention the variables
-in scope at the loop head. In it, \code{old(e)} names the value of
-\code{e} at the entry of the function.
-\item[\code{@invariant C} on a record type $R$]
-It states an assertion $I_R(o)$ about each value $o$ of type $R$; in
-the clause, \code{this} stands for $o$. Definition~\ref{def:given}
-says where $I_R$ is assumed and where it is an obligation.
-\item[\code{@stable} on a \code{readonly} field]
-It states that the field's contract admits exactly one value
-(Section~2).
-\end{description}
-\code{@requires} may also be placed before a function literal. Its
-clause may mention only the literal's own parameters. A clause that
-mentions a variable captured from the enclosing function, such as
-\code{xs.length} for an enclosing \code{xs}, is refused. The body of a
-function literal is verified from the types of its parameters and its
-own \code{@requires}: the facts the enclosing function has about the
-captured variables are not known facts inside the literal.
-
-\begin{definition}[Clauses]\label{def:clause}
-A clause \code{C} is a conjunction, written with \code{\&\&}, of the
-following forms.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[A linear atom]
-A comparison with \code{<}, \code{<=}, \code{===} or one of their
-converses between two linear terms. A linear term has literal
-coefficients and is over parameters, paths through required fields of
-record types, and lengths \code{p.length}. The length \code{p.length}
-is $\len p$ for an array, $\kw{view}(p)$ for a typed array and
-$\slen(p)$ for a string. The form \code{safeInteger(e)} is the linear
-atom $-M\le e\le M$, which states that \code{e} is a safe integer.
-\item[A combination of linear atoms]
-Linear atoms combined with \code{||} and \code{!}, and the guarded
-forms \code{p === null || F} and \code{p === undefined || F}. A
-comparison may mention a path, or the value of a parameter, only if
-\code{safeInteger} of it is stated in the same conjunction or in a
-conjunct outside every disjunction. A clause that breaks this condition
-is refused: \code{i < 0 || safeInteger(i)} is refused.
-\item[A separation]
-\code{P !== Q}, for two array paths, is $P\sep Q$. If \code{P} or
-\code{Q} may be a typed array the clause is refused, because two typed
-arrays may share bytes.
-\item[One quantified atom, in the last position]
-\code{forall x in P: B} is $\every(P,\len P,B)$, and
-\code{forall x < n of P: B} is $\every(P,n,B)$, for an array or a
-typed array \code{P}. The body \code{B} is a conjunction or a
-disjunction of atoms. An atom of the body is over \code{x},
-\code{P[x]}, \code{P[x+d]} for a constant $d\ge 0$, a path
-\code{P[x].p} and its length, and the paths and lengths of parameters.
-A comparison in the body may mention \code{P[x]} only if the body
-states \code{safeInteger(P[x])}.
-\end{description}
-A clause is refused if it contains a product of two variables, an
-indexed path \code{P[x][y]}, or a relation between the elements of two
-arrays. A \code{@requires} clause that contains \code{old} is refused.
-\end{definition}
-
-\begin{definition}[Obligations]\label{def:obl}
-Each expression is used at the type TypeScript gives it. Where that
-type holds only because of a fact, the fact is an \emph{obligation}:
-the known facts at that point must entail it. A use that TypeScript
-itself rejects is refused, for example returning a value of type
-\code{string | undefined} from a function whose result type is
-\code{string}. The obligations are the following.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[Reading an array element, \code{xs[k]}]
-A read used at the element type $T$ has the obligation
-$0\le k<\len{\mathit{xs}}$, with $k$ a known integer
-(Definition~\ref{def:int}). A read is used at $T$ when it is written
-\code{xs[k]!}, or written without \code{!} where TypeScript gives it
-the type $T$. A read used at the type $T\,|\,\code{undefined}$ has no
-obligation; examples are \code{xs[k] ?? d}, \code{xs[k]?.f} and a read
-whose result is tested. A read stored in a variable also has no
-obligation when the variable is tested against \code{undefined}, or
-for truth, before it is used. A read at a literal index, without
-\code{!}, has the type $T$ only at a required position of a tuple.
-\item[Writing an array element, \code{xs[k] = v}]
-A write to a writable array of type \code{T[]} has the obligation
-$0\le k\le\len{\mathit{xs}}$ and $k\le 2^{32}-2$, with $k$ a known
-integer. The index test of Definition~\ref{def:cond} also discharges
-it. Under the obligation the write stores at a present index or at the
-end of the array (\textsc{Write-In}, \textsc{Write-End}). A write past
-the end would leave holes, and no rule admits it. A write at a literal
-index to a required position of a tuple has no obligation. A write to
-\code{x.length} that may lengthen \code{x} is refused, because it
-would leave holes.
-\item[Reading and writing a typed array, \code{b[k]} and \code{b[k] = v}]
-A read used at the type \code{number} has the obligation
-$0\le k<\kw{view}(b)$, with $k$ a known integer (\textsc{View-Read}).
-A write has no obligation (\textsc{View-Write-Any}): outside the bound
-it changes nothing. The compound forms \code{b[k] += v} and
-\code{b[k]++} are refused.
-\item[Reading a length, \code{p.length}]
-No obligation.
-\item[Calling a function, \code{f(e1, ...)}]
-The obligation is the precondition of \code{f}, with the arguments
-substituted for the parameters (\textsc{Call}). A call whose result
-type is \code{never} has no normal exit. The precondition of an
-exported function is an obligation at each call in the analysed files,
-and it is assumed at the function's entry.
-\item[Returning]
-The obligations are the postcondition, with each parameter standing
-for its value at entry, and $\fresh(\mathit{result})$ when the result
-type is \code{Fresh<T>}. In addition every step of the body must stay
-within the stated effect: on a normal exit always, and on a throw when
-the effect states \code{onThrow}. A function whose body exceeds its
-\code{Modifies} is refused at the first step outside the effect.
-\item[Using a narrowed value]
-Where TypeScript gives a value a narrower type because of an earlier
-test, the fact the test established is an obligation at the use. For
-example, a use of \code{o.v} as defined, after the test
-\code{o.v === undefined} was false, needs
-$o.v\ne\code{undefined}$ among the known facts at the use.
-\item[Reading a string]
-\code{s[i]} has the type $\code{string}\,|\,\code{undefined}$. No rule
-gives a string's element, so \code{s[i]!} used as a string is refused
-(Section~\ref{sec:future}).
-\item[Calling a library function]
-The verifier does not analyse the code of a library function. It uses
-a \emph{contract} for the function, written and reviewed by hand, and
-trusted: a precondition, an effect and a postcondition. The
-precondition is an obligation at each call, as for any function.
-
-The functions with a contract are the methods of strings
-(\code{toUpperCase}, \code{split}, \code{replace}, \code{slice} and
-the others), \code{Math.max}, \code{Math.min} and the other numeric
-functions of \code{Math}, \code{Object.is}, \code{Number},
-\code{String}, the array methods that Definition~\ref{def:given}
-names, and the constructors and methods of the typed arrays.
-
-A contract may have two forms. The general form has the precondition
-\code{true}, and it states the result type and the facts that hold of
-every call. The stronger form has a precondition, and its result has a
-narrower type or a further fact. The verifier uses the stronger form
-at a call where the known facts entail its precondition, and the
-general form otherwise. The functions with a stronger form are
-\code{charCodeAt}, \code{codePointAt}, \code{indexOf},
-\code{lastIndexOf}, \code{slice} and the typed-array constructors;
-the paragraph \emph{Facts a step provides} states each precondition
-with the fact it gives. Every other function has the general form
-only. Definition~\ref{def:given} gives the effects. A result has no
-fact other than those this section states.
-
-A call of a library function that has no contract is refused. A
-library function this paper does not name is outside its scope.
-\end{description}
-\end{definition}
-
-\paragraph{Facts a step provides.} Besides its obligation, a step adds
-facts about its result $r$.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[Lengths]
-\code{r = xs.length} gives that $r$ is an integer,
-$r=\len{\mathit{xs}}$ and $0\le r\le 2^{32}-1$. \code{r = b.length}
-gives $r=\kw{view}(b)$, and \code{r = s.length} gives $r=\slen(s)$.
-\item[Literals]
-An array literal \code{r = [a1, ..., an]} without spreads gives
-$\len r=n$. An object literal \code{r = \{f: a, ...\}} gives
-$r.f\doteq a$ for each field.
-\item[Push]
-\code{x.push(v1, ..., vk)} gives $\len x=\old(\len x)+k$.
-\item[An array write at index $k$]
-It gives $k<\len{\mathit{xs}}$. If $k<\len{\mathit{xs}}$ was known
-before the write, every length is unchanged. If
-$\len{\mathit{xs}}\le k$ was known before the write, then
-$\len{\mathit{xs}}=\old(\len{\mathit{xs}})+1$.
-\item[A read under a quantified fact]
-Let $\every(\mathit{xs},t,\varphi)$ be known, with $k$ a known integer
-and $0\le k<t$. Then \code{v = xs[k]!} gives the body $\varphi$ for
-the value $v$ at the index $k$. The same holds for a read of a typed
-array.
-\item[Strings]
-\code{s + t} gives the postcondition of \textsc{Concat}. The library
-functions give the following.
-\begin{itemize}[leftmargin=1.2em,itemsep=1pt,topsep=1pt]
-\item \code{r = s.charCodeAt(i)}: with $i$ a known integer and
-$0\le i<\slen(s)$, an integer $r$ with $0\le r\le 65535$. Otherwise a
-number with no fact.
-\item \code{r = s.codePointAt(i)}: with $i$ a known integer and
-$0\le i<\slen(s)$, the result has the type \code{number}, and it is an
-integer $r$ with $0\le r\le\code{0x10FFFF}$; if $r>\code{0xFFFF}$ then
-$i+2\le\slen(s)$. Otherwise the result has the type
-$\code{number}\,|\,\code{undefined}$ and no fact.
-\item \code{r = s.indexOf(t)} and \code{r = s.lastIndexOf(t)}: an
-integer $r$ with $-1\le r\le\slen(s)$. With $1\le\slen(t)$, also
-$r<\slen(s)$.
-\item \code{s.slice(a, b)}: with $a$ and $b$ known integers and
-$0\le a\le b\le\slen(s)$, a string of length $b-a$. Otherwise a string
-with no length fact.
-\end{itemize}
-\item[Typed-array construction]
-For each typed-array format \code{C}, \code{new C(n)} gives
-$\kw{view}(r)=n$ on a normal return, when $n$ is a known safe integer
-with $n\ge 0$, or when $n$ is the sum $\slen(s)+1$. That sum may be
-$2^{53}$ (Section~6), and the construction then throws. \code{new C(xs)}
-for an array \code{xs} gives no length fact.
-\end{description}
-
-\begin{definition}[Known integers]\label{def:int}
-A variable is a \emph{known integer} at a point when a linear fact
-among the known facts at that point mentions it. The following give
-known integers: literals; lengths; \code{safeInteger(e)} in a clause;
-the exact arithmetic of Definition~\ref{def:cond}; and the facts found
-at a loop head (Definition~\ref{def:head}). A parameter of type
-\code{number}, the result of an element read and the result of a field
-read are known integers only where a clause states \code{safeInteger}
-of them.
-\end{definition}
-\noindent
-Example: with a parameter \code{k: number} and no clause,
-\code{if (k < xs.length) return xs[k]!;} is refused, because \code{k}
-is not a known integer.
-
-\begin{definition}[Conditions and arithmetic]\label{def:cond}
-A test and an arithmetic step give the following facts.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[Comparisons]
-Let $a$ and $b$ be known integers, or one of them a known integer and
-the other a literal. A test \code{a < b}, \code{a <= b}, \code{a > b}
-or \code{a >= b} gives the comparison on its true branch and the
-negated comparison on its false branch. The test \code{===} gives
-$a=b$, and \code{!==} gives $a\ne b$. From $a\ne d$ and a known
-$a\le d$ the verifier derives $a\le d-1$. The operators \code{\&\&},
-\code{||} and \code{!} combine the facts of their operands' branches.
-A comparison of two arrays gives no fact.
-\item[Sums, differences and constant multiples]
-For known integers $a$ and $b$, \code{y = a + b} and \code{y = a - b}
-are \emph{exact} when the known facts entail $|a\pm b|\le M$: the
-result is an integer and $y=a\pm b$. To prove the bound the verifier
-uses that each array length lies in $[0,2^{32}-1]$, each typed-array
-or string length in $[0,M]$, and each known integer in $[-M,M]$. So
-\code{i + 1} is exact where $i<t$ is known for a known integer or a
-length $t$, and \code{i - 1} is exact where $1\le i$ is known. In
-\code{y = a + (c ? p : q)} each arm is computed under the facts of its
-branch of \code{c}, and the two results are joined as at a merge. A
-product \code{c * x} or \code{x * c} with a constant $c$ is exact when
-the known facts entail $|c\,x|\le M$; a constant is a literal, a
-negated literal or a variable whose value is a known constant. A
-product of two variables gives no fact.
-\item[Shifts and masks]
-The rules \textsc{Shr} and \textsc{Mask} of Section~6 apply to an
-operand already known to lie in $[0,2^{31})$.
-\item[The index test]
-Let $m$ be a constant with $0\le m<2^{31}$. The true branch of
-\code{(j \& m) === j}, and the false branch of \code{(j \& m) !== j},
-give the \emph{index fact} $\kw{idx}(j)$: $j$ is an integer in
-$[0,2^{31})$. When $\kw{idx}(j)$ is known, the branch on which
-\code{j > xs.length} is false discharges the obligation of the write
-\code{xs[j] = v}. The index fact is not a linear fact: arithmetic,
-comparisons and reads cannot use it as $0\le j$.
-\item[Operations that give no fact]
-\code{|}, \code{<<}, \code{>>>}, \code{\textasciicircum}, \code{/},
-\code{\%}, \code{j | 0} and \code{Number.isInteger(j)} give no fact.
-The result of a library function has only the facts stated above.
-\end{description}
-\end{definition}
-\noindent
-Two examples. First,
-\code{if ((j \& 0x7fffffff) !== j || j > out.length) throw ...; out[j] = v;}
-verifies, and without the second test it is refused. Second, outside a
-loop and with only $0\le i$ known, the test
-\code{i + 1 < flags.length} gives no fact: $i$ may be $M$, so the sum
-is not exact.
-
-\begin{definition}[Stated and inferred effects, and type invariants]\label{def:given}
-The verifier obtains the effect of each step, and the invariant of each
-record type, as follows.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[Stated effects]
-An effect stated with \code{Modifies} is checked against the body
-(Definition~\ref{def:obl}).
-\item[Inferred effects]
-For each module function declaration and each function literal that
-has no \code{Modifies}, the verifier infers an effect from the body and
-checks it together with the body. It treats callees before callers.
-For a recursive function it starts from $\emptyset$ and repeats until
-the effect no longer changes. A call of the function uses the inferred
-effect.
-\item[Calls through a function type]
-A call of a parameter or of a field of function type has the effect
-its type states with \code{Modifies}. If the type states none, the
-effect is $\top$. A call of a function imported from a module outside
-the analysed files, and a call of an \code{async} function, also have
-the effect $\top$.
-\item[Effects of the native steps]
-\begin{tabular}[t]{@{}ll@{}}
-\code{x.push(...)} & $\{x.\kw{store}:\grow\}$\\
-\code{x.pop()}, \code{x.shift()}, \code{x.splice(...)} & $\{x.\kw{store}:\any\}$\\
-an element write \code{x[k] = v} & $\{\val:\any,\ \st:\grow\}$\\
-a field write \code{x.f = e} & $\{x.f:\any\}$\\
-a typed-array write, \code{fill}, \code{copyWithin}, \code{set} & $\{\vw:\grow\}$\\
-the other library functions of Definition~\ref{def:obl} & $\emptyset$
-\end{tabular}
-
-\smallskip
-The array methods that take a callback (\code{forEach}, \code{map},
-\code{filter}, \code{find}, \code{findIndex} and the like) have the
-effect of their callback. Two of their results depend on that effect.
-The result of \code{map} is an array without holes only if the
-callback's effect changes stores by at most $\grow$; it has the length
-of the receiver only if the effect keeps every store. \code{find} and
-\code{findIndex} pass the element type to their callback only if its
-effect keeps every store; otherwise they pass
-$T\,|\,\code{undefined}$.
-\item[Module bindings]
-A module \code{const} that holds an array gives no length fact at the
-entry of a function. A module \code{const} whose type is a
-safe-integer literal type gives its value. A module \code{let} is a
-private cell. A write to the cell, or a call that may change values,
-removes the facts about its contents.
-\item[Type invariants]
-Let $R$ be a record type with an invariant $I_R$.
-\begin{itemize}[leftmargin=1.2em,itemsep=1pt,topsep=1pt]
-\item $I_R(p)$ is assumed at the entry of each module function
-declaration that is not \code{async}, for each required parameter $p$
-whose type names $R$.
-\item $I_R$ is an obligation at each call, for each argument passed to
-such a parameter, and at each return of a function whose result type
-names $R$.
-\item After a call, $I_R$ holds again of each argument whose parameter
-the callee does not assign, and of the result when the callee's result
-type names $R$.
-\item Between these points $I_R$ is kept or removed like any other
-fact (Definition~\ref{def:across}).
-\item A cast, a spread and the result of a native step give no $I_R$.
-\end{itemize}
-\end{description}
-\end{definition}
-\noindent
-Example: let \code{build} only allocate. The function
-\code{getProfile() \{ return cached ??= build(); \}} has the inferred
-effect $\{\val:\init\}$. By \textsc{(Init)}, a call of it keeps every
-fact over values, paths and lengths.
-
-\begin{definition}[Facts across a step]\label{def:across}
-After a step, the known facts are the postcondition of the step and
-each earlier fact that the step keeps. The verifier decides whether a
-step keeps a fact from the effect of the step and from the locations
-the fact reads.
-
-\emph{What a step may alter.} From the effect the verifier takes three
-things: whether the step may alter a location that holds an object,
-whether it may alter a location that holds a number, and what it may
-do to each store.
-\begin{itemize}[leftmargin=1.5em,itemsep=1pt,topsep=2pt]
-\item An entry $\val:\any$ may alter locations of both kinds. An entry
-$\val:\kw{scalar}$ may alter locations that hold numbers. An entry
-$\val:\init$ or $\val:\keep$ alters no location of either kind.
-\item An entry for stores gives the change allowed to those stores.
-\item A region $p[\ast]$ allows a change to the store of $p$ and to
-its element cells, and to nothing else.
-\item A write through a typed array changes no length.
-\item A field write \code{x.f = e} may alter every location that the
-field's type admits as its target, except the other fields of the
-object \code{x}.
-\end{itemize}
-
-\emph{What a fact reads.} A fact over a path reads the field locations
-along the path. A fact over a length reads the store of that array. A
-fact over elements reads the element cells.
-
-\emph{The rule.} A step keeps a fact when it alters no location the
-fact reads. This is Theorem~\ref{thm:frame}, applied with the
-following refinements.
-\begin{itemize}[leftmargin=1.5em,itemsep=1pt,topsep=2pt]
-\item A change $\grow$ to a store keeps a linear fact in which that
-store's length has a coefficient of at most 0 when the fact is written
-as $e\le 0$; an example is $n\le\len{\mathit{xs}}$ (\textsc{(Grow)}).
-\item The location of a \code{@stable} field is never altered.
-\item A location is not altered when a known separation keeps it apart
-from the store the step grows, from the region the effect names, or
-from the field the step writes.
-\end{itemize}
-
-\emph{Assignment.} An assignment to a variable removes the facts that
-mention the variable's old value and keeps their consequences over the
-other variables. For example, with $j=i+1$ and $0\le i$ known, the
-assignment \code{i = j} leaves $1\le j$.
-
-Four kinds of fact have further rules.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[A fact about a field's contents]
-Let the fact be $y.f\in V$, where $V$ is a set of values: the values
-other than \code{null}, the numbers, or one value. Besides the rule
-above, it is kept by a write whose new value is in $V$, whatever the
-written field may alias. It is also kept by a step that changes stores
-only, such as a push. Example: after
-\code{if (a.v === null) return 0;} the write \code{b.v = 3} keeps
-$a.v\ne\code{null}$.
-\item[A guarded fact]
-A guarded fact has the form $p\doteq\code{null}\vee F$, or the same
-with \code{undefined}. It is kept when $F$ is kept and the guard $p$
-is a variable, or is one field that is kept by the rule above. A guard
-read through two or more fields, as in \code{x.f.g === null || F}, is
-kept by no step that changes the heap (Section~\ref{sec:future}). A
-conditional \code{x = c ? o : null} gives, at the merge, the fact
-$x\doteq\code{null}\vee F$ for each known fact $F$ about \code{o},
-restated over \code{x}. The type invariant
-\code{this.f === null || this.f.length === this.g.length} has a guard
-of one field.
-\item[A variable read from a field]
-After \code{w = x.f} the verifier knows that $w$ equals $x.f$. This
-fact is removed by the next step that changes the heap.
-\item[A quantified fact]
-$\every(z,t,\varphi)$ is kept by each of the following steps.
-\begin{itemize}[leftmargin=1.2em,itemsep=1pt,topsep=1pt]
-\item A step that alters no location holding an object, no location
-holding a number and no store; an example is a call with the effect
-$\{\val:\init\}$.
-\item A push, when the bound $t$ and the body $\varphi$ are kept by
-the rule above.
-\item A push \code{z.push(a)} on $z$ itself, when $\varphi$ holds of
-$a$ at the index $\len z$.
-\item An element write, at an index that meets the write's obligation,
-to an array known to be apart from $z$.
-\item A field write whose new value satisfies $\varphi$.
-\item For a typed array $z$, a write \code{z[k] = v} where $k$ is a
-known integer with $0\le k<\kw{view}(z)$ and $v$ is an integer that
-the format stores unchanged ($-0$ counts as 0), when $\varphi$ holds
-of $v$ at $k$ or $t\le k$.
-\end{itemize}
-The last write also extends the fact. If $k\le t$, $\varphi$ holds of
-$v$, and a known term equals $k+1$, the verifier adds
-$\every(z,k+1,\varphi)$ with that term as the bound. Every other step
-that changes the heap removes the fact. A write through a typed array
-removes every quantified fact over any other array or typed array
-(Section~\ref{sec:future}).
-\end{description}
-\end{definition}
-\noindent
-Example: the loop
-\code{while (count < ends.length) \{ const v = count + 1; ends[count++] = v; \}}
-has the stated invariant
-$\every(\mathit{ends},\mathit{count},0<v\le\slen(\mathit{text}))$.
-Each iteration extends it by one index.
-
-\begin{definition}[Known facts at a loop head]\label{def:head}
-The known facts at a loop head are the stated invariant and each
-\emph{candidate} that holds on the entry edge and on every back edge
-(Theorem~\ref{thm:transfer}). If the stated invariant fails on an
-edge, the function is refused. If a candidate fails on an edge, the
-candidate is dropped. No other fact is known at the head. The
-candidates are the following.
-\begin{description}[leftmargin=1.5em,style=nextline,itemsep=2pt,topsep=2pt]
-\item[Facts about a linearly updated variable]
-Let $i$ be a variable that is a known integer at the entry of the
-loop, such that every assignment to $i$ in the loop gives it a linear
-value (\code{i++}, \code{i += c}, \code{i = j},
-\code{i += c ? 2 : 1}), and such that the loop test compares $i$ only
-with known integers. The candidates are:
-\begin{itemize}[leftmargin=1.2em,itemsep=1pt,topsep=1pt]
-\item $i$ is an integer;
-\item each lower bound of $i$ known at entry, or each upper bound
-known at entry if every assignment decreases $i$;
-\item $i\le 2^{32}-1$, when the test bounds $i$, or a sum $i+c'$, by
-the length of an array or of a typed array, or by a variable that the
-entry bounds by such a length.
-\end{itemize}
-A \emph{counter} is such a variable to which every assignment adds the
-same constant $c$. For a counter there are two more candidates: each
-bound the true branch of the test gives, shifted by $c$ (with
-\code{i++}, the test $i<n$ gives $i\le n$); and $i\le n$ for a test
-$i\ne n$ with $c=1$.
-\item[A fixed difference from the counter]
-$j-i=d$, for a counter $i$ and a variable $j$ that is updated at most
-once in each iteration, by the same constant as $i$, with $j-i=d$
-known at entry.
-\item[Facts the loop does not touch]
-A fact known at entry that mentions only variables the loop does not
-assign, paths, and lengths of arrays the loop does not resize. A loop
-resizes an array when its body applies \code{push}, \code{pop},
-\code{shift}, \code{unshift}, \code{splice}, an element write or a
-write of \code{length} to an expression that names that array.
-\item[Quantified facts]
-A quantified fact of the precondition, of an enclosing loop's
-invariant or of the exit of an earlier loop, over variables the loop
-does not assign, when the body writes no element of an ordinary array
-and resizes none of the arrays the fact mentions.
-\end{description}
-\end{definition}
-\noindent
-Example: for \code{for (let i = 0; i < xs.length; i++) s += xs[i]!;}
-the known facts at the head are that $i$ is an integer,
-$0\le i\le\len{\mathit{xs}}$ and $i\le 2^{32}-1$.
-
-The verifier applies the rule \textsc{Loop} with these known facts as
-the invariant $I$ and with $R=\kw{true}$. A fact that the rule would
-carry around the loop as $\bx{\Phi}R$ is here a candidate, which every
-step of the body must keep. At a merge that is not a loop head, the
-known facts are those that hold on every incoming edge; of two linear
-bounds on the same term the weaker is kept.
-
-A loop \code{for (const x of xs)} over an array has a test that reads
-nothing. The variable \code{x} has the element type. The step of the
-iterator changes the iterator alone, so the candidates include the
-facts over variables and over the lengths of the arrays in scope
-before the loop. A loop that assigns a new object to a variable in
-each iteration is refused on an edge into its head: no rule keeps the
-new object apart from the iterator (Section~\ref{sec:future}).
-
-\begin{definition}[Allocation]\label{def:alloc}
-An array literal \code{[...]} creates a new array. After it, the new
-array is fresh, and it is apart from the array held by each variable
-in scope at the allocation (\textsc{Alloc}); a variable that holds the
-value read from a path counts. For an array at a path $a.f$, the
-separation is known only if a variable was read from $a.f$ before the
-allocation and is still known to equal $a.f$
-(Section~\ref{sec:future}). A typed array gets no separation fact; its
-length never changes.
-
-$\fresh(x)$ holds of a variable $x$ bound to one of: a new array; a
-value with no store, such as \code{null} or a number; the value of a
-fresh variable; the result of a call whose result type is
-\code{Fresh<T>}. At a merge it is kept when it holds on every incoming
-edge. Freshness also holds in two other places.
-\begin{itemize}[leftmargin=1.5em,itemsep=1pt,topsep=2pt]
-\item The store at $x.f$ is fresh when $f$ is a \code{@stable} field
-that an object literal initialised with a new array. The expression
-\code{c ? x : null} keeps this.
-\item The contents of a private cell are fresh when every write to
-the cell stored a fresh value and no step since the last write changed
-a value location.
-\end{itemize}
-A step on the store of a fresh array adds nothing to the effect of the
-function at its entry (\textsc{Fresh-Eff}). Example:
-\code{(acc ??= []).push(s)}, where \code{acc} is such a cell, changes
-no array of the caller.
-\end{definition}
-\noindent
-Example: after \code{const widths = []; const lists = \{ widths \};}
-the fact $a.\mathit{flags}\sep\mathit{lists}.\mathit{widths}$ is known
-only if \code{const \{ flags \} = a;} came before the allocation.
-
-\begin{definition}[Handlers]\label{def:handler}
-At the start of a \code{catch} block, the known facts are the facts
-known before the step that threw that read no heap location: facts
-over variables, facts over the lengths of strings, and separations
-between variables. Facts about an array's length, a path, a field's
-contents or an element are removed, whatever the effect of the step
-that threw (Section~\ref{sec:future}). The caught value has the type
-\code{unknown}.
-\end{definition}
-\noindent
-Example:
-\code{if (o.v === undefined) return ""; try \{ clear(o); \} catch \{ return o.v; \}}
-is refused, because $o.v\ne\code{undefined}$ is not a known fact in
-the handler.
 
 \section{Transfer along edges}\label{sec:transfer}
 
@@ -1914,9 +1271,7 @@ like any other.
 
 \paragraph{The forward pass.} A forward pass proposes knowledge for
 $\mathrm{Check}$. A merge retains facts established by every incoming
-edge. The knowledge at a loop head is the stated invariant together
-with the candidates of Definition~\ref{def:head} that hold on every
-edge into the head.
+edge. Loop-head knowledge is supplied.
 
 Derivations use ordinary two-state logic, linear arithmetic, and
 Propositions~\ref{prop:laws} and~\ref{prop:axioms}.
@@ -1927,9 +1282,7 @@ This system is sound and incomplete for semantic entailment.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
-$\Sigma_H(j)=\{0\le j,\ j\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}$, the candidates of
-Definition~\ref{def:head} for the counter $j$ and for the variable
-$\mathit{to}$, which the loop does not assign:
+$\Sigma_H(j)=\{0\le j,\ j\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}$:
 \[
 \resizebox{\linewidth}{!}{$
 \begin{array}{llll}
@@ -1951,8 +1304,7 @@ Suppose the invariant also includes $\len{\mathit{xs}}\le n$.
 The effect in row 5 permits growth beyond $n$, so that effect alone
 does not preserve the bound. The write itself keeps $\len{\mathit{xs}}$:
 if \code{out} is \code{xs}, then $j<\len{\mathit{xs}}$ by row 4, and the
-write is at a present index. No rule of this paper derives this, and
-the verifier does not keep the bound.
+write is at a present index. No rule of this paper derives this.
 
 The regional effect
 $\{\val:\any,\ \mathit{out}.\kw{store}:\grow\}$ preserves the upper bound
@@ -1967,15 +1319,17 @@ This separation is an obligation of rows 1 and 7.
 \toprule
 Lower bound under aliasing (Ex.~\ref{ex:alias}) & $\mathit{to}\le\len{\mathit{xs}}\vdash\bx{\val:\any,\,\st:\grow}(\mathit{to}\le\len{\mathit{xs}})$\hfill\textsc{(Grow)}\\[2pt]
 Bound across a rewriting call (Ex.~\ref{ex:sep}) & $\mathit{flags}\sep y\wedge i<\len{\mathit{flags}}\vdash\bx{\val:\any,\,y.\kw{store}:\any}(i<\len{\mathit{flags}})$, $y$ standing for the rigid $\mathit{runs}.\mathit{openBrackets}$\hfill\textsc{(Sep)}, \textsc{(Rigid)}\\[2pt]
-Fresh array store & its writes are omitted from the invocation's entry effect; $\apart(x,y)$ for each older array a variable $y$ holds\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
+Fresh array store & its writes are omitted from the invocation's entry effect; $\apart(x,y)$ for older $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
 Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{\val:\init\}}\,a$, by Theorem~\ref{thm:frame} at a support respected by $\Phi_{\mathit{build}}$ and tolerating $\init$\hfill\textsc{(Init)}\\[2pt]
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$\hfill Prop.~\ref{prop:rely}\\[2pt]
-Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$; the verifier applies it at the changes Definition~\ref{def:across} lists\hfill\textsc{(Every)}\\[2pt]
+Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$\hfill\textsc{(Every)}\\[2pt]
 Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$\hfill postcondition, \textsc{(Sep)}\\[2pt]
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{store}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
-Index from a shift or a mask & $0\le c<2^{31}\vdash 0\le(c\gg d)\wedge 2^{d}(c\gg d)\le c$; $0\le(c\mathbin{\&}m)\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\
+Index from a shift or a mask & $0\le c<2^{31}\vdash 0\le(c\gg d)\wedge 2^{d}(c\gg d)\le c$; $0\le(c\mathbin{\&}m)\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
+Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\every(\mathit{xs},t,\varphi)\vdash\bx{\vw:\grow}\every(\mathit{xs},t,\varphi)$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
+Fact at a handler & $\bx{\Phi^{e}}R^{e}$\hfill\textsc{Frame}\\
 \bottomrule
 \end{tabular}
 
@@ -2011,59 +1365,27 @@ completeness claim.
 
 \section{Future work}\label{sec:future}
 
-The sections above describe the verifier as it is. This section lists
-programs that it refuses and that an extension would accept. The
-extensions are of two kinds: rules that this paper states and the
-verifier does not yet implement in full, and forms that the language of
-this paper lacks.
+This section holds what the sections above do not establish:
+conjectures, and forms that the language of this paper lacks.
 
-\paragraph{Rules to implement.} Each program below is refused by the
-verifier. For each, a rule of this paper accepts it, and the verifier
-implements that rule only in a narrower form
-(Section~\ref{sec:verifies}). The first rule is a conjecture. The
-others are sound by results of this paper.
+\paragraph{Conjectures.} Each statement below is believed true of
+JavaScript and has no proof in the Lean development.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Reading a string's element]
-The program uses \code{s[i]!} as a string, with $0\le i<\slen(s)$
-known. The rule is
 $\hoare{0\le i<\slen(s)\wedge i<N}{\code{y = s[i]}}{\slen(y)=1}$: the
 read gives the UTF-16 code unit at $i$ as a string of length 1. The
-rule is conjectured, because the Lean model of the read gives U+FFFD
-for half of a surrogate pair. The verifier has no rule for this read.
-\item[A guard read through two stable fields, across a call]
-The program tests $x.f.g$, where both fields are \code{@stable}, and
-relies on the test after a call that changes no store. The rule
-\textsc{(Rigid)} keeps the fact, since the path $x.f.g$ is rigid. The
-verifier keeps a guard read through one field only
-(Definition~\ref{def:across}).
-\item[A heap fact in a handler]
-The program uses, in a \code{catch} block, a fact about a length, a
-path or an element that held before the \code{try}. When the callee's
-effect states \code{onThrow}, the rule \textsc{Frame} keeps the fact
-at the exceptional exit, as $\bx{\Phi^{e}}R^{e}$. The verifier keeps
-no heap fact in a handler (Definition~\ref{def:handler}).
-\item[A quantified fact across a write to another object]
-The program relies on $\every(\mathit{xs},t,\varphi)$ of an array
-$\mathit{xs}$ after a field write to a fresh object, or after a write
-through a typed array. In Example~\ref{ex:view}, the fact
-$\every(\mathit{xs},3,v>0)$ holds after \code{b[0] = 7}.
-Theorem~\ref{thm:frame} keeps the fact: its support lies in
-$\mathit{xs}[\ast]$, which a field write and the effect
-$\{\vw:\grow\}$ both respect. The verifier keeps a quantified fact
-only across the steps Definition~\ref{def:across} lists.
-\item[A new array and an array at a path]
-The program relies on $\apart(y,x.f)$ after allocating $y$, where the
-array $x.f$ is reached only through fields. The rule \textsc{Alloc}
-gives the separation, since the new array is apart from every array
-that existed before. The verifier knows it only for arrays held in
-variables (Definition~\ref{def:alloc}).
-\item[A prefix extended at a second index]
-The program extends a quantified fact by a write at an index other
-than the loop's counter:
-\code{for (let i = 1; i <= n; i++) ends[count++] = i;} with the
-invariant $\mathit{count}=i-1$. The extension rule applies at any
-index equal to the length of the prefix. The verifier applies it at
-the loop's own counter, and outside a loop.
+Lean model of the read gives U+FFFD for half of a surrogate pair.
+\item[What a write at the length stores]
+After \code{x[i] = v} with $i=\len x$, $x[i]\doteq v$ holds, and a
+dense prefix extends: $\old(\dense(x,i))\Rightarrow\dense(x,i+1)$.
+\textsc{Write-End} states the growth of the length alone.
+\item[The value of a push]
+\code{y = x.push(v)} gives $y=\len x$. \textsc{Push} states the growth
+of the length alone.
+\item[Rigidity of the own fields at a rigid path]
+$\{\pi.\kw{own}:\delta\}$ is rigid on the states where $\pi$ is rigid:
+by (T3) the path then reads an object with the same field locations in
+$h$ and in $h'$.
 \end{description}
 
 \paragraph{Extensions of the language.} Four patterns cannot be verified in the language of this paper. Three of them need a form that the language lacks.
@@ -2106,9 +1428,6 @@ environment, $\top$.
 admissibility (Section~3) governs intermediate states.
 \item[Fixed contracts] World extension (Section~3) excludes type-changing updates.
 \item[Transfer at regional effects] Theorem~\ref{thm:transfer} states the Lean scope.
-\item[Rules not yet implemented in full] Section~\ref{sec:future} lists them.
-\item[Scope] Definition~\ref{def:scope} states which programs this
-paper covers.
 \end{description}
 
 \begin{thebibliography}{9}\small\itemsep1pt
