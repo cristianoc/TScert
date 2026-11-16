@@ -13,38 +13,61 @@ the work is run. Read it in full, then the plan's row of
 ## The goal
 
 The note [Tolerant frames](../../../docs/drafts/tolerant-frames-note/note.tex)
-is the theory and the source of truth. Lean and the note are in sync when,
-for an example in the part the note covers, an agent that has only the note
-answers "does this example verify?" the same way the implementation does
-(the owner's definition, 2026-11-15). Parts the note does not cover
-(promises, for instance) are outside the test. The note is a model of the
-verifier, actionable and accurate without being the implementation; a piece
-of work starts as a change of the note the owner approves, and the code is
-then written until readers of the note and the verifier agree on the
-examples the change concerns (the owner's statement, 2026-11-15).
+is the theory and the source of truth. The goal is the owner's, in his
+words:
+
+- "Implementation being in sync with the paper means implementing the same
+  rules. Not simply passing the same examples. The examples are just used
+  as additional test that the implementation matches the paper."
+  (2026-11-14)
+- An agent that has only the note answers "does this example verify?" the
+  same way the implementation does, for the part the note covers; promises,
+  for instance, are not covered. (2026-11-15)
+- "If it is organised in a very different way then automatically it is not
+  aligned." (2026-11-16)
+
+These are one goal. Each definition and each rule of the note is the
+definition and the rule that acceptance applies. A decider with its own
+soundness proof, which establishes no derivation in the note's rules, does
+not meet the goal, however it is proved, and whatever examples agree. The
+agreement of a paper-only reader with the verifier is the additional test
+of the goal; it does not replace it.
+
+**What counts as in sync.** A rule is in sync when acceptance applies it,
+with no separate decider beside it. A proved Lean statement that acceptance
+does not run, and a count of agreeing examples, are neither of them
+evidence of it. A report on this work says, for each rule it mentions,
+what acceptance runs.
 
 **The test.** Each example is given to an agent that has only the note,
 which answers whether it verifies; the answer is compared with the
 verifier's outcome on the example's pipeline case. A disagreement is closed
 on either side: the pass changes, or the note changes with the owner's
-approval.
-
-The test is run as [the paper-reader test](#the-paper-reader-test).
+approval. The test is run as
+[the paper-reader test](#the-paper-reader-test).
 
 **Busy work** is work that is required neither for soundness nor on the
-critical path to that agreement. It is not queued.
+critical path to the goal (the owner's definition, 2026-11-15). It is not
+queued. Making acceptance apply the note's rules is the goal itself.
+
+**Where two statements of the owner seem to conflict,** both are quoted to
+him and he decides. The reading that removes work is not chosen for him.
+
+The note is a model of the verifier, actionable and accurate without being
+the implementation; a piece of work starts as a change of the note the
+owner approves, and the code is then written to realise it (the owner's
+statement, 2026-11-15).
 
 The order of the work:
 
-1. the implementation is brought to the note where an example's verdict
-   depends on it;
+1. acceptance is brought to apply the note's definitions and rules, rule
+   by rule, from the [rule table](../../../docs/drafts/parity-rule-table.md);
 2. the checking round: every example of the note is run through the
    verifier and through the paper-only agent, and the two notes are read
-   again against the result. This round drives the work: the
-   disagreements it finds are the work list;
-3. then the second note,
+   again against the result;
+3. then the next pattern of the second note,
    [Tolerant frames II](../../../docs/drafts/tolerant-frames-2-note/note.tex),
-   is rewritten as the examples the first note does not handle.
+   is taken as a change of the first note and realised in the code.
 
 The scope is the general rules and the arithmetic of bound facts that the
 text-layout library pretext needs. The note does not give a rule to every

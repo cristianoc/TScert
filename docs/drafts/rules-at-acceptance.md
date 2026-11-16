@@ -31,10 +31,8 @@ sound.
 
 **B. Checked transfer by derivation.** The existing deciders (frame
 keeping, Entry, arithmetic, allocation) emit derivations that
-`checkScoped` checks at every edge, merge and loop head. In this strict
-form B moves no verdict and is required by neither soundness nor the goal;
-it is not planned. A decider is changed where an example's verdict needs
-it.
+`checkScoped` checks at every edge, merge and loop head. B is what the goal requires of the rules that keep and establish
+facts.
 
 **C. Rule Loop with its frame.**
 
