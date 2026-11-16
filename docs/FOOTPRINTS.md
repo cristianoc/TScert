@@ -315,7 +315,9 @@ that slot, and the regions at any other position widen to every allocated locati
 `Post.renameM`, `callerFrame_post`). Across a call, the facts its frame
 keeps are those the survival check keeps under $`\Sigma`$'s query, its
 receiver's entries and spine regions included (`PromiseCalls.frameKeeps`,
-collected by `PromiseCalls.effectKept`), the note's Frame. A closed bound's class
+collected by `PromiseCalls.effectKept`), the note's Frame, and
+the cell facts whose support it respects (`PromiseCalls.frameCells`,
+[`frame-cell`](PROGRAM-TYPING.md#a-fields-contents-across-a-write)). A closed bound's class
 entries are read as they act on their class: on a spine `init` and `scalar`
 are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
 `Post.byClass`).

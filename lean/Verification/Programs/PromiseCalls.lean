@@ -2151,6 +2151,65 @@ def frameKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : H
     (a : HeapKnowledge.IndexAtom) : Bool :=
   a.fact.keeps (Footprints.knowledgeQuery k) { stable } (callerFrame eff t)
 
+/-- Every spine meets a set of values alike. -/
+theorem mem_spine {V : ValueSets.ValueSet} {v v' : Tm} (hv : Footprints.isArr v = true)
+    (hv' : Footprints.isArr v' = true) : V.mem v' = V.mem v := by
+  cases v <;> simp [Footprints.isArr] at hv <;> cases v' <;> simp [Footprints.isArr] at hv' <;> rfl
+
+/-- **A cell fact's support respected by a frame** (the note's Respect, at
+the support of a cell fact `y.f ∈ V`: the location `y.f`, at a change into
+`V`): every entry of the frame keeps its locations, or holds only spines and
+changes them otherwise than by `any`, which leaves a spine a spine
+(`Change.Holds.isArr_eq`), and every spine meets `V` alike (`mem_spine`), or
+the query separates its region from the field `y.f`. -/
+def cellRespects (q : Footprints.SepQuery) (Φ : Footprints.Footprint) (f : HeapFacts.Fact) : Bool :=
+  Φ.all fun e => e.2 == .keep || (Footprints.spineOnly e.1 && e.2 != .any) ||
+    q.disjoint (.field f.slot f.field) e.1
+
+/-- **A call's cell facts kept by its frame** (the note's Frame, at cell
+facts): those of the call's entry whose support the call's frame at the
+caller's slots respects under the entry's query (`cellRespects`), renamed
+past the result. -/
+def frameCells (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : HeapFacts.Facts :=
+  (k.cells.filter (cellRespects (Footprints.knowledgeQuery k) (callerFrame eff t))).map
+    fun f => { f with slot := f.slot + 1 }
+
+/-- **The frame keeps the cell facts it respects** (the tolerant frame for
+cell facts): each holds on the call's normal return, past the result. -/
+theorem frameCells_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
+    {v : Tm} {nw : Nat} {W : WorldT nw} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk nw W h)
+    (hρ : RootsOk W ρ)
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
+    HeapFacts.Holds (frameCells eff t k) (push v ρ) h' := by
+  have hp := callerFrame_post (CallEffects.Effect.callPost_within hq)
+  have hqs := Footprints.knowledgeQuery_sound hk hok hρ
+  intro g hg
+  obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hg
+  obtain ⟨hfm, hr⟩ := List.mem_filter.mp hf
+  obtain ⟨flds, c, oid, w, hρs, hrd, hm⟩ := hk.1 f hfm
+  refine ⟨flds, c, oid, ?_⟩
+  unfold HeapFacts.ReadGave at hrd
+  cases hl : flds.lookup f.field with
+  | none =>
+    rw [hl] at hrd
+    exact ⟨w, by simpa [push] using hρs, by unfold HeapFacts.ReadGave; rw [hl]; exact hrd, hm⟩
+  | some l =>
+    rw [hl] at hrd
+    obtain ⟨w', hw', ha⟩ := hp.2 l w hrd
+    refine ⟨w', by simpa [push] using hρs, by unfold HeapFacts.ReadGave; rw [hl]; exact hw', ?_⟩
+    rcases ha with rfl | ⟨e, he, hme, hh⟩
+    · exact hm
+    · have hx := List.all_eq_true.mp hr e he
+      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at hx
+      rcases hx with (hkeep | ⟨hs, hany⟩) | hd
+      · rw [hkeep] at hh
+        simp only [Footprints.Change.Holds] at hh
+        rw [hh]; exact hm
+      · have harr := Footprints.spineOnly_mem hs hme hrd
+        rw [mem_spine harr ((hh.isArr_eq hany).trans harr)]; exact hm
+      · exact (hqs _ _ l (List.getElem?_eq_some_iff.mp hrd).1 hd
+          (by simp [Footprints.Region.mem, hρs, Footprints.fieldsOf, hl]) hme).elim
+
 /-- The change of a typed array's element write: spines keep their lengths,
 nothing else changes. -/
 def writeChanges : HeapKnowledge.Changes := CallEffects.ElementWrite.changes .spines
@@ -3309,13 +3368,15 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
       exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
     · cases ha
 
-/-- Knowledge with a call's result-fact atoms added, the atoms of its entry
-`k0` its footprint keeps (`effectKept`) and the quantified atoms its growth
-of its receiver's spine keeps or extends (`appendKept`), then the instances
-of quantified facts the element reads among them state (`withElements`). -/
+/-- Knowledge with a call's result-fact atoms added, the atoms and the cell
+facts of its entry `k0` its footprint keeps (`effectKept`, `frameCells`) and
+the quantified atoms its growth of its receiver's spine keeps or extends
+(`appendKept`), then the instances of quantified facts the element reads
+among them state (`withElements`). -/
 def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapKnowledge.withElements
-    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept stable eff t k0 ++ appendKept eff t k0 ++
+    { k with cells := k.cells ++ (frameCells eff t k0).filter (!k.cells.contains ·),
+             indices := k.indices ++ ensuresAtoms eff t ++ effectKept stable eff t k0 ++ appendKept eff t k0 ++
         writeKept eff t k0 ++ linearAppendKept n eff t k0 ++ ensuresComposed stable eff t k0 }
 
 theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
@@ -3325,7 +3386,8 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
     HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
-  ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
+  ⟨fun f hf => (List.mem_append.mp hf).elim (hk.1 f)
+      (fun hf => frameCells_holds hk0 hok hρ hq f (List.mem_filter.mp hf).1), hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
       · rcases List.mem_append.mp ha with ha | ha
@@ -3348,7 +3410,8 @@ exit states the receiver's growth and the append (`statesExtension`,
 `statesAppend`); none otherwise. -/
 def withGrown (eff : Effect) (out : HeapKnowledge.Knowledge) (kept : List HeapKnowledge.IndexAtom)
     (cells : HeapFacts.Facts) : HeapKnowledge.Knowledge :=
-  if statesExtension eff && statesAppend eff then { out with cells := out.cells ++ cells, indices := out.indices ++ HeapKnowledge.shiftIndices kept }
+  if statesExtension eff && statesAppend eff then
+    { out with cells := out.cells ++ cells.filter (!out.cells.contains ·), indices := out.indices ++ HeapKnowledge.shiftIndices kept }
   else out
 
 theorem withGrown_grows {eff : Effect} (hg : (statesExtension eff && statesAppend eff) = true) {r : Tm}
@@ -3369,7 +3432,8 @@ theorem withGrown_holds {eff : Effect} {out : HeapKnowledge.Knowledge} {kept : L
   unfold withGrown
   split
   · rename_i hg
-    exact ⟨fun f hf => (List.mem_append.mp hf).elim (ho.1 f) (hc hg f), ho.2.1, ho.2.2.1, ho.2.2.2.1, ho.2.2.2.2.1,
+    exact ⟨fun f hf => (List.mem_append.mp hf).elim (ho.1 f) (fun hf => hc hg f (List.mem_filter.mp hf).1), ho.2.1,
+      ho.2.2.1, ho.2.2.2.1, ho.2.2.2.2.1,
       IndexWrites.indexHolds_cat ho.2.2.2.2.2 (HeapKnowledge.shiftIndices_holds (hk hg))⟩
   · exact ho
 
@@ -3397,7 +3461,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
       | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty &&
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty &&
           (!(statesExtension eff && statesAppend eff) || k.cells.isEmpty) then none else some eff
       | none => none
     else none
@@ -3415,7 +3479,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
     | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty &&
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty &&
           (!(statesExtension eff && statesAppend eff) || k.cells.isEmpty) then none
       else if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
           requiresTree G images k codes sums p) then some eff else none
