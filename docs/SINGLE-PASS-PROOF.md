@@ -128,7 +128,8 @@ in an admissible state (`graph_run`).
 One expression end to end, proved: a typed field write
 (`ExpressionEffects.fieldWriteWithin` with $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$,
 the closed weakening `fieldWriteFrame_closed` of its frame
-$`\{x.f:\mathsf{any}\}`$, `fieldWriteStep_sound`),
+$`\{x.f:\mathsf{any}\}`$, `fieldWriteStep_sound`, which also states its
+postcondition $`x.f \doteq a`$ for the written value $`a`$),
 safe at $`s`$, run with budget left to a value or a raise, ends in a state an
 action of that effect reaches, with the residual budget, the result's type or
 the raised value's family, and every bound $`y\le|x|`$ that held at $`s`$
