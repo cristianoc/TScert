@@ -266,9 +266,13 @@ whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow},\mathsf{v
 the array's spine location at either key an array or a typed array holds its
 elements under, at `keep`, the locations of class value at `init` (an element
 the body reads is a number, which `init` keeps), and its bound's and its
-body's terms at `keep` (`everyCells`, `bodySupport`). An element fact, and a
-quantified fact projecting through its elements, have no support produced:
-the check keeps none of them.
+body's terms at `keep` (`everyCells`, `bodySupport`); an element fact
+$`z[t] \doteq v`$ over the array a slot holds, the spine location of its
+elements (an array's or a typed array's view spine) and the element cells
+it lists, both at `keep` (`elementSupport`; the note's row of
+$`z[t] \doteq v`$, its slot's path empty and its index a slot's value). A
+quantified fact projecting through its elements has no support produced (the
+note gives a term $`z[t].\vec f`$ none): the check keeps none of them.
 
 The support is produced with finite evidence of the form it is computed for
 (`IndexFact.produceSupport`, `FactSupport`), and `IndexFact.support?` is

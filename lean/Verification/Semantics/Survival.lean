@@ -438,6 +438,15 @@ def everyCells (s : Nat) (p : List String) : Footprint :=
 def apartSupport (a b : Nat) : Footprint :=
   [(.inCls (.field a arraySpineKey) .spines, .keep), (.inCls (.field b arraySpineKey) .spines, .keep)]
 
+/-- The support of an element fact $`z[t] \doteq v`$ over the array a slot
+holds (the note, §5, Definition "Supports of the atoms", the row of
+$`z[t] \doteq v`$: $`\mathrm{reads}_{\mathsf{grow}}(z) \cup \{z[\ast]{:}\,\mathsf{keep}\} \cup
+\mathrm{supp}(t)`$): its spine location, an array's or a typed array's view
+spine, at `keep`, and the element cells it lists at `keep`; the slot's path
+is empty and its index a slot's value, which read no location. -/
+def elementSupport (x : Nat) : Footprint :=
+  [(.inCls (.spine x []) .spines, .keep), (.cells x, .keep)]
+
 /-- The support of a quantified fact whose body reads no element's fields:
 its array's path, spine and element cells (`everyCells`), its bound's and
 its body's terms. -/
@@ -458,13 +467,13 @@ inductive FactSupport where
   | guarded (body : Footprint) (b : FactSupport)
   | spineApart
   | apart
+  | element
   | every
   deriving Repr
 
 /-- **The check of an index fact's support by evidence**: the footprint is
 the one the evidence's form gives the fact, the parts' checked by theirs; a
-quantified fact's body reads no element's fields. An element fact has no
-evidence. -/
+quantified fact's body reads no element's fields. -/
 def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSupport → Bool
   | .index _, S, .slots | .int _, S, .slots | .pastSafe _, S, .slots => S.isEmpty
   | .length x _, S, .length => S == spineRead c x [] .keep
@@ -474,6 +483,7 @@ def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSuppor
   | .guarded s p _ B, S, .guarded SB b => S == pathReads c s .keep .all [] p ++ SB && check c B SB b
   | .spineApart a p b q, S, .spineApart => S == pathReads c a .keep .all [] p ++ pathReads c b .keep .all [] q
   | .apart a b, S, .apart => S == apartSupport a b
+  | .element _ x _, S, .element => S == elementSupport x
   | .every s p stop body, S, .every =>
     body.all (fun F => F.vars.all Bound.scalar) && S == everySupport c s p stop body
   | _, _, _ => false
@@ -532,7 +542,29 @@ theorem FactSupport.check_sound (c : ReadContext) :
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, pathReads_sound hc p [] (supported_left hs) (keeps_keep u) (Selector.has_all _) rfl rfl hu,
       pathReads_sound hc q [] (supported_right hs) (keeps_keep w) (Selector.has_all _) rfl rfl hw, hne⟩
-  | element _ _ _ => intro S ev hS; cases ev <;> simp [FactSupport.check] at hS
+  | element v x k =>
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
+    refine Supports.intro fun ρ h h' _ hF hs => ?_
+    obtain ⟨s, ls, b, i, hx, hls, hb, hi, hlt, hcell, hnone⟩ := hF
+    obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
+    have hm : (Region.inCls (.spine x []) .spines).mem ρ h s = true := by
+      have harr : isArr u = true := by cases u <;> simp_all [spineEntries, isArr]
+      simp [Region.mem, readPath, hx, hu, harr]
+    obtain ⟨u', hu', hk⟩ := hs (.inCls (.spine x []) .spines, .keep) (by simp [elementSupport]) s _ hm hu
+    simp only [Change.Holds] at hk
+    subst hk
+    refine ⟨s, ls, b, i, hx, by rw [hu']; exact hue, hb, hi, hlt, fun l hl => ?_, hnone⟩
+    have hv := hcell l hl
+    have hmem : (Region.cells x).mem ρ h l = true := by
+      have ho : some l ∈ entriesAt h (some s) := by
+        simp only [entriesAt, hls, Option.getD_some]
+        exact List.mem_of_getElem? hl
+      simpa [Region.mem, List.contains_iff_mem] using elementsOf_entries_sub hx ho
+    obtain ⟨v', hv', hk'⟩ := hs (.cells x, .keep) (by simp [elementSupport]) l _ hmem hv
+    simp only [Change.Holds] at hk'
+    rw [hv', hk']
   | apart a b =>
     intro S ev hS
     cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
@@ -603,9 +635,9 @@ disjunction both sides'; a guarded fact its guard's path reads and its
 body's; a spine separation its two paths' reads; a region fact its two
 spines at `keep`; a quantified fact whose body reads no element's fields its
 array's path, spine and element cells (`everyCells`), its bound's and its
-body's terms. An element fact, and a quantified fact projecting through
-elements, get none here: no support is produced, and nothing is kept by
-it. -/
+body's terms; an element fact its spine and element cells at `keep`
+(`elementSupport`). A quantified fact projecting through elements gets none:
+the note gives a term $`z[t].\vec f`$ no support. -/
 def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext) :
     IndexFact → Option (Footprint × FactSupport)
   | .index _ | .int _ | .pastSafe _ => some ([], .slots)
@@ -623,7 +655,7 @@ def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext)
   | .apart a b => some (apartSupport a b, .apart)
   | .every s p stop body =>
     if body.all (fun F => F.vars.all Bound.scalar) then some (everySupport c s p stop body, .every) else none
-  | .element _ _ _ => none
+  | .element _ x _ => some (elementSupport x, .element)
 
 /-- **The support of an index fact**, where one is produced: the footprint
 of the produced support (`produceSupport`). -/
@@ -658,7 +690,6 @@ theorem IndexFact.produceSupport_check (c : ReadContext) :
       cases h
       simp [FactSupport.check, hsc]
     · cases h
-  | element => intro S ev h; cases h
   | _ => intro S ev h; cases h; simp [FactSupport.check]
 
 /-- **Every produced support supports its fact** in its context
