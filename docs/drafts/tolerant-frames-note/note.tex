@@ -413,8 +413,7 @@ runs from $s$ for $j<k$ steps and reaches a heap $h'$, then $h'$ is the
 heap of a state that is admissible from $s$, with budget $k-j$
 \status{Lean: \lean{run}, \lean{run\_normal}, \lean{run\_throw},
 \lean{safe\_run} for (W4); \lean{HasTyUsing.sound} and
-\lean{ControlFlow.state\_safe} for (W1) to (W3), in a model whose view
-stores may hold holes and whose typed-array steps are native calls}.
+\lean{ControlFlow.state\_safe} for (W1) to (W3), in a model whose typed-array steps are native calls}.
 \end{theorem}
 \noindent
 So what is proved below of every admissible transition holds of every
@@ -430,7 +429,7 @@ the intermediate state's world
 \item[(T2) Growth] If $h\tr{}_\rho h'$ then $\len h\le\len{h'}$, and
 every location of $h$ has in $h'$ the kind and form it had: a
 transition allocates and never removes or re-purposes a location
-\status{Lean: \lean{Admissible.length\_le}}.
+\status{Lean: \lean{Admissible.length\_le}, \lean{Admissible.roleAt}}.
 \item[(T3) Fixed objects] Let $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ be an
 object value and $h\tr{}_\rho h'$. The domain of $v$ and each location
 $v(f)$ are the same before and after: the field $f$ of $v$ is read as
@@ -762,7 +761,8 @@ $\bx{\Phi}F=\mathit{wlp}(\kw{havoc}\,\Phi,F)$, the reading a verifier
 gives a call when it replaces it by its \code{modifies} clause. For a
 rigid $\Phi$ it is the weakest assertion that is stronger than $F$ and
 stable under $\tr{\Phi}$: the floor of explicit
-stabilisation~\cite{wickerson}, at a rely denoted by an effect.
+stabilisation~\cite{wickerson}, at a rely denoted by an effect
+\status{conj.}.
 \end{remark}
 
 \begin{proposition}[Laws]\label{prop:laws}\status{Lean: \lean{box\_elim}, \lean{box\_and}, \lean{box\_mono}, \lean{box\_anti}, \lean{box\_or}, \lean{box\_idem}}
@@ -824,7 +824,7 @@ meets the second: a store location is no location of class value.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
 If $S$ supports $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
-\status{Lean: \lean{tolerant\_frame\_supports}, for a supported heap predicate and an effect over the regions other than $\vw$; \lean{tolerant\_frame} for five forms of fact with their supports: a cell's contents, a link of a variable to a field, a value's kind, density, and the kind of elements. Linear facts enter the modality by the axioms below}
+\status{Lean: \lean{Parity.tolerant\_frame}, for the assertions the Lean represents and every effect; \lean{supported\_of\_pairs} for the pairwise condition of respect}
 \end{theorem}
 \begin{proof}
 Let $h\tr{\Phi}_\rho h'$ and $l\in r(\rho,h)$ with $(r:\delta)\in S$.
@@ -846,7 +846,8 @@ $\{x[\ast]:\grow,\ y[\ast]:\keep\}$: a store that grows lists only the
 cells it listed and new ones. It is also supported by the mirror image,
 $\{x[\ast]:\keep,\ y[\ast]:\grow\}$. It is not supported by
 $\{x[\ast]:\grow,\ y[\ast]:\grow\}$: both stores may come to list the
-same new cell.
+same new cell
+\status{Lean: \lean{apart\_grow\_keep}, for the first support; conj. for the mirror image and for the failure of the third}.
 
 \begin{proposition}[Axioms of the atoms]\label{prop:axioms}
 For variables $x,y,z,w$, any effect $\Phi$, and $a$ an
@@ -875,11 +876,11 @@ $\{x.\kw{store}:\grow\}$ supports $\dense(x,n)$; the axiom follows by
 Theorem~\ref{thm:frame}.
 \item[\textsc{(Sep)}] A fact about the length of $x$ survives an
 arbitrary change of another array $y$. It is Example~\ref{ex:sep}.
-\status{conj.} Lean: \lean{regionFirst\_kept}, for the store of an array
-a variable holds, across a call with a regional effect.
+\status{Lean: \lean{RawDerivation.sep}, \lean{checkScoped\_sound}, for $a$ a linear
+fact over variables and the length of $x$}.
 \item[\textsc{(Every)}] A fact about each element of $z$ survives an
 arbitrary change of an array $x$ that shares no element cell with $z$.
-\status{conj.} Lean: \lean{writeAtoms\_holds}, for an element write at a checked index.
+\status{Lean: \lean{RawDerivation.everyFrame}, \lean{checkScoped\_sound}, for an ordinary array $z$ and $\varphi$ a conjunction of disjunctions of linear facts over the index, the element as a safe integer, the element's string length and scalar parameters}.
 \item[\textsc{(Init)}] A fact about a length survives a change that only
 initialises: $\init$ changes no location that holds an object, a number
 or a store, and a defined read of a path passes only fields that hold
@@ -887,17 +888,17 @@ objects. Lean: \lean{init\_box}, \lean{init\_path}, for linear facts
 over integers, array lengths and typed-array lengths at any paths.
 \item[\textsc{(Rigid)}] A fact that holds of an array named by a
 variable holds of the array at a rigid path. The substitution of the
-witness for $y$ is capture-avoiding. \status{conj.} as a rule of
-substitution. Lean: a path through fields that each type states stable is
+witness for $y$ is capture-avoiding. \status{Lean: \lean{Derivation.rigidSubst}, \lean{Derivation.sound}, with the fresh
+witness absent from the effect}. A path through fields that each type states stable is
 rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
 \lean{stable\_rigid}), and the instance for \textsc{(Grow)} is
 \lean{grow\_path\_typed}.
 \item[\textsc{(View)}] A fact about a typed array's length survives
 every change: the typed array's store location and its form
 $\mathsf{view}_N$ are fixed, by (T2). Lean: \lean{view\_box},
-\lean{viewLengthOf\_kept}, for linear facts over variables and
-typed-array lengths; the Lean reads the length from a location of the
-typed array whose contract admits the one value $N$.
+\lean{viewLength\_invariant}, for linear facts over variables and
+typed-array lengths; the Lean reads the length from the typed array's
+descriptor.
 \end{description}
 
 \section{Programs}
@@ -954,9 +955,7 @@ $h_0\tr{\Phi}_{\rho_0}h_1$, using the action of Section~3.
 The precondition supplies $\old(B)$; the effect judgment supplies the
 action at each exit. For example, $\len z=j$ before a command
 and its postcondition $\len z=\old(\len z)+10$ imply $\len z=j+10$.
-Lean: \lean{compose\_holds}, \lean{Composer.fact\_holds},
-for a call's normal exit and the facts of TScert's checker, without
-$\kw{tr}_\Phi$; a conjecture for an arbitrary $B$.
+\status{Lean: the rule follows from the definitions \lean{CommandSummary.Sound} and \lean{ExitSpec.Holds}, with $\old(B)$ read at the entry state; no theorem states it as displayed}.
 \item[\textsc{Frame}] The frame rule, with $\wedge\,\bx{\Phi}$ where
 separation logic has $\ast$. It is \textsc{Entry} with
 $B=\bx{\Phi}R\wedge\bx{\Phi^{e}}R^{e}$: by the modality's definition,
@@ -988,14 +987,13 @@ denotes the sequence of supplied argument values; \textsc{Call}
 substitutes the evaluated sequence, including spread expansion. In
 checking a function body, that sequence equals the initial contents of
 the freshly allocated rest array.
-Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
+Lean: \lean{call\_exits\_exact}, for both exits of a signature, rest arguments included; \lean{call\_rule}, for a checked graph and the normal exit.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 array $y$ that exists before the step. These separations are
 facts of the state after the step. Later steps keep or lose them like
 any other fact: a growth of the new array's store keeps them, and an
 arbitrary change of that store does not, since it may make the store
-list a cell of $y$. Lean: \lean{alloc\_post}, and \lean{alloc\_apart\_typed} for arrays of an
-array type; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
+list a cell of $y$. Lean: \lean{alloc\_post}, \lean{alloc\_apart}; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
 \item[\textsc{Seq-Eff}] The effect of a sequence, stated at the entry of
 the sequence. The effect $\Psi$ of the second command is read where that
 command starts, so it is first \emph{rebased} to the entry (below).
@@ -1007,9 +1005,7 @@ $\Psi^{e}$ in place of $\Psi$. For \code{try c catch (x) d}, a return of
 the sequence of the exceptional effect of \code{c} and the normal effect
 of \code{d}; a throw of \code{d} is an exceptional exit, bounded
 likewise with the exceptional effect of \code{d}
-\status{conj. Lean: \lean{PassWalkSound}, for a checker that requires,
-where a throw can escape, the normal bound to be included in the
-exceptional one; this is sufficient and not necessary}.
+\status{Lean: \lean{Post.compose\_rebases}, \lean{CommandSummary.seq\_sound}, \lean{CommandSummary.handle\_sound}, with evidence for the rebasing and a checked inclusion of effects}.
 \item[\textsc{Fresh-Eff}] A change to the store of an array that the
 command itself allocated is no part of the command's effect, seen from
 its entry. A fresh store may list a cell of the entry heap, and a change
@@ -1149,12 +1145,13 @@ and an integer $i$:
 \[
 \begin{array}{ll}
 \textsc{Str-Length} & \hoare{\kw{true}}{\code{y = s.length}}{y=\slen(s)}\\[3pt]
+\textsc{Str-Read} & \hoare{0\le i<\slen(s)\wedge i<N}{\code{y = s[i]}}{\slen(y)=1}\\[3pt]
 \textsc{Concat} & \hoare{\kw{true}}{\code{y = s + s'}}{\slen(y)=\slen(s)+\slen(s')}
 \end{array}
 \]
-A read \code{y = s[i]} has no rule (Section~\ref{sec:future}). The postcondition of \textsc{Concat} is for a
+The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
 normal return
-\status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}}.
+\status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
@@ -1255,7 +1252,7 @@ node's, and the entailment includes that every path $A$ reads is
 defined.
 \end{definition}
 
-\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{transfer}, one theorem per exit, for exit effects over class regions; \lean{graph\_safe} composes the exits into the safety of a graph, and \lean{loop\_safe} is the loop of Section~\ref{sec:transfer} as an instance. A conjecture for exit effects with regions at paths}
+\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst}: the conclusion holds of every pair of states that satisfies the premises of $\mathrm{Check}$, for every effect, regions at paths included. \lean{transfer}, one theorem per exit, connects a run of the node to those premises for exit effects over class regions, and \lean{graph\_safe} composes the exits into the safety of a graph. conj.: that connection for exit effects with regions at paths}
 If $s\models_m\Sigma$, the node $c$ runs from $s$
 through exit $e$ to $s'$, and $\mathrm{Check}(c,\Sigma,e,A)$, then
 $\theta_e(s')\models_m A$.
@@ -1278,7 +1275,8 @@ Propositions~\ref{prop:laws} and~\ref{prop:axioms}.
 They include old-state lifting:
 $F\vdash G$ gives $\old(F)\vdash\old(G)$.
 Modal elimination is the entailment in \textsc{Frame}.
-This system is sound and incomplete for semantic entailment.
+This system is sound for semantic entailment
+\status{Lean: \lean{Derivation.sound}}. It is not claimed complete.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
@@ -1371,10 +1369,10 @@ conjectures, and forms that the language of this paper lacks.
 \paragraph{Conjectures.} Each statement below is believed true of
 JavaScript and has no proof in the Lean development.
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[Reading a string's element]
-$\hoare{0\le i<\slen(s)\wedge i<N}{\code{y = s[i]}}{\slen(y)=1}$: the
-read gives the UTF-16 code unit at $i$ as a string of length 1. The
-Lean model of the read gives U+FFFD for half of a surrogate pair.
+\item[Which code unit a string read gives]
+\code{y = s[i]} gives the UTF-16 code unit of $s$ at $i$.
+\textsc{Str-Read} states the length of the result alone; the Lean model
+of the read gives U+FFFD for half of a surrogate pair.
 \item[What a write at the length stores]
 After \code{x[i] = v} with $i=\len x$, $x[i]\doteq v$ holds, and a
 dense prefix extends: $\old(\dense(x,i))\Rightarrow\dense(x,i+1)$.
