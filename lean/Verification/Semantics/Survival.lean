@@ -360,139 +360,252 @@ def everyCells (s : Nat) (p : List String) : Footprint :=
   [(.inCls (.path s p arraySpineKey) .spines, .keep), (.inCls (.spine s p) .spines, .keep),
     (.cls .values, .init)]
 
-/-- **The support of an index fact**, where one is produced: nothing for a
-fact of slots' values alone; a length its spine at `keep`, a bound its spine
-at `grow`; a linear fact `linearSupport`; a disjunction both sides'; a
-guarded fact its guard's path reads and its body's; a spine separation its
-two paths' reads; a region fact its two spines at `keep`; a quantified fact
-whose body reads no element's fields its array's path, spine and element
-cells (`everyCells`), its bound's and its body's terms. An element fact, and
-a quantified fact projecting through elements, get none here: no support is
-produced, and nothing is kept by it. -/
-def _root_.Verification.HeapKnowledge.IndexFact.support? (c : ReadContext) : IndexFact → Option Footprint
-  | .index _ | .int _ | .pastSafe _ => some []
-  | .length x _ => some (spineRead c x [] .keep)
-  | .bound x _ _ => some (spineRead c x [] .grow)
-  | .linear F => some (linearSupport c F)
-  | .either A B => do pure ((← A.support? c) ++ (← B.support? c))
-  | .guarded s p _ B => do pure (pathReads c s .keep .all [] p ++ (← B.support? c))
-  | .spineApart a p b q => some (pathReads c a .keep .all [] p ++ pathReads c b .keep .all [] q)
-  | .apart a b => some [(.inCls (.field a arraySpineKey) .spines, .keep), (.inCls (.field b arraySpineKey) .spines, .keep)]
-  | .every s p stop body =>
-    if body.all (fun F => F.vars.all Bound.scalar) then
-      some (pathReads c s .grow .values [] p ++ everyCells s p ++ stop.support c .keep ++ bodySupport c body)
-    else none
-  | .element _ _ _ => none
+/-- The support of a region fact `apart(a, b)`: its two spine locations at
+`keep`. -/
+def apartSupport (a b : Nat) : Footprint :=
+  [(.inCls (.field a arraySpineKey) .spines, .keep), (.inCls (.field b arraySpineKey) .spines, .keep)]
 
-/-- **Every produced support supports its fact** in its context. -/
-theorem IndexFact.support?_supports (c : ReadContext) :
-    ∀ (F : IndexFact) {S : Footprint}, F.support? c = some S → Supports c.Holds (F.HoldsAt ε) S := by
+/-- The support of a quantified fact whose body reads no element's fields:
+its array's path, spine and element cells (`everyCells`), its bound's and
+its body's terms. -/
+def everySupport (c : ReadContext) (s : Nat) (p : List String) (stop : Term) (body : List (LinearClause Bound)) :
+    Footprint :=
+  pathReads c s .grow .values [] p ++ everyCells s p ++ stop.support c .keep ++ bodySupport c body
+
+/-- **Finite evidence of an index fact's support**: the form of the fact
+the support is computed for, and, for a disjunction and a guarded fact, the
+supports of the parts with their evidence. -/
+inductive FactSupport where
+  /-- A fact of slots' values alone, by the empty support. -/
+  | slots
+  | length
+  | bound
+  | linear
+  | either (left : Footprint) (l : FactSupport) (right : Footprint) (r : FactSupport)
+  | guarded (body : Footprint) (b : FactSupport)
+  | spineApart
+  | apart
+  | every
+  deriving Repr
+
+/-- **The check of an index fact's support by evidence**: the footprint is
+the one the evidence's form gives the fact, the parts' checked by theirs; a
+quantified fact's body reads no element's fields. An element fact has no
+evidence. -/
+def FactSupport.check (c : ReadContext) : IndexFact → Footprint → FactSupport → Bool
+  | .index _, S, .slots | .int _, S, .slots | .pastSafe _, S, .slots => S.isEmpty
+  | .length x _, S, .length => S == spineRead c x [] .keep
+  | .bound x _ _, S, .bound => S == spineRead c x [] .grow
+  | .linear F, S, .linear => S == linearSupport c F
+  | .either A B, S, .either SA a SB b => S == SA ++ SB && check c A SA a && check c B SB b
+  | .guarded s p _ B, S, .guarded SB b => S == pathReads c s .keep .all [] p ++ SB && check c B SB b
+  | .spineApart a p b q, S, .spineApart => S == pathReads c a .keep .all [] p ++ pathReads c b .keep .all [] q
+  | .apart a b, S, .apart => S == apartSupport a b
+  | .every s p stop body, S, .every =>
+    body.all (fun F => F.vars.all Bound.scalar) && S == everySupport c s p stop body
+  | _, _, _ => false
+
+/-- **A checked support supports its fact** in its context. -/
+theorem FactSupport.check_sound (c : ReadContext) :
+    ∀ (F : IndexFact) {S : Footprint} {ev : FactSupport}, ev.check c F S = true →
+      Supports c.Holds (F.HoldsAt ε) S := by
   intro F
   induction F with
   | index k | int k | pastSafe k =>
-    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, List.isEmpty_iff, Bool.false_eq_true] at hS
+    subst hS
     exact SupportDomain.Supports.of_invariant fun _ _ _ _ _ _ hF => hF
   | length x n =>
-    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
     refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨s, ls, hst, hls, hn, hmax⟩ := hF
     obtain ⟨ls', hls', -, hk⟩ := spineRead_sound hc (.inl rfl) hs (w := ρ x) rfl hst hls
     rw [hk rfl] at hls'
     exact ⟨s, ls, hst, hls', hn, hmax⟩
   | bound x k st =>
-    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
     refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨s, ls, b, i, hst, hls, hb, hi, hle⟩ := hF
     obtain ⟨ls', hls', hg, -⟩ := spineRead_sound hc (.inr rfl) hs (w := ρ x) rfl hst hls
     exact ⟨s, ls', b, i, hst, hls', hb, hi, by have := hg.1; omega⟩
   | linear F =>
-    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
     exact linearSupport_supports c F
   | either A B ihA ihB =>
-    intro S hS
-    simp only [IndexFact.support?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
-      Option.some.injEq] at hS
-    obtain ⟨SA, hA, SB, hB, rfl⟩ := hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hS
+    obtain ⟨⟨rfl, hA⟩, hB⟩ := hS
     exact SupportDomain.Supports.or (ihA hA) (ihB hB)
   | guarded s p tag B ih =>
-    intro S hS
-    simp only [IndexFact.support?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
-      Option.some.injEq] at hS
-    obtain ⟨SB, hB, rfl⟩ := hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hS
+    obtain ⟨rfl, hB⟩ := hS
     refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, guardReads_sound hc p [] (supported_left hs) rfl rfl hv,
       hor.imp id fun hb => (ih hB).apply hc hb (supported_right hs)⟩
   | spineApart a p b q =>
-    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
     refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, pathReads_sound hc p [] (supported_left hs) (keeps_keep u) (Selector.has_all _) rfl rfl hu,
       pathReads_sound hc q [] (supported_right hs) (keeps_keep w) (Selector.has_all _) rfl rfl hw, hne⟩
-  | element _ _ _ => intro S hS; simp [IndexFact.support?] at hS
+  | element _ _ _ => intro S ev hS; cases ev <;> simp [FactSupport.check] at hS
   | apart a b =>
-    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, beq_iff_eq, Bool.false_eq_true] at hS
+    subst hS
     refine Supports.intro fun ρ h h' _ hF hs => ?_
     obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hF
-    exact ⟨sa, xs, sb, ys, regionOf_supported (supported_sub hs (by simp)) hx,
-      regionOf_supported (supported_sub hs (by simp)) hy, hab⟩
+    exact ⟨sa, xs, sb, ys, regionOf_supported (supported_sub hs (by simp [apartSupport])) hx,
+      regionOf_supported (supported_sub hs (by simp [apartSupport])) hy, hab⟩
   | every s p stop body =>
-    intro S hS
-    simp only [IndexFact.support?] at hS
-    split at hS
-    · rename_i hsc
-      simp only [Option.some.injEq] at hS; subst hS
-      refine Supports.intro fun ρ h h' hc hF hs => ?_
-      have hpath := supported_left (supported_left (supported_left hs))
-      have hcells := supported_right (supported_left (supported_left hs))
-      have hstop := supported_right (supported_left hs)
-      have hbody := supported_right hs
-      have hw_obj : ∀ w st, readPath h (ρ s) p = some w → elementsOf w = some st → isObj w = true := by
-        intro w st _ he; cases w <;> simp_all [elementsOf, isObj]
-      refine IndexFact.every_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_) (fun z hz => ?_)
-        (fun w st ls hw he hls F hF i b hb z hz => ?_)
-      · obtain ⟨w0, st0, -, -, hw0, he0, -⟩ := hF
-        have hww : w0 = w := by rw [hw0] at hw; exact Option.some.inj hw
-        subst hww
-        have ho := hw_obj _ st0 hw0 he0
-        exact pathReads_sound hc p [] hpath (keeps_obj (by decide) ho)
-          (by cases w0 <;> simp_all [isObj, isArr]) rfl rfl hw0
-      · -- the spine of elements, an array's or a view spine, holds a spine
-        obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
-        have hm : (Region.inCls (.spine s p) .spines).mem ρ h st = true := by
-          have harr : isArr u = true := by cases u <;> simp_all [spineEntries, isArr]
-          simp [Region.mem, hw, he, hu, harr]
-        obtain ⟨v', hv', hk⟩ := hcells (.inCls (.spine s p) .spines, .keep)
-          (by simp [everyCells]) st _ hm hu
-        simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
-      · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hstop hz
+    intro S ev hS
+    cases ev <;> simp only [FactSupport.check, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hS
+    obtain ⟨hsc, rfl⟩ := hS
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
+    have hpath := supported_left (supported_left (supported_left hs))
+    have hcells := supported_right (supported_left (supported_left hs))
+    have hstop := supported_right (supported_left hs)
+    have hbody := supported_right hs
+    have hw_obj : ∀ w st, readPath h (ρ s) p = some w → elementsOf w = some st → isObj w = true := by
+      intro w st _ he; cases w <;> simp_all [elementsOf, isObj]
+    refine IndexFact.every_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_) (fun z hz => ?_)
+      (fun w st ls hw he hls F hF i b hb z hz => ?_)
+    · obtain ⟨w0, st0, -, -, hw0, he0, -⟩ := hF
+      have hww : w0 = w := by rw [hw0] at hw; exact Option.some.inj hw
+      subst hww
+      have ho := hw_obj _ st0 hw0 he0
+      exact pathReads_sound hc p [] hpath (keeps_obj (by decide) ho)
+        (by cases w0 <;> simp_all [isObj, isArr]) rfl rfl hw0
+    · -- the spine of elements, an array's or a view spine, holds a spine
+      obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
+      have hm : (Region.inCls (.spine s p) .spines).mem ρ h st = true := by
+        have harr : isArr u = true := by cases u <;> simp_all [spineEntries, isArr]
+        simp [Region.mem, hw, he, hu, harr]
+      obtain ⟨v', hv', hk⟩ := hcells (.inCls (.spine s p) .spines, .keep)
+        (by simp [everyCells]) st _ hm hu
+      simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
+    · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hstop hz
+      rw [h3 rfl] at h1; exact h1
+    · have hcell : ∀ j z, elementInt h ls j = some z → elementInt h' ls j = some z := by
+        intro j z hj
+        simp only [elementInt] at hj ⊢
+        split at hj
+        · rename_i l hl
+          simp only [Option.bind_eq_some_iff] at hj ⊢
+          obtain ⟨v, hv, hz⟩ := hj
+          obtain ⟨bv, rfl, -⟩ := intValue_safe hz
+          have hm : (Region.cls .values).mem ρ h l = true := by simp [Region.mem, hv, isArr]
+          obtain ⟨v', hv', hk⟩ := hcells (.cls .values, .init) (by simp [everyCells]) l _ hm hv
+          exact ⟨_, hv', by rw [(show Change.init.Holds _ _ _ from hk).defined_kept (by decide) rfl]; exact hz⟩
+        · cases hj
+      cases b with
+      | index => exact hz
+      | elem => exact hcell i z hz
+      | offset d => exact hcell (i + d) z hz
+      | project k q =>
+        have := List.all_eq_true.mp (List.all_eq_true.mp hsc F hF) _ hb
+        simp [Bound.scalar] at this
+      | free t =>
+        have hsub : Supported (t.support c .keep) ρ h h' := supported_sub hbody fun e he => by
+          simp only [bodySupport, List.mem_flatMap]
+          exact ⟨F, hF, .free t, hb, he⟩
+        obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hsub hz
         rw [h3 rfl] at h1; exact h1
-      · have hcell : ∀ j z, elementInt h ls j = some z → elementInt h' ls j = some z := by
-          intro j z hj
-          simp only [elementInt] at hj ⊢
-          split at hj
-          · rename_i l hl
-            simp only [Option.bind_eq_some_iff] at hj ⊢
-            obtain ⟨v, hv, hz⟩ := hj
-            obtain ⟨bv, rfl, -⟩ := intValue_safe hz
-            have hm : (Region.cls .values).mem ρ h l = true := by simp [Region.mem, hv, isArr]
-            obtain ⟨v', hv', hk⟩ := hcells (.cls .values, .init) (by simp [everyCells]) l _ hm hv
-            exact ⟨_, hv', by rw [(show Change.init.Holds _ _ _ from hk).defined_kept (by decide) rfl]; exact hz⟩
-          · cases hj
-        cases b with
-        | index => exact hz
-        | elem => exact hcell i z hz
-        | offset d => exact hcell (i + d) z hz
-        | project k q =>
-          have := List.all_eq_true.mp (List.all_eq_true.mp hsc F hF) _ hb
-          simp [Bound.scalar] at this
-        | free t =>
-          have hsub : Supported (t.support c .keep) ρ h h' := supported_sub hbody fun e he => by
-            simp only [bodySupport, List.mem_flatMap]
-            exact ⟨F, hF, .free t, hb, he⟩
-          obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hsub hz
-          rw [h3 rfl] at h1; exact h1
-    · cases hS
+
+/-- **The support of an index fact, with its evidence**, where one is
+produced: nothing for a fact of slots' values alone; a length its spine at
+`keep`, a bound its spine at `grow`; a linear fact `linearSupport`; a
+disjunction both sides'; a guarded fact its guard's path reads and its
+body's; a spine separation its two paths' reads; a region fact its two
+spines at `keep`; a quantified fact whose body reads no element's fields its
+array's path, spine and element cells (`everyCells`), its bound's and its
+body's terms. An element fact, and a quantified fact projecting through
+elements, get none here: no support is produced, and nothing is kept by
+it. -/
+def _root_.Verification.HeapKnowledge.IndexFact.produceSupport (c : ReadContext) :
+    IndexFact → Option (Footprint × FactSupport)
+  | .index _ | .int _ | .pastSafe _ => some ([], .slots)
+  | .length x _ => some (spineRead c x [] .keep, .length)
+  | .bound x _ _ => some (spineRead c x [] .grow, .bound)
+  | .linear F => some (linearSupport c F, .linear)
+  | .either A B => do
+    let (SA, a) ← A.produceSupport c
+    let (SB, b) ← B.produceSupport c
+    pure (SA ++ SB, .either SA a SB b)
+  | .guarded s p _ B => do
+    let (SB, b) ← B.produceSupport c
+    pure (pathReads c s .keep .all [] p ++ SB, .guarded SB b)
+  | .spineApart a p b q => some (pathReads c a .keep .all [] p ++ pathReads c b .keep .all [] q, .spineApart)
+  | .apart a b => some (apartSupport a b, .apart)
+  | .every s p stop body =>
+    if body.all (fun F => F.vars.all Bound.scalar) then some (everySupport c s p stop body, .every) else none
+  | .element _ _ _ => none
+
+/-- **The support of an index fact**, where one is produced: the footprint
+of the produced support (`produceSupport`). -/
+def _root_.Verification.HeapKnowledge.IndexFact.support? (c : ReadContext) (F : IndexFact) : Option Footprint :=
+  (F.produceSupport c).map Prod.fst
+
+/-- **A produced support checks with its evidence.** -/
+theorem IndexFact.produceSupport_check (c : ReadContext) :
+    ∀ (F : IndexFact) {S : Footprint} {ev : FactSupport}, F.produceSupport c = some (S, ev) →
+      ev.check c F S = true := by
+  intro F
+  induction F with
+  | either A B ihA ihB =>
+    intro S ev h
+    simp only [IndexFact.produceSupport, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨⟨SA, a⟩, hA, ⟨SB, b⟩, hB, h⟩ := h
+    cases h
+    simp [FactSupport.check, ihA hA, ihB hB]
+  | guarded s p tag B ih =>
+    intro S ev h
+    simp only [IndexFact.produceSupport, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨⟨SB, b⟩, hB, h⟩ := h
+    cases h
+    simp [FactSupport.check, ih hB]
+  | every s p stop body =>
+    intro S ev h
+    simp only [IndexFact.produceSupport] at h
+    split at h
+    · rename_i hsc
+      cases h
+      simp [FactSupport.check, hsc]
+    · cases h
+  | element => intro S ev h; cases h
+  | _ => intro S ev h; cases h; simp [FactSupport.check]
+
+/-- **Every produced support supports its fact** in its context
+(`produceSupport_check`, `FactSupport.check_sound`). -/
+theorem IndexFact.support?_supports (c : ReadContext) (F : IndexFact) {S : Footprint}
+    (hS : F.support? c = some S) : Supports c.Holds (F.HoldsAt ε) S := by
+  simp only [IndexFact.support?, Option.map_eq_some_iff] at hS
+  obtain ⟨⟨S', ev⟩, h, rfl⟩ := hS
+  exact FactSupport.check_sound c F (IndexFact.produceSupport_check c F h)
+
+/-- **The index facts as an assertion language** over arbitrary heaps: the
+condition of a read context, and supports by `FactSupport` evidence. -/
+def indexFacts (ε : HeapKnowledge.EntryState) : SupportLanguage heaps where
+  Formula := IndexFact
+  sat F := fun ρ _ h => F.HoldsAt ε ρ h
+  Context := ReadContext
+  condition c := fun ρ _ h h' => c.Holds ρ h h'
+  Evidence := FactSupport
+  check c F S ev := ev.check c F S
+  check_sound c F _ _ h := FactSupport.check_sound c F h
 
 /-- **The survival check**: a produced support of the fact that the effect
 respects under the query. -/
