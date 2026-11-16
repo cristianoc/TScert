@@ -2007,68 +2007,114 @@ theorem receiverGrows_changes {r : Tm} {h h' : Heap} (hg : CallEffects.ReceiverG
     · exact ⟨ls, hk, Nat.le_refl _, id⟩
     · cases he; exact ⟨ls', hls', hle.length_le, fun _ => hmax⟩
 
-/-- The locations a call growing the receiver slot `i`'s spine keeps beside
-every object and number: each field of a slot a separation fact keeps apart
-from every own location of `i`, or from `i`'s spine field, in either
-orientation. -/
+/-- **The first fields a call growing the receiver slot `i`'s spine keeps**:
+each field of a slot that the one disjointness check of the call's entry
+(`knowledgeQuery`) separates from `i`'s spine field. A growth changes no
+location but the receiver's spine. -/
 def growFirst (k : HeapKnowledge.Knowledge) (t : Tm) : Nat → String → Bool :=
   match receiverSlot t with
-  | some i => fun s g => HeapSeparation.apartAll k.separation i s (.str g) ||
-      HeapSeparation.apart k.separation i arraySpineKey s (.str g) ||
-      (g == "[]" && IndexWrites.apartFrom k i s)
+  | some i => fun s g => (Footprints.knowledgeQuery k).disjoint (.field s (.str g)) (.field i arraySpineKey)
   | none => fun _ _ => false
 
-theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' : Heap}
-    (hk : HeapKnowledge.Holds k ε ρ h)
+theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' : Heap} {nw : Nat} {W : WorldT nw}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hg : CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h') :
     HeapKnowledge.FirstKept (growFirst k t) ρ h h' := by
   intro s g fs cd o l v hf hs hl hv
   cases hi : receiverSlot t with
   | none => simp [growFirst, hi] at hf
   | some i =>
-    simp only [growFirst, hi, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hf
+    simp only [growFirst, hi] at hf
     obtain ⟨f, args, rfl⟩ := receiverSlot_term hi
     rcases hg l v hv with hk' | ⟨hst, -⟩
     · exact hk'
     · simp only [ExpressionEffects.receiverOf, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hst
-      rcases hf with (hf | hf) | ⟨rfl, hf⟩
-      case inl.inr =>
-        -- A separation fact keeps the receiver's spine field apart from the
-        -- slot's field.
-        cases hr : ρ i with
-        | objAt flds' c' o' =>
-          rw [hr] at hst
-          exact absurd rfl (HeapSeparation.apart_sound hf hk.2.2.2.1 hr hst hs hl)
-        | _ => rw [hr] at hst; simp [Footprints.spineOf, Footprints.fieldsOf] at hst
-      case inr =>
-        -- A region fact keeps the receiver's spine cell apart from the
-        -- spine cell of the slot's array.
-        obtain ⟨sa, xs, sb, ys, hra, hrb, hsep⟩ := IndexWrites.apartFrom_sound hf hk
-        have hss : Footprints.spineOf (ρ s) = some l := by
-          simpa [hs, Footprints.spineOf, Footprints.fieldsOf, arraySpineKey] using hl
-        rw [HeapKnowledge.regionOf_spine hra hst] at hsep
-        rw [HeapKnowledge.regionOf_spine hrb hss] at hsep
-        exact absurd rfl (hsep l (.inl rfl) l (.inl rfl))
-      have hat : HeapSeparation.At none (ρ i) l := by
-        cases hr : ρ i with
-        | objAt flds' c' o' =>
-          rw [hr] at hst
-          simp only [HeapSeparation.At]
-          exact Footprints.lookup_mem_snd hst
-        | _ => rw [hr] at hst; simp [Footprints.spineOf, Footprints.fieldsOf] at hst
-      exact absurd rfl (HeapSeparation.apartAll_sound hf hk.2.2.2.1 hat hs hl)
+      exact (Footprints.knowledgeQuery_sound hk hok hρ _ _ l (List.getElem?_eq_some_iff.mp hv).1 hf
+        (by simp [Footprints.Region.mem, hs, Footprints.fieldsOf, hl])
+        (by simpa [Footprints.Region.mem] using Footprints.spineOf_lookup hst)).elim
 
-/-! ### Facts kept across a frame with spine regions
+/-! The check answers every pair the allocations' separations and the
+region facts answered for a growth: a field of a slot apart from every own
+location of the receiver (`HeapSeparation.apartAll`), or from its spine
+field in either orientation (`HeapSeparation.apart`), and a slot's spine
+whose array a region fact keeps apart from the receiver's
+(`IndexWrites.apartFrom`). -/
 
-The callee's frame at the call's actuals (`Effect.within`) keeps
-every location its regions do not select within its closed bound. A slot's
-spine is kept where the bound keeps spines and checked separation places the
-slot's spine outside every region: for a region at a position's own spine,
-a region fact `apart` between the actual's slot and the slot
-(`IndexWrites.apartFrom`); for a region through a field `f`, a read link
-from the actual's slot through `f` to a slot apart from it. The separation
-is the knowledge's own, checked where it was established; the kept spine is
-the local observation bound `IndexFacts` reads as `first s "[]"`. -/
+theorem growFirst_apartAll {k : HeapKnowledge.Knowledge} {f : Tm} {i : Nat} {args : List Tm} {s : Nat} {g : String}
+    (ha : HeapSeparation.apartAll k.separation i s (.str g) = true) :
+    growFirst k (.invoke f (.var i) args) s g = true := by
+  simp only [HeapSeparation.apartAll, Bool.and_eq_true, decide_eq_true_eq, List.any_eq_true, beq_iff_eq] at ha
+  obtain ⟨⟨hid, hsd⟩, a, ham, ⟨hsl, hfl⟩, hkey⟩ := ha
+  obtain ⟨p, hp, hpk⟩ := List.any_eq_true.mp hkey
+  simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hpk
+  obtain ⟨hp1, hg⟩ := hpk
+  have hmem : Footprints.SepFact.locs i none s (.str g) ∈ Footprints.separationFacts k.separation := by
+    simp only [Footprints.separationFacts, List.mem_flatMap, List.mem_map]
+    refine ⟨a, ham, p, hp, .str g, hg, ?_⟩
+    rw [hfl, hp1]; congr 1 <;> omega
+  simp only [growFirst, receiverSlot, Footprints.knowledgeQuery]
+  rw [Footprints.SepEvidence.query_symm]
+  exact Footprints.SepEvidence.query_fact _ (f := .locs i none s (.str g))
+    (by simp [Footprints.knowledgeEvidence, hmem])
+    (by simp [Footprints.SepEvidence.byFact, Footprints.fieldSite, Footprints.slotsOf_self, HeapSeparation.covers])
+
+theorem growFirst_apart {k : HeapKnowledge.Knowledge} {f : Tm} {i : Nat} {args : List Tm} {s : Nat} {g : String}
+    (ha : HeapSeparation.apart k.separation i arraySpineKey s (.str g) = true) :
+    growFirst k (.invoke f (.var i) args) s g = true := by
+  simp only [HeapSeparation.apart, Bool.and_eq_true, decide_eq_true_eq, List.any_eq_true, Bool.or_eq_true,
+    beq_iff_eq] at ha
+  obtain ⟨⟨hid, hsd⟩, a, ham, hcase⟩ := ha
+  simp only [growFirst, receiverSlot, Footprints.knowledgeQuery]
+  rcases hcase with ⟨⟨hsl, hc⟩, hkey⟩ | ⟨⟨hsl, hc⟩, hkey⟩
+  · obtain ⟨p, hp, hpk⟩ := List.any_eq_true.mp hkey
+    simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hpk
+    obtain ⟨hp1, hg⟩ := hpk
+    have hmem : Footprints.SepFact.locs i a.fields s (.str g) ∈ Footprints.separationFacts k.separation := by
+      simp only [Footprints.separationFacts, List.mem_flatMap, List.mem_map]
+      refine ⟨a, ham, p, hp, .str g, hg, ?_⟩
+      rw [hp1]; congr 1 <;> omega
+    rw [Footprints.SepEvidence.query_symm]
+    exact Footprints.SepEvidence.query_fact _ (f := .locs i a.fields s (.str g))
+      (by simp [Footprints.knowledgeEvidence, hmem])
+      (by simp [Footprints.SepEvidence.byFact, Footprints.fieldSite, Footprints.slotsOf_self, hc])
+  · obtain ⟨p, hp, hpk⟩ := List.any_eq_true.mp hkey
+    simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hpk
+    obtain ⟨hp1, hg⟩ := hpk
+    have hmem : Footprints.SepFact.locs s a.fields i arraySpineKey ∈ Footprints.separationFacts k.separation := by
+      simp only [Footprints.separationFacts, List.mem_flatMap, List.mem_map]
+      refine ⟨a, ham, p, hp, arraySpineKey, hg, ?_⟩
+      rw [hp1]; congr 1 <;> omega
+    exact Footprints.SepEvidence.query_fact _ (f := .locs s a.fields i arraySpineKey)
+      (by simp [Footprints.knowledgeEvidence, hmem])
+      (by simp [Footprints.SepEvidence.byFact, Footprints.fieldSite, Footprints.slotsOf_self, hc])
+
+theorem growFirst_apartFrom {k : HeapKnowledge.Knowledge} {f : Tm} {i : Nat} {args : List Tm} {s : Nat}
+    (ha : IndexWrites.apartFrom k i s = true) :
+    growFirst k (.invoke f (.var i) args) s "[]" = true := by
+  obtain ⟨atom, hat, hm⟩ := List.any_eq_true.mp ha
+  simp only [Bool.and_eq_true] at hm
+  obtain ⟨hn, hm⟩ := hm
+  split at hm
+  · rename_i x y hfa
+    simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hm
+    have hsep : Footprints.SepFact.arrays (x, []) (y, []) ∈ Footprints.knowledgeSeps k := by
+      simp only [Footprints.knowledgeSeps, List.mem_flatMap]
+      exact ⟨atom, hat, by simp [hn, hfa, Footprints.factSeps]⟩
+    have hin : Footprints.SepFact.arrays (x, []) (y, []) ∈ (Footprints.knowledgeEvidence k).facts := by
+      simp [Footprints.knowledgeEvidence, hsep]
+    have hself : ∀ z, z ∈ HeapLinks.aliases k.links z := fun z => by simp [HeapLinks.aliases]
+    simp only [growFirst, receiverSlot, Footprints.knowledgeQuery]
+    rcases hm with ⟨hx, rfl⟩ | ⟨hy, rfl⟩
+    · rw [Footprints.SepEvidence.query_symm]
+      exact Footprints.SepEvidence.query_fact _ hin (by
+        simp [Footprints.SepEvidence.byFact, Footprints.arraySite, Footprints.sameSite, Footprints.pathViews,
+          Footprints.knowledgeEvidence, hx, hself, arraySpineKey])
+    · exact Footprints.SepEvidence.query_fact _ hin (by
+        simp [Footprints.SepEvidence.byFact, Footprints.arraySite, Footprints.sameSite, Footprints.pathViews,
+          Footprints.knowledgeEvidence, hy, hself, arraySpineKey])
+  · cases hm
+
+/-! ### A call's frame at the caller's slots -/
 
 /-- The caller's slot holding a call position's value: `0` the receiver, `p`
 the `p`-th actual, each a slot of the caller. -/
@@ -2102,217 +2148,6 @@ theorem actualSlot_sound {t : Tm} {p j : Nat} (h : actualSlot t p = some j) (ρ 
       subst h
       rw [List.getD_eq_getElem?_getD, instantiateArgs_eq_map, List.getElem?_map, ha]
       simp [instantiate]
-
-/-- A spine separation (`!==`) between the path `path` at the slot `a` and
-the slot `s`'s own spine, either way round, each slot read through its
-aliases. -/
-def spineApartAt (k : HeapKnowledge.Knowledge) (a s : Nat) (path : List String) : HeapKnowledge.IndexFact → Bool
-  | .spineApart x p y q =>
-    (HeapLinks.aliases k.links a).contains x && p == path && (HeapLinks.aliases k.links s).contains y && q.isEmpty ||
-      (HeapLinks.aliases k.links a).contains y && q == path && (HeapLinks.aliases k.links s).contains x && p.isEmpty
-  | _ => false
-
-/-- A slot's spine lies outside a region of the call, by checked separation
-from the spine the region selects at the call's entry: a region fact between
-what the region reads and the slot (for a position's own spine, or through a
-read link `f`), or a spine separation (`!==`) between the region's path at
-the actual's slot and the slot, or that separation guarded by the actual's
-own value (`a === null || …`): where the actual is the guard's tag, no object,
-the region selects no location. -/
-def regionSep (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (r : Footprints.ArgumentSpineRegion) : Bool :=
-  (match actualSlot t r.position, r.path with
-  | some a, [] => IndexWrites.apartFrom k a s
-  | some a, [f] => k.links.any fun g => !g.alias && !g.optional && g.cell == a && g.field == .str f &&
-      IndexWrites.apartFrom k g.value s
-  | _, _ => false) ||
-  match actualSlot t r.position with
-  | some a => k.indices.any fun atom => atom.cond.isNone && match atom.fact with
-    | .guarded g [] _ B => (HeapLinks.aliases k.links a).contains g && spineApartAt k a s r.path B
-    | F => spineApartAt k a s r.path F
-  | none => false
-
-/-- Whether an unconditional atom reads the length of a slot of `s`'s class:
-its spine location then holds an array spine. -/
-def spineHeld (k : HeapKnowledge.Knowledge) (s : Nat) : Bool :=
-  (HeapLinks.aliases k.links s).any fun x => HeapKnowledge.termDefined k.indices (.length x) ||
-    k.indices.any fun a => a.cond.isNone && match a.fact with
-      | .bound y _ _ => y == x
-      | _ => false
-
-theorem spineHeld_sound {k : HeapKnowledge.Knowledge} {s : Nat} {ρ : Env} {h : Heap}
-    (hk : HeapKnowledge.Holds k ε ρ h) (hc : spineHeld k s = true) :
-    ∃ l ls, Footprints.spineOf (ρ s) = some l ∧ h[l]? = some (.arr ls) := by
-  obtain ⟨x, hx, hc⟩ := List.any_eq_true.mp hc
-  have hxs : ρ x = ρ s := HeapLinks.aliases_eq hk.2.2.1 hx
-  rcases Bool.or_eq_true_iff.mp hc with hd | hb
-  · have hl := HeapKnowledge.termDefined_sound hk.2.2.2.2.2 hd
-    simp only [HeapKnowledge.termValue_length] at hl
-    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hl
-    obtain ⟨l, ls, hs, hls, -, -⟩ := HeapKnowledge.lengthOf_spine hn
-    exact ⟨l, ls, hxs ▸ hs, hls⟩
-  · obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp hb
-    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-    obtain ⟨hn, hm⟩ := hm
-    have hat := hk.2.2.2.2.2 a ha fun b hb => by rw [hn] at hb; cases hb
-    split at hm
-    · rename_i y i st hfa
-      simp only [beq_iff_eq] at hm
-      subst hm
-      rw [hfa] at hat
-      obtain ⟨l, ls, -, -, hs, hls, -⟩ := hat
-      exact ⟨l, ls, hxs ▸ hs, hls⟩
-    · cases hm
-
-/-- **Whether an entry of a frame leaves the spine of the slot `s`**: its
-closed bound keeps every array spine (`Change.onSpine`), or its region is the
-spine field at a path of a call position (`ArgumentSpineRegion.entry`) that
-`regionSep` separates from `s`'s spine. -/
-def entryKeepsSpine (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (e : Footprints.Region × Footprints.Change) :
-    Bool :=
-  (Footprints.Footprint.close [e]).array.onSpine == .keep || match e.1 with
-    | .path x p key => key == arraySpineKey && regionSep k t s ⟨x, p⟩
-    | _ => false
-
-/-- The slots whose spine a frame keeps: each entry of the frame leaves the
-slot's spine (`entryKeepsSpine`), which holds an array spine
-(`regionFirst_kept`, the Lean statement the note *Tolerant frames* cites for
-its axiom (Sep); the pass reads the frame route, `callKeeps`, instead). -/
-def regionFirst (k : HeapKnowledge.Knowledge) (Φ : Footprints.Footprint) (t : Tm) : Nat → String → Bool :=
-  fun s g => g == "[]" && Φ.all (entryKeepsSpine k t s) && spineHeld k s
-
-/-- A spine separation `spineApartAt` names holds where the path's spine is
-the slot's: never. -/
-private theorem spineApartAt_out {k : HeapKnowledge.Knowledge} {a s : Nat} {path : List String}
-    {F : HeapKnowledge.IndexFact} {ρ : Env} {h : Heap} {l : Nat}
-    (al : ∀ {i j}, (HeapLinks.aliases k.links i).contains j = true → ρ j = ρ i)
-    (hm : spineApartAt k a s path F = true) (hF : F.HoldsAt ε ρ h)
-    (heq : (HeapKnowledge.readPath h (ρ a) path).bind Footprints.spineOf = some l)
-    (hl : Footprints.spineOf (ρ s) = some l) : False := by
-  obtain ⟨u, hu, hus⟩ := Option.bind_eq_some_iff.mp heq
-  cases F <;> simp only [spineApartAt, Bool.false_eq_true] at hm
-  rename_i x p y q
-  obtain ⟨u', w', hu', hw', hne⟩ := hF
-  simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hm
-  rcases hm with ⟨⟨⟨hx, rfl⟩, hy⟩, rfl⟩ | ⟨⟨⟨hy, rfl⟩, hx⟩, rfl⟩
-  · rw [al hx] at hu'
-    rw [hu] at hu'; cases hu'
-    simp only [HeapKnowledge.readPath, Option.some.injEq] at hw'
-    rw [al hy] at hw'; subst hw'
-    exact hne l l hus hl rfl
-  · rw [al hy] at hw'
-    rw [hu] at hw'; cases hw'
-    simp only [HeapKnowledge.readPath, Option.some.injEq] at hu'
-    rw [al hx] at hu'; subst hu'
-    exact hne l l hl hus rfl
-
-/-- What a region selects at the call's entry, where it is separated from a
-slot, is not the slot's spine location. -/
-private theorem regionSep_out {k : HeapKnowledge.Knowledge} {t : Tm} {s : Nat}
-    {r : Footprints.ArgumentSpineRegion} {ρ : Env} {h : Heap} {l : Nat}
-    (hk : HeapKnowledge.Holds k ε ρ h) (hr : regionSep k t s r = true)
-    (hl : Footprints.spineOf (ρ s) = some l) :
-    r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h ≠ some l := by
-  intro heq
-  unfold regionSep at hr
-  rcases Bool.or_eq_true_iff.mp hr with hr | hr
-  · -- a region fact
-    have hres : ∃ b, HeapKnowledge.RegionsApart h (ρ b) (ρ s) ∧
-        r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-          (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h = Footprints.spineOf (ρ b) := by
-      split at hr
-      · rename_i a ha hp
-        refine ⟨a, IndexWrites.apartFrom_sound hr hk, ?_⟩
-        simp [Footprints.ArgumentSpineRegion.resolve, hp, actualSlot_sound ha ρ, HeapKnowledge.readPath]
-      · rename_i a f ha hp
-        obtain ⟨g, hg, hm⟩ := List.any_eq_true.mp hr
-        simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hm
-        obtain ⟨⟨⟨⟨hal, hop⟩, hcell⟩, hfield⟩, hsep⟩ := hm
-        refine ⟨g.value, IndexWrites.apartFrom_sound hsep hk, ?_⟩
-        have hl := hk.2.2.1 g hg
-        simp only [hal, hop, Bool.false_eq_true, if_false] at hl
-        obtain ⟨flds, c, oid, l, hobj, hlook, hv⟩ := hl
-        simp only [Footprints.ArgumentSpineRegion.resolve, hp, actualSlot_sound ha ρ, ← hcell, hobj]
-        rw [hfield] at hlook
-        simp [HeapKnowledge.readPath, hlook, hv]
-      · cases hr
-    obtain ⟨b, hap, hres⟩ := hres
-    rw [hres] at heq
-    exact HeapKnowledge.regionsApart_spines hap l l heq hl rfl
-  · -- a spine separation, possibly guarded by the actual's value
-    split at hr
-    · rename_i a ha
-      obtain ⟨atom, hat, hm⟩ := List.any_eq_true.mp hr
-      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-      obtain ⟨hn, hm⟩ := hm
-      have hF := hk.2.2.2.2.2 atom hat fun b hb => by rw [hn] at hb; cases hb
-      have hres : r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-          (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h =
-          (HeapKnowledge.readPath h (ρ a) r.path).bind Footprints.spineOf := by
-        simp [Footprints.ArgumentSpineRegion.resolve, actualSlot_sound ha ρ]
-      rw [hres] at heq
-      have al : ∀ {i j}, (HeapLinks.aliases k.links i).contains j = true → ρ j = ρ i :=
-        fun hc => HeapLinks.aliases_eq hk.2.2.1 (List.contains_iff_mem.mp hc)
-      split at hm
-      · rename_i g tag B hfa
-        rw [hfa] at hF
-        simp only [Bool.and_eq_true] at hm
-        obtain ⟨hg, hm⟩ := hm
-        obtain ⟨v, hv, hB⟩ := hF
-        simp only [HeapKnowledge.readGuard, Option.some.injEq] at hv
-        rcases hB with hB | hB
-        · -- the actual is the tag's value, no object: the region selects nothing
-          have hρ : ρ a = tag.val := by rw [← al hg, hv, hB]
-          rw [hρ] at heq
-          cases tag <;> cases hp : r.path <;> rw [hp] at heq <;>
-            simp [HeapKnowledge.GuardTag.val, HeapKnowledge.readPath, Footprints.spineOf,
-              Footprints.fieldsOf] at heq
-        · exact spineApartAt_out al hm hB heq hl
-      · rename_i F _
-        exact spineApartAt_out al hm hF heq hl
-    · cases hr
-
-/-- **A frame keeps the spine of each slot `regionFirst` names** (proved):
-the slot's spine location holds an array spine, and each entry of the frame
-covering it changes no array spine or selects a spine separated from it. -/
-theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {Φ : Footprints.Footprint} {t : Tm} {ρ : Env} {h h' : Heap}
-    (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : Footprints.Post Φ (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h h') :
-    HeapKnowledge.FirstKept (regionFirst k Φ t) ρ h h' := by
-  intro s g fs cd o l v hf hρ hl hv
-  simp only [regionFirst, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hf
-  obtain ⟨⟨rfl, hall⟩, hheld⟩ := hf
-  have hspine : Footprints.spineOf (ρ s) = some l := by
-    rw [hρ]; simpa [Footprints.spineOf, Footprints.fieldsOf, arraySpineKey] using hl
-  -- the slot's spine location holds an array spine
-  obtain ⟨l', ys, hs', hys⟩ := spineHeld_sound hk hheld
-  rw [hspine] at hs'; cases hs'
-  have hvarr : v = .arr ys := by rw [hys] at hv; cases hv; rfl
-  subst hvarr
-  obtain ⟨v', hv', ha⟩ := hw.2 l (.arr ys) hv
-  rcases ha with rfl | ⟨e, he, hm, hh⟩
-  · exact hv'
-  have he' := hall e he
-  simp only [entryKeepsSpine, Bool.or_eq_true, beq_iff_eq] at he'
-  rcases he' with hkeep | hsep
-  · -- the entry's closed bound keeps array spines
-    have hc : ((Footprints.Footprint.close [e]).array).Holds h.length (.arr ys) v' := by
-      rw [← Footprints.Closed.at_arr, Footprints.Footprint.close_at, Footprints.Footprint.changeAt_holds]
-      exact .inr ⟨e, List.mem_singleton_self _, Footprints.Region.cats_mem hv hm, hh⟩
-    generalize (Footprints.Footprint.close [e]).array = c at hc hkeep
-    cases c <;> simp only [Footprints.Change.onSpine, reduceCtorEq] at hkeep
-    · rw [← hc]; exact hv'
-    · rw [← hc.init_spine]; exact hv'
-    · rw [← hc.scalar_spine]; exact hv'
-  · -- the entry selects a spine separated from the slot's
-    obtain ⟨R, δ⟩ := e
-    cases R <;> simp only [Bool.false_eq_true] at hsep
-    rename_i x p key
-    simp only [Bool.and_eq_true, beq_iff_eq] at hsep
-    obtain ⟨rfl, hsep⟩ := hsep
-    have hres := (Footprints.ArgumentSpineRegion.mem_entry ⟨x, p⟩ _ h l).mp hm
-    exact absurd hres (regionSep_out hk hsep hspine)
 
 /-- **A call's frame at the caller's slots** (`Effect.frame` read at the
 call's positions, `Footprint.renameM`): each position the caller passes a
@@ -2474,7 +2309,7 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
       · simp only [Bool.and_eq_true, Bool.or_eq_true] at hgk
         obtain ⟨hgr, hkb⟩ := hgk
         have hg := statesExtension_grows hgr hq
-        have hf := HeapKnowledge.firstKept_or (growFirst_kept hk hg) hst
+        have hf := HeapKnowledge.firstKept_or (growFirst_kept hk hok hρ hg) hst
         rcases hkb with hkb | hkb
         · exact HeapKnowledge.IndexFact.holdsAt_kept (receiverGrows_changes hg) hf hkb hF
         · exact HeapKnowledge.IndexFact.everyKept_sound (receiverGrows_changes hg) hf hkb hF
@@ -2674,7 +2509,7 @@ def appendKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List Heap
 
 open HeapKnowledge in
 theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hk : Holds k ε ρ h)
+    {nw : Nat} {W : WorldT nw} (hk : Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
     IndexHolds ε (appendKept eff t k) (push v ρ) h' := by
   unfold appendKept
@@ -2683,7 +2518,7 @@ theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h
     simp only [Bool.and_eq_true] at hgr
     have hgrow := statesExtension_grows hgr.1 hq
     have happ := statesAppend_appends hgr.2 hq
-    have hf := growFirst_kept hk hgrow
+    have hf := growFirst_kept hk hok hρ hgrow
     refine shiftIndices_holds fun a ha hcd => ?_
     obtain ⟨ha, hkept⟩ := List.mem_filter.mp ha
     have hF := hk.2.2.2.2.2 a ha hcd
@@ -2746,7 +2581,8 @@ def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List In
 
 open HeapKnowledge in
 theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hv : ∀ i, i < n → isVal (ρ i) = true) (hk : Holds k ε ρ h)
+    {nw : Nat} {W : WorldT nw} (hv : ∀ i, i < n → isVal (ρ i) = true) (hk : Holds k ε ρ h)
+    (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
     IndexHolds ε (linearAppendKept n eff t k) (push v ρ) h' := by
   unfold linearAppendKept
@@ -2758,7 +2594,7 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
       obtain ⟨⟨he, ha⟩, hs⟩ := hc
       have hgrow := statesExtension_grows he hq
       have happ := statesAppend_appends ha hq
-      have hf := growFirst_kept hk hgrow
+      have hf := growFirst_kept hk hok hρ hgrow
       simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, Nat.not_lt_zero,
         if_false, Nat.sub_zero] at hgrow happ
       refine shiftIndices_holds fun a ha _ => ?_
@@ -3496,9 +3332,9 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
               · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp
                 (CallEffects.Effect.callPost_ensures hF hq)) a ha hc
             · exact effectKept_holds hk0 hok hρ hq hstable a ha hc
-          · exact appendKept_holds hk0 hq a ha hc
+          · exact appendKept_holds hk0 hok hρ hq a ha hc
         · exact writeKept_holds hk0 hq a ha hc
-      · exact linearAppendKept_holds hv hk0 hq a ha hc
+      · exact linearAppendKept_holds hv hk0 hok hρ hq a ha hc
     · exact ensuresComposed_holds hk0 hok hρ hq hstable a ha hc⟩
 
 /-- Knowledge with the region facts a call growing its receiver's spine keeps

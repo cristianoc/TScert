@@ -391,7 +391,6 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentPathTracking.read_now
   check ``Verification.GraphCode.ArgumentRegionGraph.checkRead_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkCopy_sound
-  check ``Verification.PromiseCalls.regionFirst_kept
   check ``Verification.PromiseCalls.effectKept_holds
   check ``Verification.PromiseCalls.statesExtension_grows
   check ``Verification.PromiseCalls.statesAppend_appends
@@ -399,7 +398,6 @@ run_cmd do
   check ``Verification.PromiseCalls.exactWriteOf_exact
   check ``Verification.PromiseCalls.exactWriteOf_requires
   check ``Verification.CallEffects.Effect.exactWrite_pre
-  check ``Verification.PromiseCalls.spineHeld_sound
   check ``Verification.HeapKnowledge.spineFollows_sound
   check ``Verification.HeapKnowledge.restateSpines_holds
   check ``Verification.HeapKnowledge.indicesCheckWith_sound

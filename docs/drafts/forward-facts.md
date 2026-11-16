@@ -131,7 +131,7 @@ K_c \;=\; R_c \,\cup\, \{\, a \in C_c \mid \ldots \,\} \,\cup\, \{\, a \in F_c \
   condition and the atoms establishing that condition's guard, the read
   links and aliases its terms are restated through (`bridgeOf`,
   `restateReads`, `termDefined`), and the separations a call between $`c`$
-  and $`o`$ reads to preserve its terms (`regionSep`, `growFirst`).
+  and $`o`$ reads to preserve its terms (`knowledgeQuery`, read by `frameKeeps` and `growFirst`).
 
 Atoms are selected and none is derived at the cut: with `i < n`,
 `n ≤ xs.length` and an obligation `i < xs.length`, both atoms are kept and
