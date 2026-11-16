@@ -10,16 +10,17 @@ def grp(s,i):
             if d==0: return s[i+1:j], j+1
     raise Exception
 m=re.search(r'\\begin\{mathpar\}(.*?)\\end\{mathpar\}',src,re.S)
-body=m.group(1); out=[]
-for part in body.split(r'\and'):
-    part=part.strip()
-    mm=re.match(r'\\inferrule\*\[left=(.*?)\]',part)
-    name=mm.group(1).replace('$','')
-    name=re.sub(r'\^\{\+\}',r'}^{+}\\text{',name)
-    a,i=grp(part,mm.end()); c,_=grp(part,i)
-    a=a.replace(r'\\',r'\qquad ')
-    out.append(r'\[\class{rulec}{\text{(%s)}}\quad \dfrac{%s}{%s}\]' % (name,a,c))
-src=src[:m.start()]+'\n\n'.join(out)+src[m.end():]
+if m:
+    body=m.group(1); out=[]
+    for part in body.split(r'\and'):
+        part=part.strip()
+        mm=re.match(r'\\inferrule\*\[left=(.*?)\]',part)
+        name=mm.group(1).replace('$','')
+        name=re.sub(r'\^\{\+\}',r'}^{+}\\text{',name)
+        a,i=grp(part,mm.end()); c,_=grp(part,i)
+        a=a.replace(r'\\',r'\qquad ')
+        out.append(r'\[\class{rulec}{\text{(%s)}}\quad \dfrac{%s}{%s}\]' % (name,a,c))
+    src=src[:m.start()]+'\n\n'.join(out)+src[m.end():]
 src=re.sub(r'\\begin\{description\}\[[^\]]*\]',r'\\begin{description}',src)
 src=src.replace(r'\llbracket','⟦').replace(r'\rrbracket','⟧')
 
