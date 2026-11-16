@@ -206,7 +206,7 @@ the role class of every allocated location in it, in a well-formed state.
 |---|---|---|
 | `field x k`, `path x p k` at a key other than the spine key | field, cell | the slot's role (`SlotRole`) |
 | `field x k`, `path x p k` at the spine key | array spine | the slot's role |
-| `fields x`, `pathFields x p` | field, cell, array spine | each slot's role |
+| `fields x`, `pathFields x p` | field, cell | each slot's role under a key other than the spine key: the field locations of the object |
 | `cells x`, `pathCells x p` | element cell | a spine lists element cells (`HeapOk.entries_cells`) |
 | `spine x p` | array spine, view spine | the spine slot's role, or the descriptor's view spine (`RefOk`) |
 | `cls c` | the role classes of the categories `c` selects | a location's contents category is its role's (`Shaped.category`) |
@@ -274,10 +274,9 @@ frames' node judgments (`NodesChecked`, `NodesKeep`, `StepParts`) each take
 the spine key reads a spine: step 1 leaves the last read of a guard and of
 a spine separation unmarked for that reason, and the bound above marks it.
 
-Three region forms differ from the paper's and are brought to it here:
-`fields` includes the object's spine slot where the paper's
-$`\pi.\mathsf{fields}`$ is its value fields; `cell b` selects every value
-location; `all` selects unallocated locations.
+Two region forms differ from the paper's and are brought to it here:
+`cell b` selects every value location; `all` selects unallocated
+locations.
 
 ### Step 6: what `push` and a typed-array write need
 

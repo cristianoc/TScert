@@ -39,11 +39,11 @@ theorem stamps_separate {st typed μ ρ h x y m m' r l k l'} (hs : StampsHold st
     (hμ : ∀ i j, i ≤ j → μ i ≤ μ j) (ha : st.after x = some m) (hb : st.before y = some m')
     (hm : m' ≤ m) (hr : (∃ k, r = Region.field x k) ∨ r = .fields x) (hrm : r.mem ρ h l = true)
     (hk : k ∈ typed y) (hl' : (fieldsOf (ρ y)).lookup k = some l') : l ≠ l' := by
-  have hown : (Region.fields x).mem ρ h l = true := by
+  have hown : l ∈ (fieldsOf (ρ x)).map Prod.snd := by
     rcases hr with ⟨k, rfl⟩ | rfl
-    · exact field_mem_fields hrm
-    · exact hrm
-  have h₁ := hs.1 x m ha l (by simpa [Region.mem] using hown)
+    · simp only [Region.mem, beq_iff_eq] at hrm; exact lookup_mem_snd hrm
+    · exact fieldLocs_own (by simpa [Region.mem] using hrm)
+  have h₁ := hs.1 x m ha l hown
   have h₂ := hs.2 y m' hb k hk l' hl'
   have h₃ := hμ m' m hm
   omega
