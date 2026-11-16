@@ -133,7 +133,7 @@ export function childOf(node: Node, key: Child): Modifies<{}, Node | undefined> 
 
 /** A list of children of `node`: empty where its kind carries none or none
  * is written. */
-export function childrenOf(node: Node, key: Children): Modifies<{ values: "any"; stores: "grow" }, readonly Node[]> {
+export function childrenOf(node: Node, key: Children): Modifies<{ values: "any"; spines: "grow" }, readonly Node[]> {
   switch (key) {
     case "modifiers":
       if (ts.isVariableStatement(node)) return node.modifiers?.filter(() => true) ?? [];
@@ -243,7 +243,7 @@ export function isImport(node: Node): node is Modifies<{}, ImportDeclaration> {
 }
 
 /** Whether a member is written `static`. */
-export const isStatic = (node: Node): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
+export const isStatic = (node: Node): Modifies<{ values: "any"; spines: "grow" }, boolean> =>
   childrenOf(node, "modifiers").some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
 
 /** A named property access in either spelling — `e.k`, or `e["k"]` at a

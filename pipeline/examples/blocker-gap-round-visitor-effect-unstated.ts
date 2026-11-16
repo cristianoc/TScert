@@ -9,7 +9,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Node, Expression } from "typescript/unstable/ast";
 export function letWrites(
   block: Node,
-): Modifies<{ values: "any"; stores: "grow" }, Expression[]> {
+): Modifies<{ values: "any"; spines: "grow" }, Expression[]> {
   const values: Expression[] = [];
   const visit = (n: Node): void => {
     if (ts.isBinaryExpression(n) && outermostIs(n.left, n))

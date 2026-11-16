@@ -125,7 +125,7 @@ As a written signature's result type, or a type guard's promised type. The
 call returns a `T`; on a normal return every previously allocated location
 keeps its contents but those `P` names, each changed at most as `P` says.
 `P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`, `"grow"`
-or `"any"`) bounds changes to locations holding a value, `stores` the same
+or `"any"`) bounds changes to locations holding a value, `spines` the same
 for array stores, and `onThrow: true` makes the bound hold on a throw too;
 `{}` states that nothing previously allocated changes. On a function
 declaration, `"x[*]": "any"` excepts the store parameter `x` holds at the
@@ -139,7 +139,7 @@ function count(xs: readonly number[]): Modifies<{}, number> {
   return xs.length;
 }
 
-function evens(n: number): Modifies<{ values: "any"; stores: "grow" }, number[]> {
+function evens(n: number): Modifies<{ values: "any"; spines: "grow" }, number[]> {
   const out: number[] = [];
   for (let i = 0; i < n; i += 2) out.push(i);
   return out;
@@ -221,7 +221,7 @@ states. The spelling beside each is a proposal, read by no reader.
   allocated arrays sharing no element cell (`/** @invariant apart(out, src) */`).
 - **The frame of an overloaded declaration**, one `Modifies` per overload.
 - **The frame of a generic closure or method**:
-  `<T,>(x: T): Modifies<{ values: "keep"; stores: "keep" }, T> => x`.
+  `<T,>(x: T): Modifies<{ values: "keep"; spines: "keep" }, T> => x`.
 - **Dense presence of an array that is no tuple**: a result with no hole
   (`Dense<number[]>`).
 - **A record's exact own keys**: a spread or an absent key's read

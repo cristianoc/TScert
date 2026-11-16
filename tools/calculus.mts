@@ -157,7 +157,7 @@ export function hasExactly(
  * `"[object Object]"`, unless it owns a `toString`, which, as JSON data, is
  * not callable, so that `String` finds no callable conversion (its `valueOf`
  * returns the object) and throws a `TypeError`, with the message Node gives. */
-function scalarText(value: JsonRead): Modifies<{ values: "any"; stores: "grow" }, string> {
+function scalarText(value: JsonRead): Modifies<{ values: "any"; spines: "grow" }, string> {
   if (typeof value !== "object" || value === null) return `${value}`;
   if (Object.hasOwn(value, "toString")) throw new TypeError("Cannot convert object to primitive value");
   return "[object Object]";
@@ -176,7 +176,7 @@ interface ListPosition {
  * chain of positions, so the conversion's depth costs no call stack: where
  * `String` exhausts the call stack on a deep array (a `RangeError`), this
  * returns the text. Every other result and exception is `String`'s. */
-export function stringOfJson(value: JsonRead): Modifies<{ values: "any"; stores: "grow" }, string> {
+export function stringOfJson(value: JsonRead): Modifies<{ values: "any"; spines: "grow" }, string> {
   if (value === undefined || !isJsonList(value)) return scalarText(value);
   let text = "";
   let position: ListPosition | null = { list: value, at: 0, below: null };

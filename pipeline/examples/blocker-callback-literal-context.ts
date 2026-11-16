@@ -5,7 +5,7 @@
 import type { TypeTerm } from "../../tools/declaration-types.mts";
 export function use(
   span: [number, number],
-): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
+): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   return {
     k: "union",
     span,

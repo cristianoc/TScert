@@ -9,7 +9,7 @@ type Lists = { /** @stable */ readonly widths: number[] };
  * @requires 0 <= p.widths.length && p.widths.length <= 1000
  * @ensures p.widths.length === old(p.widths.length) + n
  */
-function measure(n: number, p: Lists): Modifies<{ values: "any"; stores: "grow" }, void> {
+function measure(n: number, p: Lists): Modifies<{ values: "any"; spines: "grow" }, void> {
   /** @invariant safeInteger(k) && safeInteger(n) && 0 <= k && k <= n && p.widths.length === old(p.widths.length) + k */
   for (let k = 0; k < n; k++) p.widths.push(k);
 }

@@ -3,7 +3,7 @@
 export function changed(
   xs: number[],
   victim: number[],
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   const alias: { [Symbol.iterator]: () => Iterator<number> } = xs;
   alias[Symbol.iterator] = (): Iterator<number> => {
     victim.pop();

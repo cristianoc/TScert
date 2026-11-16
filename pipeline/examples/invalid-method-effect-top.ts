@@ -2,7 +2,7 @@
 // too: it states nothing the ordinary effect does not.
 export function any(
   xs: number[],
-): Modifies<{ values: "any"; stores: "any"; onThrow: true }, number> {
+): Modifies<{ values: "any"; spines: "any"; onThrow: true }, number> {
   xs.pop();
   return 0;
 }

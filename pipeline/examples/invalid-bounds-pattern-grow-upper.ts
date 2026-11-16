@@ -8,7 +8,7 @@ export type Analysis = {
   /** @stable */ readonly flags: number[];
 };
 
-function note(out: number[], v: number): Modifies<{ values: "any"; stores: "grow" }, void> {
+function note(out: number[], v: number): Modifies<{ values: "any"; spines: "grow" }, void> {
   out.push(v);
 }
 

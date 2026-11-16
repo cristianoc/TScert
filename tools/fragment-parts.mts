@@ -12,15 +12,15 @@ import { someType } from "./type-term.mts";
  * a statement, a pattern, a type term, a type parameter (its name, bound
  * and resolution slots together). */
 export type PartMap = {
-  expr: (e: Expr, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, Expr>;
-  stmt: (s: Stmt, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, Stmt>;
-  pattern: (p: PatternAst, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, PatternAst>;
-  type: (t: TypeTerm, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>;
-  param: (p: TypeParamAst, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, TypeParamAst>;
+  expr: (e: Expr, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, Expr>;
+  stmt: (s: Stmt, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, Stmt>;
+  pattern: (p: PatternAst, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, PatternAst>;
+  type: (t: TypeTerm, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>;
+  param: (p: TypeParamAst, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, TypeParamAst>;
 };
 
 /** `e` with each of its direct parts mapped by `m`. */
-export function mapExprParts(e: Expr, m: PartMap): Modifies<{ values: "any"; stores: "grow" }, Expr> {
+export function mapExprParts(e: Expr, m: PartMap): Modifies<{ values: "any"; spines: "grow" }, Expr> {
   const exprs = (list: Expr[]): Expr[] => list.map(m.expr);
   const types = (list: TypeTerm[]): TypeTerm[] => list.map(m.type);
   switch (e.k) {
@@ -74,7 +74,7 @@ export function mapExprParts(e: Expr, m: PartMap): Modifies<{ values: "any"; sto
 }
 
 /** `s` with each of its direct parts mapped by `m`. */
-export function mapStmtParts(s: Stmt, m: PartMap): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function mapStmtParts(s: Stmt, m: PartMap): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const stmts = (list: Stmt[]): Stmt[] => list.map(m.stmt);
   switch (s.k) {
     case "effect": case "return": case "throw": return { ...s, e: m.expr(s.e) };
@@ -95,7 +95,7 @@ export function mapStmtParts(s: Stmt, m: PartMap): Modifies<{ values: "any"; sto
 }
 
 /** `p` with each of its direct parts mapped by `m`. */
-export function mapPatternParts(p: PatternAst, m: PartMap): Modifies<{ values: "any"; stores: "grow" }, PatternAst> {
+export function mapPatternParts(p: PatternAst, m: PartMap): Modifies<{ values: "any"; spines: "grow" }, PatternAst> {
   switch (p.k) {
     case "name": return p;
     case "object": return { ...p, props: p.props.map(q => ({ ...q, target: m.pattern(q.target), default_: q.default_ && m.expr(q.default_) })),
@@ -107,7 +107,7 @@ export function mapPatternParts(p: PatternAst, m: PartMap): Modifies<{ values: "
 }
 
 /** `f` with each of its direct parts mapped by `m`. */
-export function mapFunctionParts(f: FunctionAst, m: PartMap): Modifies<{ values: "any"; stores: "grow" }, FunctionAst> {
+export function mapFunctionParts(f: FunctionAst, m: PartMap): Modifies<{ values: "any"; spines: "grow" }, FunctionAst> {
   return { ...f, typeParams: f.typeParams.map(m.param), params: f.params.map(p => ({ ...p, type: m.type(p.type) })),
     retType: m.type(f.retType), guard: f.guard && { ...f.guard, type: m.type(f.guard.type) }, body: f.body.map(m.stmt) };
 }
@@ -115,8 +115,8 @@ export function mapFunctionParts(f: FunctionAst, m: PartMap): Modifies<{ values:
 /** The map of every part under a node: its expressions, statements and
  * patterns mapped through their parts, its type terms by `type` and its
  * type parameters by `param`. */
-export function deepPartMap(type: (t: TypeTerm, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>,
-    param: (p: TypeParamAst, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, TypeParamAst>): Modifies<{ values: "any"; stores: "grow" }, PartMap> {
+export function deepPartMap(type: (t: TypeTerm, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>,
+    param: (p: TypeParamAst, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, TypeParamAst>): Modifies<{ values: "any"; spines: "grow" }, PartMap> {
   function expr(e: Expr): Expr { return mapExprParts(e, deep); }
   function stmt(s: Stmt): Stmt { return mapStmtParts(s, deep); }
   function pattern(p: PatternAst): PatternAst { return mapPatternParts(p, deep); }
@@ -128,14 +128,14 @@ export function deepPartMap(type: (t: TypeTerm, ...further: unknown[]) => Modifi
  * term, a type parameter, a declaration's identity, a written
  * application's site. */
 export type DocumentMap = {
-  type: (t: TypeTerm, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>;
-  param: (p: SourceTypeParameter<TypeTerm>, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, SourceTypeParameter<TypeTerm>>;
-  identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, DeclarationIdentity>;
-  site: (site: string, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, string>;
+  type: (t: TypeTerm, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>;
+  param: (p: SourceTypeParameter<TypeTerm>, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, SourceTypeParameter<TypeTerm>>;
+  identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, DeclarationIdentity>;
+  site: (site: string, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, string>;
 };
 
 /** `doc` with each of its parts mapped by `m`. */
-export function mapDocument(doc: DeclarationDocument, m: DocumentMap): Modifies<{ values: "any"; stores: "grow" }, DeclarationDocument> {
+export function mapDocument(doc: DeclarationDocument, m: DocumentMap): Modifies<{ values: "any"; spines: "grow" }, DeclarationDocument> {
   const application = (a: WrittenApplication): WrittenApplication => ({ ...a,
     scope: a.scope.map(group => group.map(m.param)),
     reference: { ...a.reference, target: m.identity(a.reference.target) },
@@ -159,7 +159,7 @@ export type Part =
   | { k: "param"; p: TypeParamAst };
 
 /** The direct parts of a node, in the order its map meets them. */
-function partsOf(map: (m: PartMap) => Modifies<{ values: "any"; stores: "grow" }, unknown>): Modifies<{ values: "any"; stores: "grow" }, Part[]> {
+function partsOf(map: (m: PartMap) => Modifies<{ values: "any"; spines: "grow" }, unknown>): Modifies<{ values: "any"; spines: "grow" }, Part[]> {
   const parts: Part[] = [];
   map({
     expr: e => { parts.push({ k: "expr", e }); return e; },
@@ -174,7 +174,7 @@ function partsOf(map: (m: PartMap) => Modifies<{ values: "any"; stores: "grow" }
 /** A part's direct parts: an expression's, a statement's or a pattern's; a
  * type term and a type parameter are leaves of the fragment's grammar, read
  * by the type terms' own traversal (`typeParts`). */
-function directParts(part: Part): Modifies<{ values: "any"; stores: "grow" }, Part[]> {
+function directParts(part: Part): Modifies<{ values: "any"; spines: "grow" }, Part[]> {
   switch (part.k) {
     case "expr": return partsOf(m => mapExprParts(part.e, m));
     case "stmt": return partsOf(m => mapStmtParts(part.s, m));
@@ -185,14 +185,14 @@ function directParts(part: Part): Modifies<{ values: "any"; stores: "grow" }, Pa
 }
 
 /** Each part under `part`, itself first, depth first. */
-export function forEachPart(part: Part, visit: (part: Part) => Modifies<{ values: "any"; stores: "grow" }, void>): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function forEachPart(part: Part, visit: (part: Part) => Modifies<{ values: "any"; spines: "grow" }, void>): Modifies<{ values: "any"; spines: "grow" }, void> {
   visit(part);
   for (const p of directParts(part)) forEachPart(p, visit);
 }
 
 /** The type terms a fragment's code states, each a root of its own grammar:
  * annotations, type arguments, a type parameter's bound. */
-function fragmentTypes(roots: Part[]): Modifies<{ values: "any"; stores: "grow" }, TypeTerm[]> {
+function fragmentTypes(roots: Part[]): Modifies<{ values: "any"; spines: "grow" }, TypeTerm[]> {
   const types: TypeTerm[] = [];
   for (const root of roots) forEachPart(root, p => {
     if (p.k === "type") types.push(p.t);
@@ -203,7 +203,7 @@ function fragmentTypes(roots: Part[]): Modifies<{ values: "any"; stores: "grow" 
 
 /** The type terms a declaration document holds, each a root of its own
  * grammar, and the identities it names outside them. */
-function documentParts(doc: DeclarationDocument): Modifies<{ values: "any"; stores: "grow" }, { types: TypeTerm[]; identities: DeclarationIdentity[] }> {
+function documentParts(doc: DeclarationDocument): Modifies<{ values: "any"; spines: "grow" }, { types: TypeTerm[]; identities: DeclarationIdentity[] }> {
   const types: TypeTerm[] = [];
   const identities: DeclarationIdentity[] = [];
   mapDocument(doc, {
@@ -217,31 +217,31 @@ function documentParts(doc: DeclarationDocument): Modifies<{ values: "any"; stor
 
 /** Whether a declaration document holds a term passing `term` or names an
  * identity passing `identity`. */
-export function documentHolds(doc: DeclarationDocument, term: (t: TypeTerm) => Modifies<{ values: "any"; stores: "grow" }, boolean>,
-    identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, boolean>): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function documentHolds(doc: DeclarationDocument, term: (t: TypeTerm) => Modifies<{ values: "any"; spines: "grow" }, boolean>,
+    identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, boolean>): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   const declared = documentParts(doc);
   return declared.identities.some(identity) || declared.types.some(t => someType(t, term));
 }
 
 /** The parts of a lowered file's code: its top-level statements and its
  * functions'. */
-function codeParts(code: { init: Stmt[]; functions: FunctionAst[] }): Modifies<{ values: "any"; stores: "grow" }, Part[]> {
+function codeParts(code: { init: Stmt[]; functions: FunctionAst[] }): Modifies<{ values: "any"; spines: "grow" }, Part[]> {
   return [...code.init.map((s): Part => ({ k: "stmt", s })),
     ...code.functions.flatMap(f => partsOf(m => mapFunctionParts(f, m)))];
 }
 
 /** Whether a module's documents and code hold a term passing `term` or
  * name an identity passing `identity`. */
-export function moduleHolds(module: ModuleAst, term: (t: TypeTerm) => Modifies<{ values: "any"; stores: "grow" }, boolean>,
-    identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, boolean>): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function moduleHolds(module: ModuleAst, term: (t: TypeTerm) => Modifies<{ values: "any"; spines: "grow" }, boolean>,
+    identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, boolean>): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return documentHolds(module.declarations, term, identity) ||
     fragmentTypes(codeParts(module)).some(t => someType(t, term));
 }
 
 /** Whether a file's documents and code, its modules' included, hold a term
  * passing `term` or name an identity passing `identity`. */
-export function astHolds(ast: Ast, term: (t: TypeTerm) => Modifies<{ values: "any"; stores: "grow" }, boolean>,
-    identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; stores: "grow" }, boolean>): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function astHolds(ast: Ast, term: (t: TypeTerm) => Modifies<{ values: "any"; spines: "grow" }, boolean>,
+    identity: (id: DeclarationIdentity, ...further: unknown[]) => Modifies<{ values: "any"; spines: "grow" }, boolean>): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return documentHolds(ast.declarations, term, identity) ||
     fragmentTypes(codeParts(ast)).some(t => someType(t, term)) || ast.modules.some(m => moduleHolds(m, term, identity));
 }

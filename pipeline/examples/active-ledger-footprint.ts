@@ -19,8 +19,8 @@ export function withLedger<T>(ledger: number, run: () => T): T {
 }
 export function kept<T>(
   ledger: number,
-  run: () => Modifies<{ values: "any"; stores: "grow"; onThrow: true }, T>,
-): Modifies<{ values: "any"; stores: "grow" }, T> {
+  run: () => Modifies<{ values: "any"; spines: "grow"; onThrow: true }, T>,
+): Modifies<{ values: "any"; spines: "grow" }, T> {
   const entered = enter(ledger);
   try {
     return run();

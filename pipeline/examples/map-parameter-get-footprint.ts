@@ -6,7 +6,7 @@ export function placedBefore(
   placed: Map<string, number>,
   names: readonly string[],
   live: number,
-): Modifies<{ values: "any"; stores: "grow" }, string[]> {
+): Modifies<{ values: "any"; spines: "grow" }, string[]> {
   const bound: string[] = [];
   for (const n of names) {
     const at = placed.get(n) ?? live;

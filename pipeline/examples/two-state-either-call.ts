@@ -6,7 +6,7 @@
  * @requires 0 <= xs.length && xs.length <= 1000
  * @ensures xs.length === old(xs.length) + 1 || xs.length === old(xs.length) + 2
  */
-function appendSome(xs: number[], two: boolean): Modifies<{ values: "any"; stores: "grow" }, void> {
+function appendSome(xs: number[], two: boolean): Modifies<{ values: "any"; spines: "grow" }, void> {
   xs.push(0);
   if (!two) return;
   xs.push(1);

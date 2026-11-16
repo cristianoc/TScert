@@ -10,9 +10,9 @@ export function visit(
   seen: (
     term: Term,
     bound: ReadonlySet<string>,
-  ) => Modifies<{ values: "any"; stores: "grow" }, void>,
+  ) => Modifies<{ values: "any"; spines: "grow" }, void>,
   bound: Set<string> = new Set(),
-): Modifies<{ values: "any"; stores: "grow" }, void> {
+): Modifies<{ values: "any"; spines: "grow" }, void> {
   seen(term, bound);
   const inner = new Set([...bound, ...term.names]);
   for (const part of term.parts) visit(part, seen, inner);

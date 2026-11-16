@@ -16,7 +16,7 @@ export function writing(
 export function growing(
   xs: readonly (string | number)[],
   seen: number[],
-): Modifies<{ values: "any"; stores: "grow" }, string[]> {
+): Modifies<{ values: "any"; spines: "grow" }, string[]> {
   return xs.filter((x): x is string => {
     seen.push(1);
     return typeof x === "string";

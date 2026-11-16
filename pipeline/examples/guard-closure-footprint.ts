@@ -13,7 +13,7 @@ export function tested(vs: (A | B)[], key: string): boolean[] {
 export function collected(
   vs: readonly (A | B)[],
   key: string,
-): Modifies<{ values: "any"; stores: "grow" }, A[]> {
+): Modifies<{ values: "any"; spines: "grow" }, A[]> {
   const isA = (e: A | B): e is A => e.k === "a" && e.v === key;
   const out: A[] = [];
   const collect = (e: A | B): void => {

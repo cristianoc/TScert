@@ -94,9 +94,9 @@ read `flags[cursor.at]` after one call:
 
 | The call | Verdict |
 |---|---|
-| a function type stating `values: "keep"; stores: "keep"`, or `"init"` on either | verified |
-| a function type stating `values: "keep"; stores: "grow"` | refused |
-| a callee stating `values: "keep"; stores: "keep"; "out[*]": "any"` | refused |
+| a function type stating `values: "keep"; spines: "keep"`, or `"init"` on either | verified |
+| a function type stating `values: "keep"; spines: "grow"` | refused |
+| a callee stating `values: "keep"; spines: "keep"; "out[*]": "any"` | refused |
 | a callee whose effect is inferred from `out.push(1)` | refused |
 | `out.push(1)` written directly | verified |
 

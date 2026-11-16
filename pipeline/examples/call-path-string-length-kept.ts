@@ -4,7 +4,7 @@
 // (FOOTPRINTS.md, "Supports of index facts").
 type R = { name: string };
 
-function setup(o: { c: number | undefined }): Modifies<{ values: "init"; stores: "keep" }, void> {
+function setup(o: { c: number | undefined }): Modifies<{ values: "init"; spines: "keep" }, void> {
   o.c ??= 1;
 }
 

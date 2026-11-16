@@ -6,8 +6,8 @@
 // declaration-graph.mts#elaborateDeclaration
 type Hook = (
   n: number,
-  read: (n: number) => Modifies<{ values: "any"; stores: "grow" }, string>,
-) => Modifies<{ values: "any"; stores: "grow" }, string>;
+  read: (n: number) => Modifies<{ values: "any"; spines: "grow" }, string>,
+) => Modifies<{ values: "any"; spines: "grow" }, string>;
 export function invoke(hook: Hook, ...args: Parameters<Hook>): string {
   return hook(...args);
 }

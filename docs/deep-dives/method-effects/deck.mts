@@ -54,10 +54,10 @@ const slides: Slide[] = [
   slide("write", {
     label: "What you write", note: `from test case ${c("method-effect-map.ts")} · ${verified}`,
     title: t("The effect goes in the result type, as `Modifies<P, T>`"),
-    body: code([`note(n: number): Modifies<{ values: "any"; stores: "grow" }, number> {`, "  this.entries.push(n);", "  return n + 1;", "}"]) + bullets([
+    body: code([`note(n: number): Modifies<{ values: "any"; spines: "grow" }, number> {`, "  this.entries.push(n);", "  return n + 1;", "}"]) + bullets([
       t("`Modifies` needs no import, only its declaration file listed in the project’s tsconfig.json: it is a global type alias in tools/resolvable.d.ts (tools/, the directory of TScert’s TypeScript front end). To TypeScript, `Modifies<P, T>` is just `T`, so the code compiles and runs unchanged. TScert recognises `Modifies` by that declaration, or an identical copy of its file: another type called `Modifies` is an ordinary type."),
       t("To TScert it is a statement about the call: on a normal return, the call changes memory that existed before it at most as P, the frame, allows. With `onThrow: true` in P, this holds also when the call throws; without it, the statement says nothing about a throw."),
-      t("P has the class keys `values` (written value below) and `stores` (store), whose settings the next slide lists, an omitted key keep, and optionally `onThrow: true`; in prose this deck writes the settings without quotes. `note` states store: grow (it keeps arrays’ hole-free prefixes hole-free, next slide, as its `push` onto `entries`, a `number[]` field of its class `Log`, three slides on, does) and value: any, because `push`’s contract states value: any (two slides on)."),
+      t("P has the class keys `values` (written value below) and `spines` (store), whose settings the next slide lists, an omitted key keep, and optionally `onThrow: true`; in prose this deck writes the settings without quotes. `note` states store: grow (it keeps arrays’ hole-free prefixes hole-free, next slide, as its `push` onto `entries`, a `number[]` field of its class `Log`, three slides on, does) and value: any, because `push`’s contract states value: any (two slides on)."),
       t("TScert checks the function’s own body against the statement in a run that includes its definition, whether or not any code calls it; the statement is certified when that run verifies. Callers rely on the statement."),
     ]),
   }),
@@ -85,7 +85,7 @@ const slides: Slide[] = [
     label: "Example that verifies", note: `abridged from test case ${c("method-effect-map.ts")} · ${verified}`, gap: 32,
     title: t("A method that only appends keeps map’s result hole-free"),
     body: columns([
-      code(["export class Log {", "  entries: number[] = [];", "  note(n: number): Modifies<", `    { values: "any"; stores: "grow" }, number> {`,
+      code(["export class Log {", "  entries: number[] = [];", "  note(n: number): Modifies<", `    { values: "any"; spines: "grow" }, number> {`,
         "    this.entries.push(n);", "    return n + 1;", "  }", "}", "export function notes(log: Log,", "    xs: number[]): number[] {",
         "  const r: number[] = xs.map((x) => log.note(x));", "  return r;", "}"]),
       para(point("Checked at the method", "its body only pushes onto a field, which is within value: any, store: grow.")) +

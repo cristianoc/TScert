@@ -5,7 +5,7 @@
 import type { ParameterDeclaration } from "typescript/unstable/ast";
 function firstOptional(
   params: readonly { questionToken?: unknown; initializer?: unknown }[],
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   return params.findIndex((p) => !!p.questionToken || !!p.initializer);
 }
 export function lower(params: readonly ParameterDeclaration[]): boolean[] {

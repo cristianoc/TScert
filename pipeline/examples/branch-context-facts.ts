@@ -16,7 +16,7 @@ export function boundRecord(
 ): { name: string; bound: number | null } {
   const term = (
     n: number,
-  ): Modifies<{ values: "any"; stores: "grow" }, number> => {
+  ): Modifies<{ values: "any"; spines: "grow" }, number> => {
     kept.push(n);
     return n;
   };
@@ -31,6 +31,6 @@ export function boundRecord(
   const offered: (
     n: number,
     ...more: unknown[]
-  ) => Modifies<{ values: "any"; stores: "grow" }, number> = term;
+  ) => Modifies<{ values: "any"; spines: "grow" }, number> = term;
   return param(input);
 }

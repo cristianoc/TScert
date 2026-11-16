@@ -1,5 +1,5 @@
 // Rule Call's relational context includes the callee's effect: `measure`
-// grows every store (`stores: "grow"`), so `segs` is at least as long after
+// grows every store (`spines: "grow"`), so `segs` is at least as long after
 // the call as before it, and its post states the list 2 longer. From
 // `|lists.widths| <= |segs|` before the call, the caller reads
 // `|lists.widths| - 2 <= |segs|` after it, and `segs[n - 3]` is present.
@@ -10,7 +10,7 @@ type Lists = { /** @stable */ readonly widths: number[] };
  * @requires 0 <= paragraph.widths.length && paragraph.widths.length <= 300000
  * @ensures paragraph.widths.length === old(paragraph.widths.length) + to - from
  */
-function measure(from: number, to: number, paragraph: Lists): Modifies<{ values: "any"; stores: "grow" }, void> {
+function measure(from: number, to: number, paragraph: Lists): Modifies<{ values: "any"; spines: "grow" }, void> {
   /** @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && from <= mi && mi <= to && paragraph.widths.length === old(paragraph.widths.length) + mi - from */
   for (let mi = from; mi < to; mi++) paragraph.widths.push(0);
 }

@@ -1,4 +1,4 @@
-// A class map with a member other than `values` and `stores`.
+// A class map with a member other than `values` and `spines`.
 let cache: number | null = null;
 
 export function cached(): Modifies<

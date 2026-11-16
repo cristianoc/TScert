@@ -146,7 +146,7 @@ const slides: Slide[] = [
   slide("preservation", {
     label: "Frame conditions", note: t("the preservation rules ") + proved,
     title: "A fact survives a step that leaves its locations unchanged", gap: 22,
-    body: para(t("A fact over the heap reads particular locations: fields, variables, array elements and lengths. An operation’s frame condition, its frame, bounds what it may change in each class of location: `values` (fields and variables) and `stores` (an array’s elements and length), each kept (`keep`), changed keeping every element present and the array no shorter (`grow`), or changed freely (`any`). The producer proposes a function’s frame from its body and the checker certifies it; a signature may also state it (slide 10)."), 26) +
+    body: para(t("A fact over the heap reads particular locations: fields, variables, array elements and lengths. An operation’s frame condition, its frame, bounds what it may change in each class of location: `values` (fields and variables) and `spines` (an array’s elements and length), each kept (`keep`), changed keeping every element present and the array no shorter (`grow`), or changed freely (`any`). The producer proposes a function’s frame from its body and the checker certifies it; a signature may also state it (slide 10)."), 26) +
       table(["Operation", "Facts kept"], [
         ["Write a numeric field", "array lengths; facts about that field restated from the written value"],
         [t("Write `xs[k]` below the length"), "the length"],
@@ -178,7 +178,7 @@ const slides: Slide[] = [
     body: columns([
       code(["type Runs = { /** @stable */", "  readonly openBrackets: number[] };", "", "function readRuns(runs: Runs): Modifies<", "    { values: \"any\";", "      \"runs.openBrackets[*]\": \"any\" }, void> {", "  runs.openBrackets.splice(0, 1);", "}", "", "export function measure(flags: number[]): number {", "  const runs: Runs = { openBrackets: [] };", "  let sum = 0;", "  for (let i = 0; i < flags.length; i++) {", "    readRuns(runs); sum += flags[i]!; }", "  return sum;", "}"]),
       bullets([
-        point("Stated frame", t("`Modifies<P, T>`, read by TypeScript as `T`. `P` lets `readRuns` change any value and, through the region `\"runs.openBrackets[*]\"`, the array `runs.openBrackets` holds at the call; `stores` left out, every other array is kept. The checker certifies the body against `P`.")),
+        point("Stated frame", t("`Modifies<P, T>`, read by TypeScript as `T`. `P` lets `readRuns` change any value and, through the region `\"runs.openBrackets[*]\"`, the array `runs.openBrackets` holds at the call; `spines` left out, every other array is kept. The checker certifies the body against `P`.")),
         point("@stable", t("a `readonly` field holding what its object literal put there for the record’s life: the region names one array across every call.")),
         point("Separation", t("the literal’s `[]` is a new array, so it is not `flags`: the loop keeps `i < flags.length` across each call, and `flags[i]!` is in bounds. A record from a caller needs the precondition `flags !== runs.openBrackets`: distinct arrays. Of typed arrays it is refused; two views may share a buffer.")),
         point("Alias", t("a caller passing one array as both is refused at that precondition; under Node that call returns `NaN` (`invalid-stated-alias`).")),

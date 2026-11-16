@@ -31,7 +31,7 @@ interface Table {
 const shown = (
   table: Table,
   row: JsonValue | undefined,
-): Modifies<{ values: "any"; stores: "grow" }, Shown> => {
+): Modifies<{ values: "any"; spines: "grow" }, Shown> => {
   const key = row === undefined ? "undefined" : JSON.stringify(row);
   const held = table.lifted.get(key);
   if (held !== undefined) return held;
@@ -40,7 +40,7 @@ const shown = (
   if (name !== undefined) {
     const named: string = name;
     const later = (): Modifies<
-      { values: "any"; stores: "grow" },
+      { values: "any"; spines: "grow" },
       JsonValue[]
     > => [named];
     atoms = later();
@@ -56,7 +56,7 @@ export function liftAll(
 ): JsonValue {
   const later = (
     row: JsonValue,
-  ): Modifies<{ values: "any"; stores: "grow" }, Shown> => shown(table, row);
+  ): Modifies<{ values: "any"; spines: "grow" }, Shown> => shown(table, row);
   const cells = [shown(table, first), ...rest.map(later)];
   const [only] = cells;
   if (only === undefined || cells.length !== 1) return cells;

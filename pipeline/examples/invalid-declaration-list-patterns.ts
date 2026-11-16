@@ -3,7 +3,7 @@
 // an empty array does not hold (run under Node: `first([])` is undefined).
 export function first(
   members: readonly string[],
-): Modifies<{ values: "any"; stores: "grow" }, string> {
+): Modifies<{ values: "any"; spines: "grow" }, string> {
   const [member] = members,
     text: string = member;
   return text;

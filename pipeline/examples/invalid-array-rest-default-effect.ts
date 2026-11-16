@@ -3,7 +3,7 @@
 export function changed(
   source: { items?: readonly number[] },
   victim: number[],
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   const { items: [, ...tail] = (victim.pop(), [0]) } = source;
   return tail.length;
 }

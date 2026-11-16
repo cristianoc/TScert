@@ -1,7 +1,7 @@
-// A call stated `stores: "grow"` keeps a lower bound of a length: `add`
+// A call stated `spines: "grow"` keeps a lower bound of a length: `add`
 // leaves every store no shorter, so `i < xs.length`, established before the
 // call, holds after it and the read `xs[i]` is in bounds.
-function add(xs: number[]): Modifies<{ values: "any"; stores: "grow" }, void> {
+function add(xs: number[]): Modifies<{ values: "any"; spines: "grow" }, void> {
   xs.push(1);
 }
 
