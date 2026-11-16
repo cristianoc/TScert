@@ -12,7 +12,7 @@
  * The declarations are not read, so the types they name (`ArrayBufferLike`,
  * `ImplicitArrayBuffer`) are not collected. */
 import type { DeclarationIdentity, ExactElementWrite, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import type { CallEffect, ViewFormat } from "./type-graph.mts";
 
 export type TypeEntry = {
@@ -98,7 +98,7 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  * states a guarantee of a throw (no `onThrow`). `fill`, `copyWithin` and
  * `set` replace the written entries of the view spine of every typed array
  * over the written bytes by fresh cells holding what each now reads there,
- * within the spine-growth footprint: every location but a view spine keeps
+ * within the frame `viewWriteFrame`: every location but a view spine keeps
  * its contents, and each view spine keeps its format and length, every cell
  * it newly lists fresh, the effect `{all-views: grow}` of a write through a
  * typed array on a normal return (`elementWrite`,
@@ -121,7 +121,7 @@ const optionalNumber = union(atom("number"), atom("undefined"));
 /** What a write of a view's elements changes: the view spines of the typed
  * arrays over the written bytes, each entry it writes a fresh location
  * (`%ByteSet%`, `intrinsics.mts`). */
-const elementsWritten: CallEffect = footprintEffect({ value: "keep", spine: "grow" }, { elementWrite: "spines" });
+const elementsWritten: CallEffect = frameEffect(viewWriteFrame, { elementWrite: "spines" });
 /** The members of `%TypedArray%.prototype` a view states, each returning
  * `self` where it returns the receiver or a view of its kind. */
 const viewMethods = (self: TypeTerm): Field[] => [

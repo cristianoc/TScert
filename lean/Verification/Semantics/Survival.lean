@@ -178,9 +178,9 @@ theorem guardReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (h
 
 /-- The spine of the array the path `p` reads from slot `x`, at `δ`, where
 the context does not keep it (`keyRead`); the region is its location where it
-holds a spine. -/
+holds an array spine, the one class a length reads (`lengthOf`). -/
 def spineRead (c : ReadContext) (x : Nat) (p : List String) (δ : Change) : Footprint :=
-  keyRead c x p "[]" (.inCls (.path x p arraySpineKey) .spines) δ
+  keyRead c x p "[]" (.inCls (.path x p arraySpineKey) .arrays) δ
 
 /-- The change the last location a term's path reads tolerates: a number
 or a string is kept by `init`, an object by `grow`. -/
@@ -218,7 +218,7 @@ theorem spineRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Chan
       have hl : fs.lookup (.str "[]") = some s := by simpa [fieldsOf, arraySpineKey] using spineOf_lookup hst
       exact ⟨ls, hc x "[]" fs cd o s _ hk hρ hl hls, LengthGrows.refl ls, fun _ => rfl⟩
     | _ => rw [hρ] at hst; simp [spineOf, fieldsOf] at hst
-  · have hm : (Region.inCls (.path x p arraySpineKey) .spines).mem ρ h s = true := by
+  · have hm : (Region.inCls (.path x p arraySpineKey) .arrays).mem ρ h s = true := by
       simp only [Region.mem, hw, hls, Bool.and_eq_true]
       refine ⟨?_, rfl⟩
       simpa using spineOf_lookup hst
