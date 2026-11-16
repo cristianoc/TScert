@@ -2152,32 +2152,37 @@ def frameKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : H
   a.fact.keeps (Footprints.knowledgeQuery k) (.ofFirst stable) (callerFrame eff t)
 
 /-- **A call's cell facts kept by its frame** (the note's Frame, at cell
-facts): those of the call's entry whose support, the field location they
-read at `keep` (`FactKind.support`, the note's Definition "Support"), the
+facts): those of the call's entry whose support in the call's read context
+(`FactKind.supportIn` at `ReadContext.ofFirst stable`: the field location
+they read at `keep`, left out where the call keeps that first field), the
 call's frame at the caller's slots respects under the entry's query
 (`respects`, the note's Definition "Respect"), renamed past the result. -/
-def frameCells (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : HeapFacts.Facts :=
+def frameCells (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) :
+    HeapFacts.Facts :=
   (k.cells.filter fun f => Footprints.respects (Footprints.knowledgeQuery k)
-    (Footprints.FactKind.cell f).support (callerFrame eff t)).map
+    ((Footprints.FactKind.cell f).supportIn (.ofFirst stable)) (callerFrame eff t)).map
     fun f => { f with slot := f.slot + 1 }
 
 /-- **The frame keeps the cell facts it respects** (the note's Theorem
-"Tolerant frame", `FactKind.frame_step` at cell facts): each holds on the
-call's normal return, past the result. -/
-theorem frameCells_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
-    {v : Tm} {nw : Nat} {W : WorldT nw} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk nw W h)
-    (hρ : RootsOk W ρ)
-    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
-    HeapFacts.Holds (frameCells eff t k) (push v ρ) h' := by
+"Tolerant frame", `frame_step` at cell facts, under the call's read
+context): each holds on the call's normal return, past the result. -/
+theorem frameCells_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge}
+    {ρ : Env} {h h' : Heap} {v : Tm} {nw : Nat} {W : WorldT nw} (hk : HeapKnowledge.Holds k ε ρ h)
+    (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
+    (hstable : HeapKnowledge.FirstKept stable ρ h h') :
+    HeapFacts.Holds (frameCells stable eff t k) (push v ρ) h' := by
   intro g hg
   obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hg
   obtain ⟨hfm, hr⟩ := List.mem_filter.mp hf
   have hF : (Footprints.FactKind.cell f).Holds ρ h := fun f' hf' => by
     rw [List.mem_singleton.mp hf']; exact hk.1 f hfm
   obtain ⟨flds, c, oid, w, hρs, hrd, hm⟩ :=
-    Footprints.FactKind.frame_step (K := Footprints.knowledgeEvidence k) hr
-      (Footprints.knowledgeEvidence_holds hk) hok hρ
-      (callerFrame_post (CallEffects.Effect.callPost_within hq)) hF f (List.mem_singleton_self _)
+    Footprints.frame_step (D := Footprints.heaps) (m := 0)
+      (Footprints.FactKind.supportsIn (.ofFirst stable) (.cell f)) hr
+      (Footprints.knowledgeQuery_sound hk hok hρ)
+      (callerFrame_post (CallEffects.Effect.callPost_within hq)) trivial
+      (Footprints.ReadContext.ofFirst_holds hstable) hF f (List.mem_singleton_self _)
   exact ⟨flds, c, oid, w, by simpa [push] using hρs, hrd, hm⟩
 
 /-- The change of a typed array's element write: spines keep their lengths,
@@ -3345,7 +3350,7 @@ the quantified atoms its growth of its receiver's spine keeps or extends
 among them state (`withElements`). -/
 def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapKnowledge.withElements
-    { k with cells := k.cells ++ (frameCells eff t k0).filter (!k.cells.contains ·),
+    { k with cells := k.cells ++ (frameCells stable eff t k0).filter (!k.cells.contains ·),
              indices := k.indices ++ ensuresAtoms eff t ++ effectKept stable eff t k0 ++ appendKept eff t k0 ++
         writeKept eff t k0 ++ linearAppendKept n eff t k0 ++ ensuresComposed stable eff t k0 }
 
@@ -3357,7 +3362,7 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
     HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨fun f hf => (List.mem_append.mp hf).elim (hk.1 f)
-      (fun hf => frameCells_holds hk0 hok hρ hq f (List.mem_filter.mp hf).1), hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
+      (fun hf => frameCells_holds hk0 hok hρ hq hstable f (List.mem_filter.mp hf).1), hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
       · rcases List.mem_append.mp ha with ha | ha
@@ -3418,7 +3423,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
       | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty then none else some eff
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty then none else some eff
       | none => none
     else none
   | _ => none
@@ -3435,7 +3440,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
     | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty then none
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty then none
       else if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
           requiresTree G images k codes sums p) then some eff else none
     | none => none

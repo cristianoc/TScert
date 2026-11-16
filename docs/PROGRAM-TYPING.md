@@ -1815,8 +1815,11 @@ Every write the pass checks states its change so:
 
 A call's frame $`\Phi`$ at the caller's slots
 ([a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller))
-keeps a cell fact by the note's Frame: its support is its field location at
-$`\mathsf{keep}`$, $`\{y.f:\mathsf{keep}\}`$ (`FactKind.support`), and
+keeps a cell fact by the note's Frame: its support in the call's read
+context is its field location at $`\mathsf{keep}`$,
+$`\{y.f:\mathsf{keep}\}`$, or empty where the call keeps that first field,
+$`\mathrm{first}(y,f)`$ ([stable-first](#frame-conditions)
+facts; `FactKind.supportIn` at `ReadContext.ofFirst`), and
 $`\Phi`$ respects it under $`\Sigma`$'s query
 ([support and respect](FOOTPRINTS.md#support-and-respect)) where each entry
 $`(r,\delta)`$ keeps its locations or is separated from $`y.f`$. A region
@@ -1828,7 +1831,7 @@ keeps every cell fact at another key:
 
 ```math
 \frac{y.f\in V\in\Sigma\qquad t:\Phi\qquad
-      \forall (r,\delta)\in\Phi.\ \delta\sqsubseteq\mathsf{keep}\ \lor\ y.f\mathrel{\#}r}
+      \mathrm{first}(y,f)\ \lor\ \forall (r,\delta)\in\Phi.\ \delta\sqsubseteq\mathsf{keep}\ \lor\ y.f\mathrel{\#}r}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t\dashv\ldots,\ y.f\in V}\ \textsf{frame-cell}
 ```
 
@@ -1838,7 +1841,8 @@ own rule keeps.
 Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
 (`writeOutput`), `IndexWrites.writtenCells_sound` (`boundedCells_sound`,
 `growOutput_sound`);
-`PromiseCalls.frameCells_holds` (`frame-cell`, `FactKind.frame_step`,
+`PromiseCalls.frameCells_holds` (`frame-cell`, `frame_step` under the call's
+read context, `FactKind.supportsIn`,
 added by `Checker.ensuringCalls` through `withEnsures`).
 Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
 
