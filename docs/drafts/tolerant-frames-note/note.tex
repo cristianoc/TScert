@@ -192,7 +192,7 @@ $\LV\subseteq\LS$ for the set of view stores.
 
 A \emph{typed array}, such as a \code{Uint8Array}, is an object with a
 fixed element format $t$ that has, besides its fields, a view store
-location, of form $\mathsf{view}_N$. Its store has the
+location, of form $\mathsf{view}_N$ with $N\le 2^{53}-1$. Its store has the
 fixed length $N$ and no hole: it lists $N$ element cells, each holding a
 number of the format $t$, which is what the typed array reads at that
 index. The contract of a view store admits every such store. Distinct
@@ -682,13 +682,14 @@ F,G &::=& a \mid F\wedge G \mid F\vee G \mid \exists v.\,F & v\text{ a logical v
 \paragraph{Terms.} A \emph{term} denotes an integer at a state, or is
 undefined there:
 \[
-t\ ::=\ n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[t]
+t\ ::=\ n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[t] \mid z[t].\pi
 \]
-A literal $n$ denotes itself. A variable $x$ and a path $\pi$ denote
+A literal $n$, a safe integer, denotes itself. A variable $x$ and a path $\pi$ denote
 the number they hold or read. $\len\pi$ is the length of the array that
 $\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
 $\slen(\pi)$ the length of the string. $z[t]$ is the number that the
-array or typed array $z$ holds at the index $t$. A term is \emph{defined} when the
+array or typed array $z$ holds at the index $t$, and $z[t].\pi$ the
+number read along $\pi$ from the element at $t$. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
 value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
 $M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
@@ -933,6 +934,40 @@ meets $C$ by hypothesis, and $S$ supports $F$ under $C$, so
 $\rho,m,h'\models F$.
 \end{proof}
 
+\begin{definition}[Supports of the atoms]\label{def:supports}
+The support $\mathrm{supp}(F)$ of an assertion without a modality is
+defined by its form. Write $\mathrm{reads}_\delta(\pi)$ for the field
+locations along $\pi=x.f_1\ldots f_k$: the regions $x.f_1$, \ldots,
+$x.f_1\ldots f_{k-1}$ at $\grow$, which keeps the object each holds, and
+the last, $x.f_1\ldots f_k$, at $\delta$.
+\[
+\begin{array}{ll}
+\text{a literal or a variable} & \emptyset\\[2pt]
+\text{a number }\pi,\ \slen(\pi) & \mathrm{reads}_{\init}(\pi)\\[2pt]
+\kw{view}(\pi) & \mathrm{reads}_{\grow}(\pi)\\[2pt]
+\len\pi & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{store}:\delta\}\\[2pt]
+\text{an inequality} & \text{the supports of its terms}\\[2pt]
+\pi\doteq v,\ \pi\in V & \mathrm{reads}_{\keep}(\pi)\\[2pt]
+\dense(x,n) & \{x.\kw{store}:\grow\}\\[2pt]
+z[t]\doteq v,\ \every(z,t,\varphi) & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
+F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
+\pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')
+\end{array}
+\]
+For a length $\len\pi$ in an inequality, $\delta$ is $\grow$ where the
+inequality stays true when the length increases, as in
+$n\le\len\pi$, and $\keep$ otherwise. A field that a condition $C$ says
+keeps its contents is left out of $\mathrm{reads}$, and the support is
+then under $C$. In the row of $\every$, $z$ reads an array, the body
+$\varphi$ is over the element $z[i]$ and terms that do not mention $i$,
+and $\mathrm{supp}(\varphi)$ is the support of those terms.
+\end{definition}
+\noindent
+Example: $\mathrm{supp}(c.\mathit{at}<\kw{view}(\mathit{flags}))$ is
+$\{c.\mathit{at}:\init\}$, the one field the fact reads. An effect that
+grows stores respects it, since a field location is no store
+\status{Lean: \lean{Term.support\_sound}, \lean{IndexFact.support?\_supports}: the support supports the fact, for the facts of the acceptance path. The body of a quantified fact that reads a field of each element has no support}.
+
 The theorem has two known rules as its extreme cases. When every change
 in the support is $\keep$, the condition is that the regions a command
 writes are disjoint from the regions a formula reads: the frame rule of
@@ -1010,11 +1045,22 @@ state at its handler satisfies $Q^{e}$. We write $\hoare PcQ$ when
 $Q^{e}$ is $\kw{true}$. For example
 $\hoare{\kw{true}}{x=\code{[]}}{\len x=0}$.
 
-A command \emph{completes normally} when it reaches its end; a loop
-body also completes normally by a \code{break}, which ends the loop. It
-\emph{completes exceptionally} by a throw that it does not handle. A
-\code{return} ends the enclosing function, whose postcondition is
-required at it (rule \textsc{Fun}). The state a triple speaks of has a
+A command \emph{completes normally} when it reaches its end, and
+\emph{exceptionally} by a throw that it does not handle. A \code{break}
+and a \code{return} do neither: they leave the enclosing loop and the
+enclosing function, and what must hold at them is stated by the rule of
+that loop and of that function:
+\[
+\begin{array}{ll}
+\textsc{Break} & \hoare{J}{\code{break}}{\kw{false}}\qquad J\text{ the postcondition of the enclosing loop}\\[3pt]
+\textsc{Return} & \hoare{Q[a/y]}{\code{return a}}{\kw{false}}\qquad Q\text{ the postcondition of the enclosing function, for its result }y\\[3pt]
+\textsc{Throw} & \hoarex{R}{\code{throw a}}{\kw{false}}{R}\\[3pt]
+\textsc{Try} & \hoarex{P}{c}{Q}{R},\ \hoarex{R}{d}{Q}{Q^{e}}\ \text{give}\ \hoarex{P}{\code{try c catch (x) d}}{Q}{Q^{e}}
+\end{array}
+\]
+The postcondition $\kw{false}$ says that the command does not reach its
+end. In \textsc{Try} the assertion $R$ does not mention the caught value
+$x$, of which nothing is known. The state a triple speaks of has a
 world; a proof of the triple supplies it, and two proofs for one
 execution may supply different worlds, which is what the side condition
 of \textsc{Conj} is for.
@@ -1087,11 +1133,11 @@ modality after $c$, by law (e).
 \item[\textsc{Loop}] Induction on normal iterations uses
 \textsc{Frame}$^{+}$, which turns the premise into
 $\hoare{I\wedge\bx{\Phi}R}{c}{I\wedge\bx{\Phi}R}$. Here $c$ includes the
-guard evaluation. The body ends an iteration or leaves the loop by a
-\code{break}; the postcondition $I$ of the premise holds at both, so it
-holds when the loop ends normally. A \code{return} or a throw of the
-body is an exit of the loop, with the body's postcondition for that
-exit. Loop-carried
+guard evaluation. The body ends an iteration by reaching its end, where
+the premise gives $I$, or leaves the loop by a \code{break}, where
+\textsc{Break} requires $I\wedge\bx{\Phi}R$. So the conclusion holds
+when the loop ends. A \code{return} or a throw of the body leaves the
+loop too, by \textsc{Return} and by the exceptional postcondition. Loop-carried
 variables occur in $I$; neither $R$ nor $\Phi$ mentions them. The body
 may use $R$ at a point where the transition from the iteration's entry
 to that point is bounded by $\Phi$, by law (a).
@@ -1210,18 +1256,22 @@ postcondition of the command shows it.
 \end{definition}
 
 \noindent
-Four cases follow from the definition. A class region and a region at a
-rigid path rebase to themselves. The store of a fresh array is no location of the entry heap,
-so its entry rebases to nothing: this is \textsc{Fresh-Eff}. It applies
-to the one fresh store: a write through a fresh typed array keeps its
-entry $\vw:\grow$, since it may change an older view store. Any other
-region, and the cells of a fresh store, widen to their class. For
+Four cases follow from the definition. A class region rebases to itself,
+and so does a store or a field at a rigid path. The store of an array
+allocated after the entry heap is no location of that heap, so its entry
+rebases to nothing: this is what \textsc{Fresh-Eff} states for the entry
+of an invocation. It applies to the one new store: a write through a new
+typed array keeps its entry $\vw:\grow$, since it may change an older
+view store. The cells $\pi[\ast]$ of an array rebase to themselves only
+where the command before keeps the store of $\pi$, so that it lists the
+same cells. Any other region, and the cells of a new store, widen to
+their class. For
 example, in \code{f(o) \{ const xs = o.items; xs.push(1); \}} the push
 has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
 $o.\mathit{items}$ is rigid, the effect of \code{f} at its entry is
 $\{o.\mathit{items}.\kw{store}:\grow\}$. Otherwise it widens to
 $\{\st:\grow\}$
-\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens to its class a region at any path depth; a field read from a position with no recorded link to an entry path widens to every location, a wider bound than its class}.
+\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens a region it cannot place at an entry path: to its class for a store at a path, and to every location for a field with no recorded link to an entry path, for a selected store with no entry path and for the own fields of an object}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
 Let \code{shrink(xs)} pop its argument,
@@ -1257,6 +1307,7 @@ object or an array, $a$ an atom and $i$ an integer:
 \textsc{Field-Read} & \hoare{\kw{true}}{\code{y = x.f}}{x.f\doteq y} & :\emptyset\\[3pt]
 \textsc{Field-Write} & \hoare{\kw{true}}{\code{x.f = a}}{x.f\doteq a} & :\{x.f:\any\}\\[3pt]
 \textsc{Elem-Read} & \hoare{0\le i<\len x}{\code{y = x[i]}}{x[i]\doteq y} & :\emptyset\\[3pt]
+\textsc{Arr-Length} & \hoare{\kw{defined}(\len x)}{\code{y = x.length}}{y=\len x} & :\emptyset\\[3pt]
 \textsc{Test} & \hoare{P}{\code{if (a) ...}}{P\wedge a\ \text{on the true branch},\ P\wedge\neg a\ \text{on the false one}} & :\emptyset
 \end{array}
 \]
@@ -1264,8 +1315,10 @@ A field read of an object whose type has the field needs no fact; an
 optional field reads $x.f^{?}\doteq y$. \textsc{Elem-Read} gives
 \code{undefined} at a hole, by the meaning of the element atom; with
 $\dense(x,n)$ and $i<n$ the element is present. In \textsc{Test} the
-atom $a$ is read as an assertion: a comparison of two terms is the
-inequality, and a comparison of a path with \code{null} or
+atom $a$ is read as an assertion: a comparison of two terms that are
+both known to be defined is the inequality, and its negation the
+converse inequality; a comparison of a number not known to be a safe
+integer gives no fact. A comparison of a path with \code{null} or
 \code{undefined} is the equality or its negation, a fact
 $\pi\notin\{\code{null}\}$. A binding \code{y = a} gives $y\doteq a$
 \status{Lean: \lean{ReadGave} for a field read. \textsc{Elem-Read} is assumed, as the contract of the element read}.
@@ -1274,9 +1327,13 @@ $\pi\notin\{\code{null}\}$. A binding \code{y = a} gives $y\doteq a$
 body $c$ has the specification of rule \textsc{Call} when its body
 meets it:
 \[
-\inferrule*[left=Fun]{\hoarex{P}{c}{\kw{true}}{Q^{e}} \\ Q[a/y]\text{ holds at each }\code{return a}\text{ of }c \\ c:\Phi\mid\Phi^{e}\ \text{on the locations below the mark}}{\hoarex{P}{y=f(\vec p)}{Q}{Q^{e}}\qquad y=f(\vec p):\Phi\mid\Phi^{e}}
+\inferrule*[left=Fun]{\hoarex{P}{c}{Q[\code{undefined}/y]}{Q^{e}} \\ c:\Phi\mid\Phi^{e}\ \text{on the locations below the mark}}{\hoarex{P}{y=f(\vec p)}{Q}{Q^{e}}\qquad y=f(\vec p):\Phi\mid\Phi^{e}}
 \]
-The mark of the premise is the heap's length at the entry of the body:
+A body that reaches its end returns \code{undefined}, and each
+\code{return a} in it is checked by \textsc{Return} against $Q$. A
+specification states freshness only of the result, in its
+postcondition. The mark of the premise is the heap's length at the entry
+of the body:
 by \textsc{Fresh-Eff} what the body does to the arrays and objects it
 allocates is no part of $\Phi$. In $Q$ and $Q^{e}$, $\old$ refers to the
 entry of the body, and $\fresh(y)$ of a result is at the body's mark; a
@@ -1284,7 +1341,7 @@ caller's mark is at most that, so $\fresh(y)$ holds at the caller's mark
 too. A call of \code{f} inside its own body uses the specification being
 established: a triple speaks of the executions that complete, and the
 argument is by induction on the length of the execution
-\status{Lean: \lean{codeObligations\_sound}, with \lean{PassWalkSound} for the effect of the body on both exits}.
+\status{Lean: \lean{codeObligations\_sound}, for the exits of a signature with their effect bounds and the freshness of its result, and \lean{PassWalkSound} for the effect of the body on both exits. No theorem states the rule for an arbitrary $P$ and $Q$}.
 
 \paragraph{Exact postconditions.} The postcondition of \code{x.push(v)}
 (\textsc{Push} below) specifies a strong update on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
@@ -1343,7 +1400,7 @@ other index of $b$ reads what it read, and the index $k$ reads the
 stored value. With $k=n$ it extends the prefix, as in
 \code{while (n < b.length) \{ b[n] = n; n = n + 1; \}}, for a typed
 array \code{b} whose format stores each of its indices unchanged, such
-as an \code{Int32Array}, with the fact
+as an \code{Int32Array} of length at most $2^{31}$, with the fact
 $\every(b,n,\ v=i)$: each element holds its own index. The three rules are instances of one principle: a
 fact that holds of each of a family of locations holds after a write
 when it holds of the written value at each location of the family the
@@ -1524,7 +1581,7 @@ node's. An assertion holds only where the terms its truth depends on
 are defined, so the entailment establishes that as well.
 \end{definition}
 
-\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst}: the conclusion holds of every pair of states that satisfies the premises of $\mathrm{Check}$, for every effect, regions at paths included. \lean{transfer}, one theorem per exit, connects a run of the node to those premises for exit effects over class regions, and \lean{graph\_safe} composes the exits into the safety of a graph each of whose nodes is checked safe (\lean{NodesChecked}). conj.: that connection for exit effects with regions at paths}
+\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst}: the conclusion holds of every pair of states that satisfies the premises of $\mathrm{Check}$, for every effect, regions at paths included. \lean{transfer}, one theorem per exit, connects a run of the node to those premises for exit effects over class regions, and \lean{graph\_safe} composes the exits into the safety of a graph each of whose nodes is checked safe (\lean{NodesChecked}) and which is closed under the administrative steps of the reduction (\lean{AdminClosed}). conj.: that connection for exit effects with regions at paths}
 If $s\models_m\Sigma$, the node $c$ runs from $s$
 through exit $e$ to $s'$, and $\mathrm{Check}(c,\Sigma,e,A)$, then
 $\theta_e(s')\models_m A$.
@@ -1538,16 +1595,19 @@ rules and no other:
 \begin{description}[leftmargin=1.5em,style=nextline,itemsep=1pt,topsep=2pt]
 \item[Logic] An assumption of $\Gamma$; introduction and elimination of
 $\wedge$, $\vee$ and $\exists$; replacement of a path by a path that
-reads the same value; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
+reads the same value, outside every modality, and under a modality where
+both paths are rigid; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
 \item[Arithmetic] A linear inequality that follows over the integers
 from the linear inequalities at hand, where each term of the conclusion
 is defined: it occurs in a premise, or is a literal.
-\item[Atoms] Proposition~\ref{prop:every}, and that an equality, a
-contents fact and an element fact of one path with two different values
-are contradictory.
+\item[Atoms] Proposition~\ref{prop:every}. Two facts are contradictory
+when they are $\pi\doteq v$ and $\pi\doteq w$ with $v\ne w$;
+$\pi\doteq v$ and $\pi\in V$ with $v\notin V$; or $z[i]\doteq v$ and
+$z[i]\doteq w$ with $v\ne w$.
 \item[The modality] The laws of Proposition~\ref{prop:laws};
-Theorem~\ref{thm:frame}, with a support of the fact and respect by its
-sufficient condition; the axioms of Proposition~\ref{prop:axioms}; that
+elimination across a change, $\old(\bx{\Phi}F)\wedge\kw{tr}_\Phi\vdash F$;
+Theorem~\ref{thm:frame}, with the support of Definition~\ref{def:supports}
+and respect by its sufficient condition; the axioms of Proposition~\ref{prop:axioms}; that
 an assertion over variables alone, and $\pi\sep\pi'$ of two variables,
 are invariant; that a path through fields whose contracts admit one
 value is rigid.
@@ -1564,9 +1624,16 @@ The annotated graph is \emph{sound} when its entry state satisfies the
 knowledge at the entry, at every node the knowledge entails the
 precondition of the node's step, and $\mathrm{Check}$ holds on every
 edge against the knowledge at the edge's target. Merges and loop heads
-are targets like any other. The precondition of a step is that of its
-rule in Section~6; a step with no rule there needs no fact, and its
-safety is the type system's. A function \emph{verifies} when its graph
+are targets like any other. A step has a precondition where it is not
+safe, or not of its type, without one: \textsc{Elem-Read} of an element
+used at the element type, \textsc{View-Read} and \textsc{Str-Read}
+likewise, \textsc{Write-In} and \textsc{Write-End}, of which a write to
+an array needs one, and the precondition of a called function. A rule
+whose precondition only strengthens its postcondition, as the arithmetic
+rules and the second triple of a library contract do, is applied where
+the knowledge entails that precondition; elsewhere the step has the
+postcondition $\kw{true}$. A step with no precondition needs no fact,
+and its safety is the type system's. A function \emph{verifies} when its graph
 has a sound annotation whose entry knowledge is its precondition and
 which entails its postcondition at each return (rule \textsc{Fun}).
 
@@ -1577,7 +1644,7 @@ edge. Loop-head knowledge is supplied.
 Derivations are those of Definition~\ref{def:deriv}. Modal elimination
 is the entailment in \textsc{Frame}. This system is sound for semantic
 entailment
-\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv}}. It is not claimed complete.
+\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv} over the assertions the Lean derivation system represents: its quantified facts are over ordinary arrays, with each index present and a body over scalars}. It is not claimed complete.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
@@ -1622,7 +1689,7 @@ This separation is an obligation of rows 1 and 7.
 \toprule
 Lower bound under aliasing (Ex.~\ref{ex:alias}) & $\mathit{to}\le\len{\mathit{xs}}\vdash\bx{\val:\any,\,\st:\grow}(\mathit{to}\le\len{\mathit{xs}})$\hfill\textsc{(Grow)}\\[2pt]
 Bound across a rewriting call (Ex.~\ref{ex:sep}) & $\mathit{flags}\sep y\wedge i<\len{\mathit{flags}}\vdash\bx{\val:\any,\,y.\kw{store}:\any}(i<\len{\mathit{flags}})$, $y$ standing for the rigid $\mathit{runs}.\mathit{openBrackets}$\hfill\textsc{(Sep)}, \textsc{(Rigid)}\\[2pt]
-Fresh array store & its writes are omitted from the invocation's entry effect; $\apart(x,y)$ for older $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
+Fresh array store & a change of its store is no part of the effect below the mark; right after the allocation, $\apart(x,y)$ for each older array $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
 Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{\val:\init\}}\,a$, by Theorem~\ref{thm:frame} at a support respected by $\Phi_{\mathit{build}}$ and tolerating $\init$\hfill\textsc{(Init)}\\[2pt]
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$\hfill Prop.~\ref{prop:rely}\\[2pt]
 Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$, $t$ a variable, $\varphi$ over scalars\hfill\textsc{(Every)}\\[2pt]
@@ -1690,7 +1757,7 @@ by (T3) the path then reads an object with the same field locations in
 $h$ and in $h'$.
 \end{description}
 
-\paragraph{Extensions of the language.} Four patterns cannot be verified in the language of this paper. Three of them need a form that the language lacks.
+\paragraph{Extensions of the language.} Four patterns cannot be verified in the language of this paper. Each needs a form that the language lacks.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[A fact about a field of each element, across a change of such fields] Example:
 $\every(\mathit{rows},t,\ z[i].n\ge 0)$ across a write of a field
@@ -1704,18 +1771,14 @@ distinct view stores whether or not they share bytes, so $\sep$ on
 their stores says nothing about their elements. It needs regions of
 buffer cells with offsets.
 \item[A callback that writes what it captured] Example:
-\code{walk(xs, v => out.push(v))}. Each use has a closed effect. A
+\code{walk(xs, v => out.push(v))}. Each call of \code{walk} has a closed effect. A
 reusable specification of \code{walk} needs an effect variable,
 $\forall\varepsilon.\ \Phi\cup\varepsilon$.
-\end{description}
-\noindent
-The fourth needs a separation of the fields of one object from those
-of another, which neither $\sep$ nor $\apart$ states, and a rule that
-establishes it.
-\begin{description}[leftmargin=1.5em,style=nextline]
 \item[A record replaced on each loop pass] The new record must be
-separated from the loop's iterator on every back edge. \textsc{Alloc}
-states separation only against what is in scope at the allocation.
+separated from the loop's iterator on every back edge. That is a
+separation of the fields of one object from those of another, which
+neither $\sep$ nor $\apart$ states, and \textsc{Alloc} gives none for
+an object.
 \end{description}
 
 \section{Limits}\label{sec:limits}
