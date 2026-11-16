@@ -598,7 +598,7 @@ is the class region of the selector `S`, read from the contents. A path
 object's field locations and `pathCells x p` the element cells its spine
 lists; a read that fails denotes no location, and at the empty path they are
 `field`, `fields` and `cells`. `inCls r S` is the locations of `r` in the
-class region of `S`. -/
+class region of `S`. `all` is every allocated location. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)
   | fields (x : Nat)
@@ -623,7 +623,7 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
   | .cls c, l => match h[l]? with
     | some v => c.selects v
     | none => false
-  | .all, _ => true
+  | .all, l => decide (l < h.length)
   | .path x p k, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => (fieldsOf v).lookup k == some l
     | none => false
@@ -792,7 +792,7 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
   simp only [Bool.or_eq_true, beq_iff_eq] at hs
   rcases hs with (rfl | rfl) | hs
   · exact hm
-  · rfl
+  · simpa [Region.mem] using hl
   · cases r <;> cases s <;> (try simp only [Bool.false_eq_true] at hs)
     case field.fields x k y =>
       simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs; obtain ⟨rfl, hk⟩ := hs

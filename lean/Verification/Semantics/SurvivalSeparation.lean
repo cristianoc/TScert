@@ -188,7 +188,7 @@ def Region.renameM (σ : Nat → Option Nat) : Region → Region
   | .spine x p => match σ x with | some y => .spine y p | none => .all
 
 theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l : Nat}
-    (hσ : ∀ i j, σ i = some j → ρ j = env i) :
+    (hσ : ∀ i j, σ i = some j → ρ j = env i) (hl : l < h.length) :
     ∀ r : Region, r.mem env h l = true → (r.renameM σ).mem ρ h l = true := by
   intro r
   induction r with
@@ -202,7 +202,7 @@ theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {
     simp only [Region.renameM]
     split
     · rename_i y hy; simpa [Region.mem, hσ _ _ hy] using hm
-    · rfl
+    · simpa [Region.mem] using hl
 
 /-- A footprint read at a callee's positions, at the caller's slots. -/
 def Footprint.renameM (σ : Nat → Option Nat) (Φ : Footprint) : Footprint :=
@@ -218,7 +218,7 @@ theorem Post.renameM {Φ : Footprint} {σ : Nat → Option Nat} {ρ env : Env} {
   refine ⟨v', hv', ?_⟩
   rcases ha with h | ⟨e, he, hm, hh⟩
   · exact .inl h
-  · exact .inr ⟨(e.1.renameM σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, Region.mem_renameM hσ e.1 hm, hh⟩
+  · exact .inr ⟨(e.1.renameM σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, Region.mem_renameM hσ (List.getElem?_eq_some_iff.mp hv).1 e.1 hm, hh⟩
 
 end Verification.Footprints
 

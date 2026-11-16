@@ -308,7 +308,7 @@ $`x`$ through $`f`$ reaches $`y`$ (proved: `pathViews_read`).
 A call's frame (`Effect.frame`: its closed bound, its receiver's entries and
 its argument spine regions) is read at the call's positions. At the caller
 it is read at the caller's slots: a position the call passes a slot at is
-that slot, and the regions at any other position widen to every location
+that slot, and the regions at any other position widen to every allocated location
 (`Region.renameM`, `PromiseCalls.callerFrame`; proved:
 `Post.renameM`, `callerFrame_post`). Across a call, the facts its frame
 keeps are those the survival check keeps under $`\Sigma`$'s query, its

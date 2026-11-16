@@ -273,8 +273,10 @@ frames' node judgments (`NodesChecked`, `NodesKeep`, `StepParts`) each take
 the spine key reads a spine: step 1 leaves the last read of a guard and of
 a spine separation unmarked for that reason, and the bound above marks it.
 
-One region form differs from the paper's and is brought to it here:
-`all` selects unallocated locations.
+Every region form selects locations as the paper's region does: `fields`
+the field locations of an object, its spine slot excluded, and `all` the
+allocated locations; a frame that changes module cells states the class
+region of values.
 
 ### Step 6: what `push` and a typed-array write need
 
