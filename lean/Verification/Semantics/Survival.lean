@@ -16,7 +16,9 @@ open HeapKnowledge
 
 /-- The certified evidence a support may rely on besides its regions: the
 first fields of slots' objects whose contents a transition keeps (`stable`,
-`FirstKept`). -/
+`FirstKept`). `Holds` is the condition `C` of a support under a condition
+(the note, §5, Definition "Support"): a field it keeps is left out of the
+reads (`keyRead`), and the support is then under it. -/
 structure ReadContext where
   stable : Nat → String → Bool := fun _ _ => false
 
@@ -501,14 +503,14 @@ def _root_.Verification.HeapKnowledge.IndexFact.keeps (q : SepQuery) (c : ReadCo
 
 /-- **The survival check is sound**: a fact the check keeps holds after
 every transition within the effect meeting the context, from a prestate
-where the query is sound (`keeps_sound`). -/
+where the query is sound (`frame_step`). -/
 theorem IndexFact.keeps_sound {q : SepQuery} {c : ReadContext} {Φ : Footprint} {F : IndexFact}
     {ρ : Env} {h h' : Heap} (hk : F.keeps q c Φ = true) (hq : q.Sound ρ h) (hp : Post Φ ρ h h')
     (hc : c.Holds ρ h h') (hF : F.HoldsAt ε ρ h) : F.HoldsAt ε ρ h' := by
   unfold IndexFact.keeps at hk
   split at hk
   · rename_i S hS
-    exact Footprints.keeps_sound (IndexFact.support?_supports c F hS) hk hq hp hc hF
+    exact frame_step (D := heaps) (m := 0) (IndexFact.support?_supports c F hS) hk hq hp trivial hc hF
   · cases hk
 
 end Verification.Footprints
