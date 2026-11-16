@@ -133,8 +133,20 @@ def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option R
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
-/-- What proposals established, by their inputs' digest (`FilePlans.proposed`). -/
-abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceExtraction.ClassSummary × Footprints.Closed × Nat))
+/-- A proposal's loop-head refinement. These are search hints: acceptance
+checks the resulting candidates and given heads again. -/
+structure SettledHeads where
+  program : Program
+  initial : List (Nat × List HeapKnowledge.IndexAtom)
+  retained : List (Nat × List HeapKnowledge.IndexAtom)
+  initialGiven : Option Json
+  retainedGiven : Option Json
+
+/-- The interfaces established while proposing, and the loop-head search
+results that can seed a later check of the same member. -/
+structure ProposalMemo where
+  interfaces : Std.HashMap UInt64 (Option (SourceExtraction.ClassSummary × Footprints.Closed × Nat)) := {}
+  heads : Std.HashMap String SettledHeads := {}
 
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/

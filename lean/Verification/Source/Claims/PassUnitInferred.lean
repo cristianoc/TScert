@@ -232,6 +232,24 @@ theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
       obtain ⟨rfl, -, -, -⟩ := h
       exact h₁.trans (dropAll_recandidated _ _ _)
 
+/-- Reusing retained loop-head candidates changes only search candidates
+(proved); the subsequent member run checks them. -/
+theorem withSettledHeads_recandidated (f : FilePlans) (i : Nat) (hints : Option SettledHeads) :
+    Recandidated f (f.withSettledHeads i hints) := by
+  unfold FilePlans.withSettledHeads
+  refine recandidated_of_map _ fun e j name pos r h => ?_
+  dsimp only at h
+  split at h
+  · exact ⟨r, h, r.candidates, rfl⟩
+  · cases e with
+    | error _ => cases h
+    | ok q =>
+      cases q with
+      | graph n ps r₀ =>
+        simp only [Except.map, Except.ok.injEq, FunctionPlan.graph.injEq] at h
+        obtain ⟨rfl, rfl, rfl⟩ := h
+        exact ⟨r₀, rfl, _, rfl⟩
+
 /-- **A member's runs end at an inferred run of plans with other
 candidates** (proved). -/
 theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)}
@@ -243,8 +261,15 @@ theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (N
           fuel compare debugNode repeats observe counting located
           (f.inferredSettle fuel keep fixed compare debugNode repeats observe counting located given i).given i := by
   unfold FilePlans.inferredSettle
-  exact settleInferred_last Recandidated Recandidated.refl (fun _ _ _ => Recandidated.trans)
-    (fun _ _ _ _ _ _ _ hn => inferredNextAll_recandidated hn) _ _ _ _ _ _
+  extract_lets candidates heads reused prepared given'
+  have h := settleInferred_last Recandidated Recandidated.refl (fun _ _ _ => Recandidated.trans)
+    (fun _ _ _ _ _ _ _ hn => inferredNextAll_recandidated hn)
+    (run := fun g gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
+      g.inferredRun fuel compare debugNode repeats observe counting located gv i)
+    (refusal := fun res => res.2.1)
+    (next := fun g gv w => g.inferredNextAll fuel fixed (keep i) gv i w)
+    (4 * heads + 3) prepared given' [] 0 0
+  exact ⟨(withSettledHeads_recandidated f i reused).trans h.1, h.2⟩
 
 /-- An accepted inferred run is the pass's accepted run (proved). -/
 theorem inferredRun_accepted {g : FilePlans} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}

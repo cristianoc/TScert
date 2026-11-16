@@ -432,6 +432,34 @@ def settleInferred {S G R W : Type} (run : S → G → R) (refusal : R → Optio
       | none => ⟨f, g, ls, d, runs + 1, r⟩
       | some (f', g', ls', d') => settleInferred run refusal next n f' g' (ls ++ ls') (d + d') (runs + 1)
 
+/-- Candidates from an earlier proposal's refinement, read only when the
+program, initial candidates and given line agree exactly. The given file's
+protected facts and adversarial proposals use their original search. -/
+def FilePlans.reusedHeads (f : FilePlans) (i : Nat) (fixed : Bool)
+    (protect : List (Nat × List HeapKnowledge.IndexAtom)) (given : Option (Std.HashMap String Json)) :
+    Option SettledHeads := do
+  if fixed || !protect.isEmpty then none else do
+  let h ← f.proposed.heads.get? (f.fr.unitId i)
+  let .ok (.graph _ _ r) ← f.plans[i]? | none
+  if r.program == h.program && r.candidates == h.initial &&
+      (given.bind (·.get? (f.fr.unitId i))) == h.initialGiven then some h else none
+
+/-- The member's candidates replaced by the retained search proposal.
+Every retained fact remains an obligation of the graph check. -/
+def FilePlans.withSettledHeads (f : FilePlans) (i : Nat) (h : Option SettledHeads) : FilePlans :=
+  { f with plans := f.plans.zipIdx.map fun (p, j) =>
+    if j != i then p else p.map fun
+      | .graph name pos r => .graph name pos { r with candidates := h.map (·.retained) |>.getD r.candidates } }
+
+/-- A retained given line is a proposal for the same graph's next check. -/
+def settledGiven (f : FilePlans) (i : Nat) (h : Option SettledHeads)
+    (given : Option (Std.HashMap String Json)) : Option (Std.HashMap String Json) :=
+  match h with
+  | none => given
+  | some h => some (match h.retainedGiven with
+    | some line => (given.getD {}).insert (f.fr.unitId i) line
+    | none => (given.getD {}).erase (f.fr.unitId i))
+
 /-- Member `i`'s runs (`settleInferred`): each `inferredRun`, a refusal's
 next state from `inferredNextAll`, at most `4·h + 4` of a member with `h`
 statement entries holding candidates. -/
@@ -444,12 +472,15 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []
   let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
+  let reused := f.reusedHeads i fixed (keep i) given
+  let prepared := f.withSettledHeads i reused
+  let given' := settledGiven f i reused given
   settleInferred
     (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
       g.inferredRun fuel compare debugNode repeats observe counting located gv i)
     (fun res => res.2.1)
     (fun (g : FilePlans) gv w => g.inferredNextAll fuel fixed (keep i) gv i w)
-    (4 * heads + 3) f given [] 0 0
+    (4 * heads + 3) prepared given' [] 0 0
 
 /-- The state `passGroupInferred` carries across a group's members: the
 plans, the given lines, the lines printed, the first failure, the facts
