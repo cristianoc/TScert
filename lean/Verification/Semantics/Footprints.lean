@@ -583,12 +583,19 @@ theorem elementsOf_entries_sub {h : Heap} {v : Tm} {s : Nat} (hs : HeapKnowledge
       exact List.mem_append_right _ (by simpa [HeapKnowledge.descriptorSpine] using ho)
   | _ => simp [HeapKnowledge.elementsOf] at hs
 
+/-- The field locations of a value: an object's own locations under every
+key but the spine key `[]` (the note's $`\pi.\mathsf{fields}`$). -/
+def fieldLocs (v : Tm) : List Nat :=
+  ((fieldsOf v).filter fun kl => kl.1 != arraySpineKey).map Prod.snd
+
 /-- A region names locations relative to the values of slots and to a heap.
+`fields x` is the field locations of the object `x` holds (`fieldLocs`), its
+spine slot excluded.
 `field`, `fields` are timeless; `cells` and `cls` are read at a heap: `cls S`
 is the class region of the selector `S`, read from the contents. A path
 `p` reads own data fields from a slot's value (`HeapKnowledge.readPath`):
 `path x p k` is the own field `k` of the object it reads, `pathFields x p` that
-object's own locations and `pathCells x p` the element cells its spine
+object's field locations and `pathCells x p` the element cells its spine
 lists; a read that fails denotes no location, and at the empty path they are
 `field`, `fields` and `cells`. `cell b` is a module cell's location, read at the
 class its contents have: a cell holds a source value, never a spine, so it
@@ -615,7 +622,7 @@ inductive Region where
 
 def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
   | .field x k, l => (fieldsOf (ρ x)).lookup k == some l
-  | .fields x, l => ((fieldsOf (ρ x)).map Prod.snd).contains l
+  | .fields x, l => (fieldLocs (ρ x)).contains l
   | .cells x, l => (spineCells h (ρ x)).contains (some l)
   | .cls c, l => match h[l]? with
     | some v => c.selects v
@@ -625,7 +632,7 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | some v => (fieldsOf v).lookup k == some l
     | none => false
   | .pathFields x p, l => match HeapKnowledge.readPath h (ρ x) p with
-    | some v => ((fieldsOf v).map Prod.snd).contains l
+    | some v => (fieldLocs v).contains l
     | none => false
   | .pathCells x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => (spineCells h v).contains (some l)
@@ -664,10 +671,37 @@ theorem lookup_mem_snd {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat}
         simpa [List.lookup, show (k == k') = false from by simpa using hk] using h
       simp [ih this]
 
-theorem field_mem_fields {ρ h x k l} (hm : (Region.field x k).mem ρ h l = true) :
+theorem lookup_mem_pair {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat}
+    (h : fs.lookup k = some l) : (k, l) ∈ fs := by
+  induction fs with
+  | nil => simp at h
+  | cons p fs ih =>
+    rcases p with ⟨k', l'⟩
+    by_cases hk : k = k'
+    · subst hk; simp [List.lookup] at h; simp [h]
+    · have : fs.lookup k = some l := by
+        simpa [List.lookup, show (k == k') = false from by simpa using hk] using h
+      simp [ih this]
+
+/-- A field location is an own location. -/
+theorem fieldLocs_own {v : Tm} {l : Nat} (h : l ∈ fieldLocs v) : l ∈ (fieldsOf v).map Prod.snd := by
+  simp only [fieldLocs, List.mem_map, List.mem_filter] at h ⊢
+  obtain ⟨kl, ⟨hm, -⟩, rfl⟩ := h
+  exact ⟨kl, hm, rfl⟩
+
+/-- An own location under a key other than the spine key is a field
+location. -/
+theorem lookup_mem_fieldLocs {v : Tm} {k : PropKey} {l : Nat} (h : (fieldsOf v).lookup k = some l)
+    (hk : k ≠ arraySpineKey) : l ∈ fieldLocs v := by
+  simp only [fieldLocs, List.mem_map, List.mem_filter, bne_iff_ne, ne_eq]
+  exact ⟨(k, l), ⟨lookup_mem_pair h, hk⟩, rfl⟩
+
+/-- A field under a key other than the spine key is among the field
+locations of its object. -/
+theorem field_mem_fields {ρ h x k l} (hk : k ≠ arraySpineKey) (hm : (Region.field x k).mem ρ h l = true) :
     (Region.fields x).mem ρ h l = true := by
   simp only [Region.mem, beq_iff_eq] at hm
-  simpa [Region.mem] using lookup_mem_snd hm
+  simpa [Region.mem] using lookup_mem_fieldLocs hm hk
 
 /-! ## Footprints and their meaning -/
 
@@ -717,17 +751,18 @@ def ClassOk (cl : ClassEvidence) (ρ : Env) (h : Heap) : Prop :=
     (Region.cls c).mem ρ h l = true
 
 /-- The inclusions read without recursion: equal regions, every region in
-`all`, a field among its object's own locations and in the class its
-contents have by class evidence, a path's field among the path object's own
-locations, and a cell among the locations of class `value`. -/
+`all`, a field under a key other than the spine key among its object's
+field locations and in the class its contents have by class evidence, such
+a path's field among the path object's field locations, and a cell among
+the locations of class `value`. -/
 def Region.subBase (cl : ClassEvidence) (r s : Region) : Bool :=
   r == s || s == .all || match r, s with
-    | .field x _, .fields y => x == y
+    | .field x k, .fields y => x == y && k != arraySpineKey
     | .field x k, .cls c => match cl x k with
       | some c' => c'.sub c
       | none => false
     | .cls a, .cls b => a.sub b
-    | .path x p _, .pathFields y q => x == y && p == q
+    | .path x p k, .pathFields y q => x == y && p == q && k != arraySpineKey
     | .cell _, .cls c => Selector.values.sub c
     | _, _ => false
 
@@ -768,7 +803,8 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
   · rfl
   · cases r <;> cases s <;> (try simp only [Bool.false_eq_true] at hs)
     case field.fields x k y =>
-      simp only [beq_iff_eq] at hs; subst hs; exact field_mem_fields hm
+      simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs; obtain ⟨rfl, hk⟩ := hs
+      exact field_mem_fields hk hm
     case field.cls x k c =>
       split at hs
       · rename_i c' hc'
@@ -777,13 +813,13 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
       · cases hs
     case cls.cls a b => exact class_subset_sound hs hm
     case path.pathFields x p k y q =>
-      simp only [Bool.and_eq_true, beq_iff_eq] at hs
-      obtain ⟨rfl, rfl⟩ := hs
+      simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne] at hs
+      obtain ⟨⟨rfl, rfl⟩, hk⟩ := hs
       simp only [Region.mem] at hm ⊢
       split at hm
       · rename_i v hv
         simp only [beq_iff_eq] at hm
-        simpa using lookup_mem_snd hm
+        simpa using lookup_mem_fieldLocs hm hk
       · cases hm
     case cell.cls b c =>
       simp only [Region.mem] at hm ⊢

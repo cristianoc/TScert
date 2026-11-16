@@ -16,7 +16,8 @@ The bound is read from the region's form alone:
 
 - a field at a key is a slot of the key's role (`SlotRole`): an array spine
   at the spine key, a field or a cell at every other key;
-- an object's own locations are slots: field, cell, array spine;
+- an object's field locations are slots under keys other than the spine
+  key: field, cell;
 - the cells a spine lists are element cells (`HeapOk.entries_cells`);
 - the spine a path selects is an array spine or a view spine
   (`HeapKnowledge.elementsOf`);
@@ -34,9 +35,6 @@ def RoleSet.fieldsAndCells : RoleSet := ⟨true, true, false, false, false, fals
 
 /-- The array spine. -/
 def RoleSet.arraySpine : RoleSet := ⟨false, false, false, true, false, false⟩
-
-/-- Field, cell and array spine: the roles of an object's slots. -/
-def RoleSet.slots : RoleSet := ⟨true, true, false, true, false, false⟩
 
 /-- Element cells. -/
 def RoleSet.elems : RoleSet := ⟨false, false, true, false, false, false⟩
@@ -57,7 +55,7 @@ allocated location of the region in a well-formed state
 (`Region.bound_sound`). -/
 def Region.bound : Region → RoleSet
   | .field _ k | .path _ _ k => slotBound k
-  | .fields _ | .pathFields _ _ => RoleSet.slots
+  | .fields _ | .pathFields _ _ => RoleSet.fieldsAndCells
   | .cells _ | .pathCells _ _ => RoleSet.elems
   | .cls c => c.roles
   | .all => RoleSet.all
@@ -112,38 +110,24 @@ theorem slotBound_sound {n : Nat} {W : WorldT n} {k : PropKey} {l : Nat}
       simp [slotBound, hs, Role.cls, RoleSet.contains, RoleSet.fieldsAndCells]
     | _ => simp [SlotRole] at hs
 
-/-- A slot under any key is a field, a cell or an array spine. -/
-theorem slots_sound {n : Nat} {W : WorldT n} {k : PropKey} {l : Nat}
-    (hs : SlotRole k (roleAt W l)) :
-    ∃ role, roleAt W l = some role ∧ RoleSet.slots.contains role.cls = true := by
-  rcases hr : roleAt W l with _ | role
-  · rw [hr] at hs; cases hs
-  · rw [hr] at hs
-    refine ⟨role, rfl, ?_⟩
-    cases role with
-    | spine f => cases f with
-      | array => rfl
-      | view => simp [SlotRole] at hs
-    | field | cell => rfl
-    | _ => simp [SlotRole] at hs
-
 /-- A field of a value with valid references (`field`, `path`). -/
 theorem field_bound {n : Nat} {W : WorldT n} {v : Val} (hv : RefsOk W v) {k : PropKey} {l : Nat}
     (hm : ((fieldsOf v).lookup k == some l) = true) :
     ∃ role, roleAt W l = some role ∧ (slotBound k).contains role.cls = true :=
   slotBound_sound (slotRole_of_refs hv (by simpa using hm))
 
-/-- An own location of a value with valid references (`fields`,
-`pathFields`). -/
+/-- A field location of a value with valid references (`fields`,
+`pathFields`): a slot under a key other than the spine key. -/
 theorem fields_bound {n : Nat} {W : WorldT n} {v : Val} (hv : RefsOk W v) {l : Nat}
-    (hm : ((fieldsOf v).map Prod.snd).contains l = true) :
-    ∃ role, roleAt W l = some role ∧ RoleSet.slots.contains role.cls = true := by
+    (hm : (fieldLocs v).contains l = true) :
+    ∃ role, roleAt W l = some role ∧ RoleSet.fieldsAndCells.contains role.cls = true := by
   cases v with
   | objAt fs c i =>
-    simp only [fieldsOf, List.contains_iff_mem, List.mem_map] at hm
-    obtain ⟨⟨k, l'⟩, hkl, rfl⟩ := hm
-    exact slots_sound (hv _ (slot_mem_refs (c := c) (i := i) hkl))
-  | _ => simp [fieldsOf] at hm
+    simp only [fieldLocs, fieldsOf, List.contains_iff_mem, List.mem_map, List.mem_filter, bne_iff_ne, ne_eq] at hm
+    obtain ⟨⟨k, l'⟩, ⟨hkl, hk⟩, rfl⟩ := hm
+    have hb := slotBound_sound (hv _ (slot_mem_refs (c := c) (i := i) hkl))
+    simpa [slotBound, hk] using hb
+  | _ => simp [fieldLocs, fieldsOf] at hm
 
 /-- A cell a value's spines list (`cells`, `pathCells`): an element cell
 (`HeapOk.entries_cells`). -/

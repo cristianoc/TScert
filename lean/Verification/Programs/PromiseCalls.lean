@@ -1353,7 +1353,14 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         refine Footprints.Footprint.keepsHeap_outside (Φ := eff.schema.normal.frame) hkeep hw' ?_ hu
         simp only [receiverFieldsValues, Footprints.Region.mem, CallEffects.callEnv, if_pos, Bool.and_eq_false_iff]
         left
-        simpa [List.contains_iff_mem, Footprints.ownOf] using hl
+        have hown : ∀ x, ¬ (x, l) ∈ Footprints.fieldsOf (ρ i) := by
+          simpa [List.contains_iff_mem, Footprints.ownOf] using hl
+        simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
+        cases hc' : (Footprints.fieldLocs (ρ i)).contains l
+        · rfl
+        · obtain ⟨⟨k, l'⟩, hkl, he⟩ := List.mem_map.mp (Footprints.fieldLocs_own (List.contains_iff_mem.mp hc'))
+          cases he
+          exact absurd hkl (hown k)
       · cases hsel
     · cases hcond
   · cases hc

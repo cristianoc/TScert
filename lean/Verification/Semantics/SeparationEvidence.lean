@@ -222,15 +222,16 @@ def fieldSite : Region → Option ((Nat × List String) × Option PropKey)
   | .inCls r _ => fieldSite r
   | _ => none
 
-/-- A location of a value's field at `k`, or of its own locations at `none`. -/
+/-- A location of a value's field at `k`, or of its field locations at
+`none`. -/
 def FieldAt (v : Val) : Option PropKey → Nat → Prop
   | some k, l => (fieldsOf v).lookup k = some l
-  | none, l => l ∈ (fieldsOf v).map Prod.snd
+  | none, l => l ∈ fieldLocs v
 
 theorem FieldAt.own {v : Val} {o : Option PropKey} {l : Nat} (h : FieldAt v o l) :
     l ∈ (fieldsOf v).map Prod.snd := by
   cases o with
-  | none => exact h
+  | none => exact fieldLocs_own h
   | some k => exact lookup_mem_snd h
 
 theorem fieldSite_mem {ρ : Env} {h : Heap} {l : Nat} :
@@ -499,7 +500,7 @@ theorem SepEvidence.byFact_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} 
             | none =>
               simp only [Option.isNone_iff_eq_none] at hcov
               subst hcov
-              simpa [HeapSeparation.At, FieldAt, fieldsOf] using hvl
+              simpa [HeapSeparation.At, fieldsOf] using fieldLocs_own (v := .objAt flds c oid) hvl
           exact hF l l hat hat' rfl
         | _ => rw [hρy] at hvl'; simp [FieldAt, fieldsOf] at hvl'
       | _ => rw [hρx] at hvl; have := hvl.own; simp [fieldsOf] at this
