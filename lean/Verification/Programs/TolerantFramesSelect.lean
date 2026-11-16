@@ -298,10 +298,7 @@ theorem passSteps_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     subst hj
     apply of_value_property _ (erase (hs he hk hw hh href))
     intro _ _ heap v _
-    exact ⟨HeapFacts.holds_nil _ _, (HeapKnowledge.shift_holds (v := v) hk).2.1,
-      HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-      (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-      HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
+    exact ordinaryOutput_holds hk v heap
   · exact typedRead_optional_sound hj ht hi hopt htree hcodes hsums he hk hw hh href
 
 /-! ## The checker the pass's selection runs -/

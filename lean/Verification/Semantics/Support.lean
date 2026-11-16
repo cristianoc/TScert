@@ -204,6 +204,16 @@ theorem frame_step {State : Type} {D : SupportDomain State} {C : ConditionOn Sta
     (hc : C ρ m s s') (hA : A ρ m s) : A ρ m s' :=
   hs ρ m s s' ha hc hA (respect_sound hr hq hp)
 
+/-- **The tolerant frame at the empty support** (the note, §5, Theorem
+"Tolerant frame", where the support is empty): every effect respects the
+empty support (`respects` is vacuous), so an assertion it supports holds
+after every admissible transition meeting its condition, whatever the
+transition changes. -/
+theorem frame_nil {State : Type} {D : SupportDomain State} {C : ConditionOn State} {A : AssertionOn State}
+    (hs : D.Supports C A []) {ρ : Env} {m : Nat} {s s' : State} (ha : D.admissible s s') (hc : C ρ m s s')
+    (hA : A ρ m s) : A ρ m s' :=
+  hs ρ m s s' ha hc hA fun _ he => nomatch he
+
 /-- **The tolerant frame as a modal law** (the note, §5, Theorem "Tolerant
 frame"): `K ∧ A ⊢ □_Φ A` where `S` supports `A` under `C`, `C` holds of
 every action of `Φ` from a state of `K`, and `Φ` respects `S` under a query

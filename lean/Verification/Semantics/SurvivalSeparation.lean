@@ -270,3 +270,137 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
     | _ => exact ⟨hm, hh⟩
 
 end Verification.Footprints
+
+/-! ## The knowledge of the empty support
+
+The facts of a state's knowledge whose support is empty (the note, §5,
+"Supports of the atoms"; its Derivations, "The modality": an assertion over
+variables alone is invariant): its slots' values (`FactKind.value`), its
+alias links (`FactKind.link` of an alias), its index facts reading the
+environment alone (`IndexFact.envOnly`), whose produced support is empty, the
+entry state fixed (`IndexFact.support?_envOnly`), and its separation facts
+(`HeapSeparation`: the field locations of two objects differ). The note's
+assertion language has no form for the separation facts; they read no heap,
+an object's field locations being fixed (the note, (T3)). The tolerant frame
+at the empty support (`frame_nil`) keeps each through every transition. -/
+
+namespace Verification.Footprints
+open HeapKnowledge
+
+variable {ε : EntryState}
+
+/-- A term reading the environment alone has the empty support. -/
+private theorem term_support_envOnly (c : ReadContext) (δ : Change) {t : Term} (ht : t.envOnly = true) :
+    t.support c δ = [] := by
+  obtain ⟨k, s, p, a⟩ := t
+  cases a
+  · simp only [Term.envOnly, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+      List.isEmpty_iff] at ht
+    obtain ⟨rfl | rfl, rfl⟩ := ht <;> rfl
+  · rfl
+
+private theorem produceSupport_envOnly (c : ReadContext) :
+    ∀ (F : IndexFact), F.envOnly = true → ∃ ev, F.produceSupport c = some ([], ev) := by
+  intro F
+  induction F with
+  | index _ | int _ | pastSafe _ => intro _; exact ⟨_, rfl⟩
+  | linear F =>
+    intro hF
+    have hv : ∀ t ∈ F.vars, t.envOnly = true := fun t ht =>
+      List.all_eq_true.mp (by simpa only [IndexFact.envOnly] using hF) t ht
+    refine ⟨.linear, ?_⟩
+    simp only [IndexFact.produceSupport, Option.some.injEq, Prod.mk.injEq, and_true]
+    cases F with
+    | le G d =>
+      simp only [linearSupport, List.flatMap_eq_nil_iff]
+      exact fun p hp => term_support_envOnly c _ (hv p.1 (List.mem_map_of_mem hp))
+    | ne G d =>
+      simp only [linearSupport, List.flatMap_eq_nil_iff]
+      exact fun p hp => term_support_envOnly c _ (hv p.1 (List.mem_map_of_mem hp))
+  | either A B ihA ihB =>
+    intro hF
+    simp only [IndexFact.envOnly, Bool.and_eq_true] at hF
+    obtain ⟨a, ha⟩ := ihA hF.1
+    obtain ⟨b, hb⟩ := ihB hF.2
+    exact ⟨.either [] a [] b, by simp [IndexFact.produceSupport, ha, hb]⟩
+  | guarded s p tag B ih =>
+    intro hF
+    simp only [IndexFact.envOnly, Bool.and_eq_true, List.isEmpty_iff] at hF
+    obtain ⟨rfl, hB⟩ := hF
+    obtain ⟨b, hb⟩ := ih hB
+    exact ⟨.guarded [] b, by simp [IndexFact.produceSupport, hb, pathReads]⟩
+  | spineApart a p b q =>
+    intro hF
+    simp only [IndexFact.envOnly, Bool.and_eq_true, List.isEmpty_iff] at hF
+    obtain ⟨rfl, rfl⟩ := hF
+    exact ⟨.spineApart, by simp [IndexFact.produceSupport, pathReads]⟩
+  | _ => intro hF; simp [IndexFact.envOnly] at hF
+
+/-- **An index fact reading the environment alone has the empty support**,
+in every context. -/
+theorem IndexFact.support?_envOnly (c : ReadContext) {F : IndexFact} (hF : F.envOnly = true) :
+    F.support? c = some [] := by
+  obtain ⟨ev, h⟩ := produceSupport_envOnly c F hF
+  simp [IndexFact.support?, h]
+
+/-- The empty context holds of every transition. -/
+theorem ReadContext.empty_holds (ρ : Env) (h h' : Heap) : ({} : ReadContext).Holds ρ h h' :=
+  fun _ _ _ _ _ _ _ hs => by cases hs
+
+/-- **An index fact reading the environment alone holds in every heap**: the
+tolerant frame at its empty support (`support?_envOnly`, `frame_nil`). -/
+theorem _root_.Verification.HeapKnowledge.IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap}
+    (henv : F.envOnly = true) (hF : F.HoldsAt ε ρ h) (h' : Heap) : F.HoldsAt ε ρ h' :=
+  frame_nil (D := heaps) (m := 0) (IndexFact.support?_supports {} F (IndexFact.support?_envOnly {} henv)) trivial
+    (ReadContext.empty_holds ρ h h') hF
+
+theorem _root_.Verification.HeapKnowledge.envIndices_holds {as : List IndexAtom} {ρ h}
+    (he : IndexHolds ε as ρ h) (h' : Heap) : IndexHolds ε (envIndices as) ρ h' := by
+  intro a ha hc
+  obtain ⟨ha, henv⟩ := List.mem_filter.mp ha
+  exact HeapKnowledge.IndexFact.holdsAt_envOnly henv (he a ha hc) h'
+
+/-- **Alias links hold in every heap**: an alias link's support is empty
+(`FactKind.link`), the tolerant frame at it. -/
+theorem stableLinks_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hh : HeapLinks.Holds ls ρ h) (h' : Heap) :
+    HeapLinks.Holds (HeapLinks.stable ls) ρ h' := by
+  intro g hg
+  obtain ⟨hm, ha⟩ := List.mem_filter.mp hg
+  have hs : Supports (fun _ _ _ => True) (FactKind.link g).Holds [] := by
+    simpa [FactKind.support, ha] using (FactKind.link g).supports
+  exact frame_nil (D := heaps) (m := 0) hs trivial trivial
+    (fun g' hg' => by rw [List.mem_singleton.mp hg']; exact hh g hm) g (List.mem_singleton_self _)
+
+/-- **The knowledge of the empty support**: the slots' values, the alias
+links, the separation facts and the index facts reading the environment
+alone. -/
+def _root_.Verification.HeapKnowledge.Knowledge.heapFree (k : Knowledge) : Knowledge :=
+  ⟨[], k.values, HeapLinks.stable k.links, k.separation, [], envIndices k.indices⟩
+
+/-- **The knowledge of the empty support has the empty support** (each part's
+is empty: `FactKind.value`, `stableLinks_holds`, `holdsAt_envOnly`; the
+separation facts read no heap). -/
+theorem heapFree_supports (k : Knowledge) :
+    Supports (fun _ _ _ => True) (fun ρ h => HeapKnowledge.Holds k.heapFree ε ρ h) [] := by
+  refine Supports.intro fun ρ h h' _ hk _ => ⟨HeapFacts.holds_nil _ _, hk.2.1, ?_, hk.2.2.2.1,
+    elemsHolds_nil _ _, ?_⟩
+  · intro g hg
+    have := stableLinks_holds hk.2.2.1 h' g (List.mem_filter.mpr ⟨hg, (List.mem_filter.mp hg).2⟩)
+    exact this
+  · intro a ha hc
+    exact HeapKnowledge.IndexFact.holdsAt_envOnly (List.mem_filter.mp ha).2 (hk.2.2.2.2.2 a ha hc) h'
+
+/-- The knowledge of the empty support is part of the knowledge, at the same
+state. -/
+theorem heapFree_le {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
+    HeapKnowledge.Holds k.heapFree ε ρ h :=
+  ⟨HeapFacts.holds_nil _ _, hk.2.1, fun g hg => hk.2.2.1 g (List.mem_filter.mp hg).1, hk.2.2.2.1,
+    elemsHolds_nil _ _, fun a ha => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1⟩
+
+/-- **The knowledge of the empty support holds after every transition**: the
+tolerant frame at the empty support (`heapFree_supports`, `frame_nil`). -/
+theorem heapFree_frame {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) (h' : Heap) :
+    HeapKnowledge.Holds k.heapFree ε ρ h' :=
+  frame_nil (D := heaps) (m := 0) (heapFree_supports (ε := ε) k) trivial trivial (heapFree_le hk)
+
+end Verification.Footprints

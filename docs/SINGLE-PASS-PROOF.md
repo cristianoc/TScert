@@ -338,7 +338,9 @@ slot. $`\mathrm{Named}\ S\ \eta`$ holds at a state when every fact of $`S`$
 holds at $`\eta`$ and the state's heap. Proved:
 
 - every named fact survives an extension of the heap (`atomHolds_extend`), a
-  fact reading no heap holds in every heap (`atomHolds_heapFree`), where
+  fact reading no heap has the empty support (`atom_heapFree_supports`) and so
+  holds in every heap (`atomHolds_heapFree`, the tolerant frame at the empty
+  support), where
   $`a.\mathrm{heapFree}`$ is exactly the pass's handler filter: values, alias
   links, separation, and index facts with $`\mathrm{envOnly}`$; a fact reads
   only its names' values (`atomHolds_congr`), so naming a step's result $`r`$,
@@ -347,7 +349,8 @@ holds at $`\eta`$ and the state's heap. Proved:
   $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
   (`named_keep_box`); for $`S`$ heap-free,
   $`\mathrm{Named}\ S\ \eta\vdash\Box_\Phi\,\mathrm{Named}\ S\ \eta`$ for every
-  $`\Phi`$ (`named_any_box`); a footprint within such a $`c`$ by class evidence
+  $`\Phi`$, the empty support respected by every effect (`named_any_box`,
+  through `frame_box`); a footprint within such a $`c`$ by class evidence
   $`cl`$ keeps $`S`$ from a state where $`\mathrm{ClassOk}\ cl`$ holds at the
   action's source heap (`named_le_box`), the evidence of a density fact
   holding at the heap the density holds at (`dense_class_at`);

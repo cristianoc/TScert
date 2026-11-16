@@ -893,13 +893,6 @@ def promiseYields (G : NormalGraph ι) (A : Ty ι) (effect : Effect) (a : Nat) (
   ys.all fun y => y.target == a && within T y.type &&
     (match effect.promise with | some (.guards _) => y.conditional | _ => true)
 
-theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnowledge.Holds k ε ρ h)
-    (v : Tm) (h' : Heap) : HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) ε (push v ρ) h' :=
-  ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
-    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-    HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
-
 /-- Whether a signature's effect keeps the contents of every location a
 call starts with on a normal return: its normal exit's frame
 (`Effect.frame`) is included in the empty effect
@@ -926,7 +919,7 @@ theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ 
   · rename_i hkeep
     obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hp
     exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
-  · exact ordinaryOutput_holds hk v h'
+  · exact HeapExpressionRules.ordinaryOutput_holds hk v h'
 
 /-- What the ordinary output states holds wherever a promise call's output
 holds: it keeps less. -/
@@ -935,8 +928,7 @@ theorem promiseOutput_ordinary {effect : Effect} {k : HeapKnowledge.Knowledge} {
     HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) ε τ h := by
   unfold promiseOutput at hk
   split at hk
-  · exact ⟨HeapFacts.holds_nil _ _, hk.2.1, HeapLinks.stable_holds hk.2.2.1, hk.2.2.2.1,
-      HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.envIndices_holds hk.2.2.2.2.2 _⟩
+  · exact Footprints.heapFree_le hk
   · exact hk
 
 /-- **A call at a promise signature** returns where the promise holds: its

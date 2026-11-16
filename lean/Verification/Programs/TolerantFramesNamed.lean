@@ -62,9 +62,15 @@ theorem atomHolds_extend {a : Atom} {η : Env} {h : Heap} (vs : List Val) (ha : 
   | index x => exact HeapKnowledge.indexHolds_extend vs ha
   | sep f => exact ha
 
-/-- **A fact reading no heap holds in every heap.** -/
-theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = true) (ha : AtomHolds ε a η h)
-    (h' : Heap) : AtomHolds ε a η h' := by
+/-- **A heap-free named fact has the empty support** (the note, §5,
+"Supports of the atoms"): a slot's value and a separation fact read no heap;
+an alias link's support is empty (`Footprints.stableLinks_holds`); an index
+fact reading the environment alone has the empty produced support
+(`IndexFact.holdsAt_envOnly`). The separation facts are a fact kind the
+note's language lacks, kept by (T3). -/
+theorem atom_heapFree_supports {a : Atom} (hf : a.heapFree = true) (η : Env) :
+    Footprints.Supports (fun _ _ _ => True) (fun _ h => AtomHolds ε a η h) [] := by
+  refine Footprints.Supports.intro fun _ h h' _ ha _ => ?_
   cases a with
   | cell f => simp [Atom.heapFree] at hf
   | elem e => simp [Atom.heapFree] at hf
@@ -72,11 +78,8 @@ theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = t
   | sep f => exact ha
   | link g =>
     simp only [Atom.heapFree] at hf
-    intro g' hg
-    simp only [List.mem_singleton] at hg
-    subst hg
-    have := ha g' (List.mem_singleton_self _)
-    simp only [hf, ite_true] at this ⊢
+    have := Footprints.stableLinks_holds (ls := [g]) ha h'
+    simp only [HeapLinks.stable, List.filter_cons, hf, if_true, List.filter_nil] at this
     exact this
   | index x =>
     simp only [Atom.heapFree] at hf
@@ -84,6 +87,12 @@ theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = t
     simp only [List.mem_singleton] at hx
     subst hx
     exact HeapKnowledge.IndexFact.holdsAt_envOnly hf (ha x' (List.mem_singleton_self _) hc) h'
+
+/-- **A fact reading no heap holds in every heap**: the tolerant frame at
+its empty support (`atom_heapFree_supports`, `frame_nil`). -/
+theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = true) (ha : AtomHolds ε a η h)
+    (h' : Heap) : AtomHolds ε a η h' :=
+  frame_nil (D := heaps) (m := 0) (ρ := η) (atom_heapFree_supports hf η) trivial trivial ha
 
 /-- A named fact reads only the values of its names. -/
 theorem atomHolds_congr {a : Atom} {η η' : Env} {h : Heap} (hs : ∀ x ∈ a.names, η x = η' x) :
@@ -151,11 +160,16 @@ theorem named_keep_box {c : Footprints.Closed} (hle : c.le Footprints.Closed.emp
   rw [← hvs]
   exact atomHolds_extend vs (hS a hm)
 
-/-- **The facts reading no heap survive every admissible transition**: under
-the effect `{values: any, spines: any}` of an exceptional exit. -/
+/-- **The facts reading no heap survive every admissible transition**:
+under the effect `{values: any, spines: any}` of an exceptional exit. Their
+conjunction has the empty support (`atom_heapFree_supports`), which every
+effect respects: the tolerant frame as a modal law (`frame_box`). -/
 theorem named_any_box {Φ : Footprint} {S : List Atom} (hf : ∀ a ∈ S, a.heapFree = true) {η ρ : Env} {m : Nat}
     {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box Φ (Named ε S η) ρ m s :=
-  fun s' _ a hm => atomHolds_heapFree (hf a hm) (hS a hm) s'.h
+  frame_box (D := indexed) (K := fun _ _ _ => True) (C := fun _ _ _ _ => True) (q := .empty)
+    (A := Named ε S η) (S := [])
+    (fun _ _ s s' _ _ hN _ a hm => atomHolds_heapFree (hf a hm) (hN a hm) s'.h) (by simp [respects])
+    (fun _ _ _ _ => SepQuery.empty_sound _ _) (fun _ _ _ _ _ _ => trivial) ρ m s trivial hS
 
 /-- The pass's handler store: the facts of the entry's that read no heap. -/
 theorem named_filter_heapFree {S : List Atom} {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) :

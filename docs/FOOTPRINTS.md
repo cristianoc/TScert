@@ -195,6 +195,24 @@ context (the note's (T4) "Immutable locations"): the pass keeps at every
 step each cell fact, read link and index fact whose support in it is empty
 ([stable links](HOST-FAMILIES.md#stable-links)).
 
+At the empty support every effect respects the support, and the tolerant
+frame keeps the assertion through every transition meeting its context
+(proved: `frame_nil`). **The knowledge of the empty support**
+(`Knowledge.heapFree`) is a state's slots' values, its alias links, its
+separation facts and its index facts reading the environment alone
+(`IndexFact.envOnly`, whose produced support is empty in every context,
+proved: `IndexFact.support?_envOnly`), the entry state fixed; it has the
+empty support (proved: `heapFree_supports`) and so holds at every heap the
+state's own does (proved: `heapFree_frame`). In the note these are
+assertions over variables alone, which are invariant (its Derivations,
+"The modality"); the separation facts (`HeapSeparation`: the field locations
+of two objects differ) are a fact kind the note's assertion language lacks,
+which reads no heap since an object's field locations are fixed (the note's
+(T3)). What an arbitrary expression keeps, a call included, is this
+knowledge past its result's slot (`HeapExpressionRules.ordinaryOutput`;
+proved: `ordinaryOutput_holds`), as is what a throw keeps
+(`ControlFlow.handlerFacts`).
+
 ### Supports of index facts
 
 The context of an index fact's support is a **read context** $`c`$: the

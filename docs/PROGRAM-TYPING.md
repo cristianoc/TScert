@@ -3499,9 +3499,12 @@ Node evidence for a node with a handler supplies the type $`T`$ the thrown value
 is bound at and the handler edge's certificate. `checkHandlerUsing` requires $`T`$ to
 admit every JavaScript value, with a `source` or `top` clause (`admitsAll`), and the edge to
 check against the target's claims under the facts that hold wherever the
-expression throws, which are those of the node's entry that do not mention the
-heap (`handlerFacts`: immutable values, alias links and the
-[separation](#separation-facts), shifted past the thrown value's slot):
+expression throws, which are those of the node's entry of the empty support
+(`handlerFacts`, the
+[knowledge of the empty support](FOOTPRINTS.md#support-and-respect):
+immutable values, alias links, the [separation](#separation-facts) and the
+index facts reading the environment alone, shifted past the thrown value's
+slot):
 
 ```math
 \frac{\{\mathsf{source},\mathsf{top}\}\cap\mathrm{expand}_G(T)\ne\varnothing\quad
@@ -3511,7 +3514,8 @@ heap (`handlerFacts`: immutable values, alias links and the
 
 where $`\Gamma`$ and $`K`$ are the node's entry claims and facts. The machine
 state after a throw is safe by that edge, `admitsAll_sound` giving the thrown
-value its type, and `handlerFacts_holds` its facts at any heap.
+value its type, and `handlerFacts_holds` its facts at any heap, by the
+tolerant frame at their empty support.
 
 Node evidence supplies its entry environment, expression type and program
 evidence, and exactly the edge certificates required by its continuation. It

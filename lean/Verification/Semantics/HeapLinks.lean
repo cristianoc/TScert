@@ -192,16 +192,9 @@ theorem alloc_frames {ls ρ h} (vs : List Val) (hh : Holds ls ρ h) : Holds ls �
 theorem alloc_frame {ls ρ h v} (hh : Holds ls ρ h) : Holds ls ρ (h ++ [v]) :=
   alloc_frames [v] hh
 
-/-- Value equalities survive arbitrary heap changes; read links do not. -/
+/-- The alias links: the links of the empty support (`FactKind.link`,
+`Footprints.stableLinks_holds`). -/
 def stable (ls : Links) := ls.filter (fun g => g.alias)
-
-theorem stable_holds {ls ρ h h'} (hh : Holds ls ρ h) : Holds (stable ls) ρ h' := by
-  intro g hg
-  have hg := List.mem_filter.mp hg
-  have hh := hh g hg.1
-  have ha : g.alias = true := hg.2
-  simp only [ha, ite_true] at hh ⊢
-  exact hh
 
 /-- The slots one alias link relates to `i`. -/
 def neighbors (ls : Links) (i : Nat) : List Nat :=

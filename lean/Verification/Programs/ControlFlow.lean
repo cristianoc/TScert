@@ -642,10 +642,7 @@ def handlerFacts (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
 
 theorem handlerFacts_holds {k ρ h} (hk : HeapKnowledge.Holds k ε ρ h) (v : Tm) (h' : Heap) :
     HeapKnowledge.Holds (handlerFacts k) ε (push v ρ) h' :=
-  ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
-    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-    HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
+  HeapExpressionRules.ordinaryOutput_holds hk v h'
 
 /-- A node's handler, when it has one, is a checked target for the thrown
 value at a type admitting every value, under the facts that survive a throw. -/

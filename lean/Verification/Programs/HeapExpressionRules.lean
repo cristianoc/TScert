@@ -3,6 +3,7 @@ import Verification.Semantics.HeapKnowledge
 import Verification.Semantics.LinkClasses
 import Verification.Semantics.TolerantFrames
 import Verification.Semantics.Survival
+import Verification.Semantics.SurvivalSeparation
 
 /-! Checked expression rules with primitive state postconditions. Ordinary evidence
 retains only immutable-value facts; special rules justify stronger heap facts.
@@ -725,23 +726,26 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
       HeapObservations.value hval (hsub _ _ _ ((meaning_adm G B).down n W _ hty))
         (HeapKnowledge.withReadAtoms_holds (copy_holds hk)) (RefsOk_trunc _ (hr.refs hh))⟩⟩
 
-/-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
-heap observation without a specific proved effect rule. -/
-def ordinaryOutput (k : Knowledge) : Knowledge :=
-  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation,[],
-    HeapKnowledge.envIndices (HeapKnowledge.shiftIndices k.indices)⟩
+/-- **What an arbitrary expression keeps** (a call included): the knowledge
+of the empty support (`Knowledge.heapFree`), past the result slot. Its facts
+are the note's assertions over variables alone, which are invariant (the
+note, Derivations, "The modality"), and the separation facts, which the
+note's language lacks and (T3) keeps (`Footprints.heapFree_supports`). -/
+def ordinaryOutput (k : Knowledge) : Knowledge := (HeapKnowledge.shift k).heapFree
+
+/-- **What an arbitrary expression keeps holds at every heap it ends in**:
+the tolerant frame at the empty support, from the heap it starts in
+(`Footprints.heapFree_frame`). -/
+theorem ordinaryOutput_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) (v : Tm)
+    (h' : Heap) : HeapKnowledge.Holds (ordinaryOutput k) ε (push v ρ) h' :=
+  Footprints.heapFree_frame (HeapKnowledge.shift_holds hk) h'
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ t)) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) ε (push v ρ) h') n W h (instantiate 0 ρ t) := by
-  apply of_value_property _ (ht.sound n W h ρ he hw hh href)
-  intro _ _ heap v _
-  exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
-    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
-    HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
+      (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) ε (push v ρ) h') n W h (instantiate 0 ρ t) :=
+  of_value_property (fun _ _ h' v _ => ordinaryOutput_holds hk v h') (ht.sound n W h ρ he hw hh href)
 
 /-- The named fields, invariant fields and readonly views, of every
 record-typed slot: the locations a fresh allocation is known to differ from,
@@ -1550,7 +1554,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
         intro g hg
         rcases List.mem_cons.mp hg with rfl | hg
         · exact ⟨flds, c, oid, l, by simpa [push] using hl, hfd, by simp [push, hlt]⟩
-        · exact HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1 g hg
+        · exact Footprints.stableLinks_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1 _ g hg
       apply HeapKnowledge.withReadAtoms_holds
       refine ⟨?_,?_,hlinks,
         (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _, hindex⟩

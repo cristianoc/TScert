@@ -1847,9 +1847,7 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
       apply HeapObservations.of_value_property (fun _ _ _ u _ => ?_)
       · exact Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
-      · exact ⟨HeapFacts.holds_nil _ _, (shift_holds (v := u) hk).2.1,
-          HeapLinks.stable_holds (shift_holds (v := u) hk).2.2.1, (shift_holds (v := u) hk).2.2.2.1,
-          elemsHolds_nil _ _, envIndices_holds (shift_holds (v := u) hk).2.2.2.2.2 _⟩
+      · exact HeapExpressionRules.ordinaryOutput_holds hk u _
     · cases htypes
   · cases htypes
 
@@ -1903,9 +1901,9 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (ExpressionEffects.elem_var_write_length hvl hil hR hst hoi hfl hl hb hidx (by simp at hle; omega)
       he hh hsafe).post
   refine weaken (fun h' u hq => ?_) hp
-  exact ⟨HeapFacts.holds_nil _ _, (shift_holds (v := u) hk).2.1,
-    HeapLinks.stable_holds (shift_holds (v := u) hk).2.2.1, (shift_holds (v := u) hk).2.2.2.1,
-    elemsHolds_nil _ _, shiftIndices_holds (keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)⟩
+  have ho := HeapExpressionRules.ordinaryOutput_holds hk u h'
+  exact ⟨ho.1, ho.2.1, ho.2.2.1, ho.2.2.2.1, ho.2.2.2.2.1,
+    shiftIndices_holds (keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)⟩
 
 /-! ## Element regions (FOOTPRINTS.md, "Element regions")
 

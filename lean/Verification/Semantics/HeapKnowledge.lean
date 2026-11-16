@@ -2344,35 +2344,9 @@ def IndexFact.envOnly : IndexFact → Bool
   | .guarded _ p _ B => p.isEmpty && B.envOnly
   | .spineApart _ p _ q => p.isEmpty && q.isEmpty
 
-/-- A fact reading the environment alone holds in every heap. -/
-theorem IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap} (henv : F.envOnly = true)
-    (hF : F.HoldsAt ε ρ h) (h' : Heap) : F.HoldsAt ε ρ h' := by
-  induction F with
-  | either A B ihA ihB =>
-    simp only [IndexFact.envOnly, Bool.and_eq_true] at henv
-    exact hF.imp (ihA henv.1) (ihB henv.2)
-  | linear F => exact IndexFact.holdsAt_linear_heap henv hF
-  | index _ | int _ | pastSafe _ => exact hF
-  | length _ _ | bound _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ => simp [IndexFact.envOnly] at henv
-  | spineApart a p b q =>
-    simp only [IndexFact.envOnly, Bool.and_eq_true, List.isEmpty_iff] at henv
-    obtain ⟨rfl, rfl⟩ := henv
-    obtain ⟨u, w, hu, hw, hne⟩ := hF
-    exact ⟨u, w, by simpa [readPath] using hu, by simpa [readPath] using hw, hne⟩
-  | guarded s p t B ih =>
-    simp only [IndexFact.envOnly, Bool.and_eq_true, List.isEmpty_iff] at henv
-    obtain ⟨rfl, hB⟩ := henv
-    obtain ⟨v, hv, hor⟩ := hF
-    exact ⟨v, by simpa [readGuard] using hv, hor.imp id (ih hB)⟩
-
-/-- The atoms whose facts read the environment alone, kept by any heap change. -/
+/-- The atoms whose facts read the environment alone, of the empty support
+(`Footprints.IndexFact.support?_envOnly`). -/
 def envIndices (as : List IndexAtom) : List IndexAtom := as.filter (·.fact.envOnly)
-
-theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) (h' : Heap) :
-    IndexHolds ε (envIndices as) ρ h' := by
-  intro a ha hc
-  obtain ⟨ha, henv⟩ := List.mem_filter.mp ha
-  exact IndexFact.holdsAt_envOnly henv (he a ha hc) h'
 
 /-- The atoms a change keeps (`IndexFact.keptBy`), the facts reading no heap
 among them. -/
