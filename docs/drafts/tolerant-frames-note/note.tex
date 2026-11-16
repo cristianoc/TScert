@@ -858,30 +858,30 @@ A fact enters the modality by naming what it reads and how much change
 of it the fact tolerates.
 
 \begin{definition}[Support]
-A \emph{support} for an assertion $F$ is a finite set $S$ of pairs
-$r:\delta$, a region and a change, with this property: for all states
-with heaps $h$ and $h'$ and every mark $m$, if $\rho,m,h\models F$, $h\tr{}_\rho h'$, and every
-location $l<\len h$ in a region $r(\rho,h)$ of a pair $(r:\delta)\in S$
-satisfies $\delta_{\len h}(h(l),h'(l))$, then $\rho,m,h'\models F$.
-Locations outside the regions of $S$ may change in any admissible way.
+Let $C$ be a condition on pairs of heaps. A \emph{support} for an
+assertion $F$ \emph{under} $C$ is a finite set $S$ of pairs $r:\delta$,
+a region and a change, with this property: for all states with heaps
+$h$ and $h'$ and every mark $m$, if $\rho,m,h\models F$,
+$h\tr{}_\rho h'$, $C(h,h')$, and every location $l<\len h$ in a region
+$r(\rho,h)$ of a pair $(r:\delta)\in S$ satisfies
+$\delta_{\len h}(h(l),h'(l))$, then $\rho,m,h'\models F$. Locations
+outside the regions of $S$ may change in any admissible way. $S$
+\emph{supports} $F$ when it supports $F$ under the condition that always
+holds.
 \end{definition}
-
-\noindent
-A support may be \emph{under a condition} $C$ on pairs of heaps: the
-property above is then required only of the transitions with $C(h,h')$.
-For example, with $C$ the condition that the field $x.f$ keeps its
-contents, $\{x.f.\kw{store}:\grow\}$ supports $n\le\len{x.f}$ under $C$:
-the store that $x.f$ reads is then the same before and after. A support
-with no condition is the case where $C$ always holds.
-
-Support quantifies over every admissible transition that meets its
-condition. Evidence that one particular transition preserves $F$
-establishes $F$ after that transition and no support.
 
 \noindent
 For example $\{x.\kw{store}:\grow\}$ supports $n\le\len x$: the fact
 reads the store of $x$ and nothing else in the heap, and it tolerates
-any growth of that store.
+any growth of that store. A condition lets a support leave out what the
+transitions at hand do not change. Let $C$ say that the field $x.f$
+keeps its contents. Then $\{x.f.\kw{store}:\grow\}$ supports
+$n\le\len{x.f}$ under $C$: the array that $x.f$ reads is the same before
+and after, so its store is all the fact depends on.
+
+Support quantifies over every admissible transition that meets its
+condition. Evidence that one particular transition preserves $F$
+establishes $F$ after that transition and no support.
 
 \begin{definition}[Respect]
 Let $K$ be an assertion. An effect $\Phi$ \emph{respects} a support $S$
@@ -901,17 +901,20 @@ the first alternative, $\grow\sqsubseteq\grow$. The entry $\val:\any$
 meets the second: a store location is no location of class value.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
-If $S$ supports $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
-The same holds of a support under a condition $C$, when $C(h_1,h_2)$
-holds of every pair with $h\tr{\Phi}_\rho h_1\tr{\Phi}_\rho h_2$ from a
-state that satisfies $K$.
-\status{Lean: \lean{Parity.tolerant\_frame}, with the condition \lean{ContextThroughout}, for the assertions the Lean represents and every effect; \lean{supports\_step} for one transition that meets the condition; \lean{supported\_of\_pairs} for the pairwise condition of respect}
+Let $S$ support $F$ under $C$, let $\Phi\resp_K S$, and let $C(h,h')$
+hold of every change $h\tr{\Phi}_\rho h'$ from a state that satisfies
+$K$. Then $K\wedge F\vdash\bx{\Phi}F$. In particular, if $S$ supports
+$F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
+\status{Lean: \lean{Parity.tolerant\_frame}, for the assertions the Lean represents and every effect, with the condition required of two consecutive changes bounded by $\Phi$ (\lean{ContextThroughout}); \lean{supports\_step} for one transition that meets the condition; \lean{supported\_of\_pairs} for the pairwise condition of respect}
 \end{theorem}
 \begin{proof}
 Let $h\tr{\Phi}_\rho h'$ and $l\in r(\rho,h)$ with $(r:\delta)\in S$.
 Either $h'(l)=h(l)$, and $\delta$ is reflexive, or some
 $(r':\gamma)\in\Phi$ covers $l$ and bounds its change by $\gamma$. Then
-$r$ and $r'$ are not disjoint, so $\gamma\sqsubseteq\delta$.
+$r$ and $r'$ are not disjoint, so $\gamma\sqsubseteq\delta$. So every
+location of a region of $S$ changes within its $\delta$. The change
+meets $C$ by hypothesis, and $S$ supports $F$ under $C$, so $F$ holds at
+$h'$.
 \end{proof}
 
 The theorem has two known rules as its extreme cases. When every change
