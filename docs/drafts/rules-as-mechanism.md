@@ -288,6 +288,12 @@ the spine key reads a spine: the last read of a guard and of a spine
 separation carries no class tag for that reason, and the bound above marks
 it.
 
+A spine region a frame states (`ArgumentSpineRegion`) is well-formed by
+the kind of its path: the entry check of a stated frame
+(`ArgumentPathTracking.checkEntryFields`) refuses one whose path's declared
+type has a member other than an array, `null` or `undefined`
+(`regionKindOk`).
+
 Every region form selects locations as the paper's region does: `fields`
 the field locations of an object, its spine slot excluded, and `all` the
 allocated locations; a frame that changes module cells states the class
