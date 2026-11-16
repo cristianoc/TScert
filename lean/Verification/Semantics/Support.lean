@@ -105,6 +105,21 @@ theorem Supports.apply {C : Env → Heap → Heap → Prop} {P : Env → Heap �
     P ρ h' :=
   hs ρ 0 h h' trivial hc hP hS
 
+/-- **An assertion language's supports, by finite evidence**: its formulas
+and their meaning over a domain, the contexts a support relies on and the
+condition each states, and a check of a footprint against a formula by
+evidence, sound for `SupportDomain.Supports`. Each assertion language reads
+the one support relation through an instance; the evidence is finite and
+syntactic, its meaning given by the check's soundness alone. -/
+structure SupportLanguage {State : Type} (D : SupportDomain State) where
+  Formula : Type
+  sat : Formula → AssertionOn State
+  Context : Type
+  condition : Context → ConditionOn State
+  Evidence : Type
+  check : Context → Formula → Footprint → Evidence → Bool
+  check_sound : ∀ c F S ev, check c F S ev = true → D.Supports (condition c) (sat F) S
+
 /-! ## Separation queries and respect -/
 
 /-- **A separation query**: whether two regions denote disjoint sets. Its

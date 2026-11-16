@@ -235,6 +235,15 @@ body's terms at `keep` (`everyCells`, `bodySupport`). An element fact, and a
 quantified fact projecting through its elements, have no support produced:
 the check keeps none of them.
 
+The support is produced with finite evidence of the form it is computed for
+(`IndexFact.produceSupport`, `FactSupport`), and `IndexFact.support?` is
+the produced footprint. A check reads the evidence against the fact and the
+footprint (`FactSupport.check`); proved (`FactSupport.check_sound`): a
+checked footprint supports its fact in its read context, and a produced
+one checks (`IndexFact.produceSupport_check`). The index facts with this
+check are an instance of `SupportLanguage`, an assertion language's
+supports by evidence over a domain of states (`indexFacts`).
+
 **The survival check** (`IndexFact.keeps`): a fact survives an effect
 $`\Phi`$ under a query $`q`$ where $`\Phi`$ respects its support under $`q`$.
 Proved (`IndexFact.keeps_sound`): the fact holds after every transition

@@ -62,9 +62,10 @@ respects its support" exists as:
 - **A**, in the paper-shaped layer: `SupportEvidence`, `RespectEvidence`,
   `RawDerivation.tolerantFrame`, concluding the modal statement
   $`K \wedge A \vdash \Box_\Phi A`$;
-- **B**, on the acceptance path: `Term.support`, `IndexFact.support?`,
-  `respects` with `knowledgeQuery`, concluding that the fact holds after
-  the transition at hand.
+- **B**, on the acceptance path: `Term.support`, `IndexFact.produceSupport`
+  with its evidence checked by `FactSupport.check`, `IndexFact.support?` its
+  footprint, `respects` with `knowledgeQuery`, concluding that the fact
+  holds after the transition at hand.
 
 They share regions, changes, effects, `Supported` and the support relation
 `SupportDomain.Supports` (`Semantics/Support.lean`), read over arbitrary
