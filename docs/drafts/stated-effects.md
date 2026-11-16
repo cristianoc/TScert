@@ -511,10 +511,9 @@ a spine at a root and path, and the pipeline obtains a spine bound **per
 slot**, the local observation bound `first s "[]"` of `keptIndicesWith`
 (`FirstKept`); the global `Changes.spine` of a closed footprint is the
 constant instance. For a regional frame a slot's spine location is kept
-where $`K`$ separates it from the spine every region selects at the call
-(`regionFirst`, over each entry of the frame: its closed bound keeps array
-spines, or it selects a spine $`K`$ separates from the slot's;
-`regionFirst_kept`). $`K`$ is the caller's knowledge, and separation
+where $`K`$ separates it from the spine every region selects at the call:
+the frame check (`frameKeeps`) asks the one disjointness check of $`K`$
+(`knowledgeQuery`) of each entry of the frame against the fact's support. $`K`$ is the caller's knowledge, and separation
 enters it from checked sources only, as its index facts: a region fact
 `apart` (`RegionsApart`; `region-alloc`, `region-write`), and a spine
 separation `x.p !== y.q` (`IndexFact.spineApart`, read as `SpineApart`;
@@ -619,7 +618,7 @@ export function caller(flags: number[]): number {
 `splice` changes its receiver's spine, inside `path 0 [openBrackets] spine`,
 and value-class locations (`array_native_post_any`; its frame rebased by the
 step-frame rule, `callStep_ok`; proved), on normal return. `measure`
-keeps $`i<|\mathit{flags}|`$ across the call (`region-call-keep`): the
+keeps $`i<|\mathit{flags}|`$ across the call by the frame check (`frameKeeps`): the
 frame's closed bound keeps spines, and the precondition's spine separation
 places `flags`'s spine outside the path's region, kept along the loop
 since `openBrackets` is stable (`stable-first`); `values: "any"` changes no
@@ -829,9 +828,8 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   `Effect.pre`, the unit's entry knowledge and `call-requires`. Proved for
   spine regions: `spineFollows_sound` (`store-apart-links`),
   `restateSpines_holds`, `stableFirst_frame` (`stable-first`),
-  `spineHeld_sound`, `regionFirst_kept` (`region-call-keep`, a region's
-  spine separated by a region fact or a spine separation) and
-  `effectKept_holds` consuming the instantiated frame. The preservation
+  `knowledgeQuery_sound` (a region's spine separated by a region fact or a
+  spine separation) and `effectKept_holds` consuming the instantiated frame. The preservation
   pipeline of §4 beyond spine regions: local spine bounds per root and path
   for `pathCells` and cells, term growth, and the quantified lifting.
 - **O8 Coverage.** `Footprint.le` with the extended `Region.sub`, sound
@@ -952,7 +950,7 @@ Decisions:
   a typed array is refused, and `apart(P, Q)` keeps its name.
 - **One separation source**: the knowledge's index facts (region facts and
   spine separations), each established or restated by a checked rule;
-  `region-call-keep` reads them per slot through `regionFirst`, over the
+  the frame check reads them through `knowledgeQuery`, over the
   entries of the frame, and a separation
   through a field is kept across a call by the field's stability
   (`stable-first`), the one keep rule of a field's location across a call.

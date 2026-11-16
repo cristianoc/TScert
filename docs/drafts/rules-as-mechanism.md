@@ -252,7 +252,9 @@ field locations. It is sound at a well-formed state where the evidence holds
 a state's knowledge holds, its index facts' separations and its
 allocations' (`HeapSeparation`) among them; the stability check of the
 fact kinds (`stable`, `FootprintStability.lean`) is the check of the
-evidence its caller gives. Every pair a class answers, the part `inCls r c`
+evidence its caller gives; the first fields a call growing its receiver's
+spine keeps (`growFirst`) are those the check of the call's entry
+separates from the receiver's spine field. Every pair a class answers, the part `inCls r c`
 of a region against `cls c'` with `c` and `c'` disjoint, the bounds answer
 too (`boundQuery_inCls_cls`), and the check answers every pair any of its
 parts answers (`SepEvidence.query_of_bound`, `query_inCls_left`,

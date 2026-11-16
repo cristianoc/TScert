@@ -297,7 +297,9 @@ is sound wherever $`\Sigma`$ holds at a well-formed state
 premises, the expression checkers' soundness, `Checker.sound`, and a
 node's, `ExpressionOk`, carrying the environment's `RootsOk`. The
 stability check of the fact kinds is the same check of the evidence its
-caller gives (`stable`).
+caller gives (`stable`). The first fields a call growing its receiver's
+spine keeps are those the check separates from the receiver's spine field
+(`PromiseCalls.growFirst`, proved: `growFirst_kept`).
 
 A path's **views** are the paths reading the same value by alias and read
 links: $`x.f\pi`$ reads what $`y.\pi`$ reads where a read link of an alias of

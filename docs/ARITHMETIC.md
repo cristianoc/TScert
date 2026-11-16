@@ -1462,8 +1462,11 @@ fresh constant's among them: a [separation fact](PROGRAM-TYPING.md#separation-fa
 the allocation establishes and each cut restates (`separationFacts`), which
 names no heap and so survives every heap change, a typed array's write and
 a call included. A push into either keeps the other's length
-(`growFirst`, through `HeapSeparation.apart` in either orientation; proved:
-`growFirst_kept`):
+(`growFirst`: the one disjointness check of the call's entry,
+`knowledgeQuery`, separates the other's spine field from the receiver's,
+here by the separation fact; proved: `growFirst_kept`, and
+`growFirst_apartAll`, `growFirst_apart`, `growFirst_apartFrom` for each
+separation it reads):
 
 ```math
 \frac{x=[\,\vec e\,]\ \text{a constant}\qquad y\ \text{an older array slot}\qquad \Sigma\vdash |y|=n}
