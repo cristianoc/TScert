@@ -77,6 +77,7 @@ export const cases: Case[] = [
   positive("pretext-checked-schedules", "Pretext spacing loops retain continue behavior with checked preceding endpoints; line geometry selects one nullable extra array."),
   positive("pretext-locale-map", "Pretext locale fallback reads own Map entries, including an own toString entry."),
   positive("field-index-kept-by-class", "A bound at a field, `cursor.at < flags.length`, kept across a call whose stated effect grows every spine: the field's read is of class `values`, which the effect on `spines` leaves alone"),
+  positive("field-index-kept-by-role", "A bound at a field, `cursor.at < flags.length`, kept across a call whose stated effect changes the spine of `out`: the field's read is a field or a cell and the length's a view spine, and an array spine is neither (the regions' bounds by role class are disjoint)"),
   positive("dom-span-keeps-lengths", "A span measured as pretext's readEmojiWidth and readWidthIn measure one: creation, inline style writes, text, insertion, rectangle and removal are within the empty footprint, so a loop's `fonts[i]!` keeps its bound across each measurement"),
   { file: "invalid-dom-custom-element", area: "A custom element's definition, whose reactions an insertion would run: `customElements` is no global the fragment reads (run under Node with stand-ins: the reaction empties the array read after the insertion, `undefined`)",
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /customElements/ },

@@ -201,6 +201,10 @@ run_cmd do
   check ``Verification.Footprints.Footprint.classBound_sound
   check ``Verification.Footprints.Region.bound_sound
   check ``Verification.Footprints.Region.apart_of_bound
+  check ``Verification.Footprints.Region.cls_apart_of_bound
+  check ``Verification.Footprints.Selector.roles_inter_isEmpty
+  check ``Verification.Footprints.boundQuery_sound
+  check ``Verification.Footprints.boundQuery_inCls_cls
   check ``Verification.ProgramTyping.SafePostExc.grow
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk
   check ``Verification.SourceClaimJson.PassUnit.approx_meets

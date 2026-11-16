@@ -175,7 +175,7 @@ new check, else the old decider".
 | 1 | The untagged supports of path reads | Frame; the class of each read | measured: one refusal becomes a verification, 3417 cases unchanged |
 | 2 | The route by `callChanges` in `callKeeps` and `callGrown` | Frame alone for a term across a call | measured: none change on 3414 cases and five pretext files |
 | 3 | The duplicate respect check and the two separate frame theorems | one support relation, one respect check; B's supports as evidence in it | intended none |
-| 4 | Disjointness answered case by case (`classQuery`, `spineSite`, `SepKnowledge.apart₁`) | Alloc and (Sep): one disjointness evidence, with the bound of a region by role classes, and the separations of allocation and provenance carried through renaming | the third row above verifies; intended none lost |
+| 4 | Disjointness answered case by case (`spineSite`, `SepKnowledge.apart₁`) | Alloc and (Sep): one disjointness evidence, with the bound of a region by role classes, and the separations of allocation and provenance carried through renaming | the third row above verifies; intended none lost |
 | 5 | A function's effect as the closed bound of its steps' frames only | Seq-Eff and Fresh-Eff: a native step has the paper's regional effect and its exact postcondition, and effects compose through a function's interface on both exits | the fourth row above verifies; wrappers of `push` gain |
 | 6 | `postKeeps`, then the alternative in `effectKept` | Frame for an unchanged fact; Entry with the exact postcondition of Push for a changed length; (View) | the 11 cases and 6 units are re-established before the deletion |
 | 7 | `cellKept`, `fieldEvery`, `everyGrown`, `appendKept`, `everyWritten`, `writtenPrefix`, `writeKept`, `writeAtoms`, and the arithmetic deciders, as acceptors of their own | Write-In, Write-End, View-Write, (Every), the arithmetic rules; a rule form for each update the paper's rules justify | intended none, family by family |
@@ -229,6 +229,27 @@ Two regions are disjoint when their bounds are disjoint, or when the
 state's knowledge separates them. `SepQuery.Sound` and the paper layer's
 `DisjointUnder` are stated over allocated locations, the ones `Post` and
 `Supported` constrain.
+
+The acceptance path decides disjointness by bounds with the query
+`boundQuery` (`RegionBounds.lean`), $`r \mathrel{\#} s`$ when
+$`\mathrm{bound}(r) \cap \mathrm{bound}(s) = \emptyset`$, sound by
+`Region.apart_of_bound` (`boundQuery_sound`); `knowledgeQuery` is
+`boundQuery` or a spine separation of the knowledge. Every pair a class
+answers, the part `inCls r c` of a region against `cls c'` with `c` and
+`c'` disjoint, it answers too (`boundQuery_inCls_cls`). It also separates a
+field or a cell from an array or view spine and from an element cell: the
+pipeline case `field-index-kept-by-role` keeps `cursor.at < flags.length`
+across a call whose stated effect changes the spine of another array,
+`out`.
+
+The paper layer's class certificate (`DisjointEvidence.classes`) decides
+by the bounds of the two class regions its witnesses give
+(`Region.cls_apart_of_bound`). A class region's bound needs only the heap's
+well-formedness, which an indexed state carries, so the paper layer's
+judgments range over every valuation. A certificate by the bound of a
+region that reads a path needs valuations with valid roots
+(`RootsOk`): the judgments, the existential witnesses of $`\exists`$ and the
+states a box reaches would each carry them.
 
 The acceptance path proves a query sound with both premises of
 `Region.bound_sound` at hand: `knowledgeQuery_sound` takes `HeapOk n W h`
