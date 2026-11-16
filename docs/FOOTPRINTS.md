@@ -147,7 +147,9 @@ Whether a fact survives a step is one check, the note's
 $`S = \{r_1{:}\,\delta_1, \ldots\}`$ **supports** an assertion $`P`$ in a
 context $`C`$ when, for every transition $`h \to h'`$ meeting $`C`$, $`P`$
 holding at $`h`$ and every location of each $`r_i`$, read at $`h`$, changing
-within $`\delta_i`$ give $`P`$ at $`h'`$ (`Footprints.Supports`). The context
+within $`\delta_i`$ give $`P`$ at $`h'`$ (`Footprints.Supports`, the
+instance over arbitrary heaps of `SupportDomain.Supports`, the one support
+relation, which the paper layer reads over indexed states). The context
 is the evidence a support relies on besides its regions, such as a stable
 field's contents; it is a premise of every use. An assertion has several
 supports, none greatest; the empty support states that the assertion is

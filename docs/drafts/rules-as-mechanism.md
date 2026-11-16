@@ -66,8 +66,10 @@ respects its support" exists as:
   `respects` with `knowledgeQuery`, concluding that the fact holds after
   the transition at hand.
 
-They share regions, changes, effects and `Supported`. The pairwise respect
-check is written twice. Neither language contains the other:
+They share regions, changes, effects, `Supported` and the support relation
+`SupportDomain.Supports` (`Semantics/Support.lean`), read over arbitrary
+heaps by B and over indexed states by A. The pairwise respect check is
+written twice. Neither language contains the other:
 
 | | A | B |
 |---|---|---|

@@ -191,11 +191,15 @@ theorem sat_rigid_iff {arena : AssertionArena} (hv : arena.Valid) {a b c : Asser
 endpoints of a transition. -/
 abbrev SupportContext := Env → Nat → IndexedHeap → IndexedHeap → Prop
 
+/-- **Indexed states**, the admissible transitions between them: the domain
+the note's assertions are read in. -/
+abbrev indexed : SupportDomain IndexedHeap := ⟨IndexedHeap.h, Admissible⟩
+
 /-- **`S` supports `A` in the context `C`** (the note, §5, Definition
-"Support", read in a context; I5, `Supports`): every admissible transition in
-the context and within `S` keeps `A`. -/
-def Supports (arena : AssertionArena) (C : SupportContext) (S : Footprint) (A : AssertionRef) : Prop :=
-  ∀ η m s s', Admissible s s' → C η m s s' → Sat arena η m s A → SupportedBy S η s s' → Sat arena η m s' A
+"Support", read in a context; I5, `Supports`): `SupportDomain.Supports`
+over indexed states, of `A`'s satisfaction. -/
+abbrev Supports (arena : AssertionArena) (C : SupportContext) (S : Footprint) (A : AssertionRef) : Prop :=
+  indexed.Supports C (fun η m s => Sat arena η m s A) S
 
 /-- **`Φ` respects `S` under `K`, semantically** (the note, §5, Definition
 "Respect", read as what its proof uses): every action of `Φ` from a state of
