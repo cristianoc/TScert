@@ -1,6 +1,6 @@
 import Verification.Programs.TolerantFramesModelTyped
 import Verification.Programs.TolerantFramesModelLoop
-import Verification.Programs.TolerantFramesElems
+import Verification.Programs.TolerantFramesWrites
 
 /-! # Tolerant frames: the note's remaining atoms and rules in the model
 
@@ -62,6 +62,10 @@ theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
   simp only [HeapKnowledge.termValuation, he t ht]
 
 /-! ## (Init) -/
+
+/-- The initialisation write's closed effect: values from absent to present,
+spines kept (`ExpressionEffects.initWriteWithin`). -/
+def initEffect : Footprints.Closed := ⟨.init, .keep, .keep⟩
 
 /-- **(Init)** (the note, Proposition "Axioms of the atoms"): a linear fact
 over current terms holds after every action of the initialisation write's

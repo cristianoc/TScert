@@ -17,10 +17,8 @@ step:
   within `{values: keep, spines: keep}` (`allocated_judgment`), and a step
   with no effect judgment within `{values: any, spines: any}` on both exits
   (`top_judgment`, from `safePost_grow`: a run only grows the heap);
-- which named facts survive an action of a closed effect: those reading no
-  heap and the index facts the effect's change keeps (`Atom.keptBy`,
-  `atom_kept`); a length lower bound under the field write's and the element
-  write's effects by the tolerant frame at `{x.spine: grow}` (Grow:
+- a length lower bound over names under the field write's and the element
+  write's effects, by the tolerant frame at `{x.spine: grow}` (Grow:
   `named_lowerBound_grow`, `named_lowerBound_field`);
 - both exits of the step (`writing_frame`): the action of each exit's effect,
   the residual budget, the type, the rule's output and the named facts each
@@ -31,30 +29,6 @@ open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
 
 /-! ## Named facts an effect keeps -/
-
-/-- A named fact every action of the closed effect `c` keeps: one reading no
-heap, or an index fact `c`'s change keeps (`IndexFact.keptBy`, no stable first
-field). -/
-def _root_.Verification.SinglePass.Atom.keptBy (c : Footprints.Closed) : Atom → Bool
-  | .index x => x.fact.envOnly || x.fact.keptBy (HeapKnowledge.Changes.ofClosed c) (fun _ _ => false)
-  | a => a.heapFree
-
-/-- **A kept named fact survives an action of its effect.** -/
-theorem atom_kept {c : Footprints.Closed} {a : Atom} (hk : a.keptBy c = true) {η ρ : Env} {s s' : IndexedHeap}
-    (hact : Action c.fp ρ s s') (ha : AtomHolds ε a η s.h) : AtomHolds ε a η s'.h := by
-  cases a with
-  | index x =>
-    simp only [Atom.keptBy, Bool.or_eq_true] at hk
-    rcases hk with he | hk
-    · exact atomHolds_heapFree (a := .index x) he ha s'.h
-    · intro x' hx hcnd
-      simp only [List.mem_singleton] at hx
-      subst hx
-      have hc : (HeapKnowledge.Changes.ofClosed c).Holds s.h s'.h :=
-        HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp hact.2))
-      exact HeapKnowledge.IndexFact.holdsAt_kept hc (fun _ _ _ _ _ _ _ hf => by simp at hf) hk
-        (ha x' (List.mem_singleton_self _) hcnd)
-  | _ => exact atomHolds_heapFree (by simpa only [Atom.keptBy] using hk) ha s'.h
 
 /-- **(Grow) as a named fact** (the note, Proposition "Axioms of the
 atoms"): a length lower bound over names survives every action of

@@ -90,7 +90,7 @@ contains the other:
 
 **Several decisions try two routes in turn.** `callKeeps` and `callGrown` each tried a change read from
 the call and then respect of the support; the deciders for writes,
-elements and cells have the same shape (`keptIndices`, `Atom.keptBy`,
+elements and cells have the same shape (`keptIndices`,
 `everyGrown`, `writeKept`, `keepsLengths`, `writeAtoms`, `cellKept`,
 `IndexFact.keptBy`, `keptWith`).
 

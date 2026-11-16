@@ -518,11 +518,9 @@ safety does not.
 
 Module `lean/Verification/Programs/TolerantFramesWrites.lean`. A step the pass
 does not frame reads every fact and the store keeps what its rule's
-output states. A named fact $`a`$ is kept by a closed effect $`c`$ when it reads
-no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
+output states. Proved:
 
-- (Keep by atom) a kept fact survives every action of its effect
-  (`atom_kept`); a length lower bound over names survives every action of
+- a length lower bound over names survives every action of
   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
   and of $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
   by the tolerant frame at $`\{x.\mathsf{spine}:\mathsf{grow}\}`$
@@ -549,31 +547,9 @@ no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
 
 `written` and `boundedWrite` acceptance does not imply `writeWithin` or
 `fieldWriteWithin`; the effect a writing step has is what the pass's footprint
-check gives ([the footprint check](#the-footprint-check-at-a-node)); the element facts
-an effect keeps are [below](#element-facts-under-an-effect).
+check gives ([the footprint check](#the-footprint-check-at-a-node)).
 
-### Element facts under an effect
-
-Module `lean/Verification/Programs/TolerantFramesElems.lean`.
-`Atom.keptByElems c` extends `Atom.keptBy c` by two cases: an index atom whose
-fact $`c`$'s change keeps as a quantified element fact
-(`IndexFact.everyKept`: spines kept, no number changed, its length path, stop
-and body terms kept), and an elements atom (`.elem`, `ElemsAt`: every present
-element of the spine meets the predicate) under
-$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
-
-- `keptBy_keptByElems`: it decides at least what `keptBy` decides;
-- `atom_keptByElems`, `named_keptByElems_box`: a fact it keeps survives every
-  action of $`c`$, so $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
-  for $`S`$ kept by $`c`$;
-- `every_keptBy_init`: a quantified element fact over a slot's spine with a
-  slot's value as its stop and a body of kept terms is kept by the
-  initialisation write's $`\{\mathsf{values}:\mathsf{init},\ \mathsf{spines}:\mathsf{keep}\}`$
-  (`initEffect`); `elem_keptByElems_empty`: an elements atom by
-  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$.
-
-A dense prefix is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
-(`dense`); it is a semantic atom, not one of the pass's atoms. Under
+Under
 $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$ and
 $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$ neither
 element fact is kept by its effect alone: a `grow` change admits a fresh spine
@@ -853,7 +829,7 @@ the output lost leaves the store (`removedLeave`): `Store.remove` erases a
 canonical fact from the live set and from each of its names' lists, which
 hold it once, and no other list holds it (`remove_absent`), and the loop keeps
 the store well-formed (`deltaRemove_wf`). The facts that hold after a writing
-step are those its effect keeps (`writing_frame`, `Atom.keptByElems`). The
+step are those its effect keeps (`writing_frame`). The
 pass removes before the delta the heap facts it does not hand the step
 (`Store.dropHeap` of the handed set, [the facts a writing step is not
 handed](#the-footprint-check-at-a-node)): after it every fact is handed or

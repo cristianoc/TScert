@@ -58,7 +58,6 @@ import Verification.Programs.TolerantFramesSteps
 import Verification.Programs.TolerantFramesWrites
 import Verification.Programs.TolerantFramesSelect
 import Verification.Programs.TolerantFramesFootprint
-import Verification.Programs.TolerantFramesElems
 import Verification.Programs.TolerantFramesState
 import Verification.Programs.TolerantFramesMaterialize
 import Verification.Programs.TolerantFramesDelta
@@ -533,7 +532,6 @@ run_cmd do
   check ``Verification.TolerantFrames.increment_judgment
   check ``Verification.TolerantFrames.increment_checked
   check ``Verification.TolerantFrames.preserving_step_frame
-  check ``Verification.TolerantFrames.atom_kept
   check ``Verification.TolerantFrames.safePost_grow
   check ``Verification.TolerantFrames.judgment_with_output
   check ``Verification.TolerantFrames.top_judgment
@@ -627,11 +625,6 @@ run_cmd do
   check ``Verification.TolerantFrames.pass_within_throw
   check ``Verification.TolerantFrames.pass_within_entry
   check ``Verification.TolerantFrames.pass_write_judgment
-  check ``Verification.TolerantFrames.keptBy_keptByElems
-  check ``Verification.TolerantFrames.atom_keptByElems
-  check ``Verification.TolerantFrames.named_keptByElems_box
-  check ``Verification.TolerantFrames.elem_keptByElems_empty
-  check ``Verification.TolerantFrames.every_keptBy_init
   check ``Verification.TolerantFrames.StateWF.fresh_result
   check ``Verification.TolerantFrames.forIn_idx
   check ``Verification.TolerantFrames.forIn_idx_bind
