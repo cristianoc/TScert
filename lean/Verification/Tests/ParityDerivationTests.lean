@@ -218,14 +218,14 @@ private def frameOf (a b : Nat) (box : RawDerivation) : RawDerivation :=
   .frame Φ (r b) (r a) θ box .assumption .assumption
 
 private def box0 : RawDerivation :=
-  .tolerantFrame [(.spine 0 [], .keep)] .lengths ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩ .truth (r 0) (r 0)
+  .tolerantFrame [(.spine 0 [], .keep)] .lengths ⟨[.classes (.arrayAt (r 0)) .intrinsic]⟩ .truth (r 0) (r 0)
     .assumption .assumption .assumption
 private def box1 : RawDerivation :=
   .tolerantFrame [(.spine 0 [], .keep), (.pathCells 0 [], .keep)] .everyCells
-    ⟨[(0, 0, .classes (.arrayAt (r 1)) .intrinsic), (1, 0, .classes .intrinsic .intrinsic)]⟩ .truth (r 1) (r 1)
+    ⟨[.classes (.arrayAt (r 1)) .intrinsic, .classes .intrinsic .intrinsic]⟩ .truth (r 1) (r 1)
     .assumption .assumption .assumption
 private def box2 : RawDerivation :=
-  .tolerantFrame [(.path 1 [] (.str "n"), .keep)] .field ⟨[(0, 0, .classes (.fieldAt (r 2)) .intrinsic)]⟩ .truth
+  .tolerantFrame [(.path 1 [] (.str "n"), .keep)] .field ⟨[.classes (.fieldAt (r 2)) .intrinsic]⟩ .truth
     (r 2) (r 2) .assumption .assumption .assumption
 
 private def goal : Formula := conj [.at .after (r 0), .at .after (r 1), .at .after (r 2), .at .after (r 3)]
@@ -297,8 +297,7 @@ private def arena : AssertionArena := ⟨#[
 /-- The support of a length fact over `y1`, `y2`, respected by `Φ2`. -/
 private def frameLength (K : Nat) (seps : Bool) (dA : RawDerivation) : RawDerivation :=
   .tolerantFrame [(.spine 1 [], .keep), (.spine 0 [], .keep)] .lengths
-    ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (0, 1, .spines (r 2)),
-      (1, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 1, .spines (r (if seps then 3 else 2)))]⟩
+    ⟨[.classes (.arrayAt (r 0)) .intrinsic, .spines (r 2), .spines (r (if seps then 3 else 2))]⟩
     .truth (r K) (r K) .assumption .assumption dA
 
 /-- `a2 ⊢ □_Φ2 a2`. -/
@@ -403,7 +402,7 @@ private def arena : AssertionArena := ⟨#[
 
 private def frameLength (dA : RawDerivation) : RawDerivation :=
   .tolerantFrame [(.spine 1 [], .keep), (.spine 0 [], .keep)] .lengths
-    ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩
+    ⟨[.classes (.arrayAt (r 0)) .intrinsic]⟩
     .truth (r 2) (r 2) .assumption .assumption dA
 
 private def e2 : RawDerivation :=
@@ -711,7 +710,7 @@ private def raw : RawDerivation :=
     .assumption)) = "tolerantFrame: the effect does not respect the support"
 -- With a disjointness certificate the spines' support is respected.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
-  (.tolerantFrame [(.cls .spines, .keep)] .invariant ⟨[(0, 0, .classes .intrinsic .intrinsic)]⟩ .truth (ref 1) (ref 1) .assumption
+  (.tolerantFrame [(.cls .spines, .keep)] .invariant ⟨[.classes .intrinsic .intrinsic]⟩ .truth (ref 1) (ref 1) .assumption
     .assumption .assumption))
 
 -- Region inclusion by selectors: `{arrays: keep} ⊑ {spines: grow}`, not

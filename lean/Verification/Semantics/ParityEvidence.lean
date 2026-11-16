@@ -737,35 +737,33 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
       rw [hl] at this; cases this
 
 /-- **Respect, checked as the note defines it** (§5, Definition
-"Respect"): for every support entry `r : δ` (index `i`) and every effect
-entry `r' : γ` (index `j`), `γ ⊑ δ`, or a disjointness certificate for the
-pair `(i, j)` under `K`. -/
+"Respect"): disjointness certificates under `K`, read as a separation query
+that answers for a pair of regions some certificate checks; the check is
+`respects` under that query. -/
 structure RespectEvidence where
-  disjoint : List (Nat × Nat × DisjointEvidence)
+  disjoint : List DisjointEvidence
   deriving DecidableEq, Repr
+
+/-- The separation query the certificates answer under `K`. -/
+def RespectEvidence.query (ev : RespectEvidence) (arena : AssertionArena) (K : AssertionRef) : SepQuery :=
+  ⟨fun r r' => ev.disjoint.any fun d => d.check arena K r r'⟩
 
 def RespectEvidence.check (ev : RespectEvidence) (arena : AssertionArena) (K : AssertionRef) (S Φ : Footprint) :
     Bool :=
-  (List.range S.length).all fun i => (List.range Φ.length).all fun j =>
-    match S[i]?, Φ[j]? with
-    | some (r, δ), some (r', γ) =>
-      γ.le δ || ev.disjoint.any fun (i', j', d) => i' == i && j' == j && d.check arena K r r'
-    | _, _ => true
+  respects (ev.query arena K) S Φ
+
+/-- The certificates' query is sound at every state of `K`. -/
+theorem RespectEvidence.query_sound {arena : AssertionArena} {K : AssertionRef} (ev : RespectEvidence)
+    {η : Env} {m : Nat} {s : IndexedHeap} (hK : Sat arena η m s K) : (ev.query arena K).Sound η s.h := by
+  intro r r' l hd hr hr'
+  obtain ⟨d, -, hdc⟩ := List.any_eq_true.mp hd
+  rw [d.sound hdc η m s hK l hr] at hr'; cases hr'
 
 /-- **The note's respect implies its semantic use**: every action of `Φ`
-from a state of `K` stays within `S` (`Respects`). -/
+from a state of `K` stays within `S` (`Respects`, `respect_sound`). -/
 theorem RespectEvidence.sound {arena : AssertionArena} {K : AssertionRef} {S Φ : Footprint}
-    (ev : RespectEvidence) (hc : ev.check arena K S Φ = true) : Respects arena K Φ S := by
-  intro η m s s' hK ha
-  refine supported_of_pairs ha fun e he e' he' => ?_
-  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
-  obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem he'
-  have := List.all_eq_true.mp (List.all_eq_true.mp hc i (List.mem_range.mpr hi)) j (List.mem_range.mpr hj)
-  rw [List.getElem?_eq_getElem hi, List.getElem?_eq_getElem hj] at this
-  simp only [Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at this
-  rcases this with hle | ⟨⟨i', j', d⟩, hd, ⟨⟨rfl, rfl⟩, hdc⟩⟩
-  · exact .inl hle
-  · exact .inr fun l hl => d.sound hdc η m s hK l hl
+    (ev : RespectEvidence) (hc : ev.check arena K S Φ = true) : Respects arena K Φ S :=
+  fun _ _ _ _ hK ha => respect_sound hc (ev.query_sound hK) ha.2
 
 /-! ### Supports -/
 

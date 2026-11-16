@@ -893,7 +893,7 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
         let ⟨_⟩ ← req (Φ = [(.cls .values, .any), (.spine y [], .any)]) "sep: the effect is not {values: any, y.spine: any}"
         let ⟨_⟩ ← node? arena K (.separated (.var x) (.var y))
         let S : Footprint := [(.spine x [], .keep)]
-        let rev : RespectEvidence := ⟨[(0, 0, .classes (.arrayAt K) .intrinsic), (0, 1, .spines K)]⟩
+        let rev : RespectEvidence := ⟨[.classes (.arrayAt K) .intrinsic, .spines K]⟩
         let ⟨hs⟩ ← req (SupportEvidence.lengths.check arena A S = true) "sep: the atom reads more than |x| and variables"
         let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "sep: the effect does not respect the support"
         let ⟨hc⟩ ← req (ContextEvidence.truth.check arena K = true) "sep: no context"
@@ -909,8 +909,8 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
         let ⟨_⟩ ← req (q = .var x ∧ z.fields = []) "everyFrame: the separation is not apart(x, z)"
         let ⟨_⟩ ← req (Φ = [(.spine x [], .any), (.pathCells x [], .any)]) "everyFrame: the effect is not {x[*]: any}"
         let S : Footprint := [(.spine z.root [], .keep), (.pathCells z.root [], .keep)]
-        let rev : RespectEvidence := ⟨[(0, 0, .swap (.spines K)), (0, 1, .classes (.arrayAt K) .intrinsic),
-          (1, 0, .classes .intrinsic (.arrayAt K)), (1, 1, .swap (.cells K))]⟩
+        let rev : RespectEvidence := ⟨[.swap (.spines K), .classes (.arrayAt K) .intrinsic,
+          .classes .intrinsic (.arrayAt K), .swap (.cells K)]⟩
         let ⟨hs⟩ ← req (SupportEvidence.everyCells.check arena A S = true)
           "everyFrame: the atom is no every(z, t, φ) at a variable bound over scalars"
         let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "everyFrame: the effect does not respect the support"
@@ -926,7 +926,7 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       | some (.box Φ A) => do
         let ⟨_⟩ ← req (Φ = [(.cls .values, .init)]) "init: the effect is not {values: init}"
         let S : Footprint := [(.cls .values, .init), (.cls .spines, .keep)]
-        let rev : RespectEvidence := ⟨[(1, 0, .classes .intrinsic .intrinsic)]⟩
+        let rev : RespectEvidence := ⟨[.classes .intrinsic .intrinsic]⟩
         let ⟨hs⟩ ← req (SupportEvidence.init.check arena A S = true) "init: the atom is no linear fact"
         let ⟨hr⟩ ← req (rev.check arena A S Φ = true) "init: the effect does not respect the support"
         let ⟨hc⟩ ← req (ContextEvidence.truth.check arena A = true) "init: no context"
