@@ -1431,30 +1431,35 @@ $o.v\ne\code{undefined}$ among the known facts at the use.
 \item[Reading a string]
 \code{s[i]} has the type $\code{string}\,|\,\code{undefined}$. No rule
 gives a string's element, so \code{s[i]!} used as a string is refused
-(Section~\ref{sec:future}). \code{s.charCodeAt(i)} and
-\code{s.codePointAt(i)!}, used as an integer, have the obligation
-$0\le i<\slen(s)$, with $i$ a known integer. Under this obligation,
-\code{r = s.codePointAt(i)!} gives an integer $r$ with
-$0\le r\le\code{0x10FFFF}$, and if $r>\code{0xFFFF}$ it gives
-$i+2\le\slen(s)$.
+(Section~\ref{sec:future}).
 \item[Calling a library function]
-A library function is used at a reviewed contract. The contract
-consists of the function's signature, an effect
-(Definition~\ref{def:given}) and the postconditions this section
-states. A call has no obligation beyond the argument types of the
-signature, except the obligations this definition states for
-\code{charCodeAt} and \code{codePointAt}: with arguments of those
-types the function either returns a value of its result type or
-throws, and a throw is a safe outcome. The reviewed functions are the methods
-of strings (\code{toUpperCase}, \code{split}, \code{replace},
-\code{slice} and the others), \code{Math.max}, \code{Math.min} and the
-other numeric functions of \code{Math}, \code{Object.is},
-\code{Number}, \code{String}, the array methods that
-Definition~\ref{def:given} names, and the constructors and methods of
-the typed arrays. Their results have no length fact and no element
-fact other than those this section states. A call of a library
-function with no reviewed contract is refused. A library function this
-paper does not name is outside the scope.
+The verifier does not analyse the code of a library function. It uses
+a \emph{contract} for the function, written and reviewed by hand, and
+trusted: a precondition, an effect and a postcondition. The
+precondition is an obligation at each call, as for any function.
+
+The functions with a contract are the methods of strings
+(\code{toUpperCase}, \code{split}, \code{replace}, \code{slice} and
+the others), \code{Math.max}, \code{Math.min} and the other numeric
+functions of \code{Math}, \code{Object.is}, \code{Number},
+\code{String}, the array methods that Definition~\ref{def:given}
+names, and the constructors and methods of the typed arrays.
+
+A contract may have two forms. The general form has the precondition
+\code{true}, and it states the result type and the facts that hold of
+every call. The stronger form has a precondition, and its result has a
+narrower type or a further fact. The verifier uses the stronger form
+at a call where the known facts entail its precondition, and the
+general form otherwise. The functions with a stronger form are
+\code{charCodeAt}, \code{codePointAt}, \code{indexOf},
+\code{lastIndexOf}, \code{slice} and the typed-array constructors;
+the paragraph \emph{Facts a step provides} states each precondition
+with the fact it gives. Every other function has the general form
+only. Definition~\ref{def:given} gives the effects. A result has no
+fact other than those this section states.
+
+A call of a library function that has no contract is refused. A
+library function this paper does not name is outside its scope.
 \end{description}
 \end{definition}
 
@@ -1482,12 +1487,24 @@ and $0\le k<t$. Then \code{v = xs[k]!} gives the body $\varphi$ for
 the value $v$ at the index $k$. The same holds for a read of a typed
 array.
 \item[Strings]
-\code{s + t} gives the postcondition of \textsc{Concat}. For known
-integers with $0\le a\le b\le\slen(s)$, \code{s.slice(a, b)} gives a
-string of length $b-a$. \code{s.indexOf(t)} gives an integer $r$ with
-$-1\le r\le\slen(s)$. \code{s.charCodeAt(i)} gives an integer $r$ with
-$0\le r\le 65535$ when its obligation holds; without it the result is
-a number with no fact.
+\code{s + t} gives the postcondition of \textsc{Concat}. The library
+functions give the following.
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt,topsep=1pt]
+\item \code{r = s.charCodeAt(i)}: with $i$ a known integer and
+$0\le i<\slen(s)$, an integer $r$ with $0\le r\le 65535$. Otherwise a
+number with no fact.
+\item \code{r = s.codePointAt(i)}: with $i$ a known integer and
+$0\le i<\slen(s)$, the result has the type \code{number}, and it is an
+integer $r$ with $0\le r\le\code{0x10FFFF}$; if $r>\code{0xFFFF}$ then
+$i+2\le\slen(s)$. Otherwise the result has the type
+$\code{number}\,|\,\code{undefined}$ and no fact.
+\item \code{r = s.indexOf(t)} and \code{r = s.lastIndexOf(t)}: an
+integer $r$ with $-1\le r\le\slen(s)$. With $1\le\slen(t)$, also
+$r<\slen(s)$.
+\item \code{s.slice(a, b)}: with $a$ and $b$ known integers and
+$0\le a\le b\le\slen(s)$, a string of length $b-a$. Otherwise a string
+with no length fact.
+\end{itemize}
 \item[Typed-array construction]
 For each typed-array format \code{C}, \code{new C(n)} gives
 $\kw{view}(r)=n$ on a normal return, when $n$ is a known safe integer
