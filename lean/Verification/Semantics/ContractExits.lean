@@ -192,6 +192,12 @@ def Effect.callPost (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Pos
   fun after v => ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.spineOf r = none) ∧
     e.schema.heapPost .normal r (args ++ pad) before after v
 
+/-- **The receiver's growth as a frame**: what a normal return of the note's
+Push may change, `{x.spine: grow}`, the receiver at position `0`, its spine
+the location of its `[]` slot holding an array spine
+(`Effect.callPost_receiverGrowFrame`). -/
+def receiverGrowFrame : Footprint := [((Region.field 0 arraySpineKey).inCls .arrays, .grow)]
+
 /-- **A call's throw read at heaps**: the exceptional exit at the actuals
 followed by the omitted positions' `undefined`, read at heaps, or a throw of
 the call's evaluation, which leaves the heap. -/
@@ -276,6 +282,59 @@ theorem Effect.callPost_appends
   · simp only [List.append_nil] at hF
     exact (receiverAppends_iff (by simpa using hv)).mp hF hv
   · exact ReceiverAppends.of_no_spine hr hv
+
+/-- **A growth that appends is within the receiver's growth frame**
+(`receiverGrowFrame`, the note's Push): the spine `ReceiverGrows` lets
+change extends the old one, and the cells it lists past the old length are
+the appended ones, each fresh (`ReceiverAppends`). -/
+theorem receiverGrowFrame_post {r : Tm} {args vs : List Tm} {before after : Heap}
+    (hlen : before.length ≤ after.length) (hg : ReceiverGrows r before after)
+    (hvs : ∀ a ∈ vs, isVal a = true) (ha : ReceiverAppends r vs before after) :
+    Post receiverGrowFrame (callEnv r args) before after := by
+  refine ⟨hlen, fun l u hu => ?_⟩
+  rcases hg l u hu with hk | ⟨hs, ls, ls', rfl, hl', hpre, hmax⟩
+  · exact ⟨u, hk, .inl rfl⟩
+  · obtain ⟨ls'', hl'', hn, hnew⟩ := ha hvs l ls hs hu
+    rw [hl'] at hl''
+    cases hl''
+    obtain ⟨t, rfl⟩ := hpre
+    refine ⟨.arr (ls ++ t), hl', .inr ⟨_, List.mem_singleton_self _, ?_, .inr (.inl ⟨ls, ls ++ t, rfl, rfl,
+      ?_, ?_, ⟨by simp, fun _ => hmax⟩⟩)⟩⟩
+    · simp only [Region.mem, hu, Bool.and_eq_true]
+      exact ⟨by simpa [callEnv, spineOf] using hs, rfl⟩
+    · rintro n ⟨hnl, hd⟩
+      refine ⟨by simp; omega, fun i hi => ?_⟩
+      rw [List.getElem?_append_left (by omega)]
+      exact hd i hi
+    · intro l₀ hm
+      rcases List.mem_append.mp hm with hm | hm
+      · exact .inl hm
+      · right
+        obtain ⟨j, hj, hjt⟩ := List.getElem_of_mem hm
+        have hjv : j < vs.length := by simp at hn; omega
+        obtain ⟨l₁, hl₁, -, hfresh⟩ := hnew j vs[j] (List.getElem?_eq_getElem hjv)
+        rw [List.getElem?_append_right (by omega), Nat.add_sub_cancel_left, List.getElem?_eq_getElem hj,
+          hjt] at hl₁
+        cases hl₁
+        exact hfresh
+
+/-- **The receiver's growth frame follows from the growth's postconditions**:
+where the normal exit states the frame `{receiver spine: any}`, the spine's
+extension and the append of the actuals, a normal return is within
+`receiverGrowFrame`. A contract stating this frame as its normal frame
+states nothing its postconditions do not. -/
+theorem Effect.callPost_receiverGrowFrame
+    (h1 : (.transition [(.field 0 arraySpineKey, .any)] : FormulaSchema) ∈ e.schema.normal.ensures)
+    (h2 : (.operation (.spineExtends 0) : FormulaSchema) ∈ e.schema.normal.ensures)
+    (h3 : (.operation (.push 0 1 (.restFrom 1)) : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hp : e.callPost r args before after v) : Post receiverGrowFrame (callEnv r args) before after := by
+  obtain ⟨pad, -, -, s, s', rfl, rfl, hadm, hH⟩ := Effect.callPost_holds hp
+  have hg := (receiverGrows_iff (args := args ++ pad) hadm).mp ⟨hH _ h1, hH _ h2⟩
+  have hF := hH _ h3
+  simp only [instantiateFormula, FormulaF.map, OperationPostF.map, Exits.callInstantiation, restFrom_one,
+    Parity.Holds, OperationPostF.Holds, callState] at hF
+  obtain ⟨vs, -, hvs, ha, -⟩ := hF
+  exact receiverGrowFrame_post hadm.length_le hg hvs ha
 
 /-- **An element write's coarse change**, where the normal exit states the
 views' growth `{all-views: grow}` (`Kinds.ViewWrite.frame_iff`,

@@ -596,6 +596,7 @@ run_cmd do
   check ``Verification.CallEffects.Effect.callPost_holds
   check ``Verification.CallEffects.Effect.callPost_spineGrows
   check ``Verification.CallEffects.Effect.callPost_appends
+  check ``Verification.CallEffects.Effect.callPost_receiverGrowFrame
   check ``Verification.CallEffects.Effect.callPost_viewGrowth
   check ``Verification.CallEffects.Effect.callPost_exactWrite
   check ``Verification.CallEffects.Effect.heldPosts_call

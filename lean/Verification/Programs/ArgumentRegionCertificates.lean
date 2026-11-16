@@ -60,25 +60,8 @@ def callSlots (r : Tm) (args : List Tm) (p : Nat) : Option Nat :=
     | some (.var j) => some j
     | _ => none
 
-/-- The frame `ReceiverGrows` states: every old location but the receiver's
-spine kept, which holds a spine. -/
-def grownFrame : Footprint := [((Region.field 0 arraySpineKey).inCls .spines, .any)]
-
-theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : Heap}
-    (hw : e.within r args h h') (hg : CallEffects.ReceiverGrows r h h') :
-    Post grownFrame (CallEffects.callEnv r args) h h' := by
-  refine ⟨hw.1, fun l v hv => ?_⟩
-  rcases hg l v hv with hs | ⟨hs, ls, ls', rfl, hl', -⟩
-  · exact ⟨v, hs, .inl rfl⟩
-  · refine ⟨.arr ls', hl', .inr ⟨((Region.field 0 arraySpineKey).inCls .spines, .any), by simp [grownFrame], ?_,
-      trivial⟩⟩
-    simp only [Region.mem, hv, Bool.and_eq_true]
-    exact ⟨by simpa [CallEffects.callEnv, Footprints.spineOf] using hs, rfl⟩
-
 /-- A call at its selected signature: its exits' frames at the call's
-positions, on normal return the narrower `grownFrame` where its normal exit
-states the receiver's growth (`PromiseCalls.statesExtension`), on a throw
-its exceptional exit's frame. -/
+positions. -/
 @[nospecialize] def callStep [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
     (c : NodeEvidence ι) (t : Tm) : Option StepEffect :=
@@ -88,8 +71,7 @@ its exceptional exit's frame. -/
       ExpressionEffects.selectedOperands c.expression then
     match t, ExpressionEffects.selectedEffect c.expression with
     | .invoke _ r args, some eff =>
-      some ⟨callSlots r args, if PromiseCalls.statesExtension eff then grownFrame else eff.schema.normal.frame,
-        eff.schema.exceptional.frame⟩
+      some ⟨callSlots r args, eff.schema.normal.frame, eff.schema.exceptional.frame⟩
     | _, _ => none
   else none
 
@@ -149,10 +131,7 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
             instantiateArgs_eq_map] at hs ⊢
           apply HeapObservations.SafePostExc.weaken _ _ hs
           · intro h' v hp
-            cases hg : PromiseCalls.statesExtension eff
-            · simp only [Bool.false_eq_true, ↓reduceIte]; exact CallEffects.Effect.callPost_within hp
-            · simp only [↓reduceIte]
-              exact grown_post (CallEffects.Effect.callPost_within hp) (PromiseCalls.statesExtension_grows hg hp)
+            exact CallEffects.Effect.callPost_within hp
           · intro h' hp hthr
             exact CallEffects.Effect.callExc_exitFrame (hp hthr)
     · cases hc

@@ -693,7 +693,7 @@ fresh value wherever it writes; and a frame whose every entry keeps its
 locations or holds only spines ($`\mathsf{cls}\ \mathsf{spine}`$, a region's
 part of class spine) changes no cell's contents, a value of no spine
 (`keepsValues`, proved: `CellFresh.post`). `push`'s frame names its
-receiver's spine at its part of class spine, which `ReceiverGrows` states.
+receiver's spine at its part of class array (`receiverGrowFrame`).
 The allocation rule holds of a run of the allocation with any initializers
 or binding before it (`alloc_fresh`, from `alloc_step`: the spine field's
 location is past the heap the allocation starts in); the others are
@@ -1251,10 +1251,11 @@ reads it, so the path selects no spine. A parameter's type passes the entry
 check where every alternative a field read succeeds on states $`f`$ present
 and stable, and there is one (`entryField`).
 
-Push's step frame is the one `ReceiverGrows` gives on normal return, every
-old location kept but the receiver's spine, which holds a spine and which
-`grownFrame` names at `any`, as its part of class spine; its signature's closed bound `{value: any, spine: grow}` is its frame
-on a throw. A destructuring read, `const { f } = x`, is a stable read: an
+Push's step frame on normal return is its signature's, the receiver's spine
+at `grow` as its part of class array (`receiverGrowFrame`, which the
+growth's and the append's postconditions imply,
+`Effect.callPost_receiverGrowFrame`); on a throw it is every location
+(`⊤`). A destructuring read, `const { f } = x`, is a stable read: an
 empty frame and the result's provenance. A node's fresh positions are the
 slots its fresh facts name (`nodeFresh`).
 
@@ -1301,8 +1302,7 @@ checks a provenance table at entry, every normal edge and every handler.
 A node is a provenance step, a slot copy (`checkCopy_sound`) or a read
 through a `@stable` field the slot's type states present (`checkRead_sound`),
 or a step whose local effect the common check `stepWithin` includes:
-`closedStep_ok`, `callStep_ok` (its frame, or `grownFrame` where the
-signature states `receiverGrows`) and `writeStep_ok` (from
+`closedStep_ok`, `callStep_ok` (its signature's frames) and `writeStep_ok` (from
 `writeStep_sound`, `ExpressionEffects.lean`, whose element-write cores
 state the written spine, `SpineWrite`). Each node also passes its
 freshness check (`checkFresh_sound`, [fresh array

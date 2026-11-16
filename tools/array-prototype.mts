@@ -31,7 +31,8 @@ import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import { termText } from "./named-record.mts";
 import type { JsonObject } from "./calculus.mts";
 import type { DeclarationIdentity, ElementKind, IndexFact, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, frameEffect, ordinaryEffect,
+  receiverGrowFrame } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
@@ -400,9 +401,11 @@ export const overlay: readonly OverlayEntry[] = [
           { k: "array", presence: "readable", readonly: true, element: stringConvertible, span: at }], span: at },
         params: [atomOf("undefined")], result: { k: "array", presence: "readable", readonly: false, element, span: at } },
     ] },
-  // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` and
-  // `unshift` change the receiver's spine by `grow` and only element
-  // contents beside it; `pop`, `shift` and `reverse` change the receiver's
+  // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` changes
+  // the receiver's spine by `grow` and nothing else (`receiverGrowFrame`,
+  // the frame its growth and append postconditions imply); `unshift`
+  // changes the receiver's spine by `grow` and only element contents beside
+  // it; `pop`, `shift` and `reverse` change the receiver's
   // spine arbitrarily and only element contents beside it: within
   // `{value: any, spine: keep}` but for the receiver's spine
   // (`receiverSpine`); `sort` grows it over the whole call when its
@@ -410,7 +413,7 @@ export const overlay: readonly OverlayEntry[] = [
   // specification steps (FootprintNatives.lean); that each native changes
   // nothing but its spine and element contents is this entry's audit.
   { name: "push", from: "Array", signature: "push(...items: T[]): number;",
-    effect: footprintEffect({ value: "any", spine: "grow" }, { receiverGrows: true }) },
+    effect: frameEffect(receiverGrowFrame, { receiverGrows: true }) },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverSpineEffect },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverSpineEffect },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
