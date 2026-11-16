@@ -310,6 +310,8 @@ run_cmd do
   check ``Verification.CallEffects.SafePostExcV.cross_independent
   check ``Verification.Parity.Holds.mono_exit
   check ``Verification.Parity.Holds.exit_heap
+  check ``Verification.Parity.Derivation.sound
+  check ``Verification.Parity.checkScoped_sound
   check ``Verification.CallEffects.Effect.summary_scoped
   -- command summaries: their meaning, consequence and weakening
   check ``Verification.CallEffects.checkConsequences_sound
