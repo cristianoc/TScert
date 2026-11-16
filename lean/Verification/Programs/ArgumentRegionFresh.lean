@@ -19,8 +19,8 @@ A value is fresh where it is a slot copy of a fresh slot, a constant, an
 allocation of an object with a spine field, a read of a fresh cell, or the
 result of a call whose signature states a fresh result. A cell is fresh
 where it is a copy of a fresh cell or an allocation holding a fresh value.
-A step keeps every fresh cell where it changes no old location of class
-value (`keepsValues`), or writes a fresh value. The facts are
+A step keeps every fresh cell where its frame respects the cells' support
+`{values: keep}` (`CellsHold.frame`), or writes a fresh value. The facts are
 GraphCode's slot facts (`edgesFresh`, `handlerFresh`) at these
 properties. -/
 namespace Verification.GraphCode.ArgumentRegionFresh
@@ -58,31 +58,32 @@ structure FreshHold (F C : List Nat) (b : Nat) (ρ : Env) (h : Heap) : Prop wher
 
 /-! ## Keeping cells -/
 
-/-- A frame changing no location of class value: every entry keeps its
-locations, or holds only spines (`Footprints.spineOnly`). -/
-def keepsValues (Ψ : Footprint) : Bool := Ψ.all fun e => e.2 == .keep || spineOnly e.1
+/-- **The support of fresh cells** (the note, §5, Definition "Support"):
+`{values: keep}`. A fresh cell's location holds a value of no spine, a
+location of the class `values`. -/
+def cellSupport : Footprint := [(.cls .values, .keep)]
 
-/-- **A frame keeping values keeps every fresh cell**: a cell's location
-holds a value of no spine, which no entry of the frame changes. -/
-theorem CellFresh.post {Ψ : Footprint} {σ : Env} {h h' : Heap} {b : Nat} {c : Tm}
-    (hk : keepsValues Ψ = true) (hp : Post Ψ σ h h') (hc : CellFresh b h c) : CellFresh b h' c := by
-  obtain ⟨l, v, hl, hv, hf⟩ := hc
-  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-  refine ⟨l, v', hl, hv', ?_⟩
-  rcases ha with rfl | ⟨e, he, hm, hh⟩
-  · exact hf
-  · have hx := List.all_eq_true.mp hk e he
-    simp only [Bool.or_eq_true, beq_iff_eq] at hx
-    rcases hx with hkeep | hs
-    · rw [hkeep] at hh
-      simp only [Change.Holds] at hh
-      rw [hh]; exact hf
-    · have := spineOnly_mem hs hm hv
-      rw [hf.1] at this; cases this
+/-- `{values: keep}` supports the fresh cells, at every valuation of its
+regions. -/
+theorem cellsHold_supports (C : List Nat) (b : Nat) (ρ : Env) :
+    Supports (fun _ _ _ => True) (fun _ h => CellsHold C b ρ h) cellSupport := by
+  refine Supports.intro fun σ h h' _ hc hs i hi => ?_
+  obtain ⟨l, v, hl, hv, hf⟩ := hc i hi
+  have hm : (Region.cls .values).mem σ h l = true := by
+    have ha := hf.1
+    simp only [Region.mem, hv, Selector.selects]
+    cases v <;> simp_all [contentsCategory, Selector.has, isArr]
+  obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l v hm hv
+  simp only [Change.Holds] at hk
+  exact ⟨l, v', hl, hv', hk ▸ hf⟩
 
-theorem CellsHold.post {Ψ : Footprint} {σ : Env} {C : List Nat} {b : Nat} {ρ : Env} {h h' : Heap}
-    (hk : keepsValues Ψ = true) (hp : Post Ψ σ h h') (hc : CellsHold C b ρ h) : CellsHold C b ρ h' :=
-  fun i hi => (hc i hi).post hk hp
+/-- **A frame respecting `{values: keep}` under the query by bounds keeps
+every fresh cell** (the note, §5, Theorem "Tolerant frame"; `frame_step`),
+from a well-formed heap whose frame's valuation has valid roots. -/
+theorem CellsHold.frame {Ψ : Footprint} {σ : Env} {C : List Nat} {b : Nat} {ρ : Env} {n : Nat}
+    {W : WorldT n} {h h' : Heap} (hk : respects boundQuery cellSupport Ψ = true) (hok : HeapOk n W h)
+    (hσ : RootsOk W σ) (hp : Post Ψ σ h h') (hc : CellsHold C b ρ h) : CellsHold C b ρ h' :=
+  frame_step (D := heaps) (m := 0) (cellsHold_supports C b ρ) hk (boundQuery_sound hok hσ) hp trivial trivial hc
 
 /-- Writing a fresh value anywhere keeps every fresh cell. -/
 theorem CellFresh.set {b : Nat} {h : Heap} {c u : Tm} {l : Nat} (hu : FreshValue b u)

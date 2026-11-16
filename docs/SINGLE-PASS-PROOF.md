@@ -298,8 +298,9 @@ reads the same locations at every heap where the path reads $`v`$
 
 The tolerant frame theorem, proved: a fact kind whose support the effect
 respects under separation knowledge $`K`$ holding at $`s`$ enters
-$`\Box_\Phi`$ (`tolerant_frame`), and an index fact a closed footprint's
-change keeps enters its modality (`kept_box`). The atoms, proved, with
+$`\Box_\Phi`$ (`tolerant_frame`), and an atom whose support the effect
+respects under the evidence of its own arena enters it (`Parity.atom_frame`).
+The atoms, proved, with
 $`G=\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$,
 each an instance of the tolerant frame theorem at the support
 $`\{x.\mathsf{spine}:\mathsf{grow}\}`$, which $`G`$ respects since $`x`$
@@ -314,12 +315,12 @@ y\le|x| \;\vdash\; \Box_G\,(y\le|x|)
 (`RawDerivation.grow`, `RawDerivation.dense`, through `tolerantFrame`, with
 `SupportEvidence.lengths` and `SupportEvidence.dense`), for variables $`x`$,
 $`y`$ and a fixed prefix $`k`$; `grow` states the first for the acceptance
-path's index fact (`kept_box`). Density here is physical presence of the first $`k`$ spine entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
+path's index fact, through `Parity.atom_frame`. Density here is physical presence of the first $`k`$ spine entries: it states neither that the listed cells are allocated nor anything of the elements' contents.
 Along a stable path $`p`$, $`y\le|x.p|\vdash\Box_G(y\le|x.p|)`$
 (`grow_path`): the note's (Rigid) with (Grow), the rigidity supplied by the
-world. $`y\le|x.p|`$ is the pass's linear index fact over the value of $`y`$
-and the length term at $`x`$'s path $`p`$ (proved: `pathLowerBound_iff`), so
-(Grow) at a rigid path holds of that fact (`grow_path_fact`). That
+world, the bound read at a fresh slot holding the path's value and kept by
+`grow`. $`y\le|x.p|`$ is the pass's linear index fact over the value of $`y`$
+and the length term at $`x`$'s path $`p`$ (proved: `pathLowerBound_iff`). That
 `StableAt` follows from the pass's own path-preservation evidence is not
 connected.
 

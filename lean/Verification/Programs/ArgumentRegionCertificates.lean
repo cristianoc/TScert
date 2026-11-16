@@ -42,7 +42,7 @@ theorem closedStep_ok [DecidableEq ι] {G : NormalGraph ι}
   have hn := nodeWithin_of_checked (F := []) (thr := thr) hc.1.1 hc.2 (fun hthr => by
     have hx := hc.1.2; rw [hthr] at hx; simpa using hx) ht hsums
   intro ε n W h ρ he hi hk hw hh hr hρ
-  refine ⟨ρ, ?_, ?_⟩
+  refine ⟨ρ, ?_, hρ, ?_⟩
   · intro p s hs; simp [closedStep] at hs
   apply HeapObservations.SafePostExc.weaken _ _
     (hn ε n W h ρ h.length (Nat.le_refl _) (fun _ hi => nomatch hi) he hi hk hw hh hr hρ)
@@ -59,6 +59,20 @@ def callSlots (r : Tm) (args : List Tm) (p : Nat) : Option Nat :=
     | _ => none) else match args[p - 1]? with
     | some (.var j) => some j
     | _ => none
+
+/-- **A call's positions have valid references** where the call does: the
+receiver at `0`, each actual after it, `undefined` past them. -/
+theorem callEnv_roots {n : Nat} {W : WorldT n} {fn r : Tm} {args : List Tm} (h : RefsOk W (.invoke fn r args)) :
+    RootsOk W (CallEffects.callEnv r args) := by
+  obtain ⟨-, hr, ha⟩ := RefsOk_invoke.mp h
+  intro i
+  simp only [CallEffects.callEnv]
+  split
+  · exact hr
+  · rw [List.getD_eq_getElem?_getD]
+    cases hg : args[i - 1]? with
+    | none => intro x hx; simp [refs] at hx
+    | some a => exact ha a (List.mem_of_getElem? hg)
 
 /-- A call at its selected signature: its exits' frames at the call's
 positions. -/
@@ -112,8 +126,9 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
             rw [heff] at heff'; cases heff'
             exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
               (hs he hk hw hh hr)
-        rw [hterm] at hs ⊢
-        refine ⟨CallEffects.callEnv (instantiate 0 ρ receiver) (args.map (instantiate 0 ρ)), ?_, ?_⟩
+        rw [hterm] at hs hr ⊢
+        refine ⟨CallEffects.callEnv (instantiate 0 ρ receiver) (args.map (instantiate 0 ρ)), ?_,
+          callEnv_roots (by simpa only [instantiate, instantiateArgs_eq_map] using hr), ?_⟩
         · intro p s hp
           simp only [callSlots] at hp
           split at hp
@@ -149,7 +164,7 @@ theorem writeStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι}
     StepOk G c t (writeStepEffect w) thr := by
   obtain ⟨i, s⟩ := w
   intro ε n W h ρ he hi hk hw hh hr hρ
-  refine ⟨ρ, fun p s hp => by cases hp; rfl, ?_⟩
+  refine ⟨ρ, fun p s hp => by cases hp; rfl, hρ, ?_⟩
   have hs := HeapObservations.erase (HeapObservations.consequence
     (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr hρ))
   exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1)
@@ -164,7 +179,7 @@ theorem fieldStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι}
     {w : Nat × PropKey} (hc : ExpressionEffects.fieldWriteStep G (entry c) t = some w) (ht : ExpressionOk G c t) :
     StepOk G c t (fieldStepEffect w) thr := by
   intro ε n W h ρ he hi hk hw hh hr hρ
-  refine ⟨ρ, fun p s hp => by cases hp; rfl, ?_⟩
+  refine ⟨ρ, fun p s hp => by cases hp; rfl, hρ, ?_⟩
   have hs := HeapObservations.erase (HeapObservations.consequence
     (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr hρ))
   exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1)
@@ -250,7 +265,8 @@ def freshWrite (F : List Nat) : Tm → Bool
     (sums : List (ProgramCertificates.ReadSummary ι)) (Φ : Footprints.Closed) (F C : List Nat)
     (c : NodeEvidence ι) (t : Tm) (thr : Bool) : Bool :=
   C.isEmpty || ExpressionEffects.check G (entry c) t || freshWrite F t ||
-    (stepEffects G images sums Φ c t thr).any fun se => keepsValues se.normal && (!thr || keepsValues se.raised)
+    (stepEffects G images sums Φ c t thr).any fun se =>
+      respects boundQuery cellSupport se.normal && (!thr || respects boundQuery cellSupport se.raised)
 
 /-- **A node's freshness check.** -/
 @[nospecialize] def checkFresh [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -407,10 +423,12 @@ theorem cellsKept_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     subst hnil
     exact HeapObservations.SafePostExc.weaken (fun _ _ _ i hi => nomatch hi) (fun _ _ _ i hi => nomatch hi)
       (trivial_run hs)
-  · have hkeep : keepsValues Footprints.Closed.empty.fp = true := rfl
+  · have hkeep : respects boundQuery cellSupport Footprints.Closed.empty.fp = true := by decide
     exact HeapObservations.SafePostExc.weaken
-      (fun _ _ hq => hF.cells.post (σ := ρ) hkeep (Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hq)))
-      (fun _ hq _ => hF.cells.post (σ := ρ) hkeep (Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hq)))
+      (fun _ _ hq => hF.cells.frame (σ := ρ) hkeep hh hρ
+        (Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hq)))
+      (fun _ hq _ => hF.cells.frame (σ := ρ) hkeep hh hρ
+        (Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hq)))
       (ExpressionEffects.sound_exc hins hscope he hw hh hs)
   · obtain ⟨f, i, j, rfl, hwr⟩ : ∃ f i j, t = .writeAt f (.var i) (.var j) ∧ F.contains j = true := by
       unfold freshWrite at hwr
@@ -424,10 +442,13 @@ theorem cellsKept_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         (hF.values j (List.contains_iff_mem.mp hwr)) hF.cells hs)
   · obtain ⟨se, hse, hkv⟩ := List.any_eq_true.mp hstep
     simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hkv
-    obtain ⟨σ, -, hrun⟩ := stepEffects_ok hse ht hsums ε n W h ρ he hi hkn hw hh hs.refs hρ
-    exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hF.cells.post hkv.1 hq)
-      (fun _ hq hthr => hF.cells.post (by rcases hkv.2 with h | h; · rw [hthr] at h; cases h
-                                          · exact h) (hq hthr)) hrun
+    obtain ⟨σ, -, hσ, hrun⟩ := stepEffects_ok hse ht hsums ε n W h ρ he hi hkn hw hh hs.refs hρ
+    have hraised : thr = true → respects boundQuery cellSupport se.raised = true := fun hthr => by
+      rcases hkv.2 with h | h
+      · rw [hthr] at h; cases h
+      · exact h
+    exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hF.cells.frame hkv.1 hh hσ hq)
+      (fun _ hq hthr => hF.cells.frame (hraised hthr) hh hσ (hq hthr)) hrun
 
 /-- **A node passing the freshness check meets its freshness obligation**,
 its value fresh where `freshOut` says so and a fresh cell where `cellOut`

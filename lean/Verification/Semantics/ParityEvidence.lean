@@ -1152,4 +1152,26 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
       | _ => rw [hkd] at hk; rwa [kindValue_heapFree (by decide) s'.h s.h]
     · cases h
 
+/-! ### The tolerant frame of one atom -/
+
+/-- **An atom whose support the evidence checks, and whose support the
+effect respects under the evidence, holds after every action of the effect**
+(the note, §5, Theorem "Tolerant frame"; `tolerant_frame`, `frame_box` over
+indexed states, in the arena of the atom alone). -/
+theorem atom_frame {x : Atom} {S Φ : Footprint} {sev : SupportEvidence} {rev : RespectEvidence}
+    (hs : sev.check ⟨#[.atom x]⟩ ⟨0⟩ S = true) (hr : rev.check ⟨#[.atom x]⟩ ⟨0⟩ S Φ = true)
+    {η : Env} {m : Nat} {s : IndexedHeap} (hx : x.Holds η s.h) :
+    Box Φ (fun η _ s => x.Holds η s.h) η m s := by
+  have hn : (⟨#[.atom x]⟩ : AssertionArena).nodes[(⟨0⟩ : AssertionRef).index]? = some (.atom x) := rfl
+  intro s' ha
+  have h := tolerant_frame (C := fun _ _ _ _ => True) (sev.sound hs) hr (fun _ _ _ hK => rev.query_sound hK)
+    (fun _ _ _ _ _ _ => trivial) η m s ((sat_atom hn).mpr hx) ((sat_atom hn).mpr hx) s' ha
+  exact (sat_atom hn).mp h
+
+/-- A linear fact over current terms is the linear atom. -/
+theorem linear_holdsAt_iff {ε : EntryState} {F : Linear.Fact Term} (hF : ∀ t ∈ F.vars, t.atEntry = false)
+    {η : Env} {h : Heap} : (IndexFact.linear F).HoldsAt ε η h ↔ (Atom.linear F).Holds η h :=
+  ⟨fun hf => factAt_congr (fun t ht => (termValue_now (hF t ht)).symm) hf,
+    fun hf => factAt_congr (fun t ht => termValue_now (hF t ht)) hf⟩
+
 end Verification.Parity

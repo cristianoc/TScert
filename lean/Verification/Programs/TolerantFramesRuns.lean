@@ -394,6 +394,50 @@ theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : 
     fun s v ha hv hT hq => hentN s v ha hv hT hq (transported_of fun F hF => hkeepN F hF s ha),
     fun s e ha hsc hΞ hq => hentE s e ha hsc hΞ hq (transported_of fun F hF => hkeepE F hF s ha)⟩
 
+/-! ## (Grow) -/
+
+/-- **(Grow)** `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)` (the note,
+Proposition "Axioms of the atoms"): the tolerant frame at the support
+`{x.spine: grow}`, which `{values: any, spines: grow}` respects since `x`
+reads an array (`Parity.atom_frame`). -/
+theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound ε y x ρ m s) :
+    Box growEffect.fp (LowerBound ε y x) ρ m s := by
+  have hF : ∀ t ∈ (Linear.Fact.le [(HeapKnowledge.Term.value y, 1), (HeapKnowledge.Term.length x, -1)] 0).vars,
+      t.atEntry = false := by
+    simp [Linear.Fact.vars, HeapKnowledge.Term.value, HeapKnowledge.Term.length]
+  have hbox := Parity.atom_frame (m := m)
+    (x := .linear (.le [(HeapKnowledge.Term.value y, 1), (HeapKnowledge.Term.length x, -1)] 0))
+    (S := [(.spine x [], .grow)]) (Φ := growEffect.fp) (sev := .lengths) (rev := ⟨[.classes (.arrayAt ⟨0⟩) .intrinsic]⟩)
+    (by simp [Parity.SupportEvidence.check, Parity.lengthsSupported, Parity.growsWith, Linear.Fact.vars,
+      HeapKnowledge.Term.value, HeapKnowledge.Term.length])
+    (by
+      simp [Parity.RespectEvidence.check, respects, Parity.RespectEvidence.query, Parity.DisjointEvidence.check,
+        Parity.ClassWitness.selector, Parity.conjuncts, Parity.arrayNode, growEffect, Footprints.Closed.fp,
+        Parity.regionClass, Linear.Fact.vars, Parity.Path.term, HeapKnowledge.Term.length]
+      decide)
+    ((Parity.linear_holdsAt_iff hF).mp hb)
+  exact fun s' ha => (Parity.linear_holdsAt_iff hF).mpr (hbox s' ha)
+
+/-- **(Grow) at a rigid path** (the note, Proposition "Axioms of the
+atoms", (Rigid) with (Grow)): along a stable path, `y ≤ |x.p|` survives every
+action of `{values: any, spines: grow}`. The path reads its value `v` at every
+admissible state; `y ≤ |z|` at a fresh slot `z` holding `v` enters the
+modality by (Grow), and the effect reads its classes at no slot. -/
+theorem grow_path {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hp : StableAt x p v ρ m s) (hb : PathLowerBound y x p ρ m s) :
+    Box growEffect.fp (PathLowerBound y x p) ρ m s := by
+  intro s' ha
+  obtain ⟨w, a, len, hw, hy, hl, hle⟩ := hb
+  have hwv : w = v := Option.some.inj (hw.symm.trans (hp.read s.pos s.ok))
+  subst hwv
+  have h0 : LowerBound ⟨ρ, s.h⟩ (y + 1) 0 (push w ρ) m s :=
+    pathLowerBound_iff (m := m).mp ⟨w, a, len, rfl, hy, hl, hle⟩
+  have ha0 : Action growEffect.fp (push w ρ) s s' :=
+    ⟨ha.1, Footprints.Closed.post_iff.mpr (Footprints.Closed.post_iff.mp ha.2)⟩
+  obtain ⟨w', a', len', hw', hy', hl', hle'⟩ := pathLowerBound_iff (m := m).mpr (grow h0 s' ha0)
+  cases hw'
+  exact ⟨w, a', len', ha.1.readPath hp, hy', hl', hle'⟩
+
 /-! ## A typed field write -/
 
 /-- `{values: any, spines: keep}`: the effect of a typed field write. -/

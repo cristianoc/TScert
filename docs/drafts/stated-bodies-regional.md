@@ -7,7 +7,7 @@ stays open.
 ## Open questions
 
 1. Whether fresh cells become the fresh-field table at the cell key, kept
-   by frames that keep values (`keepsValues`) where the field is not
+   by frames respecting `{values: keep}` (`CellsHold.frame`) where the field is not
    `@stable`, so that one table serves both. `CellFresh` requires a present
    field holding a `FreshValue`; `FieldFresh` permits absence and requires
    `FreshIfSpine`.

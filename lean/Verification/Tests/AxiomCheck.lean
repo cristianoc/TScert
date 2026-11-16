@@ -424,7 +424,6 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionFresh.cellAlloc_fresh
   check ``Verification.GraphCode.ArgumentRegionFresh.cellRead_fresh
   check ``Verification.GraphCode.ArgumentRegionFresh.freshWrite_cells
-  check ``Verification.GraphCode.ArgumentRegionFresh.CellFresh.post
   check ``Verification.GraphCode.ArgumentRegionGraph.checkFresh_sound
   check ``Verification.GraphCode.edgesFresh_holds
   check ``Verification.GraphCode.handlerFresh_holds
@@ -477,7 +476,6 @@ run_cmd do
   check ``Verification.Footprints.Post.renameM
   check ``Verification.PromiseCalls.callerFrame_post
   check ``Verification.Footprints.Post.byClass
-  check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
   check ``Verification.TolerantFrames.grow_path
   check ``Verification.TolerantFrames.field_write_keeps_bound
@@ -518,7 +516,6 @@ run_cmd do
   check ``Verification.TolerantFrames.path_mem_eq
   check ``Verification.TolerantFrames.path_rigid_on
   check ``Verification.TolerantFrames.pathLowerBound_iff
-  check ``Verification.TolerantFrames.grow_path_fact
   check ``Verification.TolerantFrames.throw_nul_safe
   check ``Verification.TolerantFrames.handled_safe
   check ``Verification.TolerantFrames.escaping_checked
@@ -1828,6 +1825,14 @@ run_cmd do
   check ``Verification.CallEffects.frameActualsIndependent_of_scoped
   check ``Verification.CallEffects.Exits.forgetActuals_sound
   check ``Verification.CallEffects.Exits.callExit_held
+  -- One support relation, one respect check, one frame theorem (rules-as-mechanism, step 1)
+  check ``Verification.Parity.atom_frame
+  check ``Verification.Parity.linear_holdsAt_iff
+  check ``Verification.Footprints.grow_arr
+  check ``Verification.Footprints.map_rely
+  check ``Verification.GraphCode.ArgumentRegionGraph.callEnv_roots
+  check ``Verification.GraphCode.ArgumentRegionFresh.cellsHold_supports
+  check ``Verification.GraphCode.ArgumentRegionFresh.CellsHold.frame
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write
   check ``Verification.Kinds.gate_handled

@@ -17,8 +17,9 @@ meet `Post Φ ρ`, and `Box Φ F` holds where `F` holds after every action of
 `Φ`: the weakest liberal precondition of one arbitrary such action. The name
 valuation and the entry mark are parameters of every assertion and stay fixed
 across the modality. A fact whose support an effect respects enters the
-modality (`tolerant_frame`), and a length lower bound, at a variable and at
-a rigid path, enters that of `{values: any, spines: grow}`. -/
+modality (`tolerant_frame`); a length lower bound, at a variable and at a
+path, is stated here, and enters the modality of `{values: any, spines: grow}`
+in `TolerantFramesRuns` (`grow`, `grow_path`). -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
@@ -464,17 +465,6 @@ theorem tolerant_frame {K : SepEvidence} {F : FactKind} {Φ : Footprint} {μ : N
     (hρ : RootsOk s.W ρ) (hF : F.Holds ρ s.h) : Box Φ (fun ρ _ s => F.Holds ρ s.h) ρ m s :=
   fun _ ha => FactKind.frame_step hc hK s.ok hρ ha.2 hF
 
-open HeapKnowledge in
-/-- **An index fact a closed footprint's change keeps holds after every
-action of the footprint** (`holdsAt_kept`, `Changes.ofClosed_holds`). -/
-theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hk : F.keptBy (Changes.ofClosed c) (fun _ _ => false) = true) (hF : F.HoldsAt ε ρ s.h) :
-    Box c.fp (fun ρ _ s => F.HoldsAt ε ρ s.h) ρ m s := by
-  intro s' ha
-  have hc : (Changes.ofClosed c).Holds s.h s'.h :=
-    Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
-  exact IndexFact.holdsAt_kept hc (fun _ _ _ _ _ _ _ hf => by simp at hf) hk hF
-
 /-! ## A run keeps what every transition keeps -/
 
 /-- **The tolerant frame along a run, at `⊤`** (the note, §5, Theorem
@@ -524,34 +514,11 @@ def lowerBoundFact (y x : Nat) : IndexFact := .linear (.le [(.value y, 1), (.len
 /-- `y ≤ |x|` as an assertion. -/
 def LowerBound (ε : HeapKnowledge.EntryState) (y x : Nat) : Assertion := fun ρ _ s => (lowerBoundFact y x).HoldsAt ε ρ s.h
 
-/-- `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)` as the acceptance
-path's index fact (`kept_box`), for the loop of `loop_back_edge`. -/
-theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound ε y x ρ m s) :
-    Box growEffect.fp (LowerBound ε y x) ρ m s :=
-  kept_box growEffect rfl hb
-
 /-- `y ≤ |x.p|`: the value the path `p` reads from `x` has a spine at least as
 long as the integer slot `y` holds. -/
 def PathLowerBound (y x : Nat) (p : List String) : Assertion := fun ρ _ s =>
   ∃ w a len, HeapKnowledge.readPath s.h (ρ x) p = some w ∧ HeapKnowledge.intValue (ρ y) = some a ∧
     HeapKnowledge.lengthOf s.h w = some len ∧ a ≤ len
-
-/-- **(Grow) at a rigid path**: along a stable path, `y ≤ |x.p|` survives
-every action of `{values: any, spines: grow}`. The path's rigidity is a fact
-of the world, kept by every admissible transition. -/
-theorem grow_path {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hp : StableAt x p v ρ m s) (hb : PathLowerBound y x p ρ m s) :
-    Box growEffect.fp (PathLowerBound y x p) ρ m s := by
-  intro s' ha
-  obtain ⟨w, a, len, hw, ha', hl, hle⟩ := hb
-  have hv : HeapKnowledge.readPath s.h (ρ x) p = some v := hp.read s.pos s.ok
-  rw [hw] at hv; cases hv
-  obtain ⟨st, ls, hst, hls, rfl, hm⟩ := HeapKnowledge.lengthOf_spine hl
-  have hc : (HeapKnowledge.Changes.ofClosed growEffect).Holds s.h s'.h :=
-    HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
-  obtain ⟨ls', hls', hlen, hmax⟩ := hc.2.2 rfl st ls hls
-  exact ⟨v, a, ls'.length, ha.1.readPath hp, ha', HeapKnowledge.lengthOf_of_spine hst hls' (hmax hm),
-    by omega⟩
 
 open HeapKnowledge in
 /-- `y ≤ |x.p|` as the pass states it: a linear index fact over the value of
@@ -580,11 +547,5 @@ theorem pathLowerBound_iff {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s
     rw [ha, hl] at hle
     simp only [Option.getD_some] at hle
     exact ⟨w, a, len, hw, ha, hl', by omega⟩
-
-/-- (Grow) at a rigid path for the pass's path-term fact. -/
-theorem grow_path_fact {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hp : StableAt x p v ρ m s) (hb : (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) :
-    Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) ρ m s :=
-  fun s' ha => pathLowerBound_iff.mp (grow_path hp (pathLowerBound_iff.mpr hb) s' ha)
 
 end Verification.TolerantFrames

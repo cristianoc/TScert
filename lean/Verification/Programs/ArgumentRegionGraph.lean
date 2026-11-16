@@ -49,12 +49,12 @@ structure StepEffect where
 /-- A node's step meets its local effect: from a context ordinary graph
 checking established, at positions agreeing with the slots `slot` names, its
 normal return, and where `thr` its throw, meets the frame from the heap the
-step starts in. -/
+step starts in. The positions' values have valid references. -/
 def StepOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (se : StepEffect) (thr : Bool) :
     Prop :=
   ∀ ε n W h ρ, EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
     HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) → RootsOk W ρ →
-    ∃ σ : Env, (∀ p s, se.slot p = some s → σ p = ρ s) ∧
+    ∃ σ : Env, (∀ p s, se.slot p = some s → σ p = ρ s) ∧ RootsOk W σ ∧
       HeapObservations.SafePostExc (excOf G) (meaning G (result c))
         (fun h' _ => Post se.normal σ h h') (fun h' => thr = true → Post se.raised σ h h')
         n W h (instantiate 0 ρ t)
@@ -172,7 +172,7 @@ theorem nodeWithin_of_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprint
   | zero => exact href
   | succ n =>
     simp only [stepWithin, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
-    obtain ⟨σ, hσ, hrun⟩ := hs ε (n + 1) W h ρ he hi hk hw hh href hρ
+    obtain ⟨σ, hσ, -, hrun⟩ := hs ε (n + 1) W h ρ he hi hk hw hh href hρ
     have hp := ArgumentSpineRegionsWithin.iff_post.mp hb
     have hok := nodeRebase_ok (regions := regions) hσ hf hF hFs (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
     apply HeapObservations.SafePostExc.weaken _ _ hrun

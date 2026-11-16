@@ -12,9 +12,9 @@ where the note's statement does not hold:
   typed-array lengths holds after every admissible transition (`view_box`);
   an entry term reads the entry state,
   which no transition changes;
-- (Init): every linear fact whose current terms are no string lengths
-  survives every action of `{values: init, spines: keep}` (`init_box`), with
-  no condition on its paths, its entry terms of every kind;
+- (Init): every linear fact over current terms survives every action of
+  `{values: init, spines: keep}` (`init_box`), with no condition on its
+  paths;
 - Call: a callee's run is an action of its renamed regional effect at the
   caller's slots, its post holds, and the caller's facts it keeps are named
   at the result's fresh name (`call_rule`);
@@ -63,35 +63,31 @@ theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
 
 /-! ## (Init) -/
 
-theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.atEntry = false → t.kind ≠ .strLength) :
-    t.keptBy (HeapKnowledge.Changes.ofClosed initEffect) (fun _ _ => false) = true := by
-  obtain ⟨k, slot, p, e⟩ := t
-  cases e
-  case true => simp [HeapKnowledge.Term.keptBy]
-  have hk := hk rfl
-  cases k <;> cases p <;>
-    simp_all [HeapKnowledge.Term.keptBy, HeapKnowledge.Term.pathKeptBy, HeapKnowledge.Changes.ofClosed,
-      initEffect, HeapKnowledge.Changes.keepsLength, Footprints.Change.le, Footprints.Change.rank,
-      Footprints.Change.onSpine, Footprints.Closed.spines, Footprints.Change.max]
-
-/-- **(Init)**: a linear fact whose current terms are integers, lengths and
-view lengths at any paths holds after every action of the initialisation
-write's `{values: init, spines: keep}`; its entry terms are of any kind. The
-note's side condition, paths through fields holding objects, is what a
-defined path read already is. -/
+/-- **(Init)** (the note, Proposition "Axioms of the atoms"): a linear fact
+over current terms holds after every action of the initialisation write's
+`{values: init, spines: keep}`: the tolerant frame at the support
+`{values: init, spines: keep}`, respected by class (`Parity.atom_frame`,
+`SupportEvidence.init`). The note's side condition, paths through fields
+holding objects, is what a defined path read already is. -/
 theorem init_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hk : ∀ t ∈ F.vars, t.atEntry = false → t.kind ≠ .strLength) (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
-    Box initEffect.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s :=
-  kept_box initEffect (by
-    simp only [HeapKnowledge.IndexFact.keptBy, Bool.or_eq_true, List.all_eq_true]
-    exact .inl fun t ht => initTerm_kept t (hk t ht)) hF
+    (hk : ∀ t ∈ F.vars, t.atEntry = false) (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
+    Box initEffect.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
+  have hbox := Parity.atom_frame (m := m) (x := .linear F) (S := [(.cls .values, .init), (.cls .spines, .keep)])
+    (Φ := initEffect.fp)
+    (sev := .init) (rev := ⟨[.classes .intrinsic .intrinsic]⟩)
+    (by simpa [Parity.SupportEvidence.check] using hk)
+    (by
+      simp [Parity.RespectEvidence.check, respects, Parity.RespectEvidence.query, Parity.DisjointEvidence.check,
+        Parity.ClassWitness.selector, Parity.regionClass, initEffect, Footprints.Closed.fp]
+      decide) ((Parity.linear_holdsAt_iff hk).mp hF)
+  exact fun s' ha => (Parity.linear_holdsAt_iff hk).mpr (hbox s' ha)
 
 /-- (Init) for the length lower bound along a path. -/
 theorem init_path {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hb : PathLowerBound y x p ρ m s) : Box initEffect.fp (PathLowerBound y x p) ρ m s := by
   intro s' ha
   refine pathLowerBound_iff.mpr (init_box (ε := ⟨ρ, s.h⟩) (m := m) (F := .le [(.value y, 1), ((HeapKnowledge.Term.now .length x p), -1)] 0)
-    (fun t ht _ => ?_) (pathLowerBound_iff.mp hb) s' ha)
+    (fun t ht => ?_) (pathLowerBound_iff.mp hb) s' ha)
   simp only [Linear.Fact.vars, List.map, List.mem_cons, List.not_mem_nil, or_false] at ht
   rcases ht with rfl | rfl <;> simp [HeapKnowledge.Term.value]
 

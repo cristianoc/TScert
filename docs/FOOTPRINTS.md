@@ -709,10 +709,11 @@ $`i \in F`$ and $`j \in C`$:
 ```
 
 An inspection changes no old location; a write of a fresh value leaves a
-fresh value wherever it writes; and a frame whose every entry keeps its
-locations or holds only spines ($`\mathsf{cls}\ \mathsf{spine}`$, a region's
-part of class spine) changes no cell's contents, a value of no spine
-(`keepsValues`, proved: `CellFresh.post`). `push`'s frame names its
+fresh value wherever it writes; and a frame respecting the cells' support
+$`\{\mathsf{values}:\mathsf{keep}\}`$ under the query by bounds changes no
+cell's contents, a value of no spine: every entry keeps its locations or has
+a bound apart from the values' (proved: `CellsHold.frame`, by `frame_step`,
+the frame's positions with valid roots). `push`'s frame names its
 receiver's spine at its part of class array (`receiverGrowFrame`).
 The allocation rule holds of a run of the allocation with any initializers
 or binding before it (`alloc_fresh`, from `alloc_step`: the spine field's
