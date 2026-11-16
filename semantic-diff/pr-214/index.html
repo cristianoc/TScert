@@ -1,0 +1,534 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-214"><code>f0cb88387f1fe862ce9f7977c583790c73a20193..pr-214</code></a><ul><li>2 commits</li><li>changes: 2 Definition, 1 Wire, 1 Refusal, 1 Docs</li><li>parts: <span class="chip">lean,</span> <span class="chip">tools,</span> <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-214"><code>f0cb88387f1fe862ce9f7977c583790c73a20193..pr-214</code></h2><article class="card" id="c-7a2f2d847"><header><div><div class="sha">7a2f2d847 · Cristiano Calcagno · Nov 16, 10:00</div><h3>Name an indexed collection's store its spine, and the regions of its cells and fields</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The paper calls the sequence of an array's or a typed array's element cells and holes its spine, the region of those cells <code>cells</code> and an object's field locations <code>fields</code>. The implementation called them the store, <code>elems</code> and <code>own</code>. The owner decided that the implementation's names follow the paper's.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">the store of an array or typed array</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">store</span><span class="m-rel">:</span> <code class="m-code"><span class="tk-t">Role</span>.store</code>, <code class="m-code"><span class="tk-t">Kind</span>.store</code>, <code class="m-code"><span class="tk-t">Region</span>.store</code>, <code class="m-code"><span class="tk-t">StoreForm</span></code>,</span></div><div class="row"><span><code class="m-code">arrayStoreKey</code>, <code class="m-code">storeOf</code>, <code class="m-code"><span class="tk-t">PathStoresApart</span></code>, <code class="m-code"><span class="tk-t">ArgumentStoreRegion</span></code>,</span></div><div class="row"><span><code class="m-code"><span class="tk-t">Closed</span>.stores</code>, <code class="m-code"><span class="tk-t">Selector</span>.stores</code>, <code class="m-code"><span class="tk-t">ElementWrite</span>.stores</code> <span class="m-text">and about</span></span></div><div class="row"><span>190 <span class="m-text">other names built on the word</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">spine</span><span class="m-rel">:</span> <code class="m-code"><span class="tk-t">Role</span>.spine</code>, <code class="m-code"><span class="tk-t">Kind</span>.spine</code>, <code class="m-code"><span class="tk-t">Region</span>.spine</code>, <code class="m-code"><span class="tk-t">SpineForm</span></code>,</span></div><div class="row"><span><code class="m-code">arraySpineKey</code>, <code class="m-code">spineOf</code>, <code class="m-code"><span class="tk-t">PathSpinesApart</span></code>, <code class="m-code"><span class="tk-t">ArgumentSpineRegion</span></code>,</span></div><div class="row"><span><code class="m-code"><span class="tk-t">Closed</span>.spines</code>, <code class="m-code"><span class="tk-t">Selector</span>.spines</code>, <code class="m-code"><span class="tk-t">ElementWrite</span>.spines</code>, ...; <span class="m-text">the</span></span></div><div class="row"><span><span class="m-text">modules ArgumentSpineRegions, SpineRegions and ViewSpines</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">the regions of cells and fields</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Region</span>.elems</code>, <code class="m-code">pathElems</code>, <code class="m-code">own</code>, <code class="m-code">pathOwn</code>; <code class="m-code">storeElems</code></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">Region</span>.cells</code>, <code class="m-code">pathCells</code>, <code class="m-code">fields</code>, <code class="m-code">pathFields</code>; <code class="m-code">spineCells</code>, <span class="m-text">and</span></span></div><div class="row"><span><span class="m-text">the lemmas named after these regions</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the effect, region, type and request documents</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a closed footprint <code>{&quot;value&quot;, &quot;store&quot;}</code>; region tags <code>own</code>, <code>elems</code>, <code>pathOwn</code>, <code>pathElems</code>, <code>store</code>; a type atom <code>&quot;a&quot;: &quot;store&quot;</code>; a parameter kind <code>&quot;store&quot;</code>; operations <code>freshStore</code>, <code>storeExtends</code></p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>{&quot;value&quot;, &quot;spine&quot;}</code>; <code>fields</code>, <code>cells</code>, <code>pathFields</code>, <code>pathCells</code>, <code>spine</code>; <code>&quot;a&quot;: &quot;spine&quot;</code>; <code>&quot;spine&quot;</code>; <code>freshSpine</code>, <code>spineExtends</code>; TypeScript and Lean together</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Refusal <span class="target">the messages naming the notion</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>&quot;a store region ...&quot;, &quot;store separation&quot;, &quot;array store&quot;, <code>Store&lt;T&gt;</code></p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>&quot;a spine region ...&quot;, &quot;spine separation&quot;, &quot;array spine&quot;, <code>Spine&lt;T&gt;</code>; the case expectations matching them follow</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean,</span> <span class="chip">tools,</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (with the axiom check) · tsc over tools/tsconfig.json · tests/json-field-names.mts · tools/unchecked.mts, 0 errors · run-cases.mts by pattern modifies, typed-array, field-index, stated-, store, map-stable, fresh, exceptional-footprint, view: all as expected</dd></dl>
+<details><summary>191 files changed, 3972 insertions(+), 3972 deletions(-)</summary><pre class="code"> dev/fact-text.mts                                  |   8 +-
+ lean/ProposalsExperiment.lean                      |   8 +-
+ .../Programs/ArgumentPathTracking.lean             |  22 +-
+ .../Programs/ArgumentRegionCertificates.lean       |  74 ++--
+ .../Verification/Programs/ArgumentRegionFresh.lean |  64 +--
+ .../Verification/Programs/ArgumentRegionGraph.lean |  70 ++--
+ lean/Verification/Programs/BranchRefinement.lean   |  44 +--
+ .../Verification/Programs/CertificateProducer.lean |  34 +-
+ lean/Verification/Programs/CodeConditions.lean     |  10 +-
+ lean/Verification/Programs/ComputedKey.lean        |  22 +-
+ lean/Verification/Programs/ControlFlow.lean        |   2 +-
+ lean/Verification/Programs/ExpressionEffects.lean  | 256 ++++++------
+ lean/Verification/Programs/FrameChecks.lean        |  94 ++---
+ lean/Verification/Programs/GraphCode.lean          |  38 +-
+ .../Verification/Programs/HeapExpressionRules.lean |  72 ++--
+ lean/Verification/Programs/IndexWrites.lean        | 428 ++++++++++-----------
+ lean/Verification/Programs/KindsModelRules.lean    | 108 +++---
+ lean/Verification/Programs/ObjectMerge.lean        | 224 +++++------
+ .../Programs/ParityArithmeticBridges.lean          |  10 +-
+ .../Verification/Programs/ProgramCertificates.lean |  38 +-
+ lean/Verification/Programs/ProgramTyping.lean      |  82 ++--
+ lean/Verification/Programs/PromiseCalls.lean       | 228 +++++------
+ lean/Verification/Programs/RestCalls.lean          |  32 +-
+ lean/Verification/Programs/SinglePass.lean         |  46 +--
+ lean/Verification/Programs/SinglePassStats.lean    |   2 +-
+ lean/Verification/Programs/TolerantFramesEdge.lean |   6 +-
+ .../Verification/Programs/TolerantFramesElems.lean |  18 +-
+ .../Programs/TolerantFramesFootprint.lean          |   2 +-
+ .../Programs/TolerantFramesGuarantee.lean          |  16 +-
+ .../Programs/TolerantFramesGuaranteeTarget.lean    |   8 +-
+ .../Programs/TolerantFramesGuaranteeWalk.lean      |   8 +-
+ .../Programs/TolerantFramesInvocation.lean         |   4 +-
+ .../Programs/TolerantFramesMaterialize.lean        |   6 +-
+ .../Programs/TolerantFramesMergeEntailed.lean      |   2 +-
+ .../Programs/TolerantFramesMergeGuarded.lean       |   2 +-
+ .../Programs/TolerantFramesMergeHolds.lean         |   2 +-
+ .../Programs/TolerantFramesMergeMirror.lean        |   4 +-
+ .../Programs/TolerantFramesModelLoop.lean          | 154 ++++----
+ .../Programs/TolerantFramesModelRules.lean         |  94 ++---
+ .../Programs/TolerantFramesModelTyped.lean         |  58 +--
+ .../Verification/Programs/TolerantFramesNamed.lean |  22 +-
+ .../Programs/TolerantFramesNodeBound.lean          |  10 +-
+ .../Programs/TolerantFramesNodeCallFresh.lean      |   4 +-
+ .../Programs/TolerantFramesNodeWalk.lean           |   2 +-
+ .../Programs/TolerantFramesRegionalHeld.lean       |   2 +-
+ .../Programs/TolerantFramesRegionalNode.lean       |   8 +-
+ .../Programs/TolerantFramesRegionalRecorded.lean   |   4 +-
+ .../Programs/TolerantFramesRegionalRuns.lean       |  28 +-
+ .../Programs/TolerantFramesRunSound.lean           |   4 +-
+ lean/Verification/Programs/TolerantFramesRuns.lean |  10 +-
+ .../Programs/TolerantFramesSelect.lean             |   6 +-
+ .../Verification/Programs/TolerantFramesState.lean |   6 +-
+ .../Programs/TolerantFramesStepLinkReturns.lean    |   6 +-
+ .../Programs/TolerantFramesStepLinkSound.lean      |  10 +-
+ .../Verification/Programs/TolerantFramesSteps.lean |  10 +-
+ .../Programs/TolerantFramesStoreOpsBelowNames.lean |   8 +-
+ .../Programs/TolerantFramesStoreOpsDrop.lean       |  10 +-
+ .../Programs/TolerantFramesStoreOpsNames.lean      |  14 +-
+ .../Programs/TolerantFramesWrites.lean             |  18 +-
+ lean/Verification/Programs/TypingBasics.lean       |  66 ++--
+ lean/Verification/Programs/VariadicTyping.lean     |  80 ++--
+ lean/Verification/Semantics/AllocationWorlds.lean  |   2 +-
+ lean/Verification/Semantics/ArgumentContracts.lean |   2 +-
+ ...StoreRegions.lean =&gt; ArgumentSpineRegions.lean} |  44 +--
+ lean/Verification/Semantics/AssertionScopes.lean   |  16 +-
+ lean/Verification/Semantics/Calculus.lean          | 124 +++---
+ lean/Verification/Semantics/CallArguments.lean     |   6 +-
+ lean/Verification/Semantics/ClosedFootprints.lean  | 196 +++++-----
+ .../Verification/Semantics/CommandComposition.lean |  52 +--
+ lean/Verification/Semantics/ContractExits.lean     |  28 +-
+ lean/Verification/Semantics/EffectSignatures.lean  |  20 +-
+ lean/Verification/Semantics/ElementWrites.lean     |  76 ++--
+ lean/Verification/Semantics/ExitComposition.lean   |  18 +-
+ lean/Verification/Semantics/ExitRenaming.lean      |   8 +-
+ lean/Verification/Semantics/ExitSchemas.lean       |   4 +-
+ lean/Verification/Semantics/ExitSummaries.lean     |  28 +-
+ lean/Verification/Semantics/FootprintNatives.lean  |  50 +--
+ .../Semantics/FootprintProvenance.lean             |  26 +-
+ lean/Verification/Semantics/FootprintRebase.lean   | 102 ++---
+ .../Verification/Semantics/FootprintStability.lean |  64 +--
+ lean/Verification/Semantics/Footprints.lean        | 230 +++++------
+ lean/Verification/Semantics/FormulaScopes.lean     |   4 +-
+ lean/Verification/Semantics/HeapKnowledge.lean     | 160 ++++----
+ lean/Verification/Semantics/Heaps.lean             |  64 +--
+ lean/Verification/Semantics/IndexFacts.lean        | 322 ++++++++--------
+ lean/Verification/Semantics/Kinds.lean             |  10 +-
+ lean/Verification/Semantics/KindsAllocation.lean   |  92 ++---
+ lean/Verification/Semantics/KindsCalls.lean        |  22 +-
+ lean/Verification/Semantics/KindsCapabilities.lean |  48 +--
+ lean/Verification/Semantics/KindsEffects.lean      |   6 +-
+ lean/Verification/Semantics/KindsNatives.lean      |  28 +-
+ lean/Verification/Semantics/KindsWrites.lean       |  62 +--
+ lean/Verification/Semantics/ObjectCoherence.lean   |   2 +-
+ lean/Verification/Semantics/ParityAssertions.lean  |  66 ++--
+ lean/Verification/Semantics/ParityDerivations.lean |  42 +-
+ lean/Verification/Semantics/ParityEvidence.lean    | 110 +++---
+ lean/Verification/Semantics/Purity.lean            |  12 +-
+ lean/Verification/Semantics/Rules.lean             |  10 +-
+ .../{StoreRegions.lean =&gt; SpineRegions.lean}       |  42 +-
+ lean/Verification/Semantics/StepRelations.lean     |  10 +-
+ lean/Verification/Semantics/StorageRoles.lean      |  16 +-
+ lean/Verification/Semantics/Survival.lean          |  90 ++---
+ .../Verification/Semantics/SurvivalSeparation.lean |  96 ++---
+ lean/Verification/Semantics/TolerantFrames.lean    |  54 +--
+ .../Semantics/TolerantFramesCells.lean             |  74 ++--
+ lean/Verification/Semantics/TwoStateFormulas.lean  |  68 ++--
+ lean/Verification/Semantics/ValueSets.lean         |   8 +-
+ lean/Verification/Semantics/ViewFormats.lean       |   6 +-
+ .../Semantics/{ViewStores.lean =&gt; ViewSpines.lean} |  56 +--
+ lean/Verification/Semantics/Worlds.lean            | 140 +++----
+ lean/Verification/Source/Claims/Extraction.lean    |   2 +-
+ lean/Verification/Source/Claims/FragmentFront.lean |  20 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  16 +-
+ lean/Verification/Source/Claims/Json.lean          |  32 +-
+ lean/Verification/Source/Claims/MemberSettle.lean  |   6 +-
+ lean/Verification/Source/Claims/PassProposals.lean |  10 +-
+ lean/Verification/Source/Claims/PassUnit.lean      |   4 +-
+ lean/Verification/Source/Claims/PassUnitCodes.lean |  30 +-
+ lean/Verification/Source/Claims/PassUnitFile.lean  |   2 +-
+ .../Source/Claims/PassUnitHeadline.lean            |   2 +-
+ .../Verification/Source/Claims/PassUnitMember.lean |   2 +-
+ .../Source/Claims/PassUnitRealize.lean             |  30 +-
+ lean/Verification/Source/Claims/PassUnitSafe.lean  |   4 +-
+ lean/Verification/Source/Claims/Preparation.lean   |   4 +-
+ .../Source/Claims/RegionInference.lean             |  14 +-
+ lean/Verification/Source/Claims/Schemes.lean       |   8 +-
+ lean/Verification/Source/Claims/Wire.lean          |  14 +-
+ lean/Verification/Source/EffectCodec.lean          |  70 ++--
+ lean/Verification/Source/EffectJson.lean           |  40 +-
+ lean/Verification/Source/Equations/Core.lean       |  12 +-
+ .../Source/Equations/Declarations.lean             |   2 +-
+ lean/Verification/Source/Equations/Interning.lean  |   4 +-
+ lean/Verification/Source/Equations/State.lean      |   4 +-
+ lean/Verification/Source/Equations/Store.lean      |   4 +-
+ lean/Verification/Source/Fragment.lean             |  16 +-
+ lean/Verification/Source/FragmentTypes.lean        |  16 +-
+ lean/Verification/Source/Lowering/Atoms.lean       | 118 +++---
+ lean/Verification/Source/Lowering/Bindings.lean    |   6 +-
+ .../Verification/Source/Lowering/ClosureSetup.lean |  32 +-
+ lean/Verification/Source/Lowering/Closures.lean    |  24 +-
+ lean/Verification/Source/Lowering/Control.lean     |  20 +-
+ lean/Verification/Source/Lowering/Execution.lean   |  14 +-
+ .../Source/Lowering/ExitProposals.lean             |   4 +-
+ lean/Verification/Source/Lowering/Expression.lean  |  18 +-
+ lean/Verification/Source/Lowering/Flow.lean        |  20 +-
+ .../Verification/Source/Lowering/Observations.lean |  16 +-
+ lean/Verification/Source/Lowering/Operands.lean    |  16 +-
+ lean/Verification/Source/Lowering/Plans.lean       |  50 +--
+ lean/Verification/Source/Lowering/Synthesis.lean   | 144 +++----
+ lean/Verification/Source/Lowering/Types.lean       |  34 +-
+ lean/Verification/Source/RequestJson.lean          |  20 +-
+ lean/Verification/Source/SourceClaims.lean         |  20 +-
+ lean/Verification/Source/SourceExtraction.lean     |  20 +-
+ lean/Verification/Source/SourceRequests.lean       |  34 +-
+ lean/Verification/Source/SourceTypes.lean          |  12 +-
+ lean/Verification/Tests/AxiomCheck.lean            |  56 +--
+ lean/Verification/Tests/EffectCodecControls.lean   |   6 +-
+ lean/Verification/Tests/FootprintControls.lean     | 100 ++---
+ lean/Verification/Tests/ParityDerivationTests.lean |  94 ++---
+ lean/Verification/Types/Claim.lean                 |   2 +-
+ lean/Verification/Types/ClauseSelection.lean       |   2 +-
+ lean/Verification/Types/EquationGraphs.lean        |   2 +-
+ lean/Verification/Types/EquationJson.lean          |   4 +-
+ .../Types/NativePromiseSeparation.lean             |   8 +-
+ lean/Verification/Types/PositiveGraphs.lean        | 136 +++----
+ lean/Verification/Types/PositiveNormalization.lean |  64 +--
+ lean/Verification/Types/PositiveRules.lean         |  44 +--
+ lean/Verification/Types/StoreMapsBuiltins.lean     |   2 +-
+ lean/Verification/Types/Types.lean                 |  62 +--
+ pipeline/cases.mts                                 | 290 +++++++-------
+ tests/node-runs.mts                                |  18 +-
+ tests/single-pass-controls.mts                     |  68 ++--
+ tools/array-prototype.mts                          |  86 ++---
+ tools/bound-annotations.mts                        |  14 +-
+ tools/calculus.mts                                 |  18 +-
+ tools/claim-text.mts                               |  24 +-
+ tools/claim.mts                                    |   8 +-
+ tools/compiler-api.mts                             |  12 +-
+ tools/declaration-graph.mts                        |   4 +-
+ tools/declaration-types.mts                        |  34 +-
+ tools/diagnostic.mts                               |  14 +-
+ tools/fragment-statements.mts                      |   2 +-
+ tools/fragment.mts                                 |   4 +-
+ tools/host-operations.mts                          |  18 +-
+ tools/intrinsics.mts                               |  36 +-
+ tools/library-globals.mts                          |  10 +-
+ tools/library-types.mts                            |  16 +-
+ tools/regexp.mts                                   |  10 +-
+ tools/resolvable.d.ts                              |   6 +-
+ tools/type-graph.mts                               |  84 ++--
+ tools/type-term.mts                                |  52 +--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-330e1cff4"><header><div><div class="sha">330e1cff4 · Cristiano Calcagno · Nov 16, 10:00</div><h3>Use the words spine, cells and fields in the documents</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The code names an indexed collection's store its spine, and the regions of its cells and fields <code>cells</code> and <code>fields</code>, as the paper does. The documents, skills and example comments still used the old words and identifiers.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">docs/, AGENTS.md, WORK.md, skills, example comments</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the store of an array or typed array, <code>Region.store</code>, <code>elems</code>, <code>own</code>; sections &quot;Store separation&quot; (ARITHMETIC.md), &quot;Argument-path store regions&quot; (FOOTPRINTS.md), &quot;Store regions&quot; (SINGLE-PASS.md)</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>spine, <code>Region.spine</code>, <code>cells</code>, <code>fields</code>; sections &quot;Spine separation&quot;, &quot;Argument-path spine regions&quot;, &quot;Spine regions&quot;, with every citation; the decks method-effects, checked-bounds and gap-priorities rebuilt</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>tests/docs.mts, 0 problems</dd></dl>
+<details><summary>231 files changed, 1623 insertions(+), 1623 deletions(-)</summary><pre class="code"> .claude/skills/parity/SKILL.md                     |   4 +-
+ AGENTS.md                                          |   4 +-
+ WORK.md                                            |  32 +-
+ docs/ANNOTATIONS.md                                |  18 +-
+ docs/ARITHMETIC.md                                 | 106 +++---
+ docs/COMPILER-API.md                               |  26 +-
+ docs/DESIGN.md                                     |  24 +-
+ docs/FOOTPRINTS.md                                 | 394 ++++++++++-----------
+ docs/FRAGMENT-FORMAT.md                            |   2 +-
+ docs/GLOSSARY.md                                   |  12 +-
+ docs/HOST-FAMILIES.md                              |  22 +-
+ docs/POSITIVE-TYPES.md                             |  46 +--
+ docs/PROGRAM-TYPING.md                             | 310 ++++++++--------
+ docs/REFERENCES.md                                 |   2 +-
+ docs/REQUEST-PROTOCOL.md                           |  58 +--
+ docs/SEMANTICS.md                                  |  84 ++---
+ docs/SINGLE-PASS-CONTROLS.md                       |   4 +-
+ docs/SINGLE-PASS-FRONT.md                          |  40 +--
+ docs/SINGLE-PASS-PROOF.md                          | 134 +++----
+ docs/SINGLE-PASS-THEOREM.md                        |  12 +-
+ docs/SINGLE-PASS.md                                |  38 +-
+ docs/SOURCE-CLAIMS.md                              |  34 +-
+ docs/SOURCE-CONTRACTS.md                           | 160 ++++-----
+ docs/SOURCE-ELABORATION.md                         |  94 ++---
+ docs/SOURCE-FRAGMENT.md                            |   4 +-
+ docs/SOURCE-MODEL.md                               |  26 +-
+ docs/SOURCE-REWRITES.md                            | 104 +++---
+ docs/TRUST-REDUCTION.md                            |   2 +-
+ docs/UNION-SHAPES.md                               |  12 +-
+ docs/deep-dives/checked-bounds/deck.mts            |  40 +--
+ .../checked-bounds/project/slides/growth-heap.html |   6 +-
+ .../checked-bounds/project/slides/growth.html      |   8 +-
+ .../project/slides/one-array-heap.html             |   4 +-
+ .../project/slides/preservation.html               |   2 +-
+ .../project/slides/separation-heap.html            |   2 +-
+ .../checked-bounds/project/slides/separation.html  |   2 +-
+ .../checked-bounds/project/slides/trust.html       |   2 +-
+ .../checked-bounds/project/slides/visitor.html     |   4 +-
+ docs/deep-dives/gap-priorities/deck.mts            |   2 +-
+ .../gap-priorities/project/slides/storage.html     |   2 +-
+ docs/deep-dives/method-effects/deck.mts            |  44 +--
+ .../method-effects/project/slides/closure.html     |   2 +-
+ .../method-effects/project/slides/footprint.html   |   8 +-
+ .../method-effects/project/slides/map.html         |   2 +-
+ .../method-effects/project/slides/natives.html     |   6 +-
+ .../method-effects/project/slides/needed.html      |   6 +-
+ .../method-effects/project/slides/outcomes.html    |   2 +-
+ .../method-effects/project/slides/tscert.html      |  12 +-
+ .../method-effects/project/slides/write.html       |   2 +-
+ docs/drafts/correctness-specs.md                   |  10 +-
+ docs/drafts/effects-of-commands.md                 |  54 +--
+ docs/drafts/element-facts.md                       |   4 +-
+ docs/drafts/forward-facts.md                       |   4 +-
+ docs/drafts/head-invariant-facts.md                |   4 +-
+ docs/drafts/heap-knowledge-canonical.md            |   2 +-
+ docs/drafts/keeping-contract-facts-across-calls.md |  12 +-
+ docs/drafts/location-kinds.md                      | 136 +++----
+ docs/drafts/method-effects.md                      |  62 ++--
+ docs/drafts/native-footprints-from-steps.md        |  16 +-
+ docs/drafts/on-demand-processing.md                |  10 +-
+ docs/drafts/parity-interfaces.md                   | 142 ++++----
+ docs/drafts/parity-rule-table.md                   |   2 +-
+ docs/drafts/proposals-by-the-pass.md               |  12 +-
+ docs/drafts/rules-as-mechanism.md                  |  34 +-
+ docs/drafts/rules-at-acceptance.md                 |   2 +-
+ docs/drafts/stated-bodies-regional.md              |   2 +-
+ docs/drafts/stated-effects.md                      | 246 ++++++-------
+ docs/drafts/tolerant-frames-note-errata.md         |  20 +-
+ docs/drafts/tolerant-frames.md                     |  78 ++--
+ docs/drafts/two-state-postconditions.md            |   4 +-
+ pipeline/examples/array-index-loop-footprint.ts    |   2 +-
+ pipeline/examples/array-isarray.ts                 |   2 +-
+ pipeline/examples/array-iterable.ts                |   2 +-
+ pipeline/examples/array-literal-host-spread.ts     |   2 +-
+ pipeline/examples/array-literal-keeps-facts.ts     |   6 +-
+ pipeline/examples/array-push-keeps-facts.ts        |   2 +-
+ pipeline/examples/array-splice-insert.ts           |   2 +-
+ pipeline/examples/array-spread-union-footprint.ts  |   2 +-
+ pipeline/examples/array-union-length-test.ts       |   2 +-
+ pipeline/examples/blocker-claim-lift-forms.ts      |   2 +-
+ ...locker-compiler-api-declaration-bindings-map.ts |   2 +-
+ .../examples/blocker-compiler-api-map-spread.ts    |   2 +-
+ pipeline/examples/blocker-fresh-sort-effect.ts     |   4 +-
+ ...gap-round-captured-arms-reduction-preserving.ts |   2 +-
+ .../blocker-gap-round-visitor-effect-unstated.ts   |   2 +-
+ .../examples/blocker-gap-round-visitor-effect.ts   |   2 +-
+ .../blocker-pretext-module-cell-after-call.ts      |   2 +-
+ .../blocker-round-conditional-record-join.ts       |   2 +-
+ pipeline/examples/bounded-write-keeps-cells.ts     |   2 +-
+ .../bounds-pattern-fresh-field-write-refused.ts    |   2 +-
+ .../examples/bounds-pattern-grow-upper-refused.ts  |   4 +-
+ .../bounds-pattern-module-constant-refused.ts      |   2 +-
+ pipeline/examples/bounds-pattern-visitor.ts        |   2 +-
+ .../examples/callback-field-write-footprint.ts     |   4 +-
+ pipeline/examples/closure-array-length.ts          |   2 +-
+ .../examples/closure-declared-before-reader.ts     |   2 +-
+ pipeline/examples/closure-graph-entries.ts         |   2 +-
+ .../compiler-api-find-union-node-method.ts         |   4 +-
+ pipeline/examples/compiler-api-guard-values.ts     |   2 +-
+ .../compiler-api-narrowed-node-callback.ts         |   2 +-
+ .../compiler-api-node-list-fallback-push.ts        |   2 +-
+ .../examples/compiler-api-node-list-length-test.ts |   2 +-
+ pipeline/examples/compiler-api-request-effect.ts   |   2 +-
+ pipeline/examples/compiler-api-visitor-effect.ts   |   2 +-
+ .../examples/compiler-api-visitor-pop-sparse.ts    |   2 +-
+ .../examples/declaration-field-write-callback.ts   |   2 +-
+ pipeline/examples/element-write-keeps-lengths.ts   |   2 +-
+ pipeline/examples/exceptional-footprint-fresh.ts   |   4 +-
+ pipeline/examples/facts-across-writes.ts           |   4 +-
+ pipeline/examples/field-index-kept-by-class.ts     |   2 +-
+ pipeline/examples/find-stable-counter.ts           |   2 +-
+ pipeline/examples/for-of-keeps-counter-facts.ts    |   2 +-
+ .../grow-call-in-expression-keeps-lengths.ts       |   2 +-
+ pipeline/examples/guard-footprint.ts               |   2 +-
+ .../interface-module-cells-value-import.ts         |   2 +-
+ pipeline/examples/invalid-array-splice-tuple.ts    |   2 +-
+ .../invalid-bounded-element-read-shrunk.ts         |   2 +-
+ .../examples/invalid-bounds-pattern-grow-upper.ts  |   2 +-
+ .../invalid-bounds-pattern-module-constant.ts      |   2 +-
+ .../examples/invalid-bounds-pattern-visitor.ts     |   2 +-
+ .../invalid-closure-finally-throw-footprint.ts     |   2 +-
+ .../invalid-compiler-api-callback-tojson.ts        |   2 +-
+ ...lid-compiler-api-node-list-fallback-set-push.ts |   2 +-
+ .../examples/invalid-compiler-api-retained-fs.ts   |   2 +-
+ .../invalid-compiler-api-visitor-effect.ts         |   2 +-
+ .../examples/invalid-declaration-pop-callback.ts   |   2 +-
+ .../examples/invalid-facts-across-alias-pop.ts     |   2 +-
+ .../invalid-lazy-cache-initializer-pops.ts         |   2 +-
+ pipeline/examples/invalid-map-filter-pop.ts        |   2 +-
+ pipeline/examples/invalid-map-fresh-alias.ts       |   4 +-
+ pipeline/examples/invalid-map-fresh-join.ts        |   2 +-
+ pipeline/examples/invalid-map-fresh-parameter.ts   |   2 +-
+ pipeline/examples/invalid-map-fresh-reassigned.ts  |   2 +-
+ pipeline/examples/invalid-map-reduce-pop.ts        |   2 +-
+ pipeline/examples/invalid-map-spread-pop.ts        |   2 +-
+ .../examples/invalid-method-effect-declaration.ts  |   2 +-
+ pipeline/examples/invalid-method-effect-method.ts  |   2 +-
+ .../examples/invalid-modifies-region-callback.ts   |   2 +-
+ .../examples/invalid-modifies-region-change.ts     |   2 +-
+ pipeline/examples/invalid-modifies-region-root.ts  |   2 +-
+ .../invalid-module-dictionary-keeps-lengths.ts     |   2 +-
+ pipeline/examples/invalid-native-constant-let.ts   |   2 +-
+ pipeline/examples/invalid-normal-return-finally.ts |   2 +-
+ .../examples/invalid-open-array-generic-call.ts    |   2 +-
+ .../invalid-push-keeps-fresh-lengths-alias.ts      |   2 +-
+ pipeline/examples/invalid-quantified-push-alias.ts |   2 +-
+ .../invalid-regexp-replace-callback-pops.ts        |   2 +-
+ pipeline/examples/invalid-reserved-key.ts          |   2 +-
+ .../examples/invalid-returned-closure-footprint.ts |   2 +-
+ .../invalid-round-conditional-path-call.ts         |   2 +-
+ .../invalid-shrinking-call-in-declaration.ts       |   2 +-
+ .../examples/invalid-sort-comparator-shrink.ts     |   4 +-
+ pipeline/examples/invalid-stated-alias.ts          |   2 +-
+ .../examples/invalid-stated-effect-stringify.ts    |   2 +-
+ pipeline/examples/invalid-stated-fresh-join.ts     |   2 +-
+ .../examples/invalid-stated-fresh-old-array.ts     |   2 +-
+ .../examples/invalid-stated-fresh-parameter.ts     |   2 +-
+ pipeline/examples/invalid-stated-grow-pops.ts      |   2 +-
+ pipeline/examples/invalid-stated-path-unstable.ts  |   4 +-
+ pipeline/examples/invalid-stated-region-alias.ts   |   4 +-
+ .../invalid-stated-region-fresh-wrapper.ts         |   2 +-
+ .../examples/invalid-stated-region-grow-region.ts  |   4 +-
+ .../invalid-stated-region-grow-upper-bound.ts      |   2 +-
+ pipeline/examples/invalid-stated-region-other.ts   |   2 +-
+ .../invalid-stated-region-unstable-apart-write.ts  |   2 +-
+ pipeline/examples/invalid-stated-store-region.ts   |   6 +-
+ pipeline/examples/isarray-record-array.ts          |   2 +-
+ pipeline/examples/isarray-unknown.ts               |   2 +-
+ pipeline/examples/lazy-cache-keeps-facts.ts        |   6 +-
+ pipeline/examples/length-array-or-record.ts        |   2 +-
+ pipeline/examples/length-view.ts                   |   4 +-
+ pipeline/examples/map-annotated-regexp-replace.ts  |   2 +-
+ pipeline/examples/map-fresh-controls-sparse.ts     |   2 +-
+ pipeline/examples/map-insert-keeps-paths.ts        |   6 +-
+ pipeline/examples/map-parameter-get-footprint.ts   |   2 +-
+ pipeline/examples/map-stable-collection-write.ts   |   2 +-
+ pipeline/examples/map-stable-element-write.ts      |   2 +-
+ pipeline/examples/map-stable-filter-push.ts        |   2 +-
+ pipeline/examples/map-stable-for-of.ts             |   2 +-
+ pipeline/examples/map-stable-fresh-store.ts        |   6 +-
+ pipeline/examples/map-stable-named-callback.ts     |   2 +-
+ pipeline/examples/map-stable-object-spread.ts      |   2 +-
+ pipeline/examples/map-stable-optional-chain.ts     |   2 +-
+ pipeline/examples/map-stable-reduce-push.ts        |   2 +-
+ pipeline/examples/map-stable-set.ts                |   2 +-
+ pipeline/examples/map-stable-spread-call.ts        |   2 +-
+ pipeline/examples/map-stable-spread.ts             |   4 +-
+ pipeline/examples/method-calls-keep-facts.ts       |   2 +-
+ pipeline/examples/method-effect-interface.ts       |   2 +-
+ pipeline/examples/method-effect-map.ts             |   2 +-
+ pipeline/examples/module-cache-keeps-lengths.ts    |   2 +-
+ .../examples/module-dictionary-keeps-lengths.ts    |   2 +-
+ pipeline/examples/node-path-strings.ts             |   2 +-
+ .../examples/open-array-generic-call-refused.ts    |   2 +-
+ pipeline/examples/pretext-array-element-read.ts    |   2 +-
+ pipeline/examples/pretext-native-constants.ts      |   2 +-
+ pipeline/examples/push-keeps-apart-lengths.ts      |   2 +-
+ pipeline/examples/push-keeps-fresh-lengths.ts      |   2 +-
+ pipeline/examples/push-spread.ts                   |   2 +-
+ .../regexp-replace-callback-keeps-lengths.ts       |   4 +-
+ .../region-call-in-expression-keeps-lengths.ts     |   4 +-
+ pipeline/examples/region-call-path-length-kept.ts  |   6 +-
+ .../examples/regional-walk-lacking-head-fact.ts    |   2 +-
+ pipeline/examples/returned-closure-footprint.ts    |   2 +-
+ pipeline/examples/set-spread-stated-footprint.ts   |   2 +-
+ pipeline/examples/stated-argument-path.ts          |  12 +-
+ pipeline/examples/stated-argument-store.ts         |   6 +-
+ pipeline/examples/stated-distinct-view-refused.ts  |   2 +-
+ pipeline/examples/stated-fresh-direct.ts           |  10 +-
+ pipeline/examples/stated-fresh-field-alias.ts      |   2 +-
+ pipeline/examples/stated-fresh-field-local.ts      |   2 +-
+ pipeline/examples/stated-fresh-field-nullable.ts   |   4 +-
+ pipeline/examples/stated-fresh-field.ts            |   6 +-
+ pipeline/examples/stated-grow-keeps-lengths.ts     |   2 +-
+ pipeline/examples/stated-local-runs.ts             |   6 +-
+ pipeline/examples/stated-region-cell-call.ts       |   2 +-
+ pipeline/examples/stated-region-fresh.ts           |   6 +-
+ .../examples/stated-region-grow-keeps-lengths.ts   |   4 +-
+ pipeline/examples/stated-region-lazy.ts            |   4 +-
+ .../stated-region-nullable-apart-assigned.ts       |   2 +-
+ .../stated-region-nullable-apart-undefined.ts      |   2 +-
+ pipeline/examples/stated-region-nullable-write.ts  |   6 +-
+ .../examples/stated-region-stable-apart-writes.ts  |   4 +-
+ pipeline/examples/stated-region-steps.ts           |   4 +-
+ pipeline/examples/stated-slot-collect.ts           |   2 +-
+ pipeline/examples/stated-slot-conditional.ts       |   2 +-
+ pipeline/examples/stated-slot-handler.ts           |   2 +-
+ pipeline/examples/store-apart-through-paths.ts     |   2 +-
+ pipeline/examples/two-state-effect-relation.ts     |   2 +-
+ .../examples/typed-array-subarray-facts-gap.ts     |   2 +-
+ pipeline/examples/write-keeps-cells.ts             |   2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
