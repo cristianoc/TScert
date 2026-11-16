@@ -2101,7 +2101,9 @@ assignment is. The views over one buffer share its bytes (`subarray`), so a
 write changes the elements of every view over the written bytes: in the
 model it replaces the written entries of those views' element spines by
 fresh locations holding what each view then reads there. It changes spines
-alone and keeps their lengths: the spine-growth footprint, values kept, with
+alone and keeps their lengths: its frame is
+$`\{\mathsf{views}:\mathsf{grow}\}`$, every value and array spine kept
+(`viewWriteFrame`, the frame its transition postcondition states), with
 `elementWrite` (`Effect.viewPost`, `Kinds.ViewWriteOf`): every location
 whose role at the call's entry is not a view's element spine keeps its
 contents, and each view's element spine keeps its length, every cell it

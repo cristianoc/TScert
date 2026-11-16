@@ -95,7 +95,7 @@
 import { join } from "node:path";
 import type { IndexFact, LinearTerm, SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
-import { emptyFootprint, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyFootprint, emptyEffect, footprintEffect, frameEffect, ordinaryEffect, viewWriteFrame } from "./type-graph.mts";
 import { viewKinds, views, canvasContext, canvasGetters, canvasSetters, domSetters, dateTimeFormat, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 
@@ -729,7 +729,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // typed array over the written bytes to a fresh location holding what
     // that view now reads there, which changes view spines alone and keeps
     // their lengths: the effect `{all-views: grow}` (`elementWrite`,
-    // `Kinds.ViewWrite.frame_iff`), within the spine-growth footprint. Its
+    // `Kinds.ViewWrite.frame_iff`), its frame (`viewWriteFrame`). Its
     // first signature states this of every element assignment, with the
     // element write at the view's own format and the value as the result
     // (`"assign"`, `CallEffects.ViewAssign`).
@@ -749,9 +749,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1), { int: { slot: 3 } }];
       return { typeParams: [], type: { k: "intersection", span, parts: [
         { ...fn([views, atom("number"), atom("number")], atom("number")),
-          effect: footprintEffect({ value: "keep", spine: "grow" }, { elementWrite: "assign" }) },
+          effect: frameEffect(viewWriteFrame, { elementWrite: "assign" }) },
         ...viewKinds.map(({ type, range, write }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
-          effect: footprintEffect({ value: "keep", spine: "grow" }, { elementWrite: write, pre: [...index,
+          effect: frameEffect(viewWriteFrame, { elementWrite: write, pre: [...index,
             ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])] }) })),
       ] } };
     },

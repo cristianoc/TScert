@@ -113,6 +113,13 @@ export const classFrame = (c: ClosedFootprint): Modifies<{}, Frame> => [
   { region: { cls: viewsClass }, change: c.spine }];
 /** The frame letting every location change: the note's `⊤`. */
 export const topFrame: Frame = classFrame(topFootprint);
+/** **The frame of a write through a typed array** (the note *Tolerant
+ * frames*, View-Write, `{views: grow}`): the view spines grow, every other
+ * location keeps its contents; the frame its transition postcondition
+ * states (`writePosts`, `Kinds.ViewWrite.frame_iff`). */
+export const viewWriteFrame: Frame = [
+  { region: { cls: valuesClass }, change: "keep" }, { region: { cls: arraysClass }, change: "keep" },
+  { region: { cls: viewsClass }, change: "grow" }];
 /** **An exit's guarantee**: its frame and its postconditions (`ExitSchema`). */
 export const exitSchema = (frame: Frame, ensures: readonly Formula[] = []): Modifies<{}, ExitSchema> =>
   ({ frame, ensures });
@@ -150,8 +157,8 @@ function writePosts(w: ElementWrite): Modifies<{}, Formula[]> {
 }
 /** The receiver's spine entry of a frame: its array spine at `any`. */
 const receiverSpineEntry: Frame[number] = { region: { field: { x: 0, key: "[]" } }, change: "any" };
-/** **A signature effect of a footprint and its options**, the exits it
- * states (`Exits`): the normal frame the footprint's class entries, then the
+/** **A signature effect of a frame and its options**, the exits it
+ * states (`Exits`): the normal frame the stated frame's entries, then the
  * receiver's fields (else its spine) at `any`; the normal
  * postconditions the fresh result spine and object, the receiver's
  * elements where the result is `true`, the facts after, the receiver's growth
@@ -159,7 +166,7 @@ const receiverSpineEntry: Frame[number] = { region: { field: { x: 0, key: "[]" }
  * where `onThrow`, `⊤` otherwise, with no postcondition. An exact element
  * write states its range in its preconditions (`exactWritePre`); an effect
  * without it is refused. */
-export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Modifies<{}, CallEffect> => {
+export const frameEffect = (stated: Frame, options?: EffectOptions): Modifies<{}, CallEffect> => {
   const elementWrite = options?.elementWrite ?? null;
   const pre = options?.pre ?? [];
   if (isExactWrite(elementWrite) && !exactWritePre(elementWrite).every(f => pre.some(g => canonicalText(g) === canonicalText(f))))
@@ -167,7 +174,7 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
   const receiver: Frame = options?.receiverFields
     ? [{ region: { inCls: { region: { fields: { x: 0 } }, selector: valuesClass } }, change: "any" }]
     : options?.receiverSpine ? [receiverSpineEntry] : [];
-  const frame: Frame = [...classFrame(footprint), ...receiver];
+  const frame: Frame = [...stated, ...receiver];
   const elements = options?.elements ?? null;
   const ensures: Formula[] = [
     ...(options?.fresh ? [operation({ freshSpine: { x: 0 } })] : []),
@@ -180,6 +187,10 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
   return effect({ normal: exitSchema(frame, ensures), exceptional: options?.onThrow ? exitSchema(frame) : exitSchema(topFrame) },
     { promise: options?.promise ?? null, requires: options?.requires ?? null, pre });
 };
+/** **A signature effect of a closed footprint and its options**: the
+ * effect of its frame (`classFrame`, `frameEffect`). */
+export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Modifies<{}, CallEffect> =>
+  frameEffect(classFrame(footprint), options);
 /** **A statement's exits** (`Exits.ofStated`): the closed footprint's frame
  * and the spine regions at `any`, a fresh result spine where it states one,
  * and on a throw the same frame where it states `onThrow`, `⊤` otherwise. */
