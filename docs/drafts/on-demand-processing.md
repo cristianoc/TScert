@@ -214,6 +214,117 @@ Gate on executed/replayed units, distinct processed identities, preparation exec
 
 Required edit experiments: unchanged request executes zero units; unchanged-interface body edit executes one; unrelated same-file edit leaves other keys stable; declaration/interface change invalidates exactly its recorded readers; a diamond processes its shared dependency once; a killed unit preserves completed siblings; a cycle uses conservative views without iteration.
 
+### Frozen-root workload, 2026-11-16
+
+These three measurements use the annotated pretext source at
+`9268edb157fa2d697c36185e2cd5500fc6753e38`. Each request selects the named
+root and its reachable same-file declarations. Imported interfaces are
+established separately and frozen; their establishment and TypeScript parsing
+are outside verifier-only CPU. Source lines include comments and annotations;
+statement counts exclude block statements. Graph counts describe the root alone,
+while unit counts describe the complete timed request. Import counts are the
+union of imported dependencies named by its same-file verdicts, not every row
+loaded from the interface documents.
+Slot totals count logical occurrences, not distinct types, allocations or measured
+memory; persistent structures can share storage.
+
+| Root | Source lines / statements | Same-file units, including initialization | Consumed imported entries | Typed graph nodes / edges | Maximum context slots | Context slots summed over nodes | Edge slot-map entries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [`prepare.ts#measureAnalysis`](https://github.com/cristianoc/pretext/blob/9268edb157fa2d697c36185e2cd5500fc6753e38/src/prepare.ts#L358) | 338 / 186 | 18 | 11 | 1,424 / 1,555 | 201 | 200,513 | 203,326 |
+| [`rich-inline.ts#prepareRichInline`](https://github.com/cristianoc/pretext/blob/9268edb157fa2d697c36185e2cd5500fc6753e38/src/rich-inline.ts#L182) | 574 / 404 | 10 | 10 | 3,055 / 3,298 | 207 | 478,866 | 477,404 |
+| [`line-break.ts#walkPreparedComplexLines`](https://github.com/cristianoc/pretext/blob/9268edb157fa2d697c36185e2cd5500fc6753e38/src/line-break.ts#L469) | 634 / 337 | 11 | 2 | 2,667 / 2,965 | 155 | 320,223 | 338,135 |
+
+The frozen fragments occupy 15.04 / 20.64 / 13.47 MB; their interface documents
+occupy 3.73 / 6.97 / 3.00 MB (decimal MB), including 5 / 9 / 4 modules with
+transitive and unused rows. Reading and decoding those documents is included in
+verifier CPU even though generating them is excluded.
+
+The first request reaches measurement, script and spacing helpers in its own
+file, and interfaces from `checked.ts`, `graphemes.ts`, `line-breaks.ts` and
+`measurement.ts`. The second reaches helpers including `getHyphenRooms`, `findWholeLine`,
+`getOpeningFit` and `getSourceUnits`, and interfaces from `analysis.ts`, `checked.ts`, `line-break.ts` and
+`measurement.ts`. The third reaches line-start, tab-advance and terminal-spacing
+helpers, and interfaces from `checked.ts` and `measurement.ts`. Calls consume
+checked interfaces; the verifier does not inline every imported implementation
+at every call. Native contracts retain their separately stated assumptions.
+
+Lowering makes the work larger than the source. For example, the first statement
+of `prepareRichInline` is:
+
+```ts
+const whiteSpace = options?.whiteSpace ?? "normal";
+```
+
+Its execution graph contains two nullish tests, saved values and branch merges.
+A schematic rendering of those operations is:
+
+```text
+receiver = options
+value = isNullish(receiver) ? undefined : receiver.whiteSpace
+whiteSpace = isNullish(value) ? "normal" : value
+```
+
+The typed graph also carries contexts, edge mappings and proof facts. Its entry
+allocates 49 path-witness slots before the body: saved values used to relate
+field reads to their snapshots. These slots widen later contexts and mappings.
+The other roots allocate 29 and 6 such slots. The roughly eight typed graph nodes
+per non-block source statement therefore understate the representation size:
+there are also hundreds of thousands of slot occurrences and mappings.
+
+Counts from a separate instrumented run of `ceade5ed`, before demand-based
+proposal planning, show why one graph size does not predict runtime. Across
+all units, the requests make at least 8,737 / 25,352 / 12,034 node attempts,
+including diagnosing walks. These are lower bounds because failed proposal
+walks do not report their visited-node counts. Root fresh-value/cell propagation
+alone performs 43,556 / 126,341 / 151,326 transfers; the latter two roots also
+perform 12,028 / 11,768 summary transfers. These are symbolic propagation steps,
+not runtime loop iterations, and differ from the final acceptance walk's counts.
+
+This is substantial verification work, but it does not establish that tens of
+seconds are necessary. Unused root interface proposals add complete body and
+regional-inference walks without providing a fact any caller consumes. Repeated
+invariant diagnosis, dense context mappings and widely allocated path witnesses
+are further costs to distinguish from the obligations of a fresh acceptance
+check. Equivalence and completeness of inference under finite budgets are not
+proved; acceptance soundness does not imply either property.
+
+### Interface demand in a prepared worker
+
+The existing planner's known-proposal list can state that a function has no
+extra inferred interface. This preserves its written declaration and leaves its
+body check intact. A prepared worker computes interface demand over the existing
+reachable group dependency graph, once for its selected roots. It uses that
+planner entry for a group with no reachable consumer, provided the group has no
+recursive reference or written effect contract and no proposal control is forced.
+An incomplete demand walk conservatively demands all groups. Dependencies retain
+their proposals, and module-interface publication uses its separate full planner.
+The demand set is scoped to that prepared file and selection; it is not a cache
+of body results across changing invariants, summaries or stores.
+
+Measured in cloud on 2026-11-16 against `ceade5ed`, with only this demand
+change added. Three alternating serial, uncached pairs per root use identical
+frozen parser documents and imported interfaces; profiling and counters are
+disabled. The Linux x86-64 host exposes an AMD EPYC 9V74 with a four-CPU
+quota; the verifier runs serially. Lean is pinned at 4.33.1 and Node is 26.13.0.
+Parser revision is `83a014de`, mode 8 uses fuel 12 and 4,096 subtype rounds.
+These absolute times are not interchangeable with local measurements.
+
+| Root | Before, CPU seconds | Demand-based, CPU seconds | Speedup |
+| --- | --- | --- | --- |
+| `measureAnalysis` | 13.128 | 13.125 | 1.00× |
+| `prepareRichInline` | 36.629 | 16.503 | 2.22× |
+| `walkPreparedComplexLines` | 16.538 | 3.930 | 4.21× |
+
+All 18 complete verdict outputs match the original executable byte for byte.
+`measureAnalysis` remains refused; its explicit effect contract retains inference,
+and its timing difference is negligible. The other two roots remain accepted.
+All bodies retain fresh acceptance checks. Preparing immutable edge mappings and
+pre-sizing temporary hash sets, measured separately on rich-inline, give median
+differences of about 0.7% and a further 1.7% respectively. These small differences
+do not establish a material gain against run variation; neither experiment is
+retained. FIFO worklist scheduling increases root fresh-value/cell transfers
+from 126,341 to 179,233 and is also discarded.
+
 ### Accounting
 
 The instrument for "every item processed once" is the [work table](../SINGLE-PASS.md#work) of a profiled request (`TSCERT_PROFILE=<directory>`) and its report, `node dev/work-report.mts report <directory>`, a function of the directory alone. Profiling sets `TSCERT_PROFILE=1` in each verifier stage's environment and adds the output `work.jsonl`, so a profiled stage's key differs from the unprofiled one; an unprofiled request's keys and verdicts are those of a request with no accounting.
