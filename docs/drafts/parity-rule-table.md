@@ -33,7 +33,7 @@ row whose mechanism is separate, or absent, is work.
 | Dense | `Derivation.dense`, for a prefix bounded by a variable | separate: the density and type checks and the callback contracts |
 | Sep | `RawDerivation.sep`, through `tolerantFrame`, for linear length atoms | separate: `frameKeeps` and the separation queries |
 | Every | `RawDerivation.everyFrame`, through support and respect, for ordinary arrays and the represented scalar predicates | separate: `everyKept`, `writeAtoms`, and the append and write rules |
-| Init | `RawDerivation.init`, through support and respect, for linear atoms at a path | separate: `callChanges`, the kept terms and the initialization checks |
+| Init | `RawDerivation.init`, through support and respect, for linear atoms at a path | separate: the kept terms and the initialization checks |
 | Rigid | `Derivation.rigidSubst`: capture-avoiding substitution under the fresh-variable and effect condition | separate: recognition of stable fields and paths; no producer introduces rigidity into the checker from the typing certificates |
 | View | `RawDerivation.view`, through invariant support, for facts over variables and view lengths | separate: the preservation of view lengths |
 | Write-In | `Derivation.writeIn` with `Bridges.lengthsKept_of_run`: the exact length equation | separate: `keepsLengths`, `boundedLength_sound` |

@@ -3340,56 +3340,11 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
   · exact ⟨fun F hF => (by cases hF), fun _ u hu => (by cases hu), fun u hu => (by cases hu)⟩
 
 open HeapKnowledge in
-/-- **The changes a call's normal exit states of the caller's heap**
-(`Changes`), each with the fields of slots' objects it keeps (`first`): the
-growth where it states the receiver's store extended (`statesExtension`:
-`growChanges`, `growFirst`), an element write's where it states the views'
-growth (`statesViewGrowth`: `writeChanges`), and its frame's closed bound
-(`Footprint.boundBelow` with no fresh position, `Changes.ofClosed`). -/
-def callChanges (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) :
-    List (Changes × (Nat → String → Bool)) :=
-  (if statesExtension eff then [(growChanges, fun s g => growFirst k t s g || stable s g)] else []) ++
-  (if statesViewGrowth eff then [(writeChanges, stable)] else []) ++
-  [(Changes.ofClosed (Footprints.Footprint.boundBelow [] eff.frame), stable)]
-
-open HeapKnowledge in
-/-- Each change holds of the call's step, and the fields it keeps keep their
-contents (proved). -/
-theorem callChanges_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap}
-    {v : Tm}
-    (hk : Holds k ε ρ h)
-    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
-    (hst : FirstKept stable ρ h h') :
-    ∀ c ∈ callChanges stable eff t k, c.1.Holds h h' ∧ FirstKept c.2 ρ h h' := by
-  intro c hc
-  unfold callChanges at hc
-  simp only [List.mem_append] at hc
-  rcases hc with (hc | hc) | hc
-  · split at hc
-    · rename_i hx
-      simp only [List.mem_singleton] at hc; subst hc
-      have hgr := statesExtension_grows hx hq
-      exact ⟨receiverGrows_changes hgr, firstKept_or (growFirst_kept hk hgr) hst⟩
-    · cases hc
-  · split at hc
-    · rename_i hv
-      simp only [List.mem_singleton] at hc; subst hc
-      exact ⟨statesViewGrowth_changes hv hq, hst⟩
-    · cases hc
-  · simp only [List.mem_singleton] at hc; subst hc
-    refine ⟨Changes.ofClosed_holds (Footprints.Closed.holds_of_on ?_), hst⟩
-    have hb := Footprints.Footprint.boundBelow_sound (b := h.length) (CallEffects.Effect.callPost_within hq)
-      (Footprints.FreshPositions.nil _ _)
-    exact ⟨hb.1, fun l v _ hv => hb.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩
-
-open HeapKnowledge in
-/-- **Whether a call keeps the value of a term of the caller**: a change its
-normal exit states keeps it (`Term.keptBy`, the note's Entry), or its frame
-at the caller's slots respects the term's support at `keep` under the query
-of the call's entry (`Term.support`, `respects`, the note's Frame). -/
+/-- **Whether a call keeps the value of a term of the caller**: its frame at
+the caller's slots respects the term's support at `keep` under the query of
+the call's entry (`Term.support`, `respects`, the note's Frame). -/
 def callKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Bool :=
-  (callChanges stable eff t k).any (fun c => u.keptBy c.1 c.2) ||
-    Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .keep) (callerFrame eff t)
+  Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .keep) (callerFrame eff t)
 
 open HeapKnowledge in
 /-- A term of the caller the call keeps, read after the return one slot
@@ -3398,12 +3353,10 @@ def callKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Kno
   if callKeeps stable eff t k u then some (u.mapM' (· + 1)) else none
 
 open HeapKnowledge in
-/-- A term of the caller the call grows: a change its normal exit states
-grows it (`Term.grownBy`), or its frame respects the term's support at
-`grow`; read after the return one slot higher. -/
+/-- A term of the caller the call grows: its frame respects the term's
+support at `grow`; read after the return one slot higher. -/
 def callGrown (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Option Term :=
-  if (callChanges stable eff t k).any (fun c => u.grownBy c.1 c.2) ||
-      Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .grow) (callerFrame eff t)
+  if Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .grow) (callerFrame eff t)
   then some (u.mapM' (· + 1)) else none
 
 open HeapKnowledge in
@@ -3419,13 +3372,9 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
     cases hu
     rw [termValue_mapM' fun _ => rfl]
     unfold callKeeps at hc
-    rcases Bool.or_eq_true_iff.mp hc with hc | hc
-    · obtain ⟨c, hcm, hc⟩ := List.any_eq_true.mp hc
-      obtain ⟨hch, hf⟩ := callChanges_holds hk hq hst c hcm
-      exact termValue_kept hch hf hc hn
-    · obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inl rfl)
-        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
-      rw [h3 rfl] at h1; exact h1
+    obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inl rfl)
+      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
+    rw [h3 rfl] at h1; exact h1
   · cases hu
 
 open HeapKnowledge in
@@ -3441,13 +3390,9 @@ theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : T
   · rename_i hc
     cases hu
     rw [termValue_mapM' fun _ => rfl]
-    rcases Bool.or_eq_true_iff.mp hc with hc | hc
-    · obtain ⟨c, hcm, hc⟩ := List.any_eq_true.mp hc
-      obtain ⟨hch, hf⟩ := callChanges_holds hk hq hst c hcm
-      exact termValue_grown hch hf hc hn
-    · obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inr rfl)
-        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
-      exact ⟨n', h1, h2⟩
+    obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inr rfl)
+      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
+    exact ⟨n', h1, h2⟩
   · cases hu
 
 open HeapKnowledge in
