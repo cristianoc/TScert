@@ -1,4 +1,5 @@
 import Verification.Semantics.ParityAssertions
+import Verification.Semantics.Survival
 
 /-! # Parity evidence: substitution, marks and support contexts
 
@@ -789,7 +790,13 @@ Definition "Support"):
   changes no location holding an object, a number or a string;
 - a typed array's element `b[i] ≐ ℓ` at a variable `b`, `i` heap-free and
   `ℓ` a literal, by `{b.spine: keep, b[cells]: keep}` (the note, §6,
-  Example "A write through a typed array"). -/
+  Example "A write through a typed array");
+- a linear fact reading the current heap, by any `S` containing the support
+  the acceptance path produces for it in the empty read context: each
+  term's path reads and spine (the note, §5, Definition "Supports of the
+  atoms", the rows of an inequality; `IndexFact.support?`), through the
+  shared support relation (`IndexFact.support?_supports`,
+  `SupportDomain.Supports.pullback`). -/
 inductive SupportEvidence where
   | invariant
   | lengths
@@ -797,6 +804,7 @@ inductive SupportEvidence where
   | field
   | init
   | viewElement
+  | paths
   deriving DecidableEq, Repr
 
 def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footprint) : SupportEvidence → Bool
@@ -818,6 +826,12 @@ def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footp
   | .viewElement => match arena.nodes[A.index]? with
     | some (.atom (.element b t (.literal _))) => b.fields.isEmpty && !t.atEntry && t.path.isEmpty &&
         t.kind != .length && S.contains (.spine b.root [], .keep) && S.contains (.pathCells b.root [], .keep)
+    | _ => false
+  | .paths => match arena.nodes[A.index]? with
+    | some (.atom (.linear F)) => F.vars.all (fun t => !t.atEntry) &&
+        match (IndexFact.linear F).support? {} with
+        | some T => T.all S.contains
+        | none => false
     | _ => false
 
 private theorem lengths_term {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS : SupportedBy S η s s') {t : Term}
@@ -1010,6 +1024,25 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
         · simp only [viewCells, hso, hds, hc0', Option.bind_some, hent]
         · simpa [Witness.value] using hw
       · cases hvc
+    · cases h
+  | .paths, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i F hn
+      simp only [Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true'] at h
+      obtain ⟨hnow, hT⟩ := h
+      split at hT
+      · rename_i T hTs
+        intro η m s s' ha _ hA hS
+        have hsub : ∀ e ∈ T, e ∈ S := fun e he => by simpa using List.all_eq_true.mp hT e he
+        have hsup := ((Footprints.IndexFact.support?_supports (ε := ⟨η, s.h⟩) {} _ hTs).pullback indexed).mono hsub
+        have hkept : ∀ (h : Heap) t, t ∈ F.vars → termValue ⟨η, s.h⟩ η h t = termAt η h t :=
+          fun _ t ht => termValue_now (hnow t ht)
+        have hF : (IndexFact.linear F).HoldsAt ⟨η, s.h⟩ η s.h :=
+          factAt_congr (fun t ht => hkept s.h t ht) ((sat_atom hn).mp hA)
+        have hF' := hsup η m s s' ha (fun _ _ _ _ _ _ _ hf => by cases hf) hF hS
+        exact (sat_atom hn).mpr (factAt_congr (fun t ht => (hkept s'.h t ht).symm) hF')
+      · cases hT
     · cases h
   | .init, h => by
     simp only [SupportEvidence.check] at h

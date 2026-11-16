@@ -80,7 +80,7 @@ contains the other:
 | | A | B |
 |---|---|---|
 | Modality as an assertion, Frame+, existentials, rigid substitution | yes | no |
-| Supports of facts at field paths, by the locations read | one coarse support | precise |
+| Supports of facts at field paths, by the locations read | B's, for a linear fact (`SupportEvidence.paths`); else one coarse support | precise |
 | Quantified facts over typed arrays, with offsets | no | yes |
 | Unrestricted disjunction, guards that read the heap | no | yes |
 | A quantified fact requires each element present | yes | no |
