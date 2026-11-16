@@ -590,7 +590,7 @@ well-formed where $\pi$ is an object path. The region $\pi.f$ is
 well-formed where $\pi$ is an object path and every object member of
 its type has the field $f$, required or optional. An effect, a support
 and an annotation contain well-formed regions only
-\status{Lean: the regions \lean{spine}, \lean{pathCells}, \lean{path} and \lean{pathFields} are defined at every path and denote the empty set at a value of another kind; no kinding of regions is checked}.
+\status{Lean: the regions \lean{spine}, \lean{pathCells}, \lean{path} and \lean{pathFields} are defined at every path and denote the empty set at a value of another kind. A spine region that a frame states is checked well-formed by the declared type of its path, every member an array type, \code{null} or \code{undefined} (\lean{regionKindOk}); the regions of supports are not kinded}.
 
 In the four forms at a path, $v$ stands for $\mathit{read}(\pi,\rho,h)$.
 The region denotes $\emptyset$ when the read fails, when $v$ is
