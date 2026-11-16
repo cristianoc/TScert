@@ -301,13 +301,20 @@ operation & writes & class written\\
 \code{o.f = e} & the field location & \emph{value}\\
 \code{a[i] = e}, index present & the element cell & \emph{value}\\
 \code{a[i] = e} at a hole or past the end; \code{push} & the spine (longer or filled), and a new cell & \emph{spine}\\
-\code{pop}, \code{splice}, \code{a.length = n} & the spine (possibly shorter) & \emph{spine}\\
+\code{pop}, \code{a.length = n} & the spine (possibly shorter) & \emph{spine}\\
+\code{shift}, \code{reverse}, \code{splice} & the spine, and the element cells of the array & \emph{spine} and \emph{value}\\
 \code{b[i] = e}, \code{b} a typed array & view spines (same lengths), and new cells & \emph{spine}\\
 \bottomrule
 \end{tabular}
 \medskip
 
 \noindent
+The last three array methods move elements as ECMA-262 specifies, by
+assigning to an index the value of another: an index that has an element
+before and after keeps its cell, and the contents of the cell change.
+After \code{a = [10, 20]; a.shift()} the spine is $\langle l_0\rangle$,
+and $l_0$, which held 10, holds 20.
+
 The \emph{value} class is thus ``contents'': every location that holds
 something other than a spine. The \emph{spine} class is ``shape'': which
 elements an array has and how many. A fact about a length or about
