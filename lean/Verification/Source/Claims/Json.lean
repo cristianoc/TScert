@@ -33,6 +33,11 @@ def observationLine (tag : String) (record : Json) : String :=
   | .ok j => tag ++ j.compress
   | .error e => tag ++ "refused: " ++ e
 
+/-- The refusal of a spine region at a path of another kind (the note's
+§3, "Regions"; `ArgumentPathTracking.regionKindOk`). -/
+def kindRefusal : String :=
+  "states a spine region at a path whose declared type is no collection type: a member of it is not an array, null or undefined"
+
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
 at the first node the node-by-node bound check refuses, else at the
@@ -84,7 +89,11 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
       (GraphCode.ArgumentRegionGraph.firstRefusedNode G images c.readSummaries Φ regions table ft
         (r.stated.any (·.onThrow)) P c.certificate).bind fun (_, l) => (r.sourceMap[l]?).bind id
     let pos := (place.map (·.pos)).getD namePos
-    if !fieldsOk then
+    let kindsOk := (r.regional.map fun (_, regions) =>
+      regions.all (GraphCode.ArgumentPathTracking.regionKindOk G r.inputs)).getD true
+    if !kindsOk then
+      some s!"source effect refusal at [{namePos.1},{namePos.2}): the frame stated for '{name}' {kindRefusal}"
+    else if !fieldsOk then
       some s!"source effect refusal at [{namePos.1},{namePos.2}): the frame stated for '{name}' reads a spine region through a field that is no present stable field of its parameter's type, or through more than one field"
     else
     some s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for '{name}' is not established by its body: a step changes a location outside its spine regions beyond the statement's bound"
@@ -796,6 +805,8 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
   if w == "spine regions" then
     let (_, regions) ← r.regional
     let pos := f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0)
+    if !regions.all (GraphCode.ArgumentPathTracking.regionKindOk (RequestJson.graph r.toRequest) r.inputs) then
+      return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} {kindRefusal}"
     if !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
       return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} reads a spine region through a field that is no present stable field of its parameter's type, or through more than one field"
     return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} is not established by its body"

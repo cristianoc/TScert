@@ -178,11 +178,45 @@ def entryField [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (A : Program
   G.plainTy A && HeapExpressionRules.fieldOperand (presentClauses G A) (.str f) &&
     (presentClauses G A).all fun c => c.stableKeys.contains (.str f)
 
-/-- **The entry check of traversed fields.** Each is a field of its
-position's entry contract `entryField` accepts, an input slot of the unit,
-and every region's path has at most one field. -/
+/-- An alternative of a collection type at an array spine: `null`,
+`undefined`, or an object whose spine slot's contract is an array's spine
+(the reading of `IndexWrites.arraySlot`). -/
+@[nospecialize] def arrayClause [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) :
+    PositiveNormalization.Clause (ProgramTyping.Ty ι) → Bool
+  | .nul | .undef => true
+  | .refs fs _ vs _ _ _ _ =>
+    match ((Stored.views fs).lookup arraySpineKey).orElse fun _ => vs.lookup arraySpineKey with
+    | some S => match PositiveRules.expand G S with
+      | [.list _ []] => true
+      | _ => false
+    | none => false
+  | _ => false
+
+/-- **A collection type** (the note's §3, "Regions": a region `π.spine` is
+well-formed at a path whose type has every member a collection type, `null`
+or `undefined`), at an array spine: every alternative is an `arrayClause`. -/
+@[nospecialize] def arrayType [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (A : ProgramTyping.Ty ι) : Bool :=
+  G.plainTy A && (PositiveRules.expand G A).all (arrayClause G)
+
+/-- **A spine region is well-formed**: the declared type at its path, its
+position's input type or the type of the field it reads on every present
+alternative, is a collection type (`arrayType`). -/
+def regionKindOk [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (inputs : List (ProgramTyping.Ty ι))
+    (r : ArgumentSpineRegion) : Bool :=
+  match inputs[r.position]? with
+  | none => false
+  | some A => match r.path with
+    | [] => arrayType G A
+    | [f] => (HeapExpressionRules.fieldTys (presentClauses G A) (.str f)).all (arrayType G)
+    | _ => false
+
+/-- **The entry check of traversed fields.** Each region is well-formed
+(`regionKindOk`); each field is a field of its position's entry contract
+`entryField` accepts, an input slot of the unit, and every region's path has
+at most one field. -/
 def checkEntryFields [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (inputs : List (ProgramTyping.Ty ι))
     (regions : List ArgumentSpineRegion) : Bool :=
+  regions.all (regionKindOk G inputs) &&
   regions.all (·.path.length ≤ 1) &&
   (stableFields regions).all fun (x, f) => match inputs[x]? with
     | some A => entryField G A f
