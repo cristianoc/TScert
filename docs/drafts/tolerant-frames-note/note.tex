@@ -590,7 +590,7 @@ well-formed where $\pi$ is an object path. The region $\pi.f$ is
 well-formed where $\pi$ is an object path and every object member of
 its type has the field $f$, required or optional. An effect, a support
 and an annotation contain well-formed regions only
-\status{Lean: the regions \lean{store}, \lean{pathElems}, \lean{path} and \lean{pathOwn} are defined at every path and denote the empty set at a value of another kind; no kinding of regions is checked}.
+\status{Lean: the regions \lean{spine}, \lean{pathCells}, \lean{path} and \lean{pathFields} are defined at every path and denote the empty set at a value of another kind; no kinding of regions is checked}.
 
 In the four forms at a path, $v$ stands for $\mathit{read}(\pi,\rho,h)$.
 The region denotes $\emptyset$ when the read fails, when $v$ is
@@ -614,7 +614,7 @@ $(\pi.\kw{cells})(\rho,h)=\mathit{cells}(h(\mathit{sp}(v)))$ if $v$ is
 a collection. It is a set of value locations. After a
 change of the spine, the region denotes the cells that the new spine
 lists. Example: $a.\kw{cells}$ denotes $\{4,5\}$
-\status{Lean: the regions \lean{elems} and \lean{pathElems}}.
+\status{Lean: the regions \lean{cells} and \lean{pathCells}}.
 \item[{$\pi.f$}] The field location for the key $f$ of the object that
 $\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$ if $v$ is an object with
 $f\in\mathrm{dom}\,v$. Examples: $o.n$ denotes $\{0\}$ and $o.m$
@@ -624,7 +624,7 @@ reads: $(\pi.\kw{fields})(\rho,h)=\mathit{fields}(v)$ if $v$ is an object.
 It is a set of value locations. Example: $o.\kw{fields}$ denotes $\{0,1\}$. It
 covers the fields a type of $v$ does not list, which no finite set of
 regions $\pi.f$ does. By (T3) the object $v$ fixes this set
-\status{Lean: the regions \lean{own} and \lean{pathOwn}, which also contain the spine location of an array}.
+\status{Lean: the regions \lean{fields} and \lean{pathFields}, which also contain the spine location of an array}.
 \end{description}
 \noindent
 We write $\pi[\ast]$ for the spine location together with the cells:
@@ -718,7 +718,7 @@ states the effect judgment as displayed}.
 \item[Rigid: the fields at a rigid path] $\{\pi.\kw{fields}:\delta\}$ is
 rigid on the states where $\pi$ is rigid: by (T3) the path then reads an
 object with the same field locations in $h$ and in $h'$
-\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound}, for the region \lean{pathOwn}, which also contains the spine location of an array}.
+\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound}, for the region \lean{pathFields}, which also contains the spine location of an array}.
 \item[Not rigid: cells of a spine changed at $\any$]
 $\{x[\ast]:\any\}$ is not rigid. A first change may make the spine of
 $x$ list an element cell that existed before and that it did not list,
@@ -880,7 +880,7 @@ the object $x$ were allocated by this invocation. The other four forms are:
 \rho,m,h\models\bx{\Phi}F &\iff& \text{for all }h'\text{, if }h\tr{\Phi}_\rho h'\text{ then }\rho,m,h'\models F .
 \end{array}
 \]
-\status{Lean: \lean{PathStoresApart} for $\sep$ as stated; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for the freshness of the spine of a path that reads an array, and of the fields of one that reads an object. The derivation system \lean{Parity.Derivation} states $\sep$ of two arrays.}
+\status{Lean: \lean{PathSpinesApart} for $\sep$ as stated; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for the freshness of the spine of a path that reads an array, and of the fields of one that reads an object. The derivation system \lean{Parity.Derivation} states $\sep$ of two arrays.}
 So $\bx{\Phi}F$ says: $F$ holds in every state reached from here by a
 change bounded by $\Phi$. The states reached are those admissible from
 $s$, so the modality reads the world of $s$, and it is the one form that
@@ -943,7 +943,7 @@ stabilisation~\cite{wickerson}, at a rely denoted by an effect.
 Law (a) follows from reflexivity; (b), (c) and (d) from the definitions;
 (e) from transitivity. For class regions, transitivity is
 \lean{Closed.Holds.trans\_on}; for a spine at a path it is
-\lean{ArgumentStoreRegionsWithin.trans}, provided the path resolves to
+\lean{ArgumentSpineRegionsWithin.trans}, provided the path resolves to
 the same spine in both heaps.
 
 \begin{proposition}[Guards and quantified facts]\label{prop:every}
