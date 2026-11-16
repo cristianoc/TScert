@@ -1441,7 +1441,11 @@ $i+2\le\slen(s)$.
 A library function is used at a reviewed contract. The contract
 consists of the function's signature, an effect
 (Definition~\ref{def:given}) and the postconditions this section
-states; it has no precondition. The reviewed functions are the methods
+states. A call has no obligation beyond the argument types of the
+signature, except the obligations this definition states for
+\code{charCodeAt} and \code{codePointAt}: with arguments of those
+types the function either returns a value of its result type or
+throws, and a throw is a safe outcome. The reviewed functions are the methods
 of strings (\code{toUpperCase}, \code{split}, \code{replace},
 \code{slice} and the others), \code{Math.max}, \code{Math.min} and the
 other numeric functions of \code{Math}, \code{Object.is},
