@@ -532,7 +532,7 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 \draw[->] (a) -- (2.7,0.42);
 \draw[->] ([xshift=-2pt]c3.south) to[out=-70,in=-110,looseness=0.9] (c4.south);
 \draw[->] ([xshift=2pt]c3.south) to[out=-60,in=-120,looseness=0.7] (c5.south);
-\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{own}$}/{0,1},-3.4/{$a.\kw{store}$}/{3},-3.8/{$a.\kw{cells}$}/{4,5},-4.2/{$a[\ast]$}/{3,4,5},-4.6/{$\st$}/{3},-5.0/{$\val$}/{0,1,2,4,5}}{
+\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{fields}$}/{0,1},-3.4/{$a.\kw{store}$}/{3},-3.8/{$a.\kw{cells}$}/{4,5},-4.2/{$a[\ast]$}/{3,4,5},-4.6/{$\st$}/{3},-5.0/{$\val$}/{0,1,2,4,5}}{
   \node[anchor=east] at (-0.55,\y) {\name};
   \foreach \j in \cells { \ifnum\j=3 \node[sbar] at (\j,\y) {}; \else \node[bar] at (\j,\y) {}; \fi }
 }
@@ -589,9 +589,9 @@ lists. Example: $a.\kw{cells}$ denotes $\{4,5\}$
 $\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$ if $v$ is an object and
 $f\in\mathrm{dom}\,v$. Examples: $o.n$ denotes $\{0\}$ and $o.m$
 denotes $\{1\}$.
-\item[{$\pi.\kw{own}$}] Every field location of the object that $\pi$
-reads: $(\pi.\kw{own})(\rho,h)=\mathit{fields}(v)$ if $v$ is an object.
-It is a set of value locations. Example: $o.\kw{own}$ denotes $\{0,1\}$. It
+\item[{$\pi.\kw{fields}$}] Every field location of the object that $\pi$
+reads: $(\pi.\kw{fields})(\rho,h)=\mathit{fields}(v)$ if $v$ is an object.
+It is a set of value locations. Example: $o.\kw{fields}$ denotes $\{0,1\}$. It
 covers the fields a type of $v$ does not list, which no finite set of
 regions $\pi.f$ does. By (T3) the object $v$ fixes this set
 \status{Lean: the regions \lean{own} and \lean{pathOwn}, which also contain the store location of an array}.
@@ -621,7 +621,7 @@ region and a change:
 \[
 \begin{array}{rcl}
 \Phi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[3pt]
-r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{own}\\[3pt]
+r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{fields}\\[3pt]
 \delta &::=& \keep\mid\init\mid\kw{scalar}\mid\grow\mid\any
 \end{array}
 \]
@@ -672,10 +672,10 @@ location in its class, and $\any$ absorbs any change that follows it.
 \item[Rigid: a store at a rigid path] $\{\pi.\kw{store}:\delta\}$ is
 rigid on the states where $\pi$ is rigid (Section~4): the path then
 reads the same store in $h$ and in $h'$.
-\item[The own fields at a path] $\{\pi.\kw{own}:\delta\}$ is the effect of a method that changes only its
+\item[The fields at a path] $\{\pi.\kw{fields}:\delta\}$ is the effect of a method that changes only its
 receiver's fields. An iterator \code{it} whose \code{next} has that
 specification gives
-$\code{it.next()}:\{\mathit{it}.\kw{own}:\any\}$
+$\code{it.next()}:\{\mathit{it}.\kw{fields}:\any\}$
 \status{Lean: \lean{ownCall\_sound}, for a call whose normal effect has
 an entry at the receiver's own fields and keeps every other location}.
 \item[Not rigid: cells of a store changed at $\any$]
@@ -797,7 +797,7 @@ the invocation has allocated. Atoms read
 $\rho$ and $h$ only, and the connectives $\wedge$, $\vee$, $\exists$
 have their usual meaning: a disjunction holds where one of its two
 assertions holds, whatever the other reads. We write $\fresh(x)$ for
-$\fresh(x.\kw{store})$, and $\fresh(x.\kw{own})$ says that the fields of
+$\fresh(x.\kw{store})$, and $\fresh(x.\kw{fields})$ says that the fields of
 the object $x$ were allocated by this invocation. The other four forms are:
 \[
 \begin{array}{lcl}
@@ -1217,7 +1217,7 @@ allocate in the same way:
 \[
 \begin{array}{l}
 \hoare{\kw{true}}{\code{x = [a1, ..., ak]}}{\fresh(x)\wedge\len x=k\wedge\dense(x,k)\wedge\textstyle\bigwedge_{j<k}x[j]\doteq a_{j+1}\wedge\bigwedge_y\apart(x,y)}\\[3pt]
-\hoare{\kw{true}}{\code{y = \{f: a, ...\}}}{\fresh(y.\kw{own})\wedge y.f\doteq a\wedge\cdots}
+\hoare{\kw{true}}{\code{y = \{f: a, ...\}}}{\fresh(y.\kw{fields})\wedge y.f\doteq a\wedge\cdots}
 \end{array}
 \]
 These separations are
@@ -1803,8 +1803,8 @@ dense prefix extends: $\old(\dense(x,i))\Rightarrow\dense(x,i+1)$.
 \item[The value of a push]
 \code{y = x.push(v)} gives $y=\len x$. \textsc{Push} states nothing
 of the value it returns.
-\item[Rigidity of the own fields at a rigid path]
-$\{\pi.\kw{own}:\delta\}$ is rigid on the states where $\pi$ is rigid:
+\item[Rigidity of the fields at a rigid path]
+$\{\pi.\kw{fields}:\delta\}$ is rigid on the states where $\pi$ is rigid:
 by (T3) the path then reads an object with the same field locations in
 $h$ and in $h'$.
 \end{description}
