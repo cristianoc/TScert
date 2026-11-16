@@ -1782,13 +1782,14 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
       (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hv hev _ _ _ _ _ (ihD s hΓ) a₁ a₂).2
   | @tolerantFrame Γ p K A b g Φ S sev rev cev hs hr hc hb _ _ _ ihe ihK ihA =>
     intro s hΓ
-    have hthrough : ContextThroughout arena K Φ (cev.ctx arena) := by
-      intro η m anchor s₁ s₂ hK a₁ a₂
-      have hg : Sat arena η m anchor g := ihe ⟨η, η, m, anchor, anchor⟩ fun q hq => by
+    have hcond : ConditionOnActions arena K Φ (cev.ctx arena) := by
+      intro η m s₁ s₂ hK a
+      have hg : Sat arena η m s₁ g := ihe ⟨η, η, m, s₁, s₁⟩ fun q hq => by
         simp only [List.mem_singleton] at hq; subst hq; exact hK
-      exact cev.sound hc η m anchor s₁ s₂ hg a₁ a₂
+      exact cev.sound hc η m s₁ s₂ hg a
     exact (sat_box hv hb).mpr fun s' act =>
-      tolerant_frame (sev.sound hs) hthrough (rev.sound hr) _ _ _ (ihK s hΓ) (ihA s hΓ) s' act
+      tolerant_frame (q := rev.query arena K) (sev.sound hs) hr (fun _ _ _ hK => rev.query_sound hK) hcond
+        _ _ _ (ihK s hΓ) (ihA s hΓ) s' act
   | transportRigid θ rigid hθ hr _ _ ihd ihr =>
     intro s hΓ
     obtain ⟨hb, hst⟩ := hθ

@@ -498,7 +498,7 @@ theorem rely_chain {F : FactKind} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Fo
     intro hi
     obtain ⟨hp, hs, hk⟩ := hstep i (by omega)
     have hF := ih (by omega)
-    exact FactKind.support_sound hF (stable_sound hs (hk hF) hp)
+    exact FactKind.frame_step hs (hk hF) hp hF
 
 /-- **`map`'s rely.** If the receiver is dense below its length at entry, and
 every step until the last presence test (callbacks and `map`'s own steps)

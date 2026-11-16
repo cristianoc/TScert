@@ -1007,7 +1007,7 @@ Let $K$ be an assertion. An effect $\Phi$ \emph{respects} a support $S$
 under $K$, written $\Phi\resp_K S$, when for every $\rho,m,h,h'$ with
 $\rho,m,h\models K$ and $h\tr{\Phi}_\rho h'$, every location
 $l<\len h$ in a region $r(\rho,h)$ of a pair $(r:\delta)\in S$
-satisfies $\delta_{\len h}(h(l),h'(l))$ \status{Lean: \lean{Respects}}.
+satisfies $\delta_{\len h}(h(l),h'(l))$ \status{Lean: \lean{Supported} of every action of $\Phi$ from a state of $K$; \lean{respect\_sound} gives it from the sufficient condition below}.
 \end{definition}
 
 \noindent
@@ -1022,14 +1022,14 @@ condition is sufficient because a location of a region of $S$ either
 keeps its contents, and every change is reflexive, or lies in a region
 $r'$ of an entry of $\Phi$ that bounds its change by $\gamma$; then $r$
 and $r'$ are not disjoint, so $\gamma\sqsubseteq\delta$
-\status{Lean: \lean{supported\_of\_pairs}}.
+\status{Lean: \lean{respects}, \lean{respect\_sound}}.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
 Let $S$ support $F$ under $C$, let $\Phi\resp_K S$, and let $C(h,h')$
 hold of every change $h\tr{\Phi}_\rho h'$ from a state that satisfies
 $K$. Then $K\wedge F\vdash\bx{\Phi}F$. In particular, if $S$ supports
 $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
-\status{Lean: \lean{Parity.tolerant\_frame}, for the assertions the Lean represents and every effect, with the condition required of two consecutive changes bounded by $\Phi$ (\lean{ContextThroughout}); \lean{supports\_step} for one transition that meets the condition}
+\status{Lean: \lean{frame\_step} at one transition, over any domain of states, and its modal form \lean{frame\_box}, with the condition required of every change bounded by $\Phi$ from a state that satisfies $K$ (\lean{ConditionOnActions}); \lean{Parity.tolerant\_frame} is its instance for the assertions the Lean represents, and the acceptance path's survival check (\lean{IndexFact.keeps\_sound}) its instance at one transition}
 \end{theorem}
 \begin{proof}
 Let $\rho,m,h\models K\wedge F$ and $h\tr{\Phi}_\rho h'$. Since $\Phi$

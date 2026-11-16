@@ -185,7 +185,7 @@ theorem sat_rigid_iff {arena : AssertionArena} (hv : arena.Valid) {a b c : Asser
     refine ⟨v, (sat_box hv hb).mpr fun s' hs' => (sat_atom hc).mpr ⟨v, ?_, rfl⟩⟩
     rw [hread]; exact hv' s' hs'.admissible
 
-/-! ## Support contexts throughout a modality -/
+/-! ## Support contexts and the tolerant frame -/
 
 /-- **A contextual support** (I5, `SupportContext`): a condition on both
 endpoints of a transition. -/
@@ -201,35 +201,21 @@ over indexed states, of `A`'s satisfaction. -/
 abbrev Supports (arena : AssertionArena) (C : SupportContext) (S : Footprint) (A : AssertionRef) : Prop :=
   indexed.Supports C (fun η m s => Sat arena η m s A) S
 
-/-- **`Φ` respects `S` under `K`, semantically** (the note, §5, Definition
-"Respect", read as what its proof uses): every action of `Φ` from a state of
-`K` stays within `S`. -/
-def Respects (arena : AssertionArena) (K : AssertionRef) (Φ S : Footprint) : Prop :=
-  ∀ η m s s', Sat arena η m s K → EffectAction Φ η s s' → SupportedBy S η s s'
+/-- **The condition of a support holds of every action of `Φ` from a state
+of `K`** (the note, §5, Theorem "Tolerant frame", its premise on the
+condition): `SupportDomain.ConditionOnActions` over indexed states. -/
+abbrev ConditionOnActions (arena : AssertionArena) (K : AssertionRef) (Φ : Footprint) (C : SupportContext) : Prop :=
+  indexed.ConditionOnActions (fun η m s => Sat arena η m s K) Φ C
 
-/-- **Context evidence valid over the entire modal domain** (I5,
-`ContextThroughout`): from a state reached by an action from a state of `K`,
-every further action of `Φ` is in the context. -/
-def ContextThroughout (arena : AssertionArena) (K : AssertionRef) (Φ : Footprint) (C : SupportContext) : Prop :=
-  ∀ η m anchor s s', Sat arena η m anchor K → EffectAction Φ η anchor s → EffectAction Φ η s s' → C η m s s'
-
-/-- **A context of one transition gives that transition's consequence**:
-the one use of actual-step evidence. Box introduction (`tolerant_frame`)
-asks the context throughout the modal domain instead. -/
-theorem supports_step {arena : AssertionArena} {C : SupportContext} {S : Footprint} {A : AssertionRef}
-    (hs : Supports arena C S A) {η : Env} {m : Nat} {s s' : IndexedHeap} (ha : Admissible s s')
-    (hc : C η m s s') (hA : Sat arena η m s A) (hS : SupportedBy S η s s') : Sat arena η m s' A :=
-  hs η m s s' ha hc hA hS
-
-/-- **The tolerant frame theorem** (the note, §5, Theorem "Tolerant frame";
-I5, `tolerant_frame`): `K ∧ A ⊢ □_Φ A` where `S` supports `A` in a context
-holding throughout the modal domain of `K` and `Φ`, and `Φ` respects `S`
-under `K`. -/
+/-- **The tolerant frame theorem** (the note, §5, Theorem "Tolerant
+frame"): `K ∧ A ⊢ □_Φ A` where `S` supports `A` under a condition holding of
+every action of `Φ` from a state of `K`, and `Φ` respects `S` under a query
+sound at every state of `K`; `frame_box` over indexed states. -/
 theorem tolerant_frame {arena : AssertionArena} {C : SupportContext} {S Φ : Footprint} {K A : AssertionRef}
-    (hs : Supports arena C S A) (hc : ContextThroughout arena K Φ C) (hr : Respects arena K Φ S) :
+    {q : SepQuery} (hs : Supports arena C S A) (hr : respects q S Φ = true)
+    (hq : ∀ η m s, Sat arena η m s K → q.Sound η s.h) (hc : ConditionOnActions arena K Φ C) :
     ∀ η m s, Sat arena η m s K → Sat arena η m s A → ∀ s', EffectAction Φ η s s' → Sat arena η m s' A :=
-  fun η m s hK hA s' ha =>
-    hs η m s s' ha.admissible (hc η m s s s' hK (EffectAction.refl Φ η s) ha) hA (hr η m s s' hK ha)
+  frame_box hs hr hq hc
 
 /-- The references whose nodes are conjuncts of node `k`: `k` itself and,
 through `∧`, those of its two sides. -/
@@ -289,22 +275,21 @@ def ContextEvidence.check (arena : AssertionArena) (K : AssertionRef) : ContextE
   | .invariant g => (conjuncts arena.nodes K.index).contains g.index && invNode arena.nodes g.index
   | .conj a b => a.check arena K && b.check arena K
 
-/-- **Checked context evidence holds throughout the modal domain.** -/
+/-- **Checked context evidence holds of every action of `Φ` from a state of
+`K`.** -/
 theorem ContextEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ : Footprint} :
-    ∀ ev : ContextEvidence, ev.check arena K = true → ContextThroughout arena K Φ (ev.ctx arena)
-  | .truth, _ => fun _ _ _ _ _ _ _ _ => trivial
-  | .wellFormed, _ => fun _ _ _ s s' _ _ _ => ⟨s.ok, s'.ok⟩
+    ∀ ev : ContextEvidence, ev.check arena K = true → ConditionOnActions arena K Φ (ev.ctx arena)
+  | .truth, _ => fun _ _ _ _ _ _ => trivial
+  | .wellFormed, _ => fun _ _ s s' _ _ => ⟨s.ok, s'.ok⟩
   | .invariant g, hc => by
     simp only [ContextEvidence.check, Bool.and_eq_true, List.contains_iff_mem] at hc
-    intro η m anchor s s' hK ha ha'
-    have hg : Sat arena η m anchor g := conjuncts_sat arena.nodes K.index g.index hc.1 η m anchor hK
-    have hinv := invNode_sound arena.nodes g.index hc.2
-    have h1 : Sat arena η m s g := hinv η m anchor s ha.admissible hg
-    exact ⟨h1, hinv η m s s' ha'.admissible h1⟩
+    intro η m s s' hK ha
+    have hg : Sat arena η m s g := conjuncts_sat arena.nodes K.index g.index hc.1 η m s hK
+    exact ⟨hg, invNode_sound arena.nodes g.index hc.2 η m s s' ha.1 hg⟩
   | .conj a b, hc => by
     simp only [ContextEvidence.check, Bool.and_eq_true] at hc
-    intro η m anchor s s' hK ha ha'
-    exact ⟨a.sound hc.1 η m anchor s s' hK ha ha', b.sound hc.2 η m anchor s s' hK ha ha'⟩
+    intro η m s s' hK ha
+    exact ⟨a.sound hc.1 η m s s' hK ha, b.sound hc.2 η m s s' hK ha⟩
 
 /-! ## Finite certificates of the modal rules
 
@@ -758,12 +743,6 @@ theorem RespectEvidence.query_sound {arena : AssertionArena} {K : AssertionRef} 
   intro r r' l hd hr hr'
   obtain ⟨d, -, hdc⟩ := List.any_eq_true.mp hd
   rw [d.sound hdc η m s hK l hr] at hr'; cases hr'
-
-/-- **The note's respect implies its semantic use**: every action of `Φ`
-from a state of `K` stays within `S` (`Respects`, `respect_sound`). -/
-theorem RespectEvidence.sound {arena : AssertionArena} {K : AssertionRef} {S Φ : Footprint}
-    (ev : RespectEvidence) (hc : ev.check arena K S Φ = true) : Respects arena K Φ S :=
-  fun _ _ _ _ hK ha => respect_sound hc (ev.query_sound hK) ha.2
 
 /-! ### Supports -/
 

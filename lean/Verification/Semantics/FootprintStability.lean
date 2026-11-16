@@ -292,19 +292,11 @@ theorem Sep.sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
   · exact apart₁_sound hK ha hr hs
   · exact apart₁_sound hK ha hs hr
 
-/-! ## The tolerant frame at a transition
+/-! ## The tolerant frame
 
-The note's Theorem *Tolerant frame*, over any assertion (FOOTPRINTS.md,
-"Support and respect"); its Definitions *Support* and *Respect* are
-`Supports` and `respects` (`Semantics/Support.lean`). -/
-
-/-- **The tolerant frame, at a transition**: an assertion with a support
-the effect respects under a query sound at the prestate holds after every
-transition within the effect that meets the support's context. -/
-theorem keeps_sound {C : Env → Heap → Heap → Prop} {P : Env → Heap → Prop} {S Φ : Footprint}
-    {q : SepQuery} {ρ h h'} (hs : Supports C P S) (hr : respects q S Φ = true) (hq : q.Sound ρ h)
-    (hp : Post Φ ρ h h') (hc : C ρ h h') (hP : P ρ h) : P ρ h' :=
-  hs.apply hc hP (respect_sound hr hq hp)
+The note's Theorem *Tolerant frame* is `frame_step` (`Semantics/Support.lean`),
+over any assertion (FOOTPRINTS.md, "Support and respect"); the fact kinds and
+the stability check below are its instances. -/
 
 /-- Separation knowledge answers a query (`Sep.sound`). -/
 def SepKnowledge.query (K : SepKnowledge) : SepQuery := ⟨K.apart⟩
@@ -326,6 +318,13 @@ theorem stable_sound {K : SepKnowledge} {S Φ μ ρ h h'} (hc : stable K S Φ = 
     (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' :=
   respect_sound (q := K.query) hc (SepKnowledge.query_sound hK) hp
 
+/-- **A fact kind the stability check keeps holds after the transition**
+(`frame_step`, `FactKind.supports`). -/
+theorem FactKind.frame_step {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {μ ρ h h'}
+    (hc : stable K F.support Φ = true) (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') (hF : F.Holds ρ h) :
+    F.Holds ρ h' :=
+  Footprints.frame_step (D := heaps) (m := 0) F.supports hc (SepKnowledge.query_sound hK) hp trivial trivial hF
+
 /-- The facts the check keeps across a footprint. -/
 def frame (K : SepKnowledge) (fs : List FactKind) (Φ : Footprint) : List FactKind :=
   fs.filter fun F => stable K F.support Φ
@@ -334,7 +333,7 @@ theorem frame_sound {K : SepKnowledge} {fs Φ μ ρ h h'} (hK : K.Holds μ ρ h)
     (hf : ∀ F ∈ fs, F.Holds ρ h) (hp : Post Φ ρ h h') : ∀ F ∈ frame K fs Φ, F.Holds ρ h' := by
   intro F hF
   obtain ⟨hm, hs⟩ := List.mem_filter.mp hF
-  exact FactKind.support_sound (hf F hm) (stable_sound hs hK hp)
+  exact FactKind.frame_step hs hK hp (hf F hm)
 
 /-! ## A callee's frame at the caller's slots -/
 
@@ -359,7 +358,7 @@ theorem keep_across_call {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {σ 
     {μ : Nat → Nat} {ρ env : Env} {h h' : Heap}
     (hσ : ∀ i, ρ (σ i) = env i) (hp : Post Φ env h h') (hK : K.Holds μ ρ h)
     (hs : stable K F.support (Φ.rename σ) = true) (hF : F.Holds ρ h) : F.Holds ρ h' :=
-  FactKind.support_sound hF (stable_sound hs hK (Post.rename hσ hp))
+  FactKind.frame_step hs hK (Post.rename hσ hp) hF
 
 /-- The class evidence a density fact supplies: its spine holds a spine. -/
 def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arraySpineKey then some .spines else none
