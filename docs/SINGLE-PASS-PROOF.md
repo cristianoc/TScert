@@ -403,8 +403,8 @@ the checker whose `run` its selection is states the same effect
 $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$.
 Each layer states its own rule's effect and reads its base's otherwise:
 
-- the base rules (`Checker.steps`, `passSteps`, `Checker.subtypingSteps`,
-  `stepsNormal`): an ordinary step and a write $`\top`$; every other base
+- the base rules (`Checker.steps`, `passSteps`, `Checker.subtypingSteps`
+  under a qualified body's call layers, `stepsNormal`): an ordinary step and a write $`\top`$; every other base
   rule fixes the term's shape (`base_shape`): `pure` and `reading` an
   inspection by their checked purity, the four reads `.readAt f (.var i)` with
   $`i`$ a slot holding a value (for `linkedRead`, an object by the link fact),
@@ -488,8 +488,9 @@ $`b`$ (`Checker.ordinary = ordinaryOver (Checker.steps …)`, by definition);
 
 The pass's checker (`SinglePass.PassChecker`) is
 `ordinary` (`Checker.ordinary`, whose `select` takes a derivation as given,
-the pass checking its tree) or `qualified` (`Checker.withSubtyping`, whose
-`select` is its `run`). The pass's tree check at the step's facts
+the pass checking its tree) or `qualified` (`Checker.withSubtyping`: the
+descriptor-aware steps under the call layers of `Checker.ordinary`, so a call
+states the same normal effect in both; its `select` is its `run`). The pass's tree check at the step's facts
 $`k_E`$ is `passTreeCheck`: refused, or accepted with the
 tree only `requiresTree` accepted (`preconditioned`); before a writing step's
 `select` over every fact $`k_E'`$ that tree is checked again at $`k_E'`$

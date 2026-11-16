@@ -2775,11 +2775,4 @@ admits (`ordinary`). -/
     | ordinary e => exact absurd rfl (hord e)
     | _ => exact base_keeps checked hord hwr hcodes hsums he hk hw hh href
 
-/-- Descriptor-aware steps, each keeping its input's stable links. -/
-@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (subtyping : BodySubtyping G)
-    (ordinary : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true) :
-    Checker G images :=
-  (Checker.subtypingSteps G images subtyping ordinary).keepingStable
-
 end Verification.HeapExpressionRules

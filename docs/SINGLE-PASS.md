@@ -340,7 +340,8 @@ A qualified body (`SourceRequest.checker`) is walked over the request's own
 graph and image check at its checker and aliases. The pass takes its
 checker as `SinglePass.PassChecker`: the proved layers (`Checker.ordinary`),
 whose steps' trees the pass checks, or a qualified body's
-(`Checker.withSubtyping`), whose `select` is its `run`
+(`Checker.withSubtyping`, its descriptor-aware steps under the same call
+layers), whose `select` is its `run`
 (`PassChecker.select_eq_run`), so a step's derivation is checked by the
 step's own check. Its
 request-level conditions are those `effectResult`, `regionalResult` and

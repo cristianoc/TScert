@@ -372,22 +372,6 @@ theorem checkStepResult_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowl
       (checkStepResult G images j k e codes sums).value :=
   checkStep_reassign G η images j k e codes sums
 
-/-- Descriptor evidence may vary with the assignment while the executable
-body comparison stays fixed. -/
-theorem checkBodyStep_reassign (body : BodySubtyping G)
-    (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
-    (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
-    (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
-    (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
-    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
-    ((Checker.withSubtyping (reassign G η) (images.reassign η) body' ord').run j k e codes sums).value =
-      ((Checker.withSubtyping G images body ord).run j k e codes sums).value := by
-  simp only [Checker.withSubtyping, Checker.keepingStable, CheckResult.map, withStable_reassign]
-  congr 1
-  cases e <;> simp only [Checker.subtypingSteps, CheckResult.value_bind_const,
-    CheckResult.accepted_ofBool, same, checkTreeWith_reassign,
-    checkStepResult_value_reassign] <;> rfl
-
 theorem entryKnows_reassign (inputs : List (List ι)) (S : HeapSeparation.Separation)
     (I : List HeapKnowledge.IndexAtom) (k : HeapKnowledge.Knowledge) :
     ControlFlow.entryKnows (reassign G η) inputs S I k = ControlFlow.entryKnows G inputs S I k := rfl
@@ -514,6 +498,46 @@ theorem elementCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledg
   split
   · rfl
   · exact requiringCalls_value_reassign G η images j k e codes sums
+
+/-- **The call layers read their base at a reassignment as they read it at
+the graph**: their predicates and outputs are the graph's. -/
+theorem callLayers_value_reassign {b : Checker G images} {b' : Checker (reassign G η) (images.reassign η)}
+    (hb : ∀ j k e codes sums, (b'.run j k e codes sums).value = (b.run j k e codes sums).value)
+    (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    (b'.keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.run j k e codes sums).value =
+      (b.keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.run j k e codes sums).value := by
+  simp only [Checker.elementCalls, Checker.requiringCalls, Checker.allocatingCalls, Checker.keepingOwnCalls,
+    Checker.keepingCalls, elementsCall_reassign, requiresCall_reassign, freshCall_reassign, ownCall_reassign,
+    keepsCall_reassign]
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · rfl
+      · split
+        · rfl
+        · split
+          · rfl
+          · exact hb j k e codes sums
+
+/-- Descriptor evidence may vary with the assignment while the executable
+body comparison stays fixed. -/
+theorem checkBodyStep_reassign (body : BodySubtyping G)
+    (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
+    (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
+    (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.withSubtyping (reassign G η) (images.reassign η) body' ord').run j k e codes sums).value =
+      ((Checker.withSubtyping G images body ord).run j k e codes sums).value := by
+  simp only [Checker.withSubtyping, Checker.keepingStable, CheckResult.map, withStable_reassign]
+  congr 1
+  refine callLayers_value_reassign G η images (fun j k e codes sums => ?_) j k e codes sums
+  cases e <;> simp only [Checker.subtypingSteps, CheckResult.value_bind_const,
+    CheckResult.accepted_ofBool, same, checkTreeWith_reassign,
+    checkStepResult_value_reassign] <;> rfl
 
 omit [DecidableEq ι] in
 theorem stableFirst_reassign :

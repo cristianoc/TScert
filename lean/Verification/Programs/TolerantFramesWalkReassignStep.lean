@@ -68,7 +68,11 @@ theorem passCheckerReassign_qualified (body : BodySubtyping G) (body' : BodySubt
   ⟨rfl, fun j k e codes sums =>
     Parametricity.checkBodyStep_reassign G η images body body' same ord
       (fun h => by rw [same]; exact ord ((Parametricity.check_reassign G η images _ _ _).symm.trans h)) j k e codes sums,
-    fun _ _ _ _ _ => rfl⟩
+    fun j k e codes sums => by
+    simp only [PassChecker.checker, Checker.withSubtyping, Checker.keepingStable, Checker.elementCalls,
+      Checker.requiringCalls, Checker.allocatingCalls, Checker.keepingOwnCalls, Checker.keepingCalls,
+      Checker.subtypingSteps, Parametricity.keepsCall_reassign, Parametricity.freshCall_reassign,
+      Parametricity.ownCall_reassign, Parametricity.elementsCall_reassign, Parametricity.requiresCall_reassign]⟩
 
 omit [DecidableEq ι] in
 theorem kOf_reassign (c : PointClaim ι) (entry : SinglePass.State) (ms : List Nat) (whole : Bool) :

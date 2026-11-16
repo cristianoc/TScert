@@ -4027,6 +4027,17 @@ other step is `base`'s. -/
       exact base.normal_sound hrun hcodes hsums he hk hw hh href hn
     · exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
+/-- **A qualified body's checker**: its descriptor-aware steps
+(`Checker.subtypingSteps`) under the call layers of `Checker.ordinary`, so a
+call states the same normal effect in a qualified body as in an ordinary one,
+each step keeping its input's stable links. -/
+@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (subtyping : ProgramTyping.BodySubtyping G)
+    (ordinary : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true) :
+    Checker G images :=
+  (Checker.subtypingSteps G images subtyping ordinary).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls
+    |>.elementCalls.keepingStable
+
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own
 locations keeping the facts separated from them, a call stating a postcondition
