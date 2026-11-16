@@ -537,9 +537,6 @@ run_cmd do
   check ``Verification.TolerantFrames.preserving_step_frame
   check ``Verification.TolerantFrames.pass_preserving_frame
   check ``Verification.TolerantFrames.atom_kept
-  check ``Verification.TolerantFrames.named_kept_box
-  check ``Verification.TolerantFrames.lowerBound_keptBy_grow
-  check ``Verification.TolerantFrames.lowerBound_keptBy_field
   check ``Verification.TolerantFrames.safePost_grow
   check ``Verification.TolerantFrames.judgment_with_output
   check ``Verification.TolerantFrames.top_judgment
@@ -767,6 +764,7 @@ run_cmd do
   -- (Semantics/TolerantFrames, Programs/TolerantFramesModel*). Roots of
   -- their own, kept whether or not the verifier reaches them.
   -- (Dense)
+  check ``Verification.Footprints.dense_support
   -- (View)
   check ``Verification.TolerantFrames.view_box
   -- (Init)
@@ -1833,6 +1831,8 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.callEnv_roots
   check ``Verification.GraphCode.ArgumentRegionFresh.cellsHold_supports
   check ``Verification.GraphCode.ArgumentRegionFresh.CellsHold.frame
+  check ``Verification.TolerantFrames.named_lowerBound_grow
+  check ``Verification.TolerantFrames.named_lowerBound_field
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write
   check ``Verification.Kinds.gate_handled

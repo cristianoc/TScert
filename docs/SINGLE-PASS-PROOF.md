@@ -520,11 +520,13 @@ output states. A named fact $`a`$ is kept by a closed effect $`c`$ when it reads
 no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
 
 - (Keep by atom) a kept fact survives every action of its effect
-  (`atom_kept`), so $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
-  for $`S`$ kept by $`c`$ (`named_kept_box`); a length lower bound over names
-  is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
-  and by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
-  (`lowerBound_keptBy_grow`, `lowerBound_keptBy_field`);
+  (`atom_kept`); a length lower bound over names survives every action of
+  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
+  and of $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
+  by the tolerant frame at $`\{x.\mathsf{spine}:\mathsf{grow}\}`$
+  (`named_lowerBound_grow`, `named_lowerBound_field`); a step's exits carry
+  the named facts that hold after every action of each exit's effect
+  (`writing_frame`);
 - a run only grows the heap: a normal-only judgment holds on both exits with
   each exit's heap at least as long (`safePost_grow`);
 - the judgments, in the form `NodesChecked` takes, each with `run`'s output

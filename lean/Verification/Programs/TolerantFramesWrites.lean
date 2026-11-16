@@ -19,11 +19,12 @@ step:
   (`top_judgment`, from `safePost_grow`: a run only grows the heap);
 - which named facts survive an action of a closed effect: those reading no
   heap and the index facts the effect's change keeps (`Atom.keptBy`,
-  `named_kept_box`), among them every length lower bound under the field
-  write's and the element write's effects (Grow);
+  `atom_kept`); a length lower bound under the field write's and the element
+  write's effects by the tolerant frame at `{x.spine: grow}` (Grow:
+  `named_lowerBound_grow`, `named_lowerBound_field`);
 - both exits of the step (`writing_frame`): the action of each exit's effect,
-  the residual budget, the type, the rule's output and the kept named
-  facts. -/
+  the residual budget, the type, the rule's output and the named facts each
+  exit's effect keeps. -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
@@ -55,19 +56,28 @@ theorem atom_kept {c : Footprints.Closed} {a : Atom} (hk : a.keptBy c = true) {�
         (ha x' (List.mem_singleton_self _) hcnd)
   | _ => exact atomHolds_heapFree (by simpa only [Atom.keptBy] using hk) ha s'.h
 
-/-- **(Keep by atom)** `Named ε S η ⊢ □_c Named ε S η` for `S` kept by `c`. -/
-theorem named_kept_box {c : Footprints.Closed} {S : List Atom} (hk : ∀ a ∈ S, a.keptBy c = true) {η ρ : Env}
-    {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s :=
-  fun _ ha a hm => atom_kept (hk a hm) ha (hS a hm)
+/-- **(Grow) as a named fact** (the note, Proposition "Axioms of the
+atoms"): a length lower bound over names survives every action of
+`{values: any, spines: grow}`: the tolerant frame at `{x.spine: grow}`
+(`grow`, `Parity.atom_frame`), the effect reading its classes at no name. -/
+theorem named_lowerBound_grow {y x : Nat} {η ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η ρ m s) :
+    Box growEffect.fp (Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η) ρ m s := by
+  intro s' ha a hm
+  simp only [List.mem_singleton] at hm
+  subst hm
+  intro a' ha' _
+  simp only [List.mem_singleton] at ha'
+  subst ha'
+  have hb : LowerBound ε y x η m s :=
+    hS _ (List.mem_singleton_self _) _ (List.mem_singleton_self _) (fun _ h => by cases h)
+  exact grow hb s' ⟨ha.1, Footprints.Closed.post_iff.mpr (Footprints.Closed.post_iff.mp ha.2)⟩
 
-/-- (Grow) as a named fact: a length lower bound over names is kept by the
-element write's effect. -/
-theorem lowerBound_keptBy_grow (y x : Nat) :
-    (Atom.index ⟨lowerBoundFact y x, none, false⟩).keptBy growEffect = true := rfl
-
-/-- The same bound is kept by the field write's effect. -/
-theorem lowerBound_keptBy_field (y x : Nat) :
-    (Atom.index ⟨lowerBoundFact y x, none, false⟩).keptBy fieldWriteEffect = true := rfl
+/-- (Grow) under the field write's effect, within the element write's. -/
+theorem named_lowerBound_field {y x : Nat} {η ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η ρ m s) :
+    Box fieldWriteEffect.fp (Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η) ρ m s :=
+  fun s' ha => named_lowerBound_grow hS s' (action_le_closed (by decide) ha)
 
 /-! ## A run only grows the heap -/
 
@@ -206,24 +216,25 @@ end Writes
 /-- **A step's exits with the named facts its effects keep.** A judgment whose
 normal exit is within `cn` with post `Qn` and whose throw is within `ce`, run
 with budget left: a normal return is an action of `cn` with the residual
-budget, the value's type, `Qn`, and the named facts `Sn` that `cn` keeps at
-`η[r ↦ v]`; a throw is an action of `ce` with the raised value closed and of
-the exception family, and the named facts `Se` that `ce` keeps. -/
+budget, the value's type, `Qn`, and the named facts `Sn` that hold after
+every action of `cn`, at `η[r ↦ v]`; a throw is an action of `ce` with the
+raised value closed and of the exception family, and the named facts `Se`
+that hold after every action of `ce`. -/
 theorem writing_frame {Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {Sn Se : List Atom} {η ρ : Env}
     {r m : Nat} {s : IndexedHeap} {t t' : Tm} {h' : Heap} {k : Nat}
     (hsafe : SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ True)
       s.n s.W s.h t)
     (hst : Steps k s.h t h' t') (hk : k < s.n)
-    (hn : ∀ a ∈ Sn, a.keptBy cn = true) (he : ∀ a ∈ Se, a.keptBy ce = true)
-    (hSn : Named ε Sn η ρ m s) (hSe : Named ε Se η ρ m s) (hr : ∀ a ∈ Sn, r ∉ a.names) :
+    (hSn : Box cn.fp (Named ε Sn η) ρ m s) (hSe : Box ce.fp (Named ε Se η) ρ m s)
+    (hr : ∀ a ∈ Sn, r ∉ a.names) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action cn.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
         T s'.n s'.W t' ∧ Qn h' t' ∧ Named ε Sn (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action ce.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
         Scoped 0 x ∧ Ξ s'.n s'.W x ∧ Named ε Se η ρ m s') := by
   refine ⟨fun hv => ?_, fun x hx => ?_⟩
   · obtain ⟨s', ha, he', hn', hT, hq⟩ := action_normal (ρ := ρ) hsafe hst hv hk
-    exact ⟨s', ha, he', hn', hT, hq, named_set t' hr (named_kept_box hn hSn s' ha)⟩
+    exact ⟨s', ha, he', hn', hT, hq, named_set t' hr (hSn s' ha)⟩
   · obtain ⟨s', ha, he', hn', hsc, hΞ, -⟩ := action_throw (ρ := ρ) hsafe hst hx hk
-    exact ⟨s', ha, he', hn', hsc, hΞ, named_kept_box he hSe s' ha⟩
+    exact ⟨s', ha, he', hn', hsc, hΞ, hSe s' ha⟩
 
 end Verification.TolerantFrames

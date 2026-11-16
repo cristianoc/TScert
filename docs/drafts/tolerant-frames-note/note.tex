@@ -1139,7 +1139,8 @@ The marks below give each axiom's scope.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[\textsc{(Grow)}] A lower bound on a length survives any change
 that only grows arrays. It mentions no separation: it is
-Example~\ref{ex:alias}. Lean: \lean{grow}.
+Example~\ref{ex:alias}. Lean: \lean{grow}, the frame at the support
+$\{x.\kw{spine}:\grow\}$ (\lean{SupportEvidence.lengths}, \lean{atom\_frame}).
 \item[\textsc{(Dense)}] A dense prefix survives any change that only
 grows arrays. The bound is a variable or a literal. A bound that reads
 the heap may increase under the effect: with the bound $\len y$, a
@@ -1157,7 +1158,7 @@ arbitrary change of an array $x$ that shares no element cell with $z$.
 initialises: $\init$ changes no location that holds an object, a number
 or a spine, and a defined read of a path passes only fields that hold
 objects. Lean: \lean{init\_box}, \lean{init\_path}, for linear facts
-over integers, array lengths and typed-array lengths at any paths.
+over current terms at any paths, string lengths included.
 \item[\textsc{(Rigid)}] A fact that holds of an array named by a
 variable holds of the array at a rigid path. The substitution of the
 witness for $y$ is capture-avoiding. \status{Lean: \lean{Derivation.rigidSubst}, \lean{Derivation.sound}, with the fresh

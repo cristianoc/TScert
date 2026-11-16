@@ -58,9 +58,10 @@ structure FreshHold (F C : List Nat) (b : Nat) (ρ : Env) (h : Heap) : Prop wher
 
 /-! ## Keeping cells -/
 
-/-- **The support of fresh cells** (the note, §5, Definition "Support"):
-`{values: keep}`. A fresh cell's location holds a value of no spine, a
-location of the class `values`. -/
+/-- **The support of fresh cells**: `{values: keep}`. The note's table of
+supports (§5, Definition "Support") has no row for this fact; the support is
+proved from the Definition directly (`cellsHold_supports`): a fresh cell's
+location holds a value of no spine, a location of the class `values`. -/
 def cellSupport : Footprint := [(.cls .values, .keep)]
 
 /-- `{values: keep}` supports the fresh cells, at every valuation of its
