@@ -167,11 +167,14 @@ from that evidence. An effect $`\Phi`$ **respects** $`S`$ under $`q`$ when
 \forall (r{:}\,\delta) \in S.\ \forall (r'{:}\,\gamma) \in \Phi.\quad \gamma \sqsubseteq \delta \ \lor\ q(r, r')
 ```
 
-(`respects`). **Theorem** (proved: `respect_sound`, `keeps_sound`,
-`TolerantFrames.tolerant_frame_supports`): if $`S`$ supports $`P`$ in $`C`$,
+(`respects`). **Theorem** (proved: `respect_sound`, `frame_step`, over
+any domain of states): if $`S`$ supports $`P`$ in $`C`$,
 $`\Phi`$ respects $`S`$ under $`q`$, $`q`$ is sound at $`(\rho, h)`$, the
-transition meets $`C`$ and $`\mathrm{Post}(\Phi)`$, and $`P`$ holds at $`h`$,
-then $`P`$ holds at $`h'`$. Separation knowledge (`SepKnowledge`: class
+transition is admissible and meets $`C`$ and $`\mathrm{Post}(\Phi)`$, and
+$`P`$ holds at $`h`$, then $`P`$ holds at $`h'`$. Its modal form
+(`frame_box`): where $`C`$ holds of every action of $`\Phi`$ from a state of
+an assertion $`K`$ and $`q`$ is sound at every state of $`K`$,
+$`K \wedge P \vdash \Box_\Phi P`$. Separation knowledge (`SepKnowledge`: class
 evidence, provenance stamps, distinct pairs) is one sound query
 (`SepKnowledge.query_sound`), and the five fact kinds' supports below are
 supports in every context (`FactKind.supports`).

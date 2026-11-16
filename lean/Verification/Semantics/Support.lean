@@ -12,7 +12,9 @@ path over arbitrary heaps (`heaps`, `Footprints.Supports`), the paper layer
 over indexed states (`Parity.Supports`). The note's Definition *Respect* is
 one check, `respects`, of a support against an effect under a separation
 query, sound by `respect_sound`; both languages run it, each with its own
-query. -/
+query. Its Theorem *Tolerant frame* is one theorem, `frame_step`, at a
+transition, and its modal form `frame_box`, over every action of the
+effect; every frame of both languages is an instance. -/
 namespace Verification.Footprints
 
 /-- **A domain of states for support**: the heap each state's regions are
@@ -148,5 +150,46 @@ theorem respect_sound {q : SepQuery} {S Φ ρ h h'} (hc : respects q S Φ = true
     rcases this with hle | hap
     · exact hh.mono hle
     · exact (hq e.1 f.1 l hap hm hfm).elim
+
+/-! ## The tolerant frame -/
+
+namespace SupportDomain
+variable {State : Type}
+
+/-- **An action of the effect `Φ`** in a domain, at a valuation: an
+admissible transition whose heaps meet `Φ`'s postcondition, its regions read
+at the heap it starts from. -/
+def Action (D : SupportDomain State) (Φ : Footprint) (ρ : Env) (s s' : State) : Prop :=
+  D.admissible s s' ∧ Post Φ ρ (D.heap s) (D.heap s')
+
+/-- **The condition of a support holds of every action** (the note's
+Theorem "Tolerant frame", its premise on `C`): every single change bounded
+by `Φ` from a state of `K` meets `C`. -/
+def ConditionOnActions (D : SupportDomain State) (K : AssertionOn State) (Φ : Footprint) (C : ConditionOn State) :
+    Prop :=
+  ∀ ρ m s s', K ρ m s → D.Action Φ ρ s s' → C ρ m s s'
+
+end SupportDomain
+
+/-- **The tolerant frame, at a transition** (the note, §5, Theorem
+"Tolerant frame"): an assertion with a support `S` under `C`, and an effect
+respecting `S` under a query sound at the prestate, hold after every
+admissible transition meeting the effect's postcondition and `C`. Every
+frame of both assertion languages is an instance. -/
+theorem frame_step {State : Type} {D : SupportDomain State} {C : ConditionOn State} {A : AssertionOn State}
+    {S Φ : Footprint} {q : SepQuery} (hs : D.Supports C A S) (hr : respects q S Φ = true) {ρ : Env} {m : Nat}
+    {s s' : State} (hq : q.Sound ρ (D.heap s)) (hp : Post Φ ρ (D.heap s) (D.heap s')) (ha : D.admissible s s')
+    (hc : C ρ m s s') (hA : A ρ m s) : A ρ m s' :=
+  hs ρ m s s' ha hc hA (respect_sound hr hq hp)
+
+/-- **The tolerant frame as a modal law** (the note, §5, Theorem "Tolerant
+frame"): `K ∧ A ⊢ □_Φ A` where `S` supports `A` under `C`, `C` holds of
+every action of `Φ` from a state of `K`, and `Φ` respects `S` under a query
+sound at every state of `K` (`frame_step` at each action). -/
+theorem frame_box {State : Type} {D : SupportDomain State} {K : AssertionOn State} {C : ConditionOn State}
+    {A : AssertionOn State} {S Φ : Footprint} {q : SepQuery} (hs : D.Supports C A S) (hr : respects q S Φ = true)
+    (hq : ∀ ρ m s, K ρ m s → q.Sound ρ (D.heap s)) (hc : D.ConditionOnActions K Φ C) :
+    ∀ ρ m s, K ρ m s → A ρ m s → ∀ s', D.Action Φ ρ s s' → A ρ m s' :=
+  fun ρ m s hK hA s' ha => frame_step hs hr (hq ρ m s hK) ha.2 ha.1 (hc ρ m s s' hK ha) hA
 
 end Verification.Footprints

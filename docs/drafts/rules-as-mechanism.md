@@ -16,7 +16,7 @@ pipeline runs of that day and say what was run.
 |---|---|---|
 | Location kinds and roles, fixed for a location's life | `Kind`, `Role`, `roleAt`, `HeapOk`, `RootsOk`, `RefsOk` (`Semantics/Worlds.lean`, `Semantics/Heaps.lean`, `Semantics/Kinds*.lean`) | [Location kinds](location-kinds.md) |
 | Regions, changes, effects | `Footprints.Region`, `Region.mem`, `Selector`, `Change`, `Footprint`, `Post`, `Supported` | [Footprints](../FOOTPRINTS.md#changes-and-footprints), [parity interfaces, I1](parity-interfaces.md#i1-entry-relative-regions-and-exit-specifications) |
-| Support and respect on the acceptance path | `HeapKnowledge.IndexFact`, `Term.support`, `IndexFact.support?`, `Footprints.respects`, `knowledgeQuery`, `keeps_sound`, used by `frameKeeps` | [Support and respect](../FOOTPRINTS.md#support-and-respect), [Separation queries](../FOOTPRINTS.md#separation-queries) |
+| Support and respect on the acceptance path | `HeapKnowledge.IndexFact`, `Term.support`, `IndexFact.support?`, `Footprints.respects`, `knowledgeQuery`, `frame_step`, used by `frameKeeps` | [Support and respect](../FOOTPRINTS.md#support-and-respect), [Separation queries](../FOOTPRINTS.md#separation-queries) |
 | The paper's assertions and rules as checked derivations | Parity assertions, `SupportEvidence`, `RespectEvidence`, `RawDerivation`, `Derivation`, `Derivation.sound`, `checkScoped` (`Semantics/Parity*.lean`) | [Parity interfaces](parity-interfaces.md) |
 | Effects of commands composed on both exits, loops | `CommandSummary`, `ThenEvidence`, `LoopEvidence` (`Semantics/Command*.lean`) | [Effects of commands](effects-of-commands.md) |
 | The judgment at an edge | Checked transfer, section "Transfer along edges" | [the paper](tolerant-frames-note/note.tex) |
@@ -70,7 +70,10 @@ They share regions, changes, effects, `Supported` and the support relation
 `SupportDomain.Supports` (`Semantics/Support.lean`), read over arbitrary
 heaps by B and over indexed states by A, and the one respect check
 `respects`, sound by `respect_sound`: B asks it under `knowledgeQuery`, A
-under the query its disjointness certificates answer. Neither language
+under the query its disjointness certificates answer. Both conclude through
+the one frame theorem `frame_step`: B at the transition at hand, A through
+its modal form `frame_box`, whose condition holds of every single action of
+the effect from a state of $`K`$ (`ConditionOnActions`). Neither language
 contains the other:
 
 | | A | B |
