@@ -187,13 +187,13 @@ cell $l_3$ and changes the spine to $\langle l_0,\circ,l_2,l_3\rangle$;
 A spine location has one of two \emph{forms}, fixed with its kind. An
 \emph{array spine} belongs to an array, and its length may
 change, as above. A \emph{view spine} belongs to a typed array. We
-write the forms $\mathsf{array}$ and $\mathsf{view}_N$, and
+write the forms $\mathsf{array}$ and $\mathsf{view}_L$, and
 $\LV\subseteq\LS$ for the set of view spines.
 
 A \emph{typed array}, such as a \code{Uint8Array}, is an object with a
 fixed element format $t$ that has, besides its fields, a view spine
-location, of form $\mathsf{view}_N$ with $N\le 2^{53}-1$. Its spine has the
-fixed length $N$ and no hole: it lists $N$ element cells, each holding a
+location, of form $\mathsf{view}_L$ with $L\le 2^{53}-1$. Its spine has the
+fixed length $L$ and no hole: it lists $L$ element cells, each holding a
 number of the format $t$, which is what the typed array reads at that
 index. The contract of a view spine admits every such spine. Distinct
 typed arrays have distinct view spines. Typed arrays are created by
@@ -337,7 +337,7 @@ object always holds the same array, whose elements and length may still
 change. The second is an identity
 location. Both belong to the value
 class, and no admissible transition (Definition~\ref{def:adm}) changes them.
-A typed array's length is fixed too, by the form $\mathsf{view}_N$ of
+A typed array's length is fixed too, by the form $\mathsf{view}_L$ of
 its spine.
 
 \section{Model}
@@ -351,7 +351,7 @@ programs make only admissible transitions (Theorem~\ref{thm:pres}).
 A \emph{world} $W$ is a finite map from locations to pairs
 $(\kappa,T)$ of a kind $\kappa\in\{\kF,\kC,\kE,\kS,\kI\}$ and a \emph{contract}
 $T$; for a location of kind $\kS$ the kind includes its form,
-$\mathsf{array}$ or $\mathsf{view}_N$. A contract is a type; it denotes a predicate on contents that is
+$\mathsf{array}$ or $\mathsf{view}_L$. A contract is a type; it denotes a predicate on contents that is
 step-indexed and world-monotone~\cite{ahmed}. A world $W'$
 \emph{extends} $W$, written $W\sqsubseteq W'$, when
 $\mathrm{dom}\,W\subseteq\mathrm{dom}\,W'$ and $W'(l)=W(l)$ for every
@@ -370,14 +370,14 @@ when:
 \begin{description}[leftmargin=1.5em,style=sameline]
 \item[(W1) one domain] $\mathrm{dom}\,h=\mathrm{dom}\,W$.
 \item[(W2) contents by kind] For every $l$ with $W(l)=(\kappa,T)$:
-$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a spine when $\kappa=\kS$, of length $N$ and without holes when its
-form is $\mathsf{view}_N$, and \code{null} when $\kappa=\kI$.
+$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a spine when $\kappa=\kS$, of length $L$ and without holes when its
+form is $\mathsf{view}_L$, and \code{null} when $\kappa=\kI$.
 \item[(W3) valid references] Every cell that a spine of $h$ lists is a
 location of kind $\kE$. For every object that occurs in $h$ or in $\rho$,
 each field location is of kind $\kF$ or $\kC$ and its identity location
 is of kind $\kI$; the spine location of an array is of kind $\kS$ and
-form $\mathsf{array}$, and that of a typed array of length $N$ of form
-$\mathsf{view}_N$.
+form $\mathsf{array}$, and that of a typed array of length $L$ of form
+$\mathsf{view}_L$.
 \item[(W4) contracts] $h(l)$ is within $T$ for every $l$ with
 $W(l)=(\kappa,T)$, and each value of $\rho$ meets its type, at the
 budget $k$.
@@ -466,7 +466,7 @@ to the new contents $u'$.
 
 The action of an effect sets $b=\len h$ for its entry heap $h$.
 Only condition (iv) of $\grow$ depends on $b$.
-Write $N$ for the maximal array length, $2^{32}-1$; the $N$ of a form $\mathsf{view}_N$ is the length of one typed array. For contents $u,u'$:
+Write $N$ for the maximal array length, $2^{32}-1$. For contents $u,u'$:
 \[
 \begin{array}{lcl}
 \keep_b(u,u') &\iff& u'=u\\[2pt]
@@ -572,7 +572,10 @@ when every member of its type is an object type, \code{null} or
 \code{xs: number[]}, \code{z: \{ open: number[] \} | null} and
 \code{u: number[] | string}, the paths $\mathit{xs}$ and
 $z.\mathit{open}$ are collection paths, $z$ is an object path, and $u$
-is neither.
+is neither. The type of a path is its declared type: a test that narrows
+it does not change which regions are well-formed. A substitution of a
+path for a variable is defined where the regions it produces are
+well-formed.
 
 A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
 of $h$. A class region reads the kinds and forms of those locations,
@@ -731,9 +734,9 @@ then $h\tr{\Phi}_\rho h'$. If $c$ throws, in a heap
 $h'$, then $h\tr{\Phi^{e}}_\rho h'$. We write $c:\Phi$ when $\Phi^{e}$ is
 $\top$. A throw that $c$ itself catches is no exit of $c$: the normal
 bound of \code{try c catch (x) d} covers \code{c} reaching its end, and a
-throw of \code{c} followed by \code{d} reaching its end. A judgment is
-under the knowledge at the entry of the command, as a triple is under
-its precondition. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
+throw of \code{c} followed by \code{d} reaching its end. An effect
+judgment may assume the assertions that hold at the entry of the
+command, as a triple assumes its precondition. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
 judgment is what a \code{Modifies} annotation states and what an effect
 system derives
 \status{Lean: \lean{Post}; for graph code \lean{run\_sound\_single\_pass}, whose guarantee states the bound over class regions and the regional bound of an accepted function}.
@@ -746,10 +749,11 @@ A path $\pi$ is as in Section~3. A \emph{field suffix} $\vec f$ is a
 non-empty sequence of field names $f_1\ldots f_k$. In a term, $n$ is a
 safe-integer literal. In a linear combination, $c$ is any integer. In
 an atom, $v$ and $w$ stand for a scalar literal, a variable or a logical
-variable, and in the rules of a typed array of format $t$ also for
-$\mathit{conv}_t(v)$ of one of these (Section~6). An atom of this
-grammar is a fact; an atom of a command (Definition~\ref{def:cmd}) is a
-variable or a literal, and the rules of Section~6 write both $a$.
+variable. In the rules of a typed array of format $t$ they also stand
+for $\mathit{conv}_t$ of one of these (Section~6). The word atom has two
+uses. An atom of this grammar is a fact. An atom of a command
+(Definition~\ref{def:cmd}) is a variable or a literal. The rules of
+Section~6 write $a$ for both.
 \[
 \begin{array}{llcl}
 \text{paths} & \pi &::=& x \mid \pi.f\\[2pt]
@@ -789,9 +793,10 @@ the number they hold or read. $\len\pi$ is the length of the array that
 $\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
 $\slen(\pi)$ the length of the string. $z[e]$ is the number that the
 collection $z$ holds at the index $e$, and $z[e].\vec f$ the
-number read from the element at $e$ along the fields $\vec f$; the
-three lengths are also taken of what $z[e].\vec f$ reads, and $\slen$ of
-the element $z[e]$. A term is \emph{defined} when the
+number read from the element at $e$ along the fields $\vec f$. The
+terms $\len{z[e].\vec f}$, $\kw{view}(z[e].\vec f)$ and
+$\slen(z[e].\vec f)$ are the three lengths of what $z[e].\vec f$ reads,
+and $\slen(z[e])$ is the length of an element that is a string. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
 value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
 $M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
@@ -1062,8 +1067,9 @@ inequality stays true when the length increases, as in
 $n\le\len\pi$, and $\keep$ otherwise. In the index of an element term
 or fact, in the bound of a density, and in the bound and the body of a
 quantified fact, every length is at $\keep$: the support keeps the value
-of the index and of the bound. For an optional field that is absent the region $\pi.f$ is empty,
-and the object keeps its fields (T3). A term $z[t].\vec f$ reads a field of an element, for which there
+of the index and of the bound. The row of $\pi.f^{?}\doteq v$ covers a field that is absent: the
+region $\pi.f$ is then empty, and the fact stays true because an object
+keeps its fields (T3). A term $z[t].\vec f$ reads a field of an element, for which there
 is no region, and has no support. A field that a condition $C$ says
 keeps its contents is left out of $\mathrm{reads}$, and the support is
 then under $C$. In the row of $\every$, $z$ reads an array, the body
@@ -1116,8 +1122,9 @@ The marks below give each axiom's scope.
 that only grows arrays. It mentions no separation: it is
 Example~\ref{ex:alias}. Lean: \lean{grow}.
 \item[\textsc{(Dense)}] A dense prefix survives any change that only
-grows arrays. The bound is a variable or a literal: a bound that reads
-the heap may grow with it. Lean: \lean{dense\_support}, the statement that
+grows arrays. The bound is a variable or a literal. A bound that reads
+the heap may increase under the effect: with the bound $\len y$, a
+growth of $y$ increases the bound, and the fact may become false. Lean: \lean{dense\_support}, the statement that
 $\{x.\kw{spine}:\grow\}$ supports $\dense(x,n)$ for a fixed number $n$;
 the axiom follows by Theorem~\ref{thm:frame}.
 \item[\textsc{(Sep)}] A fact about the length of $x$ survives an
@@ -1141,7 +1148,7 @@ rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
 \lean{grow\_path\_typed}.
 \item[\textsc{(View)}] A fact about a typed array's length survives
 every change: the typed array's spine location and its form
-$\mathsf{view}_N$ are fixed, by (T2). Lean: \lean{view\_box},
+$\mathsf{view}_L$ are fixed, by (T2). Lean: \lean{view\_box},
 \lean{viewLength\_invariant}, for linear facts over variables and
 typed-array lengths; the Lean reads the length from the typed array's
 descriptor.
@@ -1288,9 +1295,9 @@ member may mention $n$ and these variables; it does not mention $r$.
 \textsc{Call} instantiates the member whose $n$ is the number of
 arguments that the call supplies for $r$, with the $j$-th of them for
 $r_j$. A spread argument \code{...x} is expanded to its elements where
-the knowledge gives $\len x=k$ and $\dense(x,k)$ for a literal $k$, each
-element read as by \textsc{Elem-Read}; a spread of another array is
-outside this rule. In the body
+the knowledge gives $\len x=k$ and $\dense(x,k)$ for a literal $k$. Each
+element is read as by \textsc{Elem-Read}. The rule does not cover a
+spread of any other array. In the body
 of the function, $r$ is an array that the invocation allocates, so
 $\fresh(r)$ holds at the body's mark, and at the entry $\len r=n$,
 $\dense(r,n)$ and $r[j]\doteq r_j$ for each $j<n$ hold. Example: for
@@ -1490,7 +1497,7 @@ false branch has $n\le i\vee\mathit{xs}\doteq\code{null}$.
 The operands of a comparison are atoms of a command, so each of these
 facts is about variables and holds at every later state. A fact about a
 path follows from it by the equality of a read, such as $x.f\doteq t$,
-at a state where that equality holds: after \code{t = o.n; y = t < 1;
+at a state where that equality holds. Example: after \code{t = o.n; y = t < 1;
 o.n = 2}, the true branch of \code{if (y)} has $t<1$, and $o.n<1$ does
 not follow, since $o.n\doteq t$ no longer holds.
 
@@ -1805,9 +1812,6 @@ the types of the two paths have no typed-array member,
 $\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and $\fresh(r)$ for $r$ and
 any region of locations below the mark. The separation $\pi\sep\pi'$
 says nothing of a typed array: $b\sep b$ holds of a typed array $b$.
-The type of a path is its declared type: a test that narrows it does not
-change which regions are well-formed, and a substitution of a path for a
-variable is defined where the regions it produces are well-formed.
 \end{definition}
 
 \paragraph{Sound graphs.} Annotate each point of a graph with knowledge.
@@ -1835,7 +1839,7 @@ has a sound annotation that meets the four obligations of rule
 each return, and at the end of the body, the knowledge entails the
 normal postcondition, with the returned atom for the result. At each
 throw that leaves the function it entails the exceptional postcondition.
-And the effect of the body at each of these exits, composed from the
+Finally, the effect of the body at each of these exits, composed from the
 effects of its nodes by \textsc{Seq-Eff} and \textsc{Fresh-Eff}, is
 included in the effect the specification states for that exit.
 
