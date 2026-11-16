@@ -392,6 +392,9 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.checkRead_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkCopy_sound
   check ``Verification.PromiseCalls.effectKept_holds
+  check ``Verification.HeapKnowledge.entry_sound
+  check ``Verification.PromiseCalls.appendEntry_holds
+  check ``Verification.PromiseCalls.callEntry_holds
   check ``Verification.PromiseCalls.statesExtension_grows
   check ``Verification.PromiseCalls.statesAppend_appends
   check ``Verification.PromiseCalls.statesViewGrowth_changes

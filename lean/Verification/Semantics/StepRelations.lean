@@ -373,6 +373,43 @@ theorem compose_holds {kept : Term → Option Term} {before : List (Linear.Fact 
     · simp only [definedAfter, hc, Bool.false_eq_true, if_false, reduceCtorEq] at hx
 
 
+/-! ## Rule Entry
+
+The note's rule Entry at a step: the facts known before it, `old(Σ)`, and
+the step's exit specification `Q` with its transition, are the premises;
+each fact put into the knowledge after the step is a consequence of them
+by the composition's arithmetic (`compose`: substitution and
+Fourier–Motzkin elimination of the before-variables), each of its terms
+defined after the step. The transition enters as the terms it keeps, read
+after the step, and the relation of the terms it grows (`growth`); `Q` as
+a relation between the two states. -/
+
+/-- **Rule Entry's premises at a step**: the linear facts before it
+(`old(Σ)`), the terms the step keeps, each read after it, and the relation
+the exit specification and the transition state between the two states. -/
+structure Entry where
+  kept : Term → Option Term
+  before : List (Linear.Fact Term)
+  rel : StepRelation
+
+/-- Rule Entry's premises hold of a step from `ρ, h` to `ρ', h'`: the facts
+before hold before it, each kept term denotes after the step what it
+denoted before, and the relation holds of the step. -/
+structure Entry.Holds (E : Entry) (ε : EntryState) (ρ : Env) (h : Heap) (ρ' : Env) (h' : Heap) : Prop where
+  before : ∀ F ∈ E.before, (IndexFact.linear F).HoldsAt ε ρ h
+  kept : ∀ t t' n, E.kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n
+  rel : E.rel.Holds ε ρ h ρ' h'
+
+/-- **Rule Entry's consequences**: the linear facts after the step the
+composition derives from the premises (`compose`). -/
+def Entry.consequences (E : Entry) : List (Linear.Fact Term) := compose E.kept E.before E.rel
+
+/-- **Rule Entry is sound** (proved): where its premises hold of a step,
+each of its consequences holds after the step, its terms defined. -/
+theorem entry_sound {E : Entry} {ρ ρ' : Env} {h h' : Heap} (hE : E.Holds ε ρ h ρ' h') :
+    ∀ F ∈ E.consequences, (IndexFact.linear F).HoldsAt ε ρ' h' :=
+  compose_holds hE.before hE.kept hE.rel
+
 /-! ## Composing a fact of every form
 
 A callee's post fact of any form is composed into the caller's facts after
@@ -486,15 +523,11 @@ instance : DecidableRel (α := BodyVar) (· < ·) := fun a b => inferInstanceAs 
 
 end BodyVar
 
-/-- **What a composition reads** (rule Call): the terms the step keeps, the
-linear facts before it, the relation the post's linear facts state, and how
-the post's terms and current slots read across the step: an entry term as
-a before-variable, a current term as an after-variable, a current slot as
-the slot after the step holding it. -/
-structure Composer where
-  kept : Term → Option Term
-  before : List (Linear.Fact Term)
-  rel : StepRelation
+/-- **What a composition reads** (rule Entry at a call): rule Entry's
+premises (`Entry`), and how the post's terms and current slots read across
+the step: an entry term as a before-variable, a current term as an
+after-variable, a current slot as the slot after the step holding it. -/
+structure Composer extends Entry where
   term : Term → Option StepVar
   slot : Nat → Option Nat
   /-- A post term reading a value the step's states give `undefined` at. -/
@@ -687,7 +720,7 @@ theorem definedOf_defined (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt �
 theorem context_holds (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt ε ρ h)
     (hk : ∀ t t' n, kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n)
     (hR : R.Holds ε ρ h ρ' h') :
-    ∀ G ∈ (Composer.mk kept before R term slot absent absentSlot).context, G.Holds (StepVar.value ε ρ h ρ' h') := by
+    ∀ G ∈ (Composer.mk ⟨kept, before, R⟩ term slot absent absentSlot).context, G.Holds (StepVar.value ε ρ h ρ' h') := by
   show ∀ G ∈ before.filterMap (·.mapVars (some ∘ keptVar kept)) ++ relOf kept before R, _
   have hbdef : ∀ t ∈ beforeTerms before, (termValue ε ρ h t).isSome := by
     intro t ht
@@ -763,14 +796,11 @@ theorem StepRelation.with_holds {R : StepRelation} (hR : R.Holds ε ρ h ρ' h')
 
 /-- **What a composition assumes** of a step from `ρ, h` to `ρ', h'`, the
 post read at the callee's entry `ε₀` and its environment `τ` after the
-step: the facts before hold before it, each kept term denotes after the step
-what it denoted before, the relation holds of the step, each post term's
-variable denotes what the term denotes, and each current slot's image holds
-its value. -/
-structure Composer.Sound (P : Composer) (ε ε₀ : EntryState) (ρ : Env) (h : Heap) (ρ' τ : Env) (h' : Heap) : Prop where
-  before : ∀ F ∈ P.before, (IndexFact.linear F).HoldsAt ε ρ h
-  kept : ∀ t t' n, P.kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n
-  rel : P.rel.Holds ε ρ h ρ' h'
+step: rule Entry's premises hold of the step (`Entry.Holds`), each post
+term's variable denotes what the term denotes, and each current slot's image
+holds its value. -/
+structure Composer.Sound (P : Composer) (ε ε₀ : EntryState) (ρ : Env) (h : Heap) (ρ' τ : Env) (h' : Heap) : Prop
+    extends P.toEntry.Holds ε ρ h ρ' h' where
   term : ∀ t x, P.term t = some x → StepVar.val ε ρ h ρ' h' x = termValue ε₀ τ h' t
   slot : ∀ s s', P.slot s = some s' → ρ' s' = τ s
   absent : ∀ t, P.absent t = true → termValue ε₀ τ h' t = none

@@ -789,9 +789,24 @@ caller's facts by composition: with $`b`$ a logical name of a before-value,
 each fact $`B`$ before the call over a term the call changes rewritten
 through the relation the callee's post states, the terms the call keeps read
 after it, and every before-name eliminated (`HeapKnowledge.compose`,
-proved `compose_holds`). The push rule
-(`|x| = old(|x|) + count`) and the write at the length
-(`|x| = old(|x|) + 1`) are instances of the same composition.
+proved `compose_holds`).
+
+This is the note's rule Entry at a step. Its premises are the linear facts
+before the step ($`\mathrm{old}(\Sigma)`$), the terms its transition keeps,
+each read after it, and the relation its exit specification $`Q`$ and its
+transition state between the two states (`HeapKnowledge.Entry`, which hold
+of a step by `Entry.Holds`); its consequences are the facts the composition
+derives from them (`Entry.consequences`), each of its terms defined after
+the step (proved: `entry_sound`). At a call stating a two-state
+postcondition the premises are the caller's unconditional linear facts, the
+terms its frame keeps, and its post's relation with the growth of the terms
+its frame grows (`PromiseCalls.callEntry`, proved `callEntry_holds`); at a
+push, the facts before with the floor $`0\le|x|`$ of a receiver length
+they state defined, the terms the growth keeps, and the push's exact
+postcondition $`|x| = \mathrm{old}(|x|) + \mathit{count}`$ with the growth
+of every other term (`PromiseCalls.appendEntry`, proved
+`appendEntry_holds`). The write at the length
+($`|x| = \mathrm{old}(|x|) + 1`$) is an instance of the same composition.
 
 The relational context of each composition is the post's relation, the
 facts before, and what the step's effect itself states of each term between
@@ -1452,8 +1467,10 @@ $`|x|`$ therefore contributes its coefficient times $`n`$ to the bound in
 the fact after the call. Every other term must be preserved by the
 receiver growth's frame. The rule accepts fixed slot actuals, whose context
 establishes they are values, and unconditional linear facts; spread actuals
-state no count (proved: `PromiseCalls.appended_length`,
-`append_fact_holds`, `linearAppendKept_holds`). This applies to equality as
+state no count. Where the facts state the receiver's length defined, its
+floor $`0\le|x|`$ is a premise, and $`|x|\ge n`$ holds after the call
+(proved: `PromiseCalls.appended_length`, `append_fact_holds`,
+`appendEntry_holds`, `entry_sound`). This applies to equality as
 its two inequalities, including the builder invariant `out.length === i`.
 
 **Lengths kept across a push.** A constant holding an array literal's object has

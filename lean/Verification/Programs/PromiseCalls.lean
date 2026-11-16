@@ -2512,22 +2512,94 @@ theorem appended_length {ρ : Env} {h h' : Heap} {i : Nat} {args : List Tm} {n :
   simpa [hlen] using hl
 
 open HeapKnowledge in
-/-- **The facts a push carries** (`push-append`, an instance of the
-composition, a derived rule of the note's Entry at the append
-postcondition): with `receiverGrows`, the unconditional linear facts of the
-call's entry over the receiver's length, each term the growth keeps read
-after it, the length `count` longer (`IndexWrites.lengthGrowth`); and, where
-the entry states the length defined, the length at least `count`. -/
-def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List IndexAtom :=
+/-- The floor of a length the facts `as` state defined, `0 ≤ |x|`: a fact of
+the entry, every array's length a natural number. -/
+def lengthFloor (as : List IndexAtom) (i : Nat) : List (Linear.Fact Term) :=
+  if termDefined as (.length i) then [.le [(.length i, -1)] 0] else []
+
+open HeapKnowledge in
+theorem lengthFloor_holds {as : List IndexAtom} {i : Nat} {ρ : Env} {h : Heap} (he : IndexHolds ε as ρ h) :
+    ∀ F ∈ lengthFloor as i, (IndexFact.linear F).HoldsAt ε ρ h := by
+  intro F hF
+  unfold lengthFloor at hF
+  split at hF
+  · rename_i hd
+    simp only [List.mem_singleton] at hF
+    subst hF
+    obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (termDefined_sound he hd)
+    have hm0 : 0 ≤ m := by
+      obtain ⟨_, ls, _, _, rfl, _⟩ := lengthOf_spine (by simpa only [termValue_length] using hm)
+      omega
+    refine ⟨fun t ht => ?_, ?_⟩
+    · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
+      subst ht
+      simp [hm]
+    · simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hm, Option.getD_some]
+      omega
+  · cases hF
+
+open HeapKnowledge in
+/-- **Rule Entry's premises at a push** (`push-append`): at the call `t`
+appending the slots `args` to the receiver slot `i`, where its normal exit
+states the receiver's growth and the append (`statesExtension`,
+`statesAppend`), `old(Σ)` the entry's unconditional linear facts and the
+floor of the receiver's length (`lengthFloor`), the terms the growth keeps
+(`keptOf growChanges`), and the relation of the exact postcondition
+`|x| = old(|x|) + count` (`IndexWrites.lengthGrowth`) with the growth of
+each other term (`growth`). -/
+def appendEntry (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : Option Entry :=
   match t with
   | .invoke _ (.var i) args =>
     if statesExtension eff && statesAppend eff && IndexWrites.appendSlots n args then
-      shiftIndices ((compose (IndexWrites.keptOf growChanges (growFirst k t)) (IndexWrites.unconditionalLinear k.indices)
-          ((IndexWrites.lengthGrowth i args.length).join (growth (IndexWrites.grownOf growChanges (growFirst k t))
-            (IndexWrites.unconditionalLinear k.indices)))).map (fun F => { fact := .linear F }) ++
-        if termDefined k.indices (.length i) then
-          [{ fact := .linear (.le [(.length i, -1)] (-(args.length : Int))) }] else []) else []
-  | _ => []
+      let pre := IndexWrites.unconditionalLinear k.indices ++ lengthFloor k.indices i
+      some ⟨IndexWrites.keptOf growChanges (growFirst k t), pre,
+        (IndexWrites.lengthGrowth i args.length).join (growth (IndexWrites.grownOf growChanges (growFirst k t)) pre)⟩
+    else none
+  | _ => none
+
+open HeapKnowledge in
+/-- Rule Entry's premises hold at a push (proved): the entry's facts hold
+before the call, and its normal exit's postconditions state the growth and
+the append of value actuals. -/
+theorem appendEntry_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge} {E : Entry} {ρ : Env} {h h' : Heap}
+    {v : Tm} {nw : Nat} {W : WorldT nw} (hE : appendEntry n eff t k = some E) (hv : ∀ i, i < n → isVal (ρ i) = true)
+    (hk : Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
+    E.Holds ε ρ h ρ h' := by
+  unfold appendEntry at hE
+  split at hE
+  · rename_i f i args
+    split at hE
+    · rename_i hc
+      cases hE
+      simp only [Bool.and_eq_true] at hc
+      obtain ⟨⟨he, ha⟩, hs⟩ := hc
+      have hgrow := statesExtension_grows he hq
+      have happ := statesAppend_appends ha hq
+      have hf := growFirst_kept hk hok hρ hgrow
+      simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, Nat.not_lt_zero,
+        if_false, Nat.sub_zero] at hgrow happ
+      refine ⟨fun F hF => ?_, IndexWrites.keptOf_sound (receiverGrows_changes hgrow) hf,
+        StepRelation.join_holds (IndexWrites.lengthGrowth_holds fun m hm => ?_)
+          (growth_holds (IndexWrites.grownOf_sound (receiverGrows_changes hgrow) hf))⟩
+      · rcases List.mem_append.mp hF with hF | hF
+        · exact IndexWrites.unconditionalLinear_holds hk.2.2.2.2.2 F hF
+        · exact lengthFloor_holds hk.2.2.2.2.2 F hF
+      · have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
+        simpa [instantiateArgs_eq_map] using hl
+    · cases hE
+  · cases hE
+
+open HeapKnowledge in
+/-- **The facts a push carries** (`push-append`): rule Entry's consequences
+at a push (`appendEntry`), renamed past the result: the unconditional linear
+facts of the call's entry, each term the growth keeps read after it, the
+receiver's length `count` longer, and the length at least `count` where the
+entry states it defined. -/
+def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List IndexAtom :=
+  match appendEntry n eff t k with
+  | some E => shiftIndices (E.consequences.map fun F => { fact := .linear F })
+  | none => []
 
 open HeapKnowledge in
 theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
@@ -2537,45 +2609,10 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
     IndexHolds ε (linearAppendKept n eff t k) (push v ρ) h' := by
   unfold linearAppendKept
   split
-  · rename_i f i args
-    split
-    · rename_i hc
-      simp only [Bool.and_eq_true] at hc
-      obtain ⟨⟨he, ha⟩, hs⟩ := hc
-      have hgrow := statesExtension_grows he hq
-      have happ := statesAppend_appends ha hq
-      have hf := growFirst_kept hk hok hρ hgrow
-      simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, Nat.not_lt_zero,
-        if_false, Nat.sub_zero] at hgrow happ
-      refine shiftIndices_holds fun a ha _ => ?_
-      rcases List.mem_append.mp ha with ha | ha
-      · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
-        refine compose_holds (IndexWrites.unconditionalLinear_holds hk.2.2.2.2.2)
-          (IndexWrites.keptOf_sound (receiverGrows_changes hgrow) hf)
-          (StepRelation.join_holds (IndexWrites.lengthGrowth_holds fun m hm => ?_)
-            (growth_holds (IndexWrites.grownOf_sound (receiverGrows_changes hgrow) hf))) F hF
-        have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
-        simpa [instantiateArgs_eq_map] using hl
-      · split at ha
-        · rename_i hd
-          simp only [List.mem_singleton] at ha
-          subst ha
-          obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp (termDefined_sound hk.2.2.2.2.2 hd)
-          have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
-          have hm0 : 0 ≤ m := by
-            obtain ⟨_, ls, _, _, rfl, _⟩ := lengthOf_spine hm
-            omega
-          simp only [instantiateArgs_eq_map, List.length_map] at hl
-          have hv' : termValuation ε ρ h' (.length i) = m + args.length := by simp [termValuation, hl]
-          refine ⟨?_, ?_⟩
-          · intro t ht
-            simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_singleton] at ht
-            subst ht
-            simp [hl]
-          · simp only [Linear.Fact.Holds, Linear.Form.eval, hv']
-            omega
-        · cases ha
-    · exact indexHolds_nil _ _
+  · rename_i E hE
+    refine shiftIndices_holds fun a ha _ => ?_
+    obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+    exact entry_sound (appendEntry_holds hE hv hk hok hρ hq) F hF
   · exact indexHolds_nil _ _
 
 /-! ### Quantified facts across a typed array's element write (ARITHMETIC.md, "Quantified clauses") -/
@@ -3205,21 +3242,39 @@ theorem callContext_holds {stable : Nat → String → Bool} {eff : Effect} {t :
   StepRelation.join_holds (callRelation_holds fun _ hF => CallEffects.Effect.callPost_ensures hF hq) (growth_holds (callGrown_sound hk0 hok hρ hq hstable))
 
 open HeapKnowledge in
-/-- **Rule Call's composition in the caller**: the caller's facts after the
-call composed from its unconditional linear facts before it and the
-relation its callee's two-state postcondition states (`callRelation`), and
-each other post fact composed with them form by form (`Composer.fact`), each
-position the call passes nothing at read as `undefined`: every post fact but
-a linear one naming an entry term (`callRelation`'s) and one naming none
-whose every slot the return holds (`ensuresAtoms`'). -/
+/-- **Rule Entry's premises at a call** stating a two-state postcondition:
+`old(Σ)` the entry's unconditional linear facts, the terms its frame keeps
+(`callKept`, the note's Frame), and the relation of its postcondition and
+of the terms its frame grows (`callContext`). -/
+def callEntry (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 : Knowledge) : Entry :=
+  ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices, callContext stable eff t k0⟩
+
+open HeapKnowledge in
+/-- Rule Entry's premises hold at a call (proved): the entry's facts hold
+before it, its frame bounds it, and its normal exit's postconditions hold. -/
+theorem callEntry_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
+    {h h' : Heap} {v : Tm} {nw : Nat} {W : WorldT nw} (hk0 : Holds k0 ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
+    (hstable : FirstKept stable ρ h h') :
+    (callEntry stable eff t k0).Holds ε ρ h (push v ρ) h' :=
+  ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hok hρ hq hstable,
+    callContext_holds hk0 hok hρ hq hstable⟩
+
+open HeapKnowledge in
+/-- **Rule Entry's consequences in the caller** at a call stating a
+two-state postcondition (`callEntry`): its linear consequences
+(`Entry.consequences`), and each other post fact composed with the same
+premises form by form (`Composer.fact`), each position the call passes
+nothing at read as `undefined`: every post fact but a linear one naming an
+entry term (`callRelation`'s) and one naming none whose every slot the
+return holds (`ensuresAtoms`'). -/
 def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 : Knowledge) : List IndexAtom :=
   (if (callRelation eff t).facts.isEmpty then [] else
-  (compose (callKept stable eff t k0) (IndexWrites.unconditionalLinear k0.indices) (callContext stable eff t k0)).map
-    fun F => { fact := .linear F }) ++
+  (callEntry stable eff t k0).consequences.map fun F => { fact := .linear F }) ++
   match callSlots t with
   | some (recv, slots) =>
-    let P : Composer := ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
-      callContext stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩
+    let P : Composer := ⟨callEntry stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots,
+      absentSlot slots⟩
     ((eff.schema.normal.facts.filter fun F => match F with
       | .linear G => !G.vars.any (·.atEntry) && (F.mapM (ensuresSlot recv slots)).isNone
       | _ => !F.entrySlots.isEmpty || (F.mapM (ensuresSlot recv slots)).isNone).flatMap
@@ -3232,25 +3287,24 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : FirstKept stable ρ h h') :
     IndexHolds ε (ensuresComposed stable eff t k0) (push v ρ) h' := by
+  have hE := callEntry_holds hk0 hok hρ hq hstable
   intro a ha _
   unfold ensuresComposed at ha
   rcases List.mem_append.mp ha with ha | ha
   · split at ha
     · cases ha
     · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
-      exact compose_holds (IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2)
-        (callKept_sound hk0 hok hρ hq hstable) (callContext_holds hk0 hok hρ hq hstable) F hF
+      exact entry_sound hE F hF
   · split at ha
     · rename_i recv slots hs
       obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
       obtain ⟨F, hF, hGF⟩ := List.mem_flatMap.mp hG
-      have hsound : Composer.Sound ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
-          callContext stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩ ε
+      have hsound : Composer.Sound ⟨callEntry stable eff t k0, callVar recv slots, ensuresSlot recv slots,
+          absentAt slots, absentSlot slots⟩ ε
           ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
           ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
             (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
-        ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hok hρ hq hstable,
-          callContext_holds hk0 hok hρ hq hstable, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
+        ⟨hE, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
           fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
       exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
     · cases ha
