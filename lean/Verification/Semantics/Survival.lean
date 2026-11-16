@@ -288,7 +288,7 @@ def linearSupport (c : ReadContext) : Linear.Fact Term → Footprint
 /-- **A linear fact's support supports it** in its context. -/
 theorem linearSupport_supports (c : ReadContext) (F : Linear.Fact Term) :
     Supports c.Holds (fun ρ h => (IndexFact.linear F).HoldsAt ε ρ h) (linearSupport c F) := by
-  intro ρ h h' hc hF hs
+  refine Supports.intro fun ρ h h' hc hF hs => ?_
   let S := linearSupport c F
   let kept : Term → Bool := fun t => (t.support c .keep).all S.contains
   let grown : Term → Bool := fun t => (t.support c .grow).all S.contains
@@ -389,17 +389,17 @@ theorem IndexFact.support?_supports (c : ReadContext) :
   induction F with
   | index k | int k | pastSafe k =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
-    exact Supports.of_invariant fun _ _ _ _ hF => hF
+    exact SupportDomain.Supports.of_invariant fun _ _ _ _ _ _ hF => hF
   | length x n =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
-    intro ρ h h' hc hF hs
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨s, ls, hst, hls, hn, hmax⟩ := hF
     obtain ⟨ls', hls', -, hk⟩ := spineRead_sound hc (.inl rfl) hs (w := ρ x) rfl hst hls
     rw [hk rfl] at hls'
     exact ⟨s, ls, hst, hls', hn, hmax⟩
   | bound x k st =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
-    intro ρ h h' hc hF hs
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨s, ls, b, i, hst, hls, hb, hi, hle⟩ := hF
     obtain ⟨ls', hls', hg, -⟩ := spineRead_sound hc (.inr rfl) hs (w := ρ x) rfl hst hls
     exact ⟨s, ls', b, i, hst, hls', hb, hi, by have := hg.1; omega⟩
@@ -411,26 +411,26 @@ theorem IndexFact.support?_supports (c : ReadContext) :
     simp only [IndexFact.support?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at hS
     obtain ⟨SA, hA, SB, hB, rfl⟩ := hS
-    exact Supports.or (ihA hA) (ihB hB)
+    exact SupportDomain.Supports.or (ihA hA) (ihB hB)
   | guarded s p tag B ih =>
     intro S hS
     simp only [IndexFact.support?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at hS
     obtain ⟨SB, hB, rfl⟩ := hS
-    intro ρ h h' hc hF hs
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, guardReads_sound hc p [] (supported_left hs) rfl rfl hv,
-      hor.imp id fun hb => ih hB ρ h h' hc hb (supported_right hs)⟩
+      hor.imp id fun hb => (ih hB).apply hc hb (supported_right hs)⟩
   | spineApart a p b q =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
-    intro ρ h h' hc hF hs
+    refine Supports.intro fun ρ h h' hc hF hs => ?_
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, pathReads_sound hc p [] (supported_left hs) (keeps_keep u) (Selector.has_all _) rfl rfl hu,
       pathReads_sound hc q [] (supported_right hs) (keeps_keep w) (Selector.has_all _) rfl rfl hw, hne⟩
   | element _ _ _ => intro S hS; simp [IndexFact.support?] at hS
   | apart a b =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
-    intro ρ h h' _ hF hs
+    refine Supports.intro fun ρ h h' _ hF hs => ?_
     obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hF
     exact ⟨sa, xs, sb, ys, regionOf_supported (supported_sub hs (by simp)) hx,
       regionOf_supported (supported_sub hs (by simp)) hy, hab⟩
@@ -440,7 +440,7 @@ theorem IndexFact.support?_supports (c : ReadContext) :
     split at hS
     · rename_i hsc
       simp only [Option.some.injEq] at hS; subst hS
-      intro ρ h h' hc hF hs
+      refine Supports.intro fun ρ h h' hc hF hs => ?_
       have hpath := supported_left (supported_left (supported_left hs))
       have hcells := supported_right (supported_left (supported_left hs))
       have hstop := supported_right (supported_left hs)

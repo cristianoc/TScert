@@ -28,11 +28,9 @@ The one place the parity modules read the meaning of an effect. Every
 modal statement goes through `EffectAction` and the lemmas after it, and
 every support through `SupportedBy`. -/
 
-/-- **A transition within a support** (the note, §5, "Support"): every
-location `l` below the first heap's length in a region of an entry `r : δ`
-of `S`, read at the first state, changes at most by `δ`
-(`Footprints.Supported`). -/
-def SupportedBy (S : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
+/-- **A transition within a support** (the note, §5, "Support"):
+`Footprints.Supported` at the two states' heaps. -/
+abbrev SupportedBy (S : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
   Footprints.Supported S η s.h s'.h
 
 /-- A region read without the name valuation: classes, every location, a
