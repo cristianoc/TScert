@@ -1167,10 +1167,11 @@ normal return
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
-The precondition of a read, and the condition under which a write has
-the postcondition of \textsc{View-Write}, is the linear atom
-$0\le i<\kw{view}(b)$; as a linear atom it holds only of an integer $i$
-(Section~4). A write has no precondition. The format has a total conversion
+The precondition of \textsc{View-Read} and of \textsc{View-Write} is
+the linear atom $0\le i<\kw{view}(b)$; as a linear atom it holds only of
+an integer $i$ (Section~4). A write has two rules: \textsc{View-Write}
+states what the write stores, and \textsc{View-Write-Any} holds of a
+write at every number $i$. The format has a total conversion
 $\mathit{conv}_t$ from numbers to the numbers it stores. There are four
 formats. \code{Uint8}, \code{Uint16} and \code{Int32} send a number that
 is not finite to 0 and any other to its integer part modulo $2^{8}$,
@@ -1181,14 +1182,15 @@ number itself, NaN as one value. The index $-0$ is the index 0.
 \begin{array}{lll}
 \textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\kw{view}(b)} & :\emptyset\\[3pt]
 \textsc{View-Read} & \hoare{0\le i<\kw{view}(b)}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
-\textsc{View-Write} & \hoare{0\le i<\kw{view}(b)}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}
+\textsc{View-Write} & \hoare{0\le i<\kw{view}(b)}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}\\[3pt]
+\textsc{View-Write-Any} & \hoare{\kw{true}}{\code{b[i] = v}}{\kw{true}} & :\{\vw:\grow\}
 \end{array}
 \]
 where $Q_{\ne i}$ says that every other index of $b$ reads after the
 write what it read before:
 $\forall j\ne i.\ \forall u.\ \old(b[j]\doteq u)\Rightarrow b[j]\doteq u$.
-At any other number $i$, the read gives \code{undefined}
-and the write changes nothing: $\hoare{\kw{true}}{\code{b[i] = v}}{\kw{true}}:\{\vw:\grow\}$ holds at every number $i$. An assignment has the value $v$ in
+At a number $i$ outside the bound, the read gives \code{undefined} and
+the write changes nothing. An assignment has the value $v$ in
 either case. The three steps do not throw. The effect
 of \textsc{View-Write} bounds what every typed array reads after the
 write; the postcondition says what $b$ itself reads, since each element of a
@@ -1349,8 +1351,8 @@ to a required position of a tuple: none. A write of \code{x.length} that
 may lengthen \code{x} is refused: it leaves holes.
 \item[Typed array, \code{b[k]} and \code{b[k] = v}] A read used at
 \code{number}: $0\le k<\kw{view}(b)$, with $k$ an integer
-(\textsc{View-Read}). A write: none; at any other number it changes
-nothing (\textsc{View-Write}). \code{b[k] += v} and \code{b[k]++} are
+(\textsc{View-Read}). A write: none (\textsc{View-Write-Any}); outside the
+bound it changes nothing. \code{b[k] += v} and \code{b[k]++} are
 refused.
 \item[Length, \code{p.length}] None.
 \item[Call, \code{f(e1, ...)}] The precondition of \code{f} with the
