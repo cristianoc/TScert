@@ -3226,9 +3226,10 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
     cases hu
     rw [termValue_mapM' fun _ => rfl]
     unfold callKeeps at hc
-    obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := .ofFirst stable) (Footprints.ReadContext.ofFirst_holds hst) (.inl rfl)
-      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
-    rw [h3 rfl] at h1; exact h1
+    exact Footprints.frame_step (D := Footprints.heaps) (m := 0)
+      (Footprints.Term.supports_keep (ε := ε) (.ofFirst stable) u n) hc
+      (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq)) trivial
+      (Footprints.ReadContext.ofFirst_holds hst) hn
   · cases hu
 
 open HeapKnowledge in
@@ -3244,9 +3245,10 @@ theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : T
   · rename_i hc
     cases hu
     rw [termValue_mapM' fun _ => rfl]
-    obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := .ofFirst stable) (Footprints.ReadContext.ofFirst_holds hst) (.inr rfl)
-      (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
-    exact ⟨n', h1, h2⟩
+    exact Footprints.frame_step (D := Footprints.heaps) (m := 0)
+      (Footprints.Term.supports_grow (ε := ε) (.ofFirst stable) u n) hc
+      (Footprints.knowledgeQuery_sound hk hok hρ) (callerFrame_post (CallEffects.Effect.callPost_within hq)) trivial
+      (Footprints.ReadContext.ofFirst_holds hst) ⟨n, hn, Int.le_refl n⟩
   · cases hu
 
 open HeapKnowledge in

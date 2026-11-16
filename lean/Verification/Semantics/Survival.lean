@@ -353,6 +353,23 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
 
 /-! ## Facts -/
 
+/-- **A term's value has its support at `keep`** (the note, §5, Definition
+"Supports of the atoms", the rows of terms): where the support is kept, the
+term denotes what it denoted (`Term.support_sound`). -/
+theorem Term.supports_keep (c : ReadContext) (t : Term) (n : Int) :
+    Supports c.Holds (fun ρ h => termValue ε ρ h t = some n) (t.support c .keep) :=
+  Supports.intro fun _ _ _ hc ht hs => by
+    obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hs ht
+    rw [h3 rfl] at h1; exact h1
+
+/-- **A term's lower bound has its support at `grow`**: where the support is
+kept, a length denotes at least as much (`Term.support_sound`). -/
+theorem Term.supports_grow (c : ReadContext) (t : Term) (n : Int) :
+    Supports c.Holds (fun ρ h => ∃ m, termValue ε ρ h t = some m ∧ n ≤ m) (t.support c .grow) :=
+  Supports.intro fun _ _ _ hc ⟨m, ht, hnm⟩ hs => by
+    obtain ⟨m', h1, h2, -⟩ := Term.support_sound hc (.inr rfl) hs ht
+    exact ⟨m', h1, Int.le_trans hnm h2⟩
+
 /-- **A linear fact's support**: each term's (`Term.support`), in `F ≤ d`
 at `grow` for a term of coefficient at most `0`, which a larger value keeps,
 and otherwise at `keep`. -/
