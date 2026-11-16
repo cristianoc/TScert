@@ -312,7 +312,7 @@ cell.
 \paragraph{Which locations can change.} A location never moves or
 disappears; what changes is its contents. We say that a location $l$
 \emph{changes} between two heaps $h$ and $h'$ when $h'(l)\ne h(l)$.
-Every location can change, through any alias. What bounds the change is the location's
+A location may be changed through any alias of the object or array it belongs to. What bounds the change is the location's
 \emph{contract}: the set of contents the location may hold, fixed when
 the location is allocated. A field declared \code{n: number} has the
 contract ``a number'': \code{o.n = 2} is within it and \code{o.n = "a"}
@@ -420,6 +420,12 @@ heap of a state that is admissible from $s$, with budget $k-j$
 So what is proved below of every admissible transition holds of every
 step, call and callback of typed code. Host and library code is modelled
 by declared contracts; that a model is accurate is audited, not proved.
+
+This paper takes three things from the type system, which is specified
+apart from it: the contract of each location, fixed at its allocation;
+that each write is within the contract of the location it writes; and
+the safety of each step that needs no fact about the heap, such as the
+read of a field that the object's type has.
 
 The relation has four properties, used throughout:
 \begin{description}[leftmargin=1.5em,style=nextline]
@@ -748,7 +754,7 @@ elements are in order.
 \end{description}
 We write $\varphi(v)$ for a body over the one term $z[i]$, named $v$:
 $\every(a,1,v>0)$
-\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}, for the terms and atoms as stated here. The derivation system \lean{Parity.Derivation} states $\every$ for an ordinary array with each index below $t$ present, and the element atom for a typed array}.
+\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the four kinds of reading, and whether it is read at the entry; an element term occurs only in a body, and the bound of $\every$ is one term. The derivation system \lean{Parity.Derivation} states $\every$ for an ordinary array with each index below $t$ present, and the element atom for a typed array}.
 
 \paragraph{Satisfaction.} An assertion is interpreted at a state
 $s=(\rho,h,W,k)$ and an \emph{entry mark} $m$; we write
@@ -770,7 +776,7 @@ the object $x$ were allocated by this invocation. The other four forms are:
 \rho,m,h\models\bx{\Phi}F &\iff& \text{for all }h'\text{, if }h\tr{\Phi}_\rho h'\text{ then }\rho,m,h'\models F .
 \end{array}
 \]
-\status{Lean: \lean{PathStoresApart} for $\sep$ as stated; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for the freshness of a store and of an object's fields. The derivation system \lean{Parity.Derivation} states $\sep$ of two ordinary arrays.}
+\status{Lean: \lean{PathStoresApart} for $\sep$ as stated; \lean{RegionsApart} for $\apart$; \lean{FreshAt} and \lean{FreshObjectAt} for the freshness of the store of a path that reads an array, and of the fields of one that reads an object. The derivation system \lean{Parity.Derivation} states $\sep$ of two ordinary arrays.}
 So $\bx{\Phi}F$ says: $F$ holds in every state reached from here by a
 change bounded by $\Phi$. The states reached are those admissible from
 $s$, so the modality reads the world of $s$, and it is the one form that
@@ -934,14 +940,14 @@ region logic~\cite{bnr}. When $K$ separates no pair, the condition is
 that the assertion is stable under an interfering action~\cite{jones}.
 The theorem chooses between the two at each pair.
 
-A fact may have several supports and none of them greatest. The fact
+A fact may have several supports, with no one of them weaker than the others. The fact
 $\apart(x,y)$ is supported by
 $\{x[\ast]:\grow,\ y[\ast]:\keep\}$: a store that grows lists only the
 cells it listed and new ones. It is also supported by the mirror image,
 $\{x[\ast]:\keep,\ y[\ast]:\grow\}$. It is not supported by
 $\{x[\ast]:\grow,\ y[\ast]:\grow\}$: both stores may come to list the
 same new cell
-\status{Lean: \lean{apart\_grow\_keep}, for the first support; conj. for the mirror image and for the failure of the third}.
+\status{Lean: \lean{apart\_grow\_keep}, the instance of the first support where every other store is kept; conj. for the mirror image and for the failure of the third}.
 
 \begin{proposition}[Axioms of the atoms]\label{prop:axioms}
 For variables $x,y,z,w$, any effect $\Phi$, and $a$ an
@@ -1004,6 +1010,15 @@ state at its handler satisfies $Q^{e}$. We write $\hoare PcQ$ when
 $Q^{e}$ is $\kw{true}$. For example
 $\hoare{\kw{true}}{x=\code{[]}}{\len x=0}$.
 
+A command \emph{completes normally} when it reaches its end; a loop
+body also completes normally by a \code{break}, which ends the loop. It
+\emph{completes exceptionally} by a throw that it does not handle. A
+\code{return} ends the enclosing function, whose postcondition is
+required at it (rule \textsc{Fun}). The state a triple speaks of has a
+world; a proof of the triple supplies it, and two proofs for one
+execution may supply different worlds, which is what the side condition
+of \textsc{Conj} is for.
+
 The assertion $P$ is the \emph{precondition} of the triple; $Q$ and
 $Q^{e}$ are its \emph{postconditions}, the normal and the exceptional one. A
 postcondition is a \emph{two-state} assertion.
@@ -1042,7 +1057,7 @@ over the variables in scope before $c$ is unaffected by the binding.
 \and
 \inferrule*[left=Seq-Eff]{c_1:\Phi \\ c_2:\Psi \\ \Psi\rightsquigarrow^{\Phi}_{\mathit{ev}}\Psi' \\ \Phi\cup\Psi'\sqsubseteq\Phi}{c_1;c_2:\Phi}
 \and
-\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{x.\kw{store}:\delta\} \\ \fresh(x)\text{ holds before }c}{c:\Phi\ \text{ from the entry}}
+\inferrule*[left=Fresh-Eff]{c:\Phi\cup\{x.\kw{store}:\delta\} \\ \fresh(x)\text{ holds before }c}{c:\Phi\ \text{ on the locations below the mark}}
 \end{mathpar}
 
 \noindent
@@ -1138,10 +1153,13 @@ the sequence of the exceptional effect of \code{c} and the normal effect
 of \code{d}; a throw of \code{d} is an exceptional exit, bounded
 likewise with the exceptional effect of \code{d}
 \status{Lean: \lean{Post.compose\_rebases}, \lean{CommandSummary.seq\_sound}, \lean{CommandSummary.handle\_sound}, with evidence for the rebasing and a checked inclusion of effects}.
-\item[\textsc{Fresh-Eff}] A change to the store of an array that the
-command itself allocated is no part of the command's effect, seen from
-its entry. A fresh store may list a cell of the entry heap, and a change
-of that cell is part of the effect.
+\item[\textsc{Fresh-Eff}] The store of a fresh array is at or above the
+mark, so a change to it is no change of a location the invocation
+started with: on those locations the command is bounded by the rest of
+its effect. The conclusion is about the command $c$ alone; what ran
+before it is composed by \textsc{Seq-Eff}. A fresh store may list a
+cell from below the mark, and a change of that cell is part of the
+effect.
 \end{description}
 
 \begin{definition}[Independence of the world]\label{def:indep}
@@ -1185,7 +1203,10 @@ holds when every location of the entry heap that $\Psi$ covers at a
 change $\delta$ is covered by $\Psi'$ at $\delta$ or at a wider change,
 or is covered by $\Phi$ at $\any$: the command may already have changed
 it arbitrarily. The evidence $\mathit{ev}$ gives, for each value that
-$\Psi$ names, a path that reads that value in both heaps.
+$\Psi$ names, a path that reads that value in both heaps. The cases
+below establish such evidence from rigid paths; a path that happens to
+read the same value in the two heaps is evidence too, when a
+postcondition of the command shows it.
 \end{definition}
 
 \noindent
@@ -1200,7 +1221,7 @@ has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
 $o.\mathit{items}$ is rigid, the effect of \code{f} at its entry is
 $\{o.\mathit{items}.\kw{store}:\grow\}$. Otherwise it widens to
 $\{\st:\grow\}$
-\status{Lean: \lean{seq\_eff}, \lean{fresh\_eff}, \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens to its class a region at any path depth; a field read from a position with no recorded link to an entry path widens to every location, a wider bound than its class}.
+\status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens to its class a region at any path depth; a field read from a position with no recorded link to an entry path widens to every location, a wider bound than its class}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
 Let \code{shrink(xs)} pop its argument,
@@ -1228,6 +1249,42 @@ has an effect bounded by $\Phi$, then by \textsc{(Dense)} and the
 proposition $F$ holds each time \code{map} reads an element. That the
 array \code{map} returns is dense is a separate fact, of how \code{map}
 builds it, and belongs to its postcondition.
+
+\paragraph{Reads, writes and tests.} With $x$ a variable that holds an
+object or an array, $a$ an atom and $i$ an integer:
+\[
+\begin{array}{lll}
+\textsc{Field-Read} & \hoare{\kw{true}}{\code{y = x.f}}{x.f\doteq y} & :\emptyset\\[3pt]
+\textsc{Field-Write} & \hoare{\kw{true}}{\code{x.f = a}}{x.f\doteq a} & :\{x.f:\any\}\\[3pt]
+\textsc{Elem-Read} & \hoare{0\le i<\len x}{\code{y = x[i]}}{x[i]\doteq y} & :\emptyset\\[3pt]
+\textsc{Test} & \hoare{P}{\code{if (a) ...}}{P\wedge a\ \text{on the true branch},\ P\wedge\neg a\ \text{on the false one}} & :\emptyset
+\end{array}
+\]
+A field read of an object whose type has the field needs no fact; an
+optional field reads $x.f^{?}\doteq y$. \textsc{Elem-Read} gives
+\code{undefined} at a hole, by the meaning of the element atom; with
+$\dense(x,n)$ and $i<n$ the element is present. In \textsc{Test} the
+atom $a$ is read as an assertion: a comparison of two terms is the
+inequality, and a comparison of a path with \code{null} or
+\code{undefined} is the equality or its negation, a fact
+$\pi\notin\{\code{null}\}$. A binding \code{y = a} gives $y\doteq a$
+\status{Lean: \lean{ReadGave} for a field read. \textsc{Elem-Read} is assumed, as the contract of the element read}.
+
+\paragraph{Functions.} A function \code{f} with parameters $\vec p$ and
+body $c$ has the specification of rule \textsc{Call} when its body
+meets it:
+\[
+\inferrule*[left=Fun]{\hoarex{P}{c}{\kw{true}}{Q^{e}} \\ Q[a/y]\text{ holds at each }\code{return a}\text{ of }c \\ c:\Phi\mid\Phi^{e}\ \text{on the locations below the mark}}{\hoarex{P}{y=f(\vec p)}{Q}{Q^{e}}\qquad y=f(\vec p):\Phi\mid\Phi^{e}}
+\]
+The mark of the premise is the heap's length at the entry of the body:
+by \textsc{Fresh-Eff} what the body does to the arrays and objects it
+allocates is no part of $\Phi$. In $Q$ and $Q^{e}$, $\old$ refers to the
+entry of the body, and $\fresh(y)$ of a result is at the body's mark; a
+caller's mark is at most that, so $\fresh(y)$ holds at the caller's mark
+too. A call of \code{f} inside its own body uses the specification being
+established: a triple speaks of the executions that complete, and the
+argument is by induction on the length of the execution
+\status{Lean: \lean{codeObligations\_sound}, with \lean{PassWalkSound} for the effect of the body on both exits}.
 
 \paragraph{Exact postconditions.} The postcondition of \code{x.push(v)}
 (\textsc{Push} below) specifies a strong update on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
@@ -1266,7 +1323,7 @@ fact across a write that cannot reach what the fact reads. Three rules
 keep or extend a fact across a write that can reach it, because of the
 value written. Let $y$ and $x$ be variables, $V$ a set of values, and
 $\varphi(i,v)$ a body over the index $i$, the one element term $v$ and
-terms the step keeps:
+terms the step keeps. The bound $n$ and the index $k$ are variables:
 \[
 \begin{array}{ll}
 \textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
@@ -1284,15 +1341,18 @@ the appended element, using the postcondition of \textsc{Push}.
 \textsc{View-Every} uses the postcondition of \textsc{View-Write}: every
 other index of $b$ reads what it read, and the index $k$ reads the
 stored value. With $k=n$ it extends the prefix, as in
-\code{while (n < b.length) \{ b[n] = n; n = n + 1; \}} with the fact
+\code{while (n < b.length) \{ b[n] = n; n = n + 1; \}}, for a typed
+array \code{b} whose format stores each of its indices unchanged, such
+as an \code{Int32Array}, with the fact
 $\every(b,n,\ v=i)$: each element holds its own index. The three rules are instances of one principle: a
 fact that holds of each of a family of locations holds after a write
 when it holds of the written value at each location of the family the
 write can reach
 \status{Lean: \lean{keptCells\_holds}; \lean{every\_appended} with \lean{appendKept\_holds}, for an appended safe integer; \lean{every\_written}, \lean{every\_written\_prefix} with \lean{writeKept\_holds}, for an integer the format stores unchanged. The principle has no theorem of its own}.
 
-A growth of a store alone keeps no quantified fact: a store that grows
-may list other cells at its old indices (Section~3). Across
+A growth of a store does not in general keep a quantified fact about
+elements: a store that grows may list other cells at its old indices
+(Section~3). Across
 \code{x.push(v)} a fact $\every(x,t,\varphi)$ with $t\le\old(\len x)$
 is kept by the postcondition $Q_{<}$ of \textsc{Push}, where the bound
 and the other terms of the body are kept. Across a field write, a fact
@@ -1304,8 +1364,8 @@ field of each element, such as $z[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
-operands and the empty effect. Let $x,x'$ be safe integers and $c$ a
-safe-integer constant:
+operands and the empty effect. Let $x,x'$ be safe integers, $c$ a
+safe-integer constant, and $d$ and $m$ integers:
 \[
 \begin{array}{ll}
 \textsc{Add}, \textsc{Sub}, \textsc{Scale} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\qquad\hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
@@ -1464,7 +1524,7 @@ node's. An assertion holds only where the terms its truth depends on
 are defined, so the entailment establishes that as well.
 \end{definition}
 
-\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst}: the conclusion holds of every pair of states that satisfies the premises of $\mathrm{Check}$, for every effect, regions at paths included. \lean{transfer}, one theorem per exit, connects a run of the node to those premises for exit effects over class regions, and \lean{graph\_safe} composes the exits into the safety of a graph. conj.: that connection for exit effects with regions at paths}
+\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{checkScoped\_sound} with \lean{sat\_subst}: the conclusion holds of every pair of states that satisfies the premises of $\mathrm{Check}$, for every effect, regions at paths included. \lean{transfer}, one theorem per exit, connects a run of the node to those premises for exit effects over class regions, and \lean{graph\_safe} composes the exits into the safety of a graph each of whose nodes is checked safe (\lean{NodesChecked}). conj.: that connection for exit effects with regions at paths}
 If $s\models_m\Sigma$, the node $c$ runs from $s$
 through exit $e$ to $s'$, and $\mathrm{Check}(c,\Sigma,e,A)$, then
 $\theta_e(s')\models_m A$.
@@ -1472,23 +1532,52 @@ $\theta_e(s')\models_m A$.
 \noindent
 The proof is \textsc{Entry} with $B=\bigwedge\Sigma$, and consequence.
 
+\begin{definition}[Derivations]\label{def:deriv}
+A derivation of $\Gamma\vdash F$, for two-state assertions, uses these
+rules and no other:
+\begin{description}[leftmargin=1.5em,style=nextline,itemsep=1pt,topsep=2pt]
+\item[Logic] An assumption of $\Gamma$; introduction and elimination of
+$\wedge$, $\vee$ and $\exists$; replacement of a path by a path that
+reads the same value; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
+\item[Arithmetic] A linear inequality that follows over the integers
+from the linear inequalities at hand, where each term of the conclusion
+is defined: it occurs in a premise, or is a literal.
+\item[Atoms] Proposition~\ref{prop:every}, and that an equality, a
+contents fact and an element fact of one path with two different values
+are contradictory.
+\item[The modality] The laws of Proposition~\ref{prop:laws};
+Theorem~\ref{thm:frame}, with a support of the fact and respect by its
+sufficient condition; the axioms of Proposition~\ref{prop:axioms}; that
+an assertion over variables alone, and $\pi\sep\pi'$ of two variables,
+are invariant; that a path through fields whose contracts admit one
+value is rigid.
+\end{description}
+Two regions are disjoint, for the sufficient condition of respect, when
+no kind of location belongs to both, or when a separation at hand says
+so: $\pi\sep\pi'$ for $\pi.\kw{store}$ and $\pi'.\kw{store}$,
+$\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and $\fresh(r)$ for $r$ and
+any region of locations below the mark.
+\end{definition}
+
 \paragraph{Sound graphs.} Annotate each point of a graph with knowledge.
 The annotated graph is \emph{sound} when its entry state satisfies the
-knowledge at the entry, and $\mathrm{Check}$ holds on every edge against
-the knowledge at the edge's target. Merges and loop heads are targets
-like any other.
+knowledge at the entry, at every node the knowledge entails the
+precondition of the node's step, and $\mathrm{Check}$ holds on every
+edge against the knowledge at the edge's target. Merges and loop heads
+are targets like any other. The precondition of a step is that of its
+rule in Section~6; a step with no rule there needs no fact, and its
+safety is the type system's. A function \emph{verifies} when its graph
+has a sound annotation whose entry knowledge is its precondition and
+which entails its postcondition at each return (rule \textsc{Fun}).
 
 \paragraph{The forward pass.} A forward pass proposes knowledge for
 $\mathrm{Check}$. A merge retains facts established by every incoming
 edge. Loop-head knowledge is supplied.
 
-Derivations use ordinary two-state logic, linear arithmetic, and
-Propositions~\ref{prop:laws}, \ref{prop:every} and~\ref{prop:axioms}.
-They include old-state lifting:
-$F\vdash G$ gives $\old(F)\vdash\old(G)$.
-Modal elimination is the entailment in \textsc{Frame}.
-This system is sound for semantic entailment
-\status{Lean: \lean{Derivation.sound}}. It is not claimed complete.
+Derivations are those of Definition~\ref{def:deriv}. Modal elimination
+is the entailment in \textsc{Frame}. This system is sound for semantic
+entailment
+\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv}}. It is not claimed complete.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
@@ -1514,9 +1603,11 @@ Suppose the invariant also includes $\len{\mathit{xs}}\le n$.
 The effect in row 5 permits growth beyond $n$, so that effect alone
 does not preserve the bound. The write itself keeps $\len{\mathit{xs}}$:
 if \code{out} is \code{xs}, then $j<\len{\mathit{xs}}$ by row 4, and the
-write is at a present index, where \textsc{Write-In} keeps every
-length. The knowledge at hand does not say whether \code{out} is
-\code{xs}, so the bound is not kept.
+write is at an index below the length, where \textsc{Write-In} keeps
+every length; if it is not, the store of \code{xs} is not written. So
+the bound holds after the write. Deriving it takes a case distinction on
+whether two arrays are the same, for which the derivation system has no
+rule.
 
 The regional effect
 $\{\val:\any,\ \mathit{out}.\kw{store}:\grow\}$ preserves the upper bound
@@ -1618,8 +1709,9 @@ reusable specification of \code{walk} needs an effect variable,
 $\forall\varepsilon.\ \Phi\cup\varepsilon$.
 \end{description}
 \noindent
-The fourth needs no new form. It needs a separation that the rules do
-not establish.
+The fourth needs a separation of the fields of one object from those
+of another, which neither $\sep$ nor $\apart$ states, and a rule that
+establishes it.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[A record replaced on each loop pass] The new record must be
 separated from the loop's iterator on every back edge. \textsc{Alloc}
