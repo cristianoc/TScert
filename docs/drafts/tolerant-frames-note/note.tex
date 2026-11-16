@@ -24,9 +24,9 @@
 \newcommand{\init}{\kw{init}}
 \newcommand{\grow}{\kw{grow}}
 \newcommand{\any}{\kw{any}}
-\newcommand{\val}{\kw{all\text{-}values}}
-\newcommand{\st}{\kw{all\text{-}spines}}
-\newcommand{\vw}{\kw{all\text{-}views}}
+\newcommand{\val}{\kw{values}}
+\newcommand{\st}{\kw{spines}}
+\newcommand{\vw}{\kw{views}}
 \newcommand{\slen}{\kw{strlen}}
 \newcommand{\LV}{\mathit{Loc}_{\mathsf{view}}}
 \newcommand{\rigid}{\kw{rigid}}
@@ -638,8 +638,8 @@ partition the locations of $h$; $\st$ is the union of the last two. A
 location keeps its kind and form (T2), so a class region denotes, among
 the locations of $h$, the same set in every heap reached from $h$; and
 the spine of an array, at $\pi.\kw{spine}$ or in $\pi[\ast]$,
-is disjoint from $\vw$. In TScert's \code{Modifies}
-annotation $\st$ and $\val$ are written \code{spines} and \code{values}. 
+is disjoint from $\vw$. TScert's \code{Modifies}
+annotation writes $\st$ and $\val$ with the same names, \code{spines} and \code{values}. 
 
 Two examples of regions at a path, with the declarations above. If
 \code{z} is \code{null}, then the read of $z.\mathit{open}$ fails and
