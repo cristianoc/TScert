@@ -558,8 +558,8 @@ denotes $\emptyset$.
 \item[{$\val$}] Every location of class value:
 $\val(\rho,h)=\LF\cup\LC\cup\LE\cup\LI$. In the heap of Section~2 it denotes
 $\{0,1,2,4,5,6,7,8,9\}$.
-\item[{$\pi.\kw{store}$}] The store location of the one array that $\pi$
-reads: $(\pi.\kw{store})(\rho,h)=\{s\}$, where $s$ is that array's store
+\item[{$\pi.\kw{store}$}] The store location of the one array or typed
+array that $\pi$ reads: $(\pi.\kw{store})(\rho,h)=\{s\}$, where $s$ is that array's store
 location. Example: $a.\kw{store}$ denotes $\{3\}$.
 \item[{$\pi[\ast]$}] That store location together with the element cells
 its store lists: $(\pi[\ast])(\rho,h)=\{s\}\cup\mathit{cells}(h(s))$.
@@ -645,7 +645,8 @@ location in its class, and $\any$ absorbs any change that follows it.
 rigid on the states where $\pi$ is rigid (Section~4): the path then
 reads the same store in $h$ and in $h'$.
 \item[The own fields at a path] $\{\pi.\kw{own}:\delta\}$ is the effect of a method that changes only its
-receiver's fields, as \code{it.next()} does for an iterator \code{it}:
+receiver's fields. An iterator \code{it} whose \code{next} has that
+specification gives
 $\code{it.next()}:\{\mathit{it}.\kw{own}:\any\}$
 \status{Lean: \lean{ownCall\_sound}, for a call whose normal effect has
 an entry at the receiver's own fields and keeps every other location}.
@@ -689,7 +690,8 @@ the number they hold or read. $\len\pi$ is the length of the array that
 $\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
 $\slen(\pi)$ the length of the string. $z[t]$ is the number that the
 array or typed array $z$ holds at the index $t$, and $z[t].\pi$ the
-number read along $\pi$ from the element at $t$. A term is \emph{defined} when the
+number read from the element at $t$ along the fields of $\pi$, which
+here stands for a sequence of field names alone. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
 value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
 $M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
@@ -935,8 +937,8 @@ $\rho,m,h'\models F$.
 \end{proof}
 
 \begin{definition}[Supports of the atoms]\label{def:supports}
-The support $\mathrm{supp}(F)$ of an assertion without a modality is
-defined by its form. Write $\mathrm{reads}_\delta(\pi)$ for the field
+The support $\mathrm{supp}(F)$ is defined for the forms of assertion
+below; an assertion of another form has no support by this definition. Write $\mathrm{reads}_\delta(\pi)$ for the field
 locations along $\pi=x.f_1\ldots f_k$: the regions $x.f_1$, \ldots,
 $x.f_1\ldots f_{k-1}$ at $\grow$, which keeps the object each holds, and
 the last, $x.f_1\ldots f_k$, at $\delta$.
@@ -956,7 +958,10 @@ F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
 \]
 For a length $\len\pi$ in an inequality, $\delta$ is $\grow$ where the
 inequality stays true when the length increases, as in
-$n\le\len\pi$, and $\keep$ otherwise. A field that a condition $C$ says
+$n\le\len\pi$, and $\keep$ otherwise. In the index of an element fact
+and in the bound and the body of a quantified fact, every length is at
+$\keep$. A term $z[t].\pi$ reads a field of an element, for which there
+is no region, and has no support. A field that a condition $C$ says
 keeps its contents is left out of $\mathrm{reads}$, and the support is
 then under $C$. In the row of $\every$, $z$ reads an array, the body
 $\varphi$ is over the element $z[i]$ and terms that do not mention $i$,
@@ -966,7 +971,7 @@ and $\mathrm{supp}(\varphi)$ is the support of those terms.
 Example: $\mathrm{supp}(c.\mathit{at}<\kw{view}(\mathit{flags}))$ is
 $\{c.\mathit{at}:\init\}$, the one field the fact reads. An effect that
 grows stores respects it, since a field location is no store
-\status{Lean: \lean{Term.support\_sound}, \lean{IndexFact.support?\_supports}: the support supports the fact, for the facts of the acceptance path. The body of a quantified fact that reads a field of each element has no support}.
+\status{Lean: \lean{Term.support\_sound}, \lean{IndexFact.support?\_supports}: the support supports the fact, where Lean computes a support. It computes none for an element fact; \lean{Parity.SupportEvidence} has one for the element of a typed array}.
 
 The theorem has two known rules as its extreme cases. When every change
 in the support is $\keep$, the condition is that the regions a command
@@ -1059,8 +1064,13 @@ that loop and of that function:
 \end{array}
 \]
 The postcondition $\kw{false}$ says that the command does not reach its
-end. In \textsc{Try} the assertion $R$ does not mention the caught value
-$x$, of which nothing is known. The state a triple speaks of has a
+end. In \textsc{Return}, an $\old$ of $Q$ refers to the entry of the
+function, so $Q[a/y]$ is required of the function's entry state and the
+state at the \code{return}. In \textsc{Try} the assertions $R$, $Q$ and
+$Q^{e}$ are without $\old$, as in \textsc{Seq}, and $R$ does not mention
+the caught value $x$, of which nothing is known. These four rules, and
+\textsc{If}, \textsc{Seq} and \textsc{Test}, follow from the meaning of
+a triple; no Lean theorem states them in this form. The state a triple speaks of has a
 world; a proof of the triple supplies it, and two proofs for one
 execution may supply different worlds, which is what the side condition
 of \textsc{Conj} is for.
@@ -1186,7 +1196,7 @@ These separations are
 facts of the state after the step. Later steps keep or lose them like
 any other fact: a growth of the new array's store keeps them, and an
 arbitrary change of that store does not, since it may make the store
-list a cell of $y$. Lean: \lean{alloc\_post}, \lean{alloc\_apart}, for the empty array; \lean{literalArrayAtoms} for the length of an array literal, and \lean{FreshObjectAt} for the fields of an object literal; the elements and the density of an array literal are a conjecture; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
+list a cell of $y$. Lean: \lean{alloc\_post}, \lean{alloc\_apart}, for the empty array; \lean{literalArrayAtoms\_holds} for the length of an array literal; the elements and the density of an array literal, and the postcondition of an object literal, are conjectures; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
 \item[\textsc{Seq-Eff}] The effect of a sequence, stated at the entry of
 the sequence. The effect $\Psi$ of the second command is read where that
 command starts, so it is first \emph{rebased} to the entry (below).
@@ -1256,15 +1266,16 @@ postcondition of the command shows it.
 \end{definition}
 
 \noindent
-Four cases follow from the definition. A class region rebases to itself,
+Four sufficient cases follow from the definition. A class region rebases to itself,
 and so does a store or a field at a rigid path. The store of an array
 allocated after the entry heap is no location of that heap, so its entry
 rebases to nothing: this is what \textsc{Fresh-Eff} states for the entry
 of an invocation. It applies to the one new store: a write through a new
 typed array keeps its entry $\vw:\grow$, since it may change an older
-view store. The cells $\pi[\ast]$ of an array rebase to themselves only
-where the command before keeps the store of $\pi$, so that it lists the
-same cells. Any other region, and the cells of a new store, widen to
+view store. The region $\pi[\ast]$ at a rigid path rebases to itself where the
+command before changes the store of $\pi$ by at most $\grow$: the cells
+a grown store adds are new, so each of its cells from the entry heap was
+one it listed. Any other region, and the cells of a new store, widen to
 their class. For
 example, in \code{f(o) \{ const xs = o.items; xs.push(1); \}} the push
 has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
@@ -1289,7 +1300,7 @@ modality.
 Let every native step and every callback have effect bounded by
 a rigid $\Phi$. If $\bx{\Phi}F$ holds initially, $F$ holds at every
 observation between these steps and calls.
-\status{Lean: \lean{rely\_chain}; \lean{map\_rely}, \lean{elems\_rely} for \code{map}}
+\status{Lean: \lean{rely\_chain}, for the kinds of fact of \lean{FactKind} with a checked stability at each step; \lean{map\_rely}, \lean{elems\_rely} for \code{map}. The proposition as stated follows by induction on the steps}
 \end{proposition}
 \noindent
 For example take \code{xs.map(f)}, where \code{map} reads
@@ -1318,7 +1329,7 @@ $\dense(x,n)$ and $i<n$ the element is present. In \textsc{Test} the
 atom $a$ is read as an assertion: a comparison of two terms that are
 both known to be defined is the inequality, and its negation the
 converse inequality; a comparison of a number not known to be a safe
-integer gives no fact. A comparison of a path with \code{null} or
+integer gives no fact, and neither does a test of any other form. A comparison of a path with \code{null} or
 \code{undefined} is the equality or its negation, a fact
 $\pi\notin\{\code{null}\}$. A binding \code{y = a} gives $y\doteq a$
 \status{Lean: \lean{ReadGave} for a field read. \textsc{Elem-Read} is assumed, as the contract of the element read}.
@@ -1478,7 +1489,7 @@ $\slen(s)+1$ past the range, the construction throws. Without the stated precond
 is still safe: \code{charCodeAt} gives a number with no fact, and
 \code{codePointAt} a number or \code{undefined}. Example:
 \code{const j = text.indexOf("x"); if (j >= 0) return text.charCodeAt(j);}
-verifies: $1\le\slen(\code{"x"})$ gives $j<\slen(\mathit{text})$, and
+verifies: the string searched for has length 1, which gives $j<\slen(\mathit{text})$, and
 the test gives $0\le j$
 \status{assumed, as contracts of the host. In the Lean model of UTF-16 strings, \lean{unit\_bound} and \lean{code\_unit\_safe} prove the range of a code unit, \lean{slice\_length} the length of a slice, and \lean{search\_bounds} the bounds of a search in a string that fails or finds a match}.
 
@@ -1600,7 +1611,12 @@ both paths are rigid; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
 \item[Arithmetic] A linear inequality that follows over the integers
 from the linear inequalities at hand, where each term of the conclusion
 is defined: it occurs in a premise, or is a literal.
-\item[Atoms] Proposition~\ref{prop:every}. Two facts are contradictory
+\item[Atoms] Proposition~\ref{prop:every}. An element fact
+$z[t]\doteq v$ gives $0\le t$ and $t$ below the length of $z$, and after
+a read \code{y = z[t]} the term $z[t]$ and the variable $y$ replace each
+other. A postcondition quantified over indices is instantiated at a
+term, and an implication with its premise gives its conclusion. Two
+facts are contradictory
 when they are $\pi\doteq v$ and $\pi\doteq w$ with $v\ne w$;
 $\pi\doteq v$ and $\pi\in V$ with $v\notin V$; or $z[i]\doteq v$ and
 $z[i]\doteq w$ with $v\ne w$.
@@ -1624,9 +1640,14 @@ The annotated graph is \emph{sound} when its entry state satisfies the
 knowledge at the entry, at every node the knowledge entails the
 precondition of the node's step, and $\mathrm{Check}$ holds on every
 edge against the knowledge at the edge's target. Merges and loop heads
-are targets like any other. A step has a precondition where it is not
+are targets like any other. The graph has an edge for every way each
+node completes, the exceptional one included; a \code{break} has the
+edge to the exit of its loop and a \code{return} the edge to the exit of
+the function. A step has a precondition where it is not
 safe, or not of its type, without one: \textsc{Elem-Read} of an element
-used at the element type, \textsc{View-Read} and \textsc{Str-Read}
+used at the element type, which also needs the element present, by
+$\dense(x,n)$ with $i<n$ or by an array type without holes;
+\textsc{View-Read} and \textsc{Str-Read}
 likewise, \textsc{Write-In} and \textsc{Write-End}, of which a write to
 an array needs one, and the precondition of a called function. A rule
 whose precondition only strengthens its postcondition, as the arithmetic
@@ -1644,7 +1665,7 @@ edge. Loop-head knowledge is supplied.
 Derivations are those of Definition~\ref{def:deriv}. Modal elimination
 is the entailment in \textsc{Frame}. This system is sound for semantic
 entailment
-\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv} over the assertions the Lean derivation system represents: its quantified facts are over ordinary arrays, with each index present and a body over scalars}. It is not claimed complete.
+\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv} over the assertions the Lean derivation system represents: its quantified facts are over ordinary arrays, with each index present and a body over scalars, and its arithmetic steps carry a certificate that Lean checks}. It is not claimed complete.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
