@@ -223,6 +223,41 @@ A verdict change the table does not expect is investigated before the next
 step; a loss is a defect in every step, the refusals step 3 intends
 excepted.
 
+### What an audit checks
+
+A step judged done is audited from the sources by a reviewer who has not
+worked on it, before it is recorded as done. For each fact acceptance
+relies on where the step works, the audit establishes:
+
+1. **The rule.** The decision that keeps or establishes the fact is one
+   application of a named rule of the paper: Frame, Entry, an atom axiom
+   or the rule of a step.
+2. **The paper's premises.** That application checks the rule's premises
+   as the paper states them: a support the paper gives, respect by its
+   sufficient condition, disjointness from the evidence the paper lists,
+   the effect the paper states for the step.
+3. **The shared statements.** The check runs the one Lean definition of
+   each notion (`Supports`, `respects`, the step's effect), and its
+   soundness goes through the one Lean theorem of the rule, such as
+   `frame_step`.
+4. **No other route.** No other decision on the acceptance path concludes
+   a fact of that kind. The step's "Deleted" column names the routes
+   known; the audit searches for others.
+5. **Lean states the paper.** Each Lean definition and rule used reads,
+   side by side, as the paper's numbered definition or rule.
+
+Steps 1 to 6 establish items 3 and 4 for what they replace; steps 2, 3,
+4 and 7 establish item 2 for disjointness, regions, effects and writes;
+step 10 establishes item 1 for every fact; item 5 is checked at every
+step for the definitions it touches. The audit reports, item by item, what
+holds, with the place in the sources.
+
+An item that cannot be established is a result to discuss with the owner,
+with its reason: the paper's rule may lose a program that verifies, the
+Lean may need a premise the paper does not state, or the paper may be
+silent. The discussion decides the way forward: the paper gains the rule,
+the code changes, or the case stays as it is, recorded where it belongs.
+
 Steps 1 to 6 change the deciders that run and what they share. The
 paper's rules as a derivation system (`Parity.Derivation`, its checker and
 its soundness theorem) are applied by acceptance from step 7 on: the
