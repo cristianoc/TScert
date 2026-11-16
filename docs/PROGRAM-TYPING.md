@@ -1816,14 +1816,18 @@ Every write the pass checks states its change so:
 
 A call's frame $`\Phi`$ at the caller's slots
 ([a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller))
-respects the support where each of its entries $`(r,\delta)`$ keeps its
-locations, or holds only spines and changes them otherwise than by
-$`\mathsf{any}`$, which leaves a spine a spine, every spine meeting $`V`$
-alike, or is separated from $`y.f`$ by $`\Sigma`$'s query:
+keeps a cell fact by the note's Frame: its support is its field location at
+$`\mathsf{keep}`$, $`\{y.f:\mathsf{keep}\}`$ (`FactKind.support`), and
+$`\Phi`$ respects it under $`\Sigma`$'s query
+([support and respect](FOOTPRINTS.md#support-and-respect)) where each entry
+$`(r,\delta)`$ keeps its locations or is separated from $`y.f`$. A region
+holding only spines is separated from a field at a key other than the
+spine key by their bounds
+([separation queries](FOOTPRINTS.md#separation-queries)):
 
 ```math
 \frac{y.f\in V\in\Sigma\qquad t:\Phi\qquad
-      \forall (r,\delta)\in\Phi.\ \delta=\mathsf{keep}\ \lor\ (r\subseteq\mathsf{cls}\ \mathsf{spine}\land\delta\ne\mathsf{any})\ \lor\ y.f\mathrel{\#}r}
+      \forall (r,\delta)\in\Phi.\ \delta\sqsubseteq\mathsf{keep}\ \lor\ y.f\mathrel{\#}r}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t\dashv\ldots,\ y.f\in V}\ \textsf{frame-cell}
 ```
 
@@ -1833,7 +1837,7 @@ own rule keeps.
 Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
 (`writeOutput`), `IndexWrites.writtenCells_sound` (`boundedCells_sound`,
 `growOutput_sound`) and `PromiseCalls.withGrown_holds`;
-`PromiseCalls.frameCells_holds` (`frame-cell`, `PromiseCalls.cellRespects`,
+`PromiseCalls.frameCells_holds` (`frame-cell`, `FactKind.frame_step`,
 added by `Checker.ensuringCalls` through `withEnsures`).
 Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
 

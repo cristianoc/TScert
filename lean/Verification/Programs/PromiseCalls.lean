@@ -2151,64 +2151,34 @@ def frameKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : H
     (a : HeapKnowledge.IndexAtom) : Bool :=
   a.fact.keeps (Footprints.knowledgeQuery k) { stable } (callerFrame eff t)
 
-/-- Every spine meets a set of values alike. -/
-theorem mem_spine {V : ValueSets.ValueSet} {v v' : Tm} (hv : Footprints.isArr v = true)
-    (hv' : Footprints.isArr v' = true) : V.mem v' = V.mem v := by
-  cases v <;> simp [Footprints.isArr] at hv <;> cases v' <;> simp [Footprints.isArr] at hv' <;> rfl
-
-/-- **A cell fact's support respected by a frame** (the note's Respect, at
-the support of a cell fact `y.f ∈ V`: the location `y.f`, at a change into
-`V`): every entry of the frame keeps its locations, or holds only spines and
-changes them otherwise than by `any`, which leaves a spine a spine
-(`Change.Holds.isArr_eq`), and every spine meets `V` alike (`mem_spine`), or
-the query separates its region from the field `y.f`. -/
-def cellRespects (q : Footprints.SepQuery) (Φ : Footprints.Footprint) (f : HeapFacts.Fact) : Bool :=
-  Φ.all fun e => e.2 == .keep || (Footprints.spineOnly e.1 && e.2 != .any) ||
-    q.disjoint (.field f.slot f.field) e.1
-
 /-- **A call's cell facts kept by its frame** (the note's Frame, at cell
-facts): those of the call's entry whose support the call's frame at the
-caller's slots respects under the entry's query (`cellRespects`), renamed
-past the result. -/
+facts): those of the call's entry whose support, the field location they
+read at `keep` (`FactKind.support`, the note's Definition "Support"), the
+call's frame at the caller's slots respects under the entry's query
+(`respects`, the note's Definition "Respect"), renamed past the result. -/
 def frameCells (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : HeapFacts.Facts :=
-  (k.cells.filter (cellRespects (Footprints.knowledgeQuery k) (callerFrame eff t))).map
+  (k.cells.filter fun f => Footprints.respects (Footprints.knowledgeQuery k)
+    (Footprints.FactKind.cell f).support (callerFrame eff t)).map
     fun f => { f with slot := f.slot + 1 }
 
-/-- **The frame keeps the cell facts it respects** (the tolerant frame for
-cell facts): each holds on the call's normal return, past the result. -/
+/-- **The frame keeps the cell facts it respects** (the note's Theorem
+"Tolerant frame", `FactKind.frame_step` at cell facts): each holds on the
+call's normal return, past the result. -/
 theorem frameCells_holds {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
     {v : Tm} {nw : Nat} {W : WorldT nw} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk nw W h)
     (hρ : RootsOk W ρ)
     (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
     HeapFacts.Holds (frameCells eff t k) (push v ρ) h' := by
-  have hp := callerFrame_post (CallEffects.Effect.callPost_within hq)
-  have hqs := Footprints.knowledgeQuery_sound hk hok hρ
   intro g hg
   obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hg
   obtain ⟨hfm, hr⟩ := List.mem_filter.mp hf
-  obtain ⟨flds, c, oid, w, hρs, hrd, hm⟩ := hk.1 f hfm
-  refine ⟨flds, c, oid, ?_⟩
-  unfold HeapFacts.ReadGave at hrd
-  cases hl : flds.lookup f.field with
-  | none =>
-    rw [hl] at hrd
-    exact ⟨w, by simpa [push] using hρs, by unfold HeapFacts.ReadGave; rw [hl]; exact hrd, hm⟩
-  | some l =>
-    rw [hl] at hrd
-    obtain ⟨w', hw', ha⟩ := hp.2 l w hrd
-    refine ⟨w', by simpa [push] using hρs, by unfold HeapFacts.ReadGave; rw [hl]; exact hw', ?_⟩
-    rcases ha with rfl | ⟨e, he, hme, hh⟩
-    · exact hm
-    · have hx := List.all_eq_true.mp hr e he
-      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at hx
-      rcases hx with (hkeep | ⟨hs, hany⟩) | hd
-      · rw [hkeep] at hh
-        simp only [Footprints.Change.Holds] at hh
-        rw [hh]; exact hm
-      · have harr := Footprints.spineOnly_mem hs hme hrd
-        rw [mem_spine harr ((hh.isArr_eq hany).trans harr)]; exact hm
-      · exact (hqs _ _ l (List.getElem?_eq_some_iff.mp hrd).1 hd
-          (by simp [Footprints.Region.mem, hρs, Footprints.fieldsOf, hl]) hme).elim
+  have hF : (Footprints.FactKind.cell f).Holds ρ h := fun f' hf' => by
+    rw [List.mem_singleton.mp hf']; exact hk.1 f hfm
+  obtain ⟨flds, c, oid, w, hρs, hrd, hm⟩ :=
+    Footprints.FactKind.frame_step (K := Footprints.knowledgeEvidence k) hr
+      (Footprints.knowledgeEvidence_holds hk) hok hρ
+      (callerFrame_post (CallEffects.Effect.callPost_within hq)) hF f (List.mem_singleton_self _)
+  exact ⟨flds, c, oid, w, by simpa [push] using hρs, hrd, hm⟩
 
 /-- The change of a typed array's element write: spines keep their lengths,
 nothing else changes. -/

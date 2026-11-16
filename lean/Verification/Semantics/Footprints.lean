@@ -715,18 +715,6 @@ theorem spineOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Val} (hs
     simp only [Region.mem, hv, Bool.and_eq_true] at hm
     exact Selector.selects_noValue hs hm.2
 
-/-- A change other than `any` leaves a spine a spine, and contents that are
-no spine no spine. -/
-theorem Change.Holds.isArr_eq {δ : Change} {b v v'} (hδ : δ ≠ .any) (h : δ.Holds b v v') :
-    isArr v' = isArr v := by
-  have hc := h.same_category hδ
-  cases hv : isArr v
-  · exact (contentsCategory_value v').mp (hc.trans ((contentsCategory_value v).mpr hv))
-  · cases hv' : isArr v'
-    · have := (contentsCategory_value v).mp (hc.symm.trans ((contentsCategory_value v').mpr hv'))
-      rw [hv] at this; cases this
-    · rfl
-
 /-! ## Footprints and their meaning -/
 
 abbrev Footprint := List (Region × Change)
