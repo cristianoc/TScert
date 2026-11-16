@@ -139,7 +139,7 @@ theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s
     (hp : ∀ xp ∈ paths, readPath s'.h (η xp.1) xp.2 = readPath s.h (η xp.1) xp.2) :
     ∀ {r : Region}, stableRegion paths r = true → ∀ l, l < s.h.length → r.mem η s'.h l = r.mem η s.h l
   | .cls c, _, l, hl => ha.cls_mem hl η c
-  | .all, _, _, _ => rfl
+  | .all, _, l, hl => by simp [Region.mem, hl, Nat.lt_of_lt_of_le hl ha.length_le]
   | .field _ _, _, _, _ => rfl
   | .fields _, _, _, _ => rfl
   | .inCls r c, h, l, hl => by

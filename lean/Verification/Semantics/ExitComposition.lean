@@ -210,7 +210,10 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
     obtain ⟨t, rfl⟩ := hp
     exact List.getElem?_append_left hl
   induction R with
-  | field | fields | all => rfl
+  | field | fields => rfl
+  | all =>
+    have hlh : l < h.length := Nat.lt_of_lt_of_le hl hp.length_le
+    simp [Region.mem, hl, hlh]
   | cls _ => simp only [Region.mem, hgl]
   | path _ p _ => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | pathFields _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]

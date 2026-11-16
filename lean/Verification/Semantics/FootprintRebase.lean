@@ -325,7 +325,7 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
       omega
     simp only [Bool.not_eq_true] at hf
     cases he : ev.path s [] with
-    | none => exact .inl ⟨.all, by simp [rebase, he, hf], rfl⟩
+    | none => exact .inl ⟨.all, by simp [rebase, he, hf], by simpa [Region.mem] using hl⟩
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.path x q k, by simp [rebase, he, hf], ?_⟩
@@ -334,7 +334,7 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
   | fields s =>
     intro hm
     cases he : ev.path s [] with
-    | none => exact .inl ⟨.all, by simp [rebase, he], rfl⟩
+    | none => exact .inl ⟨.all, by simp [rebase, he], by simpa [Region.mem] using hl⟩
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.pathFields x q, by simp [rebase, he], ?_⟩
@@ -350,7 +350,7 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
     cases he : ev.path s p with
     | none =>
       by_cases hp0 : p.isEmpty = true
-      · exact .inl ⟨.all, by simp [rebase, he, hf, hp0], rfl⟩
+      · exact .inl ⟨.all, by simp [rebase, he, hf, hp0], by simpa [Region.mem] using hl⟩
       · have hne : p ≠ [] := by simpa using hp0
         simp only [Region.mem] at hm
         split at hm
@@ -372,7 +372,7 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
   | pathFields s p =>
     intro hm
     cases he : ev.path s p with
-    | none => exact .inl ⟨.all, by simp [rebase, he], rfl⟩
+    | none => exact .inl ⟨.all, by simp [rebase, he], by simpa [Region.mem] using hl⟩
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.pathFields x q, by simp [rebase, he], ?_⟩
@@ -407,11 +407,11 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
     · have harr := hk.categories.elems (by simpa using hm) hu
       exact class_back hp hl hu (by rw [Selector.selects_values, harr]; rfl)
     · cases hm
-  | all => intro _; exact .inl ⟨.all, by simp [rebase], rfl⟩
+  | all => intro _; exact .inl ⟨.all, by simp [rebase], by simpa [Region.mem] using hl⟩
   | spine s p =>
     intro hm
     cases he : ev.path s p with
-    | none => exact .inl ⟨.all, by simp [rebase, he], rfl⟩
+    | none => exact .inl ⟨.all, by simp [rebase, he], by simpa [Region.mem] using hl⟩
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.spine x q, by simp [rebase, he], ?_⟩
