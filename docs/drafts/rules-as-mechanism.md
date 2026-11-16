@@ -47,8 +47,10 @@ the paper against the Lean sources found the rules proved in the layer
 facts over variables and the length of the array, (Every) for the
 represented scalar bodies, (Rigid) as a rule of substitution, the
 composition of effects on both exits with the handler, Conj. Two
-statements are open: rule Entry has no theorem stating it as displayed, and
-the Transfer theorem's connection to a run is proved for effects over
+statements are open: rule Entry has no theorem stating it as displayed
+(the acceptance path states it for the linear consequences the composition
+derives, `HeapKnowledge.entry_sound`, and for the post's other forms over
+the same premises, `Composer.fact_holds`), and the Transfer theorem's connection to a run is proved for effects over
 classes only. `Derivation.sound` and `checkScoped_sound` are not in the
 axiom check.
 
