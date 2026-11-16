@@ -1899,7 +1899,7 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   have hsafe : Safe (excOf G) (meaning G j.type) n W h
       (instantiate 0 ρ (.writeAt arraySpineKey (.var a) (.setElem (.readAt arraySpineKey (.var a)) (.var i) (.var v)))) :=
     HeapObservations.erase hs
-  have hp := HeapExpressionRules.stableFirst_frame he hh
+  have hp := HeapExpressionRules.stableFirst_frame he hw hh
     (ExpressionEffects.elem_var_write_length hvl hil hR hst hoi hfl hl hb hidx (by simp at hle; omega)
       he hh hsafe).post
   refine weaken (fun h' u hq => ?_) hp
@@ -2881,7 +2881,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     · rw [if_pos hcond]
       obtain ⟨⟨-, hws⟩, hent⟩ := Bool.and_eq_true_iff.mp hcond |>.imp_left Bool.and_eq_true_iff.mp
       obtain ⟨wi, hwi⟩ := Option.isSome_iff_exists.mp hws
-      have hgrow := HeapExpressionRules.stableFirst_frame he hh
+      have hgrow := HeapExpressionRules.stableFirst_frame he hw hh
         (ExpressionEffects.elemWriteStep_grow hwi he hh (HeapObservations.erase hst))
       refine weaken (fun h' _ hq => ?_) (safePost_and hst hgrow)
       obtain ⟨⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, -, hgr⟩, hch, hfirst⟩ := hq
@@ -3125,7 +3125,7 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
       rw [ht] at hsafe ⊢
       exact writtenCells_sound hk hfd hiv (fun R' hR' => HeapExpressionRules.valuesAt_sound hR' he hk) hw hh hsafe
     · exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)
-        (HeapExpressionRules.stableFirst_frame he hh
+        (HeapExpressionRules.stableFirst_frame he hw hh
           (ExpressionEffects.elemWriteStep_grow hi he hh (HeapObservations.erase hs)))
   · exact hs
 

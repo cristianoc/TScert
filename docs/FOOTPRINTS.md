@@ -188,10 +188,11 @@ location at `any`, whose postcondition every admissible transition meets
 (`action_top`); the tolerant frame at $`\top`$ along a step's run keeps
 every fact whose support $`\top`$ respects, the empty support, where the
 support's condition holds of every admissible transition from the step's
-first state (proved: `TolerantFrames.frame_run_top`). The keys every clause
-of a slot's type states stable are such a context (the note's (T4)
-"Immutable locations"): the pass keeps at every step each cell fact, read
-link and index fact whose support in it is empty
+first state, at its normal or thrown exit (proved:
+`TolerantFrames.frame_run_top`). The keys some clause of a slot's type
+states stable, every other clause being `null` or `undefined`, are such a
+context (the note's (T4) "Immutable locations"): the pass keeps at every
+step each cell fact, read link and index fact whose support in it is empty
 ([stable links](HOST-FAMILIES.md#stable-links)).
 
 ### Supports of index facts

@@ -480,31 +480,35 @@ theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s
 /-- **The tolerant frame along a run, at `⊤`** (the note, §5, Theorem
 "Tolerant frame", at the effect bounding every admissible transition,
 `Footprints.Closed.top.fp`, `action_top`): from a state `s`, a safe run's
-normal exit keeps every assertion of a family whose support `⊤` respects
-under a query sound at `s`, where each support's condition holds of every
-admissible transition from `s` (`frame_step` at the transition from `s` to
-the exit). The run's intermediate worlds are those the safety derivation
-supplies. -/
-theorem frame_run_top {Ξ T : Fam} {Q : Post} {α : Type} {I : α → Prop} {P : α → Env → Heap → Prop}
-    {C : α → ConditionOn IndexedHeap} {S : α → Footprint} {q : SepQuery} {ρ : Env} {m : Nat} {s : IndexedHeap}
+exit, normal or thrown, keeps every assertion of a family whose support `⊤`
+respects under a query sound at `s`, where each support's condition holds
+of every admissible transition from `s` (`frame_step` at the transition
+from `s` to the exit). The run's intermediate worlds are those the safety
+derivation supplies; a normal-only judgment enters through
+`SafePostExc.of_post` and leaves through `SafePostExc.post`. -/
+theorem frame_run_top {Ξ T : Fam} {Q : Post} {E : Heap → Prop} {α : Type} {I : α → Prop}
+    {P : α → Env → Heap → Prop} {C : α → ConditionOn IndexedHeap} {S : α → Footprint} {q : SepQuery}
+    {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hs : ∀ i, I i → indexed.Supports (C i) (fun ρ _ s => P i ρ s.h) (S i))
     (hr : ∀ i, I i → respects q (S i) Footprints.Closed.top.fp = true) (hq : q.Sound ρ s.h)
     (hc : ∀ i, I i → ∀ s', Admissible s s' → C i ρ m s s') (hP : ∀ i, I i → P i ρ s.h) :
-    ∀ {n} {W : WorldT n} {h t}, WorldReach s.W W → WorldAdm W → HeapOk n W h → SafePost Ξ T Q n W h t →
-      SafePost Ξ T (fun h' v => Q h' v ∧ ∀ i, I i → P i ρ h') n W h t := by
+    ∀ {n} {W : WorldT n} {h t}, WorldReach s.W W → WorldAdm W → HeapOk n W h → SafePostExc Ξ T Q E n W h t →
+      SafePostExc Ξ T (fun h' v => Q h' v ∧ ∀ i, I i → P i ρ h') (fun h' => E h' ∧ ∀ i, I i → P i ρ h')
+        n W h t := by
   intro n
   induction n with
   | zero => intro _ _ _ _ _ _ hsafe; exact hsafe
   | succ n ih =>
     intro W h t hreach hadm hok hsafe
+    let s' : IndexedHeap := ⟨n + 1, W, h, Nat.succ_pos n, hadm, hok⟩
+    have ha : Admissible s s' := hreach
+    have hexit : ∀ i, I i → P i ρ h := fun i hi =>
+      frame_step (D := indexed) (hs i hi) (hr i hi) hq (action_top ha).2 ha (hc i hi s' ha) (hP i hi)
     obtain ⟨hrf, hsafe⟩ := hsafe
     refine ⟨hrf, ?_⟩
-    rcases hsafe with (⟨hv, hT, hQ⟩ | hth) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
-    · let s' : IndexedHeap := ⟨n + 1, W, h, Nat.succ_pos n, hadm, hok⟩
-      have ha : Admissible s s' := hreach
-      exact .inl (.inl ⟨hv, hT, hQ, fun i hi =>
-        frame_step (D := indexed) (hs i hi) (hr i hi) hq (action_top ha).2 ha (hc i hi s' ha) (hP i hi)⟩)
-    · exact .inl (.inr hth)
+    rcases hsafe with (⟨hv, hT, hQ⟩ | ⟨hth, hE⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
+    · exact .inl (.inl ⟨hv, hT, hQ, hexit⟩)
+    · exact .inl (.inr ⟨hth, hE, hexit⟩)
     · exact .inr ⟨U, h', t', hx, hu, st, hh, ih (hreach.trans ⟨Nat.le_succ n, hx⟩) hu hh hs'⟩
 
 /-! ## Two atoms -/

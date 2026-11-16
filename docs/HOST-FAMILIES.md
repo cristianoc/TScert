@@ -1346,19 +1346,21 @@ list. Spelling (`readonly`, a member name) makes nothing stable.
 
 #### Stable links
 
-A read link $`x.f\mapsto y`$ through a member $`f`$ every arm of its
-cell's claim states stable holds through every step, an optional link (a read of a member the object
+A read link $`x.f\mapsto y`$ through a member $`f`$ some arm of its
+cell's claim states stable, every other arm being `null` or `undefined`,
+holds through every step, an optional link (a read of a member the object
 may lack) among them, and so does a cell fact of such a read
 ([linked reads](#linked-reads)): the rule
 [stable-link](PROGRAM-TYPING.md#checked-expression-postconditions), for
 every term $`t`$, a call, a write or a closure's run, on the term's normal
-return. A claim with an arm that does not state $`f`$ stable keeps no link
-through $`f`$.
+return. A claim with an object arm that does not state $`f`$ stable keeps
+no link through $`f`$.
 
 It is sound by the empty support of such a read in the step's read
 context (the note's Definition "Support", "Supports of the atoms" and (T4)
 "Immutable locations", [the note](REFERENCES.md#the-tolerant-frames-note)).
-The keys every clause of a slot's type states stable form a read context
+The keys some clause of a slot's type states stable, every other clause
+being `null` or `undefined` (`stableFieldPresent`), form a read context
 (`HeapExpressionRules.stableContext`), whose condition every admissible
 transition meets: a present stable key is a location whose contract is
 stable at a value $`v_0`$ in the world $`W`$ of the transition's first

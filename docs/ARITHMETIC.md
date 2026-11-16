@@ -1750,7 +1750,8 @@ some clause of its slot's type states `@stable` and every other clause
 states `@stable` or is `null` or `undefined`, which owns no field
 (`HeapExpressionRules.stableFirst`, `stableFieldPresent`,
 `stableFirst_frame`: a stable location
-holds its value in every heap a normal return reaches; a write of a
+holds its value at every exit of a run, by the tolerant frame at $`\top`$
+under the read context of the stable keys; a write of a
 `@stable` field is refused):
 
 ```math

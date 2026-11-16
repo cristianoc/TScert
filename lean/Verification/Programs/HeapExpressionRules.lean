@@ -1161,30 +1161,6 @@ theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
   obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
   exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
 
-/-- Every stable location selected in the entry world keeps its value on
-normal return. -/
-theorem stableLocations_frame {R : Nat → Val → Prop} {T : Fam} {Q : Post} :
-    ∀ {n W h t}, (∀ l v, R l v → ∃ c, lookup W l = some c ∧ CtrStable c v) →
-    HeapOk n W h → SafePost (excOf G) T Q n W h t →
-    SafePost (excOf G) T (fun h' u => Q h' u ∧ ∀ l v, R l v → h'[l]? = some v) n W h t := by
-  intro n
-  induction n with
-  | zero => intros; assumption
-  | succ n ih =>
-    intro W h t hr hh hs
-    obtain ⟨hrf, hs⟩ := hs
-    refine ⟨hrf, ?_⟩
-    rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
-    · refine .inl (.inl ⟨hv, ht, hq, ?_⟩)
-      intro l v hR
-      obtain ⟨c, hl, hc⟩ := hr l v hR
-      exact hh.stable_value (Nat.zero_lt_succ n) hl hc
-    · exact .inl (.inr hthrow)
-    · refine .inr ⟨U, h', t', hx, hu, step, hh', ih ?_ hh' hs⟩
-      intro l v hR
-      obtain ⟨c, hl, hc⟩ := hr l v hR
-      exact ⟨_, WExt_lookup hx (lookup_trunc (Nat.le_succ n) W l c hl), hc.restrict (Nat.le_succ n)⟩
-
 /-- Whether some clause of `A` states `fld` stable and every other is `null`
 or `undefined`, which owns no field: a value of `A` that is an object owns
 `fld` stably. -/
@@ -1215,43 +1191,67 @@ def stableFirst (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) (g : String) 
   | some A => stableFieldPresent G A (.str g)
   | none => false
 
-/-- A stable field's location holds its value in every heap a normal
-execution reaches (`stable-first`). -/
-theorem stableFirst_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
-    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : SafePost (excOf G) T Q n W h t) :
-    SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h') n W h t := by
+/-- **The keys a step keeps** (the note, (T4) "Immutable locations"): of a
+slot's object, those some clause of the slot's type states stable, every
+other clause being `null` or `undefined` (`stableFieldPresent`). The first
+fields `stableFirst` names are its string keys. -/
+def stableContext (G : NormalGraph ι) (Γ : List (Ty ι)) : Footprints.ReadContext where
+  stable x k := match Γ[x]? with
+    | some A => stableFieldPresent G A k
+    | none => false
+
+/-- **An admissible transition keeps the stable keys** (the note, (T4)): a
+present stable key's location holds its contract's one value in both
+states. -/
+theorem stableContext_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env}
+    {s s' : TolerantFrames.IndexedHeap} (he : EnvOk G Γ ρ s.n s.W) (ha : TolerantFrames.Admissible s s') :
+    (stableContext G Γ).Holds ρ s.h s'.h := by
+  intro x k fs cd o l v hst hx hl hv
+  simp only [stableContext] at hst
+  split at hst
+  · rename_i A hA
+    obtain hx' | hx' | ⟨flds, oid, hx', hS⟩ := stableFieldPresent_at hst (he.2 x A hA)
+    · rw [hx] at hx'; cases hx'
+    · rw [hx] at hx'; cases hx'
+    rw [hx] at hx'
+    cases hx'
+    obtain ⟨c, value, hw, hc⟩ := hS.present hl
+    rw [s.stable_value hw hc] at hv
+    rw [← Option.some.inj hv]
+    exact ha.stable_value hw hc
+  · cases hst
+
+/-- **A stable field's location holds its value at every exit of a run**
+(`stable-first`), normal or thrown: the assertion that each first field
+`stableFirst` names holds what it held at the start has the empty support
+under the step's context (`stableContext`), which every admissible
+transition keeps (`stableContext_holds`), so the tolerant frame at `⊤`
+keeps it (`TolerantFrames.frame_run_top`). -/
+theorem stableFirst_frame_exc {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
+    {Ξ T : Fam} {Q : Post} {E : Heap → Prop} (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : SafePostExc Ξ T Q E n W h t) :
+    SafePostExc Ξ T (fun h' v => Q h' v ∧ HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h')
+      (fun h' => E h' ∧ HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h') n W h t := by
   cases n with
   | zero => exact hs
   | succ n =>
-    obtain ⟨hrf, hs⟩ := hs
-    refine ⟨hrf, ?_⟩
-    rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
-    · exact .inl (.inl ⟨hv, ht, hq, fun _ _ _ _ _ _ _ _ _ _ hw => hw⟩)
-    · exact .inl (.inr hthrow)
-    · refine .inr ⟨U, h', t', hx, hu, step, hh', ?_⟩
-      cases n with
-      | zero => exact hs
-      | succ m =>
-      let R := fun l v => ∃ c, lookup (trunc (m + 1) (Nat.le_succ (m + 1)) W) l = some c ∧ CtrStable c v
-      have hr : ∀ l v, R l v → ∃ c, lookup U l = some c ∧ CtrStable c v := by
-        intro l v ⟨c, hl, hc⟩
-        exact ⟨c, WExt_lookup hx hl, hc⟩
-      refine HeapObservations.weaken (fun h'' v hq => ⟨hq.1, ?_⟩)
-        (stableLocations_frame hr hh' hs)
-      intro s g fs cd o l w hsf hs0 hl0 hw0
-      unfold stableFirst at hsf
-      split at hsf
-      · rename_i A hA
-        obtain hv0 | hv0 | ⟨flds, oid, hv0, hst⟩ := stableFieldPresent_at hsf (he.2 s A hA)
-        · rw [hs0] at hv0; cases hv0
-        · rw [hs0] at hv0; cases hv0
-        rw [hs0] at hv0; cases hv0
-        obtain ⟨c, u, hlk, hcs⟩ := hst.present hl0
-        have h0 := hh.stable_value (Nat.zero_lt_succ (m + 1)) hlk hcs
-        rw [hw0] at h0; cases h0
-        exact hq.2 l w ⟨_, lookup_trunc (Nat.le_succ (m + 1)) W l c hlk, hcs.restrict (Nat.le_succ (m + 1))⟩
-      · cases hsf
+  let s : TolerantFrames.IndexedHeap := ⟨n + 1, W, h, Nat.succ_pos n, hw, hh⟩
+  have hrun := TolerantFrames.frame_run_top (s := s) (m := 0) (q := .empty) (α := Unit) (I := fun _ => True)
+    (P := fun _ ρ h' => HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h')
+    (C := fun _ ρ _ s s' => (stableContext G Γ).Holds ρ s.h s'.h) (S := fun _ => [])
+    (fun _ _ => Footprints.SupportDomain.Supports.of_invariant fun _ _ _ _ _ hc hA =>
+      fun x g fs cd o l v hf hx hl hv => hc x (.str g) fs cd o l v hf hx hl (hA x g fs cd o l v hf hx hl hv))
+    (fun _ _ => rfl) (Footprints.SepQuery.empty_sound _ _)
+    (fun _ _ s' ha => stableContext_holds (s := s) he ha)
+    (fun _ _ _ _ _ _ _ _ _ _ _ _ hv => hv) (TolerantFrames.WorldReach.refl W) hw hh hs
+  exact SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2 () trivial⟩) (fun _ hq => ⟨hq.1, hq.2 () trivial⟩) hrun
+
+/-- `stableFirst_frame_exc` at a normal-only judgment. -/
+theorem stableFirst_frame {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : SafePost (excOf G) T Q n W h t) :
+    SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h') n W h t :=
+  (stableFirst_frame_exc he hw hh (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hs)).post
 
 /-- Whether a write of field `fld` of slot `i` keeps a cell fact about
 field `g` of slot `s`: a separation fact states the two apart, or, where the
@@ -2314,7 +2314,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 
 /-! ### Stable links (HOST-FAMILIES.md, "Stable links")
 
-A step's context keeps the keys every clause of a slot's type states stable
+A step's context keeps the stable keys of the slots' objects
 (`stableContext`): an admissible transition keeps their contents (the note,
 (T4) "Immutable locations"). A fact whose support in that context (the
 note, §5, "Supports of the atoms": a field the condition keeps is left out
@@ -2324,32 +2324,6 @@ state to its normal exit (`TolerantFrames.frame_run_top`). These are the
 cell facts and read links whose support in the context is empty
 (`FactKind.supportIn`), and the index facts whose produced support in the
 context is (`IndexFact.keeps`). -/
-
-/-- **The keys a step keeps**: those every clause of a slot's type states
-stable (`stableField`). -/
-def stableContext (G : NormalGraph ι) (Γ : List (Ty ι)) : Footprints.ReadContext where
-  stable x k := match Γ[x]? with
-    | some A => stableField G A k
-    | none => false
-
-/-- **An admissible transition keeps the stable keys** (the note, (T4)): a
-present stable key's location holds its contract's one value in both
-states. -/
-theorem stableContext_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env}
-    {s s' : TolerantFrames.IndexedHeap} (he : EnvOk G Γ ρ s.n s.W) (ha : TolerantFrames.Admissible s s') :
-    (stableContext G Γ).Holds ρ s.h s'.h := by
-  intro x k fs cd o l v hst hx hl hv
-  simp only [stableContext] at hst
-  split at hst
-  · rename_i A hA
-    obtain ⟨flds, oid, hx', hS⟩ := stableField_at hst (he.2 x A hA)
-    rw [hx] at hx'
-    cases hx'
-    obtain ⟨c, value, hw, hc⟩ := hS.present hl
-    rw [s.stable_value hw hc] at hv
-    rw [← Option.some.inj hv]
-    exact ha.stable_value hw hc
-  · cases hst
 
 /-- The read links a step keeps through its every effect: those whose
 support in the step's context `⊤` respects with no separation evidence. -/
@@ -2426,7 +2400,7 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
       rcases (stableKinds_mem hF).2 with ⟨f, hf, rfl⟩ | ⟨g, hg, rfl⟩
       · intro f' hf'; rw [List.mem_singleton.mp hf']; exact hk.1 f hf
       · intro g' hg'; rw [List.mem_singleton.mp hg']; exact hk.2.2.1 g hg)
-    (TolerantFrames.WorldReach.refl W) hw hh hs
+    (TolerantFrames.WorldReach.refl W) hw hh (SafePostExc.of_post (fun _ => trivial) hs)
   have hidx := TolerantFrames.frame_run_top (s := s) (m := 0) (q := .empty)
     (I := fun a => a ∈ stableIndices G Γ k ∧ ∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated)
     (P := fun a ρ h => a.fact.HoldsAt ε ρ h)
@@ -2451,6 +2425,7 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
     (Footprints.SepQuery.empty_sound _ _) (fun _ _ s' ha => hctx s' ha)
     (fun a ha => hk.2.2.2.2.2 a (List.mem_filter.mp ha.1).1 ha.2)
     (TolerantFrames.WorldReach.refl W) hw hh hkinds
+  replace hidx := hidx.post
   refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_) hidx
   obtain ⟨⟨hout, hall⟩, hI⟩ := hq
   have hcells : HeapFacts.Holds (stableCells G Γ k) ρ h' := fun f hf =>

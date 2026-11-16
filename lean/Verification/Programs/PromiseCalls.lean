@@ -3843,7 +3843,7 @@ other step is `base`'s. -/
           hh hρ hq.2 hq'.2)
         (fun hgr => IndexWrites.grownRegions_holds he hh hk (PromiseCalls.withGrown_grows hgr hq.2)
           (PromiseCalls.withGrown_appends hgr hq.2)))
-        (HeapExpressionRules.stableFirst_frame he hh
+        (HeapExpressionRules.stableFirst_frame he hw hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
 

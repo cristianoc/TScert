@@ -1660,8 +1660,9 @@ $`\Gamma(x)`$ states $`g`$ `@stable` and every other states it or is `null`
 or `undefined`, which owns no field: the field's location holds the value
 its object literal put there in every heap a normal execution reaches
 (`stable-first`, proved: `HeapExpressionRules.stableFirst_frame` at a call
-and an element write, the step's world extension in `write_sound` at a field
-write):
+and an element write, the tolerant frame at $`\top`$ along the step's run
+under the read context of those keys, `stableContext`; the step's world
+extension in `write_sound` at a field write):
 
 ```math
 \mathrm{kept}_\chi(x.g_1\ldots g_m) \iff
@@ -4935,8 +4936,9 @@ It computes a guaranteed output, not an assumed postcondition:
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 Every step keeps, past its result, the read links and cell facts of its
-input through a member every clause of the receiver's type states a stable
-key ([stable keys](POSITIVE-TYPES.md#records)), optional links among them,
+input through a member some clause of the receiver's type states a stable
+key, every other clause being `null` or `undefined`
+([stable keys](POSITIVE-TYPES.md#records)), optional links among them,
 whatever the step: a call, a write, a closure's run. The stable keys of
 the slots' types form a read context (`stableContext`) every admissible
 transition keeps (`stableContext_holds`: a present key's location holds
@@ -4948,7 +4950,7 @@ tolerant frame keeps the fact to the step's normal return
 whose support is empty in every context, is kept likewise:
 
 ```math
-\frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad
+\frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\lor c\in\{\mathsf{null},\mathsf{undefined}\}\quad
       \Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\Sigma'}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\ \Sigma',\ x.f\mapsto y}\ \textsf{stable-link}
 ```
