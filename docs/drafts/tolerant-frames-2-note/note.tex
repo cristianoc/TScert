@@ -84,11 +84,13 @@ sites.
 Each entry has four parts: the program, shortened from the verifier's
 test case for the pattern; the function the verifier refuses and the
 first obligation that fails; the nearest program that verifies; and
-what an extension of the verifier must provide. The entries use the
-notions of Paper~I without restating them: its assertion language and
-the definitions of its section \emph{What verifies}. A reference such
-as (\nI{Clauses}) names a definition or a section of Paper~I.
+what an extension of the verifier must provide.
 \end{abstract}
+
+\section*{The status of this paper}
+
+This paper needs revision once the verifier applies the rules of
+Paper~I.
 
 \section{P1: a visitor of unknown effect between reads (50 sites)}
 
@@ -116,15 +118,13 @@ as (\nI{Clauses}) names a definition or a section of Paper~I.
 
 \entry{What is refused} The verifier refuses \code{afterWalk} at the read
 \code{xs[i]!} of line 10. The obligation of the read is
-$0\le i<\len{\mathit{xs}}$ (\nI{Obligations}), and the known facts
+$0\le i<\len{\mathit{xs}}$, and the known facts
 after the call of line 9 do not entail it. The reason is the effect of
 \code{walk}. Its parameter \code{visit} has a type that states no
-\code{Modifies}, so a call of \code{visit} has the effect $\top$
-(\nI{Stated and inferred effects}). The inferred effect of \code{walk}
+\code{Modifies}, so a call of \code{visit} has the effect $\top$. The inferred effect of \code{walk}
 contains that call's effect, and every call of \code{walk} has the
 inferred effect, including the call that passes \code{undefined}. A
-step with the effect $\top$ keeps no fact about a length (\nI{Facts
-across a step}). The verifier refuses \code{widthsWalk} at
+step with the effect $\top$ keeps no fact about a length. The verifier refuses \code{widthsWalk} at
 \code{widths[i]!} of line 16 for the same reason: the call
 \code{visit(i)} removes $\mathit{count}\le\len{\mathit{widths}}$.
 
@@ -164,16 +164,15 @@ quantified fact
 $\every(\mathit{items},\kw{view}(\mathit{items}),0\le v<\len{\mathit{widths}})$,
 but the field write \code{fragment.width = s} removes that fact: a
 field write keeps a quantified fact only if the new value satisfies
-the fact's body (\nI{Facts across a step}). Stating the fact as a loop
+the fact's body. Stating the fact as a loop
 invariant does not help; the function is refused in the same way.
 
 \entry{The nearest form that verifies} The same loop without the field write.
 
 \entry{What an extension must provide} A quantified fact is kept across a write to a field of a
 fresh object. The written location is neither the store nor an element
-cell that the fact reads. Paper~I states the rule and the verifier
-does not implement it for this write (\nI{Future work}, a quantified
-fact across a write to another object).
+cell that the fact reads. Theorem ``frame'' of Paper~I keeps
+the fact, since the write respects its support.
 
 \section{P4: an upper bound of a length across a call growing stores (18 sites)}
 
@@ -215,13 +214,12 @@ $a.\mathit{starts}\sep\mathit{lists}.\mathit{widths}$, and they do not
 hold on that edge. The literal \code{[]} is known to be apart from the
 array held by each variable. For an array at a path $a.f$, the
 separation is known only if a variable was read from $a.f$ before the
-allocation and is still known to equal it (\nI{Allocation}).
+allocation and is still known to equal it.
 
 It refuses \code{straight} at the read \code{starts[i + 1]!} of line
 18. The test \code{i + 1 < flags.length} gives no fact. The sum
 \code{i + 1} is exact only if $|i+1|\le M$ is entailed, and outside a
-loop $0\le i$ alone does not entail it (\nI{Conditions and
-arithmetic}).
+loop $0\le i$ alone does not entail it.
 
 \entry{The nearest form that verifies} For the first function, the same loop over arrays held
 in parameters, with their separation from \code{out} stated in the
@@ -230,9 +228,9 @@ precondition. Alternatively, the separations at the paths
 the callee's effect names its region.
 
 \entry{What an extension must provide} Two rules. First, a new array is apart from the arrays
-reached through fields of the variables in scope. Paper~I states this
-rule and the verifier implements it for variables only
-(\nI{Future work}, a new array and an array at a path). Second, a test
+reached through fields of the variables in scope. Rule \textsc{Alloc} of Paper~I
+states it: a new array is apart from every array that existed before.
+Second, a test
 \code{i + 1 < n} against a length $n$ gives $i+1<n$ even where the sum
 may be inexact. Neither paper has the second rule.
 
@@ -257,10 +255,10 @@ may be inexact. Neither paper has the second rule.
 \entry{What is refused} The verifier refuses \code{next} at the outer read
 of line 11. The index of that read is \code{t[state]}, and the
 obligation requires it to be a known integer with
-$0\le t[\mathit{state}]<\kw{view}(t)$ (\nI{Obligations}). The
+$0\le t[\mathit{state}]<\kw{view}(t)$. The
 postcondition of \code{decode} states the length of the table and
 nothing about its contents. The result of an element read is a known
-integer only where a clause says so (\nI{Known integers}). No step of
+integer only where a clause says so. No step of
 the program establishes a fact about the contents of the table:
 \code{decode} copies the bytes and does not test them.
 
@@ -294,8 +292,7 @@ is true because of what the generator of the table wrote. Neither paper has such
 quantified fact over \code{starts}, and the call \code{touch(c)}
 removes that fact. The effect of \code{touch} has the entry
 $\val:\any$. A step with that entry may alter any location that holds
-a number, and the element cells of \code{starts} are such locations
-(\nI{Facts across a step}).
+a number, and the element cells of \code{starts} are such locations.
 
 \entry{The nearest form that verifies} A callee with the effect
 \code{\{ values: "init"; stores: "keep" \}}, such as one that executes
@@ -307,9 +304,7 @@ Under such an effect, a quantified fact over the element cells of an
 array is kept. The model of Paper~I distinguishes field locations from
 element cells by their kind, and its region $\pi.f$ names one field.
 The effects a program can state, however, name only $\val$, $\st$ and
-$p[\ast]$ (\nI{What verifies}, the surface syntax). The rule in
-Paper~I's \emph{Future work} covers a field write to a fresh object.
-For a callee that writes a field of an object it receives, neither
+$p[\ast]$. For a callee that writes a field of an object it receives, neither
 paper has a rule.
 
 \section{P7: a fact over a local closure's captures (10 sites)}
@@ -331,12 +326,11 @@ paper has a rule.
 
 \entry{What is refused} The verifier refuses \code{groups}, inside its
 function literal \code{group}. The stated invariant of line 6 does not
-hold on the entry edge of the loop (\nI{Known facts at a loop head}).
+hold on the entry edge of the loop.
 The body of a function literal is verified from the types of its
 parameters and its own \code{@requires}. The facts the enclosing
 function has about \code{glyphs} are not known inside the literal, and
-a clause that mentions a captured variable is refused (\nI{What
-verifies}, the surface syntax).
+a clause that mentions a captured variable is refused.
 
 \entry{The nearest form that verifies} The same reads placed directly in the body of the
 enclosing function.
@@ -361,9 +355,8 @@ $\mathit{to}\le4$ at each call. Neither paper has such a rule.
 
 \entry{What is refused} The verifier refuses \code{badProduct} at its
 precondition. The clause of line 3 contains a product of two
-variables, and such a clause is refused (\nI{Clauses}). In addition, a
-product of two variables in the body gives no fact (\nI{Conditions and
-arithmetic}).
+variables, and such a clause is refused. In addition, a
+product of two variables in the body gives no fact.
 
 \entry{The nearest form that verifies} A constant stride: \code{rows[last * 28 + 27]!} with
 \code{rows.length === 6244} and $0\le\mathit{last}<223$.
@@ -392,8 +385,7 @@ Neither paper has such a rule.
 
 \entry{What is refused} The verifier refuses \code{paired} at the read
 \code{w[k]!} of line 9. The obligation $k<\len w$ is not entailed. At
-the loop head, $k$ is bounded by $\len e$ (\nI{Known facts at a loop
-head}), and nothing relates $\len e$ to $\len w$. The length of
+the loop head, $k$ is bounded by $\len e$, and nothing relates $\len e$ to $\len w$. The length of
 neither callee's result is a linear term over \code{text}, and no
 clause can name a count that both functions compute.
 
@@ -419,15 +411,14 @@ has such a term.
 
 \entry{What is refused} The verifier refuses \code{badElement} at
 \code{text[i]!} of line 3, which is used as a string. No rule gives
-the element of a string (\nI{Obligations}).
+the element of a string.
 
 \entry{The nearest form that verifies} A read of the code unit below the length,
 \code{text.charCodeAt(i)}.
 
 \entry{What an extension must provide} A rule for the step \code{y = s[i]}: under
 $0\le i<\strl(s)$ the result is a string. Paper~I states this rule as
-a conjecture and the verifier does not implement it (\nI{Future work},
-reading a string's element).
+a conjecture (\nI{Future work}, reading a string's element).
 
 \section{P12: a pointwise relation of two arrays (5 sites)}
 
@@ -444,7 +435,7 @@ reading a string's element).
 
 \entry{What is refused} The verifier refuses \code{bad} at its
 precondition. The clause of line 2 relates the elements of two arrays,
-and such a clause is refused (\nI{Clauses}).
+and such a clause is refused.
 
 \entry{The nearest form that verifies} A single array of arrays, with a read below the length
 of the selected element.
@@ -490,10 +481,7 @@ allocates the typed array, with the loop's own counter as the written
 index.
 
 \entry{What an extension must provide} A write at an index that differs from the loop's counter
-by a known constant extends a quantified fact. Paper~I states the rule
-and the verifier does not implement it at such an index (\nI{Future
-work}, a prefix extended at a second index, with this loop as its
-example).
+by a known constant extends a quantified fact. Neither paper has such a rule.
 
 \section{P14: length contracts of string and array natives (4 sites, 33 depending on them)}
 
@@ -514,8 +502,7 @@ example).
 of its loop. The stated invariant contains
 $\strl(\mathit{normalized})\le\strl(\mathit{text})$, which does not
 hold on that edge. The reviewed contract of \code{replace} gives no
-fact about the length of its result (\nI{Obligations}, calling a
-library function).
+fact about the length of its result.
 
 \entry{The nearest form that verifies} A call of \code{slice}, whose contract states the length
 of its result: \code{text.slice(0, k)} has length $k$.
@@ -539,8 +526,7 @@ line 3. The obligation is
 $0\le f\mathbin{\&}3<\len{\mathit{KINDS}}$. The rule \textsc{Mask}
 gives $0\le f\mathbin{\&}3\le3$. The length of \code{KINDS} is not
 known: a module \code{const} that holds an array gives no length fact
-at the entry of a function (\nI{Stated and inferred effects}, module
-bindings).
+at the entry of a function.
 
 \entry{The nearest form that verifies} The same array literal declared inside the function.
 
@@ -562,8 +548,7 @@ function keeps. Neither paper has such a rule.
 
 \entry{What is refused} The verifier refuses \code{bitsAt} at the read of
 line 5. The obligation is $\mathit{cp}<\kw{view}(\mathit{table})$. A
-module \code{let} is a private cell (\nI{Stated and inferred effects},
-module bindings). On the path where the cell already holds a typed
+module \code{let} is a private cell. On the path where the cell already holds a typed
 array, the length of that array is not known. At the merge, only the
 facts that hold on every incoming edge are kept.
 
@@ -590,7 +575,7 @@ module cell that every write to the cell keeps. Neither paper has such a rule.
 \entry{What is refused} The verifier refuses \code{at} at its precondition.
 The atom \code{c.grapheme < fits[c.segment].length} contains a path
 with a step indexed by a term. The paths of a clause go through the
-fields of record types only (\nI{Clauses}).
+fields of record types only.
 
 \entry{The nearest form that verifies} A test of the selected element's length at the place of
 the read:
@@ -630,16 +615,15 @@ follows from the type invariant of \code{Prepared}. That invariant is
 a guarded fact whose guard is read through two fields, \code{items}
 and \code{insideExtras}. The call \code{step(c)} changes the heap, and
 a guard read through two or more fields is kept by no step that
-changes the heap (\nI{Facts across a step}, a guarded fact).
+changes the heap.
 
 \entry{The nearest form that verifies} A type invariant whose guard is one field:
 \code{this.extras === null || this.extras.length === this.widths.length}.
 
 \entry{What an extension must provide} A guarded fact whose guard is read through two
 \code{@stable} fields is kept across a call that changes no store.
-Paper~I states the rule, \textsc{(Rigid)}, and the verifier implements
-it for a guard read through one field (\nI{Future work}, a guard read
-through two stable fields).
+Axiom \textsc{(Rigid)} of Paper~I states it: a fact that holds of a
+value named by a variable holds of the value at a rigid path.
 
 \section{P19: a running sum of element lengths (2 sites)}
 
@@ -662,7 +646,7 @@ through two stable fields).
 $0\le\mathit{at}<\kw{view}(\mathit{offsets})$. Each iteration adds the
 length of an element to \code{at}. That length is not a constant, so
 \code{at} is not a counter, and no fact about it is known at the loop
-head (\nI{Known facts at a loop head}).
+head.
 
 \entry{The nearest form that verifies} A read of the typed array at the sum itself,
 \code{offsets[total]!}.
@@ -692,11 +676,9 @@ is a loop invariant. Neither paper has such a term.
 \entry{What is refused} The verifier refuses \code{tableOf} at its return.
 The type invariant of \code{ClassTable} is an obligation at each
 return of a function whose result type names \code{ClassTable}, and
-the result of a native step gives no type invariant (\nI{Stated and
-inferred effects}, type invariants). On the path where
+the result of a native step gives no type invariant. On the path where
 \code{cache.get} returned a table, the invariant is therefore not
-known. Paper~I names no contract for \code{Map}, so this function is
-outside its scope (\nI{Obligations}, calling a library function).
+known. The verifier has no contract for \code{Map}.
 
 \entry{The nearest form that verifies} The record returned directly by its builder,
 \code{build().index[c >{}> 8]!}.
@@ -720,8 +702,7 @@ Neither paper has such a rule.
 \entry{What is refused} The verifier refuses \code{badBits} at the read of
 line 4. The obligation is
 $0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\kw{view}(\mathit{values})$.
-The operators \code{<{}<} and \code{|} give no fact (\nI{Conditions
-and arithmetic}).
+The operators \code{<{}<} and \code{|} give no fact.
 
 \entry{The nearest form that verifies} A shift right and a mask,
 \code{index[c >{}> 8]! + (c \& 0xff)}, which the rules \textsc{Shr}
@@ -746,9 +727,9 @@ P6 & 12 & an effect writing fields alone & in neither paper\\
 P7 & 10 & captured facts in a function literal & in neither paper\\
 P9 & 7 & a product of two variables & in neither paper\\
 P10 & 7 & a count two functions share & in neither paper\\
-P11 & 5 & a string's element below its length & stated in Paper~I, not implemented\\
+P11 & 5 & a string's element below its length & a conjecture of Paper~I\\
 P12 & 5 & two arrays related at an index & in neither paper\\
-P13 & 5 & a prefix at a paired index & stated in Paper~I, not implemented\\
+P13 & 5 & a prefix at a paired index & in neither paper\\
 P14 & 4 & the length of \code{replace}'s result & in neither paper\\
 P15 & 4 & a module array's length at entry & in neither paper\\
 P16 & 4 & a module cell's contents at entry & in neither paper\\
