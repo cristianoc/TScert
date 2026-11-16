@@ -1,30 +1,22 @@
 import Verification.Programs.TolerantFramesNamed
 
-/-! # Tolerant frames: the pass's preserving steps through their checked rules
+/-! # Tolerant frames: a step's checked normal effect
 
-The pass applies a step's output with the frame of the facts it was not handed
-(`applyDelta … true`, `SinglePass.lean` 1315–1318) when the step is
-**preserving**: a call the pass's own predicates find keeping the heap
-(`callKeepsHeap`, lines 1289–1296), or a step of any kind other than
-`ordinary`, `written` and `boundedWrite` (`kindPreserving`, lines 1307–1309).
-This module connects that classification to the frame (`preserving_normal`,
-`preserving_throw`) through the checked rule:
+The pass applies a step's output with the frame of the facts it was not
+handed (`applyDelta … true`) where the step's checked normal effect
+(`PromiseCalls.stepNormal`) is `{values: keep, spines: keep}`: the tolerant
+frame at the support `all` keeps every fact there (`named_keep_box`). This
+module proves the effect sound (`stepNormal_sound`):
 
-- each preserving kind's base rule (`HeapExpressionRules.checkStepUsing`)
-  fixes the term's shape, an inspection or a graph closure's creation, so its
-  normal exit only extends the heap (`base_keeps`);
-- the call predicates keep the heap by their selected signature
-  (`elementsCall_keeps`, `requiresCall_keeps`, `callKeepsHeap_keeps`);
-- the production checker `Checker.ordinary` accepts a preserving kind only
-  where its base rule or `elementsCall` does (`ordinary_run_base`), so every
-  step the pass classifies preserving keeps the heap (`passPreserving_keeps`);
-- with the output the checker's `run` gives, both exits of the step: the
+- a step other than a call or a write states the empty effect where its base
+  rule (`HeapExpressionRules.checkStepUsing`) accepts it, which fixes the
+  term's shape, an inspection or a graph closure's creation (`base_shape`,
+  `base_keeps`);
+- a call states it by its selected signature (`elementsCall_keeps`,
+  `requiresCall_keeps`, `freshCall_keeps`, `keepsCall_keeps`);
+- with the output a checker's `run` gives, both exits of the step: the
   action, the residual budget, the type, the rule's output, and the store's
-  facts at the name valuation (`preserving_step_frame`, and at
-  `Checker.ordinary`, `pass_preserving_frame`).
-
-What is assumed: the output the pass applies is `run`'s (`hrun`); the pass
-takes it from `Checker.select` or the search. -/
+  facts at the name valuation (`preserving_step_frame`). -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
@@ -33,34 +25,6 @@ open Verification.SinglePass (Atom)
 section Steps
 variable {ι : Type} [DecidableEq ι]
 open ProgramTyping PositiveCertificates ProgramCertificates PositiveGraphs PositiveRules HeapExpressionRules
-
-/-! ## The pass's classification -/
-
-/-- The step kinds the pass frames whatever their rule (`SinglePass.lean`
-lines 1307–1309): every kind but `ordinary`, `written` and `boundedWrite`. -/
-def kindPreserving : StepEvidence ι → Bool
-  | .ordinary _ | .written .. | .boundedWrite .. => false
-  | _ => true
-
-/-- The calls the pass frames (`SinglePass.lean` lines 1289–1296): one
-promising its receiver's elements, one at a precondition whose selected
-signature keeps the heap, one allocating its result, else one keeping the heap
-that changes no receiver's field locations. -/
-def callKeepsHeap (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι) (kE : HeapKnowledge.Knowledge)
-    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
-  match e with
-  | .ordinary p =>
-    (PromiseCalls.elementsCall G images j e codes sums).isSome ||
-    (if PromiseCalls.requiresCall G images j kE e codes sums then
-      (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap
-    else PromiseCalls.freshCall G images j e codes sums ||
-      ((PromiseCalls.ownCall G images j e codes sums).isNone && PromiseCalls.keepsCall G images j e codes sums))
-  | _ => false
-
-/-- The pass's `preserving` (line 1307). -/
-def passPreserving (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι) (kE : HeapKnowledge.Knowledge)
-    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
-  callKeepsHeap G images j kE e codes sums || kindPreserving e
 
 /-- The step's normal exit is within `{values: keep, spines: keep}` from `h`. -/
 def KeepsPost (G : NormalGraph ι) (j : Sequent ι) (ρ : Env) (n : Nat) (W : WorldT n) (h : Heap) : Prop :=
@@ -114,7 +78,8 @@ theorem created_keeps {Ξ T : Fam} {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env
 instantiated term is an inspection, or the term creates a graph closure. -/
 theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
     {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : checkStepUsing G images j k e codes sums = some out) (hp : kindPreserving e = true)
+    (hc : checkStepUsing G images j k e codes sums = some out) (hord : ∀ p, e ≠ .ordinary p)
+    (hwr : ∀ i v R q, e ≠ .written i v R q)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) :
     Purity.inspectTerm (instantiate 0 ρ j.term) = true ∨
       ∃ arity E K start caps kind rest, j.term = .makeFn (.graph arity E K start caps kind rest) .nul := by
@@ -123,9 +88,9 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
     rw [ht]; simpa [instantiate, Purity.inspectTerm] using hi
   rw [checkStepUsing_eq] at hc
   cases e with
-  | ordinary => cases hp
-  | written => cases hp
-  | boundedWrite => cases hp
+  | ordinary p => exact absurd rfl (hord p)
+  | written i v R q => exact absurd rfl (hwr i v R q)
+  | boundedWrite => simp at hc
   | pure e =>
     simp only at hc
     split at hc
@@ -245,13 +210,13 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
 /-- **A preserving kind's base rule keeps the heap on its normal exit.** -/
 theorem base_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
     {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : checkStepUsing G images j k e codes sums = some out) (hp : kindPreserving e = true)
-    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (hc : checkStepUsing G images j k e codes sums = some out) (hord : ∀ p, e ≠ .ordinary p)
+    (hwr : ∀ i v R q, e ≠ .written i v R q) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   have hs := erase (checkStep_sound hc hcodes hsums he hk hw hh href)
-  rcases base_shape hc hp he hk with hi | ⟨_, _, _, _, _, _, _, ht⟩
+  rcases base_shape hc hord hwr he hk with hi | ⟨_, _, _, _, _, _, _, ht⟩
   · exact inspection_keeps hs hi hw hh
   · unfold KeepsPost; rw [ht] at hs ⊢; exact created_keeps hs
 
@@ -307,104 +272,54 @@ theorem requiresCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
     (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
     (hs he hk hw hh href)
 
-/-- **Every call the pass frames keeps the heap.** -/
-theorem callKeepsHeap_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+/-- The two closed footprints differ. -/
+theorem top_ne_empty : Footprints.Closed.top ≠ Footprints.Closed.empty := by
+  intro h; injection h with h1; cases h1
+
+/-- **A step's checked normal effect is sound** (`PromiseCalls.stepNormal`):
+where it is `{values: keep, spines: keep}`, the step's normal exit keeps the
+heap, by the call's selected signature or by the base rule's shape. -/
+theorem stepNormal_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
     {kE : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : callKeepsHeap G images j kE e codes sums = true)
+    (hn : PromiseCalls.stepNormal G images j kE e codes sums = Footprints.Closed.empty)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
+  have base : ∀ (e : StepEvidence ι), (∀ p, e ≠ .ordinary p) → (∀ i v R q, e ≠ .written i v R q) →
+      (checkStepUsing G images j kE e codes sums).isSome = true → KeepsPost G j ρ n W h := by
+    intro e hord hwr hs
+    obtain ⟨out, hb⟩ := Option.isSome_iff_exists.mp hs
+    exact base_keeps hb hord hwr hcodes hsums he hk hw hh href
   cases e with
   | ordinary p =>
-    simp only [callKeepsHeap, Bool.or_eq_true, Option.isSome_iff_exists] at hc
-    rcases hc with ⟨⟨x, R⟩, hel⟩ | hc
-    · exact elementsCall_keeps hel hcodes hsums he hw hh href
-    · split at hc
-      · rename_i hreq; exact requiresCall_keeps hreq hc hcodes hsums he hk hw hh href
-      · simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
-        rcases hc with hf | ⟨-, hkc⟩
-        · exact freshCall_keeps hf hcodes hsums he hw hh href
-        · exact keepsCall_keeps hkc hcodes hsums he hw hh href
-  | _ => simp [callKeepsHeap] at hc
-
-/-! ## The production checker -/
-
-/-- **`Checker.ordinary` accepts a preserving kind only where its base rule or
-`elementsCall` does**: every call layer but `elementsCall` reads an
-`ordinary` step, and the others map the base's output. -/
-theorem ordinary_run_base {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
-    {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hp : kindPreserving e = true) (hr : ((Checker.ordinary G images).run j k e codes sums).value = some out) :
-    (∃ out₀, checkStepUsing G images j k e codes sums = some out₀) ∨
-      (PromiseCalls.elementsCall G images j e codes sums).isSome := by
-  have hb : ∀ (e : StepEvidence ι), kindPreserving e = true → ∀ out,
-      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.run
-        j k e codes sums).value = some out →
-      (∃ out₀, checkStepUsing G images j k e codes sums = some out₀) ∨
-        (PromiseCalls.elementsCall G images j e codes sums).isSome := by
-    intro e hp out hr
-    have h1 : PromiseCalls.ensuresCall G images j k e codes sums = none := by
-      cases e <;> first | rfl | cases hp
-    have h2 : PromiseCalls.requiresCall G images j k e codes sums = false := by
-      cases e <;> first | rfl | cases hp
-    have h3 : PromiseCalls.freshCall G images j e codes sums = false := by
-      cases e <;> first | rfl | cases hp
-    have h4 : PromiseCalls.ownCall G images j e codes sums = none := by
-      cases e <;> first | rfl | cases hp
-    have h5 : PromiseCalls.keepsCall G images j e codes sums = false := by
-      cases e <;> first | rfl | cases hp
-    simp only [Checker.ensuringCalls, Checker.elementCalls, Checker.requiringCalls, Checker.allocatingCalls,
-      Checker.keepingOwnCalls, Checker.keepingCalls, Checker.steps, h1, h2, h3, h4, h5] at hr
-    cases hel : PromiseCalls.elementsCall G images j e codes sums with
-    | some _ => exact .inr rfl
-    | none =>
-      simp only [hel, Bool.false_eq_true, if_false] at hr
-      exact .inl ⟨out, hr⟩
-  simp only [Checker.ordinary, Checker.keepingStable, Checker.boundedWrites, Checker.indexing,
-    Checker.emptyArrays, Checker.negatingSlots, CheckResult.map, Option.map_eq_some_iff] at hr
-  obtain ⟨o₁, hr, -⟩ := hr
-  have hnb : ∀ a i v p, e ≠ .boundedWrite a i v p := fun _ _ _ _ he => by subst he; cases hp
-  split at hr
-  · rename_i a i v p; exact absurd rfl (hnb a i v p)
-  · obtain ⟨o₂, hr, -⟩ := Option.map_eq_some_iff.mp hr
-    obtain ⟨o₃, hr, -⟩ := Option.map_eq_some_iff.mp hr
-    obtain ⟨o₄, hr, -⟩ := Option.map_eq_some_iff.mp hr
-    split at hr
-    · obtain ⟨o₅, hr, -⟩ := Option.map_eq_some_iff.mp hr
-      exact hb e hp o₅ hr
-    · exact hb e hp o₄ hr
-
-/-- A qualified body's checker (`Checker.withSubtyping`) accepts a preserving
-kind only where its base rule does; its `select` is its `run`. -/
-theorem withSubtyping_run_base {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G}
-    {ord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true}
-    {j : Sequent ι} {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
-    {sums : List (ReadSummary ι)} (hp : kindPreserving e = true)
-    (hr : ((Checker.withSubtyping G images subtyping ord).run j k e codes sums).value = some out) :
-    ∃ out₀, checkStepUsing G images j k e codes sums = some out₀ := by
-  simp only [Checker.withSubtyping, Checker.keepingStable, Checker.subtypingSteps, CheckResult.map,
-    Option.map_eq_some_iff] at hr
-  obtain ⟨o, hr, -⟩ := hr
-  cases e <;> first | exact ⟨o, hr⟩ | cases hp
-
-/-- **Every step the pass classifies preserving keeps the heap**, at the
-production checker, where `run` accepts it. -/
-theorem passPreserving_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
-    {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hpres : passPreserving G images j kE e codes sums = true)
-    (hr : ((Checker.ordinary G images).run j kE e codes sums).value = some out)
-    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
-  simp only [passPreserving, Bool.or_eq_true] at hpres
-  rcases hpres with hc | hp
-  · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh href
-  · rcases ordinary_run_base hp hr with ⟨o, hb⟩ | hel
-    · exact base_keeps hb hp hcodes hsums he hk hw hh href
-    · obtain ⟨⟨x, R⟩, hel⟩ := Option.isSome_iff_exists.mp hel
+    simp only [PromiseCalls.stepNormal] at hn
+    split at hn
+    · rename_i hel
+      obtain ⟨⟨x, R⟩, hel⟩ := Option.isSome_iff_exists.mp hel
       exact elementsCall_keeps hel hcodes hsums he hw hh href
+    · split at hn
+      · rename_i hreq
+        split at hn
+        · rename_i hkeep; exact requiresCall_keeps hreq hkeep hcodes hsums he hk hw hh href
+        · exact absurd hn top_ne_empty
+      · split at hn
+        · rename_i hc
+          simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
+          rcases hc with hf | ⟨-, hkc⟩
+          · exact freshCall_keeps hf hcodes hsums he hw hh href
+          · exact keepsCall_keeps hkc hcodes hsums he hw hh href
+        · exact absurd hn top_ne_empty
+  | written => exact absurd hn top_ne_empty
+  | boundedWrite => exact absurd hn top_ne_empty
+  | _ =>
+    simp only [PromiseCalls.stepNormal] at hn
+    split at hn
+    · rename_i hs
+      refine base _ ?_ ?_ hs
+      · intro _ h; cases h
+      · intro _ _ _ _ h; cases h
+    · exact absurd hn top_ne_empty
 
 /-! ## Both exits of a preserving step -/
 
@@ -439,28 +354,6 @@ theorem preserving_step_frame {G : NormalGraph ι} {images : InstanceImageCheck 
   refine ⟨fun hv => ?_, fun x hx => preserving_throw hj hst hx hk hS⟩
   obtain ⟨s', ha, he', hn, hT, hq, hS'⟩ := preserving_normal (Footprints.Closed.empty_le _) hj hst hv hk hS hfr
   exact ⟨s', ha, he', hn, hT, hq, hS'⟩
-
-/-- **The pass's preserving steps at the production checker, both exits**:
-`preserving_step_frame` with the heap kept by the pass's own classification
-(`passPreserving_keeps`). -/
-theorem pass_preserving_frame {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
-    {sums : List (ReadSummary ι)}
-    (hpres : passPreserving G images j kE e codes sums = true)
-    (hr : ((Checker.ordinary G images).run j kE e codes sums).value = some out)
-    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
-    (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
-    (href : RefsOk s.W (instantiate 0 ρ j.term)) (hρ : RootsOk s.W ρ)
-    (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
-    {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
-    (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ meaning G j.type s'.n s'.W t' ∧
-        HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
-      (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
-  preserving_step_frame _ hr hcodes hsums he hkE hρ
-    (passPreserving_keeps hpres hr hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 end Steps
 

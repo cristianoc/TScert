@@ -12,7 +12,7 @@ accepting runs are characterized here by the conditions they pass
 (`checkedStep_ok`): a copy of a slot at the claim's type, or a step whose
 selected output, tree check, result name and store after the step are those
 the development's definitions state (`StepAccepted`, over `passTreeCheck`,
-`passWholeCheck`, `passPreserving`, `handedSet`, `passBack`).
+`passWholeCheck`, `PromiseCalls.stepNormal`, `handedSet`, `passBack`).
 
 The proof walks the block outermost first: three tactics generalize the
 outermost `match` discriminant (`gen_discr`), the outermost `if` condition
@@ -122,27 +122,29 @@ def resultOf (t : Tm) (names : List Nat) (fresh : Nat) : Nat × Nat :=
 
 /-- **A step `checkedStep` accepts, read as its conditions**, at the
 evidence `effect` the search or the direct call returned, with the read
-summaries `sums₀` the call layers read (line 1251) and `sums` the selection
-and the tree check read: the selected output `out` at the step's facts `kE`,
-the tree check (`passTreeCheck`) with the tree only `requiresTree` accepted
-`pre`, the result's name, and the store after the step: a preserving step's
-delta over the handed facts; a writing step's tree checked over every fact
+summaries `sums` the selection, the tree check and the step's checked normal
+effect (`PromiseCalls.stepNormal`) read: the selected output `out` at the
+step's facts `kE`, the tree check (`passTreeCheck`) with the tree only
+`requiresTree` accepted `pre`, the result's name, and the store after the
+step: where the normal effect is empty, the delta over the handed facts; a writing step's tree checked over every fact
 (`passWholeCheck`), its output `out'` selected over every fact, and its delta
 after the heap facts it is not handed are dropped. -/
 def StepAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : PassChecker G images)
     (codes : CodeEntry ι → Bool) (c : PointClaim ι) (node : Node) (entry : SinglePass.State) (ms : List Nat)
-    (fresh : Nat) (effect : HeapExpressionRules.StepEvidence ι) (sums₀ sums : List (ReadSummary ι))
+    (fresh : Nat) (effect : HeapExpressionRules.StepEvidence ι) (sums : List (ReadSummary ι))
     (st : Stepped ι) : Prop :=
   ∃ out pre, (pc.checker.select (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums).value =
       some out ∧
     passTreeCheck pc (kOf G c entry ms (wholeOf node.expression)) codes sums effect = some pre ∧
     st.result = (resultOf node.expression entry.names fresh).1 ∧ st.fresh = (resultOf node.expression entry.names fresh).2 ∧
     st.copied = false ∧ st.stepEffect = some effect ∧
-    (passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums₀ = true →
+    ((PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+        Footprints.Closed.empty) = true →
       st.store = applyDelta entry.store (materialize entry c.context.length ms (wholeOf node.expression)).2.1 out true
         (passBack (materialize entry c.context.length ms (wholeOf node.expression)).2.2 entry.names st.result) ∧
       st.stepK = kOf G c entry ms (wholeOf node.expression) ∧ st.stepOut = out) ∧
-    (passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums₀ = false →
+    ((PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+        Footprints.Closed.empty) = false →
       ∃ out', passWholeCheck G images (kOf G c entry ms true) codes sums pre = true ∧
         (pc.checker.select (jOf c node) (kOf G c entry ms true) effect codes sums).value = some out' ∧
         st.store = applyDelta (entry.store.dropHeap (handedSet (materialize entry c.context.length ms true).2.1).contains)
@@ -309,7 +311,7 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
           ∃ adm, a0 = keepSummaries answers (directCall G images c.context node.expression c.type adm undefTy answers).2) ∧
         (a1 = a0 ∨ ∃ k own adm, a1 = keepSummaries a0 (expressionEffectUsing G images pool fuel
           (jOf c node) k suggestions index codes aliases passChecker.checker own adm a0).2) ∧
-        StepAccepted G images passChecker codes c node entry ms fresh effect a0.summaries.toList a1.summaries.toList st ∧
+        StepAccepted G images passChecker codes c node entry ms fresh effect a1.summaries.toList st ∧
         ans = a1) := by
   unfold checkedStep at h
   simp only [Id.run, timedKind] at h

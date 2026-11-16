@@ -2054,27 +2054,12 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
       if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums) then
         if PromiseCalls.requiresTree G images kE codes sums p then preconditioned := some p
         else return (.error s!"expression at node {l}: its derivation", stats, answers)
-    -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
-    -- before it in `Checker.ordinary` decides the step, keeps every fact
-    -- it does not name: its output over the facts it names is its delta.
-    -- A call whose output keeps every heap fact it does not name, as the
-    -- layers of `Checker.ordinary` decide it, outermost first: one
-    -- promising its receiver's elements (`elementsCall`), one at a
-    -- precondition whose effect keeps the heap (`requiresCall`), one
-    -- allocating its result (`freshCall`), else one keeping the heap
-    -- (`keepsCall`) that changes no receiver's own locations (`ownCall`).
-    let keepsHeap := match effect with
-      | .ordinary p =>
-        (PromiseCalls.elementsCall G images j effect codes sums).isSome ||
-        (if PromiseCalls.requiresCall G images j kE effect codes sums then
-          (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap
-        else PromiseCalls.freshCall G images j effect codes sums ||
-          ((PromiseCalls.ownCall G images j effect codes sums).isNone &&
-            PromiseCalls.keepsCall G images j effect codes sums))
-      | _ => false
-    let preserving := keepsHeap || match effect with
-      | .ordinary _ | .written .. | .boundedWrite .. => false
-      | _ => true
+    -- The step's checked normal effect (`PromiseCalls.stepNormal`), at the
+    -- summaries the step is selected and checked with: where it is empty,
+    -- the tolerant frame at the support `all` keeps every fact the step is
+    -- not handed, and the step's delta is applied to the whole store.
+    let preserving := PromiseCalls.stepNormal G images j kE effect codes answers.summaries.toList ==
+      Footprints.Closed.empty
     -- A slot's read is that slot's value: it keeps its name.
     match node.expression, entry.names[(match node.expression with | .var i => i | _ => 0)]? with
     | .var _, some x => result := x

@@ -541,12 +541,8 @@ run_cmd do
   check ``Verification.TolerantFrames.base_keeps
   check ``Verification.TolerantFrames.elementsCall_keeps
   check ``Verification.TolerantFrames.requiresCall_keeps
-  check ``Verification.TolerantFrames.callKeepsHeap_keeps
-  check ``Verification.TolerantFrames.ordinary_run_base
-  check ``Verification.TolerantFrames.withSubtyping_run_base
-  check ``Verification.TolerantFrames.passPreserving_keeps
+  check ``Verification.TolerantFrames.stepNormal_sound
   check ``Verification.TolerantFrames.preserving_step_frame
-  check ``Verification.TolerantFrames.pass_preserving_frame
   check ``Verification.TolerantFrames.atom_kept
   check ``Verification.TolerantFrames.safePost_grow
   check ``Verification.TolerantFrames.judgment_with_output
@@ -569,20 +565,12 @@ run_cmd do
   check ``Verification.TolerantFrames.select_run
   check ``Verification.TolerantFrames.ordinary_select_sound
   check ``Verification.TolerantFrames.withSubtyping_select
-  check ``Verification.TolerantFrames.ordinaryOver_run_base
-  check ``Verification.TolerantFrames.passSteps_keeps
-  check ``Verification.TolerantFrames.passPreserving_keeps_select
-  check ``Verification.TolerantFrames.pass_preserving_frame_select
-  check ``Verification.TolerantFrames.preserving_judgment_select
   check ``Verification.TolerantFrames.passTreeCheck_ok
   check ``Verification.TolerantFrames.passWholeCheck_ok
   check ``Verification.TolerantFrames.pass_select_run
   check ``Verification.TolerantFrames.pass_select_narrow
   check ``Verification.TolerantFrames.pass_select_whole
   check ``Verification.TolerantFrames.pass_select_sound
-  check ``Verification.TolerantFrames.passPreserving_keeps_pass
-  check ``Verification.TolerantFrames.pass_preserving_frame_pass
-  check ``Verification.TolerantFrames.preserving_judgment_pass
   check ``Verification.TolerantFrames.passWrites_sound
   check ``Verification.TolerantFrames.selected_within_on
   check ``Verification.Footprints.Footprint.boundBelow_sound

@@ -390,17 +390,21 @@ compares the closed bound of the selected exit's frame with the empty one
 is fresh for the spine (a premise, `hr`), and the output the pass applies is
 the checked rule's (`Checker.select` agreeing with `run`).
 
-### The preserving steps through their checked rules
+### A step's checked normal effect
 
 Module `lean/Verification/Programs/TolerantFramesSteps.lean`. The pass frames
-a step (`applyDelta … true`) when it is preserving: a call its own predicates
-find keeping the heap (`callKeepsHeap`), or
-a step of a kind other than `ordinary`, `written` and `boundedWrite`
-(`kindPreserving`); `passPreserving` is their disjunction.
-$`\mathrm{KeepsPost}`$ is the normal exit within
+a step (`applyDelta … true`) where its checked normal effect
+(`PromiseCalls.stepNormal`, read at the summaries the step is selected and
+checked with) is $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$:
+a call states it by its selected signature (one promising its receiver's
+elements, one at a precondition whose signature keeps the heap, one
+allocating its result, one keeping the heap that changes no receiver's own
+locations); a step other than a call or a write by its base rule
+(`checkStepUsing`), which it checks again. $`\mathrm{KeepsPost}`$ is the
+normal exit within
 $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
 
-- the base rule (`checkStepUsing`) of each preserving kind fixes the term's
+- the base rule of a step other than a call or a write fixes the term's
   shape (`base_shape`): `pure` and `reading` an inspection by their checked
   purity, the four reads `.readAt f (.var i)` with $`i`$ a slot holding a value
   (for `linkedRead`, an object by the link fact), `knownValue` a slot,
@@ -409,21 +413,18 @@ $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
   heap (`base_keeps`, with `pure_inspect`);
 - the calls: `elementsCall` and a `requiresCall` whose selected signature keeps
   the heap (`elementsCall_keeps`, `requiresCall_keeps`, from `selected_sound`,
-  `requiresTree_sound` and `keepsHeap_prefix`), and with `freshCall_keeps`,
-  `keepsCall_keeps` every call the pass frames (`callKeepsHeap_keeps`);
-- the production checker accepts a preserving kind only where its base rule or
-  `elementsCall` does (`ordinary_run_base`: every other call layer reads an
-  `ordinary` step, the rest map the base's output), and a qualified body's
-  checker only where its base rule does (`withSubtyping_run_base`); so every
-  step the pass classifies preserving keeps the heap (`passPreserving_keeps`);
-- both exits (`preserving_step_frame` for any checker given $`\mathrm{KeepsPost}`$,
-  `pass_preserving_frame` at `Checker.ordinary`): from `run`'s output
+  `requiresTree_sound` and `keepsHeap_prefix`), `freshCall_keeps`,
+  `keepsCall_keeps`; so the checked normal effect is sound
+  (`stepNormal_sound`), whichever layer of the checker ran the step;
+- both exits (`preserving_step_frame` for any checker given $`\mathrm{KeepsPost}`$):
+  from `run`'s output
   $`\mathit{out}`$ over the handed facts, a normal return is an action of
   $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$ with
   $`n'+k=n`$, the result's type, $`\mathit{out}`$ at $`\mathrm{push}\ v\ \rho`$ and
-  $`\mathrm{Named}\ S\ \eta[r\mapsto v]`$; a throw is an action of $`\top`$ with
-  the raised value closed and of the exception family and the heap-free part
-  of $`S`$.
+  $`\mathrm{Named}\ S\ \eta[r\mapsto v]`$, every fact kept by the tolerant
+  frame at the support `all` (`named_keep_box`); a throw is an action of
+  $`\top`$ with the raised value closed and of the exception family and the
+  heap-free part of $`S`$.
 
 `ownCall` and `ensuresCall` steps are not preserving: the first only
 excludes `keepsCall`, the second is an `ordinary` step taking the
@@ -478,13 +479,6 @@ $`b`$ (`Checker.ordinary = ordinaryOver (Checker.steps …)`, by definition);
   `write_judgment`, `top_judgment`, `writing_frame`'s premise,
   `preserving_step_frame`) holds of it at `passOrdinary`;
 - a qualified body's `select` is its `run` (`withSubtyping_select`);
-- the preserving steps at the selected output: `ordinaryOver b` accepts a
-  preserving kind only where $`b`$ or `elementsCall` does
-  (`ordinaryOver_run_base`); `passSteps` keeps the heap at a preserving kind
-  (`passSteps_keeps`); so `passPreserving_keeps_select`,
-  `pass_preserving_frame_select` and `preserving_judgment_select` are
-  `passPreserving_keeps`, `pass_preserving_frame` and `preserving_judgment`
-  from the pass's conditions;
 - a tree `checkTreeUsing` accepts passes the check at every knowledge
   (`passTreeOk_of_tree`).
 
@@ -507,9 +501,7 @@ the ordinary checker and the qualified body's checker itself. Proved:
   applies over the step's facts (for a direct call and for a searched step,
   both `select` of the step's evidence) is its checker's `run`
   (`pass_select_narrow`), and the output over every fact too
-  (`pass_select_whole`); it is sound (`pass_select_sound`);
-- the preserving steps at either checker: `passPreserving_keeps_pass`,
-  `pass_preserving_frame_pass`, `preserving_judgment_pass`.
+  (`pass_select_whole`); it is sound (`pass_select_sound`).
 
 **Where `run` and the pass differ**: `typedRead`'s optional-field branch.
 `run` checks its tree with no codes (`fun _ => false`), the pass with the
@@ -837,7 +829,7 @@ The state after a step, proved:
 - a preserving step with a fresh result name:
   $`\eta'=\eta[r\mapsto v]`$ with $`r`$ new (`ResultFresh`), from the frame's
   $`\mathrm{Named}\ \mathrm{all}(S)\ \eta[r\mapsto v]`$, which
-  `pass_preserving_frame_select` gives with `StateWF.fresh_result`
+  `named_keep_box` gives with `StateWF.fresh_result`
   (`stateHolds_fresh_result`);
 - a read of a slot keeping its name: $`\eta'=\eta`$, the result
   slot $`i`$'s value (`stateHolds_reused_name`);
@@ -934,14 +926,14 @@ $`\mathit{st}_0`$ with result $`r`$ is
 - a copy (`copiedOf`): the term is a slot $`i`$ whose context type is the
   claim's, $`r=\mathit{st}_0.\mathrm{names}[i]`$, the store and the answers
   unchanged; or
-- a step (`StepAccepted`) at evidence $`e`$, the call layers reading the
-  summaries $`\mathit{sums}_0`$ of the answers after the direct call and the
-  selection those, $`\mathit{sums}`$, after the search: the output
+- a step (`StepAccepted`) at evidence $`e`$, the selection, the tree check
+  and the checked normal effect reading the summaries $`\mathit{sums}`$ of
+  the answers after the search: the output
   $`\mathit{out}=\mathrm{select}\ j\ k_E\ e\ \mathit{sums}`$ at the step's
   facts $`k_E`$ (`kOf`); the tree check
   $`\mathrm{passTreeCheck}\ k_E\ \mathit{sums}\ e=\mathrm{some}\ \mathit{pre}`$;
   the result $`(r,\mathit{fresh}')=\mathrm{resultOf}`$; where
-  $`\mathrm{passPreserving}\ j\ k_E\ e\ \mathit{sums}_0`$, the store
+  $`\mathrm{stepNormal}\ j\ k_E\ e\ \mathit{sums}=\emptyset`$, the store
   $`\mathrm{applyDelta}\ \mathit{st}_0.\mathrm{store}\ \mathit{pairs}\ \mathit{out}`$;
   otherwise `passWholeCheck` at every fact $`k_W`$, the output
   $`\mathit{out}'=\mathrm{select}\ j\ k_W\ e\ \mathit{sums}`$ and the store

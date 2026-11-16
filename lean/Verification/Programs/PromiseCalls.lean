@@ -3633,6 +3633,32 @@ theorem negation_bool {u v : Tm} (h : (v = .tru ∧ u = .fls) ∨ (v = .fls ∧ 
   · exact .inl ⟨rfl, rfl⟩
   · exact .inr ⟨rfl, rfl⟩
 
+/-- **A step's checked normal effect** (the note, §5, Theorem "Tolerant
+frame": the effect a Frame reads): `{values: keep, spines: keep}` where the
+step's evidence checks a rule whose normal exit keeps every old location,
+`{values: any, spines: any}` otherwise. A call states it by its selected
+signature's effect: one promising its receiver's elements (`elementsCall`),
+one at a precondition whose signature keeps the heap (`requiresCall`), one
+allocating its result (`freshCall`), one keeping the heap (`keepsCall`) that
+changes no receiver's own locations (`ownCall`). Any other step but a write
+states it by its base rule (`HeapExpressionRules.checkStepUsing`), which fixes
+an inspection or a closure's creation; the base rule is checked again here,
+a cost the pass pays at each such step. Its soundness is
+`TolerantFrames.stepNormal_sound`. -/
+@[nospecialize] def stepNormal [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (kE : HeapKnowledge.Knowledge) (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) : Footprints.Closed :=
+  match e with
+  | .ordinary p =>
+    if (elementsCall G images j e codes sums).isSome then .empty
+    else if requiresCall G images j kE e codes sums then
+      if (ExpressionEffects.selectedEffect p).any keepsHeap then .empty else .top
+    else if freshCall G images j e codes sums ||
+        ((ownCall G images j e codes sums).isNone && keepsCall G images j e codes sums) then .empty
+    else .top
+  | .written .. | .boundedWrite .. => .top
+  | _ => if (HeapExpressionRules.checkStepUsing G images j kE e codes sums).isSome then .empty else .top
+
 end
 end Verification.PromiseCalls
 

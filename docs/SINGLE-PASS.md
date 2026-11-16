@@ -223,11 +223,13 @@ order `CertificateProducer.expressionWithUsing` tries them, each operand by
 identity or a subtype proof, each stated precondition decided once per call over the index facts connected to the
 call's slots through shared slots, alias links and read links.
 The step is `ordinary` at that derivation, and its output is the proved
-layers' (`Checker.ordinary`'s `select`). Where those layers keep every heap
-fact the call does not name (`elementsCall`, `requiresCall` at a heap-keeping
-effect, `freshCall`, `keepsCall` without `ownCall`), the output over the
-named facts is the step's delta and every other fact stays where it is;
-otherwise the layers read every fact.
+layers' (`Checker.ordinary`'s `select`). Where the step's checked normal
+effect is empty (`PromiseCalls.stepNormal`: `elementsCall`, `requiresCall` at
+a heap-keeping effect, `freshCall`, `keepsCall` without `ownCall`, or a step
+other than a call or a write that its base rule accepts), the output over
+the named facts is the step's delta and every other fact stays where it is,
+kept by the tolerant frame at the support `all`; otherwise the layers read
+every fact.
 
 ### A footprint
 

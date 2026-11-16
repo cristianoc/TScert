@@ -188,13 +188,13 @@ theorem element_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck
       (fun h' => growEffect.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   write_judgment checker hr hcodes hsums hc he hk hw hh hρ href
 
-/-- **A step the pass frames, an allocation among them**, at the production
-checker: its normal exit within `{values: keep, spines: keep}` with its rule's
+/-- **A step whose checked normal effect is empty, an allocation among them**,
+at the production checker: its normal exit within `{values: keep, spines: keep}` with its rule's
 output, its throw within `{values: any, spines: any}`. -/
 theorem preserving_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)}
-    (hpres : passPreserving G images j kE e codes sums = true)
+    (hpres : PromiseCalls.stepNormal G images j kE e codes sums = Footprints.Closed.empty)
     (hr : ((Checker.ordinary G images).run j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
@@ -204,7 +204,7 @@ theorem preserving_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (passPreserving_keeps hpres hr hcodes hsums he hk hw hh href)
+    (stepNormal_sound hpres hcodes hsums he hk hw hh href)
     ((Checker.ordinary G images).sound hr hcodes hsums he hk hw hh href hρ)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)

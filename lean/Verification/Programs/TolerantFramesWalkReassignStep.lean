@@ -84,11 +84,13 @@ theorem passWholeCheck_reassign (kE : HeapKnowledge.Knowledge) (codes : CodeEntr
   | none => rfl
   | some p => simp only [passWholeCheck, Parametricity.requiresTree_reassign]
 
-theorem passPreserving_reassign (j : Sequent ι) (kE : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+theorem stepNormal_reassign (j : Sequent ι) (kE : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
-    passPreserving (reassign G η) (images.reassign η) j kE e codes sums = passPreserving G images j kE e codes sums := by
-  simp only [passPreserving, callKeepsHeap, Parametricity.elementsCall_reassign, Parametricity.requiresCall_reassign,
-    Parametricity.freshCall_reassign, Parametricity.ownCall_reassign, Parametricity.keepsCall_reassign]
+    PromiseCalls.stepNormal (reassign G η) (images.reassign η) j kE e codes sums =
+      PromiseCalls.stepNormal G images j kE e codes sums := by
+  cases e <;> simp only [PromiseCalls.stepNormal, Parametricity.elementsCall_reassign,
+    Parametricity.requiresCall_reassign, Parametricity.freshCall_reassign, Parametricity.ownCall_reassign,
+    Parametricity.keepsCall_reassign, Parametricity.checkStep_reassign]
 
 /-- **The evidence a search returned at `G`, re-checked, is accepted at
 `reassign G η`**: where the pass accepts the step at `G` at the evidence
@@ -98,18 +100,18 @@ whose `select` is the same result there. -/
 theorem stepAccepted_reassign {pc : PassChecker G images} {pc' : PassChecker (reassign G η) (images.reassign η)}
     (hpc : PassCheckerReassign G η images pc pc') {codes : CodeEntry ι → Bool} {c : PointClaim ι} {node : Node}
     {entry : SinglePass.State} {ms : List Nat} {fresh : Nat} {effect : StepEvidence ι}
-    {sums₀ sums : List (ReadSummary ι)} {st : Stepped ι}
-    (h : StepAccepted G images pc codes c node entry ms fresh effect sums₀ sums st) :
-    StepAccepted (reassign G η) (images.reassign η) pc' codes c node entry ms fresh effect sums₀ sums st := by
+    {sums : List (ReadSummary ι)} {st : Stepped ι}
+    (h : StepAccepted G images pc codes c node entry ms fresh effect sums st) :
+    StepAccepted (reassign G η) (images.reassign η) pc' codes c node entry ms fresh effect sums st := by
   obtain ⟨out, pre, hsel, htree, hres, hfr, hcp, hef, hpres, hwrit⟩ := h
   refine ⟨out, pre, ?_, ?_, hres, hfr, hcp, hef, ?_, ?_⟩
   · rw [hpc.2, kOf_reassign]; exact hsel
   · rw [passTreeCheck_reassign G η images hpc.1, kOf_reassign]; exact htree
   · intro hp
-    rw [passPreserving_reassign, kOf_reassign] at hp
+    rw [stepNormal_reassign, kOf_reassign] at hp
     exact hpres hp
   · intro hp
-    rw [passPreserving_reassign, kOf_reassign] at hp
+    rw [stepNormal_reassign, kOf_reassign] at hp
     obtain ⟨out', hwc, hsel', hrest⟩ := hwrit hp
     refine ⟨out', ?_, ?_, hrest⟩
     · rw [passWholeCheck_reassign, kOf_reassign]; exact hwc

@@ -299,8 +299,8 @@ def ResultFresh (st : State) (I : List (PromiseCalls.Implication ι)) (start : L
   r ∉ st.names ∧ r ∉ st.fresh ∧ r ∉ start ∧ ∀ y ∈ I, y.test ≠ r ∧ y.target ≠ r
 
 /-- **The state after a preserving step whose result takes a fresh name**
-(line 1309): the frame's facts at `Env.set η r v` (`named_keep_box`,
-`pass_preserving_frame_select`) and the rule's output at the pushed slots
+(line 1309): the frame's facts at `Env.set η r v` (`named_keep_box`) and
+the rule's output at the pushed slots
 give the pushed state. -/
 theorem stateHolds_fresh_result {G : NormalGraph ι} {st : State}
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ η : Env} {m : Nat} {s s' : IndexedHeap}

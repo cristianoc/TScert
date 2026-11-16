@@ -158,35 +158,20 @@ theorem writing_spine {st : SinglePass.State} {I : List (PromiseCalls.Implicatio
   · rw [hT] at hx; exact table_named hn' x i hx
   · rw [hT]; exact passBack_ok hn (by simp [Env.set]) g1
 
-/-! ## The judgments at the pass's two sums -/
+/-! ## The judgment of a step of empty normal effect -/
 
 variable [DecidableEq ι]
 
-/-- **A preserving step keeps the heap** with the call layers' test read at
-the summaries `sums₀` (`SinglePass.lean` 1251) and the selection at `sums`. -/
-theorem passPreserving_keeps_two {G : NormalGraph ι} {images : InstanceImageCheck G} {pc : PassChecker G images}
-    {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : HeapExpressionRules.StepEvidence ι}
-    {codes : CodeEntry ι → Bool} {sums₀ sums : List (ReadSummary ι)}
-    (hpres : passPreserving G images j kE e codes sums₀ = true)
-    (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
-    (hsel : (pc.checker.select j kE e codes sums).value = some out)
-    (hcodes : CodesSound G codes) (hsums₀ : SummariesSound G images sums₀) (hsums : SummariesSound G images sums)
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
-  simp only [passPreserving, Bool.or_eq_true] at hpres
-  rcases hpres with hc | hp
-  · exact callKeepsHeap_keeps hc hcodes hsums₀ he hk hw hh href
-  · exact passPreserving_keeps_pass (by simp [passPreserving, hp]) hok hsel hcodes hsums he hk hw hh href
-
-/-- **A preserving step's judgment** at the pass's two sums: normal exit
-keeping the heap with the selected output, throw within `top`. -/
+/-- **The judgment of a step whose checked normal effect is empty**
+(`PromiseCalls.stepNormal`, `stepNormal_sound`): normal exit keeping the heap
+with the selected output, throw within `top`. -/
 theorem preserving_judgment_two {G : NormalGraph ι} {images : InstanceImageCheck G} {pc : PassChecker G images}
     {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : HeapExpressionRules.StepEvidence ι}
-    {codes : CodeEntry ι → Bool} {sums₀ sums : List (ReadSummary ι)}
-    (hpres : passPreserving G images j kE e codes sums₀ = true)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hpres : PromiseCalls.stepNormal G images j kE e codes sums = Footprints.Closed.empty)
     (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
-    (hcodes : CodesSound G codes) (hsums₀ : SummariesSound G images sums₀) (hsums : SummariesSound G images sums)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hρ : RootsOk W ρ) (href : RefsOk W (instantiate 0 ρ j.term)) :
@@ -194,7 +179,7 @@ theorem preserving_judgment_two {G : NormalGraph ι} {images : InstanceImageChec
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (passPreserving_keeps_two hpres hok hsel hcodes hsums₀ hsums he hk hw hh href)
+    (stepNormal_sound hpres hcodes hsums he hk hw hh href)
     (pass_select_sound hok hsel hcodes hsums he hk hw hh href hρ)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
@@ -295,7 +280,7 @@ def StepChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : PassC
   (∃ x, copiedOf G c entry node.expression = some x ∧ st.result = x ∧ st.store = entry.store ∧
       st.fresh = fresh ∧ st.copied = true ∧ st.stepK = {} ∧ st.stepOut = {} ∧ ans = answers) ∨
     (copiedOf G c entry node.expression = none ∧ ∃ (effect : StepEvidence ι) (a0 : Answered G),
-      StepAccepted G images pc codes c node entry ms fresh effect a0.summaries.toList ans.summaries.toList st ∧
+      StepAccepted G images pc codes c node entry ms fresh effect ans.summaries.toList st ∧
       (SummariesSound G images answers.summaries.toList →
         SummariesSound G images a0.summaries.toList ∧ SummariesSound G images ans.summaries.toList))
 
@@ -385,7 +370,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       exact (atomHolds_congr fun y hy => (g2 a ha' y hy).symm).mp
         (named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha')
     · intro s' ha; exact stateHolds_throw hS w ha.1
-  · obtain ⟨hs0, hs1⟩ := hss hsum
+  · obtain ⟨-, hs1⟩ := hss hsum
     -- The result's name: a slot's name its value holds, or the fresh one.
     have hkv : ∀ k h' v, Steps k s.h (instantiate 0 ρ node.expression) h' v →
         NamesBelow entry I start st.result ∨ η st.result = v := by
@@ -407,12 +392,12 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · exact .inr ⟨hres.trans hr1, hfresh.trans hf⟩
     have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf node.expression)) codes
         ans.summaries.toList effect = true := fun hs => passTreeCheck_ok htree hs
-    by_cases hp : passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes
-        a0.summaries.toList = true
+    by_cases hp : (PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
+        codes ans.summaries.toList == Footprints.Closed.empty) = true
     · obtain ⟨hstore, hK, hO⟩ := hpres hp
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
-      · intro href hρ; rw [hO]; exact preserving_judgment_two hp hok hsel hcodes hs0 hs1 he hk.1 s.adm s.ok hρ href
+      · intro href hρ; rw [hO]; exact preserving_judgment_two (beq_iff_eq.mp hp) hok hsel hcodes hs1 he hk.1 s.adm s.ok hρ href
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
@@ -420,8 +405,8 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         exact preserving_spine hn (hkv k h' v hsteps)
           (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
-    · have hpf : passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes
-          a0.summaries.toList = false := by simpa using hp
+    · have hpf : (PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
+          codes ans.summaries.toList == Footprints.Closed.empty) = false := by simpa using hp
       obtain ⟨out', hwc, hsel', hstore, hK, hO⟩ := hwrit hpf
       have hrun := pass_select_whole htree hwc hsel'
       refine ⟨hs1, by rw [hK]; exact hk.2, hres', Footprints.Closed.top, Footprints.Closed.top,
