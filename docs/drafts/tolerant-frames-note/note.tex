@@ -235,9 +235,12 @@ A value in $\mathit{Val}$ is a scalar or an object. A function is an object that
 boolean or a bigint; $\mathit{Scalar}\subseteq\mathit{Val}$ is the set of
 scalars and $\mathit{Obj}\subseteq\mathit{Val}$ the set of objects. An object is a finite map $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ from its
 own keys to field locations, together with an identity location in $\LI$;
-both are fixed when the object is allocated. The
+both are fixed when the object is allocated. We write
+$\mathit{fields}(v)=\{v(f)\mid f\in\mathrm{dom}\,v\}$ for the set of the
+field locations of an object $v$. The
 read of a field $f$ of $v$ in a heap $h$ is $h(v(f))$. What changes is $h$ at the locations $v(f)$. An array is an object that has, besides its fields, a
-\emph{store location} $s\in\LS$. Its \emph{store} is the
+\emph{store location} $s\in\LS$. We write $\mathit{st}(v)$ for the
+store location of an array or a typed array $v$. Its \emph{store} is the
 sequence $h(s)=\langle c_0,\dots,c_{n-1}\rangle\in\mathit{Store}$, where
 $c_i\in\LE$ if index $i$ is present and $c_i=\circ$ if it is a hole. The
 array's length is $n$, and its element at a present index $i$ is
@@ -276,6 +279,7 @@ The object \code{o} is the map $\{\code{n}\mapsto 0,\ \code{m}\mapsto 1\}$:
 \code{o.n} is read as $h(0)$ and \code{o.m} as $h(1)$.
 The cell \code{r} is the object $\{\code{value}\mapsto 2\}$, so
 \code{r.value} is read as $h(2)$. The array \code{a} has store location 3.
+So $\mathit{fields}(o)=\{0,1\}$ and $\mathit{st}(a)=3$.
 The environment $\rho$ holds \code{o}, \code{r}, \code{inc} and \code{a}.
 A call \code{inc()} changes $h(2)$ to 1 and leaves the other existing
 locations unchanged; \code{o.m = 7} changes $h(1)$ to 7 and leaves the others
@@ -528,7 +532,7 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 \draw[->] (a) -- (2.7,0.42);
 \draw[->] ([xshift=-2pt]c3.south) to[out=-70,in=-110,looseness=0.9] (c4.south);
 \draw[->] ([xshift=2pt]c3.south) to[out=-60,in=-120,looseness=0.7] (c5.south);
-\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{own}$}/{0,1},-3.4/{$a.\kw{store}$}/{3},-3.8/{$a[\ast]$}/{3,4,5},-4.2/{$\st$}/{3},-4.6/{$\val$}/{0,1,2,4,5}}{
+\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{own}$}/{0,1},-3.4/{$a.\kw{store}$}/{3},-3.8/{$a.\kw{cells}$}/{4,5},-4.2/{$a[\ast]$}/{3,4,5},-4.6/{$\st$}/{3},-5.0/{$\val$}/{0,1,2,4,5}}{
   \node[anchor=east] at (-0.55,\y) {\name};
   \foreach \j in \cells { \ifnum\j=3 \node[sbar] at (\j,\y) {}; \else \node[bar] at (\j,\y) {}; \fi }
 }
@@ -542,13 +546,25 @@ region denotes; store locations are drawn lighter.}\label{fig:heap}
 \end{figure}
 
 A \emph{path} $\pi=x.f_1\ldots f_k$ is a variable
-followed by field names. Its \emph{read} in $(\rho,h)$ starts from
-$\rho(x)$ and follows the fields $f_1,\ldots,f_k$ in turn through $h$;
-the read \emph{fails} when a value on the way is not an object with the
-next field. A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
+followed by field names. Its \emph{read} in $(\rho,h)$ is the value
+$\mathit{read}(\pi,\rho,h)$. It starts from $\rho(x)$ and follows the
+fields $f_1,\ldots,f_k$ in turn through $h$. The read \emph{fails},
+written $\bot$, when a value on the way is not an object with the next
+field:
+\[
+\mathit{read}(x,\rho,h)=\rho(x)\qquad
+\mathit{read}(\pi.f,\rho,h)=\begin{cases}h(v(f)) & \text{if }\mathit{read}(\pi,\rho,h)\text{ is an object }v\text{ and }f\in\mathrm{dom}\,v\\ \bot & \text{otherwise.}\end{cases}
+\]
+Example: in the heap of Section~2, $\mathit{read}(o.n,\rho,h)=h(0)=1$,
+and $\mathit{read}(o.n.k,\rho,h)=\bot$, since 1 is not an object.
+
+A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
 of $h$. A class region reads the kinds and forms of those locations,
 which the world of the state records (Definition~\ref{def:world}); the
-other regions read $\rho$ and $h$. There are seven forms:
+other regions read $\rho$ and $h$. There are seven forms. In the four
+forms at a path $\pi$, $v$ stands for $\mathit{read}(\pi,\rho,h)$, and
+the region denotes $\emptyset$ where the stated condition on $v$ does
+not hold.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[{$\st$}] Every location of class store:
 $\st(\rho,h)=\LS$. In the heap of Section~2 it denotes $\{3\}$.
@@ -558,23 +574,35 @@ denotes $\emptyset$.
 \item[{$\val$}] Every location of class value:
 $\val(\rho,h)=\LF\cup\LC\cup\LE\cup\LI$. In the heap of Section~2 it denotes
 $\{0,1,2,4,5,6,7,8,9\}$.
-\item[{$\pi.\kw{store}$}] The store location of the one array or typed
-array that $\pi$ reads: $(\pi.\kw{store})(\rho,h)=\{s\}$, where $s$ is that array's store
-location. Example: $a.\kw{store}$ denotes $\{3\}$.
-\item[{$\pi[\ast]$}] That store location together with the element cells
-its store lists: $(\pi[\ast])(\rho,h)=\{s\}\cup\mathit{cells}(h(s))$.
-Example: $a[\ast]$ denotes $\{3,4,5\}$.
-\item[{$\pi.f$}] The field location for the key $f$ of the one object
-$v$ that $\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$. Examples: $o.n$
-denotes $\{0\}$ and $o.m$ denotes $\{1\}$.
-\item[{$\pi.\kw{own}$}] Every field location of the one object $v$ that
-$\pi$ reads: $(\pi.\kw{own})(\rho,h)=\{v(f)\mid f\in\mathrm{dom}\,v\}$,
-a set of value locations. Example: $o.\kw{own}$ denotes $\{0,1\}$. It
+\item[{$\pi.\kw{store}$}] The store location of the array or typed
+array that $\pi$ reads:
+$(\pi.\kw{store})(\rho,h)=\{\mathit{st}(v)\}$ if $v$ is an array or a
+typed array. Example: $a.\kw{store}$ denotes $\{3\}$.
+\item[{$\pi.\kw{cells}$}] The element cells that the store of that array
+or typed array lists in $h$:
+$(\pi.\kw{cells})(\rho,h)=\mathit{cells}(h(\mathit{st}(v)))$ if $v$ is
+an array or a typed array. It is a set of value locations. After a
+change of the store, the region denotes the cells that the new store
+lists. Example: $a.\kw{cells}$ denotes $\{4,5\}$
+\status{Lean: the regions \lean{elems} and \lean{pathElems}}.
+\item[{$\pi.f$}] The field location for the key $f$ of the object that
+$\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$ if $v$ is an object and
+$f\in\mathrm{dom}\,v$. Examples: $o.n$ denotes $\{0\}$ and $o.m$
+denotes $\{1\}$.
+\item[{$\pi.\kw{own}$}] Every field location of the object that $\pi$
+reads: $(\pi.\kw{own})(\rho,h)=\mathit{fields}(v)$ if $v$ is an object.
+It is a set of value locations. Example: $o.\kw{own}$ denotes $\{0,1\}$. It
 covers the fields a type of $v$ does not list, which no finite set of
 regions $\pi.f$ does. By (T3) the object $v$ fixes this set
 \status{Lean: the regions \lean{own} and \lean{pathOwn}, which also contain the store location of an array}.
 \end{description}
 \noindent
+We write $\pi[\ast]$ for the store location together with the cells:
+$(\pi[\ast])(\rho,h)=(\pi.\kw{store})(\rho,h)\cup(\pi.\kw{cells})(\rho,h)$.
+A pair $\pi[\ast]:\delta$, in an effect or in a support, stands for the
+two pairs $\pi.\kw{store}:\delta$ and $\pi.\kw{cells}:\delta$. Example:
+$a[\ast]$ denotes $\{3,4,5\}$.
+
 The first three regions are named for what they cover: all the stores
 of the heap, its view stores, and all its value locations. They are the
 \emph{class regions}. Value locations, array stores and view stores
@@ -583,9 +611,9 @@ location keeps its kind and form (T2), so a class region denotes, among
 the locations of $h$, the same set in every heap reached from $h$; and
 the store of an ordinary array, at $\pi.\kw{store}$ or in $\pi[\ast]$,
 is disjoint from $\vw$. In TScert's \code{Modifies}
-annotation $\st$ and $\val$ are written \code{stores} and \code{values}. A region at
-a path whose read fails denotes the empty set: if \code{z} is
-\code{null}, then $z.\mathit{open}.\kw{store}$ denotes $\emptyset$.
+annotation $\st$ and $\val$ are written \code{stores} and \code{values}. For
+example, if \code{z} is \code{null}, then the read of $z.\mathit{open}$
+fails and $z.\mathit{open}.\kw{store}$ denotes $\emptyset$.
 
 \paragraph{Effects.} An \emph{effect} says where a step may change the
 heap and by how much. It is a finite set of entries $r:\delta$, each a
@@ -593,7 +621,7 @@ region and a change:
 \[
 \begin{array}{rcl}
 \Phi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[3pt]
-r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi[\ast] \mid \pi.f \mid \pi.\kw{own}\\[3pt]
+r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{own}\\[3pt]
 \delta &::=& \keep\mid\init\mid\kw{scalar}\mid\grow\mid\any
 \end{array}
 \]
@@ -1272,7 +1300,7 @@ allocated after the entry heap is no location of that heap, so its entry
 rebases to nothing: this is what \textsc{Fresh-Eff} states for the entry
 of an invocation. It applies to the one new store: a write through a new
 typed array keeps its entry $\vw:\grow$, since it may change an older
-view store. The region $\pi[\ast]$ at a rigid path rebases to itself where the
+view store. The region $\pi.\kw{cells}$ at a rigid path rebases to itself where the
 command before changes the store of $\pi$ by at most $\grow$: the cells
 a grown store adds are new, so each of its cells from the entry heap was
 one it listed. Any other region, and the cells of a new store, widen to
@@ -1371,9 +1399,12 @@ maximal array length and $i$ an integer:
 where $Q_{<}$ says that the elements below the old length read what
 they read before:
 $\forall j<\old(\len x).\ \forall u.\ \old(x[j]\doteq u)\Rightarrow x[j]\doteq u$.
-As effects, \textsc{Write-In} is bounded by $\{x[\ast]:\any\}$, and
+As effects, \textsc{Write-In} is bounded by
+$\{x.\kw{store}:\grow,\ x.\kw{cells}:\any\}$, and
 \textsc{Write-End} and \textsc{Push} by $\{x.\kw{store}:\grow\}$; the
-postconditions say more than these bounds.
+postconditions say more than these bounds. At a present index the write
+of \textsc{Write-In} changes one element cell and no store. At a hole
+below the length it makes the store list a new cell, which is a growth.
 \textsc{Write-In} keeps the length of every array, not of $x$ alone: a
 write at an index below the length changes no store's length, so the
 bound $n\le\len y$ and the equality $\len y=n$ both survive it, whether
