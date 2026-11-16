@@ -166,28 +166,40 @@ modality, Frame+, rigid substitution and rule Loop, which the paper states.
 
 ## The order of work
 
-A family of facts is ported whole before its acceptance route is switched,
-and the old route is deleted in the same change. No step leaves "try the
-new check, else the old decider".
+The steps lead to the goal, which is the last of them. Each step replaces
+a mechanism by a definition or a rule of the paper and deletes what it
+replaces in the same change: no step leaves "try the new check, else the
+old decider". No step lands with a pretext function or a pipeline case
+lost.
 
-| Step | Replaced and deleted | The paper's rule, and what it needs first | Verdicts |
-|---|---|---|---|
-| 1 | The untagged supports of path reads | Frame; the class of each read | measured: one refusal becomes a verification, 3417 cases unchanged |
-| 2 | The route by `callChanges` in `callKeeps` and `callGrown` | Frame alone for a term across a call | measured: none change on 3414 cases and five pretext files |
-| 3 | The duplicate respect check and the two separate frame theorems | one support relation, one respect check; B's supports as evidence in it | intended none |
-| 4 | Disjointness answered case by case (`spineSite`, `SepKnowledge.apart₁`) | Alloc and (Sep): one disjointness evidence, with the bound of a region by role classes, and the separations of allocation and provenance carried through renaming | the third row above verifies; intended none lost |
-| 5 | A function's effect as the closed bound of its steps' frames only | Seq-Eff and Fresh-Eff: a native step has the paper's regional effect and its exact postcondition, and effects compose through a function's interface on both exits | the fourth row above verifies; wrappers of `push` gain |
-| 6 | `postKeeps`, then the alternative in `effectKept` | Frame for an unchanged fact; Entry with the exact postcondition of Push for a changed length; (View) | the 11 cases and 6 units are re-established before the deletion |
-| 7 | `cellKept`, `fieldEvery`, `everyGrown`, `appendKept`, `everyWritten`, `writtenPrefix`, `writeKept`, `writeAtoms`, and the arithmetic deciders, as acceptors of their own | Write-In, Write-End, View-Write, (Every), the arithmetic rules; a rule form for each update the paper's rules justify | intended none, family by family |
-| 8 | `exitStep`, `edgeTransfer`, `assertionExit`, the merge checks; the handler edge's dropping of every heap fact | checked transfer at every edge with the edge's own effect, postcondition, branch condition and renaming; Frame at the exceptional exit | ordinary edges intended none; handlers gain |
-| 9 | Checking a loop head's facts as ordinary targets, as the only form | Loop with its frame: Frame+, rigidity, the invariant and the frame kept apart | existing loops intended none; framed loops gain |
-| 10 | What remains of the duplicate definitions and unused checkers | the acceptance theorem depends on the rules' judgments throughout | none |
+| Step | Done when | Deleted |
+|---|---|---|
+| 1. One support relation, one respect check, one frame theorem | the acceptance path and the paper-shaped layer use the same three | the duplicate relation, the duplicate respect loops, the separate frame proofs |
+| 2. Disjointness as the paper states it | one check decides that two regions are disjoint, by the kinds of their locations or by a separation at hand ($`\mathrel{\#}`$, $`\mathsf{apart}`$, $`\mathsf{fresh}`$); the separations of allocation and provenance feed it; each region form selects the locations the paper's region does | `classQuery`, `spineSite`, `sitesApart`, `SepKnowledge.apart₁`; the spine slot in `fields`, the form `cell b`, the unallocated locations of `all` |
+| 3. Regions well-formed by the kind of their path | the tool and Lean refuse a region at a path of another kind | the class tags (`inCls`) on supports |
+| 4. Native steps carry the paper's effect and exact postcondition | the contracts of Push, Write-In, Write-End, View-Write, the field write and Alloc each state the regional effect of their rule | the class-wide frames of those contracts |
+| 5. A function's effect is composed from its steps | Seq-Eff, Fresh-Eff and rebasing run along the graph, on both exits, through the function's interface; a wrapper of `push` has the effect the paper derives for it | the closed bound of the steps' frames as the only inferred effect |
+| 6. A fact across a call is kept by Frame or by Entry | no other route keeps one | `postKeeps` and the alternative in `effectKept` |
+| 7. Writes and quantified facts by the paper's rules | each of `cellKept`, `fieldEvery`, `everyGrown`, `appendKept`, `everyWritten`, `writtenPrefix`, `writeKept`, `writeAtoms`, `keepsLengths` and the arithmetic deciders is an application of Write-In, Write-Kept, Push-Every, View-Every, Guard, Inst, Prefix, Empty or an arithmetic rule | each of those deciders as an acceptor of its own |
+| 8. Edges, merges, handlers and loops by the paper's transfer | checked transfer on every edge with the edge's effect, postcondition, condition and renaming; a merge keeps what every incoming edge establishes; Try; Loop with a rigid effect | `exitStep`, `edgeTransfer`, `assertionExit`, the merge checks, the handler edge's dropping of every heap fact |
+| 9. One assertion language | acceptance and the paper-shaped layer state facts in the paper's grammar, with one satisfaction relation | the second language and the translations between the two |
+| 10. A function verifies as the paper defines it | the premise of the acceptance theorem is a sound annotation of the graph that meets the four obligations of rule Fun, by derivations of the paper's Definition "Derivations" | what remains of the duplicate definitions and unused checkers |
+| 11. The goal | the implementation applies the paper's rules and no others, and is organised as the paper is | |
 
-Steps 1 and 2 are implemented on one pull request. Step 5 is before step 6
-because a postcondition of `push` does not pass through a wrapper's
-interface: only an effect does.
+Step 11 is checked three ways: each decision of the acceptance path names
+the rule of the paper it applies, and no decider with a soundness proof of
+its own remains outside those rules; pretext keeps its count and every
+pipeline case its outcome; a reader with the paper alone gives the
+verifier's verdict on the examples.
 
-### Step 4: a region is bounded by role classes
+A function that verifies only through something the paper does not state
+is put to the owner with its consequences: the paper gains the rule, or
+the function stops verifying.
+
+Step 5 is before step 6 because a postcondition of `push` does not pass
+through a wrapper's interface: only an effect does.
+
+### Step 2: a region is bounded by role classes
 
 A *role class* is one of field, cell, element cell, array spine, view
 spine, identity: the roles of `Worlds.lean` without their parameters. It
@@ -270,21 +282,22 @@ judgments a node's check is read by: `Checker.sound`, `ControlFlow.ExpressionOk`
 `GraphCode.NodeWithin`, the argument-region obligations and the tolerant
 frames' node judgments (`NodesChecked`, `NodesKeep`, `StepParts`) each take
 `RootsOk W ρ` beside the term's `RefsOk`. A path that ends at
-the spine key reads a spine: step 1 leaves the last read of a guard and of
-a spine separation unmarked for that reason, and the bound above marks it.
+the spine key reads a spine: the last read of a guard and of a spine
+separation carries no class tag for that reason, and the bound above marks
+it.
 
 Every region form selects locations as the paper's region does: `fields`
 the field locations of an object, its spine slot excluded, and `all` the
 allocated locations; a frame that changes module cells states the class
 region of values.
 
-### Step 6: what `push` and a typed-array write need
+### Steps 4 to 6: what `push` and a typed-array write need
 
 For an equality of lengths across `texts.push(v)` where `texts` is another
 array: the effect of `push` is
 $`\{\mathit{texts}.\mathsf{spine} : \mathsf{grow}\}`$, the fact's support
 keeps the other array's spine, and respect needs the two spines disjoint,
-which Alloc states for a fresh array and step 4 makes available to the
+which Alloc states for a fresh array and step 2 makes available to the
 check.
 
 For a fact about the receiver's own length: a lower bound is kept by
@@ -294,9 +307,10 @@ $`|x| = \mathsf{old}(|x|) + 1`$ and arithmetic gives the new one. Equal
 lengths across pushes to two arrays hold again after the second push, by
 the same reasoning through the state in between.
 
-For the typed-array write, the pair of support and effect that fails in
-each of the affected cases is established first; the step that removes
-`postKeeps` does not start before that.
+A typed-array write has the frame of rule View-Write, the view spines at
+$`\mathsf{grow}`$, and the support of an array's length is its array
+spine, so a fact about an array's length is kept across the write by
+Frame.
 
 ## What changes in the paper
 
@@ -328,13 +342,12 @@ programs it affects, when its step is reached.
 - **Native precision can be lost at a wrapper.** Step 5 is before step 6
   for this reason. The exceptional exit of a native keeps its own effect.
 - **Loops.** The ordinary facts at a loop head stay checked as they are
-  until step 9 adds the frame beside them.
+  until step 8 adds the frame beside them.
 - **Checking time.** Building a derivation where a decider answered
   directly costs time. It is measured on the pass's performance gate at
-  step 3, before the later steps depend on the answer.
+  step 1, before the later steps depend on the answer.
 - **Pretext.** No step lands with a pretext function lost. A step that
   would lose one waits for the rule that keeps it.
-- **Size.** Steps 1 and 2 are one file each. Step 3 is about ten core
-  modules. Steps 4 to 10 together touch twenty to forty files and every
-  decider on the acceptance path. These are estimates from the structure
+- **Size.** Step 1 is about ten core modules. Steps 2 to 10 together touch
+  twenty to forty files and every decider on the acceptance path. These are estimates from the structure
   of the sources.
