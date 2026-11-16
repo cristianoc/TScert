@@ -56,8 +56,7 @@ differences in the model's states and transitions themselves are listed in
   allocation: freshness of $`x`$ does not keep them, a change of $`x`$'s spine
   alone at $`\mathsf{any}`$ making it list $`y`$'s cell (false as a modal
   consequence of $`\mathrm{fresh}(x)`$: `apart_not_kept_fresh`); a growth of
-  $`x`$'s spine keeps them (proved: `apart_grow_keep`,
-  `apart_grow_keep_typed`).
+  $`x`$'s spine keeps them (proved: `apart_grow_keep`).
 - **Seq-Eff.** The inclusion $`\Phi\cup\Psi'\sqsubseteq\Phi`$ is
   $`\Phi\cup\Psi'\le_{cl}\Phi`$ with the class evidence $`cl`$ holding at the
   entry heap (proved: `seq_eff`, from `action_compose_at`). Rebasing keeps each

@@ -504,7 +504,6 @@ run_cmd do
   check ``Verification.TolerantFrames.rootCells_invariant
   check ``Verification.TolerantFrames.alloc_apart
   check ``Verification.TolerantFrames.apart_of_mark
-  check ``Verification.TolerantFrames.growOne_keeps_spine
   check ``Verification.TolerantFrames.apart_grow_keep
   check ``Verification.TolerantFrames.graph_step
   check ``Verification.TolerantFrames.graph_inv_run

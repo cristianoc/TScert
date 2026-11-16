@@ -154,15 +154,8 @@ theorem dropElems_holds {as : List ElemAtom} {ρ h v} (he : ElemsHolds as (push 
     exact hc i (by simp [hc'])
   simpa [hs] using this
 
-/-- A fresh allocation preserves every assertion about existing cells and aliases. -/
-theorem alloc_frame {k ρ h v} (hk : Holds k ε ρ h) : Holds k ε ρ (h ++ [v]) := by
-  refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2.1, hk.2.2.2.1, elemsHolds_extend [v] hk.2.2.2.2.1,
-    indexHolds_extend [v] hk.2.2.2.2.2⟩
-  intro f hf
-  obtain ⟨flds,c,oid,u,he,hr,hm⟩ := hk.1 f hf
-  exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],hm⟩
-
-/-- The same across a whole object's worth of fresh locations. -/
+/-- A fresh allocation of several locations preserves every assertion about
+existing cells and aliases. -/
 theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ε ρ h) : Holds k ε ρ (h ++ vs) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2.1, hk.2.2.2.1, elemsHolds_extend vs hk.2.2.2.2.1,
     indexHolds_extend vs hk.2.2.2.2.2⟩

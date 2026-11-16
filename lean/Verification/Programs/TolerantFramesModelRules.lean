@@ -36,30 +36,36 @@ open ProgramTyping PositiveGraphs PositiveRules ExpressionEffects HeapExpression
 /-! ## (View) -/
 
 /-- **(View)**: a linear fact whose current terms are slots' integers and
-typed-array lengths holds after every admissible transition; its entry
-terms, of any kind and path, read the entry state
-(`termValue_entry_invariant`). A typed array's length is its descriptor's,
-part of the value. -/
+typed-array lengths holds after every admissible transition: the tolerant
+frame (`frame_box`) at the empty support, which every effect respects. The
+empty support supports the fact since no transition changes what it reads:
+its entry terms, of any kind and path, read the entry state
+(`termValue_entry_invariant`), and a typed array's length is its
+descriptor's, part of the value. -/
 theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hv : ∀ t ∈ F.vars, t.atEntry = false → t.path = [] ∧ (t.kind = .value ∨ t.kind = .view))
     (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
     Box Footprints.Closed.top.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
-  intro s' _
-  have he : ∀ t ∈ F.vars, HeapKnowledge.termValue ε ρ s'.h t = HeapKnowledge.termValue ε ρ s.h t := by
-    intro t ht
-    obtain ⟨k, slot, p, e⟩ := t
-    cases e
-    case true => exact HeapKnowledge.termValue_entry_invariant rfl
-    obtain ⟨hp, hk⟩ := hv _ ht rfl
-    simp only at hp hk
-    subst hp
-    rcases hk with rfl | rfl
-    · rfl
-    · simp only [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue]
-  obtain ⟨hd, hh⟩ := hF
-  refine ⟨fun t ht => by rw [he t ht]; exact hd t ht, ?_⟩
-  refine (Linear.Fact.holds_congr fun t ht => ?_).mpr hh
-  simp only [HeapKnowledge.termValuation, he t ht]
+  have hs : indexed.Supports (fun _ _ _ _ => True) (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h)
+      [] := by
+    refine SupportDomain.Supports.of_invariant fun ρ _ s s' _ _ hF => ?_
+    have he : ∀ t ∈ F.vars, HeapKnowledge.termValue ε ρ s'.h t = HeapKnowledge.termValue ε ρ s.h t := by
+      intro t ht
+      obtain ⟨k, slot, p, e⟩ := t
+      cases e
+      case true => exact HeapKnowledge.termValue_entry_invariant rfl
+      obtain ⟨hp, hk⟩ := hv _ ht rfl
+      simp only at hp hk
+      subst hp
+      rcases hk with rfl | rfl
+      · rfl
+      · simp only [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue]
+    obtain ⟨hd, hh⟩ := hF
+    refine ⟨fun t ht => by rw [he t ht]; exact hd t ht, ?_⟩
+    refine (Linear.Fact.holds_congr fun t ht => ?_).mpr hh
+    simp only [HeapKnowledge.termValuation, he t ht]
+  exact frame_box (D := indexed) (K := fun _ _ _ => True) (q := SepQuery.empty) hs rfl
+    (fun ρ _ s _ => SepQuery.empty_sound ρ s.h) (fun _ _ _ _ _ _ => trivial) ρ m s trivial hF
 
 /-! ## (Init) -/
 
@@ -94,6 +100,46 @@ theorem init_path {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : Indexe
     (fun t ht => ?_) (pathLowerBound_iff.mp hb) s' ha)
   simp only [Linear.Fact.vars, List.map, List.mem_cons, List.not_mem_nil, or_false] at ht
   rcases ht with rfl | rfl <;> simp [HeapKnowledge.Term.value]
+
+/-! ## (Apart, one-sided) -/
+
+/-- **(Apart, one-sided)** `apart(x, y) ⊢ □_{growOne x} apart(x, y)`, for `y`
+an array object and roots with valid references: the tolerant frame
+(`frame_step`) at the note's support `{x[*]: grow, y[*]: keep}`
+(`IndexWrites.apartGrow_supports`, the note, §5, after Definition
+"Support"), which `growOne x` respects under the query of the knowledge
+`apart(x, y)`: `values` apart from both spines by class, `y`'s spine apart
+from `x`'s by the fact. The support's condition, `y`'s region in the heap,
+holds in every well-formed heap. -/
+theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hρ : RootsOk s.W ρ)
+    (hys : (spineOf (ρ y)).isSome = true) (hap : ApartAt x y ρ m s) :
+    Box (growOne x) (ApartAt x y) ρ m s := by
+  let k : HeapKnowledge.Knowledge := { indices := [⟨.apart x y, none, false⟩] }
+  have hk : HeapKnowledge.Holds k ⟨ρ, s.h⟩ ρ s.h := by
+    refine ⟨by simp [k, HeapFacts.Holds], by simp [k, HeapKnowledge.ValueHolds], by simp [k, HeapLinks.Holds],
+      by simp [k, HeapSeparation.Holds], by simp [k, HeapKnowledge.ElemsHolds], fun a ha _ => ?_⟩
+    simp only [k, List.mem_singleton] at ha
+    subst ha
+    exact hap
+  have hb : ∀ z, (knowledgeQuery k).disjoint ((Region.field z arraySpineKey).inCls .arrays) (.cls .values) = true :=
+    fun z => knowledgeQuery_bound k (boundQuery_inCls_cls _ (by decide)).1
+  have hs : (knowledgeQuery k).disjoint ((Region.field y arraySpineKey).inCls .arrays)
+      (.field x arraySpineKey) = true := by
+    simp [k, knowledgeQuery, SepEvidence.query, knowledgeEvidence, knowledgeSeps, factSeps, SepEvidence.byFact,
+      arraySite, sameSite, pathViews, separationFacts, HeapLinks.aliases]
+  have hr : respects (knowledgeQuery k) (IndexWrites.apartGrowSupport x y) (growOne x) = true := by
+    simp [respects, IndexWrites.apartGrowSupport, growOne, Change.le, Change.rank]
+    exact ⟨hb x, hb y, hs⟩
+  have hbelow : IndexWrites.RegionBelow s.h (ρ y) := by
+    obtain ⟨sty, hsty⟩ := Option.isSome_iff_exists.mp hys
+    obtain ⟨_, _, sb, ys, -, hy, -⟩ := hap
+    rcases hy with ⟨rfl, hv⟩ | ⟨st, rfl, hst, hv⟩
+    · rw [hv] at hsty; simp [spineOf, fieldsOf] at hsty
+    · rw [hsty] at hst; cases hst
+      exact ⟨sty, ys, hsty, hv, (List.getElem?_eq_some_iff.mp hv).1, s.ok.elementsBelow hv⟩
+  intro s' ha
+  exact frame_step (D := heaps) (m := 0) (IndexWrites.apartGrow_supports x y) hr
+    (knowledgeQuery_sound hk s.ok hρ) ha.2 trivial hbelow hap
 
 /-! ## Call -/
 

@@ -108,9 +108,11 @@ theorem Supports.apply {C : Env → Heap → Heap → Prop} {P : Env → Heap �
 /-- **An assertion language's supports, by finite evidence**: its formulas
 and their meaning over a domain, the contexts a support relies on and the
 condition each states, and a check of a footprint against a formula by
-evidence, sound for `SupportDomain.Supports`. Each assertion language reads
-the one support relation through an instance; the evidence is finite and
-syntactic, its meaning given by the check's soundness alone. -/
+evidence, sound for `SupportDomain.Supports`. The acceptance path's index
+facts are an instance (`indexFacts`); the paper layer checks its supports by
+its own evidence (`Parity.SupportEvidence`), sound for the same relation over
+indexed states. The evidence is finite and syntactic, its meaning given by
+the check's soundness alone. -/
 structure SupportLanguage {State : Type} (D : SupportDomain State) where
   Formula : Type
   sat : Formula → AssertionOn State

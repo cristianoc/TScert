@@ -640,18 +640,20 @@ Separation, proved:
 
 The third atom, (Apart, one-sided), proved (`apart_grow_keep`), with
 $`\Phi_x=\{\mathsf{values}:\mathsf{any},\ x.\mathsf{spine}:\mathsf{grow}\}`$
-(`growOne`) and $`y`$ an array object:
+(`growOne`), $`y`$ an array object and the roots' references valid:
 
 ```math
 \mathrm{apart}(x,y)\;\vdash\;\Box_{\Phi_x}\,\mathrm{apart}(x,y)
 ```
 
-($`\mathrm{cells}(y)`$ holds at every state: `rootCells_holds`.)
-
-$`y`$'s spine location is not $`x`$'s, so it is kept (`growOne_keeps_spine`),
-and $`x`$'s spine gains only cells at or past the heap's end, beyond $`y`$'s
-allocated cells and spine location. Both spines growing is not covered: their
-new cells may coincide.
+It is the tolerant frame at the note's support
+$`\{x[\ast]:\mathsf{grow},\ y[\ast]:\mathsf{keep}\}`$
+(`IndexWrites.apartGrow_supports`, the acceptance path's lemma), which
+$`\Phi_x`$ respects under the query of the knowledge
+$`\mathrm{apart}(x,y)`$: the values are apart from both spines by class, and
+$`y`$'s spine from $`x`$'s by the fact. The support's condition, $`y`$'s
+region in the heap, holds in every well-formed heap. Both spines growing is
+not covered: their new cells may coincide.
 
 ## The pass's named state
 

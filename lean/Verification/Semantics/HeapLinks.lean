@@ -189,9 +189,6 @@ theorem alloc_frames {ls ρ h} (vs : List Val) (hh : Holds ls ρ h) : Holds ls �
     exact ⟨flds,c,oid,hl,hr.alloc_frames vs⟩
   all_goals exact hh
 
-theorem alloc_frame {ls ρ h v} (hh : Holds ls ρ h) : Holds ls ρ (h ++ [v]) :=
-  alloc_frames [v] hh
-
 /-- The alias links: the links of the empty support (`FactKind.link`,
 `Footprints.stableLinks_holds`). -/
 def stable (ls : Links) := ls.filter (fun g => g.alias)
