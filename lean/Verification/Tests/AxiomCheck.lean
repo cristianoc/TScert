@@ -379,9 +379,6 @@ run_cmd do
   check ``Verification.Footprints.CellsFrom.of_post
   check ``Verification.Footprints.ArgumentSpineRegionsWithin.iff_post
   check ``Verification.Footprints.ArgumentSpineRegionsWithin.trans
-  check ``Verification.Footprints.SpineApart.stable_frame
-  check ``Verification.Footprints.StablePath.frame
-  check ``Verification.Footprints.SpineApart.stable_path_frame
   check ``Verification.GraphCode.ArgumentPathTracking.checkEntry_sound
   check ``Verification.GraphCode.ArgumentPathTracking.checkEdges_sound
   check ``Verification.GraphCode.ArgumentPathTracking.checkHandler_sound

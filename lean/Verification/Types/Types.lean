@@ -253,8 +253,8 @@ def StableAt {n : Nat} (W : WorldT n) (flds : List (PropKey × Nat)) (key : Prop
   | some l => ∃ (c : Ctr n) (value : Val), lookup W l = some c ∧ CtrStable c value
   | none => flds.lookup CallArguments.protoField = none
 
-/-- A present stable key supplies the location's stable contract needed by
-`HeapObservations.stable_frame`. -/
+/-- A present stable key supplies the location's stable contract
+(`HeapOk.stable_value`, `TolerantFrames.Admissible.stable_value`). -/
 theorem StableAt.present {n : Nat} {W : WorldT n} {flds : List (PropKey × Nat)} {key : PropKey}
     {l : Nat} (h : StableAt W flds key) (hl : flds.lookup key = some l) :
     ∃ (c : Ctr n) (value : Val), lookup W l = some c ∧ CtrStable c value := by

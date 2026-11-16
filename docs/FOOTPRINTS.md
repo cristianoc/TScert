@@ -1316,10 +1316,10 @@ defines `ArgumentSpineRegionsWithin`, `SpineApart` and `StablePath`.
 Proved: `ArgumentSpineRegionsWithin.trans` composes at unchanged selected
 spines; `.nested` composes with a nested call's selected entry or fresh
 spines; `.receiver` embeds the receiver-spine exception; `.frame_length`
-and `.frame_densePrefix` give caller framing. `StablePath.transfer`, `.read`
-and `.frame` retain the path through world extension and safe execution,
-including a throw. `SpineApart.stable_path_frame` retains separation and
-`.not_alias` excludes the alias case.
+and `.frame_densePrefix` give caller framing. `StablePath.transfer` and `.read`
+retain the path through world extension and read it at a heap meeting the
+world; along a run, a stable location is kept by the tolerant frame at
+$`\top`$ ([support and respect](#support-and-respect)).
 
 [`ArgumentPathTracking.lean`](../lean/Verification/Programs/ArgumentPathTracking.lean)
 proves entry, slot-map, normal-edge and handler checks sound

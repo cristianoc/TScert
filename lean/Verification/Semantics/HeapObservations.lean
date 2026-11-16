@@ -74,28 +74,6 @@ theorem of_safe {T} : ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T (fun _ 
     · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
-/-- A stable contract frames its location through every modeled execution on
-normal return. External calls receiving the host object rely on F1′ (T1′)
-and T8 for their correspondence with this execution. A thrown outcome carries
-no postcondition, so this rule supplies no link to an exceptional edge. -/
-theorem stable_frame {T Q} {l : Nat} {v : Val} : ∀ {n W h t} {c : Ctr n},
-    lookup W l = some c → CtrStable c v → HeapOk n W h →
-    SafePost Ξ T Q n W h t →
-    SafePost Ξ T (fun h' u => Q h' u ∧ h'[l]? = some v) n W h t := by
-  intro n
-  induction n with
-  | zero => intro _ _ _ _ _ _ _ hs; exact hs
-  | succ n ih =>
-    intro W h t c hl hc hh hs
-    obtain ⟨hrf, hs⟩ := hs
-    refine ⟨hrf, ?_⟩
-    rcases hs with (⟨hv, ht, hq⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', hs⟩
-    · exact .inl (.inl ⟨hv, ht, hq, hh.stable_value (Nat.zero_lt_succ n) hl hc⟩)
-    · exact .inl (.inr hr)
-    · exact .inr ⟨U, h', t', hx, hu, step, hh',
-        ih (WExt_lookup hx (lookup_trunc (Nat.le_succ n) W l c hl))
-          (hc.restrict (Nat.le_succ n)) hh' hs⟩
-
 /-- Overload combination compares two executions of the same term. The
 worlds may differ, but determinism makes the final heap and value the same.
 Both executions' postconditions survive in the first result world; the

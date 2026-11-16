@@ -41,26 +41,6 @@ theorem StablePath.read {n : Nat} {W : WorldT n} {h x path v}
     rw [HeapKnowledge.readPath_cons hf (hh.stable_value hn hl hc)]
     exact ih
 
-/-- Stable paths survive normal and exceptional returns by the heap
-invariant. This does not supply a footprint guarantee on a throw. -/
-theorem StablePath.frame {Ξ T Q R x path v} : ∀ {n W h t},
-    StablePath W x path v → HeapOk n W h →
-    HeapObservations.SafePostExc Ξ T Q R n W h t →
-    HeapObservations.SafePostExc Ξ T
-      (fun h' u => Q h' u ∧ HeapKnowledge.readPath h' x path = some v)
-      (fun h' => R h' ∧ HeapKnowledge.readPath h' x path = some v) n W h t := by
-  intro n
-  induction n with
-  | zero => intro _ _ _ _ _ hs; exact hs
-  | succ n ih =>
-    intro W h t hp hh hs
-    obtain ⟨hrf, hs⟩ := hs
-    rcases hs with (⟨hv, ht, hq⟩ | ⟨hr, hR⟩) | ⟨U, h', t', hx, hu, st, hh', hs'⟩
-    · exact ⟨hrf, .inl (.inl ⟨hv, ht, hq, hp.read (Nat.zero_lt_succ n) hh⟩)⟩
-    · exact ⟨hrf, .inl (.inr ⟨hr, hR, hp.read (Nat.zero_lt_succ n) hh⟩)⟩
-    · exact ⟨hrf, .inr ⟨U, h', t', hx, hu, st, hh',
-        ih (hp.transfer (Nat.le_succ n) hx) hh' hs'⟩⟩
-
 /-- Fixed protected locations compose even when intermediate heaps grow. -/
 theorem Closed.HoldsOn.trans_on {c : Closed} {P : Nat → Prop} {h₀ h h' : Heap}
     (h₁ : c.HoldsOn P h₀ h) (h₂ : c.HoldsOn (fun l => l < h₀.length ∧ P l) h h') :
@@ -85,32 +65,5 @@ theorem ArgumentSpineRegionsWithin.trans {c : Closed} {regions : List ArgumentSp
     ArgumentSpineRegionsWithin c regions ρ entry after := by
   apply h₁.trans_on
   exact h₂.weaken (fun l hl r hr => by rw [hs r hr]; exact hl.2 r hr)
-
-/-- A stable path retains spine separation on normal and exceptional returns.
-Preservation of another fact additionally needs the call's footprint there. -/
-theorem SpineApart.stable_path_frame {Ξ T Q R x path v y s t n W h term}
-    (hp : StablePath W x path v) (hs : spineOf v = some s) (ht : spineOf y = some t)
-    (hne : s ≠ t) (hh : HeapOk n W h)
-    (hr : HeapObservations.SafePostExc Ξ T Q R n W h term) :
-    HeapObservations.SafePostExc Ξ T
-      (fun h' u => Q h' u ∧ SpineApart h' x path y)
-      (fun h' => R h' ∧ SpineApart h' x path y) n W h term := by
-  apply HeapObservations.SafePostExc.weaken _ _ (hp.frame hh hr)
-  · intro h' u hq
-    exact ⟨hq.1, v, s, t, hq.2, hs, ht, hne⟩
-  · intro h' hq
-    exact ⟨hq.1, v, s, t, hq.2, hs, ht, hne⟩
-
-/-- A stable own field keeps separation on every normal return. -/
-theorem SpineApart.stable_frame {Ξ T Q} {fs : List (PropKey × Nat)} {code : CallCode}
-    {oid l : Nat} {field : String} {v y : Val} {s t : Nat} {n W h term} {c : Ctr n}
-    (hf : fs.lookup (.str field) = some l) (hl : lookup W l = some c) (hc : CtrStable c v)
-    (hs : spineOf v = some s) (ht : spineOf y = some t) (hne : s ≠ t)
-    (hh : HeapOk n W h) (hr : HeapObservations.SafePost Ξ T Q n W h term) :
-    HeapObservations.SafePost Ξ T
-      (fun h' u => Q h' u ∧ SpineApart h' (.objAt fs code oid) [field] y) n W h term := by
-  apply HeapObservations.weaken _ (HeapObservations.stable_frame hl hc hh hr)
-  intro h' u hp
-  exact ⟨hp.1, v, s, t, by simp [HeapKnowledge.readPath, hf, hp.2], hs, ht, hne⟩
 
 end Verification.Footprints
