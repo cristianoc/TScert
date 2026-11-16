@@ -666,39 +666,82 @@ system derives
 \paragraph{Syntax.} Assertions $F,G$ are built from atoms $a$:
 \[
 \begin{array}{rcll}
-F,G &::=& a \mid F\wedge G \mid g\vee F \mid \exists v.\,F & g\text{ an invariant assertion; }v\text{ a logical variable}\\
- &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(x) & \text{separation and freshness}\\
+F,G &::=& a \mid F\wedge G \mid F\vee G \mid \exists v.\,F & v\text{ a logical variable}\\
+ &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) & \text{separation and freshness}\\
  &\mid& \bx{\Phi}F & \text{the modality}
 \end{array}
 \]
 
+\paragraph{Terms.} A \emph{term} denotes an integer at a state, or is
+undefined there:
+\[
+t\ ::=\ n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi)
+\]
+A literal $n$ denotes itself. A variable $x$ and a path $\pi$ denote
+the number they hold or read. $\len\pi$ is the length of the array that
+$\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
+$\slen(\pi)$ the length of the string. A term is \emph{defined} when the
+read succeeds, gives a value of the kind the term asks for, and that
+value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
+$M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
+the term $o.n$ denotes 1, $\len a$ denotes 3, and $\len{o}$ is undefined.
+
 \paragraph{Atoms.} An atom is a fact of a first-order language over the
-heap. An atom is true only where every path it reads is defined. There
-are six forms:
+heap. An atom is true only where every term and every path it reads is
+defined. There are six forms:
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[Linear inequality] An inequality between linear terms over
-variables and, at paths, lengths $\len\pi$ of arrays,
-$\kw{view}(\pi)$ of typed arrays and $\slen(\pi)$ of strings. Examples:
-$i<\len{\mathit{flags}}$ and $\mathit{to}\le\len{\mathit{xs}}$.
-Each variable or length it reads must denote a \emph{safe integer}, an
-integer $n$ with $|n|\le M$, where $M=2^{53}-1$. Linear combinations of
-these are taken over the mathematical integers; the arithmetic steps of
-Section~6 state when JavaScript arithmetic computes them exactly.
+\item[Linear inequality] An inequality between linear combinations of
+terms, with integer coefficients. Examples: $i<\len{\mathit{flags}}$,
+$\mathit{to}\le\len{\mathit{xs}}$ and
+$c.\mathit{at}<\kw{view}(\mathit{flags})$. The combinations are taken
+over the mathematical integers; the arithmetic steps of Section~6 state
+when JavaScript arithmetic computes them exactly. The inequality
+$t\le t$ says that $t$ is defined; we write it $\kw{defined}(t)$.
 \item[Equality $\pi\doteq v$] The path $\pi$ reads the value $v$.
-Example: $z\doteq\code{null}$.
+Example: $z\doteq\code{null}$. The last field of the path may be read as
+an \emph{optional} field, written $\pi.f^{?}$: where the object that
+$\pi$ reads has no field $f$, the read gives \code{undefined}. Example:
+with \code{o = \{ n: 1 \}}, $o.m^{?}\doteq\code{undefined}$ holds, and
+$o.m\doteq v$ holds of no $v$.
 \item[Density $\dense(x,n)$] The first $n$ indices of the array $x$ are
 present. For \code{a = [10, , 30]}, $\dense(a,1)$ holds and $\dense(a,2)$
 does not.
-\item[Kind of contents] The contents of a cell are of a stated kind,
-such as a number or an object. Example: the contents of $x.f$ are a
-number.
-\item[Bounded quantification $\every(z,t,\varphi)$] Each element of the
-array $z$ at an index below $t$ satisfies $\varphi$. For
-\code{a = [10, , 30]}, $\every(a,1,v>0)$ holds.
-\item[Element of a typed array $b{[i]}\doteq v$] The cell that the view
-store of the typed array $b$ lists at index $i$ holds $v$; false when
-$i$ is no index of that store. Example: $b[1]\doteq 4$.
+\item[Contents $\pi\in V$] The path $\pi$ reads a value in the set $V$.
+The set is a finite union of kinds of value (a number, a string, an
+object, \code{null}, \code{undefined}, a boolean), possibly with
+literals added or excluded. Examples: $x.f\in\mathit{number}$, and
+$x.f\notin\{\code{null}\}$, the values other than \code{null}.
+\item[Element $z{[i]}\doteq v$] The array or typed array $z$ reads $v$
+at the index $i$: the term $i$ is defined with $0\le i$ and $i$ below
+the length of $z$, and $v$ is the value of the element cell the store
+lists at $i$, or \code{undefined} where an array has a hole at $i$.
+Examples: for \code{a = [10, , 30]}, $a[0]\doteq 10$ and
+$a[1]\doteq\code{undefined}$; for a typed array, $b[1]\doteq 4$.
+\item[Bounded quantification $\every(z,t,\varphi)$] The path $z$ reads
+an array or a typed array, the term $t$ is defined, and the body
+$\varphi$ holds at each index $i$ with $0\le i<t$. The body is a
+conjunction of disjunctions of linear inequalities over the index $i$
+and these further terms:
+\[
+z[i]\qquad z[i+d]\ \ (d\ge 0\text{ a literal})\qquad z[i].\pi\qquad
+\len{z[i].\pi}\qquad\kw{view}(z[i].\pi)\qquad\slen(z[i].\pi)
+\]
+together with terms that do not mention $i$. The term $z[i]$ denotes
+the number the element at $i$ holds, and $z[i].\pi$ the number read
+from that element along $\pi$. As in every inequality, each term must be
+defined: a body that mentions $z[i]$ holds at $i$ only where $z$ has an
+element at $i$ that is a safe integer. A body that mentions no element
+states nothing about the elements. Examples: for \code{a = [10, , 30]},
+$\every(a,1,z[i]>0)$ holds and $\every(a,3,z[i]>0)$ does not, because of
+the hole at index 1;
+$\every(\mathit{items},n,\ 0\le z[i].\mathit{at}<\len{\mathit{widths}})$
+says that the field \code{at} of each of the first $n$ items is an index
+of \code{widths}; and $\every(\mathit{xs},n,\ z[i]\le z[i+1])$ says that
+the first $n+1$ elements are in order.
 \end{description}
+We write $\varphi(v)$ for a body over the one term $z[i]$, named $v$:
+$\every(a,1,v>0)$
+\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}, for the terms and atoms as stated here. The derivation system \lean{Parity.Derivation} states $\every$ for an ordinary array with each index below $t$ present, and the element atom for a typed array}.
 
 \paragraph{Satisfaction.} An assertion is interpreted at a state
 $s=(\rho,h,W,k)$ and an \emph{entry mark} $m$; we write
@@ -708,12 +751,15 @@ entry mark $m\le\len h$ is the length the heap had when the current
 function invocation started; the locations at or above $m$ are the ones
 the invocation has allocated. We write $\rho,m,h\models F$. Atoms read
 $\rho$ and $h$ only, and the connectives $\wedge$, $\vee$, $\exists$
-have their usual meaning. The other four forms are:
+have their usual meaning: a disjunction holds where one of its two
+assertions holds, whatever the other reads. We write $\fresh(x)$ for
+$\fresh(x.\kw{store})$, and $\fresh(x.\kw{own})$ says that the fields of
+the object $x$ were allocated by this invocation. The other four forms are:
 \[
 \begin{array}{lcl}
-\rho,m,h\models\pi\sep\pi' &\iff& \pi\text{ and }\pi'\text{ read arrays with different store locations},\\[2pt]
+\rho,m,h\models\pi\sep\pi' &\iff& \pi\text{ and }\pi'\text{ are defined, and if both read arrays, their store locations differ},\\[2pt]
 \rho,m,h\models\apart(x,y) &\iff& x\sep y\text{, and the stores of }x\text{ and }y\text{ list no common element cell},\\[2pt]
-\rho,m,h\models\fresh(x) &\iff& \text{the store location of }\rho(x)\text{ is at or above }m,\\[2pt]
+\rho,m,h\models\fresh(r) &\iff& \text{every location of }r(\rho,h)\text{ is at or above }m,\\[2pt]
 \rho,m,h\models\bx{\Phi}F &\iff& \text{for all }h'\text{, if }h\tr{\Phi}_\rho h'\text{ then }\rho,m,h'\models F .
 \end{array}
 \]
@@ -781,6 +827,31 @@ Law (a) follows from reflexivity; (b), (c) and (d) from the definitions;
 \lean{ArgumentStoreRegionsWithin.trans}, provided the path resolves to
 the same store in both heaps.
 
+\begin{proposition}[Guards and quantified facts]\label{prop:every}
+For terms $t,t',k$ and a body $\varphi$:
+\[
+\begin{array}{ll}
+\textsc{(Guard)} & (\pi\doteq v\vee F)\wedge\pi\doteq w\ \vdash\ F\qquad v\ne w\\[2pt]
+\textsc{(Inst)} & \every(z,t,\varphi)\wedge 0\le k<t\ \vdash\ \varphi[k/i]\\[2pt]
+\textsc{(Prefix)} & \every(z,t,\varphi)\wedge t'\le t\ \vdash\ \every(z,t',\varphi)\\[2pt]
+\textsc{(Empty)} & \kw{defined}(\len z)\wedge t\le 0\ \vdash\ \every(z,t,\varphi)
+\end{array}
+\]
+In \textsc{(Guard)} the path may end at an optional field. In
+\textsc{(Inst)} the instance $\varphi[k/i]$ has the element at $k$ for
+$z[i]$: after a read \code{v = z[k]}, it is $\varphi$ of $v$. In
+\textsc{(Empty)} $\len z$ may be $\kw{view}(z)$
+\status{Lean: \lean{unguardIndices\_holds}, \lean{releaseEither\_holds}; \lean{instantiateEvery\_holds}, \lean{elementInstances\_holds}; \lean{everyPrefix\_sound}. \textsc{(Empty)} is \lean{Derivation.everyEmpty}, for an ordinary array}.
+\end{proposition}
+\noindent
+Example: with $\every(\mathit{items},n,\ 0\le z[i].\mathit{at}<\len{\mathit{widths}})$
+and $0\le k<n$, \textsc{(Inst)} gives
+$0\le\mathit{items}[k].\mathit{at}<\len{\mathit{widths}}$, the
+precondition of the read \code{widths[items[k].at]}. A fact
+$\mathit{xs}\doteq\code{null}\vee i<\len{\mathit{xs}}$ gives
+$i<\len{\mathit{xs}}$ on the branch where \code{xs} was tested not to be
+\code{null}, by \textsc{(Guard)}.
+
 \section{Entering the modality}
 
 A fact enters the modality by naming what it reads and how much change
@@ -796,9 +867,16 @@ Locations outside the regions of $S$ may change in any admissible way.
 \end{definition}
 
 \noindent
-Support quantifies over every admissible transition. Evidence that one
-particular transition preserves $F$ establishes $F$ after that
-transition and no support.
+A support may be \emph{under a condition} $C$ on pairs of heaps: the
+property above is then required only of the transitions with $C(h,h')$.
+For example, with $C$ the condition that the field $x.f$ keeps its
+contents, $\{x.f.\kw{store}:\grow\}$ supports $n\le\len{x.f}$ under $C$:
+the store that $x.f$ reads is then the same before and after. A support
+with no condition is the case where $C$ always holds.
+
+Support quantifies over every admissible transition that meets its
+condition. Evidence that one particular transition preserves $F$
+establishes $F$ after that transition and no support.
 
 \noindent
 For example $\{x.\kw{store}:\grow\}$ supports $n\le\len x$: the fact
@@ -824,7 +902,10 @@ meets the second: a store location is no location of class value.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
 If $S$ supports $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
-\status{Lean: \lean{Parity.tolerant\_frame}, for the assertions the Lean represents and every effect; \lean{supported\_of\_pairs} for the pairwise condition of respect}
+The same holds of a support under a condition $C$, when $C(h_1,h_2)$
+holds of every pair with $h\tr{\Phi}_\rho h_1\tr{\Phi}_\rho h_2$ from a
+state that satisfies $K$.
+\status{Lean: \lean{Parity.tolerant\_frame}, with the condition \lean{ContextThroughout}, for the assertions the Lean represents and every effect; \lean{supports\_step} for one transition that meets the condition; \lean{supported\_of\_pairs} for the pairwise condition of respect}
 \end{theorem}
 \begin{proof}
 Let $h\tr{\Phi}_\rho h'$ and $l\in r(\rho,h)$ with $(r:\delta)\in S$.
@@ -964,6 +1045,12 @@ uses $\Phi^{e}$ and $R^{e}$. The effect is stated at the command's
 entry. Bound variables are renamed apart from the frame assertions and
 their effects; a substitution acts on assertions and effects alike and
 leaves the invocation mark.
+Where a rule renames variables or substitutes paths for them, as
+\textsc{Call} does and as an edge does (Section~\ref{sec:transfer}), an
+assertion under a modality is transported only along paths that are
+rigid: a path substituted for a variable inside $\bx{\Phi}F$ must read
+the same value after every change bounded by $\Phi$
+\status{Lean: \lean{Derivation.transportRigid}}.
 \item[\textsc{Frame}$^{+}$] For a rigid effect the frame keeps its
 modality after $c$, by law (e).
 \item[\textsc{Loop}] Induction on normal iterations uses
@@ -976,6 +1063,20 @@ to that point is bounded by $\Phi$, by law (a).
 Proposition~\ref{prop:rely} gives this bound for a sequence of steps and
 calls each bounded by the rigid $\Phi$. A bound on the iteration's exit
 alone gives no bound inside it.
+\item[\textsc{If} and the exits of a loop] A choice has the
+postconditions and the effects that both of its branches have, each
+branch checked under its answer to the test:
+\[
+\inferrule*[left=If]{\hoarex{P\wedge b}{c_1}{Q}{Q^{e}} \\ \hoarex{P\wedge\neg b}{c_2}{Q}{Q^{e}} \\ c_1,c_2:\Phi\mid\Phi^{e}}{\hoarex{P}{\code{if (b) c1 else c2}}{Q}{Q^{e}}\qquad\code{if (b) c1 else c2}:\Phi\mid\Phi^{e}}
+\]
+A loop leaves by a \code{break}, a \code{return} or a throw of its
+body. Let $L$ be a specification that holds from the loop's entry to its
+head after any number of iterations: it holds after none, and composing
+it with one more iteration by \textsc{Seq-Eff} gives $L$ again. Then
+each exit of the loop has the specification of $L$ composed with the
+part of the body that ends at that exit, on the normal exit and the
+exceptional exit separately
+\status{Lean: \lean{CommandSummary.choice\_sound}, \lean{CommandSummary.join\_sound}; \lean{LoopEvidence.prefix\_sound}, \lean{LoopEvidence.loop\_sound}}.
 \item[\textsc{Call}] Instantiate the callee's specification at the
 actual arguments by capture-avoiding substitution; $Q$ may mention
 the result $y$. The displayed rule uses assertions independent of
@@ -989,11 +1090,20 @@ checking a function body, that sequence equals the initial contents of
 the freshly allocated rest array.
 Lean: \lean{call\_exits\_exact}, for both exits of a signature, rest arguments included; \lean{call\_rule}, for a checked graph and the normal exit.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
-array $y$ that exists before the step. These separations are
+array $y$ that exists before the step. An array literal
+\code{x = [a1, ..., ak]} and an object literal \code{y = \{f: a, ...\}}
+allocate in the same way:
+\[
+\begin{array}{l}
+\hoare{\kw{true}}{\code{x = [a1, ..., ak]}}{\fresh(x)\wedge\len x=k\wedge\dense(x,k)\wedge\textstyle\bigwedge_{j<k}x[j]\doteq a_{j+1}\wedge\bigwedge_y\apart(x,y)}\\[3pt]
+\hoare{\kw{true}}{\code{y = \{f: a, ...\}}}{\fresh(y.\kw{own})\wedge y.f\doteq a\wedge\cdots}
+\end{array}
+\]
+These separations are
 facts of the state after the step. Later steps keep or lose them like
 any other fact: a growth of the new array's store keeps them, and an
 arbitrary change of that store does not, since it may make the store
-list a cell of $y$. Lean: \lean{alloc\_post}, \lean{alloc\_apart}; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
+list a cell of $y$. Lean: \lean{alloc\_post}, \lean{alloc\_apart}, for the empty array; \lean{literalArrayAtoms} for the length of an array literal, and \lean{FreshObjectAt} for the fields of an object literal; the elements and the density of an array literal are a conjecture; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
 \item[\textsc{Seq-Eff}] The effect of a sequence, stated at the entry of
 the sequence. The effect $\Psi$ of the second command is read where that
 command starts, so it is first \emph{rebased} to the entry (below).
@@ -1049,7 +1159,9 @@ provisional: an example may call for a weaker side condition.
 Let $\Psi$ be an effect read at an intermediate heap and $\Psi'$ an
 effect read at the entry heap. $\Psi\rightsquigarrow_{\mathit{ev}}\Psi'$
 holds when every location of the entry heap that $\Psi$ covers at a
-change $\delta$ is covered by $\Psi'$ at $\delta$ or at a wider change.
+change $\delta$ is covered by $\Psi'$ at $\delta$ or at a wider change,
+or is covered at $\any$ by the effect of the command that ran before:
+that command may already have changed it arbitrarily.
 The evidence $\mathit{ev}$ records, for each value that $\Psi$ names,
 the entry path it was read from, and that this path reads the same in
 both heaps.
@@ -1106,18 +1218,59 @@ The steps that change a length have exact postconditions. With $N=2^{32}-1$ the
 maximal array length and $i$ an integer:
 \[
 \begin{array}{ll}
-\textsc{Write-In} & \hoare{0\le i<\len x}{\code{x[i] = v}}{\len x=\old(\len x)}\\[3pt]
+\textsc{Write-In} & \hoare{0\le i<\len x}{\code{x[i] = v}}{\len\pi=\old(\len\pi)}\qquad\text{for every path }\pi\\[3pt]
 \textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1}\\[3pt]
-\textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1}
+\textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1\wedge x[\old(\len x)]\doteq v\wedge Q_{<}}
 \end{array}
 \]
+where $Q_{<}$ says that the elements below the old length read what
+they read before:
+$\forall j<\old(\len x).\ \forall u.\ \old(x[j]\doteq u)\Rightarrow x[j]\doteq u$.
+\textsc{Write-In} keeps the length of every array, not of $x$ alone: a
+write at a present index changes one element cell and no store, so the
+bound $n\le\len y$ and the equality $\len y=n$ both survive it, whether
+or not $y$ is $x$.
 For example, a loop that fills \code{widths[at] = w} with \code{at} the
 current length keeps $\mathit{at}=\len{\mathit{widths}}$ by
 \textsc{Write-End} and the increment of \code{at}
 \textsc{Write-In} holds also where the write fills a hole. At the
 maximal length \code{push} throws, so its premise is not needed for a
 postcondition on normal return
-\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth is the assumed contract \lean{ReceiverAppends}}.
+\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth, the appended element and the kept prefix are the assumed contract \lean{ReceiverAppends} with \lean{ReceiverGrows}}.
+
+\paragraph{Writes that keep or extend a fact.} \textsc{Frame} keeps a
+fact across a write that cannot reach what the fact reads. Three rules
+keep or extend a fact across a write that can reach it, because of the
+value written. Let $y$ and $x$ be variables, $V$ a set of values, and
+$\varphi(v)$ a body over the one element term and terms the step keeps:
+\[
+\begin{array}{ll}
+\textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
+\textsc{Push-Every} & \hoare{\every(x,n,\varphi)\wedge n=\len x\wedge\varphi(v)}{\code{x.push(v)}}{\every(x,n+1,\varphi)}\\[3pt]
+\textsc{View-Every} & \{\every(b,n,\varphi)\wedge 0\le k<\kw{view}(b)\wedge\varphi(\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
+ & \qquad\{\every(b,n,\varphi)\wedge(k=n\Rightarrow\every(b,n+1,\varphi))\}
+\end{array}
+\]
+In \textsc{Write-Kept} the written field may be the field $y.f$ itself:
+then it holds $v$, which is in $V$; otherwise $y.f$ holds what it held.
+Example: after \code{if (a.v === null) return 0;} the write
+\code{b.v = 3} keeps $a.v\notin\{\code{null}\}$, whether or not \code{b}
+is \code{a}. \textsc{Push-Every} extends a fact over the whole array by
+the appended element, using the postcondition of \textsc{Push}.
+\textsc{View-Every} uses the postcondition of \textsc{View-Write}: every
+other index of $b$ reads what it read, and the index $k$ reads the
+stored value. With $k=n$ it extends the prefix, as in
+\code{while (n < b.length) \{ b[n] = n; n = n + 1; \}} with the fact
+$\every(b,n,0\le v)$. The three rules are instances of one principle: a
+fact that holds of each of a family of locations holds after a write
+when it holds of the written value at each location of the family the
+write can reach
+\status{Lean: \lean{keptCells\_holds}; \lean{every\_appended} with \lean{appendKept\_holds}, for an appended safe integer; \lean{every\_written}, \lean{every\_written\_prefix} with \lean{writeKept\_holds}, for an integer the format stores unchanged. The principle has no theorem of its own}.
+
+A quantified fact over an array needs no rule of this kind for a growth
+of the array's store or for a write of a field: by
+Theorem~\ref{thm:frame} it is kept, since a store that grows lists the
+cells it listed, and a field location is no element cell.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
 operands and the empty effect. Let $x,x'$ be safe integers and $c$ a
@@ -1152,6 +1305,33 @@ and an integer $i$:
 The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
 normal return
 \status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
+
+\paragraph{Library functions.} A library function is not analysed. It
+has a \emph{contract}: a triple with its effects, assumed of the host,
+which \textsc{Call} instantiates like the specification of any function.
+A contract may give two triples for one function, a general one and one
+with a stronger precondition and postcondition; \textsc{Conj} combines
+them. For integers $i,a,b$ and strings $s,u$:
+\[
+\begin{array}{ll}
+\code{r = s.charCodeAt(i)} & \hoare{0\le i<\slen(s)}{\cdot}{0\le r\le 65535}\\[2pt]
+\code{r = s.codePointAt(i)} & \hoare{0\le i<\slen(s)}{\cdot}{0\le r\le\code{0x10FFFF}}\\[2pt]
+ & \hoare{0\le i<\slen(s)}{\cdot}{r>\code{0xFFFF}\Rightarrow i+2\le\slen(s)}\\[2pt]
+\code{r = s.indexOf(u)},\ \code{s.lastIndexOf(u)} & \hoare{\kw{true}}{\cdot}{-1\le r\le\slen(s)}\\[2pt]
+ & \hoare{1\le\slen(u)}{\cdot}{r<\slen(s)}\\[2pt]
+\code{r = s.slice(a, b)} & \hoare{0\le a\le b\le\slen(s)}{\cdot}{\slen(r)=b-a}\\[2pt]
+\code{r = xs.indexOf(v)} & \hoare{\kw{true}}{\cdot}{-1\le r<\len{\mathit{xs}}}\\[2pt]
+\code{r = new C(n)},\ C\text{ a typed array} & \hoare{0\le n}{\cdot}{\kw{view}(r)=n}
+\end{array}
+\]
+Each of these has the effect $\emptyset$ on its normal exit; the
+construction also allocates. Without the stated precondition the call
+is still safe: \code{charCodeAt} gives a number with no fact, and
+\code{codePointAt} a number or \code{undefined}. Example:
+\code{const j = text.indexOf("x"); if (j >= 0) return text.charCodeAt(j);}
+verifies: $1\le\slen(\code{"x"})$ gives $j<\slen(\mathit{text})$, and
+the test gives $0\le j$
+\status{assumed, as contracts of the host. Lean: \lean{unit\_bound}, \lean{code\_unit\_safe}, \lean{slice\_length}, \lean{search\_bounds} prove these bounds of the model of UTF-16 strings}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
