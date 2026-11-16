@@ -259,8 +259,15 @@ valid roots, `RootsOk`: `knowledgeQuery_sound`; the acceptance path reaches
 every use with both, the expression checkers' soundness, `Checker.sound`,
 and a node's, `ExpressionOk`, carrying the environment's `RootsOk`):
 
-- **by class**: the locations of a region in the class region of one
-  selector and the class region of a disjoint selector;
+- **by bounds** (`boundQuery`): the bounds of the two regions hold no role
+  class in common. A region's bound (`Region.bound`) is a set of the role
+  classes field, cell, element cell, array spine, view spine and identity
+  holding the role of each of its allocated locations at a heap meeting
+  its world with valid roots (proved: `Region.bound_sound`,
+  `Region.apart_of_bound`). It answers each pair of a region's part in one
+  class and a class region of a disjoint selector
+  (`boundQuery_inCls_cls`), and a field or cell against a spine or an
+  element cell;
 - **by a spine separation**: each region lies in the spine of the value a
   path reads, $`x.\pi`$ and $`y.\pi'`$ (`spineSite`), and an unconditional
   fact of $`\Sigma`$ states two paths' values' spines different, each path

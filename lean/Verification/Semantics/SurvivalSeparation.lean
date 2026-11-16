@@ -1,10 +1,12 @@
 import Verification.Semantics.Survival
 import Verification.Semantics.HeapKnowledge
+import Verification.Semantics.RegionBounds
 
 /-! # Separation queries from knowledge
 
 The separation query a state's knowledge answers (FOOTPRINTS.md, "Separation
-queries"): two regions are disjoint by class, or each selects the spine of
+queries"): two regions are disjoint by their bounds (`boundQuery`: no role
+class of a location in both, `Semantics/RegionBounds.lean`), or each selects the spine of
 the value a path reads, and an unconditional fact of the knowledge states
 those two values' spines different. A path is read up to the knowledge's
 alias links and read links (`pathViews`): every view of it reads the same
@@ -12,32 +14,6 @@ value. The query is built from the prestate's knowledge and is sound where
 that knowledge holds (`knowledgeQuery_sound`). -/
 namespace Verification.Footprints
 open HeapKnowledge
-
-/-! ## Disjointness by class -/
-
-/-- Locations of a region whose contents are of one class, against the
-locations of another class. -/
-def classQuery : SepQuery := ⟨fun r s => match r, s with
-  | .inCls _ c, .cls c' => c.disjoint c'
-  | .cls c', .inCls _ c => c.disjoint c'
-  | _, _ => false⟩
-
-private theorem cls_disjoint {c c' : Selector} (hd : c.disjoint c' = true) {v : Val}
-    (h₁ : c.selects v = true) (h₂ : c'.selects v = true) : False := by
-  rw [Selector.selects_disjoint hd h₁] at h₂; cases h₂
-
-theorem classQuery_sound (ρ : Env) (h : Heap) : classQuery.Sound ρ h := by
-  intro r s l _ hd hr hs
-  have key : ∀ {r c c'}, c.disjoint c' = true → (Region.inCls r c).mem ρ h l = true →
-      (Region.cls c').mem ρ h l = true → False := by
-    intro r c c' hne hr hs
-    simp only [Region.mem, Bool.and_eq_true] at hr hs
-    obtain ⟨-, hr⟩ := hr
-    split at hr
-    · rename_i v hv; rw [hv] at hs; exact cls_disjoint hne hr hs
-    · cases hr
-  cases r <;> cases s <;> simp only [classQuery, Bool.false_eq_true] at hd
-  all_goals first | exact key hd hr hs | exact key hd hs hr
 
 /-! ## Views of a path -/
 
@@ -232,19 +208,20 @@ def sitesApart (ls : HeapLinks.Links) (seps : List SpineSep) (x y : Nat × List 
     (sameSite ls X (pathViews ls e.a.1 e.a.2) && sameSite ls Y (pathViews ls e.b.1 e.b.2)) ||
     (sameSite ls X (pathViews ls e.b.1 e.b.2) && sameSite ls Y (pathViews ls e.a.1 e.a.2))
 
-/-- **The query a state's knowledge answers**: by class, or by a spine
-separation between the two regions' spine sites. -/
+/-- **The query a state's knowledge answers**: by the regions' bounds, or
+by a spine separation between the two regions' spine sites. -/
 def knowledgeQuery (k : Knowledge) : SepQuery :=
   let seps := knowledgeSeps k
-  classQuery.or ⟨fun r s => match spineSite r, spineSite s with
+  boundQuery.or ⟨fun r s => match spineSite r, spineSite s with
     | some x, some y => sitesApart k.links seps x y
     | _, _ => false⟩
 
-/-- **The knowledge's query is sound** wherever the knowledge holds. -/
+/-- **The knowledge's query is sound** wherever the knowledge holds, at a
+heap meeting its world with valid roots. -/
 theorem knowledgeQuery_sound {k : Knowledge} {ρ : Env} {h : Heap} {n : Nat} {W : WorldT n}
-    (hk : HeapKnowledge.Holds k ε ρ h) (_hok : HeapOk n W h) (_hρ : RootsOk W ρ) :
+    (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ) :
     (knowledgeQuery k).Sound ρ h := by
-  refine SepQuery.or_sound (classQuery_sound ρ h) ?_
+  refine SepQuery.or_sound (boundQuery_sound hok hρ) ?_
   intro r s l _ hd hr hs
   simp only at hd
   split at hd

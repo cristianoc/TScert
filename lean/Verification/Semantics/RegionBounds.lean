@@ -1,4 +1,5 @@
 import Verification.Semantics.FootprintRebase
+import Verification.Semantics.Support
 
 /-! # Regions bounded by role classes
 
@@ -9,7 +10,7 @@ satisfying its world (`HeapOk`) and an environment whose roots are valid
 (`RootsOk`), `Region.bound_sound`. Two regions whose bounds have no class in
 common share no allocated location (`Region.apart_of_bound`): the note
 *Tolerant frames*, §3, two regions are disjoint when no kind of location
-belongs to both.
+belongs to both. The query `boundQuery` answers by bounds.
 
 The bound is read from the region's form alone:
 
@@ -273,5 +274,58 @@ theorem Region.apart_of_bound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
   rw [hrole] at hrole'; cases hrole'
   rw [RoleSet.inter_isEmpty hd hb] at hb'
   cases hb'
+
+/-! ## Class regions -/
+
+/-- **Two selectors' role classes are apart exactly when the selectors
+are**: no category in both. -/
+theorem Selector.roles_inter_isEmpty (a b : Selector) : (a.roles.inter b.roles).isEmpty = a.disjoint b := by
+  rcases a with ⟨a1, a2, a3⟩
+  rcases b with ⟨b1, b2, b3⟩
+  cases a1 <;> cases a2 <;> cases a3 <;> cases b1 <;> cases b2 <;> cases b3 <;> rfl
+
+/-- **Class regions whose bounds hold no class in common share no
+location**, in a heap meeting its world: a class region's bound needs no
+valuation. -/
+theorem Region.cls_apart_of_bound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} (hok : HeapOk n W h)
+    {c c' : Selector} (hd : ((Region.cls c).bound.inter (Region.cls c').bound).isEmpty = true) {l : Nat}
+    (hc : (Region.cls c).mem ρ h l = true) (hc' : (Region.cls c').mem ρ h l = true) : False := by
+  simp only [Region.mem] at hc hc'
+  simp only [Region.bound] at hd
+  split at hc
+  · rename_i v hv
+    rw [hv] at hc'
+    obtain ⟨role, hrole, hb⟩ := selects_bound hok hv hc
+    obtain ⟨role', hrole', hb'⟩ := selects_bound hok hv hc'
+    rw [hrole] at hrole'; cases hrole'
+    rw [RoleSet.inter_isEmpty hd hb] at hb'
+    cases hb'
+  · cases hc
+
+/-! ## The query by bounds -/
+
+/-- **Disjointness by bounds** (the note, §3: no kind of location belongs
+to both): two regions whose bounds hold no role class in common. -/
+def boundQuery : SepQuery := ⟨fun r s => (r.bound.inter s.bound).isEmpty⟩
+
+/-- **The query by bounds is sound** at a heap meeting its world with
+valid roots (`Region.apart_of_bound`). -/
+theorem boundQuery_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} (hok : HeapOk n W h)
+    (hρ : RootsOk W ρ) : boundQuery.Sound ρ h :=
+  fun _ _ _ hl hd hr hs => Region.apart_of_bound hok hρ hd hl hr hs
+
+/-- **The query by bounds separates every pair of a class region and a
+region's part in a disjoint class**, the part `inCls r c` against
+`cls c'` either way round. -/
+theorem boundQuery_inCls_cls (r : Region) {c c' : Selector} (hd : c.disjoint c' = true) :
+    boundQuery.disjoint (.inCls r c) (.cls c') = true ∧ boundQuery.disjoint (.cls c') (.inCls r c) = true := by
+  have h0 : ∀ cl, (c.roles.contains cl && c'.roles.contains cl) = false := by
+    intro cl
+    have := RoleSet.isEmpty_iff.mp ((Selector.roles_inter_isEmpty c c').trans hd) cl
+    simpa using this
+  simp only [boundQuery, Region.bound]
+  constructor <;> refine RoleSet.isEmpty_iff.mpr fun cl => ?_ <;> have := h0 cl <;>
+    simp only [RoleSet.contains_inter] <;> revert this <;>
+    cases r.bound.contains cl <;> cases c.roles.contains cl <;> cases c'.roles.contains cl <;> simp
 
 end Verification.Footprints

@@ -1,5 +1,6 @@
 import Verification.Semantics.ParityAssertions
 import Verification.Semantics.Survival
+import Verification.Semantics.RegionBounds
 
 /-! # Parity evidence: substitution, marks and support contexts
 
@@ -630,8 +631,9 @@ theorem RigidityEvidence.sound {arena : AssertionArena} (hv : arena.Valid) {D : 
 def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : Prop :=
   ∀ η m s, Sat arena η m s K → ∀ l, l < s.h.length → r.mem η s.h l = true → r'.mem η s.h l = false
 
-/-- Finite evidence of disjointness under `K`: regions of disjoint classes
-(`Selector.disjoint`, `class_disjoint_sound`), each class by a witness; the
+/-- Finite evidence of disjointness under `K`: regions in class regions
+whose bounds hold no role class in common (`Region.bound`,
+`Region.cls_apart_of_bound`), each class by a witness; the
 spines of two paths a conjunct separates (`π # π'` or `apart`); the cells of
 two paths a conjunct states apart; and either of these in the other order. -/
 inductive DisjointEvidence where
@@ -648,7 +650,7 @@ def separatedPaths : Option AssertionNode → Option (Path × Path)
 
 def DisjointEvidence.check (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : DisjointEvidence → Bool
   | .classes a b => match a.selector arena K r, b.selector arena K r' with
-    | some x, some y => x.disjoint y
+    | some x, some y => ((Region.cls x).bound.inter (Region.cls y).bound).isEmpty
     | _, _ => false
   | .spines c => (conjuncts arena.nodes K.index).contains c.index && match separatedPaths arena.nodes[c.index]? with
     | some (q, q') => r == .spine q.root q.fields && r' == .spine q'.root q'.fields
@@ -667,9 +669,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
       intro η m s hK l hlt hl
       cases hm : r'.mem η s.h l
       · rfl
-      · have h1 := a.sound hx η m s hK l hl
-        have h2 := b.sound hy η m s hK l hm
-        rw [class_disjoint_sound h h1] at h2; cases h2
+      · exact (Region.cls_apart_of_bound s.ok h (a.sound hx η m s hK l hl) (b.sound hy η m s hK l hm)).elim
     · cases h
   | r, r', .spines c, h => by
     simp only [DisjointEvidence.check, Bool.and_eq_true] at h
