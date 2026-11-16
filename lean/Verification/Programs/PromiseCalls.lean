@@ -2037,7 +2037,7 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
 region facts answered for a growth: a field of a slot apart from every own
 location of the receiver (`HeapSeparation.apartAll`), or from its spine
 field in either orientation (`HeapSeparation.apart`), and a slot's spine
-whose array a region fact keeps apart from the receiver's
+whose array the check keeps apart from the receiver's
 (`IndexWrites.apartFrom`). -/
 
 theorem growFirst_apartAll {k : HeapKnowledge.Knowledge} {f : Tm} {i : Nat} {args : List Tm} {s : Nat} {g : String}
@@ -2091,28 +2091,10 @@ theorem growFirst_apart {k : HeapKnowledge.Knowledge} {f : Tm} {i : Nat} {args :
 theorem growFirst_apartFrom {k : HeapKnowledge.Knowledge} {f : Tm} {i : Nat} {args : List Tm} {s : Nat}
     (ha : IndexWrites.apartFrom k i s = true) :
     growFirst k (.invoke f (.var i) args) s "[]" = true := by
-  obtain ⟨atom, hat, hm⟩ := List.any_eq_true.mp ha
-  simp only [Bool.and_eq_true] at hm
-  obtain ⟨hn, hm⟩ := hm
-  split at hm
-  · rename_i x y hfa
-    simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hm
-    have hsep : Footprints.SepFact.arrays (x, []) (y, []) ∈ Footprints.knowledgeSeps k := by
-      simp only [Footprints.knowledgeSeps, List.mem_flatMap]
-      exact ⟨atom, hat, by simp [hn, hfa, Footprints.factSeps]⟩
-    have hin : Footprints.SepFact.arrays (x, []) (y, []) ∈ (Footprints.knowledgeEvidence k).facts := by
-      simp [Footprints.knowledgeEvidence, hsep]
-    have hself : ∀ z, z ∈ HeapLinks.aliases k.links z := fun z => by simp [HeapLinks.aliases]
-    simp only [growFirst, receiverSlot, Footprints.knowledgeQuery]
-    rcases hm with ⟨hx, rfl⟩ | ⟨hy, rfl⟩
-    · rw [Footprints.SepEvidence.query_symm]
-      exact Footprints.SepEvidence.query_fact _ hin (by
-        simp [Footprints.SepEvidence.byFact, Footprints.arraySite, Footprints.sameSite, Footprints.pathViews,
-          Footprints.knowledgeEvidence, hx, hself, arraySpineKey])
-    · exact Footprints.SepEvidence.query_fact _ hin (by
-        simp [Footprints.SepEvidence.byFact, Footprints.arraySite, Footprints.sameSite, Footprints.pathViews,
-          Footprints.knowledgeEvidence, hy, hself, arraySpineKey])
-  · cases hm
+  simp only [IndexWrites.apartFrom, Bool.and_eq_true] at ha
+  simp only [growFirst, receiverSlot, Footprints.knowledgeQuery] at ha ⊢
+  rw [Footprints.SepEvidence.query_symm]
+  exact ha.1.1.1
 
 /-! ### A call's frame at the caller's slots -/
 

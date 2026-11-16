@@ -4,6 +4,7 @@ import Verification.Programs.HeapExpressionRules
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
 import Verification.Semantics.StepRelations
+import Verification.Semantics.SurvivalSeparation
 
 /-! # Writes at a checked index
 
@@ -2262,33 +2263,98 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     · exact none_holds
   · exact none_holds
 
-/-- Whether an unconditional region fact keeps slot `e`'s region apart from
-that of `a`'s alias class. -/
+/-- **Whether slot `e`'s array is apart from `a`'s** by the one disjointness
+check of the knowledge's evidence (`Footprints.knowledgeQuery`): the spine
+location and the element cells of either against the spine location and the
+element cells of the other. It states the separation alone; that both slots
+hold arrays is the premise of its use (`apartFrom_sound`). -/
 def apartFrom (k : Knowledge) (a e : Nat) : Bool :=
-  k.indices.any fun atom => atom.cond.isNone && match atom.fact with
-    | .apart x y => ((HeapLinks.aliases k.links a).contains x && y == e) ||
-        ((HeapLinks.aliases k.links a).contains y && x == e)
-    | _ => false
+  let q := (Footprints.knowledgeQuery k).disjoint
+  q (.field a arraySpineKey) (.field e arraySpineKey) && q (.field a arraySpineKey) (.cells e) &&
+    q (.cells a) (.field e arraySpineKey) && q (.cells a) (.cells e)
 
-theorem apartFrom_sound {k : Knowledge} {a e : Nat} {ρ h} (hc : apartFrom k a e = true) (hk : Holds k ε ρ h) :
+/-- A spine's location is the spine field's location of the value holding it. -/
+private theorem spine_mem {ρ : Env} {h : Heap} {x st : Nat} (hs : Footprints.spineOf (ρ x) = some st) :
+    (Footprints.Region.field x arraySpineKey).mem ρ h st = true := by
+  simpa [Footprints.Region.mem, Footprints.spineOf] using hs
+
+/-- A cell a value's spine lists is in its cells region. -/
+private theorem cells_mem {ρ : Env} {h : Heap} {x st l : Nat} {ls : List (Option Nat)}
+    (hs : Footprints.spineOf (ρ x) = some st) (hls : h[st]? = some (.arr ls)) (hl : some l ∈ ls) :
+    (Footprints.Region.cells x).mem ρ h l = true := by
+  simp only [Footprints.Region.mem, Footprints.spineCells, List.contains_iff_mem, List.mem_append]
+  left
+  simpa [Footprints.entriesAt, Footprints.spineOf_lookup hs, hls, spineEntries] using hl
+
+/-- **Apart arrays from the evidence**: where both slots hold arrays, each
+spine at a location of the heap holding a spine, the separation the
+knowledge's query states of their spines and cells is `RegionsApart`. -/
+theorem apartFrom_sound {k : Knowledge} {a e : Nat} {ρ h} {n : Nat} {W : WorldT n} {sa st : Nat}
+    {xs ys : List (Option Nat)} (hc : apartFrom k a e = true) (hk : Holds k ε ρ h) (hok : HeapOk n W h)
+    (hρ : RootsOk W ρ) (hu : RegionOf h (ρ a) (some sa) xs) (hse : Footprints.spineOf (ρ e) = some st)
+    (hys : h[st]? = some (.arr ys)) :
     RegionsApart h (ρ a) (ρ e) := by
-  obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
-  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-  obtain ⟨hnone, hf⟩ := hm
-  have hat := hk.2.2.2.2.2 atom ha fun b hb => by rw [hnone] at hb; cases hb
-  cases hfact : atom.fact
-  case apart x y =>
-    rw [hfact] at hf hat
-    simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hf
-    rcases hf with ⟨hx, rfl⟩ | ⟨hy, rfl⟩
-    · rw [← HeapLinks.aliases_eq hk.2.2.1 hx]; exact hat
-    · rw [← HeapLinks.aliases_eq hk.2.2.1 hy]; exact regionsApart_symm hat
-  all_goals (rw [hfact] at hf; cases hf)
+  have hq := Footprints.knowledgeQuery_sound hk hok hρ
+  simp only [apartFrom, Bool.and_eq_true] at hc
+  obtain ⟨⟨⟨hss, hsc⟩, hcs⟩, hcc⟩ := hc
+  obtain ⟨sa', hsa, hsa', hxs⟩ : ∃ s', some sa = some s' ∧ Footprints.spineOf (ρ a) = some s' ∧
+      h[s']? = some (.arr xs) := by
+    rcases hu with ⟨h1, -⟩ | h2
+    · cases h1
+    · exact h2
+  cases hsa
+  have hxb : ∀ l, some l ∈ xs → l < h.length := fun _ hl => (hok.spine_cells hxs hl).2
+  have hyb : ∀ l, some l ∈ ys → l < h.length := fun _ hl => (hok.spine_cells hys hl).2
+  refine ⟨some sa, xs, some st, ys, hu, .inr ⟨st, rfl, hse, hys⟩, fun l hl m hm heq => ?_⟩
+  subst heq
+  rcases hl with hl | hl <;> rcases hm with hm | hm
+  · cases hl; cases hm
+    exact hq _ _ _ (List.getElem?_eq_some_iff.mp hys).1 hss (spine_mem hsa') (spine_mem hse)
+  · cases hl
+    exact hq _ _ _ (hyb _ hm) hsc (spine_mem hsa') (cells_mem hse hys hm)
+  · cases hm
+    exact hq _ _ _ (hxb _ hl) hcs (cells_mem hsa' hxs hl) (spine_mem hse)
+  · exact hq _ _ _ (hxb _ hl) hcc (cells_mem hsa' hxs hl) (cells_mem hse hys hm)
+
+/-- **No pair is lost**: an unconditional region fact between an alias of `a`
+and `e` makes the query answer each pair `apartFrom` asks. -/
+theorem apartFrom_of_atom {k : Knowledge} {a e : Nat} {atom : IndexAtom} (hat : atom ∈ k.indices)
+    (hn : atom.cond.isNone = true)
+    (hf : (∃ x, atom.fact = .apart x e ∧ x ∈ HeapLinks.aliases k.links a) ∨
+      (∃ y, atom.fact = .apart e y ∧ y ∈ HeapLinks.aliases k.links a)) :
+    apartFrom k a e = true := by
+  have hself : ∀ z, z ∈ HeapLinks.aliases k.links z := fun z => by simp [HeapLinks.aliases]
+  have hin : ∀ x y, atom.fact = .apart x y →
+      Footprints.SepFact.arrays (x, []) (y, []) ∈ (Footprints.knowledgeEvidence k).facts := by
+    intro x y hxy
+    have hsep : Footprints.SepFact.arrays (x, []) (y, []) ∈ Footprints.knowledgeSeps k := by
+      simp only [Footprints.knowledgeSeps, List.mem_flatMap]
+      exact ⟨atom, hat, by simp [hn, hxy, Footprints.factSeps]⟩
+    simp [Footprints.knowledgeEvidence, hsep]
+  have hby : ∀ (r s : Footprints.Region) x y p q, atom.fact = .apart x y →
+      Footprints.arraySite r = some (p, []) → Footprints.arraySite s = some (q, []) →
+      x ∈ HeapLinks.aliases k.links p → y ∈ HeapLinks.aliases k.links q →
+      (Footprints.knowledgeQuery k).disjoint r s = true := by
+    intro r s x y p q hxy hr hs hx hy
+    exact Footprints.SepEvidence.query_fact _ (hin x y hxy) (by
+      simp [Footprints.SepEvidence.byFact, hr, hs, Footprints.sameSite, Footprints.pathViews,
+        Footprints.knowledgeEvidence, hx, hy])
+  have hsa : Footprints.arraySite (.field a arraySpineKey) = some (a, []) := by simp [Footprints.arraySite]
+  have hse : Footprints.arraySite (.field e arraySpineKey) = some (e, []) := by simp [Footprints.arraySite]
+  have hca : Footprints.arraySite (.cells a) = some (a, []) := rfl
+  have hce : Footprints.arraySite (.cells e) = some (e, []) := rfl
+  simp only [apartFrom, Bool.and_eq_true]
+  rcases hf with ⟨x, hxy, hx⟩ | ⟨y, hxy, hy⟩
+  · exact ⟨⟨⟨hby _ _ _ _ _ _ hxy hsa hse hx (hself e), hby _ _ _ _ _ _ hxy hsa hce hx (hself e)⟩,
+      hby _ _ _ _ _ _ hxy hca hse hx (hself e)⟩, hby _ _ _ _ _ _ hxy hca hce hx (hself e)⟩
+  · simp only [Footprints.knowledgeQuery] at hby ⊢
+    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩ <;> rw [Footprints.SepEvidence.query_symm] <;>
+      exact hby _ _ _ _ _ _ hxy (by assumption) (by assumption) (hself e) hy
 
 /-- Whether a term reads, through the heap, only locations apart from the
 region of `a`'s class: an entry term, which reads the entry state; a slot's
-value, a string's length, or the length of an array whose region a fact
-keeps apart. -/
+value, a string's length, or the length of an array whose region the one
+disjointness check keeps apart (`apartFrom`). -/
 def termApart (k : Knowledge) (a : Nat) (t : Term) : Bool :=
   t.atEntry || t.path.isEmpty && match t.kind with
     | .value | .strLength => true
@@ -2297,16 +2363,18 @@ def termApart (k : Knowledge) (a : Nat) (t : Term) : Bool :=
 
 /-- The facts a write at the spine of `a`'s array keeps (`region-write`,
 `every-apart-write`): a region fact one of whose sides is the written array and
-the other an array slot apart from it, or both of whose sides are apart from
-it; and a quantified fact over an array apart from it whose bound and free
-terms read nothing of its region. -/
+the other an array slot apart from it, or both of whose sides are array slots
+apart from it; and a quantified fact over an array slot apart from it whose
+bound and free terms read nothing of its region. Each separation is the one
+disjointness check's (`apartFrom`); that a side is an array is its slot's
+type (`arraySlot`). -/
 def writeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (a : Nat) : List IndexAtom :=
   k.indices.filter fun atom => atom.cond.isNone && match atom.fact with
     | .apart x y =>
       ((HeapLinks.aliases k.links a).contains x && apartFrom k a y && arraySlot G Γ y) ||
       ((HeapLinks.aliases k.links a).contains y && apartFrom k a x && arraySlot G Γ x) ||
-      (apartFrom k a x && apartFrom k a y)
-    | .every s [] stop body => apartFrom k a s && termApart k a stop &&
+      (apartFrom k a x && apartFrom k a y && arraySlot G Γ x && arraySlot G Γ y)
+    | .every s [] stop body => apartFrom k a s && arraySlot G Γ s && termApart k a stop &&
         body.all fun F => F.vars.all fun b => match b with
           | .free t => termApart k a t
           | .project _ _ => false
@@ -2343,7 +2411,8 @@ theorem untouched {h h' : Heap} {target : Nat} {xs : List (Option Nat)} {written
 /-- A term `termApart` admits denotes after the write what it denoted. -/
 theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : Heap} {target : Nat}
     {xs : List (Option Nat)} {written : Option Nat} {z : Int}
-    (hw : WriteHeap h h' target xs written) (hk : Holds k ε ρ h)
+    {nw : Nat} {W : WorldT nw} (hw : WriteHeap h h' target xs written) (hk : Holds k ε ρ h)
+    (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
     (hu : RegionOf h (ρ a) (some target) xs) (hc : termApart k a t = true)
     (ht : termValue ε ρ h t = some z) : termValue ε ρ h' t = some z := by
   obtain ⟨kind, x, p, e⟩ := t
@@ -2359,7 +2428,7 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
   | length =>
     simp only at hc
     obtain ⟨st, ls, hst, hls, rfl, hmax⟩ := lengthOf_spine ht
-    obtain ⟨se, ys, hre, hre', -⟩ := untouched hw hu (apartFrom_sound hc hk)
+    obtain ⟨se, ys, hre, hre', -⟩ := untouched hw hu (apartFrom_sound hc hk hok hρ hu hst hls)
     obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst, hls⟩)
     rw [e1, e2] at hre'
     rcases hre' with ⟨he, -⟩ | ⟨st', he, hst', hls'⟩
@@ -2369,7 +2438,7 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
 
 theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {a : Nat}
     {ρ n W h h'} {target : Nat} {xs : List (Option Nat)} {written : Option Nat}
-    (he : EnvOk G Γ ρ (n + 1) W) (hk : Holds k ε ρ h) (hh : HeapOk (n + 1) W h)
+    (he : EnvOk G Γ ρ (n + 1) W) (hk : Holds k ε ρ h) (hh : HeapOk (n + 1) W h) (hρ : RootsOk W ρ)
     (hu : RegionOf h (ρ a) (some target) xs) (hw : WriteHeap h h' target xs written) :
     IndexHolds ε (writeAtoms G Γ k a) ρ h' := by
   intro atom hm hcond
@@ -2387,8 +2456,8 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       RegionsApart h' (ρ x) (ρ y) := by
     intro x y hx hy hs
     rw [HeapLinks.aliases_eq hk.2.2.1 hx]
-    obtain ⟨se, ys, hre, hre', hsep⟩ := untouched hw hu (apartFrom_sound hy hk)
     obtain ⟨st, ls, hst, hls, hlt, hbelow⟩ := arraySlot_region hs he hh
+    obtain ⟨se, ys, hre, hre', hsep⟩ := untouched hw hu (apartFrom_sound hy hk hh hρ hu hst hls)
     obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst, hls⟩)
     rw [e1, e2] at hre' hsep
     refine ⟨some target, xs', some st, ls, hwritten, hre', fun l hl m hm => ?_⟩
@@ -2404,11 +2473,13 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     rw [hfact] at hsel hat
     show RegionsApart h' (ρ x) (ρ y)
     simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem] at hsel
-    rcases hsel with (⟨⟨hx, hy⟩, hs⟩ | ⟨⟨hy, hx⟩, hs⟩) | ⟨hx, hy⟩
+    rcases hsel with (⟨⟨hx, hy⟩, hs⟩ | ⟨⟨hy, hx⟩, hs⟩) | ⟨⟨⟨hx, hy⟩, hsx⟩, hsy⟩
     · exact side x y hx hy hs
     · exact regionsApart_symm (side y x hy hx hs)
-    · obtain ⟨sx, xs1, hrx, hrx', -⟩ := untouched hw hu (apartFrom_sound hx hk)
-      obtain ⟨sy, ys1, hry, hry', -⟩ := untouched hw hu (apartFrom_sound hy hk)
+    · obtain ⟨stx, lsx, hstx, hlsx, -, -⟩ := arraySlot_region hsx he hh
+      obtain ⟨sty, lsy, hsty, hlsy, -, -⟩ := arraySlot_region hsy he hh
+      obtain ⟨sx, xs1, hrx, hrx', -⟩ := untouched hw hu (apartFrom_sound hx hk hh hρ hu hstx hlsx)
+      obtain ⟨sy, ys1, hry, hry', -⟩ := untouched hw hu (apartFrom_sound hy hk hh hρ hu hsty hlsy)
       obtain ⟨sa, xs0, sb, ys0, hra, hrb, hsep⟩ := hat
       obtain ⟨e1, e2⟩ := regionOf_unique hra hrx
       obtain ⟨e3, e4⟩ := regionOf_unique hrb hry
@@ -2420,12 +2491,13 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     | cons _ _ => simp at hsel
     | nil =>
     simp only [Bool.and_eq_true, List.all_eq_true] at hsel
-    obtain ⟨⟨hs, hstop⟩, hbody⟩ := hsel
+    obtain ⟨⟨⟨hs, hsa⟩, hstop⟩, hbody⟩ := hsel
     show (IndexFact.every s [] stop body).HoldsAt ε ρ h'
     obtain ⟨w, st, ls, z, hwp, hst, hls, hz, hall⟩ := hat
     simp only [readPath, Option.some.injEq] at hwp
     subst hwp
-    obtain ⟨se, ys, hre, -, hsep⟩ := untouched hw hu (apartFrom_sound hs hk)
+    obtain ⟨sts, lss, hsts, hlss, -, -⟩ := arraySlot_region hsa he hh
+    obtain ⟨se, ys, hre, -, hsep⟩ := untouched hw hu (apartFrom_sound hs hk hh hρ hu hsts hlss)
     -- A region is an array's: its elements are its spine's.
     have hst0 : Footprints.spineOf (ρ s) = some st ∧ h[st]? = some (.arr ls) := by
       rcases hre with ⟨-, hv⟩ | ⟨st0, -, hs0, hys⟩
@@ -2450,7 +2522,7 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       rw [hst] at hst'; cases hst'
       obtain ⟨u, hu', hue⟩ := Option.bind_eq_some_iff.mp hls'
       rw [hkeep st (.inl rfl) _ hu']; exact hue
-    · intro z' hz'; exact termApart_kept hw hk hu hstop hz'
+    · intro z' hz'; exact termApart_kept hw hk hh hρ hu hstop hz'
     · intro w st' ls' hw' hst' hls' F hF i b hb z' hz'
       simp only [readPath, Option.some.injEq] at hw'
       subst hw'
@@ -2458,7 +2530,7 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       rw [hls] at hls'; cases hls'
       cases b with
       | index => exact hz'
-      | free t => exact termApart_kept hw hk hu (hbody F hF _ hb) hz'
+      | free t => exact termApart_kept hw hk hh hρ hu (hbody F hF _ hb) hz'
       | elem => exact elementInt_frame hz' fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
       | offset d => exact elementInt_frame hz' fun l v hl hv => hkeep l (.inr (List.mem_of_getElem? hl)) v hv
       | project k p => have := hbody F hF (.project k p) hb; contradiction
@@ -2469,7 +2541,7 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
 theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {k : Knowledge}
     {a : Nat} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
     {xs : List (Option Nat)} {b : UInt64} {value : Val}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h) (hρ : RootsOk W ρ)
     (hobj : ρ a = .objAt flds cd oid) (hfield : flds.lookup arraySpineKey = some target)
     (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
     (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
@@ -2497,13 +2569,13 @@ theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
           simp only [hl, Option.bind_some] at hc
           cases hc
           exact List.mem_of_getElem? hl
-    refine writeAtoms_after (written := some cell) he hk hh hu ⟨⟨xs, ?_, fun l hl => .inl hl⟩, fun l _ hl hc' => ?_, ?_⟩
+    refine writeAtoms_after (written := some cell) he hk hh hρ hu ⟨⟨xs, ?_, fun l hl => .inl hl⟩, fun l _ hl hc' => ?_, ?_⟩
     · rw [List.getElem?_set_self (by simpa using htl)]
     · have hne : cell ≠ l := fun he => hc' (by rw [he])
       rw [List.getElem?_set_ne (Ne.symm hl), List.getElem?_set_ne hne]
     · intro c hc'; cases hc'; exact hm
   · intro i _ _
-    refine writeAtoms_after (written := none) he hk hh hu
+    refine writeAtoms_after (written := none) he hk hh hρ hu
       ⟨⟨placeAt xs i h.length, ?_, fun l hl => ExpressionEffects.placeAt_mem hl⟩, fun l hlt hl _ => ?_, ?_⟩
     · rw [List.getElem?_set_self (by simp; omega)]
     · rw [List.getElem?_set_ne (Ne.symm hl), List.getElem?_append_left hlt]
@@ -3087,7 +3159,7 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (href : RefsOk W (instantiate 0 ρ j.term)) (hρ : RootsOk W ρ) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' _ => IndexHolds ε (writeAtoms G j.context k a) ρ h') n W h (instantiate 0 ρ j.term) := by
   have hs := boundedWrite_sound hc he hk hw hh href
@@ -3108,7 +3180,7 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   rw [boundedSlots_eq hslots] at hs ⊢
   have hsafe := HeapObservations.erase hs
   simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
-  exact writeAtoms_holds he hk hh hoi hfl hl hval hsafe
+  exact writeAtoms_holds he hk hh hρ hoi hfl hl hval hsafe
 
 /-- The region facts a call growing its receiver's spine keeps
 (`region-grow`): each between two array slots, whose regions lie in the old
@@ -3351,7 +3423,7 @@ every other step is `base`'s. -/
         cases hc
         apply IndexWrites.withCells_sound (IndexWrites.boundedCells_sound hck he hk hw hh href)
         apply IndexWrites.withWritten_sound (weaken (fun _ _ hq => indexHolds_append hq.1 hq.2)
-          (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh href)
+          (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh href hρ)
             (IndexWrites.atLengthAtoms_sound hck he hk hw hh href)))
         split
         · rename_i hkeep

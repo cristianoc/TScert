@@ -919,28 +919,36 @@ from (`region-alloc`, `regionAtoms`, proved). A fact is kept by a change
 keeping every spine ($`s=\mathsf{keep}`$), whose spine cells hold the same
 spines. A write at a checked index of $`a`$'s spine keeps a fact whose one
 side is $`a`$ and other an array slot apart from it, or both of whose sides
-are apart from it (`region-write`); a call growing its receiver's spine
+are array slots apart from it (`region-write`). That $`w`$ is apart from
+$`a`$, $`\mathrm{apart}_\Sigma(a,w)`$, is the one disjointness check of
+$`\Sigma`$ ([separation queries](#separation-queries), `knowledgeQuery`)
+separating each of $`a`$'s spine field and cells from each of $`w`$'s
+(`apartFrom`); with both slots arrays it gives the two regions apart
+(`apartFrom_sound`), and every region fact $`\mathrm{apart}(a',w)`$,
+$`a'`$ an alias of $`a`$, makes the check answer it (`apartFrom_of_atom`).
+A call growing its receiver's spine
 keeps a fact between two array slots (`region-grow`), each appended cell
 lying past the old heap ([native footprints](SOURCE-CONTRACTS.md#native-footprints),
 the append relation of `push`). Both proved (`writeAtoms_holds`,
 `grownRegions_holds`):
 
 ```math
-\frac{\mathrm{apart}(x,y)\in\Sigma\quad (x\in[a]\land \mathrm{apart}(a,y)\in\Sigma\land \mathrm{array}(y))\lor(\mathrm{apart}(a,x),\mathrm{apart}(a,y)\in\Sigma)}
+\frac{\mathrm{apart}(x,y)\in\Sigma\quad (x\in[a]\land \mathrm{apart}_\Sigma(a,y)\land \mathrm{array}(y))\lor(\mathrm{apart}_\Sigma(a,x)\land\mathrm{apart}_\Sigma(a,y)\land\mathrm{array}(x)\land\mathrm{array}(y))}
      {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{apart}(x,y)}\ \textsf{region-write}
 ```
 
 **Quantified facts across a write.** A write at a checked index of $`a`$'s
-spine keeps $`\mathrm{every}(z,t,\Phi)`$ where $`\mathrm{apart}(a,z)`$ and
-the bound and every free body term read nothing of $`a`$'s region: a slot's
-value, a string's length, or the length of a slot $`w`$ with
-$`\mathrm{apart}(a,w)`$ (`every-apart-write`, proved: `writeAtoms_holds`, through
+spine keeps $`\mathrm{every}(z,t,\Phi)`$ where $`z`$ is an array slot with
+$`\mathrm{apart}_\Sigma(a,z)`$ and the bound and every free body term read
+nothing of $`a`$'s region: a slot's value, a string's length, or the length
+of a slot $`w`$ with $`\mathrm{apart}_\Sigma(a,w)`$ (`every-apart-write`,
+proved: `writeAtoms_holds`, through
 `IndexFact.every_frame`). Across a growth of $`a`$'s spine, the length of a
 slot apart from $`a`$ is kept (`growFirst`), so `every-grow` keeps such a
 fact too.
 
 ```math
-\frac{\mathrm{every}(z,t,\Phi)\in\Sigma\quad \mathrm{apart}(a,z)\in\Sigma\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
+\frac{\mathrm{every}(z,t,\Phi)\in\Sigma\quad \mathrm{array}(z)\quad \mathrm{apart}_\Sigma(a,z)\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
      {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{every}(z,t,\Phi)}\ \textsf{every-apart-write}
 ```
 
