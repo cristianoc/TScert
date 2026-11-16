@@ -1814,13 +1814,28 @@ Every write the pass checks states its change so:
 - a call growing its receiver's spine (`ReceiverGrows`): $`L=\emptyset`$
   (its spine location alone changes, to a spine, `grows_into`).
 
-A step whose change bounds no contents (a call at a footprint, an
-`elementWrite` change) keeps the cell facts its own rule keeps.
+A call's frame $`\Phi`$ at the caller's slots
+([a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller))
+respects the support where each of its entries $`(r,\delta)`$ keeps its
+locations, or holds only spines and changes them otherwise than by
+$`\mathsf{any}`$, which leaves a spine a spine, every spine meeting $`V`$
+alike, or is separated from $`y.f`$ by $`\Sigma`$'s query:
+
+```math
+\frac{y.f\in V\in\Sigma\qquad t:\Phi\qquad
+      \forall (r,\delta)\in\Phi.\ \delta=\mathsf{keep}\ \lor\ (r\subseteq\mathsf{cls}\ \mathsf{spine}\land\delta\ne\mathsf{any})\ \lor\ y.f\mathrel{\#}r}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t\dashv\ldots,\ y.f\in V}\ \textsf{frame-cell}
+```
+
+An `elementWrite` change, which bounds no contents, keeps the cell facts its
+own rule keeps.
 
 Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
 (`writeOutput`), `IndexWrites.writtenCells_sound` (`boundedCells_sound`,
-`growOutput_sound`) and `PromiseCalls.withGrown_holds`.
-Cases: `bounded-write-keeps-cells`, `write-keeps-cells`.
+`growOutput_sound`) and `PromiseCalls.withGrown_holds`;
+`PromiseCalls.frameCells_holds` (`frame-cell`, `PromiseCalls.cellRespects`,
+added by `Checker.ensuringCalls` through `withEnsures`).
+Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
 
 **Typed-array lengths through every step.** A typed array's length is its
 descriptor's, part of the value. So every step preserves a linear fact whose

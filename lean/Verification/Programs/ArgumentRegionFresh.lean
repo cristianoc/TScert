@@ -58,30 +58,8 @@ structure FreshHold (F C : List Nat) (b : Nat) (ρ : Env) (h : Heap) : Prop wher
 
 /-! ## Keeping cells -/
 
-/-- A region every location of which holds a spine where it is read. -/
-def spineOnly : Region → Bool
-  | .cls c => !c.value
-  | .inCls _ c => !c.value
-  | _ => false
-
-/-- A selector naming no value category selects only spines. -/
-theorem Selector.selects_spine_only {c : Footprints.Selector} (hc : c.value = false) {v : Tm}
-    (hs : c.selects v = true) : isArr v = true :=
-  Footprints.Selector.selects_noValue hc hs
-
-theorem spineOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Tm} (hs : spineOnly r = true)
-    (hm : r.mem σ h l = true) (hv : h[l]? = some v) : isArr v = true := by
-  cases r <;> simp only [spineOnly, Bool.false_eq_true] at hs
-  case cls c =>
-    simp only [Bool.not_eq_true'] at hs
-    exact Selector.selects_spine_only hs (by simpa [Region.mem, hv] using hm)
-  case inCls r c =>
-    simp only [Bool.not_eq_true'] at hs
-    simp only [Region.mem, hv, Bool.and_eq_true] at hm
-    exact Selector.selects_spine_only hs hm.2
-
 /-- A frame changing no location of class value: every entry keeps its
-locations, or holds only spines. -/
+locations, or holds only spines (`Footprints.spineOnly`). -/
 def keepsValues (Ψ : Footprint) : Bool := Ψ.all fun e => e.2 == .keep || spineOnly e.1
 
 /-- **A frame keeping values keeps every fresh cell**: a cell's location

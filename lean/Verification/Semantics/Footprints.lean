@@ -696,6 +696,37 @@ theorem field_mem_fields {ρ h x k l} (hk : k ≠ arraySpineKey) (hm : (Region.f
   simp only [Region.mem, beq_iff_eq] at hm
   simpa [Region.mem] using lookup_mem_fieldLocs hm hk
 
+/-- A region every location of which holds a spine where it is read: a class
+region, or a region's part in one, of a selector naming no value
+category. -/
+def spineOnly : Region → Bool
+  | .cls c => !c.value
+  | .inCls _ c => !c.value
+  | _ => false
+
+theorem spineOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Val} (hs : spineOnly r = true)
+    (hm : r.mem σ h l = true) (hv : h[l]? = some v) : isArr v = true := by
+  cases r <;> simp only [spineOnly, Bool.false_eq_true] at hs
+  case cls c =>
+    simp only [Bool.not_eq_true'] at hs
+    exact Selector.selects_noValue hs (by simpa [Region.mem, hv] using hm)
+  case inCls r c =>
+    simp only [Bool.not_eq_true'] at hs
+    simp only [Region.mem, hv, Bool.and_eq_true] at hm
+    exact Selector.selects_noValue hs hm.2
+
+/-- A change other than `any` leaves a spine a spine, and contents that are
+no spine no spine. -/
+theorem Change.Holds.isArr_eq {δ : Change} {b v v'} (hδ : δ ≠ .any) (h : δ.Holds b v v') :
+    isArr v' = isArr v := by
+  have hc := h.same_category hδ
+  cases hv : isArr v
+  · exact (contentsCategory_value v').mp (hc.trans ((contentsCategory_value v).mpr hv))
+  · cases hv' : isArr v'
+    · have := (contentsCategory_value v).mp (hc.symm.trans ((contentsCategory_value v').mpr hv'))
+      rw [hv] at this; cases this
+    · rfl
+
 /-! ## Footprints and their meaning -/
 
 abbrev Footprint := List (Region × Change)
