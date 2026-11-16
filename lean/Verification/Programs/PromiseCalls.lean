@@ -2143,8 +2143,7 @@ theorem callerFrame_post {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
     Footprints.Post (callerFrame eff t) ρ h h' :=
   (Footprints.Post.renameM (fun _ _ hij => (actualSlot_sound hij ρ).symm) hw).byClass
 
-/-- **A call's fact kept by its frame** (the note's Frame, the tolerant
-route): the fact has a support that every entry of the call's frame at the
+/-- **A call's fact kept by its frame** (the note's Frame): the fact has a support that every entry of the call's frame at the
 caller's slots (`callerFrame`) respects under the query of the call's entry
 (`IndexFact.keeps`, FOOTPRINTS.md "Support and respect"); where a support or
 the evidence is missing the check fails. -/
@@ -2248,29 +2247,14 @@ theorem exactWriteOf_requires {eff : Effect} {k : CallEffects.ElementKind} (h : 
     · cases hk
   · cases hk
 
-/-- **A call's fact kept by its postcondition** (the note's Entry, from the
-old fact, the transition and the normal exit's exact postconditions,
-`callPosts`): where the normal exit states the receiver's spine extended
-(`statesExtension`), the change it allows (`growChanges`) keeps the fact,
-the fields apart from the receiver's own locations kept besides
-(`growFirst`); where it states the views' growth of an element write
-(`statesViewGrowth`), the write's change (`writeChanges`: every spine keeps
-its length) keeps it. -/
-def postKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge)
-    (a : HeapKnowledge.IndexAtom) : Bool :=
-  (statesExtension eff && (a.fact.keptBy growChanges (fun s g => growFirst k t s g || stable s g) ||
-    a.fact.everyKept growChanges (fun s g => growFirst k t s g || stable s g))) ||
-  (statesViewGrowth eff && (a.fact.keptWith writeChanges stable || a.fact.everyKept writeChanges stable))
-
 /-- The heap-reading atoms of a call's entry its normal exit keeps, renamed
 past the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): each
-atom its postcondition keeps (`postKeeps`, the note's Entry) or its frame
-keeps (`frameKeeps`, the note's Frame); none where its frame keeps the heap,
-whose output keeps every atom (`call-keep`). -/
+atom its frame keeps (`frameKeeps`, the note's Frame); none where its frame
+keeps the heap, whose output keeps every atom (`call-keep`). -/
 def effectKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   if keepsHeap eff then [] else
   HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-    !a.fact.envOnly && (postKeeps stable eff t k a || frameKeeps stable eff t k a))
+    !a.fact.envOnly && frameKeeps stable eff t k a)
 
 theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     {nw : Nat} {W : WorldT nw} (hk : HeapKnowledge.Holds k ε ρ h) (hok : HeapOk nw W h) (hρ : RootsOk W ρ)
@@ -2283,25 +2267,9 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
   · exact HeapKnowledge.indexHolds_nil _ _
   · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
     obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
-    simp only [Bool.and_eq_true, Bool.or_eq_true] at hkeep
+    simp only [Bool.and_eq_true] at hkeep
     have hF := hk.2.2.2.2.2 a ha hcd
-    rcases hkeep.2 with hpost | hframe
-    · unfold postKeeps at hpost
-      rcases Bool.or_eq_true_iff.mp hpost with hgk | hwk
-      · simp only [Bool.and_eq_true, Bool.or_eq_true] at hgk
-        obtain ⟨hgr, hkb⟩ := hgk
-        have hg := statesExtension_grows hgr hq
-        have hf := HeapKnowledge.firstKept_or (growFirst_kept hk hok hρ hg) hst
-        rcases hkb with hkb | hkb
-        · exact HeapKnowledge.IndexFact.holdsAt_kept (receiverGrows_changes hg) hf hkb hF
-        · exact HeapKnowledge.IndexFact.everyKept_sound (receiverGrows_changes hg) hf hkb hF
-      · simp only [Bool.and_eq_true] at hwk
-        obtain ⟨hvw, hwk⟩ := hwk
-        have hc : writeChanges.Holds h h' := statesViewGrowth_changes hvw hq
-        rcases Bool.or_eq_true_iff.mp hwk with hkb | hkb
-        · exact HeapKnowledge.IndexFact.holdsAt_keptWith hc hst hkb hF
-        · exact HeapKnowledge.IndexFact.everyKept_sound hc hst hkb hF
-    · exact Footprints.IndexFact.keeps_sound hframe (Footprints.knowledgeQuery_sound hk hok hρ)
+    exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk hok hρ)
         (callerFrame_post hw) hst hF
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/

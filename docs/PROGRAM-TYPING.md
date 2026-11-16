@@ -1871,14 +1871,14 @@ through `GraphCode.writeWithinAt`. The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
 `ExpressionEffects.elem_var_write_length`, `placeAt_length`), and at any
 index `IndexWrites.growOutput` in `Checker.boundedWrites` (proved:
-`ExpressionEffects.elemWriteStep_grow`, `growOutput_sound`). A call's facts across its normal exit are, fact by
-fact, those of either of the note's two routes (`PromiseCalls.effectKept`,
+`ExpressionEffects.elemWriteStep_grow`, `growOutput_sound`). A call's facts of its entry kept across its normal exit
+are those its frame keeps (the note's Frame, `PromiseCalls.effectKept`,
 added by `Checker.ensuringCalls`; proved: `effectKept_holds`): its frame
-respects a support of the fact (the note's Frame, `PromiseCalls.frameKeeps`:
+respects a support of the fact (`PromiseCalls.frameKeeps`:
 [support and respect](FOOTPRINTS.md#support-and-respect),
-[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)),
-or the change its exact postcondition states keeps it (the note's Entry,
-`PromiseCalls.postKeeps`), each rule triggered by the postconditions it
+[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)).
+The facts its exact postcondition establishes (the note's Entry) are
+derived by rules each triggered by the postconditions it
 reads among the normal exit's postconditions of the signature's schema,
 stated once for every arity (`PromiseCalls.callPosts`), and its contract
 derived from those formulas at the call (proved: `statesExtension_grows`
