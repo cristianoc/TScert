@@ -1084,6 +1084,18 @@ $\varphi$ is over the element $z[i]$ and terms that do not mention $i$,
 and $\mathrm{supp}(\varphi)$ is the support of those terms. A
 quantified fact whose body has another body term has no support by this
 definition.
+
+Besides $\mathrm{supp}(F)$, every assertion $F$ without a modality has
+the support $\mathrm{all}=\{\val:\keep,\ \st:\keep\}$, which keeps every
+location below $\len h$. Such an assertion reads $\rho$, the mark and
+the contents of locations its paths reach from $\rho$; by (W3) these are
+below $\len h$, and a location allocated later is reached by none of
+them. The empty effect respects $\mathrm{all}$, so a command whose
+effect is $\emptyset$ keeps every assertion without a modality, the ones
+the table gives no support among them, such as one with a term
+$z[t].\vec f$. The support $\mathrm{all}$ does not extend to $\bx{\Phi}F$:
+the states admissible from $h'$ depend on the world as well
+\status{Lean: \lean{HeapKnowledge.alloc\_frames}, \lean{atomHolds\_extend}, for the facts the Lean represents: they hold after any extension of the heap that keeps its old locations; conj. for the language}.
 \end{definition}
 \noindent
 Example: $\mathrm{supp}(c.\mathit{at}<\kw{view}(\mathit{flags}))$ is
@@ -1806,8 +1818,8 @@ $\pi\doteq v$ and $\pi\in V$ with $v\notin V$; or $z[i]\doteq v$ and
 $z[i]\doteq w$ with $v\ne w$.
 \item[The modality] The laws of Proposition~\ref{prop:laws};
 elimination across a change, $\old(\bx{\Phi}F)\wedge\kw{tr}_\Phi\vdash F$;
-Theorem~\ref{thm:frame}, with the support of Definition~\ref{def:supports}
-and respect by its sufficient condition; the axioms of Proposition~\ref{prop:axioms}; that
+Theorem~\ref{thm:frame}, with a support of Definition~\ref{def:supports},
+$\mathrm{supp}(F)$ or $\mathrm{all}$, and respect by its sufficient condition; the axioms of Proposition~\ref{prop:axioms}; that
 an assertion over variables alone, and $\pi\sep\pi'$ of two variables,
 are invariant; that a path that reads a value through fields whose
 contracts admit one value is rigid.
