@@ -20,7 +20,7 @@ export function measured(vs: string[], scope: Scope): number[] {
 export function stated(
   v: string,
   scope: Scope,
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   const measure = (s: string): number => {
     scope.depth.push(1);
     try {

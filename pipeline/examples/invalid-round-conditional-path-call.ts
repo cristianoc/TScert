@@ -4,7 +4,7 @@ type Expression =
   | { kind: "other" };
 export function wrong(
   node: { expression: Expression | undefined },
-  change: () => Modifies<{ values: "any"; stores: "grow" }, void>,
+  change: () => Modifies<{ values: "any"; spines: "grow" }, void>,
 ): Expression {
   if (!node.expression) return { kind: "other" };
   if (

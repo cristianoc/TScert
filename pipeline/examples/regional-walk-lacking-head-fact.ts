@@ -11,7 +11,7 @@ type Runs = { read: number; /** @stable */ readonly open: number[] };
 function step(
   runs: Runs,
   at: number,
-): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, boolean> {
+): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, boolean> {
   runs.open.pop();
   runs.read = at;
   return runs.open.length > 0;
@@ -19,7 +19,7 @@ function step(
 
 export function f(
   xs: number[],
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   const runs: Runs = { read: 0, open: [] };
   for (let i = 0; i < xs.length; i++) {
     xs[0] = i;

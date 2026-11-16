@@ -4,17 +4,17 @@
 // allocated, so the later region on it rebases to none.
 type Runs = { /** @stable */ readonly open: number[] };
 
-function keep(holder: Runs[], runs: Runs): Modifies<{ values: "any"; stores: "grow" }, void> {
+function keep(holder: Runs[], runs: Runs): Modifies<{ values: "any"; spines: "grow" }, void> {
   holder.push(runs);
 }
 
-function step(runs: Runs, out: number[]): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, number> {
+function step(runs: Runs, out: number[]): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, number> {
   runs.open.pop();
   out.push(1);
   return out.length;
 }
 
-export function f(holder: Runs[], xs: number[]): Modifies<{ values: "any"; stores: "grow" }, number> {
+export function f(holder: Runs[], xs: number[]): Modifies<{ values: "any"; spines: "grow" }, number> {
   const runs: Runs = { open: [] };
   keep(holder, runs);
   return step(runs, xs);

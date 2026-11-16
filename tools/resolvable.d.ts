@@ -14,7 +14,7 @@ type Awaitable = unknown;
 // previously allocated location keeps its contents but those `P` names,
 // each changed at most as `P` says: `values` the locations holding a value
 // (`init` only those holding `null` or `undefined`, `scalar` only those
-// holding neither an object nor a store), `stores` those holding an array
+// holding neither an object nor a store), `spines` those holding an array
 // store, and a quoted location key (`"x.f"`, `"x[*]"`, `"x.*"`, `"cell(b)"`)
 // the locations it names (SOURCE-ELABORATION.md, "Stated effects"). As a
 // type it is `T`; the verifier certifies the statement from the definition's
@@ -23,7 +23,7 @@ type Awaitable = unknown;
 type Modifies<
   P extends {
     values?: "keep" | "init" | "scalar" | "grow" | "any";
-    stores?: "keep" | "init" | "scalar" | "grow" | "any";
+    spines?: "keep" | "init" | "scalar" | "grow" | "any";
     onThrow?: true;
     [location: string]:
       | "keep"
@@ -33,7 +33,7 @@ type Modifies<
       | "any"
       | {
           values?: "keep" | "init" | "scalar" | "grow" | "any";
-          stores?: "keep" | "init" | "scalar" | "grow" | "any";
+          spines?: "keep" | "init" | "scalar" | "grow" | "any";
         }
       | true
       | undefined;

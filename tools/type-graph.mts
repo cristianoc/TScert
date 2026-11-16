@@ -394,7 +394,7 @@ function shapeError(shape: Shape, v: JsonRead, at: string, depth: number): Modif
 export const effectError = (v: JsonRead): Modifies<{}, string | null> => shapeError({ ref: "effect" }, v, "effect", nestingLimit);
 /** **The effect a value states**, or `undefined` where it is not exactly the
  * serialized effect (`effectError`). */
-export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, CallEffect | undefined> {
+export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; spines: "grow" }, CallEffect | undefined> {
   if (effectError(v) !== null) return undefined;
   return v as CallEffect; // asserted: effectError checked the value field by field against the effect's grammar
 }

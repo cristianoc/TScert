@@ -9,7 +9,7 @@ type Lists = { /** @stable */ readonly widths: number[] };
  * @requires 0 <= paragraph.widths.length && paragraph.widths.length <= 100000
  * @ensures paragraph.widths.length === old(paragraph.widths.length) + to - from
  */
-export function measure(from: number, to: number, paragraph: Lists): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function measure(from: number, to: number, paragraph: Lists): Modifies<{ values: "any"; spines: "grow" }, void> {
   let s = 0;
   /** @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && from <= mi && mi <= to && paragraph.widths.length === old(paragraph.widths.length) + mi - from */
   for (let mi = from; mi < to; mi++) {

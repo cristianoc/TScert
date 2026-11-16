@@ -6,7 +6,7 @@
 export function plainLabels(
   labels: readonly string[],
   known: ReadonlySet<string>,
-): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   const member = (u: string): boolean =>
     u.startsWith("E.") && labels.includes(u.slice(2));
   const plain = (u: string): boolean =>

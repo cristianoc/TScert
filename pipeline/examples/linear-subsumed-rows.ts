@@ -11,7 +11,7 @@ type Lists = {
  * @requires 0 <= paragraph.widths.length && paragraph.widths.length <= 100000 && paragraph.widths.length + to - from <= paragraph.segmentFlags.length
  * @ensures paragraph.widths.length === old(paragraph.widths.length) + to - from
  */
-export function measure(from: number, to: number, paragraph: Lists): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function measure(from: number, to: number, paragraph: Lists): Modifies<{ values: "any"; spines: "grow" }, void> {
   const sf = paragraph.segmentFlags;
   /** @invariant safeInteger(mi) && safeInteger(from) && safeInteger(to) && from <= mi && mi <= to && paragraph.widths.length === old(paragraph.widths.length) + mi - from && paragraph.widths.length + to - mi <= sf.length */
   for (let mi = from; mi < to; mi++) {

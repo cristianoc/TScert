@@ -130,7 +130,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never, record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
+    fail: (message: string) => never, record?: RecordHook, alias?: AliasHook): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   if (library.k === "stated") {
     if (args.length) return fail(`${library.identity.name} is read at the type the overlay of library types states, which takes no type arguments`);
     return { k: "reference", args: [], span,
@@ -154,8 +154,8 @@ type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 /** The arguments of a reference to `library`: at a mapped type's key
  * parameter, the keys `keys` computes where it can (an alias of literals is
  * its literals), otherwise each argument as `read` reads it. */
-export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>,
-    keys?: (node: TypeNode) => Modifies<{ values: "any"; stores: "grow" }, TypeTerm | null>): Modifies<{ values: "any"; stores: "grow" }, TypeTerm[]> {
+export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>,
+    keys?: (node: TypeNode) => Modifies<{ values: "any"; spines: "grow" }, TypeTerm | null>): Modifies<{ values: "any"; spines: "grow" }, TypeTerm[]> {
   const named: number[] = [];
   const mentions = (t: TypeTerm): void => {
     if (t.k === "parameter") named.push(t.index);
@@ -275,14 +275,14 @@ function withOwnProject<T>(file: string,
 }
 
 /** Whether a type term contains a named binder. */
-function hasBinderTerm(term: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+function hasBinderTerm(term: TypeTerm): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   if (term.k === "binder") return true;
   for (const part of typeParts(term)) if (hasBinderTerm(part)) return true;
   return false;
 }
 
 /** The module, name and source span identifying an alias. */
-function aliasKey(identity: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, string> {
+function aliasKey(identity: DeclarationIdentity): Modifies<{ values: "any"; spines: "grow" }, string> {
   return `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
 }
 
@@ -1096,9 +1096,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const clean = (node: Node, what: string): void => resolutionClean(program, client, errors, observations, node, what);
     // The host's branded strings met (reading rule 5), by identity.
     const brands = new Set<string>();
-    const brandKey = (id: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, string> => `${id.module}#${id.name}#${id.span.join(":")}`;
+    const brandKey = (id: DeclarationIdentity): Modifies<{ values: "any"; spines: "grow" }, string> => `${id.module}#${id.name}#${id.span.join(":")}`;
     const identityOf = (node: TypeDeclaration): DeclarationIdentity => resolutionIdentityOf(idOf, brands, brandKey, node);
-    const isBrand = (id: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, boolean> => brands.has(brandKey(id));
+    const isBrand = (id: DeclarationIdentity): Modifies<{ values: "any"; spines: "grow" }, boolean> => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
     const resolveDeclarations = (identifier: Identifier, what: string): Node[] => resolutionResolveDeclarations(checker, verifierFile, clean, idOf, identifier, what);

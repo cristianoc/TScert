@@ -2,8 +2,8 @@
 // footprint composes through the query; the handler has no normal exit.
 let queryFailure: unknown = null;
 export function kept<T>(
-  query: () => Modifies<{ values: "any"; stores: "grow" }, T>,
-): Modifies<{ values: "any"; stores: "grow" }, T> {
+  query: () => Modifies<{ values: "any"; spines: "grow" }, T>,
+): Modifies<{ values: "any"; spines: "grow" }, T> {
   try {
     return query();
   } catch (error) {
@@ -15,8 +15,8 @@ export function kept<T>(
 // reach a normal return of this invocation.
 export function changedOnThrow(
   xs: number[],
-  query: () => Modifies<{ values: "any"; stores: "grow" }, number>,
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+  query: () => Modifies<{ values: "any"; spines: "grow" }, number>,
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   try {
     return query();
   } catch (error) {
@@ -26,8 +26,8 @@ export function changedOnThrow(
 }
 export function nested(
   xs: number[],
-  query: () => Modifies<{ values: "any"; stores: "grow" }, number>,
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+  query: () => Modifies<{ values: "any"; spines: "grow" }, number>,
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   try {
     return query();
   } catch (error) {
@@ -41,8 +41,8 @@ export function nested(
   }
 }
 export function finalizer(
-  query: () => Modifies<{ values: "any"; stores: "grow" }, number>,
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+  query: () => Modifies<{ values: "any"; spines: "grow" }, number>,
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   try {
     return query();
   } finally {
@@ -50,7 +50,7 @@ export function finalizer(
   }
 }
 function inferred(
-  query: () => Modifies<{ values: "any"; stores: "grow" }, number>,
+  query: () => Modifies<{ values: "any"; spines: "grow" }, number>,
 ): number {
   try {
     return query();
@@ -61,7 +61,7 @@ function inferred(
 }
 export function mapped(
   xs: number[],
-  query: () => Modifies<{ values: "any"; stores: "grow" }, number>,
+  query: () => Modifies<{ values: "any"; spines: "grow" }, number>,
 ): number[] {
   return xs.map(() => inferred(query));
 }

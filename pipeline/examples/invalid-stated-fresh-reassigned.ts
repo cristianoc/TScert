@@ -6,11 +6,11 @@
 // past the end of the array the calls shorten.
 type Box = { open: number[] };
 
-function step(box: Box): Modifies<{ values: "any"; stores: "grow"; "box.open[*]": "any" }, void> {
+function step(box: Box): Modifies<{ values: "any"; spines: "grow"; "box.open[*]": "any" }, void> {
   box.open.pop();
 }
 
-function drain(xs: number[]): Modifies<{ values: "any"; stores: "grow" }, void> {
+function drain(xs: number[]): Modifies<{ values: "any"; spines: "grow" }, void> {
   const box: Box = { open: [] };
   box.open = xs;
   step(box);

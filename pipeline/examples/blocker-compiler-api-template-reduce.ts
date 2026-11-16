@@ -11,8 +11,8 @@ type E =
   | { k: "arith"; pos: Span; op: "add" | "sub"; l: E; r: E };
 export function template(
   node: ts.TemplateExpression,
-  f: (e: Expression) => Modifies<{ values: "any"; stores: "grow" }, E>,
-): Modifies<{ values: "any"; stores: "grow" }, E> {
+  f: (e: Expression) => Modifies<{ values: "any"; spines: "grow" }, E>,
+): Modifies<{ values: "any"; spines: "grow" }, E> {
   const start = node.pos;
   const head: E = {
     k: "lit",

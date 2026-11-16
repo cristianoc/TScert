@@ -26,7 +26,7 @@ import { isImport, isTypeAlias } from "./syntax.mts";
  * as a statement of its own at `pos`: the statement's span, or the
  * declarator's where an earlier declarator of its list is lowered before
  * it (`hoisting`). */
-export function patternStmt(this: Gate, d: ts.VariableDeclaration, node: Node, mutable: boolean, pos: Span): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function patternStmt(this: Gate, d: ts.VariableDeclaration, node: Node, mutable: boolean, pos: Span): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   if (mutable)
     gate.fail(node, "a `let` pattern whose bindings are assigned in a `for` head is outside the fragment: its bindings are cells, which only a statement of a block lowers them to (one never assigned is a `const` pattern)");
@@ -56,7 +56,7 @@ export function patternStmt(this: Gate, d: ts.VariableDeclaration, node: Node, m
  * reads its parts at `T`. A default under an annotation is refused: the
  * annotation states the type of the binding it replaces `undefined` for,
  * which the default must meet and the lowering states no type for. */
-export function patternInit(this: Gate, d: ts.VariableDeclaration, init: Expression): Modifies<{ values: "any"; stores: "grow" }, Expr> {
+export function patternInit(this: Gate, d: ts.VariableDeclaration, init: Expression): Modifies<{ values: "any"; spines: "grow" }, Expr> {
   const gate: Gate = this;
   if (!d.type) return gate.expr(init);
   const [fallback] = gate.patternDefaults(d.name);
@@ -85,7 +85,7 @@ export function patternInit(this: Gate, d: ts.VariableDeclaration, init: Express
  * Binding a name runs nothing, so binding each after the steps is binding
  * it at its step. A default or a nested pattern, which run code between
  * the steps (and IteratorClose on a throw of theirs), is outside it. */
-export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean, pos: Span): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean, pos: Span): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   if (gate.hoist?.stmt !== node)
     gate.fail(node, "an array pattern over a program's iterable is outside the fragment here: its steps are statements, with cells, before the declaration, which a function's or a closure's body has and a module's top level or a `for` initializer does not");
@@ -159,8 +159,8 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
 
 /** One step of a collecting loop: the step, its `done` leaving by `leave`,
  * and the value pushed onto the fresh array `items`. */
-export function collectStep(this: Gate, next: string, result: string, items: string, leave: () => Modifies<{ values: "any"; stores: "grow" }, Stmt>,
-    site: { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> }): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function collectStep(this: Gate, next: string, result: string, items: string, leave: () => Modifies<{ values: "any"; spines: "grow" }, Stmt>,
+    site: { entry(): Modifies<{ values: "any"; spines: "grow" }, number>; span(): Modifies<{ values: "any"; spines: "grow" }, Span> }): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const step = gate.protocolStep(next, result, leave, site);
   const e = site.entry();
@@ -174,8 +174,8 @@ export function collectStep(this: Gate, next: string, result: string, items: str
  * (`protocolForOf`). A `return` the iterator's type declares a required
  * method (`method`) is a method member, read bound to the iterator
  * (`o.m.bind(o)`, which reads it once) and always present. */
-export function closeStatements(this: Gate, iteratorAt: () => Modifies<{ values: "any"; stores: "grow" }, Expr>, tag: string, site: { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> },
-    method: boolean): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function closeStatements(this: Gate, iteratorAt: () => Modifies<{ values: "any"; spines: "grow" }, Expr>, tag: string, site: { entry(): Modifies<{ values: "any"; spines: "grow" }, number>; span(): Modifies<{ values: "any"; spines: "grow" }, Span> },
+    method: boolean): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const member = `%return@${tag}`, closed = `%closed@${tag}`;
   const e1 = site.entry();
   if (method) {
@@ -214,7 +214,7 @@ export function closeStatements(this: Gate, iteratorAt: () => Modifies<{ values:
  * before the statement it is in (`hoist`): the steps of `protocolForOf`,
  * closing nothing (a spread steps until done), each value pushed onto the
  * array, which the spread then stands for. */
-export function collect(this: Gate, operand: Expression): Modifies<{ values: "any"; stores: "grow" }, Expr> {
+export function collect(this: Gate, operand: Expression): Modifies<{ values: "any"; spines: "grow" }, Expr> {
   const gate: Gate = this;
   const hoist = gate.hoist;
   if (!hoist) throw Error("internal: a spread collected outside its statement");
@@ -248,7 +248,7 @@ export function collect(this: Gate, operand: Expression): Modifies<{ values: "an
  * initializer, and evaluation is followed in JavaScript's order: an array
  * literal's elements, a call's or construction's callee then arguments, a
  * member read's object. */
-export function hoistTarget(this: Gate, s: Statement): Modifies<{ values: "any"; stores: "grow" }, ts.SpreadElement | null> {
+export function hoistTarget(this: Gate, s: Statement): Modifies<{ values: "any"; spines: "grow" }, ts.SpreadElement | null> {
   const gate: Gate = this;
   let e: Expression | undefined;
   if (ts.isExpressionStatement(s)) e = s.expression;
@@ -321,7 +321,7 @@ export function hoistTarget(this: Gate, s: Statement): Modifies<{ values: "any";
  * an enum, a namespace, a named function or class expression's own name, a
  * binding of another `switch` clause, an ambient or unresolved name is not
  * one. */
-export function readScope(this: Gate, id: ts.Identifier): Modifies<{ values: "any"; stores: "grow" }, Node | null> {
+export function readScope(this: Gate, id: ts.Identifier): Modifies<{ values: "any"; spines: "grow" }, Node | null> {
   const gate: Gate = this;
   for (let at: Node | undefined = id.parent; at; at = at.parent) {
     // A parameter is bound before the body runs and before the later
@@ -384,22 +384,22 @@ export function readScope(this: Gate, id: ts.Identifier): Modifies<{ values: "an
  * throw nor run code (`readScope`), and no write in its binding's scope names
  * the binding (`writesName`), a nested closure's included. Code outside that
  * scope cannot name the binding. */
-export function unassigned(this: Gate, id: ts.Identifier): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function unassigned(this: Gate, id: ts.Identifier): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   const gate: Gate = this;
   const scope = gate.readScope(id);
   return scope !== null && !writesName(gate, scope, new Set([gate.local(id)]));
 }
 
 /** Whether a binding name, an identifier or a pattern, binds `name`. */
-const bindsName = (b: ts.BindingName, name: string): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
+const bindsName = (b: ts.BindingName, name: string): Modifies<{ values: "any"; spines: "grow" }, boolean> =>
   ts.isIdentifier(b) ? b.text === name
     : b.elements.some(e => !ts.isOmittedExpression(e) && !!e.name && bindsName(e.name, name));
 
 /** Whether `n` lies within `region`. */
-const within = (n: Node, region: Node): Modifies<{ values: "any"; stores: "grow" }, boolean> => n.pos >= region.pos && n.end <= region.end;
+const within = (n: Node, region: Node): Modifies<{ values: "any"; spines: "grow" }, boolean> => n.pos >= region.pos && n.end <= region.end;
 
 /** The local names an import declaration binds. */
-const importedNames = (st: ts.ImportDeclaration): Modifies<{ values: "any"; stores: "grow" }, string[]> => {
+const importedNames = (st: ts.ImportDeclaration): Modifies<{ values: "any"; spines: "grow" }, string[]> => {
   const clause = st.importClause;
   if (!clause) return [];
   const bindings = clause.namedBindings;
@@ -413,7 +413,7 @@ const functionLikeNode = (n: Node): n is ts.FunctionDeclaration | ts.FunctionExp
   ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n) ||
   ts.isConstructorDeclaration(n);
 
-export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Expr | null][]): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Expr | null][]): Modifies<{ values: "any"; spines: "grow" }, void> {
   const gate: Gate = this;
   const own = new Set(targets.flatMap(([t]) => patternNames(t)));
   const bound = new Set<string>();
@@ -501,7 +501,7 @@ export function steppedPattern(this: Gate, fresh: boolean,
 }
 
 export function assignedSteps(this: Gate, left: ts.ArrayLiteralExpression):
-    Modifies<{ values: "any"; stores: "grow" }, { node: Node; hole: boolean; before: Node[]; after: Node[] }[]> {
+    Modifies<{ values: "any"; spines: "grow" }, { node: Node; hole: boolean; before: Node[]; after: Node[] }[]> {
   return left.elements.map((el) => {
     if (ts.isOmittedExpression(el)) return { node: el, hole: true, before: [], after: [] };
     const assigned = ts.isBinaryExpression(el) && el.operatorToken.kind === ts.SyntaxKind.EqualsToken ? el : null;
@@ -515,7 +515,7 @@ export function assignedSteps(this: Gate, left: ts.ArrayLiteralExpression):
   });
 }
 
-export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fresh: boolean = false): Modifies<{ values: "any"; stores: "grow" }, PatternAst> {
+export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fresh: boolean = false): Modifies<{ values: "any"; spines: "grow" }, PatternAst> {
   const gate: Gate = this;
   if (ts.isIdentifier(node)) {
     if (node.text === "undefined")
@@ -571,7 +571,7 @@ export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fr
   return { k: "object", pos: gate.span(node), props, rest };
 }
 
-export function block(this: Gate, node: Statement): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function block(this: Gate, node: Statement): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   if (!ts.isBlock(node)) {
     if (ts.isVariableStatement(node))
@@ -589,7 +589,7 @@ export function block(this: Gate, node: Statement): Modifies<{ values: "any"; st
  * live reference to it would be to that binding, forever uninitialized. A
  * function declaration of the list there is bound at the block's entry, as
  * one before it is (`functionPlacement`). */
-export function statements(this: Gate, list: readonly Statement[]): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function statements(this: Gate, list: readonly Statement[]): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const end = list.findIndex((s) => abrupt(s));
   const live = end < 0 ? list : list.slice(0, end + 1);
@@ -647,7 +647,7 @@ export function statements(this: Gate, list: readonly Statement[]): Modifies<{ v
  * whichever comes first, and at most its own. A mention of a declaration
  * is the identifier the fragment names it by (`local`), outside types and
  * property keys. */
-export function functionPlacement(gate: Gate, live: readonly Statement[]): Modifies<{ values: "any"; stores: "grow" }, Map<FunctionDeclaration, number>> {
+export function functionPlacement(gate: Gate, live: readonly Statement[]): Modifies<{ values: "any"; spines: "grow" }, Map<FunctionDeclaration, number>> {
   const placed = new Map<FunctionDeclaration, number>();
   const byName = new Map<string, FunctionDeclaration>();
   live.forEach((s, i) => {
@@ -703,7 +703,7 @@ export function functionPlacement(gate: Gate, live: readonly Statement[]): Modif
  * the declaration is evaluated; an overloaded or repeated one; and one
  * naming a parameter of the function whose body holds it, which it
  * replaces there. */
-export function functionDeclarations(this: Gate, scope: readonly Statement[], live: number, placed: Map<FunctionDeclaration, number>): Modifies<{ values: "any"; stores: "grow" }, Map<number, Stmt[]>> {
+export function functionDeclarations(this: Gate, scope: readonly Statement[], live: number, placed: Map<FunctionDeclaration, number>): Modifies<{ values: "any"; spines: "grow" }, Map<number, Stmt[]>> {
   const gate: Gate = this;
   const declared = scope.filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s));
   const bound = new Map<number, Stmt[]>();
@@ -736,7 +736,7 @@ export function functionDeclarations(this: Gate, scope: readonly Statement[], li
  * nothing, wherever it is; it binds a type name over its block, which the
  * type readers resolve as TypeScript does (SOURCE-CONTRACTS.md,
  * "Block-scoped type declarations"). */
-function typeStatement(s: Statement): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+function typeStatement(s: Statement): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return isTypeAlias(s) || ts.isInterfaceDeclaration(s);
 }
 
@@ -749,7 +749,7 @@ function typeStatement(s: Statement): Modifies<{ values: "any"; stores: "grow" }
  * A function literal that is a constant's whole initializer runs only after
  * the constant holds it, so its mentions of the constant are the closure's
  * self entry. A pattern's binding so mentioned is refused. */
-export function markEarly(this: Gate, live: readonly Statement[], placed: Map<FunctionDeclaration, number>): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function markEarly(this: Gate, live: readonly Statement[], placed: Map<FunctionDeclaration, number>): Modifies<{ values: "any"; spines: "grow" }, void> {
   const gate: Gate = this;
   const functionLike = (n: Node): boolean => ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n);
   const declared = new Map<string, ts.VariableDeclaration>();
@@ -834,10 +834,10 @@ export function markEarly(this: Gate, live: readonly Statement[], placed: Map<Fu
 /** A statement, preceded by the statements its lowering runs before it:
  * the collection of a spread of a program's iterable (`collect`), or the
  * steps of an array pattern over one (`protocolPattern`). */
-export function hoisting(this: Gate, s: Statement): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function hoisting(this: Gate, s: Statement): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const savedHoist = gate.hoist, savedHoisted = gate.hoisted;
-  let site: { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> } | null = null;
+  let site: { entry(): Modifies<{ values: "any"; spines: "grow" }, number>; span(): Modifies<{ values: "any"; spines: "grow" }, Span> } | null = null;
   const lazy = () => site ??= gate.sites(s);
   gate.hoist = { stmt: s, spread: gate.hoistTarget(s),
     site: { entry: () => lazy().entry(), span: () => lazy().span() } };
@@ -874,7 +874,7 @@ export function hoisting(this: Gate, s: Statement): Modifies<{ values: "any"; st
  * JavaScript reads and defaults the pattern's positions, then initializes
  * the bindings, in the same order either way. Each cell is claimed at its
  * name, as the value it starts with is. Null for any other statement. */
-export function letPattern(this: Gate, s: ts.VariableStatement): Modifies<{ values: "any"; stores: "grow" }, Stmt[] | null> {
+export function letPattern(this: Gate, s: ts.VariableStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt[] | null> {
   const gate: Gate = this;
   const list = s.declarationList;
   const [d] = list.declarations;
@@ -887,7 +887,7 @@ export function letPattern(this: Gate, s: ts.VariableStatement): Modifies<{ valu
 /** The declarator `d` of a `let` list whose bindings are written, a
  * pattern, as `letPattern` lowers it, its destructuring at `pos`. Null over
  * a program's iterable. */
-export function letPatternOf(this: Gate, d: ts.VariableDeclaration, pos: Span): Modifies<{ values: "any"; stores: "grow" }, Stmt[] | null> {
+export function letPatternOf(this: Gate, d: ts.VariableDeclaration, pos: Span): Modifies<{ values: "any"; spines: "grow" }, Stmt[] | null> {
   const gate: Gate = this;
   if (d.type)
     gate.fail(d, "an annotated `let` pattern whose bindings are assigned is outside the fragment: each binding's contract is the part of the annotation it reads, which the lowering does not state");
@@ -942,7 +942,7 @@ export function writtenPattern(pos: Span, letPos: Span, target: PatternAst, defa
  * binding of each name before the pattern's later defaults read it is
  * lowered. */
 export function parameterBinding(this: Gate, at: Node, scope: Node, pos: Span, target: PatternAst,
-    default_: Expr | null, hidden: string, annot: TypeTerm | null): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+    default_: Expr | null, hidden: string, annot: TypeTerm | null): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   if (!writesName(gate, scope, new Set(patternNames(target))))
     return [{ k: "destructure", pos, target, default_, init: { k: "id", pos: target.pos, name: hidden } }];
@@ -957,7 +957,7 @@ export function parameterBinding(this: Gate, at: Node, scope: Node, pos: Span, t
 
 /** The offset of `token` at or after `from`, past whitespace and comments:
  * a punctuator or keyword of `at` the tree has no node for. */
-export function token(this: Gate, from: number, token: string, at: Node): Modifies<{ values: "any"; stores: "grow" }, number> {
+export function token(this: Gate, from: number, token: string, at: Node): Modifies<{ values: "any"; spines: "grow" }, number> {
   const gate: Gate = this;
   const text = gate.file.text;
   let i = from;
@@ -984,7 +984,7 @@ export function token(this: Gate, from: number, token: string, at: Node): Modifi
  * JavaScript copies it into each iteration: the two differ only for a
  * closure capturing it, where the loop is lowered with a binding per
  * iteration (`perIterationFor`). */
-export function forStmt(this: Gate, node: ts.ForStatement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function forStmt(this: Gate, node: ts.ForStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   if (capturesLoopLet(node)) return gate.perIterationFor(node);
   const open = gate.token(node.getStart(gate.file) + "for".length, "(", node);
@@ -1032,7 +1032,7 @@ export function forStmt(this: Gate, node: ts.ForStatement): Modifies<{ values: "
  * source spells; the mentions of the head's names in `ē` read `x̄⁰`, and
  * those in `c`, `u` and `s` read `x̄`. The added statements' sites are the
  * free offsets of the head (`sites`). */
-export function perIterationFor(this: Gate, node: ts.ForStatement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function perIterationFor(this: Gate, node: ts.ForStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const init = node.initializer;
   if (!init || !ts.isVariableDeclarationList(init)) return gate.fail(node, "internal: a `for` head with a binding per iteration and no `let`");
@@ -1094,7 +1094,7 @@ export function perIterationFor(this: Gate, node: ts.ForStatement): Modifies<{ v
 /** `for (const k in o) body` is `for (const k of %ForIn%(o)) body`: the
  * keys the loop visits, a string each (`intrinsics.mts`), the call at the
  * declaration, the intrinsic read at `in`. */
-export function forInStmt(this: Gate, node: ts.ForInStatement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function forInStmt(this: Gate, node: ts.ForInStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const list = node.initializer;
   if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1 ||
@@ -1149,7 +1149,7 @@ export function forInStmt(this: Gate, node: ts.ForInStatement): Modifies<{ value
  * reads its element in place, and a program's iterator may keep what it
  * yields), at the entry `pos`, its read of the element at `at`. */
 export function forOfPattern(this: Gate, d: ts.VariableDeclaration, name: ts.BindingPattern, element: string,
-    pos: Span, at: Span): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+    pos: Span, at: Span): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const target = gate.pattern(name, new Set(), false);
   gate.initializedBefore(d, [[target, null]]);
@@ -1184,7 +1184,7 @@ export function forOfPattern(this: Gate, d: ts.VariableDeclaration, name: ts.Bin
  * TypeError IteratorClose throws otherwise being then impossible. Each part
  * has a claim site of its own: a token of the header or a run of them. */
 export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.VariableDeclarationList,
-    name: ts.BindingName, method: boolean): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+    name: ts.BindingName, method: boolean): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const s = node.getStart(gate.file);
   const p = gate.token(s + "for".length, "(", node);
@@ -1253,7 +1253,7 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
  * from them are expression sites (`span`); none is a source node's site.
  * With `until`, only the offsets before it are entries and starts of
  * spans. */
-export function sites(this: Gate, within: Node, until?: number): Modifies<{ values: "any"; stores: "grow" }, { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> }> {
+export function sites(this: Gate, within: Node, until?: number): Modifies<{ values: "any"; spines: "grow" }, { entry(): Modifies<{ values: "any"; spines: "grow" }, number>; span(): Modifies<{ values: "any"; spines: "grow" }, Span> }> {
   const gate: Gate = this;
   const text = gate.file.text;
   let to = within.end;
@@ -1283,8 +1283,8 @@ export function sites(this: Gate, within: Node, until?: number): Modifies<{ valu
  * declarators `%iterator = iterable[Symbol.iterator](), %next =
  * %iterator.next.bind(%iterator)`, `next` read once and called on the
  * iterator at each step (`protocolStep`). */
-export function protocolStart(this: Gate, iterable: Expr, site: { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> }, tag: string, at: Node):
-    Modifies<{ values: "any"; stores: "grow" }, { bindings: BindingAst[]; iterator: string; next: string; iteratorAt: () => Modifies<{ values: "any"; stores: "grow" }, Expr> }> {
+export function protocolStart(this: Gate, iterable: Expr, site: { entry(): Modifies<{ values: "any"; spines: "grow" }, number>; span(): Modifies<{ values: "any"; spines: "grow" }, Span> }, tag: string, at: Node):
+    Modifies<{ values: "any"; spines: "grow" }, { bindings: BindingAst[]; iterator: string; next: string; iteratorAt: () => Modifies<{ values: "any"; spines: "grow" }, Expr> }> {
   const gate: Gate = this;
   const iterator = `%iterator@${tag}`, next = `%next@${tag}`;
   const symbol = gate.wellKnownIterator;
@@ -1307,8 +1307,8 @@ export function protocolStart(this: Gate, iterable: Expr, site: { entry(): Modif
 /** One step of the protocol, `%next()`, bound to `result`, and the test of
  * its `done`, which leaves by `leave`: three statements, with their
  * entries. The value is `result`'s `value`, read by the caller next. */
-export function protocolStep(this: Gate, next: string, result: string, leave: () => Modifies<{ values: "any"; stores: "grow" }, Stmt>,
-    site: { entry(): Modifies<{ values: "any"; stores: "grow" }, number>; span(): Modifies<{ values: "any"; stores: "grow" }, Span> }): Modifies<{ values: "any"; stores: "grow" }, { stmts: Stmt[]; value: () => Modifies<{ values: "any"; stores: "grow" }, Expr> }> {
+export function protocolStep(this: Gate, next: string, result: string, leave: () => Modifies<{ values: "any"; spines: "grow" }, Stmt>,
+    site: { entry(): Modifies<{ values: "any"; spines: "grow" }, number>; span(): Modifies<{ values: "any"; spines: "grow" }, Span> }): Modifies<{ values: "any"; spines: "grow" }, { stmts: Stmt[]; value: () => Modifies<{ values: "any"; spines: "grow" }, Expr> }> {
   const nextAt = site.span();
   const e1 = site.entry();
   const call: Expr = { k: "apply", pos: site.span(), callee: { k: "id", pos: nextAt, name: next }, args: [] };
@@ -1347,7 +1347,7 @@ export function protocolStep(this: Gate, next: string, result: string, leave: ()
  * at the keyword, the one to the switch's end at the clauses' `{`. The clauses
  * share one scope in JavaScript, so a name one declares directly must not
  * be read in another clause or in a label. */
-export function switchStmt(this: Gate, node: ts.SwitchStatement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function switchStmt(this: Gate, node: ts.SwitchStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const clauses = node.caseBlock.clauses;
   for (const c of clauses) {
@@ -1451,7 +1451,7 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Modifies<{ val
  * `unknown`, the only annotation admitted: anything may be thrown. The
  * finalizer runs on every way out of the body and the handler, which the
  * lowering states by running it on each (`SourceExtraction`). */
-export function tryStmt(this: Gate, node: ts.TryStatement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function tryStmt(this: Gate, node: ts.TryStatement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const handler = node.catchClause;
   let param: { name: string; namePos: Span } | null = null;
@@ -1474,7 +1474,7 @@ export function tryStmt(this: Gate, node: ts.TryStatement): Modifies<{ values: "
 
 /** Whether a statement never completes normally: a jump, or a list or both
  * arms of an `if` that reach one. A loop may complete. */
-export function abrupt(s: Statement): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function abrupt(s: Statement): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return ts.isReturnStatement(s) || ts.isBreakStatement(s) || ts.isContinueStatement(s) ||
     ts.isThrowStatement(s) ||
     (ts.isBlock(s) && s.statements.some((t) => abrupt(t))) ||
@@ -1484,7 +1484,7 @@ export function abrupt(s: Statement): Modifies<{ values: "any"; stores: "grow" }
       (abrupt(s.tryBlock) && (!s.catchClause || abrupt(s.catchClause.block)))));
 }
 
-export function stmt(this: Gate, node: Statement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function stmt(this: Gate, node: Statement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   // `assert(v, m);` of `node:assert/strict`, which the declaration graph
   // found to be the reviewed one, with no message or a literal one: the
@@ -1598,7 +1598,7 @@ export function stmt(this: Gate, node: Statement): Modifies<{ values: "any"; sto
  * and `%hᵢ` no source spells; the added statements' entries and claims are
  * the statement's free offsets (`sites`), the read of each property claimed
  * at its target's span. */
-export function objectAssignment(this: Gate, node: ts.ExpressionStatement, assignment: ts.BinaryExpression): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function objectAssignment(this: Gate, node: ts.ExpressionStatement, assignment: ts.BinaryExpression): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const site = gate.sites(node);
   const entry = (): Span => {
@@ -1670,7 +1670,7 @@ export function objectAssignment(this: Gate, node: ts.ExpressionStatement, assig
 
 /** A `let` or `const` declaration list, the statement `at` spans: a
  * variable statement, or a `for` loop's initializer. */
-export function declarations(this: Gate, list: ts.VariableDeclarationList, at: Node): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function declarations(this: Gate, list: ts.VariableDeclarationList, at: Node): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   gate.lexicalList(list, at);
   if (list.declarations.length > 1 && list.declarations.some((d) => !ts.isIdentifier(d.name)))
@@ -1680,7 +1680,7 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
 
 /** The declarator `d` of the list `list`, the statement `at` holds it, as
  * a declaration of its own at `pos`: a pattern's, or a binding's. */
-export function declarator(this: Gate, list: ts.VariableDeclarationList, d: ts.VariableDeclaration, at: Statement, pos: Span): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function declarator(this: Gate, list: ts.VariableDeclarationList, d: ts.VariableDeclaration, at: Statement, pos: Span): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   if (ts.isIdentifier(d.name)) return [gate.declarationsOf(list, [d], at, pos)];
   const mutable = gate.mutableList(list, at);
@@ -1689,7 +1689,7 @@ export function declarator(this: Gate, list: ts.VariableDeclarationList, d: ts.V
 
 /** Refuses `list`, the statement `at` holds it, unless it is a `let` or a
  * `const` list. */
-export function lexicalList(this: Gate, list: ts.VariableDeclarationList, at: Node): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function lexicalList(this: Gate, list: ts.VariableDeclarationList, at: Node): Modifies<{ values: "any"; spines: "grow" }, void> {
   const gate: Gate = this;
   // `var` is function-scoped and hoisted, so it is not this binding form.
   if (!(list.flags & ts.NodeFlags.Const) && !(list.flags & ts.NodeFlags.Let))
@@ -1698,7 +1698,7 @@ export function lexicalList(this: Gate, list: ts.VariableDeclarationList, at: No
 
 /** Whether the bindings of `list`, the statement `at` holds it, are cells:
  * a `let` or `const` list (`lexicalList`). */
-export function mutableList(this: Gate, list: ts.VariableDeclarationList, at: Node): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function mutableList(this: Gate, list: ts.VariableDeclarationList, at: Node): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   const gate: Gate = this;
   gate.lexicalList(list, at);
   // A `let` statement whose bindings are all initialized and nothing
@@ -1714,7 +1714,7 @@ export function mutableList(this: Gate, list: ts.VariableDeclarationList, at: No
 
 /** The declarators `ds` of `list`, the statement `at` holds them, as one
  * declaration at `pos`. */
-export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds: readonly ts.VariableDeclaration[], at: Node, pos: Span): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds: readonly ts.VariableDeclaration[], at: Node, pos: Span): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const mutable = gate.mutableList(list, at);
   const kindWord = mutable ? "let" : "const";
@@ -1755,7 +1755,7 @@ export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds:
     // another binding or none.
     const self = gate.local(d.name);
     // The recursive visitor preserves array stores, including calls through itself.
-    const reads = (n: Node): Modifies<{ values: "any"; stores: "grow" }, Node | undefined> => {
+    const reads = (n: Node): Modifies<{ values: "any"; spines: "grow" }, Node | undefined> => {
       if (ts.isTypeNode(n)) return undefined;
       if (ts.isIdentifier(n) && gate.local(n) === self) {
         const parent = n.parent;
@@ -1830,7 +1830,7 @@ export function literalDeclaredType(e: Expression, span: Span): TypeTerm | null 
  * logical assignment, update or destructuring assignment names one. A
  * write is found by the name the fragment gives the binding (`local`), so
  * a same-named binding elsewhere in that scope keeps the list a `let`. */
-export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loopHead: boolean = false): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loopHead: boolean = false): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   const gate: Gate = this;
   const [first] = list.declarations;
   // A loop head's binding is bound by each iteration, not by an initializer.
@@ -1849,7 +1849,7 @@ export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loop
  * assignment, an update, a destructuring assignment or a `for` head's
  * target. A same-named binding declared within the scope shadows and has a
  * name of its own (`renames`). */
-function writesName(gate: Gate, scope: Node, names: Set<string>): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+function writesName(gate: Gate, scope: Node, names: Set<string>): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   const targets = (e: Node): boolean => {
     while (ts.isParenthesizedExpression(e)) e = e.expression;
     if (ts.isIdentifier(e)) return names.has(gate.local(e));
@@ -1879,7 +1879,7 @@ function writesName(gate: Gate, scope: Node, names: Set<string>): Modifies<{ val
  * leaves where the loop has one (`continueBlock`), so that the `continue`
  * goes to what follows the body: the test of a `do...while`, the update of a
  * `for`, the next step of a `for...of`. */
-export function loopBody(this: Gate, loop: Loop): Modifies<{ values: "any"; stores: "grow" }, Stmt[]> {
+export function loopBody(this: Gate, loop: Loop): Modifies<{ values: "any"; spines: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const body = gate.block(loop.statement);
   return continueBlock(loop)
@@ -1889,7 +1889,7 @@ export function loopBody(this: Gate, loop: Loop): Modifies<{ values: "any"; stor
 
 /** Loops, branches, blocks, labeled statements, `switch`, `try` and
  * `throw`. */
-export function controlStmt(this: Gate, node: Statement): Modifies<{ values: "any"; stores: "grow" }, Stmt> {
+export function controlStmt(this: Gate, node: Statement): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   if (ts.isWhileStatement(node))
     return {
@@ -2258,7 +2258,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
  * clause through this one elaboration. The refusal's message where it is
  * refused. */
 export function precondition(gate: Gate, clauses: readonly string[],
-    parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean): Modifies<{ values: "any"; stores: "grow" }, IndexFact[] | string> {
+    parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean): Modifies<{ values: "any"; spines: "grow" }, IndexFact[] | string> {
   // A precondition is read at the call's entry, where `old(p)` is `p`: the
   // entry's position of a name is its own.
   const named = parameters.map(({ name, type }, i): ClauseParameter =>

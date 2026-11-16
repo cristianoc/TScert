@@ -16,16 +16,16 @@ type Mapper = {
   tree: (
     t: Tree,
     ...further: unknown[]
-  ) => Modifies<{ values: "any"; stores: "grow" }, Tree>;
+  ) => Modifies<{ values: "any"; spines: "grow" }, Tree>;
   num: (
     n: number,
     ...further: unknown[]
-  ) => Modifies<{ values: "any"; stores: "grow" }, number>;
+  ) => Modifies<{ values: "any"; spines: "grow" }, number>;
 };
 export function mapParts(
   t: Tree,
   m: Mapper,
-): Modifies<{ values: "any"; stores: "grow" }, Tree> {
+): Modifies<{ values: "any"; spines: "grow" }, Tree> {
   switch (t.k) {
     case "leaf":
       return { ...t, n: m.num(t.n) };
@@ -37,8 +37,8 @@ export function deep(
   num: (
     n: number,
     ...further: unknown[]
-  ) => Modifies<{ values: "any"; stores: "grow" }, number>,
-): Modifies<{ values: "any"; stores: "grow" }, Mapper> {
+  ) => Modifies<{ values: "any"; spines: "grow" }, number>,
+): Modifies<{ values: "any"; spines: "grow" }, Mapper> {
   function tree(t: Tree): Tree {
     return mapParts(t, d);
   }
@@ -47,7 +47,7 @@ export function deep(
 }
 export function numbers(
   t: Tree,
-): Modifies<{ values: "any"; stores: "grow" }, number[]> {
+): Modifies<{ values: "any"; spines: "grow" }, number[]> {
   const seen: number[] = [];
   mapParts(t, {
     tree: (u) => u,

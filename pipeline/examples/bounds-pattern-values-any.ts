@@ -1,10 +1,10 @@
 // Bounds pattern P6, the supported neighbour of
 // `bounds-pattern-values-any-refused`: a callee of frame `{ values: "init";
-// stores: "keep" }`, which changes no location holding a number.
+// spines: "keep" }`, which changes no location holding a number.
 // Pretext: the measuring caches of measurement.ts.
 type Cache = { value: number | null };
 
-function warm(c: Cache): Modifies<{ values: "init"; stores: "keep" }, void> {
+function warm(c: Cache): Modifies<{ values: "init"; spines: "keep" }, void> {
   c.value ??= 5;
 }
 

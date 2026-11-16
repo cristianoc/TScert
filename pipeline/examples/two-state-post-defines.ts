@@ -8,7 +8,7 @@
  * @requires 0 <= ys.length && ys.length <= 1000
  * @ensures safeInteger(result) && ys.length === old(ys.length) + 1 && result === old(ys.length)
  */
-function grow(ys: number[]): Modifies<{ values: "any"; stores: "grow" }, number> {
+function grow(ys: number[]): Modifies<{ values: "any"; spines: "grow" }, number> {
   const n = ys.length;
   ys.push(0);
   return n;

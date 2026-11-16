@@ -77,7 +77,7 @@ The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
 holes with unrestricted callbacks. This is a negative case under the
 [route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for).
 `blocker-prep-reference-args-map-preserving` requires
-`Modifies<{ values: "any"; stores: "grow" }, TypeTerm>` from `go`; the existing
+`Modifies<{ values: "any"; spines: "grow" }, TypeTerm>` from `go`; the existing
 [effect checks](FOOTPRINTS.md) and native map contract establish the readable
 result, and the reference construction verifies. This adds no external
 assumption. The compiler's own branding traversal retains a checked
@@ -98,7 +98,7 @@ The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
 holes with unrestricted callbacks. This original example is a negative
 case under the [route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for).
 `blocker-prep-captured-map-records-preserving` states a callback with
-`Modifies<{ values: "any"; stores: "grow" }, string>` as its result.
+`Modifies<{ values: "any"; spines: "grow" }, string>` as its result.
 The existing [effect checks](FOOTPRINTS.md) establish readable presence
 from that requirement, and the complete iteration verifies with the
 inferred `found` binding. This is a checked function contract and adds
@@ -241,7 +241,7 @@ shape independently before returning the text and its `printable` flag.
 
 `tools/fragment-parts.mts#partsOf` collects direct parts by passing identity
 callbacks that append to a fresh array into a traversal. Its `map`
-parameter states `(m: PartMap) => Modifies<{ values: "any"; stores: "grow" }, unknown>`.
+parameter states `(m: PartMap) => Modifies<{ values: "any"; spines: "grow" }, unknown>`.
 The callers in `directParts` and `codeParts` supply `mapExprParts`,
 `mapStmtParts`, `mapPatternParts` and `mapFunctionParts` through closures.
 Each traversal carries the same store-preserving contract.
@@ -599,7 +599,7 @@ kept by `parts.filter((p): p is TypeTerm => p !== null)`.
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
 with a `JsonValue` parameter and the result contract
-`Modifies<{ values: "any"; stores: "grow" }, Arm>`, where `Arm` is the record
+`Modifies<{ values: "any"; spines: "grow" }, Arm>`, where `Arm` is the record
 holding a count and a deferred lifting function. The existing
 [footprint checks](FOOTPRINTS.md) require preservation evidence for that definition;
 the existing [native map contract](SOURCE-CONTRACTS.md#prototype-contracts)
@@ -2248,7 +2248,7 @@ union's record was refused at its `parts`. Every reader the evaluator
 receives is the type reader's, which grows stores and changes nothing else.
 
 - **Repair:** the readers are of the type `TypeReader`, `(node: TypeNode)
-  => Modifies<{ values: "any"; stores: "grow" }, TypeTerm>`, in
+  => Modifies<{ values: "any"; spines: "grow" }, TypeTerm>`, in
   `ComputedContext.applied`, the alias members and every function of the
   evaluator taking one, so `map` keeps a dense result
   ([`map`'s stable callback](SOURCE-CONTRACTS.md#prototype-contracts)). The
@@ -2433,7 +2433,7 @@ are passed at `JsonValue`.
 
 - **Repair:** each of these functions, each callback the lifter maps with,
   and `textOf`, the text of a lifted part, state
-  `Modifies<{ values: "any"; stores: "grow" }, T>`, with the
+  `Modifies<{ values: "any"; spines: "grow" }, T>`, with the
   [stated-effect](SOURCE-ELABORATION.md#stated-effects) rule checking every
   body. The imported helpers they call state their footprints, each checked
   at its own definition: `isArrayPresence` and `presencePrefix` the empty
@@ -2515,7 +2515,7 @@ was read at an unrestricted contract, so the caller's statement `{value: any, st
 was refused ("the footprint claimed for … is not established by its body").
 
 - **Repair:** each function type states the footprint the functions passed
-  there meet, `Modifies<{ values: "any"; stores: "grow" }, R>`
+  there meet, `Modifies<{ values: "any"; spines: "grow" }, R>`
   ([stated effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
   A caller's unit relies on the statement as written, reading the function
   at its claimed signature and effect; the statement is established where

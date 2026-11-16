@@ -5,7 +5,7 @@ type Runs = { /** @stable */ readonly open: number[] };
 function step(
   runs: Runs | undefined,
   out: number[],
-): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, number> {
+): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, number> {
   if (runs !== undefined) runs.open.pop();
   out.push(1);
   return out.length;

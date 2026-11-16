@@ -5,7 +5,7 @@
 export function firsts(
   members: readonly string[],
   owners: readonly number[],
-): Modifies<{ values: "any"; stores: "grow" }, string> {
+): Modifies<{ values: "any"; spines: "grow" }, string> {
   const [member] = members,
     [owner] = owners;
   const count = owners.length,
@@ -18,7 +18,7 @@ export function firsts(
 // cells, the later initializer reading the earlier pattern's.
 export function sums(
   xs: readonly number[],
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   let [a = 0] = xs,
     b = a + 1,
     { c } = { c: b };

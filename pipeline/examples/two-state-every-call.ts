@@ -9,7 +9,7 @@
  * @requires 0 <= xs.length && xs.length <= 1000 && forall i in xs: safeInteger(xs[i]) && xs[i] === 1
  * @ensures forall i < old(xs.length) of xs: safeInteger(xs[i]) && xs[i] === 1
  */
-function appendOne(xs: number[]): Modifies<{ values: "any"; stores: "grow" }, void> {
+function appendOne(xs: number[]): Modifies<{ values: "any"; spines: "grow" }, void> {
   xs.push(1);
 }
 

@@ -5,7 +5,7 @@ type Fn = Extract<TypeTerm, { k: "function" }>;
 export function oneTerm(
   terms: Fn[],
   span: [number, number],
-): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
+): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   const [only] = terms;
   if (terms.length === 1 && only) return only;
   const parts: TypeTerm[] = terms.map((term): TypeTerm => term);

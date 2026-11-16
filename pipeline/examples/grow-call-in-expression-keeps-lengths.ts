@@ -3,7 +3,7 @@
 // right side of `x ??= …` and of a field's `o.f ??= …`.
 type Cache = { last: number[] | null };
 
-function add(xs: number[]): Modifies<{ values: "any"; stores: "grow" }, number> {
+function add(xs: number[]): Modifies<{ values: "any"; spines: "grow" }, number> {
   xs.push(1);
   return xs.length;
 }

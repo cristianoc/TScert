@@ -3994,7 +3994,7 @@ declaration, never by its spelling: an alias of the repository's file, or of
 a file of exactly its bytes, which declares the same aliases (the census's
 copy of `tools/` holds one). $`P`$ is a type literal written in place,
 one map from what may change to how much: `values: c` for the locations
-holding a value and `stores: c` for those holding an array store, `c` one
+holding a value and `spines: c` for those holding an array store, `c` one
 of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
 `"keep"`; on a value `grow` is `scalar`, and on a store `init` and `scalar`
 are `keep`. `onThrow: true` makes the frame hold on a throw too. A store
@@ -4037,7 +4037,7 @@ lowers, reads it through one function (`statedResult` in
 each where it is read ([fragment boundary](SOURCE-FRAGMENT.md)): `Modifies`
 anywhere else, a reference the declaration reader resolves to `Modifies`
 outside a signature's result included; a frame written other than in
-place; a key other than `values`, `stores` and `onThrow`, `value` and
+place; a key other than `values`, `spines` and `onThrow`, `value` and
 `store` among them (a module cell's key is `"cell(b)"`); both class keys at
 `"any"`, with or without `onThrow`, which states nothing; a statement on an async
 definition, whose call returns where its body throws

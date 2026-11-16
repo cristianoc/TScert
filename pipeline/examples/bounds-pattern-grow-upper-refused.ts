@@ -22,11 +22,11 @@ function noteAt(out: number[], v: number): Modifies<{ values: "any"; "out[*]": "
   out.push(v);
 }
 
-function noteIn(out: number[], v: number): Modifies<{ values: "any"; stores: "keep"; "out[*]": "any" }, void> {
+function noteIn(out: number[], v: number): Modifies<{ values: "any"; spines: "keep"; "out[*]": "any" }, void> {
   out.push(v);
 }
 
-function measure(n: number, p: Lists | null): Modifies<{ values: "any"; stores: "keep"; "p.widths[*]": "any" }, number> {
+function measure(n: number, p: Lists | null): Modifies<{ values: "any"; spines: "keep"; "p.widths[*]": "any" }, number> {
   if (p !== null) p.widths.push(n);
   return n;
 }

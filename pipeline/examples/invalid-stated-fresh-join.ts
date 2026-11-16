@@ -1,16 +1,16 @@
 // A join with an old store (FOOTPRINTS.md, "Fresh array storage"): `runs`
 // holds a fresh array on one branch and the caller's `xs` on the other, so
 // after the join its field has no fresh fact and `drain`'s
-// `stores: "grow"` is refused at the call. Run under Node,
+// `spines: "grow"` is refused at the call. Run under Node,
 // `total([1, 2, 3])` reads past the end of the array the calls empty and
 // returns `NaN`.
 type Runs = { /** @stable */ readonly open: number[] };
 
-function step(runs: Runs): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, void> {
+function step(runs: Runs): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, void> {
   runs.open.pop();
 }
 
-function drain(xs: number[], c: boolean): Modifies<{ values: "any"; stores: "grow" }, void> {
+function drain(xs: number[], c: boolean): Modifies<{ values: "any"; spines: "grow" }, void> {
   const runs: Runs = c ? { open: [] } : { open: xs };
   step(runs);
 }

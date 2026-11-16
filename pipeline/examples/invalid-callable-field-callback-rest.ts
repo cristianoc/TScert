@@ -6,7 +6,7 @@ type Mapper = {
   num: (
     n: number,
     ...further: string[]
-  ) => Modifies<{ values: "any"; stores: "grow" }, number>;
+  ) => Modifies<{ values: "any"; spines: "grow" }, number>;
 };
 export function wrong(list: number[], m: Mapper): number[] {
   return list.map(m.num);

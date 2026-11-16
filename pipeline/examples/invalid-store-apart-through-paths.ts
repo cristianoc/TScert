@@ -6,7 +6,7 @@
 type Runs = { read: number, /** @stable */ readonly open: number[] }
 type Analysis = { /** @stable */ readonly flags: number[] }
 
-function step(runs: Runs, at: number): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, boolean> {
+function step(runs: Runs, at: number): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, boolean> {
   runs.open.pop()
   runs.read = at
   return runs.open.length > 0

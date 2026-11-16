@@ -4,7 +4,7 @@
 // and i = 1: `at` returns `undefined`, no number).
 type R = { name: string };
 
-function shorten(r: R): Modifies<{ values: "any"; stores: "keep" }, void> {
+function shorten(r: R): Modifies<{ values: "any"; spines: "keep" }, void> {
   r.name = "";
 }
 

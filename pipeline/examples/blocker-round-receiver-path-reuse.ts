@@ -5,7 +5,7 @@ import type { Gate } from "../../tools/fragment-parse.mts";
 export function receiver(
   this: Gate,
   node: ts.Expression,
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   const gate: Gate = this;
   if (ts.isCallExpression(node)) {
     if (

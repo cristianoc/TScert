@@ -1,4 +1,4 @@
-// A frame stating a store region beside `stores: "grow"` keeps a lower
+// A frame stating a store region beside `spines: "grow"` keeps a lower
 // bound of the length of a store apart from the region (`region-call-grow`):
 // `step` pops the array `runs.open` reads, its region, and pushes onto
 // `out`, within grow outside the region. `get` allocates the record, so its
@@ -9,7 +9,7 @@ type Runs = { /** @stable */ readonly open: number[] };
 function step(
   runs: Runs,
   out: number[],
-): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, void> {
+): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, void> {
   runs.open.pop();
   out.push(1);
 }

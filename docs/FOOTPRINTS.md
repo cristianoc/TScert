@@ -120,7 +120,7 @@ A closed footprint stating one change for both stores,
 `Closed.ofStores δ_v δ_s`, is the footprint
 $`\{\mathsf{values}{:}\,\delta_v,\ \mathsf{stores}{:}\,\delta_s\}`$
 (proved: `Closed.ofStores_post_iff`). The change a closed footprint allows on
-the class `stores` is the larger of its two store components
+the class `spines` is the larger of its two store components
 (`Closed.stores`). A footprint of class regions alone has an exact closed
 form (`Footprint.closed?`, proved: `Footprint.closed?_sound`); every
 footprint implies its closed bound, each category's largest change of an

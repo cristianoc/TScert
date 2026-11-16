@@ -29,7 +29,7 @@ export const definitionKey = (id: DeclarationIdentity): Modifies<{}, string> =>
 // Classification preserves the definition being inspected; definition lookup
 // can settle and cache definitions under its separate growth contract.
 export type NamedRecords = {
-  definition(id: DeclarationIdentity, fail: Fail): Modifies<{ values: "any"; stores: "grow" }, TypeDefinition | undefined>;
+  definition(id: DeclarationIdentity, fail: Fail): Modifies<{ values: "any"; spines: "grow" }, TypeDefinition | undefined>;
   record(id: DeclarationIdentity): Modifies<{}, boolean>;
 };
 
@@ -122,7 +122,7 @@ function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): M
   return `{"name":${JSON.stringify(b.name)},"bound":${optionalTermText(b.bound)},"resolution":${resolution},"default":${optionalTermText(b.default)}}`;
 }
 
-const keyText = (name: PropertyKey): Modifies<{ values: "any"; stores: "grow" }, string> =>
+const keyText = (name: PropertyKey): Modifies<{ values: "any"; spines: "grow" }, string> =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 
 /** What `reference` denotes (`AliasHook`, type-term.mts): `"record"` for a
@@ -130,7 +130,7 @@ const keyText = (name: PropertyKey): Modifies<{ values: "any"; stores: "grow" },
  * of a record literal), its definition's equation at the reference's
  * arguments for any other definition that has one, an alias of a named
  * type included, which the caller follows in turn; refused otherwise. */
-export function aliasMeaning(reference: Reference, records: NamedRecords, fail: Fail): Modifies<{ values: "any"; stores: "grow" }, TypeTerm | "record"> {
+export function aliasMeaning(reference: Reference, records: NamedRecords, fail: Fail): Modifies<{ values: "any"; spines: "grow" }, TypeTerm | "record"> {
   const target = reference.reference.target;
   const name = `${target.module}#${target.name}`;
   const definition = records.definition(target, fail) ?? fail(`a type with no definition the reader holds: ${name}`);
@@ -148,7 +148,7 @@ export function aliasMeaning(reference: Reference, records: NamedRecords, fail: 
  * included. A shape reaching itself, a definition that is no record, call
  * or construct signatures, a prototype or a host's members, and an inherited
  * member or index redeclared at another type are refused. */
-export function recordShape(reference: Reference, records: NamedRecords, fail: Fail): Modifies<{ values: "any"; stores: "grow" }, ObjectTerm> {
+export function recordShape(reference: Reference, records: NamedRecords, fail: Fail): Modifies<{ values: "any"; spines: "grow" }, ObjectTerm> {
   const named = (ref: Reference, path: readonly string[]): ObjectTerm => {
     const target = ref.reference.target;
     const key = definitionKey(target);
@@ -205,7 +205,7 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
  * is refused. The refusal callback throws with the source location. */
 export function settleDocument(document: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
     record: (id: DeclarationIdentity) => Modifies<{}, boolean>,
-    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; stores: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
+    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; spines: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
   const byKey = new Map(document.definitions.map(d => [definitionKey(d.declaration), d] as const));
   const settled = new Map<string, TypeDefinition>();
   const settling = new Set<string>();
@@ -245,7 +245,7 @@ export function settleDocument(document: { definitions: TypeDefinition[]; values
  * named type's outer record shape (`recordShape`) at the mapping's
  * modifiers. */
 export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
-    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; stores: "grow" }, TypeTerm> {
+    refused: (where: string, error: unknown) => never): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => {
     const deferred = deferredOf(t);
     if (!deferred) return mapTypeParts(t, go);
@@ -267,24 +267,24 @@ export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
 /* Whether a document holds a deferred mapped type (`deferredIdentity`):
  * none may reach a serialized document, where it would name no
  * declaration. A declaration of its module is one, wherever it is named. */
-const deferredTerm = (t: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
+const deferredTerm = (t: TypeTerm): Modifies<{ values: "any"; spines: "grow" }, boolean> =>
   t.k === "reference" && t.reference.target.module === DEFERRED_MODULE;
-const deferredDeclaration = (id: DeclarationIdentity): Modifies<{ values: "any"; stores: "grow" }, boolean> =>
+const deferredDeclaration = (id: DeclarationIdentity): Modifies<{ values: "any"; spines: "grow" }, boolean> =>
   id.module === DEFERRED_MODULE;
 
 /** Whether a declaration document holds a deferred mapped type. */
-export function deferredInDocument(doc: DeclarationDocument): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function deferredInDocument(doc: DeclarationDocument): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return documentHolds(doc, deferredTerm, deferredDeclaration);
 }
 
 /** Whether a lowered file, its documents and code, holds a deferred mapped
  * type. */
-export function deferredInAst(ast: Ast): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function deferredInAst(ast: Ast): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return astHolds(ast, deferredTerm, deferredDeclaration);
 }
 
 /** Whether an imported module's entry, its documents and code, holds a
  * deferred mapped type. */
-export function deferredInModule(module: ModuleAst): Modifies<{ values: "any"; stores: "grow" }, boolean> {
+export function deferredInModule(module: ModuleAst): Modifies<{ values: "any"; spines: "grow" }, boolean> {
   return moduleHolds(module, deferredTerm, deferredDeclaration);
 }

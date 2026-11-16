@@ -23,7 +23,7 @@ class Steps {
 function note(
   log: string[],
   text: string,
-): Modifies<{ values: "any"; stores: "grow" }, number> {
+): Modifies<{ values: "any"; spines: "grow" }, number> {
   log.push(text);
   return log.length;
 }

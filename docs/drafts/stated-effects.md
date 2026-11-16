@@ -123,13 +123,13 @@ c &::= \texttt{"keep"} \mid \texttt{"init"} \mid \texttt{"scalar"} \mid \texttt{
 Each entry adds its regions at its change; a location no entry covers is
 unchanged, so `Modifies<{}, T>` changes nothing. The class keys and the
 flag are written unquoted, a location key quoted. `values: c` is
-`cls value` at $`c`$ and `stores: c` is `cls store` at $`c`$. A location
+`cls value` at $`c`$ and `spines: c` is `cls store` at $`c`$. A location
 key adds its regions: `cell(b)` is `cell b`, $`R.f`$ is `path`, $`R[*]`$ is
 `path store` with `pathElems`, $`R.*`$ is `pathOwn`. A location key at a
 class map, `"L": { values: c_v; stores: c_s }`, is `inCls L value` at
 $`c_v`$ and `inCls L store` at $`c_s`$, an omitted class unchanged; since
 the classes partition the locations, `"L": c` is
-`"L": { values: c; stores: c }`. On a value `grow` is `scalar`
+`"L": { values: c; spines: c }`. On a value `grow` is `scalar`
 (`Change.onValue`), and on a store `init` and `scalar` are `keep`
 (`Change.onStore`). `onThrow: true` makes the frame hold on a throw too.
 A statement whose class keys are both `"any"` lets every location change
@@ -143,11 +143,11 @@ reader recognizes:
 type Modifies<
   P extends {
     values?: "keep" | "init" | "scalar" | "grow" | "any";
-    stores?: "keep" | "init" | "scalar" | "grow" | "any";
+    spines?: "keep" | "init" | "scalar" | "grow" | "any";
     onThrow?: true;
     [location: string]:
       | "keep" | "init" | "scalar" | "grow" | "any"
-      | { values?: "keep" | "init" | "scalar" | "grow" | "any"; stores?: "keep" | "init" | "scalar" | "grow" | "any" }
+      | { values?: "keep" | "init" | "scalar" | "grow" | "any"; spines?: "keep" | "init" | "scalar" | "grow" | "any" }
       | true
       | undefined;
   },
@@ -160,11 +160,11 @@ TypeScript checks a class key's change; a location key passes its index
 signature whatever its spelling and value, so the reader refuses a key
 that is no $`L`$ or that resolves to nothing (Binding, below), and a value
 that is no $`m`$: `true` or `undefined` at a location key, and a class map
-with a member other than `values` and `stores`.
+with a member other than `values` and `spines`.
 
 ```ts
 function size(xs: number[]): Modifies<{}, number>
-function lower(term: TypeTerm): Modifies<{ values: "any"; stores: "grow" }, TypeTerm>
+function lower(term: TypeTerm): Modifies<{ values: "any"; spines: "grow" }, TypeTerm>
 function readRuns(runs: Runs): Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
 note(n: number): Modifies<{ "this.*": { values: "scalar" }; onThrow: true }, number>
 function cached(): Modifies<{ "cell(values)": "init" }, Profile>
@@ -192,7 +192,7 @@ entry contents at the return. Beyond the set, `Modifies` states four parts:
   `grow` (a length's lower bound) is kept across a call that grows the
   store it reads, where a plain modifies set, listing that store, would
   drop it.
-- **Classes.** `values` and `stores` name every location of a class, so a
+- **Classes.** `values` and `spines` name every location of a class, so a
   frame bounds locations no path reaches.
 - **Normal return by default.** The frame bounds a normal return; a throw
   is unbounded unless the statement writes `onThrow: true`.
@@ -272,7 +272,7 @@ parameter, a field or a returned closure, an import, an audited contract.
 
 ```ts
 function zeros(count: number): Fresh<number[]>
-function build(make: () => Modifies<{ stores: "grow" }, Fresh<number[]>>): number[]
+function build(make: () => Modifies<{ spines: "grow" }, Fresh<number[]>>): number[]
 ```
 
 It is certified where the function is introduced, as O10 states: a body
@@ -333,7 +333,7 @@ the frame at the same actuals; every signature mapping carries it whole.
 `Modifies` replaces `Within` in one change, with no second accepted
 spelling: `Within` and `Footprint` leave `tools/resolvable.d.ts`, and a
 reference to either is an ordinary type. The class keys map one to one
-(`value` to `values`, `store` to `stores`), with `"keep"` entries
+(`value` to `values`, `store` to `spines`), with `"keep"` entries
 dropped, so `{ value: "keep"; store: "keep" }` becomes `{}`. The sites, on
 main at 0c4518e4:
 
@@ -560,7 +560,7 @@ may change any value-class location. On normal return `push`'s
 row is the global $`\{\mathsf{any},\mathsf{grow}\}`$. A row stating
 `"this[*]"` needs a theorem from a narrower audited premise (the native
 changes only its store and the cells its store lists in $`h_0`$, and
-allocates the rest) with `Arr.Within`: `{ values: "any"; stores: "grow" }`
+allocates the rest) with `Arr.Within`: `{ values: "any"; spines: "grow" }`
 for `push`, `unshift` and `sort`'s writeback (`unshift` overwrites present
 cells), `"any"` for `pop`, `shift`, `reverse` and `splice`.
 
@@ -648,7 +648,7 @@ Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
 ```
 
 joined with `unpackClasses`'s and `getClass`'s frames. `push` and the
-element writes need no global `stores: "grow"`: `push`'s step frame is the
+element writes need no global `spines: "grow"`: `push`'s step frame is the
 one `ReceiverGrows` gives (its receiver's store alone), an element write's
 is value-class locations and the written array's store (`StoreWrite`), and
 both rebase into `"runs.openBrackets[*]"` through the destructured slot's
@@ -669,7 +669,7 @@ cited), so the record's allocation gives the store separation
 (`store-apart-links`, `restateStores`;
 [store separation](../ARITHMETIC.md#store-separation); proved, as
 `stated-local-runs` shows). A loop fact on
-those arrays' lengths, support at `grow`, is then kept: `stores: "grow"`
+those arrays' lengths, support at `grow`, is then kept: `spines: "grow"`
 tolerates it, `values: "any"` misses stores, the path region is apart, the
 cells are value-class. The stable link from `scriptRuns` to its array is
 `/** @stable */` on `openBrackets`, since the loop's other calls state
@@ -751,15 +751,15 @@ places the map's table among the receiver's own locations.
 
 ### 6.5 Footprints ([FOOTPRINTS.md](../FOOTPRINTS.md))
 
-- **Value and store classes**: `values` and `stores`.
+- **Value and store classes**: `values` and `spines`.
 - **Fresh array storage**: freshness discharges the enclosing obligation
   (§4; `FreshOk`, `Closed.HoldsOn.below_fresh`; cited); a result's
   freshness is `Fresh<T>` (§2.1).
 - **Element writes**: `o[k] = v` is within
-  `"o[*]": { values: "any"; stores: "grow" }` (`stores: "keep"` at a
+  `"o[*]": { values: "any"; spines: "grow" }` (`spines: "keep"` at a
   required position) once its write is proved confined to the store's
   cells; without that proof it is the closed
-  `{ values: "any"; stores: "grow" }`
+  `{ values: "any"; spines: "grow" }`
   ([element writes](../FOOTPRINTS.md#element-writes); cited).
 
 ## 7. Stating effects to save module runs
@@ -889,7 +889,7 @@ at a frame claiming `onThrow`), `invalid-stated-default-root`,
 `Fresh<T>`), `invalid-stated-fresh-closure` (a closure returning a
 captured array, passed at a parameter type stating `Fresh`), and an
 unpinned statement in a declaration file. Refused at the reader:
-`Modifies<{ values: "any"; stores: "any" }, T>`; `Fresh` on a type of no
+`Modifies<{ values: "any"; spines: "any" }, T>`; `Fresh` on a type of no
 array, outside a result, and as `Fresh<Modifies<P, T>>`.
 
 Migration controls, each with its outcome: refused at the reader, the old

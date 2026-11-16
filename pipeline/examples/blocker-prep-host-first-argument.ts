@@ -14,11 +14,11 @@ export function receiver(
   node: ts.CallExpression,
   expr: (
     e: ts.Expression,
-  ) => Modifies<{ values: "any"; stores: "grow" }, number>,
+  ) => Modifies<{ values: "any"; spines: "grow" }, number>,
   span: (n: ts.Node) => Modifies<{}, number>,
   knownLocal: (
     e: ts.Expression,
-  ) => Modifies<{ values: "any"; stores: "grow" }, boolean>,
+  ) => Modifies<{ values: "any"; spines: "grow" }, boolean>,
 ): number {
   if (!ts.isPropertyAccessExpression(node.expression))
     throw Error("expected a method call");

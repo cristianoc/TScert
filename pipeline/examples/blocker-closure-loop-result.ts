@@ -3,7 +3,7 @@
 // Census functions:
 // fragment-statements.mts#sites.
 export function use(): {
-  span(): Modifies<{ values: "any"; stores: "grow" }, [number, number]>;
+  span(): Modifies<{ values: "any"; spines: "grow" }, [number, number]>;
 } {
   let i = 0;
   return {

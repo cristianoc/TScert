@@ -7,7 +7,7 @@
 // The write states the index below the length (`write-bound`) and, at the
 // length, the length one longer (`write-append`), so `readWritten` reads at
 // the written index and the builders keep at <= widths.length at the loop head.
-function note(out: number[], v: number): Modifies<{ values: "any"; stores: "grow" }, void> {
+function note(out: number[], v: number): Modifies<{ values: "any"; spines: "grow" }, void> {
   out.push(v);
 }
 

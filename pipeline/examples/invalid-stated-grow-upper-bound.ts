@@ -1,7 +1,7 @@
-// A call stated `stores: "grow"` keeps no upper bound of a length: `add`
+// A call stated `spines: "grow"` keeps no upper bound of a length: `add`
 // may lengthen `xs`, so `xs.length <= ys.length` is lost and `ys[n - 1]` may
 // be out of bounds (run under Node: `last([], [])` returns `undefined`).
-function add(xs: number[]): Modifies<{ values: "any"; stores: "grow" }, void> {
+function add(xs: number[]): Modifies<{ values: "any"; spines: "grow" }, void> {
   xs.push(1);
 }
 

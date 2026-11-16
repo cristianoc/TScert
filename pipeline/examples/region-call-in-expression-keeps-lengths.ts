@@ -8,7 +8,7 @@ type Runs = { /** @stable */ readonly open: number[] };
 function step(
   runs: Runs,
   out: number[],
-): Modifies<{ values: "any"; stores: "grow"; "runs.open[*]": "any" }, number> {
+): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, number> {
   runs.open.pop();
   out.push(1);
   return out.length;

@@ -6,7 +6,7 @@
  * @requires 0 <= xs.length && xs.length <= 1000
  * @ensures grow === false || xs.length === old(xs.length) + 1
  */
-function maybeAppend(xs: number[], grow: boolean): Modifies<{ values: "any"; stores: "grow" }, void> {
+function maybeAppend(xs: number[], grow: boolean): Modifies<{ values: "any"; spines: "grow" }, void> {
   if (!grow) return;
   xs.push(0);
 }

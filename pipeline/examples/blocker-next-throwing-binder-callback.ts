@@ -1,6 +1,6 @@
 // Census: tools/array-prototype.mts#functionPrototype,#mergeRefusal,#prototype.
 type Scope = {
-  named: () => Modifies<{ values: "any"; stores: "grow" }, number>;
+  named: () => Modifies<{ values: "any"; spines: "grow" }, number>;
 };
 export function scope(ok: boolean, failure: () => Error): Scope {
   return {

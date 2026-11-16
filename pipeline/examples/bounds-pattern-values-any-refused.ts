@@ -1,6 +1,6 @@
 // Bounds pattern P6: a fact over value locations across a call changing values.
 // Fact: forall i in starts: 0 <= starts[i] < offsets.length across a callee
-// whose frame is `{ values: "any"; stores: "keep" }` and which writes only a
+// whose frame is `{ values: "any"; spines: "keep" }` and which writes only a
 // field of a `Cache`.
 // Pretext: rich-inline.ts prepareRichInline, materializeRichInlineLineRange;
 // prepare.ts getFollowingSpaceTail; han-kerning.ts getHanKerningTrims (12 sites).
@@ -8,7 +8,7 @@
 // names the kind of value locations a callee changes (fields only).
 type Cache = { value: number | null };
 
-function touch(c: Cache): Modifies<{ values: "any"; stores: "keep" }, void> {
+function touch(c: Cache): Modifies<{ values: "any"; spines: "keep" }, void> {
   c.value = null;
 }
 

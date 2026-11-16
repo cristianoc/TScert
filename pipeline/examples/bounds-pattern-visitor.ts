@@ -4,7 +4,7 @@
 // which no visitor changes, read below a count taken at entry.
 // Pretext: line-break.ts walkPreparedComplexLines and its callers.
 type Visitor = (w: number) => void;
-type BoundedVisitor = (w: number) => Modifies<{ values: "any"; stores: "grow" }, void>;
+type BoundedVisitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
 
 function walkBounded(xs: number[], visit: BoundedVisitor | undefined): number {
   let s = 0;

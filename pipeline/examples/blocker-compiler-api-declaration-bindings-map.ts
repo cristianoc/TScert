@@ -8,7 +8,7 @@ export function bindings(nodes: ts.Node[], gate: Gate): number[] {
   const found: number[] = nodes.map((node) => {
     const reads = (
       n: ts.Node,
-    ): Modifies<{ values: "any"; stores: "grow" }, ts.Node | undefined> => {
+    ): Modifies<{ values: "any"; spines: "grow" }, ts.Node | undefined> => {
       if (ts.isIdentifier(n) && gate.local(n) === "self") return n;
       return n.forEachChild(reads);
     };

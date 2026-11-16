@@ -8,7 +8,7 @@
  * @requires xs === undefined || (0 <= xs.length && xs.length <= 1000)
  * @ensures xs === undefined || xs.length === old(xs.length) + 1
  */
-export function maybePush(xs: number[] | undefined): Modifies<{ values: "any"; stores: "grow" }, void> {
+export function maybePush(xs: number[] | undefined): Modifies<{ values: "any"; spines: "grow" }, void> {
   if (xs === undefined) return;
   xs.push(0);
 }
