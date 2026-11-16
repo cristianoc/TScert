@@ -61,10 +61,10 @@ abbreviate, so every rule and proof written before field names keeps its
 meaning. -/
 def valueField : PropKey := "value"
 
-/-- The key an array object holds its store under (`CallArguments.arrayStoreField`).
+/-- The key an array object holds its spine under (`CallArguments.arraySpineField`).
 No source property names it, so an object owns it exactly when it is an array:
 that is what `Array.isArray` tests (`Tag.isArray`). -/
-def arrayStoreKey : PropKey := "[]"
+def arraySpineKey : PropKey := "[]"
 
 /-- The key a host object owns (HOST-FAMILIES.md, "The host classification"):
 the package's instances and node lists, which the model reads as records and
@@ -108,7 +108,7 @@ inductive Tag where
   | strEq (value : String)
   | isBigint | isSymbol
   | truthy
-  /-- `Array.isArray`: a plain object owning the store key, which only an
+  /-- `Array.isArray`: a plain object owning the spine key, which only an
   array does. Keys are fixed at allocation, so the answer never changes. -/
   | isArray
   /-- One Boolean, and one bigint: equality with a singleton of the last two
@@ -251,29 +251,29 @@ inductive Tm where
   /-- A binary operator on the values of `a` and `b`, in that order: defined
   where `binop` answers, stuck elsewhere. -/
   | arith (op : Arith) (a b : Tm)
-  /-- An array's store: the location of each element, in order, or none at a
-  hole. The array object holds this value in its store field and replaces it
+  /-- An array's spine: the location of each element, in order, or none at a
+  hole. The array object holds this value in its spine field and replaces it
   when the array grows, so identity, aliasing and holes all live in locations. -/
   | arr (elems : List (Option Nat))
-  /-- A typed array's view store (the note *Tolerant frames*, §2, the view
-  stores; (W2)): the location of each element, in index order, of a store
+  /-- A typed array's view spine (the note *Tolerant frames*, §2, the view
+  spines; (W2)): the location of each element, in index order, of a spine
   of the format `format`. It lists a cell at every index, so it has no hole,
-  and its tag tells it from an array's store by its contents alone. A typed
+  and its tag tells it from an array's spine by its contents alone. A typed
   array's descriptor names the location holding it (`CallCode.view`). An
   internal machine value: no source term has one. -/
-  | viewStore (format : ViewFormat) (cells : List Nat)
-  /-- Allocate one location per initializer, in order, as a store. -/
+  | viewSpine (format : ViewFormat) (cells : List Nat)
+  /-- Allocate one location per initializer, in order, as a spine. -/
   | arrLit (inits : List Tm)
-  /-- The element a numeric index names in a store: `undefined` at a hole or
+  /-- The element a numeric index names in a spine: `undefined` at a hole or
   past the end, as property lookup answers. In a string it is the code unit
   there, as the string's own index property answers. -/
   | elemAt (a i : Tm)
   /-- Store a value at a numeric index: into the element's location, or, at a
-  hole or past the end, into a fresh location the returned store records. -/
+  hole or past the end, into a fresh location the returned spine records. -/
   | setElem (a i v : Tm)
-  /-- A store's length, or a string's own `length`: its UTF-16 code units. -/
+  /-- A spine's length, or a string's own `length`: its UTF-16 code units. -/
   | lenOf (a : Tm)
-  /-- An actual that stands for the elements of the store `a` evaluates to,
+  /-- An actual that stands for the elements of the spine `a` evaluates to,
   read in order when every earlier actual is a value. Only an argument list
   gives it meaning: anywhere else it is stuck. -/
   | spread (a : Tm)
@@ -283,7 +283,7 @@ inductive Tm where
   | throw (a : Tm)
   /-- An allocation from parts: evaluate `a`, then `b`, then allocate one
   fresh plain object holding `a`'s own fields (its prototype included, its
-  store not) and, over them, the own enumerable data properties `b` has now,
+  spine not) and, over them, the own enumerable data properties `b` has now,
   but the keys in `drop` (`mergeParts`). An object literal with spreads is a
   chain of these from a fresh accumulator: `{ ...x, k: e }` copies `x` into
   `{}`, then `{ k: e }` into that (SOURCE-MODEL.md, "Object literals"). -/
@@ -327,7 +327,7 @@ inductive CallCode where
   `[this, parameter_0, …, parameter_{arity-1}] ++ captures ++ [self]`, self
   the invoked object; `new` on
   construct code passes `undefined` for `this`. Code with a rest first
-  collects the actuals past its `arity` fixed parameters into one fresh store,
+  collects the actuals past its `arity` fixed parameters into one fresh spine,
   which the run finds in slot 0, before the receiver
   (`CallArguments.graphEntry`). The node expressions are scoped by that
   environment alone: substitution reaches the captures, never the nodes. -/
@@ -335,20 +335,20 @@ inductive CallCode where
       (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
       (start : Nat) (caps : List Tm) (kind : Invoke := .call) (rest : Bool := false)
   /-- A typed array's immutable descriptor (the note *Tolerant frames*, §2,
-  a typed array; (W3)): the location of its view store, its element format
+  a typed array; (W3)): the location of its view spine, its element format
   and its fixed length. An object carrying it is a typed array (`Tm.viewAt`):
   it has no `[[Call]]`, and its own fields and identity are an object's. -/
-  | view (store : Nat) (format : ViewFormat) (length : Nat)
+  | view (spine : Nat) (format : ViewFormat) (length : Nat)
   deriving Repr
 end
 
 /-- **A typed array** (the note *Tolerant frames*, §2; parity-interfaces I3,
 `Tm.viewAt`): an object with own fields `fields` and identity `identity`
-whose immutable descriptor names its view store `store`, its format and its
+whose immutable descriptor names its view spine `spine`, its format and its
 fixed length. Execution tells a typed array by this value alone. -/
-@[match_pattern] abbrev Tm.viewAt (fields : List (PropKey × Nat)) (identity store : Nat)
+@[match_pattern] abbrev Tm.viewAt (fields : List (PropKey × Nat)) (identity spine : Nat)
     (format : ViewFormat) (length : Nat) : Tm :=
-  .objAt fields (.view store format length) identity
+  .objAt fields (.view spine format length) identity
 
 /-- Whether code has `[[Call]]`: all code but a class constructor's. A plain
 object has none. -/
@@ -687,10 +687,10 @@ def primString : Tm → Option String
 
 def isVal : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _
-  | .viewStore .. => true
+  | .viewSpine .. => true
   | _ => false
 
-/-- Values exposed to JavaScript. Element stores are internal machine values. -/
+/-- Values exposed to JavaScript. Element spines are internal machine values. -/
 def isSourceVal : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. => true
   | _ => false
@@ -698,7 +698,7 @@ def isSourceVal : Tm → Bool
 theorem sourceVal_isVal {v : Tm} (h : isSourceVal v = true) : isVal v = true := by
   cases v <;> simp_all [isSourceVal, isVal]
 
-/-- A spelling the model keeps for itself: the array store's `[]` and every
+/-- A spelling the model keeps for itself: the array spine's `[]` and every
 name in double brackets (the prototype, a function's code, a class's
 prototype object's key). -/
 def reservedSpelling : List Char → Bool
@@ -870,14 +870,14 @@ def primitiveEquals (a b : Tm) : Bool :=
   | _, _ => sameValue a b
 
 /-- Strict equality compares primitives by JavaScript value equality and
-objects by allocated identity. Two internal element stores have no answer. -/
+objects by allocated identity. Two internal element spines have no answer. -/
 def strictEquals (a b : Tm) : Option Bool :=
   if !(isVal a && isVal b) then none
   else if isPrim a || isPrim b then some (sameValue a b)
   else match a, b with
     | .objAt _ _ i, .objAt _ _ j => some (i == j)
     | .objAt .., .arr _ | .arr _, .objAt .. => some false
-    | .objAt .., .viewStore .. | .viewStore .., .objAt .. => some false
+    | .objAt .., .viewSpine .. | .viewSpine .., .objAt .. => some false
     | _, _ => none
 
 /-- Loose equality runs no client code on primitive pairs, nullish comparisons,
@@ -1012,22 +1012,22 @@ def codeUnitAt (s : String) (b : UInt64) : Tm :=
   | some u => .str (unitString u)
   | none => .undef
 
-/-- The location an index names in a store: none at a hole or past the end. -/
+/-- The location an index names in a spine: none at a hole or past the end. -/
 def elemLoc (ls : List (Option Nat)) (b : UInt64) : Option Nat :=
   (indexOfBits b).bind fun k => (ls[k]?).bind id
 
-/-- The elements a store holds, in order: `undefined` at a hole, as iterating
+/-- The elements a spine holds, in order: `undefined` at a hole, as iterating
 an array answers. None when a location is missing from the heap. -/
 def readElems (h : List Tm) : List (Option Nat) → Option (List Tm)
   | [] => some []
   | none :: ls => (readElems h ls).map (.undef :: ·)
   | some l :: ls => h[l]?.bind fun v => (readElems h ls).map (v :: ·)
 
-/-- The most elements a built-in array store holds: `2^32 - 1`, the largest
+/-- The most elements a built-in array spine holds: `2^32 - 1`, the largest
 array length ECMA-262 admits (ArrayCreate, ArraySetLength). -/
 def maxArrayLength : Nat := 2 ^ 32 - 1
 
-/-- An index is below the most elements a store holds. -/
+/-- An index is below the most elements a spine holds. -/
 theorem indexOfBits_lt {b : UInt64} {k : Nat} (h : indexOfBits b = some k) : k < maxArrayLength := by
   simp only [indexOfBits] at h
   split at h
@@ -1043,7 +1043,7 @@ theorem indexOfBits_lt {b : UInt64} {k : Nat} (h : indexOfBits b = some k) : k <
 /-- One fresh location per element, in order, as a literal allocates them. -/
 def elemSlots (base n : Nat) : List (Option Nat) := (List.range n).map fun i => some (base + i)
 
-/-- The store with location `l` at index `k`, holes filling any gap before it. -/
+/-- The spine with location `l` at index `k`, holes filling any gap before it. -/
 def placeAt (ls : List (Option Nat)) (k l : Nat) : List (Option Nat) :=
   (ls ++ List.replicate (k + 1 - ls.length) none).set k (some l)
 
@@ -1116,8 +1116,8 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.arith.injEq])
   case arr.arr a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.arr.injEq])
-  case viewStore.viewStore a0 a1 b0 b1 =>
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.viewStore.injEq])
+  case viewSpine.viewSpine a0 a1 b0 b1 =>
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.viewSpine.injEq])
   case arrLit.arrLit a0 b0 =>
     haveI : Decidable (a0 = b0) := argsDecEq a0 b0
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.arrLit.injEq])
@@ -1317,7 +1317,7 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b))
     (arith : ∀ op a b, P a → P b → P (.arith op a b))
     (arr : ∀ ls, P (.arr ls))
-    (viewStore : ∀ f cs, P (.viewStore f cs))
+    (viewSpine : ∀ f cs, P (.viewSpine f cs))
     (arrLit : ∀ inits, (∀ a ∈ inits, P a) → P (.arrLit inits))
     (elemAt : ∀ a i, P a → P i → P (.elemAt a i))
     (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
@@ -1341,7 +1341,7 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
       | .graph _ E _ _ caps _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a
       | .view .. => True)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr viewStore arrLit elemAt setElem lenOf spread throw merge makeKey
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr viewSpine arrLit elemAt setElem lenOf spread throw merge makeKey
     (fun E K l L d hE hL hd => goto E K l L d hE hL hd)
     (fun E K t L d k x hE ht hL hd => frame E K t L d k x hE ht hL hd)
     True.intro (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩)
@@ -1563,8 +1563,8 @@ def tagHolds : Tag → Val → Bool
   | .truthy, .sym _ => true
   | .truthy, .objAt _ _ _ => true
   | .truthy, .arr _ => true
-  | .truthy, .viewStore .. => true
-  | .isArray, .objAt fs .absent _ => (fs.lookup arrayStoreKey).isSome
+  | .truthy, .viewSpine .. => true
+  | .isArray, .objAt fs .absent _ => (fs.lookup arraySpineKey).isSome
   | .typeofObject, .nul => true
   | .typeofObject, .objAt _ .absent _ => true
   | .typeofObject, .objAt _ (.view ..) _ => true
@@ -1599,7 +1599,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
   | .arith op x y => .arith op (subst j a x) (subst j a y)
   | .arr ls => .arr ls
-  | .viewStore f cs => .viewStore f cs
+  | .viewSpine f cs => .viewSpine f cs
   | .arrLit xs => .arrLit (substArgs j a xs)
   | .elemAt x y => .elemAt (subst j a x) (subst j a y)
   | .setElem x y z => .setElem (subst j a x) (subst j a y) (subst j a z)
@@ -1635,8 +1635,8 @@ def parameters : Nat → List Tm → List Tm
   | n+1, [] => .undef :: parameters n []
   | n+1, a::args => a :: parameters n args
 
-/-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
-def arrayStoreField : PropKey := arrayStoreKey
+/-- The field an array object keeps its spine in: `SourceTypes.spineField`. -/
+def arraySpineField : PropKey := arraySpineKey
 
 /-- The field an object keeps its prototype in. No source property names it:
 a read of a key the object lacks continues there (`Step.readProto`). -/
@@ -1645,9 +1645,9 @@ def protoField : PropKey := "[[proto]]"
 /-- What invoking graph code yields: a run at its entry, the receiver in slot
 0, then the `arity` parameters `parameters` binds, then the captures, then the
 invoked object itself, the code's self entry. Code with
-a rest first allocates the store of the actuals past its parameters, a fresh
-array store, and the run finds that store in slot 0, before the receiver.
-Invocation itself allocates nothing: the store is allocated by the ordinary
+a rest first allocates the spine of the actuals past its parameters, a fresh
+array spine, and the run finds that spine in slot 0, before the receiver.
+Invocation itself allocates nothing: the spine is allocated by the ordinary
 steps of the term it yields. -/
 def graphEntry (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
@@ -1664,7 +1664,7 @@ end CallArguments
 What an object spread reads (`Tm.merge`). The model's own fields are data
 properties; those a spread copies are its own enumerable ones, which are the
 fields under string keys other than the two the model keeps for itself, and,
-for an array, the elements of its store under their index keys. -/
+for an array, the elements of its spine under their index keys. -/
 
 /-- The value a copy reads at a location. A location the heap lacks, or one
 holding a term that is not a value, reads as `undefined`: no run reaches
@@ -1721,7 +1721,7 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
   · exact .inl ((tagHoldsIn_of_protoFree hp).symm.trans hq)
 
 /-- A key a spread copies: a string key the model does not keep for itself
-(the prototype, the array store, a function object's code field, the host
+(the prototype, the array spine, a function object's code field, the host
 classification, an early binding's uninitialized marker). A
 symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record, and
@@ -1737,9 +1737,9 @@ def firstKeys {α : Type} : List (PropKey × α) → List (PropKey × α)
   | (k, x) :: ps => (k, x) :: (firstKeys ps).filter (·.1 != k)
 
 /-- An array's elements, under their index keys, when the object holds a
-store. -/
-def storeData (h : List Tm) (fs : List (PropKey × Nat)) : List (PropKey × Tm) :=
-  match fs.lookup arrayStoreKey with
+spine. -/
+def spineData (h : List Tm) (fs : List (PropKey × Nat)) : List (PropKey × Tm) :=
+  match fs.lookup arraySpineKey with
   | some l => match h[l]? with
     | some (.arr ls) => ls.zipIdx.filterMap fun p => p.1.map fun m => (.str (toString p.2), heapVal h m)
     | _ => []
@@ -1766,16 +1766,16 @@ Boolean, a number, a bigint or a symbol, whose wrappers own no enumerable
 property. -/
 def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
   | v@(.objAt fs _ _) => if hostOwned v then none else some (firstKeys
-      ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
+      ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ spineData h fs))
   | .str s => some (firstKeys (stringData s))
   | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
   | _ => none
 
 /-- The fields of the accumulator a copy is made onto: all of a plain
-object's own fields, its prototype included, but its store. -/
+object's own fields, its prototype included, but its spine. -/
 def ownAll (h : List Tm) : Tm → Option (List (PropKey × Tm))
   | .objAt fs .absent _ => if (fs.lookup hostKey).isSome then none else some (firstKeys
-      ((fs.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2))))
+      ((fs.filter (·.1 != arraySpineKey)).map (fun p => (p.1, heapVal h p.2))))
   | _ => none
 
 /-- The properties of `a` with `b`'s defined over them: a key `b` has takes
@@ -1887,7 +1887,7 @@ theorem mergeParts_vals {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (
       rcases List.mem_append.mp (mem_firstKeys hp) with hp | hp
       · obtain ⟨r, -, rfl⟩ := List.mem_map.mp hp
         exact (heapVal_mem h r.2).imp_right .inl
-      · unfold storeData at hp
+      · unfold spineData at hp
         split at hp
         · split at hp
           · obtain ⟨r, -, hr⟩ := List.mem_filterMap.mp hp
@@ -2055,7 +2055,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   dropped, the saved one used, and the prefix goes before the actuals. -/
   | callBound : isVal r = true → (∀ a ∈ args, isVal a = true) →
       Step h (.invoke (.objAt fs (.bound t r₀ pre) oid) r args) h (.invoke t r₀ (pre ++ args))
-  /-- A spread actual whose store is ready is replaced by the store's elements
+  /-- A spread actual whose spine is ready is replaced by the spine's elements
   once every earlier actual is a value, so later actuals run after the read. -/
   | spreadC : Step h a h' a' → Step h (.spread a) h' (.spread a')
   | callSpread {args pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} :
@@ -2120,20 +2120,20 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | arithC2 : isVal a = true → Step h b h' b' → Step h (.arith op a b) h' (.arith op a b')
   /-- Two values combine in one step where `binop` answers for them. -/
   | arithV : binop op a b = some v → Step h (.arith op a b) h v
-  /-- Store initializers are evaluated left to right, like fields. -/
+  /-- Spine initializers are evaluated left to right, like fields. -/
   | arrArg {inits : List Tm} {i : Nat} {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
       (∀ j, j < i → ∀ v, inits[j]? = some v → isVal v = true) →
       Step h a h' a' → Step h (.arrLit inits) h' (.arrLit (inits.set i a'))
-  /-- A spread among a literal's initializers is replaced by its store's
+  /-- A spread among a literal's initializers is replaced by its spine's
   elements once every earlier initializer is a value, as in a call. -/
   | arrSpread {inits pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} {h : Heap} :
       inits = pre ++ .spread (.arr ls) :: post → (∀ v ∈ pre, isVal v = true) →
       readElems h ls = some vs → Step h (.arrLit inits) h (.arrLit (pre ++ vs ++ post))
-  /-- A store takes one fresh location per element, in order, where it has
+  /-- A spine takes one fresh location per element, in order, where it has
   at most `maxArrayLength` elements. -/
   | arrAlloc {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) → vs.length ≤ maxArrayLength →
       Step h (.arrLit vs) (h ++ vs) (.arr (elemSlots h.length vs.length))
-  /-- A store of more elements throws a fresh error object, a `RangeError`, as
+  /-- A spine of more elements throws a fresh error object, a `RangeError`, as
   engines do (ECMA-262, ArrayCreate). -/
   | arrAllocThrow {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) → maxArrayLength < vs.length →
       Step h (.arrLit vs) (h ++ [.nul]) (.throw (thrownError h.length))
@@ -2148,12 +2148,12 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | setC2 : isVal a = true → Step h i h' i' → Step h (.setElem a i v) h' (.setElem a i' v)
   | setC3 : isVal a = true → isVal i = true → Step h v h' v' →
       Step h (.setElem a i v) h' (.setElem a i v')
-  /-- A present element's location takes the value; the store is unchanged. -/
+  /-- A present element's location takes the value; the spine is unchanged. -/
   | setPresent {ls : List (Option Nat)} {b : UInt64} {l : Nat} {h : Heap} {v : Val} :
       isVal v = true → elemLoc ls b = some l → l < h.length →
       Step h (.setElem (.arr ls) (.num b) v) (h.set l v) (.arr ls)
   /-- A hole or an index past the end takes a fresh location, which the new
-  store records; holes fill any gap. -/
+  spine records; holes fill any gap. -/
   | setGrow {ls : List (Option Nat)} {b : UInt64} {k : Nat} {h : Heap} {v : Val} :
       isVal v = true → indexOfBits b = some k → elemLoc ls b = none →
       Step h (.setElem (.arr ls) (.num b) v) (h ++ [v]) (.arr (placeAt ls k h.length))
@@ -2193,7 +2193,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- Graph code with `[[Call]]` is invoked in one step, changing no heap: its
   run starts at the entry label, the receiver in slot 0, then the parameters,
   then the captures, then the invoked object, after collecting the rest's
-  store when it has one (`CallArguments.graphEntry`). Its kind binds the
+  spine when it has one (`CallArguments.graphEntry`). Its kind binds the
   receiver (`Invoke.binds`): sloppy code is invoked only with an object. -/
   | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) → k.binds r = true →
       Step h (.invoke (.objAt fs (.graph n E K s caps k rest) oid) r args) h
@@ -2292,7 +2292,7 @@ theorem spread_not_values {args pre post : List Tm} {a : Tm}
   have := hv (.spread a) (by simp [he])
   simp [isVal] at this
 
-/-- A spread whose store is ready is the first actual still to run, so no
+/-- A spread whose spine is ready is the first actual still to run, so no
 earlier actual steps and it has no step of its own. -/
 theorem spread_blocks_arg {args pre post : List Tm} {ls : List (Option Nat)}
     (he : args = pre ++ .spread (.arr ls) :: post) (hpre : ∀ v ∈ pre, isVal v = true)
@@ -2392,7 +2392,7 @@ theorem not_val_of_step {h h' t t'} (s : Step h t h' t') : isVal t = false := by
   · rfl
   · exact False.elim (value_no_step ht s)
 
-/-- A spread whose store is ready never throws. -/
+/-- A spread whose spine is ready never throws. -/
 theorem spread_arr_no_raise {ls : List (Option Nat)} {v : Tm} : ¬ Raises (.spread (.arr ls)) v := by
   intro h; cases h with | spreadC h => cases h
 

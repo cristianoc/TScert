@@ -12,7 +12,7 @@ needs it (`throws`: a call by its signature's exceptional exit,
 
 - `pass_within_normal`, `pass_within_throw`: the node's run is within `Φ` on
   the locations below `b` from the node's entry heap, the slots `F` holding
-  stores allocated at or after `b`; with `Closed.Holds.trans_on`, within `Φ`
+  spines allocated at or after `b`; with `Closed.Holds.trans_on`, within `Φ`
   from the invocation's entry `h₀` where `b = |h₀|` (`pass_within_entry`);
 - `pass_write_judgment`: where `writes` holds, the step's judgment within
   `Φ` on the whole heap, both exits, with its rule's output, the form

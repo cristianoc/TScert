@@ -8,10 +8,10 @@ import type { ArrayPresence, ViewFormat } from "./type-graph.mts";
 import type { Span } from "./span.mts";
 /** A closed footprint (`Footprints.Closed`): the change a call may make, on
  * normal return, to the locations of its entry heap holding a value and to
- * those holding an array store. `keep` changes nothing, `grow` keeps every
- * dense prefix of a store, `any` allows every change; on a value `grow` is
+ * those holding an array spine. `keep` changes nothing, `grow` keeps every
+ * dense prefix of a spine, `any` allows every change; on a value `grow` is
  * `keep`. Fresh locations are unconstrained. */
-export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "any"; readonly store: "keep" | "grow" | "any" };
+export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "any"; readonly spine: "keep" | "grow" | "any" };
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
 export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |
@@ -23,22 +23,22 @@ export type Key = string | { readonly symbol: number };
 /** The content categories a class region selects (`Footprints.Selector`). */
 export type Selector = { readonly value: boolean; readonly array: boolean; readonly view: boolean };
 /** A region of locations, read at the call's entry (`Footprints.Region`):
- * a field, the own locations or the element cells of the value at position
+ * a field, the fields or the cells of the value at position
  * `x`, a content class, every location, the same through the data fields
- * `fields`, a variable's cell, a region within a class, and the store the
+ * `fields`, a variable's cell, a region within a class, and the spine the
  * value through `fields` selects. */
 export type Region =
   | { readonly field: { readonly x: number; readonly key: Key } }
-  | { readonly own: { readonly x: number } }
-  | { readonly elems: { readonly x: number } }
+  | { readonly fields: { readonly x: number } }
+  | { readonly cells: { readonly x: number } }
   | { readonly cls: Selector }
   | "all"
   | { readonly path: { readonly x: number; readonly fields: readonly string[]; readonly key: Key } }
-  | { readonly pathOwn: { readonly x: number; readonly fields: readonly string[] } }
-  | { readonly pathElems: { readonly x: number; readonly fields: readonly string[] } }
+  | { readonly pathFields: { readonly x: number; readonly fields: readonly string[] } }
+  | { readonly pathCells: { readonly x: number; readonly fields: readonly string[] } }
   | { readonly cell: { readonly name: string } }
   | { readonly inCls: { readonly region: Region; readonly selector: Selector } }
-  | { readonly store: { readonly x: number; readonly fields: readonly string[] } };
+  | { readonly spine: { readonly x: number; readonly fields: readonly string[] } };
 /** A frame: the regions an exit may change, each with its change
  * (`Footprints.Footprint`). */
 export type Frame = readonly { readonly region: Region; readonly change: Change }[];
@@ -79,11 +79,11 @@ export type OperationPost =
   | { readonly boundedWrite: { readonly x: number; readonly i: number; readonly exit: number } }
   | { readonly push: { readonly x: number; readonly exit: number; readonly args: WitnessSeq } }
   | { readonly fact: { readonly phase: "before" | "after"; readonly lift: number; readonly fact: IndexFact } }
-  | { readonly freshStore: { readonly x: number } }
+  | { readonly freshSpine: { readonly x: number } }
   | { readonly freshObject: { readonly x: number } }
   | { readonly elementsWhen: { readonly x: number; readonly value: Literal; readonly y: number;
       readonly predicate: ElementKinds } }
-  | { readonly storeExtends: { readonly x: number } }
+  | { readonly spineExtends: { readonly x: number } }
   | { readonly viewWrite: { readonly x: number; readonly i: number; readonly v: number; readonly format: ViewFormat | null } };
 /** A two-state postcondition of a specification
  * (`FormulaF WitnessSeq TransportSchema`, no assertion-arena node). */
@@ -113,7 +113,7 @@ export type CallEffect = {
   readonly pre: readonly IndexFact[];
 };
 /** What a typed array's element write keeps (`CallEffects.ElementWrite`):
- * every location holding no store and every store's length (`"stores"`);
+ * every location holding no spine and every spine's length (`"spines"`);
  * besides, for an element assignment `b[i] = v` (`"assign"`), the write of
  * the element at the view's own format (`CallEffects.ViewAssign`, the
  * note's View-Write for every number) and the value as the result; and
@@ -124,12 +124,12 @@ export type CallEffect = {
  * `Float64Array`), its other elements unchanged (`"exactUint8"`,
  * `"exactUint16"`, `"exactInt32"`, `"exactFloat64"`). An authoring option of
  * `footprintEffect`, which states it as postconditions. */
-export type ElementWrite = "stores" | "assign" | ExactElementWrite;
+export type ElementWrite = "spines" | "assign" | ExactElementWrite;
 /** The exact element write of each element type (`ElementWrite`). */
 export type ExactElementWrite = "exactUint8" | "exactUint16" | "exactInt32" | "exactFloat64";
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
- * array's store; an index at most that length, below it where `strict`; a
+ * array's spine; an index at most that length, below it where `strict`; a
  * safe integer; the double `2^53`, past the safe integers (`pastSafe`); a linear fact `Σ c·t ≤ d` or `≠ d`; a guarded fact, which
  * holds where the named data fields `path` read from the position `slot`
  * give the value `tag` names, or where its body holds (ARITHMETIC.md,
@@ -152,7 +152,7 @@ export type IndexFact =
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
       readonly body: readonly BodyFact[] } }
   | { readonly apart: { readonly slot: number; readonly other: number } }
-  | { readonly storeApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
+  | { readonly spineApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
       readonly otherPath: readonly string[] } };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
  * index, the element at it, or a linear term. */
@@ -177,7 +177,7 @@ export type LinearFactOf<V> =
 /** A term of a linear fact (`HeapKnowledge.Term`): a root position, the
  * named data fields read from what it holds in turn (`path`, empty for the
  * position's own value), and what the term reads of the value the path ends
- * at (`kind`): the safe integer it is, the length of its array store, the
+ * at (`kind`): the safe integer it is, the length of its array spine, the
  * length of the typed array it is, or the length of the string it is. */
 export type LinearTerm = {
   readonly kind: "value" | "length" | "view" | "strLength";

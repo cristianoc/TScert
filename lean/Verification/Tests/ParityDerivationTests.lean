@@ -7,7 +7,7 @@ encodes a derivation of the note "Tolerant frames"
 it with `checkScoped`, which checks the arena and the scopes first: what it
 accepts holds by `checkScoped_sound`.
 
-- The regional certificates: classes, store separation, rigid stores.
+- The regional certificates: classes, spine separation, rigid spines.
 - The atom axioms (Sep), (Init), (View), (Every), (Rigid), each refused off
   its shape.
 - A rigid path image under a box (Frame⁺ with a certified transport).
@@ -82,21 +82,21 @@ private def arena : AssertionArena := ⟨#[
   .existsValue (r 4)]⟩                          -- 5 rigid(p.items), p at slot 0
 
 #guard arena.check
--- `xs.store` is an array store, disjoint from the view stores.
-#guard (DisjointEvidence.classes (.arrayAt (r 0)) .intrinsic).check arena (r 2) (.store 0 []) (.cls .views)
--- Without a conjunct naming `ys` as an array, `ys.store` has no class.
-#guard !(DisjointEvidence.classes (.arrayAt (r 0)) .intrinsic).check arena (r 2) (.store 2 []) (.cls .views)
-#guard (DisjointEvidence.classes (.arrayAt (r 1)) .intrinsic).check arena (r 2) (.store 2 []) (.cls .views)
--- The two stores a separation names, in either order.
-#guard (DisjointEvidence.stores (r 1)).check arena (r 2) (.store 0 []) (.store 2 [])
-#guard (DisjointEvidence.swap (.stores (r 1))).check arena (r 2) (.store 2 []) (.store 0 [])
--- A store's cells are values, disjoint from every store.
-#guard (DisjointEvidence.classes .intrinsic .intrinsic).check arena (r 2) (.pathElems 0 []) (.cls .stores)
--- `{p.items.store: any}` is rigid where `p.items` is; `{p.items[cells]: any}` is not.
-#guard (RigidityEvidence.stable [r 5]).check arena (r 5) [(.store 0 ["items"], .any), (.cls .values, .any)]
-#guard !(RigidityEvidence.stable [r 5]).check arena (r 5) [(.pathElems 0 ["items"], .any)]
+-- `xs.spine` is an array spine, disjoint from the view spines.
+#guard (DisjointEvidence.classes (.arrayAt (r 0)) .intrinsic).check arena (r 2) (.spine 0 []) (.cls .views)
+-- Without a conjunct naming `ys` as an array, `ys.spine` has no class.
+#guard !(DisjointEvidence.classes (.arrayAt (r 0)) .intrinsic).check arena (r 2) (.spine 2 []) (.cls .views)
+#guard (DisjointEvidence.classes (.arrayAt (r 1)) .intrinsic).check arena (r 2) (.spine 2 []) (.cls .views)
+-- The two spines a separation names, in either order.
+#guard (DisjointEvidence.spines (r 1)).check arena (r 2) (.spine 0 []) (.spine 2 [])
+#guard (DisjointEvidence.swap (.spines (r 1))).check arena (r 2) (.spine 2 []) (.spine 0 [])
+-- A spine's cells are values, disjoint from every spine.
+#guard (DisjointEvidence.classes .intrinsic .intrinsic).check arena (r 2) (.pathCells 0 []) (.cls .spines)
+-- `{p.items.spine: any}` is rigid where `p.items` is; `{p.items[cells]: any}` is not.
+#guard (RigidityEvidence.stable [r 5]).check arena (r 5) [(.spine 0 ["items"], .any), (.cls .values, .any)]
+#guard !(RigidityEvidence.stable [r 5]).check arena (r 5) [(.pathCells 0 ["items"], .any)]
 -- Inclusion by class: the cells of `xs` at `any` are within `{values: any}`.
-#guard (InclusionEvidence.byClass [.intrinsic]).check arena (r 2) [(.pathElems 0 [], .any)] [(.cls .values, .any)]
+#guard (InclusionEvidence.byClass [.intrinsic]).check arena (r 2) [(.pathCells 0 [], .any)] [(.cls .values, .any)]
 end Regional
 
 /-! ## The atom axioms
@@ -110,13 +110,13 @@ private def grow : Footprint := TolerantFrames.growEffect.fp
 private def arena : AssertionArena := ⟨#[
   .atom (.linear (.le [(Term.value 1, 1), (Term.length 0, -1)] 0)),      -- 0 n ≤ |x|
   .separated (.var 0) (.var 2),                                         -- 1 x # y
-  .box [(.cls .values, .any), (.store 2 [], .any)] (r 0),               -- 2 (Sep)
+  .box [(.cls .values, .any), (.spine 2 [], .any)] (r 0),               -- 2 (Sep)
   .box [(.cls .values, .init)] (r 0),                                   -- 3 (Init)
   .atom (.linear (.le [(Term.value 1, 1), (Term.now .view 3 [], -1)] 0)), -- 4 n ≤ view(w)
   .box topEffect (r 4),                                                 -- 5 (View)
   .apart (.var 2) (.var 0),                                             -- 6 apart(y, x)
   .atom (.every (.var 0) (Term.value 1) [.atom (.le [(.elem, -1)] (-1))]), -- 7 every(x, n, v > 0)
-  .box [(.store 2 [], .any), (.pathElems 2 [], .any)] (r 7),            -- 8 (Every)
+  .box [(.spine 2 [], .any), (.pathCells 2 [], .any)] (r 7),            -- 8 (Every)
   .atom (.equal ⟨5, ["f"]⟩ (.path (.var 0))),                           -- 9
   .box topEffect (r 9),                                                 -- 10
   .existsValue (r 10),                                                  -- 11 rigid(p.f), p at slot 4
@@ -125,7 +125,7 @@ private def arena : AssertionArena := ⟨#[
   .atom (.linear (.le [(Term.value 1, 1), (Term.now .length 4 ["f"], -1)] 0)), -- 14 n ≤ |p.f|
   .box grow (r 14),                                                     -- 15 (Rigid) with (Grow)
   .atom (.linear (.le [(Term.value 1, 1), (Term.length 2, -1)] 0)),      -- 16 n ≤ |y|
-  .box [(.cls .values, .any), (.store 2 [], .any)] (r 16)]⟩             -- 17
+  .box [(.cls .values, .any), (.spine 2 [], .any)] (r 16)]⟩             -- 17
 
 #guard arena.check
 private def sc : Scope := ⟨5, 5⟩
@@ -142,7 +142,7 @@ private def sc : Scope := ⟨5, 5⟩
   "view: the atom reads more than variables and typed-array lengths"
 #guard isOk (checkScoped arena sc [.at .before (r 6), .at .before (r 7)] (.at .before (r 8))
   (.everyFrame 2 (r 6) .assumption .assumption))
--- (Every) needs `apart`; a store separation leaves the cells shared.
+-- (Every) needs `apart`; a spine separation leaves the cells shared.
 #guard errorOf (checkScoped arena sc [.at .before (r 1), .at .before (r 7)] (.at .before (r 8))
   (.everyFrame 2 (r 1) .assumption .assumption)) = "everyFrame: goal is no box or the separation is no apartness"
 #guard isOk (checkScoped arena sc [.at .before (r 11), .at .before (r 14)] (.at .before (r 15))
@@ -193,7 +193,7 @@ Before `b[0] = 7`, of effect `{views: grow}`: `3 ≤ |xs|`,
 `every(xs, t, v > 0)`, `o.n ≐ 1`, `2 ≤ view(c)` and `c[j] ≐ 5` (`t` and `j`
 variables standing for `3` and `1`). The first four hold after the write by
 Frame, each from the tolerant frame theorem at its support or (View); the
-last has no derivation: its support keeps `c`'s view store, which the
+last has no derivation: its support keeps `c`'s view spine, which the
 effect lets grow. -/
 
 namespace ViewWrite
@@ -218,10 +218,10 @@ private def frameOf (a b : Nat) (box : RawDerivation) : RawDerivation :=
   .frame Φ (r b) (r a) θ box .assumption .assumption
 
 private def box0 : RawDerivation :=
-  .tolerantFrame [(.store 0 [], .keep)] .lengths ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩ .truth (r 0) (r 0)
+  .tolerantFrame [(.spine 0 [], .keep)] .lengths ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩ .truth (r 0) (r 0)
     .assumption .assumption .assumption
 private def box1 : RawDerivation :=
-  .tolerantFrame [(.store 0 [], .keep), (.pathElems 0 [], .keep)] .everyCells
+  .tolerantFrame [(.spine 0 [], .keep), (.pathCells 0 [], .keep)] .everyCells
     ⟨[(0, 0, .classes (.arrayAt (r 1)) .intrinsic), (1, 0, .classes .intrinsic .intrinsic)]⟩ .truth (r 1) (r 1)
     .assumption .assumption .assumption
 private def box2 : RawDerivation :=
@@ -234,21 +234,21 @@ private def goal : Formula := conj [.at .after (r 0), .at .after (r 1), .at .aft
   (.andIntro (frameOf 0 5 box0) (.andIntro (frameOf 1 6 box1) (.andIntro (frameOf 2 7 box2)
     (.andIntro (frameOf 3 8 (.view .assumption)) .truth)))))
 
--- `c[j] ≐ 5` has its support at `c`'s view store and cells at `keep`; the
--- effect lets the view store grow, and no certificate separates it.
+-- `c[j] ≐ 5` has its support at `c`'s view spine and cells at `keep`; the
+-- effect lets the view spine grow, and no certificate separates it.
 #guard errorOf (checkScoped arena ⟨6, 6⟩ Γ (.at .after (r 4)) (frameOf 4 9
-  (.tolerantFrame [(.store 3 [], .keep), (.pathElems 3 [], .keep)] .viewElement ⟨[]⟩ .truth (r 4) (r 4)
+  (.tolerantFrame [(.spine 3 [], .keep), (.pathCells 3 [], .keep)] .viewElement ⟨[]⟩ .truth (r 4) (r 4)
     .assumption .assumption .assumption))) = "tolerantFrame: the effect does not respect the support"
 end ViewWrite
 
 /-! ## P4, the straight-line bound
 
 `|a.flags| = |a.starts|` survives a call of effect
-`{values: any, o.store: any}` where `a.flags # o` and `a.starts # o`, the
+`{values: any, o.spine: any}` where `a.flags # o` and `a.starts # o`, the
 two paths rigid (`astra/parity-plan-out.md`, P4): (Rigid) twice opens the
 paths as fresh variables `y1`, `y2`, the tolerant frame theorem frames each
-length fact at the support `{y1.store: keep, y2.store: keep}` (values and
-`o.store` disjoint from both stores), and the separations of variables are
+length fact at the support `{y1.spine: keep, y2.spine: keep}` (values and
+`o.spine` disjoint from both spines), and the separations of variables are
 invariant. After the call, `i + 1 < |a.flags|` gives `i + 1 < |a.starts|`.
 The rigidity of the two fields comes from their stable contracts, which no
 rule of this checker introduces: they are premises. -/
@@ -257,7 +257,7 @@ namespace P4
 private def r (n : Nat) : AssertionRef := ⟨n⟩
 private def fl : Path := ⟨0, ["flags"]⟩
 private def st : Path := ⟨0, ["starts"]⟩
-private def Φ : Footprint := [(.cls .values, .any), (.store 1 [], .any)]
+private def Φ : Footprint := [(.cls .values, .any), (.spine 1 [], .any)]
 private def Φ1 : Footprint := Footprint.rename (· + 1) Φ
 private def Φ2 : Footprint := Footprint.rename (· + 1) Φ1
 private def len (p : Path) : Term := p.term .length
@@ -296,9 +296,9 @@ private def arena : AssertionArena := ⟨#[
 
 /-- The support of a length fact over `y1`, `y2`, respected by `Φ2`. -/
 private def frameLength (K : Nat) (seps : Bool) (dA : RawDerivation) : RawDerivation :=
-  .tolerantFrame [(.store 1 [], .keep), (.store 0 [], .keep)] .lengths
-    ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (0, 1, .stores (r 2)),
-      (1, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 1, .stores (r (if seps then 3 else 2)))]⟩
+  .tolerantFrame [(.spine 1 [], .keep), (.spine 0 [], .keep)] .lengths
+    ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (0, 1, .spines (r 2)),
+      (1, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 1, .spines (r (if seps then 3 else 2)))]⟩
     .truth (r K) (r K) .assumption .assumption dA
 
 /-- `a2 ⊢ □_Φ2 a2`. -/
@@ -342,7 +342,7 @@ private def raw : RawDerivation :=
 
 #guard isOk (checkScoped arena ⟨3, 3⟩ Γ goal raw)
 
--- Without `y2 # o` the call's write of `o`'s store may be `y2`'s:
+-- Without `y2 # o` the call's write of `o`'s spine may be `y2`'s:
 -- the length fact's support is not respected.
 #guard errorOf (checkScoped arena ⟨4, 4⟩ [.at .after (r 42)] (.at .after (r 7))
   (frameLength 42 true (.atAndLeft (r 4) (r 1) (.atAndLeft (r 42) (r 2) .assumption)))) =
@@ -354,8 +354,8 @@ end P4
 `F = g₁ ∨ g₂ ∨ (L ∧ rigid(p.items.insideExtras) ∧ rigid(p.widths))` with
 `g₁ = □_⊤(p.items ≐ null)`, `g₂ = □_⊤(p.items.insideExtras ≐ null)` and
 `L = |p.items.insideExtras| = |p.widths|`, across a call of effect
-`{values: any}` (stores kept): law (d) twice, and in the third case (Rigid)
-twice and the tolerant frame theorem at the two stores' `keep`
+`{values: any}` (spines kept): law (d) twice, and in the third case (Rigid)
+twice and the tolerant frame theorem at the two spines' `keep`
 (`astra/parity-plan-out.md`, P18). The guards and the two rigidities are
 the stable contracts' facts, which no rule of this checker introduces: the
 premise `F` states them. -/
@@ -402,7 +402,7 @@ private def arena : AssertionArena := ⟨#[
 #guard arena.check
 
 private def frameLength (dA : RawDerivation) : RawDerivation :=
-  .tolerantFrame [(.store 1 [], .keep), (.store 0 [], .keep)] .lengths
+  .tolerantFrame [(.spine 1 [], .keep), (.spine 0 [], .keep)] .lengths
     ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩
     .truth (r 2) (r 2) .assumption .assumption dA
 
@@ -606,7 +606,7 @@ private def extras : Path := ⟨0, ["items", "insideExtras"]⟩
 private def widths : Path := ⟨0, ["widths"]⟩
 private def i : Term := Term.value 1
 
-/-- `step`'s effect `{values: any}`, stores kept. -/
+/-- `step`'s effect `{values: any}`, spines kept. -/
 private def Φ : Footprint := (⟨.any, .keep, .keep⟩ : Footprints.Closed).fp
 
 private def lenEq₁ : Linear.Fact Term := .le [(extras.term .length, 1), (widths.term .length, -1)] 0
@@ -640,7 +640,7 @@ private def arena : AssertionArena := ⟨#[
   .box topEffect (ref 17),                     -- 18
   .existsValue (ref 18),                       -- 19 rigid(p.items)
   .box Φ (ref 1),                              -- 20 □_Φ g₁
-  .box [(.elems 0, .any)] (ref 0),             -- 21 □_{p[elements]: any} (p.items ≐ null)
+  .box [(.cells 0, .any)] (ref 0),             -- 21 □_{p[elements]: any} (p.items ≐ null)
   .guarded (ref 1) (ref 10)]⟩                  -- 22 g₁ ∨ g₂ ∨ □_Φ L
 
 #guard arena.check
@@ -709,19 +709,19 @@ private def raw : RawDerivation :=
 #guard errorOf (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
   (.tolerantFrame [(.cls .values, .keep)] .invariant ⟨[]⟩ .truth (ref 1) (ref 1) .assumption .assumption
     .assumption)) = "tolerantFrame: the effect does not respect the support"
--- With a disjointness certificate the stores' support is respected.
+-- With a disjointness certificate the spines' support is respected.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
-  (.tolerantFrame [(.cls .stores, .keep)] .invariant ⟨[(0, 0, .classes .intrinsic .intrinsic)]⟩ .truth (ref 1) (ref 1) .assumption
+  (.tolerantFrame [(.cls .spines, .keep)] .invariant ⟨[(0, 0, .classes .intrinsic .intrinsic)]⟩ .truth (ref 1) (ref 1) .assumption
     .assumption .assumption))
 
--- Region inclusion by selectors: `{arrays: keep} ⊑ {stores: grow}`, not
+-- Region inclusion by selectors: `{arrays: keep} ⊑ {spines: grow}`, not
 -- the converse.
-#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .arrays, .keep)] [(.cls .stores, .grow)]
-#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .stores, .grow)] [(.cls .arrays, .keep)]
--- The views analogue: `{views: keep} ⊑ {stores: grow}`, not the converse,
--- and array stores and view stores are disjoint classes.
-#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .stores, .grow)]
-#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .stores, .grow)] [(.cls .views, .keep)]
+#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .arrays, .keep)] [(.cls .spines, .grow)]
+#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .spines, .grow)] [(.cls .arrays, .keep)]
+-- The views analogue: `{views: keep} ⊑ {spines: grow}`, not the converse,
+-- and array spines and view spines are disjoint classes.
+#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .spines, .grow)]
+#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .spines, .grow)] [(.cls .views, .keep)]
 #guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .arrays, .grow)]
 #guard Selector.arrays.disjoint Selector.views
 

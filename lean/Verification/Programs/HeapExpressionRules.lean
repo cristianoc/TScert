@@ -38,10 +38,10 @@ inductive StepEvidence (ι : Type) where
   state, so this carries only the ordinary derivation it stands beside. -/
   | allocated (proof : ProgramCertificates.Evidence ι)
   | written (receiver value : Nat) (contents : Option ValueSets.ValueSet) (proof : ProgramCertificates.Evidence ι)
-  /-- A write `x.[] := x.[]⟦k ↦ v⟧` of the value in `value` into the store of
+  /-- A write `x.[] := x.[]⟦k ↦ v⟧` of the value in `value` into the spine of
   the array in `receiver` at the index in `index`, where the knowledge bounds
-  that index by the store's length (`IndexWrites`, `setElem-bounded`); `sub`
-  takes the value's type to the store's element type. The base checker
+  that index by the spine's length (`IndexWrites`, `setElem-bounded`); `sub`
+  takes the value's type to the spine's element type. The base checker
   accepts none: a layer of `Checker.ordinary` checks it. -/
   | boundedWrite (receiver index value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
 
@@ -795,7 +795,7 @@ theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
     · exact Nat.le_refl _
     · exact Nat.le_trans (Nat.le_succ base) (slots_snd_ge h)
 
-/-- A fresh object's own locations lie past the old heap's end; a contract
+/-- A fresh object's field locations lie past the old heap's end; a contract
 field of a slot holds a heap value, so it lies below it. -/
 theorem fresh_apart_from [DecidableEq ι] {G : NormalGraph ι} {Γ ρ n W h} {ns : List PropKey} {code : CallCode} {oid base : Nat}
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hb : h.length ≤ base) :
@@ -940,7 +940,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       exact ⟨_, _, _, h.length + i, rfl, hl, by simpa [push] using hv⟩
 
 /-- An object allocated past the heap's end keeps what was known of the old
-heap, and its own locations are separated from every contract field of the
+heap, and its field locations are separated from every contract field of the
 context's record-typed slots. -/
 theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hh : HeapOk n W h)
@@ -1030,9 +1030,9 @@ A write's location held, before it, a member of the field's type, so it
 holds no value of a class the type excludes: a location holding such a value
 is another location, and keeps its contents (`Changes`). -/
 
-/-- Whether a clause admits an object, a number, an array store, by its
+/-- Whether a clause admits an object, a number, an array spine, by its
 members' shape (`semWithArgs_shape`); `top` admits each, `source` each but a
-store. -/
+spine. -/
 def clauseObj (c : PositiveNormalization.Clause α) : Bool := ![0, 1, 4, 5, 6, 8, 9, 10, 12].contains (shape c)
 def clauseNum (c : PositiveNormalization.Clause α) : Bool := [5, 7].contains (shape c)
 def clauseArr : PositiveNormalization.Clause α → Bool
@@ -1072,7 +1072,7 @@ theorem clauseChanges_alters {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c 
   case arr ls =>
     simp only [valueShape] at hsh
     cases c <;> simp_all [clauseChanges, Changes.alters, clauseArr, shape]
-  case viewStore f cs =>
+  case viewSpine f cs =>
     simp only [valueShape] at hsh
     cases c <;> simp_all [shape]
   all_goals simp [Changes.alters]
@@ -1124,26 +1124,26 @@ theorem fieldChanges_alters [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} 
   · exact Changes.top_alters u
 
 /-- A write of one location meets a change altering what it held, where the
-change keeps no store's length alone and grows none. -/
+change keeps no spine's length alone and grows none. -/
 theorem set_changes {c : Changes} {h : Heap} {l : Nat} {u b : Val} (hu : h[l]? = some u) (ha : c.alters u = true)
-    (hs : c.store ≠ .length ∧ c.store ≠ .grow) : c.Holds h (h.set l b) := by
+    (hs : c.spine ≠ .length ∧ c.spine ≠ .grow) : c.Holds h (h.set l b) := by
   refine ⟨fun l' v hv hna => ?_, fun hl => absurd hl hs.1, fun hl => absurd hl hs.2⟩
   have hne : l ≠ l' := by
     rintro rfl; rw [hu] at hv; cases hv; rw [ha] at hna; cases hna
   rw [List.getElem?_set_ne hne]; exact hv
 
-theorem foldr_join_store (cs : List Changes) :
-    (cs.foldr Changes.join ⟨false, false, .keep⟩).store ≠ .length ∧
-      (cs.foldr Changes.join ⟨false, false, .keep⟩).store ≠ .grow := by
+theorem foldr_join_spine (cs : List Changes) :
+    (cs.foldr Changes.join ⟨false, false, .keep⟩).spine ≠ .length ∧
+      (cs.foldr Changes.join ⟨false, false, .keep⟩).spine ≠ .grow := by
   cases cs with
   | nil => simp
   | cons d ds => simp only [List.foldr_cons, Changes.join]; split <;> simp
 
-theorem fieldChanges_store [DecidableEq ι] (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι)))
-    (fld : PropKey) : (fieldChanges G cs fld).store ≠ .length ∧ (fieldChanges G cs fld).store ≠ .grow := by
+theorem fieldChanges_spine [DecidableEq ι] (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι)))
+    (fld : PropKey) : (fieldChanges G cs fld).spine ≠ .length ∧ (fieldChanges G cs fld).spine ≠ .grow := by
   unfold fieldChanges
   split
-  · exact foldr_join_store _
+  · exact foldr_join_spine _
   · simp [Changes.top]
 
 /-- Every clause of `A` states `fld` a stable key. -/
@@ -1276,7 +1276,7 @@ def fieldEveryBody (as : List IndexAtom) (chg : Changes) (first : Nat → String
 def fieldEvery (as : List IndexAtom) (chg : Changes) (first : Nat → String → Bool)
     (v : Nat) (a : IndexAtom) : Bool :=
   match a.fact with
-  | .every _ [] stop body => chg.store == .keep && stop.keptBy chg first && body.all (fieldEveryBody as chg first v)
+  | .every _ [] stop body => chg.spine == .keep && stop.keptBy chg first && body.all (fieldEveryBody as chg first v)
   | _ => false
 
 theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → String → Bool}
@@ -1290,11 +1290,11 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
   · rename_i s st body hfact
     rw [hfact] at ha ⊢
     simp only [Bool.and_eq_true, beq_iff_eq] at hk
-    obtain ⟨⟨hstore, hst⟩, hb⟩ := hk
+    obtain ⟨⟨hspine, hst⟩, hb⟩ := hk
     obtain ⟨w, sto, ls, n, hw, hs, hl, hn, hall⟩ := ha
-    have hl' : (h.set l (ρ v))[sto]?.bind storeEntries = some ls := by
+    have hl' : (h.set l (ρ v))[sto]?.bind spineEntries = some ls := by
       obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hl
-      rw [hc.1 sto u hu (by cases u <;> simp_all [storeEntries, Changes.alters])]; exact hue
+      rw [hc.1 sto u hu (by cases u <;> simp_all [spineEntries, Changes.alters])]; exact hue
     refine ⟨w, sto, ls, n, hw, hs, hl', termValue_kept hc hf hst hn, fun j hj F hF => ?_⟩
     have hB := List.all_eq_true.mp hb F hF
     cases F with
@@ -1334,7 +1334,7 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
           | free t => exact termValue_kept (ε := ε) hc hf hky hy
         · cases y with
           | index | elem | project _ _ | offset _ => simp [Bound.grownBy] at hgy
-          | free t => simp [Bound.grownBy, Term.grownBy, hstore] at hgy
+          | free t => simp [Bound.grownBy, Term.grownBy, hspine] at hgy
   · cases hk
 
 /-! ## A field's contents across a write (`weak-update`)
@@ -1343,14 +1343,14 @@ The tolerant frame theorem for a cell fact `y.f ∈ V`: its support is the
 location `y.f`, at the change "into `V`" (the location keeps its value or
 comes to hold one of `V`). A write's effect states the locations it changes
 (`changed`) and, where it is known, a set `C` holding every value a changed
-location may come to hold, a store's change into a store aside: a location
-holding a store meets `V` only where every store does (`IntoContents`). The effect respects the support
+location may come to hold, a spine's change into a spine aside: a location
+holding a spine meets `V` only where every spine does (`IntoContents`). The effect respects the support
 where the two are apart (`apart`) or where `C ⊆ V` (`cellKept`); every write
 the pass checks states its effect so and keeps its cell facts by
 `keptCells_holds`. -/
 
 /-- A change from `h` to `h'` that leaves each old location's value, or
-replaces an array store by an array store, or changes a location of
+replaces an array spine by an array spine, or changes a location of
 `changed` to a value of `C` where `C` is known. -/
 def IntoContents (changed : Nat → Prop) (C : Option ValueSets.ValueSet) (h h' : Heap) : Prop :=
   ∀ (l : Nat) (w : Tm), h[l]? = some w → h'[l]? = some w ∨
@@ -1513,7 +1513,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
         obtain ⟨u, hu⟩ : ∃ u, h[l]? = some u := ⟨h[l], List.getElem?_eq_getElem hlt⟩
         have hRef : meaning G (Γ.getD i []) (m + 1 + 1) W (ρ i) :=
           he.2 i (Γ.getD i []) (by simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi])
-        have hc := set_changes (b := ρ j) hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_store _ _ _)
+        have hc := set_changes (b := ρ j) hu (fieldChanges_alters hRef hh hl hfd hu) (fieldChanges_spine _ _ _)
         have hf : FirstKept (fun s g => writeKeeps k i fld (ownedField (expand G (Γ.getD i [])) fld) s (.str g))
             ρ h (h.set l (ρ j)) := by
           intro s g fs cd o l0 v hfirst hs0 hl0 hv
@@ -1815,22 +1815,22 @@ theorem mergeSlots_eq {t d a b} (h : mergeSlots t = some (d, a, b)) :
   unfold mergeSlots at h
   split at h <;> simp_all
 
-/-- A store allocated from value slots: its elements' fresh locations lie past
+/-- A spine allocated from value slots: its elements' fresh locations lie past
 the heap's end, so what was known of the heap stays known. -/
-def storeSlots : Tm → Option (List Nat)
+def spineSlots : Tm → Option (List Nat)
   | .arrLit inits => ProgramCertificates.varSlots inits
   | _ => none
 
-theorem storeSlots_eq {t slots} (h : storeSlots t = some slots) :
+theorem spineSlots_eq {t slots} (h : spineSlots t = some slots) :
     t = .arrLit (slots.map .var) := by
-  unfold storeSlots at h
+  unfold spineSlots at h
   split at h
   · rw [ProgramCertificates.varSlots_eq h]
   · simp at h
 
-/-- A store of values takes one fresh location per element, past the heap's
+/-- A spine of values takes one fresh location per element, past the heap's
 end: every fact about the old heap, and every link, still holds. -/
-theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
+theorem spine_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
     {vs : List Tm} (hvals : ∀ v ∈ vs, isVal v = true)
     (hk : HeapKnowledge.Holds k ε ρ h)
     (hs : Safe (excOf G) (meaning G A) n W h (.arrLit vs)) :
@@ -1945,7 +1945,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
         checkedOutput G images e (decide (claim e = j ∧ a < j.context.length ∧ b < j.context.length))
           (allocOutput k [] j.context.length (contractFields G j.context)) codes sums tree
       | none =>
-        match storeSlots j.term with
+        match spineSlots j.term with
         | some slots =>
           checkedOutput G images e (decide (claim e = j ∧ ∀ i ∈ slots, i < j.context.length))
             (HeapKnowledge.shift k) codes sums tree
@@ -2044,7 +2044,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
         if claim e = j ∧ checkTreeUsing G images e codes sums = true ∧ a < j.context.length ∧ b < j.context.length
         then some (allocOutput k [] j.context.length (contractFields G j.context)) else none
       | none =>
-        match storeSlots j.term with
+        match spineSlots j.term with
         | some slots =>
           if claim e = j ∧ checkTreeUsing G images e codes sums = true ∧ ∀ i ∈ slots, i < j.context.length
           then some (HeapKnowledge.shift k) else none
@@ -2273,18 +2273,18 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
             exact makeKey_alloc_sound hva hvb he hk hh hs
         · contradiction
       · split at hc
-        · rename_i slots hstore
+        · rename_i slots hspine
           split at hc
           · rename_i hp
             obtain ⟨hj,ht,hin⟩ := hp
             have typed := checkTreeUsing_sound e ht hcodes hsums
             rw [hj] at typed
-            have term := storeSlots_eq hstore
+            have term := spineSlots_eq hspine
             cases hc
             rw [term] at typed href ⊢
             have hs := typed.sound n W h ρ he hw hh href
             simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at hs ⊢
-            refine store_alloc_sound ?_ hk hs
+            refine spine_alloc_sound ?_ hk hs
             intro v hv
             obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hv
             exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (hin i hi)))).1

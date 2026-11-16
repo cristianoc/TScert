@@ -72,7 +72,7 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
     some (refuse s!"'{name}'" (((firstBad (ProgramTyping.RunBound.ofRequest r.footprint r.onThrow r.fresh) r.start r.program c.certificate
       r.sourceMap).map (·.pos)).getD namePos))
   else
-  -- A statement with store regions: at the first node the regional check
+  -- A statement with spine regions: at the first node the regional check
   -- refuses (`regionalResult`), else at the declaration.
   if !(regionalResult r c).accepted then
     let fieldsOk := (r.regional.map fun (_, regions) =>
@@ -85,9 +85,9 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
         (r.stated.any (·.onThrow)) P c.certificate).bind fun (_, l) => (r.sourceMap[l]?).bind id
     let pos := (place.map (·.pos)).getD namePos
     if !fieldsOk then
-      some s!"source effect refusal at [{namePos.1},{namePos.2}): the frame stated for '{name}' reads a store region through a field that is no present stable field of its parameter's type, or through more than one field"
+      some s!"source effect refusal at [{namePos.1},{namePos.2}): the frame stated for '{name}' reads a spine region through a field that is no present stable field of its parameter's type, or through more than one field"
     else
-    some s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for '{name}' is not established by its body: a step changes a location outside its store regions beyond the statement's bound"
+    some s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for '{name}' is not established by its body: a step changes a location outside its spine regions beyond the statement's bound"
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
       let code := GraphCode.effectCheckedResult G images c.readSummaries q.entry C
@@ -490,7 +490,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   -- (`effectResult`, `regionalResult`, `ensuresResult`).
   if let some q := r.qualification then
     if !(r.footprint == .top && !r.onThrow && !r.fresh) then return .before name (.refused "the declared effect")
-    if r.regional.isSome then return .before name (.refused "store regions of a qualified body")
+    if r.regional.isSome then return .before name (.refused "spine regions of a qualified body")
     if !r.codes.isEmpty then return .before name (.notHandled "codes of a qualified body")
     let G' := RequestJson.graph r.toRequest
     let I' := StoreView.images r.types
@@ -608,11 +608,11 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     if let .notHandled w := o then throw w
   let tracing := observe.map observedWhat == some "refusal"
   -- The regional checks (`regionalChecked`), made in the walk: the
-  -- unit's store regions, and its footprint's regional fallback
+  -- unit's spine regions, and its footprint's regional fallback
   -- (`effectResult`); each loop head's given regional facts read from
   -- the given line. Their entry conditions (`checkEntryFields`, the
   -- regions' own conditions) are checked here.
-  let regionalOf := fun (key : String) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (exc : Bool) =>
+  let regionalOf := fun (key : String) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentSpineRegion) (exc : Bool) =>
     let (names, heads) := match line.bind fun l => (l.getObjVal? key).toOption with
       | some j => (regionalFromJson r.program.length j).toOption.getD ([], #[])
       | none => ([], #[])
@@ -620,7 +620,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   let regional := r.regional.map fun (Φ, regions) => regionalOf "regional" Φ regions (r.stated.any (·.onThrow))
   if let some (_, regions) := r.regional then
     if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
-      return { name, codes := codeRuns, outcome := .refused "store regions" }
+      return { name, codes := codeRuns, outcome := .refused "spine regions" }
   let walk := fun (k : WalkKind) (bound : Option RunBound) (regional : Option SinglePass.Regional) =>
     -- (each run recorded: more than one per member run is a regional
     -- check beside the first, `mainRun`)
@@ -645,7 +645,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
             { route := .fallbackThenRegions, outcome := o'.asRefusal, counts := c', after := a', trace := t', fallbackAfter := some a }
           | none => { route := .fallback, outcome := .accepted, counts := c, after := a, trace := t, fallbackAfter := none }
         | (.refused w' lacks, c, a, t) =>
-          { route := .fallback, outcome := .refused s!"footprint by store regions: {w'} (after footprint at node {l})" lacks,
+          { route := .fallback, outcome := .refused s!"footprint by spine regions: {w'} (after footprint at node {l})" lacks,
             counts := c, after := a, trace := t, fallbackAfter := none }
         | (o', c, a, t) => { route := .fallback, outcome := o'.asRefusal, counts := c, after := a, trace := t, fallbackAfter := none }
       else { route := .direct, outcome := o.asRefusal, counts, after, trace, fallbackAfter := none }
@@ -735,11 +735,11 @@ def refusalLabel (w key : String) : Option Nat :=
 
 /-- **A pass refusal, located** (the verdict's text): the obligation a
 refusal of the single pass names (`expression at node l`, `return at node
-l`, an edge into node `t`, `footprint at node l`, `store regions at node l`,
+l`, an edge into node `t`, `footprint at node l`, `spine regions at node l`,
 `handler of node l`, in the unit's graph or, after `code i: `, in its code `i`'s) at the source
 span of its node, in the wording the search's refusal of the same
 obligation has (`produceGraphUsing`, `footprintRefusal`, `ensuresRefusal`);
-a statement's store regions refused at their entry conditions (`store
+a statement's spine regions refused at their entry conditions (`spine
 regions`) at the declaration; none where the refusal names no node with a
 source span. -/
 def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
@@ -783,21 +783,21 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
     let t ← refusalLabel w " to node " <|> refusalLabel w " into statement entry " <|> refusalLabel w " into node "
     let o ← at_ t
     return s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): evidence search failed: the edge from node {l} does not establish the claims at this point"
-  if w.startsWith "footprint at node " || w.startsWith "footprint by store regions: " then
+  if w.startsWith "footprint at node " || w.startsWith "footprint by spine regions: " then
     let l ← refusalLabel w "footprint at node "
     let o := at_ l
     let pos := (o.map (·.pos)).getD (f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0))
     return s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
-  if w.startsWith "store regions at node " then
-    let o ← at_ (← refusalLabel w "store regions at node ")
-    return s!"source effect refusal at [{o.pos.1},{o.pos.2}): the frame stated for {what} is not established by its body: a step changes a location outside its store regions beyond the statement's bound"
+  if w.startsWith "spine regions at node " then
+    let o ← at_ (← refusalLabel w "spine regions at node ")
+    return s!"source effect refusal at [{o.pos.1},{o.pos.2}): the frame stated for {what} is not established by its body: a step changes a location outside its spine regions beyond the statement's bound"
   -- The regions' entry conditions, refused before the walk (`passMember`),
   -- at the declaration, as `effectRefusal` words them.
-  if w == "store regions" then
+  if w == "spine regions" then
     let (_, regions) ← r.regional
     let pos := f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0)
     if !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
-      return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} reads a store region through a field that is no present stable field of its parameter's type, or through more than one field"
+      return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} reads a spine region through a field that is no present stable field of its parameter's type, or through more than one field"
     return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} is not established by its body"
   if w.startsWith "handler of node " then
     let o ← at_ (← refusalLabel w "handler of node ")

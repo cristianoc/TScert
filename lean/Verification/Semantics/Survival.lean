@@ -8,7 +8,7 @@ The supports of the pass's index facts (FOOTPRINTS.md, "Supports of index
 facts"): what each reads of the current heap, each read with the change it
 tolerates, in a context of certified evidence (`ReadContext`). A path's read
 keeps every field location it passes, but a first field the context states
-stable; a length keeps its store, or tolerates growth where a larger length
+stable; a length keeps its spine, or tolerates growth where a larger length
 keeps the fact; a typed array's length keeps its length location, but where
 the context keeps it; an entry term reads no current heap. -/
 namespace Verification.Footprints
@@ -176,11 +176,11 @@ theorem guardReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (h
 
 /-! ## Terms -/
 
-/-- The store of the array the path `p` reads from slot `x`, at `δ`, where
+/-- The spine of the array the path `p` reads from slot `x`, at `δ`, where
 the context does not keep it (`keyRead`); the region is its location where it
-holds a store. -/
-def storeRead (c : ReadContext) (x : Nat) (p : List String) (δ : Change) : Footprint :=
-  keyRead c x p "[]" (.inCls (.path x p arrayStoreKey) .stores) δ
+holds a spine. -/
+def spineRead (c : ReadContext) (x : Nat) (p : List String) (δ : Change) : Footprint :=
+  keyRead c x p "[]" (.inCls (.path x p arraySpineKey) .spines) δ
 
 /-- The change the last location a term's path reads tolerates: a number
 or a string is kept by `init`, an object by `grow`. -/
@@ -188,24 +188,24 @@ def lastChange : Term.Kind → Change
   | .value | .strLength => .init
   | .length | .view => .grow
 
-/-- **A term's support** at the change `δ` its store tolerates: nothing for
+/-- **A term's support** at the change `δ` its spine tolerates: nothing for
 an entry term; else its path's reads, and what its kind reads of the value
-the path ends at: a length its store (`storeRead`); a typed array's length,
+the path ends at: a length its spine (`spineRead`); a typed array's length,
 which its descriptor holds, a value or a string's length nothing more. -/
 def _root_.Verification.HeapKnowledge.Term.support (c : ReadContext) (δ : Change) (t : Term) : Footprint :=
   if t.atEntry then [] else
   pathReads c t.slot (lastChange t.kind) .values [] t.path ++ match t.kind with
     | .value | .strLength | .view => []
-    | .length => storeRead c t.slot t.path δ
+    | .length => spineRead c t.slot t.path δ
 
-/-- What a supported store read keeps: the store, grown at most where `δ` is
+/-- What a supported spine read keeps: the spine, grown at most where `δ` is
 `grow`. -/
-theorem storeRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Change} {ρ : Env} {h h' : Heap}
+theorem spineRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Change} {ρ : Env} {h h' : Heap}
     {w : Val} {s : Nat} {ls : List (Option Nat)} (hc : c.Holds ρ h h') (hδ : δ = .keep ∨ δ = .grow)
-    (hs : Supported (storeRead c x p δ) ρ h h') (hw : readPath h (ρ x) p = some w)
-    (hst : storeOf w = some s) (hls : h[s]? = some (.arr ls)) :
+    (hs : Supported (spineRead c x p δ) ρ h h') (hw : readPath h (ρ x) p = some w)
+    (hst : spineOf w = some s) (hls : h[s]? = some (.arr ls)) :
     ∃ ls', h'[s]? = some (.arr ls') ∧ LengthGrows ls ls' ∧ (δ = .keep → ls' = ls) := by
-  unfold storeRead keyRead at hs
+  unfold spineRead keyRead at hs
   split at hs
   · rename_i hk
     simp only [Bool.and_eq_true, List.isEmpty_iff] at hk
@@ -215,13 +215,13 @@ theorem storeRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Chan
     cases hρ : ρ x with
     | objAt fs cd o =>
       rw [hρ] at hst
-      have hl : fs.lookup (.str "[]") = some s := by simpa [fieldsOf, arrayStoreKey] using storeOf_lookup hst
+      have hl : fs.lookup (.str "[]") = some s := by simpa [fieldsOf, arraySpineKey] using spineOf_lookup hst
       exact ⟨ls, hc x "[]" fs cd o s _ hk hρ hl hls, LengthGrows.refl ls, fun _ => rfl⟩
-    | _ => rw [hρ] at hst; simp [storeOf, fieldsOf] at hst
-  · have hm : (Region.inCls (.path x p arrayStoreKey) .stores).mem ρ h s = true := by
+    | _ => rw [hρ] at hst; simp [spineOf, fieldsOf] at hst
+  · have hm : (Region.inCls (.path x p arraySpineKey) .spines).mem ρ h s = true := by
       simp only [Region.mem, hw, hls, Bool.and_eq_true]
       refine ⟨?_, rfl⟩
-      simpa using storeOf_lookup hst
+      simpa using spineOf_lookup hst
     obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) s _ hm hls
     rcases hδ with rfl | rfl
     · simp only [Change.Holds] at hk
@@ -254,8 +254,8 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
       cases w <;> simp [kindValue, strLengthOf] at hk
       exact ⟨keeps_defined (by decide) rfl, rfl⟩
     | length =>
-      obtain ⟨s, -, hst, -⟩ := lengthOf_store hk
-      cases w <;> simp [storeOf, fieldsOf] at hst
+      obtain ⟨s, -, hst, -⟩ := lengthOf_spine hk
+      cases w <;> simp [spineOf, fieldsOf] at hst
       exact ⟨keeps_obj (by decide) rfl, rfl⟩
     | view =>
       obtain ⟨fs, o, st, f, N, rfl, -⟩ := viewLengthOf_inv hk
@@ -270,9 +270,9 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
   | strLength => exact ⟨n, hk, Int.le_refl n, fun _ => rfl⟩
   | length =>
     simp only [kindValue] at hk ⊢
-    obtain ⟨s, ls, hst, hls, rfl, hmax⟩ := lengthOf_store hk
-    obtain ⟨ls', hls', hg, hkeep⟩ := storeRead_sound hc hδ hkind hw hst hls
-    refine ⟨ls'.length, lengthOf_of_store hst hls' (hg.2 hmax), by exact_mod_cast hg.1, fun h => ?_⟩
+    obtain ⟨s, ls, hst, hls, rfl, hmax⟩ := lengthOf_spine hk
+    obtain ⟨ls', hls', hg, hkeep⟩ := spineRead_sound hc hδ hkind hw hst hls
+    refine ⟨ls'.length, lengthOf_of_spine hst hls' (hg.2 hmax), by exact_mod_cast hg.1, fun h => ?_⟩
     rw [hkeep h]
   | view => exact ⟨n, hk, Int.le_refl n, fun _ => rfl⟩
 
@@ -324,16 +324,16 @@ theorem linearSupport_supports (c : ReadContext) (F : Linear.Fact Term) :
     intro q hq
     exact hall .keep G (fun _ => .keep) q hq rfl rfl
 
-/-- A value's region (`RegionOf`) is kept where its store location, holding
-a store, keeps its contents. -/
+/-- A value's region (`RegionOf`) is kept where its spine location, holding
+a spine, keeps its contents. -/
 theorem regionOf_supported {x : Nat} {ρ : Env} {h h' : Heap} {st : Option Nat} {cells : List (Option Nat)}
-    (hs : Supported [(.inCls (.field x arrayStoreKey) .stores, .keep)] ρ h h') (hr : RegionOf h (ρ x) st cells) :
+    (hs : Supported [(.inCls (.field x arraySpineKey) .spines, .keep)] ρ h h') (hr : RegionOf h (ρ x) st cells) :
     RegionOf h' (ρ x) st cells := by
   rcases hr with hr | ⟨l, rfl, hst, hl⟩
   · exact .inl hr
-  · have hm : (Region.inCls (.field x arrayStoreKey) .stores).mem ρ h l = true := by
+  · have hm : (Region.inCls (.field x arraySpineKey) .spines).mem ρ h l = true := by
       simp only [Region.mem, hl, Bool.and_eq_true]
-      exact ⟨by simpa using storeOf_lookup hst, rfl⟩
+      exact ⟨by simpa using spineOf_lookup hst, rfl⟩
     obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l _ hm hl
     simp only [Change.Holds] at hk
     exact .inr ⟨l, rfl, hst, by rw [hv', hk]⟩
@@ -351,31 +351,31 @@ def bodySupport (c : ReadContext) (body : List (LinearClause Bound)) : Footprint
     | _ => []
 
 /-- The locations a quantified fact over the array the path `p` reads from
-slot `s` reads besides its path: the store of its elements, an array's
-under `[]` or a typed array's view store (`Region.store`), and the element
+slot `s` reads besides its path: the spine of its elements, an array's
+under `[]` or a typed array's view spine (`Region.spine`), and the element
 cells, which hold numbers where an element is read, at `init`. -/
 def everyCells (s : Nat) (p : List String) : Footprint :=
-  [(.inCls (.path s p arrayStoreKey) .stores, .keep), (.inCls (.store s p) .stores, .keep),
+  [(.inCls (.path s p arraySpineKey) .spines, .keep), (.inCls (.spine s p) .spines, .keep),
     (.cls .values, .init)]
 
 /-- **The support of an index fact**, where one is produced: nothing for a
-fact of slots' values alone; a length its store at `keep`, a bound its store
+fact of slots' values alone; a length its spine at `keep`, a bound its spine
 at `grow`; a linear fact `linearSupport`; a disjunction both sides'; a
-guarded fact its guard's path reads and its body's; a store separation its
-two paths' reads; a region fact its two stores at `keep`; a quantified fact
-whose body reads no element's fields its array's path, store and element
+guarded fact its guard's path reads and its body's; a spine separation its
+two paths' reads; a region fact its two spines at `keep`; a quantified fact
+whose body reads no element's fields its array's path, spine and element
 cells (`everyCells`), its bound's and its body's terms. An element fact, and
 a quantified fact projecting through elements, get none here: no support is
 produced, and nothing is kept by it. -/
 def _root_.Verification.HeapKnowledge.IndexFact.support? (c : ReadContext) : IndexFact → Option Footprint
   | .index _ | .int _ | .pastSafe _ => some []
-  | .length x _ => some (storeRead c x [] .keep)
-  | .bound x _ _ => some (storeRead c x [] .grow)
+  | .length x _ => some (spineRead c x [] .keep)
+  | .bound x _ _ => some (spineRead c x [] .grow)
   | .linear F => some (linearSupport c F)
   | .either A B => do pure ((← A.support? c) ++ (← B.support? c))
   | .guarded s p _ B => do pure (pathReads c s .keep .all [] p ++ (← B.support? c))
-  | .storeApart a p b q => some (pathReads c a .keep .all [] p ++ pathReads c b .keep .all [] q)
-  | .apart a b => some [(.inCls (.field a arrayStoreKey) .stores, .keep), (.inCls (.field b arrayStoreKey) .stores, .keep)]
+  | .spineApart a p b q => some (pathReads c a .keep .all [] p ++ pathReads c b .keep .all [] q)
+  | .apart a b => some [(.inCls (.field a arraySpineKey) .spines, .keep), (.inCls (.field b arraySpineKey) .spines, .keep)]
   | .every s p stop body =>
     if body.all (fun F => F.vars.all Bound.scalar) then
       some (pathReads c s .grow .values [] p ++ everyCells s p ++ stop.support c .keep ++ bodySupport c body)
@@ -394,14 +394,14 @@ theorem IndexFact.support?_supports (c : ReadContext) :
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
     intro ρ h h' hc hF hs
     obtain ⟨s, ls, hst, hls, hn, hmax⟩ := hF
-    obtain ⟨ls', hls', -, hk⟩ := storeRead_sound hc (.inl rfl) hs (w := ρ x) rfl hst hls
+    obtain ⟨ls', hls', -, hk⟩ := spineRead_sound hc (.inl rfl) hs (w := ρ x) rfl hst hls
     rw [hk rfl] at hls'
     exact ⟨s, ls, hst, hls', hn, hmax⟩
   | bound x k st =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
     intro ρ h h' hc hF hs
     obtain ⟨s, ls, b, i, hst, hls, hb, hi, hle⟩ := hF
-    obtain ⟨ls', hls', hg, -⟩ := storeRead_sound hc (.inr rfl) hs (w := ρ x) rfl hst hls
+    obtain ⟨ls', hls', hg, -⟩ := spineRead_sound hc (.inr rfl) hs (w := ρ x) rfl hst hls
     exact ⟨s, ls', b, i, hst, hls', hb, hi, by have := hg.1; omega⟩
   | linear F =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
@@ -421,7 +421,7 @@ theorem IndexFact.support?_supports (c : ReadContext) :
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, guardReads_sound hc p [] (supported_left hs) rfl rfl hv,
       hor.imp id fun hb => ih hB ρ h h' hc hb (supported_right hs)⟩
-  | storeApart a p b q =>
+  | spineApart a p b q =>
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
     intro ρ h h' hc hF hs
     obtain ⟨u, w, hu, hw, hne⟩ := hF
@@ -455,12 +455,12 @@ theorem IndexFact.support?_supports (c : ReadContext) :
         have ho := hw_obj _ st0 hw0 he0
         exact pathReads_sound hc p [] hpath (keeps_obj (by decide) ho)
           (by cases w0 <;> simp_all [isObj, isArr]) rfl rfl hw0
-      · -- the store of elements, an array's or a view store, holds a store
+      · -- the spine of elements, an array's or a view spine, holds a spine
         obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
-        have hm : (Region.inCls (.store s p) .stores).mem ρ h st = true := by
-          have harr : isArr u = true := by cases u <;> simp_all [storeEntries, isArr]
+        have hm : (Region.inCls (.spine s p) .spines).mem ρ h st = true := by
+          have harr : isArr u = true := by cases u <;> simp_all [spineEntries, isArr]
           simp [Region.mem, hw, he, hu, harr]
-        obtain ⟨v', hv', hk⟩ := hcells (.inCls (.store s p) .stores, .keep)
+        obtain ⟨v', hv', hk⟩ := hcells (.inCls (.spine s p) .spines, .keep)
           (by simp [everyCells]) st _ hm hu
         simp only [Change.Holds] at hk; rw [hv', hk]; exact hue
       · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hstop hz

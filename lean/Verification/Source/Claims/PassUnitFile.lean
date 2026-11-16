@@ -53,7 +53,7 @@ def RowRealized (f : FilePlans) (c : ModuleCode (Lab f) String) (j : Nat) (p : C
     Prop :=
   ∃ (name : String) (pos : Span) (r : Req f) (e e' : CodeEntry (Lab f)), PlanAt f j name pos r ∧
     CodeOf f r e e' c.sep ∧ rowConditions e = true ∧ e'.arity = c.arity ∧ e'.exprs = c.exprs ∧ e'.conts = c.conts ∧ e'.start = c.start ∧
-    e'.captures = c.captures ∧ e'.store = none ∧
+    e'.captures = c.captures ∧ e'.spine = none ∧
     (e'.row = p ∨ ∃ π, e'.row.effect.promise = some π ∧ p = promisePlain e'.row p.result ∧
       promiseAdmits (graphOf f) p.result π = true)
 

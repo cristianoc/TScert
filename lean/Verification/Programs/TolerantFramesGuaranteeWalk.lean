@@ -26,7 +26,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
 /-- The fields a regional bound fixes: its regions' traversed fields, none
 where the call states no regional bound. -/
-def regionFields (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) :
+def regionFields (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)) :
     List (Nat × String) :=
   match regional with
   | some (_, regions, _) => ArgumentPathTracking.stableFields regions
@@ -79,7 +79,7 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
     (sep : HeapSeparation.Separation) (idx : List HeapKnowledge.IndexAtom)
     (assertions : List (Nat × HeapKnowledge.Knowledge)) (bound : Option RunBound)
     (ensures : List HeapKnowledge.IndexFact)
-    (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool))
+    (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool))
     (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop where
@@ -104,7 +104,7 @@ theorem PassWalkSound.start {G : NormalGraph ι} {P : Program} {start : Nat} {go
     {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
     {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option RunBound}
     {ensures : List HeapKnowledge.IndexFact}
-    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
+    {regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)}
     {w : Walk ι} {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} {stated : Nat → Option HeapKnowledge.Knowledge}
@@ -128,7 +128,7 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
     {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
     {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option RunBound}
     {ensures : List HeapKnowledge.IndexFact}
-    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
+    {regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)}
     (hall : ∀ η, admits η → ∃ (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
       (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
       (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge),

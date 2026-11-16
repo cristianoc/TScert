@@ -80,20 +80,20 @@ export type Term =
   /** A binary operator on primitive operands: arithmetic on two numbers or
    * two bigints, or a relational comparison. */
   | { kind: "arith"; op: Operator; a: Term; b: Term }
-  /** An array store with these initial elements, in order: the value an
-   * array object holds in its store field. */
+  /** An array spine with these initial elements, in order: the value an
+   * array object holds in its spine field. */
   | { kind: "arrLit"; inits: Term[] }
-  /** The element of a store at a numeric index: `undefined` at a hole or out
+  /** The element of a spine at a numeric index: `undefined` at a hole or out
    * of range. */
   | { kind: "elemAt"; a: Term; i: Term }
-  /** The store with the element at a numeric index set, growing it when the
+  /** The spine with the element at a numeric index set, growing it when the
    * index is past the end. */
   | { kind: "setElem"; a: Term; i: Term; v: Term }
-  /** The length of a store, as a number. */
+  /** The length of a spine, as a number. */
   | { kind: "lenOf"; a: Term }
-  /** A store: the location of each element, in order, or none at a hole. */
+  /** A spine: the location of each element, in order, or none at a hole. */
   | { kind: "arr"; elems: (number | null)[] }
-  /** An actual standing for the elements of a store, read where it is written. */
+  /** An actual standing for the elements of a spine, read where it is written. */
   | { kind: "spread"; a: Term }
   /** Evaluate `a`, then throw its value. */
   | { kind: "throw"; a: Term }
@@ -406,7 +406,7 @@ export function decodeTerm(v: Json | undefined): Term {
     case "lenOf": return { kind: "lenOf", a: decodeTerm(fields(value, ["a"]).a) };
     case "arr": {
       const elems = fields(value, ["elems"]).elems;
-      if (!Array.isArray(elems)) throw Error("invalid store");
+      if (!Array.isArray(elems)) throw Error("invalid spine");
       return { kind: "arr", elems: elems.map((l: Json) => (l === null ? null : nat(l))) };
     }
     case "spread": return { kind: "spread", a: decodeTerm(fields(value, ["a"]).a) };
@@ -481,7 +481,7 @@ export function showTerm(t: Term): string {
     case "elemAt": return `${showTerm(t.a)}⟦${showTerm(t.i)}⟧`;
     case "setElem": return `${showTerm(t.a)}⟦${showTerm(t.i)} ↦ ${showTerm(t.v)}⟧`;
     case "lenOf": return `len(${showTerm(t.a)})`;
-    case "arr": return `store[${t.elems.map((e) => (e === null ? "hole" : `ℓ${e}`)).join(", ")}]`;
+    case "arr": return `spine[${t.elems.map((e) => (e === null ? "hole" : `ℓ${e}`)).join(", ")}]`;
     case "spread": return `...${showTerm(t.a)}`;
     case "throw": return `throw ${showTerm(t.a)}`;
     case "makeKey": return `makeKey(${showTerm(t.key)}, ${showTerm(t.init)})`;

@@ -71,39 +71,39 @@ theorem roleAt_some {n} {W : WorldT n} {l : Nat} (h : l < (entries W).length) :
     ∃ r, roleAt W l = some r :=
   ⟨_, List.getElem?_eq_getElem (by simpa using h)⟩
 
-theorem Cat_store_iff {r : Role} {u : Val} {ls : List (Option Nat)} (hu : storeEntries u = some ls)
-    (h : Cat r u) : r.kind = .store := by
+theorem Cat_spine_iff {r : Role} {u : Val} {ls : List (Option Nat)} (hu : spineEntries u = some ls)
+    (h : Cat r u) : r.kind = .spine := by
   cases r with
-  | field | cell | elem => cases u <;> simp_all [Cat, isSourceVal, storeEntries]
-  | identity => subst h; simp [storeEntries] at hu
-  | store f => rfl
+  | field | cell | elem => cases u <;> simp_all [Cat, isSourceVal, spineEntries]
+  | identity => subst h; simp [spineEntries] at hu
+  | spine f => rfl
 
-theorem RefsOk_store {n} {W : WorldT n} {u : Val} {ls : List (Option Nat)} (hu : storeEntries u = some ls)
+theorem RefsOk_spine {n} {W : WorldT n} {u : Val} {ls : List (Option Nat)} (hu : spineEntries u = some ls)
     (h : RefsOk W u) : ∀ l, some l ∈ ls → K W .elem l := by
   intro l hl
   have hr : Ref.elem l ∈ refs u := by
-    cases u <;> simp only [storeEntries, reduceCtorEq, Option.some.injEq] at hu <;> subst hu
-    · simp only [refs, storeRefs]; exact List.mem_filterMap.mpr ⟨some l, hl, rfl⟩
+    cases u <;> simp only [spineEntries, reduceCtorEq, Option.some.injEq] at hu <;> subst hu
+    · simp only [refs, spineRefs]; exact List.mem_filterMap.mpr ⟨some l, hl, rfl⟩
     · simp only [List.mem_map, Option.some.injEq, exists_eq_right] at hl
       simp only [refs, List.mem_map]; exact ⟨l, hl, rfl⟩
   have := h _ hr
   simp [RefOk] at this; simp [K, kindAt, this, Role.kind]
 
 theorem RefsOk_arr {n} {W : WorldT n} {ls : List (Option Nat)} (h : RefsOk W (.arr ls)) :
-    ∀ l, some l ∈ ls → K W .elem l := RefsOk_store rfl h
+    ∀ l, some l ∈ ls → K W .elem l := RefsOk_spine rfl h
 
 /-- **Kinds partition a well-formed heap's domain**: each location has
-exactly one kind; a location is a store location exactly when it holds a
-store, an array's or a view store; and every store lists element cells only,
+exactly one kind; a location is a spine location exactly when it holds a
+spine, an array's or a view spine; and every spine lists element cells only,
 which are locations of the heap. -/
 theorem HeapOk.kinds {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
     (∀ l, l < h.length → ∃ k, K W k l ∧ ∀ k', K W k' l → k' = k) ∧
-    (∀ l, K W .store l ↔ ∃ ls, h[l]?.bind storeEntries = some ls) ∧
-    (∀ (s : Nat) (ls : List (Option Nat)), h[s]?.bind storeEntries = some ls →
+    (∀ l, K W .spine l ↔ ∃ ls, h[l]?.bind spineEntries = some ls) ∧
+    (∀ (s : Nat) (ls : List (Option Nat)), h[s]?.bind spineEntries = some ls →
       ∀ l, some l ∈ ls → K W .elem l ∧ l < h.length) := by
   have hlen : h.length = (entries W).length := by simpa using hok.1.1
-  have store_of : ∀ (s : Nat) (ls : List (Option Nat)), h[s]?.bind storeEntries = some ls →
-      ∃ r u, roleAt W s = some r ∧ h[s]? = some u ∧ storeEntries u = some ls ∧ Shape W r u := by
+  have spine_of : ∀ (s : Nat) (ls : List (Option Nat)), h[s]?.bind spineEntries = some ls →
+      ∃ r u, roleAt W s = some r ∧ h[s]? = some u ∧ spineEntries u = some ls ∧ Shape W r u := by
     intro s ls hs
     obtain ⟨u, hs, hu⟩ := Option.bind_eq_some_iff.mp hs
     have hlt : s < (entries W).length := by
@@ -120,15 +120,15 @@ theorem HeapOk.kinds {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
     obtain ⟨r, hr, hk⟩ := hk
     obtain ⟨u, hu, hc, -⟩ := hok.2 l r hr
     cases r with
-    | store f =>
+    | spine f =>
       cases f with
-      | array => obtain ⟨ls, rfl⟩ := hc; exact ⟨ls, by simp [hu, storeEntries]⟩
-      | view fm N => obtain ⟨cs, rfl, -⟩ := hc; exact ⟨cs.map some, by simp [hu, storeEntries]⟩
+      | array => obtain ⟨ls, rfl⟩ := hc; exact ⟨ls, by simp [hu, spineEntries]⟩
+      | view fm N => obtain ⟨cs, rfl, -⟩ := hc; exact ⟨cs.map some, by simp [hu, spineEntries]⟩
     | _ => simp [Role.kind] at hk
-  · obtain ⟨r, u, hr, -, hu, hsh⟩ := store_of l ls hs
-    simp [K, kindAt, hr, Cat_store_iff hu hsh.1]
-  · obtain ⟨r, u, hr, -, hu, hsh⟩ := store_of s ls hs
-    have he := RefsOk_store hu hsh.2 l hl
+  · obtain ⟨r, u, hr, -, hu, hsh⟩ := spine_of l ls hs
+    simp [K, kindAt, hr, Cat_spine_iff hu hsh.1]
+  · obtain ⟨r, u, hr, -, hu, hsh⟩ := spine_of s ls hs
+    have he := RefsOk_spine hu hsh.2 l hl
     refine ⟨he, ?_⟩
     simp only [K, kindAt, Option.map_eq_some_iff] at he
     obtain ⟨r', hr', -⟩ := he
@@ -136,11 +136,11 @@ theorem HeapOk.kinds {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
 
 /-! ## What kinded satisfaction excludes -/
 
-/-- **Allocated cells**: every cell a store of a well-formed heap lists, an
-array's or a view store's, is an element cell of the world and a location
+/-- **Allocated cells**: every cell a spine of a well-formed heap lists, an
+array's or a view spine's, is an element cell of the world and a location
 of the heap. The budget is any, zero included. -/
 theorem HeapOk.entries_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
-    {ls : List (Option Nat)} (hs : h[s]?.bind storeEntries = some ls) {l : Nat} (hl : some l ∈ ls) :
+    {ls : List (Option Nat)} (hs : h[s]?.bind spineEntries = some ls) {l : Nat} (hl : some l ∈ ls) :
     roleAt W l = some .elem ∧ l < h.length := by
   have hk := (HeapOk.kinds hok).2.2 s ls hs l hl
   refine ⟨?_, hk.2⟩
@@ -149,15 +149,15 @@ theorem HeapOk.entries_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n
   obtain ⟨r, hr, hk'⟩ := hk1
   cases r <;> first | exact hr | simp [Role.kind] at hk'
 
-/-- An array's store's cells (`HeapOk.entries_cells`). -/
-theorem HeapOk.store_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
+/-- An array's spine's cells (`HeapOk.entries_cells`). -/
+theorem HeapOk.spine_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
     {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) {l : Nat} (hl : some l ∈ ls) :
     roleAt W l = some .elem ∧ l < h.length :=
   hok.entries_cells (by rw [hs]; rfl) hl
 
-/-- A view store's cells (`HeapOk.entries_cells`). -/
+/-- A view spine's cells (`HeapOk.entries_cells`). -/
 theorem HeapOk.view_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
-    {f : ViewFormat} {cs : List Nat} (hs : h[s]? = some (Tm.viewStore f cs)) {l : Nat} (hl : l ∈ cs) :
+    {f : ViewFormat} {cs : List Nat} (hs : h[s]? = some (Tm.viewSpine f cs)) {l : Nat} (hl : l ∈ cs) :
     roleAt W l = some .elem ∧ l < h.length :=
   hok.entries_cells (ls := cs.map some) (by rw [hs]; rfl) (by simpa using hl)
 
@@ -165,16 +165,16 @@ theorem RefsOk_arr_iff {k : Nat} {W : WorldT k} {ls : List (Option Nat)} :
     RefsOk W (.arr ls) ↔ ∀ l, some l ∈ ls → roleAt W l = some .elem := by
   constructor
   · intro h l hl
-    have := h (.elem l) (by simp only [refs, storeRefs]; exact List.mem_filterMap.mpr ⟨some l, hl, rfl⟩)
+    have := h (.elem l) (by simp only [refs, spineRefs]; exact List.mem_filterMap.mpr ⟨some l, hl, rfl⟩)
     simpa [RefOk] using this
   · intro h r hr
-    simp only [refs, storeRefs, List.mem_filterMap] at hr
+    simp only [refs, spineRefs, List.mem_filterMap] at hr
     obtain ⟨o, ho, hro⟩ := hr
     cases o with
     | none => cases hro
     | some l => cases hro; exact h l ho
 
-/-- A store listing only cells another valid store lists is valid. -/
+/-- A spine listing only cells another valid spine lists is valid. -/
 theorem RefsOk_arr_of_subset {k : Nat} {W : WorldT k} {ls ls' : List (Option Nat)}
     (hsub : ∀ l, some l ∈ ls' → some l ∈ ls) (h : RefsOk W (.arr ls)) : RefsOk W (.arr ls') :=
   RefsOk_arr_iff.mpr fun l hl => RefsOk_arr_iff.mp h l (hsub l hl)

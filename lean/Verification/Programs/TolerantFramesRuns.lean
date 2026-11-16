@@ -8,7 +8,7 @@ A graph run that `SafeGraph` covers, with budget left, ends in a state an
 admissible transition reaches, by determinism of the graph machine's
 transitions. A typed field write's effect judgment
 (`ExpressionEffects.field_write_within_exc`) yields, on each exit of a run
-with budget left, an action of `{values: any, stores: keep}`, and every length
+with budget left, an action of `{values: any, spines: keep}`, and every length
 lower bound survives it by antitonicity and (Grow). -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
@@ -396,11 +396,11 @@ theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : 
 
 /-! ## A typed field write -/
 
-/-- `{values: any, stores: keep}`: the effect of a typed field write. -/
+/-- `{values: any, spines: keep}`: the effect of a typed field write. -/
 def fieldWriteEffect : Footprints.Closed := ⟨.any, .keep, .keep⟩
 
 /-- **A typed field write keeps every length lower bound, on both exits**,
-exposing each exit's endpoint: the action of `{values: any, stores: keep}`, the
+exposing each exit's endpoint: the action of `{values: any, spines: keep}`, the
 residual budget, the result's type or the raised value's family, and the
 bound. -/
 theorem field_write_keeps_bound {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
@@ -437,7 +437,7 @@ def NonNeg (j : Nat) : Assertion := fun ρ _ _ => ∃ a, HeapKnowledge.intValue 
 
 /-- **The aliasing element write keeps the head's facts** for the increment:
 an element write at a run-time index, checked within
-`{values: any, stores: grow}` whichever array it writes, and `to ≤ |xs|`
+`{values: any, spines: grow}` whichever array it writes, and `to ≤ |xs|`
 retained under that effect; `0 ≤ j` reads no heap. The escaping throw meets
 the graph's exception family where the node's family does one level up. -/
 theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop} {ρ : Env}
@@ -459,7 +459,7 @@ theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam}
     (fun s e _ _ hab _ _ => hΞ s e hab)
 
 /-- The write node's local judgment: a typed write checked within
-`{values: any, stores: grow}` (`ExpressionEffects.write_within_exc`), in the
+`{values: any, spines: grow}` (`ExpressionEffects.write_within_exc`), in the
 form `NodesChecked` takes, with both posts `True`. -/
 theorem grow_write_judgment {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι} {Γ} {t : Tm}
     {Ξ T : Fam} {ρ : Env} {s : IndexedHeap}

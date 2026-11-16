@@ -4,8 +4,8 @@ import Verification.Semantics.CallEffects
 /-!
 # Natives, copies and administrative steps preserve kinds
 
-The array natives are modelled as steps on a store's list of element
-locations (`Footprints.Arr`); each keeps the store's cells among the original
+The array natives are modelled as steps on a spine's list of element
+locations (`Footprints.Arr`); each keeps the spine's cells among the original
 ones and fresh ones (`Arr.Within`), and a native's element-storage phase
 preserves kinds when its world extension makes the fresh cells element cells
 and the contents it writes are source values (`native_shaped`); a whole
@@ -28,7 +28,7 @@ namespace Verification.Kinds
 section natives
 open Footprints
 
-/-- A native's store lists element cells where the original store does and
+/-- A native's spine lists element cells where the original spine does and
 the native's world extension makes every fresh cell it lists one. -/
 theorem Arr.Within.refs {k : Nat} {W : WorldT k} {b : Nat} {orig : List (Option Nat)} {a : Arr}
     (hw : a.Within b orig) (ho : RefsOk W (.arr orig))
@@ -67,7 +67,7 @@ theorem Arr.reverse_within {b} {a : Arr} (h : b ≤ a.next) : a.reverse.Within b
   · exact (hs.delete _).set _
   · exact hs
 
-/-- **Every array native keeps its store's cells among the original and
+/-- **Every array native keeps its spine's cells among the original and
 fresh ones**: `Set`, `Delete`, a length change, `push`, `pop`, `shift`,
 `unshift`, `reverse` and `sort`'s writeback. -/
 theorem Arr.natives_within {b} {a : Arr} (h : b ≤ a.next) (k n c len : Nat) :
@@ -79,18 +79,18 @@ theorem Arr.natives_within {b} {a : Arr} (h : b ≤ a.next) (k n c len : Nat) :
     Arr.reverse_within h, Arr.writeback_within c len (Arr.Within.refl h)⟩
 
 /-- **An array native's element-storage phase preserves kinds.** From a
-well-formed heap `h`, the phase of a native that rewrites the array store at
-`s` reaches `h'`: the store holds the native's result `a.ls`, every other old
+well-formed heap `h`, the phase of a native that rewrites the array spine at
+`s` reaches `h'`: the spine holds the native's result `a.ls`, every other old
 location keeps its contents or is an element cell now holding a source
 value, and every fresh location holds a source value. The world extension
 makes the fresh locations element cells.
 
-The premises are stated here: the store's change, the element contents and
+The premises are stated here: the spine's change, the element contents and
 the fresh locations' contents. `array_native_post` bounds which locations
 change and gives none of them. -/
 theorem native_shaped {k : Nat} {W : WorldT k} {h h' : Heap} {s : Nat} {orig : List (Option Nat)}
     {a : Arr} (cs : List (Ctr k)) (hlen : h.length = (entries W).length) (hsh : Shaped W h)
-    (hs : roleAt W s = some (.store .array)) (hso : h[s]? = some (.arr orig))
+    (hs : roleAt W s = some (.spine .array)) (hso : h[s]? = some (.arr orig))
     (hw : a.Within h.length orig)
     (hlen' : h'.length = h.length + cs.length) (hs' : h'[s]? = some (.arr a.ls))
     (hcells : ∀ l, some l ∈ a.ls → l < h'.length)
@@ -143,13 +143,13 @@ def RespectsKinds (R : Heap → Heap → Prop) : Prop :=
     ∃ W' : WorldT k, WExt W W' ∧ h'.length = (entries W').length ∧ Shaped W' h'
 
 /-- **The typed-array element write's coarse change does not respect
-kinds** (`ElementWrite.changes`: every location holding no store, object or
-number may change, and every store keeps its length). A field holding a
-string may come to hold a store; the kinded view write the call's
+kinds** (`ElementWrite.changes`: every location holding no spine, object or
+number may change, and every spine keeps its length). A field holding a
+string may come to hold a spine; the kinded view write the call's
 postcondition states beside it keeps every location whose role is no view
-store (`ViewWrite.keep`). -/
+spine (`ViewWrite.keep`). -/
 theorem elementWrite_not_respects :
-    ¬ RespectsKinds (CallEffects.ElementWrite.stores.changes.Holds) := by
+    ¬ RespectsKinds (CallEffects.ElementWrite.spines.changes.Holds) := by
   intro H
   let W : WorldT 0 := ofEntries [(.field, fun _ hj _ _ => absurd hj (Nat.not_lt_zero _))]
   have hW : roleAt W 0 = some .field := by simp [W, roleAt, roles]
@@ -159,7 +159,7 @@ theorem elementWrite_not_respects :
     subst hl
     rw [hW] at hr; cases hr
     exact ⟨_, rfl, rfl, fun _ h => by simp [refs] at h⟩
-  have hc : CallEffects.ElementWrite.stores.changes.Holds [.str "a"] [.arr []] := by
+  have hc : CallEffects.ElementWrite.spines.changes.Holds [.str "a"] [.arr []] := by
     refine ⟨fun l v hv halt => ?_, fun _ l ls hl => ?_, fun hg => ?_⟩
     · have : l = 0 := by have := (List.getElem?_eq_some_iff.mp hv).1; simp at this; omega
       subst this; simp at hv; subst hv

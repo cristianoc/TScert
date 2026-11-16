@@ -187,7 +187,7 @@ def Store.integral (s : Store) (x : Nat) : Bool :=
 structure State where
   names : List Nat
   store : Store := {}
-  /-- The names holding a store this run allocated (`GraphCode.inferFresh`'s
+  /-- The names holding a spine this run allocated (`GraphCode.inferFresh`'s
   facts, over names). -/
   fresh : List Nat := []
 
@@ -271,7 +271,7 @@ structure StepGrades where
 /-- **A step's local certificate**: for each exit, the exit specifications
 its rules establish (`CallEffects.ExitSpec`: a frame read at the step's call
 positions and the postconditions it states), each read from the step's
-evidence and none from a bound; the call positions holding a fresh store,
+evidence and none from a bound; the call positions holding a fresh spine,
 whose entries a frame's closed bound below the invocation's mark discharges
 (`GraphCode.freshPositions`, `Footprint.boundBelow`); and whether its term is
 in scope. -/
@@ -483,7 +483,7 @@ def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain 
     -- a name in scope, where a read link gives one, then eliminated.
     let isOut := fun s => !table.contains s
     let restated := indices ++ HeapKnowledge.restateReads links isOut indices ++
-      HeapKnowledge.restateStores links isOut indices
+      HeapKnowledge.restateSpines links isOut indices
     (HeapKnowledge.eliminateIndices out restated).drop indices.length
   let f := fun n => table.get? n
   let pairs := atoms.filterMap fun a => (a.rename f).map (a, ·)
@@ -625,7 +625,7 @@ def Store.drop (s : Store) (D : List Nat) : Store := timedKind "drop" fun _ => I
   let links := (atoms ++ near).filterMap fun a => match a with | .link g => some g | _ => none
   let isOut := fun n => dset.contains n
   let restated := indices ++ HeapKnowledge.restateReads links isOut indices ++
-    HeapKnowledge.restateStores links isOut indices
+    HeapKnowledge.restateSpines links isOut indices
   let derived := (HeapKnowledge.eliminateIndices D restated).drop indices.length
   let mut s := atoms.foldl Store.remove s
   -- A separation fact keeps its subject's separation from the partners the
@@ -953,11 +953,11 @@ structure RegionState where
   deriving Inhabited
 
 /-- A regional check (`regionalChecked`) made in the walk: the bound, the
-store regions, whether it bounds a throw, the field names fresh fields
+spine regions, whether it bounds a throw, the field names fresh fields
 range over, and each loop head's given regional facts. -/
 structure Regional where
   Φ : Footprints.Closed
-  regions : List Footprints.ArgumentStoreRegion
+  regions : List Footprints.ArgumentSpineRegion
   exc : Bool
   names : List String := []
   heads : Array (Option RegionState) := #[]
@@ -1327,7 +1327,7 @@ def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.Index
   | .guarded (s + 1) p tag B =>
     (startIdentities B).map fun (c, r) => (c ++ (c.getLast?.map (.guarded s p tag ·)).toList, r)
   | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .apart _ _
-  | .storeApart _ _ _ _ => []
+  | .spineApart _ _ _ _ => []
 
 /-- The start's identity facts (`startIdentities`) for the postcondition
 `ens`: of each statement list, the first the entry facts entail
@@ -1732,7 +1732,7 @@ structure Merged (ι : Type) where
 /-- The merge of the states `preds` entering a node of context `context`
 through the edges `edgesIn` (each as the search's merge reads it), its
 fresh names from `fresh`: the names, the facts every predecessor holds and
-those a join keeps, the fresh stores, the implications. -/
+those a join keeps, the fresh spines, the implications. -/
 def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State)
     (edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) (fresh : Nat) :
     Merged ι := Id.run do
@@ -1850,13 +1850,13 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   -- path two reads long reaches the value the second read gives; and a
   -- fact one predecessor states of a slot another holds a tag's value
   -- in, guarded by that tag (`x === null || F`), as the join guards a
-  -- store separation; each kept where every predecessor's facts entail it.
+  -- spine separation; each kept where every predecessor's facts entail it.
   let tags : List HeapKnowledge.GuardTag := [.null, .undef, .tru, .fls]
   let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
     | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
-    | .index ⟨.guarded .., _, _⟩ | .index ⟨.storeApart .., _, _⟩ | .link _ => a.names
+    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .link _ => a.names
     | _ => [])
   let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
     (diffs.flatMap fun d => d.flatMap fun a => match a with
@@ -1886,7 +1886,7 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   met := guarded.foldl (fun (acc : Store) x => match (Atom.index x).rename (mergedNames[·]?) with
     | some a => acc.add a
     | none => acc) met
-  -- A name holds a fresh store where every predecessor's does.
+  -- A name holds a fresh spine where every predecessor's does.
   let freshLists := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
     st.fresh.flatMap fun x => x :: m.getD x []
   let met' := match freshLists with
@@ -2364,8 +2364,8 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     grading }
 
 /-- The walk's setup over one graph: its checks (the claims' count, the
-loop heads' fuel, store regions with an edge into the start, the entry's
-fields under store regions, one written assertion per label, the entry),
+loop heads' fuel, spine regions with an edge into the start, the entry's
+fields under spine regions, one written assertion per label, the entry),
 then what every visit reads (`setupEnv`) and the state the first visit
 starts from (`setupState`), or where it stopped. -/
 def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
@@ -2414,13 +2414,13 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
   -- A regional check assumes the regions' input facts at the start, which
   -- no edge into it establishes.
   if startEntered && regional.isSome then
-    .error (WalkStop.mk (.notHandled "store regions with an edge into the start") counts answers trace0) else
-  -- Under store regions, the entry's fields the regions read
+    .error (WalkStop.mk (.notHandled "spine regions with an edge into the start") counts answers trace0) else
+  -- Under spine regions, the entry's fields the regions read
   -- (`ArgumentPathTracking.checkEntryFields`, as `goto_bounded` checks them).
   if (match regional with
       | some rg => !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions
       | none => false) then
-    .error (WalkStop.mk (.refused "store regions: the entry's fields") counts answers trace0) else
+    .error (WalkStop.mk (.refused "spine regions: the entry's fields") counts answers trace0) else
   -- One written assertion per label (`byLabel` reads the first).
   if (assertions.map (·.1)).eraseDups.length != assertions.length then
     .error (WalkStop.mk (.refused "a label with two written assertions") counts answers trace0) else
@@ -2679,7 +2679,7 @@ region. -/
 def deadEvidence (c : PointClaim ι) (node : Node) : NodeEvidence ι :=
   ⟨none, some ⟨c.context, node.expression, c.type⟩, [], {}, none, {}, none, [], [], [], none⟩
 
-/-- Whether the step's result holds a fresh store: a copy of a fresh slot,
+/-- Whether the step's result holds a fresh spine: a copy of a fresh slot,
 or a call at a selected signature stating a fresh result
 (`GraphCode.varFresh`, `callFresh`) whose derivation `derivChecked`
 accepts at the step's facts `stepK`. -/
@@ -2904,7 +2904,7 @@ started from (`stepAnswers`), those after `checkedStep` (`steppedAnswers`,
 which the footprint check reads), those the return check started from
 (`yieldAnswers`) and those after the step (`answers`); the counters, trace,
 fresh counter and timer kind after it; the slots it read, its result,
-whether its result holds a fresh store, whether its footprint and return
+whether its result holds a fresh spine, whether its footprint and return
 checks passed, its yields where computed, the handler's thrown value's type
 and name, and under `grading` the visit's record (`stepCheck`). -/
 structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
@@ -3089,8 +3089,8 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let width := c.context.length
   let st := sd.st
   let here : RegionState := if l == env.start then
-      { facts := ((rg.regions.map fun (x : Footprints.ArgumentStoreRegion) =>
-          (⟨x.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
+      { facts := ((rg.regions.map fun (x : Footprints.ArgumentSpineRegion) =>
+          (⟨x.position, []⟩ : Footprints.ArgumentSpineRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
     else if env.isHead[l]! then ((rg.heads[l]?).join).getD {}
     else RegionState.meet (regionIn[l]!)
   let sums := answers.summaries.toList
@@ -3100,9 +3100,9 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
     | none, none => none
   let kHere := (materialize en.entry width (List.range width) true).1
   if !regionalDerivChecked G images env.codes sums c node st.stepK st.stepDeriv then
-    .error s!"store regions at node {l}: its derivation"
+    .error s!"spine regions at node {l}: its derivation"
   else if !regionalHeaderChecked c st.stepDeriv st.stepEffect then
-    .error s!"store regions at node {l}: its step evidence"
+    .error s!"spine regions at node {l}: its step evidence"
   else
     let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
     let t0 := node.expression
@@ -3142,7 +3142,7 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
     let ft : GraphCode.ArgumentRegionFresh.FreshTables := ⟨sparse n [] (at_.map fun (x, r) => (x, r.values)),
       sparse n [] (at_.map fun (x, r) => (x, r.cells)), sparse n [] (at_.map fun (x, r) => (x, r.fields)), rg.names⟩
     if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
-      .error s!"store regions at node {l}"
+      .error s!"spine regions at node {l}"
     else .ok { regionIn, state := { here with cells := C, fields := Fs }, table, ft, cEv }
 
 /-- Whether each slot `diff` names has, in the edge's context `Γ`, a type

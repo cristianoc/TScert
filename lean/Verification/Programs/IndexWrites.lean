@@ -12,7 +12,7 @@ The index facts (`HeapKnowledge.IndexAtom`) and the write they admit
 `(k & m) !== k || k > xs.length`, `m` a mask whose `ToInt32` is a natural
 below `2^31`, states them in four steps: the conjunction is an index
 (`index-mask`), strict equality with an index is one where it answers `true`
-(`index-equal`), the read of a store's length a read link names is that
+(`index-equal`), the read of a spine's length a read link names is that
 array's length (`length-observed`), and a comparison of an index with that
 length bounds it on the answer giving `k ≤ length` (`bound-compare`). Each is
 a layer of `Checker.ordinary` adding ats to the output its base step's
@@ -76,7 +76,7 @@ theorem arith_run {Ξ T : Fam} {Q : Post} {op : Arith} {a b : Tm} (ha : isVal a 
           · exact absurd step' (value_no_step (binop_values hv).2.2)
       | arithThrow _ => exact throw_post rfl hs
 
-/-- A store's length gives, where it returns, the number of its entries, in
+/-- A spine's length gives, where it returns, the number of its entries, in
 the heap it started in. -/
 theorem len_run {Ξ T : Fam} {Q : Post} {ls : List (Option Nat)} :
     ∀ {n W h}, SafePost Ξ T Q n W h (.lenOf (.arr ls)) →
@@ -163,7 +163,7 @@ theorem appendSlots_values {n : Nat} {ρ : Env}
 def literalArrayAtoms (n : Nat) (t : Tm) : List IndexAtom :=
   match t with
   | .letE (.arrLit es) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
-    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < n + 1) &&
+    if s == arraySpineKey && p == CallArguments.protoField && decide (proto < n + 1) &&
         appendSlots n es && decide (es.length ≤ maxArrayLength) then
       [{ fact := .linear (.le [(.length 0, 1)] es.length) },
        { fact := .linear (.le [(.length 0, -1)] (-(es.length : Int))) }]
@@ -190,18 +190,18 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
         simpa only [vs, instantiateArgs_eq_map] using appendSlots_values
           (fun i hi => (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hes
       have hlen : vs.length = es.length := by simp [vs]
-      let store := Tm.arr (elemSlots h.length vs.length)
+      let spine := Tm.arr (elemSlots h.length vs.length)
       let heap := h ++ vs
-      have hstore : isVal store = true := rfl
+      have hspine : isVal spine = true := rfl
       have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit es)
-          (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto])))
-          (heap ++ [store, (push store ρ) proto] ++ [.nul])
-          (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) := by
+          (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto])))
+          (heap ++ [spine, (push spine ρ) proto] ++ [.nul])
+          (.objAt (slots heap.length [arraySpineKey, CallArguments.protoField]) .absent (heap.length + 2)) := by
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
         apply Steps.next (Step.letC (Step.arrAlloc hvs (by omega)))
-        apply Steps.next (Step.letV hstore)
-        have hb := instantiate_beta ρ he.1 store
-          (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto]) 0
+        apply Steps.next (Step.letV hspine)
+        have hb := instantiate_beta ρ he.1 spine
+          (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto]) 0
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
         rw [hb]
         simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
@@ -209,17 +209,17 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
         intro v hv
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
         rcases hv with rfl | rfl
-        · exact hstore
+        · exact hspine
         · cases proto with
-          | zero => exact hstore
+          | zero => exact hspine
           | succ i => exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (by omega)))).1
       refine weaken (fun heap' u hq => ?_) (steps_run run rfl hs)
       obtain ⟨hq, rfl, rfl⟩ := hq
       refine ⟨hq, ?_, ?_⟩
-      · have hl : termValue ε (push (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) ρ)
-            (heap ++ [store, (push store ρ) proto] ++ [.nul]) (.length 0) = some (es.length : Int) := by
-          simp [termValue_length, push, lengthOf, Footprints.storeOf, Footprints.fieldsOf, slots,
-            store, elemSlots, hlen, hmax, arrayStoreKey, CallArguments.protoField]
+      · have hl : termValue ε (push (.objAt (slots heap.length [arraySpineKey, CallArguments.protoField]) .absent (heap.length + 2)) ρ)
+            (heap ++ [spine, (push spine ρ) proto] ++ [.nul]) (.length 0) = some (es.length : Int) := by
+          simp [termValue_length, push, lengthOf, Footprints.spineOf, Footprints.fieldsOf, slots,
+            spine, elemSlots, hlen, hmax, arraySpineKey, CallArguments.protoField]
         simp only [termValue_length, List.append_assoc, List.cons_append, List.nil_append] at hl
         intro a ha _
         simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
@@ -227,7 +227,7 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
           simp [IndexFact.HoldsAt, Linear.Fact.vars, Linear.Fact.Holds, Linear.Form.eval, termValuation, hl]
       · refine ⟨HeapSeparation.allocate_holds hk.2.2.2.1
           (HeapExpressionRules.fresh_apart_from he hh (by simp [heap])), ?_⟩
-        exact indexHolds_extend [.nul] (indexHolds_extend [store, (push store ρ) proto]
+        exact indexHolds_extend [.nul] (indexHolds_extend [spine, (push spine ρ) proto]
           (indexHolds_extend vs (shift_holds hk).2.2.2.2.2))
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
   · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _, trivial⟩) hs
@@ -288,9 +288,9 @@ theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true)
   | bound _ _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfact] at hf; cases hf
 
-/-- The arrays whose store's length a slot of `n`'s class holds, by unconditional ats. -/
+/-- The arrays whose spine's length a slot of `n`'s class holds, by unconditional ats. -/
 def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
   k.indices.filterMap fun atom => if atom.cond.isNone then
     match atom.fact with
@@ -299,7 +299,7 @@ def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
   else none
 
 theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf k n) (hk : Holds k ε ρ h) :
-    ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧ ρ n = .num (bitsOfNat ls.length) ∧
+    ∃ s ls, Footprints.spineOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧ ρ n = .num (bitsOfNat ls.length) ∧
       ls.length ≤ maxArrayLength := by
   obtain ⟨atom, ha, hm⟩ := List.mem_filterMap.mp hx
   split at hm
@@ -321,17 +321,17 @@ theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf
     | bound _ _ _ => rw [hfact] at hm; cases hm
     | int _ => rw [hfact] at hm; cases hm
     | linear _ => rw [hfact] at hm; cases hm
-    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfact] at hm; cases hm
+    | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfact] at hm; cases hm
   · cases hm
 
-/-- The arrays a slot of `s`'s class was read from as their store: read links
-at the store field. -/
-def storeReaders (k : Knowledge) (s : Nat) : List Nat :=
-  k.links.filterMap fun g => if !g.alias && !g.optional && g.field == arrayStoreKey &&
+/-- The arrays a slot of `s`'s class was read from as their spine: read links
+at the spine field. -/
+def spineReaders (k : Knowledge) (s : Nat) : List Nat :=
+  k.links.filterMap fun g => if !g.alias && !g.optional && g.field == arraySpineKey &&
     (HeapLinks.aliases k.links s).contains g.value then some g.cell else none
 
-theorem storeReaders_sound {k : Knowledge} {s x : Nat} {ρ h} (hx : x ∈ storeReaders k s) (hk : Holds k ε ρ h) :
-    ∃ l, Footprints.storeOf (ρ x) = some l ∧ h[l]? = some (ρ s) := by
+theorem spineReaders_sound {k : Knowledge} {s x : Nat} {ρ h} (hx : x ∈ spineReaders k s) (hk : Holds k ε ρ h) :
+    ∃ l, Footprints.spineOf (ρ x) = some l ∧ h[l]? = some (ρ s) := by
   obtain ⟨g, hg, hm⟩ := List.mem_filterMap.mp hx
   split at hm
   · rename_i hc
@@ -342,7 +342,7 @@ theorem storeReaders_sound {k : Knowledge} {s x : Nat} {ρ h} (hx : x ∈ storeR
     simp only [hal, hopt, Bool.false_eq_true, if_false] at hl
     obtain ⟨flds, c, oid, l, hcell, hf, hl⟩ := hl
     refine ⟨l, ?_, ?_⟩
-    · rw [hcell]; simp only [Footprints.storeOf, Footprints.fieldsOf]; rw [← hfld]; exact hf
+    · rw [hcell]; simp only [Footprints.spineOf, Footprints.fieldsOf]; rw [← hfld]; exact hf
     · rw [hl, HeapLinks.aliases_eq hk.2.2.1 hval]
   · cases hm
 
@@ -392,17 +392,17 @@ theorem maskSlot_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     · cases hc
   · cases hc
 
-/-- Whether a slot's type is a store: one list contract. -/
-def storeSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
+/-- Whether a slot's type is a spine: one list contract. -/
+def spineSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
   match Γ[s]? with
   | some S => match expand G S with
     | [.list _ []] => true
     | _ => false
   | none => false
 
-theorem storeSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
-    (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength := by
-  unfold storeSlot at hc
+theorem spineSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
+    (hc : spineSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength := by
+  unfold spineSlot at hc
   split at hc
   · rename_i S hS
     split at hc
@@ -475,13 +475,13 @@ theorem boundAnswerOf_sound {op : Arith} {left q : Bool} (h : boundAnswerOf op l
     · cases h
 
 /-- The index atoms a step on slots states of its result, slot `0`, every
-other slot one higher: the length of a store a read link names
+other slot one higher: the length of a spine a read link names
 (`length-observed`), an index from a conjunction with a mask (`index-mask`),
 an index equal to one (`index-equal`, where the equality answers `true`),
 and an index bounded by a length (`bound-compare`, on the answer giving it). -/
 def stepAtoms [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .lenOf (.var s) =>
-    if storeSlot G Γ s then (storeReaders k s).map fun x => ⟨.length (x + 1) 0, none, false⟩ else []
+    if spineSlot G Γ s then (spineReaders k s).map fun x => ⟨.length (x + 1) 0, none, false⟩ else []
   | .arith op (.var a) (.var b) =>
     if a < Γ.length ∧ b < Γ.length then
       match op with
@@ -540,13 +540,13 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     simp only [stepAtoms]
     split
     · rename_i hst
-      obtain ⟨ls, hls, hmax⟩ := storeSlot_sound hst he
+      obtain ⟨ls, hls, hmax⟩ := spineSlot_sound hst he
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hls] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_run hs)
       obtain ⟨-, rfl, rfl⟩ := hq
       intro atom ha _
       obtain ⟨x, hx, rfl⟩ := List.mem_map.mp ha
-      obtain ⟨l, hl, hh⟩ := storeReaders_sound hx hk
+      obtain ⟨l, hl, hh⟩ := spineReaders_sound hx hk
       exact ⟨l, ls, hl, by rw [hh, hls], rfl, hmax⟩
     · exact weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
   · simp only [stepAtoms]
@@ -649,7 +649,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
 
 A step on safe integers states the integer facts of its result (ARITHMETIC.md,
 "Linear facts"): a literal its value, a copy its equality with the copied
-slot, a store's length its range `0 ≤ n ≤ 2^32 - 1`, a sum or a difference its
+slot, a spine's length its range `0 ≤ n ≤ 2^32 - 1`, a sum or a difference its
 value where the knowledge bounds it within the safe integers, and a comparison
 its outcome on each answer. An operand is a slot the knowledge states a safe
 integer, or a literal that is one; its value is a linear form plus a constant. -/
@@ -857,7 +857,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
       (match litSlot G Γ a with | some i => valueAtoms [] i | none => []) ++
       (if a < Γ.length then copiedAtoms k a ++ pastCopies k a else [])
   | .lenOf (.var s) =>
-    if storeSlot G Γ s then
+    if spineSlot G Γ s then
       [⟨.int 0, none, false⟩, ⟨.linear (valueFact (.le [(0, -1)] 0)), none, false⟩,
         ⟨.linear (valueFact (.le [(0, 1)] maxArrayLength)), none, false⟩]
     else if stringSlot G Γ s then
@@ -995,9 +995,9 @@ theorem binop_num_arith {op : Arith} {x y : UInt64} {u : Tm} (hop : op = .add �
     (h : binop op (.num x) (.num y) = some u) : u = .num (arithBits op x y) := by
   rcases hop with rfl | rfl | rfl <;> simp [binop, Arith.relational] at h <;> exact h.symm
 
-theorem storeSlot_bound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
-    (hc : storeSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength :=
-  storeSlot_sound hc he
+theorem spineSlot_bound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
+    (hc : spineSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength :=
+  spineSlot_sound hc he
 
 theorem operandIn_value {Γ : List (Ty ι)} {t : Tm} {ρ : Env} (hval : ∀ i, i < Γ.length → isVal (ρ i) = true)
     (h : operandIn Γ t = true) : isVal (instantiate 0 ρ t) = true := by
@@ -1222,7 +1222,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       simp only [linearAtoms]
       split
       · rename_i hst
-        obtain ⟨ls, hls, hmax⟩ := storeSlot_bound hst he
+        obtain ⟨ls, hls, hmax⟩ := spineSlot_bound hst he
         simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hls] at hs ⊢
         refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_run hs)
         obtain ⟨-, -, rfl⟩ := hq
@@ -1447,7 +1447,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
 /-! ## A comparison with a length
 
 A strict comparison of a safe integer `k` with a slot `n` holding the length of
-an array `x`'s store states, on the answer giving `k < n`, the facts of `k`
+an array `x`'s spine states, on the answer giving `k < n`, the facts of `k`
 alone that survive the length slot: `k ≤ 2^32 - 2`, and, where the knowledge
 entails `0 ≤ k`, the strict `bound(x, k)`: `k` an index below the length. -/
 
@@ -1590,43 +1590,43 @@ theorem lengthAtoms_holds {k : Knowledge} {Γ : List (Ty ι)} {G : NormalGraph �
 
 /-! ## The write at a checked index -/
 
-/-- **A write at an index at most the store's length** (`setElem-bounded`).
-The object `obj` is a record whose store field, invariant, holds a
-homogeneous writable store; that store, at its location now, has `ls`, and
-`b` is an index `i ≤ |ls|`. The write reads the store, lands on a present
-element or appends (`setElem_store_safe`), and writes the store it yields,
+/-- **A write at an index at most the spine's length** (`setElem-bounded`).
+The object `obj` is a record whose spine field, invariant, holds a
+homogeneous writable spine; that spine, at its location now, has `ls`, and
+`b` is an index `i ≤ |ls|`. The write reads the spine, lands on a present
+element or appends (`setElem_spine_safe`), and writes the spine it yields,
 which meets the field's contract, back. -/
 theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S E : Ty ι}
     {fs : List (Stored (Ty ι))} {vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
     {ms : List (MethodMembers.Sig (Ty ι))}
     {ks : List KeyBound} {st : List PropKey} {pr : ArrayPresence} {sr : StorageRole}
-    (hr : Represents G R (.refs fs [] vs os ms ks st)) (hm : (arrayStoreKey, sr, S) ∈ fs)
+    (hr : Represents G R (.refs fs [] vs os ms ks st)) (hm : (arraySpineKey, sr, S) ∈ fs)
     (hS : Represents G S (.list ⟨[], [], some E, false, pr⟩ []))
     {obj vv : Tm} {s : Nat} {ls : List (Option Nat)} {b : UInt64} {i : Nat} {n : Nat} {W : WorldT n} {h : Heap}
-    (hobj : meaning G R n W obj) (hs : Footprints.storeOf obj = some s) (hl : h[s]? = some (.arr ls))
+    (hobj : meaning G R n W obj) (hs : Footprints.spineOf obj = some s) (hl : h[s]? = some (.arr ls))
     (hb : indexOfBits b = some i) (hi : i ≤ ls.length)
     (hv : meaning G E n W vv) (hw : WorldAdm W) (hh : HeapOk n W h) (hsrc : isSourceVal vv = true)
-    (href : RefsOk W (.writeAt arrayStoreKey obj (.setElem (.readAt arrayStoreKey obj) (.num b) vv))) :
-    Safe Ξ nulT n W h (.writeAt arrayStoreKey obj (.setElem (.readAt arrayStoreKey obj) (.num b) vv)) := by
+    (href : RefsOk W (.writeAt arraySpineKey obj (.setElem (.readAt arraySpineKey obj) (.num b) vv))) :
+    Safe Ξ nulT n W h (.writeAt arraySpineKey obj (.setElem (.readAt arraySpineKey obj) (.num b) vv)) := by
   obtain ⟨flds, l, c, oid, rfl, hf, hlc, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S, hm, rfl⟩) ((represents_raw hr n W _) hobj).1.1
   have hsl : s = l := by
-    simp only [Footprints.storeOf, Footprints.fieldsOf] at hs
+    simp only [Footprints.spineOf, Footprints.fieldsOf] at hs
     rw [hf] at hs; cases hs; rfl
   subst hsl
   have hvval := (meaning_value hv).1
-  have hC : CtxRefs (Tm.writeAt arrayStoreKey (.objAt flds .absent oid)) := by ctx_refs
+  have hC : CtxRefs (Tm.writeAt arraySpineKey (.objAt flds .absent oid)) := by ctx_refs
   cases n with
   | zero => exact href
   | succ p =>
     obtain ⟨w, hwv, hwc⟩ := hh.1.2 s c hlc
     rw [hl] at hwv; cases hwv
-    have hstore : meaning G S p (trunc p (Nat.le_succ p) W) (.arr ls) := (hag p (by omega) _ _).mp (hwc p (by omega))
+    have hspine : meaning G S p (trunc p (Nat.le_succ p) W) (.arr ls) := (hag p (by omega) _ _).mp (hwc p (by omega))
     have hv' : meaning G E p (trunc p (Nat.le_succ p) W) vv := (meaning_adm G E).down_le (p + 1) p (by omega) W vv hv
     have hpos : positionTy (⟨[], [], some E, false, pr⟩ : Tuple (Ty ι)) i = some E := by
       simp [positionTy]
-    have hframe : RefsOk (trunc p (Nat.le_succ p) W) (.writeAt arrayStoreKey (.objAt flds .absent oid) .undef) :=
-      RefsOk_trunc _ (hC.frame (t := .setElem (.readAt arrayStoreKey (.objAt flds .absent oid)) (.num b) vv) href)
+    have hframe : RefsOk (trunc p (Nat.le_succ p) W) (.writeAt arraySpineKey (.objAt flds .absent oid) .undef) :=
+      RefsOk_trunc _ (hC.frame (t := .setElem (.readAt arraySpineKey (.objAt flds .absent oid)) (.num b) vv) href)
     have hset : RefsOk (trunc p (Nat.le_succ p) W) (.setElem (.arr ls) (.num b) vv) := by
       have hvr : RefsOk W vv := fun r hr => href r (by simp [refs, hr])
       intro r hr
@@ -1637,11 +1637,11 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
       · exact RefsOk_trunc _ hvr r hr
     refine ⟨href, Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hw,
       .writeC2 rfl (.setC1 (.readField hf hl)), HeapOk_trunc p W h hh, ?_⟩⟩
-    apply Safe_bind (.writeAt arrayStoreKey (.objAt flds .absent oid)) (Step.writeC2 rfl) (Raises.writeC2 rfl) hC
+    apply Safe_bind (.writeAt arraySpineKey (.objAt flds .absent oid)) (Step.writeC2 rfl) (Raises.writeC2 rfl) hC
       p _ h _ (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh) hframe
-      (setElem_store_safe hS rfl hpos hb hi hstore (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh) hvval hv' hsrc hset)
+      (setElem_spine_safe hS rfl hpos hb hi hspine (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh) hvval hv' hsrc hset)
     intro j hj U hx hu heap av hok hav ha' hvr
-    have hfin : RefsOk U (.writeAt arrayStoreKey (.objAt flds .absent oid) av) :=
+    have hfin : RefsOk U (.writeAt arraySpineKey (.objAt flds .absent oid) av) :=
       hC.ok hvr (RefsOk_mono hx (RefsOk_trunc _ hframe))
     have hobjp : meaning G R p (trunc p (Nat.le_succ p) W) (.objAt flds .absent oid) :=
       (meaning_adm G R).down_le (p + 1) p (by omega) W _ hobj
@@ -1652,13 +1652,13 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     cases heq
     have hcat : ∀ r, roleAt U l' = some r → Cat r av := by
       intro r hr
-      have hslot : RefOk U (.slot arrayStoreKey l') := hfin _ (by
+      have hslot : RefOk U (.slot arraySpineKey l') := hfin _ (by
         simp only [refs, List.mem_append, objRefs, List.mem_cons, List.mem_map]
-        exact .inl (.inr ⟨(arrayStoreKey, l'), lookup_mem_pair hf', rfl⟩))
+        exact .inl (.inr ⟨(arraySpineKey, l'), lookup_mem_pair hf', rfl⟩))
       simp only [RefOk, hr] at hslot
       obtain ⟨ls', rfl, -⟩ := ((represents_raw hS j U av) ha').1
       cases r with
-      | store k =>
+      | spine k =>
         cases k with
         | array => exact ⟨ls', rfl⟩
         | view fm N => simp [SlotRole] at hslot
@@ -1666,22 +1666,22 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     exact write_rule (meaning_adm G S) j U heap l' av hav hu hok hf' hl' hag' ha' hcat hfin
 
 /-- The complete element-write execution consumes a postcondition for
-both possible updates: an existing element cell followed by the store
-write, or a fresh cell followed by the store write. -/
+both possible updates: an existing element cell followed by the spine
+write, or a fresh cell followed by the spine write. -/
 theorem elementWrite_post {Ξ T : Fam} {P : Heap → Prop}
     {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
     {xs : List (Option Nat)} {b : UInt64} {value : Val} {n W}
-    (hfield : flds.lookup arrayStoreKey = some target)
+    (hfield : flds.lookup arraySpineKey = some target)
     (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
     (hpresent : ∀ cell, elemLoc xs b = some cell →
       P ((h.set cell value).set target (.arr xs)))
     (hfresh : ∀ i, indexOfBits b = some i → elemLoc xs b = none →
       P ((h ++ [value]).set target (.arr (placeAt xs i h.length))))
-    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
-      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value))) :
+    (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value))) :
     SafePost Ξ T (fun h' _ => P h') n W h
-      (.writeAt arrayStoreKey (.objAt flds cd oid)
-        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
+      (.writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value)) := by
   cases n with
   | zero => assumption
   | succ n1 =>
@@ -1709,7 +1709,7 @@ theorem elementWrite_post {Ξ T : Fam} {P : Heap → Prop}
       · exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2,
           (ExpressionEffects.write_back_post hfield (hfresh i hi hn) hs2).post⟩
 
-/-- Whether an unconditional atom bounds a slot of `i`'s class by the store of
+/-- Whether an unconditional atom bounds a slot of `i`'s class by the spine of
 an array of `a`'s class, strictly where `strict`. -/
 def boundAtom (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
   k.indices.any fun atom => atom.cond.isNone && match atom.fact with
@@ -1719,7 +1719,7 @@ def boundAtom (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
 
 theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : boundAtom k a i strict = true)
     (hk : Holds k ε ρ h) :
-    ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
+    ∃ s ls b idx, Footprints.spineOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -1737,26 +1737,26 @@ theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc :
   | length _ _ => rw [hfact] at hf; cases hf
   | int _ => rw [hfact] at hf; cases hf
   | linear _ => rw [hfact] at hf; cases hf
-  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfact] at hf; cases hf
+  | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | spineApart _ _ _ _ => rw [hfact] at hf; cases hf
 
-/-- Whether the linear facts bound a slot `i` by the length of the store of an
+/-- Whether the linear facts bound a slot `i` by the length of the spine of an
 array of `a`'s class (`HeapKnowledge.lengthBound`). -/
 def linearBound (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
   lengthBound (HeapLinks.aliases k.links a) k.indices i strict
 
 theorem linearBound_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : linearBound k a i strict = true)
     (hk : Holds k ε ρ h) :
-    ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
+    ∃ s ls b idx, Footprints.spineOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length :=
   lengthBound_sound (fun _ hy => HeapLinks.aliases_eq hk.2.2.1 hy) hc hk.2.2.2.2.2
 
 /-- Whether a slot of `i`'s class holds an index at most the length of the
-store of an array of `a`'s class: a bound atom states it, or the linear facts do. -/
+spine of an array of `a`'s class: a bound atom states it, or the linear facts do. -/
 def bounded (k : Knowledge) (a i : Nat) (strict : Bool) : Bool := boundAtom k a i strict || linearBound k a i strict
 
 theorem bounded_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : bounded k a i strict = true)
     (hk : Holds k ε ρ h) :
-    ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
+    ∃ s ls b idx, Footprints.spineOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   rcases Bool.or_eq_true_iff.mp hc with hc | hc
   · exact boundAtom_sound hc hk
@@ -1765,11 +1765,11 @@ theorem bounded_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : b
 /-- The slots of a write at a run-time index: `x.[] := x.[]⟦k ↦ v⟧`. -/
 def boundedSlots : Tm → Option (Nat × Nat × Nat)
   | .writeAt f (.var a) (.setElem (.readAt f' (.var a')) (.var i) (.var v)) =>
-    if f = arrayStoreKey ∧ f' = arrayStoreKey ∧ a = a' then some (a, i, v) else none
+    if f = arraySpineKey ∧ f' = arraySpineKey ∧ a = a' then some (a, i, v) else none
   | _ => none
 
 theorem boundedSlots_eq {t : Tm} {a i v : Nat} (h : boundedSlots t = some (a, i, v)) :
-    t = .writeAt arrayStoreKey (.var a) (.setElem (.readAt arrayStoreKey (.var a)) (.var i) (.var v)) := by
+    t = .writeAt arraySpineKey (.var a) (.setElem (.readAt arraySpineKey (.var a)) (.var i) (.var v)) := by
   unfold boundedSlots at h
   split at h
   · split at h
@@ -1779,12 +1779,12 @@ theorem boundedSlots_eq {t : Tm} {a i v : Nat} (h : boundedSlots t = some (a, i,
     · cases h
   · cases h
 
-/-- The store's element type of a homogeneous writable array type: its type a
-record whose invariant store field holds one list contract of no required
+/-- The spine's element type of a homogeneous writable array type: its type a
+record whose invariant spine field holds one list contract of no required
 or optional position. -/
 def writableElement (G : NormalGraph ι) (R : Ty ι) : Option (Ty ι) :=
   match expand G R with
-  | [.refs fs [] _ _ _ _ _] => match (Stored.views fs).lookup arrayStoreKey with
+  | [.refs fs [] _ _ _ _ _] => match (Stored.views fs).lookup arraySpineKey with
     | some S => match expand G S with
       | [.list ⟨[], [], some E, false, _⟩ []] => some E
       | _ => none
@@ -1792,7 +1792,7 @@ def writableElement (G : NormalGraph ι) (R : Ty ι) : Option (Ty ι) :=
   | _ => none
 
 theorem writableElement_sound {G : NormalGraph ι} {R E : Ty ι} (h : writableElement G R = some E) :
-    ∃ fs vs os ms ks st sr S pr, Represents G R (.refs fs [] vs os ms ks st) ∧ (arrayStoreKey, sr, S) ∈ fs ∧
+    ∃ fs vs os ms ks st sr S pr, Represents G R (.refs fs [] vs os ms ks st) ∧ (arraySpineKey, sr, S) ∈ fs ∧
       Represents G S (.list ⟨[], [], some E, false, pr⟩ []) := by
   unfold writableElement at h
   split at h
@@ -1811,7 +1811,7 @@ theorem writableElement_sound {G : NormalGraph ι} {R E : Ty ι} (h : writableEl
 /-- Whether the write of a step's evidence is admitted (`setElem-bounded`):
 its term `x.[] := x.[]⟦k ↦ v⟧` at the evidence's slots, `x` a homogeneous
 writable array whose element type the value's type is below by `sub` and is
-an element's payload (`Payload`), the knowledge bounding `k` by `x`'s store,
+an element's payload (`Payload`), the knowledge bounding `k` by `x`'s spine,
 and its type `null`. -/
 @[nospecialize] def boundedWriteCheck [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (j : Sequent ι) (k : Knowledge) (a i v : Nat) (sub : PositiveCertificates.SubtypeChoices ι) : Bool :=
@@ -1852,19 +1852,19 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     · cases htypes
   · cases htypes
 
-/-- The knowledge after a write below its store's length: what the ordinary
-output keeps, and every atom reading stores' lengths alone or locations
+/-- The knowledge after a write below its spine's length: what the ordinary
+output keeps, and every atom reading spines' lengths alone or locations
 `stable` keeps (`ExpressionEffects.elem_var_write_length`, `stable-first`). -/
 def lengthOutput (stable : Nat → String → Bool) (k : Knowledge) : Knowledge :=
   { HeapExpressionRules.ordinaryOutput k with
     indices := shiftIndices (keptIndices ⟨true, true, .length⟩ stable k.indices) }
 
-/-- Whether a checked write keeps every store's length: its index below the
-store's length, at a store type every position of which holds source
+/-- Whether a checked write keeps every spine's length: its index below the
+spine's length, at a spine type every position of which holds source
 values. -/
 def keepsLengths [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) : Bool :=
   bounded k a i true && match j.context[a]? with
-    | some R => ExpressionEffects.storeFieldEvery G (expand G R) arrayStoreKey
+    | some R => ExpressionEffects.spineFieldEvery G (expand G R) arraySpineKey
     | none => false
 
 theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -1891,12 +1891,12 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
     cases hra : ρ a
     case objAt => exact ⟨_, _, _, rfl⟩
-    all_goals rw [hra] at hs0; simp [Footprints.storeOf, Footprints.fieldsOf] at hs0
-  have hfl : flds.lookup arrayStoreKey = some s := by
-    simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hs0
+    all_goals rw [hra] at hs0; simp [Footprints.spineOf, Footprints.fieldsOf] at hs0
+  have hfl : flds.lookup arraySpineKey = some s := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hs0
   rw [boundedSlots_eq hslots] at hs ⊢
   have hsafe : Safe (excOf G) (meaning G j.type) n W h
-      (instantiate 0 ρ (.writeAt arrayStoreKey (.var a) (.setElem (.readAt arrayStoreKey (.var a)) (.var i) (.var v)))) :=
+      (instantiate 0 ρ (.writeAt arraySpineKey (.var a) (.setElem (.readAt arraySpineKey (.var a)) (.var i) (.var v)))) :=
     HeapObservations.erase hs
   have hp := HeapExpressionRules.stableFirst_frame he hh
     (ExpressionEffects.elem_var_write_length hvl hil hR hst hoi hfl hl hb hidx (by simp at hle; omega)
@@ -1909,20 +1909,20 @@ theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
 /-! ## Element regions (FOOTPRINTS.md, "Element regions")
 
 A region fact `apart(x, y)` keeps the regions of two values apart: an array
-object's store cell and listed element cells, or a raw store's cells. An
+object's spine cell and listed element cells, or a raw spine's cells. An
 allocation states it of its result and every array of the context, whose
 locations the heap already holds; an element write keeps it where the
 written array's region is apart from each side, or is one side and the other
 an array of the context; and an element write keeps a quantified fact whose
 array, bound and free terms read locations apart from the written region. -/
 
-/-- Whether slot `j`'s type is an array: one record clause whose store field,
+/-- Whether slot `j`'s type is an array: one record clause whose spine field,
 written or read only, holds one list contract. -/
 def arraySlot (G : NormalGraph ι) (Γ : List (Ty ι)) (j : Nat) : Bool :=
   match Γ[j]? with
   | some R => match expand G R with
     | [.refs fs [] vs _ _ _ _] =>
-      match ((Stored.views fs).lookup arrayStoreKey).orElse fun _ => vs.lookup arrayStoreKey with
+      match ((Stored.views fs).lookup arraySpineKey).orElse fun _ => vs.lookup arraySpineKey with
       | some S => match expand G S with
         | [.list _ []] => true
         | _ => false
@@ -1930,7 +1930,7 @@ def arraySlot (G : NormalGraph ι) (Γ : List (Ty ι)) (j : Nat) : Bool :=
     | _ => false
   | none => false
 
-/-- Every cell a store under a tuple contract lists is a location of the world. -/
+/-- Every cell a spine under a tuple contract lists is a location of the world. -/
 theorem listT_cells {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)}
     (h : listT T k W (.arr ls)) : ∀ l, some l ∈ ls → ∃ c, lookup W l = some c := by
   obtain ⟨ls', heq, -, -, -, -, hreq, hopt, hrest⟩ := h
@@ -1948,11 +1948,11 @@ theorem listT_cells {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat
     · obtain ⟨E, c, -, hw, -⟩ := hrest i l (by omega) hi
       exact ⟨c, hw⟩
 
-/-- An array slot's region lies in the heap: its store cell and every cell
-its store lists. -/
+/-- An array slot's region lies in the heap: its spine cell and every cell
+its spine lists. -/
 theorem arraySlot_region {G : NormalGraph ι} {Γ : List (Ty ι)} {j : Nat} {ρ n W h}
     (hc : arraySlot G Γ j = true) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h) :
-    ∃ st ls, Footprints.storeOf (ρ j) = some st ∧ h[st]? = some (.arr ls) ∧ st < h.length ∧
+    ∃ st ls, Footprints.spineOf (ρ j) = some st ∧ h[st]? = some (.arr ls) ∧ st < h.length ∧
       ElementsBelow h.length ls := by
   unfold arraySlot at hc
   split at hc
@@ -1969,11 +1969,11 @@ theorem arraySlot_region {G : NormalGraph ι} {Γ : List (Ty ι)} {j : Nat} {ρ 
   rename_i T hT
   have hr : Represents G R (.refs fs [] vs os ms ks st) := hexp
   have hsem := (represents_raw hr _ W _) (he.2 j R hR)
-  -- The store field's location, whose contract implies the store's type.
+  -- The spine field's location, whose contract implies the spine's type.
   obtain ⟨flds, l, c, oid, hobj, hf, hlc, hag⟩ : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr (n + 1)) (oid : Nat),
-      ρ j = .objAt flds .absent oid ∧ flds.lookup arrayStoreKey = some l ∧ lookup W l = some c ∧
+      ρ j = .objAt flds .absent oid ∧ flds.lookup arraySpineKey = some l ∧ lookup W l = some c ∧
       ∀ (i : Nat) (hi : i < n + 1) (W' : WorldT i) (u : Val), c i hi W' u → meaning G S i W' u := by
-    cases hfs : (Stored.views fs).lookup arrayStoreKey with
+    cases hfs : (Stored.views fs).lookup arraySpineKey with
     | some S' =>
       rw [hfs] at hS
       simp only [Option.orElse_some, Option.some.injEq] at hS
@@ -1986,14 +1986,14 @@ theorem arraySlot_region {G : NormalGraph ι} {Γ : List (Ty ι)} {j : Nat} {ρ 
       rw [hfs] at hS
       simp only [Option.orElse_none] at hS
       exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
-        (by simp [arrayStoreKey, lengthKey]) hsem.2.1
+        (by simp [arraySpineKey, lengthKey]) hsem.2.1
   obtain ⟨w, hwv, hwc⟩ := hh.1.2 l c hlc
-  have hstore : meaning G S n (trunc n (Nat.le_succ n) W) w := hag n (by omega) _ _ (hwc n (by omega))
-  have hlist := (represents_raw (show Represents G S (.list T []) from hT) _ _ _ hstore).1
+  have hspine : meaning G S n (trunc n (Nat.le_succ n) W) w := hag n (by omega) _ _ (hwc n (by omega))
+  have hlist := (represents_raw (show Represents G S (.list T []) from hT) _ _ _ hspine).1
   obtain ⟨ls, rfl, -⟩ := hlist
-  refine ⟨l, ls, by simp [hobj, Footprints.storeOf, Footprints.fieldsOf, hf], hwv,
+  refine ⟨l, ls, by simp [hobj, Footprints.spineOf, Footprints.fieldsOf, hf], hwv,
     (List.getElem?_eq_some_iff.mp hwv).1, fun l' hl' => ?_⟩
-  obtain ⟨c', hc'⟩ := listT_cells ((represents_raw (show Represents G S (.list T []) from hT) _ _ _ hstore).1) l' hl'
+  obtain ⟨c', hc'⟩ := listT_cells ((represents_raw (show Represents G S (.list T []) from hT) _ _ _ hspine).1) l' hl'
   obtain ⟨c0, hc0, -⟩ := lookup_trunc_inv _ W l' c' hc'
   obtain ⟨u, hu, -⟩ := hh.1.2 l' c0 hc0
   exact (List.getElem?_eq_some_iff.mp hu).1
@@ -2042,7 +2042,7 @@ def arrayPartners (G : NormalGraph ι) (Γ : List (Ty ι)) : List Nat :=
 def freshApart (G : NormalGraph ι) (Γ : List (Ty ι)) : List IndexAtom :=
   (arrayPartners G Γ).map fun j => { fact := .apart 0 (j + 1) }
 
-/-- The array slots an unconditional atom keeps apart from the raw store in slot 0. -/
+/-- The array slots an unconditional atom keeps apart from the raw spine in slot 0. -/
 def rawPartners (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List Nat :=
   k.indices.filterMap fun a => if a.cond.isNone then match a.fact with
     | .apart x y =>
@@ -2078,19 +2078,19 @@ theorem rawPartners_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledg
     · cases hm
 
 /-- The region facts an allocation states (`region-alloc`): a literal's
-store, of slots, apart from every array slot; its combined object allocation
-likewise; and an array object holding the raw store in slot 0, apart from
-every array slot the raw store is known apart from. -/
+spine, of slots, apart from every array slot; its combined object allocation
+likewise; and an array object holding the raw spine in slot 0, apart from
+every array slot the raw spine is known apart from. -/
 def regionAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .arrLit es => match slotVars es with
     | some is => if is.all (· < Γ.length) && decide (is.length ≤ maxArrayLength) then freshApart G Γ else []
     | none => []
   | .makeAt .absent [s, p] [.var 0, .var proto] =>
-    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < Γ.length) && storeSlot G Γ 0 then
+    if s == arraySpineKey && p == CallArguments.protoField && decide (proto < Γ.length) && spineSlot G Γ 0 then
       (rawPartners G Γ k).map fun y => { fact := .apart 0 (y + 1) }
     else []
   | .letE (.arrLit es) (.makeAt .absent [s, p] [.var 0, .var proto]) =>
-    if s == arrayStoreKey && p == CallArguments.protoField && decide (proto < Γ.length + 1) &&
+    if s == arraySpineKey && p == CallArguments.protoField && decide (proto < Γ.length + 1) &&
         appendSlots Γ.length es && decide (es.length ≤ maxArrayLength) then
       freshApart G Γ
     else []
@@ -2169,22 +2169,22 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     split
     · rename_i hc
       simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
-      obtain ⟨⟨⟨rfl, rfl⟩, hproto⟩, hstore⟩ := hc
-      obtain ⟨cells, hcells, -⟩ := storeSlot_sound hstore he
-      have hinst : instantiate 0 ρ (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto]) =
-          .makeAt .absent [arrayStoreKey, CallArguments.protoField] [ρ 0, ρ proto] := by
+      obtain ⟨⟨⟨rfl, rfl⟩, hproto⟩, hspine⟩ := hc
+      obtain ⟨cells, hcells, -⟩ := spineSlot_sound hspine he
+      have hinst : instantiate 0 ρ (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto]) =
+          .makeAt .absent [arraySpineKey, CallArguments.protoField] [ρ 0, ρ proto] := by
         simp [instantiate, instantiateArgs_eq_map]
       rw [hinst] at hs ⊢
-      have run : Steps 1 h (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [ρ 0, ρ proto])
+      have run : Steps 1 h (.makeAt .absent [arraySpineKey, CallArguments.protoField] [ρ 0, ρ proto])
           (h ++ [ρ 0, ρ proto] ++ [.nul])
-          (.objAt (slots h.length [arrayStoreKey, CallArguments.protoField]) .absent (h.length + 2)) :=
+          (.objAt (slots h.length [arraySpineKey, CallArguments.protoField]) .absent (h.length + 2)) :=
         .next (Step.makeFields (by
           intro v hv
           simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
           rcases hv with rfl | rfl
           · exact hval 0 (by
               cases hΓ : Γ with
-              | nil => simp [storeSlot, hΓ] at hstore
+              | nil => simp [spineSlot, hΓ] at hspine
               | cons _ _ => simp)
           · exact hval proto hproto) rfl) .refl
       refine weaken (fun heap u hq => ?_) (steps_run run rfl hs)
@@ -2200,7 +2200,7 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       have hlen : (h ++ [ρ 0, ρ proto] ++ [Tm.nul])[h.length]? = some (.arr cells) := by
         simp [hcells]
       refine ⟨some h.length, cells, some st, ls,
-        .inr ⟨h.length, rfl, by simp [push, Footprints.storeOf, Footprints.fieldsOf, slots], hlen⟩,
+        .inr ⟨h.length, rfl, by simp [push, Footprints.spineOf, Footprints.fieldsOf, slots], hlen⟩,
         .inr ⟨st, rfl, hst, by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hls⟩,
         fun l hl m hm => ?_⟩
       rcases hl with hl | hl
@@ -2220,18 +2220,18 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         simpa only [vs, instantiateArgs_eq_map] using appendSlots_values
           (fun i hi => (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hes
       have hlen : vs.length = es.length := by simp [vs]
-      let store := Tm.arr (elemSlots h.length vs.length)
+      let spine := Tm.arr (elemSlots h.length vs.length)
       let heap := h ++ vs
-      have hstore : isVal store = true := rfl
+      have hspine : isVal spine = true := rfl
       have run : Steps 3 h (instantiate 0 ρ (.letE (.arrLit es)
-          (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto])))
-          (heap ++ [store, (push store ρ) proto] ++ [.nul])
-          (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) := by
+          (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto])))
+          (heap ++ [spine, (push spine ρ) proto] ++ [.nul])
+          (.objAt (slots heap.length [arraySpineKey, CallArguments.protoField]) .absent (heap.length + 2)) := by
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil]
         apply Steps.next (Step.letC (Step.arrAlloc hvs (by omega)))
-        apply Steps.next (Step.letV hstore)
-        have hb := instantiate_beta ρ he.1 store
-          (.makeAt .absent [arrayStoreKey, CallArguments.protoField] [.var 0, .var proto]) 0
+        apply Steps.next (Step.letV hspine)
+        have hb := instantiate_beta ρ he.1 spine
+          (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto]) 0
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
         rw [hb]
         simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
@@ -2239,21 +2239,21 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         intro v hv
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
         rcases hv with rfl | rfl
-        · exact hstore
+        · exact hspine
         · cases proto with
-          | zero => exact hstore
+          | zero => exact hspine
           | succ i => exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (by omega)))).1
       refine weaken (fun heap' u hq => ?_) (steps_run run rfl hs)
       obtain ⟨hq, rfl, rfl⟩ := hq
       refine ⟨hq, ?_⟩
-      have hr : RegionOf (h ++ (vs ++ [store, (push store ρ) proto] ++ [.nul]))
-          (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2))
+      have hr : RegionOf (h ++ (vs ++ [spine, (push spine ρ) proto] ++ [.nul]))
+          (.objAt (slots heap.length [arraySpineKey, CallArguments.protoField]) .absent (heap.length + 2))
           (some heap.length) (elemSlots h.length vs.length) := by
         refine .inr ⟨heap.length, rfl, ?_, ?_⟩
-        · simp [Footprints.storeOf, Footprints.fieldsOf, slots]
-        · rw [show h ++ (vs ++ [store, (push store ρ) proto] ++ [.nul]) =
-              heap ++ [store, (push store ρ) proto] ++ [.nul] by simp [heap, List.append_assoc]]
-          simp [store]
+        · simp [Footprints.spineOf, Footprints.fieldsOf, slots]
+        · rw [show h ++ (vs ++ [spine, (push spine ρ) proto] ++ [.nul]) =
+              heap ++ [spine, (push spine ρ) proto] ++ [.nul] by simp [heap, List.append_assoc]]
+          simp [spine]
       have hf := freshApart_holds (ε := ε) he hh hr (fun l hl => by
         rcases hl with hl | hl
         · cases hl; simp [heap]
@@ -2295,7 +2295,7 @@ def termApart (k : Knowledge) (a : Nat) (t : Term) : Bool :=
     | .length => apartFrom k a t.slot
     | .view => false
 
-/-- The facts a write at the store of `a`'s array keeps (`region-write`,
+/-- The facts a write at the spine of `a`'s array keeps (`region-write`,
 `every-apart-write`): a region fact one of whose sides is the written array and
 the other an array slot apart from it, or both of whose sides are apart from
 it; and a quantified fact over an array apart from it whose bound and free
@@ -2313,12 +2313,12 @@ def writeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (a : Nat
           | _ => true
     | _ => false
 
-/-- What an element write at the store cell `target`, which held `xs`,
-leaves: `target` holds a store listing old cells of `xs` and at most the one
+/-- What an element write at the spine cell `target`, which held `xs`,
+leaves: `target` holds a spine listing old cells of `xs` and at most the one
 fresh cell at the old heap's end; every other old location keeps its value,
 but the written element cell, one of `xs`. -/
 structure WriteHeap (h h' : Heap) (target : Nat) (xs : List (Option Nat)) (written : Option Nat) : Prop where
-  store : ∃ xs', h'[target]? = some (.arr xs') ∧ ∀ l, some l ∈ xs' → some l ∈ xs ∨ l = h.length
+  spine : ∃ xs', h'[target]? = some (.arr xs') ∧ ∀ l, some l ∈ xs' → some l ∈ xs ∨ l = h.length
   kept : ∀ l, l < h.length → l ≠ target → written ≠ some l → h'[l]? = h[l]?
   cell : ∀ c, written = some c → some c ∈ xs
 
@@ -2358,7 +2358,7 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
   | view => simp at hc
   | length =>
     simp only at hc
-    obtain ⟨st, ls, hst, hls, rfl, hmax⟩ := lengthOf_store ht
+    obtain ⟨st, ls, hst, hls, rfl, hmax⟩ := lengthOf_spine ht
     obtain ⟨se, ys, hre, hre', -⟩ := untouched hw hu (apartFrom_sound hc hk)
     obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst, hls⟩)
     rw [e1, e2] at hre'
@@ -2377,7 +2377,7 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hsel
   obtain ⟨hnone, hsel⟩ := hsel
   have hat := hk.2.2.2.2.2 atom hmem fun b hb => by rw [hnone] at hb; cases hb
-  obtain ⟨xs', hxs', hcells⟩ := hw.store
+  obtain ⟨xs', hxs', hcells⟩ := hw.spine
   have hwritten : RegionOf h' (ρ a) (some target) xs' := by
     rcases hu with ⟨he, -⟩ | ⟨st, he, hst, -⟩
     · cases he
@@ -2426,13 +2426,13 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     simp only [readPath, Option.some.injEq] at hwp
     subst hwp
     obtain ⟨se, ys, hre, -, hsep⟩ := untouched hw hu (apartFrom_sound hs hk)
-    -- A region is an array's: its elements are its store's.
-    have hst0 : Footprints.storeOf (ρ s) = some st ∧ h[st]? = some (.arr ls) := by
+    -- A region is an array's: its elements are its spine's.
+    have hst0 : Footprints.spineOf (ρ s) = some st ∧ h[st]? = some (.arr ls) := by
       rcases hre with ⟨-, hv⟩ | ⟨st0, -, hs0, hys⟩
       · rw [hv] at hst; simp [elementsOf] at hst
-      · rw [elementsOf_store hs0] at hst; cases hst
+      · rw [elementsOf_spine hs0] at hst; cases hst
         rw [hys] at hls
-        simp only [Option.bind_some, storeEntries, Option.some.injEq] at hls
+        simp only [Option.bind_some, spineEntries, Option.some.injEq] at hls
         subst hls; exact ⟨hs0, hys⟩
     obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst0.1, hst0.2⟩)
     rw [e1, e2] at hsep
@@ -2464,24 +2464,24 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       | project k p => have := hbody F hF (.project k p) hb; contradiction
   all_goals (rw [hfact] at hsel; cases hsel)
 
-/-- A write at the store of `a`'s array keeps `writeAtoms` (`region-write`,
+/-- A write at the spine of `a`'s array keeps `writeAtoms` (`region-write`,
 `every-apart-write`) in each heap it returns in. -/
 theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {k : Knowledge}
     {a : Nat} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
     {xs : List (Option Nat)} {b : UInt64} {value : Val}
     (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
-    (hobj : ρ a = .objAt flds cd oid) (hfield : flds.lookup arrayStoreKey = some target)
+    (hobj : ρ a = .objAt flds cd oid) (hfield : flds.lookup arraySpineKey = some target)
     (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
-    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
-      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value))) :
+    (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value))) :
     SafePost Ξ T (fun h' _ => IndexHolds ε (writeAtoms G Γ k a) ρ h') n W h
-      (.writeAt arrayStoreKey (.objAt flds cd oid)
-        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
+      (.writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) (.num b) value)) := by
   cases n with
   | zero => assumption
   | succ n =>
   have hu : RegionOf h (ρ a) (some target) xs :=
-    .inr ⟨target, rfl, by simp [hobj, Footprints.storeOf, Footprints.fieldsOf, hfield], hxs⟩
+    .inr ⟨target, rfl, by simp [hobj, Footprints.spineOf, Footprints.fieldsOf, hfield], hxs⟩
   have htl : target < h.length := (List.getElem?_eq_some_iff.mp hxs).1
   apply elementWrite_post hfield hxs hv _ _ hs
   · intro cell hc
@@ -2512,7 +2512,7 @@ theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
 /-! ## The length after a write at the length (PROGRAM-TYPING.md, "Writes at a checked index")
 
 A write `x[k] = v` at `0 ≤ k ≤ |x|` leaves `|x| = max(|x|_before, k + 1)`
-with the index `k` present: a present cell keeps the store, and a fresh
+with the index `k` present: a present cell keeps the spine, and a fresh
 cell is placed at `k` (`placeAt`). So `k < |x|` after it (`write-bound`), and
 where `k = |x|` before it, every linear fact over `|x|` and terms the write
 keeps holds with `|x|` one longer (`write-append`). -/
@@ -2598,17 +2598,17 @@ theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.F
     omega
 
 
-/-- **The store after a write at an index at most its length**: the written
-array's store, at its location, lists a cell at the index, so the index is
-below its length; where the index was at the length, the store is one
+/-- **The spine after a write at an index at most its length**: the written
+array's spine, at its location, lists a cell at the index, so the index is
+below its length; where the index was at the length, the spine is one
 longer. -/
-theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+theorem boundedWrite_spine [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' _ => ∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
+      (fun h' _ => ∃ s ls ls' b idx, Footprints.spineOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
         h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
         ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1))
       n W h (instantiate 0 ρ j.term) := by
@@ -2629,9 +2629,9 @@ theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
         cases hra : ρ a
         case objAt => exact ⟨_, _, _, rfl⟩
-        all_goals rw [hra] at hs; simp [Footprints.storeOf, Footprints.fieldsOf] at hs
-      have hfl : flds.lookup arrayStoreKey = some s := by
-        simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hs
+        all_goals rw [hra] at hs; simp [Footprints.spineOf, Footprints.fieldsOf] at hs
+      have hfl : flds.lookup arraySpineKey = some s := by
+        simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hs
       have hval : isVal (ρ v) = true := (meaning_value hv).1
       have hslt : s < h.length := (List.getElem?_eq_some_iff.mp hl).1
       have hle' : idx ≤ ls.length := by simpa using hle
@@ -2699,7 +2699,7 @@ theorem grownOf_sound {c : Changes} {first : Nat → String → Bool} {ρ : Env}
   · rename_i hg; cases ht; exact termValue_grown hc hf hg hn
   · cases ht
 
-/-- **The exact growth of a store's length**: the length of the slot `a`'s
+/-- **The exact growth of a spine's length**: the length of the slot `a`'s
 array after the step is its length before it plus `count`, as two facts over
 the before- and after-lengths; the length after defined. -/
 def lengthGrowth (a count : Nat) : StepRelation :=
@@ -2707,7 +2707,7 @@ def lengthGrowth (a count : Nat) : StepRelation :=
       .le [(.before (Term.length a), -1), (.after (Term.length a), 1)] count]
     defined := [Term.length a] }
 
-/-- The growth relation holds of a step that leaves the array's store one
+/-- The growth relation holds of a step that leaves the array's spine one
 `count` longer wherever it was defined. -/
 theorem lengthGrowth_holds {a count : Nat} {ρ ρ' : Env} {h h' : Heap}
     (hg : ∀ n, termValue ε ρ h (Term.length a) = some n → termValue ε ρ' h' (Term.length a) = some (n + count)) :
@@ -2741,9 +2741,9 @@ def writeCarried (a : Nat) (first : Nat → String → Bool) (k : Knowledge) : L
       (unconditionalLinear k.indices)))).map
     fun F => { fact := .linear F }
 
-/-- The facts a write at a checked index states of its store, at the entry's
+/-- The facts a write at a checked index states of its spine, at the entry's
 slots (`write-bound`, `write-append`): the index below the length; and, where
-the write grows the stores (`ExpressionEffects.writeStep`) and the facts
+the write grows the spines (`ExpressionEffects.writeStep`) and the facts
 entail the index at least the length, the facts `writeCarried` composes. -/
 def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) :
     List IndexAtom :=
@@ -2762,9 +2762,9 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' _ => IndexHolds ε (atLengthAtoms G j k a i) ρ h') n W h (instantiate 0 ρ j.term) := by
-  have hst := boundedWrite_store hc he hk hw hh href
+  have hst := boundedWrite_spine hc he hk hw hh href
   -- `write-bound`, and its linear fact where the entry's length is defined.
-  have hbound : ∀ h', (∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
+  have hbound : ∀ h', (∃ s ls ls' b idx, Footprints.spineOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
       h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
       ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1)) →
       IndexHolds ε ({ fact := .bound a i true } :: if termDefined k.indices (Term.length a) then
@@ -2778,12 +2778,12 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         subst hm
         obtain ⟨n0, hn0⟩ := Option.isSome_iff_exists.mp (termDefined_sound hk.2.2.2.2.2 hdef)
         simp only [termValue_length] at hn0
-        obtain ⟨s0, ls0, hs0, hls0, -, hmax0⟩ := lengthOf_store hn0
+        obtain ⟨s0, ls0, hs0, hls0, -, hmax0⟩ := lengthOf_spine hn0
         rw [hs] at hs0; cases hs0
         rw [hl] at hls0; cases hls0
         have hmax : ls'.length ≤ maxArrayLength := by
           have := indexOfBits_lt hidx; omega
-        have hlv := lengthOf_of_store hs hl' hmax
+        have hlv := lengthOf_of_spine hs hl' hmax
         have hiv : intValue (ρ i) = some (idx : Int) := by
           rw [hb]; exact HeapKnowledge.intValue_num (index_safeInt hidx)
         refine ⟨fun t ht => ?_, ?_⟩
@@ -2819,7 +2819,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         simp [termValuation, hb, HeapKnowledge.intValue_num (index_safeInt hidx)]
       have hR : (lengthGrowth a 1).Holds ε ρ h ρ h' := lengthGrowth_holds fun m hm' => by
         simp only [termValue_length] at hm' ⊢
-        obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_store hm'
+        obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_spine hm'
         rw [hs] at hs0; cases hs0
         rw [hl] at hls0; cases hls0
         have hlv : termValuation ε ρ h (Term.length a) = ls.length := by
@@ -2828,7 +2828,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         have hlen := hgr (by omega)
         have hmax : ls'.length ≤ maxArrayLength := by
           have := indexOfBits_lt hidx; omega
-        rw [lengthOf_of_store hs hl' hmax, hlen]
+        rw [lengthOf_of_spine hs hl' hmax, hlen]
         simp
       intro atom hm _
       obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
@@ -2858,19 +2858,19 @@ theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom}
     indexHolds_cat hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩) (safePost_and ho hk)
 
 /-- **An element write's change** (`weak-update`'s effect): at any index, it
-sets the store location to an array store and at most one element location
+sets the spine location to an array spine and at most one element location
 to the written value, and leaves every other old location as it was; a
-fresh element's location is past the heap. The store location held a store
+fresh element's location is past the heap. The spine location held a spine
 and holds one. -/
 theorem elementWrite_into {Ξ T : Fam} {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode}
     {oid target : Nat} {iv value : Tm} {R : ValueSets.ValueSet} {n W}
-    (hfield : flds.lookup arrayStoreKey = some target) (hiv : isVal iv = true) (hR : R.mem value = true)
+    (hfield : flds.lookup arraySpineKey = some target) (hiv : isVal iv = true) (hR : R.mem value = true)
     (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
-      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value))) :
+    (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) iv value))) :
     SafePost Ξ T (fun h' _ => HeapExpressionRules.IntoContents (fun _ => True) (some R) h h')
-      n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
-        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value)) := by
+      n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) iv value)) := by
   have hv : isVal value = true := ValueSets.ValueSet.mem_isVal hR
   cases n with
   | zero => exact hs
@@ -2935,17 +2935,17 @@ theorem withCells_sound {Ξ T : Fam} {out : Knowledge} {cs : HeapFacts.Facts} {�
     (safePost_and ho hc)
 
 /-- **An element write keeps `writtenCells`** at any index: of an object
-holding a store, of a value of `R`. -/
+holding a spine, of a value of `R`. -/
 theorem writtenCells_sound {Ξ T : Fam} {k : Knowledge} {R : Option ValueSets.ValueSet} {ρ : Env}
     {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat} {iv value : Tm} {n W}
-    (hk : Holds k ε ρ h) (hfield : flds.lookup arrayStoreKey = some target) (hiv : isVal iv = true)
+    (hk : Holds k ε ρ h) (hfield : flds.lookup arraySpineKey = some target) (hiv : isVal iv = true)
     (hR : ∀ R', R = some R' → R'.mem value = true)
     (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
-      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value))) :
+    (hs : Safe Ξ T n W h (.writeAt arraySpineKey (.objAt flds cd oid)
+      (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) iv value))) :
     SafePost Ξ T (fun h' u => HeapFacts.Holds (writtenCells k R) (push u ρ) h') n W h
-      (.writeAt arrayStoreKey (.objAt flds cd oid)
-        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value)) := by
+      (.writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) iv value)) := by
   cases hRc : R with
   | none =>
     exact weaken (fun _ _ _ => by simp [writtenCells, HeapExpressionRules.keptCells,
@@ -2975,9 +2975,9 @@ theorem boundedCells_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
     cases hra : ρ a
     case objAt => exact ⟨_, _, _, rfl⟩
-    all_goals rw [hra] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
-  have hfl : flds.lookup arrayStoreKey = some s := by
-    simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hst
+    all_goals rw [hra] at hst; simp [Footprints.spineOf, Footprints.fieldsOf] at hst
+  have hfl : flds.lookup arraySpineKey = some s := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hst
   have hval : isVal (ρ v) = true := (meaning_value (he.2 v _ (List.getElem?_eq_getElem hvl))).1
   rw [boundedSlots_eq hslots] at hs ⊢
   simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb, hoi] at hs ⊢
@@ -2990,15 +2990,15 @@ def writeValue (t : Tm) : Option Nat :=
   | some (_, _, _, k) => some k
   | none => (ExpressionEffects.elemWriteSlots t).map fun (_, _, _, k) => k
 
-/-- **An element write whose typing gives its change writes a store field**:
-its array slot holds an object with a store, its index is a value, and it
+/-- **An element write whose typing gives its change writes a spine field**:
+its array slot holds an object with a spine, its index is a value, and it
 writes the value of `writeValue`'s slot. -/
-theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat} {ρ n W}
+theorem writeStep_spine [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat} {ρ n W}
     (hc : ExpressionEffects.writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) :
-    ∃ flds cd oid fl iv v, ρ i = .objAt flds cd oid ∧ flds.lookup arrayStoreKey = some fl ∧ isVal iv = true ∧
+    ∃ flds cd oid fl iv v, ρ i = .objAt flds cd oid ∧ flds.lookup arraySpineKey = some fl ∧ isVal iv = true ∧
       writeValue t = some v ∧ v < Γ.length ∧
-      instantiate 0 ρ t = .writeAt arrayStoreKey (.objAt flds cd oid)
-        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv (ρ v)) := by
+      instantiate 0 ρ t = .writeAt arraySpineKey (.objAt flds cd oid)
+        (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) iv (ρ v)) := by
   unfold ExpressionEffects.writeStep at hc
   split at hc
   · rename_i f i' j k hw
@@ -3009,7 +3009,7 @@ theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
       split at hsel
       · rename_i Ref hi
-        obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.storeFieldEvery_sound hsel (he.2 _ Ref hi)
+        obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.spineFieldEvery_sound hsel (he.2 _ Ref hi)
         obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
         obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
           recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -3030,10 +3030,10 @@ theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
         obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
         split at hsel
         · rename_i Ref idx hi hidx
-          have hobj : ∃ flds code oid fl, ρ i = .objAt flds code oid ∧ flds.lookup arrayStoreKey = some fl := by
+          have hobj : ∃ flds code oid fl, ρ i = .objAt flds code oid ∧ flds.lookup arraySpineKey = some fl := by
             rcases Bool.or_eq_true_iff.mp hsel with hst | hst
             all_goals
-              obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.storeField_sound hst (he.2 _ Ref hi)
+              obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.spineField_sound hst (he.2 _ Ref hi)
               obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
               obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
                 recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -3048,7 +3048,7 @@ theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     · cases hc
 
 /-- The knowledge after a step that is an element write at any index: `out`,
-and every atom the change `{value: any, store: grow}` keeps, a linear fact
+and every atom the change `{value: any, spine: grow}` keeps, a linear fact
 whose length terms have non-positive coefficients and whose other terms read
 no location holding an object or a number, or locations a stable field holds
 (`ExpressionEffects.writeStep_grow`, `stable-first`); and the cell facts the
@@ -3072,7 +3072,7 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
   · rename_i hw'
     obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hw'
     refine withCells_sound ?_ (withWritten_sound ?_ hs)
-    · obtain ⟨flds, cd, oid, fl, iv, v, -, hfd, hiv, hv, hvl, ht⟩ := writeStep_store hi he
+    · obtain ⟨flds, cd, oid, fl, iv, v, -, hfd, hiv, hv, hvl, ht⟩ := writeStep_spine hi he
       rw [hv]
       simp only
       have hsafe := HeapObservations.erase hs
@@ -3101,16 +3101,16 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
     cases hra : ρ a
     case objAt => exact ⟨_, _, _, rfl⟩
-    all_goals rw [hra] at hs0; simp [Footprints.storeOf, Footprints.fieldsOf] at hs0
-  have hfl : flds.lookup arrayStoreKey = some s := by
-    simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hs0
+    all_goals rw [hra] at hs0; simp [Footprints.spineOf, Footprints.fieldsOf] at hs0
+  have hfl : flds.lookup arraySpineKey = some s := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hs0
   have hval : isVal (ρ v) = true := (meaning_value (he.2 v _ (List.getElem?_eq_getElem hvl))).1
   rw [boundedSlots_eq hslots] at hs ⊢
   have hsafe := HeapObservations.erase hs
   simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
   exact writeAtoms_holds he hk hh hoi hfl hl hval hsafe
 
-/-- The region facts a call growing its receiver's store keeps
+/-- The region facts a call growing its receiver's spine keeps
 (`region-grow`): each between two array slots, whose regions lie in the old
 heap, so the cells the call appends, past its end, are apart from either. -/
 def grownRegions (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
@@ -3129,7 +3129,7 @@ of a grown region's separation. -/
 theorem appended_cells {r : Tm} {args : List Tm} {h h' : Heap} {s xs ys}
     (ha : CallEffects.ReceiverAppends r args h h')
     (hv : ∀ a ∈ args, isVal a = true)
-    (hs : Footprints.storeOf r = some s) (hx : h[s]? = some (.arr xs))
+    (hs : Footprints.spineOf r = some s) (hx : h[s]? = some (.arr xs))
     (hy : h'[s]? = some (.arr ys)) (hp : xs <+: ys) :
     ∀ l, some l ∈ ys → some l ∈ xs ∨ h.length ≤ l := by
   obtain ⟨ys', hy', hlen, hel⟩ := ha hv s xs hs hx
@@ -3151,16 +3151,16 @@ theorem appended_cells {r : Tm} {args : List Tm} {h h' : Heap} {s xs ys}
     cases hcell
     exact hfresh
 
-/-- An array slot's region after a growth of the receiver's store: the same,
-or, where it is the receiver's store, its old cells and appended ones past the
+/-- An array slot's region after a growth of the receiver's spine: the same,
+or, where it is the receiver's spine, its old cells and appended ones past the
 old heap. -/
 theorem grown_region {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h h'} {r : Tm} {args : List Tm} {z : Nat}
     (hc : arraySlot G Γ z = true) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
     (hg : CallEffects.ReceiverGrows r h h') (ha : CallEffects.ReceiverAppends r args h h')
     (hv : ∀ a ∈ args, isVal a = true) :
-    ∃ sz zs zs', Footprints.storeOf (ρ z) = some sz ∧ h[sz]? = some (.arr zs) ∧ sz < h.length ∧
+    ∃ sz zs zs', Footprints.spineOf (ρ z) = some sz ∧ h[sz]? = some (.arr zs) ∧ sz < h.length ∧
       ElementsBelow h.length zs ∧ h'[sz]? = some (.arr zs') ∧
-      (zs' = zs ∨ (Footprints.storeOf r = some sz ∧ ∀ l, some l ∈ zs' → some l ∈ zs ∨ h.length ≤ l)) := by
+      (zs' = zs ∨ (Footprints.spineOf r = some sz ∧ ∀ l, some l ∈ zs' → some l ∈ zs ∨ h.length ≤ l)) := by
   obtain ⟨sz, zs, hst, hzs, hlt, hbelow⟩ := arraySlot_region hc he hh
   rcases hg sz _ hzs with hk | ⟨hr, ls, ls', he', hls', hp, -⟩
   · exact ⟨sz, zs, zs, hst, hzs, hlt, hbelow, hk, .inl rfl⟩
@@ -3236,7 +3236,7 @@ theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
     · exact hsep l hxl m hym
     · have := below sx xs l hxlt hxb hxl; omega
     · have := below sy ys m hylt hyb hym; omega
-    · -- Both appended to: both stores the receiver's, the same location.
+    · -- Both appended to: both spines the receiver's, the same location.
       rcases hxg with rfl | ⟨hrx, -⟩
       · rcases hl with hl | hl
         · cases hl; omega
@@ -3319,7 +3319,7 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
 
 /-- A checker whose `boundedWrite` steps are writes at a checked index
 (`IndexWrites.boundedWriteCheck`, `setElem-bounded`), keeping the cell facts
-the written value and an array store meet (`IndexWrites.writtenCells`,
+the written value and an array spine meet (`IndexWrites.writtenCells`,
 `weak-update`), and whose element writes
 at any index keep the atoms a growing change keeps (`IndexWrites.growOutput`);
 every other step is `base`'s. -/

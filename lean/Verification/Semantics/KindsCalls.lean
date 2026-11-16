@@ -179,7 +179,7 @@ exception family that admits it, at that world. -/
 theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n + 2)}
     {h : Heap} (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal v = true)
     (hvr : RefsOk W v)
-    (hf : f ≠ arrayStoreKey)
+    (hf : f ≠ arraySpineKey)
     (hΞ : ∀ (U : WorldT (n + 1)) u, Ξ (n + 1) U u) :
     SafePostExcW Ξ T Q (fun _ _ _ => True) (n + 2) W h (allocThrow f v) := by
   have hv : isVal v = true := sourceVal_isVal hsrc
@@ -240,7 +240,7 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm}
     {d : Tm} {k : ControlFlow.Continuation} {l : ControlFlow.Target}
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal v = true)
-    (hf : f ≠ arrayStoreKey)
+    (hf : f ≠ arraySpineKey)
     (hr : RefsOk W (.frame E K (allocThrow f v) L d k (some l))) :
     ∃ (h' : Heap) (t' : Tm) (U : WorldT n),
       HeapObservations.Steps 2 h (.frame E K (allocThrow f v) L d k (some l)) h' t' ∧
@@ -291,8 +291,8 @@ well-formed under one world extending the callback's.** The callback ran to
 a value at the world `U` its own typing chose (`SafePostExcW.exit`), its
 allocations with whatever roles that typing gave. The native then appends
 fresh element cells holding source values valid in `U`, each meeting its
-contract, and writes an ordinary array's store `s` to a store listing cells
-of the old store or fresh ones, a store `s`'s contract admits. The result
+contract, and writes an ordinary array's spine `s` to a spine listing cells
+of the old spine or fresh ones, a spine `s`'s contract admits. The result
 meets the one world `U'` that extends `U` by the fresh cells as E, in both
 parts of satisfaction; the callback's result keeps every property its type
 gives at `U` that extension keeps. -/
@@ -301,7 +301,7 @@ theorem callback_writeback {n : Nat} {U : WorldT n} {h : Heap} (hok : HeapOk n U
     (hcadm : ∀ c ∈ cs, CtrAdm c)
     (hvs : ∀ (i : Nat) (c : Ctr n) (u : Val), cs[i]? = some c → vs[i]? = some u →
       isSourceVal u = true ∧ RefsOk U u ∧ ∀ (j : Nat) (hj : j < n), c j hj (trunc j (Nat.le_of_lt hj) U) u)
-    {s : Nat} {orig ls' : List (Option Nat)} (hs : roleAt U s = some (.store .array))
+    {s : Nat} {orig ls' : List (Option Nat)} (hs : roleAt U s = some (.spine .array))
     (horig : h[s]? = some (.arr orig))
     (hcells : ∀ c, some c ∈ ls' → some c ∈ orig ∨ (h.length ≤ c ∧ c < h.length + vs.length))
     (hctr : ∀ c, lookup (appendWs U (cs.map fun c => (Role.elem, c))) s = some c →
@@ -329,7 +329,7 @@ theorem callback_writeback {n : Nat} {U : WorldT n} {h : Heap} (hok : HeapOk n U
       rw [hc] at hr; cases hr
       obtain ⟨hsrc, hur, -⟩ := hvs i c u hc hu
       exact ⟨by simpa [Cat] using hsrc, RefsOk_mono hx hur⟩)
-  have hsU' : roleAt U' s = some (.store .array) := WExt_roleAt hx hs
+  have hsU' : roleAt U' s = some (.spine .array) := WExt_roleAt hx hs
   obtain ⟨c, hc⟩ : ∃ c, lookup U' s = some c := by
     obtain ⟨u, hu, -⟩ := hok'.2 s _ hsU'
     have hlt : s < (h ++ vs).length := (List.getElem?_eq_some_iff.mp hu).1
@@ -338,7 +338,7 @@ theorem callback_writeback {n : Nat} {U : WorldT n} {h : Heap} (hok : HeapOk n U
   refine ⟨hx, hadm', write_sound n U' (h ++ vs) s c _ _ hok' hc hsU' (hctr c hc) ⟨⟨ls', rfl⟩, ?_⟩⟩
   refine RefsOk_arr_iff.mpr fun l hl => ?_
   rcases hcells l hl with ho | ⟨h1, h2⟩
-  · have := hok.store_cells horig ho
+  · have := hok.spine_cells horig ho
     exact WExt_roleAt hx this.1
   · obtain ⟨i, rfl⟩ : ∃ i, l = h.length + i := ⟨l - h.length, by omega⟩
     rw [hlenU, roleAt_appendWs']
@@ -374,8 +374,8 @@ theorem fieldWorld_shaped : Shaped fieldWorld [.str "a"] := by
   exact ⟨_, rfl, rfl, fun _ h => by simp [refs] at h⟩
 
 /-- **A change confined to one location, arbitrary there, does not respect
-kinds**: the relation a receiver's store (`receiverStore`), a receiver's own
-locations (`receiverOwn`) or an argument store region bounds a call by at
+kinds**: the relation a receiver's spine (`receiverSpine`), a receiver's own
+locations (`receiverFields`) or an argument spine region bounds a call by at
 the location it names. -/
 theorem confined_not_respects :
     ¬ RespectsKinds (fun h h' => h'.length = h.length ∧ ∀ l, l ≠ 0 → h'[l]? = h[l]?) :=
@@ -391,7 +391,7 @@ theorem unrestricted_not_respects : ¬ RespectsKinds (fun _ _ => True) := fun H 
 
 /-- **Allocation alone does not respect kinds**: a relation admitting any
 heap the old one is a prefix of, whatever the fresh locations hold
-(`fresh`, `freshObject`), admits a fresh store listing a location of no
+(`fresh`, `freshObject`), admits a fresh spine listing a location of no
 heap. -/
 theorem allocation_not_respects : ¬ RespectsKinds (fun h h' => h.IsPrefix h') := by
   intro H
@@ -403,7 +403,7 @@ theorem allocation_not_respects : ¬ RespectsKinds (fun h h' => h.IsPrefix h') :
   obtain ⟨u, hu, hc, href⟩ := hsh 0 r hr
   simp at hu; subst hu
   cases r with
-  | store f =>
+  | spine f =>
     have := roleAt_lt (RefsOk_arr_iff.mp href 5 (by simp))
     omega
   | field | cell | elem => simp [Cat, isSourceVal] at hc

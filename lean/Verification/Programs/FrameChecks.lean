@@ -8,14 +8,14 @@ each over the frame's region-and-change entries, read at the environment
 the frame is instantiated at (the note *Tolerant frames*, Frame and
 Fresh-Eff).
 
-- **Freshness** (`Region.freshStore`, the note's Fresh-Eff): an entry whose
-  region is the store of a call position holding a store allocated at or
-  after a mark `b` (its store field, the store field at the empty path, as an
-  argument store region states it, or the selected store at the empty path,
+- **Freshness** (`Region.freshSpine`, the note's Fresh-Eff): an entry whose
+  region is the spine of a call position holding a spine allocated at or
+  after a mark `b` (its spine field, the spine field at the empty path, as an
+  argument spine region states it, or the selected spine at the empty path,
   each possibly restricted to a class) covers no location below `b`
-  (`Region.freshStore_mem`); on the old locations it is discharged
+  (`Region.freshSpine_mem`); on the old locations it is discharged
   (`Footprint.old`). A region reached through a nonempty path from a fresh
-  position stays: a fresh store may list old cells.
+  position stays: a fresh spine may list old cells.
 - **The closed bound below a mark** (`Footprint.boundBelow`): the closed
   bound of the entries freshness does not discharge, each category's
   largest change of an entry whose region may hold it; a transition the
@@ -44,68 +44,68 @@ open Verification
 
 /-! ## Freshness -/
 
-/-- **Whether a region is the store of a call position the list `P`
-names** (the note's Fresh-Eff, `x.store` with `x` fresh): its store field,
-its store field at the empty path, its selected store at the empty path, or
+/-- **Whether a region is the spine of a call position the list `P`
+names** (the note's Fresh-Eff, `x.spine` with `x` fresh): its spine field,
+its spine field at the empty path, its selected spine at the empty path, or
 such a region restricted to a class. -/
-def Region.freshStore (P : List Nat) : Region → Bool
-  | .field i k => decide (k = arrayStoreKey) && P.contains i
-  | .path i [] k => decide (k = arrayStoreKey) && P.contains i
-  | .store i [] => P.contains i
-  | .inCls r _ => r.freshStore P
+def Region.freshSpine (P : List Nat) : Region → Bool
+  | .field i k => decide (k = arraySpineKey) && P.contains i
+  | .path i [] k => decide (k = arraySpineKey) && P.contains i
+  | .spine i [] => P.contains i
+  | .inCls r _ => r.freshSpine P
   | _ => false
 
-/-- The positions `P` hold values whose array store was allocated at or
+/-- The positions `P` hold values whose array spine was allocated at or
 after the mark `b`. -/
 def FreshPositions (P : List Nat) (b : Nat) (ρ : Env) : Prop := ∀ i ∈ P, FreshAt b (ρ i)
 
 theorem FreshPositions.nil (b : Nat) (ρ : Env) : FreshPositions [] b ρ := fun _ hi => nomatch hi
 
-/-- **A fresh store covers no old location.** -/
-theorem Region.freshStore_mem {P : List Nat} {b : Nat} {ρ : Env} {R : Region} {h : Heap} {l : Nat}
-    (hP : FreshPositions P b ρ) (hR : R.freshStore P = true) (hm : R.mem ρ h l = true) : b ≤ l := by
-  have hfield : ∀ i, i ∈ P → (Region.field i arrayStoreKey).mem ρ h l = true → b ≤ l := by
+/-- **A fresh spine covers no old location.** -/
+theorem Region.freshSpine_mem {P : List Nat} {b : Nat} {ρ : Env} {R : Region} {h : Heap} {l : Nat}
+    (hP : FreshPositions P b ρ) (hR : R.freshSpine P = true) (hm : R.mem ρ h l = true) : b ≤ l := by
+  have hfield : ∀ i, i ∈ P → (Region.field i arraySpineKey).mem ρ h l = true → b ≤ l := by
     intro i hi hm
     obtain ⟨s, hs, hb⟩ := hP i hi
     simp only [Region.mem, beq_iff_eq] at hm
-    rw [storeOf_lookup hs] at hm
+    rw [spineOf_lookup hs] at hm
     cases hm
     exact hb
   induction R with
   | field i k =>
-    simp only [Region.freshStore, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
+    simp only [Region.freshSpine, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
     obtain ⟨rfl, hi⟩ := hR
     exact hfield i hi hm
   | path i p k =>
     cases p with
     | nil =>
-      simp only [Region.freshStore, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
+      simp only [Region.freshSpine, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
       obtain ⟨rfl, hi⟩ := hR
       rw [Region.mem_path_nil] at hm
       exact hfield i hi hm
-    | cons _ _ => simp [Region.freshStore] at hR
-  | store i p =>
+    | cons _ _ => simp [Region.freshSpine] at hR
+  | spine i p =>
     cases p with
     | nil =>
-      simp only [Region.freshStore, List.contains_iff_mem] at hR
+      simp only [Region.freshSpine, List.contains_iff_mem] at hR
       obtain ⟨s, hs, hb⟩ := hP i hR
       simp only [Region.mem, HeapKnowledge.readPath, beq_iff_eq] at hm
-      have hfs := storeOf_lookup hs
+      have hfs := spineOf_lookup hs
       cases hv : ρ i <;> rw [hv] at hfs hm <;> simp only [fieldsOf, List.lookup] at hfs
       case objAt fs c x =>
         simp only [HeapKnowledge.elementsOf, hfs, Option.some.injEq] at hm
         exact hm ▸ hb
       all_goals cases hfs
-    | cons _ _ => simp [Region.freshStore] at hR
+    | cons _ _ => simp [Region.freshSpine] at hR
   | inCls r c ih =>
-    simp only [Region.freshStore] at hR
+    simp only [Region.freshSpine] at hR
     simp only [Region.mem, Bool.and_eq_true] at hm
     exact ih hR hm.1
-  | _ => simp [Region.freshStore] at hR
+  | _ => simp [Region.freshSpine] at hR
 
 /-- The entries of a frame that may cover an old location: those freshness
 does not discharge. -/
-def Footprint.old (P : List Nat) (Φ : Footprint) : Footprint := List.filter (fun e => !e.1.freshStore P) Φ
+def Footprint.old (P : List Nat) (Φ : Footprint) : Footprint := List.filter (fun e => !e.1.freshSpine P) Φ
 
 /-! ## The closed bound below a mark -/
 
@@ -115,7 +115,7 @@ def Footprint.boundBelow (P : List Nat) (Φ : Footprint) : Closed := Footprint.c
 
 /-- **A frame is within its closed bound below the mark** (proved): every
 location below `b` changes as the bound's component for its contents
-allows, where the positions `P` hold stores allocated at or after `b`. -/
+allows, where the positions `P` hold spines allocated at or after `b`. -/
 theorem Footprint.boundBelow_sound {P : List Nat} {Φ : Footprint} {ρ : Env} {b : Nat} {h h' : Heap}
     (hp : Post Φ ρ h h') (hP : FreshPositions P b ρ) : (Φ.boundBelow P).HoldsOn (· < b) h h' := by
   refine ⟨hp.1, fun l v hl hv => ?_⟩
@@ -124,9 +124,9 @@ theorem Footprint.boundBelow_sound {P : List Nat} {Φ : Footprint} {ρ : Env} {b
   rw [Footprint.boundBelow, Footprint.close_at, Footprint.changeAt_holds]
   rcases ha with rfl | ⟨e, he, hm, hh⟩
   · exact .inl rfl
-  · cases hf : e.1.freshStore P
+  · cases hf : e.1.freshSpine P
     · exact .inr ⟨e, List.mem_filter.mpr ⟨he, by simp [hf]⟩, Region.cats_mem hv hm, hh⟩
-    · exact absurd (Region.freshStore_mem hP hf hm) (by omega)
+    · exact absurd (Region.freshSpine_mem hP hf hm) (by omega)
 
 @[simp] theorem Change.keep_max (a : Change) : Change.keep.max a = a := by cases a <;> rfl
 @[simp] theorem Change.max_keep (a : Change) : a.max .keep = a := by cases a <;> rfl
@@ -163,15 +163,15 @@ theorem Footprint.close_nil : Footprint.close [] = Closed.empty := rfl
 exactly where every entry freshness does not discharge has its own closed
 bound below `c`. -/
 theorem Footprint.boundBelow_le (P : List Nat) (Φ : Footprint) (c : Closed) :
-    (Φ.boundBelow P).le c = Φ.all fun e => e.1.freshStore P || (Footprint.close [e]).le c := by
+    (Φ.boundBelow P).le c = Φ.all fun e => e.1.freshSpine P || (Footprint.close [e]).le c := by
   unfold Footprint.boundBelow Footprint.old
   induction Φ with
   | nil => simp [Footprint.close_nil, Closed.empty_le]
   | cons e Φ ih =>
     simp only [List.filter_cons, List.all_cons]
-    cases hf : e.1.freshStore P
+    cases hf : e.1.freshSpine P
     · simp only [Bool.not_false, if_true, Bool.false_or]
-      rw [show e :: List.filter (fun e => !e.1.freshStore P) Φ = [e] ++ List.filter (fun e => !e.1.freshStore P) Φ
+      rw [show e :: List.filter (fun e => !e.1.freshSpine P) Φ = [e] ++ List.filter (fun e => !e.1.freshSpine P) Φ
         from rfl, Footprint.close_append, Closed.join_le, ih]
     · simp only [Bool.not_true, Bool.false_eq_true, if_false, Bool.true_or, Bool.true_and]
       exact ih
@@ -182,7 +182,7 @@ theorem Closed.fp_close (c : Closed) : Footprint.close c.fp = c := by
   cases v <;> cases a <;> cases w <;> rfl
 
 /-- A closed footprint's entries are their own closed bound below any mark:
-no class entry is a fresh store. -/
+no class entry is a fresh spine. -/
 theorem Footprint.boundBelow_fp (P : List Nat) (c : Closed) : Footprint.boundBelow P c.fp = c :=
   Closed.fp_close c
 
@@ -196,7 +196,7 @@ an entry of the bound with at least its change, by region containment
 (`Region.sub` with the class evidence `cl`); or, category by category, in
 the bound's class entries. -/
 def Footprint.entryIncluded (cl : ClassEvidence) (P : List Nat) (Ψ : Footprint) (e : Region × Change) : Bool :=
-  e.1.freshStore P || Ψ.any (fun f => e.2.le f.2 && Region.sub cl e.1 f.1) ||
+  e.1.freshSpine P || Ψ.any (fun f => e.2.le f.2 && Region.sub cl e.1 f.1) ||
     (Footprint.close [e]).le (Footprint.close (Footprint.classes Ψ))
 
 /-- **Whether a frame is included in a bound**, entry by entry. -/
@@ -240,7 +240,7 @@ private theorem class_cover {Ψ : Footprint} {ρ : Env} {h h' : Heap} {l : Nat} 
 
 /-- **Inclusion is sound** (proved): a transition a frame allows is the
 bound's on the locations below the mark `b`, where the class evidence holds
-at the heap they are read at and the positions `P` hold stores allocated at
+at the heap they are read at and the positions `P` hold spines allocated at
 or after `b`. -/
 theorem Footprint.includedIn_sound {cl : ClassEvidence} {P : List Nat} {Φ Ψ : Footprint} {ρ : Env} {b : Nat}
     {h h' : Heap} (hi : Footprint.includedIn cl P Φ Ψ = true) (hc : ClassOk cl ρ h) (hP : FreshPositions P b ρ)
@@ -254,7 +254,7 @@ theorem Footprint.includedIn_sound {cl : ClassEvidence} {P : List Nat} {Φ Ψ : 
   have hei := List.all_eq_true.mp hi e he
   simp only [Footprint.entryIncluded, Bool.or_eq_true] at hei
   rcases hei with (hf | hsub) | hcat
-  · exact absurd (Region.freshStore_mem hP hf hm) (by omega)
+  · exact absurd (Region.freshSpine_mem hP hf hm) (by omega)
   · obtain ⟨f, hf, hfe⟩ := List.any_eq_true.mp hsub
     simp only [Bool.and_eq_true] at hfe
     exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hlt hm, hh.mono hfe.1⟩
@@ -291,13 +291,13 @@ theorem Footprint.keepsHeap_prefix {Φ : Footprint} {ρ : Env} {h h' : Heap} (hk
   exact Closed.holds_empty.mp (Closed.holds_of_on
     ⟨hb.1, fun l v _ hv => hb.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩)
 
-/-- No region is the store of a position of the empty list. -/
-theorem Region.freshStore_nil (R : Region) : R.freshStore [] = false := by
+/-- No region is the spine of a position of the empty list. -/
+theorem Region.freshSpine_nil (R : Region) : R.freshSpine [] = false := by
   induction R with
-  | inCls r _ ih => simpa [Region.freshStore] using ih
-  | path _ p _ => cases p <;> simp [Region.freshStore]
-  | store _ p => cases p <;> simp [Region.freshStore]
-  | _ => first | rfl | simp [Region.freshStore]
+  | inCls r _ ih => simpa [Region.freshSpine] using ih
+  | path _ p _ => cases p <;> simp [Region.freshSpine]
+  | spine _ p => cases p <;> simp [Region.freshSpine]
+  | _ => first | rfl | simp [Region.freshSpine]
 
 /-- **A frame's entries at regions other than `R`.** -/
 def Footprint.without (R : Region) (Φ : Footprint) : Footprint := Φ.filter fun e => !(e.1 == R)
@@ -320,7 +320,7 @@ theorem Footprint.keepsHeap_outside {R : Region} {Φ : Footprint} {ρ : Env} {h 
     subst heq; rw [hv] at hw; cases hw
     refine ⟨v', hv', ?_⟩
     rw [Footprint.boundBelow, Footprint.close_at, Footprint.changeAt_holds]
-    exact .inr ⟨e, List.mem_filter.mpr ⟨List.mem_filter.mpr ⟨he, by simp [hne]⟩, by simp [Region.freshStore_nil]⟩,
+    exact .inr ⟨e, List.mem_filter.mpr ⟨List.mem_filter.mpr ⟨he, by simp [hne]⟩, by simp [Region.freshSpine_nil]⟩,
       Region.cats_mem hv hm, hh⟩⟩
   obtain ⟨u, hu, hc⟩ := (hon.mono hk).2 l v rfl hv
   rw [Closed.at_empty] at hc

@@ -2,7 +2,7 @@ import Verification.Programs.TolerantFramesModelRules
 import Verification.Semantics.KindsNatives
 import Verification.Semantics.TolerantFramesCells
 import Verification.Semantics.KindsCapabilities
-import Verification.Semantics.ViewStores
+import Verification.Semantics.ViewSpines
 /-!
 # Witnesses of (View), Alloc and the view write over kinded worlds
 
@@ -13,8 +13,8 @@ The rules of `Programs/TolerantFramesModelRules.lean` (`view_box`,
   array valid (`alloc_wellformed`).
 
 A view-element write (`ViewWrite`) between two concrete well-formed heaps
-changes the view stores of two typed arrays over the written bytes, exact for
-the designated one, and keeps an ordinary array's store
+changes the view spines of two typed arrays over the written bytes, exact for
+the designated one, and keeps an ordinary array's spine
 (`viewWrite_overlap`).
 -/
 namespace Verification.Kinds
@@ -24,18 +24,18 @@ open Verification.TolerantFrames (allocated oneBits oneBits_safe)
 
 /-! ## Alloc -/
 
-/-- **The allocation keeps the heap well-formed.** The rule gives the store
-slot the role of an array store and the identity its own, with contracts
-`c` that survives allocation and admits the empty store, the identity's
+/-- **The allocation keeps the heap well-formed.** The rule gives the spine
+slot the role of an array spine and the identity its own, with contracts
+`c` that survives allocation and admits the empty spine, the identity's
 admitting `null` alone (`idCtr`);
 the allocated array's references are valid in the extended world. -/
 theorem alloc_wellformed {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) (hadm : WorldAdm W)
     {c : Ctr n} (hc : CtrAdm c)
     (hcv : ∀ (j : Nat) (hj : j < n), c j hj (trunc j (Nat.le_of_lt hj) W) (.arr [])) :
-    HeapOk n (appendWs W (objectEntries [.store .array] [c])) (h ++ [.arr []] ++ [.nul]) ∧
-      RefsOk (appendWs W (objectEntries [.store .array] [c])) (allocated h) := by
+    HeapOk n (appendWs W (objectEntries [.spine .array] [c])) (h ++ [.arr []] ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries [.spine .array] [c])) (allocated h) := by
   have hlen : h.length = (entries W).length := by simpa using hok.1.1
-  obtain ⟨hsh, href⟩ := arrayObject_shaped (ls := []) c hlen hok.2 (fun _ hr => by simp [refs, storeRefs] at hr)
+  obtain ⟨hsh, href⟩ := arrayObject_shaped (ls := []) c hlen hok.2 (fun _ hr => by simp [refs, spineRefs] at hr)
   refine ⟨⟨?_, hsh⟩, href⟩
   rw [List.append_assoc]
   refine HeapMeets_appendWs hok.1 hadm (fun e he => ?_) rfl (fun i d v hd hv => ?_)
@@ -75,24 +75,24 @@ theorem roleWorld_ext {k : Nat} (rs tail : List Role) :
     WExt (roleWorld (k := k) rs) (roleWorld (rs ++ tail)) :=
   ⟨tail.map fun r => (r, anyCtr), by simp [roleWorld]⟩
 
-/-- The roles of the entry heap: two view stores of format `uint8` and
-length 1, their two element cells, an ordinary array's store and its element
+/-- The roles of the entry heap: two view spines of format `uint8` and
+length 1, their two element cells, an ordinary array's spine and its element
 cell. -/
 def overlapRoles : List Role :=
-  [.store (.view .uint8 1), .store (.view .uint8 1), .elem, .elem, .store .array, .elem]
+  [.spine (.view .uint8 1), .spine (.view .uint8 1), .elem, .elem, .spine .array, .elem]
 
-/-- Two typed arrays over the same bytes (view stores at 0 and 1) and an
-ordinary array (store at 4). -/
+/-- Two typed arrays over the same bytes (view spines at 0 and 1) and an
+ordinary array (spine at 4). -/
 def overlapBefore : Heap :=
-  [.viewStore .uint8 [2], .viewStore .uint8 [3], .num 0, .num 0, .arr [some 5], .num 0]
+  [.viewSpine .uint8 [2], .viewSpine .uint8 [3], .num 0, .num 0, .arr [some 5], .num 0]
 
 /-- After a write of `oneBits` at index 0 through the first typed array: both
-view stores list fresh cells holding the written value. -/
+view spines list fresh cells holding the written value. -/
 def overlapAfter : Heap :=
-  [.viewStore .uint8 [6], .viewStore .uint8 [7], .num 0, .num 0, .arr [some 5], .num 0, .num oneBits,
+  [.viewSpine .uint8 [6], .viewSpine .uint8 [7], .num 0, .num 0, .arr [some 5], .num 0, .num oneBits,
     .num oneBits]
 
-/-- The designated typed array: its descriptor names the view store at 0. -/
+/-- The designated typed array: its descriptor names the view spine at 0. -/
 def overlapView : Val := .viewAt [] 8 0 .uint8 1
 
 theorem overlapBefore_ok (n : Nat) : HeapOk n (roleWorld overlapRoles) overlapBefore := by
@@ -125,10 +125,10 @@ theorem conv_oneBits : ViewFormat.conv .uint8 oneBits = oneBits := by
   simp [int32Bits, oneBits]
 
 /-- **The write of `1` at index 0 through a `Uint8Array` of length 1**
-whose view store at `s` lists the cell `c` before and the cell `c'`, holding
+whose view spine at `s` lists the cell `c` before and the cell `c'`, holding
 `1`, after: the exact write and the facts its precondition gives. -/
 theorem exactWrite_one {i s c c' : Nat} {before after : Heap}
-    (hb : before[s]? = some (.viewStore .uint8 [c])) (ha : after[s]? = some (.viewStore .uint8 [c']))
+    (hb : before[s]? = some (.viewSpine .uint8 [c])) (ha : after[s]? = some (.viewSpine .uint8 [c']))
     (hc' : after[c']? = some (.num oneBits)) :
     CallEffects.ExactWrite .uint8 [.viewAt [] i s .uint8 1, .num 0, .num oneBits] before after ∧
       CallEffects.ExactPre .uint8 [.viewAt [] i s .uint8 1, .num 0, .num oneBits] := by
@@ -144,26 +144,26 @@ theorem exactWrite_one {i s c c' : Nat} {before after : Heap}
   rw [List.getD_cons_zero, HeapKnowledge.elementsOf_view (by rfl)] at hst
   cases hst
   rw [hb] at hls
-  simp only [Option.bind_some, storeEntries, List.map_cons, List.map_nil, Option.some.injEq] at hls
+  simp only [Option.bind_some, spineEntries, List.map_cons, List.map_nil, Option.some.injEq] at hls
   subst hls
-  refine ⟨[some c'], by simp [ha, storeEntries], ⟨c', oneBits, rfl, hc', by
+  refine ⟨[some c'], by simp [ha, spineEntries], ⟨c', oneBits, rfl, hc', by
     show SameNumber _ (ViewFormat.conv .uint8 oneBits); rw [conv_oneBits]; exact .refl _⟩,
     fun j hj l u hl _ => ?_⟩
   rcases j with _ | j
   · exact absurd rfl hj
   · simp at hl
 
-/-- **A view-element write changes two overlapping views' stores and keeps
+/-- **A view-element write changes two overlapping views' spines and keeps
 an ordinary array's.** Between the two well-formed heaps, at every budget,
-the exact write through the first view holds: both view stores (locations 0
+the exact write through the first view holds: both view spines (locations 0
 and 1) change, the designated one at the written index alone, and the
-ordinary array's store (location 4) is kept. -/
+ordinary array's spine (location 4) is kept. -/
 theorem viewWrite_overlap (n : Nat) :
     HeapOk n (roleWorld overlapRoles) overlapBefore ∧
       ViewWriteOf (.exact .uint8) [overlapView, .num 0, .num oneBits] (roleWorld (k := n) overlapRoles)
         overlapBefore (roleWorld (k := n) (overlapRoles ++ [.elem, .elem])) overlapAfter ∧
       overlapAfter[0]? ≠ overlapBefore[0]? ∧ overlapAfter[1]? ≠ overlapBefore[1]? ∧
-      roleAt (roleWorld (k := n) overlapRoles) 4 = some (.store .array) ∧
+      roleAt (roleWorld (k := n) overlapRoles) 4 = some (.spine .array) ∧
       overlapAfter[4]? = overlapBefore[4]? := by
   refine ⟨overlapBefore_ok n, ⟨⟨Nat.le_refl n, by rw [trunc_id]; exact roleWorld_ext _ _,
     overlapAfter_ok n, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩, fun _ hk => ?_, fun hk => by cases hk⟩,
@@ -182,18 +182,18 @@ theorem viewWrite_overlap (n : Nat) :
 
 /-! ## A representative initial host world
 
-A world with every role a builtin heap holds: a typed array (its view store
+A world with every role a builtin heap holds: a typed array (its view spine
 of format `uint8` and length 1, its element cell and its identity), an
-ordinary array (its store, its element cell, its identity) and an object (a
+ordinary array (its spine, its element cell, its identity) and an object (a
 property and its identity). The heap meets it at every budget with all three
 objects valid, and the exact view-element write through the typed array
 inhabits the contract (`ViewWriteOf`) from it, keeping the ordinary array's
-store and every other location. -/
+spine and every other location. -/
 
 /-- The roles and contracts of the initial host world, by location. -/
 def hostEntries {k : Nat} : List (Role × Ctr k) :=
-  [(.store (.view .uint8 1), viewStoreCtr k .uint8 1), (.elem, viewCellCtr k .uint8), (.identity, idCtr),
-   (.store .array, anyCtr), (.elem, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr)]
+  [(.spine (.view .uint8 1), viewSpineCtr k .uint8 1), (.elem, viewCellCtr k .uint8), (.identity, idCtr),
+   (.spine .array, anyCtr), (.elem, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr)]
 
 def hostWorld {k : Nat} : WorldT k := ofEntries hostEntries
 
@@ -201,18 +201,18 @@ def hostWorld {k : Nat} : WorldT k := ofEntries hostEntries
 def hostWorld' {k : Nat} : WorldT k := ofEntries (hostEntries ++ [(.elem, viewCellCtr k .uint8)])
 
 def hostBefore : Heap :=
-  [.viewStore .uint8 [1], .num 0, .nul, .arr [some 4], .num 0, .nul, .str "x", .nul]
+  [.viewSpine .uint8 [1], .num 0, .nul, .arr [some 4], .num 0, .nul, .str "x", .nul]
 
-/-- After writing `1` at index 0 through the typed array: its view store
+/-- After writing `1` at index 0 through the typed array: its view spine
 lists a fresh cell holding the value. -/
 def hostAfter : Heap :=
-  [.viewStore .uint8 [8], .num 0, .nul, .arr [some 4], .num 0, .nul, .str "x", .nul, .num oneBits]
+  [.viewSpine .uint8 [8], .num 0, .nul, .arr [some 4], .num 0, .nul, .str "x", .nul, .num oneBits]
 
-/-- The typed array: its descriptor names its view store at 0, its format
+/-- The typed array: its descriptor names its view spine at 0, its format
 and its length 1. -/
 def hostView : Val := .viewAt [] 2 0 .uint8 1
 /-- The ordinary array. -/
-def hostArray : Val := .objAt [(arrayStoreKey, 3)] .absent 5
+def hostArray : Val := .objAt [(arraySpineKey, 3)] .absent 5
 /-- The object with one property. -/
 def hostObject : Val := .objAt [("p", 6)] .absent 7
 
@@ -246,11 +246,11 @@ theorem stored_uint8_one : ViewFormat.Stored .uint8 (.num oneBits) :=
   ⟨oneBits, rfl, fun lo hi he => ⟨1, oneBits_safe, by
     simp only [ViewFormat.range, Option.some.injEq, Prod.mk.injEq] at he; omega⟩⟩
 
-/-- **A `Uint8Array` view store of length 1 meets its canonical contract**
+/-- **A `Uint8Array` view spine of length 1 meets its canonical contract**
 where its cell's entry is a cell of the format. -/
-theorem viewStore_one {k j : Nat} (hj : j < k) {es : List (Role × Ctr k)} {c : Nat}
+theorem viewSpine_one {k j : Nat} (hj : j < k) {es : List (Role × Ctr k)} {c : Nat}
     (he : es[c]? = some (.elem, viewCellCtr k .uint8)) :
-    viewStoreCtr k .uint8 1 j hj (trunc j (Nat.le_of_lt hj) (ofEntries es)) (.viewStore .uint8 [c]) := by
+    viewSpineCtr k .uint8 1 j hj (trunc j (Nat.le_of_lt hj) (ofEntries es)) (.viewSpine .uint8 [c]) := by
   refine ⟨[c], rfl, rfl, fun c' hc => ?_⟩
   simp only [List.mem_singleton] at hc; subst hc
   have hl : lookup (ofEntries es) c' = some (viewCellCtr k .uint8) := by simp [lookup, toList, he]
@@ -265,7 +265,7 @@ theorem hostBefore_ok (n : Nat) : HeapOk n (hostWorld (k := n)) hostBefore := by
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | i <;>
       simp [hostEntries, hostBefore] at he hv <;> subst he hv <;>
       first
-        | exact viewStore_one hj (es := hostEntries (k := n)) (c := 1) rfl
+        | exact viewSpine_one hj (es := hostEntries (k := n)) (c := 1) rfl
         | exact stored_uint8_zero
         | simp [anyCtr, idCtr, isVal]
   · simp only [hostWorld, roleAt_ofEntries] at hr
@@ -282,7 +282,7 @@ theorem hostAfter_ok (n : Nat) : HeapOk n (hostWorld' (k := n)) hostAfter := by
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
       simp [hostEntries, hostAfter] at he hv <;> subst he hv <;>
       first
-        | exact viewStore_one hj (es := hostEntries (k := n) ++ [(.elem, viewCellCtr n .uint8)]) (c := 8) rfl
+        | exact viewSpine_one hj (es := hostEntries (k := n) ++ [(.elem, viewCellCtr n .uint8)]) (c := 8) rfl
         | exact stored_uint8_zero
         | exact stored_uint8_one
         | simp [anyCtr, idCtr, isVal]
@@ -296,9 +296,9 @@ theorem hostAfter_ok (n : Nat) : HeapOk n (hostWorld' (k := n)) hostAfter := by
         | simp [Cat, isSourceVal]
 
 /-- **The three host objects are valid in the initial host world**: the
-typed array's identity is in I and its descriptor names a view store of its
-format and length (`Ref.view`); the array's store slot an ordinary array's
-store; the object's property in F. -/
+typed array's identity is in I and its descriptor names a view spine of its
+format and length (`Ref.view`); the array's spine slot an ordinary array's
+spine; the object's property in F. -/
 theorem host_refs {k : Nat} :
     RefsOk (hostWorld (k := k)) hostView ∧ RefsOk (hostWorld (k := k)) hostArray ∧
       RefsOk (hostWorld (k := k)) hostObject := by
@@ -317,12 +317,12 @@ theorem host_refs {k : Nat} :
       or_false] at hr
     rcases hr with rfl | rfl
     · simp [RefOk, hostWorld, hostEntries]
-    · simp [RefOk, SlotRole, hostWorld, hostEntries, arrayStoreKey]
+    · simp [RefOk, SlotRole, hostWorld, hostEntries, arraySpineKey]
 
 /-- **The view-element write is inhabited from the initial host world**: at
 every budget the exact write of `1` at index 0 through the typed array is a
 `ViewWriteOf` transition between the two well-formed heaps, changing the view
-store and keeping the ordinary array's store. -/
+spine and keeping the ordinary array's spine. -/
 theorem host_viewWrite (n : Nat) :
     ViewWriteOf (.exact .uint8) [hostView, .num 0, .num oneBits] (hostWorld (k := n)) hostBefore
       (hostWorld' (k := n)) hostAfter ∧ hostAfter[0]? ≠ hostBefore[0]? ∧ hostAfter[3]? = hostBefore[3]? := by
@@ -374,7 +374,7 @@ theorem familiesWorld_adm {k : Nat} : WorldAdm (familiesWorld (k := k)) := by
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
       simp [familiesEntries, hostEntries] at he <;> subst he <;>
       first
-        | exact viewStoreCtr_adm k .uint8 1
+        | exact viewSpineCtr_adm k .uint8 1
         | exact viewCellCtr_adm k .uint8
         | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
         | exact idCtr_adm
@@ -390,7 +390,7 @@ theorem familiesWorld_ext {k : Nat} : WExt (hostWorld (k := k)) (familiesWorld (
     (.identity, idCtr), (.identity, idCtr)], by simp [hostWorld, familiesWorld, familiesEntries]⟩
 
 /-- **Every family's value is valid in the families' world**: a typed array
-with its view store of its format and length, an ordinary array with its store and
+with its view spine of its format and length, an ordinary array with its spine and
 element, an object, a binding cell, a prototype property, a closure with its
 capture and code field, and a forwarding descriptor of the closure. -/
 theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv := by
@@ -403,7 +403,7 @@ theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv :
       or_false] at hr
     rcases hr with rfl | rfl
     · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
-    · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, valueField, arrayStoreKey]
+    · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, valueField, arraySpineKey]
   have hpro : RefsOk (familiesWorld (k := k)) hostProtoed := by
     intro r hr
     simp only [hostProtoed, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
@@ -411,7 +411,7 @@ theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv :
     rcases hr with rfl | rfl
     · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
     · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, CallArguments.protoField,
-        arrayStoreKey]
+        arraySpineKey]
   have hclo : RefsOk (familiesWorld (k := k)) hostClosure := by
     intro r hr
     rw [hostClosure, refs_objAt] at hr
@@ -419,7 +419,7 @@ theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv :
     · simp only [objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hr
       rcases hr with rfl | rfl
       · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
-      · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, codeField, arrayStoreKey]
+      · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, codeField, arraySpineKey]
     · simp only [codeRefs, refsArgs_eq, List.flatMap_nil, List.flatMap_cons, List.flatMap_nil,
         List.append_nil, List.nil_append] at hr
       exact hobj r hr
@@ -451,8 +451,8 @@ theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv :
 every budget, the families' heap meets the families' world, which is
 admissible, and every family's value is valid in it, all at once: an
 object's identity, a property and a prototype property (F), a binding cell
-(C), an ordinary array's store and its element (S, E), a typed array's view
-store of its format and length, a closure's capture and code field,
+(C), an ordinary array's spine and its element (S, E), a typed array's view
+spine of its format and length, a closure's capture and code field,
 and a forwarding descriptor's target, receiver and prefix. -/
 theorem families_state (n : Nat) :
     HeapOk n (familiesWorld (k := n)) familiesHeap ∧ WorldAdm (familiesWorld (k := n)) ∧
@@ -462,7 +462,7 @@ theorem families_state (n : Nat) :
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
       simp [familiesEntries, hostEntries, familiesHeap, hostBefore] at he hv <;> subst he hv <;>
       first
-        | exact viewStore_one hj (es := familiesEntries (k := n)) (c := 1) rfl
+        | exact viewSpine_one hj (es := familiesEntries (k := n)) (c := 1) rfl
         | exact stored_uint8_zero
         | simp [anyCtr, idCtr, isVal, hostObject]
   · simp only [familiesWorld, roleAt_ofEntries] at hr

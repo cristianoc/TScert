@@ -162,10 +162,10 @@ def renameOperation {S S' : Type} (R : Renaming) (seq : S → Option S') :
   | .boundedWrite x i x' => do pure (.boundedWrite (← R.before x) (← R.before i) (← R.after x'))
   | .push x x' args => do pure (.push (← R.before x) (← R.after x') (← seq args))
   | .fact p l F => do pure (.fact p 0 (← F.reframe (fun i => R.at p (i + l)) R.before))
-  | .freshStore x => (R.after x).map .freshStore
+  | .freshSpine x => (R.after x).map .freshSpine
   | .freshObject x => (R.after x).map .freshObject
   | .elementsWhen x v y P => do pure (.elementsWhen (← R.after x) v (← R.after y) P)
-  | .storeExtends x => (R.before x).map .storeExtends
+  | .spineExtends x => (R.before x).map .spineExtends
   | .viewWrite x i v g => do pure (.viewWrite (← R.before x) (← R.before i) (← R.before v) g)
 
 /-- **A renamed operation post holds where the original does**, at agreeing
@@ -217,7 +217,7 @@ theorem holds_renameOperation {R : Renaming} {s s' : TwoState} (hs : R.Agrees s 
     simp only [OperationPostF.map, OperationPostF.Holds, Nat.add_zero, hs.state p]
     refine IndexFact.holdsAt_reframe hF (fun i _ t ht => hs.env p _ _ ht) (by simp [hs.pre]) ?_
     exact fun i j hj => hb i j hj
-  | freshStore x =>
+  | freshSpine x =>
     simp only [renameOperation, Option.map_eq_some_iff] at hq
     obtain ⟨a, hx, rfl⟩ := hq
     simp only [OperationPostF.map, OperationPostF.Holds, hs.pre, ha _ _ hx]
@@ -229,7 +229,7 @@ theorem holds_renameOperation {R : Renaming} {s s' : TwoState} (hs : R.Agrees s 
     simp only [renameOperation, Option.bind_eq_bind, Option.pure_def] at hq
     obtain ⟨a, hx, hq⟩ := bind_some hq; obtain ⟨b, hy, hq⟩ := bind_some hq; cases hq
     simp only [OperationPostF.map, OperationPostF.Holds, hs.post, ha _ _ hx, ha _ _ hy]
-  | storeExtends x =>
+  | spineExtends x =>
     simp only [renameOperation, Option.map_eq_some_iff] at hq
     obtain ⟨a, hx, rfl⟩ := hq
     simp only [OperationPostF.map, OperationPostF.Holds, hs.pre, hs.post, hb _ _ hx]

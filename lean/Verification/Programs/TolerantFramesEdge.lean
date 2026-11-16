@@ -187,7 +187,7 @@ theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk �
           · rcases List.mem_append.mp ha with ha | ha
             · exact index_filterMap_holds hread a ha
             · exact HeapKnowledge.restateReads_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
-          · exact HeapKnowledge.restateStores_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
+          · exact HeapKnowledge.restateSpines_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
         · exact hc
     · refine storeOk_bind (storeOk_forIn _ _ _ hb ?_) fun d hd => hd
       intro x hx c hc
@@ -200,7 +200,7 @@ theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk �
         · rcases List.mem_append.mp ha with ha | ha
           · exact index_filterMap_holds hread a ha
           · exact HeapKnowledge.restateReads_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
-        · exact HeapKnowledge.restateStores_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
+        · exact HeapKnowledge.restateSpines_holds (link_filterMap_holds hread) (index_filterMap_holds hread) a ha
       · exact hc
 
 /-! ## The edge's store -/
@@ -298,7 +298,7 @@ theorem mapNamesSound_none (names : List Nat) : MapNamesSound names none :=
 /-- **The edge's transfer keeps the state holding** at the target's
 environment: each target slot named by its source slot's name; the store
 without the dropped names (`drop_ok`), whatever names they are; the fresh
-names it keeps, the result among them where it holds a fresh store; the
+names it keeps, the result among them where it holds a fresh spine; the
 implications naming no dropped name. -/
 theorem edgeTransfer_ok [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {names : List Nat} {m : PointClaims.Mapping}
     {pushed isHandler outFresh : Bool} {entry : SinglePass.State} {result : Nat} {edgeStore : Store}

@@ -106,7 +106,7 @@ export interface HeapKnowledge {
    * value, or a falsy one where `negated`. */
   elems: {slot: number; pred: ElemKind[]; cond?: number; negated: boolean}[];
   /** Index facts: the slot `k` holds an array index (`index`), the slot `n`
-   * the length of the array slot `x`'s store (`length`), or `k` an index at
+   * the length of the array slot `x`'s spine (`length`), or `k` an index at
    * most that length (`bound`), where the slot `cond`, if stated, holds a
    * truthy value, or a falsy one where `negated`. */
   indices: {fact: IndexFact; cond?: number; negated: boolean}[];
@@ -120,14 +120,14 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
   { apart: { slot: number; other: number } } |
-  { storeApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
+  { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
 /** A variable of a quantified fact's body: the index, the element, or a term. */
 type BodyFormula = { form: [BodyVariable, number][]; bound: number; ne: boolean } |
   { either: { left: BodyFormula; right: BodyFormula } };
 type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
- * of its array store, or the length of its typed array. */
+ * of its array spine, or the length of its typed array. */
 type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[] };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
@@ -463,13 +463,13 @@ function indexFact(f: Json | undefined): IndexFact {
     const r = record(record(f,["apart"]).apart,["slot","other"]);
     return { apart: { slot: nat(r.slot), other: nat(r.other) } };
   }
-  if ("storeApart" in f) {
-    const r = record(record(f,["storeApart"]).storeApart,["slot","path","other","otherPath"]);
+  if ("spineApart" in f) {
+    const r = record(record(f,["spineApart"]).spineApart,["slot","path","other","otherPath"]);
     const fields = (p: Json): string[] => {
-      if (!Array.isArray(p) || !p.every((x: Json) => typeof x === "string")) throw Error("a store separation's path");
+      if (!Array.isArray(p) || !p.every((x: Json) => typeof x === "string")) throw Error("a spine separation's path");
       return p.filter((x: Json): x is string => typeof x === "string");
     };
-    return { storeApart: { slot: nat(r.slot), path: fields(r.path), other: nat(r.other), otherPath: fields(r.otherPath) } };
+    return { spineApart: { slot: nat(r.slot), path: fields(r.path), other: nat(r.other), otherPath: fields(r.otherPath) } };
   }
   if ("element" in f) {
     const e = record(record(f,["element"]).element,["value","array","index"]);

@@ -36,7 +36,7 @@ structure Draft where
 inductive Job where
   | declaration (head index : Nat)
   | term (head : Nat) (ctx : Ctx) (term : Json)
-  | store (head : Nat) (ctx : Ctx) (term : Json)
+  | spine (head : Nat) (ctx : Ctx) (term : Json)
   | pack (head : Nat) (ctx : Ctx) (required : List Json) (rest : Option Json)
   | scheme (head : Nat) (ctx : Ctx) (term : Json)
   | unit (head : Nat) (ctx : Ctx) (node : Json)
@@ -45,7 +45,7 @@ inductive Job where
   deriving Inhabited
 
 def Job.head : Job → Nat
-  | .declaration h _ | .term h .. | .store h .. | .pack h .. | .scheme h .. | .unit h .. | .row h _ => h
+  | .declaration h _ | .term h .. | .spine h .. | .pack h .. | .scheme h .. | .unit h .. | .row h _ => h
 
 /-- A declared bound to check where an application is written (§8.2): the
 actual union within the declared one. Inside a template, `owner` is the head

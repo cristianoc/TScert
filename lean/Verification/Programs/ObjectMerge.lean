@@ -12,11 +12,11 @@ is known to hold, clause by clause, from what its two operands' types say
 
 The facts are about keys. For the source (`b`), a key is *never* copied when
 it is dropped or reserved, or when a key bound excludes it and, if it could be
-an array index, excludes the array store too; it is *surely* copied at a type
+an array index, excludes the array spine too; it is *surely* copied at a type
 when the source's type names it as a field or view; and whatever is copied
 under it is *within* a type when, besides, its optional field or index says so
-and it cannot come from an array's store. The accumulator (`a`) is read the
-same way, all its keys but the store's copied. A result field is surely there
+and it cannot come from an array's spine. The accumulator (`a`) is read the
+same way, all its keys but the spine's copied. A result field is surely there
 at its type: the source's, or the accumulator's where whatever the source
 copies over it is within the type. A result's optional field is within its
 type on both sides, and the result then has no prototype. A result's key
@@ -117,11 +117,11 @@ theorem mergeData_nodup {a b : List (PropKey × Tm)} (ha : (a.map Prod.fst).Nodu
   rw [Bool.not_eq_true', ← Bool.not_eq_true] at this
   exact this ((any_key_iff b p.1).mpr hy)
 
-/-- No index key a store's copy writes is the store key: an index key is the
+/-- No index key a spine's copy writes is the spine key: an index key is the
 decimal spelling of a natural number. -/
-theorem index_key_not_store (i : Nat) : PropKey.str (toString i) ≠ arrayStoreKey := by
+theorem index_key_not_spine (i : Nat) : PropKey.str (toString i) ≠ arraySpineKey := by
   intro h
-  have hs : toString i = "[]" := by simpa [arrayStoreKey] using h
+  have hs : toString i = "[]" := by simpa [arraySpineKey] using h
   have hm : '[' ∈ Nat.toDigits 10 i := by
     rw [← Nat.toList_repr]
     change '[' ∈ (toString i).toList
@@ -182,7 +182,7 @@ theorem mergeParts_host {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (
         change r.1 = hostKey at hk
         rw [hk] at this
         simp [hostKey, copiedKey] at this
-      · unfold storeData at he
+      · unfold spineData at he
         split at he
         · split at he
           · obtain ⟨q, -, hq⟩ := List.mem_filterMap.mp he
@@ -195,11 +195,11 @@ theorem mergeParts_host {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (
       exact index_key_not_host _
     all_goals first | (simp at he; done) | (cases hb; simp at he; done) | (cases hb; done)
 
-/-- **A merge allocates no store.** The accumulator's fields are copied but its
-store, and a source gives its copied keys and its elements' index keys, none
-of which is the store key: an object a merge allocates is no array. -/
-theorem mergeParts_store {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
-    (hp : mergeParts h d a b = some ps) : ∀ e ∈ ps, e.1 ≠ arrayStoreKey := by
+/-- **A merge allocates no spine.** The accumulator's fields are copied but its
+spine, and a source gives its copied keys and its elements' index keys, none
+of which is the spine key: an object a merge allocates is no array. -/
+theorem mergeParts_spine {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) : ∀ e ∈ ps, e.1 ≠ arraySpineKey := by
   simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff] at hp
   obtain ⟨pa, ha, qb, hb, he⟩ := hp
   cases he
@@ -225,20 +225,20 @@ theorem mergeParts_store {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List 
       · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp he
         have := (List.mem_filter.mp hr).2
         intro hk
-        change r.1 = arrayStoreKey at hk
+        change r.1 = arraySpineKey at hk
         rw [hk] at this
-        simp [arrayStoreKey, copiedKey] at this
-      · unfold storeData at he
+        simp [arraySpineKey, copiedKey] at this
+      · unfold spineData at he
         split at he
         · split at he
           · obtain ⟨q, -, hq⟩ := List.mem_filterMap.mp he
             obtain ⟨m, -, rfl⟩ := Option.map_eq_some_iff.mp hq
-            exact index_key_not_store _
+            exact index_key_not_spine _
           · simp at he
         · simp at he
     · cases hb
       obtain ⟨q, -, rfl⟩ := List.mem_map.mp (mem_firstKeys he)
-      exact index_key_not_store _
+      exact index_key_not_spine _
     all_goals first | (simp at he; done) | (cases hb; simp at he; done) | (cases hb; done)
 
 /-- In a list naming each key once, an entry is what its key looks up. -/
@@ -268,7 +268,7 @@ theorem mem_of_lookup {β : Type} : ∀ {ps : List (PropKey × β)} {k : PropKey
 
 /-! ### What the copy reads from an object -/
 
-/-- A key an array's store gives: its index, spelled in decimal. -/
+/-- A key an array's spine gives: its index, spelled in decimal. -/
 def indexKey : PropKey → Bool
   | .str s => s.toList.all Char.isDigit
   | .sym _ => false
@@ -279,10 +279,10 @@ theorem indexKey_toString (n : Nat) : indexKey (.str (toString n)) = true := by
   rw [Nat.toString_eq_repr, Nat.toList_repr] at hc
   exact Nat.isDigit_of_mem_toDigits (by decide) (by decide) hc
 
-/-- A store's copied entries are under index keys. -/
-theorem storeData_lookup_none {h : List Tm} {fs : List (PropKey × Nat)} {k : PropKey}
-    (hk : indexKey k = false ∨ fs.lookup arrayStoreKey = none) : (storeData h fs).lookup k = none := by
-  unfold storeData
+/-- A spine's copied entries are under index keys. -/
+theorem spineData_lookup_none {h : List Tm} {fs : List (PropKey × Nat)} {k : PropKey}
+    (hk : indexKey k = false ∨ fs.lookup arraySpineKey = none) : (spineData h fs).lookup k = none := by
+  unfold spineData
   rcases hk with hk | hk
   · split
     · split
@@ -305,7 +305,7 @@ one the copy takes, else an array element. -/
 theorem ownData_lookup {h : List Tm} {fs : List (PropKey × Nat)} {qs : List (PropKey × Tm)}
     {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) (k : PropKey) :
     qs.lookup k = ((if copiedKey k then fs.lookup k else none).map (heapVal h)).or
-      ((storeData h fs).lookup k) := by
+      ((spineData h fs).lookup k) := by
   simp only [ownData] at hq
   split at hq
   · cases hq
@@ -329,13 +329,13 @@ theorem ownData_nodup {h : List Tm} {v : Tm} {qs : List (PropKey × Tm)} (hq : o
 
 theorem ownAll_lookup {h : List Tm} {fs : List (PropKey × Nat)} {ps : List (PropKey × Tm)}
     (hp : ownAll h (.objAt fs .absent oid) = some ps) (k : PropKey) :
-    ps.lookup k = (if k != arrayStoreKey then fs.lookup k else none).map (heapVal h) := by
+    ps.lookup k = (if k != arraySpineKey then fs.lookup k else none).map (heapVal h) := by
   simp only [ownAll] at hp
   split at hp
   · cases hp
   simp only [Option.some.injEq] at hp
   subst hp
-  rw [lookup_firstKeys, lookup_map_snd, lookup_filter_key (fun k => k != arrayStoreKey)]
+  rw [lookup_firstKeys, lookup_map_snd, lookup_filter_key (fun k => k != arraySpineKey)]
 
 theorem ownAll_nodup {h : List Tm} {v : Tm} {ps : List (PropKey × Tm)} (hp : ownAll h v = some ps) :
     (ps.map Prod.fst).Nodup := by
@@ -359,23 +359,23 @@ theorem inLabels_sound {G : NormalGraph ι} {A T : List ι} (h : inLabels A T = 
   obtain ⟨i, hi, hv⟩ := hv
   exact ⟨i, List.all_eq_true.mp h i hi |> of_decide_eq_true, hv⟩
 
-/-- A store type whose elements are within `T`: each clause a store's, the
+/-- A spine type whose elements are within `T`: each clause a spine's, the
 positions of its first tuple contract within `T`. -/
-@[nospecialize] def storeIn (G : NormalGraph ι) (S T : List ι) : Bool :=
+@[nospecialize] def spineIn (G : NormalGraph ι) (S T : List ι) : Bool :=
   G.plainTy S && (expand G S).all fun c => match c with
     | .list a _ => a.operands.all (inLabels · T)
     | _ => false
 
-/-- A store of such a type is a possibly sparse store of `T`. -/
-theorem storeIn_sound {G : NormalGraph ι} {S T : List ι} (h : storeIn G S T = true)
-    {m : Nat} {U : WorldT m} {s : Val} (hs : meaning G S m U s) : builtinStoreT (meaning G T) m U s := by
-  simp only [storeIn, Bool.and_eq_true, List.all_eq_true] at h
+/-- A spine of such a type is a possibly sparse spine of `T`. -/
+theorem spineIn_sound {G : NormalGraph ι} {S T : List ι} (h : spineIn G S T = true)
+    {m : Nat} {U : WorldT m} {s : Val} (hs : meaning G S m U s) : builtinSpineT (meaning G T) m U s := by
+  simp only [spineIn, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 m U s).mp hs
   have hl := h.2 c hc
   cases c with
   | list a bs =>
     have hin : ∀ B ∈ a.operands, inLabels B T = true := by simpa only [List.all_eq_true] using hl
-    refine listT_builtinStore (fun A hA j W' u hu => ?_) hv.1
+    refine listT_builtinSpine (fun A hA j W' u hu => ?_) hv.1
     simp only [tupleFams] at hA
     rcases hA with hA | hA | hA
     · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
@@ -442,21 +442,21 @@ structure ObjFacts (G : NormalGraph ι) (o : Obj ι) (n : Nat) (W : WorldT n)
     lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → meaning G x.2 j U u
   bounds : ∀ K ∈ o.bounds, ∀ oid, ownKeysT K n W (.objAt fs .absent oid)
   plain : o.plain = true → fs.lookup CallArguments.protoField = none
-  /-- An array's own fields at canonical numeric keys hold what its store's
+  /-- An array's own fields at canonical numeric keys hold what its spine's
   elements do (the built-in `numericOwn`). -/
-  numeric : ∀ S T, (CallArguments.arrayStoreField, S) ∈ o.named → storeIn G S T = true →
+  numeric : ∀ S T, (CallArguments.arraySpineField, S) ∈ o.named → spineIn G S T = true →
     G.builtins.isSome = true → ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
     ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j + 1 < n) (U : WorldT j) (u : Val), c j (by omega) U u → meaning G T j U u
 
 /-- An array of a builtins-checked clause holds, at its own canonical numeric
-keys, what its store's elements hold. -/
+keys, what its spine's elements hold. -/
 theorem numeric_of_inv {G : NormalGraph ι} {c : Clause (List ι)} (hc : c.carriesInvariant = true)
     {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)} {oid : Nat}
     (hinv : builtinInvariant G (builtinValues G) c n W (.objAt fs .absent oid)) {S T : List ι}
-    (hσ : ∃ (l : Nat) (c' : Ctr n), fs.lookup CallArguments.arrayStoreField = some l ∧ lookup W l = some c' ∧
+    (hσ : ∃ (l : Nat) (c' : Ctr n), fs.lookup CallArguments.arraySpineField = some l ∧ lookup W l = some c' ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c' j hj U u → meaning G S j U u)
-    (hst : storeIn G S T = true) (hr : G.builtins.isSome = true) :
+    (hst : spineIn G S T = true) (hr : G.builtins.isSome = true) :
     ∀ key l, IndexKeys.numeric.Admits key → fs.lookup key = some l →
       ∃ c : Ctr n, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j + 1 < n) (U : WorldT j) (u : Val), c j (by omega) U u → meaning G T j U u := by
@@ -471,7 +471,7 @@ theorem numeric_of_inv {G : NormalGraph ι} {c : Clause (List ι)} (hc : c.carri
   rw [hcs] at hcσ; cases hcσ
   obtain ⟨c, hcw, hag⟩ := hk key l hkey hl
   exact ⟨c, hcw, fun j hj U u hu => hag j hj U u hu (meaning G T)
-    fun U' s hs => storeIn_sound hst (hagσ (j + 1) hj U' s hs)⟩
+    fun U' s hs => spineIn_sound hst (hagσ (j + 1) hj U' s hs)⟩
 
 theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : objOf c = some o)
     {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) :
@@ -549,9 +549,9 @@ if any, and no bound. -/
 @[nospecialize] def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
   | .callable a bs _ _ _ =>
-    some ⟨(Stored.views (a :: bs).flatten).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+    some ⟨(Stored.views (a :: bs).flatten).filter (·.1 != CallArguments.arraySpineField), [], [], [], false⟩
   | .ctors _ _ a bs vs =>
-    some ⟨(Stored.views (a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+    some ⟨(Stored.views (a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arraySpineField), [], [], [], false⟩
   | _ => none
 
 /-- A bag's fields hold their contracts on the object the bag is of. -/
@@ -560,7 +560,7 @@ theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (S
     {n : Nat} {W : WorldT n} {v : Val} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v)
     (hvs : CallableConjunctions.viewsT (ReferenceConjunctions.viewsOf (meaning G) vs) n W v) :
     ∃ fs code oid, v = .objAt fs code oid ∧
-      ObjFacts G ⟨(Stored.views (a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+      ObjFacts G ⟨(Stored.views (a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arraySpineField), [], [], [], false⟩
         n W fs := by
   obtain ⟨⟨fs, code, oid, rfl, -, ha⟩, hbs⟩ := bag_sem hc hv
   refine ⟨fs, code, oid, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
@@ -692,14 +692,14 @@ theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFre
       | (cases hc; done)
 
 /-- The source never gives the key: it is dropped or a reserved string key,
-or a bound excludes it and, if an array could give it as an index, the store
+or a bound excludes it and, if an array could give it as an index, the spine
 too. A symbol key the model's copy does not take, JavaScript's takes where
 the source owns it enumerable: only a bound says it never does. -/
 @[nospecialize] def Src.never : Src ι → List PropKey → PropKey → Bool
   | .prim, _, _ => true
   | .str, d, k => d.contains k || !indexKey k
   | .obj o, d, k => d.contains k || (strKey k && !copiedKey k) ||
-      (excludes o.bounds k && (!indexKey k || excludes o.bounds arrayStoreKey))
+      (excludes o.bounds k && (!indexKey k || excludes o.bounds arraySpineKey))
 
 /-- The source surely gives the key, at a value within `T`: its type names it. -/
 @[nospecialize] def Src.sure : Src ι → List PropKey → PropKey → List ι → Bool
@@ -714,19 +714,19 @@ the source owns it enumerable: only a bound says it never does. -/
   | .obj o, d, k, T => (Src.obj o).never d k || (Src.obj o).sure d k T ||
       ((o.optional.any fun q => q.key == k && inLabels q.type T) ||
         (o.indexes.any fun x => x.1.surely k && inLabels x.2 T)) &&
-        (!indexKey k || excludes o.bounds arrayStoreKey)
+        (!indexKey k || excludes o.bounds arraySpineKey)
 
-/-- The accumulator never gives the key: it is the store's, or excluded, or
+/-- The accumulator never gives the key: it is the spine's, or excluded, or
 the prototype of an object its index says has none. -/
 @[nospecialize] def Obj.neverA (o : Obj ι) (k : PropKey) : Bool :=
-  k == arrayStoreKey || excludes o.bounds k || (o.plain && k == CallArguments.protoField)
+  k == arraySpineKey || excludes o.bounds k || (o.plain && k == CallArguments.protoField)
 
 @[nospecialize] def Obj.sureA (o : Obj ι) (k : PropKey) (T : List ι) : Bool :=
-  k != arrayStoreKey && o.named.any fun p => p.1 == k && inLabels p.2 T
+  k != arraySpineKey && o.named.any fun p => p.1 == k && inLabels p.2 T
 
 @[nospecialize] def Obj.withinA (o : Obj ι) (k : PropKey) (T : List ι) : Bool :=
   o.neverA k || o.sureA k T ||
-    (k != arrayStoreKey && ((o.optional.any fun q => q.key == k && inLabels q.type T) ||
+    (k != arraySpineKey && ((o.optional.any fun q => q.key == k && inLabels q.type T) ||
       (o.indexes.any fun x => x.1.surely k && inLabels x.2 T)))
 
 /-! ### What a side gives under the keys of an index class
@@ -743,7 +743,7 @@ typing each the class may admit. -/
   o.optional.all (fun q => !K.may q.key || inLabels q.type T) &&
   (o.indexes.any (fun x => K.within x.1 && inLabels x.2 T) ||
    o.bounds.any fun B => B.among && B.keys.all fun x =>
-     !K.may x || x == arrayStoreKey || o.named.any (·.1 == x) || o.optional.any (·.key == x))
+     !K.may x || x == arraySpineKey || o.named.any (·.1 == x) || o.optional.any (·.key == x))
 
 /-- A type holding every string: one of its clauses is the string family. -/
 @[nospecialize] def strIn (G : NormalGraph ι) (T : List ι) : Bool :=
@@ -756,20 +756,20 @@ theorem strIn_sound {G : NormalGraph ι} {T : List ι} (h : strIn G T = true) (n
   cases c <;> simp at hs
   exact expand_sem_mpr ⟨.str, expand_sub hc, ⟨u, rfl⟩, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
 
-/-- A type none of whose members is an array's store: every clause is a
+/-- A type none of whose members is an array's spine: every clause is a
 primitive's or a plain object's. A string index at such a type rules out the
-store key, `[]`, which is a string. -/
-@[nospecialize] def noStore (G : NormalGraph ι) (T : List ι) : Bool :=
+spine key, `[]`, which is a string. -/
+@[nospecialize] def noSpine (G : NormalGraph ι) (T : List ι) : Bool :=
   G.plainTy T && (expand G T).all fun c => match c with
     | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
     | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .refs .. | .dict .. => true
     | _ => false
 
 omit [DecidableEq ι] in
-theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true)
+theorem noSpine_sound {G : NormalGraph ι} {T : List ι} (h : noSpine G T = true)
     {n : Nat} {W : WorldT n} {ls : List (Option Nat)} : ¬ meaning G T n W (.arr ls) := by
   intro hm
-  simp only [noStore, Bool.and_eq_true, List.all_eq_true] at h
+  simp only [noSpine, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hs, -⟩ := (expand_sem G T h.1 _ _ _).mp hm
   have hw := h.2 c hc
   cases c with
@@ -806,7 +806,7 @@ The symbol class admits none of the string keys the model's copy gives;
 JavaScript's copy also gives the source's own enumerable symbol-keyed
 properties, so the source's type says what it holds there, by a symbol index
 within `T` or by listing its keys, none a symbol. Otherwise the source owns no
-store whose elements it would give under index keys, and each key it copies
+spine whose elements it would give under index keys, and each key it copies
 is typed. -/
 @[nospecialize] def Src.classWithinPlain (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
   | .prim, _, _, _ => true
@@ -815,19 +815,19 @@ is typed. -/
     o.indexes.any (fun x => x.1 == .symbols && inLabels x.2 T) ||
       o.bounds.any (fun B => B.among && B.keys.all fun x => strKey x)
     else
-    (excludes o.bounds arrayStoreKey || o.indexes.any (fun x => x.1 == .strings && noStore G x.2)) &&
+    (excludes o.bounds arraySpineKey || o.indexes.any (fun x => x.1 == .strings && noSpine G x.2)) &&
     o.named.all (fun p => !K.may p.1 || d.contains p.1 || !copiedKey p.1 || inLabels p.2 T) &&
     o.optional.all (fun q => !K.may q.key || d.contains q.key || !copiedKey q.key || inLabels q.type T) &&
     (o.indexes.any (fun x => K.within x.1 && inLabels x.2 T) ||
      o.bounds.any fun B => B.among && B.keys.all fun x =>
        !K.may x || d.contains x || !copiedKey x || o.named.any (·.1 == x) || o.optional.any (·.key == x))
 
-/-- An array source under the canonical numeric keys: its store's elements
+/-- An array source under the canonical numeric keys: its spine's elements
 are within `T`, and so, by the built-ins' invariant (`numericOwn`), are its own
 fields there. -/
 @[nospecialize] def Src.arrayRoute (G : NormalGraph ι) : Src ι → IndexKeys → List ι → Bool
   | .obj o, K, T => K == .numeric && G.builtins.isSome &&
-      o.named.any fun p => p.1 == CallArguments.arrayStoreField && storeIn G p.2 T
+      o.named.any fun p => p.1 == CallArguments.arraySpineField && spineIn G p.2 T
   | _, _, _ => false
 
 /-- Whatever the source gives under a key the class `K` admits is within `T`:
@@ -859,19 +859,19 @@ theorem heap_contract_within {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)}
 /-- The world a merge's values are read at: one level down. -/
 abbrev below {p : Nat} (W : WorldT (p + 1)) : WorldT p := trunc p (Nat.le_succ p) W
 
-/-- An array's element a copy reads is within what its store type's elements
+/-- An array's element a copy reads is within what its spine type's elements
 are, at every level below the one after the read: the element sits one
-location further than the store. -/
-theorem storeData_typed {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h : Heap}
+location further than the spine. -/
+theorem spineData_typed {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h : Heap}
     (hok : HeapOk (p + 1) W h) {fs : List (PropKey × Nat)} {S T : List ι} {lσ : Nat} {cσ : Ctr (p + 1)}
-    (hl : fs.lookup arrayStoreKey = some lσ) (hc : lookup W lσ = some cσ)
+    (hl : fs.lookup arraySpineKey = some lσ) (hc : lookup W lσ = some cσ)
     (hag : ∀ (j : Nat) (hj : j < p + 1) (U : WorldT j) (u : Val), cσ j hj U u → meaning G S j U u)
-    (hst : storeIn G S T = true) {k : PropKey} {v : Tm} (hv : (storeData h fs).lookup k = some v) :
+    (hst : spineIn G S T = true) {k : PropKey} {v : Tm} (hv : (spineData h fs).lookup k = some v) :
     ∀ (j : Nat) (hj : j + 1 < p), meaning G T j (trunc j (by omega) (below W)) v := by
   intro j hj
   obtain ⟨u, hu, hmem⟩ := hok.1.2 lσ cσ hc
-  have hs := storeIn_sound hst (hag p (Nat.lt_succ_self p) _ u (hmem p (Nat.lt_succ_self p)))
-  unfold storeData at hv
+  have hs := spineIn_sound hst (hag p (Nat.lt_succ_self p) _ u (hmem p (Nat.lt_succ_self p)))
+  unfold spineData at hv
   simp only [hl] at hv
   rw [hu] at hv
   obtain ⟨ls, rfl, -, -, -, -, -, -, hrest⟩ := hs
@@ -904,7 +904,7 @@ theorem srcData_lookup {h : List Tm} {fs : List (PropKey × Nat)} {qs : List (Pr
     {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) (d : List PropKey) (k : PropKey) :
     (qs.filter fun e => !d.contains e.1).lookup k =
       if d.contains k then none else
-        ((if copiedKey k then fs.lookup k else none).map (heapVal h)).or ((storeData h fs).lookup k) := by
+        ((if copiedKey k then fs.lookup k else none).map (heapVal h)).or ((spineData h fs).lookup k) := by
   rw [lookup_filter_key (fun k => !d.contains k), ownData_lookup hq]
   by_cases hd : d.contains k <;> simp []
 
@@ -935,13 +935,13 @@ theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs
     rcases hn with (hd' | ⟨-, hc⟩) | ⟨hx, hi⟩
     · exact absurd hd' hd
     · rw [if_neg (by simp [hc]), Option.map_none, Option.none_or]
-      exact storeData_lookup_none (.inl (indexKey_of_not_copied hc))
+      exact spineData_lookup_none (.inl (indexKey_of_not_copied hc))
     · have hl := excludes_lookup (oid := 0) hx (fun K hK => hf.bounds K hK 0)
       rw [show (if copiedKey k = true then fs.lookup k else none) = none by split <;> simp [hl],
         Option.map_none, Option.none_or]
       rcases hi with hi | hs
-      · exact storeData_lookup_none (.inl hi)
-      · exact storeData_lookup_none (.inr (excludes_lookup (oid := 0) hs (fun K hK => hf.bounds K hK 0)))
+      · exact spineData_lookup_none (.inl hi)
+      · exact spineData_lookup_none (.inr (excludes_lookup (oid := 0) hs (fun K hK => hf.bounds K hK 0)))
 
 theorem src_sure {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
@@ -970,12 +970,12 @@ theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 
     by_cases hd : d.contains k = true
     · rw [if_pos hd] at hv; cases hv
     rw [if_neg hd] at hv
-    have hstore : (storeData h fs).lookup k = none := by
+    have hspine : (spineData h fs).lookup k = none := by
       simp only [Bool.not_eq_true'] at hidx
       rcases hidx with hi | hs
-      · exact storeData_lookup_none (.inl hi)
-      · exact storeData_lookup_none (.inr (excludes_lookup (oid := 0) hs (fun K hK => hf.bounds K hK 0)))
-    rw [hstore, Option.or_none] at hv
+      · exact spineData_lookup_none (.inl hi)
+      · exact spineData_lookup_none (.inr (excludes_lookup (oid := 0) hs (fun K hK => hf.bounds K hK 0)))
+    rw [hspine, Option.or_none] at hv
     by_cases hc : copiedKey k = true
     · rw [if_pos hc] at hv
       cases hl : fs.lookup k with
@@ -1056,7 +1056,7 @@ theorem acc_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
     {v : Tm} (hv : ps.lookup k = some v) : meaning G T p (below W) v := by
   have hmay := IndexKeys.may_of_admits hk
   rw [ownAll_lookup hp] at hv
-  by_cases hs : (k != arrayStoreKey) = true
+  by_cases hs : (k != arraySpineKey) = true
   · rw [if_pos hs] at hv
     cases hl : fs.lookup k with
     | none => rw [hl] at hv; cases hv
@@ -1093,8 +1093,8 @@ theorem acc_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
         · exact typed (.inr h1)
   · rw [if_neg hs] at hv; cases hv
 
-/-- The store key is a string key: a string index constrains it. -/
-theorem strings_admit_store : IndexKeys.strings.Admits arrayStoreKey := trivial
+/-- The spine key is a string key: a string index constrains it. -/
+theorem strings_admit_spine : IndexKeys.strings.Admits arraySpineKey := trivial
 
 /-- What the source gives under a key its class admits, read through
 `classWithin`. -/
@@ -1116,25 +1116,25 @@ theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT 
     | str s => exact absurd hk (by simp [IndexKeys.Admits])
     | sym i =>
       rw [if_neg (by simp [copiedKey]), Option.map_none, Option.none_or,
-        storeData_lookup_none (.inl rfl)] at hv
+        spineData_lookup_none (.inl rfl)] at hv
       cases hv
   · rw [if_neg (by simpa using hsym)] at hc
     simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true,
       Bool.not_eq_true', List.any_eq_true, beq_iff_eq] at hc
-    obtain ⟨⟨⟨hstore, hnamed⟩, hopt⟩, hroute⟩ := hc
-    have hnone : (storeData h fs).lookup k = none := by
-      rcases hstore with hx | ⟨x, hx, hstr, hns⟩
-      · exact storeData_lookup_none (.inr (excludes_lookup (oid := 0) hx (fun K hK => hf.bounds K hK 0)))
-      · unfold storeData
-        cases hl : fs.lookup arrayStoreKey with
+    obtain ⟨⟨⟨hspine, hnamed⟩, hopt⟩, hroute⟩ := hc
+    have hnone : (spineData h fs).lookup k = none := by
+      rcases hspine with hx | ⟨x, hx, hstr, hns⟩
+      · exact spineData_lookup_none (.inr (excludes_lookup (oid := 0) hx (fun K hK => hf.bounds K hK 0)))
+      · unfold spineData
+        cases hl : fs.lookup arraySpineKey with
         | none => rfl
         | some l =>
-          obtain ⟨c, hcw, hag⟩ := hf.indexes x hx arrayStoreKey l (by rw [hstr]; exact strings_admit_store) hl
+          obtain ⟨c, hcw, hag⟩ := hf.indexes x hx arraySpineKey l (by rw [hstr]; exact strings_admit_spine) hl
           obtain ⟨u, hu, hmem⟩ := hok.1.2 l c hcw
           have hm := hag p (Nat.lt_succ_self p) _ u (hmem p (Nat.lt_succ_self p))
           simp only [hu]
           cases u with
-          | arr ls => exact absurd hm (noStore_sound hns)
+          | arr ls => exact absurd hm (noSpine_sound hns)
           | _ => rfl
     rw [hnone, Option.or_none] at hv
     by_cases hcp : copiedKey k = true
@@ -1179,8 +1179,8 @@ theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT 
 
 /-- What the source gives under a key its class admits, at every level the
 allocation it is copied into is judged at: by `classWithinPlain`, or, for an
-array under the canonical numeric keys, by its store's elements and its own
-fields there (`arrayRoute`, `storeData_typed`, `ObjFacts.numeric`). -/
+array under the canonical numeric keys, by its spine's elements and its own
+fields there (`arrayRoute`, `spineData_typed`, `ObjFacts.numeric`). -/
 theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
     {fs : List (PropKey × Nat)} (hf : ObjFacts G o (p + 1) W fs) {h : Heap} (hok : HeapOk (p + 1) W h)
     {qs : List (PropKey × Tm)} {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) {d : List PropKey}
@@ -1214,7 +1214,7 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
       exact hT
     | none =>
       rw [hown, Option.map_none, Option.none_or] at hv
-      exact storeData_typed hok hlσ hcσ hagσ hst hv
+      exact spineData_typed hok hlσ hcσ hagσ hst hv
   · intro j hj
     exact (meaning_valueFam G T).1.down_le p j (by omega) (below W) _ (src_class_plain hf hok hq hc hk hv)
 
@@ -1222,16 +1222,16 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
 
 /-- A result key bound follows from the operands': listing keys, the
 accumulator's and the source's own keys are among them (the source owning no
-store, so no index), a symbol key the source lists included, which
+spine, so no index), a symbol key the source lists included, which
 JavaScript's copy takes where it is enumerable; excluding keys, neither side
 gives one. -/
 @[nospecialize] def boundOk (oa : Obj ι) (sb : Src ι) (d : List PropKey) (K : KeyBound) : Bool :=
   if K.among then
-    (oa.bounds.any fun Ka => Ka.among && Ka.keys.all fun x => x == arrayStoreKey || K.admits x) &&
+    (oa.bounds.any fun Ka => Ka.among && Ka.keys.all fun x => x == arraySpineKey || K.admits x) &&
     (match sb with
      | .prim => true
      | .str => false
-     | .obj ob => ob.bounds.any fun Kb => Kb.among && !Kb.keys.contains arrayStoreKey &&
+     | .obj ob => ob.bounds.any fun Kb => Kb.among && !Kb.keys.contains arraySpineKey &&
          Kb.keys.all fun x => (strKey x && !copiedKey x) || d.contains x || K.admits x)
   else K.keys.all fun x => oa.neverA x && sb.never d x
 
@@ -1359,10 +1359,10 @@ structure Sides (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src 
   within : ∀ k T, sb.within d k T = true → ∀ v, qs.lookup k = some v → meaning G T p (below W) v
   /-- A key the source gives is one it copied, not dropped, or an index. -/
   bound : ∀ K ∈ (match sb with | .prim | .str => [] | .obj ob => ob.bounds),
-    ∀ k v, qs.lookup k = some v → K.among = true → K.admits arrayStoreKey = false →
+    ∀ k v, qs.lookup k = some v → K.among = true → K.admits arraySpineKey = false →
       copiedKey k = true ∧ d.contains k = false ∧ K.admits k = true
-  /-- A key the accumulator gives is its own, not the store. -/
-  boundA : ∀ K ∈ oa.bounds, ∀ k v, pa.lookup k = some v → k ≠ arrayStoreKey ∧ K.admits k = true
+  /-- A key the accumulator gives is its own, not the spine. -/
+  boundA : ∀ K ∈ oa.bounds, ∀ k v, pa.lookup k = some v → k ≠ arraySpineKey ∧ K.admits k = true
   proto : qs.lookup CallArguments.protoField = none
   /-- What either side gives under a key an index class admits. -/
   classA : ∀ K T, oa.classWithinA K T = true → ∀ k v, K.Admits k → pa.lookup k = some v →
@@ -1386,13 +1386,13 @@ theorem sides_obj {G : NormalGraph ι} {d : List PropKey} {oa ob : Obj ι} {p : 
   never _ hn := src_never hfb hq hn
   sure _ _ hs := src_sure hfb hok hq hs
   within _ _ hs _ hv := src_within hfb hok hq hs hv
-  bound K hK k v hv hamong hstore := by
+  bound K hK k v hv hamong hspine := by
     rw [srcData_lookup hq] at hv
     by_cases hd : d.contains k = true
     · rw [if_pos hd] at hv; cases hv
     rw [if_neg hd] at hv
-    have hs : fb.lookup arrayStoreKey = none := ownKeysT_lookup (hfb.bounds K hK 0) hstore
-    rw [storeData_lookup_none (.inr hs), Option.or_none] at hv
+    have hs : fb.lookup arraySpineKey = none := ownKeysT_lookup (hfb.bounds K hK 0) hspine
+    rw [spineData_lookup_none (.inr hs), Option.or_none] at hv
     by_cases hc : copiedKey k = true
     · rw [if_pos hc] at hv
       cases hl : fb.lookup k with
@@ -1401,7 +1401,7 @@ theorem sides_obj {G : NormalGraph ι} {d : List PropKey} {oa ob : Obj ι} {p : 
     · rw [if_neg hc] at hv; cases hv
   boundA K hK k v hv := by
     rw [ownAll_lookup hp] at hv
-    by_cases hk : (k != arrayStoreKey) = true
+    by_cases hk : (k != arraySpineKey) = true
     · rw [if_pos hk] at hv
       cases hl : fa.lookup k with
       | none => rw [hl] at hv; cases hv
@@ -1412,7 +1412,7 @@ theorem sides_obj {G : NormalGraph ι} {d : List PropKey} {oa ob : Obj ι} {p : 
     split
     · rfl
     · rw [if_neg (by simp [proto_not_copied]), Option.map_none, Option.none_or]
-      exact storeData_lookup_none (.inl proto_not_index)
+      exact spineData_lookup_none (.inl proto_not_index)
   classA _ _ hc _ _ hk hv := acc_class hfa hok hp hc hk hv
   classB _ _ hc _ _ hk hv := src_class hfb hok hq hc hk hv
 
@@ -1431,7 +1431,7 @@ theorem sides_prim {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Na
   bound _ hK := by simp at hK
   boundA K hK k v hv := by
     rw [ownAll_lookup hp] at hv
-    by_cases hk : (k != arrayStoreKey) = true
+    by_cases hk : (k != arraySpineKey) = true
     · rw [if_pos hk] at hv
       cases hl : fa.lookup k with
       | none => rw [hl] at hv; cases hv
@@ -1476,7 +1476,7 @@ theorem sides_str {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Nat
   bound _ hK := by simp at hK
   boundA K hK k v hv := by
     rw [ownAll_lookup hp] at hv
-    by_cases hk : (k != arrayStoreKey) = true
+    by_cases hk : (k != arraySpineKey) = true
     · rw [if_pos hk] at hv
       cases hl : fa.lookup k with
       | none => rw [hl] at hv; cases hv
@@ -1563,9 +1563,9 @@ theorem result_facts {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
           obtain ⟨Kb, hKb, hbits⟩ := List.any_eq_true.mp hB
           simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hbits
           obtain ⟨⟨hKa, hst⟩, hall⟩ := hbits
-          have hstore : Kb.admits arrayStoreKey = false := by
+          have hspine : Kb.admits arraySpineKey = false := by
             simp only [KeyBound.admits, hKa, hst]; rfl
-          obtain ⟨hc, hd, hadm⟩ := hs.bound Kb hKb k w hq' hKa hstore
+          obtain ⟨hc, hd, hadm⟩ := hs.bound Kb hKb k w hq' hKa hspine
           have := hall k ((admits_among hKa).mp hadm)
           simp only [Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true'] at this
           rcases this with (h1 | h1) | h1
@@ -1822,13 +1822,13 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     have hbounds : ∀ K ∈ ks, ownKeysT K j U (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
       intro K hKm
       exact ⟨_, _, rfl, fun q hq => hK K hKm q.1 (slots_fst_mem hq)⟩
-    have hstore : (slots h.length (ps.map Prod.fst)).lookup CallArguments.arrayStoreField = none := by
+    have hspine : (slots h.length (ps.map Prod.fst)).lookup CallArguments.arraySpineField = none := by
       apply lookup_slots_none
       intro hm
       obtain ⟨e, he, hk⟩ := List.mem_map.mp hm
-      exact mergeParts_store hparts e he hk
+      exact mergeParts_spine hparts e he hk
     refine (expand_sem G R (plain_of_mem_expand hcr) j U _).mpr
-      ⟨_, hcr, ?_, builtinInvariant_of_lookup hstore⟩
+      ⟨_, hcr, ?_, builtinInvariant_of_lookup hspine⟩
     rcases hshape with rfl | ⟨rfl, hne⟩
     · simp only [semWithArgs]
       exact ⟨hrefs, viewsT_of_viewT hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds, stableKeysT_nil _ _ _⟩
@@ -1947,7 +1947,7 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
       Sides G d oa sb p W pa qs := by
   obtain ⟨fa, oid, rfl, hfa⟩ := objFacts_of_sem hoa hsa
   have hp : ownAll h (.objAt fa .absent oid) = some (firstKeys
-      ((fa.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2)))) := by
+      ((fa.filter (·.1 != arraySpineKey)).map (fun p => (p.1, heapVal h p.2)))) := by
     simp [ownAll, hna fa oid rfl]
   unfold srcOf at hsrc
   split at hsrc
@@ -1983,7 +1983,7 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
         exact ⟨ob, fb, code, oidb, rfl, rfl, hfb⟩
     obtain ⟨ob, fb, code, oidb, rfl, rfl, hfb⟩ := hfacts
     have hq : ownData h (.objAt fb code oidb) = some (firstKeys
-        ((fb.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fb)) := by
+        ((fb.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ spineData h fb)) := by
       have hno : hostOwned (.objAt fb code oidb) = false := by
         cases code with
         | absent => simp [hostOwned, hnb fb oidb rfl]
@@ -2087,7 +2087,7 @@ may hold, optional; and, when both sides list their keys, the keys listed. -/
   let oa ← objOf ca
   let sb ← srcOf cb
   let bKeys := match sb with | .prim | .str => [] | .obj ob => ob.keys
-  let keys := (oa.keys ++ bKeys).eraseDups.filter (· != arrayStoreKey)
+  let keys := (oa.keys ++ bKeys).eraseDups.filter (· != arraySpineKey)
   let bNamed (k : PropKey) : Option (List ι) := match sb with
     | .prim | .str => none
     | .obj ob => if !d.contains k && copiedKey k then ob.namedType k else none
@@ -2109,10 +2109,10 @@ may hold, optional; and, when both sides list their keys, the keys listed. -/
       if oa.withinA k T && sb.within d k T then some ⟨k, false, .field, T⟩ else none
     else []
   let bound : List KeyBound := match oa.bounds.find? (·.among), sb with
-    | some Ka, .prim => [⟨true, Ka.keys.filter (· != arrayStoreKey)⟩]
+    | some Ka, .prim => [⟨true, Ka.keys.filter (· != arraySpineKey)⟩]
     | some Ka, .obj ob =>
-      match ob.bounds.find? (fun K => K.among && !K.keys.contains arrayStoreKey) with
-      | some Kb => [⟨true, (Ka.keys.filter (· != arrayStoreKey) ++
+      match ob.bounds.find? (fun K => K.among && !K.keys.contains arraySpineKey) with
+      | some Kb => [⟨true, (Ka.keys.filter (· != arraySpineKey) ++
           Kb.keys.filter (fun x => (copiedKey x || !strKey x) && !d.contains x)).eraseDups⟩]
       | none => []
     | some _, .str => []

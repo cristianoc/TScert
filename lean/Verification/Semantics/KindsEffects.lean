@@ -32,7 +32,7 @@ in I; there the field capability of `f` at `A` holds of the object. -/
 theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n : Nat}
     {W : WorldT (n + 2)} {h : Heap} (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h)
     (hsrc : isSourceVal x = true) (hxr : RefsOk W x)
-    (hf : f ≠ arrayStoreKey)
+    (hf : f ≠ arraySpineKey)
     (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
     (hT : ∀ (U : WorldT (n + 1)) u, T (n + 1) U u) :
@@ -121,7 +121,7 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
     (hb : CallEffects.PromiseWith Ξ b Acc Rc C (n + 2) W g)
     (hcross : ∀ j, j < n + 2 → CrossCompatUpTo j B C D)
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal x = true)
-    (hf : f ≠ arrayStoreKey)
+    (hf : f ≠ arraySpineKey)
     (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
     (hrefs : RefsOk W (.letE (literal f x) (.invoke g r args)))
@@ -202,7 +202,7 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
     (hb : CallEffects.PromiseWith Ξ b Acc Rc C (n + 2) W g)
     (hcross : ∀ j, j < n + 2 → CrossCompatUpTo j B C D)
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal x = true)
-    (hf : f ≠ arrayStoreKey)
+    (hf : f ≠ arraySpineKey)
     (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
     (hrefs : RefsOk W (.frame E K (.letE (literal f x) (.invoke g r args)) L d k (some l)))

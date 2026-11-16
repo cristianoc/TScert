@@ -259,12 +259,12 @@ did not mention grow it, and the request carries the result. -/
           (.bind ⟨first.label,some mapping⟩) Γ reference "parameter-allocation"
           (scope := fullScope)
     -- A rest parameter's array is allocated once, on entry, before the body
-    -- runs: the store holding the surplus arguments, then the object that
-    -- holds the store. The body's environment binds the array where its name
+    -- runs: the spine holding the surplus arguments, then the object that
+    -- holds the spine. The body's environment binds the array where its name
     -- is; the request's inputs remain the positions a caller writes.
     if hasRest then
       let some restTy := bindings.getLast? | throw "a rest parameter needs a parameter"
-      let some S := storeOf (SourceTypes.graph (← table)) restTy
+      let some S := spineOf (SourceTypes.graph (← table)) restTy
         | throw "a rest parameter needs an array contract"
       let fixed := bindings.length - 1
       let anonymous := held ⟨"",some f.namePos⟩
@@ -278,12 +278,12 @@ did not mention grow it, and the request carries the result. -/
       let object ← emitAt f.namePos (arrayTerm proto)
         (.bind ⟨first.label, some bodyMapping⟩) (S :: inputs) restTy "rest-allocation"
         (scope := anonymous :: restScope)
-      let store ← emitAt f.namePos
+      let spine ← emitAt f.namePos
         (.arrLit ((List.range restElements.length).map fun j => .var (fixed + j)))
         (.bind ⟨object.label, some ((List.range (inputs.length + 1)).map
           fun j => if j == 0 then 0 else j)⟩)
         inputs S "rest-allocation" (scope := restScope)
-      first := store
+      first := spine
     -- The module cells' separation, which the unit assumes of its entry.
     let base := inputs.length - siblingScope.length
     let entrySeparation := moduleCellSeparation inputs.length
@@ -313,15 +313,15 @@ did not mention grow it, and the request carries the result. -/
   let receiverInput := (f.params.head?.map (·.name == "this")).getD false
   let some ensures := f.ensures.mapM (fun F => if receiverInput then some F else F.pastReceiver)
     | throw "a result fact names the receiver, which the function does not declare"
-  -- The stores a stated frame excepts, each call position at the input slot
+  -- The spines a stated frame excepts, each call position at the input slot
   -- that holds it on entry.
   let regionSlot : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
   let some regional := (f.stated.bind fun (s : EffectJson.StatedEffect) =>
       if s.regions.isEmpty then none else some (s.closed, s.regions)).mapM
-        fun ((c, rs) : Footprints.Closed × List Footprints.ArgumentStoreRegion) =>
-          (rs.mapM fun (r : Footprints.ArgumentStoreRegion) => (regionSlot r.position).map fun q =>
-            (⟨q, r.path⟩ : Footprints.ArgumentStoreRegion)).map (c, ·)
-    | throw "a stated store region names the receiver, which the function does not declare"
+        fun ((c, rs) : Footprints.Closed × List Footprints.ArgumentSpineRegion) =>
+          (rs.mapM fun (r : Footprints.ArgumentSpineRegion) => (regionSlot r.position).map fun q =>
+            (⟨q, r.path⟩ : Footprints.ArgumentSpineRegion)).map (c, ·)
+    | throw "a stated spine region names the receiver, which the function does not declare"
   let (program, claims, source, start) := compactLowered built.program built.claims built.source entry.label
   return {
     toRequest := ⟨built.types, program, claims, R, start, inputs, built.codes, promise,

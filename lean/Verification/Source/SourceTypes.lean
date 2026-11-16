@@ -11,13 +11,13 @@ open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 open EquationStore (State)
 
-/-- The field an array object holds its store in. No source name spells it. -/
-def storeField : PropKey := CallArguments.arrayStoreField
+/-- The field an array object holds its spine in. No source name spells it. -/
+def spineField : PropKey := CallArguments.arraySpineField
 
 /-- The field an object holds its prototype in. No source name spells it. -/
 def protoField : PropKey := CallArguments.protoField
 
-/-- A key the model keeps for itself: the array store, the prototype, and
+/-- A key the model keeps for itself: the array spine, the prototype, and
 every other name in double brackets (`RequestJson.reservedKey`). -/
 abbrev reservedKey : PropKey → Bool := RequestJson.reservedKey
 
@@ -44,7 +44,7 @@ def functionPrototypeName : String := "[[Function.prototype]]"
 def prototypeNames : List String :=
   arrayPrototypeName :: functionPrototypeName :: primitivePrototypes.map (·.2)
 
-/-- An array type: its store at `store`, invariant or, for a readonly array, a
+/-- An array type: its spine at `store`, invariant or, for a readonly array, a
 view; the prototype as a view at `proto`, `ArrayProto`; and none of `excluded`,
 the keys `ArrayProto` provides plus `constructor`, `then` and `toJSON` (`arrayExcludedKeys`), among
 its own keys, so a read of one of them continues at the prototype. -/
@@ -111,7 +111,7 @@ def renderIn {ι : Type} [Labels ι] (G : NormalGraph ι) (A : Ty ι) : String :
   | [] => "never"
   | [.boolLit true, .boolLit false] | [.boolLit false, .boolLit true] => "boolean"
   | cs => String.intercalate " | " (cs.map fun c => match c with
-      | .refs fs _ vs .. => if ((Stored.views fs ++ vs).lookup storeField).isSome then "array" else clauseName c
+      | .refs fs _ vs .. => if ((Stored.views fs ++ vs).lookup spineField).isSome then "array" else clauseName c
       | _ => clauseName c).eraseDups
 
 def render (T : State) (A : Ty Tree) : String :=
@@ -222,7 +222,7 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Tree) := do
     | .bigintLit i => out := out ++ [← use (.bigintLit i)]
     | .symbol => out := out ++ [← use .symbol]
     -- A void value is any source value: primitives and objects, including
-    -- callable and constructible objects. Internal array stores are separate.
+    -- callable and constructible objects. Internal array spines are separate.
     | .void => out := out ++ [← useRow EquationLowering.sourceValueClauses]
     | _ => pure ()
   return out

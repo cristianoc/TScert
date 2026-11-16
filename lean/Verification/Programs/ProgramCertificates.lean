@@ -374,7 +374,7 @@ inductive Rule (ι : Type) where
   | bigintLit | bigint
   /-- Graph code: its captures, each a slot of the context at the type the
   code was checked with, are the premises; the code itself is an entry of the
-  unit's checked code table. With a rest, `arrays` are the rest-store types of
+  unit's checked code table. With a rest, `arrays` are the rest-spine types of
   the variadic signatures, in their order. -/
   | funGraph (arrays : List (Ty ι))
   /-- A recursive closure: graph code of fixed arity whose table entries are
@@ -491,7 +491,7 @@ def capSlotsBelow (caps : List Tm) (n : Nat) : Bool :=
 
 /-- Every signature `(L, S)` offers is a checked entry of graph code with
 captures at `Cs` (`CodeOffers`): without a rest, each offered row; with one,
-no fixed signature and each variadic signature with its store type from `As`. -/
+no fixed signature and each variadic signature with its spine type from `As`. -/
 @[nospecialize] def offersChecked [DecidableEq ι] (G : NormalGraph ι) (codes : CodeEntry ι → Bool) (arity : Nat)
     (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
     (Cs : List (Ty ι)) (rest : Bool) (L : List (Arrow (Ty ι)))
@@ -499,7 +499,7 @@ no fixed signature and each variadic signature with its store type from `As`. -/
   match rest with
   | false => (offerRows L S).all fun p => codes ⟨arity, E, K, start, Cs, p, none⟩
   | true => L.isEmpty && S.length == As.length && (S.zip As).all fun q =>
-      q.1.arguments.1.length == arity && decide (RestStore G q.2 q.1.arguments.2) &&
+      q.1.arguments.1.length == arity && decide (RestSpine G q.2 q.1.arguments.2) &&
         codes ⟨arity, E, K, start, Cs, q.1.fixed, some q.2⟩
 
 /-- Every signature the type `A` offers is a checked entry of graph code of
@@ -988,7 +988,7 @@ declared bounds. -/
         Stored.views fs = stablePart st false (ns.zip (ps.map Sequent.type)) ∧
         vs = stablePart st true (ns.zip (ps.map Sequent.type)) ∧
         (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images (ns.zip (ps.map Sequent.type)) = true ∧
-        (st = [] ∨ CallArguments.arrayStoreField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns) ∧
+        (st = [] ∨ CallArguments.arraySpineField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns) ∧
         (∀ q ∈ ns.zip (ps.map Sequent.type), Payload G (.stored (allocRole fs q.1)) q.2) ∧
         (∀ n ∈ ns, (allocRole fs n).fitsKey n = true)
       -- A literal allocated directly at a dictionary: each field an index's
@@ -996,7 +996,7 @@ declared bounds. -/
       -- writable optional field, at that writable index's role; each
       -- optional field absent (`HasTyUsing.allocDict`).
       | [.dict fs [] [] ix os [] [] cs] =>
-        ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧ hostKey ∉ ns ∧
+        ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arraySpineField ∉ ns ∧ hostKey ∉ ns ∧
         ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧ Stored.views fs = ns.zip (ps.map Sequent.type) ∧
         (∀ f ∈ fs, ∀ y ∈ ix ++ cellViews cs, y.1.may f.1 = true → f.2.2 = y.2) ∧
@@ -1237,7 +1237,7 @@ declared bounds. -/
       | _ => False
     | _, _ => False
   -- One premise per part: the entry itself, at the element type, or, for a
-  -- part flagged as a spread, the store it reads, whose elements that type
+  -- part flagged as a spread, the spine it reads, whose elements that type
   -- admits.
   | .arrParts E flags =>
     match j.term with
@@ -1252,7 +1252,7 @@ declared bounds. -/
     | _ => False
   -- The callee, the receiver, the fixed actuals, one `undefined` premise per
   -- fixed position the call omits, then one premise per further part: the
-  -- actual itself, or the store a spread reads. A call that omits a position
+  -- actual itself, or the spine a spread reads. A call that omits a position
   -- writes no part.
   | .callRest effect k u flags P =>
     match j.term, ps with
@@ -1267,7 +1267,7 @@ declared bounds. -/
       ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type ∧
       effect.plain = true
     | _, _ => False
-  -- The callee, the receiver, the fixed actuals, then the value whose store
+  -- The callee, the receiver, the fixed actuals, then the value whose spine
   -- the last actual spreads, of the packed binder the rest is.
   | .callPacked effect k t P =>
     match j.term, ps with
@@ -1275,7 +1275,7 @@ declared bounds. -/
       jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧ jas.length = k + 1 ∧
       args = (jas.take k).map Sequent.term ++
-        (jas.drop k).map (fun ja => .spread (.readAt CallArguments.arrayStoreField ja.term)) ∧
+        (jas.drop k).map (fun ja => .spread (.readAt CallArguments.arraySpineField ja.term)) ∧
       (∀ ja ∈ jas.drop k, PackedBy G ja.type t) ∧ t ∈ P ∧
       ⟨jr.type, ((jas.take k).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type ∧
       effect.plain = true
@@ -1335,7 +1335,7 @@ declared bounds. -/
       | _ => False
     | _, _ => False
   -- The constructor, the fixed actuals, then one premise per further part:
-  -- the actual itself, or the store a spread reads.
+  -- the actual itself, or the spine a spread reads.
   | .constructRest k flags P =>
     match j.term, ps with
     | .construct f args, jf :: jas =>
@@ -1553,12 +1553,12 @@ theorem schemeOffersChecked_sound [DecidableEq ι] {G : NormalGraph ι}
     {s : SchemeRow ι} {codes : CodeEntry ι → Bool}
     (hcodes : SchemeCodesSound G s codes) {arity : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}
-    {Cs : List (Ty ι)} {rest : Bool} {stores : List (Ty ι)}
-    (h : offersChecked G codes arity E K start Cs rest s.signatures s.variadic stores = true)
+    {Cs : List (Ty ι)} {rest : Bool} {spines : List (Ty ι)}
+    (h : offersChecked G codes arity E K start Cs rest s.signatures s.variadic spines = true)
     (η : MixedAssignment ι) (As : List MixedFamily)
     (hlen : As.length = s.binders.length) (ha : G.domain.allowed s As) :
     CodeOffers (reassign G (assign η s.binders As)) arity E K start Cs rest
-      s.signatures s.variadic stores := by
+      s.signatures s.variadic spines := by
   cases rest with
   | false =>
     simp only [offersChecked, List.all_eq_true] at h
@@ -1573,9 +1573,9 @@ theorem schemeOffersChecked_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- The checker establishes code formation independently of whether a scheme
 has an admitted instance. -/
 theorem offersChecked_shape [DecidableEq ι] {G : NormalGraph ι}
-    {codes : CodeEntry ι → Bool} {arity E K start Cs rest L S stores}
-    (h : offersChecked G codes arity E K start Cs rest L S stores = true) :
-    CodeOffersShape G arity rest L S stores := by
+    {codes : CodeEntry ι → Bool} {arity E K start Cs rest L S spines}
+    (h : offersChecked G codes arity E K start Cs rest L S spines = true) :
+    CodeOffersShape G arity rest L S spines := by
   cases rest with
   | false => trivial
   | true =>
@@ -1591,11 +1591,11 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
     {codes : CodeEntry ι → Bool} (hcodes : SchemeCodesSound G s codes)
     {arity start : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-    {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {stores : List (Ty ι)}
+    {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {spines : List (Ty ι)}
     (hp : G.params j = false) (hs : G.schemes j = some s) (hcon : s.construct = false)
     (hkind : KindOffers G kind s.signatures s.variadic)
     (hc : offersChecked G codes arity E K start (caps.map Prod.fst) rest
-      s.signatures s.variadic stores = true)
+      s.signatures s.variadic spines = true)
     (hfree : capturesFree G s (caps.map Prod.fst) = true)
     (hlt : ∀ c ∈ caps, c.2 < Γ.length)
     (hcap : ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1) :
@@ -1604,7 +1604,7 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
   .funScheme hp hs hcon hkind (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
 
 /-- A checked offer holds at every assignment: each entry does (`CodesSound`),
-and a store type is read through the graph's rows only. -/
+and a spine type is read through the graph's rows only. -/
 theorem offersChecked_sound [DecidableEq ι] {G : NormalGraph ι} {codes : CodeEntry ι → Bool}
     (hcodes : CodesSound G codes) {arity : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat}

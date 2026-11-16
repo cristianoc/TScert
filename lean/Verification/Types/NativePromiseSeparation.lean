@@ -103,7 +103,7 @@ theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
 
 theorem witness_builtins (G : NormalGraph ι) (X : List ι → Fam)
     (keys : List PropKey) (c : Clause (List ι))
-    (ha : CallArguments.arrayStoreField ∉ keys) :
+    (ha : CallArguments.arraySpineField ∉ keys) :
     builtinInvariant G X c 1 witnessWorld (witness keys) := by
   exact builtinInvariant_of_lookup (fields_absent keys _ ha)
 
@@ -146,7 +146,7 @@ theorem reject_clause (G : NormalGraph ι) (η : MixedAssignment ι)
 
 /-- The checked structure: the Promise row's plain record clause, whose views
 include the prototype key, whose own-key bounds admit every view key and
-whose views exclude the array store, and a stable bound each clause of which
+whose views exclude the array spine, and a stable bound each clause of which
 rejects the witness. -/
 structure Shape (G : NormalGraph ι) (root : ι) (stable : List ι) where
   views : List (PropKey × List ι)
@@ -156,7 +156,7 @@ structure Shape (G : NormalGraph ι) (root : ι) (stable : List ι) where
   row : Clause.refs [] [] views [] methods bounds ∈ G root
   proto : CallArguments.protoField ∈ viewKeys views
   admitted : ∀ K ∈ bounds, ∀ p ∈ views, K.admits p.1 = true
-  noArray : CallArguments.arrayStoreField ∉ viewKeys views
+  noArray : CallArguments.arraySpineField ∉ viewKeys views
   stablePlain : G.plainTy stable = true
   reject : ∀ l ∈ stable, ∀ c ∈ G l, RejectClause (viewKeys views) c
 
@@ -189,7 +189,7 @@ def check [DecidableEq ι] (G : NormalGraph ι) (root : ι) (stable : List ι) :
     | _ => none
   let fits := fun (vs : List (PropKey × List ι)) (ks : List KeyBound) =>
     CallArguments.protoField ∈ viewKeys vs ∧ (∀ K ∈ ks, ∀ p ∈ vs, K.admits p.1 = true) ∧
-      CallArguments.arrayStoreField ∉ viewKeys vs ∧
+      CallArguments.arraySpineField ∉ viewKeys vs ∧
       ∀ l ∈ stable, ∀ c ∈ G l, RejectClause (viewKeys vs) c
   let (vs, ms, ks) ← candidates.find? fun r => decide (fits r.1 r.2.2)
   if plain : G.plain root = true then

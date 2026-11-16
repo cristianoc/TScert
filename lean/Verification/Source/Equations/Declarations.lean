@@ -41,7 +41,7 @@ def arrayProtoIdentity : Json :=
 
 /-- The declarations lowering reads by identity, where no reference in the
 term being lowered names them: the array prototype every array and tuple
-term's store reaches, and the stable non-thenable family and the native
+term's spine reaches, and the stable non-thenable family and the native
 `Promise` a resolution-qualified scheme's domain is relative to. Lowering
 selects each only through `selects`. -/
 inductive ImplicitDependency where

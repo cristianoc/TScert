@@ -403,7 +403,7 @@ theorem bitsOf_bitsText (b : UInt64) : bitsOf (bitsText b) = .ok b := by
 A literal of a specification is one of the calculus's eight primitive
 constants: `null`, `undefined`, the two Booleans, a number by its double's
 bits, a string, a bigint and a symbol by its identity. No object identity,
-store or executable term is a literal (`Tm.isLiteral`, by every constructor
+spine or executable term is a literal (`Tm.isLiteral`, by every constructor
 of `Tm`). -/
 
 /-- **Whether a term is a literal of a specification**. -/
@@ -594,16 +594,16 @@ def nestingLimit : Nat := 256
 
 def regionJ : Region → Json
   | .field x k => tagged "field" (obj ["x", "key"] [natJ x, keyJ k])
-  | .own x => tagged "own" (obj ["x"] [natJ x])
-  | .elems x => tagged "elems" (obj ["x"] [natJ x])
+  | .fields x => tagged "fields" (obj ["x"] [natJ x])
+  | .cells x => tagged "cells" (obj ["x"] [natJ x])
   | .cls c => tagged "cls" (selectorJ c)
   | .all => "all"
   | .path x p k => tagged "path" (obj ["x", "fields", "key"] [natJ x, strsJ p, keyJ k])
-  | .pathOwn x p => tagged "pathOwn" (obj ["x", "fields"] [natJ x, strsJ p])
-  | .pathElems x p => tagged "pathElems" (obj ["x", "fields"] [natJ x, strsJ p])
+  | .pathFields x p => tagged "pathFields" (obj ["x", "fields"] [natJ x, strsJ p])
+  | .pathCells x p => tagged "pathCells" (obj ["x", "fields"] [natJ x, strsJ p])
   | .cell b => tagged "cell" (obj ["name"] [Json.str b])
   | .inCls r c => tagged "inCls" (obj ["region", "selector"] [regionJ r, selectorJ c])
-  | .store x p => tagged "store" (obj ["x", "fields"] [natJ x, strsJ p])
+  | .spine x p => tagged "spine" (obj ["x", "fields"] [natJ x, strsJ p])
 
 def regionDepth : Region → Nat
   | .inCls r _ => regionDepth r + 1
@@ -617,32 +617,32 @@ def regionOf : Nat → Json → Except String Region
     | "field" => do
       let [x, key] ← fields v ["x", "key"] | throw "field"
       pure (.field (← under "x" (natOf x)) (← under "key" (keyOf key)))
-    | "own" => do
-      let [x] ← fields v ["x"] | throw "own"
-      pure (.own (← under "x" (natOf x)))
-    | "elems" => do
-      let [x] ← fields v ["x"] | throw "elems"
-      pure (.elems (← under "x" (natOf x)))
+    | "fields" => do
+      let [x] ← fields v ["x"] | throw "fields"
+      pure (.fields (← under "x" (natOf x)))
+    | "cells" => do
+      let [x] ← fields v ["x"] | throw "cells"
+      pure (.cells (← under "x" (natOf x)))
     | "cls" => .cls <$> selectorOf v
     | "all" => pure .all
     | "path" => do
       let [x, p, key] ← fields v ["x", "fields", "key"] | throw "path"
       pure (.path (← under "x" (natOf x)) (← under "fields" (listOf strOf p)) (← under "key" (keyOf key)))
-    | "pathOwn" => do
-      let [x, p] ← fields v ["x", "fields"] | throw "pathOwn"
-      pure (.pathOwn (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
-    | "pathElems" => do
-      let [x, p] ← fields v ["x", "fields"] | throw "pathElems"
-      pure (.pathElems (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+    | "pathFields" => do
+      let [x, p] ← fields v ["x", "fields"] | throw "pathFields"
+      pure (.pathFields (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+    | "pathCells" => do
+      let [x, p] ← fields v ["x", "fields"] | throw "pathCells"
+      pure (.pathCells (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
     | "cell" => do
       let [b] ← fields v ["name"] | throw "cell"
       pure (.cell (← under "name" (strOf b)))
     | "inCls" => do
       let [r, c] ← fields v ["region", "selector"] | throw "inCls"
       pure (.inCls (← under "region" (regionOf n r)) (← under "selector" (selectorOf c)))
-    | "store" => do
-      let [x, p] ← fields v ["x", "fields"] | throw "store"
-      pure (.store (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
+    | "spine" => do
+      let [x, p] ← fields v ["x", "fields"] | throw "spine"
+      pure (.spine (← under "x" (natOf x)) (← under "fields" (listOf strOf p)))
     | _ => throw "no region"
 
 theorem regionOf_regionJ (r : Region) : ∀ n, regionDepth r ≤ n → regionOf n (regionJ r) = .ok r := by
@@ -920,7 +920,7 @@ def factJ : IndexFact → Json
   | .every k p stop body => tagged "every"
       (obj ["slot", "path", "stop", "body"] [natJ k, strsJ p, termJ stop, listJ (clauseJ boundJ) body])
   | .apart a b => tagged "apart" (obj ["slot", "other"] [natJ a, natJ b])
-  | .storeApart a p b q => tagged "storeApart"
+  | .spineApart a p b q => tagged "spineApart"
       (obj ["slot", "path", "other", "otherPath"] [natJ a, strsJ p, natJ b, strsJ q])
 
 def factOf : Nat → Json → Except String IndexFact
@@ -963,9 +963,9 @@ def factOf : Nat → Json → Except String IndexFact
     | "apart" => do
       let [a, b] ← fields v ["slot", "other"] | throw "apart"
       pure (.apart (← under "slot" (natOf a)) (← under "other" (natOf b)))
-    | "storeApart" => do
-      let [a, p, b, q] ← fields v ["slot", "path", "other", "otherPath"] | throw "storeApart"
-      pure (.storeApart (← under "slot" (natOf a)) (← under "path" (listOf strOf p)) (← under "other" (natOf b))
+    | "spineApart" => do
+      let [a, p, b, q] ← fields v ["slot", "path", "other", "otherPath"] | throw "spineApart"
+      pure (.spineApart (← under "slot" (natOf a)) (← under "path" (listOf strOf p)) (← under "other" (natOf b))
         (← under "otherPath" (listOf strOf q)))
     | _ => throw "no index fact"
 
@@ -1022,11 +1022,11 @@ def postJ : OperationPostF WitnessSeq → Json
   | .boundedWrite x i x' => tagged "boundedWrite" (obj ["x", "i", "exit"] [natJ x, natJ i, natJ x'])
   | .push x x' args => tagged "push" (obj ["x", "exit", "args"] [natJ x, natJ x', seqJ args])
   | .fact ph l F => tagged "fact" (obj ["phase", "lift", "fact"] [phaseJ ph, natJ l, factJ F])
-  | .freshStore x => tagged "freshStore" (obj ["x"] [natJ x])
+  | .freshSpine x => tagged "freshSpine" (obj ["x"] [natJ x])
   | .freshObject x => tagged "freshObject" (obj ["x"] [natJ x])
   | .elementsWhen x v y R => tagged "elementsWhen"
       (obj ["x", "value", "y", "predicate"] [natJ x, litJ v, natJ y, predJ R])
-  | .storeExtends x => tagged "storeExtends" (obj ["x"] [natJ x])
+  | .spineExtends x => tagged "spineExtends" (obj ["x"] [natJ x])
   | .viewWrite x i v g => tagged "viewWrite" (obj ["x", "i", "v", "format"] [natJ x, natJ i, natJ v, optJ formatJ g])
 
 def postOf (n : Nat) (j : Json) : Except String (OperationPostF WitnessSeq) := do
@@ -1054,9 +1054,9 @@ def postOf (n : Nat) (j : Json) : Except String (OperationPostF WitnessSeq) := d
   | "fact" => do
     let [ph, l, F] ← fields v ["phase", "lift", "fact"] | throw "fact"
     pure (.fact (← under "phase" (phaseOf ph)) (← under "lift" (natOf l)) (← under "fact" (factOf n F)))
-  | "freshStore" => do
-    let [x] ← fields v ["x"] | throw "freshStore"
-    pure (.freshStore (← under "x" (natOf x)))
+  | "freshSpine" => do
+    let [x] ← fields v ["x"] | throw "freshSpine"
+    pure (.freshSpine (← under "x" (natOf x)))
   | "freshObject" => do
     let [x] ← fields v ["x"] | throw "freshObject"
     pure (.freshObject (← under "x" (natOf x)))
@@ -1064,9 +1064,9 @@ def postOf (n : Nat) (j : Json) : Except String (OperationPostF WitnessSeq) := d
     let [x, a, y, R] ← fields v ["x", "value", "y", "predicate"] | throw "elementsWhen"
     pure (.elementsWhen (← under "x" (natOf x)) (← under "value" (litOf a)) (← under "y" (natOf y))
       (← under "predicate" (predOf R)))
-  | "storeExtends" => do
-    let [x] ← fields v ["x"] | throw "storeExtends"
-    pure (.storeExtends (← under "x" (natOf x)))
+  | "spineExtends" => do
+    let [x] ← fields v ["x"] | throw "spineExtends"
+    pure (.spineExtends (← under "x" (natOf x)))
   | "viewWrite" => do
     let [x, i, a, g] ← fields v ["x", "i", "v", "format"] | throw "viewWrite"
     pure (.viewWrite (← under "x" (natOf x)) (← under "i" (natOf i)) (← under "v" (natOf a))
@@ -1437,7 +1437,7 @@ private def topFrame : Footprint := Parity.topEffect
 /-- An exceptional postcondition, a rest sequence, a nested conjunction and
 a transport with overrides and stable slots. -/
 private def sample : Effect :=
-  ⟨⟨⟨[(.cls ⟨true, false, false⟩, .keep), (.inCls (.pathOwn 1 ["a"]) ⟨true, false, false⟩, .any),
+  ⟨⟨⟨[(.cls ⟨true, false, false⟩, .keep), (.inCls (.pathFields 1 ["a"]) ⟨true, false, false⟩, .any),
         (.path 0 [] (.sym 3), .grow)],
       [.operation (.push 0 1 (.append (.fixed [.literal (.num 0x3ff0000000000000)]) (.restFrom 1))),
         .and (.operation (.fact .after 0 (.linear (.le [(.old .length 1 [], -9007199254740993)] 4))))
@@ -1446,7 +1446,7 @@ private def sample : Effect :=
         .operation (.arith .add (.literal (.bigint (-123456789012345678901234567890))) (.literal (.str "x\"y"))
           ⟨2, ["f"]⟩)]⟩,
     ⟨topFrame, [.transport ⟨1, [(3, .path ⟨0, []⟩), (3, .literal .undef)], true, [2, 2]⟩,
-      .operation (.freshStore 0)]⟩⟩,
+      .operation (.freshSpine 0)]⟩⟩,
     some (.asserts 1), some ⟨false, true, false, false, false, false, false, true⟩,
     [.every 1 ["x"] (.now .length 1 ["x"]) [.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))],
       .apart 1 2]⟩

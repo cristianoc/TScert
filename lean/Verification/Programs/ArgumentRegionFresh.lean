@@ -1,22 +1,22 @@
 import Verification.Programs.ArgumentPathTracking
 
-/-! # Fresh array stores in a regional body
+/-! # Fresh array spines in a regional body
 
-A step's store region selecting a location allocated during the invocation
+A step's spine region selecting a location allocated during the invocation
 selects no location of its entry heap, so it rebases to none
 (`Footprints.RebaseEvidence.fresh`). The regional graph tracks which slots
 hold such a value, and which hold a cell whose contents are one:
 
-- a **fresh value** (`FreshValue b v`): no store itself, and its array store,
+- a **fresh value** (`FreshValue b v`): no spine itself, and its array spine,
   where it has one, at or above `b`, the entry heap's length
-  (`Footprints.FreshIfStore`). `null`, a number and an object of no store
+  (`Footprints.FreshIfSpine`). `null`, a number and an object of no spine
   field meet it; it reads no heap.
 - a **fresh cell** (`CellFresh b h c`): the object `c` has the field a cell
   holds its contents in, and its location holds a fresh value at `h`. It is
   an invariant of the cell's contents, read at each heap.
 
 A value is fresh where it is a slot copy of a fresh slot, a constant, an
-allocation of an object with a store field, a read of a fresh cell, or the
+allocation of an object with a spine field, a read of a fresh cell, or the
 result of a call whose signature states a fresh result. A cell is fresh
 where it is a copy of a fresh cell or an allocation holding a fresh value.
 A step keeps every fresh cell where it changes no old location of class
@@ -30,14 +30,14 @@ open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules Footprin
 /-- The field a cell holds its contents in. -/
 def cellKey : PropKey := .str "value"
 
-/-- A value of no store whose array store, where it has one, lies at or
+/-- A value of no spine whose array spine, where it has one, lies at or
 above `b`. -/
-def FreshValue (b : Nat) (v : Tm) : Prop := isArr v = false ∧ FreshIfStore b v
+def FreshValue (b : Nat) (v : Tm) : Prop := isArr v = false ∧ FreshIfSpine b v
 
 theorem freshAt_value {b : Nat} {v : Tm} (h : FreshAt b v) : FreshValue b v := by
-  refine ⟨?_, FreshAt.ifStore h⟩
+  refine ⟨?_, FreshAt.ifSpine h⟩
   obtain ⟨s, hs, -⟩ := h
-  cases v <;> simp_all [storeOf, fieldsOf, isArr]
+  cases v <;> simp_all [spineOf, fieldsOf, isArr]
 
 /-- A value of no field: a constant. -/
 theorem freshValue_of_fields {b : Nat} {v : Tm} (ha : isArr v = false) (hf : fieldsOf v = []) :
@@ -58,34 +58,34 @@ structure FreshHold (F C : List Nat) (b : Nat) (ρ : Env) (h : Heap) : Prop wher
 
 /-! ## Keeping cells -/
 
-/-- A region every location of which holds a store where it is read. -/
-def storeOnly : Region → Bool
+/-- A region every location of which holds a spine where it is read. -/
+def spineOnly : Region → Bool
   | .cls c => !c.value
   | .inCls _ c => !c.value
   | _ => false
 
-/-- A selector naming no value category selects only stores. -/
-theorem Selector.selects_store_only {c : Footprints.Selector} (hc : c.value = false) {v : Tm}
+/-- A selector naming no value category selects only spines. -/
+theorem Selector.selects_spine_only {c : Footprints.Selector} (hc : c.value = false) {v : Tm}
     (hs : c.selects v = true) : isArr v = true :=
   Footprints.Selector.selects_noValue hc hs
 
-theorem storeOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Tm} (hs : storeOnly r = true)
+theorem spineOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Tm} (hs : spineOnly r = true)
     (hm : r.mem σ h l = true) (hv : h[l]? = some v) : isArr v = true := by
-  cases r <;> simp only [storeOnly, Bool.false_eq_true] at hs
+  cases r <;> simp only [spineOnly, Bool.false_eq_true] at hs
   case cls c =>
     simp only [Bool.not_eq_true'] at hs
-    exact Selector.selects_store_only hs (by simpa [Region.mem, hv] using hm)
+    exact Selector.selects_spine_only hs (by simpa [Region.mem, hv] using hm)
   case inCls r c =>
     simp only [Bool.not_eq_true'] at hs
     simp only [Region.mem, hv, Bool.and_eq_true] at hm
-    exact Selector.selects_store_only hs hm.2
+    exact Selector.selects_spine_only hs hm.2
 
 /-- A frame changing no location of class value: every entry keeps its
-locations, or holds only stores. -/
-def keepsValues (Ψ : Footprint) : Bool := Ψ.all fun e => e.2 == .keep || storeOnly e.1
+locations, or holds only spines. -/
+def keepsValues (Ψ : Footprint) : Bool := Ψ.all fun e => e.2 == .keep || spineOnly e.1
 
 /-- **A frame keeping values keeps every fresh cell**: a cell's location
-holds a value of no store, which no entry of the frame changes. -/
+holds a value of no spine, which no entry of the frame changes. -/
 theorem CellFresh.post {Ψ : Footprint} {σ : Env} {h h' : Heap} {b : Nat} {c : Tm}
     (hk : keepsValues Ψ = true) (hp : Post Ψ σ h h') (hc : CellFresh b h c) : CellFresh b h' c := by
   obtain ⟨l, v, hl, hv, hf⟩ := hc
@@ -99,7 +99,7 @@ theorem CellFresh.post {Ψ : Footprint} {σ : Env} {h h' : Heap} {b : Nat} {c : 
     · rw [hkeep] at hh
       simp only [Change.Holds] at hh
       rw [hh]; exact hf
-    · have := storeOnly_mem hs hm hv
+    · have := spineOnly_mem hs hm hv
       rw [hf.1] at this; cases this
 
 theorem CellsHold.post {Ψ : Footprint} {σ : Env} {C : List Nat} {b : Nat} {ρ : Env} {h h' : Heap}
@@ -149,11 +149,11 @@ theorem value_run {Ξ T : Fam} {Q : Heap → Tm → Prop} {R : Heap → Prop} {n
 
 /-! ## Allocation -/
 
-/-- A term allocating an object with a store field, its initializers first
+/-- A term allocating an object with a spine field, its initializers first
 or a binding before it. -/
 def AllocShape (t : Tm) : Prop :=
-  (∃ c ns inits, t = .makeAt c ns inits ∧ arrayStoreKey ∈ ns) ∨
-    (∃ a c ns inits, t = .letE a (.makeAt c ns inits) ∧ arrayStoreKey ∈ ns)
+  (∃ c ns inits, t = .makeAt c ns inits ∧ arraySpineKey ∈ ns) ∨
+    (∃ a c ns inits, t = .letE a (.makeAt c ns inits) ∧ arraySpineKey ∈ ns)
 
 theorem lookup_slots_mem {k : PropKey} : ∀ {ns : List PropKey} {b : Nat}, k ∈ ns →
     ∃ l, (slots b ns).lookup k = some l ∧ b ≤ l
@@ -173,7 +173,7 @@ theorem subst_makeAt (j : Nat) (a : Tm) (c : CallCode) (ns : List PropKey) (xs :
   cases c <;> simp only [subst] <;> exact ⟨_, _, rfl⟩
 
 /-- An allocation's step: it stays an allocation, or returns an object whose
-store field's location is past the heap it allocated in. -/
+spine field's location is past the heap it allocated in. -/
 theorem alloc_step {b : Nat} {h h' : Heap} {t t' : Tm} (hb : b ≤ h.length) (hs : AllocShape t)
     (st : Step h t h' t') : b ≤ h'.length ∧ (AllocShape t' ∨ (isVal t' = true ∧ FreshAt b t')) := by
   refine ⟨Nat.le_trans hb (step_length_le st), ?_⟩
@@ -182,7 +182,7 @@ theorem alloc_step {b : Nat} {h h' : Heap} {t t' : Tm} (hb : b ≤ h.length) (hs
     | makeArg _ _ _ => exact .inl (.inl ⟨_, _, _, rfl, hk⟩)
     | makeFields _ _ =>
       obtain ⟨l, hl, hle⟩ := lookup_slots_mem (b := h.length) hk
-      exact .inr ⟨rfl, l, by simpa [storeOf, fieldsOf] using hl, Nat.le_trans hb hle⟩
+      exact .inr ⟨rfl, l, by simpa [spineOf, fieldsOf] using hl, Nat.le_trans hb hle⟩
   · cases st with
     | letC _ => exact .inl (.inr ⟨_, _, _, _, rfl, hk⟩)
     | letV _ =>
@@ -192,7 +192,7 @@ theorem alloc_step {b : Nat} {h h' : Heap} {t t' : Tm} (hb : b ≤ h.length) (hs
 theorem allocShape_not_val {t : Tm} (hs : AllocShape t) : isVal t = false := by
   rcases hs with ⟨_, _, _, rfl, _⟩ | ⟨_, _, _, _, rfl, _⟩ <;> rfl
 
-/-- **An allocation returns a fresh store**: its store field's location is
+/-- **An allocation returns a fresh spine**: its spine field's location is
 at least the heap's length where it started, so at least `b`. -/
 theorem alloc_fresh {Ξ T : Fam} {n W h t} {b : Nat} (hb : b ≤ h.length) (hs : AllocShape t)
     (hsafe : Safe Ξ T n W h t) : HeapObservations.SafePostExc Ξ T (fun _ v => FreshAt b v) (fun _ => True) n W h t :=
@@ -283,18 +283,18 @@ theorem freshWrite_cells {Ξ T : Fam} {n W h} {b : Nat} {f : PropKey} {a u : Tm}
 /-! ## Fresh fields
 
 A **fresh field** (`FieldFresh b h v f`): the value field `f` of `v` holds at
-`h`, where `v` has that field, has its store, where it has one, at or above
+`h`, where `v` has that field, has its spine, where it has one, at or above
 `b`. A value with no field `f` meets it, `null` and `undefined` included.
 It is established by an allocation whose field `f` is initialized by a
 fresh value, and kept across a node where the slot's type states `f`
 stable: the field's location then keeps its value in every heap a run
-reaches, its throws included, and a store's location is part of the
+reaches, its throws included, and a spine's location is part of the
 value. -/
 
-/-- The store field `f` of `v` holds at `h`, where it has one, lies at or
+/-- The spine field `f` of `v` holds at `h`, where it has one, lies at or
 above `b`. -/
 def FieldFresh (b : Nat) (h : Heap) (v : Tm) (f : String) : Prop :=
-  ∀ u, HeapKnowledge.readPath h v [f] = some u → FreshIfStore b u
+  ∀ u, HeapKnowledge.readPath h v [f] = some u → FreshIfSpine b u
 
 /-- The pairs `Fs` of a slot and a field are fresh fields at `h`. -/
 def FieldsHold (Fs : List (Nat × String)) (b : Nat) (ρ : Env) (h : Heap) : Prop :=
@@ -417,7 +417,7 @@ theorem fieldsHold_frame {G : NormalGraph ι} {Γ : List (Ty ι)} {Fs : List (Na
 each field `P` names. -/
 theorem fieldAlloc_fresh {Ξ T : Fam} {n W h} {b : Nat} {code : CallCode} {ns : List PropKey} {vs : List Tm}
     {P : String → Prop} (hnd : ns.Nodup) (hlen : ns.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
-    (hP : ∀ f, P f → ∃ i, ∃ hi : i < ns.length, ns[i] = .str f ∧ ∀ v, vs[i]? = some v → FreshIfStore b v)
+    (hP : ∀ f, P f → ∃ i, ∃ hi : i < ns.length, ns[i] = .str f ∧ ∀ v, vs[i]? = some v → FreshIfSpine b v)
     (hsafe : Safe Ξ T n W h (.makeAt code ns vs)) :
     HeapObservations.SafePostExc Ξ T (fun h' v => ∀ f, P f → FieldFresh b h' v f) (fun _ => True)
       n W h (.makeAt code ns vs) := by

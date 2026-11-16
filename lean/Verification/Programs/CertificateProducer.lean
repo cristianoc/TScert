@@ -810,8 +810,8 @@ came from a different context. No execution budget is inspected. -/
         else none
     -- Graph code: its captures at their slots' types, the code the unit's
     -- table checked; the claim or a pool type. A function's (`Rule.funGraph`)
-    -- has a fresh bag; with a rest, each variadic signature's store is at a
-    -- pool type that is its rest store. A class value's (`Rule.ctorGraph`)
+    -- has a fresh bag; with a rest, each variadic signature's spine is at a
+    -- pool type that is its rest spine. A class value's (`Rule.ctorGraph`)
     -- has its receiver slot at a pool type that is exactly `undefined`, what
     -- `new` passes there. A callable object's (`Rule.callableGraph`) has the
     -- bag's initializers, then the captures.
@@ -819,7 +819,7 @@ came from a different context. No execution budget is inspected. -/
       let some slots := ProgramCertificates.varSlots caps | return none
       let some ps := slots.mapM (fun i => (Γ[i]?).map fun C => leaf' i C) | return none
       let arraysOf := fun (S : List (RestArrow (Ty ι))) =>
-        if rest then S.mapM fun p => pool.find? fun R => decide (RestStore G R p.arguments.2) else some []
+        if rest then S.mapM fun p => pool.find? fun R => decide (RestSpine G R p.arguments.2) else some []
       let fresh := ns == [codeField] && inits == [.nul]
       let classFields := ns.head? == some codeField && inits.head? == some .nul
       return (A :: pool).findSearch? fun F => do
@@ -920,7 +920,7 @@ came from a different context. No execution budget is inspected. -/
       let own := match f with | .var i => (Γ[i]?).toList | _ => []
       -- A variadic callee: the receiver at the signature's receiver, the fixed
       -- actuals at its parameters, then the further parts: with a spread, each
-      -- at the element rest's element, or a spread of a pool store type whose
+      -- at the element rest's element, or a spread of a pool spine type whose
       -- elements are; without one, each at its position in the rest's tuple.
       let variadic := fun (candidates : List (Ty ι)) => candidates.findSearch? fun F => do
         (restSigs G F).findSearch? fun ⟨Rt, (Ps, P), B, effect⟩ => do
@@ -935,11 +935,11 @@ came from a different context. No execution budget is inspected. -/
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let eus ← omitted.mapM fun D => recur Γ .undef D
           let flags := parts.map fun a => match a with | .spread _ => true | _ => false
-          -- A rest that is a packed binder takes one spread of the store of
+          -- A rest that is a packed binder takes one spread of the spine of
           -- one of its values, after the fixed actuals.
           if let ([.spread (.readAt key a)], some q) :=
               (parts, P.find? fun l => G.parameterKinds l == some .packed) then
-            if key == CallArguments.arrayStoreField && omitted.isEmpty then
+            if key == CallArguments.arraySpineField && omitted.isEmpty then
               let ea ← ((Γ ++ pool).filter fun C => decide (PackedBy G C q)).findSearch? fun C => recur Γ a C
               let sub ← subtypeUsing G images B A
               let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
@@ -1002,7 +1002,7 @@ came from a different context. No execution budget is inspected. -/
           let all := ns.filterMap fun n => ((Stored.views B ++ V).lookup n).map (n, ·)
           if all.length != ns.length || Stored.views B != stablePart st false all || stablePart st true all != V ||
             !ks.all (fun K => ns.all K.admits) || !st.all ns.contains ||
-            (!st.isEmpty && ns.contains CallArguments.arrayStoreField) then none else do
+            (!st.isEmpty && ns.contains CallArguments.arraySpineField) then none else do
           let ps ← (inits.zip (all.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G images aliases (.node ⟨Γ,t,R⟩ .alloc ps) A
         -- A literal allocated directly at a dictionary, each field an index
@@ -1108,8 +1108,8 @@ came from a different context. No execution budget is inspected. -/
           (A :: pool).findSearch? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
             (checkTreeS G images e).bind fun _ => coerce G images aliases e A
-    -- A literal with spreads: a store type of any length at some element
-    -- type, each plain part at it, and for each spread a pool store type
+    -- A literal with spreads: a spine type of any length at some element
+    -- type, each plain part at it, and for each spread a pool spine type
     -- whose elements it admits.
     | .arrLit inits =>
       let flags := inits.map fun a => match a with | .spread _ => true | _ => false
@@ -1133,7 +1133,7 @@ came from a different context. No execution budget is inspected. -/
         let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .arrLit ps
         (checkTreeS G images e).bind fun _ => coerce G images aliases e A
     | .elemAt a i =>
-      -- A store read through a union of array objects splits the receiver.
+      -- A spine read through a union of array objects splits the receiver.
       let direct := (synthesizedFirst G Γ a pool).findSearch? fun L => do
         let [.list T []] := expand G L | none
         let ea ← recur Γ a L
@@ -1183,14 +1183,14 @@ came from a different context. No execution budget is inspected. -/
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
           (checkTreeS G images e).bind fun _ => coerce G images aliases e A
     | .lenOf a =>
-      let store := (synthesizedFirst G Γ a pool).findSearch? fun L => do
+      let spine := (synthesizedFirst G Γ a pool).findSearch? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findSearch? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
           (checkTreeS G images e).bind fun _ => coerce G images aliases e A
       -- A string's own `length`.
-      return store <|> (stringOperands a).findSearch? fun S => do
+      return spine <|> (stringOperands a).findSearch? fun S => do
         let ea ← recur Γ a S
         (A :: pool).findSearch? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .lenStr [ea]
@@ -2038,7 +2038,7 @@ meets establishes every candidate. -/
   let m := target.mapping
   cs.filter fun t => !(a.indices.any (fun s => HeapKnowledge.indexFollows M m s t) ||
     HeapKnowledge.linearFollows M m a.indices B t || HeapKnowledge.guardFollows M m a.links tags a.indices t ||
-    HeapKnowledge.storeFollows M m a.links a.indices t || HeapKnowledge.guardBodyFollows M m a.indices t)
+    HeapKnowledge.spineFollows M m a.links a.indices t || HeapKnowledge.guardBodyFollows M m a.indices t)
 
 /-- A table by label of the first entry `xs` gives each label below `n`, as
 `List.lookup` finds it. -/
@@ -2047,7 +2047,7 @@ def byLabel {α : Type} (n : Nat) (xs : List (Nat × α)) : Array (Option α) :=
 
 /-- The guarded facts a merge keeps (ARITHMETIC.md, "Guarded clauses", the
 join), of the knowledge `projections` its edges carry, beside `k`: each
-one's guarded atoms, also restated through its read links; and a store
+one's guarded atoms, also restated through its read links; and a spine
 separation one states of an alias of a slot another holds a tag's value in,
 restated of that slot and guarded by its tag (`a === null || y !== a.q`);
 each kept where every edge's knowledge entails it. Search only: each edge is
@@ -2056,13 +2056,13 @@ def joinGuarded (projections : List HeapKnowledge.Knowledge) (k : HeapKnowledge.
     List HeapKnowledge.IndexAtom :=
   let restated := projections.flatMap fun p => p.indices.flatMap fun a =>
     if a.cond.isSome then [] else match a.fact with
-    | .storeApart x q y r =>
+    | .spineApart x q y r =>
       let guardsOf := fun (w : Nat) (mk : Nat → HeapKnowledge.IndexFact) =>
         (HeapLinks.aliases p.links w).flatMap fun z =>
           ([HeapKnowledge.GuardTag.null, .undef].filter fun g =>
             projections.any fun o => HeapKnowledge.guardTags o z [] g).map fun g =>
               ({ fact := .guarded z [] g (mk z) } : HeapKnowledge.IndexAtom)
-      guardsOf x (fun z => .storeApart z q y r) ++ guardsOf y (fun z => .storeApart x q z r)
+      guardsOf x (fun z => .spineApart z q y r) ++ guardsOf y (fun z => .spineApart x q z r)
     | _ => []
   let candidates := (projections.flatMap fun p => HeapKnowledge.lowerGuards p.links p.indices).eraseDups ++
     restated.eraseDups
@@ -2269,7 +2269,7 @@ independent consumer. The search's result, and the candidates it left out. -/
                 -- "Guarded clauses", the join): each one's guarded atoms, also
                 -- restated through its read links, kept where every edge's
                 -- knowledge entails it; each edge is checked again.
-                -- A store separation one predecessor states of an alias of a
+                -- A spine separation one predecessor states of an alias of a
                 -- slot another holds a tag's value in, restated of that slot
                 -- and guarded by its tag (`a === null || y !== a.q`).
                 let guarded := joinGuarded projections k

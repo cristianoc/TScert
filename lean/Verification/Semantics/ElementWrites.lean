@@ -17,8 +17,8 @@ what it states of the two heaps alone.
   (`ExactWrite.taken`, `ElementKind.convert`).
 - **The view-element write** (`Kinds.ViewWrite`, `Kinds.ViewWriteOf`): the
   exit world extends the entry one, the exit heap meets it in both parts,
-  every old location whose role in the entry world is no view store keeps
-  its contents, and a view store's newly listed cells are fresh. On
+  every old location whose role in the entry world is no view spine keeps
+  its contents, and a view spine's newly listed cells are fresh. On
   well-formed states its frame is the action of the effect
   `{all-views: grow}` (`Kinds.ViewWrite.frame_iff`). A call's postcondition
   states it from the call's entry world and heap
@@ -100,17 +100,17 @@ def ElementKind.preFacts (k : ElementKind) : List HeapKnowledge.IndexFact :=
 
 /-- A typed array's element write (`%ByteSet%`, a view's `fill`,
 `copyWithin` and `set`; SOURCE-CONTRACTS.md, "Stated library types"). A
-typed array's elements are its view store's cells, the view store of fixed
+typed array's elements are its view spine's cells, the view spine of fixed
 format and length that its descriptor names, and a write replaces entries of
-the view stores of the typed arrays over the written bytes by fresh cells
+the view spines of the typed arrays over the written bytes by fresh cells
 (`ElementWrite.Holds`). -/
 inductive ElementWrite where
-  | stores
+  | spines
   /-- Besides, a numeric element assignment `b[i] = v` (`%ByteSet%`): the
   write of the element at the typed array's format (`ViewAssign`, the note's
   View-Write for every number and index). -/
   | assign
-  /-- Besides, the element store of the view (the first actual), whose
+  /-- Besides, the element spine of the view (the first actual), whose
   element type is `k`, changed only at the index (the second actual, a safe
   integer below its length), whose entry is a location holding `k`'s
   conversion of the value (the third actual, `ElementKind.convert`): each
@@ -120,7 +120,7 @@ inductive ElementWrite where
   deriving Repr, DecidableEq
 
 /-- The coarse change an element write implies (`ElementWrite.Holds.changes`):
-no object or number altered, every store's length kept. The checker frames
+no object or number altered, every spine's length kept. The checker frames
 facts through it. -/
 def ElementWrite.changes : ElementWrite → HeapKnowledge.Changes
   | _ => ⟨false, false, .length⟩
@@ -162,7 +162,7 @@ of the actuals `args`, a typed array of format `f` (`args[0]`), a number
 (`args[1]`) and the number written (`args[2]`), from `before` to `after`.
 Where the index denotes an integer `i` below the typed array's length (a
 valid index; `-0` denotes `0`; every typed array's length is below `2^53`,
-so a valid index is a safe integer), where its store (`elementsOf`) listed
+so a valid index is a safe integer), where its spine (`elementsOf`) listed
 the entries `ls`, it lists after the write a cell at `i` holding the
 format's conversion of the number (`ViewFormat.conv`; a NaN of `Float64` as a
 NaN, `SameNumber`), and at every other
@@ -172,8 +172,8 @@ def WriteAt (f : ViewFormat) (args : List Tm) (before after : Heap) : Prop :=
   ∀ x ib N, args.getD 2 .undef = .num x → args.getD 1 .undef = .num ib →
     viewLength (args.getD 0 .undef) = some N →
     (∀ i : Nat, SafeIntegers.SafeInt ib i → i < N →
-      ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]?.bind storeEntries = some ls →
-        ∃ ls', after[s]?.bind storeEntries = some ls' ∧
+      ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]?.bind spineEntries = some ls →
+        ∃ ls', after[s]?.bind spineEntries = some ls' ∧
           (∃ l y, ls'[i]? = some (some l) ∧ after[l]? = some (.num y) ∧ SameNumber y (f.conv x)) ∧
           ∀ j, j ≠ i → ∀ l u, ls[j]? = some (some l) → before[l]? = some u →
             ∃ l', ls'[j]? = some (some l') ∧ after[l']? = some u) ∧
@@ -211,13 +211,13 @@ theorem ElementKind.convert_conv {k : ElementKind} {x : UInt64} (hk : k.Takes (.
   cases k <;> rfl
 
 /-- **The exact write at a value `k` takes and a valid index**: the
-designated store lists at the index a cell holding `k`'s conversion of the
+designated spine lists at the index a cell holding `k`'s conversion of the
 value (`ElementKind.convert`, which keeps its integer), and at every other
 index a cell holding what that index's cell held. -/
 theorem ExactWrite.taken {k : ElementKind} {args : List Tm} {before after : Heap}
     (hx : ExactWrite k args before after) (hp : ExactPre k args) :
-    ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]?.bind storeEntries = some ls →
-      ∃ ls' b, ∃ i : Nat, after[s]?.bind storeEntries = some ls' ∧ args.getD 1 .undef = .num b ∧
+    ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]?.bind spineEntries = some ls →
+      ∃ ls' b, ∃ i : Nat, after[s]?.bind spineEntries = some ls' ∧ args.getD 1 .undef = .num b ∧
         SafeIntegers.SafeInt b (i : Int) ∧
         (∀ j, j ≠ i → ∀ l u, ls[j]? = some (some l) → before[l]? = some u →
           ∃ l', ls'[j]? = some (some l') ∧ after[l']? = some u) ∧
@@ -268,7 +268,7 @@ theorem ElementKind.readPath_convert (k : ElementKind) (h : Heap) (v : Tm) (p : 
     | cons _ _ => rfl
     | nil =>
       cases kd <;> simp [HeapKnowledge.readPath, HeapKnowledge.kindValue, HeapKnowledge.lengthOf,
-        HeapKnowledge.viewLengthOf, HeapKnowledge.strLengthOf, Footprints.storeOf, Footprints.fieldsOf, he]
+        HeapKnowledge.viewLengthOf, HeapKnowledge.strLengthOf, Footprints.spineOf, Footprints.fieldsOf, he]
   have hc := k.intValue_convert v
   cases v with
   | num b =>
@@ -303,7 +303,7 @@ theorem ElementKind.convert_negZero :
 
 /-- **What an element write states of the heaps alone**, of a call with
 actuals `args`: its coarse change (`ElementWrite.changes`: no object or
-number altered, every store's length kept), and, where exact, `ExactWrite`
+number altered, every spine's length kept), and, where exact, `ExactWrite`
 and the facts its precondition gives (`ExactPre`). They are consequences
 of the kinded view-element write from a well-formed entry
 (`Kinds.ViewWriteOf.holds`), which the call's postcondition states beside it
@@ -322,7 +322,7 @@ theorem WriteAt.prefix_left {f : ViewFormat} {args : List Tm} {before middle aft
   obtain ⟨hv, hinv⟩ := hx x ib N hxv hb hN
   refine ⟨fun i hi hlt s ls hs hls => ?_, fun h => hprefix.trans (hinv h)⟩
   obtain ⟨t, rfl⟩ := hprefix
-  obtain ⟨ls', hls', hw, hj⟩ := hv i hi hlt s ls hs (HeapKnowledge.storeEntries_extend t hls)
+  obtain ⟨ls', hls', hw, hj⟩ := hv i hi hlt s ls hs (HeapKnowledge.spineEntries_extend t hls)
   exact ⟨ls', hls', hw, fun j hji l u hl hu =>
     hj j hji l u hl (List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1 ▸ hu)⟩
 
@@ -339,9 +339,9 @@ theorem ElementWrite.Holds.prefix_left {w : ElementWrite} {args : List Tm} {befo
   ⟨HeapKnowledge.Changes.Holds.prefix_left hx.1 hprefix, fun k he =>
     ⟨(hx.2.1 k he).1.prefix_left hprefix, (hx.2.1 k he).2⟩, fun he => (hx.2.2 he).prefix_left hprefix⟩
 
-/-- An element write of any actuals keeps what a write of stores does. -/
-theorem ElementWrite.Holds.stores {w : ElementWrite} {args args' : List Tm} {before after : Heap}
-    (h : w.Holds args before after) : ElementWrite.stores.Holds args' before after :=
+/-- An element write of any actuals keeps what a write of spines does. -/
+theorem ElementWrite.Holds.spines {w : ElementWrite} {args args' : List Tm} {before after : Heap}
+    (h : w.Holds args before after) : ElementWrite.spines.Holds args' before after :=
   ⟨by cases w <;> exact h.1, fun _ he => (by cases he), fun he => (by cases he)⟩
 end Verification.CallEffects
 
@@ -355,16 +355,16 @@ exit world `W'` and heap `h'`. The exit world extends the entry one
 truncated to its budget; the exit heap meets the exit world in both parts,
 so its domain is the exit world's, each location has its role's shape and
 its contract's contents, the fresh ones included; every old location whose
-role is no view store keeps its contents; and each cell an old view store
-newly lists is fresh against `h`. The relation constrains every view store,
+role is no view spine keeps its contents; and each cell an old view spine
+newly lists is fresh against `h`. The relation constrains every view spine,
 whichever typed array the call names. -/
 structure ViewWrite {n n' : Nat} (W : WorldT n) (h : Heap) (W' : WorldT n') (h' : Heap) : Prop where
   le : n' ≤ n
   ext : WExt (trunc n' le W) W'
   ok : HeapOk n' W' h'
-  keep : ∀ (l : Nat) (r : Role), roleAt W l = some r → (∀ f N, r ≠ .store (.view f N)) → h'[l]? = h[l]?
-  grow : ∀ (l : Nat) (f : ViewFormat) (N : Nat) (cs cs' : List Nat), roleAt W l = some (.store (.view f N)) →
-    h[l]? = some (Tm.viewStore f cs) → h'[l]? = some (Tm.viewStore f cs') →
+  keep : ∀ (l : Nat) (r : Role), roleAt W l = some r → (∀ f N, r ≠ .spine (.view f N)) → h'[l]? = h[l]?
+  grow : ∀ (l : Nat) (f : ViewFormat) (N : Nat) (cs cs' : List Nat), roleAt W l = some (.spine (.view f N)) →
+    h[l]? = some (Tm.viewSpine f cs) → h'[l]? = some (Tm.viewSpine f cs') →
     ∀ c ∈ cs', c ∈ cs ∨ h.length ≤ c
 
 namespace ViewWrite
@@ -374,16 +374,16 @@ variable {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT n'} {h' : Heap}
 theorem roleAt (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verification.roleAt W l = some r) :
     Verification.roleAt W' l = some r := WExt_roleAt hw.ext (by simpa using hl)
 
-/-- **An ordinary array's store is kept.** -/
-theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Verification.roleAt W l = some (.store .array)) :
+/-- **An ordinary array's spine is kept.** -/
+theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Verification.roleAt W l = some (.spine .array)) :
     h'[l]? = h[l]? := hw.keep l _ hl (fun f N hN => by cases hN)
 
-/-- **An old view store holds a replacement view store of its fixed format
+/-- **An old view spine holds a replacement view spine of its fixed format
 and length, whose cells are element cells of the exit world and locations of
 the exit heap.** -/
-theorem view_store (hw : ViewWrite W h W' h') {l : Nat} {f : ViewFormat} {N : Nat}
-    (hl : Verification.roleAt W l = some (.store (.view f N))) :
-    ∃ cs', h'[l]? = some (Tm.viewStore f cs') ∧ cs'.length = N ∧
+theorem view_spine (hw : ViewWrite W h W' h') {l : Nat} {f : ViewFormat} {N : Nat}
+    (hl : Verification.roleAt W l = some (.spine (.view f N))) :
+    ∃ cs', h'[l]? = some (Tm.viewSpine f cs') ∧ cs'.length = N ∧
       ∀ c ∈ cs', Verification.roleAt W' c = some .elem ∧ c < h'.length := by
   obtain ⟨u, hu, ⟨cs', rfl, hlen⟩, -⟩ := hw.ok.2 l _ (hw.roleAt hl)
   exact ⟨cs', hu, hlen, fun c hc => hw.ok.view_cells hu hc⟩
@@ -394,7 +394,7 @@ theorem fresh (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verification
 
 /-- **The coarse change is a consequence**: from a well-formed entry heap,
 every location holding an object or a number keeps its contents, and every
-store keeps its length (`CallEffects.ElementWrite.changes`). -/
+spine keeps its length (`CallEffects.ElementWrite.changes`). -/
 theorem changes (hw : ViewWrite W h W' h') (hok : HeapOk n W h) (w : CallEffects.ElementWrite) :
     w.changes.Holds h h' := by
   have role_of : ∀ {l : Nat} {v : Val}, h[l]? = some v → ∃ r, Verification.roleAt W l = some r ∧ Shape W r v := by
@@ -415,7 +415,7 @@ theorem changes (hw : ViewWrite W h W' h') (hok : HeapOk n W h) (w : CallEffects
     cases w <;> simp [CallEffects.ElementWrite.changes, HeapKnowledge.Changes.alters] at halt
   · obtain ⟨r, hr, hc, -⟩ := role_of hl
     cases r with
-    | store f =>
+    | spine f =>
       cases f with
       | array => exact ⟨ls, by rw [hw.keeps_array hr, hl], rfl⟩
       | view fm N =>
@@ -431,7 +431,7 @@ exact form the write of the designated typed array's element
 (`CallEffects.ExactWrite`) and the facts its precondition gives
 (`CallEffects.ExactPre`); for an element assignment the write at the typed
 array's format (`CallEffects.ViewAssign`). Exactness constrains the
-designated typed array; every other view store may change. -/
+designated typed array; every other view spine may change. -/
 def ViewWriteOf (w : CallEffects.ElementWrite) (args : List Tm) {n n' : Nat} (W : WorldT n) (h : Heap)
     (W' : WorldT n') (h' : Heap) : Prop :=
   ViewWrite W h W' h' ∧ (∀ k, w = .exact k → CallEffects.ExactWrite k args h h' ∧ CallEffects.ExactPre k args) ∧
@@ -451,8 +451,8 @@ theorem ViewWriteOf.holds {w : CallEffects.ElementWrite} {args : List Tm} {n n' 
 grow}`** (the note *Tolerant frames*, View-Write's effect): from a
 well-formed entry, a transition to a well-formed exit of an extending world
 is a view write exactly when it meets that effect's footprint
-(`Post [(.cls Selector.views, .grow)]`): a location holding no view store
-keeps its contents, and a view store may be replaced by one of its format
+(`Post [(.cls Selector.views, .grow)]`): a location holding no view spine
+keeps its contents, and a view spine may be replaced by one of its format
 and length every cell of which it listed or is fresh (`ViewStep`). The
 environment is any: a class region reads no slot. -/
 theorem ViewWrite.frame_iff {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT n'} {h' : Heap}
@@ -477,12 +477,12 @@ theorem ViewWrite.frame_iff {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT 
       omega
     · obtain ⟨r, hr, hc⟩ := role_of hv
       cases r with
-      | store sf =>
+      | spine sf =>
         cases sf with
         | array => exact ⟨v, by rw [hw.keeps_array hr, hv], .inl rfl⟩
         | view f N =>
           obtain ⟨cs, rfl, hcs⟩ := hc
-          obtain ⟨cs', hcs', hlen', -⟩ := hw.view_store hr
+          obtain ⟨cs', hcs', hlen', -⟩ := hw.view_spine hr
           refine ⟨_, hcs', .inr ⟨_, List.mem_singleton.mpr rfl, ?_, ?_⟩⟩
           · simp [Footprints.Region.mem, hv, Footprints.Selector.selects, contentsCategory,
               Footprints.Selector.has]
@@ -512,7 +512,7 @@ theorem ViewWrite.frame_iff {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT 
       · rw [hv', hv]
       · rw [hcat.category] at hcv
         cases r with
-        | store sf => cases sf with
+        | spine sf => cases sf with
           | array => cases hcv
           | view f N => exact absurd rfl (hne f N)
         | field | cell | elem | identity => cases hcv

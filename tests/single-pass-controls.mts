@@ -39,7 +39,7 @@ import { deferredIdentity } from "../tools/type-term.mts";
 import { cases } from "../pipeline/cases.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
-import type { StatedFrame, StoreRegion } from "../tools/type-graph.mts";
+import type { StatedFrame, SpineRegion } from "../tools/type-graph.mts";
 import { emptyEffect, ordinaryEffect, statedExits } from "../tools/type-graph.mts";
 import { entryRowControl, forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
 
@@ -525,12 +525,12 @@ control("forged fragment: a closure's written precondition removed", async (): P
 /** A function's statement forged in the fragment: `stated` replaced by the
  * exits of a written frame (`statedExits`). */
 type Stated = NonNullable<Ast["functions"][number]["stated"]>;
-/** The store regions a statement's normal frame states. */
-const statedRegions = (stated: Stated): StoreRegion[] => stated.normal.frame.flatMap(({ region, change }) =>
+/** The spine regions a statement's normal frame states. */
+const statedRegions = (stated: Stated): SpineRegion[] => stated.normal.frame.flatMap(({ region, change }) =>
   typeof region === "object" && "path" in region && region.path.key === "[]" && change === "any"
     ? [{ position: region.path.x, path: [...region.path.fields] }] : []);
 function forgedStatement(artifacts: string, name: string, document: string, stated: StatedFrame,
-    expected?: StoreRegion[]): Pass {
+    expected?: SpineRegion[]): Pass {
   const ast = fragmentAst(artifacts);
   const fn = must(ast.functions.find((f) => f.name === name), name);
   if (expected === undefined) assert.equal(fn.stated, null, `${name} states nothing`);
@@ -544,11 +544,11 @@ control("forged fragment: a fresh result stated of an identity function", async 
   const unit = unitOf(fragmentAst(artifacts), "same");
   honest("stated-fresh", unit);
   refused(forgedStatement(artifacts, "same", "forged-fresh-fragment",
-    { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true, regions: [] }), unit, "forged");
+    { footprint: { value: "any", spine: "any" }, onThrow: false, fresh: true, regions: [] }), unit, "forged");
   say("forged fresh result: an identity function's statement forged to promise a fresh result, refused at its unit");
 });
 
-control("forged fragment: store regions moved", async (): Promise<void> => {
+control("forged fragment: spine regions moved", async (): Promise<void> => {
   const artifacts = run("stated-argument-store");
   const ast = fragmentAst(artifacts);
   const trim = unitOf(ast, "trim"), shrink = unitOf(ast, "shrink");
@@ -556,13 +556,13 @@ control("forged fragment: store regions moved", async (): Promise<void> => {
   honest("stated-argument-store", trim, unforced);
   honest("stated-argument-store", shrink, unforced);
   refused(forgedStatement(artifacts, "trim", "forged-region-fragment",
-    { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] },
+    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] },
     [{ position: 2, path: [] }]), trim, "trim's region at n");
   const ownAst = fragmentAst(artifacts);
   must(ownAst.functions.find((f) => f.name === "shrink"), "shrink").stated =
-    statedExits({ footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [] }] });
+    statedExits({ footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [] }] });
   refused(pass(forged(artifacts, "forged-receiver-region-fragment", ownAst)), shrink, "shrink's region at the receiver");
-  say("forged store regions: a region moved to another parameter, and one at an undeclared receiver, each refused at its unit");
+  say("forged spine regions: a region moved to another parameter, and one at an undeclared receiver, each refused at its unit");
 });
 
 control("forged fragment: path regions moved", async (): Promise<void> => {
@@ -573,9 +573,9 @@ control("forged fragment: path regions moved", async (): Promise<void> => {
     { document: "forged-path-field-fragment", path: ["closed"] }];
   for (const { document, path } of moved)
     refused(forgedStatement(artifacts, "readRuns", document,
-      { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path }] },
+      { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path }] },
       [{ position: 1, path: ["openBrackets"] }]), unit, document);
-  say("forged path regions: a path region moved to its record's own store, and one through a field the type does not state, refused at the unit");
+  say("forged path regions: a path region moved to its record's own spine, and one through a field the type does not state, refused at the unit");
 });
 
 control("forged fragment: rebased regions", async (): Promise<void> => {
@@ -583,24 +583,24 @@ control("forged fragment: rebased regions", async (): Promise<void> => {
   const scan = unitOf(fragmentAst(steps), "scan");
   honest("stated-region-steps", scan);
   refused(forgedStatement(steps, "scan", "forged-rebased-fragment",
-    { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] },
+    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] },
     [{ position: 1, path: ["open"] }]), scan, "scan's region at its record");
   const nullable = run("stated-region-nullable-write");
   const mark = unitOf(fragmentAst(nullable), "mark");
   honest("stated-region-nullable-write", mark);
   refused(forgedStatement(nullable, "mark", "forged-witness-fragment",
-    { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 2, path: ["open"] }] },
+    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 2, path: ["open"] }] },
     [{ position: 1, path: ["open"] }]), mark, "mark's region through a number");
   say("forged rebasing: a caller's region moved from the field's array to its record, and a region through a number parameter, each refused at its unit");
 });
 
-control("forged fragment: a fresh result whose store a caller pops", async (): Promise<void> => {
+control("forged fragment: a fresh result whose spine a caller pops", async (): Promise<void> => {
   const artifacts = run("invalid-stated-region-fresh-call");
   const unit = unitOf(fragmentAst(artifacts), "same");
   honest("invalid-stated-region-fresh-call", unit);
   refused(forgedStatement(artifacts, "same", "forged-fresh-call-fragment",
-    { footprint: { value: "any", store: "any" }, onThrow: false, fresh: true, regions: [] }), unit, "forged");
-  say("forged fresh store: a fresh result forged onto a function returning its parameter refused at the function's unit");
+    { footprint: { value: "any", spine: "any" }, onThrow: false, fresh: true, regions: [] }), unit, "forged");
+  say("forged fresh spine: a fresh result forged onto a function returning its parameter refused at the function's unit");
 });
 
 control("forged fragment: an old array at a slot's join", async (): Promise<void> => {
@@ -1094,7 +1094,7 @@ control("forged declarations: a generic member's result", async (): Promise<void
 control("forged declarations: a typed array's view", async (): Promise<void> => {
   // A typed array's type is a view clause, its format stated by the
   // declaration's `view` and its members methods alone; the value is a
-  // descriptor and its view store. A record of the source given a `view`
+  // descriptor and its view spine. A record of the source given a `view`
   // (a user record shaped like a typed array) refuses the unit reading it;
   // the untampered document is accepted.
   const artifacts = run("typed-array-length-across-field-write");
@@ -1112,13 +1112,13 @@ control("forged declarations: a typed array's view", async (): Promise<void> => 
   const shaped = pass(forged(artifacts, "forged-record-view", document(text.replace(cursor, '$1"view":"uint8",'))));
   refused(shaped, marked, "a record of the source given a view",
     /the declarations required by this unit cannot be interpreted: Cursor: a typed array's type states its methods alone/);
-  // A typed array's declaration given an array-store slot `[]`: a typed
-  // array has one store, its descriptor's, so the declaration is refused.
+  // A typed array's declaration given an array-spine slot `[]`: a typed
+  // array has one spine, its descriptor's, so the declaration is refused.
   const uint8 = /("name":"Uint8Array","span":\[0,0\]\},"parameters":\[\],"bases":\[\],"expression":\{"k":"object","fields":\[)/;
   assert.ok(uint8.test(text), "Uint8Array's definition");
   const slot = '{"name":"[]","optional":false,"readonly":false,"type":{"k":"atom","name":"number","span":[0,0]},"span":[0,0]},';
-  const stored = pass(forged(artifacts, "forged-view-store-slot", document(text.replace(uint8, `$1${slot}`))));
-  refused(stored, marked, "a typed array given an array-store slot",
+  const stored = pass(forged(artifacts, "forged-view-spine-slot", document(text.replace(uint8, `$1${slot}`))));
+  refused(stored, marked, "a typed array given an array-spine slot",
     /Uint8Array: a declared member cannot use the model's internal key/);
   say("forged declarations: a record of the source given a view, and a typed array given `[]`, refused at their declarations");
 });
@@ -1202,7 +1202,7 @@ control("forged fragment: an array owning toJSON", async (): Promise<void> => {
 });
 
 /** A statement keeping every location, on a throw too: `Modifies<{}, T>`. */
-const emptyStatement: StatedFrame = { footprint: { value: "keep", store: "keep" }, onThrow: false, fresh: false, regions: [] };
+const emptyStatement: StatedFrame = { footprint: { value: "keep", spine: "keep" }, onThrow: false, fresh: false, regions: [] };
 
 control("forged fragment: a generic closure's statement", async (): Promise<void> => {
   const artifacts = run("generic-function-type-annotation");
@@ -1860,20 +1860,20 @@ control("forged declarations: stable optional members' keys dropped", async (): 
 // ---------------------------------------------------------------------------
 // The stage store on the route: in a fresh store of the control's own.
 
-control("forged fragment: a store separation removed", async (): Promise<void> => {
-  // A store separation forged away in the fragment: `measure`'s precondition
+control("forged fragment: a spine separation removed", async (): Promise<void> => {
+  // A spine separation forged away in the fragment: `measure`'s precondition
   // `flags !== runs.openBrackets` removed, so `i < flags.length` is not kept
-  // across `readRuns`, whose frame may change `runs.openBrackets`'s store,
+  // across `readRuns`, whose frame may change `runs.openBrackets`'s spine,
   // and the read `flags[i]` is refused.
   const artifacts = run("invalid-stated-alias");
   const ast = fragmentAst(artifacts);
   const measure = must(ast.functions.find((f) => f.name === "measure"), "measure");
   const unit = unitOf(ast, "measure");
   honest("invalid-stated-alias", unit);
-  assert.ok(measure.requires.some((f) => "storeApart" in f), "measure states its separation");
+  assert.ok(measure.requires.some((f) => "spineApart" in f), "measure states its separation");
   measure.requires = [];
   refused(pass(forged(artifacts, "forged-unseparated", ast)), unit, "forged");
-  say("store separations: the fragment without the callee's separation refused at the read it kept");
+  say("spine separations: the fragment without the callee's separation refused at the read it kept");
 });
 
 // ---------------------------------------------------------------------------
@@ -1985,12 +1985,12 @@ control("forged effect: documents outside the grammar", async (): Promise<void> 
   const functions = Array.isArray(statedDocument.functions) ? statedDocument.functions : [];
   const same: unknown = functions.find((f: unknown) => isObject(f) && f.name === "same");
   assert.ok(isObject(same) && isObject(same.stated) === false, "same states nothing");
-  same.stated = statedExits({ footprint: { value: "any", store: "any" }, onThrow: false, fresh: false, regions: [] });
+  same.stated = statedExits({ footprint: { value: "any", spine: "any" }, onThrow: false, fresh: false, regions: [] });
   const exits: unknown = same.stated;
   assert.ok(isObject(exits) && isObject(exits.normal) && Array.isArray(exits.normal.ensures));
   exits.normal.ensures.push("truth");
   refusedAtRead(forged(stated, "statement-outside-its-form", statedDocument), unitOf(fragmentAst(stated), "same"),
-    "a statement stating a postcondition", /a statement states a closed frame with store regions, a throw within it or none, and a fresh result/);
+    "a statement stating a postcondition", /a statement states a closed frame with spine regions, a throw within it or none, and a fresh result/);
   say(`forged effect: ${forgeries.length} effects outside the grammar and a statement outside its form refused at their read`);
 });
 /** An effect's normal postconditions. */
@@ -2039,12 +2039,12 @@ control("forged effect: a rest closure's statement past its scope or through a p
   // accepted.
   const file = "method-effect-rest";
   const artifacts = run(file);
-  const restate = (regions: StoreRegion[]): Record<string, unknown> => {
+  const restate = (regions: SpineRegion[]): Record<string, unknown> => {
     const document = fragmentJson(artifacts);
     let stated = 0;
     visitAll(document, (node) => {
       if (node.k !== "lambda" || !isObject(node.stated)) return;
-      node.stated = statedExits({ footprint: { value: "keep", store: "keep" }, onThrow: false, fresh: false, regions });
+      node.stated = statedExits({ footprint: { value: "keep", spine: "keep" }, onThrow: false, fresh: false, regions });
       stated++;
     });
     assert.equal(stated, 1, "sum's statement");
@@ -2053,8 +2053,8 @@ control("forged effect: a rest closure's statement past its scope or through a p
   const honestRun = pass(forged(artifacts, "rest-body-restated", restate([])));
   const units = [...honestRun.verdicts].filter(([, v]) => v.closed).map(([u]) => u);
   assert.ok(units.length > 0 && [...honestRun.verdicts.values()].every((v) => v.closed), `restated: ${words(honestRun).slice(0, 1500)}`);
-  // Regions at the receiver, in scope at every arity: its own store, read
-  // at a location, is accepted; the store of its field `f`, read through
+  // Regions at the receiver, in scope at every arity: its own spine, read
+  // at a location, is accepted; the spine of its field `f`, read through
   // the path, is refused at the code's obligations, where the two differ
   // only in reading the heap at a location (`framesAtLocation`).
   const own = pass(forged(artifacts, "rest-body-own-region", restate([{ position: 0, path: [] }])));
@@ -2064,7 +2064,7 @@ control("forged effect: a rest closure's statement past its scope or through a p
   refused(pass(forged(artifacts, "rest-body-far-region", restate([{ position: 5, path: [] }]))), "init",
     "a region past the arity", /single pass: refused: code 0: its signature/);
   const p = pass(forged(artifacts, "rest-body-path-region", restate([{ position: 0, path: ["f"] }])));
-  refused(p, "init", "a rest body stated with a store region", /single pass: refused: code 0: its signature/);
+  refused(p, "init", "a rest body stated with a spine region", /single pass: refused: code 0: its signature/);
 
   say(`forged effect: a rest closure's statement re-stated accepted (${units.join(", ")}), with a region at a location accepted, with one past its arity or through a path refused at its code`);
 });

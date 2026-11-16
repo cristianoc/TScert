@@ -143,7 +143,7 @@ theorem select_value_eq {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     have h := ht p rfl
     simp only [checkStepResult]
     rcases allocationSlots j.term with _ | s₁ <;> rcases mergeSlots j.term with _ | ⟨d, a, b⟩ <;>
-      rcases storeSlots j.term with _ | s₃ <;>
+      rcases spineSlots j.term with _ | s₃ <;>
       simp only [checkedOutput_value_tree, treeChecked_accepted h]
   | written i v R p =>
     have h := ht p rfl
@@ -182,7 +182,7 @@ theorem select_call_none {G : NormalGraph ι} {images : InstanceImageCheck G} {j
     all_goals first
       | exact absurd rfl (hno _)
       | simp [checkStepResult, checkedOutput_value_tree, readSlot, writeSlots, allocationSlots, mergeSlots,
-          storeSlots, Purity.pureTerm, Purity.inspectTerm, isVal, CheckResult.value_bind_const,
+          spineSlots, Purity.pureTerm, Purity.inspectTerm, isVal, CheckResult.value_bind_const,
           CheckResult.fromOption, CheckResult.value_failure]
 
 /-- **What `select` at the base and the pass's tree check give**: `run`'s
@@ -671,7 +671,7 @@ theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
     (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 /-- **A step the pass frames, at either checker's selected output**: normal
-exit within `{values: keep, stores: keep}` with the output, throw within
+exit within `{values: keep, spines: keep}` with the output, throw within
 `top`. -/
 theorem preserving_judgment_pass {pc : SinglePass.PassChecker G images}
     {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}

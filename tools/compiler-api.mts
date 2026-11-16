@@ -268,7 +268,7 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * An entry marked `fresh` returns an array its call allocates (audited,
  * COMPILER-API.md, "Audits of sync members"), which its request reading
  * states (`requestReading`). An entry marked `request` carries the audited
- * normal-return store-growth effect. An entry marked `table` returns a native `Map`
+ * normal-return spine-growth effect. An entry marked `table` returns a native `Map`
  * whose keys are strings the package produced (audited, COMPILER-API.md,
  * "Audits of sync members"), which `tableReading` reads at `string` keys.
  * A class the contract lists no view for has none: no member. The members
@@ -381,7 +381,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
 /** The stated type guards (T7, COMPILER-API.md, "Stated type guards"): the
  * sync API's predicates over `Type` a unit narrows by, each read at its
  * reviewed declaration (`dist/api/sync/api.d.ts`), its plain signature and
- * its promise about its argument, both changing no value and no store. Its
+ * its promise about its argument, both changing no value and no spine. Its
  * implementation (`dist/api/sync/api.js`), which `tests/compiler-api.mts`
  * compares with the function Node loads, reads its argument's own data
  * field `flags` (`isTypeReference`, through the module's `isObjectType`,
@@ -410,15 +410,15 @@ export const statedGuards: readonly { name: string; text: string; implementation
 ];
 
 /** The reading of a view member explicitly marked `request`: each signature
- * at `{value: any, store: grow}`, on normal return only. An unmarked member
+ * at `{value: any, spine: grow}`, on normal return only. An unmarked member
  * retains its declared effects, including methods whose serialization runs
  * getters or `toJSON` of program objects. A `fresh` entry additionally states
- * that an array result's store is allocated by the call. */
+ * that an array result's spine is allocated by the call. */
 export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
-  const effect: CallEffect = footprintEffect({ value: "any", store: "grow" });
+  const effect: CallEffect = footprintEffect({ value: "any", spine: "grow" });
   const at = (t: TypeTerm): TypeTerm =>
     t.k === "function" && t.effect.promise === null
-      ? { ...t, effect: footprintEffect({ value: "any", store: "grow" }, { fresh: fresh && t.result.k === "array" }) }
+      ? { ...t, effect: footprintEffect({ value: "any", spine: "grow" }, { fresh: fresh && t.result.k === "array" }) }
     : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
     : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
     : t;

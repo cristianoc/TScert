@@ -4,7 +4,7 @@ import Verification.Types.StoreMapsCheck
 
 Every arrow, method and constructor signature of a graph reads the graph's
 exception family (`excOf`: `builtinExc` at the built-in values), which is the
-built-ins' array invariant where the graph states built-ins and the store
+built-ins' array invariant where the graph states built-ins and the spine
 being a list where it states none. A store map relates the two graphs'
 built-ins, so:
 

@@ -251,18 +251,18 @@ theorem RaisesPost.step {R n h t h' t'} (hp : RaisesPost R (n+1) h t)
 theorem RaisesPost.raised {R n h t v} (hp : RaisesPost R (n+1) h t) (hr : Raises t v) : R h :=
   hp 0 h t v (by omega) .refl hr
 
-/-! ## Fresh stores along a graph
+/-! ## Fresh spines along a graph
 
-A run within a footprint may change a store beyond it where that store was
+A run within a footprint may change a spine beyond it where that spine was
 allocated during the run: the old locations are those below where the run
-started, and a store allocated later is none of them. A node's facts name the
-slots of its entry whose values have such a store; each edge carries them,
+started, and a spine allocated later is none of them. A node's facts name the
+slots of its entry whose values have such a spine; each edge carries them,
 and a node's value adds to them where it is fresh. The facts read no heap:
 an object's fields are fixed at its allocation. -/
 
 open Footprints (FreshAt)
 
-/-- The values at the slots `F` have an array store allocated at or after `b`. -/
+/-- The values at the slots `F` have an array spine allocated at or after `b`. -/
 def FreshOk (F : List Nat) (b : Nat) (ρ : Env) : Prop := ∀ i ∈ F, FreshAt b (ρ i)
 
 /-- A label's facts: none past the list. -/
@@ -393,20 +393,20 @@ def callFresh [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck
     decide ((ProgramCertificates.claim c.expression).term = t) &&
     ProgramCertificates.checkTreeUsing G images c.expression (sums := sums)
 
-/-- A call whose receiver is a slot holding a fresh store. -/
+/-- A call whose receiver is a slot holding a fresh spine. -/
 def receiverFresh (F : List Nat) : Tm → Bool
   | .invoke _ (.var j) _ => F.contains j
   | _ => false
 
 /-- The call positions, from `i`, of actuals that are slots holding a fresh
-store. -/
+spine. -/
 def freshActuals (F : List Nat) : List Tm → Nat → List Nat
   | [], _ => []
   | a :: as, i => (if varFresh F a then [i] else []) ++ freshActuals F as (i + 1)
 
 /-- **The fresh call positions** of a call or a construction: the receiver
 (`0`) and each actual (`i + 1` for the `i`-th) that is a slot holding a
-fresh store. -/
+fresh spine. -/
 def freshPositions (F : List Nat) : Tm → List Nat
   | .invoke _ r args => (if varFresh F r then [0] else []) ++ freshActuals F args 1
   | .construct _ args => freshActuals F args 1
@@ -445,7 +445,7 @@ theorem freshPositions_zero (F : List Nat) (t : Tm) : (freshPositions F t).conta
     cases r <;> simp [varFresh]
   case construct f args => exact hnot args
 
-/-- **The fresh positions hold fresh stores** at the call's positions
+/-- **The fresh positions hold fresh spines** at the call's positions
 (`callEnv`), where the slots `F` do. -/
 theorem freshPositions_sound {F : List Nat} {b : Nat} {ρ : Env} {t : Tm} (hF : FreshOk F b ρ) :
     Footprints.FreshPositions (freshPositions F t)
@@ -481,7 +481,7 @@ theorem freshPositions_sound {F : List Nat} {b : Nat} {ρ : Env} {t : Tm} (hF : 
 /-- **A selected call's local effect**: the closed bound below the
 invocation's mark of its signature's normal-exit frame (`Effect.frame`),
 each entry instantiated at the call's positions, an entry on a fresh
-position's store discharged (`Footprint.boundBelow`). It reads no bound. -/
+position's spine discharged (`Footprint.boundBelow`). It reads no bound. -/
 def selectedGrades (F : List Nat) (e : ProgramCertificates.Evidence ι) : List Footprints.Closed :=
   if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
     | some eff => [Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term) eff.frame]
@@ -517,7 +517,7 @@ theorem selectedWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {
 /-- **A selected call's local effect on a throw**: the closed bound below
 the invocation's mark of its signature's exceptional-exit frame (the note's
 rule Call at the exceptional exit, `Effect.summary`), each entry
-instantiated at the call's positions, an entry on a fresh position's store
+instantiated at the call's positions, an entry on a fresh position's spine
 discharged (`Footprint.boundBelow`); a throw of the call's evaluation
 keeps the heap (`ExpressionEffects.selected_sound_exc`). It reads no
 bound. -/
@@ -578,8 +578,8 @@ theorem selectedThrowWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : N
     (freshPositions_sound hF)).mono hle
 
 /-- A node's run is within a closed bound `Φ` on the locations below `b`, on
-normal return, from the heap it starts in, where the slots `F` hold stores
-allocated at or after `b`; and its value has such a store where `out`. Where
+normal return, from the heap it starts in, where the slots `F` hold spines
+allocated at or after `b`; and its value has such a spine where `out`. Where
 `thr`, the heap a throw leaves is within the bound too. The precondition is
 the same point context and knowledge that ordinary graph checking
 established. -/
@@ -1265,7 +1265,7 @@ theorem writeWithinAt_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprin
 /-- **A node the bound check accepts is within the bound** on the locations
 below where the invocation started: an inspection, which preserves the heap,
 a typed write of a field holding a value, or a call at a selected signature
-within the bound, its receiver's store, where the signature excepts it, fresh;
+within the bound, its receiver's spine, where the signature excepts it, fresh;
 each beside the node's ordinary safety. Its value is fresh where it copies a
 fresh slot or a call's signature states a fresh result. -/
 theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
@@ -1579,18 +1579,18 @@ or its signature's promise about the parameter it names, at that parameter's
 place in the frame. -/
 def _root_.Verification.ProgramTyping.CodeEntry.goal (c : CodeEntry ι) : Goal ι :=
   match c.row.effect.promise with
-  | some (.guards p) => .guards c.row.result (frameOffset c.store + p)
-  | some (.asserts p) => .asserts c.row.result (frameOffset c.store + p)
+  | some (.guards p) => .guards c.row.result (frameOffset c.spine + p)
+  | some (.asserts p) => .asserts c.row.result (frameOffset c.spine + p)
   | none => .plain c.row.result
 
 /-- What code assumes of its frame at entry: its signature's precondition on
 the call's values, at the frame's slots, which are the call's positions for
 code collecting no rest (`TypingBasics.PreAt`). -/
 def codeEntryIndices (c : CodeEntry ι) : List HeapKnowledge.IndexAtom :=
-  if c.store = none then c.row.effect.pre.map fun F => { fact := F } else []
+  if c.spine = none then c.row.effect.pre.map fun F => { fact := F } else []
 
 theorem codeEntryIndices_holds {c : CodeEntry ι} {L : List Tm} {h : Heap}
-    (hp : PreAt c.row.effect c.store L h) : HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ (codeEntryIndices c) (envOf L .nul) h := by
+    (hp : PreAt c.row.effect c.spine L h) : HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ (codeEntryIndices c) (envOf L .nul) h := by
   intro a ha _
   unfold codeEntryIndices at ha
   split at ha
@@ -1606,7 +1606,7 @@ describes, against an earlier table. -/
     (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   (effectCheckedResult G images sums c C).bind fun _ =>
   checkEntryResult (sums := sums) (entryIndices := codeEntryIndices c) G images c.goal (program c.exprs c.conts)
-    C c.start (codeFrame c.arity c.row c.captures c.store) (admits table)
+    C c.start (codeFrame c.arity c.row c.captures c.spine) (admits table)
 
 /-- Check codes in order, each against the table of those before it. -/
 @[nospecialize] def extendTableResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)

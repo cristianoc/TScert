@@ -114,8 +114,8 @@ inductive Prepare : Heap → Frame → Heap → Frame → Prop where
   | recv : isVal f = true → Step h r h' r' → Prepare h ⟨f,r,args⟩ h' ⟨f,r',args⟩
   | args : isVal f = true → isVal r = true → ArgStep h args h' args' →
       Prepare h ⟨f,r,args⟩ h' ⟨f,r,args'⟩
-  /-- A spread whose store is ready, after a completed prefix, becomes the
-  store's elements; the heap is only read. -/
+  /-- A spread whose spine is ready, after a completed prefix, becomes the
+  spine's elements; the heap is only read. -/
   | splice {pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} :
       isVal f = true → isVal r = true → args = pre ++ .spread (.arr ls) :: post → Values pre →
       readElems h ls = some vs → Prepare h ⟨f,r,args⟩ h ⟨f,r,pre ++ vs ++ post⟩
@@ -187,7 +187,7 @@ theorem Step.constructArgs {h h' : Heap} {f : Tm} {args args' : List Tm} (hf : i
   obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
   exact .constructArg hf hg hb hstep
 
-/-- A store's initializers reduce exactly as actual arguments do. -/
+/-- A spine's initializers reduce exactly as actual arguments do. -/
 theorem Step.arrArgs {h h' : Heap} {args args' : List Tm}
     (hs : ArgStep h args h' args') : Step h (.arrLit args) h' (.arrLit args') := by
   obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs

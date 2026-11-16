@@ -307,10 +307,10 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | throw "internal flow error: missing iteration intrinsic"
       let A ← exprType fc iterable
       let N ← exprType fc (.var pos iterate)
-      -- An iterator whose step changes only its own locations (its normal
+      -- An iterator whose step changes only its field locations (its normal
       -- exit's frame, `PromiseCalls.ownOnly`, the premise of `call-own`) is a
       -- fresh object, separated from the fields of the slots below it, which
-      -- its own locations differ from; the edge from the intrinsic's call
+      -- its field locations differ from; the edge from the intrinsic's call
       -- establishes that separation where its effect states a fresh object.
       let fresh := match PositiveRules.expand (SourceTypes.graph (← table)) N with
         | [.arrs [⟨_, _, _, effect⟩] _] => PromiseCalls.ownOnly effect.schema.normal.frame
@@ -351,7 +351,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   let separation ← separationAt scope Γ
   let links ← witnessLinks fc node.source.1 scope
   -- A bound: the index binding's value is an array index at most the length
-  -- of the array binding's store, below it where strict (PROGRAM-TYPING.md,
+  -- of the array binding's spine, below it where strict (PROGRAM-TYPING.md,
   -- "Writes at a checked index"). Both name value bindings; a claim naming
   -- any other is refused rather than dropped.
   let bounds ← ((fc.entryBounds.lookup node.source.1).getD []).mapM fun (array, index, strict) =>
@@ -406,23 +406,23 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         s!"a region fact names '{name}', which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
         s!"a region fact names '{other}', which is no value binding")
-  -- The store separations the producer proposes (ARITHMETIC.md, "Store
+  -- The spine separations the producer proposes (ARITHMETIC.md, "Spine
   -- separation"): both sides paths from value bindings, each guarded by its
   -- guards, the first outermost, each a value binding's path.
-  let storesApart ← ((fc.entryStoresApart.lookup node.source.1).getD []).mapM fun (guards, (name, p), (other, q)) =>
+  let spinesApart ← ((fc.entrySpinesApart.lookup node.source.1).getD []).mapM fun (guards, (name, p), (other, q)) =>
     match valueSlot scope name, valueSlot scope other with
     | some x, some y => do
       let guards ← guards.mapM fun (g, path, tag) => match valueSlot scope g with
         | some z => pure (z, path, tag)
         | none => do throw (locatedRefusal (← table) node.source .entryClaim
-            s!"a store separation's guard names '{g}', which is no value binding")
+            s!"a spine separation's guard names '{g}', which is no value binding")
       let fact := guards.foldr (fun g B => HeapKnowledge.IndexFact.guarded g.1 g.2.1 g.2.2 B)
-        (HeapKnowledge.IndexFact.storeApart x p y q)
+        (HeapKnowledge.IndexFact.spineApart x p y q)
       pure ({ fact } : HeapKnowledge.IndexAtom)
     | none, _ => do throw (locatedRefusal (← table) node.source .entryClaim
-        s!"a store separation names '{name}', which is no value binding")
+        s!"a spine separation names '{name}', which is no value binding")
     | _, none => do throw (locatedRefusal (← table) node.source .entryClaim
-        s!"a store separation names '{other}', which is no value binding")
+        s!"a spine separation names '{other}', which is no value binding")
   -- A loop's invariant (ARITHMETIC.md, "Loop invariants"): at its head,
   -- each fact rooted at the value bindings or initialized cells it names, which every edge
   -- into the head establishes.
@@ -443,7 +443,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- cell's value term stated an integer and bounded by `2^53 - 1`), and an
   -- atom the invariant states is required.
   let invariant := invariant.eraseDups
-  let candidates := (bounds ++ linear ++ quantified ++ apart ++ storesApart).eraseDups.filter
+  let candidates := (bounds ++ linear ++ quantified ++ apart ++ spinesApart).eraseDups.filter
     (!invariant.contains ·)
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty || !invariant.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, [], invariant⟩

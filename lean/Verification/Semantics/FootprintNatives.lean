@@ -5,30 +5,30 @@ import Verification.Semantics.FootprintStability
 Each native's footprint is a footprint of the step-1 vocabulary, never a rule
 of its own. This module proves what the native's specification steps decide
 about it, where the model has those steps: the array mutators. An array
-native writes its store and the contents of element locations, and allocates
-fresh ones: on the store's list of element locations it performs `Set` of an
+native writes its spine and the contents of element locations, and allocates
+fresh ones: on the spine's list of element locations it performs `Set` of an
 index (a present index keeps its location, whose contents change; an absent
 one gets a fresh location), `Delete` of an index, and a length change. The
 mutators are those steps in the order their specification gives
 (ECMA-262 `push`, `pop`, `shift`, `unshift`, `reverse`, and `sort`'s
-writeback). The heap side, that a native changes nothing but its store and
+writeback). The heap side, that a native changes nothing but its spine and
 element contents, is the audited part of each native's row; `array_native_post`
-turns it, with the proved store relation, into the footprint's postcondition.
+turns it, with the proved spine relation, into the footprint's postcondition.
 
 `map` relies on density between callbacks: `rely_chain` is the one framing
 mechanism applied to a sequence of steps, and `denseCheck_stable` shows the
 closed check of `map`'s bound to be an instance of the stability check. -/
 namespace Verification.Footprints
 
-/-! ## Stores and their steps -/
+/-! ## Spines and their steps -/
 
-/-- Whether index `i` of a store is present. -/
+/-- Whether index `i` of a spine is present. -/
 def present (ls : List (Option Nat)) (i : Nat) : Bool :=
   match ls[i]? with
   | some (some _) => true
   | _ => false
 
-/-- A store's element locations and the next location an allocation takes. -/
+/-- A spine's element locations and the next location an allocation takes. -/
 structure Arr where
   ls : List (Option Nat)
   next : Nat
@@ -118,7 +118,7 @@ theorem present_setLength {a : Arr} {n i : Nat} (hi : i < n) :
   · simp [present, h]
   · simp [present, h1, h2]
 
-/-- **Locations.** Every step keeps the store's element locations among the
+/-- **Locations.** Every step keeps the spine's element locations among the
 original ones and fresh ones, at least `b`. -/
 def Arr.Within (b : Nat) (orig : List (Option Nat)) (a : Arr) : Prop :=
   b ≤ a.next ∧ ∀ l, some l ∈ a.ls → some l ∈ orig ∨ b ≤ l
@@ -153,8 +153,8 @@ theorem Arr.Within.setLength {b orig} {a : Arr} (h : a.Within b orig) (n : Nat) 
     · exact h.2 l hl
     · simp [List.mem_replicate] at hl
 
-/-- A store change within the original and fresh locations that keeps every
-dense prefix, and leaves the store no shorter and within `maxArrayLength` where
+/-- A spine change within the original and fresh locations that keeps every
+dense prefix, and leaves the spine no shorter and within `maxArrayLength` where
 it was, is `grow`. -/
 theorem grow_of_steps {b : Nat} {orig : List (Option Nat)} {a : Arr} (hw : a.Within b orig)
     (hd : ∀ n, DensePrefix n orig → DensePrefix n a.ls) (hg : LengthGrows orig a.ls) :
@@ -312,7 +312,7 @@ private theorem foldl_delete_present (c : Nat) : ∀ (xs : List Nat) (a : Arr) (
       (by rw [present_delete_other _ (by omega)]; exact h)
 
 /-- **`sort`'s writeback leaves every index below `itemCount` present**,
-whatever the store was before it. -/
+whatever the spine was before it. -/
 theorem Arr.writeback_dense (c len : Nat) (a : Arr) : DensePrefix c (a.writeback c len).ls := by
   rw [dense_iff_present]
   intro i hi
@@ -354,7 +354,7 @@ theorem sort_dense {ls : List (Option Nat)} {n : Nat} (hd : DensePrefix n ls) (m
 
 /-! ## Lengths of the mutators -/
 
-/-- `Set(O, k, v)` leaves the store no shorter, and at most `k + 1` long
+/-- `Set(O, k, v)` leaves the spine no shorter, and at most `k + 1` long
 where it was shorter. -/
 theorem Arr.set_length (a : Arr) (k : Nat) :
     a.ls.length ≤ (a.set k).ls.length ∧ (a.set k).ls.length ≤ max a.ls.length (k + 1) := by
@@ -381,7 +381,7 @@ private theorem foldl_length {lo hi : Nat} {f : Arr → Nat → Arr} :
     foldl_length xs (fun a k hk => hf a k (List.mem_cons_of_mem _ hk)) (f a x) h.1 h.2
 
 /-- `sort`'s write-back sets the first `n` indices and deletes the rest: the
-store no shorter, and at most `n` long where it was shorter. -/
+spine no shorter, and at most `n` long where it was shorter. -/
 theorem Arr.writeback_length (n len : Nat) (a : Arr) :
     a.ls.length ≤ (a.writeback n len).ls.length ∧ (a.writeback n len).ls.length ≤ max a.ls.length n := by
   unfold Arr.writeback
@@ -397,8 +397,8 @@ theorem itemCount_le (ls : List (Option Nat)) (len : Nat) : itemCount ls len ≤
   unfold itemCount
   exact Nat.le_trans (List.length_filter_le _ _) (by simp; omega)
 
-/-- `sort` grows its store over the whole call when the comparator's own
-store changes keep the store's locations among the entry's and fresh ones,
+/-- `sort` grows its spine over the whole call when the comparator's own
+spine changes keep the spine's locations among the entry's and fresh ones,
 and leave it no shorter and within `maxArrayLength` where it was. -/
 theorem sort_grow {b} {ls : List (Option Nat)} {mid : Arr} (hmid : mid.Within b ls)
     (hlen : LengthGrows ls mid.ls) :
@@ -408,7 +408,7 @@ theorem sort_grow {b} {ls : List (Option Nat)} {mid : Arr} (hmid : mid.Within b 
   have hc := itemCount_le ls ls.length
   exact ⟨Nat.le_trans hlen.1 hw.1, fun h => by have := hlen.2 h; omega⟩
 
-/-- `push` on a store shorter than `maxArrayLength`: a longer length at
+/-- `push` on a spine shorter than `maxArrayLength`: a longer length at
 `maxArrayLength` throws a `RangeError`. -/
 theorem Arr.push_grow {b} {a : Arr} (h : b ≤ a.next) (hmax : a.ls.length < maxArrayLength) :
     Change.grow.Holds b (.arr a.ls) (.arr a.push.ls) := by
@@ -434,31 +434,31 @@ theorem Arr.setLength_grow {b} {a : Arr} {m : Nat} (h : b ≤ a.next) (hm : a.ls
     exact hd i hi
   · refine ⟨?_, fun _ => ?_⟩ <;> rw [Arr.setLength_length] <;> assumption
 
-/-! ## From the store to the footprint -/
+/-! ## From the spine to the footprint -/
 
 /-- **The footprint of an array native.** A native that changes its
-receiver's store by `grow`, any other old location only where it holds no
-store (an element's contents), and allocates the rest, meets the footprint
-`store(x): grow, class(value): any`. The heap-side premise is the audited
+receiver's spine by `grow`, any other old location only where it holds no
+spine (an element's contents), and allocates the rest, meets the footprint
+`spine(x): grow, class(value): any`. The heap-side premise is the audited
 part of the native's row. -/
-theorem array_native_post {ρ x s h h' ls ls'} (hs : (fieldsOf (ρ x)).lookup arrayStoreKey = some s)
+theorem array_native_post {ρ x s h h' ls ls'} (hs : (fieldsOf (ρ x)).lookup arraySpineKey = some s)
     (hv : h[s]? = some (.arr ls)) (hv' : h'[s]? = some (.arr ls')) (hlen : h.length ≤ h'.length)
     (hg : Change.grow.Holds h.length (.arr ls) (.arr ls'))
     (hrest : ∀ l v, h[l]? = some v → l ≠ s → h'[l]? = some v ∨
       ((Region.cls .values).mem ρ h l = true ∧ ∃ v', h'[l]? = some v')) :
-    Post [(.field x arrayStoreKey, .grow), (.cls .values, .any)] ρ h h' := by
+    Post [(.field x arraySpineKey, .grow), (.cls .values, .any)] ρ h h' := by
   refine ⟨hlen, fun l v hl => ?_⟩
   by_cases hls : l = s
   · subst hls
     rw [hv] at hl; cases hl
-    exact ⟨_, hv', .inr ⟨(.field x arrayStoreKey, .grow), List.mem_cons_self .., by simp [Region.mem, hs], hg⟩⟩
+    exact ⟨_, hv', .inr ⟨(.field x arraySpineKey, .grow), List.mem_cons_self .., by simp [Region.mem, hs], hg⟩⟩
   · rcases hrest l v hl hls with h | ⟨hc, v', hv''⟩
     · exact ⟨v, h, .inl rfl⟩
     · exact ⟨v', hv'', .inr ⟨(.cls .values, .any), by simp, hc, trivial⟩⟩
 
 /-! ## Relies -/
 
-/-- The separation knowledge a density fact supplies about its own store. -/
+/-- The separation knowledge a density fact supplies about its own spine. -/
 def denseK (x : Nat) : SepKnowledge :=
   { cl := denseClass x, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
 
@@ -468,7 +468,7 @@ theorem denseK_holds {x n ρ h} (hd : Dense x n ρ h) : (denseK x).Holds id ρ h
     fun _ h => by simp [denseK] at h⟩
 
 /-- **The closed check of `map`'s bound is the stability check**, with the
-knowledge density gives about its own store. -/
+knowledge density gives about its own spine. -/
 theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed Φ = true) :
     stable (denseK x) (FactKind.dense x n).support Φ = true := by
   simp only [stable, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, List.all_eq_true]

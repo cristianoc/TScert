@@ -64,8 +64,8 @@ private partial def groundIn (T : EquationStore.State) :
   | .labels A => pure (T, A)
   | .array e => do
       let (T, E) ← groundIn T e
-      let (T, store) := EquationStore.intern T [.list ⟨[], [], some E, false, .readable⟩ []]
-      let (T, array) := EquationStore.intern T [SourceTypes.arrayOf T store false]
+      let (T, spine) := EquationStore.intern T [.list ⟨[], [], some E, false, .readable⟩ []]
+      let (T, array) := EquationStore.intern T [SourceTypes.arrayOf T spine false]
       pure (T, [array])
   | .scheme [] rc ps rest r effect => do
       let (T, rc) ← groundIn T rc
@@ -445,9 +445,9 @@ private partial def groundT : ClaimType Tree → SchemeM (List Tree)
     pure (arms.flatten.eraseDups.mergeSort Labels.le)
   | .array e => do
     let E ← groundT e
-    let store ← internS (.list ⟨[], [], some E, false, .readable⟩ [])
+    let spine ← internS (.list ⟨[], [], some E, false, .readable⟩ [])
     let (T, _) ← get
-    pure [← internS (SourceTypes.arrayOf T store false)]
+    pure [← internS (SourceTypes.arrayOf T spine false)]
   | .scheme [] rc ps rest r effect => do
     let rc ← groundT rc
     let ps ← ps.mapM groundT

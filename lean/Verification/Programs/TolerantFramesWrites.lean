@@ -11,11 +11,11 @@ step:
 
 - its judgment in the two-exit form `NodesChecked` takes, its rule's output on
   the normal exit (`judgment_with_output`), from an effect judgment: a typed
-  field write within `{values: any, stores: keep}`
+  field write within `{values: any, spines: keep}`
   (`field_write_judgment`), an element write within
-  `{values: any, stores: grow}` (`element_write_judgment`), an allocation
-  within `{values: keep, stores: keep}` (`allocated_judgment`), and a step
-  with no effect judgment within `{values: any, stores: any}` on both exits
+  `{values: any, spines: grow}` (`element_write_judgment`), an allocation
+  within `{values: keep, spines: keep}` (`allocated_judgment`), and a step
+  with no effect judgment within `{values: any, spines: any}` on both exits
   (`top_judgment`, from `safePost_grow`: a run only grows the heap);
 - which named facts survive an action of a closed effect: those reading no
   heap and the index facts the effect's change keeps (`Atom.keptBy`,
@@ -114,7 +114,7 @@ theorem judgment_with_output {G : NormalGraph ι} {images : InstanceImageCheck G
         (checker.sound hr hcodes hsums he hk hw hh (SafePostExcW.refs hexc))))
 
 /-- **A step with no effect judgment**, an ordinary call or expression: its
-rule's output, both exits within `{values: any, stores: any}`. -/
+rule's output, both exits within `{values: any, spines: any}`. -/
 theorem top_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (checker : Checker G images)
     {j : Sequent ι} {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} (hr : (checker.run j k e codes sums).value = some out)
@@ -146,7 +146,7 @@ theorem write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (che
   judgment_with_output checker hr hcodes hsums he hk hw hh
     (ExpressionEffects.write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh href)))
 
-/-- **A typed field write**, within `{values: any, stores: keep}`
+/-- **A typed field write**, within `{values: any, spines: keep}`
 (`ExpressionEffects.field_write_within_exc`), with its rule's output. -/
 theorem field_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (checker : Checker G images)
     {j : Sequent ι} {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
@@ -163,7 +163,7 @@ theorem field_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G
     (ExpressionEffects.field_write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh href)))
 
 /-- **An element write at any index of any array**, within
-`{values: any, stores: grow}`, with its rule's output (`write_judgment` at
+`{values: any, spines: grow}`, with its rule's output (`write_judgment` at
 `growEffect`). -/
 theorem element_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (checker : Checker G images)
     {j : Sequent ι} {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
@@ -179,8 +179,8 @@ theorem element_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck
   write_judgment checker hr hcodes hsums hc he hk hw hh href
 
 /-- **A step the pass frames, an allocation among them**, at the production
-checker: its normal exit within `{values: keep, stores: keep}` with its rule's
-output, its throw within `{values: any, stores: any}`. -/
+checker: its normal exit within `{values: keep, spines: keep}` with its rule's
+output, its throw within `{values: any, spines: any}`. -/
 theorem preserving_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)}

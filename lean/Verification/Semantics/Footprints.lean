@@ -26,25 +26,25 @@ def readPath (h : Heap) : Val → List String → Option Val
     | none => none
   | _, _ :: _ => none
 
-/-- The location of the store of elements a value holds (the note *Tolerant
-frames*, the store a typed array's or an array's element facts read): an
-array's store, which its `[]` slot names and the calculus's array steps
-read, or else a typed array's view store, which its descriptor names. The
-one store selection of both forms. -/
+/-- The location of the spine of elements a value holds (the note *Tolerant
+frames*, the spine a typed array's or an array's element facts read): an
+array's spine, which its `[]` slot names and the calculus's array steps
+read, or else a typed array's view spine, which its descriptor names. The
+one spine selection of both forms. -/
 def elementsOf : Val → Option Nat
-  | .objAt fs c _ => match fs.lookup arrayStoreKey, c with
+  | .objAt fs c _ => match fs.lookup arraySpineKey, c with
     | some s, _ => some s
     | none, .view s _ _ => some s
     | none, _ => none
   | _ => none
 
-/-- **The descriptor selects the store of a typed array owning no `[]` slot.** -/
-theorem elementsOf_view {fs : List (PropKey × Nat)} (hfs : fs.lookup arrayStoreKey = none) (i s : Nat)
+/-- **The descriptor selects the spine of a typed array owning no `[]` slot.** -/
+theorem elementsOf_view {fs : List (PropKey × Nat)} (hfs : fs.lookup arraySpineKey = none) (i s : Nat)
     (f : ViewFormat) (n : Nat) : elementsOf (.viewAt fs i s f n) = some s := by
   simp [elementsOf, hfs]
 
-/-- The view store a typed array's descriptor names. -/
-def descriptorStore : Val → Option Nat
+/-- The view spine a typed array's descriptor names. -/
+def descriptorSpine : Val → Option Nat
   | .objAt _ (.view s _ _) _ => some s
   | _ => none
 
@@ -60,10 +60,10 @@ def nullish : Val → Bool
   | .nul | .undef => true
   | _ => false
 
-/-- Whether contents are a store: an array's, or a typed array's view store
-(the note *Tolerant frames*, §3, class `store`). -/
+/-- Whether contents are a spine: an array's, or a typed array's view spine
+(the note *Tolerant frames*, §3, class `spine`). -/
 def isArr : Val → Bool
-  | .arr _ | .viewStore .. => true
+  | .arr _ | .viewSpine .. => true
   | _ => false
 
 def isObj : Val → Bool
@@ -71,11 +71,11 @@ def isObj : Val → Bool
   | _ => false
 
 /-- An initialization's step: a location holding `null` or `undefined` takes
-a value that is no store. -/
+a value that is no spine. -/
 def InitStep (v v' : Val) : Prop := nullish v = true ∧ isArr v' = false
 
-/-- A scalar's step: a location holding neither an object nor a store takes a
-value that is no store. -/
+/-- A scalar's step: a location holding neither an object nor a spine takes a
+value that is no spine. -/
 def ScalarStep (v v' : Val) : Prop := isObj v = false ∧ isArr v = false ∧ isArr v' = false
 
 theorem InitStep.scalar {v v' : Val} (h : InitStep v v') : ScalarStep v v' := by
@@ -84,8 +84,8 @@ theorem InitStep.scalar {v v' : Val} (h : InitStep v v') : ScalarStep v v' := by
 
 /-- How an entry may change a location's contents: not at all, by an
 initialization of `null` or `undefined`, by a scalar's step (contents
-neither an object nor a store replaced by contents that are no store), as a
-store that keeps every dense prefix (or by a scalar's step), or arbitrarily.
+neither an object nor a spine replaced by contents that are no spine), as a
+spine that keeps every dense prefix (or by a scalar's step), or arbitrarily.
 They form the chain `keep ⊑ init ⊑ scalar ⊑ grow ⊑ any`. -/
 inductive Change where
   | keep
@@ -107,11 +107,11 @@ def Change.le (a b : Change) : Bool := a.rank ≤ b.rank
 
 def Change.max (a b : Change) : Change := if a.le b then b else a
 
-/-- The first `n` indices of a store are present. -/
+/-- The first `n` indices of a spine are present. -/
 def DensePrefix (n : Nat) (ls : List (Option Nat)) : Prop :=
   n ≤ ls.length ∧ ∀ i, i < n → ls[i]? ≠ some none
 
-/-- A store at least as long, at most `maxArrayLength` long where it was. -/
+/-- A spine at least as long, at most `maxArrayLength` long where it was. -/
 def LengthGrows (ls ls' : List (Option Nat)) : Prop :=
   ls.length ≤ ls'.length ∧ (ls.length ≤ maxArrayLength → ls'.length ≤ maxArrayLength)
 
@@ -121,17 +121,17 @@ theorem LengthGrows.trans {ls ls' ls'' : List (Option Nat)} (h₁ : LengthGrows 
     (h₂ : LengthGrows ls' ls'') : LengthGrows ls ls'' :=
   ⟨Nat.le_trans h₁.1 h₂.1, fun h => h₂.2 (h₁.2 h)⟩
 
-/-- A view store's step (the note *Tolerant frames*, §2, a write through a
-typed array): a view store replaced by a view store of the same format and
+/-- A view spine's step (the note *Tolerant frames*, §2, a write through a
+typed array): a view spine replaced by a view spine of the same format and
 length, every cell it newly lists fresh against the starting heap's length
 `b`. It has no hole before or after, so it keeps every dense prefix. -/
 def ViewStep (b : Nat) (v v' : Val) : Prop :=
-  ∃ f cs cs', v = .viewStore f cs ∧ v' = .viewStore f cs' ∧ cs'.length = cs.length ∧
+  ∃ f cs cs', v = .viewSpine f cs ∧ v' = .viewSpine f cs' ∧ cs'.length = cs.length ∧
     ∀ c ∈ cs', c ∈ cs ∨ b ≤ c
 
 /-- A change's relation on contents. `b` is the length of the heap the change
-starts from: a growing store gains no element location below it that it did
-not already list, and gets no shorter; a growing view store keeps its format
+starts from: a growing spine gains no element location below it that it did
+not already list, and gets no shorter; a growing view spine keeps its format
 and length (`ViewStep`). -/
 def Change.Holds : Change → Nat → Val → Val → Prop
   | .keep, _, v, v' => v' = v
@@ -249,12 +249,12 @@ theorem Change.Holds.seq {δ₁ δ₂ : Change} {b b' v v' v''} (hb : b ≤ b')
 
 /-! ## Selectors of categories
 
-A class region (the note *Tolerant frames*, §3: $\mathsf{stores}$,
+A class region (the note *Tolerant frames*, §3: $\mathsf{spines}$,
 $\mathsf{views}$, $\mathsf{values}$) is named by a selector, a finite set of
 the three categories (`Category`, which partition the roles); the named
-ones are `values`, `arrays`, `views`, `stores` (arrays and views) and `all`.
+ones are `values`, `arrays`, `views`, `spines` (arrays and views) and `all`.
 Inclusion and disjointness are the set operations on the three categories,
-so two selectors are disjoint exactly when no category is in both: `stores`
+so two selectors are disjoint exactly when no category is in both: `spines`
 and `views` overlap. -/
 
 /-- A finite set of categories (the note, §3: a class region names one). -/
@@ -285,14 +285,14 @@ def Selector.inter (a b : Selector) : Selector := ⟨a.value && b.value, a.array
 /-- The note's $\mathsf{values}$: field, cell, element and identity locations. -/
 @[simp] def Selector.values : Selector := ⟨true, false, false⟩
 
-/-- The stores of ordinary arrays. -/
+/-- The spines of ordinary arrays. -/
 @[simp] def Selector.arrays : Selector := ⟨false, true, false⟩
 
-/-- The note's $\mathsf{views}$: the view stores of typed arrays. -/
+/-- The note's $\mathsf{views}$: the view spines of typed arrays. -/
 @[simp] def Selector.views : Selector := ⟨false, false, true⟩
 
-/-- The note's $\mathsf{stores}$: array stores and view stores. -/
-@[simp] def Selector.stores : Selector := ⟨false, true, true⟩
+/-- The note's $\mathsf{spines}$: array spines and view spines. -/
+@[simp] def Selector.spines : Selector := ⟨false, true, true⟩
 
 /-- Every location. -/
 @[simp] def Selector.all : Selector := ⟨true, true, true⟩
@@ -368,17 +368,17 @@ theorem Selector.partition (c : Category) :
 theorem Selector.values_disjoint_arrays : Selector.values.disjoint Selector.arrays = true := rfl
 theorem Selector.values_disjoint_views : Selector.values.disjoint Selector.views = true := rfl
 theorem Selector.arrays_disjoint_views : Selector.arrays.disjoint Selector.views = true := rfl
-theorem Selector.values_disjoint_stores : Selector.values.disjoint Selector.stores = true := rfl
+theorem Selector.values_disjoint_spines : Selector.values.disjoint Selector.spines = true := rfl
 
-/-- `stores` is the union of `arrays` and `views`. -/
-theorem Selector.stores_eq : Selector.stores = Selector.arrays.union Selector.views := rfl
+/-- `spines` is the union of `arrays` and `views`. -/
+theorem Selector.spines_eq : Selector.spines = Selector.arrays.union Selector.views := rfl
 
-theorem Selector.arrays_sub_stores : Selector.arrays.sub Selector.stores = true := rfl
-theorem Selector.views_sub_stores : Selector.views.sub Selector.stores = true := rfl
+theorem Selector.arrays_sub_spines : Selector.arrays.sub Selector.spines = true := rfl
+theorem Selector.views_sub_spines : Selector.views.sub Selector.spines = true := rfl
 
-/-- **`stores` and `views` overlap**: different selectors need not be
+/-- **`spines` and `views` overlap**: different selectors need not be
 disjoint. -/
-theorem Selector.stores_views_overlap : Selector.stores.disjoint Selector.views = false := rfl
+theorem Selector.spines_views_overlap : Selector.spines.disjoint Selector.views = false := rfl
 
 /-- `all` is the union of the three categories. -/
 theorem Selector.all_eq : Selector.all = (Selector.values.union Selector.arrays).union Selector.views := rfl
@@ -416,7 +416,7 @@ theorem Selector.has_category (r : Role) : (Selector.of r.category).has r.catego
 
 A class region selects locations by their contents in the entry heap: a
 selector selects a location whose contents' category (`contentsCategory`:
-an array store, a view store, or a value) it names. The selector algebra is
+an array spine, a view spine, or a value) it names. The selector algebra is
 sound for this selection (`Selector.selects_sub`,
 `Selector.selects_disjoint`), and on a well-formed heap a location's
 contents category is its role's (`Shaped.category`). -/
@@ -436,23 +436,23 @@ theorem Selector.selects_disjoint {a b : Selector} (hab : a.disjoint b = true) {
     (ha : a.selects v = true) : b.selects v = false :=
   Selector.disjoint_sound hab ha
 
-/-- Contents are of the value category exactly when they are no store. -/
+/-- Contents are of the value category exactly when they are no spine. -/
 theorem contentsCategory_value (v : Val) : (contentsCategory v = .value) ↔ isArr v = false := by
   cases v <;> simp [contentsCategory, isArr]
 
 theorem Selector.selects_values (v : Val) : Selector.values.selects v = !isArr v := by
   cases v <;> rfl
 
-theorem Selector.selects_stores (v : Val) : Selector.stores.selects v = isArr v := by
+theorem Selector.selects_spines (v : Val) : Selector.spines.selects v = isArr v := by
   cases v <;> rfl
 
-/-- A selector naming no value category selects stores only. -/
+/-- A selector naming no value category selects spines only. -/
 theorem Selector.selects_noValue {c : Selector} {v : Val} (hc : c.value = false) (h : c.selects v = true) :
     isArr v = true := by
   unfold Selector.selects at h
   cases v <;> simp_all [contentsCategory, Selector.has, isArr]
 
-/-- A selector naming neither store category selects values only. -/
+/-- A selector naming neither spine category selects values only. -/
 theorem Selector.selects_valueOnly {c : Selector} {v : Val} (ha : c.array = false) (hw : c.view = false)
     (h : c.selects v = true) : isArr v = false := by
   unfold Selector.selects at h
@@ -462,7 +462,7 @@ theorem Selector.selects_valueOnly {c : Selector} {v : Val} (ha : c.array = fals
     ({ value := true, array := false, view := false } : Selector).selects v = !isArr v := by
   cases v <;> rfl
 
-@[simp] theorem Selector.selects_stores' (v : Val) :
+@[simp] theorem Selector.selects_spines' (v : Val) :
     ({ value := false, array := true, view := true } : Selector).selects v = isArr v := by
   cases v <;> rfl
 
@@ -494,7 +494,7 @@ theorem Change.Holds.same_class {δ : Change} {b v v'} (hδ : δ ≠ .any)
     (h : δ.Holds b v v') (c : Selector) : c.selects v' = c.selects v := by
   simp only [Selector.selects, h.same_category hδ]
 
-/-- On contents that are no store, `grow` is `scalar`. -/
+/-- On contents that are no spine, `grow` is `scalar`. -/
 theorem Change.Holds.grow_value {b v v'} (h : Change.grow.Holds b v v') (hv : isArr v = false) :
     Change.scalar.Holds b v v' := by
   rcases h with h | ⟨_, _, rfl, _, _, _⟩ | h | ⟨_, _, _, rfl, _⟩
@@ -503,7 +503,7 @@ theorem Change.Holds.grow_value {b v v'} (h : Change.grow.Holds b v v') (hv : is
   · exact .inr h
   · simp [isArr] at hv
 
-/-- On contents that are no store and neither `null` nor `undefined`,
+/-- On contents that are no spine and neither `null` nor `undefined`,
 `init` is `keep`. -/
 theorem Change.Holds.init_defined {b v v'} (h : Change.init.Holds b v v') (hv : nullish v = false) :
     v' = v := by
@@ -533,19 +533,19 @@ theorem Change.Holds.object_kept {δ : Change} {b v v'} (hδ : δ ≠ .any) (h :
   | grow => exact hs (h.grow_value ha)
   | any => exact absurd rfl hδ
 
-/-- On a store, `scalar` is `keep`. -/
-theorem Change.Holds.scalar_store {b ls v'} (h : Change.scalar.Holds b (.arr ls) v') : v' = .arr ls :=
+/-- On a spine, `scalar` is `keep`. -/
+theorem Change.Holds.scalar_spine {b ls v'} (h : Change.scalar.Holds b (.arr ls) v') : v' = .arr ls :=
   h.resolve_right fun hs => absurd hs.2.1 (by simp [isArr])
 
-/-- On a store, `init` is `keep`. -/
-theorem Change.Holds.init_store {b ls v'} (h : Change.init.Holds b (.arr ls) v') : v' = .arr ls :=
+/-- On a spine, `init` is `keep`. -/
+theorem Change.Holds.init_spine {b ls v'} (h : Change.init.Holds b (.arr ls) v') : v' = .arr ls :=
   h.init_defined rfl
 
-/-- On any store, an array's or a view store, `scalar` is `keep`. -/
+/-- On any spine, an array's or a view spine, `scalar` is `keep`. -/
 theorem Change.Holds.scalar_isArr {b v v'} (hv : isArr v = true) (h : Change.scalar.Holds b v v') : v' = v :=
   h.resolve_right fun hs => absurd hs.2.1 (by simp [hv])
 
-/-- On any store, `init` is `keep`. -/
+/-- On any spine, `init` is `keep`. -/
 theorem Change.Holds.init_isArr {b v v'} (hv : isArr v = true) (h : Change.init.Holds b v v') : v' = v :=
   h.init_defined (by cases v <;> simp_all [isArr, nullish])
 
@@ -553,26 +553,26 @@ def fieldsOf : Tm → List (PropKey × Nat)
   | .objAt fs _ _ => fs
   | _ => []
 
-/-- The entries the store at a location lists, at a heap (`storeEntries`). -/
+/-- The entries the spine at a location lists, at a heap (`spineEntries`). -/
 def entriesAt (h : Heap) : Option Nat → List (Option Nat)
-  | some s => (h[s]?.bind storeEntries).getD []
+  | some s => (h[s]?.bind spineEntries).getD []
   | none => []
 
-/-- The element locations a value's stores list, at a heap: those of the
-store its `[]` slot names, which the calculus's array steps read and write,
-and those of the view store its descriptor names, which a typed array's
+/-- The element locations a value's spines list, at a heap: those of the
+spine its `[]` slot names, which the calculus's array steps read and write,
+and those of the view spine its descriptor names, which a typed array's
 element facts read (`HeapKnowledge.elementsOf`). A value is an array or a
 typed array, so on a well-formed heap one of the two lists nothing. -/
-def storeElems (h : Heap) (v : Tm) : List (Option Nat) :=
-  entriesAt h ((fieldsOf v).lookup arrayStoreKey) ++ entriesAt h (HeapKnowledge.descriptorStore v)
+def spineCells (h : Heap) (v : Tm) : List (Option Nat) :=
+  entriesAt h ((fieldsOf v).lookup arraySpineKey) ++ entriesAt h (HeapKnowledge.descriptorSpine v)
 
-/-- The cells of the store a value selects are among its store cells. -/
+/-- The cells of the spine a value selects are among its spine cells. -/
 theorem elementsOf_entries_sub {h : Heap} {v : Tm} {s : Nat} (hs : HeapKnowledge.elementsOf v = some s)
-    {o : Option Nat} (ho : o ∈ entriesAt h (some s)) : o ∈ storeElems h v := by
+    {o : Option Nat} (ho : o ∈ entriesAt h (some s)) : o ∈ spineCells h v := by
   cases v with
   | objAt fs c i =>
     simp only [HeapKnowledge.elementsOf] at hs
-    cases hl : fs.lookup arrayStoreKey with
+    cases hl : fs.lookup arraySpineKey with
     | some s' =>
       rw [hl] at hs; cases hs
       exact List.mem_append_left _ (by simpa [fieldsOf, hl] using ho)
@@ -580,43 +580,43 @@ theorem elementsOf_entries_sub {h : Heap} {v : Tm} {s : Nat} (hs : HeapKnowledge
       rw [hl] at hs
       cases c <;> simp at hs
       cases hs
-      exact List.mem_append_right _ (by simpa [HeapKnowledge.descriptorStore] using ho)
+      exact List.mem_append_right _ (by simpa [HeapKnowledge.descriptorSpine] using ho)
   | _ => simp [HeapKnowledge.elementsOf] at hs
 
 /-- A region names locations relative to the values of slots and to a heap.
-`field`, `own` are timeless; `elems` and `cls` are read at a heap: `cls S`
+`field`, `fields` are timeless; `cells` and `cls` are read at a heap: `cls S`
 is the class region of the selector `S`, read from the contents. A path
 `p` reads own data fields from a slot's value (`HeapKnowledge.readPath`):
-`path x p k` is the own field `k` of the object it reads, `pathOwn x p` that
-object's own locations and `pathElems x p` the element cells its store
+`path x p k` is the own field `k` of the object it reads, `pathFields x p` that
+object's own locations and `pathCells x p` the element cells its spine
 lists; a read that fails denotes no location, and at the empty path they are
-`field`, `own` and `elems`. `cell b` is a module cell's location, read at the
-class its contents have: a cell holds a source value, never a store, so it
+`field`, `fields` and `cells`. `cell b` is a module cell's location, read at the
+class its contents have: a cell holds a source value, never a spine, so it
 denotes the locations of class `value` (the exact cell needs module-cell
 agreement, a step of the stated-effects design). `inCls r S` is the locations
 of `r` in the class region of `S`. -/
 inductive Region where
   | field (x : Nat) (k : PropKey)
-  | own (x : Nat)
-  | elems (x : Nat)
+  | fields (x : Nat)
+  | cells (x : Nat)
   | cls (c : Selector)
   | all
   | path (x : Nat) (p : List String) (k : PropKey)
-  | pathOwn (x : Nat) (p : List String)
-  | pathElems (x : Nat) (p : List String)
+  | pathFields (x : Nat) (p : List String)
+  | pathCells (x : Nat) (p : List String)
   | cell (b : String)
   | inCls (r : Region) (c : Selector)
-  /-- The store location of the value the path reads (parity-interfaces I1,
-  the selected store): an array's or a typed array's
-  (`HeapKnowledge.elementsOf`); a failed read or a value with no store
+  /-- The spine location of the value the path reads (parity-interfaces I1,
+  the selected spine): an array's or a typed array's
+  (`HeapKnowledge.elementsOf`); a failed read or a value with no spine
   selects nothing. -/
-  | store (x : Nat) (p : List String)
+  | spine (x : Nat) (p : List String)
   deriving DecidableEq, Repr
 
 def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
   | .field x k, l => (fieldsOf (ρ x)).lookup k == some l
-  | .own x, l => ((fieldsOf (ρ x)).map Prod.snd).contains l
-  | .elems x, l => (storeElems h (ρ x)).contains (some l)
+  | .fields x, l => ((fieldsOf (ρ x)).map Prod.snd).contains l
+  | .cells x, l => (spineCells h (ρ x)).contains (some l)
   | .cls c, l => match h[l]? with
     | some v => c.selects v
     | none => false
@@ -624,11 +624,11 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
   | .path x p k, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => (fieldsOf v).lookup k == some l
     | none => false
-  | .pathOwn x p, l => match HeapKnowledge.readPath h (ρ x) p with
+  | .pathFields x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => ((fieldsOf v).map Prod.snd).contains l
     | none => false
-  | .pathElems x p, l => match HeapKnowledge.readPath h (ρ x) p with
-    | some v => (storeElems h v).contains (some l)
+  | .pathCells x p, l => match HeapKnowledge.readPath h (ρ x) p with
+    | some v => (spineCells h v).contains (some l)
     | none => false
   | .cell _, l => match h[l]? with
     | some v => Selector.values.selects v
@@ -636,7 +636,7 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
   | .inCls r c, l => r.mem ρ h l && match h[l]? with
     | some v => c.selects v
     | none => false
-  | .store x p, l => match HeapKnowledge.readPath h (ρ x) p with
+  | .spine x p, l => match HeapKnowledge.readPath h (ρ x) p with
     | some v => HeapKnowledge.elementsOf v == some l
     | none => false
 
@@ -644,12 +644,12 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     (Region.path x [] k).mem ρ h l = (Region.field x k).mem ρ h l := by
   simp [Region.mem, HeapKnowledge.readPath]
 
-@[simp] theorem Region.mem_pathOwn_nil (ρ : Env) (h : Heap) (x : Nat) (l : Nat) :
-    (Region.pathOwn x []).mem ρ h l = (Region.own x).mem ρ h l := by
+@[simp] theorem Region.mem_pathFields_nil (ρ : Env) (h : Heap) (x : Nat) (l : Nat) :
+    (Region.pathFields x []).mem ρ h l = (Region.fields x).mem ρ h l := by
   simp [Region.mem, HeapKnowledge.readPath]
 
-@[simp] theorem Region.mem_pathElems_nil (ρ : Env) (h : Heap) (x : Nat) (l : Nat) :
-    (Region.pathElems x []).mem ρ h l = (Region.elems x).mem ρ h l := by
+@[simp] theorem Region.mem_pathCells_nil (ρ : Env) (h : Heap) (x : Nat) (l : Nat) :
+    (Region.pathCells x []).mem ρ h l = (Region.cells x).mem ρ h l := by
   simp [Region.mem, HeapKnowledge.readPath]
 
 theorem lookup_mem_snd {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat}
@@ -664,8 +664,8 @@ theorem lookup_mem_snd {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat}
         simpa [List.lookup, show (k == k') = false from by simpa using hk] using h
       simp [ih this]
 
-theorem field_mem_own {ρ h x k l} (hm : (Region.field x k).mem ρ h l = true) :
-    (Region.own x).mem ρ h l = true := by
+theorem field_mem_fields {ρ h x k l} (hm : (Region.field x k).mem ρ h l = true) :
+    (Region.fields x).mem ρ h l = true := by
   simp only [Region.mem, beq_iff_eq] at hm
   simpa [Region.mem] using lookup_mem_snd hm
 
@@ -722,12 +722,12 @@ contents have by class evidence, a path's field among the path object's own
 locations, and a cell among the locations of class `value`. -/
 def Region.subBase (cl : ClassEvidence) (r s : Region) : Bool :=
   r == s || s == .all || match r, s with
-    | .field x _, .own y => x == y
+    | .field x _, .fields y => x == y
     | .field x k, .cls c => match cl x k with
       | some c' => c'.sub c
       | none => false
     | .cls a, .cls b => a.sub b
-    | .path x p _, .pathOwn y q => x == y && p == q
+    | .path x p _, .pathFields y q => x == y && p == q
     | .cell _, .cls c => Selector.values.sub c
     | _, _ => false
 
@@ -750,7 +750,7 @@ theorem class_subset_sound {a b : Selector} (hab : a.sub b = true) {ρ h l}
   · cases ha
 
 /-- **Selector disjointness excludes common membership.** Unequal selectors
-need not be disjoint: `stores` and `views` overlap. -/
+need not be disjoint: `spines` and `views` overlap. -/
 theorem class_disjoint_sound {a b : Selector} (hab : a.disjoint b = true) {ρ h l}
     (ha : (Region.cls a).mem ρ h l = true) : (Region.cls b).mem ρ h l = false := by
   simp only [Region.mem] at ha ⊢
@@ -767,8 +767,8 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
   · exact hm
   · rfl
   · cases r <;> cases s <;> (try simp only [Bool.false_eq_true] at hs)
-    case field.own x k y =>
-      simp only [beq_iff_eq] at hs; subst hs; exact field_mem_own hm
+    case field.fields x k y =>
+      simp only [beq_iff_eq] at hs; subst hs; exact field_mem_fields hm
     case field.cls x k c =>
       split at hs
       · rename_i c' hc'
@@ -776,7 +776,7 @@ theorem Region.subBase_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
         exact class_subset_sound hs (hc x k c' l hc' hm hl)
       · cases hs
     case cls.cls a b => exact class_subset_sound hs hm
-    case path.pathOwn x p k y q =>
+    case path.pathFields x p k y q =>
       simp only [Bool.and_eq_true, beq_iff_eq] at hs
       obtain ⟨rfl, rfl⟩ := hs
       simp only [Region.mem] at hm ⊢
@@ -815,7 +815,7 @@ theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
         · exact Selector.selects_sub hs.1 hm'.2
         · cases hm'.2
     · exact Region.subBase_mem hs hc hl hm
-  | field | own | elems | cls | all | path | pathOwn | pathElems | cell | store =>
+  | field | fields | cells | cls | all | path | pathFields | pathCells | cell | spine =>
     exact Region.subBase_mem (by simpa [Region.sub] using hs) hc hl hm
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/
@@ -839,30 +839,30 @@ theorem Post.mono {cl : ClassEvidence} {Φ Ψ : Footprint} {ρ : Env} {h h' : He
     obtain ⟨v', hv', ha⟩ := hp.2 l v hv
     exact ⟨v', hv', Allowed.mono hle hc (List.getElem?_eq_some_iff.mp hv).1 ha⟩⟩
 
-/-- Every element location the store of `v` lists at `h`, below the entry
-heap `h₀`'s length, the store of `v` listed at `h₀`: **cell provenance**. -/
+/-- Every element location the spine of `v` lists at `h`, below the entry
+heap `h₀`'s length, the spine of `v` listed at `h₀`: **cell provenance**. -/
 def CellsFrom (h₀ h : Heap) (v : Val) : Prop :=
-  ∀ l, some l ∈ storeElems h v → l < h₀.length → some l ∈ storeElems h₀ v
+  ∀ l, some l ∈ spineCells h v → l < h₀.length → some l ∈ spineCells h₀ v
 
-/-- A store location whose list at `h` keeps only cells of its list at `h₀`
+/-- A spine location whose list at `h` keeps only cells of its list at `h₀`
 and cells at or above `h₀`'s length gives cell provenance. -/
 theorem CellsFrom.of_lists {h₀ h : Heap} {v : Val} {s : Nat}
-    (hs : (fieldsOf v).lookup arrayStoreKey = some s) (hd : HeapKnowledge.descriptorStore v = none)
-    (hl : ∀ ls', h[s]?.bind storeEntries = some ls' → ∀ m, some m ∈ ls' → m < h₀.length →
-      ∃ ls, h₀[s]?.bind storeEntries = some ls ∧ some m ∈ ls) : CellsFrom h₀ h v := by
+    (hs : (fieldsOf v).lookup arraySpineKey = some s) (hd : HeapKnowledge.descriptorSpine v = none)
+    (hl : ∀ ls', h[s]?.bind spineEntries = some ls' → ∀ m, some m ∈ ls' → m < h₀.length →
+      ∃ ls, h₀[s]?.bind spineEntries = some ls ∧ some m ∈ ls) : CellsFrom h₀ h v := by
   intro m hm hm₀
-  simp only [storeElems, hs, hd, entriesAt, List.append_nil] at hm ⊢
-  cases hls' : h[s]?.bind storeEntries with
+  simp only [spineCells, hs, hd, entriesAt, List.append_nil] at hm ⊢
+  cases hls' : h[s]?.bind spineEntries with
   | none => rw [hls'] at hm; simp at hm
   | some ls' =>
     rw [hls'] at hm
     obtain ⟨ls, hls, hm'⟩ := hl ls' hls' m hm hm₀
     simpa [hls] using hm'
 
-/-- A change of the store location within `grow` gives cell provenance. -/
+/-- A change of the spine location within `grow` gives cell provenance. -/
 theorem CellsFrom.of_change {δ : Change} {h₀ h : Heap} {v : Val} {s : Nat} {w w' : Val}
-    (hδ : δ.le .grow = true) (hs : (fieldsOf v).lookup arrayStoreKey = some s)
-    (hd : HeapKnowledge.descriptorStore v = none)
+    (hδ : δ.le .grow = true) (hs : (fieldsOf v).lookup arraySpineKey = some s)
+    (hd : HeapKnowledge.descriptorSpine v = none)
     (hw : h₀[s]? = some w) (hw' : h[s]? = some w') (hc : δ.Holds h₀.length w w') :
     CellsFrom h₀ h v := by
   have hg : Change.grow.Holds h₀.length w w' := hc.mono hδ
@@ -875,17 +875,17 @@ theorem CellsFrom.of_change {δ : Change} {h₀ h : Heap} {v : Val} {s : Nat} {w
     rcases hl m hm with hm' | hle
     · exact ⟨ls, by rw [hw]; rfl, hm'⟩
     · omega
-  · cases w' <;> simp_all [isArr, storeEntries, ScalarStep]
+  · cases w' <;> simp_all [isArr, spineEntries, ScalarStep]
   · cases hls'
     rcases hl m (by simpa using hm) with hm' | hle
     · exact ⟨cs.map some, by rw [hw]; rfl, by simpa using hm'⟩
     · omega
 
-/-- A footprint letting the store location of `v`, read at `h₀`, change at
+/-- A footprint letting the spine location of `v`, read at `h₀`, change at
 most within `grow` gives cell provenance. -/
 theorem CellsFrom.of_post {Φ : Footprint} {ρ : Env} {h₀ h : Heap} {v : Val} {s : Nat}
-    (hp : Post Φ ρ h₀ h) (hs : (fieldsOf v).lookup arrayStoreKey = some s)
-    (hd : HeapKnowledge.descriptorStore v = none) (hs₀ : s < h₀.length)
+    (hp : Post Φ ρ h₀ h) (hs : (fieldsOf v).lookup arraySpineKey = some s)
+    (hd : HeapKnowledge.descriptorSpine v = none) (hs₀ : s < h₀.length)
     (hΦ : ∀ e ∈ Φ, e.1.mem ρ h₀ s = true → e.2.le .grow = true) : CellsFrom h₀ h v := by
   obtain ⟨w, hw⟩ : ∃ w, h₀[s]? = some w := ⟨h₀[s], List.getElem?_eq_getElem hs₀⟩
   obtain ⟨w', hw', ha⟩ := hp.2 s w hw
@@ -950,7 +950,7 @@ theorem preserves_dense_iff (ls ls' : List (Option Nat)) :
   simp only [densePrefix_iff]
   exact ⟨fun h => h _ (Nat.le_refl _), fun h n hn => Nat.le_trans hn h⟩
 
-/-- `grow` on an array's store, decided. -/
+/-- `grow` on an array's spine, decided. -/
 def arrayGrowB (b : Nat) : Val → Val → Bool
   | .arr ls, .arr ls' => decide (denseLen ls ≤ denseLen ls') &&
       ((ls'.all fun o => match o with
@@ -959,9 +959,9 @@ def arrayGrowB (b : Nat) : Val → Val → Bool
       (decide (ls.length ≤ ls'.length) && (!decide (ls.length ≤ maxArrayLength) || decide (ls'.length ≤ maxArrayLength))))
   | _, _ => false
 
-/-- A view store's step, decided (`ViewStep`). -/
+/-- A view spine's step, decided (`ViewStep`). -/
 def viewStepB (b : Nat) : Val → Val → Bool
-  | .viewStore f cs, .viewStore f' cs' => f' == f && cs'.length == cs.length &&
+  | .viewSpine f cs, .viewSpine f' cs' => f' == f && cs'.length == cs.length &&
       cs'.all fun c => cs.contains c || decide (b ≤ c)
   | _, _ => false
 

@@ -1,48 +1,48 @@
 import Verification.Semantics.ClosedFootprints
 
-/-! Store regions read from entry values through data-field paths: the store
+/-! Spine regions read from entry values through data-field paths: the spine
 a call position's path selects at the call's entry, and the closed bound on
-every other location. A region excepts the store location alone. -/
+every other location. A region excepts the spine location alone. -/
 namespace Verification.Footprints
 
 /-- A call position (`0` is the receiver) and a path of own data fields. -/
-structure ArgumentStoreRegion where
+structure ArgumentSpineRegion where
   position : Nat
   path : List String
   deriving Repr, DecidableEq
 
-/-- The store selected in the entry heap. A failed read selects no location. -/
-def ArgumentStoreRegion.resolve (r : ArgumentStoreRegion) (ρ : Env) (h : Heap) : Option Nat :=
-  (HeapKnowledge.readPath h (ρ r.position) r.path).bind storeOf
+/-- The spine selected in the entry heap. A failed read selects no location. -/
+def ArgumentSpineRegion.resolve (r : ArgumentSpineRegion) (ρ : Env) (h : Heap) : Option Nat :=
+  (HeapKnowledge.readPath h (ρ r.position) r.path).bind spineOf
 
-/-- A footprint on all old locations except the selected entry stores. -/
-def ArgumentStoreRegionsWithin (c : Closed) (regions : List ArgumentStoreRegion)
+/-- A footprint on all old locations except the selected entry spines. -/
+def ArgumentSpineRegionsWithin (c : Closed) (regions : List ArgumentSpineRegion)
     (ρ : Env) (entry after : Heap) : Prop :=
   c.HoldsOn (fun l => ∀ r ∈ regions, r.resolve ρ entry ≠ some l) entry after
 
 /-- **No regions.** With no region the exclusion predicate holds of every
 location: the closed footprint itself. -/
-theorem ArgumentStoreRegionsWithin.nil_holds {c : Closed} {ρ : Env} {entry after : Heap}
-    (h : ArgumentStoreRegionsWithin c [] ρ entry after) : c.Holds entry after :=
+theorem ArgumentSpineRegionsWithin.nil_holds {c : Closed} {ρ : Env} {entry after : Heap}
+    (h : ArgumentSpineRegionsWithin c [] ρ entry after) : c.Holds entry after :=
   Closed.holds_of_on (h.weaken fun _ _ _ hr => nomatch hr)
 
 /-! ## The regions as entries of the regional footprint -/
 
-/-- The region's entry: its selected store's location, at `any`. -/
-def ArgumentStoreRegion.entry (r : ArgumentStoreRegion) : Region × Change :=
-  (.path r.position r.path arrayStoreKey, .any)
+/-- The region's entry: its selected spine's location, at `any`. -/
+def ArgumentSpineRegion.entry (r : ArgumentSpineRegion) : Region × Change :=
+  (.path r.position r.path arraySpineKey, .any)
 
-theorem ArgumentStoreRegion.mem_entry (r : ArgumentStoreRegion) (ρ : Env) (h : Heap) (l : Nat) :
+theorem ArgumentSpineRegion.mem_entry (r : ArgumentSpineRegion) (ρ : Env) (h : Heap) (l : Nat) :
     r.entry.1.mem ρ h l = true ↔ r.resolve ρ h = some l := by
-  simp only [ArgumentStoreRegion.entry, Region.mem, ArgumentStoreRegion.resolve]
-  cases HeapKnowledge.readPath h (ρ r.position) r.path <;> simp [storeOf]
+  simp only [ArgumentSpineRegion.entry, Region.mem, ArgumentSpineRegion.resolve]
+  cases HeapKnowledge.readPath h (ρ r.position) r.path <;> simp [spineOf]
 
-/-- **The bridge.** A closed footprint excepting the selected stores is the
-regional footprint of its two classes and each selected store at `any`. -/
-theorem ArgumentStoreRegionsWithin.iff_post {c : Closed} {regions : List ArgumentStoreRegion}
+/-- **The bridge.** A closed footprint excepting the selected spines is the
+regional footprint of its two classes and each selected spine at `any`. -/
+theorem ArgumentSpineRegionsWithin.iff_post {c : Closed} {regions : List ArgumentSpineRegion}
     {ρ : Env} {entry after : Heap} :
-    ArgumentStoreRegionsWithin c regions ρ entry after ↔
-      Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after := by
+    ArgumentSpineRegionsWithin c regions ρ entry after ↔
+      Post (c.fp ++ regions.map ArgumentSpineRegion.entry) ρ entry after := by
   constructor
   · intro hw
     refine ⟨hw.1, fun l v hv => ?_⟩

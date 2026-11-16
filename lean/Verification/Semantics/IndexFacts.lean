@@ -3,7 +3,7 @@ import Verification.Semantics.SafeIntegers
 import Verification.Semantics.Linear
 
 /-! Index facts: what a slot holds as an array index, a length, a bound by a
-store's length, a safe integer or a linear fact (PROGRAM-TYPING.md, "Writes at
+spine's length, a safe integer or a linear fact (PROGRAM-TYPING.md, "Writes at
 a checked index"; ARITHMETIC.md, "Linear facts"). Heap knowledge carries them as atoms
 (`HeapKnowledge.IndexAtom`); a signature states its precondition with them
 (`CallEffects.Effect.pre`). -/
@@ -36,7 +36,7 @@ theorem intValue_num {b : UInt64} {i : Int} (h : SafeIntegers.SafeInt b i) : int
   SafeIntegers.safeIntOfBits_complete h
 
 /-- What a term reads of the value its path ends at: the safe integer it is
-(`value`), the length of its array store (`length`), the length of
+(`value`), the length of its array spine (`length`), the length of
 the typed array it is (`view`), or the count of UTF-16 code units of the
 string it is (`strLength`). -/
 inductive Term.Kind where
@@ -49,7 +49,7 @@ inductive Term.Kind where
 /-- A term of a linear fact (ARITHMETIC.md, "Linear facts"): a root slot,
 a path of named data fields read in turn from the value it holds, and what
 the term reads of the value the path ends at (`Term.Kind`): the safe integer
-it is; the length of its array store, as the calculus's `lenOf` gives it
+it is; the length of its array spine, as the calculus's `lenOf` gives it
 (`Step.lenV`), at most `maxArrayLength`; or the length of the typed
 array it is, the safe integer at least `0` its descriptor states
 (`viewLengthOf`); or the count of UTF-16 code units of
@@ -113,7 +113,7 @@ theorem eq_now {t : Term} (h : t.atEntry = false) : t = now t.kind t.slot t.path
 
 /-- The safe integer a slot holds. -/
 def value (s : Nat) : Term := ⟨.value, s, [], false⟩
-/-- The length of the array store a slot holds. -/
+/-- The length of the array spine a slot holds. -/
 def length (s : Nat) : Term := ⟨.length, s, [], false⟩
 /-- The length of the string a slot holds. -/
 def strLength (s : Nat) : Term := ⟨.strLength, s, [], false⟩
@@ -364,17 +364,17 @@ theorem readPath_guardKept {first : Nat → String → Bool} {ρ : Env} {h h' : 
       · cases hv
     | _ => rw [hs] at hv; simp [readPath] at hv
 
-/-- The length of the array store a value holds, read in the heap, where it
+/-- The length of the array spine a value holds, read in the heap, where it
 is at most `maxArrayLength`. -/
 def lengthOf (h : Heap) (v : Val) : Option Int :=
-  match Footprints.storeOf v with
+  match Footprints.spineOf v with
   | some s => match h[s]? with
     | some (.arr ls) => if ls.length ≤ maxArrayLength then some (ls.length : Int) else none
     | _ => none
   | none => none
 
-theorem lengthOf_store {h : Heap} {v : Val} {n : Int} (hl : lengthOf h v = some n) :
-    ∃ s ls, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ n = (ls.length : Int) ∧
+theorem lengthOf_spine {h : Heap} {v : Val} {n : Int} (hl : lengthOf h v = some n) :
+    ∃ s ls, Footprints.spineOf v = some s ∧ h[s]? = some (.arr ls) ∧ n = (ls.length : Int) ∧
       ls.length ≤ maxArrayLength := by
   unfold lengthOf at hl
   split at hl
@@ -387,27 +387,27 @@ theorem lengthOf_store {h : Heap} {v : Val} {n : Int} (hl : lengthOf h v = some 
     · cases hl
   · cases hl
 
-/-- **A well-formed typed array owns no array-store slot** (the note
-*Tolerant frames*, (W3): a typed array's one store is the view store its
+/-- **A well-formed typed array owns no array-spine slot** (the note
+*Tolerant frames*, (W3): a typed array's one spine is the view spine its
 descriptor names). -/
-theorem RefsOk.view_noArrayStore {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {i s n : Nat}
-    {f : ViewFormat} (hr : RefsOk W (.viewAt fs i s f n)) : fs.lookup arrayStoreKey = none := by
-  have := (hr (.view s f n (fs.lookup arrayStoreKey).isNone) (by simp [refs])).1
+theorem RefsOk.view_noArraySpine {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {i s n : Nat}
+    {f : ViewFormat} (hr : RefsOk W (.viewAt fs i s f n)) : fs.lookup arraySpineKey = none := by
+  have := (hr (.view s f n (fs.lookup arraySpineKey).isNone) (by simp [refs])).1
   simpa using this
 
-/-- **The descriptor selects a well-formed typed array's store**, whatever
-its other fields: it is the store of elements its element facts read, it
-has no array store, and so no array length; its length is its
+/-- **The descriptor selects a well-formed typed array's spine**, whatever
+its other fields: it is the spine of elements its element facts read, it
+has no array spine, and so no array length; its length is its
 descriptor's (`viewLengthOf`). -/
 theorem RefsOk.view_selects {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {i s n : Nat}
     {f : ViewFormat} (hr : RefsOk W (.viewAt fs i s f n)) (h : Heap) :
-    elementsOf (.viewAt fs i s f n) = some s ∧ Footprints.storeOf (.viewAt fs i s f n) = none ∧
+    elementsOf (.viewAt fs i s f n) = some s ∧ Footprints.spineOf (.viewAt fs i s f n) = none ∧
       lengthOf h (.viewAt fs i s f n) = none := by
-  have hno := RefsOk.view_noArrayStore hr
-  refine ⟨elementsOf_view hno i s f n, by simpa [Footprints.storeOf, Footprints.fieldsOf] using hno, ?_⟩
-  simp [lengthOf, Footprints.storeOf, Footprints.fieldsOf, hno]
+  have hno := RefsOk.view_noArraySpine hr
+  refine ⟨elementsOf_view hno i s f n, by simpa [Footprints.spineOf, Footprints.fieldsOf] using hno, ?_⟩
+  simp [lengthOf, Footprints.spineOf, Footprints.fieldsOf, hno]
 
-theorem lengthOf_of_store {h : Heap} {v : Val} {s : Nat} {ls : List (Option Nat)} (hs : Footprints.storeOf v = some s)
+theorem lengthOf_of_spine {h : Heap} {v : Val} {s : Nat} {ls : List (Option Nat)} (hs : Footprints.spineOf v = some s)
     (hl : h[s]? = some (.arr ls)) (hm : ls.length ≤ maxArrayLength) : lengthOf h v = some (ls.length : Int) := by
   simp only [lengthOf, hs, hl, hm, ite_true]
 
@@ -599,12 +599,12 @@ theorem holds_valueFact {ρ : Env} {h : Heap} {F : Linear.Fact Nat} :
 theorem vars_valueFact (F : Linear.Fact Nat) : (valueFact F).vars = F.vars.map .value := by
   cases F <;> simp [valueFact, Linear.Fact.vars, valueForm, Function.comp_def]
 
-/-- A heap extension keeps the length of what a value is: a store lies in the
+/-- A heap extension keeps the length of what a value is: a spine lies in the
 old heap. -/
 theorem lengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : lengthOf h v = some n) :
     lengthOf (h ++ vs) v = some n := by
-  obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_store hl
-  exact lengthOf_of_store hs (by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]) hm
+  obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_spine hl
+  exact lengthOf_of_spine hs (by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]) hm
 
 /-- A term reading the environment alone denotes the same in every heap. -/
 theorem termValue_envOnly {ρ : Env} {h h' : Heap} {t : Term} (ht : t.envOnly = true) :
@@ -798,18 +798,18 @@ def mapEntry (g : Nat → Option Nat) : Bound → Option Bound
 end Bound
 
 
-/-- A heap extension keeps what a store location lists. -/
-theorem storeEntries_extend {h : Heap} (vs : List Val) {s : Nat} {ls : List (Option Nat)}
-    (hs : h[s]?.bind storeEntries = some ls) : (h ++ vs)[s]?.bind storeEntries = some ls := by
+/-- A heap extension keeps what a spine location lists. -/
+theorem spineEntries_extend {h : Heap} (vs : List Val) {s : Nat} {ls : List (Option Nat)}
+    (hs : h[s]?.bind spineEntries = some ls) : (h ++ vs)[s]?.bind spineEntries = some ls := by
   obtain ⟨u, hu, he⟩ := Option.bind_eq_some_iff.mp hs
   rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1, hu]; exact he
 
-/-- An array's store is the store of elements it holds. -/
-theorem elementsOf_store {v : Val} {s : Nat} (h : Footprints.storeOf v = some s) : elementsOf v = some s := by
-  simp only [Footprints.storeOf] at h
+/-- An array's spine is the spine of elements it holds. -/
+theorem elementsOf_spine {v : Val} {s : Nat} (h : Footprints.spineOf v = some s) : elementsOf v = some s := by
+  simp only [Footprints.spineOf] at h
   cases v <;> simp_all [elementsOf, Footprints.fieldsOf]
 
-/-- The safe integer the element at index `i` of the store elements `ls` is,
+/-- The safe integer the element at index `i` of the spine elements `ls` is,
 where it is present and one. -/
 def elementInt (h : Heap) (ls : List (Option Nat)) (i : Nat) : Option Int :=
   match ls[i]? with
@@ -817,7 +817,7 @@ def elementInt (h : Heap) (ls : List (Option Nat)) (i : Nat) : Option Int :=
   | _ => none
 
 /-- Every listed element cell is allocated below `b`. This describes a
-particular store view; a later store replacement needs a new proof. -/
+particular spine view; a later spine replacement needs a new proof. -/
 def ElementsBelow (b : Nat) (ls : List (Option Nat)) : Prop :=
   ∀ l, some l ∈ ls → l < b
 
@@ -847,7 +847,7 @@ theorem elementInt_frame {h h' : Heap} {ls : List (Option Nat)} {i : Nat} {z : I
     exact ⟨v, hf l v hl hv, hz⟩
   · cases he
 
-/-- What a body variable denotes at the index `i` of the store elements `ls`. -/
+/-- What a body variable denotes at the index `i` of the spine elements `ls`. -/
 def boundValue (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
   | .index => some (i : Int)
   | .elem => elementInt h ls i
@@ -857,31 +857,31 @@ def boundValue (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) 
     | _ => none
   | .free t => termValue ε ρ h t
 
-/-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw store
-lists its element cells and has no store cell; an array object has its store
-field's location and the cells the store there lists. -/
-def RegionOf (h : Heap) (v : Val) (store : Option Nat) (cells : List (Option Nat)) : Prop :=
-  (store = none ∧ v = .arr cells) ∨
-    ∃ st, store = some st ∧ Footprints.storeOf v = some st ∧ h[st]? = some (.arr cells)
+/-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw spine
+lists its element cells and has no spine cell; an array object has its spine
+field's location and the cells the spine there lists. -/
+def RegionOf (h : Heap) (v : Val) (spine : Option Nat) (cells : List (Option Nat)) : Prop :=
+  (spine = none ∧ v = .arr cells) ∨
+    ∃ st, spine = some st ∧ Footprints.spineOf v = some st ∧ h[st]? = some (.arr cells)
 
-/-- A location of a region: its store cell or a listed element cell. -/
-def InRegion (store : Option Nat) (cells : List (Option Nat)) (l : Nat) : Prop :=
-  store = some l ∨ some l ∈ cells
+/-- A location of a region: its spine cell or a listed element cell. -/
+def InRegion (spine : Option Nat) (cells : List (Option Nat)) (l : Nat) : Prop :=
+  spine = some l ∨ some l ∈ cells
 
-/-- The values two paths read hold different array stores, where both hold
-one (`!==` of two arrays, ARITHMETIC.md, "Store separation"): for two
-arrays, `Footprints.StoreApart` (`PathStoresApart.storeApart`). -/
-def PathStoresApart (h : Heap) (x : Val) (p : List String) (y : Val) (q : List String) : Prop :=
+/-- The values two paths read hold different array spines, where both hold
+one (`!==` of two arrays, ARITHMETIC.md, "Spine separation"): for two
+arrays, `Footprints.SpineApart` (`PathSpinesApart.spineApart`). -/
+def PathSpinesApart (h : Heap) (x : Val) (p : List String) (y : Val) (q : List String) : Prop :=
   ∃ u w, readPath h x p = some u ∧ readPath h y q = some w ∧
-    ∀ s t, Footprints.storeOf u = some s → Footprints.storeOf w = some t → s ≠ t
+    ∀ s t, Footprints.spineOf u = some s → Footprints.spineOf w = some t → s ≠ t
 
-theorem PathStoresApart.symm {h : Heap} {x y : Val} {p q : List String}
-    (ha : PathStoresApart h x p y q) : PathStoresApart h y q x p := by
+theorem PathSpinesApart.symm {h : Heap} {x y : Val} {p q : List String}
+    (ha : PathSpinesApart h x p y q) : PathSpinesApart h y q x p := by
   obtain ⟨u, w, hu, hw, hne⟩ := ha
   exact ⟨w, u, hw, hu, fun s t hs ht he => hne t s ht hs he.symm⟩
 
-theorem PathStoresApart.extend {h : Heap} {x y : Val} {p q : List String} (vs : List Val)
-    (ha : PathStoresApart h x p y q) : PathStoresApart (h ++ vs) x p y q := by
+theorem PathSpinesApart.extend {h : Heap} {x y : Val} {p q : List String} (vs : List Val)
+    (ha : PathSpinesApart h x p y q) : PathSpinesApart (h ++ vs) x p y q := by
   obtain ⟨u, w, hu, hw, hne⟩ := ha
   exact ⟨u, w, readPath_extend vs hu, readPath_extend vs hw, hne⟩
 
@@ -905,11 +905,11 @@ theorem regionsApart_symm {h : Heap} {u v : Val} (ha : RegionsApart h u v) : Reg
   obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := ha
   exact ⟨sb, ys, sa, xs, hy, hx, fun l hl m hm he => hab m hm l hl he.symm⟩
 
-/-- An array object's region has its store cell. -/
-theorem regionOf_store {h : Heap} {v : Val} {s xs l} (hr : RegionOf h v s xs)
-    (hs : Footprints.storeOf v = some l) : s = some l := by
+/-- An array object's region has its spine cell. -/
+theorem regionOf_spine {h : Heap} {v : Val} {s xs l} (hr : RegionOf h v s xs)
+    (hs : Footprints.spineOf v = some l) : s = some l := by
   rcases hr with ⟨-, rfl⟩ | ⟨st, rfl, hst, -⟩
-  · simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+  · simp [Footprints.spineOf, Footprints.fieldsOf] at hs
   · rw [hst] at hs; exact hs
 
 /-- A region's value determines it, in a given heap. -/
@@ -917,13 +917,13 @@ theorem regionOf_unique {h : Heap} {v : Val} {s s' xs xs'} (hr : RegionOf h v s 
     s = s' ∧ xs = xs' := by
   rcases hr with ⟨rfl, rfl⟩ | ⟨st, rfl, hst, hx⟩ <;> rcases hr' with ⟨rfl, he⟩ | ⟨st', rfl, hst', hx'⟩
   · cases he; exact ⟨rfl, rfl⟩
-  · simp [Footprints.storeOf, Footprints.fieldsOf] at hst'
-  · subst he; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+  · simp [Footprints.spineOf, Footprints.fieldsOf] at hst'
+  · subst he; simp [Footprints.spineOf, Footprints.fieldsOf] at hst
   · rw [hst] at hst'; cases hst'; rw [hx] at hx'; cases hx'; exact ⟨rfl, rfl⟩
 
 /-- An index fact (DESIGN of the guarded write, PROGRAM-TYPING.md, "Writes at
 a checked index"): the slot `k` holds a number that is an array index
-(`index`); the slot `n` holds the length of the store the array in slot `x`
+(`index`); the slot `n` holds the length of the spine the array in slot `x`
 holds (`length`); the slot `k` holds an array index at most that length
 (`bound`), below it where `strict`; the slot `k` holds a safe integer (`int`);
 the slot `k` holds the double `2^53`, past the safe integers (`pastSafe`);
@@ -931,11 +931,11 @@ the slots of a linear
 fact denote integers meeting it (`linear`, ARITHMETIC.md, "Linear
 facts"), its terms (`Term`) rooted at slots. `index`, `int` and a linear fact
 of slots' values read no heap; the others read the locations their terms or
-the array's store field read. A guarded fact (`guarded`, ARITHMETIC.md,
+the array's spine field read. A guarded fact (`guarded`, ARITHMETIC.md,
 "Guarded clauses") holds where the path `path` from the slot `slot` reads a
 value (`readGuard`) that is the tag's, or its body holds. An element fact
 (`element`, ARITHMETIC.md, "Quantified clauses") states that the slot
-`value` holds what the store of the array in slot `array` holds at the index
+`value` holds what the spine of the array in slot `array` holds at the index
 the slot `index` holds, below its length: the present element's value, or
 `undefined` at a hole. A quantified fact (`every`) states, of the array the
 path `path` reads from the slot `slot`, that for every index `i` with
@@ -943,10 +943,10 @@ path `path` reads from the slot `slot`, that for every index `i` with
 element at it (a present safe integer) and terms, each denoting an integer.
 A region fact (`apart`, FOOTPRINTS.md, "Element regions") states that the
 regions of the values in slots `slot` and `other` share no location
-(`RegionsApart`). A store separation (`storeApart`, ARITHMETIC.md, "Store
+(`RegionsApart`). A spine separation (`spineApart`, ARITHMETIC.md, "Spine
 separation") states that the values the paths `path` and `otherPath` read
-from the slots `slot` and `other` hold different array stores
-(`PathStoresApart`). -/
+from the slots `slot` and `other` hold different array spines
+(`PathSpinesApart`). -/
 inductive IndexFact where
   | index (slot : Nat)
   | length (array length : Nat)
@@ -959,7 +959,7 @@ inductive IndexFact where
   | element (value array index : Nat)
   | every (slot : Nat) (path : List String) (stop : Term) (body : List (LinearClause Bound))
   | apart (slot other : Nat)
-  | storeApart (slot : Nat) (path : List String) (other : Nat) (otherPath : List String)
+  | spineApart (slot : Nat) (path : List String) (other : Nat) (otherPath : List String)
   deriving DecidableEq, Repr, Hashable
 
 namespace IndexFact
@@ -977,7 +977,7 @@ def slots : IndexFact → List Nat
   | .element v x k => [v, x, k]
   | .every s _ stop body => s :: stop.slots ++ body.flatMap fun F => F.vars.flatMap Bound.slots
   | .apart a b => [a, b]
-  | .storeApart a _ b _ => [a, b]
+  | .spineApart a _ b _ => [a, b]
 
 /-- The slots of the entry environment a fact reads, by its entry terms. -/
 def entrySlots : IndexFact → List Nat
@@ -1035,42 +1035,42 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
   | .every s p stop body => do
     pure (.every (← f s) p (← stop.mapM f) (← mapBody f body))
   | .apart a b => do pure (.apart (← f a) (← f b))
-  | .storeApart a p b q => do pure (.storeApart (← f a) p (← f b) q)
+  | .spineApart a p b q => do pure (.spineApart (← f a) p (← f b) q)
 
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
 
 def HoldsAt (ε : EntryState) : IndexFact → Env → Heap → Prop
   | .index k, ρ, _ => ∃ b i, ρ k = .num b ∧ indexOfBits b = some i
-  | .length x n, ρ, h => ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+  | .length x n, ρ, h => ∃ s ls, Footprints.spineOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ n = .num (bitsOfNat ls.length) ∧ ls.length ≤ maxArrayLength
-  | .bound x k st, ρ, h => ∃ s ls b i, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+  | .bound x k st, ρ, h => ∃ s ls b i, Footprints.spineOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ indexOfBits b = some i ∧ i + (if st then 1 else 0) ≤ ls.length
   | .int k, ρ, _ => (intValue (ρ k)).isSome
   | .pastSafe k, ρ, _ => ρ k = .num SafeIntegers.pastSafeBits
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ε ρ h t).isSome) ∧ F.Holds (termValuation ε ρ h)
   | .either A B, ρ, h => A.HoldsAt ε ρ h ∨ B.HoldsAt ε ρ h
   | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ε ρ h)
-  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]?.bind storeEntries = some ls ∧
+  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]?.bind spineEntries = some ls ∧
       ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
       (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
-      h[st]?.bind storeEntries = some ls ∧ termValue ε ρ h stop = some n ∧
+      h[st]?.bind spineEntries = some ls ∧ termValue ε ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ε ρ h ls i)
   | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
-  | .storeApart a p b q, ρ, h => PathStoresApart h (ρ a) p (ρ b) q
+  | .spineApart a p b q, ρ, h => PathSpinesApart h (ρ a) p (ρ b) q
 
 
 
-/-- A quantified clause is framed by its array path, store, bound and body values. -/
+/-- A quantified clause is framed by its array path, spine, bound and body values. -/
 theorem every_frame {s p stop body ρ h h'}
     (he : (IndexFact.every s p stop body).HoldsAt ε ρ h)
     (hp : ∀ w, readPath h (ρ s) p = some w → readPath h' (ρ s) p = some w)
     (hs : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
-      h[st]?.bind storeEntries = some ls → h'[st]?.bind storeEntries = some ls)
+      h[st]?.bind spineEntries = some ls → h'[st]?.bind spineEntries = some ls)
     (hn : ∀ z, termValue ε ρ h stop = some z → termValue ε ρ h' stop = some z)
     (hb : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
-      h[st]?.bind storeEntries = some ls → ∀ F ∈ body, ∀ i b, b ∈ F.vars → ∀ z,
+      h[st]?.bind spineEntries = some ls → ∀ F ∈ body, ∀ i b, b ∈ F.vars → ∀ z,
       boundValue ε ρ h ls i b = some z → boundValue ε ρ h' ls i b = some z) :
     (IndexFact.every s p stop body).HoldsAt ε ρ h' := by
   obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := he
@@ -1091,7 +1091,7 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨a', ha, b', hb, rfl⟩ := hm
     simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
-  | storeApart a p b q =>
+  | spineApart a p b q =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨a', ha, b', hb, rfl⟩ := hm
     simp only [HoldsAt, hf a (by simp [slots]) a' ha, hf b (by simp [slots]) b' hb]
@@ -1326,7 +1326,7 @@ def defines : IndexFact → List Term
   | .element _ _ k => [.value k]
   | .every _ _ stop _ => [stop]
   | .index _ | .bound _ _ _ | .pastSafe _ | .either _ _ | .guarded _ _ _ _ | .apart _ _
-  | .storeApart _ _ _ _ => []
+  | .spineApart _ _ _ _ => []
 
 /-- **A fact that holds defines its terms** (proved, by every form): each
 term `defines` names denotes an integer wherever the fact holds. -/
@@ -1342,7 +1342,7 @@ theorem defines_holds {F : IndexFact} {ρ : Env} {h : Heap} (hF : F.HoldsAt ε �
     obtain ⟨s, ls, hs, hl, hn, hm⟩ := hF
     simp only [defines, List.mem_cons, List.not_mem_nil, or_false] at ht
     rcases ht with rfl | rfl
-    · simp only [termValue_length, lengthOf_of_store hs hl hm, Option.isSome_some]
+    · simp only [termValue_length, lengthOf_of_spine hs hl hm, Option.isSome_some]
     · simp only [termValue_value, hn]
       rw [intValue_num (i := (ls.length : Int)) ⟨by simp [maxArrayLength] at hm ⊢; omega, .inl ⟨by omega, by simp⟩⟩]; rfl
   | element v x k =>
@@ -1353,7 +1353,7 @@ theorem defines_holds {F : IndexFact} {ρ : Env} {h : Heap} (hF : F.HoldsAt ε �
     obtain ⟨w, sto, ls, n, -, -, -, hn, -⟩ := hF
     simp only [defines, List.mem_singleton] at ht; subst ht
     simp [hn]
-  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | apart _ _ | storeApart _ _ _ _ =>
+  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | apart _ _ | spineApart _ _ _ _ =>
     simp [defines] at ht
 
 /-- A total renaming renames every fact. -/
@@ -1379,7 +1379,7 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
     have hst : Term.mapM (some ∘ f) stop = some (Term.mapM' f stop) := congrFun (Term.mapM_eq f) stop
     exact ⟨.every (f s) p (Term.mapM' f stop) body', by simp only [mapM, hb, hst]; rfl⟩
   | .apart a b => ⟨_, rfl⟩
-  | .storeApart a p b q => ⟨_, rfl⟩
+  | .spineApart a p b q => ⟨_, rfl⟩
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
@@ -1388,24 +1388,24 @@ theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
   simp only [map, hG, Option.getD_some]
   exact holdsAt_mapM hG (fun s hs t ht => by cases ht; exact hf s hs)
 
-/-- A heap extension preserves a fact: the store lies in the old heap. -/
+/-- A heap extension preserves a fact: the spine lies in the old heap. -/
 theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ε ρ h) :
     F.HoldsAt ε ρ (h ++ vs) := by
   induction F with
   | either A B ihA ihB => exact hF.imp ihA ihB
   | apart a b => exact regionsApart_extend vs hF
-  | storeApart a p b q => exact PathStoresApart.extend vs hF
+  | spineApart a p b q => exact PathSpinesApart.extend vs hF
   | guarded s p t B ih =>
     obtain ⟨v, hv, hor⟩ := hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
   | element v x k =>
     obtain ⟨s, ls, b, i, hs, hl, hk, hi, hlt, hp, hh⟩ := hF
-    refine ⟨s, ls, b, i, hs, storeEntries_extend vs hl, hk, hi, hlt, fun l hli => ?_, hh⟩
+    refine ⟨s, ls, b, i, hs, spineEntries_extend vs hl, hk, hi, hlt, fun l hli => ?_, hh⟩
     have := hp l hli
     rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp this).1]; exact this
   | every s p stop body =>
     obtain ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩ := hF
-    refine ⟨w, st, ls, n, readPath_extend vs hw, hsto, storeEntries_extend vs hls,
+    refine ⟨w, st, ls, n, readPath_extend vs hw, hsto, spineEntries_extend vs hls,
       termValue_extend vs hn, fun i hi F hF => ?_⟩
     have hA := hall i hi F hF
     refine LinearClause.holdsAt_extend (fun x hx m hm => ?_) hA
@@ -1459,7 +1459,7 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
   | apart a b =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
     simp only [HoldsAt, hs.1, hs.2]
-  | storeApart a p b q =>
+  | spineApart a p b q =>
     simp only [slots, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq] at hs
     simp only [HoldsAt, hs.1, hs.2]
   | guarded s p t B ih =>
@@ -1701,7 +1701,7 @@ theorem holdsAt_mapEntry {F F' : IndexFact} {g : Nat → Option Nat} {ε' : Entr
   | pastSafe k => cases hm; exact Iff.rfl
   | element v x k => cases hm; exact Iff.rfl
   | apart a b => cases hm; exact Iff.rfl
-  | storeApart a p b q => cases hm; exact Iff.rfl
+  | spineApart a p b q => cases hm; exact Iff.rfl
 
 /-- **A change of frame**: the fact with its current slots renamed by `f`
 (`mapM`) and its entry slots translated by `g` (`mapEntry`), each by its own
@@ -1856,14 +1856,14 @@ end LinearClause
 /-! ## Facts a heap change keeps (ARITHMETIC.md, "Linear facts")
 
 A change is described by what a location held before it: an object, a
-number, an array store. A term reads locations of known contents, its path's
-objects, then a store or a number; it denotes the same after a change that
+number, an array spine. A term reads locations of known contents, its path's
+objects, then a spine or a number; it denotes the same after a change that
 alters no location holding what it reads. -/
 
-/-- What a heap change does to a location holding an array store: keeps its
-contents, keeps its length, grows it (a store at least as long, at most
+/-- What a heap change does to a location holding an array spine: keeps its
+contents, keeps its length, grows it (a spine at least as long, at most
 `2^32 - 1` long where it was), or neither. -/
-inductive StoreChange where
+inductive SpineChange where
   | keep
   | length
   | grow
@@ -1871,12 +1871,12 @@ inductive StoreChange where
   deriving DecidableEq, Repr
 
 /-- Which locations a heap change may alter, by what they held before it: an
-object (`obj`), a number (`num`), an array store (`store`). A location
+object (`obj`), a number (`num`), an array spine (`spine`). A location
 holding any other value may change. -/
 structure Changes where
   obj : Bool
   num : Bool
-  store : StoreChange
+  spine : SpineChange
   deriving DecidableEq, Repr
 
 namespace Changes
@@ -1885,17 +1885,17 @@ namespace Changes
 def alters (c : Changes) : Val → Bool
   | .objAt .. => c.obj
   | .num _ => c.num
-  | .arr _ | .viewStore .. => c.store != .keep
+  | .arr _ | .viewSpine .. => c.spine != .keep
   | _ => true
 
 /-- `h'` meets the change from `h`: every location of `h` holding a value it
-does not alter holds it in `h'`, and where it keeps stores' lengths every
-store of `h` is a store of that length in `h'`. -/
+does not alter holds it in `h'`, and where it keeps spines' lengths every
+spine of `h` is a spine of that length in `h'`. -/
 def Holds (c : Changes) (h h' : Heap) : Prop :=
   (∀ (l : Nat) (v : Val), h[l]? = some v → c.alters v = false → h'[l]? = some v) ∧
-  (c.store = .length → ∀ (l : Nat) (ls : List (Option Nat)), h[l]? = some (.arr ls) →
+  (c.spine = .length → ∀ (l : Nat) (ls : List (Option Nat)), h[l]? = some (.arr ls) →
     ∃ ls' : List (Option Nat), h'[l]? = some (.arr ls') ∧ ls'.length = ls.length) ∧
-  (c.store = .grow → ∀ (l : Nat) (ls : List (Option Nat)), h[l]? = some (.arr ls) →
+  (c.spine = .grow → ∀ (l : Nat) (ls : List (Option Nat)), h[l]? = some (.arr ls) →
     ∃ ls' : List (Option Nat), h'[l]? = some (.arr ls') ∧ ls.length ≤ ls'.length ∧
       (ls.length ≤ maxArrayLength → ls'.length ≤ maxArrayLength))
 
@@ -1916,7 +1916,7 @@ theorem top_alters (v : Val) : Changes.top.alters v = true := by
 
 /-- Two changes' union. -/
 def join (a b : Changes) : Changes :=
-  ⟨a.obj || b.obj, a.num || b.num, if a.store == .keep && b.store == .keep then .keep else .any⟩
+  ⟨a.obj || b.obj, a.num || b.num, if a.spine == .keep && b.spine == .keep then .keep else .any⟩
 
 theorem join_alters_left {a b : Changes} {v : Val} (h : a.alters v = true) : (a.join b).alters v = true := by
   cases v <;> simp_all [Changes.join, Changes.alters]
@@ -1930,35 +1930,35 @@ theorem top_holds (h h' : Heap) : top.Holds h h' :=
 
 /-- The change a closed footprint allows: below `any` no location holding an
 object changes, at most `init` none holding a number, `init` or `scalar` on a
-store is `keep`, and `grow` on a store leaves each store no shorter and within
+spine is `keep`, and `grow` on a spine leaves each spine no shorter and within
 `maxArrayLength` where it was. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
   ⟨Φ.value == .any, !(Φ.value.le .init),
-    match Φ.stores.onStore with
+    match Φ.spines.onSpine with
     | .keep => .keep
     | .grow => .grow
     | _ => .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
-  replace hp := Footprints.Closed.holds_iff.mp (hp.mono (Footprints.Closed.le_ofStores_stores Φ))
+  replace hp := Footprints.Closed.holds_iff.mp (hp.mono (Footprints.Closed.le_ofSpines_spines Φ))
   refine ⟨fun l v hv ha => ?_, fun hs => ?_, fun hs => ?_⟩
   · obtain ⟨v', hv', hc⟩ := hp.2 l v hv
     have hkeep : v' = v := by
       cases v
       case arr ls =>
         simp only [alters, ofClosed] at ha
-        have hst : Φ.stores = .keep ∨ Φ.stores = .init ∨ Φ.stores = .scalar := by
-          cases hΦ : Φ.stores <;> simp_all [Footprints.Change.onStore]
-        simp only [Footprints.Closed.at_ofStores, Footprints.isArr, ite_true] at hc
+        have hst : Φ.spines = .keep ∨ Φ.spines = .init ∨ Φ.spines = .scalar := by
+          cases hΦ : Φ.spines <;> simp_all [Footprints.Change.onSpine]
+        simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true] at hc
         rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
-        · rw [hst] at hc; exact hc.init_store
-        · rw [hst] at hc; exact hc.scalar_store
-      case viewStore f cs =>
+        · rw [hst] at hc; exact hc.init_spine
+        · rw [hst] at hc; exact hc.scalar_spine
+      case viewSpine f cs =>
         simp only [alters, ofClosed] at ha
-        have hst : Φ.stores = .keep ∨ Φ.stores = .init ∨ Φ.stores = .scalar := by
-          cases hΦ : Φ.stores <;> simp_all [Footprints.Change.onStore]
-        simp only [Footprints.Closed.at_ofStores, Footprints.isArr, ite_true] at hc
+        have hst : Φ.spines = .keep ∨ Φ.spines = .init ∨ Φ.spines = .scalar := by
+          cases hΦ : Φ.spines <;> simp_all [Footprints.Change.onSpine]
+        simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true] at hc
         rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
         · rw [hst] at hc; exact hc.init_isArr rfl
@@ -1966,22 +1966,22 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       case objAt =>
         have hva : Φ.value ≠ .any := by
           intro he; simp [alters, ofClosed, he] at ha
-        simp only [Footprints.Closed.at_ofStores, Footprints.isArr] at hc
+        simp only [Footprints.Closed.at_ofSpines, Footprints.isArr] at hc
         exact hc.object_kept hva rfl
       case num =>
         have hva : Φ.value.le .init = true := by
           simpa [alters, ofClosed] using ha
-        simp only [Footprints.Closed.at_ofStores, Footprints.isArr] at hc
+        simp only [Footprints.Closed.at_ofSpines, Footprints.isArr] at hc
         exact hc.defined_kept hva rfl
       all_goals simp [alters] at ha
     exact hkeep ▸ hv'
   · revert hs; simp only [ofClosed]; split <;> simp
   · intro l ls hl
-    have hg : Φ.stores = .grow := by
+    have hg : Φ.spines = .grow := by
       revert hs; simp only [ofClosed]
-      cases hΦ : Φ.stores <;> simp [Footprints.Change.onStore]
+      cases hΦ : Φ.spines <;> simp [Footprints.Change.onSpine]
     obtain ⟨v', hv', hc⟩ := hp.2 l _ hl
-    simp only [Footprints.Closed.at_ofStores, Footprints.isArr, ite_true, hg] at hc
+    simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true, hg] at hc
     rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc | ⟨_, _, _, he, -⟩
     · exact ⟨ls, hv', Nat.le_refl _, id⟩
     · cases h₁; exact ⟨ls', hv', hlen.1, hlen.2⟩
@@ -1998,7 +1998,7 @@ def FirstKept (first : Nat → String → Bool) (ρ : Env) (h h' : Heap) : Prop 
 
 /-- Whether a term denotes the same after a change `c`: each location its
 path reads holds an object, but the last, which holds a number for a value
-term; a length term then reads a store, a view term a number. The first
+term; a length term then reads a spine, a view term a number. The first
 location, field `g` of the root's object, may instead be one `first` keeps. -/
 def Term.pathKeptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
   let last := if t.kind == .value then c.num else c.obj
@@ -2007,9 +2007,9 @@ def Term.pathKeptBy (c : Changes) (first : Nat → String → Bool) (t : Term) :
     | g :: q => (first t.slot g || !(if q.isEmpty then last else c.obj)) &&
         (q.isEmpty || (!last && (q.length == 1 || !c.obj)))
 
-/-- Whether a change keeps a store's length: it keeps the store or its
+/-- Whether a change keeps a spine's length: it keeps the spine or its
 length. -/
-def Changes.keepsLength (c : Changes) : Bool := c.store == .keep || c.store == .length
+def Changes.keepsLength (c : Changes) : Bool := c.spine == .keep || c.spine == .length
 
 def Term.keptBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
   t.atEntry || t.pathKeptBy c first &&
@@ -2051,7 +2051,7 @@ theorem readPath_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') :
       · cases hw
     all_goals simp [readPath] at hw
 
-/-- A change keeps what a kind of term reads of a value: a store it keeps or
+/-- A change keeps what a kind of term reads of a value: a spine it keeps or
 keeps the length of, a number it keeps. -/
 theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term.Kind} {w : Val} {n : Int}
     (hk : kindValue h k w = some n) (hlen : k = .length → c.keepsLength = true) (hview : k = .view → c.num = false) :
@@ -2060,13 +2060,13 @@ theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term
   | value => exact hk
   | strLength => exact hk
   | length =>
-    obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_store hk
+    obtain ⟨s, ls, hs, hls, rfl, hm⟩ := lengthOf_spine hk
     have hst := hlen rfl
-    cases hcs : c.store with
-    | keep => exact lengthOf_of_store hs (hc.1 s _ hls (by simp [Changes.alters, hcs])) hm
+    cases hcs : c.spine with
+    | keep => exact lengthOf_of_spine hs (hc.1 s _ hls (by simp [Changes.alters, hcs])) hm
     | length =>
       obtain ⟨ls', hls', heq⟩ := hc.2.1 hcs s ls hls
-      have := lengthOf_of_store hs hls' (by omega)
+      have := lengthOf_of_spine hs hls' (by omega)
       simp only [kindValue, this, heq]
     | grow | any => simp [Changes.keepsLength, hcs] at hst
   | view => exact hk
@@ -2139,29 +2139,29 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
       obtain ⟨b, rfl, -⟩ := intValue_safe hkw
       rfl
     | length =>
-      obtain ⟨st, ls, hs, -⟩ := lengthOf_store hkw
+      obtain ⟨st, ls, hs, -⟩ := lengthOf_spine hkw
       cases w
       case objAt => rfl
-      all_goals simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+      all_goals simp [Footprints.spineOf, Footprints.fieldsOf] at hs
     | view =>
       obtain ⟨fs, cd, o, l, b, rfl, -⟩ := viewLengthOf_inv hkw
       rfl
     | strLength => exact absurd rfl hstr
   by_cases hfs : kind = .length ∧ p = [] ∧ first s "[]" = true
-  · -- The store at field `[]` of the root's object, kept by `first`.
+  · -- The spine at field `[]` of the root's object, kept by `first`.
     obtain ⟨rfl, rfl, hfs⟩ := hfs
     refine ⟨w, hw, ?_⟩
     simp only [readPath, Option.some.injEq] at hw
     subst hw
     simp only [kindValue] at hkw ⊢
-    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hkw
+    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hkw
     cases hv : ρ s
     case objAt fs cd o =>
       rw [hv] at hst
       have hl : fs.lookup (.str "[]") = some st := by
-        simpa [Footprints.fieldsOf, arrayStoreKey] using Footprints.storeOf_lookup hst
-      exact lengthOf_of_store hst (hf s "[]" fs cd o st _ hfs hv hl hls) hm
-    all_goals rw [hv] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+        simpa [Footprints.fieldsOf, arraySpineKey] using Footprints.spineOf_lookup hst
+      exact lengthOf_of_spine hst (hf s "[]" fs cd o st _ hfs hv hl hls) hm
+    all_goals rw [hv] at hst; simp [Footprints.spineOf, Footprints.fieldsOf] at hst
   have hkind' : (match kind with
       | .value => true
       | .length => c.keepsLength
@@ -2181,9 +2181,9 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
   exact pathRead_kept hc hf (by simpa [Term.pathKeptBy] using hpath) hlast hw
 
 /-- Whether a change grows what a length term denotes: it keeps the term's
-path and grows every store (`StoreChange.grow`). -/
+path and grows every spine (`SpineChange.grow`). -/
 def Term.grownBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
-  t.kind == .length && c.store == .grow && t.pathKeptBy c first
+  t.kind == .length && c.spine == .grow && t.pathKeptBy c first
 
 /-- **A growing change keeps a length term defined, at least as large**
 (`Term.grownBy`). -/
@@ -2198,15 +2198,15 @@ theorem termValue_grown {c : Changes} {first : Nat → String → Bool} {ρ : En
   simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨w, hw, hkw⟩ := ht
   simp only [kindValue] at hkw
-  obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hkw
+  obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_spine hkw
   have hlast : c.alters w = (if Term.Kind.length == .value then c.num else c.obj) := by
     cases w
     case objAt => rfl
-    all_goals simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+    all_goals simp [Footprints.spineOf, Footprints.fieldsOf] at hst
   obtain ⟨ls', hls', hle, hmax⟩ := hc.2.2 hs st ls hls
   refine ⟨ls'.length, ⟨w, pathRead_kept hc hf hpath hlast hw, ?_⟩, by exact_mod_cast hle⟩
   simp only [kindValue]
-  exact lengthOf_of_store hst hls' (hmax hm)
+  exact lengthOf_of_spine hst hls' (hmax hm)
 
 /-- Whether a change keeps `F ≤ d` by monotonicity: each term it keeps, or a
 length it grows whose coefficient is at most `0`. -/
@@ -2344,10 +2344,10 @@ def bodyKeptBy (c : Changes) (first : Nat → String → Bool) : LinearClause Bo
 
 namespace IndexFact
 
-/-- A footprint frames a quantified clause when it keeps the store and
+/-- A footprint frames a quantified clause when it keeps the spine and
 numeric element cells, its array path, bound and every free body term. -/
 def everyKept (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
-  | .every s p stop body => c.store == .keep && !c.num &&
+  | .every s p stop body => c.spine == .keep && !c.num &&
       (Term.mk .length s p false).pathKeptBy c first && stop.keptBy c first &&
       body.all (fun F => F.vars.all fun b => match b with
         | .free t => t.keptBy c first
@@ -2362,14 +2362,14 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
   all_goals try contradiction
   rename_i s p stop body
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.all_eq_true] at hk
-  obtain ⟨⟨⟨⟨hstore, hnum⟩, hpath⟩, hstop⟩, hbody⟩ := hk
+  obtain ⟨⟨⟨⟨hspine, hnum⟩, hpath⟩, hstop⟩, hbody⟩ := hk
   obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := hF
   have hobj : c.alters w = c.obj := by
     cases w <;> simp_all [elementsOf, Changes.alters]
   have hpath' := pathRead_kept (kind := .length) hc hf hpath hobj hw
-  have hls' : h'[st]?.bind storeEntries = some ls := by
+  have hls' : h'[st]?.bind spineEntries = some ls := by
     obtain ⟨u, hu, he⟩ := Option.bind_eq_some_iff.mp hls
-    rw [hc.1 st u hu (by cases u <;> simp_all [storeEntries, Changes.alters])]; exact he
+    rw [hc.1 st u hu (by cases u <;> simp_all [spineEntries, Changes.alters])]; exact he
   refine ⟨w, st, ls, z, hpath', hst, hls',
     termValue_kept hc hf hstop hz, fun i hi F hm => ?_⟩
   have hA := hall i hi F hm
@@ -2389,39 +2389,39 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
   | offset d => exact elem (i + d) ha
   | project k p => have := hbody F hm (.project k p) hx; contradiction
 
-/-- A change keeping every store keeps every region: its store cell holds
-the same store, and a raw store reads no heap. -/
+/-- A change keeping every spine keeps every region: its spine cell holds
+the same spine, and a raw spine reads no heap. -/
 theorem regionOf_kept {c : Changes} {h h' : Heap} {v : Val} {s xs}
-    (hc : c.Holds h h') (hk : c.store = .keep) (hr : RegionOf h v s xs) : RegionOf h' v s xs := by
+    (hc : c.Holds h h') (hk : c.spine = .keep) (hr : RegionOf h v s xs) : RegionOf h' v s xs := by
   rcases hr with hr | ⟨st, hs, hst, hx⟩
   · exact .inl hr
   · exact .inr ⟨st, hs, hst, hc.1 st _ hx (by simp [Changes.alters, hk])⟩
 
 theorem regionsApart_kept {c : Changes} {h h' : Heap} {u v : Val}
-    (hc : c.Holds h h') (hk : c.store = .keep) (ha : RegionsApart h u v) : RegionsApart h' u v := by
+    (hc : c.Holds h h') (hk : c.spine = .keep) (ha : RegionsApart h u v) : RegionsApart h' u v := by
   obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := ha
   exact ⟨sa, xs, sb, ys, regionOf_kept hc hk hx, regionOf_kept hc hk hy, hab⟩
 
 /-- Whether a change preserves a fact (`Term.keptBy`): `index` and `int` read
-no heap, `length` and `bound` a store's length. -/
+no heap, `length` and `bound` a spine's length. -/
 def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .index _ | .int _ | .pastSafe _ => true
   | .length x _ => c.keepsLength || first x "[]"
-  | .bound x _ _ => c.store != .any || first x "[]"
+  | .bound x _ _ => c.spine != .any || first x "[]"
   | .linear F => F.vars.all (Term.keptBy c first) || match F with
     | .le G _ => Term.formKeptBy c first G
     | .ne _ _ => false
   | .either A B => A.keptBy c first && B.keptBy c first
   | .guarded s p _ B => guardKept first s p && B.keptBy c first
   | .element .. | .every .. => false
-  | .apart .. => c.store == .keep
-  | .storeApart a p b q => guardKept first a p && guardKept first b q
+  | .apart .. => c.spine == .keep
+  | .spineApart a p b q => guardKept first a p && guardKept first b q
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ε ρ h) :
     F.HoldsAt ε ρ h' := by
-  have store : ∀ {x s : Nat} {ls : List (Option Nat)}, (c.store != .any || first x "[]") = true →
-      Footprints.storeOf (ρ x) = some s → h[s]? = some (.arr ls) →
+  have spine : ∀ {x s : Nat} {ls : List (Option Nat)}, (c.spine != .any || first x "[]") = true →
+      Footprints.spineOf (ρ x) = some s → h[s]? = some (.arr ls) →
       ∃ ls' : List (Option Nat), h'[s]? = some (.arr ls') ∧ ls.length ≤ ls'.length ∧
         ((c.keepsLength || first x "[]") = true → ls'.length = ls.length) := by
     intro x s ls hk hs hls
@@ -2430,11 +2430,11 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
       case objAt fs cd o =>
         rw [hv] at hs
         have hl : fs.lookup (.str "[]") = some s := by
-          simpa [Footprints.fieldsOf, arrayStoreKey] using Footprints.storeOf_lookup hs
+          simpa [Footprints.fieldsOf, arraySpineKey] using Footprints.spineOf_lookup hs
         exact ⟨ls, hf x "[]" fs cd o s _ hfs hv hl hls, Nat.le_refl _, fun _ => rfl⟩
-      all_goals rw [hv] at hs; simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+      all_goals rw [hv] at hs; simp [Footprints.spineOf, Footprints.fieldsOf] at hs
     · simp only [hfs, Bool.or_false] at hk ⊢
-      cases hcs : c.store with
+      cases hcs : c.spine with
       | keep => exact ⟨ls, hc.1 s _ hls (by simp [Changes.alters, hcs]), Nat.le_refl _, fun _ => rfl⟩
       | length =>
         obtain ⟨ls', hls', heq⟩ := hc.2.1 hcs s ls hls
@@ -2450,7 +2450,7 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
   | apart a b =>
     simp only [keptBy, beq_iff_eq] at hk
     exact regionsApart_kept hc hk hF
-  | storeApart a p b q =>
+  | spineApart a p b q =>
     simp only [keptBy, Bool.and_eq_true] at hk
     obtain ⟨u, w, hu, hw, hne⟩ := hF
     exact ⟨u, w, readPath_guardKept hf hk.1 hu, readPath_guardKept hf hk.2 hw, hne⟩
@@ -2466,17 +2466,17 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
   | length x m =>
     simp only [keptBy] at hk
     obtain ⟨s, ls, hs, hls, hm, hmax⟩ := hF
-    have hk' : (c.store != .any || first x "[]") = true := by
+    have hk' : (c.spine != .any || first x "[]") = true := by
       rcases Bool.or_eq_true_iff.mp hk with h1 | h1
-      · cases hcs : c.store <;> simp_all [Changes.keepsLength]
+      · cases hcs : c.spine <;> simp_all [Changes.keepsLength]
       · simp [h1]
-    obtain ⟨ls', hls', -, heq⟩ := store hk' hs hls
+    obtain ⟨ls', hls', -, heq⟩ := spine hk' hs hls
     have heq := heq hk
     exact ⟨s, ls', hs, hls', heq ▸ hm, heq ▸ hmax⟩
   | bound x k st =>
     simp only [keptBy] at hk
     obtain ⟨s, ls, b, i, hs, hls, hb, hi, hle⟩ := hF
-    obtain ⟨ls', hls', hgrow, -⟩ := store hk hs hls
+    obtain ⟨ls', hls', hgrow, -⟩ := spine hk hs hls
     exact ⟨s, ls', b, i, hs, hls', hb, hi, by omega⟩
   | linear G =>
     simp only [keptBy, Bool.or_eq_true, List.all_eq_true] at hk
@@ -2576,7 +2576,7 @@ theorem holdsAt_keptWith {c : Changes} {first : Nat → String → Bool} {F : In
   | element _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | every _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
   | apart _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
-  | storeApart _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
+  | spineApart _ _ _ _ => exact holdsAt_kept hc hf (by simpa [keptWith] using hk) hF
 
 end IndexFact
 

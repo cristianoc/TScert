@@ -116,7 +116,7 @@ of `arity`, collecting no rest, whose effect is one module code realizes
 (`Effect.belowRow`: below its arity, a postcondition over the result, the
 receiver and its parameters admitted), safe from every frame meeting the
 signature's, its precondition and the separation `sep`, at the signature's
-result and its specification on both exits (`Exits.exitPostW`). `GraphCodeSpec` at no rest store, at `sep = {}` and with no
+result and its specification on both exits (`Exits.exitPostW`). `GraphCodeSpec` at no rest spine, at `sep = {}` and with no
 postcondition, is one (`rowSpec_of_graphCodeSpec`). -/
 def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
@@ -307,7 +307,7 @@ signature's exits (`exitBounds`) and its fresh flag. Its entry separation
 is the separation of the code's frames (`rowSpec_of_requestSafe`). -/
 structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
-  inputs : r.inputs = codeFrame c.arity c.row c.captures c.store
+  inputs : r.inputs = codeFrame c.arity c.row c.captures c.spine
   exprs : c.exprs = r.program.map (·.expression)
   conts : c.conts = r.program.map fun n => (n.continuation, n.handler)
   start : r.start = c.start
@@ -373,14 +373,14 @@ frame, meets its signature as a module row (`RowSpec`) at `sep`: the run
 (`Effect.ensures_frame`) establishes every postcondition the signature
 exports on both exits (`exportsEstablished_sound`). -/
 theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
-    (hcond : rowConditions c = true) (hstore : c.store = none)
-    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
+    (hcond : rowConditions c = true) (hspine : c.spine = none)
+    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
       (GraphCode.codeEntryIndices c) ρ n W h →
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
-      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
@@ -388,7 +388,7 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
     (hensG : c.row.effect.schema.normal.facts ≠ [] → ∀ η n W h L d,
-      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
       HeapObservations.SafePost (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
@@ -400,22 +400,22 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, hx⟩ := hcond
   refine ⟨harity, hrow, ?_⟩
   intro n W heap L he hw hh hgo hvalues hpre hsep r args hframe
-  have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W := by
-    rw [hstore]; exact he
-  have hpre' : PreAt c.row.effect c.store L heap := by rw [hstore]; exact hpre
+  have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W := by
+    rw [hspine]; exact he
+  have hpre' : PreAt c.row.effect c.spine L heap := by rw [hspine]; exact hpre
   have hrun := codeRun_of_clauses (sep := sep) hsafeG hboundG η n W heap L he' hw hh hgo hvalues hpre' hsep
-  rw [hstore] at hrun
+  rw [hspine] at hrun
   obtain ⟨pre, vs, hpl, rfl⟩ := hframe
   have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
   subst hpre0
   refine exportsEstablished_sound hx hw hh ?_
   by_cases hne : c.row.effect.schema.normal.facts = []
   · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩) (fun _ h => h) hrun
-  · have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
+  · have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep
         (GraphCode.codeEntryIndices c) (envOf ([] ++ r :: CallArguments.parameters c.arity args ++ vs) .nul) n W heap :=
       ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
     have hens := hensG hne η n W heap _ .nul hentry hgo
-    rw [code_goal, hstore] at hens
+    rw [code_goal, hspine] at hens
     refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
     obtain ⟨⟨h1, h2⟩, hq⟩ := hq
     exact ⟨h1, h2, fun F hF =>
@@ -434,7 +434,7 @@ meets the row conditions (`rowConditions`), the request's safety
 code meet its signature as a module row at the request's entry separation,
 at every assignment. -/
 theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
-    (hsafe : RequestSafe r) (hu : UnitIsCode r c) (hcond : rowConditions c = true) (hstore : c.store = none) :
+    (hsafe : RequestSafe r) (hu : UnitIsCode r c) (hcond : rowConditions c = true) (hspine : c.spine = none) :
     ∀ η, RowSpec (reassign (RequestJson.graph r.toRequest) η) c.arity c.exprs c.conts c.start c.captures c.row
       r.entrySeparation := by
   have hadm : ∀ η, r.Admits η := fun η => by simp [SourceRequest.Admits, hu.unqualified]
@@ -442,7 +442,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     rw [hu.exprs, hu.conts, program_nodes]
   have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
-  apply rowSpec_of_clauses hcond hstore
+  apply rowSpec_of_clauses hcond hspine
   · intro η n W h ρ he hP hρ
     have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) hρ
     rw [hprog, hu.goal, hu.start] at this
@@ -528,7 +528,7 @@ each entry position one lower, the result kept), and its run's bound the
 code's (`UnitIsCode.bound`). -/
 structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
-  store : c.store = none
+  spine : c.spine = none
   inputs : r.inputs = c.row.arguments.take c.arity ++ c.captures
   exprs : c.exprs = r.program.map (·.expression)
   conts : c.conts = r.program.map fun n => (n.continuation, n.handler)

@@ -6,10 +6,10 @@ import Verification.Semantics.HeapObservations
 A **closed footprint** mentions only the three class regions, the content
 categories that partition the locations (`Selector.partition`): one change
 for the old locations holding a value, one for those holding an ordinary
-array's store and one for those holding a typed array's view store. These
+array's spine and one for those holding a typed array's view spine. These
 are three components, each holding a change. On a value `grow` is `scalar`
-(`Change.onValue`), and on either kind of store `init` and `scalar` are
-`keep` (`Change.onStore`), so a component is read through its normalization
+(`Change.onValue`), and on either kind of spine `init` and `scalar` are
+`keep` (`Change.onSpine`), so a component is read through its normalization
 (`Closed.normal`, `Closed.post_normal`). Closed footprints are ordered
 exactly by their normalized components (`closed_order_exact`), their
 postcondition reads no slot, and the empty one and the one letting
@@ -18,9 +18,9 @@ no footprint relation beyond prefix and growth (`Closed.holds_empty`,
 `Closed.holds_top`). Heaps only grow under steps, so every run meets the
 latter (`Closed.top_safe`).
 
-A closed footprint stating one change for both store categories,
-`Closed.ofStores`, is the footprint `{values: δ, stores: δ'}`
-(`Closed.ofStores_post_iff`). A footprint of class regions alone has an
+A closed footprint stating one change for both spine categories,
+`Closed.ofSpines`, is the footprint `{values: δ, spines: δ'}`
+(`Closed.ofSpines_post_iff`). A footprint of class regions alone has an
 exact closed form (`Footprint.closed?`, `Footprint.closed?_sound`); every
 footprint has a closed bound, which it implies (`Footprint.close`,
 `Footprint.close_sound`). -/
@@ -42,41 +42,41 @@ structure Closed where
 def Closed.fp (c : Closed) : Footprint :=
   [(.cls .values, c.value), (.cls .arrays, c.array), (.cls .views, c.view)]
 
-/-- The closed footprint stating `value` for the values and `store` for both
-kinds of store: the footprint `{values: value, stores: store}`
-(`Closed.ofStores_post_iff`). -/
-def Closed.ofStores (value store : Change) : Closed := ⟨value, store, store⟩
+/-- The closed footprint stating `value` for the values and `spine` for both
+kinds of spine: the footprint `{values: value, spines: spine}`
+(`Closed.ofSpines_post_iff`). -/
+def Closed.ofSpines (value spine : Change) : Closed := ⟨value, spine, spine⟩
 
-/-- The least change bounding both store components: the change the closed
-footprint allows on the class `stores`. -/
-def Closed.stores (c : Closed) : Change := c.array.max c.view
+/-- The least change bounding both spine components: the change the closed
+footprint allows on the class `spines`. -/
+def Closed.spines (c : Closed) : Change := c.array.max c.view
 
 theorem Change.max_self (a : Change) : a.max a = a := by cases a <;> rfl
 
-@[simp] theorem Closed.stores_ofStores (v s : Change) : (Closed.ofStores v s).stores = s :=
+@[simp] theorem Closed.spines_ofSpines (v s : Change) : (Closed.ofSpines v s).spines = s :=
   Change.max_self s
 
-@[simp] theorem Closed.value_ofStores (v s : Change) : (Closed.ofStores v s).value = v := rfl
+@[simp] theorem Closed.value_ofSpines (v s : Change) : (Closed.ofSpines v s).value = v := rfl
 
 /-- On contents of class `value`, `grow` is `scalar`. -/
 def Change.onValue : Change → Change
   | .grow => .scalar
   | d => d
 
-/-- On a store, an array's or a view store, `init` and `scalar` are
+/-- On a spine, an array's or a view spine, `init` and `scalar` are
 `keep`. -/
-def Change.onStore : Change → Change
+def Change.onSpine : Change → Change
   | .init | .scalar => .keep
   | d => d
 
 def Closed.le (a b : Closed) : Bool :=
-  a.value.onValue.le b.value.onValue && a.array.onStore.le b.array.onStore && a.view.onStore.le b.view.onStore
+  a.value.onValue.le b.value.onValue && a.array.onSpine.le b.array.onSpine && a.view.onSpine.le b.view.onSpine
 
-/-- The order of closed footprints stating one change for both stores is the
+/-- The order of closed footprints stating one change for both spines is the
 order of their two components. -/
-theorem Closed.le_ofStores (v s v' s' : Change) :
-    (Closed.ofStores v s).le (Closed.ofStores v' s') = (v.onValue.le v'.onValue && s.onStore.le s'.onStore) := by
-  simp only [Closed.le, Closed.ofStores, Bool.and_assoc, Bool.and_self]
+theorem Closed.le_ofSpines (v s v' s' : Change) :
+    (Closed.ofSpines v s).le (Closed.ofSpines v' s') = (v.onValue.le v'.onValue && s.onSpine.le s'.onSpine) := by
+  simp only [Closed.le, Closed.ofSpines, Bool.and_assoc, Bool.and_self]
 
 private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
     (hle : δ.onValue.le δ'.onValue = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
@@ -89,9 +89,9 @@ private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
   | grow => exact Change.scalar_le_grow h''
   | _ => exact h''
 
-private theorem store_change {δ δ' : Change} {b v v'} (hv : isArr v = true)
-    (hle : δ.onStore.le δ'.onStore = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
-  have h' : δ.onStore.Holds b v v' := by
+private theorem spine_change {δ δ' : Change} {b v v'} (hv : isArr v = true)
+    (hle : δ.onSpine.le δ'.onSpine = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
+  have h' : δ.onSpine.Holds b v v' := by
     cases δ with
     | init => exact h.init_isArr hv
     | scalar => exact h.scalar_isArr hv
@@ -102,15 +102,15 @@ private theorem store_change {δ δ' : Change} {b v v'} (hv : isArr v = true)
   | scalar => exact .inl h''
   | _ => exact h''
 
-/-- Whether contents are a typed array's view store. -/
-def isViewStore : Val → Bool
-  | .viewStore .. => true
+/-- Whether contents are a typed array's view spine. -/
+def isViewSpine : Val → Bool
+  | .viewSpine .. => true
   | _ => false
 
 /-- The change a closed footprint allows on contents `v`, by their category
-(`Closed.at_category`): a value's, an array store's or a view store's. -/
+(`Closed.at_category`): a value's, an array spine's or a view spine's. -/
 def Closed.at (c : Closed) (v : Val) : Change :=
-  if isArr v then (if isViewStore v then c.view else c.array) else c.value
+  if isArr v then (if isViewSpine v then c.view else c.array) else c.value
 
 /-- **The change on contents is their category's component.** -/
 theorem Closed.at_category (c : Closed) (v : Val) : c.at v = match contentsCategory v with
@@ -124,13 +124,13 @@ theorem Closed.at_value {c : Closed} {v : Val} (hv : isArr v = false) : c.at v =
 
 @[simp] theorem Closed.at_arr (c : Closed) (ls : List (Option Nat)) : c.at (.arr ls) = c.array := rfl
 
-@[simp] theorem Closed.at_viewStore (c : Closed) (f : ViewFormat) (cs : List Nat) :
-    c.at (.viewStore f cs) = c.view := rfl
+@[simp] theorem Closed.at_viewSpine (c : Closed) (f : ViewFormat) (cs : List Nat) :
+    c.at (.viewSpine f cs) = c.view := rfl
 
-/-- On a closed footprint stating one change for both stores, the change on
-contents is the value's or the store's, by whether they are a store. -/
-theorem Closed.at_ofStores (v s : Change) (u : Val) :
-    (Closed.ofStores v s).at u = if isArr u then s else v := by
+/-- On a closed footprint stating one change for both spines, the change on
+contents is the value's or the spine's, by whether they are a spine. -/
+theorem Closed.at_ofSpines (v s : Change) (u : Val) :
+    (Closed.ofSpines v s).at u = if isArr u then s else v := by
   cases u <;> rfl
 
 private theorem cls_mem {S : Selector} {ρ : Env} {h : Heap} {l : Nat} {v : Val} (hv : h[l]? = some v) :
@@ -178,8 +178,8 @@ private theorem Closed.at_mono {a b : Closed} (hle : a.le b = true) {n v v'}
   simp only [Closed.le, Bool.and_eq_true] at hle
   cases hc : contentsCategory v <;> simp only [Closed.at_category, hc] at h ⊢
   · exact value_change ((contentsCategory_value v).mp hc) hle.1.1 h
-  · exact store_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.1.2 h
-  · exact store_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.2 h
+  · exact spine_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.1.2 h
+  · exact spine_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.2 h
 
 theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
     Post b.fp ρ h h' := by
@@ -187,19 +187,19 @@ theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Po
   exact ⟨hp.1, fun l v hv => let ⟨v', hv', hc⟩ := hp.2 l v hv; ⟨v', hv', Closed.at_mono hle hc⟩⟩
 
 /-- **The exact embedding of a closed footprint stating one change for both
-stores**: its postcondition is that of `{values: value, stores: store}`. -/
-theorem Closed.ofStores_post_iff {v s : Change} {ρ : Env} {h h' : Heap} :
-    Post (Closed.ofStores v s).fp ρ h h' ↔ Post [(.cls .values, v), (.cls .stores, s)] ρ h h' := by
+spines**: its postcondition is that of `{values: value, spines: spine}`. -/
+theorem Closed.ofSpines_post_iff {v s : Change} {ρ : Env} {h h' : Heap} :
+    Post (Closed.ofSpines v s).fp ρ h h' ↔ Post [(.cls .values, v), (.cls .spines, s)] ρ h h' := by
   refine and_congr Iff.rfl (forall_congr' fun l => forall_congr' fun u => forall_congr' fun hu =>
     exists_congr fun u' => and_congr Iff.rfl ?_)
-  rw [Closed.allowed_iff hu, Closed.at_ofStores]
+  rw [Closed.allowed_iff hu, Closed.at_ofSpines]
   constructor
   · intro hh
     refine .inr ?_
     cases ha : isArr u
     · refine ⟨(.cls .values, v), by simp, ?_, by simpa [ha] using hh⟩
       rw [cls_mem hu]; cases u <;> simp_all [contentsCategory, isArr, Selector.has]
-    · refine ⟨(.cls .stores, s), by simp, ?_, by simpa [ha] using hh⟩
+    · refine ⟨(.cls .spines, s), by simp, ?_, by simpa [ha] using hh⟩
       rw [cls_mem hu]; cases u <;> simp_all [contentsCategory, isArr, Selector.has]
   · rintro (rfl | ⟨e, he, hm, hh⟩)
     · exact Change.Holds.refl _ _ _
@@ -212,8 +212,8 @@ private def ρ₀ : Env := fun _ => .undef
 /-! ## Normalization -/
 
 /-- **The normal form of a closed footprint**: each component read on its
-category (`Change.onValue` on values, `Change.onStore` on either store). -/
-def Closed.normal (c : Closed) : Closed := ⟨c.value.onValue, c.array.onStore, c.view.onStore⟩
+category (`Change.onValue` on values, `Change.onSpine` on either spine). -/
+def Closed.normal (c : Closed) : Closed := ⟨c.value.onValue, c.array.onSpine, c.view.onSpine⟩
 
 private theorem onValue_holds {δ : Change} {b v v'} (hv : isArr v = false) :
     δ.onValue.Holds b v v' ↔ δ.Holds b v v' := by
@@ -221,8 +221,8 @@ private theorem onValue_holds {δ : Change} {b v v'} (hv : isArr v = false) :
   | grow => exact ⟨Change.scalar_le_grow, fun h => h.grow_value hv⟩
   | _ => exact Iff.rfl
 
-private theorem onStore_holds {δ : Change} {b v v'} (hv : isArr v = true) :
-    δ.onStore.Holds b v v' ↔ δ.Holds b v v' := by
+private theorem onSpine_holds {δ : Change} {b v v'} (hv : isArr v = true) :
+    δ.onSpine.Holds b v v' ↔ δ.Holds b v v' := by
   cases δ with
   | init => exact ⟨fun h => .inl h, fun h => h.init_isArr hv⟩
   | scalar => exact ⟨fun h => .inl h, fun h => h.scalar_isArr hv⟩
@@ -237,8 +237,8 @@ theorem Closed.post_normal {c : Closed} {ρ : Env} {h h' : Heap} :
   rw [Closed.at_category, Closed.at_category]; unfold Closed.normal
   cases hc : contentsCategory v <;> simp only
   · exact onValue_holds ((contentsCategory_value v).mp hc)
-  · exact onStore_holds (by cases v <;> simp_all [contentsCategory, isArr])
-  · exact onStore_holds (by cases v <;> simp_all [contentsCategory, isArr])
+  · exact onSpine_holds (by cases v <;> simp_all [contentsCategory, isArr])
+  · exact onSpine_holds (by cases v <;> simp_all [contentsCategory, isArr])
 
 /-! ## Closed footprints as call effects -/
 
@@ -248,8 +248,8 @@ any}`. -/
 def Closed.empty : Closed := ⟨.keep, .keep, .keep⟩
 def Closed.top : Closed := ⟨.any, .any, .any⟩
 
-theorem Closed.empty_eq : Closed.empty = Closed.ofStores .keep .keep := rfl
-theorem Closed.top_eq : Closed.top = Closed.ofStores .any .any := rfl
+theorem Closed.empty_eq : Closed.empty = Closed.ofSpines .keep .keep := rfl
+theorem Closed.top_eq : Closed.top = Closed.ofSpines .any .any := rfl
 
 theorem Closed.at_empty (v : Val) : Closed.empty.at v = .keep := by
   rw [Closed.at_category]; split <;> rfl
@@ -290,7 +290,7 @@ theorem closed_order_exact (a b : Closed) :
   have atn : ∀ (c : Closed) b, c.at (.num b) = c.value := fun c b => rfl
   simp only [Closed.le, Bool.and_eq_true]
   refine ⟨⟨?_, ?_⟩, ?_⟩
-  · -- a value location initialized, a number changed, or a number replaced by a store
+  · -- a value location initialized, a number changed, or a number replaced by a spine
     have v1 := refute .nul .tru
     have v2 := refute (.num 0) (.num 1)
     have v3 := refute (.num 0) (.arr [])
@@ -302,21 +302,21 @@ theorem closed_order_exact (a b : Closed) :
         | exact (v1 (by decide) (by decide)).elim
         | exact (v2 (by decide) (by decide)).elim
         | exact (v3 (by decide) (by decide)).elim
-  · -- an array's store gaining a fresh element location, or losing a present one
+  · -- an array's spine gaining a fresh element location, or losing a present one
     have s1 := refute (.arr []) (.arr [some 1])
     have s2 := refute (.arr [some 0]) (.arr [])
     simp only [Closed.at_arr] at s1 s2
     cases ha : a.array <;> cases hb : b.array <;> rw [ha, hb] at s1 s2 <;>
-      simp only [Change.onStore, Change.le, Change.rank] <;> first
+      simp only [Change.onSpine, Change.le, Change.rank] <;> first
         | decide
         | exact (s1 (by decide) (by decide)).elim
         | exact (s2 (by decide) (by decide)).elim
-  · -- a view store listing a fresh cell, or replaced by an array's store
-    have w1 := refute (.viewStore .uint8 [0]) (.viewStore .uint8 [1])
-    have w2 := refute (.viewStore .uint8 [0]) (.arr [])
-    simp only [Closed.at_viewStore] at w1 w2
+  · -- a view spine listing a fresh cell, or replaced by an array's spine
+    have w1 := refute (.viewSpine .uint8 [0]) (.viewSpine .uint8 [1])
+    have w2 := refute (.viewSpine .uint8 [0]) (.arr [])
+    simp only [Closed.at_viewSpine] at w1 w2
     cases ha : a.view <;> cases hb : b.view <;> rw [ha, hb] at w1 w2 <;>
-      simp only [Change.onStore, Change.le, Change.rank] <;> first
+      simp only [Change.onSpine, Change.le, Change.rank] <;> first
         | decide
         | exact (w1 (by decide) (by decide)).elim
         | exact (w2 (by decide) (by decide)).elim
@@ -353,31 +353,31 @@ private theorem Change.max_onValue_le (a b c : Change) :
     (a.max b).onValue.le c.onValue = (a.onValue.le c.onValue && b.onValue.le c.onValue) := by
   cases a <;> cases b <;> cases c <;> rfl
 
-private theorem Change.max_onStore_le (a b c : Change) :
-    (a.max b).onStore.le c.onStore = (a.onStore.le c.onStore && b.onStore.le c.onStore) := by
+private theorem Change.max_onSpine_le (a b c : Change) :
+    (a.max b).onSpine.le c.onSpine = (a.onSpine.le c.onSpine && b.onSpine.le c.onSpine) := by
   cases a <;> cases b <;> cases c <;> rfl
 
 theorem Closed.join_le (a b c : Closed) : (a.join b).le c = (a.le c && b.le c) := by
-  simp only [Closed.join, Closed.le, Change.max_onValue_le, Change.max_onStore_le]
+  simp only [Closed.join, Closed.le, Change.max_onValue_le, Change.max_onSpine_le]
   cases a.value.onValue.le c.value.onValue <;> cases b.value.onValue.le c.value.onValue <;>
-    cases a.array.onStore.le c.array.onStore <;> cases b.array.onStore.le c.array.onStore <;> simp
+    cases a.array.onSpine.le c.array.onSpine <;> cases b.array.onSpine.le c.array.onSpine <;> simp
 
-theorem Closed.join_ofStores (v s v' s' : Change) :
-    (Closed.ofStores v s).join (Closed.ofStores v' s') = Closed.ofStores (v.max v') (s.max s') := rfl
+theorem Closed.join_ofSpines (v s v' s' : Change) :
+    (Closed.ofSpines v s).join (Closed.ofSpines v' s') = Closed.ofSpines (v.max v') (s.max s') := rfl
 
-/-- A closed footprint is below the one stating its store bound on both
-stores (`Closed.stores`); the two are equal where its stores agree. -/
-theorem Closed.le_ofStores_stores (c : Closed) : c.le (Closed.ofStores c.value c.stores) = true := by
+/-- A closed footprint is below the one stating its spine bound on both
+spines (`Closed.spines`); the two are equal where its spines agree. -/
+theorem Closed.le_ofSpines_spines (c : Closed) : c.le (Closed.ofSpines c.value c.spines) = true := by
   cases c with | mk v a w => cases v <;> cases a <;> cases w <;> rfl
 
-/-- Where the store bound is `keep` on stores, so is each store component. -/
-theorem Closed.stores_onStore_keep {c : Closed} (h : c.stores.onStore = .keep) :
-    c.array.onStore = .keep ∧ c.view.onStore = .keep := by
+/-- Where the spine bound is `keep` on spines, so is each spine component. -/
+theorem Closed.spines_onSpine_keep {c : Closed} (h : c.spines.onSpine = .keep) :
+    c.array.onSpine = .keep ∧ c.view.onSpine = .keep := by
   cases c with
-  | mk v a w => cases a <;> cases w <;> simp_all [Closed.stores, Change.max, Change.le, Change.rank, Change.onStore]
+  | mk v a w => cases a <;> cases w <;> simp_all [Closed.spines, Change.max, Change.le, Change.rank, Change.onSpine]
 
-theorem Closed.ofStores_self {v s : Change} : Closed.ofStores (Closed.ofStores v s).value (Closed.ofStores v s).stores =
-    Closed.ofStores v s := by
+theorem Closed.ofSpines_self {v s : Change} : Closed.ofSpines (Closed.ofSpines v s).value (Closed.ofSpines v s).spines =
+    Closed.ofSpines v s := by
   simp
 
 theorem Closed.le_top (a : Closed) : a.le Closed.top = true := by
@@ -413,8 +413,8 @@ theorem Change.min_holds {a b : Change} {n v v'} :
 together. -/
 def Closed.meet (a b : Closed) : Closed := ⟨a.value.min b.value, a.array.min b.array, a.view.min b.view⟩
 
-theorem Closed.meet_ofStores (v s v' s' : Change) :
-    (Closed.ofStores v s).meet (Closed.ofStores v' s') = Closed.ofStores (v.min v') (s.min s') := rfl
+theorem Closed.meet_ofSpines (v s v' s' : Change) :
+    (Closed.ofSpines v s).meet (Closed.ofSpines v' s') = Closed.ofSpines (v.min v') (s.min s') := rfl
 
 theorem Closed.le_refl (c : Closed) : c.le c = true := by
   cases c with | mk v s w => cases v <;> cases s <;> cases w <;> rfl
@@ -428,18 +428,18 @@ private theorem Change.min_le_right (a b : Change) : (a.min b).le b = true := by
 private theorem Change.le_onValue {a b : Change} (h : a.le b = true) : a.onValue.le b.onValue = true := by
   cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onValue]
 
-private theorem Change.le_onStore {a b : Change} (h : a.le b = true) : a.onStore.le b.onStore = true := by
-  cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onStore]
+private theorem Change.le_onSpine {a b : Change} (h : a.le b = true) : a.onSpine.le b.onSpine = true := by
+  cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onSpine]
 
 theorem Closed.meet_le_left (a b : Closed) : (a.meet b).le a = true := by
   simp only [Closed.le, Closed.meet, Bool.and_eq_true]
-  exact ⟨⟨Change.le_onValue (Change.min_le_left _ _), Change.le_onStore (Change.min_le_left _ _)⟩,
-    Change.le_onStore (Change.min_le_left _ _)⟩
+  exact ⟨⟨Change.le_onValue (Change.min_le_left _ _), Change.le_onSpine (Change.min_le_left _ _)⟩,
+    Change.le_onSpine (Change.min_le_left _ _)⟩
 
 theorem Closed.meet_le_right (a b : Closed) : (a.meet b).le b = true := by
   simp only [Closed.le, Closed.meet, Bool.and_eq_true]
-  exact ⟨⟨Change.le_onValue (Change.min_le_right _ _), Change.le_onStore (Change.min_le_right _ _)⟩,
-    Change.le_onStore (Change.min_le_right _ _)⟩
+  exact ⟨⟨Change.le_onValue (Change.min_le_right _ _), Change.le_onSpine (Change.min_le_right _ _)⟩,
+    Change.le_onSpine (Change.min_le_right _ _)⟩
 
 theorem Closed.at_meet (a b : Closed) (v : Val) : (a.meet b).at v = (a.at v).min (b.at v) := by
   rw [Closed.at_category, Closed.at_category, Closed.at_category]; unfold Closed.meet
@@ -641,9 +641,9 @@ theorem Closed.closed?_fp (c : Closed) : c.fp.closed? = some c := by
 
 /-! ## Footprints on some old locations
 
-A call may change one store beyond its footprint, its receiver's: its
-postcondition is the footprint on the old locations other than that store.
-A run whose every such store was allocated after a heap of length `b` is
+A call may change one spine beyond its footprint, its receiver's: its
+postcondition is the footprint on the old locations other than that spine.
+A run whose every such spine was allocated after a heap of length `b` is
 within the footprint on the locations below `b`. -/
 
 /-- A closed footprint's postcondition on the old locations `P` admits. -/
@@ -740,27 +740,27 @@ theorem Closed.HoldsOn.top {c : Closed} {P : Nat → Prop} {h h' : Heap} (hp : c
     Closed.top.Holds h h' :=
   Closed.holds_top.mpr hp.1
 
-/-! ## Fresh stores -/
+/-! ## Fresh spines -/
 
-/-- The location of a value's array store, where it has one: its `[]`
+/-- The location of a value's array spine, where it has one: its `[]`
 slot's, which the calculus's array steps read and write. A typed array's
-element facts read the store its descriptor selects instead
+element facts read the spine its descriptor selects instead
 (`HeapKnowledge.elementsOf`). -/
-def storeOf (v : Tm) : Option Nat := (fieldsOf v).lookup arrayStoreKey
+def spineOf (v : Tm) : Option Nat := (fieldsOf v).lookup arraySpineKey
 
-theorem storeOf_lookup {v : Tm} {s : Nat} (h : storeOf v = some s) :
-    (fieldsOf v).lookup arrayStoreKey = some s := h
+theorem spineOf_lookup {v : Tm} {s : Nat} (h : spineOf v = some s) :
+    (fieldsOf v).lookup arraySpineKey = some s := h
 
-/-- A value whose array store was allocated after a heap of length `b`:
-its store's location is at least `b`. It reads no heap: an object's fields
+/-- A value whose array spine was allocated after a heap of length `b`:
+its spine's location is at least `b`. It reads no heap: an object's fields
 are fixed at its allocation. -/
-def FreshAt (b : Nat) (v : Tm) : Prop := ∃ s, storeOf v = some s ∧ b ≤ s
+def FreshAt (b : Nat) (v : Tm) : Prop := ∃ s, spineOf v = some s ∧ b ≤ s
 
 theorem FreshAt.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshAt b' v) : FreshAt b v := by
   obtain ⟨s, hs, hle⟩ := h
   exact ⟨s, hs, Nat.le_trans hb hle⟩
 
-/-- A value's own locations: one per field it was allocated with, its store's
+/-- A value's own locations: one per field it was allocated with, its spine's
 among them. -/
 def ownOf (v : Tm) : List Nat := (fieldsOf v).map Prod.snd
 
@@ -779,13 +779,13 @@ theorem Closed.HoldsOn.below_fresh_object {c : Closed} {b : Nat} {r : Tm} {h h' 
     (hf : FreshObjectAt b r) (hp : c.HoldsOn (fun l => l ∉ ownOf r) h h') : c.HoldsOn (· < b) h h' :=
   hp.weaken fun l hl hm => by have := hf.2 l hm; omega
 
-/-- A change on every old location but a fresh value's store is a change on
+/-- A change on every old location but a fresh value's spine is a change on
 every location below where it was allocated. -/
 theorem Closed.HoldsOn.below_fresh {c : Closed} {b : Nat} {r : Tm} {h h' : Heap} (hf : FreshAt b r)
-    (hp : c.HoldsOn (fun l => (fieldsOf r).lookup arrayStoreKey ≠ some l) h h') : c.HoldsOn (· < b) h h' := by
+    (hp : c.HoldsOn (fun l => (fieldsOf r).lookup arraySpineKey ≠ some l) h h') : c.HoldsOn (· < b) h h' := by
   obtain ⟨s, hs, hle⟩ := hf
   refine hp.weaken fun l hl => ?_
-  rw [storeOf_lookup hs]
+  rw [spineOf_lookup hs]
   intro he
   cases he
   omega

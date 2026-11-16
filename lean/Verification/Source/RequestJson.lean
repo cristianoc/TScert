@@ -62,7 +62,7 @@ deriving instance ToJson, FromJson for StorageRole
 
 /-- A storage position, a field's or a writable index's, is the flat array
 `[key, role, contents]`, the key a property key or an index's key class, the
-role its constructor's name (`"field"`, `"cell"`, `"arrayStore"`). -/
+role its constructor's name (`"field"`, `"cell"`, `"arraySpine"`). -/
 instance (priority := high) {κ α : Type} [ToJson κ] [ToJson α] : ToJson (κ × StorageRole × α) :=
   ⟨fun p => .arr #[toJson p.1, toJson p.2.1, toJson p.2.2]⟩
 
@@ -137,15 +137,15 @@ instance : ToJson ParameterKind := ⟨fun
   | .value => .str "value"
   | .arguments => .str "arguments"
   | .packed => .str "packed"
-  | .store => .str "store"⟩
+  | .spine => .str "spine"⟩
 
 instance : FromJson ParameterKind := ⟨fun j => do
   match ← j.getStr? with
   | "value" => return .value
   | "arguments" => return .arguments
   | "packed" => return .packed
-  | "store" => return .store
-  | _ => throw "expected parameter kind value, arguments, packed or store"⟩
+  | "spine" => return .spine
+  | _ => throw "expected parameter kind value, arguments, packed or spine"⟩
 
 /-- Resolution groups retain positions among the scheme's binders. -/
 instance : ToJson ResolutionSlots := ⟨fun s => Json.mkObj [
@@ -160,7 +160,7 @@ instance : FromJson ResolutionSlots := ⟨fun j => do
 scheme rows; a scheme row as
 `{"scheme": {"binders", "signatures", "bounds", "variadic", "resolution"}}`,
 its bounds, variadic signatures and resolution groups left out when empty, a parameter row as
-`{"param": label, "name": name, "kind": "value" | "arguments" | "packed" | "store"}`, and a meet
+`{"param": label, "name": name, "kind": "value" | "arguments" | "packed" | "spine"}`, and a meet
 row as `{"meet": binder, "clauses": [...]}`, whatever the labels are. -/
 instance [ToJson ι] [ToJson α] : ToJson (GraphRow ι α) := ⟨fun
   | .clauses cs => toJson cs
@@ -217,7 +217,7 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
 /-! ### The built-in arrays -/
 
 /-- A key a declaration may not name: one the model keeps for itself (the
-array store, the prototype, every other name in double brackets), or one its
+array spine, the prototype, every other name in double brackets), or one its
 representation of keys moves (`escapedSpelling`), so that a declared key is
 the key a computed one of the same spelling is. -/
 def reservedKey : PropKey → Bool
@@ -331,7 +331,7 @@ meaning for an invalid serialized type reference. -/
   r.inputs.all (validTy ok) &&
   r.codes.all fun q => q.claims.all (validClaim ok) &&
     (q.entry.row.operands ++ q.entry.captures ++
-      q.entry.store.toList).all
+      q.entry.spine.toList).all
       (validTy ok)
 
 @[nospecialize] def instanceTypes (c : PositiveCertificates.Instance ι) : List (Ty ι) :=
@@ -447,10 +447,10 @@ def asyncAdmits (async : Bool) (e : CallEffects.Effect) : Bool :=
 
 /-- A declaration's claim within the effect its result annotation states
 (`Modifies<P, T>`; SOURCE-ELABORATION.md, "Stated effects"): a statement adds a
-guarantee (a footprint below `top`, a fresh result, or store regions); the
+guarantee (a footprint below `top`, a fresh result, or spine regions); the
 claim's footprint is within the statement's, on a throw too where the
 statement says so, and promises a fresh result where the statement does; an
-async declaration states none. A statement with store regions is established
+async declaration states none. A statement with spine regions is established
 by the unit's regional check (`SourceRequests.regionalResult`), whatever its
 claim. Unstated, any claim. -/
 def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow fresh : Bool) :
@@ -686,7 +686,7 @@ table checked before it, not part of this request. -/
 @[nospecialize] def CodeRequest.asRequest (r : Request σ ι) (q : CodeRequest ι) : Request σ ι :=
   { types := r.types, program := GraphCode.program q.entry.exprs q.entry.conts, claims := q.claims,
     result := q.entry.row.result, start := q.entry.start,
-    inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [],
+    inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.spine, codes := [],
     entryIndices := GraphCode.codeEntryIndices q.entry }
 
 /-- Search one graph's certificate, the codes of `table` admitted, in the

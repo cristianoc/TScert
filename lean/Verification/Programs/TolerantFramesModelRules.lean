@@ -13,19 +13,19 @@ where the note's statement does not hold:
   an entry term reads the entry state,
   which no transition changes;
 - (Init): every linear fact whose current terms are no string lengths
-  survives every action of `{values: init, stores: keep}` (`init_box`), with
+  survives every action of `{values: init, spines: keep}` (`init_box`), with
   no condition on its paths, its entry terms of every kind;
 - Call: a callee's run is an action of its renamed regional effect at the
   caller's slots, its post holds, and the caller's facts it keeps are named
   at the result's fresh name (`call_rule`);
 - Alloc: an array allocated in a well-formed heap is fresh, empty and apart
-  from every older array (`alloc_post`); a later change of the fresh store
-  at `any` can break that separation even though the store stays fresh
+  from every older array (`alloc_post`); a later change of the fresh spine
+  at `any` can break that separation even though the spine stays fresh
   (`apart_not_kept_fresh`);
 - Seq-Eff: rebasing keeps each entry's change (`rebaseAll_labels`) and
-  widens element cells to the value class (`rebase_elems`); the rule
+  widens element cells to the value class (`rebase_cells`); the rule
   holds with class evidence at the entry (`seq_eff`);
-- Fresh-Eff: a fresh store's entry in a step's effect covers no location of
+- Fresh-Eff: a fresh spine's entry in a step's effect covers no location of
   the entry heap (`fresh_eff`, `fresh_eff_bound`); its listed cells are not
   erased (`fresh_cells_not_erased`). -/
 namespace Verification.TolerantFrames
@@ -72,11 +72,11 @@ theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.atEntry = false → t.kin
   cases k <;> cases p <;>
     simp_all [HeapKnowledge.Term.keptBy, HeapKnowledge.Term.pathKeptBy, HeapKnowledge.Changes.ofClosed,
       initEffect, HeapKnowledge.Changes.keepsLength, Footprints.Change.le, Footprints.Change.rank,
-      Footprints.Change.onStore, Footprints.Closed.stores, Footprints.Change.max]
+      Footprints.Change.onSpine, Footprints.Closed.spines, Footprints.Change.max]
 
 /-- **(Init)**: a linear fact whose current terms are integers, lengths and
 view lengths at any paths holds after every action of the initialisation
-write's `{values: init, stores: keep}`; its entry terms are of any kind. The
+write's `{values: init, spines: keep}`; its entry terms are of any kind. The
 note's side condition, paths through fields holding objects, is what a
 defined path read already is. -/
 theorem init_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
@@ -121,37 +121,37 @@ theorem call_rule {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qr
 
 /-! ## Alloc -/
 
-/-- The allocation of an empty array: one object whose store field holds the
-empty store. -/
-def allocTerm : Tm := .makeAt .absent [arrayStoreKey] [.arr []]
+/-- The allocation of an empty array: one object whose spine field holds the
+empty spine. -/
+def allocTerm : Tm := .makeAt .absent [arraySpineKey] [.arr []]
 
 /-- The array the allocation steps to at a heap. -/
-def allocated (h : Heap) : Val := .objAt [(arrayStoreKey, h.length)] .absent (h.length + 1)
+def allocated (h : Heap) : Val := .objAt [(arraySpineKey, h.length)] .absent (h.length + 1)
 
 theorem alloc_step (h : Heap) : Step h allocTerm (h ++ [.arr []] ++ [.nul]) (allocated h) :=
   .makeFields (by simp [isVal]) rfl
 
 /-- **Alloc**: the array allocated in a well-formed heap is fresh against
 it, has length 0, and is apart, at the heap after the allocation, from every
-value whose store the entry heap holds: that store's cells are allocated
+value whose spine the entry heap holds: that spine's cells are allocated
 because the heap is well-formed. -/
 theorem alloc_post {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
     FreshAt h.length (allocated h) ∧
       HeapKnowledge.lengthOf (h ++ [.arr []] ++ [.nul]) (allocated h) = some 0 ∧
-      ∀ (u : Val) (sy : Nat) (ys : List (Option Nat)), storeOf u = some sy → h[sy]? = some (.arr ys) →
+      ∀ (u : Val) (sy : Nat) (ys : List (Option Nat)), spineOf u = some sy → h[sy]? = some (.arr ys) →
         HeapKnowledge.RegionsApart (h ++ [.arr []] ++ [.nul]) (allocated h) u := by
-  have hst : storeOf (allocated h) = some h.length := by simp [storeOf, fieldsOf, allocated]
+  have hst : spineOf (allocated h) = some h.length := by simp [spineOf, fieldsOf, allocated]
   have hget : (h ++ [.arr []] ++ [.nul])[h.length]? = some (.arr []) := by simp
-  refine ⟨⟨_, hst, Nat.le_refl _⟩, HeapKnowledge.lengthOf_of_store hst hget (by decide), ?_⟩
+  refine ⟨⟨_, hst, Nat.le_refl _⟩, HeapKnowledge.lengthOf_of_spine hst hget (by decide), ?_⟩
   intro u sy ys hsy hys
   have hlt : sy < h.length := (List.getElem?_eq_some_iff.mp hys).1
   exact alloc_apart hok hst hget (Nat.le_refl _) (fun _ hm => by simp at hm) hsy hys
     (by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hys)
 
-/-- The counter-model's world: `y`'s store, its cell, `x`'s store, and the
+/-- The counter-model's world: `y`'s spine, its cell, `x`'s spine, and the
 two arrays' identities. -/
 def apartWorld : WorldT 1 :=
-  ofEntries [(.store .array, anyCtr), (.elem, anyCtr), (.store .array, anyCtr), (.identity, anyCtr),
+  ofEntries [(.spine .array, anyCtr), (.elem, anyCtr), (.spine .array, anyCtr), (.identity, anyCtr),
     (.identity, anyCtr)]
 
 theorem apartWorld_adm : WorldAdm apartWorld := by
@@ -162,7 +162,7 @@ theorem apartWorld_adm : WorldAdm apartWorld := by
   · simp only [roleAt, roles, apartWorld, entries_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | l <;> simp at hr
 
-/-- A heap of `apartWorld`: `y`'s store listing cell 1, and `x`'s store
+/-- A heap of `apartWorld`: `y`'s spine listing cell 1, and `x`'s spine
 listing cells among cell 1. -/
 theorem apartWorld_ok {xs : List (Option Nat)} (hxs : ∀ l, some l ∈ xs → l = 1) :
     HeapOk 1 apartWorld [.arr [some 1], .nul, .arr xs, .nul, .nul] := by
@@ -187,42 +187,42 @@ theorem apartState_admissible {xs xs' : List (Option Nat)} {hxs hxs'} :
     Admissible (apartState xs hxs) (apartState xs' hxs') :=
   ⟨Nat.le_refl 1, by show WExt (trunc 1 (Nat.le_refl 1) apartWorld) apartWorld; rw [trunc_id]; exact WExt_refl _⟩
 
-/-- The counter-model's arrays: the fresh array `x` (store at location 2,
-identity 3) and `y` (store at 0, listing cell 1, identity 4). -/
-def apartEnv : Env := fun i => if i = 0 then .objAt [(arrayStoreKey, 2)] .absent 3
-  else .objAt [(arrayStoreKey, 0)] .absent 4
+/-- The counter-model's arrays: the fresh array `x` (spine at location 2,
+identity 3) and `y` (spine at 0, listing cell 1, identity 4). -/
+def apartEnv : Env := fun i => if i = 0 then .objAt [(arraySpineKey, 2)] .absent 3
+  else .objAt [(arraySpineKey, 0)] .absent 4
 
-theorem apartEnv_store₀ : storeOf (apartEnv 0) = some 2 := by
-  simp [apartEnv, storeOf, fieldsOf]
+theorem apartEnv_spine₀ : spineOf (apartEnv 0) = some 2 := by
+  simp [apartEnv, spineOf, fieldsOf]
 
-theorem apartEnv_store₁ : storeOf (apartEnv 1) = some 0 := by
-  simp [apartEnv, storeOf, fieldsOf]
+theorem apartEnv_spine₁ : spineOf (apartEnv 1) = some 0 := by
+  simp [apartEnv, spineOf, fieldsOf]
 
 /-- **Alloc's separations are not kept by freshness**: `x` fresh against the
 mark 2, `y`'s cells allocated, `apart(x, y)`, and an action changing only
-`x`'s store, at `any`, after which `x` lists `y`'s cell. The heaps meet a
+`x`'s spine, at `any`, after which `x` lists `y`'s cell. The heaps meet a
 kinded world, each array with its own identity location. -/
 theorem apart_not_kept_fresh :
     ¬ ∀ (ρ : Env) (m : Nat) (s : IndexedHeap), Fresh 0 ρ m s → RootCells 1 ρ m s → ApartAt 0 1 ρ m s →
-      Box [(.field 0 arrayStoreKey, .any)] (ApartAt 0 1) ρ m s := by
+      Box [(.field 0 arraySpineKey, .any)] (ApartAt 0 1) ρ m s := by
   intro hall
   let s₁ := apartState [] (by simp)
   let s₂ := apartState [some 1] (by simp)
-  have hfresh : Fresh 0 apartEnv 2 s₁ := ⟨2, apartEnv_store₀, Nat.le_refl _⟩
+  have hfresh : Fresh 0 apartEnv 2 s₁ := ⟨2, apartEnv_spine₀, Nat.le_refl _⟩
   have hcells : RootCells 1 apartEnv 2 s₁ := by
     intro st ls hst hv
-    rw [apartEnv_store₁] at hst; cases hst
+    rw [apartEnv_spine₁] at hst; cases hst
     simp only [s₁, apartState] at hv
     simp at hv; subst hv
     intro l hl; simp at hl; subst hl; simp [s₁, apartState]
   have hap : ApartAt 0 1 apartEnv 2 s₁ := by
-    refine ⟨some 2, [], some 0, [some 1], .inr ⟨2, rfl, apartEnv_store₀, rfl⟩,
-      .inr ⟨0, rfl, apartEnv_store₁, rfl⟩, ?_⟩
+    refine ⟨some 2, [], some 0, [some 1], .inr ⟨2, rfl, apartEnv_spine₀, rfl⟩,
+      .inr ⟨0, rfl, apartEnv_spine₁, rfl⟩, ?_⟩
     intro l hl l' hl' he
     subst he
     simp only [HeapKnowledge.InRegion, Option.some.injEq, List.mem_singleton, List.not_mem_nil, or_false] at hl hl'
     omega
-  have hact : Action [(.field 0 arrayStoreKey, .any)] apartEnv s₁ s₂ := by
+  have hact : Action [(.field 0 arraySpineKey, .any)] apartEnv s₁ s₂ := by
     refine ⟨apartState_admissible, by simp [s₁, s₂, apartState], fun l v hl => ?_⟩
     rcases l with _ | _ | _ | _ | _ | l <;> simp [s₁, s₂, apartState] at hl ⊢
     · exact .inl hl
@@ -234,12 +234,12 @@ theorem apart_not_kept_fresh :
   have hxr : xs = [some 1] := by
     rcases hx with ⟨-, hv⟩ | ⟨st, -, hst, hv⟩
     · simp [apartEnv] at hv
-    · rw [apartEnv_store₀] at hst; cases hst
+    · rw [apartEnv_spine₀] at hst; cases hst
       simp [s₂, apartState] at hv; exact hv.symm
   have hyr : ys = [some 1] := by
     rcases hy with ⟨-, hv⟩ | ⟨st, -, hst, hv⟩
     · simp [apartEnv] at hv
-    · rw [apartEnv_store₁] at hst; cases hst
+    · rw [apartEnv_spine₁] at hst; cases hst
       simp [s₂, apartState] at hv; exact hv.symm
   subst hxr hyr
   exact hab 1 (.inr (by simp)) 1 (.inr (by simp)) rfl
@@ -256,7 +256,7 @@ theorem rebaseAll_labels {ev : RebaseEvidence} {Ψ : Footprint} {e : Region × C
 
 /-- Rebasing widens a step's element cells to the value class, which the
 step heap's contents categories justify (`rebase_sound`). -/
-theorem rebase_elems (ev : RebaseEvidence) (x : Nat) : rebase ev (.elems x) = [.cls .values] := rfl
+theorem rebase_cells (ev : RebaseEvidence) (x : Nat) : rebase ev (.cells x) = [.cls .values] := rfl
 
 /-- **Seq-Eff**: the entry effect so far, a step's effect at its own
 positions, its rebasing to the entry, and `Φ ∪ Ψ' ⊑_cl Φ` with the class
@@ -268,11 +268,11 @@ theorem seq_eff {Φ Ψ : Footprint} {cl : ClassEvidence} {ρ₀ σ : Env} {ev : 
 
 /-! ## Fresh-Eff -/
 
-/-- **Fresh-Eff**: a step's effect with an entry for `x`'s store, `x`'s store
+/-- **Fresh-Eff**: a step's effect with an entry for `x`'s spine, `x`'s spine
 allocated at or after `b`: on every location below `b`, the step is within
 the rest of its effect. -/
 theorem fresh_eff {Φ : Footprint} {x : Nat} {δ : Change} {ρ : Env} {h h' : Heap} {b : Nat}
-    (hp : Post (Φ ++ [(.field x arrayStoreKey, δ)]) ρ h h') (hf : FreshAt b (ρ x)) :
+    (hp : Post (Φ ++ [(.field x arraySpineKey, δ)]) ρ h h') (hf : FreshAt b (ρ x)) :
     ∀ l v, l < b → h[l]? = some v → ∃ v', h'[l]? = some v' ∧ Allowed Φ ρ h l v v' := by
   intro l v hl hv
   obtain ⟨v', hv', ha⟩ := hp.2 l v hv
@@ -285,36 +285,36 @@ theorem fresh_eff {Φ : Footprint} {x : Nat} {δ : Change} {ρ : Env} {h h' : He
       subst he
       obtain ⟨st, hst, hle⟩ := hf
       simp only [Region.mem, beq_iff_eq] at hm
-      simp only [storeOf] at hst
+      simp only [spineOf] at hst
       rw [hst] at hm
       cases hm
       omega
 
 /-- Fresh-Eff for the invocation's bound: a closed bound so far from the
-entry heap `h₀`, and a step within the bound beside an entry for a store
+entry heap `h₀`, and a step within the bound beside an entry for a spine
 allocated during the invocation, keep the bound from `h₀`. -/
 theorem fresh_eff_bound {c : Footprints.Closed} {x : Nat} {δ : Change} {ρ : Env} {h₀ h h' : Heap}
-    (hI : c.Holds h₀ h) (hp : Post (c.fp ++ [(.field x arrayStoreKey, δ)]) ρ h h')
+    (hI : c.Holds h₀ h) (hp : Post (c.fp ++ [(.field x arraySpineKey, δ)]) ρ h h')
     (hf : FreshAt h₀.length (ρ x)) : c.Holds h₀ h' := by
   refine bound_step_fresh hI ⟨hp.1, fun l v hl hv => ?_⟩
   obtain ⟨v', hv', ha⟩ := fresh_eff hp hf l v hl hv
   exact ⟨v', hv', (Footprints.Closed.allowed_iff hv).mp ha⟩
 
-/-- **A fresh store's cells are not erased**: a store allocated at 2 may list
+/-- **A fresh spine's cells are not erased**: a spine allocated at 2 may list
 the old cell 1, and a change of its cells changes that old location. -/
 theorem fresh_cells_not_erased :
-    ¬ ∀ (ρ : Env) (h h' : Heap) (b : Nat), Post [(.elems 0, .any)] ρ h h' → FreshAt b (ρ 0) →
+    ¬ ∀ (ρ : Env) (h h' : Heap) (b : Nat), Post [(.cells 0, .any)] ρ h h' → FreshAt b (ρ 0) →
       ∀ l v, l < b → h[l]? = some v → h'[l]? = some v := by
   intro hall
-  let ρ : Env := fun _ => .objAt [(arrayStoreKey, 2)] .absent 0
-  have hp : Post [(.elems 0, .any)] ρ [.nul, .nul, .arr [some 1]] [.nul, .tru, .arr [some 1]] := by
+  let ρ : Env := fun _ => .objAt [(arraySpineKey, 2)] .absent 0
+  have hp : Post [(.cells 0, .any)] ρ [.nul, .nul, .arr [some 1]] [.nul, .tru, .arr [some 1]] := by
     refine ⟨by simp, fun l v hl => ?_⟩
     rcases l with _ | _ | _ | l <;> simp at hl ⊢
     · exact .inl hl
     · refine .inr ?_
-      simp [Region.mem, storeElems, entriesAt, storeEntries, ρ, fieldsOf, Footprints.Change.Holds]
+      simp [Region.mem, spineCells, entriesAt, spineEntries, ρ, fieldsOf, Footprints.Change.Holds]
     · exact .inl hl
-  have := hall ρ _ _ 2 hp ⟨2, by simp [storeOf, fieldsOf, ρ], Nat.le_refl _⟩ 1 .nul (by omega) rfl
+  have := hall ρ _ _ 2 hp ⟨2, by simp [spineOf, fieldsOf, ρ], Nat.le_refl _⟩ 1 .nul (by omega) rfl
   simp at this
 
 end Verification.TolerantFrames

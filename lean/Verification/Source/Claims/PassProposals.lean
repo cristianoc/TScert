@@ -61,13 +61,13 @@ abbrev Closed := Verification.Footprints.Closed
 
 /-! ## The closed lattice -/
 
-/-- Every closed footprint stating one change for both stores
-(`Footprints.Closed.ofStores`), in an order extending the components' rank
+/-- Every closed footprint stating one change for both spines
+(`Footprints.Closed.ofSpines`), in an order extending the components' rank
 order: a footprint comes after every footprint below it. -/
 def ascending : List Closed :=
   let cs := [Footprints.Change.keep, .init, .scalar, .grow, .any]
-  ((cs.flatMap fun v => cs.map fun s => Footprints.Closed.ofStores v s).mergeSort fun a b =>
-    a.value.rank + a.stores.rank ≤ b.value.rank + b.stores.rank)
+  ((cs.flatMap fun v => cs.map fun s => Footprints.Closed.ofSpines v s).mergeSort fun a b =>
+    a.value.rank + a.spines.rank ≤ b.value.rank + b.spines.rank)
 
 def keepAll : Closed := ⟨.keep, .keep, .keep⟩
 
@@ -507,7 +507,7 @@ def written (f : Fragment.Fn) : Option SourceExtraction.ClassSummary :=
 member `j`'s group in the plans `fp` the proposal planned, its name and
 position and its plan (the program, claims, result, start, inputs,
 statement entries' candidates and cuts, assertions, entry facts, the code
-requests' goals, its declared footprint, throw bound, freshness, store
+requests' goals, its declared footprint, throw bound, freshness, spine
 regions, postcondition, stated effect, asyncness and qualification), and
 the reads `reads` gives the functions the group reaches (their signatures
 in the store): `settledInterface fp proposalDepth j` reads these alone. -/

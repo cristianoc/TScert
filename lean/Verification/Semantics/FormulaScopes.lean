@@ -149,7 +149,7 @@ theorem OperationPostF.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s
     · simp only [OperationPostF.Holds, TwoState.env, TwoState.state]
       exact (IndexFact.holdsAt_congr (ε := ⟨b', B'.h⟩) (h := A'.h) fun i hi => ha _ (hq.1 i hi)).trans
         (IndexFact.holdsAt_congr_entry rfl fun i hi => hb i (hq.2 i hi))
-  | freshStore x =>
+  | freshSpine x =>
     simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
     simp only [OperationPostF.Holds, ha x hq]
   | freshObject x =>
@@ -158,7 +158,7 @@ theorem OperationPostF.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s
   | elementsWhen x v y R =>
     simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
     simp only [OperationPostF.Holds, ha x hq.1, ha y hq.2]
-  | storeExtends x =>
+  | spineExtends x =>
     simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
     simp only [OperationPostF.Holds, hb x hq]
   | viewWrite x i v f =>

@@ -1,33 +1,33 @@
 import Verification.Semantics.KindsAllocation
 import Verification.Semantics.ViewConversion
 
-/-! # The contract of a view store
+/-! # The contract of a view spine
 
-A typed array's view store lists one element cell per index (`Cat`,
-`StoreForm.view`). Its cells hold numbers of the store's format, and its
+A typed array's view spine lists one element cell per index (`Cat`,
+`SpineForm.view`). Its cells hold numbers of the spine's format, and its
 contract admits every replacement a write through any typed array may make:
-every view store of its format and length whose cells are such cells
-(`viewStoreCtr`, `Worlds.lean`; the note *Tolerant frames*, (W2): "the
-contract of a view store admits every such store"). Every admissible world
-gives each view store this canonical contract (`WorldAdm.view`); an
+every view spine of its format and length whose cells are such cells
+(`viewSpineCtr`, `Worlds.lean`; the note *Tolerant frames*, (W2): "the
+contract of a view spine admits every such spine"). Every admissible world
+gives each view spine this canonical contract (`WorldAdm.view`); an
 allocation of a typed array choosing it keeps an admissible world
 (`WorldAdm.typedArray`), and on a well-formed heap of an admissible world
-every cell a view store lists holds a number of its format, at level 2 or
+every cell a view spine lists holds a number of its format, at level 2 or
 more (`HeapOk.view_cell_stored`). The host's total conversion of a written
 number into that range is `ViewFormat.conv` (`ViewFormat.conv_stored`). -/
 namespace Verification
 
-theorem viewStoreCtr_adm (k : Nat) (f : ViewFormat) (N : Nat) : CtrAdm (viewStoreCtr k f N) := by
+theorem viewSpineCtr_adm (k : Nat) (f : ViewFormat) (N : Nat) : CtrAdm (viewSpineCtr k f N) := by
   refine ⟨fun j _ U U' hx v hv => ?_, fun _ _ _ v hv => ?_⟩
   · obtain ⟨cs, rfl, hn, hc⟩ := hv
     exact ⟨cs, rfl, hn, fun c hc' => (hc c hc').mono hx⟩
   · obtain ⟨cs, rfl, -, -⟩ := hv; rfl
 
-/-- **The canonical contract admits every replacement**: every view store
+/-- **The canonical contract admits every replacement**: every view spine
 of the format and length whose cells are cells of the format, the old
 vector, a reordering, or one of fresh cells alike. -/
-theorem viewStoreCtr_admits {k j : Nat} (hj : j < k) (U : WorldT j) {f : ViewFormat} {cs : List Nat}
-    (hcs : ∀ c ∈ cs, ViewCell U f c) : viewStoreCtr k f cs.length j hj U (.viewStore f cs) :=
+theorem viewSpineCtr_admits {k j : Nat} (hj : j < k) (U : WorldT j) {f : ViewFormat} {cs : List Nat}
+    (hcs : ∀ c ∈ cs, ViewCell U f c) : viewSpineCtr k f cs.length j hj U (.viewSpine f cs) :=
   ⟨cs, rfl, rfl, hcs⟩
 
 /-- The contract of a cell of format `f`. -/
@@ -36,18 +36,18 @@ def viewCellCtr (k : Nat) (f : ViewFormat) : Ctr k := fun _ _ _ u => f.Stored u
 theorem viewCellCtr_adm (k : Nat) (f : ViewFormat) : CtrAdm (viewCellCtr k f) :=
   ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => h.isVal⟩
 
-/-- **A typed array's allocation keeps a view world** where its view store
-gets the canonical contract and its own fields no view-store role: the
+/-- **A typed array's allocation keeps a view world** where its view spine
+gets the canonical contract and its own fields no view-spine role: the
 note's (W2) for an allocated typed array. -/
 theorem ViewWorld.typedArray {k : Nat} {W : WorldT k} (hW : ViewWorld W) (f : ViewFormat) (N : Nat)
-    (rs : List Role) (ccs : List (Ctr k)) (hrs : ∀ r ∈ rs, ∀ f N, r ≠ .store (.view f N)) :
-    ViewWorld (Verification.appendWs (Verification.appendWs W [(.store (.view f N), viewStoreCtr k f N)])
+    (rs : List Role) (ccs : List (Ctr k)) (hrs : ∀ r ∈ rs, ∀ f N, r ≠ .spine (.view f N)) :
+    ViewWorld (Verification.appendWs (Verification.appendWs W [(.spine (.view f N), viewSpineCtr k f N)])
       (Kinds.objectEntries rs ccs)) := by
   refine ViewWorld.appendWs (ViewWorld.appendWs hW ?_) ?_
   · intro e he f' N' hef j hj U v
     simp only [List.mem_singleton] at he
     subst he
-    simp only [Role.store.injEq, StoreForm.view.injEq] at hef
+    simp only [Role.spine.injEq, SpineForm.view.injEq] at hef
     obtain ⟨rfl, rfl⟩ := hef
     exact Iff.rfl
   · intro e he f' N' hef
@@ -58,12 +58,12 @@ theorem ViewWorld.typedArray {k : Nat} {W : WorldT k} (hW : ViewWorld W) (f : Vi
     · exact absurd hef (hrs _ h f' N')
     · simp only [List.mem_singleton] at h; rw [h] at hef; cases hef
 
-/-- **The cells of a view store hold numbers of its format** on a
-well-formed heap of an admissible world, at level 2 or more: the store meets its
+/-- **The cells of a view spine hold numbers of its format** on a
+well-formed heap of an admissible world, at level 2 or more: the spine meets its
 canonical contract, which makes each listed cell one whose contract admits
 exactly those numbers, and the cell meets its contract. -/
 theorem HeapOk.view_cell_stored {n : Nat} {W : WorldT (n + 2)} {h : Heap} (hok : HeapOk (n + 2) W h)
-    (hW : WorldAdm W) {s : Nat} {f : ViewFormat} {cs : List Nat} (hs : h[s]? = some (.viewStore f cs))
+    (hW : WorldAdm W) {s : Nat} {f : ViewFormat} {cs : List Nat} (hs : h[s]? = some (.viewSpine f cs))
     {c : Nat} (hc : c ∈ cs) {u : Val} (hu : h[c]? = some u) : f.Stored u := by
   have hlen : s < (entries W).length := by
     have := (List.getElem?_eq_some_iff.mp hs).1
@@ -72,7 +72,7 @@ theorem HeapOk.view_cell_stored {n : Nat} {W : WorldT (n + 2)} {h : Heap} (hok :
   obtain ⟨u₀, hu₀, hcat, -⟩ := hok.2 s r hr
   rw [hs] at hu₀; cases hu₀
   cases r with
-  | store sf =>
+  | spine sf =>
     cases sf with
     | array => obtain ⟨_, he⟩ := hcat; cases he
     | view f' N =>
@@ -91,19 +91,19 @@ theorem HeapOk.view_cell_stored {n : Nat} {W : WorldT (n + 2)} {h : Heap} (hok :
   | field | cell | elem | identity => simp [Cat, isSourceVal] at hcat
 
 /-- **A typed array's allocation keeps an admissible world** where its view
-store gets the canonical contract and its own fields admissible contracts of
-no view-store role: the note's (W2) for an allocated typed array, as a
+spine gets the canonical contract and its own fields admissible contracts of
+no view-spine role: the note's (W2) for an allocated typed array, as a
 native constructor's, `subarray`'s or `Buffer`'s contract must allocate it. -/
 theorem WorldAdm.typedArray {k : Nat} {W : WorldT k} (hW : WorldAdm W) (f : ViewFormat) (N : Nat)
-    (rs : List Role) (ccs : List (Ctr k)) (hrs : ∀ r ∈ rs, ∀ f N, r ≠ .store (.view f N))
+    (rs : List Role) (ccs : List (Ctr k)) (hrs : ∀ r ∈ rs, ∀ f N, r ≠ .spine (.view f N))
     (hccs : ∀ c ∈ ccs, CtrAdm c) :
-    WorldAdm (Verification.appendWs (Verification.appendWs W [(.store (.view f N), viewStoreCtr k f N)])
+    WorldAdm (Verification.appendWs (Verification.appendWs W [(.spine (.view f N), viewSpineCtr k f N)])
       (Kinds.objectEntries rs ccs)) := by
-  have h₁ : WorldAdm (Verification.appendWs W [(.store (.view f N), viewStoreCtr k f N)]) :=
-    WorldAdm_appendWs hW (fun e he => by simp only [List.mem_singleton] at he; subst he; exact viewStoreCtr_adm k f N)
+  have h₁ : WorldAdm (Verification.appendWs W [(.spine (.view f N), viewSpineCtr k f N)]) :=
+    WorldAdm_appendWs hW (fun e he => by simp only [List.mem_singleton] at he; subst he; exact viewSpineCtr_adm k f N)
       (fun e he f' N' hef => by
         simp only [List.mem_singleton] at he; subst he
-        simp only [Role.store.injEq, StoreForm.view.injEq] at hef
+        simp only [Role.spine.injEq, SpineForm.view.injEq] at hef
         obtain ⟨rfl, rfl⟩ := hef
         exact fun _ _ _ _ => Iff.rfl)
   refine ⟨(WorldAdm_appendWs h₁ (fun e he => ?_) (fun e he f' N' hef => ?_)).ctr, hW.view.typedArray f N rs ccs hrs⟩

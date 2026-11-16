@@ -155,8 +155,8 @@ theorem footprint_of_fallback {G : NormalGraph ι} {r : SourceRequest σ ι} {bo
       (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
       (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d) :=
   HeapObservations.SafePostExc.weaken
-    (fun _ _ hq => ⟨Footprints.ArgumentStoreRegionsWithin.nil_holds hq, fun hf => by rw [hfr] at hf; cases hf⟩)
-    (fun _ hq ho => Footprints.ArgumentStoreRegionsWithin.nil_holds (hq ho))
+    (fun _ _ hq => ⟨Footprints.ArgumentSpineRegionsWithin.nil_holds hq, fun hf => by rw [hfr] at hf; cases hf⟩)
+    (fun _ hq ho => Footprints.ArgumentSpineRegionsWithin.nil_holds (hq ho))
     (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g.source hroots))
 
 end

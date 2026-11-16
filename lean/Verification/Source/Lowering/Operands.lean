@@ -14,7 +14,7 @@ open EquationGraphs (Tree)
 section
 variable {ι : Type} [Labels ι]
 
-/-- A copied spread holds an internal argument store. Its type is computed
+/-- A copied spread holds an internal argument spine. Its type is computed
 from the checked operand and callee contracts, independently of a source claim
 for the synthetic copy. -/
 @[nospecialize] private def executionSnapshotType (fc : SourceClaims.Function Tree)
@@ -23,7 +23,7 @@ for the synthetic copy. -/
   -- element the literal holds meets.
   if let .arrayLit .. := call then
     let G := SourceTypes.graph (← table)
-    let some S := storeOf G (← exprType fc call) | throw "an array literal needs an array claim"
+    let some S := spineOf G (← exprType fc call) | throw "an array literal needs an array claim"
     let [.list ⟨[], [], some E, _, _⟩ []] := PositiveRules.expand G S
       | throw "an array literal with a spread needs an array claim of one element type"
     let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
@@ -37,7 +37,7 @@ for the synthetic copy. -/
   let G := SourceTypes.graph (← table)
   let signatures := ProgramTyping.restSigs G B
   if let .construct .. := call then
-    if let some S := storeOf G original then
+    if let some S := spineOf G original then
       if let [.list T []] := PositiveRules.expand G S then
         if T.optional.isEmpty && T.rest.isNone then return S
     -- Into a variadic construct signature's element rest, a copy at that
@@ -51,7 +51,7 @@ for the synthetic copy. -/
   if signatures.isEmpty then
     throw (locatedRefusal (← table) call.span .bindingAnnotation
       "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
-  if let some S := storeOf G original then
+  if let some S := spineOf G original then
     if let [.list T []] := PositiveRules.expand G S then
       if T.optional.isEmpty && T.rest.isNone then return S
   let some ⟨_, (_, P), _, _⟩ := signatures.head? | throw "a spread needs a variadic callee"
@@ -75,9 +75,9 @@ for the synthetic copy. -/
     | [.list T []] =>
       if T.optional.isEmpty && T.rest.isNone then
         (List.range T.required.length).mapM fun j => do
-          return Tm.elemAt (.readAt SourceTypes.storeField (.var i)) (← indexTerm j)
-      else pure [.spread (.readAt SourceTypes.storeField (.var i))]
-    | _ => throw "a spread copy needs an array store contract"
+          return Tm.elemAt (.readAt SourceTypes.spineField (.var i)) (← indexTerm j)
+      else pure [.spread (.readAt SourceTypes.spineField (.var i))]
+    | _ => throw "a spread copy needs an array spine contract"
   emitAt original.span (.arrLit inits) (.bind next) Γ C "spread-copy" (scope := scope)
 
 @[nospecialize] def snapshotPlanType (fc : SourceClaims.Function Tree)
@@ -143,7 +143,7 @@ dispatch retains its receiver as the correlated dispatch value. -/
           ("explicit type arguments on an element call are outside the fragment: an element that " ++
             "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
       let index ← arrayKeyTerm key.span (← exprType fc key)
-      pure (none, Tm.elemAt (.readAt SourceTypes.storeField (.var i)) index)
+      pure (none, Tm.elemAt (.readAt SourceTypes.spineField (.var i)) index)
     | _ => throw "a method call's target must name a field or an element"
   if (← executionDispatch fc call).isSome then return (O, .var i)
   let term ← match fld with

@@ -43,9 +43,9 @@ the postconditions those both state or that checked consequence derives
 from each.
 
 **Fresh-Eff** (`Post.fresh_eff`, `ThenEvidence.into_fresh`) is part of
-rebasing: a later entry for a store the evidence states fresh relative to
+rebasing: a later entry for a spine the evidence states fresh relative to
 the composite's entry heap rebases to none, while the entries of that
-store's cells and every class entry are kept (`rebaseAll_fresh_eff`). -/
+spine's cells and every class entry are kept (`rebaseAll_fresh_eff`). -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
 
@@ -372,61 +372,61 @@ theorem rebaseAll_append_erased (ev : RebaseEvidence) (Ψ : Footprint) {e : Regi
     (he : rebase ev e.1 = []) : rebaseAll ev (Ψ ++ [e]) = rebaseAll ev Ψ := by
   simp [rebaseAll, List.flatMap_append, he]
 
-/-- **A store the evidence states fresh rebases to none**: the store of a
+/-- **A spine the evidence states fresh rebases to none**: the spine of a
 position's value, at the empty path, and at a path. -/
-theorem rebase_fresh_store (ev : RebaseEvidence) {x : Nat} {p : List String}
-    (hf : ev.freshPath x p arrayStoreKey = true) :
-    rebase ev (.path x p arrayStoreKey) = [] ∧ (p = [] → rebase ev (.field x arrayStoreKey) = []) := by
+theorem rebase_fresh_spine (ev : RebaseEvidence) {x : Nat} {p : List String}
+    (hf : ev.freshPath x p arraySpineKey = true) :
+    rebase ev (.path x p arraySpineKey) = [] ∧ (p = [] → rebase ev (.field x arraySpineKey) = []) := by
   refine ⟨by simp [rebase, hf], fun hp => ?_⟩
   subst hp
   simp [rebase, hf]
 
-/-- **Fresh-Eff erases the fresh store alone** (the note, §6, Fresh-Eff: "a
-fresh store may list a cell of the entry heap, and a change of that cell is
+/-- **Fresh-Eff erases the fresh spine alone** (the note, §6, Fresh-Eff: "a
+fresh spine may list a cell of the entry heap, and a change of that cell is
 part of the effect"; "a write through a fresh typed array keeps its entry
-`views: grow`"): rebasing removes the fresh store's entry and keeps the
+`views: grow`"): rebasing removes the fresh spine's entry and keeps the
 entries of its cells, at the value class, and of every class region. -/
 theorem rebaseAll_fresh_eff (ev : RebaseEvidence) (Ψ : Footprint) {x : Nat} {δ : Change}
-    (hf : ev.freshPath x [] arrayStoreKey = true) :
-    rebaseAll ev (Ψ ++ [(.field x arrayStoreKey, δ)]) = rebaseAll ev Ψ ∧
-      rebaseAll ev (Ψ ++ [(.elems x, δ)]) = rebaseAll ev Ψ ++ [(.cls .values, δ)] ∧
+    (hf : ev.freshPath x [] arraySpineKey = true) :
+    rebaseAll ev (Ψ ++ [(.field x arraySpineKey, δ)]) = rebaseAll ev Ψ ∧
+      rebaseAll ev (Ψ ++ [(.cells x, δ)]) = rebaseAll ev Ψ ++ [(.cls .values, δ)] ∧
       ∀ c, rebaseAll ev (Ψ ++ [(.cls c, δ)]) = rebaseAll ev Ψ ++ [(.cls c, δ)] := by
-  refine ⟨rebaseAll_append_erased ev Ψ ((rebase_fresh_store ev hf).2 rfl), ?_, fun c => ?_⟩
+  refine ⟨rebaseAll_append_erased ev Ψ ((rebase_fresh_spine ev hf).2 rfl), ?_, fun c => ?_⟩
   · simp [rebaseAll, List.flatMap_append, rebase]
   · simp [rebaseAll, List.flatMap_append, rebase]
 
 /-- **Fresh-Eff from the composite's entry** (the note, §6, Fresh-Eff,
-`c : Φ ∪ {x.store : δ}` and `fresh(x)` before `c` give `c : Φ` from the
-entry): a later frame with an entry for the store of position `x`, that
-store fresh relative to the entry heap by the rebasing's evidence, composes
+`c : Φ ∪ {x.spine : δ}` and `fresh(x)` before `c` give `c : Φ` from the
+entry): a later frame with an entry for the spine of position `x`, that
+spine fresh relative to the entry heap by the rebasing's evidence, composes
 as the frame without that entry. -/
 theorem Post.fresh_eff {Φp Ψ Φq : Footprint} {x : Nat} {δ : Change} {cl : ClassEvidence} {ρ₀ σ : Env}
-    {h₀ h h' : Heap} {ev : RebaseEvidence} (hf : ev.freshPath x [] arrayStoreKey = true)
-    (hp : Post Φp ρ₀ h₀ h) (hn : Post (Ψ ++ [(.field x arrayStoreKey, δ)]) σ h h') (hk : RebaseOk ev σ ρ₀ h₀ h)
+    {h₀ h h' : Heap} {ev : RebaseEvidence} (hf : ev.freshPath x [] arraySpineKey = true)
+    (hp : Post Φp ρ₀ h₀ h) (hn : Post (Ψ ++ [(.field x arraySpineKey, δ)]) σ h h') (hk : RebaseOk ev σ ρ₀ h₀ h)
     (hle : Footprint.le cl (Φp ++ rebaseAll ev Ψ) Φq = true) (hc : ClassOk cl ρ₀ h₀) : Post Φq ρ₀ h₀ h' := by
   refine Post.compose_rebases hp hn (rebases_of_rebaseOk hp hk) ?_ hc
   rw [(rebaseAll_fresh_eff ev Ψ hf).1]
   exact hle
 
 /-- **Fresh-Eff at an exit followed by another**: the composite exit's frame
-need not cover the later exit's entry for a store its evidence states fresh. -/
+need not cover the later exit's entry for a spine its evidence states fresh. -/
 theorem ThenEvidence.into_fresh {arena : AssertionArena} {q₁ q : ExitSpec} {ev : ThenEvidence} {Ψ : Footprint}
-    {ens : List Formula} {x : Nat} {δ : Change} (hf : ev.rebase.freshPath x [] arrayStoreKey = true)
+    {ens : List Formula} {x : Nat} {δ : Change} (hf : ev.rebase.freshPath x [] arraySpineKey = true)
     (hle : Footprint.le ev.cl (q₁.frame ++ rebaseAll ev.rebase Ψ) q.frame = true)
     (he : Consequence arena (.transition q.frame :: (ev.entry ++ ev.mid)) q.ensures) :
-    ev.Into arena q₁ ⟨Ψ ++ [(.field x arrayStoreKey, δ)], ens⟩ q := by
+    ev.Into arena q₁ ⟨Ψ ++ [(.field x arraySpineKey, δ)], ens⟩ q := by
   refine ⟨?_, he⟩
-  show Footprint.le ev.cl (q₁.frame ++ rebaseAll ev.rebase (Ψ ++ [(.field x arrayStoreKey, δ)])) q.frame = true
+  show Footprint.le ev.cl (q₁.frame ++ rebaseAll ev.rebase (Ψ ++ [(.field x arraySpineKey, δ)])) q.frame = true
   rw [(rebaseAll_fresh_eff ev.rebase Ψ hf).1]
   exact hle
 
-/-- **The fresh store's evidence**: a store allocated at or beyond the entry
+/-- **The fresh spine's evidence**: a spine allocated at or beyond the entry
 heap's length meets the rebasing's freshness at the empty path. -/
-theorem freshIfStore_of_freshAt {b : Nat} {σ : Env} {x : Nat} {h : Heap} (hf : FreshAt b (σ x)) :
-    ∀ v, HeapKnowledge.readPath h (σ x) [] = some v → FreshIfStore b v := by
+theorem freshIfSpine_of_freshAt {b : Nat} {σ : Env} {x : Nat} {h : Heap} (hf : FreshAt b (σ x)) :
+    ∀ v, HeapKnowledge.readPath h (σ x) [] = some v → FreshIfSpine b v := by
   intro v hv
   simp only [HeapKnowledge.readPath, Option.some.injEq] at hv
   subst hv
-  exact hf.ifStore
+  exact hf.ifSpine
 
 end Verification.CallEffects

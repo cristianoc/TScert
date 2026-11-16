@@ -25,7 +25,7 @@ def bot : FC := ⟨.keep, .keep⟩
 
 /-- The join: each component's larger change (rank order), which is an upper
 bound in `Closed.le` and in the raw order `Footprint.le` reads. -/
-def cjoin (a b : FC) : FC := ⟨a.value.max b.value, a.store.max b.store⟩
+def cjoin (a b : FC) : FC := ⟨a.value.max b.value, a.spine.max b.spine⟩
 
 def ojoin : Option FC → Option FC → Option FC
   | some a, some b => some (cjoin a b)
@@ -60,7 +60,7 @@ a typed field write `⟨any, keep⟩`, an element write `⟨any, keep⟩` or
 `⟨any, grow⟩`, an element write at a run-time index `⟨any, grow⟩`, an
 initializing write `⟨init, keep⟩`, a call its selected signature's footprint
 (with its receiver's own change, or `top` where it excepts its receiver's
-store and the receiver is not fresh). The step's grades are those, closed
+spine and the receiver is not fresh). The step's grades are those, closed
 under join; its local effect is the least of them the step's check accepts. -/
 
 /-- The rule grades of a step, from its term and its derivation's selected
@@ -71,8 +71,8 @@ def grades (t : Tm) (deriv : ProgramCertificates.Evidence ι) (F : List Nat) : L
       (⟨.any, .grow⟩, "element write, growing")] ++
     (match ExpressionEffects.selectedEffect deriv with
       | some eff =>
-        let extra := if eff.receiverOwn then eff.ownChange
-          else if eff.receiverStore && !GraphCode.receiverFresh F (ProgramCertificates.claim deriv).term then .top else bot
+        let extra := if eff.receiverFields then eff.ownChange
+          else if eff.receiverSpine && !GraphCode.receiverFresh F (ProgramCertificates.claim deriv).term then .top else bot
         [(cjoin eff.footprint extra, "call at its selected signature")]
       | none => [])
   let _ := t

@@ -3,10 +3,10 @@ import Verification.Programs.OperatorTyping
 /-! ## Variadic functions
 
 A variadic body finds the actuals past its fixed parameters in a fresh array in
-slot 0. The array's type is an object whose one field holds a store of any
-length at the element type; a spread reads a store whose every position's type
+slot 0. The array's type is an object whose one field holds a spine of any
+length at the element type; a spread reads a spine whose every position's type
 is among the element type's labels, and `undefined` must be among them when the
-store may have a hole. -/
+spine may have a hole. -/
 namespace Verification.ProgramTyping
 open PositiveNormalization PositiveGraphs PositiveRules Tower
 open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect PromiseWith ctorsT ctorsT_adm
@@ -238,15 +238,15 @@ theorem ArgsT_slots {G : NormalGraph ι} {Γ ρ n W} (he : EnvOk G Γ ρ n W) :
   | [], _ :: _, h => by simp at h
   | _ :: _, [], h => by simp at h
 
-/-- The type of the store a variadic body receives for a rest type: the rest's
-one tuple contract, as a writable store, since the store is fresh. -/
-def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
+/-- The type of the spine a variadic body receives for a rest type: the rest's
+one tuple contract, as a writable spine, since the spine is fresh. -/
+def RestSpine (G : NormalGraph ι) (S P : Ty ι) : Prop :=
   match expand G P, expand G S with
   | [.pack T []], [.list U []] => U = { T with readonly := false, presence := U.presence } ∧
       T.operands.all (tyIn G .source) = true
   | _, _ => False
 
-/-- A store type whose elements a spread passes at `E`. -/
+/-- A spine type whose elements a spread passes at `E`. -/
 def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
   match expand G S with
   | [.list T []] =>
@@ -254,8 +254,8 @@ def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
       (T.presence ≠ .sparse ∨ ∃ i ∈ E, Represents G [i] .undef)
   | _ => False
 
-instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestStore G S P) := by
-  unfold RestStore; split <;> (try dsimp only [Represents]) <;> infer_instance
+instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestSpine G S P) := by
+  unfold RestSpine; split <;> (try dsimp only [Represents]) <;> infer_instance
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S E : Ty ι) : Decidable (SpreadsInto G S E) := by
   unfold SpreadsInto; split <;> (try dsimp only [Represents]) <;> infer_instance
@@ -325,14 +325,14 @@ theorem prefix_take_drop {α : Type} (Ps : List α) (k : Nat) (E : α) :
   · rw [List.take_of_length_le (show Ps.length ≤ k by omega)]
     simp
 
-/-- **Allocating the rest store.** A store of the actuals past the fixed ones
-meets a rest-store type when the actuals as one pack meet the rest type. -/
-theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
+/-- **Allocating the rest spine.** A spine of the actuals past the fixed ones
+meets a rest-spine type when the actuals as one pack meet the rest type. -/
+theorem restSpine_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestSpine G S P)
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
     (he : argMeaning G P n W extra) (hvals : CallArguments.Values extra)
     (href : RefsOk W (.arrLit extra)) :
     Safe (excOf G) (meaning G S) n W h (.arrLit extra) := by
-  unfold RestStore at hS
+  unfold RestSpine at hS
   split at hS
   · rename_i T U hP hR
     obtain ⟨hS, hsrcT⟩ := hS
@@ -381,7 +381,7 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
   · exact hS.elim
 
 
-/-- A literal of more values than a store holds throws its fresh
+/-- A literal of more values than a spine holds throws its fresh
 `RangeError` in one step, a throw meeting `R` where `R` holds of the heap with
 the error object allocated. -/
 theorem alloc_throw_exc {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → Prop} {n : Nat} {W : WorldT n}
@@ -425,12 +425,12 @@ theorem restEntry_refs {k : Nat} {U : WorldT k} {E : List Tm}
 
 /-- **Invoking graph code with a rest.** A call at a variadic signature
 whose fixed parameters are the code's first collects the actuals past them
-into a fresh store, which meets the rest's store type, and runs the code from
-the frame the signature describes with that store in slot 0. -/
+into a fresh spine, which meets the rest's spine type, and runs the code from
+the frame the signature describes with that spine in slot 0. -/
 theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     {s : RestArrow (Ty ι)}
     (hs : GraphCodeSpec G arity E K start Cs s.fixed (some A))
-    (hk : s.arguments.1.length = arity) (harr : RestStore G A s.arguments.2)
+    (hk : s.arguments.1.length = arity) (harr : RestSpine G A s.arguments.2)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (_hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
@@ -461,7 +461,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     unfold envOf at this
     rw [List.getD_eq_getElem?_getD, hi] at this
     exact this
-  -- The rest's allocation extends the heap: by the rest store, or by the
+  -- The rest's allocation extends the heap: by the rest spine, or by the
   -- error a too long rest throws, which meets the call's exceptional exit
   -- (`Exits.AllocStable`).
   have hstore : HeapObservations.SafePostExc (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
@@ -469,10 +469,10 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     by_cases hmax : (args.drop arity).length ≤ maxArrayLength
     · apply HeapObservations.SafePostExc.one_step rfl rfl
         (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)) hmax)
-        ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)) harr_r)
+        ⟨args.drop arity, rfl⟩ (restSpine_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)) harr_r)
     · exact alloc_throw_exc (fun a hm => hvals a (List.mem_of_mem_drop hm)) (by omega) hu hh
         (builtinExc_errors G _) ⟨[.nul], rfl⟩ harr_r
-  have hstoreV : HeapObservations.SafePostExcV (excOf G) (meaning G A) (fun _ _ heap' _ => heap.IsPrefix heap')
+  have hspineV : HeapObservations.SafePostExcV (excOf G) (meaning G A) (fun _ _ heap' _ => heap.IsPrefix heap')
       (s.effect.schema.exitPostW .exceptional r args U heap) j U heap (.arrLit (args.drop arity)) := by
     refine CallEffects.SafePostExcV.weaken_reached hu hh (fun _ _ _ _ _ _ _ hp => hp) ?_
       (HeapObservations.SafePostExcV.iff_lift.mpr hstore)
@@ -481,7 +481,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     intro _ _ _ _ _ _
     exact hstable.2 _ _ _ _ _ hadm hp
   apply HeapObservations.SafePostExcV.bind (.letE · _) .letC .letC (by ctx_refs) j U heap _ hu hh
-    (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hstoreV
+    (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hspineV
   intro i hi V hy hv heap' a hh' hval harr' hprefix hvr
   have hgoV : RefsOk V (.letE a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
     intro x hx
@@ -549,7 +549,7 @@ fixed-arity case, which discards them). -/
 theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {kind : Invoke}
     {S : List (RestArrow (Ty ι))} {As : List (Ty ι)} (fs : List (PropKey × Nat)) (hkind : kind ≠ .construct)
     (hb : ∀ s ∈ S, KindBinds G kind s.receiver)
-    (hs : ∀ q ∈ S.zip As, q.1.arguments.1.length = arity ∧ RestStore G q.2 q.1.arguments.2 ∧
+    (hs : ∀ q ∈ S.zip As, q.1.arguments.1.length = arity ∧ RestSpine G q.2 q.1.arguments.2 ∧
       GraphCodeSpec G arity E K start Cs q.1.fixed (some q.2))
     (hlen : S.length = As.length)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hcs : Cs.length ≤ vs.length)
@@ -581,7 +581,7 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
 /-- **The signatures graph code offers.** Code without a rest meets each
 fixed signature and, discarding the actuals past its parameters, each
 variadic one, all at their rows (`offerRows`); code with a rest offers no
-fixed signature, and meets each variadic one from the frame with the store of
+fixed signature, and meets each variadic one from the frame with the spine of
 the further actuals, whose type `As` lists in the signatures' order. -/
 def CodeOffers (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
@@ -590,16 +590,16 @@ def CodeOffers (G : NormalGraph ι) (arity : Nat) (E : List Tm)
   match rest with
   | false => ∀ p ∈ offerRows L S, GraphCodeSpec G arity E K start Cs p
   | true => L = [] ∧ S.length = As.length ∧ ∀ q ∈ S.zip As, q.1.arguments.1.length = arity ∧
-      RestStore G q.2 q.1.arguments.2 ∧
+      RestSpine G q.2 q.1.arguments.2 ∧
       GraphCodeSpec G arity E K start Cs q.1.fixed (some q.2)
 
-/-- The arity and rest-store requirements of a code offer. -/
+/-- The arity and rest-spine requirements of a code offer. -/
 def CodeOffersShape (G : NormalGraph ι) (arity : Nat) (rest : Bool)
     (L : List (Arrow (Ty ι))) (S : List (RestArrow (Ty ι))) (As : List (Ty ι)) : Prop :=
   match rest with
   | false => True
   | true => L = [] ∧ S.length = As.length ∧ ∀ q ∈ S.zip As,
-      q.1.arguments.1.length = arity ∧ RestStore G q.2 q.1.arguments.2
+      q.1.arguments.1.length = arity ∧ RestSpine G q.2 q.1.arguments.2
 
 /-- Whether code of kind `kind` may offer a signature whose receiver is `R`:
 `call` code any; `sloppy` code one whose type is of clause rows, each an
@@ -970,7 +970,7 @@ theorem packedBy_sound {G : NormalGraph ι} {A : Ty ι} {t : ι} (hp : PackedBy 
   exact hpart hv.1.1
 
 /-- **A spread of a packed value.** The callee, the receiver and the fixed
-actuals run, then the operand; its store is read and spread, a step each, and
+actuals run, then the operand; its spine is read and spread, a step each, and
 the elements form a list of the rest `P`, which the operand's values are
 packable by (`Packable`). -/
 theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
@@ -982,15 +982,15 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
     (hf : Safe Ξ (restsT Ξ [(Rc, Ps, P, R)]) n W heap f)
     (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (ha : FutureSafe Ξ V n W a)
     (href : RefsOk W (.invoke f r (xs.map Prod.snd ++
-      [.spread (.readAt CallArguments.arrayStoreField a)]))) :
+      [.spread (.readAt CallArguments.arraySpineField a)]))) :
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++
-      [.spread (.readAt CallArguments.arrayStoreField a)])) := by
+      [.spread (.readAt CallArguments.arraySpineField a)])) := by
   obtain ⟨-, hrr, hargsr⟩ := RefsOk_invoke.mp href
-  apply Safe_bind (fun f => Tm.invoke f r (xs.map Prod.snd ++ [Tm.spread (.readAt CallArguments.arrayStoreField a)]))
+  apply Safe_bind (fun f => Tm.invoke f r (xs.map Prod.snd ++ [Tm.spread (.readAt CallArguments.arraySpineField a)]))
     Step.callL Raises.callL (by ctx_refs) n W heap f hw hh (RefsOk_invoke.mpr ⟨RefsOk_undef, hrr, hargsr⟩) hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0 hvr
   have hxW0 : ∀ {t}, RefsOk W t → RefsOk U0 t := fun h => RefsOk_mono hx0 (RefsOk_trunc _ h)
-  apply Safe_bind (fun r => Tm.invoke v r (xs.map Prod.snd ++ [Tm.spread (.readAt CallArguments.arrayStoreField a)]))
+  apply Safe_bind (fun r => Tm.invoke v r (xs.map Prod.snd ++ [Tm.spread (.readAt CallArguments.arraySpineField a)]))
     (Step.callRecv hv) (Raises.callRecv hv) (by ctx_refs) j0 U0 heap0 r hu0 hok0
     (RefsOk_invoke.mpr ⟨hvr, RefsOk_undef, fun a ha => hxW0 (hargsr a ha)⟩)
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
@@ -1003,7 +1003,7 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
     simpa only [trunc_trunc] using WExt_trunc hj1 hx0
   have hj : j ≤ n := Nat.le_trans hj1 hj0
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
-    (fun args => Tm.invoke v rv (args ++ [Tm.spread (.readAt CallArguments.arrayStoreField a)]))
+    (fun args => Tm.invoke v rv (args ++ [Tm.spread (.readAt CallArguments.arraySpineField a)]))
     (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step)
     (fun hr => (hr.append _).invoke hv hrv) (fun args r => by simp [refs, refsArgs_eq] <;> grind) hu' hok
     (RefsOk_invoke.mpr ⟨hxU1 hvr, hrvr, fun a ha => hxU1 (hxW0 (hargsr a ha))⟩)
@@ -1014,17 +1014,17 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
   have hkU : WExt (trunc k (Nat.le_trans hk hj) W) V' := by
     apply WExt_trans _ hy
     simpa only [trunc_trunc] using WExt_trunc hk hxU
-  have hctx : CtxRefs (fun t => .invoke v rv (args ++ [.spread (.readAt CallArguments.arrayStoreField t)])) := by
+  have hctx : CtxRefs (fun t => .invoke v rv (args ++ [.spread (.readAt CallArguments.arraySpineField t)])) := by
     ctx_refs
   have hctx2 : CtxRefs (fun t => .invoke v rv (args ++ [.spread t])) := by ctx_refs
-  apply Safe_bind (A := V) (fun t => .invoke v rv (args ++ [.spread (.readAt CallArguments.arrayStoreField t)]))
+  apply Safe_bind (A := V) (fun t => .invoke v rv (args ++ [.spread (.readAt CallArguments.arraySpineField t)]))
     (fun s => RestCalls.call_lift hv hrv hvals (.spreadC (.readC s)))
     (fun s => RestCalls.call_raise hv hrv hvals (.spreadC (.readC s))) hctx k V' heap'' a hv' hok'
     (hctx.frame hrefs)
     ((ha.transfer (Nat.le_trans hk hj) hkU) k (Nat.le_refl _) V'
       (by rw [trunc_id]; exact WExt_refl _) hv' heap'' hok')
   intro i hi X hz hX heap3 av hok3 hav hva havr
-  have hCX : RefsOk X (.invoke v rv (args ++ [.spread (.readAt CallArguments.arrayStoreField av)])) :=
+  have hCX : RefsOk X (.invoke v rv (args ++ [.spread (.readAt CallArguments.arraySpineField av)])) :=
     hctx.ok havr (RefsOk_mono hz (RefsOk_trunc _ (hctx.frame hrefs)))
   have hfX := (restsT_adm _).mono i _ X hz v ((restsT_adm _).down_le k i hi V' v
     ((restsT_adm _).mono k _ V' hy v ((restsT_adm _).down_le j k hk U v hfun)))
@@ -1038,7 +1038,7 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
       hVP (i + 1) X av hva i (Nat.le_refl _) X (by rw [trunc_id]; exact WExt_refl _) heap3 hok3
     have hmid : RefsOk (trunc i (Nat.le_succ i) X) (.invoke v rv (args ++ [.spread (.arr ls)])) :=
       hctx2.ok (read_value_refs hok3 hls)
-        (RefsOk_trunc _ (hctx2.frame (t := .readAt CallArguments.arrayStoreField (.objAt fs c oid)) hCX))
+        (RefsOk_trunc _ (hctx2.frame (t := .readAt CallArguments.arraySpineField (.objAt fs c oid)) hCX))
     cases i with
     | zero =>
       exact pure_step hX hok3 hCX (RestCalls.call_lift hv hrv hvals (.spreadC (.readField hl hls))) hmid
@@ -1248,10 +1248,10 @@ theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam} {e : Effec
     (by rw [List.take_append_drop]; exact hrefs)
   rwa [List.take_append_drop] at this
 
-/-- **A fresh store of values at `E`.** Allocated, the values meet the
+/-- **A fresh spine of values at `E`.** Allocated, the values meet the
 contract `E` at every position, under any readonly flag and presence mode:
 every position holds a location of its own. -/
-theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : Adm E) (hEv : ValOnly E)
+theorem fresh_spine_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : Adm E) (hEv : ValOnly E)
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ)
     (hvs : ∀ e ∈ vs, E n W e) (hsrc : ∀ v ∈ vs, isSourceVal v = true) (href : RefsOk W (.arrLit vs)) :
     Safe Ξ (listT ⟨[], [], some E, ro, presence⟩) n W h (.arrLit vs) := by
@@ -1304,9 +1304,9 @@ theorem namedMembers_carriesInvariant {c : Clause α} {fs : List (Stored α)} {v
   | .dict _ [] _ _ _ _ _ _ _, rfl => rfl
 
 /-- **`length`, read where the object may be an array**: an array's is its
-store's length, any other object's its own property's. -/
+spine's length, any other object's its own property's. -/
 def lengthRead (i : Nat) : Tm :=
-  .ite (.test .isArray (.var i)) (.lenOf (.readAt CallArguments.arrayStoreField (.var i)))
+  .ite (.test .isArray (.var i)) (.lenOf (.readAt CallArguments.arraySpineField (.var i)))
     (.readAt lengthKey (.var i))
 
 /-- Whether a clause's members exclude the number `w`. -/

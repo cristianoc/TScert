@@ -28,7 +28,7 @@ theorem termValue_value_undef {ρ : Env} {h : Heap} {s : Nat} (hs : ρ s = .unde
 /-- A length term is undefined where the slot holds a number. -/
 theorem termValue_length_num {ρ : Env} {h : Heap} {s : Nat} {b : UInt64} (hs : ρ s = .num b) :
     termValue ε ρ h (.length s) = none := by
-  simp [hs, lengthOf, Footprints.storeOf, fieldsOf]
+  simp [hs, lengthOf, Footprints.spineOf, fieldsOf]
 
 /-- The facts `linearNear` lists hold where the store does. -/
 theorem linearNear_holds (hnear : LinearNearSound) {s : Store} {η : Env} {h : Heap} (hs : StoreOk ε s η h)

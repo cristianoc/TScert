@@ -4,7 +4,7 @@ import Verification.Programs.TolerantFramesMergeHolds
 /-! # Tolerant frames: the names the eliminations give
 
 The facts `HeapKnowledge.eliminateIndices`, `restateReads` and
-`restateStores` derive name only what their inputs name: the eliminated
+`restateSpines` derive name only what their inputs name: the eliminated
 linear facts keep the terms an input atom states defined (`termDefined`),
 under a condition an input atom has; a restatement through reads roots a
 term at the cell of a read link. So the names of the facts a store
@@ -391,12 +391,12 @@ theorem plainRead_cell {ls : HeapLinks.Links} {r : Nat × String × Nat} (hr : r
     · cases hgm; exact ⟨g, hg, .inl rfl⟩
     · cases hgm
 
-/-- **A store restatement through reads names its input's names or a read's
-cell** (`restateStores`). -/
-theorem restateStores_named {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {b : IndexAtom}
-    (hb : b ∈ restateStores ls dropped as) {x : Nat} (hx : x ∈ (Atom.index b).names) :
+/-- **A spine restatement through reads names its input's names or a read's
+cell** (`restateSpines`). -/
+theorem restateSpines_named {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {b : IndexAtom}
+    (hb : b ∈ restateSpines ls dropped as) {x : Nat} (hx : x ∈ (Atom.index b).names) :
     NamedIn as x ∨ LinkNamed ls x := by
-  unfold restateStores at hb
+  unfold restateSpines at hb
   dsimp only at hb
   split at hb
   · cases hb
@@ -407,7 +407,7 @@ theorem restateStores_named {ls : HeapLinks.Links} {dropped : Nat → Bool} {as 
           ((plainReads ls).filter fun g => dropped g.2.2).length (u, p)
         let (y, q) ← liftPath dropped ((plainReads ls).filter fun g => dropped g.2.2)
           ((plainReads ls).filter fun g => dropped g.2.2).length (w, q)
-        pure { fact := .storeApart x p y q } else none) = some c →
+        pure { fact := .spineApart x p y q } else none) = some c →
       ∀ x ∈ (Atom.index c).names, NamedIn as x ∨ LinkNamed ls x := by
     intro u w p q c hu hw hc x hx
     split at hc

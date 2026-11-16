@@ -40,14 +40,14 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
   return (i, A)
 
 /-- A location a reference names: a cell's or a field's, or an element of an
-array's store, each read and written where the receiver is. -/
+array's spine, each read and written where the receiver is. -/
 private inductive Location where
   | field (object : Tm) (fld : PropKey) (contract : Ty Tree)
   | element (object : Tm) (index : Tm) (contract : Ty Tree)
 
 private def Location.read : Location → Tm
   | .field object fld _ => .readAt fld object
-  | .element object index _ => .elemAt (.readAt SourceTypes.storeField object) index
+  | .element object index _ => .elemAt (.readAt SourceTypes.spineField object) index
 
 private def Location.contract : Location → Ty Tree
   | .field _ _ T | .element _ _ T => T
@@ -57,7 +57,7 @@ private def Location.write (shift : Nat) (value : Tm) : Location → Except Stri
   | .field (.var i) fld _ => pure (.writeAt fld (.var (i+shift)) value)
   | .element (.var i) index _ =>
     let object := Tm.var (i+shift)
-    pure (.writeAt SourceTypes.storeField object (.setElem (.readAt SourceTypes.storeField object) index value))
+    pure (.writeAt SourceTypes.spineField object (.setElem (.readAt SourceTypes.spineField object) index value))
   | _ => throw "internal execution plan: reference is not a saved location"
 
 /-- The saved receiver slot of a field or element reference, and its nullish
@@ -105,7 +105,7 @@ before the member is read. -/
         pure (.elemAt pos object (.var key.source key.name))
       | _ => throw "only field and local assignments are supported"
     let prepared ← comparisonsExpr fc prepared
-    -- An element of an array's store, at the position the key names.
+    -- An element of an array's spine, at the position the key names.
     if let .elemAt _ _ keyExpr := prepared then
       let index ← arrayKeyTerm keyExpr.span (← exprType fc keyExpr)
       return .element (.var i) index (← exprType fc original)
@@ -697,21 +697,21 @@ written to the cell at its contract, and the right side's value. -/
     emitAt source (.arith op (.var old) delta) (.bind write) Γ N (scope := scope)
   | .positionRead _ array index =>
     let (i, _) ← executionSaved scope Γ array
-    emitAt source (.elemAt (.readAt SourceTypes.storeField (.var i)) (← indexTerm index))
+    emitAt source (.elemAt (.readAt SourceTypes.spineField (.var i)) (← indexTerm index))
       (.bind next) Γ A "pattern-read" (scope := scope)
   | .arrayRest _ array start slice =>
     let (i, B) ← executionSaved scope Γ array
     if slice then
       emitAt source (← sliceCall scope i start) (.bind next) Γ A "pattern-rest" (scope := scope)
     else
-      let (store, S, _) ← restArray fc B i start source
+      let (spine, S, _) ← restArray fc B i start source
       let temporary := held ⟨"",some source⟩ :: scope
       let proto ← prototypeSlot temporary
       let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
         (fun j => if j == 0 then 0 else j+1)
       let object ← emitAt source (arrayTerm proto) (.bind ⟨next.label, some mapping⟩)
         (S::Γ) A "pattern-rest" (scope := temporary)
-      emitAt source store (.bind object) Γ S "pattern-rest" (scope := scope)
+      emitAt source spine (.bind object) Γ S "pattern-rest" (scope := scope)
   | .emptyObject _ => emitAt source (.makeAt .absent [] []) (.bind next) Γ A (scope := scope)
   | .outcome _ truth => emitAt source (if truth then .tru else .fls) (.bind next) Γ A (scope := scope)
   | .addField original base key value _ =>

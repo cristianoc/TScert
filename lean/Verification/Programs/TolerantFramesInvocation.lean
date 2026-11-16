@@ -14,7 +14,7 @@ consumes for the call.
 The node assertions carry the bound so far, from the fixed invocation entry
 heap `h₀`, and each node's exit composes its own effect onto it: a closed
 node effect within the bound (`bound_step`), a node effect within the bound
-on the entry's locations only, fresh stores exempt (`bound_step_fresh`), and a
+on the entry's locations only, fresh spines exempt (`bound_step_fresh`), and a
 regional node effect rebased to the entry (`action_compose_at`, the lift of
 `Post.compose_at`), its class evidence read at the entry heap and its paths
 resolved through stable paths (`rebaseOk_stable`). The administrative
@@ -134,7 +134,7 @@ theorem bound_step {c cn : Footprints.Closed} {h₀ : Heap} {σ : Env} {s₀ s :
     (hI : c.Holds h₀ s₀.h) (ha : Action cn.fp σ s₀ s) (hle : cn.le c = true) : c.Holds h₀ s.h :=
   hI.trans_on ((Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2)).mono hle |>.on _)
 
-/-- **The fresh-store exemption**: a node effect within the bound on the
+/-- **The fresh-spine exemption**: a node effect within the bound on the
 locations the invocation's entry heap has composes onto the bound so far;
 what the node does to a location allocated during the invocation is
 unbounded. -/

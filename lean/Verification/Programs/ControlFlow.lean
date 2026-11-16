@@ -244,7 +244,7 @@ theorem sourceTerm_refs : ∀ {t : Tm}, ObjectCoherence.sourceTerm t = true → 
   | .makeAt (.graph _ E _ _ caps _ _) _ xs, h => by
     simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
     simp only [refs, sourceArgs_refs h.1.1, sourceArgs_refs h.1.2, sourceArgs_refs h.2, List.append_nil]
-  | .objAt .., h | .arr _, h | .viewStore .., h | .makeAt (.view ..) _ _, h | .goto .., h | .frame .., h => by
+  | .objAt .., h | .arr _, h | .viewSpine .., h | .makeAt (.view ..) _ _, h | .goto .., h | .frame .., h => by
     simp [ObjectCoherence.sourceTerm] at h
 
 theorem sourceArgs_refs : ∀ {xs : List Tm}, ObjectCoherence.sourceArgs xs = true → refsArgs xs = []

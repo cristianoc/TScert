@@ -1848,7 +1848,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     };
     // A guard of the compiler API's family (HOST-FAMILIES.md, "Guards as
     // values"): a listed one is read at the signature its entry gives, its
-    // plain signature changing no value and no store and taking any further
+    // plain signature changing no value and no spine and taking any further
     // arguments, beside the promise
     // signature of its tag set, the union of the family's shapes at those
     // tags (a node guard's, `guard.<name>` of the family's definitions) or
@@ -1865,7 +1865,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       if (!one || plain.length !== 1) throw Error(`the guard ${node.name.text} has no one plain signature`);
       const entry = guard;
       // A stated guard of the sync API (T7, `statedGuards`): its declared
-      // promise, both signatures changing no value and no store.
+      // promise, both signatures changing no value and no spine.
       const stated = compilerApiFile(node.getSourceFile().fileName) &&
           installationPath(node.getSourceFile().fileName) === "dist/api/sync/api.d.ts"
         ? statedGuards.find(g => g.name === node.name?.text) : undefined;

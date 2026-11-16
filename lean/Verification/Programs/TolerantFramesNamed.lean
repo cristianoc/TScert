@@ -11,7 +11,7 @@ what keeps the facts that are not handed.
 
 A **named fact** is read at a name valuation `η` (each name its value) and a
 heap (`AtomHolds`); its meaning needs no slot. On the normal exit of a step
-whose footprint is within `{values: keep, stores: keep}` (the preserving
+whose footprint is within `{values: keep, spines: keep}` (the preserving
 cases: inspections, allocations and the calls keeping the heap), every named
 fact holds after every action, whatever its names (`named_keep_box`): the
 heap only grows (`atomHolds_extend`). On the exceptional exit the heap may
@@ -142,7 +142,7 @@ theorem named_set {S : List Atom} {η : Env} {r : Nat} (v : Tm) (hr : ∀ a ∈ 
 /-! ## The frame of the facts not handed to a step -/
 
 /-- **(Keep) Every named fact survives every action of an effect within
-`{values: keep, stores: keep}`**, its names held by slots or not. -/
+`{values: keep, spines: keep}`**, its names held by slots or not. -/
 theorem named_keep_box {c : Footprints.Closed} (hle : c.le Footprints.Closed.empty = true) {S : List Atom}
     {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s := by
   intro s' ha a hm
@@ -152,7 +152,7 @@ theorem named_keep_box {c : Footprints.Closed} (hle : c.le Footprints.Closed.emp
   exact atomHolds_extend vs (hS a hm)
 
 /-- **The facts reading no heap survive every admissible transition**: under
-the effect `{values: any, stores: any}` of an exceptional exit. -/
+the effect `{values: any, spines: any}` of an exceptional exit. -/
 theorem named_any_box {Φ : Footprint} {S : List Atom} (hf : ∀ a ∈ S, a.heapFree = true) {η ρ : Env} {m : Nat}
     {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box Φ (Named ε S η) ρ m s :=
   fun s' _ a hm => atomHolds_heapFree (hf a hm) (hS a hm) s'.h
@@ -194,7 +194,7 @@ theorem preserving_normal {Ξ T : Fam} {cn : Footprints.Closed} {Qn : Post} {S :
   exact ⟨s', hact, rfl, hn, hT, hq, named_set v hr (named_keep_box hle hS s' hact)⟩
 
 /-- **The exceptional exit of a step frames the facts reading no heap.** A
-normal-only judgment leaves a throw at `{values: any, stores: any}`; the
+normal-only judgment leaves a throw at `{values: any, spines: any}`; the
 facts the pass keeps at a handler edge (`Atom.heapFree`) hold at the
 endpoint, with the raised value closed and of the exception family. -/
 theorem preserving_throw {Ξ T : Fam} {Q : Post} {S : List Atom} {η ρ : Env} {m : Nat} {s : IndexedHeap}
@@ -208,7 +208,7 @@ theorem preserving_throw {Ξ T : Fam} {Q : Post} {S : List Atom} {η ρ : Env} {
 
 /-! ## The preserving judgments -/
 
-/-- An inspection's normal exit is within `{values: keep, stores: keep}`
+/-- An inspection's normal exit is within `{values: keep, spines: keep}`
 (`HeapExpressionRules.inspect_frame`): reads, tests, arithmetic and
 allocations of evaluated operands. -/
 theorem inspection_keeps {Ξ T : Fam} {n W h t} (hs : Safe Ξ T n W h t) (hp : Purity.inspectTerm t = true)
@@ -221,7 +221,7 @@ variable {ι : Type} [DecidableEq ι]
 open ProgramTyping PositiveCertificates ProgramCertificates PositiveGraphs PositiveRules
 
 /-- **A call the pass keeps the heap across (`PromiseCalls.keepsCall`)** has
-its normal exit within `{values: keep, stores: keep}`: its selected signature
+its normal exit within `{values: keep, spines: keep}`: its selected signature
 is within the empty footprint (`ExpressionEffects.selectedCall_sound`). -/
 theorem keepsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
@@ -241,7 +241,7 @@ theorem keepsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
   · contradiction
 
 /-- A call allocating its result (`PromiseCalls.freshCall`) has its normal
-exit within `{values: keep, stores: keep}`: its selected signature keeps the
+exit within `{values: keep, spines: keep}`: its selected signature keeps the
 heap (`PromiseCalls.keepsHeap_prefix`). -/
 theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
@@ -269,10 +269,10 @@ theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
 whose step is a call `keepsCall` accepts, with the facts `k` handed to its
 rule holding at the node's slots and the store's facts `S` at the name
 valuation `η`, a run with budget left ends, on a normal return, in an action
-of `{values: keep, stores: keep}` where the result meets its type, the rule's
+of `{values: keep, spines: keep}` where the result meets its type, the rule's
 output (`HeapKnowledge.shift k`) holds, and every fact of `S`, handed or not,
 holds with the result named `r`; on a throw, in an action of
-`{values: any, stores: any}` where the raised value is of the exception family
+`{values: any, spines: any}` where the raised value is of the exception family
 and the facts of `S` reading no heap hold. -/
 theorem keepsCall_frame {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
@@ -303,7 +303,7 @@ A fact over a name no slot holds is not handed to a step even when the step
 reads every fact (`SinglePass.materialize` with `whole`: its renaming fails),
 so `applyDelta` keeps it. Across a writing step nothing justifies it: a cell
 fact of the object the name holds fails after an action of
-`{values: any, stores: any}`. -/
+`{values: any, spines: any}`. -/
 
 /-- A state of one location holding `v`, at budget 1. -/
 def oneState (v : Val) (hv : isVal v = true) (hs : isSourceVal v = true) (hn : refs v = []) : IndexedHeap :=
@@ -328,7 +328,7 @@ def oneState (v : Val) (hv : isVal v = true) (hs : isSourceVal v = true) (hn : r
 
 /-- **A cell fact over a name is not framed by a writing effect**: name 0
 holds an object whose field `f` is location 0; the fact that the field holds
-`null` holds before an action of `{values: any, stores: any}` and not after. -/
+`null` holds before an action of `{values: any, spines: any}` and not after. -/
 theorem slotless_not_framed :
     ¬ ∀ (η ρ : Env) (m : Nat) (s : IndexedHeap),
       Named ε [.cell ⟨0, { nul := true }, "f"⟩] η ρ m s →

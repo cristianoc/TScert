@@ -61,8 +61,8 @@ def callSlots (r : Tm) (args : List Tm) (p : Nat) : Option Nat :=
     | _ => none
 
 /-- The frame `ReceiverGrows` states: every old location but the receiver's
-store kept, which holds a store. -/
-def grownFrame : Footprint := [((Region.field 0 arrayStoreKey).inCls .stores, .any)]
+spine kept, which holds a spine. -/
+def grownFrame : Footprint := [((Region.field 0 arraySpineKey).inCls .spines, .any)]
 
 theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : Heap}
     (hw : e.within r args h h') (hg : CallEffects.ReceiverGrows r h h') :
@@ -70,10 +70,10 @@ theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : He
   refine ⟨hw.1, fun l v hv => ?_⟩
   rcases hg l v hv with hs | ⟨hs, ls, ls', rfl, hl', -⟩
   · exact ⟨v, hs, .inl rfl⟩
-  · refine ⟨.arr ls', hl', .inr ⟨((Region.field 0 arrayStoreKey).inCls .stores, .any), by simp [grownFrame], ?_,
+  · refine ⟨.arr ls', hl', .inr ⟨((Region.field 0 arraySpineKey).inCls .spines, .any), by simp [grownFrame], ?_,
       trivial⟩⟩
     simp only [Region.mem, hv, Bool.and_eq_true]
-    exact ⟨by simpa [CallEffects.callEnv, Footprints.storeOf] using hs, rfl⟩
+    exact ⟨by simpa [CallEffects.callEnv, Footprints.spineOf] using hs, rfl⟩
 
 /-- A call at its selected signature: its exits' frames at the call's
 positions, on normal return the narrower `grownFrame` where its normal exit
@@ -200,7 +200,7 @@ theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
 /-! ## Fresh facts of a node
 
 A node's value is fresh (`freshOut`): a slot copy of a fresh slot, a
-constant, an allocation of an object with a store field, a read of a fresh
+constant, an allocation of an object with a spine field, a read of a fresh
 cell, or a call at a signature stating a fresh result. It is a fresh cell
 (`cellOut`): a copy of a fresh cell, or an allocation holding a fresh slot's
 value in its cell field. It keeps the node's fresh cells (`cellsKept`): an
@@ -212,10 +212,10 @@ def constTerm : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
   | _ => false
 
-/-- An allocation of an object with a store field. -/
-def allocStore : Tm → Bool
-  | .makeAt _ ns _ => ns.contains arrayStoreKey
-  | .letE _ (.makeAt _ ns _) => ns.contains arrayStoreKey
+/-- An allocation of an object with a spine field. -/
+def allocSpine : Tm → Bool
+  | .makeAt _ ns _ => ns.contains arraySpineKey
+  | .letE _ (.makeAt _ ns _) => ns.contains arraySpineKey
   | _ => false
 
 /-- A read of the cell field of a slot holding a fresh cell. -/
@@ -225,7 +225,7 @@ def cellRead (C : List Nat) : Tm → Bool
 
 @[nospecialize] def freshOut [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι)) (F C : List Nat) (c : NodeEvidence ι) (t : Tm) : Bool :=
-  varFresh F t || constTerm t || allocStore t || cellRead C t || callFresh G images sums c t
+  varFresh F t || constTerm t || allocSpine t || cellRead C t || callFresh G images sums c t
 
 /-- A plain object allocated from slots, the slot its cell field holds
 fresh. -/
@@ -265,9 +265,9 @@ theorem instantiate_makeAt (d : Nat) (ρ : Env) (c : CallCode) (ns : List PropKe
     ∃ c' xs', instantiate d ρ (.makeAt c ns xs) = .makeAt c' ns xs' := by
   cases c <;> simp only [instantiate] <;> exact ⟨_, _, rfl⟩
 
-theorem allocStore_shape {t : Tm} (ha : allocStore t = true) (ρ : Env) :
+theorem allocSpine_shape {t : Tm} (ha : allocSpine t = true) (ρ : Env) :
     AllocShape (instantiate 0 ρ t) := by
-  unfold allocStore at ha
+  unfold allocSpine at ha
   split at ha
   · rename_i c ns inits
     obtain ⟨c', xs', he⟩ := instantiate_makeAt 0 ρ c ns inits
@@ -301,7 +301,7 @@ theorem freshOut_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
   · cases t <;> simp only [constTerm, Bool.false_eq_true] at hc <;> simp only [instantiate] at hs ⊢ <;>
       exact value_run rfl (freshValue_of_fields rfl rfl) hs
   · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => freshAt_value hq) (fun _ h => h)
-      (alloc_fresh hb (allocStore_shape ha ρ) hs)
+      (alloc_fresh hb (allocSpine_shape ha ρ) hs)
   · cases t <;> simp only [cellRead, Bool.false_eq_true] at hr
     rename_i k x
     cases x <;> simp only [Bool.false_eq_true] at hr
@@ -563,20 +563,20 @@ theorem fieldsCheck_sound [DecidableEq ι] {G : NormalGraph ι} {names : List St
 
 /-- A copy's origins: every region its slot holds. The node check verifies
 the slot and scope. -/
-def copyOrigins (facts : List ArgumentPathTracking.Fact) (t : Tm) : List ArgumentStoreRegion :=
+def copyOrigins (facts : List ArgumentPathTracking.Fact) (t : Tm) : List ArgumentSpineRegion :=
   match t with
   | .var i => (facts.filter fun f => f.slot == i).map (·.region)
   | _ => []
 
 @[nospecialize] def checkCopy [DecidableEq ι] (c : NodeEvidence ι)
-    (facts : List ArgumentPathTracking.Fact) (t : Tm) (rs : List ArgumentStoreRegion) : Bool :=
+    (facts : List ArgumentPathTracking.Fact) (t : Tm) (rs : List ArgumentSpineRegion) : Bool :=
   match t with
   | .var i => decide (i < (entry c).length) && rs.all fun r => facts.contains ⟨i, r⟩
   | _ => false
 
 theorem checkCopy_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
-    {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
-    {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentStoreRegion} {thr : Bool} {F : List Nat}
+    {regions : List ArgumentSpineRegion} {facts : List ArgumentPathTracking.Fact}
+    {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentSpineRegion} {thr : Bool} {F : List Nat}
     {Fs : List (Nat × String)}
     (hc : checkCopy c facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
@@ -598,8 +598,8 @@ theorem checkCopy_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
 /-- **The stable-read node rule**'s candidates: a read of a traversed field
 `f` of a tracked slot holding a position's entry value names the region
 `(x, [f])`, for each such position. The node check verifies them. -/
-def readOrigins (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (t : Tm) :
-    List ArgumentStoreRegion :=
+def readOrigins (regions : List ArgumentSpineRegion) (facts : List ArgumentPathTracking.Fact) (t : Tm) :
+    List ArgumentSpineRegion :=
   match t with
   | .readAt (.str f) (.var i) =>
     (facts.filter fun g => g.slot == i && g.region.path.isEmpty &&
@@ -608,12 +608,12 @@ def readOrigins (regions : List ArgumentStoreRegion) (facts : List ArgumentPathT
   | _ => []
 
 /-- A node's candidate origins: a copy's, and a stable read's. -/
-def nodeOrigins (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (t : Tm) :
-    List ArgumentStoreRegion :=
+def nodeOrigins (regions : List ArgumentSpineRegion) (facts : List ArgumentPathTracking.Fact) (t : Tm) :
+    List ArgumentSpineRegion :=
   copyOrigins facts t ++ readOrigins regions facts t
 
-@[nospecialize] def checkRead [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (regions : List ArgumentStoreRegion)
-    (facts : List ArgumentPathTracking.Fact) (t : Tm) (rs : List ArgumentStoreRegion) : Bool :=
+@[nospecialize] def checkRead [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (regions : List ArgumentSpineRegion)
+    (facts : List ArgumentPathTracking.Fact) (t : Tm) (rs : List ArgumentSpineRegion) : Bool :=
   match t with
   | .readAt (.str f) (.var i) => decide (i < (entry c).length) && !rs.isEmpty &&
       (match (entry c)[i]? with
@@ -643,8 +643,8 @@ private theorem read_step {h : Heap} {x : Val} {f : String} {u : Val}
 values reads the field's entry value (`read_now`): its result holds each
 region `(x, [f])`'s entry value. -/
 theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed}
-    {regions : List ArgumentStoreRegion} {facts : List ArgumentPathTracking.Fact}
-    {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentStoreRegion} {thr : Bool} {F : List Nat}
+    {regions : List ArgumentSpineRegion} {facts : List ArgumentPathTracking.Fact}
+    {c : NodeEvidence ι} {t : Tm} {rs : List ArgumentSpineRegion} {thr : Bool} {F : List Nat}
     {Fs : List (Nat × String)}
     (hc : checkRead G c regions facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
@@ -699,7 +699,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
 /-- All branch targets and handlers must justify their proposed facts. -/
 @[nospecialize] def checkNode [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+    (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool)
     (l : Nat) (node : Node) (c : NodeEvidence ι) : Bool :=
   let facts := ArgumentPathTracking.atLabel table l
@@ -730,14 +730,14 @@ can be mapped through a source map by the declaration diagnostic. Shape and
 entry failures belong to the enclosing declaration's diagnostic. -/
 @[nospecialize] def firstRefusedNode [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+    (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool)
     (P : Program) (C : Certificate ι) : Option ((Node × NodeEvidence ι) × Nat) :=
   (P.zip C).zipIdx.find? fun ((node, c), l) => !checkNode G images sums Φ regions table ft exc l node c
 
 theorem firstRefusedNode_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
+    {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion}
     {table : List (List ArgumentPathTracking.Fact)} {ft : FreshTables} {exc : Bool}
     {P : Program} {C : Certificate ι} {node : Node} {c : NodeEvidence ι} {l : Nat}
     (hf : firstRefusedNode G images sums Φ regions table ft exc P C = some ((node, c), l)) :
@@ -751,7 +751,7 @@ theorem firstRefusedNode_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- The table covers precisely the program and certificate being checked. -/
 @[nospecialize] def checkNodes [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+    (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool)
     (P : Program) (C : Certificate ι) : Bool :=
   decide (P.length = C.length) && decide (table.length = P.length) &&
@@ -760,7 +760,7 @@ theorem firstRefusedNode_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- Regional graph checking is independent of type-parameter assignment. -/
 theorem checkNodes_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (η : MixedAssignment ι) (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion)
+    (η : MixedAssignment ι) (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion)
     (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool) (P : Program) (C : Certificate ι) :
     checkNodes (reassign G η) (images.reassign η) sums Φ regions table ft exc P C =
       checkNodes G images sums Φ regions table ft exc P C := by
@@ -772,7 +772,7 @@ theorem checkNodes_reassign [DecidableEq ι] (G : NormalGraph ι)
 
 theorem checkNodes_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion} {table : List (List ArgumentPathTracking.Fact)}
+    {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion} {table : List (List ArgumentPathTracking.Fact)}
     {ft : FreshTables} {exc : Bool} {Rty : Goal ι} {P : Program} {C : Certificate ι} {codes}
     (hg : checkGraphUsing (sums := sums) G images Rty P C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
@@ -812,7 +812,7 @@ theorem checkNodes_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- Ordinary entry safety and regional obligations form one executable check. -/
 @[nospecialize] def checkEntry [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion) (Rty : Goal ι)
+    (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion) (Rty : Goal ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
     (codes : CodeEntry ι → Bool) (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool)
     (entrySeparation : HeapSeparation.Separation := {}) (entryIndices : List HeapKnowledge.IndexAtom := []) : Bool :=
@@ -825,13 +825,13 @@ theorem checkNodes_sound [DecidableEq ι] {G : NormalGraph ι}
     checkNodes G images sums Φ regions table ft exc P C
 
 theorem checkEntryFields_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (inputs : List (Ty ι)) (regions : List ArgumentStoreRegion) :
+    (inputs : List (Ty ι)) (regions : List ArgumentSpineRegion) :
     ArgumentPathTracking.checkEntryFields (reassign G η) inputs regions =
       ArgumentPathTracking.checkEntryFields G inputs regions := rfl
 
 theorem checkEntry_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (η : MixedAssignment ι) (Φ : Footprints.Closed) (regions : List ArgumentStoreRegion) (Rty : Goal ι)
+    (η : MixedAssignment ι) (Φ : Footprints.Closed) (regions : List ArgumentSpineRegion) (Rty : Goal ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι))
     (codes : CodeEntry ι → Bool) (table : List (List ArgumentPathTracking.Fact)) (ft : FreshTables) (exc : Bool)
     (entrySeparation : HeapSeparation.Separation) (entryIndices : List HeapKnowledge.IndexAtom) :
@@ -844,7 +844,7 @@ theorem checkEntry_reassign [DecidableEq ι] (G : NormalGraph ι)
 There is no semantic node-obligation premise. -/
 theorem checkEntry_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion} {Rty : Goal ι} {E K C start inputs codes}
+    {Φ : Footprints.Closed} {regions : List ArgumentSpineRegion} {Rty : Goal ι} {E K C start inputs codes}
     {table : List (List ArgumentPathTracking.Fact)} {ft : FreshTables} {exc : Bool}
     {entrySeparation : HeapSeparation.Separation} {entryIndices : List HeapKnowledge.IndexAtom}
     (hc : checkEntry G images sums Φ regions Rty (program E K) C start inputs codes table ft exc
@@ -856,8 +856,8 @@ theorem checkEntry_sound [DecidableEq ι] {G : NormalGraph ι}
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d))
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
-      (fun h' _ => ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
-      (fun h' => exc = true → ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' _ => ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      (fun h' => exc = true → ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       n W h (.goto E K start L d) := by
   simp only [checkEntry, Bool.and_eq_true] at hc
   have hg := hc.1.1.1.1.1

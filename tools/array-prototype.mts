@@ -112,13 +112,13 @@ const callback = (value: TypeTerm, result: TypeTerm,
   ({ k: "function", effect, receiver: null, rest: null, span: at,
      params: [value, atomOf("number"), arrayOf(element, true, presence)], result });
 /** `find` and `findIndex` visit every index below the length they read
- * first, present or not. At a callback that changes no array store, the
- * receiver's store, and so its length, stays as it was, and each visit reads
- * an element at the receiver's contract; at any other, a store may shrink
+ * first, present or not. At a callback that changes no array spine, the
+ * receiver's spine, and so its length, stays as it was, and each visit reads
+ * an element at the receiver's contract; at any other, a spine may shrink
  * (`grow` may drop indices past a hole), and a visit past the new length
  * passes `undefined`. */
 const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
-  callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
+  callback(footprint.spine === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
 /** `reduce`'s and `reduceRight`'s callback: the accumulator, a present
  * element, its index and the receiver, returning the next accumulator. */
@@ -132,17 +132,17 @@ const elementPredicates: readonly { kind: ElementKind; type: TypeTerm }[] = [
   { kind: "boolean", type: atomOf("boolean") },
 ];
 const guarded: TypeTerm = { k: "binder", name: "S", span: at };
-/** A destructive member's: within `{value: any, store: keep}` but for its
- * receiver's store, which it may change arbitrarily. */
-const receiverStoreEffect: CallEffect = footprintEffect({ value: "any", store: "keep" }, { receiverStore: true });
-/** `sort`'s at a comparator whose store changes are at most `grow`: its
- * writeback grows the receiver's store over the whole call (`sort_grow`) and
+/** A destructive member's: within `{value: any, spine: keep}` but for its
+ * receiver's spine, which it may change arbitrarily. */
+const receiverSpineEffect: CallEffect = footprintEffect({ value: "any", spine: "keep" }, { receiverSpine: true });
+/** `sort`'s at a comparator whose spine changes are at most `grow`: its
+ * writeback grows the receiver's spine over the whole call (`sort_grow`) and
  * changes element contents. */
-const sortGrowEffect: CallEffect = footprintEffect({ value: "any", store: "grow" });
+const sortGrowEffect: CallEffect = footprintEffect({ value: "any", spine: "grow" });
 /** The closed footprints that keep an array's dense prefixes: those whose
- * change to array stores is at most `grow` (`stableDenseClosed`), smallest
+ * change to array spines is at most `grow` (`stableDenseClosed`), smallest
  * first. */
-const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
+const stableForDensity = closedFootprints.filter((f) => f.spine !== "any");
 /** A callback member's signatures, one per closed footprint `ε`: called at a
  * callback within `ε`, the member is within `ε`, since besides the callback
  * it reads the receiver and allocates only its result. */
@@ -153,13 +153,13 @@ const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootpr
     return { ...signature(effect, footprint), effect: footprintEffect(footprint, { fresh }) };
   });
 
-/** Map allocates at the captured length. A callback preserving stores
+/** Map allocates at the captured length. A callback preserving spines
  * keeps that length equal to the receiver's final length; growth gives an
  * upper bound on the result instead. Ordinary construction fixes species. */
-const mapEnsures = (store: ClosedFootprint["store"]): IndexFact[] => store === "any" ? [] : [
+const mapEnsures = (spine: ClosedFootprint["spine"]): IndexFact[] => spine === "any" ? [] : [
   { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
     [{ kind: "length", slot: 1, path: [] }, -1]], bound: 0 } } } },
-  ...(store === "keep" ? [{ linear: { fact: { le: { form: [
+  ...(spine === "keep" ? [{ linear: { fact: { le: { form: [
     [{ kind: "length", slot: 0, path: [] }, -1],
     [{ kind: "length", slot: 1, path: [] }, 1]], bound: 0 } } } }] satisfies IndexFact[] : []),
 ];
@@ -176,24 +176,24 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
     // `map` relies on every index below the length it captured staying
     // present until it tests it. A callback whose footprint changes array
-    // stores at most by `grow` keeps that fact (FOOTPRINTS.md, "Natives":
+    // spines at most by `grow` keeps that fact (FOOTPRINTS.md, "Natives":
     // `map_rely`, `denseCheck_stable`), so at each such footprint a dense
     // receiver gives a dense result, and the call's own footprint is the
     // callback's: `map` reads the receiver and allocates its result, a fresh
-    // array, whose store its result is (each signature states it). Any
+    // array, whose spine its result is (each signature states it). Any
     // other callback gives a result that may hold holes. These are ordinary
     // per-signature call contracts.
     stated: [
       ...stableForDensity.map((footprint) => ({
         receiver: arrayOf(element, true, "dense"),
         params: [callback(element, mappedElement, footprintEffect(footprint))],
-        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint, { fresh: true, ensures: mapEnsures(footprint.store) }) })),
+        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint, { fresh: true, ensures: mapEnsures(footprint.spine) }) })),
       { params: [callback(element, mappedElement, ordinaryEffect)],
         result: arrayOf(mappedElement, false, "sparse"), effect: footprintEffect(topFootprint, { fresh: true }) },
       // At a receiver whose present elements all have the predicate's kind
       // when the call starts (`requires`), and a callback within the empty
       // footprint, every element `map` passes has it: the callback changes
-      // no location, so the store and each element keep their contents
+      // no location, so the spine and each element keep their contents
       // between visits (`elems_rely`), and `map` passes only present
       // elements, skipping a hole and leaving it in its fresh result. So the
       // callback is called at the predicate's type; the result's presence
@@ -249,7 +249,7 @@ export const overlay: readonly OverlayEntry[] = [
   // Beside each callback's call, the member reads the length once, tests and
   // reads the receiver's own numeric keys, data properties (`numericOwn`),
   // and `filter` defines the kept elements on a fresh array (ordinary
-  // construction), whose store its result is: it runs no other client code
+  // construction), whose spine its result is: it runs no other client code
   // and writes no existing location. So at a callback within a footprint the
   // member is: a signature per closed footprint; `thisArg` is not stated.
   // At a guard within the empty footprint promising a predicate's type,
@@ -353,7 +353,7 @@ export const overlay: readonly OverlayEntry[] = [
     effect: emptyEffect },
   // `find` is reviewed against its guard overload, whose declaration binds
   // `S`, and states both of TypeScript's: the predicate one at each
-  // footprint, and the guard one at each footprint keeping array stores
+  // footprint, and the guard one at each footprint keeping array spines
   // (`native-guard-find`). There every visit passes an element at the
   // receiver's contract, and where the answer is `true` the native returns
   // that very value, which the promise leaves an `S`, running no client code
@@ -363,7 +363,7 @@ export const overlay: readonly OverlayEntry[] = [
     stated: [
       ...atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
         result: maybeElement })),
-      ...closedFootprints.filter((footprint) => footprint.store === "keep").map((footprint) => ({
+      ...closedFootprints.filter((footprint) => footprint.spine === "keep").map((footprint) => ({
         params: [callback(element, guarded, footprintEffect(footprint, { promise: { guards: { param: 0 } } }))],
         result: { k: "union", parts: [guarded, atomOf("undefined")], span: at } satisfies TypeTerm,
         effect: footprintEffect(footprint) })),
@@ -382,10 +382,10 @@ export const overlay: readonly OverlayEntry[] = [
     // elements, data properties, calls the comparator only on the values it
     // snapshot, converts its numeric answer, and writes back to its own
     // receiver: `Set` of each index below the snapshot's count, then `Delete`
-    // of each later one, changing only the receiver's store and element
-    // contents. At a comparator whose store changes are at most `grow`, the
-    // receiver's store changes by `grow` over the whole call (`sort_grow`),
-    // so the call is within `{value: any, store: grow}`: a signature per
+    // of each later one, changing only the receiver's spine and element
+    // contents. At a comparator whose spine changes are at most `grow`, the
+    // receiver's spine changes by `grow` over the whole call (`sort_grow`),
+    // so the call is within `{value: any, spine: grow}`: a signature per
     // such footprint of the comparator. At any other it states no footprint.
     stated: [
       ...stableForDensity.map((footprint) => ({
@@ -401,30 +401,30 @@ export const overlay: readonly OverlayEntry[] = [
         params: [atomOf("undefined")], result: { k: "array", presence: "readable", readonly: false, element, span: at } },
     ] },
   // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` and
-  // `unshift` change the receiver's store by `grow` and only element
+  // `unshift` change the receiver's spine by `grow` and only element
   // contents beside it; `pop`, `shift` and `reverse` change the receiver's
-  // store arbitrarily and only element contents beside it: within
-  // `{value: any, store: keep}` but for the receiver's store
-  // (`receiverStore`); `sort` grows it over the whole call when its
-  // comparator's store changes do. The store relations are proved of the
+  // spine arbitrarily and only element contents beside it: within
+  // `{value: any, spine: keep}` but for the receiver's spine
+  // (`receiverSpine`); `sort` grows it over the whole call when its
+  // comparator's spine changes do. The spine relations are proved of the
   // specification steps (FootprintNatives.lean); that each native changes
-  // nothing but its store and element contents is this entry's audit.
+  // nothing but its spine and element contents is this entry's audit.
   { name: "push", from: "Array", signature: "push(...items: T[]): number;",
-    effect: footprintEffect({ value: "any", store: "grow" }, { receiverGrows: true }) },
-  { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverStoreEffect },
-  { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverStoreEffect },
+    effect: footprintEffect({ value: "any", spine: "grow" }, { receiverGrows: true }) },
+  { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverSpineEffect },
+  { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverSpineEffect },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
-    effect: footprintEffect({ value: "any", store: "grow" }) },
-  { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverStoreEffect },
+    effect: footprintEffect({ value: "any", spine: "grow" }) },
+  { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverSpineEffect },
   // `splice` converts primitive numeric offsets, copies the removed range
   // with its holes to fresh array storage, shifts the remaining indices and
-  // writes the already evaluated inserted values. Only its receiver's store
+  // writes the already evaluated inserted values. Only its receiver's spine
   // and existing element values may change. One variadic contract covers
   // both installed overloads: omission of deleteCount and explicit undefined
   // have different deletion counts but the same result and effect contracts.
   { name: "splice", from: "Array", signature: "splice(start: number, deleteCount: number, ...items: T[]): T[];",
     stated: [{ params: [atomOf("number"), optionalNumber], rest: element, result: arrayOf(element, false),
-      effect: footprintEffect({ value: "any", store: "keep" }, { receiverStore: true, fresh: true }) }] },
+      effect: footprintEffect({ value: "any", spine: "keep" }, { receiverSpine: true, fresh: true }) }] },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
@@ -559,7 +559,7 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     // `String.prototype`, which has none), and `$` patterns in a string
     // replacement are string operations. A `RegExp`, and a replacer
     // callback, are not stated. `split` gives a fresh array of strings,
-    // whose store its result is; `replaceAll` of a non-global `RegExp` would
+    // whose spine its result is; `replaceAll` of a non-global `RegExp` would
     // throw.
     { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
       effect: footprintEffect(emptyFootprint, { fresh: true }),
@@ -661,15 +661,15 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
  * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
  * `valueOf`, `toString` and `toISOString` read its time value. The members
  * that change a collection or a date (`add`, `set`, `delete`, `clear`,
- * `setTime`) state `{value: scalar, store: keep}`: they compare keys by
+ * `setTime`) state `{value: scalar, spine: keep}`: they compare keys by
  * SameValueZero or take a number, run no code, and write only the receiver's
  * internal slots, which no location of the model holds, and a `Set`'s and a
  * `Map`'s `size`, a readonly view holding a number, which they set to a
- * number: no location holding an object or a store changes. A `WeakMap`'s `set`
+ * number: no location holding an object or a spine changes. A `WeakMap`'s `set`
  * and `delete` state the empty footprint: it has no `size`. `forEach`, which
  * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
  * footprints"). */
-const changesValues = footprintEffect({ value: "scalar", store: "keep" });
+const changesValues = footprintEffect({ value: "scalar", spine: "keep" });
 export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
   ["Set", [
     { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },

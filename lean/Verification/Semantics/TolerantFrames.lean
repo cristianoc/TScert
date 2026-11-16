@@ -1,4 +1,4 @@
-import Verification.Semantics.ArgumentStoreRegions
+import Verification.Semantics.ArgumentSpineRegions
 
 /-! # Tolerant frames over indexed states
 
@@ -18,7 +18,7 @@ meet `Post Φ ρ`, and `Box Φ F` holds where `F` holds after every action of
 valuation and the entry mark are parameters of every assertion and stay fixed
 across the modality. A fact whose support an effect respects enters the
 modality (`tolerant_frame`), and two atoms, a length lower bound and density,
-enter that of `{values: any, stores: grow}`. -/
+enter that of `{values: any, spines: grow}`. -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
@@ -233,16 +233,16 @@ theorem closed_rigid (c : Footprints.Closed) (ρ : Env) : Rigid c.fp ρ := by
 
 /-! ## An effect that is not rigid
 
-`x[∗]`, the store of `x` with the cells it lists, both at `any`: a first
-action may make the store list an old cell, and a second may then change that
+`x[∗]`, the spine of `x` with the cells it lists, both at `any`: a first
+action may make the spine list an old cell, and a second may then change that
 cell, which the first heap's region does not cover. -/
 
 /-- A contract admitting every value. -/
 def anyCtr : Ctr 1 := fun _ _ _ v => isVal v = true
 
-/-- A world of three locations admitting every value: an array store, then
+/-- A world of three locations admitting every value: an array spine, then
 two element cells. -/
-def anyWorld : WorldT 1 := ofEntries [(.store .array, anyCtr), (.elem, anyCtr), (.elem, anyCtr)]
+def anyWorld : WorldT 1 := ofEntries [(.spine .array, anyCtr), (.elem, anyCtr), (.elem, anyCtr)]
 
 theorem anyWorld_lookup {l : Nat} {c : Ctr 1} (hl : lookup anyWorld l = some c) : l < 3 ∧ c = anyCtr := by
   simp only [lookup, anyWorld, toList, entries_ofEntries] at hl
@@ -256,7 +256,7 @@ theorem anyWorld_adm : WorldAdm anyWorld := by
   · simp only [roleAt, roles, anyWorld, entries_ofEntries] at hr
     rcases l with _ | _ | _ | l <;> simp at hr
 
-/-- A heap of `anyWorld`: a store listing its element cells, and two source
+/-- A heap of `anyWorld`: a spine listing its element cells, and two source
 values without references. -/
 theorem anyWorld_ok {ls : List (Option Nat)} {a b : Val} (hls : ∀ l, some l ∈ ls → l = 1 ∨ l = 2)
     (ha : isSourceVal a = true) (hb : isSourceVal b = true) (hra : refs a = []) (hrb : refs b = []) :
@@ -288,22 +288,22 @@ theorem anyState_admissible {h h' : Heap} {ok ok'} :
   ⟨Nat.le_refl 1, by show WExt (trunc 1 (Nat.le_refl 1) anyWorld) anyWorld; rw [trunc_id]; exact WExt_refl _⟩
 
 /-- **`x[∗] : any` is not rigid.** -/
-theorem elems_not_rigid :
-    ¬ Rigid [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
-      (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) := by
+theorem cells_not_rigid :
+    ¬ Rigid [(.field 0 arraySpineKey, .any), (.cells 0, .any)]
+      (fun _ => .objAt [(arraySpineKey, 0)] .absent 0) := by
   intro hr
   let s₁ := anyState [.arr [some 1], .nul, .nul] (anyWorld_ok (by simp) rfl rfl rfl rfl)
   let s₂ := anyState [.arr [some 2], .nul, .nul] (anyWorld_ok (by simp) rfl rfl rfl rfl)
   let s₃ := anyState [.arr [some 2], .nul, .tru] (anyWorld_ok (by simp) rfl rfl rfl rfl)
-  have a₁ : Action [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
-      (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) s₁ s₂ := by
+  have a₁ : Action [(.field 0 arraySpineKey, .any), (.cells 0, .any)]
+      (fun _ => .objAt [(arraySpineKey, 0)] .absent 0) s₁ s₂ := by
     refine ⟨anyState_admissible, by simp [s₁, s₂, anyState], fun l v hl => ?_⟩
     rcases l with _ | _ | _ | l <;> simp [s₁, s₂, anyState] at hl ⊢
     · exact .inr ⟨_, List.mem_cons_self .., by decide, trivial⟩
     · exact .inl hl
     · exact .inl hl
-  have a₂ : Action [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
-      (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) s₂ s₃ := by
+  have a₂ : Action [(.field 0 arraySpineKey, .any), (.cells 0, .any)]
+      (fun _ => .objAt [(arraySpineKey, 0)] .absent 0) s₂ s₃ := by
     refine ⟨anyState_admissible, by simp [s₂, s₃, anyState], fun l v hl => ?_⟩
     rcases l with _ | _ | _ | l <;> simp [s₂, s₃, anyState] at hl ⊢
     · exact .inl hl
@@ -316,7 +316,7 @@ theorem elems_not_rigid :
   rcases ha with he | ⟨e, he, hm, -⟩
   · cases he
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at he
-    rcases he with rfl | rfl <;> simp [s₁, anyState, Region.mem, storeElems, entriesAt, HeapKnowledge.descriptorStore, storeEntries, fieldsOf] at hm
+    rcases he with rfl | rfl <;> simp [s₁, anyState, Region.mem, spineCells, entriesAt, HeapKnowledge.descriptorSpine, spineEntries, fieldsOf] at hm
 
 /-! ## Adequacy: effect judgments give actions -/
 
@@ -351,7 +351,7 @@ theorem action_throw {Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {Qe : 
   exact ⟨s', ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp hc)⟩, rfl, hn, hsc, hΞ, hq⟩
 
 /-- A normal-only judgment (`SafePost`) leaves the exceptional exit at
-`{values: any, stores: any}`: its throw is an action of `Closed.top`, the
+`{values: any, spines: any}`: its throw is an action of `Closed.top`, the
 raised value exposed. -/
 theorem action_throw_top {Ξ T : Fam} {Q : Post} {ρ : Env} {s : IndexedHeap} {t t' e : Tm} {h' : Heap}
     {k : Nat} (hsafe : SafePost Ξ T Q s.n s.W s.h t) (hst : Steps k s.h t h' t') (hr : Raises t' e)
@@ -370,7 +370,7 @@ valuation and the entry mark alone. -/
 theorem invariant_const (P : Env → Nat → Prop) : Invariant (fun ρ m _ => P ρ m) :=
   fun _ _ _ _ _ hp => hp
 
-/-- The store of `x` was allocated at or after the entry mark: `fresh(x)`. It
+/-- The spine of `x` was allocated at or after the entry mark: `fresh(x)`. It
 reads no heap. -/
 def Fresh (x : Nat) : Assertion := fun ρ m _ => FreshAt m (ρ x)
 
@@ -424,7 +424,7 @@ theorem path_mem_eq {ρ : Env} {x : Nat} {p : List String} {k : PropKey} {v : Va
     (Region.path x p k).mem ρ h l = (Region.path x p k).mem ρ h' l := by
   simp only [Region.mem, hv, hv']
 
-/-- **A store region at a stable path is rigid on the domain of the path's
+/-- **A spine region at a stable path is rigid on the domain of the path's
 stability**: `{x.p.k: δ}` composes from every state where the path from `x`
 is stable, whatever the change `δ`. -/
 theorem path_rigid_on (x : Nat) (p : List String) (k : PropKey) (δ : Change) (v : Val) (ρ : Env) (m : Nat) :
@@ -482,30 +482,30 @@ theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s
 
 /-! ## Two atoms -/
 
-/-- `{values: any, stores: grow}`: the effect of an element write whose
+/-- `{values: any, spines: grow}`: the effect of an element write whose
 target is unknown. -/
 def growEffect : Footprints.Closed := ⟨.any, .grow, .grow⟩
 
 open HeapKnowledge in
-/-- `y ≤ |x|`: slot `y` holds an integer at most the length of `x`'s store. -/
+/-- `y ≤ |x|`: slot `y` holds an integer at most the length of `x`'s spine. -/
 def lowerBoundFact (y x : Nat) : IndexFact := .linear (.le [(.value y, 1), (.length x, -1)] 0)
 
 /-- `y ≤ |x|` as an assertion. -/
 def LowerBound (ε : HeapKnowledge.EntryState) (y x : Nat) : Assertion := fun ρ _ s => (lowerBoundFact y x).HoldsAt ε ρ s.h
 
-/-- **(Grow)** `y ≤ |x| ⊢ □_{values: any, stores: grow} (y ≤ |x|)`. -/
+/-- **(Grow)** `y ≤ |x| ⊢ □_{values: any, spines: grow} (y ≤ |x|)`. -/
 theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound ε y x ρ m s) :
     Box growEffect.fp (LowerBound ε y x) ρ m s :=
   kept_box growEffect rfl hb
 
-/-- `y ≤ |x.p|`: the value the path `p` reads from `x` has a store at least as
+/-- `y ≤ |x.p|`: the value the path `p` reads from `x` has a spine at least as
 long as the integer slot `y` holds. -/
 def PathLowerBound (y x : Nat) (p : List String) : Assertion := fun ρ _ s =>
   ∃ w a len, HeapKnowledge.readPath s.h (ρ x) p = some w ∧ HeapKnowledge.intValue (ρ y) = some a ∧
     HeapKnowledge.lengthOf s.h w = some len ∧ a ≤ len
 
 /-- **(Grow) at a rigid path**: along a stable path, `y ≤ |x.p|` survives
-every action of `{values: any, stores: grow}`. The path's rigidity is a fact
+every action of `{values: any, spines: grow}`. The path's rigidity is a fact
 of the world, kept by every admissible transition. -/
 theorem grow_path {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hp : StableAt x p v ρ m s) (hb : PathLowerBound y x p ρ m s) :
@@ -514,11 +514,11 @@ theorem grow_path {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {
   obtain ⟨w, a, len, hw, ha', hl, hle⟩ := hb
   have hv : HeapKnowledge.readPath s.h (ρ x) p = some v := hp.read s.pos s.ok
   rw [hw] at hv; cases hv
-  obtain ⟨st, ls, hst, hls, rfl, hm⟩ := HeapKnowledge.lengthOf_store hl
+  obtain ⟨st, ls, hst, hls, rfl, hm⟩ := HeapKnowledge.lengthOf_spine hl
   have hc : (HeapKnowledge.Changes.ofClosed growEffect).Holds s.h s'.h :=
     HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
   obtain ⟨ls', hls', hlen, hmax⟩ := hc.2.2 rfl st ls hls
-  exact ⟨v, a, ls'.length, ha.1.readPath hp, ha', HeapKnowledge.lengthOf_of_store hst hls' (hmax hm),
+  exact ⟨v, a, ls'.length, ha.1.readPath hp, ha', HeapKnowledge.lengthOf_of_spine hst hls' (hmax hm),
     by omega⟩
 
 open HeapKnowledge in
@@ -555,10 +555,10 @@ theorem grow_path_fact {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : N
     Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) ρ m s :=
   fun s' ha => pathLowerBound_iff.mp (grow_path hp (pathLowerBound_iff.mpr hb) s' ha)
 
-/-- `dense(x, k)`: the first `k` indices of `x`'s store are present. -/
+/-- `dense(x, k)`: the first `k` indices of `x`'s spine are present. -/
 def DenseAt (x k : Nat) : Assertion := fun ρ _ s => Dense x k ρ s.h
 
-/-- **(Dense)** `dense(x, k) ⊢ □_{values: any, stores: grow} dense(x, k)`. -/
+/-- **(Dense)** `dense(x, k) ⊢ □_{values: any, spines: grow} dense(x, k)`. -/
 theorem dense {x k : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hd : DenseAt x k ρ m s) :
     Box growEffect.fp (DenseAt x k) ρ m s :=
   fun _ ha => stableDenseClosed_sound (by decide) hd ha.2

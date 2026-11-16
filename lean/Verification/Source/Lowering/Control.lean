@@ -242,29 +242,29 @@ def singletonOf (singles : List (Tag × Tree)) (tag : Tag) : Option Tree :=
   (singles.find? (·.1 == tag)).map (·.2)
 
 /-- The fresh array an array pattern's rest collects from the array at slot
-`obj` of `A`: the positions from `start` on, read into a store. They are a
+`obj` of `A`: the positions from `start` on, read into a spine. They are a
 fixed list of reads where `A` is one tuple of required positions, whose
 length is exact (`listT`); an array of any other length has a slice of
 unknown length for its rest, which no list of reads is. The array is claimed
-at the rest's span, like an array literal. The store's term, the store's
+at the rest's span, like an array literal. The spine's term, the spine's
 type and the array's claimed type. -/
 @[nospecialize] def restArray (fc : SourceClaims.Function Tree) (A : Ty Tree) (obj start : Nat) (restPos : Span) :
     Compiler (Tm × Ty Tree × Ty Tree) := do
   let G := SourceTypes.graph (← table)
-  let some S := storeOf G A | throw "an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"
+  let some S := spineOf G A | throw "an array rest needs one array contract: over a union of arrays of different lengths its rest is a slice of a length known only at run time"
   let [.list T []] := PositiveRules.expand G S | throw restOfUnknownLength
   if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
   let C ← claimAt fc restPos
-  let some Sr := storeOf (SourceTypes.graph (← table)) C | throw "an array rest needs an array claim"
+  let some Sr := spineOf (SourceTypes.graph (← table)) C | throw "an array rest needs an array claim"
   let n := T.required.length - start
   -- Each read runs where the rest is collected, after earlier pattern
   -- defaults. Its value is saved before the next read; the allocation
   -- then consumes only value slots, as an array literal does.
   let reads ← (List.range n).mapM fun j => do
-    return Tm.elemAt (.readAt SourceTypes.storeField (.var (obj+j))) (← indexTerm (start + j))
+    return Tm.elemAt (.readAt SourceTypes.spineField (.var (obj+j))) (← indexTerm (start + j))
   let _ ← arrayObject Sr
-  let store := reads.foldr Tm.letE (.arrLit ((List.range n).map fun j => .var (n-1-j)))
-  return (store, Sr, C)
+  let spine := reads.foldr Tm.letE (.arrLit ((List.range n).map fun j => .var (n-1-j)))
+  return (spine, Sr, C)
 
 /-- A slice rest's collection: the call of its `%RestFrom:k%`, `k` the
 rest's index, on the array at slot `obj`, after the pattern's reads and
@@ -286,12 +286,12 @@ array contracts reads at the union of their positions. -/
   let label ← lower (SourceTypes.use (.numLit (bitsOfNat i)))
   recordHints [label]
   let alts ← (PositiveRules.expand G A).mapM fun c => do
-    let store ← match c with
-      | .refs fs [] vs _ _ _ _ => match (Stored.views fs).lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
+    let spine ← match c with
+      | .refs fs [] vs _ _ _ _ => match (Stored.views fs).lookup SourceTypes.spineField <|> vs.lookup SourceTypes.spineField with
         | some S => pure S
         | none => throw "an array pattern requires an array contract"
       | _ => throw "an array pattern requires an array contract"
-    (PositiveRules.expand G store).mapM fun c => do
+    (PositiveRules.expand G spine).mapM fun c => do
       let .list T [] := c | throw "an array pattern requires an array contract"
       match T.required[i]?, ProgramTyping.positionTy T i with
       | some E, _ => pure E

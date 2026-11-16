@@ -142,7 +142,7 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : 
     | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
     | _ => none
   let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
-    | .index ⟨.guarded .., _, _⟩ | .index ⟨.storeApart .., _, _⟩ | .link _ => a.names
+    | .index ⟨.guarded .., _, _⟩ | .index ⟨.spineApart .., _, _⟩ | .link _ => a.names
     | _ => [])
   let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
     (diffs.flatMap fun d => d.flatMap fun a => match a with
@@ -176,7 +176,7 @@ def mergeAddGuarded (mergedNames : List Nat) (guarded : List HeapKnowledge.Index
     | some a => acc.add a
     | none => acc) met
 
-/-- A name holds a fresh store where every predecessor's does: each
+/-- A name holds a fresh spine where every predecessor's does: each
 predecessor's fresh names with their renames, intersected. -/
 def mergeFresh (preds : List State) (renames : List (Std.HashMap Nat (List Nat))) : List Nat :=
   let freshLists := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>

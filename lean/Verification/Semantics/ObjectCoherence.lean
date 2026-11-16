@@ -21,7 +21,7 @@ def sourceTerm : Tm → Bool
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => sourceTerm a
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
   | .arrLit args => sourceArgs args
-  | .arr .. | .viewStore .. | .makeAt (.view ..) _ _ => false
+  | .arr .. | .viewSpine .. | .makeAt (.view ..) _ _ => false
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
   | .makeAt (.graph _ E _ _ caps _ _) _ args => sourceArgs E && sourceArgs caps && sourceArgs args
   | .goto .. | .frame .. => false

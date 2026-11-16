@@ -1,5 +1,5 @@
 import Verification.Programs.GraphCode
-import Verification.Semantics.ArgumentStoreRegions
+import Verification.Semantics.ArgumentSpineRegions
 import Verification.Semantics.FootprintRebase
 
 /-! Callee provenance names values read from the invocation's entry heap.
@@ -11,7 +11,7 @@ open PointClaims Footprints
 /-- A slot holding the value of an entry argument path. -/
 structure Fact where
   slot : Nat
-  region : ArgumentStoreRegion
+  region : ArgumentSpineRegion
   deriving Repr, DecidableEq
 
 def Holds (facts : List Fact) (ρ entry : Env) (h₀ : Heap) : Prop :=
@@ -51,10 +51,10 @@ def atLabel (table : List (List Fact)) (label : Nat) : List Fact := table.getD l
 
 /-- A normal edge can bind a result whose origins are established by the
 node. A handler binds the thrown value without assigning it an origin. -/
-def afterPush (facts : List Fact) (origins : List ArgumentStoreRegion) : List Fact :=
+def afterPush (facts : List Fact) (origins : List ArgumentSpineRegion) : List Fact :=
   origins.map (fun r => ⟨0, r⟩) ++ shift facts
 
-theorem afterPush_sound {facts : List Fact} {origins : List ArgumentStoreRegion}
+theorem afterPush_sound {facts : List Fact} {origins : List ArgumentSpineRegion}
     {ρ entry : Env} {h₀ : Heap} {v : Val} (hs : Holds facts ρ entry h₀)
     (hv : ∀ r ∈ origins, HeapKnowledge.readPath h₀ (entry r.position) r.path = some v) :
     Holds (afterPush facts origins) (push v ρ) entry h₀ := by
@@ -64,12 +64,12 @@ theorem afterPush_sound {facts : List Fact} {origins : List ArgumentStoreRegion}
     exact hv r hr
   · exact shift_sound hs v f hf
 
-def checkEdges (table : List (List Fact)) (facts : List Fact) (origins : List ArgumentStoreRegion)
+def checkEdges (table : List (List Fact)) (facts : List Fact) (origins : List ArgumentSpineRegion)
     (k : ControlFlow.Continuation) : Bool :=
   (CertificateProducer.successors k).all fun target =>
     checkMap (if pushes k then afterPush facts origins else facts) (atLabel table target.label) target.mapping
 
-theorem checkEdges_sound {table : List (List Fact)} {facts : List Fact} {origins : List ArgumentStoreRegion}
+theorem checkEdges_sound {table : List (List Fact)} {facts : List Fact} {origins : List ArgumentSpineRegion}
     {k : ControlFlow.Continuation} {ρ entry : Env} {h₀ : Heap} {v : Val}
     (hc : checkEdges table facts origins k = true) (hs : Holds facts ρ entry h₀)
     (hv : ∀ r ∈ origins, HeapKnowledge.readPath h₀ (entry r.position) r.path = some v) :
@@ -114,7 +114,7 @@ theorem stableField_path {G : PositiveGraphs.NormalGraph ι} {A : ProgramTyping.
 
 /-! ## The entry world's stable witnesses
 
-A store region's path through a field, `R.f[*]`, is tracked from the field's
+A spine region's path through a field, `R.f[*]`, is tracked from the field's
 read in the body. The read agrees with the entry heap's because the field is
 stable in the entry parameter's contract: the entry check
 (`checkEntryFields`) supplies, at the invocation's entry world, the field's
@@ -125,7 +125,7 @@ path. -/
 
 /-- The fields a region's path traverses from its position: a path of one
 field, `(x, [f])`, names `f` of position `x`. -/
-def stableFields (regions : List ArgumentStoreRegion) : List (Nat × String) :=
+def stableFields (regions : List ArgumentSpineRegion) : List (Nat × String) :=
   regions.filterMap fun r => match r.path with
     | [f] => some (r.position, f)
     | _ => none
@@ -182,7 +182,7 @@ def entryField [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (A : Program
 position's entry contract `entryField` accepts, an input slot of the unit,
 and every region's path has at most one field. -/
 def checkEntryFields [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (inputs : List (ProgramTyping.Ty ι))
-    (regions : List ArgumentStoreRegion) : Bool :=
+    (regions : List ArgumentSpineRegion) : Bool :=
   regions.all (·.path.length ≤ 1) &&
   (stableFields regions).all fun (x, f) => match inputs[x]? with
     | some A => entryField G A f
@@ -190,7 +190,7 @@ def checkEntryFields [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (input
 
 /-- The entry check gives the stable witnesses at the entry world. -/
 theorem checkEntryFields_sound [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
-    {inputs : List (ProgramTyping.Ty ι)} {regions : List ArgumentStoreRegion}
+    {inputs : List (ProgramTyping.Ty ι)} {regions : List ArgumentSpineRegion}
     (hc : checkEntryFields G inputs regions = true) {entry : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : ProgramTyping.EnvOk G inputs entry n W) (hn : 0 < n) (hh : HeapOk n W h) :
     StableNow (stableFields regions) entry h W := by
@@ -250,7 +250,7 @@ theorem read_now {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {fields : 
   · exact ⟨v, hv, hr, hx ▸ hsp.read hn hh⟩
 
 /-- A read of a tracked value extends its entry path when the entry path's
-reading is preserved. The result's array store may change independently. -/
+reading is preserved. The result's array spine may change independently. -/
 theorem read {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {f : Fact} {field : String} {v : Val}
     (hs : Holds facts ρ entry h₀) (hf : f ∈ facts)
     (hr : HeapKnowledge.readPath h (ρ f.slot) [field] = some v)

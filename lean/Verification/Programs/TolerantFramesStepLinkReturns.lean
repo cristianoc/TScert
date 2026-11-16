@@ -73,7 +73,7 @@ theorem pass_return_ensures {G : NormalGraph ι} {Γ : List (Ty ι)} {entry : Si
 
 /-- **The footprint check composes the invocation's bound** (lines
 1596–1631): where the pass's `within` and `throws` hold at the node (with the
-fresh receiver slots `F` holding stores allocated at or past the invocation's
+fresh receiver slots `F` holding spines allocated at or past the invocation's
 entry `h₀`), the
 node's local safety and a bound `Φ` from `h₀` to the node's entry heap give,
 on each exit of a run with budget left, `Φ` from `h₀` to the exit's heap. -/
@@ -131,7 +131,7 @@ theorem footprintCheck_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
 
 /-- **A throw within a bound composes the invocation's bound**: where the
 pass's `throws` holds at a bound `B` at the node, the fresh receiver slots
-`F` hold stores allocated at or past the invocation's entry `h₀`, and the
+`F` hold spines allocated at or past the invocation's entry `h₀`, and the
 node's local safety and `B` from `h₀` to its entry heap hold, each run with
 budget left that raises keeps `B` from `h₀` to its heap. -/
 theorem throw_exits [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -152,7 +152,7 @@ theorem throw_exits [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
 
 /-- **The footprint check composes the invocation's bounds**, from the
 pass's function: where `footprintCheck` accepts the node, the fresh
-receiver slots `F` hold stores allocated at or past the invocation's entry
+receiver slots `F` hold spines allocated at or past the invocation's entry
 `h₀`, and the node's local safety and the normal bound `Φ` from `h₀` to its
 entry heap hold, each run with budget left keeps `Φ` from `h₀` to the heap
 of its normal exit and of a throw a live handler catches, and the

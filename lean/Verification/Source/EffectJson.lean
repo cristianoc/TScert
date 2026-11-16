@@ -6,7 +6,7 @@ import Verification.Source.EffectCodec
 it: an effect is read and written in its one serialized form
 (`EffectCodec`, the request protocol's grammar), an index fact and a linear
 term in the same codec wherever they occur, a closed footprint as
-`{"value", "store"}` and a promise as `{"guards": {"param"}}` or
+`{"value", "spine"}` and a promise as `{"guards": {"param"}}` or
 `{"asserts": {"param"}}`. A declaration's statement is its exits in the
 same codec (`StatedEffect`). -/
 namespace Verification.EffectJson
@@ -26,17 +26,17 @@ private def changeOf (allowed : List Footprints.Change) (name : String) : Except
   | none => throw s!"invalid footprint change '{name}'"
 
 instance : ToJson Footprints.Closed :=
-  ⟨fun c => Json.mkObj [("value", toJson (changeName c.value)), ("store", toJson (changeName c.stores))]⟩
+  ⟨fun c => Json.mkObj [("value", toJson (changeName c.value)), ("spine", toJson (changeName c.spines))]⟩
 
 /-- On a value `grow` is `scalar`, so `value` is `keep`, `init`, `scalar` or
-`any`; on a store `init` and `scalar` are `keep`, so `store` is `keep`,
-`grow` or `any`. The wire's `store` is the change of both store components
-(`Footprints.Closed.ofStores`), and a closed footprint is written with its
-store bound (`Footprints.Closed.stores`). -/
+`any`; on a spine `init` and `scalar` are `keep`, so `spine` is `keep`,
+`grow` or `any`. The wire's `spine` is the change of both spine components
+(`Footprints.Closed.ofSpines`), and a closed footprint is written with its
+spine bound (`Footprints.Closed.spines`). -/
 instance : FromJson Footprints.Closed := ⟨fun j => do
-  let c : Footprints.Closed := .ofStores (← changeOf [.keep, .init, .scalar, .any] (← j.getObjValAs? String "value"))
-    (← changeOf [.keep, .grow, .any] (← j.getObjValAs? String "store"))
-  if toJson c != j then throw "a closed footprint has exactly the fields value and store"
+  let c : Footprints.Closed := .ofSpines (← changeOf [.keep, .init, .scalar, .any] (← j.getObjValAs? String "value"))
+    (← changeOf [.keep, .grow, .any] (← j.getObjValAs? String "spine"))
+  if toJson c != j then throw "a closed footprint has exactly the fields value and spine"
   pure c⟩
 
 instance : ToJson TypePromise := ⟨fun
@@ -97,14 +97,14 @@ instance : ToJson (Exits ExitSchema) := ⟨EffectCodec.exitsJ⟩
 
 /-- **An effect as a declaration's result annotation states it**
 (`Modifies<P, T>`, the Fragment's and the request's `stated`): a closed
-footprint, whether it also bounds a throw, whether the result's array store
-is fresh, and the store regions it excepts. The documents write its exits
+footprint, whether it also bounds a throw, whether the result's array spine
+is fresh, and the spine regions it excepts. The documents write its exits
 (`StatedEffect.exits`); the effect it states is `StatedEffect.effect`. -/
 structure StatedEffect where
   closed : Footprints.Closed
   onThrow : Bool
   fresh : Bool
-  regions : List Footprints.ArgumentStoreRegion
+  regions : List Footprints.ArgumentSpineRegion
   deriving Repr, DecidableEq
 
 /-- **The exits a statement states** (`Exits.ofStated`). -/
@@ -119,23 +119,23 @@ def StatedEffect.effect (s : StatedEffect) (pre : List HeapKnowledge.IndexFact :
 theorem StatedEffect.effect_exits (s : StatedEffect) (pre : List HeapKnowledge.IndexFact) :
     (s.effect pre).exits = s.exits := rfl
 
-/-- The argument store region an entry of a frame states, where it is one
-(`ArgumentStoreRegion.entry`). -/
-def storeRegionOf : Footprints.Region × Footprints.Change → Option Footprints.ArgumentStoreRegion
-  | (.path p path k, .any) => if k = arrayStoreKey then some ⟨p, path⟩ else none
+/-- The argument spine region an entry of a frame states, where it is one
+(`ArgumentSpineRegion.entry`). -/
+def spineRegionOf : Footprints.Region × Footprints.Change → Option Footprints.ArgumentSpineRegion
+  | (.path p path k, .any) => if k = arraySpineKey then some ⟨p, path⟩ else none
   | _ => none
 
 /-- **The statement whose exits these are**, where there is one: the normal
-frame's class bound and store regions, the fresh result, and a throw within
+frame's class bound and spine regions, the fresh result, and a throw within
 the frame where the exceptional exit is the normal frame and the frame is no
 `⊤`. A statement is exactly such exits (checked: the statement's exits are
 the exits read); others are refused. -/
 def StatedEffect.ofExits (x : Exits ExitSchema) : Except String StatedEffect :=
   let Φ := x.normal.frame
   let s : StatedEffect := ⟨Φ.classBound, decide (x.exceptional = ⟨Φ, []⟩) && !decide (Φ = Parity.topEffect),
-    decide (Parity.FormulaF.operation (.freshStore 0) ∈ x.normal.ensures), Φ.filterMap storeRegionOf⟩
+    decide (Parity.FormulaF.operation (.freshSpine 0) ∈ x.normal.ensures), Φ.filterMap spineRegionOf⟩
   if s.exits = x then .ok s
-  else .error "a statement states a closed frame with store regions, a throw within it or none, and a fresh result"
+  else .error "a statement states a closed frame with spine regions, a throw within it or none, and a fresh result"
 
 theorem StatedEffect.ofExits_exits {x : Exits ExitSchema} {s : StatedEffect} (h : StatedEffect.ofExits x = .ok s) :
     s.exits = x := by
@@ -146,7 +146,7 @@ theorem StatedEffect.ofExits_exits {x : Exits ExitSchema} {s : StatedEffect} (h 
   · cases h
 
 /-- The closed bound a statement gives its unit's claim: its closed footprint
-without store regions, `top` with them. -/
+without spine regions, `top` with them. -/
 def StatedEffect.footprint (s : StatedEffect) : Footprints.Closed :=
   if s.regions.isEmpty then s.closed else .top
 

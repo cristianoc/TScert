@@ -176,7 +176,7 @@ theorem SourceValues.exc {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G A)
   sourceTy_exc h G.env n W v hv
 
 /-- The roles a typed allocation or write gives contents: a storage
-position's tag (`StorageRole`), or an element of a store, whose cell is an
+position's tag (`StorageRole`), or an element of a spine, whose cell is an
 element cell (E). -/
 inductive PayloadRole where
   | stored (s : StorageRole)
@@ -184,10 +184,10 @@ inductive PayloadRole where
   deriving DecidableEq, Repr
 
 /-- **The sort of a role's contents** (the Tolerant frames note, §2): a
-field, a cell and an element hold source values, a store slot a store. -/
+field, a cell and an element hold source values, a spine slot a spine. -/
 def PayloadRole.sort : PayloadRole → ValueSort
   | .stored .field | .stored .cell | .element => .source
-  | .stored .arrayStore => .store
+  | .stored .arraySpine => .spine
 
 /-- **Payload compatibility**: `Payload(F|C|E, A) ⟺ A ⊆ V`,
 `Payload(S, A) ⟺ A ⊆ S`, the category checked by `tyIn`. -/
@@ -217,25 +217,25 @@ theorem Payload.element {G : NormalGraph ι} {A : Ty ι} (h : Payload G .element
 theorem tyIn_reassign {G : NormalGraph ι} (η : MixedAssignment ι) {q : ValueSort} {A : Ty ι} :
     tyIn (reassign G η) q A = tyIn G q A := rfl
 
-/-- A type whose every clause is a store's. -/
-def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
+/-- A type whose every clause is a spine's. -/
+def spineTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
   G.plainTy S && (expand G S).all fun c => match c with
     | .list a _ => a.operands.all (sourceTy G)
     | _ => false
 
-/-- A store type's members are stores of the built-ins, given a type `U` holding
+/-- A spine type's members are spines of the built-ins, given a type `U` holding
 the built-ins' `unknown`. -/
-theorem storeTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : storeTy G S = true)
+theorem spineTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : spineTy G S = true)
     (hu : unknownTy G U = true) {η : MixedAssignment ι} {n W v}
-    (hv : meaning G S n W v) : builtinStoreT (mixedValues G η U) n W v := by
-  simp only [storeTy, Bool.and_eq_true, List.all_eq_true] at h
+    (hv : meaning G S n W v) : builtinSpineT (mixedValues G η U) n W v := by
+  simp only [spineTy, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hv, -⟩ := (expand_sem G S h.1 n W v).mp hv
   have hl := h.2 c hc
   cases c with
   | list a bs =>
     have hj : ∀ B ∈ a.operands, SourceValues G B := by
       simpa only [List.all_eq_true, SourceValues] using hl
-    refine listT_builtinStore (fun A hA j W' u hu' => ?_) hv.1
+    refine listT_builtinSpine (fun A hA j W' u hu' => ?_) hv.1
     simp only [tupleFams] at hA
     rcases hA with hA | hA | hA
     · obtain ⟨B, hB, rfl⟩ := List.mem_map.mp hA
@@ -246,7 +246,7 @@ theorem storeTy_sound {G : NormalGraph ι} {S U : Ty ι} (h : storeTy G S = true
       exact unknownTy_sound hu ((hj B (by simp [Tuple.operands, hB])).exc hu')
   | _ => simp at hl
 
-/-- A type all of whose clauses are stores: its values are lists. -/
+/-- A type all of whose clauses are spines: its values are lists. -/
 def listsOnly [DecidableEq ι] (G : NormalGraph ι) (S : Ty ι) : Bool :=
   G.plainTy S && (expand G S).all fun c => match c with | .list .. => true | _ => false
 
@@ -314,17 +314,17 @@ theorem zip_map_zip_snd {α β δ : Type} (g : α × β → δ) : ∀ {l : List 
     simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
     exact zip_map_zip_snd g (by simpa using h)
 
-/-- **An allocation meets the built-ins' invariant**: it owns no store, or it is
-a built-in array, holding a store and the built-in prototype and owning
-no key that prototype provides; without a builtins, an array whose store is a
+/-- **An allocation meets the built-ins' invariant**: it owns no spine, or it is
+a built-in array, holding a spine and the built-in prototype and owning
+no key that prototype provides; without a builtins, an array whose spine is a
 list. -/
 def allocBuiltins [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey × Ty ι)) : Bool :=
-  !parts.any (·.1 == CallArguments.arrayStoreField) ||
+  !parts.any (·.1 == CallArguments.arraySpineField) ||
   match G.builtins with
-  | none => parts.any (fun p => p.1 == CallArguments.arrayStoreField && listsOnly G p.2)
+  | none => parts.any (fun p => p.1 == CallArguments.arraySpineField && listsOnly G p.2)
   | some r => builtinsFree G r.proto && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
       parts.all (fun p => !IndexKeys.numeric.may p.1) &&
-      parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
+      parts.any (fun p => p.1 == CallArguments.arraySpineField && spineTy G p.2) &&
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
 
 /-- `allocBuiltins` with the prototype check the graph's image checker
@@ -332,12 +332,12 @@ decides once (`InstanceImageCheck.builtinsOk`): what the certificate checker
 runs at each allocation. -/
 def allocBuiltinsUsing [DecidableEq ι] {G : NormalGraph ι} (images : PositiveCertificates.InstanceImageCheck G)
     (parts : List (PropKey × Ty ι)) : Bool :=
-  !parts.any (·.1 == CallArguments.arrayStoreField) ||
+  !parts.any (·.1 == CallArguments.arraySpineField) ||
   match G.builtins with
-  | none => parts.any (fun p => p.1 == CallArguments.arrayStoreField && listsOnly G p.2)
+  | none => parts.any (fun p => p.1 == CallArguments.arraySpineField && listsOnly G p.2)
   | some r => images.builtinsOk.get && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
       parts.all (fun p => !IndexKeys.numeric.may p.1) &&
-      parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
+      parts.any (fun p => p.1 == CallArguments.arraySpineField && spineTy G p.2) &&
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
 
 theorem allocBuiltins_of_using [DecidableEq ι] {G : NormalGraph ι}
@@ -372,7 +372,7 @@ theorem allocBuiltins_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List 
     rw [List.zip_map']
     exact List.mem_map.mpr ⟨p, hp, rfl⟩
   unfold allocBuiltins at hok
-  cases hs : parts.any (·.1 == CallArguments.arrayStoreField)
+  cases hs : parts.any (·.1 == CallArguments.arraySpineField)
   · apply builtinInvariant_of_lookup
     apply ObjectMerge.lookup_slots_none
     intro hm
@@ -413,7 +413,7 @@ theorem allocBuiltins_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List 
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
           · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem ps hps) hrec
             refine ⟨flds, l, c, oid', he, by rw [← hsk]; exact hl, hw, fun j hj W' u hu => ?_⟩
-            exact storeTy_sound hst hunk ((hag j hj W' u).mp hu)
+            exact spineTy_sound hst hunk ((hag j hj W' u).mp hu)
           · obtain ⟨flds, l, c, oid', he, hl, hw, hag⟩ := recT_at (hmem pp hpp) hrec
             refine ⟨flds, l, c, oid', he, by rw [← hpk]; exact hl, hw, fun j hj W' u hu => ?_⟩
             rw [← hpr]
@@ -456,13 +456,13 @@ theorem capturesFree_sound [DecidableEq ι] {G : NormalGraph ι} {s : SchemeRow 
 
 /-- The frame graph code is run from at one signature: the receiver, the
 parameters the code takes, then the captures (`bodyFrame`); code with a rest
-finds the store of the further actuals first, at the rest's store type. -/
+finds the spine of the further actuals first, at the rest's spine type. -/
 def codeFrame (arity : Nat) (row : Arrow (Ty ι)) (Cs : List (Ty ι)) :
     Option (Ty ι) → List (Ty ι)
   | none => bodyFrame arity row Cs
   | some S => S :: bodyFrame arity row Cs
 
-/-- Where a frame's parameters start: after the receiver, and after the store
+/-- Where a frame's parameters start: after the receiver, and after the spine
 of a rest where the code collects one. -/
 def frameOffset : Option α → Nat
   | none => 1
@@ -510,7 +510,7 @@ following the optional rest store and preceding the captures. Actuals past
 /-- **Graph code at a signature.** Code of `arity` whose body is the graph of
 the node lists `E`, `K`, entered at `start`, with captures at `Cs`, meets the
 signature `row` when every run of it started from an environment meeting the
-frame the row describes (`codeFrame`: with a rest, its store at `store`) is
+frame the row describes (`codeFrame`: with a rest, its spine at `store`) is
 safe at the row's result, a promise's about the parameter it names, and meets
 the row's specification on both exits (`Exits.exitPostW`, the note's Call) at
 the receiver and actuals matching that frame (`FrameValues`). Its signature
@@ -534,7 +534,7 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
 code, its captures' types, the signature, and, for code collecting a rest, the
-type of the store it collects. A table of them is what a code creation's
+type of the spine it collects. A table of them is what a code creation's
 evidence names (`ProgramCertificates.Rule.funGraph`). -/
 structure CodeEntry (ι : Type) where
   arity : Nat
@@ -543,7 +543,7 @@ structure CodeEntry (ι : Type) where
   start : Nat
   captures : List (Ty ι)
   row : Arrow (Ty ι)
-  store : Option (Ty ι) := none
+  spine : Option (Ty ι) := none
   deriving DecidableEq, Repr
 
 /-- **The bound a graph's run is checked within** (the note *Tolerant
@@ -560,7 +560,7 @@ def RunBound.ofRequest (Φ : Footprints.Closed) (onThrow fresh : Bool) : RunBoun
   (⟨Φ, if onThrow then Φ else .top⟩, fresh)
 
 def CodeEntry.Spec (G : NormalGraph ι) (c : CodeEntry ι) : Prop :=
-  GraphCodeSpec G c.arity c.exprs c.conts c.start c.captures c.row c.store
+  GraphCodeSpec G c.arity c.exprs c.conts c.start c.captures c.row c.spine
 
 theorem prependArgs_envOf (args L : List Tm) (d : Tm) :
     prependArgs args (envOf L d) = envOf (args ++ L) d := by
@@ -1088,7 +1088,7 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   | .isBigint => some (s == 9)
   | .isSymbol => some (s == 10)
   -- Null and undefined are falsy; every object, function, class, symbol and
-  -- store is truthy; a Boolean, number, string or bigint needs its singleton.
+  -- spine is truthy; a Boolean, number, string or bigint needs its singleton.
   | .truthy => if s == 0 || s == 4 then some false
       else if s == 1 || s == 5 || s == 6 || s == 9 || s == 12 then none else some true
   -- Only a plain object may be an array: its clause decides (`arrayAnswer`).
@@ -1130,11 +1130,11 @@ theorem inAnswer_keyAnswer {k : PropKey} {c : Clause α} {q : Bool} (h : inAnswe
       · rw [if_neg (by simp [hb2])] at h; cases h
     · rw [if_neg (by simp [hb])] at h; cases h
 
-/-- `Array.isArray` on an object clause: whether it owns the store key. A
-clause saying its object owns the store key is of arrays; one whose bound
+/-- `Array.isArray` on an object clause: whether it owns the spine key. A
+clause saying its object owns the spine key is of arrays; one whose bound
 excludes the key is of other objects; an open record may be either, since an
 array may carry other keys. -/
-def arrayAnswer (c : Clause α) : Option Bool := keyAnswer CallArguments.arrayStoreField c
+def arrayAnswer (c : Clause α) : Option Bool := keyAnswer CallArguments.arraySpineField c
 
 /-- Whether a label's clauses are exactly the literal `e`. -/
 def rowIs (G : NormalGraph ι) (l : ι) (e : Clause (List ι)) : Bool :=
@@ -1429,7 +1429,7 @@ theorem keyAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k 
 theorem arrayAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {q n W v}
     (hq : arrayAnswer c = some q) (hv : semWithArgs Ξ S P c n W v) : tagHolds .isArray v = q := by
   obtain ⟨flds, oid, rfl, h⟩ := keyAnswer_sound hq hv
-  simpa [tagHolds, CallArguments.arrayStoreField] using h
+  simpa [tagHolds, CallArguments.arraySpineField] using h
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
 branch. It neither executes a term nor queries semantic membership. `A` must be

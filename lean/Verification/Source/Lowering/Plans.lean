@@ -458,11 +458,11 @@ the bound's member. Any other plan is itself. -/
   return if B == a.type then a else DirectProof.cast Γ B a
 
 /-- `length` through a view (`lenView`): the view admits an array, whose
-`length` is its store's, so the read tests the receiver, held in a slot. -/
+`length` is its spine's, so the read tests the receiver, held in a slot. -/
 @[nospecialize] def lengthView (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
     (a : DirectProof.Plan Tree) (B : Ty Tree) : Compiler (DirectProof.Plan Tree) := do
   if !PositiveRules.numIn G B then
-    throw "a read of `length` through a view whose type neither holds every number nor excludes one: the view may admit an array, whose `length` is its store's"
+    throw "a read of `length` through a view whose type neither holds every number nor excludes one: the view may admit an array, whose `length` is its spine's"
   match a.term with
   | .var i => pure (DirectProof.node Γ (lengthRead i) B (.lenView i) [])
   | _ => pure (DirectProof.letE Γ a (DirectProof.node (a.type :: Γ) (lengthRead 0) B (.lenView 0) []))
@@ -526,47 +526,47 @@ bag, or an explicit union of cell contracts each naming the field. -/
     pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
       (.readAt fld (.var 0)) R (.unionVar 0) children))
 
-/-- The `length` of the array in slot `i`, its store's, read as a number,
-the term `lenOf (readAt store i)`: of one array contract, its store's field
-read, then that store's length; of a union of array contracts, the same term
+/-- The `length` of the array in slot `i`, its spine's, read as a number,
+the term `lenOf (readAt spine i)`: of one array contract, its spine's field
+read, then that spine's length; of a union of array contracts, the same term
 derived at each member (`unionVar`), each member one array contract. -/
 @[nospecialize] def arrayLengthAt (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
     (i : Nat) : Compiler (DirectProof.Plan Tree) := do
   let some C := Γ[i]? | throw "internal array-length slot mismatch"
   let N : Ty Tree := [← lower (SourceTypes.use .num)]
   let lengthOf := fun (H : List (Ty Tree)) (A : Ty Tree) => do
-    let store ← readCell G H SourceTypes.storeField (DirectProof.var H i A)
-    pure (DirectProof.node H (.lenOf store.term) N .len [store])
-  if (storeOf G C).isSome then return ← lengthOf Γ C
+    let spine ← readCell G H SourceTypes.spineField (DirectProof.var H i A)
+    pure (DirectProof.node H (.lenOf spine.term) N .len [spine])
+  if (spineOf G C).isSome then return ← lengthOf Γ C
   let children ← (ProgramTyping.members G C).mapM fun label => do
-    if (storeOf G [label]).isNone then
+    if (spineOf G [label]).isNone then
       throw "a read of `length` of a union some member of which is not one array contract"
     lengthOf (Γ.set i [label]) [label]
-  pure (DirectProof.node Γ (.lenOf (.readAt SourceTypes.storeField (.var i))) N (.unionVar i) children)
+  pure (DirectProof.node Γ (.lenOf (.readAt SourceTypes.spineField (.var i))) N (.unionVar i) children)
 
-/-- The store of the array in slot `i`, the term `readAt store i`: of one
-array contract, its store's field read; of a union, the same term derived at
+/-- The spine of the array in slot `i`, the term `readAt spine i`: of one
+array contract, its spine's field read; of a union, the same term derived at
 each member (`unionVar`), at the union of what the members read. The term is
 a read of a value, which a literal's spread reads in place (`initTerm`). -/
-@[nospecialize] def arrayStoreAt (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
+@[nospecialize] def arraySpineAt (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
     (i : Nat) : Compiler (DirectProof.Plan Tree) := do
-  let some C := Γ[i]? | throw "internal array-store slot mismatch"
-  if C.length ≤ 1 then return ← readCell G Γ SourceTypes.storeField (DirectProof.var Γ i C)
+  let some C := Γ[i]? | throw "internal array-spine slot mismatch"
+  if C.length ≤ 1 then return ← readCell G Γ SourceTypes.spineField (DirectProof.var Γ i C)
   let alternatives ← (ProgramTyping.members G C).mapM fun label => do
     let H := Γ.set i [label]
-    readCell G H SourceTypes.storeField (DirectProof.var H i [label])
+    readCell G H SourceTypes.spineField (DirectProof.var H i [label])
   let R := (alternatives.flatMap (·.type)).eraseDups
-  pure (DirectProof.node Γ (.readAt SourceTypes.storeField (.var i)) R (.unionVar i)
+  pure (DirectProof.node Γ (.readAt SourceTypes.spineField (.var i)) R (.unionVar i)
     (alternatives.map fun plan => DirectProof.cast plan.goal.context R plan))
 
 /-- An array's `length` (`arrayLengthAt`), of the value a plan yields: of
-one array contract, its store read from that value; of a union, a slot's
+one array contract, its spine read from that value; of a union, a slot's
 where the plan reads one, else the value held in a slot of its own. -/
 @[nospecialize] def arrayLength (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
     (a : DirectProof.Plan Tree) : Compiler (DirectProof.Plan Tree) := do
-  if (storeOf G a.type).isSome then
-    let store ← readCell G Γ SourceTypes.storeField a
-    return DirectProof.node Γ (.lenOf store.term) [← lower (SourceTypes.use .num)] .len [store]
+  if (spineOf G a.type).isSome then
+    let spine ← readCell G Γ SourceTypes.spineField a
+    return DirectProof.node Γ (.lenOf spine.term) [← lower (SourceTypes.use .num)] .len [spine]
   match a.term with
   | .var i => if Γ[i]? == some a.type then return ← arrayLengthAt G Γ i
   | _ => pure ()
@@ -876,19 +876,19 @@ reference may hold the object and see its keys change. -/
   return some (slots, receiver, key, rhs)
 
 /-- The element at literal index `b` of the array `r` reads under `H`, from
-its store: a required position at its type, an optional or rest position at
+its spine: a required position at its type, an optional or rest position at
 its type or `undefined`. -/
 @[nospecialize] def elemReadPlan (G : PositiveGraphs.NormalGraph Tree) (H : List (Ty Tree))
     (r : DirectProof.Plan Tree) (b : UInt64) : Compiler (DirectProof.Plan Tree) := do
   let I : Ty Tree := [← lower (SourceTypes.use (.numLit b))]
-  let store ← readCell G H SourceTypes.storeField r
-  let [.list T []] := PositiveRules.expand G store.type | throw "an element read needs an array"
+  let spine ← readCell G H SourceTypes.spineField r
+  let [.list T []] := PositiveRules.expand G spine.type | throw "an element read needs an array"
   let U : Ty Tree := [Labels.undef]
   let (E, rule) ← match ProgramCertificates.requiredAt T b, ProgramCertificates.optionalAt T b U with
     | some E, _ => pure (E, ProgramCertificates.Rule.elem)
     | none, some E => pure (E, .elemOpt U)
     | none, none => throw "an element read at an index no contract names"
-  pure (DirectProof.node H (.elemAt store.term (.num b)) E rule [store, DirectProof.node H (.num b) I .numLit])
+  pure (DirectProof.node H (.elemAt spine.term (.num b)) E rule [spine, DirectProof.node H (.num b) I .numLit])
 
 
 end

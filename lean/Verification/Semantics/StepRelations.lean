@@ -391,7 +391,7 @@ before-variable is its renaming. -/
 A step's effect relates each term's value before it and after it by the
 change it makes to the locations the term reads (`Changes`): equal where it
 keeps them (`Term.keptBy`, read by `compose`'s `kept`), at most where it
-grows the store a length term reads and keeps its path (`Term.grownBy`),
+grows the spine a length term reads and keeps its path (`Term.grownBy`),
 nothing otherwise. The relational context of a composition is the post's
 relation, the facts before, and this one (`R.join (growth grown before)`). -/
 
@@ -629,7 +629,7 @@ def fact : IndexFact → List IndexFact
     | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.clause)
     | none => []
   | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
-  | F@(.element _ _ _) | F@(.apart _ _) | F@(.storeApart _ _ _ _) =>
+  | F@(.element _ _ _) | F@(.apart _ _) | F@(.spineApart _ _ _ _) =>
     if P.readsAbsent F then [falsum] else (F.mapM P.slot).toList
 
 end Composer
@@ -823,7 +823,7 @@ theorem boundValue_local {ε ε' : EntryState} {ρ ρ' : Env} {h : Heap} {ls : L
   | free t => exact absurd rfl (hb t)
   | _ => rfl
 
-/-- What a body variable denotes at an index of a store, after the step. -/
+/-- What a body variable denotes at an index of a spine, after the step. -/
 def BodyVar.val (ε : EntryState) (ρ : Env) (h : Heap) (ρ' : Env) (h' : Heap) (ls : List (Option Nat)) (i : Nat) :
     BodyVar → Option Int
   | .bound b => boundValue ε ρ' h' ls i b
@@ -978,8 +978,8 @@ theorem orFacts_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.o
 holds. -/
 theorem readsAbsent_not (hs : P.Sound ε ε₀ ρ h ρ' τ h') {F : IndexFact} (ha : P.readsAbsent F = true) :
     ¬ F.HoldsAt ε₀ τ h' := by
-  have hst : ∀ x, P.absentSlot x = true → Footprints.storeOf (τ x) = none := fun x hx => by
-    rw [hs.absentSlot x hx]; simp [Footprints.storeOf, Footprints.fieldsOf]
+  have hst : ∀ x, P.absentSlot x = true → Footprints.spineOf (τ x) = none := fun x hx => by
+    rw [hs.absentSlot x hx]; simp [Footprints.spineOf, Footprints.fieldsOf]
   have hel : ∀ x, P.absentSlot x = true → elementsOf (τ x) = none := fun x hx => by
     rw [hs.absentSlot x hx]; simp [elementsOf]
   intro hF

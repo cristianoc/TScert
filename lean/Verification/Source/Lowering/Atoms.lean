@@ -171,7 +171,7 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
             "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
       let K ← exprType fc key
       let index ← arrayKeyTerm key.span K
-      pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
+      pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.spineField obj) index))
     | .invoke .. => throw "a method call's target must name a field or an element"
     | _ => pure none
   let headType ← exprType fc callee
@@ -218,7 +218,7 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
   -- A rest that is one tuple contract, an argument pack's instance, takes
   -- a spread as fixed parameters do: its tuple's positions.
   -- A rest that is a packed binder's argument lists takes one spread of the
-  -- store of one of its values (`callPacked`).
+  -- spine of one of its values (`callPacked`).
   let packedRest := variadic && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
     P.any fun t => calleeGraph.parameterKinds t == some .packed
   let tupleRest := variadic && !packedRest && restSignatures.all fun ⟨_, (_, P), _, _⟩ =>
@@ -237,12 +237,12 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
         "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
   let As₀ ← operands.mapM (exprType fc)
   -- A fixed tuple keeps its exact positions when copied. An unbounded
-  -- copy uses the existing array-parts rule: its source store must spread
+  -- copy uses the existing array-parts rule: its source spine must spread
   -- into the rest element, including undefined wherever it can have holes.
   let copyTypes ← copied.mapM fun i => do
     let G := SourceTypes.graph (← table)
     let some original := As₀[i]? | throw "a spread argument needs an operand"
-    if let some S := storeOf G original then
+    if let some S := spineOf G original then
       if let [.list T []] := PositiveRules.expand G S then
         if T.optional.isEmpty && T.rest.isNone then
           return (i, S)
@@ -265,10 +265,10 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
     spreadOrder.mapM fun i => do
       let some arrayTy := As[i]? | throw "a spread argument needs an operand"
       let G := SourceTypes.graph (← table)
-      let sourceStore := match PositiveRules.expand G arrayTy with
+      let sourceSpine := match PositiveRules.expand G arrayTy with
         | [.list ..] => some arrayTy
-        | _ => storeOf G arrayTy
-      let some S := sourceStore | throw "a spread argument needs a tuple contract"
+        | _ => spineOf G arrayTy
+      let some S := sourceSpine | throw "a spread argument needs a tuple contract"
       match PositiveRules.expand G S with
       | [.list T []] =>
         if !T.optional.isEmpty || T.rest.isSome then
@@ -289,7 +289,7 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
   -- A spread into fixed parameters is its elements, in order, where it is
   -- written.
   let argumentGraph := SourceTypes.graph (← table)
-  let rawStore := fun i => match PositiveRules.expand argumentGraph (As[i]?.getD []) with
+  let rawSpine := fun i => match PositiveRules.expand argumentGraph (As[i]?.getD []) with
     | [.list ..] => true
     | _ => false
   let actuals := ((List.range args.length).foldl (fun (g, out) i =>
@@ -297,8 +297,8 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
       match spreadElements.lookup i with
       | some Es => (g + Es.length, out ++ (List.range Es.length).map fun j => Tm.var (k-1-(g+j)))
       | none =>
-        (g, out ++ [if copied.contains i || (spreads.contains i && rawStore i) then .spread v
-          else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v)
+        (g, out ++ [if copied.contains i || (spreads.contains i && rawSpine i) then .spread v
+          else if spreads.contains i && variadic then .spread (.readAt SourceTypes.spineField v)
           else v])) (0, ([] : List Tm))).2
   let callEnv := elements.reverse ++ As.reverse ++ headTys ++ Γ
   let G := SourceTypes.graph (← table)
@@ -366,8 +366,8 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
     let some (i, j) := sources[g]? | throw "a spread element has no operand"
     let index ← indexTerm j
     let env := (elements.take g).reverse ++ As.reverse ++ headTys ++ Γ
-    let source := if rawStore i then Tm.var (g+n-1-i)
-      else .readAt SourceTypes.storeField (.var (g+n-1-i))
+    let source := if rawSpine i then Tm.var (g+n-1-i)
+      else .readAt SourceTypes.spineField (.var (g+n-1-i))
     emitAt e.span (.elemAt source index)
       (.bind next) env E "spread-element"
       (scope := (List.replicate g anonymous) ++ temporaries ++ scope)) call
@@ -377,7 +377,7 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
     let ctx := (As.take i).reverse ++ headTys ++ Γ
     if copied.contains i then
       -- The copy takes the operand's slot: the continuation sees the copied
-      -- store where it would have seen the array.
+      -- spine where it would have seen the array.
       let some A := As₀[i]? | throw "a spread argument needs an operand"
       let m := (next.mapping.getD (List.range (ctx.length + 1))).map fun j =>
         if j == 0 then 0 else j + 1
@@ -386,9 +386,9 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
         | [.list T []] =>
           if T.optional.isEmpty && T.rest.isNone then
             (List.range T.required.length).mapM fun j => do
-              return Tm.elemAt (.readAt SourceTypes.storeField (.var 0)) (← indexTerm j)
-          else pure [.spread (.readAt SourceTypes.storeField (.var 0))]
-        | _ => throw "a spread copy needs an array store contract"
+              return Tm.elemAt (.readAt SourceTypes.spineField (.var 0)) (← indexTerm j)
+          else pure [.spread (.readAt SourceTypes.spineField (.var 0))]
+        | _ => throw "a spread copy needs an array spine contract"
       let copy ← emitAt arg.span (.arrLit inits)
         (.bind ⟨next.label, some m⟩) (A :: ctx) C "spread-copy"
         (scope := held ⟨"",some arg.span⟩ :: sc)
@@ -619,26 +619,26 @@ Mappings discard only the temporaries introduced by this expression. -/
     let behind := fun (t : Target) => guarded e.span (B₀::Γ) 0 split (held ⟨"",some a.span⟩ :: scope) t
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
-    -- An array's `length` is its store's, read as a number; a primitive's
+    -- An array's `length` is its spine's, read as a number; a primitive's
     -- member is read by its shape (`dispatchTerm`).
     let G := SourceTypes.graph (← table)
     -- `length` of a value that may be an array or something else:
     -- `Array.isArray` selects the built-in `readonly unknown[]`, whose length
-    -- is its store's, and every other value reads `length` as it reads it.
+    -- is its spine's, and every other value reads `length` as it reads it.
     -- The test binds the value refined on each edge (`arraySlice`,
     -- `tagSlice`).
     if fld == "length" && B.any (fun l => arraysOnly G [l]) && !arraysOnly G B then
       let receiver := held ⟨"",some a.span⟩
       let u ← lower (SourceTypes.use .source)
-      let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
-      let R : Ty Tree := [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
-      let S : Ty Tree := [store]
+      let spine ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
+      let R : Ty Tree := [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) spine true))]
+      let S : Ty Tree := [spine]
       let F := BranchRefinement.tagSlice G B .isArray false
       let drop2 := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
         (fun i => if i == 0 then 0 else i+2))⟩
       let length ← emitAt e.span (.lenOf (.var 0)) (.bind drop2) (S::R::Γ) A
         (scope := held ⟨"",some e.span⟩ :: receiver :: scope)
-      let array ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (R::Γ) S
+      let array ← emitAt e.span (.readAt SourceTypes.spineField (.var 0)) (.bind length) (R::Γ) S
         (scope := receiver :: scope)
       let arms ← primitiveArms (receiver :: scope) (F::Γ) F fld
       let other ← emitAt e.span (dispatchTerm arms fld 0 (.readAt fld (.var 0))) (.bind drop) (F::Γ) A
@@ -659,21 +659,21 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- `length` through a view admits an array: the read tests the receiver
     -- (`lenView`).
     let object := if fld == "length" && arraysOnly G B
-      then Tm.lenOf (.readAt SourceTypes.storeField (.var 0))
+      then Tm.lenOf (.readAt SourceTypes.spineField (.var 0))
       else if fld == "length" && lengthViewed G B then lengthRead 0 else .readAt fld (.var 0)
     let arms ← primitiveArms (held ⟨"",some a.span⟩ :: scope) (B::Γ) B fld
-    -- An array's store is read in a node of its own, a field read, and its
+    -- An array's spine is read in a node of its own, a field read, and its
     -- length in the next, which reads no heap: what was known of the heap
     -- is known after both.
     if fld == "length" && arraysOnly G B && arms.isEmpty then
-      if let some S := storeOf G B then
+      if let some S := spineOf G B then
         let drop2 := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
           (fun i => if i == 0 then 0 else i+2))⟩
         let length ← emitAt e.span (.lenOf (.var 0)) (.bind drop2) (S::B::Γ) A
           (scope := held ⟨"",some e.span⟩ :: held ⟨"",some a.span⟩ :: scope)
-        let store ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (B::Γ) S
+        let spine ← emitAt e.span (.readAt SourceTypes.spineField (.var 0)) (.bind length) (B::Γ) S
           (scope := held ⟨"",some a.span⟩ :: scope)
-        return ← finish (← operand (← behind store))
+        return ← finish (← operand (← behind spine))
       -- Of a union of arrays, the same term derived at each member
       -- (`arrayLengthAt`).
       let plan ← locatedRead e.span (arrayLengthAt G (B::Γ) 0)
@@ -740,13 +740,13 @@ Mappings discard only the temporaries introduced by this expression. -/
     let As ← operands.mapM (exprType fc)
     let G := SourceTypes.graph (← table)
     -- A spread of other than a tuple of required positions goes to a variadic
-    -- construct signature: `new` reads its store where it is written, as a
+    -- construct signature: `new` reads its spine where it is written, as a
     -- call's spread into a rest is read (`constructRest`).
-    let rawStore := fun (A : Ty Tree) => match PositiveRules.expand G A with
+    let rawSpine := fun (A : Ty Tree) => match PositiveRules.expand G A with
       | [.list ..] => true
       | _ => false
     let fixedTuple := fun (A : Ty Tree) =>
-      let S := if rawStore A then some A else storeOf G A
+      let S := if rawSpine A then some A else spineOf G A
       match S.map (PositiveRules.expand G) with
       | some [.list T []] => T.optional.isEmpty && T.rest.isNone
       | _ => false
@@ -759,11 +759,11 @@ Mappings discard only the temporaries introduced by this expression. -/
       let actuals := (List.range args.length).map fun i =>
         let v := Tm.var (n-2-i)
         if spreads.contains i then
-          if rawStore (As[i+1]?.getD []) then Tm.spread v else .spread (.readAt SourceTypes.storeField v)
+          if rawSpine (As[i+1]?.getD []) then Tm.spread v else .spread (.readAt SourceTypes.spineField v)
         else v
       let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
         (fun i => if i == 0 then 0 else i+n))⟩
-      recordHints (As.flatMap fun A => (storeOf G A).getD [])
+      recordHints (As.flatMap fun A => (spineOf G A).getD [])
       let construct ← emitAt e.span (.construct (.var (n-1)) actuals)
         (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
       return ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
@@ -774,7 +774,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       let some A := As[i+1]? | throw "a constructor spread names no operand"
       let S := match PositiveRules.expand G A with
         | [.list ..] => some A
-        | _ => storeOf G A
+        | _ => spineOf G A
       let some S := S | throw "a constructor spread needs a tuple contract"
       let [.list T []] := PositiveRules.expand G S
         | throw "a constructor spread needs a tuple contract of required positions"
@@ -804,7 +804,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         | [.list ..] => true
         | _ => false
       let source := Tm.var (g+n-2-i)
-      let source := if raw then source else .readAt SourceTypes.storeField source
+      let source := if raw then source else .readAt SourceTypes.spineField source
       emitAt e.span (.elemAt source (← indexTerm j)) (.bind next)
         ((elements.take g).reverse ++ As.reverse ++ Γ) E "constructor-spread-element"
         (scope := List.replicate g anonymous ++ temporaries ++ scope)) construct
@@ -843,14 +843,14 @@ Mappings discard only the temporaries introduced by this expression. -/
       throw (locatedRefusal (← table) e.span .bindingAnnotation
         "Reflect.apply requires an array argument list")
     -- A tuple of required positions is read index by index. An array of any
-    -- length goes to a signature that takes only a rest: its store's positions
+    -- length goes to a signature that takes only a rest: its spine's positions
     -- are the actuals, `undefined` at a hole, as `CreateListFromArrayLike`
     -- reads them; nothing here iterates.
     let (elements, dynamic) : List (Ty Tree) × Bool ← match listTy with
       | none => pure ([], false)
       | some T =>
         if nullishList G T then pure ([], false) else
-        let some S := storeOf G T
+        let some S := spineOf G T
           | throw (locatedRefusal (← table) e.span .bindingAnnotation
               ".apply needs an array list, or a null or undefined one")
         match PositiveRules.expand G S with
@@ -895,7 +895,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+p+s))⟩
     -- The list is the slot below the length.
-    let actuals := if dynamic then [Tm.spread (.readAt SourceTypes.storeField (.var 1))]
+    let actuals := if dynamic then [Tm.spread (.readAt SourceTypes.spineField (.var 1))]
       else (List.range k).map fun j => Tm.var (k-1-j)
     let call ← emitAt e.span (.invoke (.var (p+s-1)) (.var receiverIndex) actuals) (.bind drop)
       callEnv A (scope := callScope)
@@ -905,11 +905,11 @@ Mappings discard only the temporaries introduced by this expression. -/
       let some E := elements[j]? | throw "an element has no contract"
       let index ← indexTerm j
       let env := (elements.take j).reverse ++ N :: saved ++ Γ
-      emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var (j+1))) index) (.bind next)
+      emitAt e.span (.elemAt (.readAt SourceTypes.spineField (.var (j+1))) index) (.bind next)
         env E "apply-element"
         (scope := List.replicate (j+1) anonymous ++ operandScope ++ scope)) call
     let prepare ← if reads then
-        emitAt e.span (.lenOf (.readAt SourceTypes.storeField (.var 0))) (.bind afterLength)
+        emitAt e.span (.lenOf (.readAt SourceTypes.spineField (.var 0))) (.bind afterLength)
           (saved ++ Γ) N "apply-length" (scope := operandScope ++ scope)
       else pure call
     let afterList ← match list with
@@ -933,19 +933,19 @@ Mappings discard only the temporaries introduced by this expression. -/
       nullishGuard e.span Γ i N scope call
     | none => compileCall (compileAtom recursive fc) fc scope Γ e callee args A next
   | .arrayLit _ elems spreads =>
-    -- Evaluate elements in order. Without spreads, inspect the store and
+    -- Evaluate elements in order. Without spreads, inspect the spine and
     -- its array object together, with the evaluated elements in slots.
     let G := SourceTypes.graph (← table)
-    let some S := storeOf G A | throw "an array literal needs an array claim"
+    let some S := spineOf G A | throw "an array literal needs an array claim"
     if elems.isEmpty && spreads.isEmpty then
       let proto ← prototypeSlot (held ⟨"",some e.span⟩ :: scope)
       let H := S :: Γ
       let some P := H[proto]? | throw "internal prototype slot mismatch"
       let O ← arrayObject S
-      let store := DirectProof.node Γ (.arrLit []) S .arrLit []
+      let spine := DirectProof.node Γ (.arrLit []) S .arrLit []
       let object := DirectProof.node H (arrayTerm proto) O .alloc
         [DirectProof.var H 0 S, DirectProof.var H proto P]
-      return ← emitPlanned e.span (DirectProof.letE Γ store object) (.bind next) Γ A (scope := scope)
+      return ← emitPlanned e.span (DirectProof.letE Γ spine object) (.bind next) Γ A (scope := scope)
     let As ← elems.mapM (exprType fc)
     let n := As.length
     let temporaries := (elems.map fun a => held ⟨"",some a.span⟩).reverse
@@ -954,14 +954,14 @@ Mappings discard only the temporaries introduced by this expression. -/
     let makeScope := held ⟨"",some e.span⟩ :: temporaries ++ scope
     let proto ← prototypeSlot makeScope
     let O ← arrayObject S
-    -- Both nodes' derivations are known: the object holding the store and
-    -- the prototype, and the store of the elements at their positions.
+    -- Both nodes' derivations are known: the object holding the spine and
+    -- the prototype, and the spine of the elements at their positions.
     let H := S :: As.reverse ++ Γ
     let some P := H[proto]? | throw "internal prototype slot mismatch"
     let objectPlan := DirectProof.node H (arrayTerm proto) O .alloc
         [DirectProof.var H 0 S, DirectProof.var H proto P]
     let K := As.reverse ++ Γ
-    let storePlan ← if spreads.isEmpty then do
+    let spinePlan ← if spreads.isEmpty then do
         let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
         let casts ← (List.range n).mapM fun i => do
           let some D := ProgramTyping.positionTy T i | throw "an array literal has more elements than its claim"
@@ -969,9 +969,9 @@ Mappings discard only the temporaries introduced by this expression. -/
           pure (DirectProof.cast K D (DirectProof.var K (n-1-i) Ai))
         pure (DirectProof.node K (.arrLit ((List.range n).map fun i => .var (n-1-i))) S .arrLit casts)
       else do
-        -- With a spread, the store's length is not known: every position is
+        -- With a spread, the spine's length is not known: every position is
         -- at the claim's one element type, each plain element cast to it,
-        -- each spread the store its operand holds (or is, for a copy).
+        -- each spread the spine its operand holds (or is, for a copy).
         let [.list ⟨[], [], some E, _, _⟩ []] := PositiveRules.expand G S
           | throw (locatedRefusal (← table) e.span .bindingAnnotation
               "an array literal with a spread needs an array claim of one element type")
@@ -982,21 +982,21 @@ Mappings discard only the temporaries introduced by this expression. -/
             match PositiveRules.expand G Ai with
             | [.list ..] => pure (true, v)
             -- Located at the spread, as a member read is (`locatedRead`).
-            | _ => pure (true, ← locatedRead ((elems[i]?.map (·.span)).getD e.span) (arrayStoreAt G K (n-1-i)))
+            | _ => pure (true, ← locatedRead ((elems[i]?.map (·.span)).getD e.span) (arraySpineAt G K (n-1-i)))
           else pure (false, DirectProof.cast K E v)
         pure (DirectProof.node K (.arrLit (parts.map fun (s, p) => if s then .spread p.term else p.term)) S
           (.arrParts E (parts.map (·.1))) (parts.map (·.2)))
-    let store ← if spreads.isEmpty then do
+    let spine ← if spreads.isEmpty then do
         let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
           (fun i => if i == 0 then 0 else i+n))⟩
-        emitPlanned e.span (DirectProof.letE K storePlan objectPlan) (.bind drop) K A (scope := temporaries ++ scope)
+        emitPlanned e.span (DirectProof.letE K spinePlan objectPlan) (.bind drop) K A (scope := temporaries ++ scope)
       else do
         let make ← emitPlanned e.span objectPlan (.bind drop) H A (scope := makeScope)
-        emitPlanned e.span storePlan (.bind make) K S (scope := temporaries ++ scope)
+        emitPlanned e.span spinePlan (.bind make) K S (scope := temporaries ++ scope)
     elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileAtom recursive fc
         ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
-        ((As.take i).reverse ++ Γ) arg next) store
+        ((As.take i).reverse ++ Γ) arg next) spine
   | .elemAt _ receiver key =>
     let B₀ ← exprType fc receiver
     -- The key is evaluated, then a nullish operand throws.
@@ -1007,27 +1007,27 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
     -- A string's code unit at the key's number; an array's element at its
-    -- one index, from its store.
+    -- one index, from its spine.
     let G := SourceTypes.graph (← table)
     let node ← if decide (Answers G B .isStr true) then
         emitAt e.span (Tm.elemAt (.var 1) (.var 0)) (.bind drop) (K::B::Γ) A (scope := temporaries)
       else do
         let index ← arrayKeyTerm key.span K
         let .num b := index | throw "internal extraction error: an array key is a number"
-        -- Planned where the receiver's contract names its store; otherwise
+        -- Planned where the receiver's contract names its spine; otherwise
         -- the choice is open, and the node is searched.
         let plan? ← tryCatch (some <$> elemReadPlan G (K::B::Γ) (DirectProof.var (K::B::Γ) 1 B) b)
           (fun _ => pure none)
         match plan? with
         | some plan => emitPlanned e.span plan (.bind drop) (K::B::Γ) A (scope := temporaries)
         | none =>
-          let term := Tm.elemAt (.readAt SourceTypes.storeField (.var 1)) index
+          let term := Tm.elemAt (.readAt SourceTypes.spineField (.var 1)) index
           emitAt e.span term (.bind drop) (K::B::Γ) A (scope := temporaries)
     let node ← guarded e.span (K::B₀::Γ) 1 split temporaries node
     let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B₀::Γ) key node
     compileAtom recursive fc scope Γ receiver right
   | .elemWrite _ receiver key rhs =>
-    -- The store is read, the element set, and the store written back: one
+    -- The spine is read, the element set, and the spine written back: one
     -- write, so every alias sees the contract kept.
     let B ← exprType fc receiver
     let K ← exprType fc key
@@ -1043,8 +1043,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       (fun i => if i == 0 then 0 else i+3))⟩
     let effects := held ⟨"",some rhs.span⟩::held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
     let result ← emitAt e.span (.var 0) (.bind drop) (C::K::B::Γ) A (scope := effects)
-    let write ← emitAt e.span (.writeAt SourceTypes.storeField (.var 2)
-        (.setElem (.readAt SourceTypes.storeField (.var 2)) index (.var 0)))
+    let write ← emitAt e.span (.writeAt SourceTypes.spineField (.var 2)
+        (.setElem (.readAt SourceTypes.spineField (.var 2)) index (.var 0)))
       (.effect result) (C::K::B::Γ) [Labels.nul] (scope := effects)
     let right ← compileAtom recursive fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
     let middle ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right

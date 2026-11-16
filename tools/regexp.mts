@@ -128,7 +128,7 @@ function replacer(shape: RegExpShape, effect: Effect = ordinaryEffect): TypeTerm
  * footprint. `exec`, `test`, `[Symbol.match]` and `[Symbol.replace]` (at a
  * string replacement) state the empty footprint where the regex is neither
  * global nor sticky, and where it is, or where the shape is the conservative
- * one, whose flags are not read, `{value: any, store: keep}`: they leave
+ * one, whose flags are not read, `{value: any, spine: keep}`: they leave
  * `lastIndex`, a location holding a number, where the last match ended (0
  * after the last). `[Symbol.search]` and `[Symbol.split]` of the
  * conservative shape state none (SOURCE-CONTRACTS.md, "Native footprints"). */
@@ -136,11 +136,11 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean 
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
   const restoring: Effect = shape !== null ? emptyEffect : ordinaryEffect;
-  // A callback keeping every store, called by `[Symbol.replace]`, which
+  // A callback keeping every spine, called by `[Symbol.replace]`, which
   // writes the fresh regex's `lastIndex`, a location holding a number.
-  const keepsStores: Effect = footprintEffect({ value: "any", store: "keep" });
+  const keepsSpines: Effect = footprintEffect({ value: "any", spine: "keep" });
   const stateless: Effect = shape === null || shape.global || shape.sticky
-    ? footprintEffect({ value: "any", store: "keep" }) : emptyEffect;
+    ? footprintEffect({ value: "any", spine: "keep" }) : emptyEffect;
   // A native `exec` and `test` convert their argument by `ToString`, which
   // runs no code on `undefined` (`"undefined"`): stated there too.
   const input = either(atom("string"), atom("undefined"));
@@ -151,7 +151,7 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, callback: boolean 
     { name: { symbol: keys.replace }, optional: false, readonly: false, span,
       type: shape !== null && callback ? { k: "intersection", span, parts: [
         method([atom("string"), atom("string")], atom("string"), stateless),
-        method([atom("string"), replacer(shape, keepsStores)], atom("string"), keepsStores),
+        method([atom("string"), replacer(shape, keepsSpines)], atom("string"), keepsSpines),
         method([atom("string"), replacer(shape)], atom("string"), ordinaryEffect)] }
         : method([atom("string"), atom("string")], atom("string"), stateless) },
     methodField({ symbol: keys.search }, [atom("string")], atom("number"), restoring),
