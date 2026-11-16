@@ -558,7 +558,7 @@ theorem fieldsCheck_sound [DecidableEq ι] {G : NormalGraph ι} {names : List St
   intro ε n W h ρ b _ hF hFs he hi hkn hw hh hr hρ
   have hs := HeapObservations.erase (HeapObservations.consequence
     (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hkn hw hh hr hρ))
-  have hkeep := fieldsHold_frame hk he hh hFs (trivial_run hs)
+  have hkeep := fieldsHold_frame hk he hw hh hFs (trivial_run hs)
   have hout := fieldOut_sound (names := names) hscope hF hFs he hs
   have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh
     hkeep hout

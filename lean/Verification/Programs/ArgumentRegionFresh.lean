@@ -284,34 +284,6 @@ theorem fieldFresh_of_fields {b : Nat} {h : Heap} {v : Tm} {f : String} (hf : fi
   intro u hu
   cases v <;> simp_all [HeapKnowledge.readPath, fieldsOf]
 
-/-- **Stable locations keep their values on a throw too**: every location
-whose contract in the entry world is stable holds its value in the heap of
-every outcome, normal or thrown. -/
-theorem stableLocations_exc {Ξ T : Fam} {Q : HeapObservations.Post} {E : Heap → Prop}
-    {R : Nat → Val → Prop} :
-    ∀ {n W h t}, (∀ l v, R l v → ∃ c, lookup W l = some c ∧ CtrStable c v) → HeapOk n W h →
-      HeapObservations.SafePostExc Ξ T Q E n W h t →
-      HeapObservations.SafePostExc Ξ T (fun h' u => Q h' u ∧ ∀ l v, R l v → h'[l]? = some v)
-        (fun h' => E h' ∧ ∀ l v, R l v → h'[l]? = some v) n W h t := by
-  intro n
-  induction n with
-  | zero => intros; assumption
-  | succ n ih =>
-    intro W h t hr hh hs
-    obtain ⟨hrf, hs⟩ := hs
-    refine ⟨hrf, ?_⟩
-    rcases hs with (⟨hv, ht, hq⟩ | ⟨hth, he⟩) | ⟨U, h', t', hx, hu, step, hh', hs⟩
-    · refine .inl (.inl ⟨hv, ht, hq, fun l v hR => ?_⟩)
-      obtain ⟨c, hl, hc⟩ := hr l v hR
-      exact hh.stable_value (Nat.zero_lt_succ n) hl hc
-    · refine .inl (.inr ⟨hth, he, fun l v hR => ?_⟩)
-      obtain ⟨c, hl, hc⟩ := hr l v hR
-      exact hh.stable_value (Nat.zero_lt_succ n) hl hc
-    · refine .inr ⟨U, h', t', hx, hu, step, hh', ih ?_ hh' hs⟩
-      intro l v hR
-      obtain ⟨c, hl, hc⟩ := hr l v hR
-      exact ⟨_, WExt_lookup hx (lookup_trunc (Nat.le_succ n) W l c hl), hc.restrict (Nat.le_succ n)⟩
-
 /-- A slot whose type admits `null` and `undefined` alone: its value has no
 field. -/
 def nullishSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
@@ -341,30 +313,29 @@ def fieldsKept (G : NormalGraph ι) (Γ : List (Ty ι)) (Fs : List (Nat × Strin
   Fs.all fun p => HeapExpressionRules.stableFirst G Γ p.1 p.2 || nullishSlot G Γ p.1
 
 /-- **A node keeps every fresh field it keeps stable**, on normal return
-and on a throw. -/
+and on a throw: a stable first field's location holds at each exit what it
+held at the start (`stableFirst_frame_exc`, the tolerant frame at `⊤`), and
+a nullish slot's value has no field. -/
 theorem fieldsHold_frame {G : NormalGraph ι} {Γ : List (Ty ι)} {Fs : List (Nat × String)} {b : Nat}
     {ρ : Env} {Ξ T : Fam} {Q : HeapObservations.Post} {E : Heap → Prop} {n W h t}
-    (hk : fieldsKept G Γ Fs = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hF : FieldsHold Fs b ρ h)
-    (hs : HeapObservations.SafePostExc Ξ T Q E n W h t) :
+    (hk : fieldsKept G Γ Fs = true) (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hF : FieldsHold Fs b ρ h) (hs : HeapObservations.SafePostExc Ξ T Q E n W h t) :
     HeapObservations.SafePostExc Ξ T (fun h' u => Q h' u ∧ FieldsHold Fs b ρ h')
       (fun h' => E h' ∧ FieldsHold Fs b ρ h') n W h t := by
   cases n with
   | zero => assumption
   | succ n =>
-  -- Each kept pair's field location, with its stable value.
-  let R : Nat → Val → Prop := fun l v => ∃ p ∈ Fs, ∃ fs cd o, ρ p.1 = .objAt fs cd o ∧
-    fs.lookup (.str p.2) = some l ∧ ∃ c, lookup W l = some c ∧ CtrStable c v
-  have hr : ∀ l v, R l v → ∃ c, lookup W l = some c ∧ CtrStable c v :=
-    fun _ _ ⟨_, _, _, _, _, _, _, hc⟩ => hc
-  -- A kept pair's field read at a later heap reads its stable value, which
-  -- the entry heap read too.
-  have keep : ∀ h', (∀ l v, R l v → h'[l]? = some v) → FieldsHold Fs b ρ h' := by
-    intro h' hR p hp u hu
+  -- A kept pair's field read at a later heap reads what the entry heap
+  -- read, its stable value.
+  have keep : ∀ h', HeapKnowledge.FirstKept (HeapExpressionRules.stableFirst G Γ) ρ h h' →
+      FieldsHold Fs b ρ h' := by
+    intro h' hkept p hp u hu
     have hsf := List.all_eq_true.mp hk p hp
     simp only [Bool.or_eq_true] at hsf
     rcases hsf with hsf | hnl
     rotate_left
     · rcases nullishSlot_at hnl he with h0 | h0 <;> (rw [h0] at hu; simp [HeapKnowledge.readPath] at hu)
+    have hsf' := hsf
     unfold HeapExpressionRules.stableFirst at hsf
     split at hsf
     · rename_i A hA
@@ -378,7 +349,7 @@ theorem fieldsHold_frame {G : NormalGraph ι} {Γ : List (Ty ι)} {Fs : List (Na
       · rename_i l hl
         obtain ⟨c, w, hlk, hcs⟩ := hst.present hl
         have h0 := hh.stable_value (Nat.zero_lt_succ n) hlk hcs
-        have h1 := hR l w ⟨p, hp, flds, .absent, oid, hv0, hl, c, hlk, hcs⟩
+        have h1 := hkept p.1 p.2 flds .absent oid l w hsf' hv0 hl h0
         rw [h1] at hu
         simp only [Option.some.injEq] at hu
         subst hu
@@ -388,7 +359,7 @@ theorem fieldsHold_frame {G : NormalGraph ι} {Γ : List (Ty ι)} {Fs : List (Na
       · cases hu
     · cases hsf
   exact HeapObservations.SafePostExc.weaken (fun h' _ hq => ⟨hq.1, keep h' hq.2⟩)
-    (fun h' hq => ⟨hq.1, keep h' hq.2⟩) (stableLocations_exc hr hh hs)
+    (fun h' hq => ⟨hq.1, keep h' hq.2⟩) (HeapExpressionRules.stableFirst_frame_exc he hw hh hs)
 
 /-- **A record allocated with a fresh value in field `f` has a fresh field
 `f`**: the field's location is the one the allocation gives that value, for

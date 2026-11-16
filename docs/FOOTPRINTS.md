@@ -795,10 +795,12 @@ slot types:
      {t\ \text{keeps}\ (j,f)}
 ```
 
-A stable field's location has a stable contract in the world, which every
-heap a run reaches keeps, its throws included, and a spine's location is
-part of the value the field holds (proved: `fieldAlloc_fresh`,
-`fieldsHold_frame` from `stableLocations_exc`, `fieldOut_sound`,
+A stable field's location has a stable contract in the world, so the
+read context of the stable keys holds of every admissible transition, and
+the tolerant frame at $`\top`$ keeps the field's contents to every exit of
+a run, its throws included; a spine's location is part of the value the
+field holds (proved: `fieldAlloc_fresh`, `fieldsHold_frame` from
+`HeapExpressionRules.stableFirst_frame_exc`, `fieldOut_sound`,
 `fieldsCheck_sound`). The facts along edges and handlers follow the slot
 maps as the other two lists' do (`edgesFields_holds`,
 `handlerFields_holds`); the entry has none. The rebasing maps a step's
