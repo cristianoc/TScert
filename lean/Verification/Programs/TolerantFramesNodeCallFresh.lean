@@ -184,10 +184,10 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
   obtain ⟨na, hent, hb⟩ := hacc l hp.1.1
   have hS := hent ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
-  refine ⟨na.node, na.hP, fun hrf k h' t' hst hk => ?_⟩
+  refine ⟨na.node, na.hP, fun hrf hρ k h' t' hst hk => ?_⟩
   obtain ⟨hsums', hkS, -, cn, ce, hj, hn, hx⟩ :=
     stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hex := (stepExits_of (hj hrf) hn hx).2
+  have hex := (stepExits_of (hj hrf hρ) hn hx).2
   cases hd : GraphCode.deadAt dead l with
   | true =>
     obtain ⟨hdn, hexc⟩ := hb.1 hd
@@ -210,7 +210,7 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
     have hm : h₀.length ≤ s.h.length := hΦ.1
     have hfc := hb.2 hd
     have hsafe : Safe (excOf G) (meaning G na.c.type) s.n s.W s.h (instantiate 0 ρ na.node.expression) :=
-      HeapObservations.erase (hj hrf).post
+      HeapObservations.erase (hj hrf hρ).post
     obtain ⟨hN, hT, hE⟩ := footprint_exits hfc hcodes hsums' (freshOk_recv hS) he hkS hsafe hΦ hst hk
     obtain ⟨-, -, -, hret, -⟩ := footprintCheck_sound hfc
     refine ⟨fun hv => contKeeps_of (fun _ _ _ => .inr (hN hv)) fun hk' => ⟨hN hv, fun hr => ?_⟩,

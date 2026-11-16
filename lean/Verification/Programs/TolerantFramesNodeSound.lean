@@ -80,7 +80,7 @@ at the typed node and edge assertions. -/
 def StepEdgesSoundT (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState)
     (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → ∃ node, P[l]? = some node ∧
-    (RefsOk s.W (instantiate 0 ρ node.expression) →
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -116,8 +116,8 @@ theorem run_sound_of_walk_typed {P : ControlFlow.Program} {G : NormalGraph ι} {
     passPreT_adminClosed hpre hPr hρ
   intro l ρ s hp
   obtain ⟨node, hn, hck⟩ := hstep l ρ s hp
-  refine ⟨node, hn, fun hr => ?_⟩
-  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr
+  refine ⟨node, hn, fun hr hρ => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr hρ
   exact ⟨Ξ, T, cn, ce, Qn, Qe, hsafe,
     nodeObligations_mono (fun t ρ s h => ⟨hentries t ρ s h.1, h.2⟩) ho⟩
 
@@ -151,7 +151,7 @@ theorem nodeObligations_of_parts {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty
     {t : Tm} {out : HeapKnowledge.Knowledge} {Fn Fe : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {k : Continuation} {x : Option Target}
     (hp : StepParts G A cn ce t out ε Fn Fe ρ m s) (he : EnvOk G Γ ρ s.n s.W)
-    (href : RefsOk s.W (instantiate 0 ρ t))
+    (href : RefsOk s.W (instantiate 0 ρ t)) (hρ : RootsOk s.W ρ)
     (hshape : ∀ j (U : WorldT (j + 1)) v, meaning G A (j + 1) U v → ShapeOk v k)
     (hnormal : ∀ (s' : IndexedHeap) v, Admissible s s' → isVal v = true → Fn (push v ρ) m s' →
       EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → HeapKnowledge.Holds out ε (push v ρ) s'.h →
@@ -166,7 +166,7 @@ theorem nodeObligations_of_parts {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty
       (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h' ∧ ∃ k, Steps k s.h (instantiate 0 ρ t) h' v)
       (fun _ => True) ρ m s k x := by
   obtain ⟨hj, hn, hx⟩ := hp
-  refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace (hj href)),
+  refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace (hj href hρ)),
     ⟨fun j U h v _ hT _ _ => hshape j U v hT, ?_, ?_⟩⟩
   · intro s' v ha hv ⟨U, hU, hT⟩ ⟨ho, k', hk⟩
     have hT' : meaning G A s'.n s'.W v := by

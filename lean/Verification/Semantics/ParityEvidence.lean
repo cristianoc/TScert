@@ -626,9 +626,9 @@ theorem RigidityEvidence.sound {arena : AssertionArena} (hv : arena.Valid) {D : 
 /-! ### Disjointness and respect -/
 
 /-- **Disjointness of two regions under `K`** (the note, §5, Definition
-"Respect"): at a state of `K`, no location is in both. -/
+"Respect"): at a state of `K`, no allocated location is in both. -/
 def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : Prop :=
-  ∀ η m s, Sat arena η m s K → ∀ l, r.mem η s.h l = true → r'.mem η s.h l = false
+  ∀ η m s, Sat arena η m s K → ∀ l, l < s.h.length → r.mem η s.h l = true → r'.mem η s.h l = false
 
 /-- Finite evidence of disjointness under `K`: regions of disjoint classes
 (`Selector.disjoint`, `class_disjoint_sound`), each class by a witness; the
@@ -664,7 +664,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
     simp only [DisjointEvidence.check] at h
     split at h
     · rename_i x y hx hy
-      intro η m s hK l hl
+      intro η m s hK l hlt hl
       cases hm : r'.mem η s.h l
       · rfl
       · have h1 := a.sound hx η m s hK l hl
@@ -678,7 +678,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
     · rename_i q q' hqq
       simp only [Bool.and_eq_true, beq_iff_eq] at h
       obtain ⟨rfl, rfl⟩ := h
-      intro η m s hK l hl
+      intro η m s hK l hlt hl
       have hcs := conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
       have hsep : ∃ u w st t, q.read η s.h = some u ∧ q'.read η s.h = some w ∧ spineOf u = some st ∧
           spineOf w = some t ∧ st ≠ t := by
@@ -705,7 +705,7 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
     · rename_i q q' hn
       simp only [Bool.and_eq_true, beq_iff_eq] at h
       obtain ⟨rfl, rfl⟩ := h
-      intro η m s hK l hl
+      intro η m s hK l hlt hl
       have hcs := conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
       obtain ⟨u, w, s₁, t₁, xs, ys, hu, hw, hau, haw, -, hlist⟩ := (sat_apart hn).mp hcs
       have hcells := (cells_disjoint_iff hau haw).mpr hlist
@@ -716,10 +716,10 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
       · exact absurd (List.contains_iff_mem.mp hm) (hcells l hl)
     · cases h
   | r, r', .swap d, h => by
-    intro η m s hK l hl
+    intro η m s hK l hlt hl
     cases hm : r'.mem η s.h l
     · rfl
-    · have := DisjointEvidence.sound d h η m s hK l hm
+    · have := DisjointEvidence.sound d h η m s hK l hlt hm
       rw [hl] at this; cases this
 
 /-- **Respect, checked as the note defines it** (§5, Definition
@@ -741,9 +741,9 @@ def RespectEvidence.check (ev : RespectEvidence) (arena : AssertionArena) (K : A
 /-- The certificates' query is sound at every state of `K`. -/
 theorem RespectEvidence.query_sound {arena : AssertionArena} {K : AssertionRef} (ev : RespectEvidence)
     {η : Env} {m : Nat} {s : IndexedHeap} (hK : Sat arena η m s K) : (ev.query arena K).Sound η s.h := by
-  intro r r' l hd hr hr'
+  intro r r' l hl hd hr hr'
   obtain ⟨d, -, hdc⟩ := List.any_eq_true.mp hd
-  rw [d.sound hdc η m s hK l hr] at hr'; cases hr'
+  rw [d.sound hdc η m s hK l hl hr] at hr'; cases hr'
 
 /-! ### Supports -/
 

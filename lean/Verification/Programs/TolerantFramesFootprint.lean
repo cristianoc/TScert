@@ -208,11 +208,11 @@ theorem pass_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hc : passWrites G j.context kS Φ j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hkS : HeapKnowledge.Holds kS ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hρ : RootsOk W ρ) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (fun h' v => Φ.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Φ.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
-  judgment_with_output checker hr hcodes hsums he hk hw hh
-    (passWrites_sound hc he hh hkS (erase (checker.sound hr hcodes hsums he hk hw hh href)))
+  judgment_with_output checker hr hcodes hsums he hk hw hh hρ
+    (passWrites_sound hc he hh hkS (erase (checker.sound hr hcodes hsums he hk hw hh href hρ)))
 
 end Footprint
 

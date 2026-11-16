@@ -422,7 +422,7 @@ theorem preserving_step_frame {G : NormalGraph ι} {images : InstanceImageCheck 
     (hr : (checker.run j kn e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
-    (he : EnvOk G j.context ρ s.n s.W) (hkn : HeapKnowledge.Holds kn ε ρ s.h)
+    (he : EnvOk G j.context ρ s.n s.W) (hkn : HeapKnowledge.Holds kn ε ρ s.h) (hρ : RootsOk s.W ρ)
     (hkeep : KeepsPost G j ρ s.n s.W s.h)
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
@@ -431,7 +431,7 @@ theorem preserving_step_frame {G : NormalGraph ι} {images : InstanceImageCheck 
         HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') := by
-  have hout := checker.sound hr hcodes hsums he hkn s.adm s.ok (SafePostW.refs hkeep)
+  have hout := checker.sound hr hcodes hsums he hkn s.adm s.ok (SafePostW.refs hkeep) hρ
   have hboth := cross_upto s.n (fun _ _ _ _ _ _ _ _ hb _ => hb) s.W s.W s.h _ s.ok s.ok hkeep hout
   have hj : SafePost (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h') s.n s.W s.h
@@ -451,7 +451,7 @@ theorem pass_preserving_frame {G : NormalGraph ι} {images : InstanceImageCheck 
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
     (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
-    (href : RefsOk s.W (instantiate 0 ρ j.term))
+    (href : RefsOk s.W (instantiate 0 ρ j.term)) (hρ : RootsOk s.W ρ)
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -459,7 +459,7 @@ theorem pass_preserving_frame {G : NormalGraph ι} {images : InstanceImageCheck 
         HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
-  preserving_step_frame _ hr hcodes hsums he hkE
+  preserving_step_frame _ hr hcodes hsums he hkE hρ
     (passPreserving_keeps hpres hr hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 end Steps

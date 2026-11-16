@@ -513,7 +513,7 @@ theorem loop_checked (m : Nat) :
     -- the initialisation `j = from`
     obtain ⟨a, ha, -⟩ := hp.1
     obtain ⟨x, hx, -⟩ := num_of_intValue ha
-    refine ⟨_, rfl, fun hr => ?_⟩
+    refine ⟨_, rfl, fun hr _ => ?_⟩
     refine ⟨noFam, numT, .empty, .empty, fun _ v => v = ρ 0, fun _ => True, ?_, ?_⟩
     · show SafePostExc _ _ _ _ s.n s.W s.h (instantiate 0 ρ (.var 0))
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hr ⊢
@@ -527,7 +527,7 @@ theorem loop_checked (m : Nat) :
     -- the guard `j < to`
     obtain ⟨a, ha, -⟩ := hp.1
     obtain ⟨b, len, hb, -, -⟩ := lowerBound_iff.mp hp.2.1
-    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨_, rfl, fun _ _ => ?_⟩
     refine ⟨noFam, boolT, .empty, .empty, _, fun _ => True, guard_safe ha hb, ?_⟩
     refine ⟨fun _ _ _ _ _ hT _ _ => hT, fun s' v ha' _ ⟨_, _, hT⟩ hq => ?_,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
@@ -538,7 +538,7 @@ theorem loop_checked (m : Nat) :
     -- the read `v = xs[j]`
     obtain ⟨a, ha, -⟩ := hp.1.1
     obtain ⟨x, hx, -⟩ := num_of_intValue ha
-    refine ⟨_, rfl, fun hr => ?_⟩
+    refine ⟨_, rfl, fun hr _ => ?_⟩
     refine ⟨noFam, srcF, .empty, .empty, _, fun _ => True,
       read_safe hx s.n s.W s.h s.adm s.ok hp.1.2.2.1 hr, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha' _ ⟨_, _, hT⟩ _ => ?_,
@@ -556,7 +556,7 @@ theorem loop_checked (m : Nat) :
     obtain ⟨st, ls, -, -, rfl, hmax⟩ := HeapKnowledge.lengthOf_spine hlen
     obtain ⟨x, hx, hsx⟩ := num_of_intValue ha
     have hidx := HeapKnowledge.indexOfBits_safe hsx h0 (by omega)
-    refine ⟨_, rfl, fun hr => ?_⟩
+    refine ⟨_, rfl, fun hr _ => ?_⟩
     refine ⟨noFam, nulT, growEffect, growEffect, fun _ _ => True, fun _ => True,
       write_safe (Ξ := noFam) (T := nulT) (fun _ _ => rfl) hv hx hidx s.n s.W s.h s.adm s.ok hout hr, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha' _ _ _ => ?_,
@@ -567,7 +567,7 @@ theorem loop_checked (m : Nat) :
     have hp4 : BodyAt ε ρ m s := hp
     obtain ⟨⟨a, ha, h0⟩, -, -, -, ⟨a', b, ha', hb, hab⟩⟩ := hp
     rw [ha] at ha'; cases ha'
-    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨_, rfl, fun _ _ => ?_⟩
     refine ⟨noFam, numT, .empty, .empty, _, fun _ => True,
       increment_judgment (fun _ _ b => ⟨b, rfl⟩) ha hb h0 hab, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha'' _ _ hq => ?_,
@@ -581,7 +581,7 @@ theorem loop_checked (m : Nat) :
       arrAt_congr (mapEnv_push_slot rfl) hb'.2.2.1, arrAt_congr (mapEnv_push_slot rfl) hb'.2.2.2.1⟩
   | 5, _ =>
     -- the exit
-    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨_, rfl, fun _ _ => ?_⟩
     refine ⟨noFam, nulT, .empty, .empty, fun _ _ => True, fun _ => True,
       SafePostExc.value rfl rfl ⟨Footprints.Closed.Holds.refl _ _, trivial⟩ RefsOk_nul, ?_⟩
     exact ⟨fun _ _ _ _ _ _ _ _ => trivial, fun _ v _ _ ⟨_, _, hT⟩ _ => ⟨hT, trivial⟩,

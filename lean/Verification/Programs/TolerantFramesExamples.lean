@@ -69,14 +69,14 @@ theorem handled_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hρ : ∀ i, RefsOk
   intro l ρ s hp
   match l, hp with
   | 0, _ =>
-    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨_, rfl, fun _ _ => ?_⟩
     refine ⟨nulFam, noFam, .empty, .empty, fun _ _ => True, fun _ => True, throw_nul_safe, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun _ _ _ _ ⟨_, _, hT⟩ _ => hT.elim, ?_⟩
     rintro s' e - - ⟨U, -, he⟩ -
     show (mapEnv none (push e ρ)) 0 = .nul
     simpa [mapEnv, slot, push, nulFam] using he
   | 1, hp =>
-    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨_, rfl, fun _ _ => ?_⟩
     refine ⟨noFam, nulFam, .empty, .empty, fun _ _ => True, fun _ => True, ?_, ?_⟩
     · obtain ⟨n, W, h, pos, adm, ok⟩ := s
       cases n with
@@ -94,7 +94,7 @@ theorem escaping_checked (m : Nat) :
     NodesChecked escapingGraph escapingPre nulFam noFam (fun _ => True) (fun _ => True) m := by
   intro l _ _ hp
   match l, hp with
-  | 0, _ => exact ⟨⟨.throw .nul, .ret, none⟩, rfl, fun _ => ⟨nulFam, noFam, .empty, .empty, fun _ _ => True,
+  | 0, _ => exact ⟨⟨.throw .nul, .ret, none⟩, rfl, fun _ _ => ⟨nulFam, noFam, .empty, .empty, fun _ _ => True,
       fun _ => True, throw_nul_safe, fun _ _ _ _ _ _ _ _ => trivial, fun _ _ _ _ ⟨_, _, hT⟩ _ => hT.elim,
       fun _ _ _ _ ⟨_, _, he⟩ _ => ⟨he, trivial⟩⟩⟩
 

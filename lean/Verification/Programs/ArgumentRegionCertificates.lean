@@ -41,11 +41,11 @@ theorem closedStep_ok [DecidableEq ι] {G : NormalGraph ι}
   simp only [checkClosedNode, Bool.and_eq_true] at hc
   have hn := nodeWithin_of_checked (F := []) (thr := thr) hc.1.1 hc.2 (fun hthr => by
     have hx := hc.1.2; rw [hthr] at hx; simpa using hx) ht hsums
-  intro ε n W h ρ he hi hk hw hh hr
+  intro ε n W h ρ he hi hk hw hh hr hρ
   refine ⟨ρ, ?_, ?_⟩
   · intro p s hs; simp [closedStep] at hs
   apply HeapObservations.SafePostExc.weaken _ _
-    (hn ε n W h ρ h.length (Nat.le_refl _) (fun _ hi => nomatch hi) he hi hk hw hh hr)
+    (hn ε n W h ρ h.length (Nat.le_refl _) (fun _ hi => nomatch hi) he hi hk hw hh hr hρ)
   · intro h' _ hq
     exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (holdsOn_length hq.1))
   · intro h' hq hthr
@@ -99,7 +99,7 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
     (hc : callStep G images sums c t = some se)
     (hsums : ProgramCertificates.SummariesSound G images sums) :
     StepOk G c t se thr := by
-  intro ε n W h ρ he _ hk hw hh hr
+  intro ε n W h ρ he _ hk hw hh hr hρ
   unfold callStep at hc
   split at hc
   · rename_i hcond
@@ -164,10 +164,10 @@ def writeStepEffect (i : Nat) : StepEffect := ⟨some, ExpressionEffects.writeFr
 theorem writeStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι} {t : Tm} {thr : Bool} {i : Nat}
     (hc : ExpressionEffects.writeStep G (entry c) t = some i) (ht : ExpressionOk G c t) :
     StepOk G c t (writeStepEffect i) thr := by
-  intro ε n W h ρ he hi hk hw hh hr
+  intro ε n W h ρ he hi hk hw hh hr hρ
   refine ⟨ρ, fun p s hp => by cases hp; rfl, ?_⟩
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr hρ))
   exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
     (ExpressionEffects.writeStep_sound hc he hh hs)
 
@@ -394,7 +394,7 @@ theorem cellsKept_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (ht : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums)
     {n W h ρ} {b : Nat} (hF : FreshHold F C b ρ h) (he : EnvOk G (entry c) ρ n W)
     (hi : PromiseCalls.ImpliesOk G c.implies ρ n W) (hkn : HeapKnowledge.Holds (entryFacts G c) ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hρ : RootsOk W ρ)
     (hs : Safe (excOf G) (meaning G (result c)) n W h (instantiate 0 ρ t)) :
     HeapObservations.SafePostExc (excOf G) (meaning G (result c)) (fun h' _ => CellsHold C b ρ h')
       (fun h' => thr = true → CellsHold C b ρ h') n W h (instantiate 0 ρ t) := by
@@ -421,7 +421,7 @@ theorem cellsKept_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         (hF.values j (List.contains_iff_mem.mp hwr)) hF.cells hs)
   · obtain ⟨se, hse, hkv⟩ := List.any_eq_true.mp hstep
     simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hkv
-    obtain ⟨σ, -, hrun⟩ := stepEffects_ok hse ht hsums ε n W h ρ he hi hkn hw hh hs.refs
+    obtain ⟨σ, -, hrun⟩ := stepEffects_ok hse ht hsums ε n W h ρ he hi hkn hw hh hs.refs hρ
     exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hF.cells.post hkv.1 hq)
       (fun _ hq hthr => hF.cells.post (by rcases hkv.2 with h | h; · rw [hthr] at h; cases h
                                           · exact h) (hq hthr)) hrun
@@ -435,11 +435,11 @@ theorem checkFresh_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     (hc : checkFresh G images sums Φ F C c t thr = true)
     (ht : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     FreshWithin G c t F C (freshOut G images sums F C c t) (cellOut F C t) thr := by
-  intro ε n W h ρ b hb hF he hi hk hw hh hr
+  intro ε n W h ρ b hb hF he hi hk hw hh hr hρ
   simp only [checkFresh, Bool.and_eq_true] at hc
   obtain ⟨hscope, hkept⟩ := hc
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr hρ))
   have hv : HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun _ v => freshOut G images sums F C c t = true → FreshValue b v) (fun _ => True) n W h (instantiate 0 ρ t) := by
     cases hf : freshOut G images sums F C c t
@@ -452,7 +452,7 @@ theorem checkFresh_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     · exact HeapObservations.SafePostExc.weaken (fun _ _ _ h => nomatch h) (fun _ h => h) (trivial_run hs)
     · exact HeapObservations.SafePostExc.weaken (fun _ _ hq _ => hq) (fun _ h => h)
         (cellOut_sound hf hscope hF he hs)
-  have hkeep := cellsKept_sound hkept hscope ht hsums hF he hi hk hw hh hs
+  have hkeep := cellsKept_sound hkept hscope ht hsums hF he hi hk hw hh hρ hs
   have h12 := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh hv hcell
   have h123 := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh h12 hkeep
   exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1.1, hq.1.2, hq.2⟩) (fun _ hq => hq.2) h123
@@ -552,9 +552,9 @@ theorem fieldsCheck_sound [DecidableEq ι] {G : NormalGraph ι} {names : List St
     (hk : fieldsKept G (entry c) Fs = true)
     (hscope : ProgramCertificates.checkScope (entry c).length t = true) (ht : ExpressionOk G c t) :
     FieldsWithin G c t F Fs (fieldOut names F Fs t) := by
-  intro ε n W h ρ b _ hF hFs he hi hkn hw hh hr
+  intro ε n W h ρ b _ hF hFs he hi hkn hw hh hr hρ
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hkn hw hh hr))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hkn hw hh hr hρ))
   have hkeep := fieldsHold_frame hk he hh hFs (trivial_run hs)
   have hout := fieldOut_sound (names := names) hscope hF hFs he hs
   have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh
@@ -580,14 +580,14 @@ theorem checkCopy_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
     {Fs : List (Nat × String)}
     (hc : checkCopy c facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
-  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hr _
+  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hr hρ _
   cases t <;> simp only [checkCopy, Bool.false_eq_true] at hc
   rename_i i
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.contains_iff_mem] at hc
   have hv : isVal (ρ i) = true :=
     (meaning_value (he.2 i _ (List.getElem?_eq_getElem hc.1))).1
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr hρ))
   simp only [instantiate, Nat.sub_zero] at hs hr ⊢
   cases n with
   | zero => exact hr
@@ -648,7 +648,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
     {Fs : List (Nat × String)}
     (hc : checkRead G c regions facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
-  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hrf hst
+  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hrf hρ hst
   unfold checkRead at hc
   split at hc
   · rename_i f i
@@ -662,7 +662,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
         simp [hobj, Footprints.fieldsOf, hl]
       · cases hfo
     have hs := HeapObservations.erase (HeapObservations.consequence
-      (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hrf))
+      (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hrf hρ))
     have hinst : instantiate 0 ρ (.readAt (.str f) (.var i)) = .readAt (.str f) (ρ i) := by
       simp [instantiate]
     rw [hinst] at hs hrf ⊢

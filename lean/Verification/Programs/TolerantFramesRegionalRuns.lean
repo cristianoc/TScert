@@ -138,14 +138,14 @@ theorem regionsKept_of {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNa
     RegionsKeptS P G w startNames ε ctx (RegionX Φ regions table ft ε h₀) Φ regions h₀ exc := by
   intro l ρ s ⟨hpT, hst⟩ hX
   obtain ⟨na⟩ := hacc l hpT.1.1
-  refine ⟨na.node, na.hP, fun hr => ?_⟩
+  refine ⟨na.node, na.hP, fun hr hρ => ?_⟩
   obtain ⟨he, hi, hk⟩ := na.entry ρ s hpT
   obtain ⟨origins, outF, outC, outFs, ht, hedge, hhandler, hfr, hef, hec, hfl, hefl, hhf⟩ := na.within
-  have hrun := ht ε s.n s.W s.h ρ h₀ ε.env hX.1 hX.2.1 hX.2.2.1.values hX.2.2.2 he hi hk s.adm s.ok hr (fun _ => hst)
+  have hrun := ht ε s.n s.W s.h ρ h₀ ε.env hX.1 hX.2.1 hX.2.2.1.values hX.2.2.2 he hi hk s.adm s.ok hr hρ (fun _ => hst)
   have hfresh := hfr ε s.n s.W s.h ρ h₀.length (ArgumentSpineRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1 he hi hk
-    s.adm s.ok hr
+    s.adm s.ok hr hρ
   have hfld := hfl ε s.n s.W s.h ρ h₀.length (ArgumentSpineRegionsWithin.iff_post.mp hX.1).1 hX.2.2.1.values
-    hX.2.2.2 he hi hk s.adm s.ok hr
+    hX.2.2.2 he hi hk s.adm s.ok hr hρ
   have hboth0 := SafePostExc.cross_upto s.n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ s.h _ s.ok s.ok hrun hfresh
   have hboth := SafePostExc.cross_upto s.n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ s.h _ s.ok s.ok hboth0 hfld
   have hret : ReturnsPost (fun h' v => ArgumentSpineRegionsWithin Φ regions ε.env h₀ h' ∧
@@ -203,7 +203,7 @@ theorem regionalTyped_of_tree {G : NormalGraph ι} {images : InstanceImageCheck 
   simp only [SinglePass.regionalDerivChecked, SinglePass.derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
   obtain ⟨⟨hterm, hctx⟩, -⟩ := hd
   refine ⟨by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using hctx, ?_⟩
-  intro ε n W h ρ he _ _ hw hh hr
+  intro ε n W h ρ he _ _ hw hh hr _
   have hs := HasTyUsing.sound (checkTreeUsing_sound d htree hcodes hsums) n W h ρ
     (by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using he) hw hh
     (by rw [hterm]; exact hr)
@@ -233,11 +233,12 @@ theorem regionalTyped_copy {G : NormalGraph ι} {c : PointClaim ι} {node : Node
   rw [hent] at he
   have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
   rw [hval]
+  intro hr _
   have hm := he.2 i c.type hty
   exact HeapObservations.value (meaning_value hm).1
     ⟨by simpa [result, passRegionalEvidence, NodeEvidence.expression, NodeEvidence.header, claim] using hm,
       fun y hy => by simp [passRegionalEvidence] at hy⟩
-    (outFacts_holds (hent ▸ he) (HeapKnowledge.empty _ _))
+    (outFacts_holds (hent ▸ he) (HeapKnowledge.empty _ _)) hr
 
 omit [DecidableEq ι] in
 /-- **The regional evidence's entry holds where the node assertion does**:
@@ -290,8 +291,8 @@ theorem nodesChecked_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres 
     NodesChecked P (fun l ρ m s => pre l ρ m s ∧ S s) Ξres Tres Qres Rres m := by
   intro l ρ s ⟨hp, hs⟩
   obtain ⟨node, hP, hck⟩ := hn l ρ s hp
-  refine ⟨node, hP, fun hr => ?_⟩
-  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr
+  refine ⟨node, hP, fun hr hρ => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr hρ
   refine ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ⟨ho.shape, fun s' v ha hv hT hq => ?_, fun s' e ha hsc hΞ hq => ?_⟩⟩
   · have ht := ho.normal s' v ha hv hT hq
     have hs' := hS s s' ha.1 hs

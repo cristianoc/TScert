@@ -58,9 +58,9 @@ theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageChe
   obtain ⟨na, ys, hY⟩ := hacc l hp.1.1
   have hS : StateHolds G na.entry (w.implies l) startNames ε ρ m s := na.hentry ▸ hp.1.2
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
-  refine ⟨na.node, na.hP, fun hr => ?_⟩
+  refine ⟨na.node, na.hP, fun hr hρ => ?_⟩
   obtain ⟨-, hkS, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hjY := hY.judged ρ s _ _ hS he hkS (hparts.1 hr)
+  have hjY := hY.judged ρ s _ _ hS he hkS (hparts.1 hr hρ)
   obtain ⟨hj, ho⟩ := nodeObligations_of_partsY (pre := edgePreAJ G w startNames ε ctx stated given edgesIn)
     (Ξres := excOf G) (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler)
     hparts he hjY

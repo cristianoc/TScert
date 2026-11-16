@@ -52,7 +52,7 @@ def StepEdgesSoundA (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι)
     (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (Ξres Tres : Fam)
     (Qres Rres : Heap → Prop) (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → ∃ node, P[l]? = some node ∧
-    (RefsOk s.W (instantiate 0 ρ node.expression) →
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -73,8 +73,8 @@ theorem nodesChecked_of_walkA {P : ControlFlow.Program} {G : NormalGraph ι} {w 
     NodesChecked P (passPreA G w startNames ε ctx stated) Ξres Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   obtain ⟨node, hn, hck⟩ := hstep l ρ s hp.1
-  refine ⟨node, hn, fun hr => ?_⟩
-  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr
+  refine ⟨node, hn, fun hr hρ => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr hρ
   exact ⟨Ξ, T, cn, ce, Qn, Qe, hsafe,
     nodeObligations_mono (fun t ρ s h => ⟨⟨entries_of_traversed hT hheads hmerges t ρ s h.1.1, h.1.2⟩, h.2⟩) ho⟩
 
