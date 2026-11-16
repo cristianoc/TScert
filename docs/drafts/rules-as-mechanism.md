@@ -194,26 +194,36 @@ spine, identity: the roles of `Worlds.lean` without their parameters. It
 projects to the paper's five kinds and to the three categories of
 `Selector`; neither of those refines the other.
 
-A region has a *bound*: a set of role classes that contains the role class
-of every allocated location in it, in a well-formed state.
+#### The bound of a region
 
-| Region | Bound |
-|---|---|
-| `field x k`, `path x p k` at a key other than the spine key | field, cell; one of the two where the object's roles say which |
-| `field x k`, `path x p k` at the spine key | array spine |
-| `spine x p` | array spine, view spine |
-| `cells x`, `pathCells x p` | element cell |
-| `fields x`, `pathFields x p` | field, cell, array spine |
-| `cls c` | the role classes of the categories `c` selects |
-| `inCls r c` | the bound of `r`, restricted to the role classes of `c` |
-| `cell b`, `all` | every role class |
+A region has a *bound* (`Region.bound`,
+[RegionBounds.lean](../../lean/Verification/Semantics/RegionBounds.lean)):
+a set of role classes (`RoleClass`, `RoleSet`,
+[Worlds.lean](../../lean/Verification/Semantics/Worlds.lean)) that contains
+the role class of every allocated location in it, in a well-formed state.
 
-```lean
-theorem Region.bound_sound {n : Nat} {W : WorldT n} {ρ : Env} {h : Heap}
-    (hok : HeapOk n W h) (hρ : RootsOk W ρ) {r : Region} {l : Nat}
-    (hl : l < h.length) (hm : r.mem ρ h l = true) :
-    ∃ c ∈ r.bound, (roleAt W l).map Role.cls = some c
-```
+| Region | Bound | From |
+|---|---|---|
+| `field x k`, `path x p k` at a key other than the spine key | field, cell | the slot's role (`SlotRole`) |
+| `field x k`, `path x p k` at the spine key | array spine | the slot's role |
+| `fields x`, `pathFields x p` | field, cell, array spine | each slot's role |
+| `cells x`, `pathCells x p` | element cell | a spine lists element cells (`HeapOk.entries_cells`) |
+| `spine x p` | array spine, view spine | the spine slot's role, or the descriptor's view spine (`RefOk`) |
+| `cls c` | the role classes of the categories `c` selects | a location's contents category is its role's (`Shaped.category`) |
+| `cell b` | field, cell, element cell, identity | its members are those of `cls values` |
+| `inCls r c` | the bound of `r`, restricted to the role classes of `c` | both of the above |
+| `all` | every role class | |
+
+`Region.bound_sound` proves: under `HeapOk n W h` and `RootsOk W ρ`, every
+`l < h.length` with `r.mem ρ h l = true` has a role `role` with
+`roleAt W l = some role` and `r.bound.contains role.cls = true`; a path
+read from a valid root reads a value with valid references
+(`readPath_refs`). Its corollary `Region.apart_of_bound` proves that when
+`(r.bound.inter s.bound).isEmpty = true`, no allocated location is in both
+`r` and `s`. The axiom check covers both.
+
+A field's bound holds both field and cell: which of the two a slot is
+depends on the object's roles, which region-kind evidence carries.
 
 Two regions are disjoint when their bounds are disjoint, or when the
 state's knowledge separates them. `SepQuery.Sound` is stated over allocated
