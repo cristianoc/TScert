@@ -372,6 +372,8 @@ structure PreparedFile where
   front : Json × SourceClaimJson.Front
   modules : List String
   selected : Option (List String)
+  /-- Groups whose interface another reachable group consumes. -/
+  interfaceDemand : Std.HashSet Nat
   force : List String
   givenLines : Std.HashMap String Json
   fuel : Nat
@@ -387,6 +389,24 @@ structure PreparedFile where
 
 /-- The prepared file's front: its units, their identities and groups. -/
 def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
+
+/-- Interface demand of one prepared selection, using the existing group
+dependency graph. Every reachable group is queued once. An incomplete walk
+conservatively demands every group. -/
+def demandedInterfaces (fr : SourceClaimJson.Front) (wanted : List Nat) : Std.HashSet Nat := Id.run do
+  let mut pending := wanted.eraseDups
+  let mut seen : Std.HashSet Nat := pending.foldl (·.insert ·) {}
+  let mut demand : Std.HashSet Nat := {}
+  for _ in List.range (fr.units.length + 1) do
+    let some g := pending.head? | return demand
+    pending := pending.tail
+    for h in fr.dependencies (fr.group g) do
+      demand := demand.insert h
+      if !seen.contains h then
+        seen := seen.insert h
+        pending := h :: pending
+  if pending.isEmpty then return demand
+  return fr.leaders.foldl (·.insert ·) demand
 
 /-- Mode 8's preparation of a file's fragment and the module interfaces its
 imports read: the fragment and interfaces decoded, the file's claims and
@@ -455,7 +475,8 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let plans ← IO.mkRef {}
   let memo ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a) =>
-    { ast := a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected, force,
+    { ast := a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+      interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
       givenLines, fuel, located, quiet, t0, proposals, plans, memo }
 
 /-- The units a prepared file's selection checks, in the order their checks
@@ -494,6 +515,16 @@ def groupsBelow (fr : SourceClaimJson.Front) (i : Nat) : List Nat := Id.run do
         stack := ((fr.group g).flatMap fr.edges).map (leader ·, false) |>.filter (!seen.contains ·.1)
           |>.append ((g, true) :: rest)
   return order
+
+/-- Whether this worker may consume a group's inferred interface: from
+another selected group, recursive members, or an explicit effect contract.
+Module-interface publication uses its own planner and still infers its rows. -/
+def PreparedFile.needsInterface (p : PreparedFile) (i : Nat) : Bool :=
+  let group := p.fr.group i
+  let own := group.filterMap fun j => (p.fr.units[j]?).map (·.1.name)
+  p.interfaceDemand.contains i ||
+    group.any (fun j => (p.fr.mentions j).any own.contains ||
+      ((p.fr.units[j]?).any fun (f, _, _) => f.stated.isSome))
 
 /-- **The proposals unit `i`'s planning reads**: for each group `i`'s group
 reaches outside itself (`groupsBelow`, callees first), its members'
@@ -554,6 +585,13 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
     | some planned => do p.plans.modify (·.erase i); pure planned
     | none => do
       let memo ← p.memo.get
+      -- No reachable caller consumes this group's extra proposal. The
+      -- existing `known` entry with `none` omits only optional inference;
+      -- ordinary declarations and every member's body are checked below.
+      let known := if !p.force.isEmpty || p.needsInterface i then known else
+        known ++ (fr.group i).filterMap fun j => match fr.units[j]? with
+          | some (f, _, none) => some (f.name, none)
+          | _ => none
       let planned ← IO.lazyPure fun _ => p.plan i known memo
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
