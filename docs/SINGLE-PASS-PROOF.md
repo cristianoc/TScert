@@ -126,7 +126,9 @@ $`\top`$ (`action_throw_top`). The graph machine is deterministic
 in an admissible state (`graph_run`).
 
 One expression end to end, proved: a typed field write
-(`ExpressionEffects.fieldWriteWithin` with $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$),
+(`ExpressionEffects.fieldWriteWithin` with $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$,
+the closed weakening `fieldWriteFrame_closed` of its frame
+$`\{x.f:\mathsf{any}\}`$, `fieldWriteStep_sound`),
 safe at $`s`$, run with budget left to a value or a raise, ends in a state an
 action of that effect reaches, with the residual budget, the result's type or
 the raised value's family, and every bound $`y\le|x|`$ that held at $`s`$
@@ -882,7 +884,8 @@ by unfolding the `let`s); the merge theorem reads it there.
   location holds contents of its role's category at every well-formed state
   ([kinded states](#kinded-states)); an effect stated by class, such as
   $`\{\mathsf{values}:\mathsf{any}\}`$, is still checked where typing gives
-  the class of what is written over (`ExpressionEffects.field_write_within_exc`).
+  the class of what is written over (`ExpressionEffects.fieldWriteStep_sound`,
+  `fieldWriteFrame_closed`).
 - **Antitonicity is relative to the start state.** Inclusion of
   footprints whose regions are read through class evidence holds where that
   evidence holds (`action_le`); law (c) for those footprints is

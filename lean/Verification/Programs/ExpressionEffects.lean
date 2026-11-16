@@ -107,27 +107,67 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
   · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
-/-- A write of a field of the object in a slot whose type gives it a type of
-source values: it changes one location, which holds a value, not a spine. -/
-def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
-  match HeapExpressionRules.writeSlots t with
-  | some (f, i, k) => Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ && decide (k < Γ.length) && match Γ[i]? with
-    | some Ref => sourceField G (expand G Ref) f
-    | none => false
-  | none => false
+/-- **A field write's frame** (the note *Tolerant frames*, Field-Write,
+`{x.f: any}`): the location of field `f` of the object in slot `i`. -/
+def fieldWriteFrame (i : Nat) (f : PropKey) : Footprints.Footprint := [(.field i f, .any)]
 
-/-- **A typed field write is within `{value: any, spine: keep}`.** -/
-theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+/-- The slot and the field a typed field write writes: a write of a field of
+the object in a slot whose type gives it a type of source values. -/
+def fieldWriteStep (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Option (Nat × PropKey) :=
+  match HeapExpressionRules.writeSlots t with
+  | some (f, i, k) => if decide (k < Γ.length) && (match Γ[i]? with
+      | some Ref => sourceField G (expand G Ref) f
+      | none => false) then some (i, f) else none
+  | none => none
+
+/-- A typed field write within the closed bound `Φ`: its frame's closed
+weakening, `{value: any, spine: keep}` (`fieldWriteFrame_closed`), within
+`Φ`. -/
+def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  (fieldWriteStep G Γ t).isSome && Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ
+
+/-- **The closed bound of a field write is a weakening of its frame**: where
+every location the frame names holds a value of no spine, `{x.f: any}` is
+within `{value: any, spine: keep}`. -/
+theorem fieldWriteFrame_closed {i : Nat} {f : PropKey} {ρ : Env} {h h' : Heap}
+    (hp : Footprints.Post (fieldWriteFrame i f) ρ h h')
+    (hv : ∀ l v, (Footprints.Region.field i f).mem ρ h l = true → h[l]? = some v → Footprints.isArr v = false) :
+    Footprints.Closed.Holds ⟨.any, .keep, .keep⟩ h h' := by
+  rw [Footprints.Closed.holds_iff]
+  refine ⟨hp.1, fun l v hl => ?_⟩
+  obtain ⟨v', hl', ha⟩ := hp.2 l v hl
+  refine ⟨v', hl', ?_⟩
+  rcases ha with rfl | ⟨e, he, hm, -⟩
+  · exact Footprints.Change.Holds.refl _ _ _
+  · simp only [fieldWriteFrame, List.mem_singleton] at he
+    subst he
+    simp only [Footprints.Closed.at, hv l v hm hl]
+    trivial
+
+/-- What a typed field write leaves: its frame `{x.f: any}`, the location it
+writes holding a value of no spine before it. -/
+def FieldWritten (i : Nat) (f : PropKey) (ρ : Env) (h h' : Heap) : Prop :=
+  Footprints.Post (fieldWriteFrame i f) ρ h h' ∧
+    ∀ l v, (Footprints.Region.field i f).mem ρ h l = true → h[l]? = some v → Footprints.isArr v = false
+
+/-- **A typed field write is within its frame** on normal return. -/
+theorem fieldWriteStep_post [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n W h} {i : Nat} {f : PropKey}
+    (hc : fieldWriteStep G Γ t = some (i, f)) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  unfold fieldWriteWithin at hc
+    SafePost Ξ T (fun h' _ => FieldWritten i f ρ h h') n W h (instantiate 0 ρ t) := by
+  unfold fieldWriteStep at hc
   split at hc
-  case h_2 => contradiction
-  rename_i f i k hw
+  case h_2 => cases hc
+  rename_i f' i' k hw
+  by_cases hcond : (decide (k < Γ.length) && match Γ[i']? with
+      | some Ref => sourceField G (expand G Ref) f'
+      | none => false) = true
+  case neg => rw [if_neg hcond] at hc; cases hc
+  rw [if_pos hcond] at hc
+  cases hc
   rw [HeapExpressionRules.writeSlots_eq hw] at hs ⊢
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-  obtain ⟨⟨hle, hk⟩, hsel⟩ := hc
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+  obtain ⟨hk, hsel⟩ := hcond
   split at hsel
   · rename_i Ref hi
     cases n with
@@ -142,13 +182,9 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
       · simp [isVal] at hbad
       · exact .inl (.inr hr)
       · obtain ⟨flds, c, oid, l, hl, hfd, hlt, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hkv step
-        refine .inr ⟨U, _, _, hx, hu, step, hh', HeapObservations.refine_value rfl ?_ hs'⟩
-        apply Footprints.Closed.Holds.mono hle
-        rw [Footprints.Closed.holds_iff]
-        refine ⟨by simp, fun l' v hv => ?_⟩
-        by_cases hll : l' = l
-        · subst hll
-          refine ⟨ρ k, by simp [hlt], ?_⟩
+        -- The written location holds a source value, of no spine.
+        have harr : ∀ v, h[l]? = some v → Footprints.isArr v = false := by
+          intro v hv
           obtain ⟨B, _, A, hmem, hsrc, hbag⟩ := sourceField_sound hsel (he.2 i Ref hi)
           obtain ⟨flds0, code0, oid0, hl0, _, hrec⟩ := hbag
           obtain ⟨flds1, l1, c1, oid', hproj, hfd1, hlookup, hagree⟩ :=
@@ -158,17 +194,87 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
           cases hproj
           rw [hfd] at hfd1
           cases hfd1
-          obtain ⟨u, hu, hmm⟩ := hh.1.2 l' c1 hlookup
+          obtain ⟨u, hu, hmm⟩ := hh.1.2 l c1 hlookup
           rw [hv] at hu
           cases hu
           have hA := (hagree 0 (by omega) _ v).mp (hmm 0 (by omega))
-          have harr : Footprints.isArr v = false := by
-            have := sourceTy_sound hsrc hA
-            cases v <;> simp_all [isSourceVal, Footprints.isArr]
-          simp only [Footprints.Closed.at, harr]
-          trivial
-        · refine ⟨v, by rw [List.getElem?_set_ne (Ne.symm hll)]; exact hv, Footprints.Change.Holds.refl _ _ _⟩
-  · contradiction
+          have := sourceTy_sound hsrc hA
+          cases v <;> simp_all [isSourceVal, Footprints.isArr]
+        have hmem : ∀ l', (Footprints.Region.field i f).mem ρ h l' = true → l' = l := by
+          intro l' hm
+          simp only [Footprints.Region.mem, hl, Footprints.fieldsOf, hfd, beq_iff_eq, Option.some.injEq] at hm
+          exact hm.symm
+        refine .inr ⟨U, _, _, hx, hu, step, hh', HeapObservations.refine_value rfl ?_ hs'⟩
+        refine ⟨⟨by simp, fun l' v hv => ?_⟩, fun l' v hm hv => by rw [hmem l' hm] at hv; exact harr v hv⟩
+        by_cases hll : l' = l
+        · subst hll
+          refine ⟨ρ k, by simp [hlt], .inr ⟨_, List.mem_singleton_self _, ?_, trivial⟩⟩
+          simp [Footprints.Region.mem, hl, Footprints.fieldsOf, hfd]
+        · exact ⟨v, by rw [List.getElem?_set_ne (Ne.symm hll)]; exact hv, .inl rfl⟩
+  · cases hsel
+
+/-- **A typed field write is within its frame** `{x.f: any}` on normal
+return, and raises, where it does, before it writes: at its entry heap. -/
+theorem fieldWriteStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n W h} {i : Nat} {f : PropKey}
+    (hc : fieldWriteStep G Γ t = some (i, f)) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => FieldWritten i f ρ h h') (fun h' => h' = h) n W h (instantiate 0 ρ t) := by
+  have hpost := fieldWriteStep_post hc he hh hs
+  unfold fieldWriteStep at hc
+  split at hc
+  case h_2 => cases hc
+  rename_i f' i' k hw
+  by_cases hcond : (decide (k < Γ.length) && match Γ[i']? with
+      | some Ref => sourceField G (expand G Ref) f'
+      | none => false) = true
+  case neg => rw [if_neg hcond] at hc; cases hc
+  rw [if_pos hcond] at hc
+  cases hc
+  rw [HeapExpressionRules.writeSlots_eq hw] at hpost ⊢
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+  obtain ⟨hk, hsel⟩ := hcond
+  split at hsel
+  · rename_i Ref hi
+    cases n with
+    | zero => assumption
+    | succ n =>
+      have hiv := (meaning_value (he.2 i Ref hi)).1
+      have hkv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hpost ⊢
+      obtain ⟨hrf, hpost⟩ := hpost
+      refine ⟨hrf, ?_⟩
+      rcases hpost with (hv | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+      · exact .inl (.inl hv)
+      · exact .inl (.inr ⟨hr, rfl⟩)
+      · obtain ⟨_, _, _, _, _, _, _, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hkv step
+        refine .inr ⟨U, _, _, hx, hu, step, hh', ?_⟩
+        cases n with
+        | zero => assumption
+        | succ m =>
+          obtain ⟨hrf, hs'⟩ := hs'
+          refine ⟨hrf, ?_⟩
+          rcases hs' with (hv | hr) | ⟨_, _, _, _, _, step', _, _⟩
+          · exact .inl (.inl hv)
+          · exact absurd hr (val_not_thrown rfl)
+          · exact False.elim (value_no_step rfl step')
+  · cases hsel
+
+/-- **A typed field write is within `{value: any, spine: keep}`**: its
+frame's closed weakening (`fieldWriteFrame_closed`). -/
+theorem field_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  simp only [fieldWriteWithin, Bool.and_eq_true, Option.isSome_iff_exists] at hc
+  obtain ⟨⟨⟨i, f⟩, hi⟩, hle⟩ := hc
+  exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle (fieldWriteFrame_closed hq.1 hq.2))
+    (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl Φ h) (fieldWriteStep_sound hi he hh hs)
+
+theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) :=
+  SafePostExc.post (field_write_within_exc hc he hh hs)
 
 /-! ### Initializing writes
 
@@ -1565,46 +1671,6 @@ theorem sound_exc {G : NormalGraph ι} {Γ t A ρ n W h}
       (fun h' => Footprints.Closed.empty.Holds h h') n W h (instantiate 0 ρ t) :=
   inspect_safe_exc (List.prefix_refl h) (HeapExpressionRules.inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
-/-- A typed write raises, where it does, before it writes: at its entry
-heap. -/
-theorem field_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  have hpost := field_write_within hc he hh hs
-  unfold fieldWriteWithin at hc
-  split at hc
-  case h_2 => contradiction
-  rename_i f i k hw
-  rw [HeapExpressionRules.writeSlots_eq hw] at hpost ⊢
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-  obtain ⟨⟨_, hk⟩, hsel⟩ := hc
-  split at hsel
-  · rename_i Ref hi
-    cases n with
-    | zero => assumption
-    | succ n =>
-      have hiv := (meaning_value (he.2 i Ref hi)).1
-      have hkv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
-      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hpost ⊢
-      obtain ⟨hrf, hpost⟩ := hpost
-      refine ⟨hrf, ?_⟩
-      rcases hpost with (hv | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
-      · exact .inl (.inl hv)
-      · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl Φ h⟩)
-      · obtain ⟨_, _, _, _, _, _, _, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hkv step
-        refine .inr ⟨U, _, _, hx, hu, step, hh', ?_⟩
-        cases n with
-        | zero => assumption
-        | succ m =>
-          obtain ⟨hrf, hs'⟩ := hs'
-          refine ⟨hrf, ?_⟩
-          rcases hs' with (hv | hr) | ⟨_, _, _, _, _, step', _, _⟩
-          · exact .inl (.inl hv)
-          · exact absurd hr (val_not_thrown rfl)
-          · exact False.elim (value_no_step rfl step')
-  · contradiction
-
 /-! ### Element writes
 
 `o[b] = v` lowers to one node: the spine `o` holds at its spine field, the
@@ -2485,11 +2551,7 @@ theorem grantIf_any (c : Bool) (g : Footprints.Closed) (p : Footprints.Closed �
 /-- The grades a typed write's rules grant (`fieldWriteWithin`,
 `elemWriteWithin`, `elemVarWriteWithin`), each with its side condition. -/
 def writeGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List Footprints.Closed :=
-  (match HeapExpressionRules.writeSlots t with
-    | some (f, i, k) => grantIf (decide (k < Γ.length) && match Γ[i]? with
-        | some Ref => sourceField G (expand G Ref) f
-        | none => false) ⟨.any, .keep, .keep⟩
-    | none => []) ++
+  ((fieldWriteStep G Γ t).map fun _ => (⟨.any, .keep, .keep⟩ : Footprints.Closed)).toList ++
   (match elemWriteSlots t with
     | some (f, i, b, k) => match Γ[i]?, indexOfBits b with
         | some Ref, some idx =>
@@ -2510,10 +2572,7 @@ theorem writeWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Foo
   congr 1
   · congr 1
     · unfold fieldWriteWithin
-      split
-      · rw [grantIf_any]
-        split <;> simp [Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
-      · rfl
+      cases fieldWriteStep G Γ t <;> simp
     · unfold elemWriteWithin
       split
       · split <;> simp [grantIf_any, List.any_append, Bool.and_assoc, Bool.and_comm, Bool.and_or_distrib_left]
