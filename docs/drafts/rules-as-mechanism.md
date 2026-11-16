@@ -317,6 +317,17 @@ $`|x| = \mathsf{old}(|x|) + 1`$ and arithmetic gives the new one. Equal
 lengths across pushes to two arrays hold again after the second push, by
 the same reasoning through the state in between.
 
+An element write $`x[i] = v`$ has the effect of Write-In and Write-End,
+$`\{x.\mathsf{spine} : \mathsf{grow},\ x.\mathsf{cells} : \mathsf{any}\}`$,
+the spine at $`\mathsf{keep}`$ at a position its contract requires
+(`ExpressionEffects.elemWriteFrame`), and the exact postcondition
+$`|x| = \max(\mathsf{old}(|x|), i+1)`$ (`ElemWritten`), both proved from
+the reduction (`elemWriteStep_sound`); the closed grade the closed check
+reads is the frame's weakening (`elemWriteFrame_closed`). The step's local
+effect carries the frame; the postcondition reaches the knowledge through
+`keepsLengths` below the length (`ElemWritten.lengths`) and
+`atLengthAtoms` at it.
+
 A typed-array write has the frame of rule View-Write, the view spines at
 $`\mathsf{grow}`$, and the support of an array's length is its array
 spine, so a fact about an array's length is kept across the write by

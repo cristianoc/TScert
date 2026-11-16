@@ -1678,9 +1678,9 @@ value written at index `b` (`setElem`), and the spine it yields put back.
 At a listed index the element's location takes the value and the spine is
 unchanged; at a hole or past the end a fresh location is listed. Either way
 every old dense prefix stays and no old location is newly listed: within
-`{value: any, spine: grow}`, and `{value: any, spine: keep}` where the
-index is a required position of the spine's tuple contract
-(FOOTPRINTS.md, "Element writes"). -/
+`{o.spine: grow, o.cells: any}`, the spine at `keep` where the index is a
+required position of the spine's tuple contract (`elemWriteFrame`,
+FOOTPRINTS.md, "Element writes"). -/
 
 /-- The slots of an element write: the object's, its spine field, the index
 and the written value's. -/
@@ -1801,27 +1801,6 @@ theorem placeAt_mem {ls : List (Option Nat)} {k l x : Nat} (hm : some x ∈ plac
     · simp [List.mem_replicate] at hm
   · exact .inr (Option.some.inj hm)
 
-/-- **An element write's change**: within the closed bound `c`, and every
-location but the written object's field `f`, where its spine is, within
-`{value: any, spine: keep}`. The second part is the write's step frame
-(FOOTPRINTS.md, "Argument-path spine regions"); the first, its closed
-weakening. -/
-def SpineWrite (f : PropKey) (o : Tm) (c : Footprints.Closed) (h h' : Heap) : Prop :=
-  c.Holds h h' ∧ ∀ fl, (Footprints.fieldsOf o).lookup f = some fl →
-    Footprints.Closed.HoldsOn ⟨.any, .keep, .keep⟩ (fun l => l ≠ fl) h h'
-
-theorem SpineWrite.refl (f : PropKey) (o : Tm) (c : Footprints.Closed) (h : Heap) : SpineWrite f o c h h :=
-  ⟨Footprints.Closed.Holds.refl c h, fun _ _ => (Footprints.Closed.Holds.refl _ h).on _⟩
-
-/-- The heap after a write taking a fresh location keeps every location but
-the spine's. -/
-theorem elem_grow_kept {h : Heap} {fl : Nat} {v : Val} {ls' : List (Option Nat)} :
-    Footprints.Closed.HoldsOn ⟨.any, .keep, .keep⟩ (fun l => l ≠ fl) h ((h ++ [v]).set fl (.arr ls')) := by
-  refine ⟨by simp, fun l' w hf hw => ?_⟩
-  have hlt := (List.getElem?_eq_some_iff.mp hw).1
-  refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
-  rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
-
 /-- The heap after a write at a listed location of the spine at `fl`, that
 spine put back. -/
 theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Option Nat)}
@@ -1866,6 +1845,127 @@ theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat
   · refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
     rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
 
+
+/-! ### An element write's frame and postcondition
+
+The note *Tolerant frames*, "Exact postconditions": Write-In and Write-End
+change the written array's spine by growth and its cells, nothing else; the
+spine's length is kept below it and one longer at it. -/
+
+/-- **An element write's frame** (the note, Write-In and Write-End,
+`{x.spine: grow, x.cells: any}`), read at the node's slots: the spine
+location of the object in slot `i`, where it holds an array spine, within
+`s`, and the element cells that spine lists, where they hold values, within
+`any`. At a position the spine's contract requires, `s` is `keep`. -/
+def elemWriteFrame (i : Nat) (s : Footprints.Change) : Footprints.Footprint :=
+  [((Footprints.Region.field i arraySpineKey).inCls .arrays, s),
+    ((Footprints.Region.cells i).inCls .values, .any)]
+
+/-- **What an element write leaves**, at the index value `ix`: its frame,
+and the written spine one past the index where that is beyond its length
+and of its length otherwise (the note's exact postconditions: Write-In
+keeps the length, Write-End adds one). -/
+def ElemWritten (i : Nat) (s : Footprints.Change) (ix : Tm) (ρ : Env) (h h' : Heap) : Prop :=
+  Footprints.Post (elemWriteFrame i s) ρ h h' ∧
+  ∀ fl ls b idx, Footprints.spineOf (ρ i) = some fl → h[fl]? = some (.arr ls) → ix = .num b →
+    indexOfBits b = some idx → ∃ ls', h'[fl]? = some (.arr ls') ∧ ls'.length = max ls.length (idx + 1)
+
+/-- **The closed bound of an element write is a weakening of its frame**:
+`{x.spine: s, x.cells: any}` is within `{value: any, spine: s}`. -/
+theorem elemWriteFrame_closed {i : Nat} {s : Footprints.Change} {ρ : Env} {h h' : Heap}
+    (hp : Footprints.Post (elemWriteFrame i s) ρ h h') : (Footprints.Closed.ofSpines .any s).Holds h h' :=
+  Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp
+    (Footprints.Post.mono (cl := fun _ _ => none) (by cases s <;> rfl) (fun _ _ _ _ hc => by cases hc) hp))
+
+/-- **Write-In keeps every spine's length**: where the index is below the
+written spine's length, every spine of the entry heap is one of the same
+length after. -/
+theorem ElemWritten.lengths {i : Nat} {s : Footprints.Change} {ix : Tm} {ρ : Env} {h h' : Heap}
+    {fl idx : Nat} {ls0 : List (Option Nat)} {b : UInt64}
+    (hw : ElemWritten i s ix ρ h h') (hs : Footprints.spineOf (ρ i) = some fl) (hls0 : h[fl]? = some (.arr ls0))
+    (hb : ix = .num b) (hidx : indexOfBits b = some idx) (hlt : idx < ls0.length) :
+    (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h' := by
+  refine ⟨fun _ v _ ha => by cases v <;> simp_all [HeapKnowledge.Changes.alters], fun _ l ls hl => ?_,
+    fun hg => by simp at hg⟩
+  by_cases hf : l = fl
+  · subst hf
+    rw [hls0] at hl; cases hl
+    obtain ⟨ls', hl', hlen⟩ := hw.2 l ls0 b idx hs hls0 hb hidx
+    exact ⟨ls', hl', by omega⟩
+  · obtain ⟨v', hv', ha⟩ := hw.1.2 l _ hl
+    rcases ha with rfl | ⟨e, he, hm, -⟩
+    · exact ⟨ls, hv', rfl⟩
+    · simp only [elemWriteFrame, List.mem_cons, List.not_mem_nil, or_false] at he
+      rcases he with rfl | rfl
+      · simp only [Footprints.Region.mem, Bool.and_eq_true, beq_iff_eq] at hm
+        exact absurd (Option.some.inj (hm.1.symm.trans hs)) hf
+      · simp [Footprints.Region.mem, hl, Footprints.isArr] at hm
+
+/-- The spine location of the object in slot `i`, holding an array spine,
+is in the frame's spine region. -/
+theorem spine_mem_frame {ρ : Env} {i : Nat} {h : Heap} {fl : Nat} {ls : List (Option Nat)}
+    (hs : Footprints.spineOf (ρ i) = some fl) (hfl : h[fl]? = some (.arr ls)) :
+    ((Footprints.Region.field i arraySpineKey).inCls .arrays).mem ρ h fl = true := by
+  simp only [Footprints.Region.mem, Bool.and_eq_true, beq_iff_eq, hfl]
+  exact ⟨hs, rfl⟩
+
+/-- A location the spine of the object in slot `i` lists, holding a value,
+is in the frame's cell region. -/
+theorem cell_mem_frame {ρ : Env} {i : Nat} {h : Heap} {fl l : Nat} {ls : List (Option Nat)} {u : Val}
+    (hs : Footprints.spineOf (ρ i) = some fl) (hfl : h[fl]? = some (.arr ls)) (hm : some l ∈ ls)
+    (hl : h[l]? = some u) (hu : Footprints.isArr u = false) :
+    ((Footprints.Region.cells i).inCls .values).mem ρ h l = true := by
+  have hs' : (Footprints.fieldsOf (ρ i)).lookup arraySpineKey = some fl := hs
+  simp [Footprints.Region.mem, Footprints.spineCells, Footprints.entriesAt, hs', hfl, spineEntries, hm, hl, hu]
+
+/-- **A write at a listed cell is within the frame**: the spine put back
+unchanged and the cell, which held a value, written. -/
+theorem elem_present_written {i : Nat} {s : Footprints.Change} {ix : Tm} {ρ : Env} {h : Heap}
+    {fl l idx : Nat} {ls : List (Option Nat)} {v u : Val}
+    (hs : Footprints.spineOf (ρ i) = some fl) (hfl : h[fl]? = some (.arr ls)) (hlk : ls[idx]? = some (some l))
+    (hl : h[l]? = some u) (hu : Footprints.isArr u = false)
+    (hix : ∀ b idx', ix = .num b → indexOfBits b = some idx' → idx' = idx) :
+    ElemWritten i s ix ρ h ((h.set l v).set fl (.arr ls)) := by
+  have hflt := (List.getElem?_eq_some_iff.mp hfl).1
+  refine ⟨⟨by simp, fun l' w hw => ?_⟩, fun fl' ls' b idx' hs' hfl' hb hidx' => ?_⟩
+  · by_cases hf : l' = fl
+    · subst hf
+      rw [hfl] at hw; cases hw
+      exact ⟨.arr ls, by rw [List.getElem?_set_self (by simpa using hflt)], .inl rfl⟩
+    · by_cases hll : l' = l
+      · subst hll
+        rw [hl] at hw; cases hw
+        refine ⟨v, ?_, .inr ⟨_, List.mem_cons_of_mem _ (List.mem_singleton_self _),
+          cell_mem_frame hs hfl (List.mem_of_getElem? hlk) hl hu, trivial⟩⟩
+        rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_set_self (List.getElem?_eq_some_iff.mp hl).1]
+      · exact ⟨w, by rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_set_ne (Ne.symm hll), hw], .inl rfl⟩
+  · rw [hs] at hs'; cases hs'
+    rw [hfl] at hfl'; cases hfl'
+    obtain rfl := hix b idx' hb hidx'
+    have hlt := (List.getElem?_eq_some_iff.mp hlk).1
+    exact ⟨ls, by rw [List.getElem?_set_self (by simpa using hflt)], by omega⟩
+
+/-- **A write taking a fresh cell is within the frame**: the spine grown by
+`placeAt`, at a hole, at its length or past it, nothing else of the entry
+heap changed. -/
+theorem elem_grow_written {i : Nat} {ix : Tm} {ρ : Env} {h : Heap} {fl idx : Nat} {ls : List (Option Nat)}
+    {v : Val} (hs : Footprints.spineOf (ρ i) = some fl) (hfl : h[fl]? = some (.arr ls))
+    (hk : idx < maxArrayLength) (hix : ∀ b idx', ix = .num b → indexOfBits b = some idx' → idx' = idx) :
+    ElemWritten i .grow ix ρ h ((h ++ [v]).set fl (.arr (placeAt ls idx h.length))) := by
+  have hflt := (List.getElem?_eq_some_iff.mp hfl).1
+  have hc := (Footprints.Closed.holds_iff.mp (elem_grow_holds (v := v) hfl hk)).2
+  refine ⟨⟨by simp, fun l' w hw => ?_⟩, fun fl' ls' b idx' hs' hfl' hb hidx' => ?_⟩
+  · by_cases hf : l' = fl
+    · subst hf
+      obtain ⟨w', hw', hch⟩ := hc l' w hw
+      rw [hfl] at hw; cases hw
+      exact ⟨w', hw', .inr ⟨_, List.mem_cons_self .., spine_mem_frame hs hfl, hch⟩⟩
+    · exact ⟨w, by rw [List.getElem?_set_ne (Ne.symm hf),
+        List.getElem?_append_left (List.getElem?_eq_some_iff.mp hw).1, hw], .inl rfl⟩
+  · rw [hs] at hs'; cases hs'
+    rw [hfl] at hfl'; cases hfl'
+    obtain rfl := hix b idx' hb hidx'
+    exact ⟨_, by rw [List.getElem?_set_self (by simp; omega)], by rw [placeAt_length]; omega⟩
 
 theorem elem_read_inv {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid : Nat} {iv : Tm}
     {v : Tm} {h h' : Heap} {t : Tm} {fl : Nat} (hf : flds.lookup f = some fl)
@@ -1913,11 +2013,11 @@ theorem write_values_not_thrown {f : PropKey} {o u : Tm} {k W} (ho : isVal o = t
 
 /-- The last step of an element write puts the spine back; the heap it
 ends in is the one `P` holds of. -/
-theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid fl : Nat}
-    {ls' : List (Option Nat)} {P : Heap → Prop} {T : Fam} {n U h2}
+theorem write_back {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid fl : Nat}
+    {ls' : List (Option Nat)} {P Q : Heap → Prop} {T : Fam} {n U h2}
     (hfd : flds.lookup f = some fl) (hq : P (h2.set fl (.arr ls')))
     (hs : Safe Ξ T n U h2 (.writeAt f (.objAt flds c oid) (.arr ls'))) :
-    SafePostExc Ξ T (fun h' _ => P h') (fun h' => P h') n U h2 (.writeAt f (.objAt flds c oid) (.arr ls')) := by
+    SafePostExc Ξ T (fun h' _ => P h') Q n U h2 (.writeAt f (.objAt flds c oid) (.arr ls')) := by
   cases n with
   | zero => assumption
   | succ n =>
@@ -1940,23 +2040,39 @@ theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCo
       · exact absurd hr (val_not_thrown rfl)
       · exact False.elim (value_no_step rfl st')
 
-/-- **An element write is within its spine's change**, `keep` at a required
-position and `grow` otherwise, on its normal return and where it raises. -/
-theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i k : Nat}
+theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid fl : Nat}
+    {ls' : List (Option Nat)} {P : Heap → Prop} {T : Fam} {n U h2}
+    (hfd : flds.lookup f = some fl) (hq : P (h2.set fl (.arr ls')))
+    (hs : Safe Ξ T n U h2 (.writeAt f (.objAt flds c oid) (.arr ls'))) :
+    SafePostExc Ξ T (fun h' _ => P h') (fun h' => P h') n U h2 (.writeAt f (.objAt flds c oid) (.arr ls')) :=
+  write_back hfd hq hs
+
+/-- **An element write at a literal index leaves its frame and its exact
+postcondition** (`ElemWritten`), its spine at `keep` at a required position
+and at `grow` otherwise; where it raises, it has written nothing. -/
+theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {i k : Nat}
     {b : UInt64} {idx : Nat} {Ref : Ty ι} {present : Bool} {T : Fam} {ρ n W h}
     (hk : k < Γ.length) (hi : Γ[i]? = some Ref) (hidx : indexOfBits b = some idx)
-    (hst : spineField G (expand G Ref) f idx present = true)
+    (hst : spineField G (expand G Ref) arraySpineKey idx present = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => SpineWrite f (ρ i) (.ofSpines .any (if present then .keep else .grow)) h h')
-      (fun h' => SpineWrite f (ρ i) (.ofSpines .any (if present then .keep else .grow)) h h') n W h
-      (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)))) := by
+    (hs : Safe Ξ T n W h (instantiate 0 ρ
+      (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.num b) (.var k))))) :
+    SafePostExc Ξ T (fun h' _ => ElemWritten i (if present then .keep else .grow) (.num b) ρ h h')
+      (fun h' => h' = h) n W h
+      (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.num b) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   obtain ⟨B, _, L, hmem, hspine, hbag⟩ := spineField_sound hst (he.2 i Ref hi)
   obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
   cases hproj
+  have hsp : Footprints.spineOf (ρ i) = some fl := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hl0] using hfd
+  have hix : ∀ b' idx', Tm.num b = .num b' → indexOfBits b' = some idx' → idx' = idx := by
+    intro b' idx' hb' hi'
+    cases hb'
+    rw [hidx] at hi'
+    exact (Option.some.inj hi').symm
   simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
   rw [hl0] at hs ⊢
   generalize hvk : ρ k = v at hs hvv ⊢
@@ -1967,7 +2083,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, rfl⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
@@ -1982,7 +2098,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, rfl⟩)
   obtain ⟨b', ls, hb', rfl, hcase⟩ := elem_set_inv rfl huv rfl hvv step2
   cases hb'
   unfold spineTy at hspine
@@ -2012,10 +2128,9 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     have hnarr : Footprints.isArr w = false := by
       have := sourceTy_sound hpos hmA
       cases w <;> simp_all [isSourceVal, Footprints.isArr]
-    refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    refine ⟨Footprints.Closed.Holds.mono (by cases present <;> rfl) (elem_present_holds hfu hw hnarr),
-      fun fl' hfl' => (elem_present_holds hfu hw hnarr).on _⟩
+    exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back hfd (elem_present_written hsp hfu hlk hw hnarr hix) hs2⟩
   · -- A fresh location: a required position is listed, so the index is not one.
+    rw [hidx] at hk'; cases hk'
     cases present with
     | true =>
       have hp : idx < Tup.required.length := by simpa using hpresent
@@ -2026,52 +2141,15 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
         rw [List.getElem?_eq_getElem hp]; rfl)
       simp [elemLoc, hidx, hl] at hn
     | false =>
-      refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-      refine ⟨elem_grow_holds hfu (indexOfBits_lt hk'), fun fl' hfl' => ?_⟩
-      simp only [Footprints.fieldsOf, hfd, Option.some.injEq] at hfl'
-      subst hfl'
-      exact elem_grow_kept
-
-
-/-- An element write within `Φ`: at a spine type whose position holds source
-values, `{value: any, spine: keep}` at a required position, else
-`{value: any, spine: grow}`. -/
-def elemWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
-  match elemWriteSlots t with
-  | some (f, i, b, k) => decide (k < Γ.length) && match Γ[i]?, indexOfBits b with
-    | some Ref, some idx =>
-      (spineField G (expand G Ref) f idx true && Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ) ||
-      (spineField G (expand G Ref) f idx false && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ)
-    | _, _ => false
-  | none => false
-
-theorem elem_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : elemWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  unfold elemWriteWithin at hc
-  split at hc
-  case h_2 => contradiction
-  rename_i f i b k hw
-  rw [elemWriteSlots_eq hw] at hs ⊢
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-  obtain ⟨hk, hsel⟩ := hc
-  split at hsel
-  · rename_i Ref idx hi hidx
-    simp only [Bool.or_eq_true, Bool.and_eq_true] at hsel
-    rcases hsel with ⟨hst, hle⟩ | ⟨hst, hle⟩
-    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq.1)
-        (fun _ hq => Footprints.Closed.Holds.mono hle hq.1) (elem_write_core hk hi hidx hst he hh hs)
-    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq.1)
-        (fun _ hq => Footprints.Closed.Holds.mono hle hq.1) (elem_write_core hk hi hidx hst he hh hs)
-  · contradiction
+      exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2,
+        write_back hfd (elem_grow_written hsp hfu (indexOfBits_lt hidx) hix) hs2⟩
 
 /-! ### Element writes at a run-time index
 
 `o[k] = v` with `k` a slot (FOOTPRINTS.md, "Element writes"): where every
 position of the spine's tuple contract holds source values, a tuple of no
 required or optional position whose rest does, the write is within
-`{value: any, spine: grow}` whatever index the slot holds, as a literal
+`{o.spine: grow, o.cells: any}` whatever index the slot holds, as a literal
 index's write is (`elem_write_core`). -/
 
 /-- The slots of an element write at a run-time index: the object's, its
@@ -2138,19 +2216,20 @@ theorem spineFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
   · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
   · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
-/-- **An element write at a run-time index is within its spine's change**,
-`grow`, on its normal return and where it raises. The index decodes, where
-the write steps, to some position of the spine, which every position the
-spine's contract holds source values at. -/
-theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i j k : Nat}
+/-- **An element write at a run-time index leaves its frame and its exact
+postcondition** (`ElemWritten`), its spine at `grow`; where it raises, it
+has written nothing. The index decodes, where the write steps, to some
+position of the spine, which every position the spine's contract holds
+source values at. -/
+theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {i j k : Nat}
     {Ref : Ty ι} {T : Fam} {ρ n W h}
     (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
-    (hst : spineFieldEvery G (expand G Ref) f = true)
+    (hst : spineFieldEvery G (expand G Ref) arraySpineKey = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => SpineWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h')
-      (fun h' => SpineWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h') n W h
-      (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
+    (hs : Safe Ξ T n W h (instantiate 0 ρ
+      (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k))))) :
+    SafePostExc Ξ T (fun h' _ => ElemWritten i .grow (ρ j) ρ h h') (fun h' => h' = h) n W h
+      (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
   obtain ⟨B, _, L, hmem, hevery, hbag⟩ := spineFieldEvery_sound hst (he.2 i Ref hi)
@@ -2158,6 +2237,8 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
   cases hproj
+  have hsp : Footprints.spineOf (ρ i) = some fl := by
+    simpa [Footprints.spineOf, Footprints.fieldsOf, hl0] using hfd
   simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
   rw [hl0] at hs ⊢
   generalize hvk : ρ k = v at hs hvv ⊢
@@ -2169,7 +2250,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, rfl⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
@@ -2183,7 +2264,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, SpineWrite.refl _ _ _ _⟩)
+  · exact .inl (.inr ⟨hr, rfl⟩)
   obtain ⟨b, ls, rfl, rfl, hcase⟩ := elem_set_inv rfl huv hjv hvv step2
   rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
   · -- A listed position: its location held a source value, which is no spine.
@@ -2218,211 +2299,42 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
     have hnarr : Footprints.isArr w = false := by
       have := sourceTy_sound hpos hmA
       cases w <;> simp_all [isSourceVal, Footprints.isArr]
-    refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    exact ⟨Footprints.Closed.Holds.mono rfl (elem_present_holds hfu hw hnarr),
-      fun fl' hfl' => (elem_present_holds hfu hw hnarr).on _⟩
-  · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
-    refine ⟨elem_grow_holds hfu (indexOfBits_lt hk'), fun fl' hfl' => ?_⟩
-    simp only [Footprints.fieldsOf, hfd, Option.some.injEq] at hfl'
-    subst hfl'
-    exact elem_grow_kept
+    exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back hfd (elem_present_written hsp hfu hlk hw hnarr
+      fun b' idx' hb' hi' => by cases hb'; rw [hidx] at hi'; exact (Option.some.inj hi').symm) hs2⟩
+  · exact .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back hfd (elem_grow_written hsp hfu (indexOfBits_lt hk')
+      fun b' idx' hb' hi' => by cases hb'; rw [hk'] at hi'; exact (Option.some.inj hi').symm) hs2⟩
 
 theorem Changes.length_refl (h : Heap) : (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h :=
   ⟨fun _ _ hv _ => hv, fun _ _ ls hls => ⟨ls, hls, rfl⟩, fun hg => by simp at hg⟩
 
 /-- **An element write below its spine's length keeps every spine's
-length** (ARITHMETIC.md, "Linear facts"): it writes a listed element's
-location, which held a source value and no spine, and the spine back
-unchanged, or, at a hole, a spine of the same length (`placeAt_length`). -/
-theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i j k : Nat}
+length** (ARITHMETIC.md, "Linear facts"; the note's Write-In): its exact
+postcondition at an index below the length (`ElemWritten.lengths`). -/
+theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {i j k : Nat}
     {Ref : Ty ι} {T : Fam} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid fl : Nat}
     {ls0 : List (Option Nat)} {b0 : UInt64} {idx : Nat}
     (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
-    (hst : spineFieldEvery G (expand G Ref) f = true)
-    (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup f = some fl) (hls0 : h[fl]? = some (.arr ls0))
+    (hst : spineFieldEvery G (expand G Ref) arraySpineKey = true)
+    (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup arraySpineKey = some fl) (hls0 : h[fl]? = some (.arr ls0))
     (hb0 : ρ j = .num b0) (hidx : indexOfBits b0 = some idx) (hlt : idx < ls0.length)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k))))) :
+    (hs : Safe Ξ T n W h (instantiate 0 ρ
+      (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k))))) :
     SafePostExc Ξ T (fun h' _ => (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h')
       (fun h' => (⟨true, true, .length⟩ : HeapKnowledge.Changes).Holds h h') n W h
-      (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
-  have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
-  have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
-  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := spineFieldEvery_sound hst (he.2 i Ref hi)
-  obtain ⟨flds0, code, oid0, hl0, _, hrec⟩ := hbag
-  obtain ⟨flds1, fl1, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
-    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
-  cases hproj
-  rw [hoi] at hl0; cases hl0
-  rw [hfl] at hfd; cases hfd
-  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
-  rw [hoi] at hs ⊢
-  rw [hb0] at hs ⊢ hjv
-  generalize hvk : ρ k = v at hs hvv ⊢
-  cases n with
-  | zero => assumption
-  | succ n1 =>
-  obtain ⟨hrf, hs⟩ := hs
-  refine ⟨hrf, ?_⟩
-  rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
-  · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, Changes.length_refl _⟩)
-  obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfl step1
-  rw [hls0] at hfu; cases hfu
-  refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
-  cases n1 with
-  | zero => assumption
-  | succ n2 =>
-  obtain ⟨u0, hu0, hcu⟩ := hh.1.2 fl cfl hlookup
-  rw [hls0] at hu0; cases hu0
-  have hmL : meaning G L 1 (trunc 1 (by omega) W) (.arr ls0) := (hagree 1 (by omega) _ _).mp (hcu 1 (by omega))
-  obtain ⟨hrf, hs1⟩ := hs1
-  refine ⟨hrf, ?_⟩
-  rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
-  · simp [isVal] at hbad
-  · exact .inl (.inr ⟨hr, Changes.length_refl _⟩)
-  obtain ⟨b, ls, hbb, hls, hcase⟩ := elem_set_inv rfl rfl hjv hvv step2
-  cases hbb; cases hls
-  have hflt := (List.getElem?_eq_some_iff.mp hls0).1
-  rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
-  · -- A listed position: its location held a source value, which is no spine.
-    have hspine := spineTyEvery_at hevery idx
-    unfold spineTy at hspine
-    split at hspine
-    case h_2 => contradiction
-    rename_i Tup hexp
-    have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
-    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hspine
-    obtain ⟨hpos, -⟩ := hspine
-    have hlk : ls0[idx]? = some (some l) := by
-      simp only [elemLoc, hidx, Option.bind_some] at hl
-      cases hls : ls0[idx]? with
-      | none => simp [hls] at hl
-      | some o => cases o with
-        | none => simp [hls] at hl
-        | some l' => simp [hls] at hl; subst hl; rfl
-    split at hpos
-    case h_2 => contradiction
-    rename_i A hA
-    obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
-      (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
-    obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
-    obtain ⟨w, hw, hcw⟩ := hh.1.2 l c hc
-    have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
-    have hnarr : Footprints.isArr w = false := by
-      have := sourceTy_sound hpos hmA
-      cases w <;> simp_all [isSourceVal, Footprints.isArr]
-    refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfl ?_ hs2⟩
-    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_,
-      fun hg => by simp at hg⟩
-    by_cases hf : l' = fl
-    · subst hf; rw [hls0] at hls'; cases hls'
-      exact ⟨ls0, by rw [List.getElem?_set_self (by simpa using hflt)], rfl⟩
-    · refine ⟨ls', ?_, rfl⟩
-      rw [List.getElem?_set_ne (Ne.symm hf)]
-      by_cases hll : l' = l
-      · subst hll; rw [hw] at hls'; cases hls'; simp [Footprints.isArr] at hnarr
-      · rw [List.getElem?_set_ne (Ne.symm hll)]; exact hls'
-  · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfl ?_ hs2⟩
-    rw [hidx] at hk'; cases hk'
-    refine ⟨fun _ _ _ ha => by cases ‹Val› <;> simp_all [HeapKnowledge.Changes.alters], fun _ l' ls' hls' => ?_,
-      fun hg => by simp at hg⟩
-    by_cases hf : l' = fl
-    · subst hf; rw [hls0] at hls'; cases hls'
-      refine ⟨placeAt ls0 idx h.length, by rw [List.getElem?_set_self (by simp; omega)], ?_⟩
-      rw [placeAt_length]; omega
-    · refine ⟨ls', ?_, rfl⟩
-      rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls').1]
-      exact hls'
+      (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)))) :=
+  have hsp : Footprints.spineOf (ρ i) = some fl := by simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hfl
+  SafePostExc.weaken (fun _ _ hq => hq.lengths hsp hls0 hb0 hidx hlt)
+    (fun _ hq => by rw [hq]; exact Changes.length_refl _) (elem_var_write_core hk hj hi hst he hh hs)
 
-/-- An element write at a run-time index within `Φ`: at a spine type every
-position of which holds source values, `{value: any, spine: grow}`. -/
-def elemVarWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
-  match elemVarWriteSlots t with
-  | some (f, i, j, k) => decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
-    | some Ref => spineFieldEvery G (expand G Ref) f && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ
-    | none => false
-  | none => false
+/-! ### An element write's step
 
-theorem elem_var_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : elemVarWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  unfold elemVarWriteWithin at hc
-  split at hc
-  case h_2 => contradiction
-  rename_i f i j k hw
-  rw [elemVarWriteSlots_eq hw] at hs ⊢
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-  obtain ⟨⟨hk, hj⟩, hsel⟩ := hc
-  split at hsel
-  · rename_i Ref hi
-    simp only [Bool.and_eq_true] at hsel
-    exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hsel.2 hq.1)
-      (fun _ hq => Footprints.Closed.Holds.mono hsel.2 hq.1) (elem_var_write_core hk hj hi hsel.1 he hh hs)
-  · contradiction
-
-/-- A typed write within `Φ`: of a field holding a value, or of an element. -/
-def writeWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
-  fieldWriteWithin G Γ Φ t || elemWriteWithin G Γ Φ t || elemVarWriteWithin G Γ Φ t
-
-/-- **A typed write is within its footprint**, where it raises too. -/
-theorem write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  simp only [writeWithin, Bool.or_eq_true] at hc
-  rcases hc with (hc | hc) | hc
-  · exact field_write_within_exc hc he hh hs
-  · exact elem_write_within_exc hc he hh hs
-  · exact elem_var_write_within_exc hc he hh hs
-
-theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) :=
-  SafePostExc.post (write_within_exc hc he hh hs)
-
-/-! ### An element write's step frame
-
-The write of an array's element changes value-class locations and the
-array's spine alone (`SpineWrite`): its step frame, read at the node's slots,
-is `{value: any}` with the written slot's spine at `any`
-(FOOTPRINTS.md, "Argument-path spine regions"). -/
-
-/-- An element write's step frame: every value-class location, and the spine
-of the array slot `i` holds. -/
-def writeFrame (i : Nat) : Footprints.Footprint :=
-  Footprints.Closed.fp ⟨.any, .keep, .keep⟩ ++ [(.field i arraySpineKey, .any)]
-
-/-- A write of the spine an array value holds is within its step frame. -/
-theorem spineWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : Heap}
-    (hfl : (Footprints.fieldsOf (ρ i)).lookup arraySpineKey = some fl)
-    (hw : SpineWrite arraySpineKey (ρ i) c h h') : Footprints.Post (writeFrame i) ρ h h' := by
-  obtain ⟨hlen, hon⟩ := hw.2 fl hfl
-  refine ⟨hlen, fun l v hv => ?_⟩
-  by_cases hl : l = fl
-  · subst hl
-    obtain ⟨v', hv'⟩ : ∃ v', h'[l]? = some v' := by
-      have := (List.getElem?_eq_some_iff.mp hv).1
-      exact ⟨h'[l], List.getElem?_eq_getElem (by omega)⟩
-    exact ⟨v', hv', .inr ⟨(.field i arraySpineKey, .any), by simp [writeFrame],
-      by simp [Footprints.Region.mem, hfl], trivial⟩⟩
-  · obtain ⟨v', hv', hch⟩ := hon l v hl hv
-    refine ⟨v', hv', ?_⟩
-    rcases (Footprints.Closed.allowed_iff (ρ := ρ) hv).mpr hch with heq | ⟨e, he, hm, hh⟩
-    · exact .inl heq
-    · exact .inr ⟨e, List.mem_append_left _ he, hm, hh⟩
-
-/-- An object a record operand states a field of has the field. -/
-theorem bag_lookup {G : NormalGraph ι} {B : List (Stored (Ty ι))} {s : StorageRole} {L : Ty ι} {fld : PropKey}
-    {n W v} (hmem : (fld, s, L) ∈ B) (hbag : bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v) :
-    ∃ fl, (Footprints.fieldsOf v).lookup fld = some fl := by
-  obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
-  obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
-    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
-  cases hproj
-  exact ⟨fl, by rw [hl0]; simpa [Footprints.fieldsOf] using hfd⟩
+`elemWriteStep` reads once, off the write's typing, the slot an element
+write writes and its spine's change: `grow` at a run-time index whose every
+position holds source values, and at a literal index `keep` where the
+spine's contract requires the position and `grow` where it does not. Its
+frame (`elemWriteFrame`) is the step's effect, and its closed weakening
+(`elemWriteFrame_closed`) the grade the closed check reads. -/
 
 /-- The typing an element write at a run-time index needs for its change. -/
 def varWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i j k : Nat) : Bool :=
@@ -2431,30 +2343,64 @@ def varWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i j k : N
       | some Ref => spineFieldEvery G (expand G Ref) f
       | none => false)
 
-/-- The typing an element write at a literal index needs for its change. -/
-def litWriteOk (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i : Nat) (b : UInt64) (k : Nat) : Bool :=
-  decide (f = arraySpineKey) && decide (k < Γ.length) &&
-    (match Γ[i]?, indexOfBits b with
-      | some Ref, some idx => spineField G (expand G Ref) f idx true || spineField G (expand G Ref) f idx false
-      | _, _ => false)
+/-- The change of its spine an element write at the literal index `b`
+makes: `keep` at a position the spine's contract requires, `grow` at
+another position holding source values. -/
+@[nospecialize] def litWriteChange (G : NormalGraph ι) (Γ : List (Ty ι)) (f : PropKey) (i : Nat) (b : UInt64)
+    (k : Nat) : Option Footprints.Change :=
+  if decide (f = arraySpineKey) && decide (k < Γ.length) then
+    match Γ[i]?, indexOfBits b with
+    | some Ref, some idx =>
+      if spineField G (expand G Ref) f idx true then some .keep
+      else if spineField G (expand G Ref) f idx false then some .grow else none
+    | _, _ => none
+  else none
 
-/-- The array slot an element write of its spine writes, where the write's
-typing gives its change (`elem_write_core`, `elem_var_write_core`). -/
-def writeStep (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Option Nat :=
+theorem litWriteChange_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i : Nat} {b : UInt64}
+    {k : Nat} {s : Footprints.Change} (h : litWriteChange G Γ f i b k = some s) :
+    f = arraySpineKey ∧ k < Γ.length ∧ ∃ Ref idx present, Γ[i]? = some Ref ∧ indexOfBits b = some idx ∧
+      spineField G (expand G Ref) f idx present = true ∧ s = (if present then .keep else .grow) := by
+  unfold litWriteChange at h
+  split at h
+  · rename_i hc
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    refine ⟨hc.1, hc.2, ?_⟩
+    split at h
+    · rename_i Ref idx hi hidx
+      split at h
+      · rename_i ht
+        cases h
+        exact ⟨Ref, idx, true, hi, hidx, ht, rfl⟩
+      · split at h
+        · rename_i hf
+          cases h
+          exact ⟨Ref, idx, false, hi, hidx, hf, rfl⟩
+        · cases h
+    · cases h
+  · cases h
+
+/-- **The slot and the spine change of a typed element write**: of the
+array in a slot whose type gives its spine a contract holding source values
+at the written position (`varWriteOk`, `litWriteChange`). -/
+@[nospecialize] def elemWriteStep (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Option (Nat × Footprints.Change) :=
   match elemVarWriteSlots t with
-  | some (f, i, j, k) => if varWriteOk G Γ f i j k then some i else none
+  | some (f, i, j, k) => if varWriteOk G Γ f i j k then some (i, .grow) else none
   | none => match elemWriteSlots t with
-    | some (f, i, b, k) => if litWriteOk G Γ f i b k then some i else none
+    | some (f, i, b, k) => (litWriteChange G Γ f i b k).map (i, ·)
     | none => none
 
-/-- **An element write is within its step frame**, on its normal return and
-where it raises. -/
-theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
-    {T : Fam} {ρ n W h} (hc : writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePostExc Ξ T (fun h' _ => Footprints.Post (writeFrame i) ρ h h')
-      (fun h' => Footprints.Post (writeFrame i) ρ h h') n W h (instantiate 0 ρ t) := by
-  unfold writeStep at hc
+/-- What `elemWriteStep` reads off a write: its term, at a run-time index
+or a literal one, and the typing of each. -/
+theorem elemWriteStep_cases {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat} {s : Footprints.Change}
+    (hc : elemWriteStep G Γ t = some (i, s)) :
+    (∃ j k Ref, t = .writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)) ∧
+      k < Γ.length ∧ j < Γ.length ∧ Γ[i]? = some Ref ∧
+      spineFieldEvery G (expand G Ref) arraySpineKey = true ∧ s = .grow) ∨
+    (∃ b k Ref idx present,
+      t = .writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.num b) (.var k)) ∧
+      k < Γ.length ∧ Γ[i]? = some Ref ∧ indexOfBits b = some idx ∧
+      spineField G (expand G Ref) arraySpineKey idx present = true ∧ s = (if present then .keep else .grow)) := by
+  unfold elemWriteStep at hc
   split at hc
   · rename_i f i' j k hw
     split at hc
@@ -2464,74 +2410,109 @@ theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
       split at hsel
       · rename_i Ref hi
-        obtain ⟨B, _, L, hmem, -, hbag⟩ := spineFieldEvery_sound hsel (he.2 _ Ref hi)
-        obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
-        rw [elemVarWriteSlots_eq hw] at hs ⊢
-        exact SafePostExc.weaken (fun _ _ hq => spineWrite_post hfl hq) (fun _ hq => spineWrite_post hfl hq)
-          (elem_var_write_core hk hj hi hsel he hh hs)
+        exact .inl ⟨j, k, Ref, elemVarWriteSlots_eq hw, hk, hj, hi, hsel, rfl⟩
       · cases hsel
     · cases hc
   · split at hc
     · rename_i f i' b k hw
-      split at hc
-      · rename_i hcond
-        cases hc
-        simp only [litWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
-        obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
-        split at hsel
-        · rename_i Ref idx hi hidx
-          rw [elemWriteSlots_eq hw] at hs ⊢
-          rcases Bool.or_eq_true_iff.mp hsel with hst | hst
-          all_goals
-            obtain ⟨B, _, L, hmem, -, hbag⟩ := spineField_sound hst (he.2 _ Ref hi)
-            obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
-            exact SafePostExc.weaken (fun _ _ hq => spineWrite_post hfl hq) (fun _ hq => spineWrite_post hfl hq)
-              (elem_write_core hk hi hidx hst he hh hs)
-        · cases hsel
-      · cases hc
+      obtain ⟨s', hs', he⟩ := Option.map_eq_some_iff.mp hc
+      cases he
+      obtain ⟨rfl, hk, Ref, idx, present, hi, hidx, hst, rfl⟩ := litWriteChange_sound hs'
+      exact .inr ⟨b, k, Ref, idx, present, elemWriteSlots_eq hw, hk, hi, hidx, hst, rfl⟩
     · cases hc
 
+/-- The index an element write's term writes at. -/
+def writeIndexOf : Tm → Tm
+  | .writeAt _ _ (.setElem _ ix _) => ix
+  | _ => .undef
+
+/-- **A typed element write leaves its frame and its exact postcondition**
+(`ElemWritten`) on normal return, and raises, where it does, before it
+writes: at its entry heap. -/
+theorem elemWriteStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
+    {s : Footprints.Change} {T : Fam} {ρ n W h} (hc : elemWriteStep G Γ t = some (i, s))
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => ElemWritten i s (instantiate 0 ρ (writeIndexOf t)) ρ h h') (fun h' => h' = h)
+      n W h (instantiate 0 ρ t) := by
+  rcases elemWriteStep_cases hc with ⟨j, k, Ref, rfl, hk, hj, hi, hst, rfl⟩ |
+    ⟨b, k, Ref, idx, present, rfl, hk, hi, hidx, hst, rfl⟩
+  · have hix : instantiate 0 ρ (.var j) = ρ j := by simp [instantiate]
+    simp only [writeIndexOf, hix]
+    exact elem_var_write_core hk hj hi hst he hh hs
+  · simp only [writeIndexOf, instantiate]
+    exact elem_write_core hk hi hidx hst he hh hs
+
+/-- The spine change `elemWriteStep` reads is within `grow`. -/
+theorem elemWriteStep_le_grow {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat} {s : Footprints.Change}
+    (hc : elemWriteStep G Γ t = some (i, s)) :
+    (Footprints.Closed.ofSpines .any s).le ⟨.any, .grow, .grow⟩ = true := by
+  rcases elemWriteStep_cases hc with ⟨-, -, -, -, -, -, -, -, rfl⟩ | ⟨-, -, -, -, present, -, -, -, -, -, rfl⟩
+  · rfl
+  · cases present <;> rfl
+
+/-- **A typed element write is within `{value: any, spine: s}`**, on normal
+return and where it raises: its frame's closed weakening
+(`elemWriteFrame_closed`). -/
+theorem elemWriteStep_closed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
+    {s : Footprints.Change} {T : Fam} {ρ n W h} (hc : elemWriteStep G Γ t = some (i, s))
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => (Footprints.Closed.ofSpines .any s).Holds h h')
+      (fun h' => (Footprints.Closed.ofSpines .any s).Holds h h') n W h (instantiate 0 ρ t) :=
+  SafePostExc.weaken (fun _ _ hq => elemWriteFrame_closed hq.1)
+    (fun _ hq => by rw [hq]; exact Footprints.Closed.Holds.refl _ h) (elemWriteStep_sound hc he hh hs)
+
+/-- An element write within `Φ`: its closed grade `{value: any, spine: s}`
+within `Φ`. -/
+def elemWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  match elemWriteStep G Γ t with
+  | some (_, s) => (Footprints.Closed.ofSpines .any s).le Φ
+  | none => false
+
+theorem elem_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : elemWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  unfold elemWriteWithin at hc
+  split at hc
+  · rename_i i s hw
+    exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hc hq)
+      (fun _ hq => Footprints.Closed.Holds.mono hc hq) (elemWriteStep_closed hw he hh hs)
+  · cases hc
+
+/-- A typed write within `Φ`: of a field holding a value, or of an element. -/
+def writeWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  fieldWriteWithin G Γ Φ t || elemWriteWithin G Γ Φ t
+
+/-- **A typed write is within its footprint**, where it raises too. -/
+theorem write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  simp only [writeWithin, Bool.or_eq_true] at hc
+  rcases hc with hc | hc
+  · exact field_write_within_exc hc he hh hs
+  · exact elem_write_within_exc hc he hh hs
+
+theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) :=
+  SafePostExc.post (write_within_exc hc he hh hs)
+
 /-- **An element write grows the spines** (ARITHMETIC.md, "Linear facts"):
-whatever its index, it is within `{value: any, spine: grow}`, so it alters
+its closed grade is within `{value: any, spine: grow}`, so it alters
 locations holding objects and numbers and leaves every spine no shorter and
 within `maxArrayLength` where it was (`HeapKnowledge.Changes.ofClosed`). -/
-theorem writeStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
-    {T : Fam} {ρ n W h} (hc : writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+theorem elemWriteStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm}
+    {w : Nat × Footprints.Change} {T : Fam} {ρ n W h} (hc : elemWriteStep G Γ t = some w)
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePost Ξ T (fun h' _ => (HeapKnowledge.Changes.ofClosed ⟨.any, .grow, .grow⟩).Holds h h') n W h
       (instantiate 0 ρ t) := by
-  unfold writeStep at hc
-  split at hc
-  · rename_i f i' j k hw
-    split at hc
-    · rename_i hcond
-      simp only [varWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
-      obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
-      split at hsel
-      · rename_i Ref hi
-        rw [elemVarWriteSlots_eq hw] at hs ⊢
-        exact SafePostExc.post (SafePostExc.weaken (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds hq.1)
-          (fun _ hq => HeapKnowledge.Changes.ofClosed_holds hq.1) (elem_var_write_core hk hj hi hsel he hh hs))
-      · cases hsel
-    · cases hc
-  · split at hc
-    · rename_i f i' b k hw
-      split at hc
-      · rename_i hcond
-        simp only [litWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
-        obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
-        split at hsel
-        · rename_i Ref idx hi hidx
-          rw [elemWriteSlots_eq hw] at hs ⊢
-          rcases Bool.or_eq_true_iff.mp hsel with hst | hst
-          all_goals
-            exact SafePostExc.post (SafePostExc.weaken
-              (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow, .grow⟩) (by rfl) hq.1))
-              (fun _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow, .grow⟩) (by rfl) hq.1))
-              (elem_write_core hk hi hidx hst he hh hs))
-        · cases hsel
-      · cases hc
-    · cases hc
+  obtain ⟨i, s⟩ := w
+  exact SafePostExc.post (SafePostExc.weaken
+    (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (elemWriteStep_le_grow hc) hq))
+    (fun _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (elemWriteStep_le_grow hc) hq))
+    (elemWriteStep_closed hc he hh hs))
 
 
 /-! ## A write's local effect
@@ -2549,39 +2530,21 @@ theorem grantIf_any (c : Bool) (g : Footprints.Closed) (p : Footprints.Closed �
   cases c <;> simp [grantIf]
 
 /-- The grades a typed write's rules grant (`fieldWriteWithin`,
-`elemWriteWithin`, `elemVarWriteWithin`), each with its side condition. -/
+`elemWriteWithin`): each its frame's closed weakening, where the write's
+step reads it. -/
 def writeGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List Footprints.Closed :=
   ((fieldWriteStep G Γ t).map fun _ => (⟨.any, .keep, .keep⟩ : Footprints.Closed)).toList ++
-  (match elemWriteSlots t with
-    | some (f, i, b, k) => match Γ[i]?, indexOfBits b with
-        | some Ref, some idx =>
-          grantIf (decide (k < Γ.length) && spineField G (expand G Ref) f idx true) ⟨.any, .keep, .keep⟩ ++
-          grantIf (decide (k < Γ.length) && spineField G (expand G Ref) f idx false) ⟨.any, .grow, .grow⟩
-        | _, _ => []
-    | none => []) ++
-  (match elemVarWriteSlots t with
-    | some (f, i, j, k) => grantIf (decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
-        | some Ref => spineFieldEvery G (expand G Ref) f
-        | none => false) ⟨.any, .grow, .grow⟩
-    | none => [])
+  ((elemWriteStep G Γ t).map fun w => Footprints.Closed.ofSpines .any w.2).toList
 
 /-- **A typed write's check is its grades' below the bound** (proved). -/
 theorem writeWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) :
     writeWithin G Γ Φ t = (writeGrades G Γ t).any (·.le Φ) := by
   simp only [writeWithin, writeGrades, List.any_append]
   congr 1
-  · congr 1
-    · unfold fieldWriteWithin
-      cases fieldWriteStep G Γ t <;> simp
-    · unfold elemWriteWithin
-      split
-      · split <;> simp [grantIf_any, List.any_append, Bool.and_assoc, Bool.and_comm, Bool.and_or_distrib_left]
-      · rfl
-  · unfold elemVarWriteWithin
-    split
-    · rw [grantIf_any]
-      split <;> simp [Bool.and_assoc, Bool.and_comm]
-    · rfl
+  · unfold fieldWriteWithin
+    cases fieldWriteStep G Γ t <;> simp
+  · unfold elemWriteWithin
+    rcases elemWriteStep G Γ t with _ | ⟨i, s⟩ <;> simp
 
 /-- The grade an initializing write's rule grants (`initWriteWithin`). -/
 def initWriteGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (t : Tm) :

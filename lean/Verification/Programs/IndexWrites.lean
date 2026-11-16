@@ -2815,7 +2815,7 @@ def writeCarried (a : Nat) (first : Nat → String → Bool) (k : Knowledge) : L
 
 /-- The facts a write at a checked index states of its spine, at the entry's
 slots (`write-bound`, `write-append`): the index below the length; and, where
-the write grows the spines (`ExpressionEffects.writeStep`) and the facts
+the write grows the spines (`ExpressionEffects.elemWriteStep`) and the facts
 entail the index at least the length, the facts `writeCarried` composes. -/
 def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) :
     List IndexAtom :=
@@ -2823,7 +2823,7 @@ def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Kn
     ((if termDefined k.indices (Term.length a) then
         [{ fact := .linear (.le [(Term.value i, 1), (Term.length a, -1)] (-1)) }] else []) ++
     let carried := writeCarried a (HeapExpressionRules.stableFirst G j.context) k
-    if !carried.isEmpty && (ExpressionEffects.writeStep G j.context j.term).isSome &&
+    if !carried.isEmpty && (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then carried
     else [])
 
@@ -2871,18 +2871,18 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   -- `write-append`: the composition with the length one longer.
   have happ : SafePost (excOf G) (meaning G j.type)
       (fun h' _ => IndexHolds ε (if !(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
-        (ExpressionEffects.writeStep G j.context j.term).isSome &&
+        (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
           writeCarried a (HeapExpressionRules.stableFirst G j.context) k else []) ρ h')
       n W h (instantiate 0 ρ j.term) := by
     by_cases hcond : (!(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
-        (ExpressionEffects.writeStep G j.context j.term).isSome &&
+        (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0)) = true
     · rw [if_pos hcond]
       obtain ⟨⟨-, hws⟩, hent⟩ := Bool.and_eq_true_iff.mp hcond |>.imp_left Bool.and_eq_true_iff.mp
       obtain ⟨wi, hwi⟩ := Option.isSome_iff_exists.mp hws
       have hgrow := HeapExpressionRules.stableFirst_frame he hh
-        (ExpressionEffects.writeStep_grow hwi he hh (HeapObservations.erase hst))
+        (ExpressionEffects.elemWriteStep_grow hwi he hh (HeapObservations.erase hst))
       refine weaken (fun h' _ hq => ?_) (safePost_and hst hgrow)
       obtain ⟨⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, -, hgr⟩, hch, hfirst⟩ := hq
       -- The index at least the length, at the entry.
@@ -3065,68 +3065,42 @@ def writeValue (t : Tm) : Option Nat :=
 /-- **An element write whose typing gives its change writes a spine field**:
 its array slot holds an object with a spine, its index is a value, and it
 writes the value of `writeValue`'s slot. -/
-theorem writeStep_spine [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat} {ρ n W}
-    (hc : ExpressionEffects.writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) :
-    ∃ flds cd oid fl iv v, ρ i = .objAt flds cd oid ∧ flds.lookup arraySpineKey = some fl ∧ isVal iv = true ∧
+theorem writeStep_spine [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm}
+    {w : Nat × Footprints.Change} {ρ n W}
+    (hc : ExpressionEffects.elemWriteStep G Γ t = some w) (he : EnvOk G Γ ρ n W) :
+    ∃ flds cd oid fl iv v, ρ w.1 = .objAt flds cd oid ∧ flds.lookup arraySpineKey = some fl ∧ isVal iv = true ∧
       writeValue t = some v ∧ v < Γ.length ∧
       instantiate 0 ρ t = .writeAt arraySpineKey (.objAt flds cd oid)
         (.setElem (.readAt arraySpineKey (.objAt flds cd oid)) iv (ρ v)) := by
-  unfold ExpressionEffects.writeStep at hc
-  split at hc
-  · rename_i f i' j k hw
-    split at hc
-    · rename_i hcond
-      cases hc
-      simp only [ExpressionEffects.varWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
-      obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
-      split at hsel
-      · rename_i Ref hi
-        obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.spineFieldEvery_sound hsel (he.2 _ Ref hi)
-        obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
-        obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
-          recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
-        cases hproj
-        refine ⟨flds, code, oid, fl, ρ j, k, hl0, hfd,
-          (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1, by simp [writeValue, hw], hk, ?_⟩
-        rw [ExpressionEffects.elemVarWriteSlots_eq hw]
-        simp [instantiate, hl0]
-      · cases hsel
-    · cases hc
-  · rename_i hnv
-    split at hc
-    · rename_i f i' b k hw
-      split at hc
-      · rename_i hcond
-        cases hc
-        simp only [ExpressionEffects.litWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
-        obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
-        split at hsel
-        · rename_i Ref idx hi hidx
-          have hobj : ∃ flds code oid fl, ρ i = .objAt flds code oid ∧ flds.lookup arraySpineKey = some fl := by
-            rcases Bool.or_eq_true_iff.mp hsel with hst | hst
-            all_goals
-              obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.spineField_sound hst (he.2 _ Ref hi)
-              obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
-              obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
-                recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
-              cases hproj
-              exact ⟨flds, code, oid, fl, hl0, hfd⟩
-          obtain ⟨flds, code, oid, fl, hl0, hfd⟩ := hobj
-          refine ⟨flds, code, oid, fl, .num b, k, hl0, hfd, rfl, by simp [writeValue, hnv, hw], hk, ?_⟩
-          rw [ExpressionEffects.elemWriteSlots_eq hw]
-          simp [instantiate, hl0]
-        · cases hsel
-      · cases hc
-    · cases hc
+  obtain ⟨i, s⟩ := w
+  rcases ExpressionEffects.elemWriteStep_cases hc with ⟨j, k, Ref, rfl, hk, hj, hi, hsel, -⟩ |
+    ⟨b, k, Ref, idx, present, rfl, hk, hi, -, hst, -⟩
+  · obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.spineFieldEvery_sound hsel (he.2 _ Ref hi)
+    obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+    obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+    cases hproj
+    refine ⟨flds, code, oid, fl, ρ j, k, hl0, hfd,
+      (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1,
+      by simp [writeValue, ExpressionEffects.elemVarWriteSlots], hk, ?_⟩
+    simp [instantiate, hl0]
+  · obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.spineField_sound hst (he.2 _ Ref hi)
+    obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+    obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+    cases hproj
+    refine ⟨flds, code, oid, fl, .num b, k, hl0, hfd, rfl,
+      by simp [writeValue, ExpressionEffects.elemVarWriteSlots, ExpressionEffects.elemWriteSlots], hk, ?_⟩
+    simp [instantiate, hl0]
 
 /-- The knowledge after a step that is an element write at any index: `out`,
 and every atom the change `{value: any, spine: grow}` keeps, a linear fact
 whose length terms have non-positive coefficients and whose other terms read
 no location holding an object or a number, or locations a stable field holds
-(`ExpressionEffects.writeStep_grow`, `stable-first`); and the cell facts the
+(`ExpressionEffects.elemWriteStep_grow`, `stable-first`); and the cell facts the
 write's change respects (`writtenCells`, `weak-update`). -/
 def growOutput [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k out : Knowledge) : Knowledge :=
-  if (ExpressionEffects.writeStep G j.context j.term).isSome then
+  if (ExpressionEffects.elemWriteStep G j.context j.term).isSome then
     withCells (withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow, .grow⟩) (HeapExpressionRules.stableFirst G j.context)
       k.indices))
       (match writeValue j.term with
@@ -3152,7 +3126,7 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
       exact writtenCells_sound hk hfd hiv (fun R' hR' => HeapExpressionRules.valuesAt_sound hR' he hk) hw hh hsafe
     · exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)
         (HeapExpressionRules.stableFirst_frame he hh
-          (ExpressionEffects.writeStep_grow hi he hh (HeapObservations.erase hs)))
+          (ExpressionEffects.elemWriteStep_grow hi he hh (HeapObservations.erase hs)))
   · exact hs
 
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}

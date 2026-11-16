@@ -842,29 +842,45 @@ returns the spine with it listed there (`placeAt`). Either way every old
 dense prefix stays and the spine lists no old element location it did not
 list (proved: `placeAt_dense`, `placeAt_mem`).
 
-Lean accepts the node (`elemWriteWithin`) where the object's slot type gives
-its spine field a tuple contract whose position at the index holds source
-values:
+Lean reads the node's step once (`elemWriteStep`): the object's slot and
+the change its spine takes, where the object's slot type gives its spine
+field a tuple contract whose position at the index holds source values.
+The step's frame is the note's Write-In and Write-End effect
+(`elemWriteFrame`): the spine location of $`o`$, where it holds an array
+spine, within $`\mathsf{grow}`$, at a position the contract requires within
+$`\mathsf{keep}`$, and the element cells that spine lists, where they hold
+values, within $`\mathsf{any}`$:
 
 ```math
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad T_{b}\ \text{source-valued}}
-     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{grow}\}}\ \textsf{elem-write}
+     {o[b] = v\ \text{within}\ \{o.\mathsf{spine}{:}\,\mathsf{grow},\ o.\mathsf{cells}{:}\,\mathsf{any}\}}\ \textsf{elem-write}
 \qquad
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad b < |T.\mathsf{required}|\qquad T_{b}\ \text{source-valued}}
-     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{keep}\}}\ \textsf{elem-write-present}
+     {o[b] = v\ \text{within}\ \{o.\mathsf{spine}{:}\,\mathsf{keep},\ o.\mathsf{cells}{:}\,\mathsf{any}\}}\ \textsf{elem-write-present}
 ```
 
-The theorem (`elem_write_core`, through `elem_present_holds` and
-`elem_grow_holds`) assumes the node's ordinary safety, `Safe` of its term at
+Its exact postcondition (`ElemWritten`) is the written spine's length,
+$`|o|' = \max(|o|, b+1)`$: kept below the length (the note's Write-In), one
+longer at it (Write-End), and $`b+1`$ past it, the positions between the
+old length and $`b`$ holes.
+
+The theorem (`elem_write_core`, through `elem_present_written` and
+`elem_grow_written`) assumes the node's ordinary safety, `Safe` of its term at
 the node's type from an environment meeting its slot types and a heap
-meeting its world, and concludes the footprint of every heap the node
-returns in, and, in the calculus, of every heap it raises in: once its first
-step has read the spine, no step of the term raises. A required position is
-listed in every spine its contract admits, so the write there takes the
-present case. A length alone proves no presence, since a hole may lie below
-it, and no other presence evidence is read. A spine write through any other
-operation (`length` assignment, `delete` of an element) is outside the
-rule.
+meeting its world, and concludes the frame and the postcondition of every
+heap the node returns in, and the entry heap as every heap it raises in:
+once its first step has read the spine, no step of the term raises. A
+required position is listed in every spine its contract admits, so the
+write there takes the present case. A length alone proves no presence,
+since a hole may lie below it, and no other presence evidence is read. A
+spine write through any other operation (`length` assignment, `delete` of
+an element) is outside the rule.
+
+The closed check reads the frame's closed weakening,
+$`\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,s\}`$ with $`s`$
+the spine's change (`elemWriteFrame_closed`, `elemWriteWithin`): the
+cells the frame changes hold values, and the location it grows an array
+spine.
 
 **Writable arrays.** The calculus's `setElem` always succeeds at an array
 index, where JavaScript's assignment to a frozen, sealed or non-extensible
@@ -874,22 +890,22 @@ every array the program writes is writable and extensible
 
 A write at a key the program computes, its index a slot
 ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)),
-is within the same `grow` footprint where every position of the spine's
-contract holds source values, a tuple of no required or optional position
-whose rest does (`elemVarWriteWithin`, proved: `elem_var_write_core`): where
-the write steps, its index decodes to some position, and the rest's contract
-gives that position's.
+has the same frame at $`\mathsf{grow}`$, and the same postcondition, where
+every position of the spine's contract holds source values, a tuple of no
+required or optional position whose rest does (`elemWriteStep`, proved:
+`elem_var_write_core`): where the write steps, its index decodes to some
+position, and the rest's contract gives that position's.
 
 ```math
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(\langle[\,],[\,],E\rangle)\qquad E\ \text{source-valued}}
-     {o[k] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{grow}\}}\ \textsf{elem-write-slot}
+     {o[k] = v\ \text{within}\ \{o.\mathsf{spine}{:}\,\mathsf{grow},\ o.\mathsf{cells}{:}\,\mathsf{any}\}}\ \textsf{elem-write-slot}
 ```
 
-Each rule's footprint is also the node's frame condition for index facts: the
-node keeps every fact the change $`(\top,\top,\mathsf{grow})`$ keeps, the
-lower bounds of every length, the written array's included
+The frame's closed weakening is also the node's frame condition for index
+facts: the node keeps every fact the change $`(\top,\top,\mathsf{grow})`$
+keeps, the lower bounds of every length, the written array's included
 ([index facts](#index-facts), `IndexWrites.growOutput`, proved:
-`ExpressionEffects.writeStep_grow`).
+`ExpressionEffects.elemWriteStep_grow`).
 
 The walk proposes `{value: any, spine: grow}` for an element write
 (`Synthesis.targetWrite`). `map-stable-element-write` is the case.
@@ -1310,9 +1326,10 @@ checks a provenance table at entry, every normal edge and every handler.
 A node is a provenance step, a slot copy (`checkCopy_sound`) or a read
 through a `@stable` field the slot's type states present (`checkRead_sound`),
 or a step whose local effect the common check `stepWithin` includes:
-`closedStep_ok`, `callStep_ok` (its signature's frames), `writeStep_ok` (from
-`writeStep_sound`, `ExpressionEffects.lean`, whose element-write cores
-state the written spine, `SpineWrite`) and `fieldStep_ok` (a typed field
+`closedStep_ok`, `callStep_ok` (its signature's frames), `writeStep_ok` (an
+element write's frame, the note's Write-In and Write-End
+$`\{x.\mathsf{spine}:\mathsf{grow},\ x.\mathsf{cells}:\mathsf{any}\}`$ at the
+node's slots, from `elemWriteStep_sound`) and `fieldStep_ok` (a typed field
 write's frame, the note's Field-Write $`\{x.f:\mathsf{any}\}`$ at the node's
 slots, from `fieldWriteStep_sound`). Each node also passes its
 freshness check (`checkFresh_sound`, [fresh array

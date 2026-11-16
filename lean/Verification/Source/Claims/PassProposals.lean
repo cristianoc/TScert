@@ -141,7 +141,7 @@ theorem closedParts_at (G : NormalGraph ι) (images : InstanceImageCheck G) (sum
 `thr`: the least of its alternatives, each rebased to the entry through the
 regional facts `rs` and read in the closed language (`ofFrame`): the closed
 check (`checkClosedNode`), a call's frame (`callStep`), an element write's
-frame (`writeStep`), a field write's (`fieldWriteStep`). -/
+frame (`elemWriteStep`), a field write's (`fieldWriteStep`). -/
 def regional (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ReadSummary ι))
     (rs : SinglePass.RegionState) (cEv : NodeEvidence ι) (t : Tm) (thr : Bool)
     (parts : ClosedParts := closedParts G images sums cEv t) : Option Closed :=
@@ -152,8 +152,8 @@ def regional (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (
     let n := ofFrame (Footprints.rebaseAll ev se.normal)
     if thr then joinOpt n (ofFrame (Footprints.rebaseAll ev se.raised)) else n
   let call := (GraphCode.ArgumentRegionGraph.callStep G images sums cEv t).bind rebased
-  let write := (ExpressionEffects.writeStep G (ControlFlow.entry cEv) t).bind fun i =>
-    rebased (GraphCode.ArgumentRegionGraph.writeStepEffect i)
+  let write := (ExpressionEffects.elemWriteStep G (ControlFlow.entry cEv) t).bind fun w =>
+    rebased (GraphCode.ArgumentRegionGraph.writeStepEffect w)
   let field := (ExpressionEffects.fieldWriteStep G (ControlFlow.entry cEv) t).bind fun w =>
     rebased (GraphCode.ArgumentRegionGraph.fieldStepEffect w)
   ascending.find? fun Φ => [closed, call, write, field].any fun a => a.any (·.le Φ)

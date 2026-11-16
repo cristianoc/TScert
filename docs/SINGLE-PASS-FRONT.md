@@ -315,7 +315,7 @@ rules establish, `top` where none bounds it (`PassProposals.localSummary`),
 its normal exit unreached where its result type is empty.
 On the regional route it is the least of the step's alternatives (the
 closed check, a call's frame, an element write's frame:
-`ArgumentRegionGraph.checkClosedNode`, `callStep`, `writeStep`), on normal
+`ArgumentRegionGraph.checkClosedNode`, `callStep`, `elemWriteStep`), on normal
 return and with the throw bounded, each frame rebased to the entry through
 the regional facts (`Footprints.rebaseAll`) and read in the closed language.
 A route's summary composes its steps' local summaries over the graph

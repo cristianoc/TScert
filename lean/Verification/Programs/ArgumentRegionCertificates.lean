@@ -137,18 +137,24 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
     · cases hc
   · cases hc
 
-/-- An element write: its frame at the node's slots (`writeFrame`). -/
-def writeStepEffect (i : Nat) : StepEffect := ⟨some, ExpressionEffects.writeFrame i, ExpressionEffects.writeFrame i⟩
+/-- An element write: its frame at the node's slots, `{x.spine: s,
+x.cells: any}` (`elemWriteFrame`), on normal return; a throw leaves the
+heap. -/
+def writeStepEffect (w : Nat × Footprints.Change) : StepEffect :=
+  ⟨some, ExpressionEffects.elemWriteFrame w.1 w.2, []⟩
 
-theorem writeStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι} {t : Tm} {thr : Bool} {i : Nat}
-    (hc : ExpressionEffects.writeStep G (entry c) t = some i) (ht : ExpressionOk G c t) :
-    StepOk G c t (writeStepEffect i) thr := by
+theorem writeStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι} {t : Tm} {thr : Bool}
+    {w : Nat × Footprints.Change}
+    (hc : ExpressionEffects.elemWriteStep G (entry c) t = some w) (ht : ExpressionOk G c t) :
+    StepOk G c t (writeStepEffect w) thr := by
+  obtain ⟨i, s⟩ := w
   intro ε n W h ρ he hi hk hw hh hr hρ
   refine ⟨ρ, fun p s hp => by cases hp; rfl, ?_⟩
   have hs := HeapObservations.erase (HeapObservations.consequence
     (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr hρ))
-  exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
-    (ExpressionEffects.writeStep_sound hc he hh hs)
+  exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1)
+    (fun _ hq _ => by rw [hq]; exact Footprints.Post.refl _ _ _)
+    (ExpressionEffects.elemWriteStep_sound hc he hh hs)
 
 /-- A field write: its frame at the node's slots, `{x.f: any}`
 (`fieldWriteFrame`), on normal return; a throw leaves the heap. -/
@@ -172,7 +178,7 @@ write's, a field write's. -/
     (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) : List StepEffect :=
   (if checkClosedNode G images sums Φ c t thr then [closedStep Φ] else []) ++
     (callStep G images sums c t).toList ++
-    ((ExpressionEffects.writeStep G (entry c) t).map writeStepEffect).toList ++
+    ((ExpressionEffects.elemWriteStep G (entry c) t).map writeStepEffect).toList ++
     ((ExpressionEffects.fieldWriteStep G (entry c) t).map fieldStepEffect).toList
 
 theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
@@ -189,8 +195,8 @@ theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}
       exact closedStep_ok hc ht hsums
     · cases hm
   · exact callStep_ok (Option.mem_toList.mp hm) hsums
-  · obtain ⟨i, hi, rfl⟩ := Option.map_eq_some_iff.mp (Option.mem_toList.mp hm)
-    exact writeStep_ok hi ht
+  · obtain ⟨w, hw, rfl⟩ := Option.map_eq_some_iff.mp (Option.mem_toList.mp hm)
+    exact writeStep_ok hw ht
   · obtain ⟨w, hw, rfl⟩ := Option.map_eq_some_iff.mp (Option.mem_toList.mp hm)
     exact fieldStep_ok hw ht
 
