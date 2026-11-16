@@ -196,6 +196,37 @@ A function that verifies only through something the paper does not state
 is put to the owner with its consequences: the paper gains the rule, or
 the function stops verifying.
 
+### What each step changes
+
+The table gives, for each step above, the kind of change it is, the
+verdicts it is expected to change, and what acceptance decides by the
+paper's rules once the step is done.
+
+| Step | Kind of change | Verdicts expected to change | After it, decided by the paper's rules |
+|---|---|---|---|
+| 1 | a restructuring of code that runs | none | nothing more: the same deciders, over shared definitions |
+| 2 | a change of a check that runs | gains only: more regions are found disjoint; none lost | whether two regions are disjoint |
+| 3 | a refusal added; the class tags deleted | an annotation with a region at a path of another kind becomes refused; nothing else | which regions are admitted |
+| 4 | a change of contracts that run | gains: a narrower effect keeps more facts. A loss is possible where another part relied on a wide effect; it is a defect of that part | the effect of each native step |
+| 5 | a change of inferred effects | gains: the callers of a wrapper keep more facts. A loss is possible as in step 4 | the effect of each function |
+| 6 | a route deleted | none | which facts are kept across a call |
+| 7 | deciders replaced | none intended, family by family | the facts across a write; quantified facts |
+| 8 | the pass's transfer replaced | ordinary edges none; handlers and framed loops gain | the facts along control flow |
+| 9 | a language replaced | none intended; a risk where the two languages give a fact different meanings | how every fact is stated |
+| 10 | the premise of the acceptance theorem changed | none | the verdict |
+| 11 | | | everything, and nothing else |
+
+A step is followed when its "Done when" and "Deleted" conditions hold in
+the sources and the verdict changes observed are those this table expects.
+A verdict change the table does not expect is investigated before the next
+step; a loss is a defect in every step, the refusals step 3 intends
+excepted.
+
+Steps 1 to 6 change the deciders that run and what they share. The
+paper's rules as a derivation system (`Parity.Derivation`, its checker and
+its soundness theorem) are applied by acceptance from step 7 on: the
+deciders steps 7 and 8 name run until those steps replace them.
+
 Step 5 is before step 6 because a postcondition of `push` does not pass
 through a wrapper's interface: only an effect does.
 
