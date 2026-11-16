@@ -311,6 +311,21 @@ pass's tree check holds. -/
     split at hc
     · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh href
     · cases hc
+  normal := fun _ _ e _ _ => stepsNormal e
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    obtain ⟨hord, hwr⟩ := stepsNormal_empty hn
+    split at hc
+    · rename_i hok
+      have hs := erase (passSteps_sound hok hc hcodes hsums he hk hw hh href)
+      rcases passSteps_value hok hc with hu | ⟨p, rfl, -⟩ | ⟨i, p, fld, Ref, rfl, -, ht, hi, -⟩
+      · exact base_keeps hu hord hwr hcodes hsums he hk hw hh href
+      · exact absurd rfl (hord p)
+      · refine inspection_keeps hs ?_ hw hh
+        rw [ht]
+        simpa [instantiate, Purity.inspectTerm] using
+          slot_inspect he (List.getElem?_eq_some_iff.mp hi).1
+    · cases hc
 
 /-- The layers of `Checker.ordinary` over a base checker. -/
 @[nospecialize] def ordinaryOver {G : NormalGraph ι} {images : InstanceImageCheck G} (base : Checker G images) :
@@ -476,6 +491,12 @@ theorem pass_select_whole {pc : SinglePass.PassChecker G images} {j : Sequent ι
     (hsel : (pc.checker.select j kE' e codes sums).value = some out) :
     ((passRunChecker pc).run j kE' e codes sums).value = some out :=
   pass_select_run (passWholeCheck_ok hc hw) hsel
+
+/-- **The pass's checker and the checker whose `run` its selection is state
+one normal effect**: the layers read the same base effect. -/
+theorem passRunChecker_normal (pc : SinglePass.PassChecker G images) :
+    (passRunChecker pc).normal = pc.checker.normal := by
+  cases pc <;> rfl
 
 /-- **The pass's selected output is sound**, at either checker: the
 conclusion `Checker.sound` states for `run`. -/

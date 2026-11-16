@@ -85,7 +85,7 @@ theorem checkedStep_store {pool fuel suggestions index codes aliases pc undefTy 
       · rw [hr, hf]; exact Nat.lt_succ_self _
     have hn' : ∀ x ∈ entry.names, x < st.fresh := fun x hx => Nat.lt_of_lt_of_le (hn x hx) hle
     have hs' := factsBelow_mono hs hle
-    refine ⟨?_, ?_, hrl, hle⟩ <;> cases hp : (PromiseCalls.stepNormal G I (jOf c node)
+    refine ⟨?_, ?_, hrl, hle⟩ <;> cases hp : (pc.checker.normal (jOf c node)
       (kOf G c entry ms (wholeOf node.expression)) effect codes a1.summaries.toList == Footprints.Closed.empty)
     · obtain ⟨out', -, -, hst, -⟩ := hwrit hp
       rw [hst]

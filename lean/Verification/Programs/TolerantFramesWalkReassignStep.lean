@@ -41,14 +41,20 @@ variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment
 /-- A pass checker at `reassign G η` whose `select` is the same result as
 `pc`'s at `G`, and which checks the step's tree where `pc` does. -/
 def PassCheckerReassign (pc : PassChecker G images) (pc' : PassChecker (reassign G η) (images.reassign η)) : Prop :=
-  pc'.selectChecks = pc.selectChecks ∧ ∀ j k e codes sums,
-    (pc'.checker.select j k e codes sums).value = (pc.checker.select j k e codes sums).value
+  pc'.selectChecks = pc.selectChecks ∧ (∀ j k e codes sums,
+    (pc'.checker.select j k e codes sums).value = (pc.checker.select j k e codes sums).value) ∧
+    ∀ j k e codes sums, pc'.checker.normal j k e codes sums = pc.checker.normal j k e codes sums
 
 /-- **The ordinary checker at a reassignment** (`ordinarySelect_reassign`). -/
 theorem passCheckerReassign_ordinary : PassCheckerReassign G η images .ordinary .ordinary :=
   ⟨rfl, fun j k e codes sums => by
     simp only [PassChecker.checker]
-    rw [ordinarySelect_reassign]⟩
+    rw [ordinarySelect_reassign], fun j k e codes sums => by
+    simp only [PassChecker.checker, Checker.ordinary, Checker.keepingStable, Checker.boundedWrites,
+      Checker.indexing, Checker.emptyArrays, Checker.negatingSlots, Checker.ensuringCalls, Checker.elementCalls,
+      Checker.requiringCalls, Checker.allocatingCalls, Checker.keepingOwnCalls, Checker.keepingCalls, Checker.steps,
+      Parametricity.keepsCall_reassign, Parametricity.freshCall_reassign, Parametricity.ownCall_reassign,
+      Parametricity.elementsCall_reassign, Parametricity.requiresCall_reassign]⟩
 
 /-- **A qualified body's checker at a reassignment**: at a body subtyping
 of the reassigned graph with the same check (`Parametricity.checkBodyStep_reassign`;
@@ -61,7 +67,8 @@ theorem passCheckerReassign_qualified (body : BodySubtyping G) (body' : BodySubt
         rw [same]; exact ord ((Parametricity.check_reassign G η images _ _ _).symm.trans h)) :=
   ⟨rfl, fun j k e codes sums =>
     Parametricity.checkBodyStep_reassign G η images body body' same ord
-      (fun h => by rw [same]; exact ord ((Parametricity.check_reassign G η images _ _ _).symm.trans h)) j k e codes sums⟩
+      (fun h => by rw [same]; exact ord ((Parametricity.check_reassign G η images _ _ _).symm.trans h)) j k e codes sums,
+    fun _ _ _ _ _ => rfl⟩
 
 omit [DecidableEq ι] in
 theorem kOf_reassign (c : PointClaim ι) (entry : SinglePass.State) (ms : List Nat) (whole : Bool) :
@@ -84,14 +91,6 @@ theorem passWholeCheck_reassign (kE : HeapKnowledge.Knowledge) (codes : CodeEntr
   | none => rfl
   | some p => simp only [passWholeCheck, Parametricity.requiresTree_reassign]
 
-theorem stepNormal_reassign (j : Sequent ι) (kE : HeapKnowledge.Knowledge) (e : StepEvidence ι)
-    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
-    PromiseCalls.stepNormal (reassign G η) (images.reassign η) j kE e codes sums =
-      PromiseCalls.stepNormal G images j kE e codes sums := by
-  cases e <;> simp only [PromiseCalls.stepNormal, Parametricity.elementsCall_reassign,
-    Parametricity.requiresCall_reassign, Parametricity.freshCall_reassign, Parametricity.ownCall_reassign,
-    Parametricity.keepsCall_reassign, Parametricity.checkStep_reassign]
-
 /-- **The evidence a search returned at `G`, re-checked, is accepted at
 `reassign G η`**: where the pass accepts the step at `G` at the evidence
 `effect` (`StepAccepted`: the selected output, the tree check, the result,
@@ -105,17 +104,17 @@ theorem stepAccepted_reassign {pc : PassChecker G images} {pc' : PassChecker (re
     StepAccepted (reassign G η) (images.reassign η) pc' codes c node entry ms fresh effect sums st := by
   obtain ⟨out, pre, hsel, htree, hres, hfr, hcp, hef, hpres, hwrit⟩ := h
   refine ⟨out, pre, ?_, ?_, hres, hfr, hcp, hef, ?_, ?_⟩
-  · rw [hpc.2, kOf_reassign]; exact hsel
+  · rw [hpc.2.1, kOf_reassign]; exact hsel
   · rw [passTreeCheck_reassign G η images hpc.1, kOf_reassign]; exact htree
   · intro hp
-    rw [stepNormal_reassign, kOf_reassign] at hp
+    rw [hpc.2.2, kOf_reassign] at hp
     exact hpres hp
   · intro hp
-    rw [stepNormal_reassign, kOf_reassign] at hp
+    rw [hpc.2.2, kOf_reassign] at hp
     obtain ⟨out', hwc, hsel', hrest⟩ := hwrit hp
     refine ⟨out', ?_, ?_, hrest⟩
     · rw [passWholeCheck_reassign, kOf_reassign]; exact hwc
-    · rw [hpc.2, kOf_reassign]; exact hsel'
+    · rw [hpc.2.1, kOf_reassign]; exact hsel'
 
 end Transport
 

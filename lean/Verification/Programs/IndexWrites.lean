@@ -3343,6 +3343,12 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
       · have hp := hr.1.2.2
         simp only [*, Bool.false_eq_true, if_false] at hp
         exact hp.2
+  normal := base.normal
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+    obtain ⟨out0, hrun, -⟩ := hc
+    exact base.normal_sound hrun hcodes hsums he hk hw hh href hn
 
 /-- A checker whose steps on slots state the index atoms of their result
 (`IndexWrites.stepAtoms`: `length-observed`, `index-mask`, `index-equal`,
@@ -3363,6 +3369,12 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     exact weaken (fun h' u hq => ⟨hq.1.1.1.1, hq.1.1.1.2.1, hq.1.1.1.2.2.1, hq.1.1.1.2.2.2.1, hq.1.1.1.2.2.2.2.1,
       indexHolds_append hq.1.1.1.2.2.2.2.2 (indexHolds_append (indexHolds_append hq.1.1.2 hq.1.2) hq.2)⟩)
       (IndexWrites.lengthAtoms_holds he hk (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs)))
+  normal := base.emptyArrays.normal
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+    obtain ⟨out0, hrun, -⟩ := hc
+    exact base.emptyArrays.normal_sound hrun hcodes hsums he hk hw hh href hn
 
 /-- A checker whose `boundedWrite` steps are writes at a checked index
 (`IndexWrites.boundedWriteCheck`, `setElem-bounded`), keeping the cell facts
@@ -3408,5 +3420,17 @@ every other step is `base`'s. -/
     · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
       exact IndexWrites.growOutput_sound he hk hw hh (base.sound hrun hcodes hsums he hk hw hh href hρ)
+  normal := fun j k e codes sums => match e with
+    | .boundedWrite .. => .top
+    | _ => base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    cases e with
+    | boundedWrite => exact absurd hn Footprints.Closed.top_ne_empty
+    | _ =>
+      dsimp only at hc hn
+      simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+      obtain ⟨out0, hrun, -⟩ := hc
+      exact base.normal_sound hrun hcodes hsums he hk hw hh href hn
 
 end Verification.HeapExpressionRules

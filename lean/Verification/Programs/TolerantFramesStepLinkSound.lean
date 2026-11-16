@@ -163,12 +163,13 @@ theorem writing_spine {st : SinglePass.State} {I : List (PromiseCalls.Implicatio
 variable [DecidableEq ι]
 
 /-- **The judgment of a step whose checked normal effect is empty**
-(`PromiseCalls.stepNormal`, `stepNormal_sound`): normal exit keeping the heap
+(`Checker.normal`, `Checker.normal_sound` at the checker whose `run` the
+selection is, `passRunChecker_normal`): normal exit keeping the heap
 with the selected output, throw within `top`. -/
 theorem preserving_judgment_two {G : NormalGraph ι} {images : InstanceImageCheck G} {pc : PassChecker G images}
     {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : HeapExpressionRules.StepEvidence ι}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hpres : PromiseCalls.stepNormal G images j kE e codes sums = Footprints.Closed.empty)
+    (hpres : pc.checker.normal j kE e codes sums = Footprints.Closed.empty)
     (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
@@ -179,7 +180,8 @@ theorem preserving_judgment_two {G : NormalGraph ι} {images : InstanceImageChec
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (stepNormal_sound hpres hcodes hsums he hk hw hh href)
+    ((passRunChecker pc).normal_sound (pass_select_run hok hsel) hcodes hsums he hk hw hh href
+      (by rw [passRunChecker_normal]; exact hpres))
     (pass_select_sound hok hsel hcodes hsums he hk hw hh href hρ)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
@@ -392,7 +394,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · exact .inr ⟨hres.trans hr1, hfresh.trans hf⟩
     have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf node.expression)) codes
         ans.summaries.toList effect = true := fun hs => passTreeCheck_ok htree hs
-    by_cases hp : (PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
+    by_cases hp : (pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
         codes ans.summaries.toList == Footprints.Closed.empty) = true
     · obtain ⟨hstore, hK, hO⟩ := hpres hp
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
@@ -405,7 +407,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         exact preserving_spine hn (hkv k h' v hsteps)
           (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
-    · have hpf : (PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
+    · have hpf : (pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
           codes ans.summaries.toList == Footprints.Closed.empty) = false := by simpa using hp
       obtain ⟨out', hwc, hsel', hstore, hK, hO⟩ := hwrit hpf
       have hrun := pass_select_whole htree hwc hsel'

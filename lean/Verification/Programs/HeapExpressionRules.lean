@@ -65,6 +65,22 @@ structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageC
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h')
       n W h (instantiate 0 ρ j.term)
+  /-- **The step's normal effect** (the note, §5, Theorem "Tolerant frame":
+  the effect a Frame reads): the effect of the rule that decides the step,
+  `{values: any, spines: any}` where none states a narrower one. -/
+  normal : Sequent ι → Knowledge → StepEvidence ι → (CodeEntry ι → Bool) → List (ReadSummary ι) →
+    Footprints.Closed := fun _ _ _ _ _ => Footprints.Closed.top
+  /-- Where the step's normal effect is empty, a step `run` accepts keeps
+  every old location on its normal exit. -/
+  normal_sound : ∀ {j k e out codes sums}, (run j k e codes sums).value = some out →
+    CodesSound G codes → SummariesSound G images sums → ∀ {ε ρ n W h},
+    EnvOk G j.context ρ n W → HeapKnowledge.Holds k ε ρ h →
+    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ j.term) →
+    normal j k e codes sums = Footprints.Closed.empty →
+    SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True)
+      n W h (instantiate 0 ρ j.term) := by
+    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hn
+    exact absurd hn Footprints.Closed.top_ne_empty
 
 /-- Copy an immutable slot into the result while preserving the old slots. -/
 def copyFacts (fs : Facts) (i : Nat) : Facts :=
@@ -2470,6 +2486,242 @@ stable cell facts. -/
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, h0, rfl⟩ := hc
     exact withStable_sound he hk hw hh (base.sound h0 hcodes hsums he hk hw hh href hρ)
+  normal := base.normal
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+    obtain ⟨out0, h0, -⟩ := hc
+    exact base.normal_sound h0 hcodes hsums he hk hw hh href hn
+
+/-! ### The base rules' normal effect -/
+
+section BaseNormal
+variable {ι : Type} [DecidableEq ι]
+
+/-- An inspection's normal exit is within `{values: keep, spines: keep}`
+(`inspect_frame`): reads, tests, arithmetic and
+allocations of evaluated operands. -/
+theorem inspection_keeps {Ξ T : Fam} {n W h t} (hs : Safe Ξ T n W h t) (hp : Purity.inspectTerm t = true)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h t :=
+  inspect_frame hs hp hw hh fun _ _ hpre => ⟨Footprints.Closed.holds_empty.mpr hpre, trivial⟩
+
+/-- The step's normal exit is within `{values: keep, spines: keep}` from `h`. -/
+def KeepsPost (G : NormalGraph ι) (j : Sequent ι) (ρ : Env) (n : Nat) (W : WorldT n) (h : Heap) : Prop :=
+  SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
+    (instantiate 0 ρ j.term)
+
+/-! ## Term shapes -/
+
+/-- A pure term is an inspection. -/
+theorem pure_inspect : ∀ {t : Tm}, Purity.pureTerm t = true → Purity.inspectTerm t = true := by
+  intro t
+  induction t using Tm.induct with
+  | var => intro; rfl
+  | _ =>
+    intro hp
+    first
+      | (simp only [Purity.pureTerm, Purity.inspectTerm, Bool.and_eq_true] at hp ⊢; simp_all; done)
+      | exact Purity.inspect_value (by simpa [Purity.pureTerm] using hp)
+
+omit [DecidableEq ι] in
+/-- A slot of the context holds a value, an inspection. -/
+theorem slot_inspect {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat} {W : WorldT n} {i : Nat}
+    (he : EnvOk G Γ ρ n W) (hi : i < Γ.length) : Purity.inspectTerm (ρ i) = true :=
+  Purity.inspect_value (meaning_value (he.2 i Γ[i] (List.getElem?_eq_getElem hi))).1
+
+theorem slot_lt_of_any {Γ : List α} {i : Nat} {p : α → Bool} (h : (Γ[i]?).any p = true) : i < Γ.length := by
+  cases hg : Γ[i]? with
+  | none => rw [hg] at h; cases h
+  | some _ => exact (List.getElem?_eq_some_iff.mp hg).1
+
+/-- **Creating a graph closure only extends the heap**: one step allocating
+its two frames, to a value. -/
+theorem created_keeps {Ξ T : Fam} {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} {arity E K start caps kind rest}
+    (hs : Safe Ξ T n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul))) :
+    SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
+      (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
+  cases n with
+  | zero => exact hs
+  | succ n =>
+    refine ⟨hs.1, ?_⟩
+    rcases hs.2 with (⟨hv, _⟩ | ⟨_, hr, _⟩) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+    · simp [instantiate, isVal] at hv
+    · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
+      cases hr with | makeArg hg _ hr => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases hr
+    · simp only [instantiate, instantiateArgs_eq_map, List.map] at step hs' ⊢
+      obtain ⟨rfl, rfl⟩ := makeFn_step_inv rfl step
+      exact Or.inr ⟨U, _, _, hx, hu, step, hh',
+        refine_value rfl ⟨Footprints.Closed.holds_empty.mpr ⟨[.nul, .nul], by simp⟩, trivial⟩ hs'⟩
+
+/-- **The base rule of a step other than a call or a write fixes the term's
+shape**: the instantiated term is an inspection, or the term creates a graph
+closure. -/
+theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : checkStepUsing G images j k e codes sums = some out) (hord : ∀ p, e ≠ .ordinary p)
+    (hwr : ∀ i v R q, e ≠ .written i v R q)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) :
+    Purity.inspectTerm (instantiate 0 ρ j.term) = true ∨
+      ∃ arity E K start caps kind rest, j.term = .makeFn (.graph arity E K start caps kind rest) .nul := by
+  have read : ∀ fld i, j.term = .readAt fld (.var i) → Purity.inspectTerm (ρ i) = true →
+      Purity.inspectTerm (instantiate 0 ρ j.term) = true := fun fld i ht hi => by
+    rw [ht]; simpa [instantiate, Purity.inspectTerm] using hi
+  rw [checkStepUsing_eq] at hc
+  cases e with
+  | ordinary p => exact absurd rfl (hord p)
+  | written i v R q => exact absurd rfl (hwr i v R q)
+  | boundedWrite => simp at hc
+  | pure e =>
+    simp only at hc
+    split at hc
+    · rename_i hq
+      exact .inl (inspect_instantiate (d := 0) (pure_inspect hq.2.2.2) (by simpa using hq.2.1) he)
+    · cases hc
+  | reading e =>
+    simp only at hc
+    split at hc
+    · rename_i hq
+      exact .inl (inspect_instantiate (d := 0) hq.2.2.2 (by simpa using hq.2.1) he)
+    · cases hc
+  | created e =>
+    simp only at hc
+    split at hc
+    · split at hc
+      · rename_i heq; exact .inr ⟨_, _, _, _, _, _, _, heq⟩
+      · cases hc
+    · cases hc
+  | typedRead i e =>
+    simp only at hc
+    split at hc
+    · rename_i fld i' hr
+      have ht := readSlot_eq hr
+      split at hc
+      · rename_i hq
+        obtain ⟨-, -, rfl, hany⟩ := hq
+        exact .inl (read fld i' ht (slot_inspect he (slot_lt_of_any hany)))
+      · split at hc
+        · rename_i hq
+          obtain ⟨-, -, rfl, hany⟩ := hq
+          exact .inl (read fld i' ht (slot_inspect he (slot_lt_of_any hany)))
+        · cases hc
+    · cases hc
+  | observedRead i R =>
+    simp only at hc
+    split at hc
+    · rename_i fld i' hr
+      split at hc
+      · rename_i hq
+        obtain ⟨rfl, hi, -⟩ := hq
+        exact .inl (read fld i' (readSlot_eq hr) (slot_inspect he hi))
+      · cases hc
+    · cases hc
+  | slicedRead tag q i e p =>
+    simp only at hc
+    split at hc
+    · rename_i fld i' hr
+      split at hc
+      · rename_i hq
+        obtain ⟨-, -, -, rfl, hany, -⟩ := hq
+        exact .inl (read fld i' (readSlot_eq hr) (slot_inspect he (slot_lt_of_any hany)))
+      · cases hc
+    · cases hc
+  | knownValue i R =>
+    simp only at hc
+    split at hc
+    · rename_i hq
+      obtain ⟨ht, hi, -⟩ := hq
+      exact .inl (by rw [ht]; simpa [instantiate] using slot_inspect he hi)
+    · cases hc
+  | linkedRead i y p =>
+    simp only at hc
+    split at hc
+    · rename_i fld i' B hr hB
+      split at hc
+      · rename_i hq
+        obtain ⟨rfl, hl, -⟩ := hq
+        obtain ⟨g, hg, hm⟩ := List.any_eq_true.mp hl
+        simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.contains_iff_mem] at hm
+        obtain ⟨⟨⟨hal, -⟩, ha⟩, -⟩ := hm
+        have hcell : ρ g.cell = ρ i' := HeapLinks.aliases_eq hk.2.2.1 hal
+        have hgl := hk.2.2.1 g hg
+        simp only [ha, Bool.false_eq_true, if_false] at hgl
+        have hobj : ∃ flds c oid, ρ i' = .objAt flds c oid := by
+          split at hgl
+          · obtain ⟨flds, c, oid, ho, -⟩ := hgl; exact ⟨flds, c, oid, hcell ▸ ho⟩
+          · obtain ⟨flds, c, oid, -, ho, -⟩ := hgl; exact ⟨flds, c, oid, hcell ▸ ho⟩
+        obtain ⟨flds, c, oid, ho⟩ := hobj
+        exact .inl (read fld i' (readSlot_eq hr) (by rw [ho]; rfl))
+      · cases hc
+    · cases hc
+  | allocated e =>
+    simp only at hc
+    split at hc
+    · rename_i slots hs
+      split at hc
+      · rename_i hq
+        obtain ⟨code, ht⟩ := allocationSlots_eq hs
+        refine .inl (inspect_instantiate (d := 0) ?_ (by simpa using hq.2.1) he)
+        rw [ht]; simp [Purity.inspectTerm, Purity.operandTerm]
+      · cases hc
+    · split at hc
+      · rename_i d a b hm
+        split at hc
+        · rename_i hq
+          obtain ⟨-, -, ha, hb⟩ := hq
+          rcases mergeSlots_eq hm with ht | ht <;> rw [ht] <;>
+            simp [instantiate, Purity.inspectTerm, slot_inspect he ha, slot_inspect he hb]
+        · cases hc
+      · split at hc
+        · rename_i slots hs
+          split at hc
+          · rename_i hq
+            obtain ⟨-, -, hin⟩ := hq
+            refine .inl ?_
+            rw [spineSlots_eq hs]
+            simp only [instantiate, instantiateArgs_eq_map, Purity.inspectTerm, List.map_map, List.all_eq_true,
+              List.mem_map]
+            rintro _ ⟨i, hi, rfl⟩
+            have hv := (meaning_value (he.2 i _ (List.getElem?_eq_getElem (hin i hi)))).1
+            simp only [Function.comp, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero]
+            cases hr : ρ i <;> simp_all [Purity.initTerm, Purity.operandTerm, isVal]
+          · cases hc
+        · cases hc
+
+/-- **The base rule of a step other than a call or a write keeps the heap on
+its normal exit.** -/
+theorem base_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : checkStepUsing G images j k e codes sums = some out) (hord : ∀ p, e ≠ .ordinary p)
+    (hwr : ∀ i v R q, e ≠ .written i v R q) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
+  have hs := erase (checkStep_sound hc hcodes hsums he hk hw hh href)
+  rcases base_shape hc hord hwr he hk with hi | ⟨_, _, _, _, _, _, _, ht⟩
+  · exact inspection_keeps hs hi hw hh
+  · unfold KeepsPost; rw [ht] at hs ⊢; exact created_keeps hs
+
+/-- **The normal effect of a step's base rule** (the note, §5, Theorem
+"Tolerant frame": the effect a Frame reads): an ordinary step and a write
+may change any location; every other base rule fixes an inspection or a
+closure's creation (`base_shape`), whose normal exit keeps every old
+location (`base_keeps`). -/
+def stepsNormal (e : StepEvidence ι) : Footprints.Closed :=
+  match e with
+  | .ordinary _ | .written .. | .boundedWrite .. => .top
+  | _ => .empty
+
+omit [DecidableEq ι] in
+/-- A step's base rule of empty normal effect is neither an ordinary step nor
+a write. -/
+theorem stepsNormal_empty {e : StepEvidence ι} (hn : stepsNormal e = Footprints.Closed.empty) :
+    (∀ p, e ≠ .ordinary p) ∧ ∀ i v R q, e ≠ .written i v R q := by
+  cases e <;> first
+    | exact absurd hn Footprints.Closed.top_ne_empty
+    | exact ⟨fun _ h => (by cases h), fun _ _ _ _ h => (by cases h)⟩
+
+end BaseNormal
 
 /-- The steps' own rules, without the stable links every step keeps. -/
 @[nospecialize] def Checker.steps [DecidableEq ι] (G : NormalGraph ι)
@@ -2479,6 +2731,11 @@ stable cell facts. -/
   sound := by
     intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href _
     exact checkStep_sound hc hcodes hsums he hk hw hh href
+  normal := fun _ _ e _ _ => stepsNormal e
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    obtain ⟨hord, hwr⟩ := stepsNormal_empty hn
+    exact base_keeps hc hord hwr hcodes hsums he hk hw hh href
 
 
 /-- Descriptor-aware ordinary expressions use the same heap-forgetting rule
@@ -2510,6 +2767,13 @@ admits (`ordinary`). -/
         exact ordinary_sound typed he hk hw hh href
       · cases checked
     | _ => exact checkStep_sound checked hcodes hsums he hk hw hh href
+  normal := fun _ _ e _ _ => stepsNormal e
+  normal_sound := by
+    intro j k step out codes sums checked hcodes hsums ε ρ n W h he hk hw hh href hn
+    obtain ⟨hord, hwr⟩ := stepsNormal_empty hn
+    cases step with
+    | ordinary e => exact absurd rfl (hord e)
+    | _ => exact base_keeps checked hord hwr hcodes hsums he hk hw hh href
 
 /-- Descriptor-aware steps, each keeping its input's stable links. -/
 @[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)

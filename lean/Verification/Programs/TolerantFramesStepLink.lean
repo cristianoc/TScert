@@ -12,7 +12,7 @@ accepting runs are characterized here by the conditions they pass
 (`checkedStep_ok`): a copy of a slot at the claim's type, or a step whose
 selected output, tree check, result name and store after the step are those
 the development's definitions state (`StepAccepted`, over `passTreeCheck`,
-`passWholeCheck`, `PromiseCalls.stepNormal`, `handedSet`, `passBack`).
+`passWholeCheck`, `Checker.normal`, `handedSet`, `passBack`).
 
 The proof walks the block outermost first: three tactics generalize the
 outermost `match` discriminant (`gen_discr`), the outermost `if` condition
@@ -123,7 +123,7 @@ def resultOf (t : Tm) (names : List Nat) (fresh : Nat) : Nat × Nat :=
 /-- **A step `checkedStep` accepts, read as its conditions**, at the
 evidence `effect` the search or the direct call returned, with the read
 summaries `sums` the selection, the tree check and the step's checked normal
-effect (`PromiseCalls.stepNormal`) read: the selected output `out` at the
+effect (`Checker.normal`) read: the selected output `out` at the
 step's facts `kE`, the tree check (`passTreeCheck`) with the tree only
 `requiresTree` accepted `pre`, the result's name, and the store after the
 step: where the normal effect is empty, the delta over the handed facts; a writing step's tree checked over every fact
@@ -138,12 +138,12 @@ def StepAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : Pass
     passTreeCheck pc (kOf G c entry ms (wholeOf node.expression)) codes sums effect = some pre ∧
     st.result = (resultOf node.expression entry.names fresh).1 ∧ st.fresh = (resultOf node.expression entry.names fresh).2 ∧
     st.copied = false ∧ st.stepEffect = some effect ∧
-    ((PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+    ((pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
         Footprints.Closed.empty) = true →
       st.store = applyDelta entry.store (materialize entry c.context.length ms (wholeOf node.expression)).2.1 out true
         (passBack (materialize entry c.context.length ms (wholeOf node.expression)).2.2 entry.names st.result) ∧
       st.stepK = kOf G c entry ms (wholeOf node.expression) ∧ st.stepOut = out) ∧
-    ((PromiseCalls.stepNormal G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+    ((pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
         Footprints.Closed.empty) = false →
       ∃ out', passWholeCheck G images (kOf G c entry ms true) codes sums pre = true ∧
         (pc.checker.select (jOf c node) (kOf G c entry ms true) effect codes sums).value = some out' ∧

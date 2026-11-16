@@ -368,6 +368,10 @@ theorem Closed.holds_top {h h' : Heap} : Closed.top.Holds h h' ↔ h.length ≤ 
   refine ⟨h'[l], List.getElem?_eq_getElem (Nat.lt_of_lt_of_le hl hlen), ?_⟩
   rw [Closed.at_top]; trivial
 
+/-- The two extreme closed footprints differ. -/
+theorem Closed.top_ne_empty : Closed.top ≠ Closed.empty := by
+  intro h; injection h with h1; cases h1
+
 theorem Closed.empty_le (c : Closed) : Closed.empty.le c = true := by
   cases c with
   | mk v s w => cases v <;> cases s <;> cases w <;> rfl

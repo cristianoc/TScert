@@ -2054,12 +2054,12 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
       if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums) then
         if PromiseCalls.requiresTree G images kE codes sums p then preconditioned := some p
         else return (.error s!"expression at node {l}: its derivation", stats, answers)
-    -- The step's checked normal effect (`PromiseCalls.stepNormal`), at the
-    -- summaries the step is selected and checked with: where it is empty,
-    -- the tolerant frame at the support `all` keeps every fact the step is
-    -- not handed, and the step's delta is applied to the whole store.
-    let preserving := PromiseCalls.stepNormal G images j kE effect codes answers.summaries.toList ==
-      Footprints.Closed.empty
+    -- The step's normal effect, as the checker's rule deciding it states it
+    -- (`Checker.normal`), at the summaries the step is selected and checked
+    -- with: where it is empty, the tolerant frame at the support `all` keeps
+    -- every fact the step is not handed, and the step's delta is applied to
+    -- the whole store.
+    let preserving := checker.normal j kE effect codes answers.summaries.toList == Footprints.Closed.empty
     -- A slot's read is that slot's value: it keeps its name.
     match node.expression, entry.names[(match node.expression with | .var i => i | _ => 0)]? with
     | .var _, some x => result := x

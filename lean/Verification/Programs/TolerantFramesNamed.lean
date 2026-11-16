@@ -239,62 +239,9 @@ theorem preserving_throw {Ξ T : Fam} {Q : Post} {S : List Atom} {η ρ : Env} {
 
 /-! ## The preserving judgments -/
 
-/-- An inspection's normal exit is within `{values: keep, spines: keep}`
-(`HeapExpressionRules.inspect_frame`): reads, tests, arithmetic and
-allocations of evaluated operands. -/
-theorem inspection_keeps {Ξ T : Fam} {n W h t} (hs : Safe Ξ T n W h t) (hp : Purity.inspectTerm t = true)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h t :=
-  HeapExpressionRules.inspect_frame hs hp hw hh fun _ _ hpre => ⟨Footprints.Closed.holds_empty.mpr hpre, trivial⟩
-
 section Calls
 variable {ι : Type} [DecidableEq ι]
 open ProgramTyping PositiveCertificates ProgramCertificates PositiveGraphs PositiveRules
-
-/-- **A call the pass keeps the heap across (`PromiseCalls.keepsCall`)** has
-its normal exit within `{values: keep, spines: keep}`: its selected signature
-is within the empty footprint (`ExpressionEffects.selectedCall_sound`). -/
-theorem keepsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
-    {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : PromiseCalls.keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes)
-    (hsums : SummariesSound G images sums) {ρ n W h} (he : EnvOk G j.context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
-      (instantiate 0 ρ j.term) := by
-  unfold PromiseCalls.keepsCall at hc
-  split at hc
-  · rename_i p
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-    obtain ⟨⟨⟨rfl, hsel⟩, -⟩, ht⟩ := hc
-    exact PromiseCalls.post_with_type (fun _ _ _ _ _ hq => ⟨hq, trivial⟩)
-      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh href)
-  · contradiction
-
-/-- A call allocating its result (`PromiseCalls.freshCall`) has its normal
-exit within `{values: keep, spines: keep}`: its selected signature keeps the
-heap (`PromiseCalls.keepsHeap_prefix`). -/
-theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
-    {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : PromiseCalls.freshCall G images j e codes sums = true) (hcodes : CodesSound G codes)
-    (hsums : SummariesSound G images sums) {ρ n W h} (he : EnvOk G j.context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
-      (instantiate 0 ρ j.term) := by
-  unfold PromiseCalls.freshCall at hc
-  split at hc
-  · rename_i p
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-    obtain ⟨⟨⟨rfl, hops⟩, hsel⟩, ht⟩ := hc
-    split at hsel
-    · rename_i eff heff
-      simp only [Bool.and_eq_true] at hsel
-      exact PromiseCalls.post_with_type
-        (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hsel.1 (CallEffects.Effect.callPost_within hq)), trivial⟩)
-        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
-    · cases hsel
-  · contradiction
 
 /-- **The selective frame at a call keeping the heap, both exits.** At a node
 whose step is a call `keepsCall` accepts, with the facts `k` handed to its
@@ -318,7 +265,7 @@ theorem keepsCall_frame {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
         HeapKnowledge.Holds (HeapKnowledge.shift kn) ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') := by
-  have hj := keepsCall_keeps hc hcodes hsums he s.adm s.ok href
+  have hj := PromiseCalls.keepsCall_keeps hc hcodes hsums he s.adm s.ok href
   refine ⟨fun hv => ?_, fun x hx => preserving_throw hj hst hx hk hS⟩
   obtain ⟨s', ha, he', hn, hT, -, hS'⟩ := preserving_normal (Footprints.Closed.empty_le _) hj hst hv hk hS hr
   have hc' : Footprints.Closed.empty.Holds s.h h' := by

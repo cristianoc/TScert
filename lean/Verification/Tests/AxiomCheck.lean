@@ -499,9 +499,6 @@ run_cmd do
   check ``Verification.TolerantFrames.named_le_box
   check ``Verification.TolerantFrames.preserving_normal
   check ``Verification.TolerantFrames.preserving_throw
-  check ``Verification.TolerantFrames.inspection_keeps
-  check ``Verification.TolerantFrames.keepsCall_keeps
-  check ``Verification.TolerantFrames.freshCall_keeps
   check ``Verification.TolerantFrames.keepsCall_frame
   check ``Verification.TolerantFrames.slotless_not_framed
   check ``Verification.TolerantFrames.rootCells_box
@@ -535,13 +532,6 @@ run_cmd do
   check ``Verification.TolerantFrames.oneBits_safe
   check ``Verification.TolerantFrames.increment_judgment
   check ``Verification.TolerantFrames.increment_checked
-  check ``Verification.TolerantFrames.pure_inspect
-  check ``Verification.TolerantFrames.created_keeps
-  check ``Verification.TolerantFrames.base_shape
-  check ``Verification.TolerantFrames.base_keeps
-  check ``Verification.TolerantFrames.elementsCall_keeps
-  check ``Verification.TolerantFrames.requiresCall_keeps
-  check ``Verification.TolerantFrames.stepNormal_sound
   check ``Verification.TolerantFrames.preserving_step_frame
   check ``Verification.TolerantFrames.atom_kept
   check ``Verification.TolerantFrames.safePost_grow
@@ -1835,3 +1825,17 @@ run_cmd do
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write
   check ``Verification.Kinds.gate_handled
+  -- Step 6 (parity/calls-by-frame): the base rules' and the call layers' normal effects.
+  check ``Verification.HeapExpressionRules.inspection_keeps
+  check ``Verification.HeapExpressionRules.pure_inspect
+  check ``Verification.HeapExpressionRules.created_keeps
+  check ``Verification.HeapExpressionRules.base_shape
+  check ``Verification.HeapExpressionRules.base_keeps
+  check ``Verification.HeapExpressionRules.stepsNormal_empty
+  check ``Verification.PromiseCalls.keepsCall_keeps
+  check ``Verification.PromiseCalls.freshCall_keeps
+  check ``Verification.PromiseCalls.elementsCall_keeps
+  check ``Verification.PromiseCalls.requiresCall_keeps
+  check ``Verification.TolerantFrames.passRunChecker_normal
+  check ``Verification.Footprints.Term.supports_keep
+  check ``Verification.Footprints.Term.supports_grow

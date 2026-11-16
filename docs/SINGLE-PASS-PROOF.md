@@ -390,32 +390,37 @@ compares the closed bound of the selected exit's frame with the empty one
 is fresh for the spine (a premise, `hr`), and the output the pass applies is
 the checked rule's (`Checker.select` agreeing with `run`).
 
-### A step's checked normal effect
+### A step's normal effect
 
-Module `lean/Verification/Programs/TolerantFramesSteps.lean`. The pass frames
-a step (`applyDelta … true`) where its checked normal effect
-(`PromiseCalls.stepNormal`, read at the summaries the step is selected and
-checked with) is $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$:
-a call states it by its selected signature (one promising its receiver's
-elements, one at a precondition whose signature keeps the heap, one
-allocating its result, one keeping the heap that changes no receiver's own
-locations); a step other than a call or a write by its base rule
-(`checkStepUsing`), which it checks again. $`\mathrm{KeepsPost}`$ is the
-normal exit within
-$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
+Each checker states, beside its output, the normal effect of the rule that
+decides a step (`Checker.normal`, $`\top`$ by default) and proves it of every
+step its `run` accepts (`Checker.normal_sound`). The pass frames a step
+(`applyDelta … true`) where its checker's effect, read at the summaries the
+step is selected and checked with, is
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$;
+the checker whose `run` its selection is states the same effect
+(`passRunChecker_normal`). $`\mathrm{KeepsPost}`$ is the normal exit within
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$.
+Each layer states its own rule's effect and reads its base's otherwise:
 
-- the base rule of a step other than a call or a write fixes the term's
-  shape (`base_shape`): `pure` and `reading` an inspection by their checked
-  purity, the four reads `.readAt f (.var i)` with $`i`$ a slot holding a value
-  (for `linkedRead`, an object by the link fact), `knownValue` a slot,
-  `allocated` an allocation or merge of slots, `created` a graph closure's
-  creation, which allocates its two frames (`created_keeps`); so each keeps the
-  heap (`base_keeps`, with `pure_inspect`);
-- the calls: `elementsCall` and a `requiresCall` whose selected signature keeps
-  the heap (`elementsCall_keeps`, `requiresCall_keeps`, from `selected_sound`,
-  `requiresTree_sound` and `keepsHeap_prefix`), `freshCall_keeps`,
-  `keepsCall_keeps`; so the checked normal effect is sound
-  (`stepNormal_sound`), whichever layer of the checker ran the step;
+- the base rules (`Checker.steps`, `passSteps`, `Checker.subtypingSteps`,
+  `stepsNormal`): an ordinary step and a write $`\top`$; every other base
+  rule fixes the term's shape (`base_shape`): `pure` and `reading` an
+  inspection by their checked purity, the four reads `.readAt f (.var i)` with
+  $`i`$ a slot holding a value (for `linkedRead`, an object by the link fact),
+  `knownValue` a slot, `allocated` an allocation or merge of slots, `created`
+  a graph closure's creation, which allocates its two frames
+  (`created_keeps`); so each keeps the heap (`base_keeps`, with
+  `pure_inspect`);
+- the call layers: a call promising its receiver's elements, one at a
+  precondition whose selected signature keeps the heap, one allocating its
+  result and one keeping the heap state the empty effect
+  (`PromiseCalls.elementsCall_keeps`, `requiresCall_keeps`,
+  `freshCall_keeps`, `keepsCall_keeps`, from `selected_sound`,
+  `requiresTree_sound` and `keepsHeap_prefix`); a call changing its
+  receiver's own locations states $`\top`$; a layer mapping its base's
+  output (stable facts, index atoms, postconditions, negations) states its
+  base's effect;
 - both exits (`preserving_step_frame` for any checker given $`\mathrm{KeepsPost}`$):
   from `run`'s output
   $`\mathit{out}`$ over the handed facts, a normal return is an action of
@@ -426,9 +431,8 @@ $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
   $`\top`$ with the raised value closed and of the exception family and the
   heap-free part of $`S`$.
 
-An `ownCall` step's normal effect is $`\top`$: it changes its receiver's own
-locations. An `ensuresCall` step is framed where its signature keeps the
-heap, as every call whose checked normal effect is empty.
+An `ensuresCall` step maps its base's output, so it is framed where the
+layer below states the empty effect.
 
 The theorems above take the output of a checker's `run` (`hr`); the pass's
 own conditions discharge it ([the selected output](#the-selected-output-under-the-passs-tree-check)).
@@ -927,13 +931,13 @@ $`\mathit{st}_0`$ with result $`r`$ is
   claim's, $`r=\mathit{st}_0.\mathrm{names}[i]`$, the store and the answers
   unchanged; or
 - a step (`StepAccepted`) at evidence $`e`$, the selection, the tree check
-  and the checked normal effect reading the summaries $`\mathit{sums}`$ of
+  and the checker's normal effect reading the summaries $`\mathit{sums}`$ of
   the answers after the search: the output
   $`\mathit{out}=\mathrm{select}\ j\ k_E\ e\ \mathit{sums}`$ at the step's
   facts $`k_E`$ (`kOf`); the tree check
   $`\mathrm{passTreeCheck}\ k_E\ \mathit{sums}\ e=\mathrm{some}\ \mathit{pre}`$;
   the result $`(r,\mathit{fresh}')=\mathrm{resultOf}`$; where
-  $`\mathrm{stepNormal}\ j\ k_E\ e\ \mathit{sums}=\emptyset`$, the store
+  $`\mathrm{normal}\ j\ k_E\ e\ \mathit{sums}=\emptyset`$, the store
   $`\mathrm{applyDelta}\ \mathit{st}_0.\mathrm{store}\ \mathit{pairs}\ \mathit{out}`$;
   otherwise `passWholeCheck` at every fact $`k_W`$, the output
   $`\mathit{out}'=\mathrm{select}\ j\ k_W\ e\ \mathit{sums}`$ and the store

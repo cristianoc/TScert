@@ -3635,31 +3635,107 @@ theorem negation_bool {u v : Tm} (h : (v = .tru ∧ u = .fls) ∨ (v = .fls ∧ 
   · exact .inl ⟨rfl, rfl⟩
   · exact .inr ⟨rfl, rfl⟩
 
-/-- **A step's checked normal effect** (the note, §5, Theorem "Tolerant
-frame": the effect a Frame reads): `{values: keep, spines: keep}` where the
-step's evidence checks a rule whose normal exit keeps every old location,
-`{values: any, spines: any}` otherwise. A call states it by its selected
-signature's effect: one promising its receiver's elements (`elementsCall`),
-one at a precondition whose signature keeps the heap (`requiresCall`), one
-allocating its result (`freshCall`), one keeping the heap (`keepsCall`) that
-changes no receiver's own locations (`ownCall`). Any other step but a write
-states it by its base rule (`HeapExpressionRules.checkStepUsing`), which fixes
-an inspection or a closure's creation; the base rule is checked again here,
-a cost the pass pays at each such step. Its soundness is
-`TolerantFrames.stepNormal_sound`. -/
-@[nospecialize] def stepNormal [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
-    (kE : HeapKnowledge.Knowledge) (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) : Footprints.Closed :=
-  match e with
-  | .ordinary p =>
-    if (elementsCall G images j e codes sums).isSome then .empty
-    else if requiresCall G images j kE e codes sums then
-      if (ExpressionEffects.selectedEffect p).any keepsHeap then .empty else .top
-    else if freshCall G images j e codes sums ||
-        ((ownCall G images j e codes sums).isNone && keepsCall G images j e codes sums) then .empty
-    else .top
-  | .written .. | .boundedWrite .. => .top
-  | _ => if (HeapExpressionRules.checkStepUsing G images j kE e codes sums).isSome then .empty else .top
+section Keeps
+open HeapExpressionRules (StepEvidence KeepsPost)
+
+/-! ## The calls the pass frames -/
+
+/-- A call promising its receiver's elements keeps the heap: its selected
+signature does (`keepsHeap_prefix`). -/
+theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {x : Nat}
+    {R : CallEffects.ElemPred} (hc : elementsCall G images j e codes sums = some (x, R))
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
+  unfold elementsCall at hc
+  split at hc
+  · rename_i p _
+    by_cases hcond : (decide (claim p = j) && ExpressionEffects.selectedOperands p &&
+        checkTreeUsing G images p codes sums && onlyBool G j.type) = true
+    · rw [if_pos hcond] at hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+      obtain ⟨⟨⟨rfl, hops⟩, ht⟩, -⟩ := hcond
+      cases hsel : ExpressionEffects.selectedEffect p with
+      | none => simp [hsel] at hc
+      | some eff =>
+        cases hrs : receiverSlot (claim p).term with
+        | none => simp [hsel, hrs] at hc
+        | some x' =>
+          simp only [hsel, hrs] at hc
+          by_cases hkeep : keepsHeap eff = true
+          · exact post_with_type
+              (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
+              (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
+          · rw [if_neg hkeep] at hc; cases hc
+    · rw [if_neg hcond] at hc; cases hc
+  · cases hc
+
+/-- A call at a precondition the step's facts establish, whose selected
+signature keeps the heap, keeps the heap (`requiresTree_sound`). -/
+theorem requiresCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {kE : HeapKnowledge.Knowledge} {p : ProgramCertificates.Evidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : requiresCall G images j kE (.ordinary p) codes sums = true)
+    (hkeep : (ExpressionEffects.selectedEffect p).any keepsHeap = true)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
+  simp only [requiresCall, Bool.and_eq_true, decide_eq_true_eq] at hc
+  obtain ⟨rfl, hc⟩ := hc
+  obtain ⟨eff, hsel, hs⟩ := requiresTree_sound hcodes hsums p hc
+  rw [hsel] at hkeep
+  exact post_with_type
+    (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
+    (hs he hk hw hh href)
+
+/-- **A call the pass keeps the heap across (`keepsCall`)** has
+its normal exit within `{values: keep, spines: keep}`: its selected signature
+is within the empty footprint (`ExpressionEffects.selectedCall_sound`). -/
+theorem keepsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes)
+    (hsums : SummariesSound G images sums) {ρ n W h} (he : EnvOk G j.context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
+      (instantiate 0 ρ j.term) := by
+  unfold keepsCall at hc
+  split at hc
+  · rename_i p
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨⟨⟨rfl, hsel⟩, -⟩, ht⟩ := hc
+    exact post_with_type (fun _ _ _ _ _ hq => ⟨hq, trivial⟩)
+      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh href)
+  · contradiction
+
+/-- A call allocating its result (`freshCall`) has its normal
+exit within `{values: keep, spines: keep}`: its selected signature keeps the
+heap (`keepsHeap_prefix`). -/
+theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : freshCall G images j e codes sums = true) (hcodes : CodesSound G codes)
+    (hsums : SummariesSound G images sums) {ρ n W h} (he : EnvOk G j.context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
+      (instantiate 0 ρ j.term) := by
+  unfold freshCall at hc
+  split at hc
+  · rename_i p
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨⟨⟨rfl, hops⟩, hsel⟩, ht⟩ := hc
+    split at hsel
+    · rename_i eff heff
+      simp only [Bool.and_eq_true] at hsel
+      exact post_with_type
+        (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hsel.1 (CallEffects.Effect.callPost_within hq)), trivial⟩)
+        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
+    · cases hsel
+  · contradiction
+
+end Keeps
 
 end
 end Verification.PromiseCalls
@@ -3736,6 +3812,14 @@ every step is otherwise `base`'s. -/
         exact HeapObservations.weaken (fun h' u hq => finish h' u hq) (PromiseCalls.negation_test_run hxv hs)
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
 
+  normal := base.normal
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+      obtain ⟨out0, hrun, -⟩ := hc
+      exact base.normal_sound hrun hcodes hsums he hk hw hh href hn
+    · exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls keeping the heap keep every
 heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
@@ -3753,6 +3837,16 @@ heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
       cases hc
       exact PromiseCalls.keepsCall_sound hkeep hcodes hsums he hk hw hh href
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
+  normal := fun j k e codes sums =>
+    if PromiseCalls.keepsCall G images j e codes sums then .empty else base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · rename_i hkeep
+      exact PromiseCalls.keepsCall_keeps hkeep hcodes hsums he hw hh href
+    · rename_i hkeep
+      rw [if_neg hkeep] at hn
+      exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls keeping the heap and
 allocating their result keep every heap fact of their entry and separate the
@@ -3773,6 +3867,16 @@ other step is `base`'s. -/
       cases hc
       exact PromiseCalls.freshCall_sound hfresh hcodes hsums he hk hw hh href
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
+  normal := fun j k e codes sums =>
+    if PromiseCalls.freshCall G images j e codes sums then .empty else base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · rename_i hfresh
+      exact PromiseCalls.freshCall_keeps hfresh hcodes hsums he hw hh href
+    · rename_i hfresh
+      rw [if_neg hfresh] at hn
+      exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls changing only their
 receiver's own locations keep the heap facts separated from them
@@ -3794,6 +3898,18 @@ receiver's own locations keep the heap facts separated from them
       cases hc
       exact PromiseCalls.ownCall_sound hown hcodes hsums he hk hw hh href
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
+  normal := fun j k e codes sums => match PromiseCalls.ownCall G images j e codes sums with
+    | some _ => .top
+    | none => base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · rename_i i hown
+      simp only [hown] at hn
+      exact absurd hn Footprints.Closed.top_ne_empty
+    · rename_i hown
+      simp only [hown] at hn
+      exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls promising their receiver's
 elements add that atom (`PromiseCalls.elementsCall`); every other step is
@@ -3815,6 +3931,17 @@ elements add that atom (`PromiseCalls.elementsCall`); every other step is
       cases hc
       exact PromiseCalls.elementsCall_sound hel hcodes hsums he hk hw hh href
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
+  normal := fun j k e codes sums => match PromiseCalls.elementsCall G images j e codes sums with
+    | some _ => .empty
+    | none => base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · rename_i x R hel
+      exact PromiseCalls.elementsCall_keeps hel hcodes hsums he hw hh href
+    · rename_i hel
+      simp only [hel] at hn
+      exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls at a precondition on their
 receiver's elements are checked against the entry's atoms
@@ -3834,6 +3961,28 @@ receiver's elements are checked against the entry's atoms
       cases hc
       exact PromiseCalls.requiresCall_sound hreq hcodes hsums he hk hw hh href
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
+  normal := fun j k e codes sums =>
+    if PromiseCalls.requiresCall G images j k e codes sums then
+      (match e with
+        | .ordinary p => if (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap then .empty else .top
+        | _ => .top)
+    else base.normal j k e codes sums
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · rename_i hreq
+      rw [if_pos hreq] at hn
+      cases e with
+      | ordinary p =>
+        dsimp only at hn
+        split at hn
+        · rename_i hkeep
+          exact PromiseCalls.requiresCall_keeps hreq hkeep hcodes hsums he hk hw hh href
+        · exact absurd hn Footprints.Closed.top_ne_empty
+      | _ => exact absurd hn Footprints.Closed.top_ne_empty
+    · rename_i hreq
+      rw [if_neg hreq] at hn
+      exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls stating a postcondition add
 their atoms to what `base` gives the step (`PromiseCalls.ensuresCall`); every
@@ -3869,6 +4018,14 @@ other step is `base`'s. -/
         (HeapExpressionRules.stableFirst_frame he hw hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
     · exact base.sound hc hcodes hsums he hk hw hh href hρ
+  normal := base.normal
+  normal_sound := by
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
+    split at hc
+    · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+      obtain ⟨out0, hrun, -⟩ := hc
+      exact base.normal_sound hrun hcodes hsums he hk hw hh href hn
+    · exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own
