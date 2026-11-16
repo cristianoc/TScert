@@ -3374,14 +3374,13 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
     · exact ensuresComposed_holds hk0 hok hρ hq hstable a ha hc⟩
 
 /-- Knowledge with the region facts a call growing its receiver's spine keeps
-(`IndexWrites.grownRegions`) and the cell facts its change respects (`cells`,
-`weak-update`, `grows_into`) added, renamed past the result, where its normal
-exit states the receiver's growth and the append (`statesExtension`,
+(`IndexWrites.grownRegions`) added, renamed past the result, where its
+normal exit states the receiver's growth and the append (`statesExtension`,
 `statesAppend`); none otherwise. -/
-def withGrown (eff : Effect) (out : HeapKnowledge.Knowledge) (kept : List HeapKnowledge.IndexAtom)
-    (cells : HeapFacts.Facts) : HeapKnowledge.Knowledge :=
+def withGrown (eff : Effect) (out : HeapKnowledge.Knowledge) (kept : List HeapKnowledge.IndexAtom) :
+    HeapKnowledge.Knowledge :=
   if statesExtension eff && statesAppend eff then
-    { out with cells := out.cells ++ cells.filter (!out.cells.contains ·), indices := out.indices ++ HeapKnowledge.shiftIndices kept }
+    { out with indices := out.indices ++ HeapKnowledge.shiftIndices kept }
   else out
 
 theorem withGrown_grows {eff : Effect} (hg : (statesExtension eff && statesAppend eff) = true) {r : Tm}
@@ -3395,27 +3394,15 @@ theorem withGrown_appends {eff : Effect} (hg : (statesExtension eff && statesApp
   statesAppend_appends (Bool.and_eq_true_iff.mp hg).2 hp
 
 theorem withGrown_holds {eff : Effect} {out : HeapKnowledge.Knowledge} {kept : List HeapKnowledge.IndexAtom}
-    {cells : HeapFacts.Facts} {ρ : Env} {h' : Heap} {v : Tm} (ho : HeapKnowledge.Holds out ε (push v ρ) h')
-    (hk : (statesExtension eff && statesAppend eff) = true → HeapKnowledge.IndexHolds ε kept ρ h')
-    (hc : (statesExtension eff && statesAppend eff) = true → HeapFacts.Holds cells (push v ρ) h') :
-    HeapKnowledge.Holds (withGrown eff out kept cells) ε (push v ρ) h' := by
+    {ρ : Env} {h' : Heap} {v : Tm} (ho : HeapKnowledge.Holds out ε (push v ρ) h')
+    (hk : (statesExtension eff && statesAppend eff) = true → HeapKnowledge.IndexHolds ε kept ρ h') :
+    HeapKnowledge.Holds (withGrown eff out kept) ε (push v ρ) h' := by
   unfold withGrown
   split
   · rename_i hg
-    exact ⟨fun f hf => (List.mem_append.mp hf).elim (ho.1 f) (fun hf => hc hg f (List.mem_filter.mp hf).1), ho.2.1,
-      ho.2.2.1, ho.2.2.2.1, ho.2.2.2.2.1,
+    exact ⟨ho.1, ho.2.1, ho.2.2.1, ho.2.2.2.1, ho.2.2.2.2.1,
       IndexWrites.indexHolds_cat ho.2.2.2.2.2 (HeapKnowledge.shiftIndices_holds (hk hg))⟩
   · exact ho
-
-/-- A growth of a receiver's spine (`ReceiverGrows`) changes only its spine
-location, from an array spine to an array spine: no location's value, so
-every cell fact is respected (`weak-update`). -/
-theorem grows_into {r : Tm} {h h' : Heap} (hg : CallEffects.ReceiverGrows r h h') :
-    HeapExpressionRules.IntoContents (fun _ => False) none h h' := by
-  intro l w hl
-  rcases hg l w hl with hw | ⟨-, ls, ls', rfl, hl', -, -⟩
-  · exact .inl hw
-  · exact .inr (.inl ⟨ls, ls', rfl, hl'⟩)
 
 /-- The selected signature of an ordinary step's evidence that `call-ensures`
 applies to: at the sequent `j`, a call checked as `selected_sound` or as
@@ -3431,8 +3418,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
       | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty &&
-          (!(statesExtension eff && statesAppend eff) || k.cells.isEmpty) then none else some eff
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty then none else some eff
       | none => none
     else none
   | _ => none
@@ -3449,8 +3435,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
     | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
-          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty &&
-          (!(statesExtension eff && statesAppend eff) || k.cells.isEmpty) then none
+          (linearAppendKept j.context.length eff j.term k).isEmpty && (frameCells eff j.term k).isEmpty then none
       else if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
           requiresTree G images k codes sums p) then some eff else none
     | none => none
@@ -3836,13 +3821,11 @@ other step is `base`'s. -/
     match PromiseCalls.ensuresCall G images j k e codes sums with
     | some eff => (base.run j k e codes sums).map fun out => PromiseCalls.withGrown eff
         (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
-        (HeapExpressionRules.keptCells (fun _ => true) none k.cells)
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
     | some eff => (base.select j k e codes sums).map fun out => PromiseCalls.withGrown eff
         (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
-        (HeapExpressionRules.keptCells (fun _ => true) none k.cells)
     | none => base.select j k e codes sums
   sound := by
     intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
@@ -3859,10 +3842,7 @@ other step is `base`'s. -/
         (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk
           hh hρ hq.2 hq'.2)
         (fun hgr => IndexWrites.grownRegions_holds he hh hk (PromiseCalls.withGrown_grows hgr hq.2)
-          (PromiseCalls.withGrown_appends hgr hq.2))
-        (fun hgr => HeapExpressionRules.keptCells_holds hk.1
-          (PromiseCalls.grows_into (PromiseCalls.withGrown_grows hgr hq.2))
-          (fun _ _ _ _ _ _ _ _ _ hf => hf)))
+          (PromiseCalls.withGrown_appends hgr hq.2)))
         (HeapExpressionRules.stableFirst_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
     · exact base.sound hc hcodes hsums he hk hw hh href hρ

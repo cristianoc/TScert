@@ -1810,9 +1810,7 @@ Every write the pass checks states its change so:
 - an element write $`x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧`$ at any index,
   a checked one and the length among them: $`L=\top`$, $`C=R(v)`$ (at most
   one element location comes to hold $`v`$, the spine location a spine; a
-  fresh element's location is past the heap, `elementWrite_into`);
-- a call growing its receiver's spine (`ReceiverGrows`): $`L=\emptyset`$
-  (its spine location alone changes, to a spine, `grows_into`).
+  fresh element's location is past the heap, `elementWrite_into`).
 
 A call's frame $`\Phi`$ at the caller's slots
 ([a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller))
@@ -1823,7 +1821,9 @@ $`\Phi`$ respects it under $`\Sigma`$'s query
 $`(r,\delta)`$ keeps its locations or is separated from $`y.f`$. A region
 holding only spines is separated from a field at a key other than the
 spine key by their bounds
-([separation queries](FOOTPRINTS.md#separation-queries)):
+([separation queries](FOOTPRINTS.md#separation-queries)), so a call
+growing its receiver's spine, of frame $`\{x.\mathtt{[]}:\mathsf{grow}\}`$,
+keeps every cell fact at another key:
 
 ```math
 \frac{y.f\in V\in\Sigma\qquad t:\Phi\qquad
@@ -1836,7 +1836,7 @@ own rule keeps.
 
 Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
 (`writeOutput`), `IndexWrites.writtenCells_sound` (`boundedCells_sound`,
-`growOutput_sound`) and `PromiseCalls.withGrown_holds`;
+`growOutput_sound`);
 `PromiseCalls.frameCells_holds` (`frame-cell`, `FactKind.frame_step`,
 added by `Checker.ensuringCalls` through `withEnsures`).
 Cases: `bounded-write-keeps-cells`, `write-keeps-cells`, `cell-kept-by-frame`.
