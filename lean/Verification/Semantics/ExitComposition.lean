@@ -197,7 +197,7 @@ position, a class region, a module cell, or such a region in a class. A
 region reading a path through the heap, or a spine's element cells, reads
 other locations. -/
 def _root_.Verification.Footprints.Region.atLocation : Region → Bool
-  | .field .. | .fields _ | .cls _ | .all | .cell _ => true
+  | .field .. | .fields _ | .cls _ | .all => true
   | .path _ [] _ | .pathFields _ [] | .spine _ [] => true
   | .inCls r _ => r.atLocation
   | _ => false
@@ -211,7 +211,7 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
     exact List.getElem?_append_left hl
   induction R with
   | field | fields | all => rfl
-  | cls _ | cell _ => simp only [Region.mem, hgl]
+  | cls _ => simp only [Region.mem, hgl]
   | path _ p _ => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | pathFields _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
   | spine _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]

@@ -21,8 +21,8 @@ The bound is read from the region's form alone:
 - the cells a spine lists are element cells (`HeapOk.entries_cells`);
 - the spine a path selects is an array spine or a view spine
   (`HeapKnowledge.elementsOf`);
-- a class region, and a module cell (the class region of `values`), hold
-  the classes of the categories its selector names (`Shaped.category`);
+- a class region holds the classes of the categories its selector names
+  (`Shaped.category`);
 - `inCls r c` holds the classes of both `r`'s bound and `c`'s categories;
 - `all` holds every class. -/
 namespace Verification.Footprints
@@ -59,7 +59,6 @@ def Region.bound : Region → RoleSet
   | .cells _ | .pathCells _ _ => RoleSet.elems
   | .cls c => c.roles
   | .all => RoleSet.all
-  | .cell _ => Selector.values.roles
   | .inCls r c => r.bound.inter c.roles
   | .spine _ _ => RoleSet.spines
 
@@ -225,11 +224,6 @@ theorem Region.bound_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
     simp only [Region.mem] at hm
     split at hm
     · exact cells_bound hok hm
-    · cases hm
-  | .cell _, _, _, hm => by
-    simp only [Region.mem] at hm
-    split at hm
-    · rename_i v hv; exact selects_bound hok hv hm
     · cases hm
   | .inCls r c, l, hl, hm => by
     simp only [Region.mem, Bool.and_eq_true] at hm

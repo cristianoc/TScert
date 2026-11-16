@@ -210,7 +210,6 @@ the role class of every allocated location in it, in a well-formed state.
 | `cells x`, `pathCells x p` | element cell | a spine lists element cells (`HeapOk.entries_cells`) |
 | `spine x p` | array spine, view spine | the spine slot's role, or the descriptor's view spine (`RefOk`) |
 | `cls c` | the role classes of the categories `c` selects | a location's contents category is its role's (`Shaped.category`) |
-| `cell b` | field, cell, element cell, identity | its members are those of `cls values` |
 | `inCls r c` | the bound of `r`, restricted to the role classes of `c` | both of the above |
 | `all` | every role class | |
 
@@ -274,9 +273,8 @@ frames' node judgments (`NodesChecked`, `NodesKeep`, `StepParts`) each take
 the spine key reads a spine: step 1 leaves the last read of a guard and of
 a spine separation unmarked for that reason, and the bound above marks it.
 
-Two region forms differ from the paper's and are brought to it here:
-`cell b` selects every value location; `all` selects unallocated
-locations.
+One region form differs from the paper's and is brought to it here:
+`all` selects unallocated locations.
 
 ### Step 6: what `push` and a typed-array write need
 

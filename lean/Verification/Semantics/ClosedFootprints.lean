@@ -496,7 +496,6 @@ recovered from its closed bound. -/
 def Region.cats : Region → Selector
   | .cls S => S
   | .inCls _ S => S
-  | .cell _ => .values
   | _ => .all
 
 /-- **A region's locations hold contents of the categories it names.** -/
@@ -507,7 +506,6 @@ theorem Region.cats_mem {r : Region} {ρ : Env} {h : Heap} {l : Nat} {v : Val} (
   | inCls r S =>
     simp only [Region.mem, hv, Bool.and_eq_true] at hm
     simpa [Region.cats, Selector.selects] using hm.2
-  | cell b => simpa [Region.cats, Region.mem, hv, Selector.selects] using hm
   | _ => exact Selector.has_all _
 
 /-- The largest change of an entry whose region may hold contents of
