@@ -4,9 +4,9 @@
  * that a producer computes from the code, between markers, and one path that
  * rewrites it or checks it.
  *
- *   node tools/generated-sections.mts            rewrite every section
- *   node tools/generated-sections.mts --check    write nothing; fail with the difference
- *   node tools/generated-sections.mts --page F   write the arithmetic rules' page to F
+ *   node dev/generated-sections.mts            rewrite every section
+ *   node dev/generated-sections.mts --check    write nothing; fail with the difference
+ *   node dev/generated-sections.mts --page F   write the arithmetic rules' page to F
  *
  * A destination holds each section registered for it once, between
  * `<!-- generated: ID -->` and `<!-- end generated: ID -->` in Markdown, and
@@ -23,9 +23,9 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { hasExactly, isParsedObject, type Json } from "./calculus.mts";
-import { CSS, rules as ruleBlocks } from "../dev/record-render.mts";
-import { FACES } from "../dev/style-tokens.mts";
+import { hasExactly, isParsedObject, type Json } from "../tools/calculus.mts";
+import { CSS, rules as ruleBlocks } from "./record-render.mts";
+import { FACES } from "./style-tokens.mts";
 
 const root: string = resolve(import.meta.dirname, "..");
 
@@ -427,8 +427,8 @@ export function spans(source: string, format: Format, file: string): Map<string,
 /** A destination with its sections' text replaced by what their producers give. */
 export function rewrite(source: string, format: Format, file: string, sections: readonly Section[]): string {
   const found = spans(source, format, file);
-  for (const id of found.keys()) {
-    if (!sections.some((s) => s.id === id)) throw new Error(`${file}: section ${id} is registered for no producer here`);
+  for (const [id, span] of found) {
+    if (!sections.some((s) => s.id === id)) throw new Error(`${file}:${span.start}: section ${id} is registered for no producer here`);
   }
   let lines = source.split("\n");
   for (const s of sections) {
@@ -456,7 +456,11 @@ export function run(check: boolean): string[] {
   const differences: string[] = [];
   for (const destination of destinations) {
     const sections = registry.filter((s) => s.destination === destination);
-    const format = sections[0]?.format ?? "markdown";
+    const formats = [...new Set(sections.map((s) => s.format))];
+    const format = formats[0];
+    if (format === undefined || formats.length > 1) {
+      throw new Error(`${destination}: its sections are registered in the formats ${formats.join(", ")}; a destination has one format`);
+    }
     const path = join(root, destination);
     const source = readFileSync(path, "utf8");
     const now = rewrite(source, format, destination, sections);

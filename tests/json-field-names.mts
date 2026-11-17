@@ -137,7 +137,7 @@ const equationReaders = [
 // The arithmetic rules' export (GENERATED-SECTIONS.md, "The arithmetic rules'
 // export"): the fields Lean writes and those the reader's types declare.
 {
-  const source = read("tools/generated-sections.mts");
+  const source = read("dev/generated-sections.mts");
   const ts = declared([], undefined, source.slice(source.indexOf("export type RuleVar"), source.indexOf("/** A decoding failure")));
   const writes = new Set([...read("lean/Verification/Source/RuleExport.lean").matchAll(/\("(\w+)",/g)].flatMap(captured));
   expectSubset("Lean writes of the arithmetic rules", writes, ts, {});
