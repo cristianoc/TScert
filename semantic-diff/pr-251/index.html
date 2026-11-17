@@ -1,0 +1,187 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-251"><code>ba681dfdab8ab41c7d73f3c573f449ab90fedab7..pr-251</code></a><ul><li>2 commits</li><li>changes: 2 Wire, 2 Check, 4 Tooling, 2 Docs, 1 Definition</li><li>parts: <span class="chip">lean-rules</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: obligation-diagnostic node-typing records gain the optional field callPreconditions</li><li>wire: the node-typing record's optional field callPreconditions is preconditions, with the step's form and nullable atom facts</li></ul></li></ul></section>
+<h2 id="g-pr-251"><code>ba681dfdab8ab41c7d73f3c573f449ab90fedab7..pr-251</code></h2><article class="card" id="c-89a9ff5dc"><header><div><div class="sha">89a9ff5dc · Cristiano Calcagno · Nov 17, 07:29</div><h3>Name the unestablished precondition of a refused call, with the facts known over its operands</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A refusal at a call of a slot printed only its operands' claims and a dump of the pass's knowledge: pretext's walkPreparedLinesRaw, refused at <code>segmentFlags[startSegmentIndex]!</code>, read &quot;its operands' claims are function, Uint8Array, number; its claim is number&quot;, which says neither which of <code>0 &lt;= i</code>, <code>i &lt; length</code> is missing nor what is known of <code>i</code> and the array.</p></div>
+<h4 class="change"><span class="act added">added</span>Wire <span class="target">obligation record: <code>callPreconditions</code> of a node-typing record</span></h4><div class="prose"><p>A refusal of the single pass at a call of a slot whose callee states a precondition the facts at the call do not establish carries the node-typing record of its node with callPreconditions = { signatures: [{ requires: {slot, pred, entailed} | null, atoms: [{ fact, entailed }] }], known: &lt;knowledge&gt; } one entry per distinct precondition of the callee's signatures; each atom at the node's slots, <code>entailed</code> decided alone over the index facts connected to the call's slots by the function that decides the whole precondition; <code>known</code> those connected facts.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">single pass: the refusal text of a step with no derivation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> node l</span><span class="tgt"><span class="m-text">expression at node</span> <var>l</var><span class="m-rel">:</span> &lt;<span class="m-text">term</span>&gt; <span class="m-text">with</span> <var>N</var> <span class="m-text">facts</span> &lt;1500 <span class="m-text">characters of the knowledge</span>&gt;</span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> node l</span><span class="tgt"><span class="m-text">expression at node</span> <var>l</var><span class="m-rel">:</span> &lt;<span class="m-text">term</span>&gt; <span class="m-text">The refusal is still an error at the same node; no verdict changes</span>.</span></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">the deferred record of a refused call</span></h4><pre class="code"><span class="ln">The walk's refusal holds the call's preconditions as a deferred value,</span><span class="ln">recomputed from the step's entry state when forced; it is forced only</span><span class="ln">where a check reports the refusal (the group's located failure, the</span><span class="ln">settled run of the inferred route), never in a proposal's search or a</span><span class="ln">settling run whose refusal is dropped.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">presentation of a node-typing record of a refused call</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">No rule derives this invoke at number from xs: &lt;type&gt;, i: number, [: &lt;type&gt;.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">No rule derives this call at number. The callee requires i &lt; xs.length,</span><span class="ln">which the facts here do not establish. Known over the call's operands:</span><span class="ln">-i &lt;= 0, safeInteger(i).</span><span class="ln">verify-source puts the record's summary as the refusal's `obligation:`</span><span class="ln">line where the refusal states none of its own; the record decoder reads</span><span class="ln">a linear term at the entry state (`old`) and a bound past the safe</span><span class="ln">integers, written as a decimal string.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">OBLIGATION-DIAGNOSTICS.md, STAGE-STORE.md</span></h4><div class="prose"><p>The section &quot;Call preconditions&quot;, the record field and the presentation bullet; the fact printer joins the unkeyed presentation modules.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-requires-missing-bound</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">refused, naming i &lt; xs.length</span></summary><pre class="code"><span class="tk-c">// A read of an element the precondition does not bound: `i` is a safe</span>
+<span class="tk-c">// integer at least 0, but nothing states it below `xs.length`. Under Node</span>
+<span class="tk-c">// `f([], 0)` returns `undefined` where `number` is claimed. The refusal names</span>
+<span class="tk-c">// the missing fact, `i &lt; xs.length`, and the facts known over the operands.</span>
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[], i: number): number {
+  <span class="tk-k">return</span> xs[i]!;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Explanatory only: the record is built after the verdict from the same facts, and no acceptance path reads it.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SinglePass.StatedPrecondition · SinglePass.CallPreconditions · SinglePass.statedAt · SinglePass.callPreconditionsAt · SinglePass.Outcome.refused · SinglePass.StopOutcome.refused · SourceClaimJson.preconditionsJson · SourceClaimJson.FilePlans.callRecord · SourceClaimJson.FilePlans.placeRefusal · SourceClaimJson.FilePlans.inferredRun</dd><dt>Wire</dt><dd>obligation-diagnostic node-typing records gain the optional field callPreconditions</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">invalid-requires-missing-bound</span></dd></dl>
+<details><summary>17 files changed, 335 insertions(+), 85 deletions(-)</summary><pre class="code"> dev/check-functions.mts                            |   8 +-
+ docs/OBLIGATION-DIAGNOSTICS.md                     |  42 +++++++-
+ docs/STAGE-STORE.md                                |   4 +-
+ lean/Verification/Programs/SinglePass.lean         |  74 +++++++++++++-
+ .../Verification/Programs/SinglePassDiagnosis.lean |   2 +-
+ lean/Verification/Source/Claims/Json.lean          |  62 +++++++++---
+ lean/Verification/Source/Claims/MemberSettle.lean  |  27 +++--
+ lean/Verification/Source/Claims/PassProposals.lean |   2 +-
+ .../Source/Claims/PassUnitInferred.lean            |   6 +-
+ .../Source/Claims/PassUnitWrapper.lean             |   6 +-
+ pipeline/cases.mts                                 |   1 +
+ .../examples/invalid-requires-missing-bound.ts     |   8 ++
+ pipeline/stage-execution.mts                       |   2 +-
+ pipeline/verify-source.mts                         |  17 +++-
+ tools/diagnostic-view.mts                          |  39 +++++++-
+ tools/diagnostic.mts                               | 110 ++++++++++++++++-----
+ {dev =&gt; tools}/fact-text.mts                       |  10 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-c2982ad6d"><header><div><div class="sha">c2982ad6d · Cristiano Calcagno · Nov 17, 07:59</div><h3>Decide each precondition atom by acceptance's check, and cover writes, constructions and code</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A review of the record of a refused call found it wrong or partial: with <code>@requires safeInteger(i) &amp;&amp; i &lt; xs.length</code>, <code>xs[i]!</code> was said to require <code>i &lt; xs.length</code>, while the missing fact is <code>0 &lt;= i</code>: the bound atom <code>bound(xs, i)</code> (an index below the length) was printed as its upper half and decided whole. The record covered only a direct call of the unit's own graph: a refused read inside a closure, a write <code>xs[i] = 1</code> and a construction carried none. Each atom was decided by a copy of the precondition check, the record was attached to steps refused after a derivation was found, and the summary replaced the operands' claims.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">obligation record: the preconditions of a refused step</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>callPreconditions = { signatures: [{ requires, atoms: [{ fact, entailed }] }], known }</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>preconditions = { step: &quot;call&quot; | &quot;construction&quot; | &quot;write&quot;, signatures: [{ requires, atoms: [{ fact | null, entailed }] }], known } of a write <code>xs[i] = v</code>, one entry, the bound its rule requires; an atom's <code>fact</code> null where it names a position the call holds no slot for</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">atoms of a precondition's index fact</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">atoms</span>(<span class="m-op">bound</span>(<var>x</var>, <var>k</var>, <span class="m-text">strict</span>))</span><span><span class="m-rel">=</span> [0 <span class="m-rel">≤</span> <var>k</var>, <var>k</var> + 1 <span class="m-rel">≤</span> |<var>x</var>|]</span></div><div class="row"><span><span class="m-op">atoms</span>(<span class="m-op">bound</span>(<var>x</var>, <var>k</var>, <span class="m-op">non-strict</span>)) <span class="m-rel">=</span> [0 <span class="m-rel">≤</span> <var>k</var>, <var>k</var> <span class="m-rel">≤</span> |<var>x</var>|, <var>k</var> <span class="m-rel">≤</span> 2^32 - 2]</span></div><div class="row"><span><span class="m-op">atoms</span>(<var>F</var>)</span><span><span class="m-rel">=</span> [<var>F</var>]</span><span><span class="m-text">otherwise</span></span></div><div class="row"><span><span class="m-text">together they give the bound but where</span> <var>k</var> <span class="m-text">is a negative zero; a bound</span></span></div><div class="row"><span><span class="m-text">whose atoms all hold and which does not is listed as its own atom</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">diagnostic: whether a precondition atom holds</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a refused call</span><span class="tgt"><span class="m-text">the slot test and index-fact entailment of preconditionHolds, copied, over the connected facts</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> a refused step</span><span class="tgt"><span class="m-text">admitsNear with the atom alone as the precondition, and with the elements precondition alone; of a write, IndexWrites</span>.<span class="m-text">bounded</span></span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">where the record of a refused step is made</span></h4><pre class="code"><span class="ln">Only a step refused for having no derivation, its search having found</span><span class="ln">none, holds the deferred record; it passes through a code's refusal,</span><span class="ln">a qualified body's run and the regional fallback, and the record of a</span><span class="ln">code's refusal is built over that code's request and source map.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">presentation of a step's preconditions</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">No rule derives this call at number. The callee requires i &lt; xs.length, ...</span><span class="ln">Known over the call's operands: -xs.length + i &lt;= -1, safeInteger(i).</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">No rule derives this invoke at number. The callee requires 0 &lt;= i, which</span><span class="ln">the facts here do not establish. Known over its operands:</span><span class="ln">i + 1 &lt;= xs.length, safeInteger(i). Its operands' claims: xs: ..., i: number.</span><span class="ln">A linear fact is printed with positive multiples on each side, a term</span><span class="ln">named by a source expression in parentheses; a bound in full,</span><span class="ln">`index(i) &amp;&amp; i &lt;= xs.length`; the elements facts known are listed; the</span><span class="ln">pass's own claims line is kept and the summary follows it; the</span><span class="ln">decoder reads a coefficient past the safe integers as a decimal string.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">OBLIGATION-DIAGNOSTICS.md</span></h4><div class="prose"><p>The section &quot;Step preconditions&quot; (form, atoms, the check deciding each, phase and fuel, where it is computed); the presentation bullet.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-requires-missing-bound</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused, naming i + 1 &lt;= xs.length</span></summary><pre class="code"><span class="tk-c">// A read of an element the precondition does not bound: `i` is a safe</span>
+<span class="tk-c">// integer at least 0, but nothing states it below `xs.length`. Under Node</span>
+<span class="tk-c">// `f([], 0)` returns `undefined` where `number` is claimed. The refusal names</span>
+<span class="tk-c">// the missing fact, `i &lt; xs.length`, and the facts known over the operands.</span>
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[], i: number): number {
+  <span class="tk-k">return</span> xs[i]!;
+}</pre></details></li><li><details><summary><code>invalid-requires-missing-lower-bound</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">refused, naming 0 &lt;= i</span></summary><pre class="code"><span class="tk-c">// A read of an element the precondition bounds above but not below: `i` is</span>
+<span class="tk-c">// a safe integer below `xs.length`, but nothing states it at least 0. Under</span>
+<span class="tk-c">// Node `f([1], -1)` returns `undefined` where `number` is claimed. The</span>
+<span class="tk-c">// refusal names the missing fact, `index(i)`, and the facts known over the</span>
+<span class="tk-c">// operands.</span>
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; i &lt; xs.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[], i: number): number {
+  <span class="tk-k">return</span> xs[i]!;
+}</pre></details></li><li><details><summary><code>invalid-write-missing-bound</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">refused, naming index(i) &amp;&amp; i &lt;= xs.length</span></summary><pre class="code"><span class="tk-c">// A write of an element at an index the precondition does not bound by the</span>
+<span class="tk-c">// array's length: under Node `w([], 5)` leaves `xs` with five holes, where</span>
+<span class="tk-c">// `number[]` states every element present. The refusal names the bound the</span>
+<span class="tk-c">// write requires, `index(i) &amp;&amp; i &lt;= xs.length`, and the facts known over</span>
+<span class="tk-c">// the operands.</span>
+<span class="tk-c">/** @requires safeInteger(i) &amp;&amp; 0 &lt;= i */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> w(xs: number[], i: number): <span class="tk-k">void</span> {
+  xs[i] = <span class="tk-n">1</span>;
+}</pre></details></li><li><details><summary><code>invalid-closure-read-missing-bound</code> <span class="kind negative">negative</span> <span class="was">(new)</span> <span class="arrow">→</span> <span class="now">refused, naming 0 &lt;= j &amp;&amp; j + 1 &lt;= xs.length</span></summary><pre class="code"><span class="tk-c">// A read of an element inside a closure, at an index nothing bounds: under</span>
+<span class="tk-c">// Node `f([], 0)` returns `undefined` where `number` is claimed. The refusal,</span>
+<span class="tk-c">// of the closure's code, names the missing facts of the element read's</span>
+<span class="tk-c">// precondition.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> f(xs: number[], i: number): number {
+  <span class="tk-k">const</span> g = (j: number): number =&gt; xs[j]!;
+  <span class="tk-k">return</span> g(i);
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Explanatory only: the record is built after the verdict, on the reporting path, and no acceptance path reads it.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SinglePass.factAtoms · SinglePass.statedAt · SinglePass.StepForm · SinglePass.StepPreconditions · SinglePass.stepPreconditionsAt · SinglePass.StepStats.underivable · SourceClaimJson.preconditionsJson · SourceClaimJson.FilePlans.callRecord · SourceClaimJson.FilePlans.placeRefusal</dd><dt>Wire</dt><dd>the node-typing record's optional field callPreconditions is preconditions, with the step's form and nullable atom facts</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">invalid-requires-missing-lower-bound</span> <span class="test pos">invalid-write-missing-bound</span> <span class="test pos">invalid-closure-read-missing-bound</span></dd></dl>
+<details><summary>11 files changed, 309 insertions(+), 175 deletions(-)</summary><pre class="code"> docs/OBLIGATION-DIAGNOSTICS.md                     |  72 ++++++-----
+ lean/Verification/Programs/SinglePass.lean         | 138 ++++++++++++++-------
+ lean/Verification/Source/Claims/Json.lean          |  79 +++++++-----
+ pipeline/cases.mts                                 |   5 +-
+ .../examples/invalid-closure-read-missing-bound.ts |   8 ++
+ .../invalid-requires-missing-lower-bound.ts        |   9 ++
+ pipeline/examples/invalid-write-missing-bound.ts   |   9 ++
+ pipeline/verify-source.mts                         |  14 ++-
+ tools/diagnostic-view.mts                          |  49 +++++---
+ tools/diagnostic.mts                               |  69 ++++++-----
+ tools/fact-text.mts                                |  32 ++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
