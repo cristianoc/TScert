@@ -348,6 +348,9 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   It is wider than that reason: a `pop` of an owned array of numbers drops a
   cell no other code reaches, and is refused all the same, a restriction of
   the language ([WORK](../../WORK.md#status), "Shrinking owned arrays").
+  Since every incoming value is charged (*Incoming values*), it also
+  refuses a member that shrinks, or overwrites a reference in, storage
+  its caller passed, which the same row covers.
 - **Construction.** An instance field's initializer reads `this` only as
   `this.#f` of an earlier field, gives `this` to nothing, and runs no code
   that is not the body's. The instance is complete, and meets $`I_C`$, only
@@ -449,10 +452,13 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   one, as pretext's cached measurement holds `fit.advances`
   (`measurement.ts:1262`), which handles share (`prepare.ts:525–529`,
   `:579`, `:628`). A value received from code that is not the body's has no
-  such proof. The
-  flow is over the body's code alone, which is all the code that stores
-  into confined storage (conjectured: a flow the front computes with
-  $`\Psi_C`$, checked by the pass as a store into owned storage is).
+  such proof. *Owning* is a component of a location's contract, fixed at
+  allocation: the front proposes it per allocation site, and the pass
+  checks every store into private state, into owned storage or into a
+  confined collection to store a value marked owning, or fresh storage
+  from a site marked owning. A write is uncharged only through a reference
+  whose possible contracts are all unmarked. Disjointness is then a typing
+  fact, and a forged mark fails a store's check (conjectured).
 - **Tolerant invariant.** Every change the body makes to a location of
   $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
   $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
@@ -729,7 +735,7 @@ export type PreparedTextWithSegments = PreparedText & {
   the module binding `measureState` (cited: `:405`), which no module
   exports, holds the record whose `Map`s of fonts (`:1379`, `:1447–1448`)
   hold each font's measurement, its `Map`s of segment metrics and the
-  advances lists `getSegmentFit` caches (`:1262`); the code that reads them
+  advances and `lineStartExtras` lists `getSegmentFit` caches (`:1262`); the code that reads them
   moves into the body with the rest of preparation. `breakableFitAdvances`
   shares the cached lists as upstream does. The body's writes to values
   from the caches are charged: preparation copies a cached list before
@@ -737,9 +743,11 @@ export type PreparedTextWithSegments = PreparedText & {
   adjustment, the cached lists being shared by every occurrence of a text),
   so no owned spine or cell is written; the insertions (`:697`, `:729`,
   `:800`, `:1304`, `:1380`) store fresh values; the fields set lazily on a
-  font's measurement and on the state record (`:595`, `:731`, `:780`,
-  `:844`, `:879–914`, `:1055`, `:1072`) are fields of records allocated at
-  sites that are not owning, since a handle holds the advances lists and its
+  font's measurement, its segment metrics and the state record (`:595`,
+  `:731`, `:780`, `:818`, `:824`, `:844`, `:847`, `:879–914`, `:1055`,
+  `:1072`, `:1189`, `:1207`, `:1262`, `:1374`, `:1457`) are fields of
+  records allocated at sites that are not owning, since a handle holds the
+  advances and `lineStartExtras` lists (`prepare.ts:526`, `:529`) and its
   own arrays and no such record (conjectured until the flow runs), so not
   owned. `clearCache` (`layout.ts:360–363`)
   calls `clearMeasurementCaches` (`measurement.ts:1453–1458`): two `clear`s
