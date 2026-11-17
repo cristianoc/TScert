@@ -287,3 +287,66 @@ and one currently; it does not construct an admissible execution or prove
 that particular textual formula admitted. The owner was asked to clarify the
 index-at-term sentence. The earlier raw-value negative-zero obstruction also
 remains unresolved. The paper's mathematics is unchanged.
+
+## Corrected literals and path supports at 3ad56a37
+
+Evidence from the cloud checkout on 2026-11-17 for source commit
+`3ad56a37ae4b1c30931fe16cc6e9d859e39b602f`, following validation commit
+`f1aaea528085f277e3787671e1d81b2b89dcf827`. The owner supplied the exact
+Definition 23 signed-zero correction during this continuation. The paper and
+PDF contain that authorized correction; other paper mathematics is unchanged.
+The original countermodel remains valid evidence against the former clause,
+not an obstacle to the corrected rule.
+
+Focused builds passed for LiteralEquality, PathSupports and the concrete
+FreshnessCounterexample, then corrected literal derivations and transfer.
+Both axiom checks passed together (414 jobs). The same eight cached
+informational PANIC traces from unchanged A code were replayed, with no new
+module warning/error; the command exited zero.
+
+A complete supervised `make test` exited zero under pinned Lean 4.33.1 and
+Node 26.13.0 with `bc`, within its 1800-second budget:
+
+- full Lean build: 623 jobs;
+- all 23 fast suites and 175 controls;
+- **3419 of 3419 pipeline cases as expected**, 4322 functions verified,
+  1782 negative controls and 147 named gaps.
+
+Controls used four lanes, with 3 operations executed and 492 replayed. Direct
+axiom import coverage includes 363 other A/shared and 48 other Paper modules.
+The source scan found zero outside-to-Paper imports, and no changed Lean
+module is outside Paper. Documentation passed with 76 documents, 892 code
+citations and zero problems; diff and commit-record checks passed. Logs are
+`/workspace/scratch/literal-path-test.log`,
+`/workspace/scratch/literal-path-axioms.log` and
+`/workspace/scratch/literal-path-docs.log`.
+
+The paper HTML build initially failed because its Pandoc option was unsupported;
+both calls use the standard `--mathjax` option. It then passed with zero
+unconverted commands. The PDF build initially lacked TeX prerequisites. They
+were installed in isolated cloud scratch, without changing the paper's style:
+newtx 1.756 (TeX Live revision 78101), mathpartir 1.3.2 (77682), stmaryrd (77682),
+kastrup (15878), txfonts (77682), tex-gyre 2.501 (68624). With those prerequisites,
+`python3 color.py` and `latexmk -pdf note-color.tex` completed; after package
+installation `-g` forced reevaluation of cached failures. The 26-page tracked
+PDF was rebuilt and the corrected rule on page 22 visually inspected. Logs
+are `/workspace/scratch/paper-literal-render.log` and
+`/workspace/scratch/paper-literal-pdf.log`; generated intermediate files were
+removed from the repository. The rendered HTML was retained in cloud scratch.
+
+Independent read-only Astra review confirmed all three literal rules exactly
+match the owner's decision, preserve raw equality and use no broader trust.
+It checked omission reinsertion and shared traversal reuse, the four exact
+successful-read support rows, and the concrete freshness countermodel. The
+latter has actual valid-context indexed heaps, an admissible transition and
+admitted regions/support under the indicated nullable path classifications;
+it is not a full source EnvTyping derivation or command execution proof.
+The reviewer found no blocking defect or correspondence overclaim, and
+confirmed unchanged **42 equal / 25 narrower / 9 absent / 13 assumed** accounting.
+It did not rerun builds or rendering checks.
+
+The paper's failed-prefix freshness support is mathematically obstructed;
+its repair and the interpretation of index-at-term instantiation await owner
+decisions. Other structural supports, full substitution/admission transport,
+primitive/host bridges, Call/Fun and closed examples remain explicit obligations.
+No full-alignment claim follows from this validation.
