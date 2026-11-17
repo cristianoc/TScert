@@ -719,3 +719,66 @@ Logs: `/workspace/scratch/graph-foundations-test.log`,
 `graph-foundations-axioms.log`, `graph-layout-inversion-build1.log` (layout),
 `graph-inversion-build3.log`, `command-machine-build3.log`,
 `graph-segments-build1.log` and `graph-foundations-docs-final.log`.
+
+
+## Third owner-requested rebase, onto 5777ed2e
+
+The owner requested another rebase after new single-pass changes. Fetching
+recorded exact remote tip `5777ed2e08992863611715aa38f21b97f10145d5`, adding
+`d970a4e3` (bounded universal notation) and `5777ed2e` (unified length) above
+`f2e33e7f35769d00dd6aa1763d86d3c6ef41983f`. The 24 implementation/record
+commits rebased without conflicts; all seven pending compiler source files
+were stashed and restored intact. The original exact fetched start remains
+`ba681dfdab8ab41c7d73f3c573f449ab90fedab7`. No owner paper/PDF changes were
+reverted or edited. Rewritten commit mapping:
+
+- `26d0fbd2c264bf97b34a9203cb98fb9ef3bf130f` → `ac2533b8332450e57c35db48bb8e46ea28f43a08`: State semantic support and respect at the paper's generality.
+- `0e0d4113e18dcda0b219d8cb8548240478a832a6` → `cb5565c22a5f2fe56b7f4a6af57413e34e1acf56`: Interpret general paper assertions and quantified consequences.
+- `c5dfad3867728aec83c0537e1c46a769687c9a6c` → `13b4cecfc6ed92ead97159c4af0f55d13f74b709`: Prove general command rules and regional checked transfer.
+- `1c5a117d9e84336b1cec0259d5333315999bc85b` → `093f111edc465a31d8e4a88257d527bdb81a841b`: Record final Paper proof, regression and correspondence validation.
+- `9065f4535d24cd15f5042e9764b0519de5014351` → `00c4b4b35a653a6bef7b3da9b73ccd4cfb8e3b95`: Prove capture-avoiding assertion transport and full quantified rules.
+- `4f99c4ab08f26552989361987f1e7205f671ecac` → `e3d0aaaacab1853eb8b88b288a1b3ddf57675553`: Record full validation of the assertion transport continuation.
+- `7a6c41b524e4b08a1e0c6f51b76178a2044c9a74` → `71cc41283ab6390efab93989f6ef361a7d0272c3`: Prove general all support, witness rules and integer consequence.
+- `b029933092b487ac695c79762502fdd7191edbb3` → `8c8048b29ea470e58242d6076ac61e163151826e`: Record validation and the numeric equality obstruction.
+- `6b2df2341132bd4ab8e54509b3c837d9442fbafb` → `41c5cb107df7389959b76503a1ce258a00aa0de1`: Formalise first-order two-state postconditions and their transport.
+- `a6a692473432e8b2412b22483d3e6652eaf6d4b7` → `6aee3ee7c6d05884ebe80beb11fd9c71a554372c`: Record validation of first-order postcondition proofs.
+- `b907a21a5fff67b20e1f8a7905dfd7073026073a` → `78ee65e9d7c40295d50f7e1ea0619fc9a1596578`: Correct the zero bridge and prove conditional path supports.
+- `2a1c50d28dfddfd0bca2a8cc8d2b608522b0fdd1` → `2d48f60aed43b4204de41993e0d3b93213d64e6f`: Record validation of the corrected literal and path support proofs.
+- `c735b67546c32b6333acc75444a469aefe6ca40a` → `942b50883ac0d0c73f79afe3ed096f88bbc50b34`: Make logical witnesses heap-based and prove structural supports.
+- `47af13f28534ff27e11ffa0b41fa30d2542b718d` → `bd26c84229721a9f60001361b792fc1496da38d5`: Record rebased quantifier and support validation.
+- `a082e3d8b0765b69fe607b46fa10a4e2ee0a2859` → `f2147af42f02ae90362b369f2a5a9449cb3aa0a6`: Prove scoped Call instantiation on actual executions.
+- `e88e2d9e2d7d8980a5afa2c6d8b94c2fa6a52f08` → `e66d3bf7b0e9ec780c3a06a7bf91d2fe8b0e6374`: Record exact scoped Call validation and review.
+- `b703b5de9b7a1c3f67d96ff4972ca43fcf7fca33` → `12d952d4f24421d513fbf95c219842ed723cd7c9`: Observe raw completions and prove scoped budget transport.
+- `7fcd1a5c1266b2add64e3956fddf56af416e4c8c` → `73cc9f4fc553cf31f60e3c7e8ce92b61f833ba08`: Record raw execution and budget proof validation.
+- `69d3e9acc3646d31e8304897e50d4ff4b5960434` → `876d9f67a38d969cf52d07b5a90974a97e538853`: Compile fixed primitive terms with a conservative own-key test.
+- `7dcd069f6f306430400b1e1c76a998fcef633ad6` → `2f329a34c0306a72c5743a176f7a9e1121cbad86`: Record latest-rebase primitive code and shared regression evidence.
+- `38b317059e56dd0dc9f155dcceca7f8f8d7c2e48` → `c55a28d13f6c6e6926fcbdbf8a5bda8a2e68d050`: Prove general Mask and Or on actual arithmetic commands.
+- `1e0016aff64de23e3b977badf25f02602728b3ba` → `cdb61b7406b08fc438dee65422d46229ec76927c`: Record complete Mask and Or command validation.
+- `1fc40c5e41873c227d977bab594034a8033614bf` → `fd3857298cc866d871ab255c94cb4f13553657a3`: Prove finite graph frames and structured command trace inversion.
+- `2583b0ea628ea3c53fc762ec998256c5fc3b6ede` → `0f3d1ba9aaad4a5a2aaa5b49b2ddb21ca6e139d6`: Record exact graph and control foundation validation.
+
+The committed Lean tree is byte-for-byte identical to pre-rebase
+`2583b0ea628ea3c53fc762ec998256c5fc3b6ede` (git diff --quiet for lean passed).
+The documentation check passes: 79 documents, 892 code citations, zero problems;
+whitespace checks pass. Earlier full regressions stay attached to their exact
+sources/bases above, not claimed reruns of this newer paper. Pending generated
+compiler/local simulation files remain uncommitted and need their own full
+validation after completion. No merge is performed.
+
+Independent Astra reread the actual paper diff and identified substantive
+unified-length obligations: mixed array/view/string paths, empty-suffix element
+lengths, support by declared sort and the explicit collection restriction of
+Empty. Receiver independence from the quantifier bound was already represented.
+Inst/Prefix/Empty and their excluded summary are conservatively narrower until
+that grammar/transport is supplied. Explicitly sorted arithmetic/string/view
+rules retain their mathematical content, with notation translation pending;
+general semantic arbitrary-assertion theorems are unchanged. The full recount
+is 91 rows: 39 equal, 29 narrower, 10 absent and 13 assumed. This reclassification
+records new scope, not a closed gap.
+
+Two precise owner questions are pending: the mixed number[]|string support
+contains a declared-ill-formed spine region, and an element-free bounded body
+has no identified implicit receiver. The correspondence obligations state the
+smallest static/interpretation obstructions. Neither the paper nor B's region
+admission or quantifier meaning is silently changed. Independent command-graph
+work continues. Full alignment remains incomplete.

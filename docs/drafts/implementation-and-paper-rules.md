@@ -4,6 +4,15 @@ The basis of the work that relates the verifier to the paper
 [Tolerant frames](tolerant-frames-note/note.tex). Its status is the row
 "Implementation rules and paper rules" of [WORK.md](../../WORK.md#status).
 
+
+The current comparison targets the owner’s latest single-pass paper at
+`5777ed2e08992863611715aa38f21b97f10145d5`. Its unified dynamic length is not yet
+represented in B. Statements below about complete syntactic transport are about
+the represented kind-specific grammar, not that new paper grammar. The bounded
+universal’s receiver is independent of its bound, as already encoded by Every;
+the no-element case and mixed-length support admission await owner decisions.
+The current table has 91 rows: 39 equal, 29 narrower, 10 absent and 13 assumed.
+
 ## Three things
 
 **A. The implementation rules.** The rules acceptance applies: the
