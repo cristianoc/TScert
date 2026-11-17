@@ -327,7 +327,7 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
         ans = a1) := by
   unfold checkedStep at h
   simp only [Id.run, timedKind] at h
-  generalize hD : directCall G images _ node.expression c.type _ undefTy answers = D at h
+  generalize hD : directCall G images (PromiseCalls.intRefine G c.context _) node.expression c.type _ undefTy answers = D at h
   generalize hS : expressionEffectUsing G images pool fuel _ _ suggestions index codes aliases _ _ _ = S at h
   generalize hM : materialize entry c.context.length ms _ = M at h
   generalize hW : materialize entry c.context.length ms true = MW at h

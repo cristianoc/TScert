@@ -254,12 +254,13 @@ elements follow from a type only through reads.
 **A type from integrality.** The converse reads the facts at a type: a
 step is checked at its claimed context refined by the safe integers its
 facts state (`PromiseCalls.intRefine`), each slot $`x`$ with
-$`K\vdash\mathrm{int}(x)`$ whose type has a clause including the safe
-integers (`number`, `int`, `unknown`) read at the graph's `int` label, which
-is the type's meet with `int` there:
+$`K\vdash\mathrm{int}(x)`$ whose type is of clause rows not all within the
+safe integers read at the graph's `int` label, within which the type's meet
+with `int` lies; a type already within the safe integers, or with a
+parameter, scheme or meet row, keeps its type:
 
 ```math
-\frac{K\vdash\mathrm{int}(x)\qquad \mathsf{int}\le c\ \text{for a clause}\ c\ \text{of}\ \Gamma(x)}{\Gamma\vdash_K x:\mathsf{int}}\ \textsf{int-refine}
+\frac{K\vdash\mathrm{int}(x)\qquad \Gamma(x)=c_1\mid\cdots\mid c_m\qquad c_i\not\le\mathsf{int}\ \text{for some}\ i}{\Gamma\vdash_K x:\mathsf{int}}\ \textsf{int-refine}
 ```
 
 The refined context is the sequent of the step's own checks, its search,

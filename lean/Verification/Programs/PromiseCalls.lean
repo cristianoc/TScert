@@ -130,10 +130,10 @@ theorem envOk_refineBy [DecidableEq ι] {G : NormalGraph ι} {ρ n W shift} {h :
 /-! ## Refinement by integer facts
 
 A slot a step's facts state a safe integer (`HeapKnowledge.intSlot`) is read
-at its type met with the clause `int` (docs/drafts/integer-types.md, "The
-bridge"). The meet is represented where it is `int`: where a clause of the
-slot's type includes `int`, at the graph's `int` label, whose row is checked
-to be that one clause. -/
+within the clause `int` (docs/drafts/integer-types.md, "The bridge"): its
+type's meet with `int` lies there, so a plain type not already within the
+safe integers is read at the graph's `int` label, whose row is checked to be
+that one clause. -/
 
 /-- The graph's `int` label, its row checked to be the one clause `int`. -/
 def intLabel (G : NormalGraph ι) : Option ι :=
@@ -141,18 +141,18 @@ def intLabel (G : NormalGraph ι) : Option ι :=
     | [.int] => true
     | _ => false
 
-/-- Whether a clause of a plain type includes the safe integers, so that the
-type's meet with `int` is `int`. -/
-def includesInt (G : NormalGraph ι) (A : Ty ι) : Bool :=
-  G.plainTy A && (PositiveRules.expand G A).any fun c => match c with
-    | .num | .int | .source | .top => true
-    | _ => false
+/-- Whether a fact stating a slot's value a safe integer refines its type
+`A`: a plain type not already within the safe integers
+(`IndexWrites.intClause`). Its meet with `int` lies within `int`, which the
+refinement reads it at; a parameter, scheme or meet row keeps its type. -/
+def intRefinable (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && !(PositiveRules.expand G A).all IndexWrites.intClause
 
 /-- **A context refined by integer facts**: each slot the atoms `as` state a
-safe integer whose type includes the safe integers, at the `int` label. -/
+safe integer whose type `intRefinable` refines, at the `int` label. -/
 def intRefine (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) : List (Ty ι) :=
   match intLabel G with
-  | some L => Γ.mapIdx fun i A => if HeapKnowledge.intSlot as i && includesInt G A then [L] else A
+  | some L => Γ.mapIdx fun i A => if HeapKnowledge.intSlot as i && intRefinable G A then [L] else A
   | none => Γ
 
 /-- Whether `Δ` is `Γ` refined by integer facts: as long, each slot its type
