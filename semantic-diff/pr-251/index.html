@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-251"><code>ba681dfdab8ab41c7d73f3c573f449ab90fedab7..pr-251</code></a><ul><li>2 commits</li><li>changes: 2 Wire, 2 Check, 4 Tooling, 2 Docs, 1 Definition</li><li>parts: <span class="chip">lean-rules</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: obligation-diagnostic node-typing records gain the optional field callPreconditions</li><li>wire: the node-typing record's optional field callPreconditions is preconditions, with the step's form and nullable atom facts</li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-251"><code>ba681dfdab8ab41c7d73f3c573f449ab90fedab7..pr-251</code></a><ul><li>3 commits</li><li>changes: 3 Wire, 2 Check, 4 Tooling, 2 Docs, 1 Definition</li><li>parts: <span class="chip">lean-rules</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: obligation-diagnostic node-typing records gain the optional field callPreconditions</li><li>wire: the node-typing record's optional field callPreconditions is preconditions, with the step's form and nullable atom facts</li></ul></li></ul></section>
 <h2 id="g-pr-251"><code>ba681dfdab8ab41c7d73f3c573f449ab90fedab7..pr-251</code></h2><article class="card" id="c-89a9ff5dc"><header><div><div class="sha">89a9ff5dc · Cristiano Calcagno · Nov 17, 07:29</div><h3>Name the unestablished precondition of a refused call, with the facts known over its operands</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>A refusal at a call of a slot printed only its operands' claims and a dump of the pass's knowledge: pretext's walkPreparedLinesRaw, refused at <code>segmentFlags[startSegmentIndex]!</code>, read &quot;its operands' claims are function, Uint8Array, number; its claim is number&quot;, which says neither which of <code>0 &lt;= i</code>, <code>i &lt; length</code> is missing nor what is known of <code>i</code> and the array.</p></div>
 <h4 class="change"><span class="act added">added</span>Wire <span class="target">obligation record: <code>callPreconditions</code> of a node-typing record</span></h4><div class="prose"><p>A refusal of the single pass at a call of a slot whose callee states a precondition the facts at the call do not establish carries the node-typing record of its node with callPreconditions = { signatures: [{ requires: {slot, pred, entailed} | null, atoms: [{ fact, entailed }] }], known: &lt;knowledge&gt; } one entry per distinct precondition of the callee's signatures; each atom at the node's slots, <code>entailed</code> decided alone over the index facts connected to the call's slots by the function that decides the whole precondition; <code>known</code> those connected facts.</p></div>
@@ -182,6 +182,29 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tools/diagnostic-view.mts                          |  49 +++++---
  tools/diagnostic.mts                               |  69 ++++++-----
  tools/fact-text.mts                                |  32 ++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2cc3a8070"><header><div><div class="sha">2cc3a8070 · Cristiano Calcagno · Nov 17, 08:21</div><h3>Read every knowledge shape the verifier writes in a diagnostic record</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The pretext tier's case invalid-every-elements-callback-call failed: &quot;a diagnostic record the reader refuses&quot;. Its record's <code>known</code> holds an elements fact with no condition, which the verifier writes as <code>&quot;cond&quot;: null</code>; the reader took <code>cond</code> as absent or a number and refused the record. Reading the encoder for every part of a record's knowledge found one more shape it refused: a cell, value or link field that is a well-known symbol, written <code>{&quot;symbol&quot;: n}</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the diagnostic reader's knowledge</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>elems[i].cond absent or a number cells/values[i].field, links[i].field a string</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>elems[i].cond null or a number, always present, as the verifier writes it cells/values[i].field, links[i].field a property key: a string or {&quot;symbol&quot;: n} A link through a symbol key is named <code>x.[Symbol n]</code> in a summary.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-every-elements-callback-call</code> <span class="kind negative">negative</span> <span class="was">record refused</span> <span class="arrow">→</span> <span class="now">record read</span></summary><pre class="code"><span class="tk-c">// map's callback calls a function it is given with the array: an ordinary</span>
+<span class="tk-c">// arrow may change anything, so the callback is beyond the empty footprint</span>
+<span class="tk-c">// and no signature at the elements fact applies. Under Node the function</span>
+<span class="tk-c">// writes null at index 1, and the next visit is handed it.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shout(
+  xs: (string | <span class="tk-k">null</span>)[],
+  f: (ys: (string | <span class="tk-k">null</span>)[]) =&gt; <span class="tk-k">void</span>,
+): string[] | <span class="tk-k">null</span> {
+  <span class="tk-k">return</span> xs.every((x): x is string =&gt; x !== <span class="tk-k">null</span>)
+    ? xs.map((x) =&gt; {
+        f(xs);
+        <span class="tk-k">return</span> x.toUpperCase();
+      })
+    : <span class="tk-k">null</span>;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>pretext tier (50 of 50 pattern cases, 215 of 215 list cases, 210 of 210 functions) · node pipeline/run-cases.mts (3423 of 3423)</dd></dl>
+<details><summary>2 files changed, 18 insertions(+), 19 deletions(-)</summary><pre class="code"> tools/diagnostic-view.mts |  3 ++-
+ tools/diagnostic.mts      | 34 ++++++++++++++++------------------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
