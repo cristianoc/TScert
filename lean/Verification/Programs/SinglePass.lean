@@ -2117,7 +2117,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
   -- A read of a slot whose type is the claim's: the result is that slot's
   -- value, named as it (`HeapExpressionRules.copy`).
   let copied : Option Nat := timedKind "node copied" fun _ => match node.expression with
-    | .var i => if (c.context[i]?).any (· == c.type) && (IndexWrites.litSlot G c.context i).isNone then
+    | .var i => if (c.context[i]?).any (· == c.type) && (IndexWrites.typeInt G c.context i).join.isNone then
         entry.names[i]? else none
     | _ => none
   let mut store := entry.store

@@ -424,30 +424,66 @@ def stringSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : Bool :=
   | some S => G.plainTy S && (expand G S).all fun c => tagClause .isStr c == some true
   | none => false
 
-/-- The safe integer a slot's type admits alone: a plain type whose one
-clause is that number's literal. -/
-def litSlot (G : NormalGraph ι) (Γ : List (Ty ι)) (a : Nat) : Option Int :=
+/-- Whether a clause holds safe integers alone: the clause `int`, or a
+numeric literal or tag set each of whose numbers decodes as a safe integer
+(the inclusions of a clause in `int`, `PositiveRules.CoversWith`). -/
+def intClause {α : Type} : Clause α → Bool
+  | .int => true
+  | .numLit b => (SafeIntegers.safeIntOfBits b).isSome
+  | .numIn S => S.all fun b => (SafeIntegers.safeIntOfBits b).isSome
+  | _ => false
+
+/-- What a slot's type states of its value as an integer: where the type is
+plain and each of its clauses holds safe integers alone (`intClause`), that
+the value is a safe integer (`some _`), and, where the type is one literal,
+the integer it is (`some (some i)`). -/
+def typeInt (G : NormalGraph ι) (Γ : List (Ty ι)) (a : Nat) : Option (Option Int) :=
   match Γ[a]? with
-  | some S => if G.plainTy S then match expand G S with
-      | [.numLit b] => SafeIntegers.safeIntOfBits b
-      | _ => none else none
+  | some S => if G.plainTy S then
+      if (expand G S).all intClause then some (match expand G S with
+        | [.numLit b] => SafeIntegers.safeIntOfBits b
+        | _ => none) else none
+    else none
   | none => none
 
-theorem litSlot_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {a : Nat} {i : Int} {ρ n W}
-    (hc : litSlot G Γ a = some i) (he : EnvOk G Γ ρ n W) : ∃ b, ρ a = .num b ∧ SafeIntegers.SafeInt b i := by
-  unfold litSlot at hc
+theorem intClause_sound {G : NormalGraph ι} {c : Clause (List ι)} {n W v}
+    (hc : intClause c = true) (hv : clauseSem G c n W v) :
+    ∃ b, v = .num b ∧ (SafeIntegers.safeIntOfBits b).isSome := by
+  replace hv := hv.1
+  cases c <;> simp only [intClause, reduceCtorEq] at hc
+  case numLit b => exact ⟨b, by simpa [semWithArgs] using hv, hc⟩
+  case numIn S =>
+    obtain ⟨b, hb, rfl⟩ : ∃ b ∈ S, v = .num b := by simpa [semWithArgs] using hv
+    exact ⟨b, rfl, List.all_eq_true.mp hc b hb⟩
+  case int =>
+    obtain ⟨b, rfl, hb⟩ : ∃ b, v = .num b ∧ SafeIntegers.safeIntOfBits b ≠ none := by
+      simpa [semWithArgs, PositiveNormalization.intT] using hv
+    exact ⟨b, rfl, Option.isSome_iff_ne_none.mpr hb⟩
+
+/-- **A slot's type states its value a safe integer**, and, at one literal,
+that integer. -/
+theorem typeInt_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {a : Nat} {r : Option Int} {ρ n W}
+    (hc : typeInt G Γ a = some r) (he : EnvOk G Γ ρ n W) :
+    (intValue (ρ a)).isSome ∧ ∀ i, r = some i → ∃ b, ρ a = .num b ∧ SafeIntegers.SafeInt b i := by
+  unfold typeInt at hc
   split at hc
   · rename_i S hS
     split at hc
     · rename_i hp
       split at hc
-      · rename_i b hx
+      · rename_i hall
+        cases hc
         have hm := (expand_sem G S hp n W (ρ a)).mp (he.2 a S hS)
-        rw [hx] at hm
-        obtain ⟨c, hc', hsem⟩ := hm
-        simp only [List.mem_singleton] at hc'
-        subst hc'
-        exact ⟨b, by simpa [clauseSem, rowSem, semWithArgs] using hsem.1, SafeIntegers.safeIntOfBits_sound hc⟩
+        obtain ⟨c, hcm, hsem⟩ := hm
+        obtain ⟨b, hb, hi⟩ := intClause_sound (List.all_eq_true.mp hall c hcm) hsem
+        refine ⟨by simp [hb, intValue, hi], fun i hr => ?_⟩
+        split at hr
+        · rename_i b' hx
+          rw [hx] at hcm
+          simp only [List.mem_singleton] at hcm
+          subst hcm
+          exact ⟨b', by simpa [clauseSem, rowSem, semWithArgs] using hsem.1, SafeIntegers.safeIntOfBits_sound hr⟩
+        · cases hr
       · cases hc
     · cases hc
   · cases hc
@@ -872,14 +908,44 @@ theorem concatOperands_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {op a b x 
     exact ⟨hop, rfl, rfl, h.1.2, h.2⟩
   · contradiction
 
-/-- The linear atoms a step on slots states of its result. -/
-def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
+/-- The slots a term reads as its operands: a slot it reads, or the slots
+a binary operation's operands read. -/
+def operandSlots : Tm → List Nat
+  | .var a => [a]
+  | .arith _ (.var a) (.var b) => [a, b]
+  | .arith _ (.var a) _ | .arith _ _ (.var a) => [a]
+  | _ => []
+
+/-- The integrality each slot a term reads has by its type (`typeInt`):
+`int(a)`. -/
+def typeAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List IndexAtom :=
+  (operandSlots t).filterMap fun a => (typeInt G Γ a).map fun _ => ⟨.int a, none, false⟩
+
+theorem typeAtoms_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {ρ n W h}
+    (he : EnvOk G Γ ρ n W) : IndexHolds ε (typeAtoms G Γ t) ρ h := by
+  intro atom hat _
+  obtain ⟨a, -, hm⟩ := List.mem_filterMap.mp hat
+  obtain ⟨r, hr, rfl⟩ := Option.map_eq_some_iff.mp hm
+  exact (typeInt_sound hr he).1
+
+/-- The knowledge a step's term is read under: the step's own, with the
+integrality the types of the slots it reads state (`typeAtoms`). -/
+def typedKnowledge (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (t : Tm) : Knowledge :=
+  { k with indices := k.indices ++ typeAtoms G Γ t }
+
+theorem typedKnowledge_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm} {ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) : Holds (typedKnowledge G Γ k t) ε ρ h :=
+  ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, indexHolds_cat hk.2.2.2.2.2 (typeAtoms_holds he)⟩
+
+/-- The linear atoms a step on slots states of its result, under knowledge
+holding the types' integrality of the slots the step reads. -/
+def linearAtomsTyped (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .num b => match SafeIntegers.safeIntOfBits b with
     | some i => valueAtoms [] i
     | none => []
   | .var a =>
     (if a < Γ.length ∧ intSlot k.indices a = true then valueAtoms [(a, 1)] 0 else []) ++
-      (match litSlot G Γ a with | some i => valueAtoms [] i | none => []) ++
+      (match typeInt G Γ a with | some (some i) => valueAtoms [] i | _ => []) ++
       (if a < Γ.length then copiedAtoms k a ++ pastCopies k a else [])
   | .lenOf (.var s) =>
     if spineSlot G Γ s then
@@ -913,6 +979,12 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
         | _, _ => []) ++ ruleAtomsOf k op a b
       else []
   | _ => []
+
+/-- The linear atoms a step on slots states of its result: those of
+`linearAtomsTyped` under the step's knowledge with the integrality the
+types of the slots it reads state (`typedKnowledge`). -/
+def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (t : Tm) : List IndexAtom :=
+  linearAtomsTyped G Γ (typedKnowledge G Γ k t) t
 
 theorem eval_shiftForm (F : Linear.Form Nat) (u : Val) (ρ : Env) :
     Linear.Form.eval (valuation (push u ρ)) (shiftForm F) = Linear.Form.eval (valuation ρ) F := by
@@ -1232,11 +1304,11 @@ theorem ruleAtomsOf_holds {k : Knowledge} {op : Arith} {a b : Tm} {ρ h h'} {u :
       exact ruleAtoms_holds hr hop' hk hu atom hat hc
     · cases hat
 
-/-- **The linear atoms a step states hold of its result.** -/
-theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}
+/-- The linear atoms of `linearAtomsTyped` hold of the step's result. -/
+theorem linearAtomsTyped_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}
     {Ξ T : Fam} {Q : Post} {ρ n W h}
     (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (linearAtoms G Γ k t) (push u ρ) h') n W h
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (linearAtomsTyped G Γ k t) (push u ρ) h') n W h
       (instantiate 0 ρ t) := by
   have hval : ∀ i, i < Γ.length → isVal (ρ i) = true := fun i hi =>
     (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
@@ -1244,7 +1316,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
   cases t with
   | num b =>
-    simp only [linearAtoms]
+    simp only [linearAtomsTyped]
     split
     · rename_i i hi
       simp only [instantiate] at hs ⊢
@@ -1253,7 +1325,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       exact valueAtoms_holds (by simp) (by simpa [Linear.Form.eval] using SafeIntegers.safeIntOfBits_sound hi)
     · exact none_case
   | var a =>
-    simp only [linearAtoms]
+    simp only [linearAtomsTyped]
     by_cases ha : a < Γ.length
     · simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, ha, true_and, if_true] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (value_run (hval a ha) hs)
@@ -1262,7 +1334,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       rotate_left
       · split
         · rename_i i hl
-          obtain ⟨b, hb, hsafe⟩ := litSlot_sound hl he
+          obtain ⟨b, hb, hsafe⟩ := (typeInt_sound hl he).2 i rfl
           rw [hb]
           exact valueAtoms_holds (by simp) (by simpa [Linear.Form.eval] using hsafe)
         · exact indexHolds_nil _ _
@@ -1275,13 +1347,13 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         refine valueAtoms_holds (by simp [hs']) ?_
         simpa [Linear.Form.eval, valuation, hi'] using hsafe
       · exact indexHolds_nil _ _
-    · have hl : litSlot G Γ a = none := by
-        simp [litSlot, List.getElem?_eq_none (show Γ.length ≤ a by omega)]
+    · have hl : typeInt G Γ a = none := by
+        simp [typeInt, List.getElem?_eq_none (show Γ.length ≤ a by omega)]
       simp only [ha, false_and, if_false, List.append_nil, hl]; exact none_case
   | lenOf a =>
     cases a with
     | var s =>
-      simp only [linearAtoms]
+      simp only [linearAtomsTyped]
       split
       · rename_i hst
         obtain ⟨ls, hls, hmax⟩ := spineSlot_bound hst he
@@ -1332,9 +1404,9 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             · show Linear.Form.eval _ _ ≤ _
               simp only [Linear.Form.eval, hv0, hv1]; omega
         · exact none_case
-    | _ => simp only [linearAtoms]; exact none_case
+    | _ => simp only [linearAtomsTyped]; exact none_case
   | arith op a b =>
-    simp only [linearAtoms]
+    simp only [linearAtomsTyped]
     split
     · rename_i x y hc
       obtain ⟨rfl, rfl, rfl, hx, hy⟩ := concatOperands_sound hc
@@ -1431,7 +1503,15 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             | exact indexHolds_nil _ _
         · exact indexHolds_nil _ _
       · exact none_case
-  | _ => simp only [linearAtoms]; exact none_case
+  | _ => simp only [linearAtomsTyped]; exact none_case
+
+/-- **The linear atoms a step states hold of its result.** -/
+theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}
+    {Ξ T : Fam} {Q : Post} {ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (linearAtoms G Γ k t) (push u ρ) h') n W h
+      (instantiate 0 ρ t) :=
+  linearAtomsTyped_holds he (typedKnowledge_holds he hk) hs
 
 /-! ## A comparison with a length
 
