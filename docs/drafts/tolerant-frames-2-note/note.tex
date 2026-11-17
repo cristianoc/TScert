@@ -643,17 +643,22 @@ Neither paper has such a rule.
 
 {\footnotesize
 \begin{tabular}{@{}r@{\hspace{1em}}l@{}}
-1 & \code{/** @requires safeInteger(hi) \&\& 0 <= hi \&\& hi < 4352 \&\& values.length === 1114112} \\
-2 & \code{~*~~~~~~~~~~~\&\& safeInteger(c) \&\& 0 <= c \&\& c < 1114112 */} \\
-3 & \code{export function badBits(values: Uint8Array, hi: number, c: number): number \{} \\
-4 & \code{~~return values[(hi <{}< 8) | (c \& 0xff)]!;} \\
-5 & \code{\}} \\
+1 & \code{/** @requires safeInteger(blocks) \&\& 0 <= blocks \&\& blocks <= 4352 \&\& values.length === 256 * blocks} \\
+2 & \code{~*~~~~~~~~~~~\&\& safeInteger(hi) \&\& 0 <= hi \&\& hi < blocks} \\
+3 & \code{~*~~~~~~~~~~~\&\& safeInteger(c) \&\& 0 <= c \&\& c < 1114112 */} \\
+4 & \code{export function badBits(values: Uint8Array, blocks: number, hi: number, c: number): number \{} \\
+5 & \code{~~return values[(hi <{}< 8) | (c \& 0xff)]!;} \\
+6 & \code{\}} \\
 \end{tabular}}
 
 \entry{What is refused} The verifier refuses \code{badBits} at the read of
-line 4. The obligation is
-$0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\kw{view}(\mathit{values})$.
-The operators \code{<{}<} and \code{|} give no fact.
+line 5. The obligation is
+$0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\kw{view}(\mathit{values})=256\cdot\mathit{blocks}$.
+The operators \code{<{}<} and \code{|} give no fact. The program is
+pretext's read of a generated class table: \code{values} holds
+\code{blocks} blocks of 256 classes, \code{hi} stands for the block
+number \code{index[c >{}> 8]}, and $\mathit{blocks}\le 4352$, the number
+of 256-blocks up to U+10FFFF.
 In pretext's \code{tscert-bounds} at \code{aa8f7cc2} the site is the
 outer read of \code{line-breaks.ts} line 138, in \code{getClass},
 behind P5.
