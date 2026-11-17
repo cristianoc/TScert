@@ -80,7 +80,7 @@ const heap = readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common
       cells: [{ slot: 0, field: "id", contents }],
       values: [], links: [{ cell: 0, value: 1, alias: false, field: "id", optional: false }],
       separation: { depth: 2, facts: [{ slot: 0, fields: ["id"], partners: [[1, ["id", { symbol: 0 }]]] }] },
-      elems: [{ slot: 1, pred, negated: false }, { slot: 1, pred, cond: 0, negated: true }],
+      elems: [{ slot: 1, pred, cond: null, negated: false }, { slot: 1, pred, cond: 0, negated: true }],
       indices: [{ fact: { bound: { array: 1, index: 2, strict: false } }, cond: null, negated: false },
         { fact: { index: { slot: 2 } }, cond: 0, negated: true }],
     } },
