@@ -324,9 +324,9 @@ integers, $`x`$ is any number, and $`d`$ is a shift count:
 <!-- Verification.ArithmeticRules.maskBound, proved by Verification.ArithmeticRules.maskBound_sound -->
 
 ```math
-\frac{\mathrm{int}(a)\quad K\vdash 0\le a}
-     {K\vdash r\leftarrow a\mathbin{\&}x\dashv \mathrm{int}(r),\ r\le a}
-     \ \textsf{Mask}\quad a:\mathit{SafeInt},\ x:\mathit{Num}
+\frac{\mathrm{int}(b)\quad K\vdash 0\le b}
+     {K\vdash r\leftarrow x\mathbin{\&}b\dashv \mathrm{int}(r),\ r\le b}
+     \ \textsf{Mask}\quad x:\mathit{Num},\ b:\mathit{SafeInt}
 ```
 
 <!-- Verification.ArithmeticRules.shl, proved by Verification.ArithmeticRules.shl_sound -->

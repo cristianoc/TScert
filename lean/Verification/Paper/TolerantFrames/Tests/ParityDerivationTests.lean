@@ -633,10 +633,10 @@ private def Γswapped : List Formula :=
   (.operation (.arith .sub (.path x) (.literal (.num mask255)) y)) (.commute .assumption)) =
   "commute: the operator does not commute"
 
--- Mask's bound `y ≤ x` (rule 2) needs `0 ≤ x`, which `Γ` does not state.
-#guard rulePremises ArithmeticRules.maskBound (.var x) (.literal mask255) = some (conj [lin (.le [(vt x, -1)] 0)])
+-- Mask's bound `y ≤ b` (rule 2), at `255 & x`, needs `0 ≤ x`, which `Γ` does not state.
+#guard rulePremises ArithmeticRules.maskBound (.literal mask255) (.var x) = some (conj [lin (.le [(vt x, -1)] 0)])
 #guard errorOf (checkScoped empty ⟨0, 3⟩ Γ (conj [safeFact y, lin (.le [(vt y, 1), (vt x, -1)] 0)])
-  (.arith 2 (.var x) (.literal mask255) y .assumption
+  (.arith 2 (.literal mask255) (.var x) y (.commute .assumption)
     (.andIntro (.definedOfLinear (.le [(av x, -1)] 0) .assumption) .truth)
     (premisesRaw 1))) = "assumption: not a premise"
 

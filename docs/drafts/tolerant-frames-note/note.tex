@@ -1682,7 +1682,7 @@ $\mathbin{\&}$ and $\mathbin{|}$ may be given in either order:
 % generated: paper-arithmetic-rules
 \textsc{Shr} & a,d:\mathit{SafeInt} & \hoare{-2^{31}\le a<2^{31}}{y=a\gg d}{2^{d'}y\le a\le 2^{d'}y+2^{d'}-1}\\[3pt]
 \textsc{Mask} & x:\mathit{Num},\ b:\mathit{SafeInt} & \hoare{0\le b<2^{31}}{y=x\mathbin{\&}b}{0\le y\le b}\\[3pt]
- & a:\mathit{SafeInt},\ x:\mathit{Num} & \hoare{0\le a}{y=a\mathbin{\&}x}{y\le a}\\[3pt]
+ & x:\mathit{Num},\ b:\mathit{SafeInt} & \hoare{0\le b}{y=x\mathbin{\&}b}{y\le b}\\[3pt]
 \textsc{Shl} & a,d:\mathit{SafeInt} & \hoare{-2^{31}\le 2^{d'}a<2^{31}}{y=a\ll d}{y=2^{d'}a}\\[3pt]
 \textsc{Or} & a,b:\mathit{SafeInt} & \hoare{0\le a<2^{31}\wedge 0\le b<2^{31}}{y=a\mathbin{|}b}{a\le y\wedge b\le y\wedge y\le a+b}
 % end generated: paper-arithmetic-rules
