@@ -534,12 +534,29 @@ with the exact primitive count. Catch binds in the current environment and pops
 before the handler; heaps and prior bindings are not rolled back. Worlds,
 marks and frozen entry do not occur in the operational machine.
 
-These are proved prerequisites for the reviewed finite CPS graph construction.
-They do not generate code, assume a desired summary, or establish Fun. In
-particular, zero-weight administrative traces do not imply termination. The
-compiler must still generate finite offsets/metadata/routing evidence and
-connect actual runs to these traces with primitive weight bounded by shared
-steps, keeping the exit environment before ret discards the frame.
+[CommandCompiler.lean](../../lean/Verification/Paper/TolerantFrames/CommandCompiler.lean)
+now generates fixed finite CPS graphs. Sequence/handler normalization stops at
+loop headers; offset size and first-site proofs are explicit.
+[CompilerSegments.lean](../../lean/Verification/Paper/TolerantFrames/CompilerSegments.lean)
+proves concrete finite lookup containment. [CompilerRoutes.lean](../../lean/Verification/Paper/TolerantFrames/CompilerRoutes.lean)
+interprets finite syntactic exit routes as actual zero-weight control traces
+with real target maps. [CompilerOrigins.lean](../../lean/Verification/Paper/TolerantFrames/CompilerOrigins.lean)
+generates every node origin/route obligation internally for every command,
+using its derived frame bound. Full sink expressions are constrained separately
+from site metadata.
+
+[CompilerSimulation.lean](../../lean/Verification/Paper/TolerantFrames/CompilerSimulation.lean)
+retains the named environment through terminal matching; the primitive/control/sink
+simulation modules prove each completed real node yields a finite command trace.
+[CompilerNodeSimulation.lean](../../lean/Verification/Paper/TolerantFrames/CompilerNodeSimulation.lean)
+assembles those cases, and [CompilerCorrectness.lean](../../lean/Verification/Paper/TolerantFrames/CompilerCorrectness.lean)
+inducts on actual shared count. Dispatch and leave make each suffix strictly
+smaller, including zero-weight B loops. Actual shared value/raise runs yield
+existing structured Executes, identical heaps and exits, restored final environments
+and primitive p≤N. No body, compiler-correctness or routing summary is an external
+premise. Host code must be machine values for graph representation; no native
+safety follows. This is completed-run inversion, not forward simulation, progress,
+callable entry, budget-adjusted specification transfer or Fun.
 
 ## How far B matches the paper
 

@@ -1,3 +1,13 @@
+import Verification.Paper.TolerantFrames.CompilerCorrectness
+import Verification.Paper.TolerantFrames.CompilerNodeSimulation
+import Verification.Paper.TolerantFrames.CompilerSinks
+import Verification.Paper.TolerantFrames.CompilerControlSimulation
+import Verification.Paper.TolerantFrames.CompilerPrimitiveSimulation
+import Verification.Paper.TolerantFrames.CompilerSimulation
+import Verification.Paper.TolerantFrames.CompilerOrigins
+import Verification.Paper.TolerantFrames.CompilerRoutes
+import Verification.Paper.TolerantFrames.CompilerSegments
+import Verification.Paper.TolerantFrames.CommandCompiler
 import Verification.Paper.TolerantFrames.CommandMachine
 import Verification.Paper.TolerantFrames.GraphSegments
 import Verification.Paper.TolerantFrames.GraphInversion

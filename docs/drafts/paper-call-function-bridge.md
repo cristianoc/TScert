@@ -186,3 +186,38 @@ steps are handled by induction on the shared run, not by decreasing B's count.
 Normal/return/throw/break exits must retain their source environment until the
 compiler proof identifies the corresponding sink; a ret discards its frame.
 No supplied command summary is part of this bridge.
+
+
+## Implemented generated-command inversion
+
+The finite offset compiler, front normalization, all concatenation lookups and
+Origin/Routes evidence are generated internally. Root sink origins constrain
+actual expressions, so metadata alone cannot justify a return or throw. Local
+node inversion preserves the real heap and target map and retains the named
+environment at the sink. The whole proof inducts on actual shared count;
+enter/leave overhead decreases the suffix count even when primitive weight is
+zero. Actual shared value and exceptional Steps yield the existing structured
+Executes with p≤N. Native host code is required to be machine values for this
+representation, not assumed safe merely from that fact. Full callable frame
+setup, physical-budget postcondition transfer, Fun and rest remain separate.
+
+## Native method elaboration is an execution obligation
+
+A literal array has no push property/prototype in its raw B allocation. Ordinary
+method lookup therefore obtains undefined, and invoking it is stuck. A scalar
+string's readAt method lookup is also stuck. An assumed partial Triple at those
+terms would not establish that the paper's native operation is represented.
+
+Extend the existing invoke/named-environment mechanism with explicit resolved
+native calls: invoke the supplied callee value with the receiver separate from
+positional arguments. Ordinary user-method/property lookup remains separate.
+The declared host identity and receiver sort select the native; a spelling such
+as push alone is insufficient. The callee slot participates in scopes, renaming
+and finite frame bounds, preserving the existing three typed-array captures.
+Shared graph entry puts the receiver in slot 0; the paper's explicit method
+receiver is not duplicated in the positional argument list. Ambient contracts
+must supply receiver-compatible callability/availability/safety and exact
+outcomes/effects, not merely SourceVal or isFun. Construct-only or incompatible
+receivers show why those weaker conditions are insufficient. No real native
+library implementation or new global axiom is proposed. Astra independently
+confirmed this source-model obstruction and the explicit-callee design.
