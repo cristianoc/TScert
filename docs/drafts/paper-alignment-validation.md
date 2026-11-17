@@ -506,3 +506,38 @@ operational body realization. All 89 counts remain 42 equal, 25 narrower,
 
 Logs: `/workspace/scratch/call-scope-test.log`, `call-scope-axioms.log`,
 `call-scope-docs.log`, and the focused `*-build.log` files for these modules.
+
+
+## Raw execution, lexical scope and budgets at 72d0295c
+
+Evidence applies to source `72d0295c9b775746a35cb1ac7501e46c08fc210d`, extending
+`9d708349a34bf9d7788c2203cb4a8be4005ea9f1` on rebased single-pass
+`56aaacc51899986d365a3853c94ac58420c1d1b8`. The original fetched start remains
+`ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+Focused raw-execution/scope integration and budget proofs pass with warnings as
+errors. Both complete axiom audits pass, exit zero, 431 jobs, with only the
+same eight cached informational upstream A backtraces. Full make test exits
+zero: 640 Lean jobs, 23 passing fast suites, 175 controls (3 operations executed,
+492 replayed), 3431/3431 expected cases, 4323 verified functions, 1790 negative
+controls and 150 named gaps. Documentation passes at 78 documents, 892 code
+citations and zero problems. Direct import coverage passes for 363 other
+A/shared and 65 other Paper modules. There are no outside-to-Paper imports or
+task-authored shared Lean changes; paper mathematics and PDF are unchanged.
+
+Independent read-only Astra review checked raw isVal versus the strong source
+exit guarantees, output validity recovery, lexical joins/catch scope and input
+preservation, and both one-state/two-state syntactic budget proofs. It found no
+soundness blocker and confirmed the explicit admissibility and budget bounds.
+The alias example's scope proof is not a closed execution proof. Budget
+transport is not claimed for arbitrary semantic assertions. The operational
+function design uses the body triple at the original budget, then restricts
+its chosen exit; no full Fun theorem or graph lowering is claimed. The
+own-key backend extension remains a reviewed design, with the existing
+request-tag vocabulary identified as a required conservation boundary.
+All 89 audit counts remain 42 equal, 25 narrower, 9 absent and 13 assumed;
+the full alignment is incomplete.
+
+Logs: `/workspace/scratch/raw-scope-budget-test.log`,
+`raw-scope-budget-axioms.log`, `raw-scope-budget-build2.log`,
+`budget-truncation-build.log` and `raw-scope-budget-docs.log`.
