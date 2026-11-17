@@ -284,30 +284,58 @@ The source cases are `table-constant-stride` and
 `invalid-table-constant-stride` (a row starting at the length).
 
 **Bounded bitwise operands.** The linear postcondition extends
-[index-mask](PROGRAM-TYPING.md#writes-at-a-checked-index) when the left operand is a safe integer
-between zero and $`2^{31}-1`$ and the right operand is a checked constant.
-For a shift count $`0\le k<32`$, writing $`q=2^k`$:
+[index-mask](PROGRAM-TYPING.md#writes-at-a-checked-index) by the
+arithmetic rules of `>>`, `&`, `<<` and `|`, the rules of the note
+"Tolerant frames" (§6, "Arithmetic steps"), each stated once in Lean as
+data (`ArithmeticRules.rules`). A rule reads each operand as its domain
+asks: a safe integer $`a`$ by its linear form, with $`\mathrm{int}(a)`$,
+and any number by nothing; a constant operand $`b`$ is a literal or a slot
+the knowledge states equal to a constant, a safe integer meeting the rule's
+side condition, and a shift count $`d`$ is read as $`d'=d\bmod 32`$, as
+`>>` and `<<` read it through `ToUint32`. Where the knowledge entails the
+rule's premises, the result $`r`$ states the rule's conclusion:
 
 ```math
-\frac{\mathrm{int}(a)\quad K\vdash 0\le a<2^{31}\quad K\vdash b=k}
-     {K\vdash r\leftarrow a\mathbin{\texttt{>>}}b
-       \dashv\mathrm{int}(r),\ 0\le r,\ qr\le a\le qr+q-1}
+\frac{\mathrm{int}(a)\quad K\vdash b=d\quad d'=d\bmod 32\quad K\vdash -2^{31}\le a<2^{31}}
+     {K\vdash r\leftarrow a\mathbin{\texttt{>>}}b\dashv \mathrm{int}(r),\ 2^{d'}r\le a\le 2^{d'}r+2^{d'}-1}
+     \ \textsf{Shr}
 ```
-
-For an integer mask $`0\le m<2^{31}`$:
 
 ```math
-\frac{\mathrm{int}(a)\quad K\vdash 0\le a<2^{31}\quad K\vdash b=m}
-     {K\vdash r\leftarrow a\,\&\,b
-       \dashv\mathrm{int}(r),\ 0\le r\le m,\ r\le a}
+\frac{K\vdash b=m\quad 0\le m<2^{31}}
+     {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ 0\le r\le m}
+     \ \textsf{Mask}
 ```
 
-Both right operands are safe integers. Proved:
-`SafeIntegers.toInt32_safe_nonneg` establishes the conversion boundary;
-`SafeIntegers.shr_safe` and `SafeIntegers.bitAnd_safe` establish the numeric
-results; `IndexWrites.bitAtoms_holds` connects them to the linear facts.
-The quotient inequalities retain the relation to the input, so an input
-bound of 222 entails a result at most 27 for a shift by three.
+```math
+\frac{\mathrm{int}(a)\quad K\vdash b=m\quad 0\le m<2^{31}\quad K\vdash 0\le a}
+     {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ r\le a}
+     \ \textsf{Mask}
+```
+
+```math
+\frac{\mathrm{int}(a)\quad K\vdash b=d\quad d'=d\bmod 32\quad K\vdash -2^{31}\le 2^{d'}a<2^{31}}
+     {K\vdash r\leftarrow a\mathbin{\texttt{<<}}b\dashv \mathrm{int}(r),\ r=2^{d'}a}
+     \ \textsf{Shl}
+```
+
+```math
+\frac{\mathrm{int}(a)\quad \mathrm{int}(b)\quad K\vdash 0\le a<2^{31}\quad K\vdash 0\le b<2^{31}}
+     {K\vdash r\leftarrow a\mathbin{|}b\dashv \mathrm{int}(r),\ a\le r,\ b\le r,\ r\le a+b}
+     \ \textsf{Or}
+```
+
+Proved: `ArithmeticRules.rules_sound` proves each rule against the
+calculus, whose `&`, `|`, `<<` and `>>` compute through `ToInt32`
+(`ArithmeticRules.shr_sound`, `maskRange_sound`, `maskBound_sound`,
+`shl_sound`, `bitOr_sound`); `IndexWrites.ruleAtoms_holds` connects a rule's
+conclusion, where the knowledge entails its premises, to the step's linear
+facts. The quotient inequalities retain the relation to the input, so an
+input bound of 222 entails a result at most 27 for a shift by three. The
+source cases are `bounds-pattern-shift-or` (pretext's class table),
+`bounds-shift-right-negative`, `bounds-mask-any-number`,
+`invalid-bounds-shift-left-overflow` (a shift past the signed 32-bit range)
+and `invalid-bounds-or-past-table` (an or past its table).
 
 **Dropping a slot.** Where a step's output drops a slot, or an edge's mapping
 retains no slot of a fact's class, the slot is first eliminated from the

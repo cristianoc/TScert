@@ -952,8 +952,7 @@ Notation:
 | `transfer` | A derivation of the substituted target assertion plus I5 substitution evidence establishes target knowledge. |
 | `linear` | Existing `Linear.check` over explicitly defined before/after observations. |
 | `integerOperation` | Exact addition, subtraction or constant multiplication, with safe-integer operands and exact-result range evidence. |
-| `shiftRight` | The constant-shift rule below. |
-| `mask` | The constant-mask rule below. |
+| `arith` | A rule of `ArithmeticRules.rules`, below. |
 | `stringLength` | A defined string has its UTF-16 length, in `[0, maxStringLength]`. |
 | `stringRead` | A valid string index reads the corresponding code unit; the result has UTF-16 length one. Invalid-index conclusions follow the operation’s result rule. |
 | `stringConcat` | A normal concatenation result has the sum of operand UTF-16 lengths. |
@@ -995,26 +994,13 @@ This allows the body to use its frame for safety. It does not require checking t
 
 ### Arithmetic indices and range conditions
 
-For `shiftRight`, let the left operand denote the integer `x`, the constant shift be `d`, and the result denote `y`. Required premises and conclusions are:
-
-```math
-0 \le x \le 2^{31}-1,\qquad 0\le d<32,
-\qquad
-0\le y,\qquad
-2^d y\le x\le 2^d y+(2^d-1).
-```
-
-`d` is a literal checked integer; the certificate connects the actual `Arith.shr` result to these inequalities. It does not infer them from a matching expression spelling.
-
-For `mask`, with constant `m`:
-
-```math
-0\le x\le 2^{31}-1,\qquad 0\le m<2^{31},
-\qquad
-0\le y\le m,\qquad y\le x.
-```
-
-The result is the actual `Arith.bitAnd` result. These are precisely the relations needed from `bitAtoms` and `smallOperand`.
+`arith` applies a rule of `ArithmeticRules.rules` (Shr, Mask, Shl and Or,
+[ARITHMETIC.md](../ARITHMETIC.md#linear-facts), "Bounded bitwise operands"):
+its operands bound by the rule's domains and constant, the operation's
+evidence, the operands' evidence and a derivation of the substituted
+premises give the substituted conclusion. The certificate connects the
+actual `Arith` result to the conclusion through `ArithmeticRules.rules_sound`;
+it does not infer it from a matching expression spelling.
 
 The general integer-operation constructor handles multiplication only when one operand is a proved constant. It checks exact binary64 representability of the result. An integer linear derivation alone never proves that a rounded JavaScript operation equals its mathematical result.
 

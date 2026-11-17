@@ -104,18 +104,16 @@ theorem ViewFormat.conv_safeInt {f : ViewFormat} {x : UInt64} {i : Int} (hx : Sa
   cases f with
   | uint8 =>
     obtain ⟨h0, h1⟩ := hr 0 255 rfl
-    simp only [ViewFormat.conv, toInt32_safe_nonneg hx h0 (by omega), reduceCtorEq, if_false]
+    simp only [ViewFormat.conv, toInt32_small hx (by omega) (by omega), reduceCtorEq, if_false]
     congr 1; omega
   | uint16 =>
     obtain ⟨h0, h1⟩ := hr 0 65535 rfl
-    simp only [ViewFormat.conv, toInt32_safe_nonneg hx h0 (by omega), reduceCtorEq, if_false]
+    simp only [ViewFormat.conv, toInt32_small hx (by omega) (by omega), reduceCtorEq, if_false]
     congr 1; omega
   | int32 =>
     obtain ⟨h0, h1⟩ := hr _ _ rfl
     simp only [ViewFormat.conv, reduceCtorEq, if_false]
-    by_cases hn : i < 0
-    · rw [toInt32_safe_neg hx hn h0]
-    · rw [toInt32_safe_nonneg hx (by omega) (by omega)]
+    rw [toInt32_small hx (by omega) (by omega)]
   | float64 => simp [ViewFormat.conv]
 
 end Verification

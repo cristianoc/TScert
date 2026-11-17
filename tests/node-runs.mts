@@ -68,6 +68,10 @@ assert.equal(runExample("invalid-bounds-pattern-module-constant", "(drop(), type
   "a module array popped by another function is read past its end");
 assert.equal(runExample("invalid-bounds-pattern-lazy-cell", "(reset(), typeof bitsAt(5))"), "undefined",
   "a shorter table written into the cell is read past its end");
+assert.equal(runExample("invalid-bounds-shift-left-overflow", "typeof shifted(new Uint8Array(4), 8388608)"), "undefined",
+  "8388608 << 8 is -2147483648, below the length and below 0");
+assert.equal(runExample("invalid-bounds-or-past-table", "typeof ored(new Uint8Array(256), 1, 0)"), "undefined",
+  "(1 << 8) | 0 is 256, past a table of 256");
 assert.equal(runExample("invalid-bounds-pattern-map-invariant", '(poison("x"), typeof classOf("x", 70000))'), "undefined",
   "a one-element table set into the map is read past its end");
 
