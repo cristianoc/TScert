@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-245"><code>118c84aafed8dce0319b179819d3dd1230905c6e..pr-245</code></a><ul><li>1 commit</li><li>changes: 3 Docs</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-245"><code>118c84aafed8dce0319b179819d3dd1230905c6e..pr-245</code></a><ul><li>2 commits</li><li>changes: 4 Docs</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
 <h2 id="g-pr-245"><code>118c84aafed8dce0319b179819d3dd1230905c6e..pr-245</code></h2><article class="card" id="c-3e718df62"><header><div><div class="sha">3e718df62 · Cristiano Calcagno · Nov 17, 03:58</div><h3>Set the basis of the work on the paper: implementation rules, paper rules, their correspondence</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The owner abandoned the plan that replaced the pass's deciders by the paper's rules step by step. The work now starts from three things: the implementation rules acceptance applies, the paper rules stated in Lean, and their partial correspondence; the first item is clarity on the paper rules.</p></div>
 <h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/implementation-and-paper-rules.md</span></h4><div class="prose"><p>A, the implementation rules; B, the paper rules; C, their correspondence; the first item, B: where it lives, how far it matches the paper, and a refactoring that makes it identifiable in the source tree</p></div>
@@ -106,6 +106,13 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  docs/drafts/rules-as-mechanism.md             | 441 --------------------------
  docs/drafts/rules-at-acceptance.md            |   3 +-
  lean/Verification/Tests/AxiomCheck.lean       |   2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-328227874"><header><div><div class="sha">328227874 · Cristiano Calcagno · Nov 17, 04:08</div><h3>State the two directions of the correspondence and where a pretext case meets it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The owner asked that the basis say what the correspondence between the implementation rules and the paper rules is about: the aspects closest to each other, first where pretext relies on them; its two directions, explored informally; and that a new pretext case, derived in the paper first, raises whether acceptance maps to it.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/implementation-and-paper-rules.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>C stated as partial and to be studied</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>C studied first where pretext relies on it, in two directions (what A accepts is derivable by B; what B derives, A accepts), each explored informally first; a section &quot;Where C is met&quot;: a new pretext case derived in the paper, and the way forward decided with the owner where A does not accept it</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 17 insertions(+), 1 deletion(-)</summary><pre class="code"> docs/drafts/implementation-and-paper-rules.md | 18 +++++++++++++++++-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
