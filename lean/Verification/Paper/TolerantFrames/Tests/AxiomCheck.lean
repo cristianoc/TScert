@@ -1,3 +1,8 @@
+import Verification.Paper.TolerantFrames.CommandMachine
+import Verification.Paper.TolerantFrames.GraphSegments
+import Verification.Paper.TolerantFrames.GraphInversion
+import Verification.Paper.TolerantFrames.CompilerScope
+import Verification.Paper.TolerantFrames.CompilerLayout
 import Verification.Paper.TolerantFrames.BitwiseArithmetic
 import Verification.Paper.TolerantFrames.PureOperations
 import Verification.Paper.TolerantFrames.BitwiseRules

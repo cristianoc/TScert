@@ -493,6 +493,45 @@ coverage are not inferred. Shr's signed/count generality and Shl remain open;
 SafeInt counts alone would narrow the paper's integer-constant wording.
 The reviewed design is [recorded separately](paper-arithmetic-command-rules.md).
 
+## Operational graph and control foundations
+
+[CompilerLayout.lean](../../lean/Verification/Paper/TolerantFrames/CompilerLayout.lean)
+uses shared envMap for a finite frame with source names, three host slots and an
+exit payload. Replacement/drop maps have exact lengths; actual map defaults
+retain machine values. Source and host slots survive payload replacement, and
+host slots survive source binding. Restoring the total B environment uses the
+original values outside the finite source frame. Its validity theorem requires
+source/world validity of those finite SOURCE slots and admissible persistence
+of original outside names; it does not assign program-root validity to host or
+payload slots.
+
+[CompilerScope.lean](../../lean/Verification/Paper/TolerantFrames/CompilerScope.lean)
+derives a frame bound for every finite command, including result/catch IDs,
+separately from lexical admission. Its operation code agreement ignores names
+outside the actual operand scope, with host code fixed explicitly.
+[GraphInversion.lean](../../lean/Verification/Paper/TolerantFrames/GraphInversion.lean)
+proves the converse of shared GraphCode.Sim on every actual reduction and whole
+run, with exactly the same counts and terminal states.
+[GraphSegments.lean](../../lean/Verification/Paper/TolerantFrames/GraphSegments.lean)
+splits a completed node evaluation into its actual expression Steps, one
+heap-preserving continuation/handler transition, and the suffix run; leaving
+terms are actual values or raises, rather than stuck expressions.
+
+[CommandMachine.lean](../../lean/Verification/Paper/TolerantFrames/CommandMachine.lean)
+adds sequence/loop/catch control frames over the existing PrimitiveRun, with
+zero weight for administrative transitions. Backward continuation interpretation
+proves each finite terminating trace yields the existing structured Executes
+with the exact primitive count. Catch binds in the current environment and pops
+before the handler; heaps and prior bindings are not rolled back. Worlds,
+marks and frozen entry do not occur in the operational machine.
+
+These are proved prerequisites for the reviewed finite CPS graph construction.
+They do not generate code, assume a desired summary, or establish Fun. In
+particular, zero-weight administrative traces do not imply termination. The
+compiler must still generate finite offsets/metadata/routing evidence and
+connect actual runs to these traces with primitive weight bounded by shared
+steps, keeping the exit environment before ret discards the frame.
+
 ## How far B matches the paper
 
 Every item is compared in [B against the paper](b-against-the-paper.md).

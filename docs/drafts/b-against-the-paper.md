@@ -117,6 +117,19 @@ fresh binding scope, and integer readings from SafeInt decoding. No arbitrary
 semantic predicate or stored signed-zero equality is transported. Shr's count
 normalization and signed generality, and Shl, remain open.
 
+The next operational function foundations are proved without summary premises.
+`CompilerScope` derives a finite frame bound for every command, including bind
+and catch IDs, and proves exact scoped code/environment agreement. `CompilerLayout`
+proves actual envMap equations, map lengths, host/payload stability, machine-value
+preservation including defaults, and restored context validity from finite
+source/world-valid source slots. `GraphInversion` maps every shared graph step to
+an actual graph transition with the same count; `GraphSegments` separates completed
+node expression steps from its heap-preserving continuation/handler transition.
+`CommandMachine` makes finite control traces explicit and proves terminating
+traces give existing structured Executes with exactly their primitive weight.
+Generated finite graphs, their routing proofs and whole-command inversion remain
+unimplemented; none of these prerequisites closes Fun.
+
 **§1 — The problem**
 
 | Paper item | B’s statement | Relation | Difference |
@@ -208,7 +221,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Elem-Read | `elementValue`, `Atom.element`, `Assertions.lean`; `Operation.elementRead`, `Commands.lean` | **none in B** | The general ordinary/view element assertion, including holes, and the executed ordinary read are defined. Their exact primitive triple/effect and typing/definedness bridge is not proved. |
 | Arr-Length | `Operation.arrayLength`, `Commands.lean`; shared `lengthOf`, `Semantics/IndexFacts.lean` | **none in B** | The operation is interpreted through the shared calculus. The general displayed primitive triple with exact equality and empty effect is not proved. |
 | Test | `Operation.binary`, `.not`, `.and`, `.or`, `Commands.lean`; `if_rule`, `CommandRules.lean` | **none in B** | Truthiness and Boolean operation execution are represented. The complete comparison/nullish/negation/conjunction/disjunction fact rules tying bindings to branch knowledge are not proved. |
-| Fun | `CommandSummary.signature_holds`, `CommandBodies.lean:86`; `.signature_holds_below`, `:106` | **narrower** | B transports a supplied sound body summary to a supplied signature at call positions. It does not establish the recursive function rule, default `undefined` return, and return obligations from the displayed body premises. Cited outside B: `codeObligations_sound`, `Programs/CodeConditions.lean:218`. |
+| Fun | `CommandSummary.signature_holds`, `CommandBodies.lean:86`; `.signature_holds_below`, `:106`; operational prerequisites in `CompilerLayout`, `CompilerScope`, `GraphInversion`, `GraphSegments`, `CommandMachine` | **narrower** | The old signature transport still assumes a sound body summary. New proofs supply finite frames for every command, stable host/payload maps, scoped environment agreement, exact shared-step→graph execution inversion, expression/continuation segmentation, and terminating control-machine→structured execution with exact primitive weight. None generates a compiler or proves a generated graph correct. Recursive Fun, default undefined, body/return obligations, anchors and rest prologue still need their actual realization. Cited outside B: `codeObligations_sound`, `Programs/CodeConditions.lean:218`. |
 | Write-In | `Derivation.writeIn`, `D:583`; `lengthsKept_of_run`, `Bridges/ParityArithmeticBridges.lean:189` | **narrower** | The conclusion concerns an array held in corresponding entry/exit slots. The paper states preservation of the length read through every path; B does not package the preservation of those path reads into this rule. |
 | Write-End | `Derivation.writeEnd`, `D:589`; `boundedWrite_of_run`, `Bridges/ParityArithmeticBridges.lean:209` | **equal** | Given the bounded-write operation postcondition and the displayed end-index premises, B concludes exactly the length increase by one. The current paper does not put element equality or density extension in this rule. |
 | Push | `PushPost`, `Consequences.lean`; `TwoState.pushPost`, `.pushPost_holds`, `PostconditionExamples.lean`; older `Derivation.pushPost`, `D:595` | **narrower** | The complete first-order syntax, including Q_< with index/value binders, is equivalent to the semantic length/appended-element/kept-prefix relation under receiver identity and entry/current admissibility. A command-level rule deriving it from the explicit native contract is not proved. |

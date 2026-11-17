@@ -132,8 +132,8 @@ numeric slot. This follows the existing locality documented by the judgment.
 The next operational construction uses the existing graph envMap mechanism.
 Choose B above every program name occurring anywhere in the command (bind and
 catch names included). Slots 0 through B-1 retain those named values. Three
-extra slots hold viewRead/viewWrite/viewLength; the symbolic host template is
-var B, var (B+1), var (B+2). Every edge carries B+3 slots. A binding x maps its
+extra slots hold viewRead/viewWrite/viewLength and a fourth the exit payload; the symbolic host template is
+var B, var (B+1), var (B+2). Every edge carries B+4 slots. A binding x maps its
 output slot x to the newly pushed result (index zero), and every other slot i
 to its previous index i+1. Perform uses effect with the complete identity map.
 Catch uses the same replacement map on the actual raised value. Reconstruct
@@ -158,3 +158,31 @@ strengthens, rather than weakens, the body Triple obligation.
 
 Astra independently designed this finite layout and identified the raw throw
 asymmetry. These are the next compiler obligations, not implemented Fun premises.
+
+## Structured command continuations
+
+The concrete next bridge extends Executes with a small control machine, not a
+second heap semantics. Its stack has sequence, loop and catch frames. Running
+a primitive uses an actual PrimitiveRun and its reduction count. Unfolding a
+sequence/choice/loop/handler or propagating an exit is administrative and costs
+zero in B's count. Return/throw arguments retain their raw isVal premises.
+The four exits and frozen function entry are unchanged.
+
+Interpret a stack structurally as the rest of the computation. A normal exit
+through a sequence frame executes its second command; an abrupt exit skips it.
+A normal exit through a loop frame executes the remaining loop, a break becomes
+normal, and return/throw propagate. A catch frame binds an actual thrown value
+and executes its handler; every other exit propagates. Each case then interprets
+the shorter stack. This interpretation may reference Executes of the remaining
+loop, so the definition itself recurses only on stack length.
+
+Backward preservation of that interpretation by each control transition proves
+that a finite terminating machine run gives the existing structured Executes,
+with exactly its primitive count. A separate CPS graph construction must
+produce concrete finite nodes/labels and relate each graph transition to these
+control configurations (possibly several zero-cost administrative steps).
+Actual graph dispatch consumes shared budget, so finite loops with no primitive
+steps are handled by induction on the shared run, not by decreasing B's count.
+Normal/return/throw/break exits must retain their source environment until the
+compiler proof identifies the corresponding sink; a ret discards its frame.
+No supplied command summary is part of this bridge.
