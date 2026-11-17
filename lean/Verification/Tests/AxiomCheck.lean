@@ -158,6 +158,7 @@ import Verification.Semantics.AllocationWorlds
 import Verification.Semantics.ApartSupport
 import Verification.Semantics.ArgumentContracts
 import Verification.Semantics.ArgumentSpineRegions
+import Verification.Semantics.ArithmeticRules
 import Verification.Semantics.AssertionScopes
 import Verification.Semantics.Bindings
 import Verification.Semantics.Calculus
@@ -312,6 +313,7 @@ import Verification.Source.RequestCli
 import Verification.Source.RequestJson
 import Verification.Source.ResolutionCapabilities
 import Verification.Source.ResolutionWire
+import Verification.Source.RuleExport
 import Verification.Source.SourceClaims
 import Verification.Source.SourceExtraction
 import Verification.Source.SourceFacts
