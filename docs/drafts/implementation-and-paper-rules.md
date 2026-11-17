@@ -146,9 +146,10 @@ them the laws of the modality (`box_elim` … `box_idem`, in
 ## How far B matches the paper
 
 Item by item in [B against the paper](b-against-the-paper.md). Of the
-paper's 92 items (its definitions, rules, axioms, laws and examples, the
+paper's 89 items (its definitions, rules, axioms, laws and examples, the
 patterns of §8 aside), B states 13 equally, 35 more narrowly and 2
-differently, none more broadly, and has no statement of 42. Its equal
+differently, none more broadly; it has no statement of 26, and none of the
+13 host contracts the paper states as assumed. Its equal
 statements are Alloc of an empty array, Fresh-Eff, Write-End, (Grow), and
 the arithmetic and string rules (Add, Sub, Scale, Shr, Mask, the
 string-length successor, Str-Length, Str-Read, Concat). The narrower ones
@@ -166,11 +167,13 @@ share three restrictions:
   and completions, with no command language (Definition 3), so the rules
   of §6 are stated as compositions of supplied summaries.
 
-B has no statement of the paper's model (worlds, well-formed states,
-admissible transitions, Preservation), of Rebasing, Independence and Conj,
-which the shared model states, nor of Break, Return, Throw, the primitive
-read and write rules, the library contracts and the typed-array rules,
-which the paper cites in A or assumes. Example 1 and its derivation
+Of the items B has no statement of, the shared model states admissible
+transitions and independence of the world equally, and Preservation from
+a safety premise in place of typing; it states well-formed states,
+Respect, Rebasing, Conj, (Prefix) and Reliance differently, each
+difference in its row. Break, Return, Throw, the primitive read and write
+rules and the command language have no statement in Lean, or one in A
+only. Example 1 and its derivation
 (Example 24) are stated of another loop: B's graph has no
 `j > out.length` test.
 
