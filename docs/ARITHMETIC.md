@@ -222,12 +222,30 @@ conclusions substituted (`Bridges.lengthReadAtoms_entry`,
 \frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c),\ (a\ne b\ \text{if}\ \neg c)}\ \textsf{int-equal}
 ```
 
-**A literal's value.** A slot whose type is one safe integer's literal
-$`k`$, a module constant `const TEXT = 0` among them, holds $`k`$
-(`IndexWrites.litSlot`, proved: `litSlot_sound`), so a read of it states
-$`\mathrm{int}(r),\ r=k`$, also where a binding is assigned or declared it
-(`literal-constant-value`; negative `invalid-literal-constant-value`, run
-under Node).
+**Integrality from a type.** A slot whose type is plain and has every
+clause within the safe integers (the clause `int`, the verifier's
+`SafeInt`, and each numeric literal or tag set whose numbers are safe
+integers, [POSITIVE-TYPES.md](POSITIVE-TYPES.md)) holds a safe integer; a
+type of one literal holds that integer:
+
+```math
+\frac{\Gamma(x)=c_1\mid\cdots\mid c_m\qquad c_1,\ldots,c_m\le\mathsf{int}}{K\vdash \mathrm{int}(x)}\ \textsf{type-int}
+\qquad
+\frac{\Gamma(x)=\mathsf{numLit}\,b\qquad\mathrm{SafeInt}(b,k)}{r\leftarrow x\dashv\mathrm{int}(r),\ r=k}\ \textsf{type-literal}
+```
+
+A step reads the slots it names under its knowledge with type-int's
+conclusion for each (`IndexWrites.typedKnowledge`), so int-copy and the
+comparison and arithmetic rules below apply to a `SafeInt` operand as to one
+the knowledge states integral; a read of a slot of one literal, a module
+constant `const TEXT = 0` among them, states type-literal's conclusion, also
+where a binding is assigned or declared it (`IndexWrites.typeInt`, proved:
+`typeInt_sound`, from `intValue_num` and `SafeIntegers.safeIntOfBits_sound`;
+case `literal-constant-value`; negative
+`invalid-literal-constant-value`, run under Node). A field or an element
+whose type is `SafeInt` reaches the rule through its read, whose result
+slot has the field's or the element's type; its path is linked to that
+slot by a read link above.
 
 **A sum reaching $`2^{53}`$.** A string's length plus one, $`a`$ a slot the
 knowledge states equal to $`\mathrm{strLength}(s)`$ and $`b`$ the constant
