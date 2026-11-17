@@ -8,7 +8,8 @@
 
 import { isJsonList, type CallCode, type JsonRead, type JsonValue, type Term } from "./calculus.mts";
 import surface from "./claim-text.mts";
-import type { DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import type { CallPreconditions, DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import { indexFact } from "./fact-text.mts";
 
 /** How a context binding is named in the source, as a source map states it. */
 type Descriptor = SourceMapEntry["context"][number];
@@ -122,6 +123,34 @@ function codeTerms(c: CallCode): Term[] {
   }
 }
 
+/* ---------- call preconditions ---------- */
+/** A refused call's preconditions in source names: each signature's
+ * requirements the facts do not establish, then the facts known over the
+ * call's slots. A slot past the context is named by the read or alias link
+ * that gives its value, else by its position. */
+function preconditionsText(pre: CallPreconditions, binding: (slot: number) => string, width: number): string {
+  const links = pre.known.links;
+  const name = (slot: number, seen: ReadonlySet<number> = new Set()): string => {
+    if (slot < width) return binding(slot);
+    const link = links.find((l) => l.value === slot && l.cell !== slot && !seen.has(l.cell));
+    if (link === undefined) return "slot " + slot;
+    const cell = name(link.cell, new Set([...seen, slot]));
+    return link.alias ? cell : `${cell}${link.optional ? "?." : "."}${link.field}`;
+  };
+  const named = (s: number): string => name(s);
+  const missing = pre.signatures.map((sig) => [
+    ...(sig.requires !== null && !sig.requires.entailed
+      ? [`every element of ${named(sig.requires.slot)} is ${sig.requires.pred.join(" | ")}`] : []),
+    ...sig.atoms.filter((a) => !a.entailed).map((a) => indexFact(a.fact, named)),
+  ]).filter((m) => m.length > 0);
+  const requirement = missing.map((m) =>
+    `${pre.signatures.length > 1 ? "A signature of the callee" : "The callee"} requires ${m.join(" && ")}, which the facts here do not establish.`);
+  const known = [...new Set(pre.known.indices.map((a) =>
+    `${a.cond === undefined ? "" : `${a.negated ? "!" : ""}${named(a.cond)} → `}${indexFact(a.fact, named)}`))];
+  return [...requirement,
+    known.length ? `Known over the call's operands: ${known.join(", ")}.` : "No fact is known over the call's operands."].join(" ");
+}
+
 /** Uniform report contract: the source-named summary of a failed obligation and
  * how its search ended, as strings a report shows without decoding the
  * calculus or applying slot transfers. */
@@ -192,6 +221,14 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       }
       if (term.kind === "nul" || term.kind === "undef" || term.kind === "tru" || term.kind === "fls")
         return { searchOutcome: searched };
+      // A call whose callee's preconditions are not established: those
+      // requirements and the facts known over its operands.
+      if (ob.kind === "node-typing" && ob.callPreconditions !== undefined)
+        return {
+          summary: `No rule derives this call at ${recordType(ob, q.type)}. ` +
+            preconditionsText(ob.callPreconditions, binding, q.context.length),
+          searchOutcome: searched,
+        };
       // Not a slot: name the term's form and the claims of the slots it reads
       // directly, which are what the rule for that form would use: a slot
       // that is a part of it, an element of a list of its parts, a part of a

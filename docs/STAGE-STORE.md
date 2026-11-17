@@ -65,8 +65,8 @@ Excluded from every key (`unkeyed`), by role:
   case inventory;
 - `pipeline/run-example.mts`, `pipeline/fixture-links.mts`: running an
   example under Node, and creating the fixture projects' links;
-- `tools/diagnostic.mts`, `tools/diagnostic-view.mts`, `tools/claim-text.mts`:
-  decoding and rendering diagnostics after the stages;
+- `tools/diagnostic.mts`, `tools/diagnostic-view.mts`, `tools/claim-text.mts`,
+  `tools/fact-text.mts`: decoding and rendering diagnostics after the stages;
 - `tools/unchecked.mts`, `tools/shadow-contracts.mts`, `tools/child-output.mts`:
   the `any` audit of the node side's sources, a suite, and the child
   processes it runs its parts in;

@@ -1,7 +1,7 @@
 // Facts of the verifier's heap knowledge (`HeapKnowledge.Knowledge` as JSON,
 // tools/diagnostic.mts's `HeapKnowledge`), printed over source names: each
 // slot named by a function the caller gives, from the point's bindings.
-import { isJsonList, isJsonObject, type JsonRead, type JsonValue } from "../tools/calculus.mts";
+import { isJsonList, isJsonObject, type JsonRead, type JsonValue } from "./calculus.mts";
 
 const num = (v: JsonRead): number => (typeof v === "number" ? v : -1);
 const str = (v: JsonRead): string => (typeof v === "string" ? v : JSON.stringify(v ?? null) ?? "");
@@ -9,11 +9,13 @@ const list = (v: JsonRead): readonly JsonValue[] => (isJsonList(v) ? v : []);
 const field = (v: JsonRead, k: string): JsonRead => (isJsonObject(v) ? v[k] : undefined);
 
 /** A linear term: the slot's value, length, view length or string length,
- * read through its path of data fields. */
+ * read through its path of data fields, at the entry state (`old`) where it
+ * is read there. */
 function term(t: JsonRead, name: (slot: number) => string): string {
   const at = [name(num(field(t, "slot"))), ...list(field(t, "path")).map(str)].join(".");
   const kind = field(t, "kind");
-  return kind === "value" ? at : kind === "length" ? `${at}.length` : `${str(kind)}(${at})`;
+  const read = kind === "value" ? at : kind === "length" ? `${at}.length` : `${str(kind)}(${at})`;
+  return field(t, "atEntry") === true ? `old(${read})` : read;
 }
 function sum(form: JsonRead, bound: JsonRead, op: string, name: (slot: number) => string): string {
   const parts = list(form).map((p) => {
@@ -21,7 +23,7 @@ function sum(form: JsonRead, bound: JsonRead, op: string, name: (slot: number) =
     const t = term(isJsonList(p) ? p[0] : undefined, name);
     return `${c === 1 ? "" : c === -1 ? "-" : `${c}*`}${t}`;
   });
-  return `${parts.join(" + ") || "0"} ${op} ${num(bound)}`;
+  return `${parts.join(" + ") || "0"} ${op} ${typeof bound === "string" ? bound : num(bound)}`;
 }
 
 /** An index fact over the point's binding names. */

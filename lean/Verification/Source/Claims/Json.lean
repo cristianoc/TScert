@@ -517,7 +517,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     let outcome : SinglePass.Outcome _ := match o with
       | .accepted => if !sumsOk then .refused "a read summary"
         else if !obligations.accepted then .refused "an expression claim" else .accepted
-      | .refused w lacks => .refused w lacks
+      | .refused w lacks _ => .refused w lacks
       | .outsideBound l => .refused s!"footprint at node {l}"
       | .notHandled w => .notHandled w
       | .observed _ => .notHandled "observing a qualified body"
@@ -564,7 +564,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     match o.asRefusal with
     | .accepted => { index := ci, outcome := .accepted, answers := a, line := "" }
     | .notHandled w => { index := ci, outcome := .notHandled s!"{w} (in code {ci})", answers := a, line := "" }
-    | .refused w lacks =>
+    | .refused w lacks _ =>
       -- A refusal observed in a code request: its obligation, the facts
       -- over its names and those it lacks, as for the unit's own graph.
       let record := if observe.map observedWhat != some "refusal" then "" else
@@ -653,7 +653,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
           | some rg => let (o', c', a', t') := walk .regions none (some rg)
             { route := .fallbackThenRegions, outcome := o'.asRefusal, counts := c', after := a', trace := t', fallbackAfter := some a }
           | none => { route := .fallback, outcome := .accepted, counts := c, after := a, trace := t, fallbackAfter := none }
-        | (.refused w' lacks, c, a, t) =>
+        | (.refused w' lacks _, c, a, t) =>
           { route := .fallback, outcome := .refused s!"footprint by spine regions: {w'} (after footprint at node {l})" lacks,
             counts := c, after := a, trace := t, fallbackAfter := none }
         | (o', c, a, t) => { route := .fallback, outcome := o'.asRefusal, counts := c, after := a, trace := t, fallbackAfter := none }
@@ -678,7 +678,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   -- the refusal: the walk that concluded again (its route's last), stopping
   -- on its entry; the refusal kept where that walk accepts.
   let o : SinglePass.Outcome _ := match o, observed with
-    | .refused _ _, some _ => if tracing then o else
+    | .refused _ _ _, some _ => if tracing then o else
       let (bound', regional') := match mainRun.route with
         | .direct => (bound, regional)
         | .fallback => (none, some (regionalOf "footprintRegional" r.footprint [] r.onThrow))
@@ -696,7 +696,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   -- A refusal observed: its obligation's facts, the facts it lacks, and
   -- each fact over its names an earlier state held, where last present
   -- and what removed it (`Trace.locate`, `Trace.lost`).
-  if let .refused w _ := o then
+  if let .refused w _ _ := o then
     if tracing then
       let l := trace.node
       let mentioned := ((r.claims[l]?).map RequestJson.PointClaim.mentions).getD []
@@ -751,7 +751,7 @@ obligation has (`produceGraphUsing`, `footprintRefusal`, `ensuresRefusal`);
 a statement's spine regions refused at their entry conditions (`spine
 regions`) at the declaration; none where the refusal names no node with a
 source span. -/
-def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
+def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) (claims : Bool := true) : Option String := do
   let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
       match (w.drop 5).toString.splitOn ": " with
@@ -769,7 +769,7 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
     -- The types the node's claim states (its operands' slots, which the
     -- refused term names as `Tm.var k`, and its result), named by kind
     -- (`SourceTypes.renderIn`); of the unit's own graph only.
-    let claimed : String := if ci.isSome then "" else
+    let claimed : String := if ci.isSome || !claims then "" else
       match r.claims[l]? with
       | none => ""
       | some c =>
@@ -815,6 +815,48 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
     return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
   none
 
+/-- A refused call's preconditions as the record's `callPreconditions`
+field states them: per signature stating one, its elements precondition on
+the receiver slot and each index fact at the call's slots, each with
+whether the facts entail it; and the facts connected to the call's slots. -/
+def preconditionsJson (d : SinglePass.CallPreconditions) : Json :=
+  Json.mkObj [("signatures", Json.arr (d.signatures.map fun s => Json.mkObj [
+      ("requires", match s.requires with
+        | some (x, R, held) => Json.mkObj [("slot", toJson x), ("pred", toJson R), ("entailed", toJson held)]
+        | none => Json.null),
+      ("atoms", Json.arr (s.atoms.map fun (F, held) =>
+        Json.mkObj [("fact", toJson F), ("entailed", toJson held)]).toArray)]).toArray),
+    ("known", toJson d.known)]
+
+/-- **The record of a refused call** of unit `i`'s own graph (`expression
+at node l`) whose callee states a precondition the facts do not establish:
+the node's obligation (`RequestJson.failureDiagnostic`) with the call's
+preconditions (`preconditionsJson`), the deferred `pre` forced here. -/
+def FilePlans.callRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
+    (pre : Option (Thunk (Option SinglePass.CallPreconditions))) : Option (List (String × Json)) := do
+  guard (w.startsWith "expression at node ")
+  let l ← refusalLabel w "expression at node "
+  let .ok (.graph _ _ r) := (f.plans[i]?).getD (.error "") | none
+  let d ← (← pre).get
+  guard (d.signatures.any fun s => s.atoms.any (!·.2) || s.requires.any (!·.2.2))
+  pure (RequestJson.failureDiagnostic r.toRequest fuel r.sourceMap (.expression l) ++
+    [("callPreconditions", preconditionsJson d)])
+
+/-- **A pass refusal as a check reports it**: with `located`, the source
+obligation it names (`locatedRefusal`) before the pass's own text `raw`;
+for a refused call whose preconditions are not established
+(`callRecord`), that obligation's record after them in place of the
+located claims' line; the pass's own text alone otherwise. -/
+def FilePlans.placeRefusal (f : FilePlans) (fuel : Nat) (located : Bool) (i : Nat) (w raw : String)
+    (pre : Option (Thunk (Option SinglePass.CallPreconditions))) : String :=
+  if !located then raw else match f.callRecord fuel i w pre with
+    | some fields => match f.locatedRefusal i w (claims := false) with
+      | some l => RequestJson.withDiagnostic s!"{l}\n{raw}" fields
+      | none => raw
+    | none => match f.locatedRefusal i w with
+      | some l => s!"{l}\n{raw}"
+      | none => raw
+
 /-- The single forward pass over each member of a group
 (`FilePlans.passMember`), no certificate built: per member its line, its
 outcome and counts; the group's verdict, the first member's refusal or
@@ -825,16 +867,12 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
   -- (`located`: a refusal's text the source obligation it names, the
   -- pass's own text on the next line, `FilePlans.locatedRefusal`; a
   -- refusal before the pass named at its unit where it names no place)
-  let place := fun (i : Nat) (w raw : String) =>
-    if !located then raw else match f.locatedRefusal i w with
-      | some l => s!"{l}\n{raw}"
-      | none => raw
   let (lines, failed) := group.foldl (init := (([] : List String), (none : Option String))) fun (lines, failed) i =>
     match f.passMember fuel i compare debugNode repeats given observe counting with
     | .ok m =>
       let failure := match m.outcome with
         | .accepted => none
-        | .refused w _ => some (place i w s!"single pass: {m.outcome} ({w.length})")
+        | .refused w _ pre => some (f.placeRefusal fuel located i w s!"single pass: {m.outcome} ({w.length})" pre)
         | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
         | o => some s!"single pass: {o} ({(toString o).length})"
       (lines ++ [s!"{m.name}: {m.outcome}; {m.line}"], failed.orElse fun _ => failure)
