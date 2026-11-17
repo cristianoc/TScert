@@ -39,8 +39,8 @@ class $`C`$ with private state:
    [inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 4. **The construct's rule**: Private frame, below. With it, Paper I's
    Theorem "Tolerant frame" and Proposition "Reliance" carry a fact across
-   every call of unknown code (proved: Paper I, Lean `frame_box`,
-   `rely_chain`).
+   every run of code that is not the class's (proved: Paper I, Lean
+   `frame_box`, `rely_chain`).
 
 It reads three existing pieces:
 
@@ -49,25 +49,26 @@ It reads three existing pieces:
   name `#x` is a key $`\sigma_{C.\#x}`$ identified by its declaring member;
   `o.#x` and `o.#x = e` are the named read and write at it; a copy takes no
   private slot.
-- **Stable keys** (cited: [records](../POSITIVE-TYPES.md#records), `@stable`).
-  A location allocated at a contract admitting one value keeps it in every
-  heap; a path through such fields is rigid (Paper I, "Invariant assertions
-  and rigid paths"). A private field written once, by its initializer, is
-  such a location.
+- **Rigid paths** (cited: Paper I, "Invariant assertions and rigid paths";
+  [records](../POSITIVE-TYPES.md#records), `@stable`). A path through fields
+  that keep the object they hold reads the same object in every heap. A
+  private field that holds an object keeps it under every change the
+  protocol admits ($`\mathsf{scalar}`$ keeps an object), so `o.#f` is
+  rigid where the field's contract admits only objects.
 - **Type invariants** (cited:
   [type invariants](../ARITHMETIC.md#type-invariants),
   [`@invariant`](../ANNOTATIONS.md#invariant-c-on-a-type)). The clause
   language states $`I_C`$ over the paths `this.#f`.
 
-New machinery: four regions, one protocol per class, one rule, one
-confinement check and one trust row, a property of the language. No new
-judgment form, no new modality, no world component.
+New machinery: the regions of a class body's private state, one protocol
+per body, one rule, one confinement check and one trust row, a property of
+the language. No new judgment form, no new modality, no world component.
 
 ## The example
 
 ```ts
 let prepare: (n: number) => Handle
-let walk: (h: Handle, visit: (w: number) => void) => number
+let walk: (h: Handle, visit: (w: number) => void) => number[]
 
 /** @invariant this.#flags.length === this.#widths.length */
 class Handle {
@@ -78,8 +79,8 @@ class Handle {
 
   static #take(): Parts {
     const p = Handle.#staged
-    if (p === null || p.flags.length !== p.widths.length) throw new TypeError("made by prepare()")
     Handle.#staged = null
+    if (p === null || p.flags.length !== p.widths.length) throw new TypeError("made by prepare()")
     return p
   }
 
@@ -88,11 +89,10 @@ class Handle {
       Handle.#staged = { widths: new Array<number>(n).fill(1), flags: new Array<number>(n).fill(0) }
       return new Handle()
     }
-    walk = (h: Handle, visit: (w: number) => void): number => {
-      const widths = h.#widths, flags = h.#flags
-      let s = 0
-      for (let i = 0; i < widths.length; i++) { visit(widths[i]!); s += flags[i]! }
-      return s
+    walk = (h: Handle, visit: (w: number) => void): number[] => {
+      const widths = h.#widths, flags = h.#flags, out: number[] = []
+      for (let i = 0; i < widths.length; i++) { visit(widths[i]!); out.push(flags[i]!) }
+      return out
     }
   }
 }
@@ -108,62 +108,68 @@ that calls every one of them leaves the walker reading `[0, 0, 0]`.
 
 Paper I's notation throughout: a heap $`h`$, an environment $`\rho`$, the
 action $`h\xrightarrow{\Phi}_\rho h'`$ of an effect, changes
-$`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$,
-regions read at the entry heap, $`\Phi\triangleleft_K S`$ for respect and
+$`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$
+(Paper I, §3, the changes' definition: $`\mathsf{scalar}`$ keeps a location
+that holds an object, and $`\mathsf{grow}`$ keeps every cell a spine lists), regions read
+at the entry heap, $`\Phi\triangleleft_K S`$ for respect and
 $`\Box_\Phi F`$ for the modality.
 
 ### Definitions
 
-**Classes with private state.** A class declares private names
-$`\sigma_{D.\#f}`$ for its instance fields, static fields and methods. A
-private name is spelled only inside its class's declaration, the
-declarations of classes nested in it included. Below, $`C`$ is a top-level
-class with private state, and its *body* is the code lexically inside its
-declaration; the classes declared in that body are $`C`$'s *classes*, $`C`$
-among them. One body, one protocol: a nested class's code reads the private
-state of the classes around it, so they share it.
-
-**Storage** is the locations of arrays, typed arrays and records: their
-spines, view spines, element cells and field locations.
+**Bodies.** A class declares private names $`\sigma_{D.\#f}`$ for its
+instance fields, static fields and methods. A private name is spelled only
+inside its class's declaration, the declarations of classes nested in it
+included. Below, $`C`$ is a top-level class with private state, and its
+*body* is the code lexically inside its declaration; the classes declared
+in that body are $`C`$'s *classes*, $`C`$ among them, and they declare
+distinct private names (a nested `#x` would shadow an outer one). One body,
+one protocol: a nested class's code reads the private state of the classes
+around it, so they share it.
 
 **The regions.** For a top-level class $`C`$:
 
-- $`\mathsf{priv}_C(\rho,h)`$ is the set of field locations
-  $`o.\sigma_{D.\#f}`$, for every object $`o`$ of $`h`$ and private field
-  $`\#f`$ of one of $`C`$'s classes $`D`$, and the cells of their private
-  static fields but their staging fields ([fields written once](#the-class-shape-the-rule-requires)).
-- $`\mathsf{own}_C(\rho,h)`$ is the storage reachable in $`h`$ from a
-  location of $`\mathsf{priv}_C`$ through element cells and record fields,
-  stopping at instances of classes with private state, whose state is
-  $`\mathsf{priv}`$ of their own body. Its three parts are
-  $`\mathsf{own}_C.\mathsf{spines}`$ (array spines and view spines),
-  $`\mathsf{own}_C.\mathsf{cells}`$ and $`\mathsf{own}_C.\mathsf{fields}`$.
+- $`\mathsf{priv}_{D.\#f}(\rho,h)`$, for a private field $`\#f`$ of one of
+  $`C`$'s classes $`D`$, is the set of field locations $`o.\sigma_{D.\#f}`$
+  of every object $`o`$ of $`h`$, or, for a static field, its cell; the
+  staging fields ([the class shape](#the-class-shape-the-rule-requires))
+  are in none. $`\mathsf{priv}_C`$ is their union.
+- $`\mathsf{own}_C(\rho,h)`$ is every location reachable in $`h`$ from a
+  location of $`\mathsf{priv}_C`$, through fields, cells, element cells and
+  the entries of collections, stopping at instances of classes with private
+  state, whose state is $`\mathsf{priv}`$ of their own body. It has one part
+  per kind of Paper I's world: $`\mathsf{own}_C.\mathsf{spines}`$ (array
+  and view spines), $`\mathsf{own}_C.\mathsf{cells}`$ (element cells) and
+  $`\mathsf{own}_C.\mathsf{fields}`$ (field and cell locations, a
+  collection's entries at the kind the model gives them).
 - $`R_C=\mathsf{priv}_C\cup\mathsf{own}_C`$.
 
-**Calls through a value.** A call names its callee when its callee is a
-function of the body, or a binding of the body written once with one; every
-other call is a call through a value.
+**Code that is not the body's.** A step runs code that is not the body's
+when it is a call whose callee is neither a function of the body nor an
+audited native, an `await`, or a `yield`. A call *names* its callee when the
+callee is a function of the body, a binding of the body written once with
+one, or a private method.
 
-**Members.** The members $`M_C`$ are the functions of the body that a call
-through a value can reach: the constructors of $`C`$'s classes, which
-`new h.constructor()` reaches; every public method, accessor and static; and
-every function of the body used as a value other than as such a binding's
-content (returned, thrown, stored in storage, or passed as an argument). A
-function the body only calls by name is no member.
+**Members.** The members $`M_C`$ are the functions of the body that code
+that is not the body's can reach: the constructors of $`C`$'s classes,
+which `new h.constructor()` reaches; every public method, accessor and
+static; and every function of the body used as a value other than as the
+content of a binding that names it (returned, thrown, stored in storage, or
+passed as an argument). A function the body only calls by name is no
+member.
 
-**The protocol.** $`\Psi_C`$ is an effect with one entry on each part of
-$`R_C`$:
+**The protocol.** $`\Psi_C`$ has one entry per private field and one per
+part of $`\mathsf{own}_C`$:
 
 ```math
-\Psi_C=\{\ \mathsf{priv}_C:\psi_{p},\ \ \mathsf{own}_C.\mathsf{spines}:\psi_{s},\ \ \mathsf{own}_C.\mathsf{cells}:\psi_{c},\ \ \mathsf{own}_C.\mathsf{fields}:\psi_{f}\ \}
+\Psi_C=\{\ \mathsf{priv}_{D.\#f}:\psi_{D.\#f}\ \}_{D,\#f}\ \cup\ \{\ \mathsf{own}_C.\mathsf{spines}:\psi_{s},\ \ \mathsf{own}_C.\mathsf{cells}:\psi_{c},\ \ \mathsf{own}_C.\mathsf{fields}:\psi_{f}\ \}
 ```
 
 It is the least such effect for which every member $`m\in M_C`$, checked
-with each of its calls through a value bounded on $`R_C`$ by
-$`\Psi_C`$, has normal and exceptional effects that, after `fresh_eff`
-drops the locations it allocated, bound every location of $`R_C`$ of its
-entry heap by $`\Psi_C`$. A member that writes only storage it allocated
-contributes $`\mathsf{keep}`$.
+with each of its steps that run code that is not the body's bounded on
+$`R_C`$ by $`\Psi_C`$, has normal and exceptional effects that, after
+`fresh_eff` drops the locations it allocated, bound every location of
+$`R_C`$ of its entry heap by $`\Psi_C`$. A member that writes only what it
+allocated contributes $`\mathsf{keep}`$.
 
 **The bound on $`R_C`$.** For an effect $`\Phi`$, $`\Phi\oplus_C\Psi_C`$
 bounds the locations of $`R_C`$ by $`\Psi_C`$ and every other location by
@@ -173,52 +179,51 @@ $`\Phi`$:
 h\xrightarrow{\Phi\oplus_C\Psi_C}_\rho h'\iff h\xrightarrow{}_\rho h'\ \wedge\ \forall l<|h|.\ h'(l)=h(l)\ \vee\ \exists (r:\delta)\in(\text{if } l\in R_C(\rho,h) \text{ then } \Psi_C \text{ else } \Phi).\ l\in r(\rho,h)\wedge\delta_{|h|}(h(l),h'(l))
 ```
 
-**The class invariant.** $`I_C(o,h)`$ is the clause of `@invariant` on
-$`C`$, with `this` read as $`o`$; its paths are `this.#f` and the lengths
-and elements they reach; $`\mathrm{supp}(I_C)`$ is its support, inside
-$`R_C`$. A class without `@invariant` has $`I_C=\mathsf{true}`$.
+**The class invariant.** $`I_C(o,h)`$ is the clause of `@invariant` on a
+class of the body, with `this` read as $`o`$; its paths are `this.#f` and
+the lengths and elements they reach; $`\mathrm{supp}(I_C)`$ is its support,
+inside $`R_C`$. A class without `@invariant` has $`I_C=\mathsf{true}`$. An
+instance is *complete* once its construction has returned.
 
 ### Private frame
 
-A call through a value runs either code outside the body, which enters it
-only by calling members, or a member itself. Either way:
+A step that runs code that is not the body's runs code outside the body,
+which enters it only by calling members, or a member itself:
 
 ```math
-\frac{c:\Phi\mid\Phi^{e}\qquad c\ \text{a call through a value}}
+\frac{c:\Phi\mid\Phi^{e}\qquad c\ \text{runs code that is not the body's}}
      {c:\ \Phi\oplus_C\Psi_C\ \mid\ \Phi^{e}\oplus_C\Psi_C}\ \textsf{(Private frame)}
 ```
 
 An unknown callback, of effect $`\top`$, has by the rule the effect
-$`\Psi_C`$ on $`R_C`$. A native step on storage outside $`R_C`$ meets the
-rule trivially; a native step on owned storage is a step of the body's code,
-checked as written.
+$`\Psi_C`$ on $`R_C`$. An `await` or a `yield` has the effect $`\top`$
+outside $`R_C`$ and $`\Psi_C`$ on it. A call that names a function of the
+body is checked at that function's certified effect; an audited native,
+owned storage among its arguments, keeps its audited effect, and each call
+of a callback it makes is bounded by the rule.
 
 **At a callback.** Let a walker hold $`F`$ with a support $`S`$ inside
 $`R_C`$ and $`\Psi_C\triangleleft_K S`$. Tolerant frame gives
 $`K\wedge F\vdash\Box_{\Phi\oplus_C\Psi_C}F`$, and Reliance carries $`F`$
-across every call through a value the walker makes, given rigidity
-([what must be proved](#what-must-be-proved), (L3)). In the example
-$`\Psi=\{\mathsf{priv}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep},\ \mathsf{cells}:\mathsf{keep},\ \mathsf{fields}:\mathsf{keep}\}`$:
-`prepare` and `new Handle()` write only what they allocate and the staging
-field, `walk` writes nothing. So $`i<|\mathit{widths}|`$ and
-$`|\mathit{flags}|=|\mathit{widths}|`$ cross `visit` (conjectured, the
-design's claim).
+across every step that runs code that is not the body's, given rigidity
+([what must be proved](#what-must-be-proved), (L3)). In the example every
+entry of $`\Psi`$ is $`\mathsf{keep}`$: `prepare` and `new Handle()` write
+only what they allocate and the staging field, `walk` writes nothing. So
+$`i<|\mathit{widths}|`$ and $`|\mathit{flags}|=|\mathit{widths}|`$ cross
+`visit` (conjectured, the design's claim).
 
 **At a private read.** `o.#f` either throws, as JavaScript does where `o`
-holds no slot, or reads a location of $`\mathsf{priv}_C`$ of an instance,
-which meets $`I_C`$ ((L4) below). A value of type $`C`$ is any object; the
-private read is the elimination that gives $`I_C`$. A field written once is
-a stable key, so `o.#f` is a rigid path.
+holds no slot, or reads a location of $`\mathsf{priv}_C`$. Of a complete
+instance it gives $`I_C(o)`$ ((L4) below). A value of type $`C`$ is any
+object; the private read is the elimination that gives $`I_C`$.
 
-**Reentrancy.** A callback may call any member on any instance. Two
-variants of the example:
-
-- A member `truncate(h)` pops `h.#widths`. $`\psi_s=\mathsf{any}`$, so
-  $`i<|\mathit{widths}|`$ does not survive `visit`, and a walker that
-  cached the length is refused at its read; under Node a visitor calling
-  `truncate` makes it read `[1, undefined, undefined]` (observed).
-- A member pops `#widths` and then `#flags`. The first pop breaks
-  $`I_C`$ until the second; the class is refused by *Tolerant*, below.
+**Reentrancy.** A callback may call any member on any instance. A member
+`truncate(h)` that pops `h.#widths` gives $`\psi_s=\mathsf{any}`$, beyond
+the bound the class shape states, so the class is refused; under Node a
+visitor calling it makes a walker that cached the length read
+`[1, undefined, undefined]` (observed). A member that pushes onto `#widths`
+and then onto `#flags` stays within the bound, and breaks $`I_C`$ until its
+second push; the class is refused by *Tolerant invariant*.
 
 ### What must be proved
 
@@ -226,43 +231,46 @@ The rule rests on two invariants of states and four lemmas. Each is
 conjectured until its Lean exists; the statement each cites is labelled.
 
 - **(P1) No private key is a value.** No value of $`\rho`$ or $`h`$ is a
-  $`\sigma_{C.\#f}`$, and no step yields one or the content of a location
-  of $`\mathsf{priv}_C`$ to code outside $`C`$'s body. For JavaScript,
-  cited: [ECMA-262](../REFERENCES.md#ecma-262), Private Names and the
-  operations PrivateFieldFind, PrivateGet, PrivateSet and PrivateFieldAdd:
-  a private name is reachable only through the lexical environment of its
-  class body, no reflection operation lists private elements, and a copy or
-  a proxy holds none. For the model, conjectured until the audit of
-  [the natives that enumerate keys](#what-tscert-must-change).
-- **(P2) Confinement.** Every path from a frame of code outside $`C`$'s body
-  to a location of $`\mathsf{own}_C`$ passes through a location of
-  $`\mathsf{priv}_C`$. Paths run through fields, element cells and
-  collection contents; a closure's environment is not reachable from a
-  holder of the closure. Conjectured, from the
+  $`\sigma_{D.\#f}`$, and no step yields one to code outside the body. For
+  JavaScript, cited: [ECMA-262](../REFERENCES.md#ecma-262), Private Names
+  and the operations PrivateFieldFind, PrivateGet, PrivateSet and
+  PrivateFieldAdd: a private name is reachable only through the lexical
+  environment of its class body, no reflection operation lists private
+  elements, and a copy or a proxy holds none. For the model, conjectured
+  until the audit of [the natives that enumerate keys](#what-tscert-must-change).
+- **(P2) Confinement.** Every path from a frame of code outside the body to
+  a location of $`\mathsf{own}_C`$ passes through a location of
+  $`\mathsf{priv}_C`$. Paths run through fields, cells, element cells and
+  collections' entries; a closure's environment is not reachable from a
+  holder of the closure. Contents are (P2)'s: a member may return a number
+  read from a private field. Conjectured, from the
   [confinement check](#the-class-shape-the-rule-requires).
 - **(L1) Outside step.** From a state meeting (P1) and (P2), a step of code
-  outside $`C`$'s body leaves every location of $`R_C`$ unchanged and keeps
+  outside the body leaves every location of $`R_C`$ unchanged and keeps
   (P1) and (P2). A write at $`o.\sigma`$ needs $`\sigma`$ as a static key,
   which the code lacks, or as a value, which (P1) excludes; a write to owned
   storage needs a reference, which (P2) excludes.
-- **(L2) Outside run.** A run of code outside $`C`$'s body from $`h`$ changes
-  each location of $`R_C(h)`$ within $`\Psi_C`$. By induction on the budget
-  $`k`$: the run changes $`R_C`$ only inside calls of members, each bounded
-  by its certificate at $`\Psi_C`$, whose own calls through a value are
-  bounded by the rule at a smaller budget.
+- **(L2) Outside run.** A run of code that is not the body's from $`h`$
+  changes each location of $`R_C(h)`$ within $`\Psi_C`$. By induction on
+  the budget $`k`$: the run changes $`R_C`$ only inside calls of members,
+  each bounded by its certificate at $`\Psi_C`$, whose own steps that run
+  code that is not the body's are bounded by the rule at a smaller budget.
 - **(L3) Rigidity.** For every transition of such a run,
-  $`\mathsf{own}_C(h)\subseteq\mathsf{own}_C(h')`$: private fields are
-  written once and an owned reference is written only by an
-  $`\mathsf{init}`$ (the shape below). Then $`\Phi\oplus_C\Psi_C`$ is rigid
-  when $`\Phi`$ and $`\Psi_C`$ are rigid and $`\Psi_C\sqsubseteq\Phi`$, as
-  for $`\Phi=\top`$ and for `{ values: "any"; spines: "grow" }` with
-  pretext's $`\Psi`$.
-- **(L4) The class invariant.** In every state of every run,
-  $`I_C(o,h)`$ holds of every instance $`o`$. The constructor establishes it
+  $`\mathsf{own}_C(h)\subseteq\mathsf{own}_C(h')`$: the bounded protocol
+  keeps every reference a location of $`R_C`$ holds ($`\mathsf{scalar}`$
+  keeps an object, $`\mathsf{grow}`$ every listed cell), and code outside
+  the body changes none (L1). Locations enter $`\mathsf{own}_C`$ only by
+  *Ownership at construction*. Then $`\Phi\oplus_C\Psi_C`$ is rigid when
+  $`\Phi`$ and $`\Psi_C`$ are rigid and $`\Psi_C\sqsubseteq\Phi`$, as for
+  $`\Phi=\top`$ and for `{ values: "any"; spines: "grow" }` with every
+  bounded protocol.
+- **(L4) The class invariant.** In every state of every run, $`I_C(o,h)`$
+  holds of every complete instance $`o`$. Its construction establishes it
   for every caller; every change the body makes to a location of $`R_C`$ of
-  an existing instance is within a change $`\mathrm{supp}(I_C)`$ tolerates
-  (*Tolerant*); outside code changes none (L1). No step of the argument
-  assumes $`I_C`$ of the state it concludes it of.
+  a complete instance is tolerated by $`\mathrm{supp}(I_C)`$, or is one
+  write checked to keep $`I_C`$ (*Tolerant invariant*); outside code changes
+  none (L1). No step of the argument assumes $`I_C`$ of the state it
+  concludes it of.
 
 `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its statement; the
 premise and conclusion of `PassUnitSafe` are reviewed again, as a change of
@@ -283,50 +291,67 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   private slot (cited: SOURCE-FRAGMENT.md, "A private name in
   inheritance"). Construction therefore allocates a fresh instance by the
   body's code alone.
-- **No replaceable code.** No call of analysed code reaches code of the
-  class through a property other code can replace: the class has no public
-  prototype method, accessor or static method, or the class and its
-  prototype are frozen when its evaluation ends. The body calls its own code
-  by name and through private names, and the module's exports are bindings
-  fixed when the module is evaluated. A public data field is an ordinary
-  field.
+- **Lexical dispatch.** Wherever a certificate assumes which function a
+  call runs, the call names it: by a function of the body, a binding
+  written once, or a private method. A call of a public method, accessor or
+  static of a class with private state is a call whose callee is not
+  named; nothing of the class's method is assumed at it. Freezing the class
+  and its prototype does not name the callee: an instance's own property
+  shadows a frozen prototype's method (observed).
 - **Evaluated once.** Each evaluation of a class declaration makes new
   private names, and the model identifies a name by its declaring member. A
   class with private state is declared at the top level of its module, or in
   a static block of such a class, which runs once.
-- **Fields written once.** Every private instance field is written once, by
-  its initializer, and every private static field is written once by its
-  initializer, but one: a class may have one *staging* field, a private
-  static that holds the values of the instance being constructed. The body
-  writes it, constructs, and the first initializer takes and clears it, with
-  no call through a value in between, so it holds nothing at any state where
-  code outside the body runs. Its reason: an initializer cannot read the
-  constructor's arguments, and a field declared and then assigned in the
-  constructor costs the walkers 15–19% on V8
-  ([performance](#performance)). The instance's changing state lives in
-  owned storage.
+- **Bounded protocol.** Every entry of $`\Psi_C`$ on a private field, on
+  $`\mathsf{own}_C.\mathsf{cells}`$ and on $`\mathsf{own}_C.\mathsf{fields}`$
+  is at most $`\mathsf{scalar}`$, and on $`\mathsf{own}_C.\mathsf{spines}`$
+  at most $`\mathsf{grow}`$. A class whose protocol exceeds it is refused.
+  Its reason: (L3), a member taking a reference out of $`R_C`$ (a `pop`, a
+  cell overwritten, a field written with another object) lets storage leave
+  $`\mathsf{own}_C`$ while other code may still reach it.
+- **Construction.** An instance field's initializer reads `this` only as
+  `this.#f` of an earlier field, gives `this` to nothing, and runs no code
+  that is not the body's. The instance is complete, and meets $`I_C`$, only
+  once construction has returned; a private read of an incomplete instance
+  is checked without $`I_C`$. A field that holds storage is written by its
+  initializer, from a *staging field*: a private static that the body sets
+  to parts it allocated and holds nowhere else, immediately before `new`,
+  and that the first initializer takes. The staging field holds `null` or
+  such parts in every state, and is `null` again before every return and
+  every throw of the construction (`#take` clears it before it tests). Its
+  reasons: the constructor is a member, reached by `new h.constructor()`,
+  so it takes no storage from its caller; an initializer cannot read the
+  constructor's arguments; and a field declared and then assigned in the
+  constructor costs the walkers 15–19% on V8 ([performance](#performance)).
+  A field that holds no storage may be written anywhere within the bounded
+  protocol.
 - **Confinement.** A value is *confined* when it is read from a private
-  field or from confined storage, or stored into either. A confined value
-  that may be storage flows only to: a binding of the body; the object of an
-  element or field read or write, or of a `length` read; an initializer of a
-  private field, or a write into confined storage; an argument of a call
-  naming a function of the body, whose parameter is then confined; and a native whose audited
-  contract calls no code but the body's and keeps no reference to it, a
-  copy (`slice`, `Array.from`, a typed array built from it) among them. A
-  return out of a member, a `throw`, a `yield` or an `await` of it, a store
-  into storage not confined, and an argument of a function outside the body
-  are refused. A closure of the body may capture a confined value; a closure
-  given out is a member, and its own flows are checked the same. A copy is
-  not confined, and may go anywhere.
+  field or from confined storage, or stored into either; confined storage is
+  that of $`\mathsf{own}_C`$, and storage the body keeps in its own bindings
+  and gives to no code outside (a cache). A confined value that may be
+  storage flows only to: a binding of the body; the object of an element or
+  field read or write, or of a `length` read; an initializer of a private
+  field, or a write into confined storage; an argument of a call naming a
+  function of the body, whose parameter is then confined; and a native whose
+  audited contract calls no code but the body's and keeps no reference to
+  it. A copy (`slice`, `Array.from`, a typed array built from it) is
+  unconfined only when its element type holds no storage: a shallow copy of
+  an array of arrays shares the inner arrays (observed). A return out of a
+  member, a `throw`, a `yield` or an `await` of a confined value, a store
+  into storage not confined, and an argument of a call that does not name a
+  function of the body are refused. A closure of the body may capture a
+  confined value; a closure given out is a member, and its own flows are
+  checked the same.
 - **Ownership at construction.** Storage enters private state, or confined
-  storage, only at a location's first write (an initializer, or an
-  $`\mathsf{init}`$ of a location holding `null` or `undefined`), and only
-  storage allocated during the current call of the body, a copy made there,
-  or storage already confined (a cache the body keeps).
+  storage, only where a location holding no object is written (an
+  initializer, or a $`\mathsf{scalar}`$ write of a location holding `null`
+  or `undefined`), and only storage allocated during the current call of the
+  body, an unconfined copy made there, or storage already confined.
 - **Tolerant invariant.** Every change the body makes to a location of
-  $`R_C`$ of an existing instance, and every entry of $`\Psi_C`$, is one
-  $`\mathrm{supp}(I_C)`$ tolerates. An invariant that one write breaks and a
-  later write restores is refused, as Paper I's limit "Broken and restored
+  $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
+  $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
+  $`I_C`$ of its instance. An invariant that one write breaks and a later
+  write restores is refused, as Paper I's limit "Broken and restored
   invariants" states for assertions.
 
 ## Trust
@@ -351,7 +376,7 @@ What it replaces:
 - **The invariant of a class with private state needs no caller trust.**
   The row on exported preconditions ("the type invariant … of each type its
   parameters' types name, a sealed handle's included") does not apply to
-  such a class: its invariant holds of every instance by (L4).
+  such a class: its invariant holds of every complete instance by (L4).
 - **No owner boundary.** The boundary is the class body, a lexical fact.
 
 Rows used unchanged: ordinary arrays, fixed-length typed arrays, the public
@@ -392,6 +417,12 @@ of this design.
 **Refusal index rows to lift** (cited: SOURCE-FRAGMENT.md, the table
 "Classes"):
 
+- "A constructor's rest parameter or parameter pattern; a default or
+  statement reading `this` before the instance is complete; …"
+  (`class-constructor-reads-this`): an instance field's initializer may read
+  `this.#f` of an earlier field, as *Construction* states; the construction
+  lowering binds each field's value in order and reads an earlier one as its
+  binding.
 - "A class declared in a `case` clause, or one with a static member, a
   private name, …": admitted for a class declared in a static block of a
   top-level class, which runs once.
@@ -421,16 +452,17 @@ the instance that every such entry excludes, which is (P1) in the model.
 **The trust row** above, in [the trust surface](../DESIGN.md#trust-surface).
 
 **`@invariant` on a class.** [ANNOTATIONS.md](../ANNOTATIONS.md) gains the
-reading on a class with private state: the clause holds of every instance
-in every state, by (L4), and its paths are private fields.
+reading on a class with private state: the clause holds of every complete
+instance in every state, by (L4), and its paths are private fields.
 
-**What acceptance reads.** The fragment carries each class's private state,
+**What acceptance reads.** The fragment carries each body's private state,
 its members, the proposed $`\Psi_C`$ and $`I_C`$. `FunctionPlan.certify`
-checks each member at $`\Psi_C`$ and each call through a value at
-$`\Phi\oplus_C\Psi_C`$; the module-interface check checks the shape
-restrictions, the confinement and ownership of every flow, *Tolerant*, and
-that every function of the body reads the same $`\Psi_C`$. Every proposal
-is untrusted: a $`\Psi_C`$ too small fails a member's check.
+checks each member at $`\Psi_C`$ and each step that runs code that is not
+the body's at $`\Phi\oplus_C\Psi_C`$; the module-interface check checks the
+shape restrictions, the bound on $`\Psi_C`$, the confinement and ownership
+of every flow, *Tolerant invariant*, and that every function of the body
+reads the same $`\Psi_C`$. Every proposal is untrusted: a $`\Psi_C`$ too
+small fails a member's check.
 
 ## Pretext
 
@@ -440,15 +472,16 @@ The three handles and the internal cursor are classes of one body, since a
 private name is spelled only inside its class and the classes nested in it.
 The top-level class is `PreparedText`. Its static block declares the cursor
 class `LineCursor` and `PreparedRichInline`, and holds the code of
-`line-break.ts`, `line-text.ts`, `layout.ts` and `rich-inline.ts`, and of
-`measureAnalysis` with its helpers, that reads or builds a handle's state.
-Each function lies in the innermost of these classes whose names it spells:
-the text walkers and steppers, which read the cursor and the text handle, in
-`LineCursor`'s static block; the paragraph's walkers and materialization in
-`PreparedRichInline`'s. Each nested static block assigns its functions to
-bindings of the outer static block, written once, which call them by name.
-The outer block assigns the package's functions to one module binding, from
-which `layout.ts` and `rich-inline.ts` export them.
+`line-break.ts`, `line-text.ts`, `layout.ts`, `measurement.ts` and
+`rich-inline.ts`, and of `measureAnalysis` with its helpers, that reads or
+builds a handle's state. Each function lies in the innermost of these
+classes whose names it spells: the text walkers and steppers, which read the
+cursor and the text handle, in `LineCursor`'s static block; the paragraph's
+walkers and materialization in `PreparedRichInline`'s. Each nested static
+block assigns its functions to bindings of the outer static block, written
+once, which call them by name. The outer block assigns the package's
+functions to one module binding, from which `layout.ts` and
+`rich-inline.ts` export them.
 
 ```ts
 let api: Api | null = null
@@ -456,31 +489,34 @@ let api: Api | null = null
 /** @invariant this.#segmentFlags.length === this.#widths.length && … */
 export class PreparedText {
   static #staged: TextParts | null = null
-  readonly #parts: TextParts = PreparedText.#take() // checks I and clears the staging field
+  readonly #parts: TextParts = PreparedText.#take() // clears the staging field, then checks I
   readonly #widths: number[] = this.#parts.widths
   readonly #segmentFlags: Uint8Array = this.#parts.segmentFlags
-  // … every field of PreparedLineBreakData and PreparedSegments, each by its initializer
-  readonly segments: readonly string[] | null = this.#parts.segmentsCopy
-  readonly kinds: readonly SegmentBreakKind[] | null = this.#parts.kindsCopy
-  readonly widths: ArrayLike<number> | null = this.#parts.widthsCopy
+  readonly #segments: string[] | null = this.#parts.segments
+  readonly #kinds: SegmentBreakKind[] | null = this.#parts.kinds
+  // … every field of PreparedLineBreakData, each by its initializer
+  readonly segments: readonly string[] | null = this.#segments === null ? null : this.#segments.slice()
+  readonly kinds: readonly SegmentBreakKind[] | null = this.#kinds === null ? null : this.#kinds.slice()
+  readonly widths: ArrayLike<number> | null = this.#segments === null ? null : this.#widths.slice()
 
   static #take(): TextParts { /* as in the example */ }
 
   static {
     let walkPreparedLinesRaw: (prepared: PreparedText, maxWidth: number, onLine?: InternalLineVisitor) => number
     class LineCursor {
-      readonly #at: number[] = [0, 0]
+      #segment = 0
+      #grapheme = 0
       static {
-        walkPreparedLinesRaw = (prepared, maxWidth, onLine) => { /* reads prepared.#widths, cursor.#at, … */ }
+        walkPreparedLinesRaw = (prepared, maxWidth, onLine) => { /* reads prepared.#widths, cursor.#segment, … */ }
         // … the steppers and the other walkers
       }
     }
-    /** @invariant … */
+    /** @invariant this.#sources === null || (this.#sources.starts.length === … && …) */
     class PreparedRichInline {
-      // the fields of InternalPreparedRichInline, and #sources
+      // the fields of InternalPreparedRichInline, and #sources: TextSources | null = null
       static { /* the paragraph's walkers and materialization */ }
     }
-    // … preparation and the package's functions, which call the walkers by name
+    // … preparation, the measurement caches and the package's functions, which call the walkers by name
     api = { prepare, prepareWithSegments, layout, walkLineRanges, /* … */ prepareRichInline, walkRichInlineLineRanges /* … */ }
   }
 }
@@ -494,39 +530,57 @@ export type PreparedTextWithSegments = PreparedText & {
 
 - **`PreparedText` and `PreparedTextWithSegments`** are one class.
   `prepareWithSegments` computes the segments and their kinds before it
-  constructs, so `#segments` and `#kinds` are written once; its result
-  narrows to `PreparedTextWithSegments` by a user-defined guard on the three
-  public fields, checked by TScert's guard rules. The public `segments`,
-  `kinds` and `widths` are copies, made at construction and written once:
-  the walkers' own arrays are confined. Upstream's
-  `layout.ts:150` write of `prepared.kinds` after preparation becomes a
-  part computed before construction.
+  constructs, so `#segments` and `#kinds` are written by their
+  initializers; its result narrows to `PreparedTextWithSegments` by a
+  user-defined guard on the three public fields, checked by TScert's guard
+  rules. The public `segments`, `kinds` and `widths` are copies their own
+  initializers make from the private fields, of strings and numbers, so
+  unconfined; `#parts` holds no public value. Upstream's `layout.ts:150`
+  write of `prepared.kinds` after preparation becomes a part computed before
+  construction.
 - **`PreparedRichInline`** holds `#data: PreparedText`, an instance whose
   state is its own class's, and the paragraph's fields. The three lists of
   where its segments are in the item's text, which upstream finds at a
-  line's first materialization (`rich-inline.ts:1160–1181`), are fields of
-  an owned record, `#sources = { starts: null, ends: null, units: null }`,
-  each written once by an $`\mathsf{init}`$ of a fresh array. The
-  whole-line fields, written by `findWholeLine`'s lambda (`:817–825`), are
-  computed before construction.
-- **Preparation's arrays** are allocated by `measureAnalysis` and its
-  helpers, which move into the body; `breakableFitAdvances`' entries come
-  from the measurement cache, storage the body keeps and confines.
-- **The internal cursor** is a `LineCursor`, whose one field `#at` holds a
-  fresh two-cell array, segment and grapheme index, written by the steppers.
-  The walker allocates it and passes it only to functions of the body that
-  it calls by name. Every member writes only cursors it allocates, so
-  $`\psi_c=\mathsf{keep}`$ on the cursors that exist when a callback runs,
+  line's first materialization from one test of `sourceStarts`
+  (`rich-inline.ts:1198–1199`, writing the three at `:1176–1178`), are one
+  record `TextSources` held by one field, `#sources`, `null` until a line is
+  first materialized and then written once, by a $`\mathsf{scalar}`$ write
+  of a record whose three lists `findSegmentSources` fills in one loop over
+  the segments (`:1160–1181`). Its invariant, the lazy-list invariant, is
+  `#sources` `null`, or holding three lists each as long as
+  `#data.#widths`. It is discharged by *Tolerant invariant*'s checked single write:
+  the record is complete before the write, and nothing writes its lists
+  after. The whole-line fields, written by `findWholeLine`'s lambda
+  (`:817–825`), are computed before construction.
+- **Preparation** happens before construction. `measureAnalysis` and its
+  helpers move into the body. In paragraph mode, where upstream returns a
+  handle sharing the paragraph's lists while they are still being filled,
+  with a `segmentFlags` of the paragraph's length and `widths` of the item's
+  (`prepare.ts:379–383`; `rich-inline.ts:479–573`), it returns a plain record
+  of the item's results, which no class's invariant reads.
+- **The measurement caches** of `measurement.ts` (cited: the `Map` of fonts,
+  `:1379`, each font's record holding `Map`s, `:1447–1448`) are bindings of
+  the body, confined storage: `breakableFitAdvances`' entries come from
+  them and enter a handle's private state by *Ownership at construction*.
+  `clearCache` (`layout.ts:360–363`) is a member whose effect on them is
+  their maps' `clear`, outside $`R_C`$: entries a handle holds stay owned
+  through the handle, and the entry of $`\Psi`$ it contributes is
+  $`\mathsf{keep}`$.
+- **The internal cursor** is a `LineCursor`, whose two private number
+  fields `#segment` and `#grapheme` the steppers write. The walker allocates
+  it and passes it only to functions of the body that it calls by name.
+  Every member writes only cursors it allocates, so
+  $`\psi_{\mathtt{LineCursor}.\#\mathit{segment}}=\psi_{\mathtt{LineCursor}.\#\mathit{grapheme}}=\mathsf{keep}`$,
   and the walker's cursor facts cross `onLine`. The public `LayoutCursor`
   stays a record that applications build, read and keep as JSON (cited:
   Decisions Log, 2026-09-24, "cursors and ranges are plain JSON"); it is
   validated by `normalizePreparedLineStart` on entry and copied into a
   `LineCursor`.
 
-The protocol for pretext (conjectured):
-$`\Psi=\{\mathsf{priv}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep},\ \mathsf{cells}:\mathsf{keep},\ \mathsf{fields}:\mathsf{init}\}`$,
-the last from `#sources`. The staging fields hold nothing at a member's
-entry or exit. No walker reads `#sources`.
+The protocol for pretext (conjectured): $`\mathsf{scalar}`$ on
+`PreparedRichInline.#sources`, from `materializeRichInlineLineRange`, and
+$`\mathsf{keep}`$ on every other private field and on every part of
+$`\mathsf{own}`$. It is within the bound. No walker reads `#sources`.
 
 ### What each site gets
 
@@ -543,76 +597,104 @@ The sites are the dossier's (cited: [dossier](callback-frames-dossier.md),
   function of the body used as a value, so a member; it pushes onto
   `lines`, which is fresh and not owned, and writes no owned location.
 - **P22, form (a)**: the six cursor sites. The cursor's two indices survive
-  `onLine` and every call through a value, by $`\psi_c=\mathsf{keep}`$; the
+  `onLine` and every step that runs code that is not the body's; the
   steppers' writes are the walker's own steps, checked as written.
 - **P18**: at pretext's sites the prepared handle is a class with private
-  state, so its invariant holds after `step(c)` by (L4) and its fields are
-  stable keys. Paper II's own program, with `Prepared` a structural type
-  external code may build, is outside.
+  state, so its invariant holds after `step(c)` by (L4), and its fields keep
+  the arrays they hold. Paper II's own program, with `Prepared` a structural
+  type external code may build, is outside.
 - **P20**: a value of a class with private state read back from a
   `Map<string, ClassTable>` meets $`I_C`$ at its first private read, by
   (L4); no contract of `Map` beyond its read returning a stored value is
   needed.
-- **P15**: a module constant array moved into a private static field
-  written once by its initializer is owned, and $`\psi_s=\mathsf{keep}`$
-  keeps its length.
-- **P16**: a cell initialized at first use, moved into an owned record
-  field, changes by $`\mathsf{init}`$. Its invariant
-  `bmp === null || bmp.length === 65536` is no support that tolerates
-  $`\mathsf{init}`$, so it needs a write checked to establish the invariant,
-  which *Tolerant* refuses: a later part.
+- **P15**: a module constant array moved into a private static field of the
+  body is owned, and $`\psi_s=\mathsf{keep}`$ keeps its length.
+- **P16**: a cell initialized at first use, moved into a private field
+  holding `null` until its one write, changes by $`\mathsf{scalar}`$; its
+  invariant `bmp === null || bmp.length === 65536` is kept by *Tolerant
+  invariant*'s checked single write, as the lazy lists' is.
 
 ### Performance
 
+The criterion is upstream (`plain`): no operation slower.
+
 **Measured** on mechanical variants of upstream `src/` at `0d102a5c`,
-bundled to one ESM file: `plainw`, the bundle's code inside a class's
-static block, the control; `priv`, every field of `PreparedLineBreakData`
-and `items`, `segments` and `kinds` (17) a private field of one class whose
-constructor assigns them; `priv2`, the same with 15 of them written once by
-initializers reading module cells the factory sets; `privcopy`, `priv` with
-the constructor copying its eight arrays. Rich-inline's own handle stays a
-record whose `data` is the class instance. Texts: 563 paragraphs, 72,144
-UTF-16 units from eight of pretext's corpus files; a stand-in Canvas
-(7.25 px per unit below U+2E80, 16 px above). Per process, 5 warm-up and 15
-timed passes, the median per operation; 15 processes per variant in shuffled
-order; the figure is the median of the process medians. Apple M2 Max, load
-average 3.5–4.7; Node 26.13.0 (V8 14.6) and Bun 1.4.2 (JavaScriptCore).
+bundled to one ESM file, all with equal checksums of results:
 
-| Operation | V8, `priv2` / `plainw` | V8, `priv` / `plainw` | JSC, `priv2` / `plainw` |
-| --- | --- | --- | --- |
-| `prepare`, cache cleared | 1.004 | 0.988 | 1.006 |
-| `prepare`, text seen | 0.990 | 0.979 | 1.019 |
-| `layout` | 1.001 | 1.016 | 0.998 |
-| `walkLineRanges` | 1.015 | 1.023 | 1.003 |
-| `measureLineStats` | 0.983 | 0.993 | 0.997 |
-| `layoutWithLines` | 0.971 | 0.979 | 0.957 |
-| `layoutNextLineRange` | 0.997 | 1.007 | 0.992 |
-| `layout`, full walker (`pre-wrap`, letter spacing) | 0.997 | 1.185 | 0.998 |
-| `walkLineRanges`, full walker | 0.999 | 1.153 | 0.988 |
+- `plain`: upstream as is.
+- `plainw`: the same code in a class's static block.
+- `designscalar`: this design's shape. `PreparedText` with the staging
+  field, `#parts`, 17 private fields and the three public copies, each
+  written once by its initializer, `#take` checking the staged parts;
+  `segments` and `kinds` computed before construction; `LineCursor` with
+  `#segment` and `#grapheme` around `line-break.ts`, the streams copying the
+  public cursor in and out; `PreparedRichInline` a class with staging, its
+  whole line computed before construction, `#sources` owned; nested blocks
+  handing their functions to bindings of the outer block; exports assigned
+  in the static block.
+- `design`: `designscalar` with the cursor's indices in an owned two-cell
+  array behind one private field.
 
-- With fields written once by their initializers, every operation is within
-  ±2% of the control in both engines, but `layoutWithLines`, 3–4% faster.
-- Declared fields assigned in the constructor cost 15–19% on V8 in the full
-  walker, and nothing elsewhere or on JavaScriptCore. A class with the same
-  shape and public fields measures as `priv`, and one without field
-  declarations, each field assigned once in the constructor, as the control;
-  so the cost is that of a field declared and then assigned, not of private
-  access. Which V8 mechanism causes it is not established.
-- Copying the eight arrays at construction changes preparation by +1.6% on
-  V8 and +1.1% on JavaScriptCore, within the spread between processes.
+Setup: 563 corpus paragraphs, 72,144 UTF-16 units from eight of pretext's
+corpus files; a stand-in Canvas (7.25 px per unit below U+2E80, 16 px
+above); five rich-inline operations on paragraph handles (every third
+paragraph one item, the others cut into items of about 40 units in two
+fonts). One process per variant with 5 warm-up and 15 timed passes, the
+median per operation; 15 processes per variant in shuffled order; the
+figure is the median of the process medians. Apple M2 Max, load average
+4.1–5.0; Node 26.13.0 (V8 14.6) and Bun 1.4.2 (JavaScriptCore).
+
+| Operation | V8, `designscalar` / `plain` | JSC, `designscalar` / `plain` | V8, `design` / `plain` | JSC, `design` / `plain` |
+| --- | --- | --- | --- | --- |
+| `prepare`, cache cleared | 0.938 | 0.986 | 0.939 | 0.984 |
+| `prepare`, text seen | 0.932 | 0.978 | 0.934 | 0.983 |
+| `prepareWithSegments`, text seen | 0.945 | 1.011 | 0.948 | 1.027 |
+| `layout` | 0.931 | 0.996 | 0.931 | 0.997 |
+| `walkLineRanges` | 0.956 | 0.940 | 1.073 | 1.073 |
+| `measureLineStats` | 0.936 | 0.929 | 1.035 | 1.091 |
+| `layoutWithLines` | 0.912 | 0.885 | 0.937 | 0.907 |
+| `layoutNextLineRange` | 0.953 | 0.909 | 1.208 | 1.283 |
+| `layout`, full walker | 0.611 | 0.981 | 0.624 | 0.995 |
+| `walkLineRanges`, full walker | 0.647 | 0.976 | 0.661 | 1.001 |
+| rich: prepare, text seen | 0.937 | 1.010 | 0.947 | 0.995 |
+| rich: prepare, walk, materialize | 0.956 | 1.007 | 0.958 | 1.016 |
+| rich: walk, materialize | 0.904 | 0.946 | 0.928 | 0.942 |
+| rich: stats | 0.756 | 0.929 | 0.795 | 1.011 |
+| rich: stream | 0.870 | 0.953 | 0.918 | 1.106 |
+
+- **`designscalar` is at or below upstream** on every operation in both
+  engines; its largest ratio, 1.011 (JSC, `prepareWithSegments`), is
+  inside the spread of `plain`'s own processes.
+- **The cursor behind an owned array regresses**: `design` is slower than
+  upstream wherever a cursor is read or made, up to +21% (V8) and +28%
+  (JSC) on `layoutNextLineRange`. The cursor's indices are private number
+  fields for this reason.
+- **Against the same code in a static block** (`plainw`), `designscalar`
+  is between 10% faster and 3% slower, but JSC's `layoutNextLineRange`,
+  +11% (10.86 against 9.77 ms): the stream allocates one `LineCursor` per
+  line, where upstream writes the result's own records. JSC's `plain` is
+  slower there than both (11.96 ms).
+- The three public copies cost `prepareWithSegments` 1–2% on V8 and 3–4% on
+  JSC against `plainw`.
+- A field declared and then assigned in the constructor, in place of
+  written by its initializer, cost the full walker 15–19% on V8 against
+  `plainw` in an earlier run on the same setup without rich-inline
+  operations, and nothing on JSC; which V8 mechanism causes it is not
+  established.
+- On V8, `plain`'s full walker takes 49.6 and 53.8 ms in these processes,
+  against 30.6 and 34.8 ms in that earlier run, which laid out no paragraph
+  handle; the variants in a static block do not show it. Its cause is not
+  established, and it makes those two ratios no evidence of a gain.
 
 **Limits.** No browser ran, and Firefox (SpiderMonkey) was not measured;
 upstream records differences of this size from V8's inlining budget alone
 (cited: `measurement.ts:983–988`, one field more in a function V8 then no
 longer inlined, 11–18% slower). The stand-in Canvas leaves out real
 measurement, so the handle's share of preparation is overstated. The
-variants differ from this design's shape: their staging is module cells,
-where this design has one private static and a `#parts` field read by the
-other initializers; `#segments` and `#kinds` are assigned after
-construction; the cursor and the rich-inline handle keep their records; the
-public copies of `segments`, `kinds` and `widths` are not made. None of
-these differences was measured, and a hand-written rewrite of the source was
-not measured.
+variants are a mechanical transform of upstream's functions, not a
+hand-written rewrite, and differ from this design in two points:
+`measureAnalysis` in paragraph mode constructs an instance, and `#sources`
+holds the three lists in three fields. Retained memory was not measured.
 
 ## Negatives and controls
 
@@ -625,21 +707,34 @@ JavaScript, run with `node`, printing the reads), each refused:
 - `invalid-private-escape-argument`: the walker passes `#widths` to the
   user's callback, which pushes onto it: `[0, 0, undefined, undefined]`.
   Refused by *Confinement* at the argument.
+- `invalid-private-shallow-copy`: a member returns `#fits.slice()` of an
+  array of arrays; the client truncates an inner array; the walker reads
+  `[undefined, undefined, 3, 4]`. Refused by *Confinement*: the copy's
+  elements hold storage.
 - `invalid-private-received-array`: the factory stages an array it received
   without copying it; the caller pushes onto its alias after construction:
   `[0, 0, undefined]`. Refused by *Ownership at construction*.
 - `invalid-private-reentrant-member`: a member pops `#widths`; the walker
   caches the length; the visitor calls the member:
-  `[1, undefined, undefined]`. Refused at the walker's read, the fact not
-  surviving $`\psi_s=\mathsf{any}`$.
-- `invalid-private-rewritten-field`: a member writes `#widths` again; the
-  walker reads through the field after the visitor calls it:
-  `[undefined, undefined, undefined]`. Refused by *Fields written once* at
-  the write.
+  `[1, undefined, undefined]`. Refused by *Bounded protocol*, its spines
+  entry $`\mathsf{any}`$.
+- `invalid-private-rewritten-field`: a member writes another array to
+  `#widths`; the walker reads through the field after the visitor calls it:
+  `[undefined, undefined, undefined]`. Refused by *Bounded protocol*, the
+  field's entry beyond $`\mathsf{scalar}`$.
+- `invalid-private-await-between`: a body function tests
+  `#pos < #widths.length`, awaits, and reads `#widths[#pos]`; a member
+  setting `#pos` to the length, within the bound, runs while it is
+  suspended: `undefined`. Refused at the read: the `await` runs code that is
+  not the body's, and $`\psi_{\#\mathit{pos}}=\mathsf{scalar}`$ does not
+  keep the test.
 - `invalid-private-replaceable-method`: the walker bounds its loop by a
   public prototype method; external code replaces it:
-  `[1, 1, undefined, undefined]`. Refused by *No replaceable code* at the
-  class.
+  `[1, 1, undefined, undefined]`. Refused by *Lexical dispatch*: the bound
+  states no fact about `#widths`.
+- `invalid-private-shadowed-method`: the same with the class and its
+  prototype frozen and an own property of the instance shadowing the
+  method: `[1, 1, undefined, undefined]`. Refused by *Lexical dispatch*.
 
 **Restriction controls**, each safe under Node and refused by its stated
 restriction (observed):
@@ -650,14 +745,16 @@ restriction (observed):
 - `private-two-evaluations-refused`: a class evaluated twice in a function;
   one evaluation's static method given the other's instance throws a
   `TypeError`. *Evaluated once*.
-- `private-open-invariant-refused`: a member pops `#widths` then `#flags`
-  under $`|\mathit{flags}|=|\mathit{widths}|`$, with a walker reading
-  `#flags[i]` before `visit`: `[0, 0]`. *Tolerant invariant*.
+- `private-open-invariant-refused`: a member pushes onto `#widths` and then
+  onto `#flags` under $`|\mathit{flags}|=|\mathit{widths}|`$, with a walker
+  reading `#flags[i]` before `visit`: `[0, 0, 0, 0]`. *Tolerant
+  invariant*.
 
 **Positive cases**: the example, its visitor calling every member
-(`[0, 0, 0]`); `private-escape-copy`, a member giving out a copy that the
-client pushes onto (`[0, 0]`); `bounds-pattern-unreachable-field-refused`
-and `bounds-pattern-unreachable-handle-refused` rewritten with a class with
+(`[0, 0, 0]`); `private-escape-copy`, a member giving out a copy of a
+number array that the client pushes onto (`[0, 0]`);
+`bounds-pattern-unreachable-field-refused` and
+`bounds-pattern-unreachable-handle-refused` rewritten with a class with
 private state.
 
 **Observation**: on an instance, `Reflect.ownKeys`,
@@ -669,28 +766,30 @@ private state.
 
 **Controls** (forged fragment or forced proposal), each refused:
 $`\Psi_C`$ forced smaller than a member's effect; a member forged as a
-non-member; a function used as a value forged as called by name only; a
-confined flow forged to an outside argument; an owned store forged as fresh;
-a staging write forged across a call through a value; a private field's
-second write forged away; $`I_C`$ forged to read a path outside $`R_C`$.
+non-member; a function used as a value forged as called by name only; an
+`await` forged as body code; a confined flow forged to an outside argument;
+a copy of an array of arrays forged unconfined; an owned store forged as
+fresh; a staging field forged left set on a throw; an initializer forged to
+pass `this` to a call; $`I_C`$ forged to read a path outside $`R_C`$.
 
 ## Stages and cost
 
-1. **The rule in the note and in Lean**: the regions, $`\Psi_C`$,
-   $`\Phi\oplus_C\Psi_C`$, (P1) and (P2) as invariants of states, (L1) to
-   (L4), Reliance at $`\Phi\oplus_C\Psi_C`$. Front: classes with private
-   state, members, $`\Psi_C`$ as a least fixed point over the members,
-   computed once per class body and keyed by its sources in the
+1. **The rule in the note and in Lean**: the regions, $`\Psi_C`$ and its
+   bound, $`\Phi\oplus_C\Psi_C`$, (P1) and (P2) as invariants of states,
+   (L1) to (L4), Reliance at $`\Phi\oplus_C\Psi_C`$. Front: bodies with
+   private state, members, $`\Psi_C`$ as a least fixed point over the
+   members, computed once per body and keyed by its sources in the
    [stage store](../STAGE-STORE.md); the shape restrictions and the
    confinement check; `@invariant` on a class. The native audit. The cases
    and controls above. Covers the example.
-2. **The fragment rows**: classes in a static block, the staging field, a
-   static block's writes of a module cell and the exports read from it.
+2. **The fragment rows**: initializers reading earlier fields, classes in a
+   static block, the staging field, a static block's writes of a module cell
+   and the exports read from it.
 3. **Pretext**: the rewrite above on the fork; the five handle sites and six
    cursor sites checked; the rewritten source benchmarked against upstream
-   on the setup above and in a browser.
-4. **P16 and P15**: a write checked to establish an invariant; module tables
-   as private statics.
+   on the setup above, with retained memory, and in a browser.
+4. **P15 and P16**: module tables and lazily initialized cells as private
+   fields.
 
 Each stage states the whole definition; what a stage leaves out is an
 explicit restriction, documented in SOURCE-FRAGMENT.md and enforced.
@@ -698,13 +797,13 @@ explicit restriction, documented in SOURCE-FRAGMENT.md and enforced.
 Cost (conjectured):
 
 - Lean: (L2) and (L4) by one induction over runs with member certificates
-  at $`\Psi_C`$; (P1) in the model by the native audit; the effect
-  $`\Phi\oplus_C\Psi_C`$ joins the effect language as a bound per region.
-  Two to four weeks.
+  at $`\Psi_C`$; (L3) from the bound; (P1) in the model by the native audit;
+  the effect $`\Phi\oplus_C\Psi_C`$ joins the effect language as a bound per
+  region. Two to four weeks.
 - Front: the fixed point over members and the confinement check, a flow
   over the body's code.
-- The pass: one region test per entry of a call's effect; no work per call
-  site beyond respect.
+- The pass: one region test per entry of an effect at a step that runs code
+  that is not the body's; no work per call site beyond respect.
 - Trust: one row, of the language. No row about external code's use of a
   handle.
 - Sources: pretext's handle code moves into one class body; its public
