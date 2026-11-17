@@ -287,14 +287,14 @@ theorem passGroupInferred_members {f : FilePlans} {fuel : Nat} {group : List Nat
       have hstep : Recandidated f (step acc i).plans := hacc.trans hq
       obtain ⟨h1, hrest⟩ := ih (step acc i) hstep h
       have h1' : (acc.failed.orElse fun _ =>
-          (acc.plans.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i).last.2.2)
-          = none := h1
+          (acc.plans.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i).last.2.2.map
+            Thunk.get) = none := h1
       cases ha : acc.failed with
       | some _ => rw [ha] at h1'; simp [Option.orElse] at h1'
       | none =>
         rw [ha] at h1'
         simp only [Option.orElse] at h1'
-        rw [hlast] at h1'
+        rw [hlast, Option.map_eq_none_iff] at h1'
         obtain ⟨m, hm, hacc'⟩ := inferredRun_accepted h1'
         refine ⟨rfl, fun j hj => ?_⟩
         rcases List.mem_cons.mp hj with rfl | hj

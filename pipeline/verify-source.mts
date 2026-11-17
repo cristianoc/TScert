@@ -11,6 +11,7 @@ import { processInconsistency, processRetirement } from "../tools/files.mts";
 import { retainDeclarationSessions } from "../tools/declaration-session.mts";
 import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf } from "../tools/thrown.mts";
 import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot, withinRunDirectory } from "./run-directory.mts";
 import type { Json as ParsedJson } from "../tools/calculus.mts";
@@ -449,6 +450,18 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       changed = true;
     }
   }
+  // A refusal whose record has a source-named summary (`presentObligation`)
+  // and that states no `obligation:` line of its own: that summary after
+  // its first line.
+  const source = readFileSync(fileKey, "utf8");
+  const described = (text: string): string => {
+    if (text.split("\n").some((l) => l.startsWith("obligation: "))) return text;
+    const record = readDiagnostic(text);
+    const summary = record === undefined ? undefined : presentObligation(record, source).summary;
+    if (summary === undefined) return text;
+    const [first, ...rest] = text.split("\n");
+    return [first, `obligation: ${summary}`, ...rest].join("\n");
+  };
   const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
   const results: UnitResult[] = verdicts.filter((v) => !v.unit.startsWith("module:"))
     .sort((a, b) => place(a.unit) - place(b.unit)).map((v): UnitResult => {
@@ -463,7 +476,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
           seen.add(u);
           const d = byUnit.get(u);
           if (d === undefined) return `${u}: no verdict`;
-          if (!d.accepted) return d.refusal;
+          if (!d.accepted) return described(d.refusal);
           u = openBy.get(u);
         }
         return "";
@@ -471,7 +484,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       const open = openBy.get(v.unit) ?? "";
       const reason = cause(open);
       const detail = v.accepted ? `reject: a unit it depends on is refused: ${open}${reason === "" ? "" : `\n${reason}`}`
-        : `reject: ${v.refusal}`;
+        : `reject: ${described(v.refusal)}`;
       return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
     });
   const first = results.find((u) => u.status !== "verified");

@@ -261,23 +261,22 @@ def withoutRegional (given : Std.HashMap String Json) (u : String) : Option (Std
 
 /-- A member's run as the inferred route reads it (`passGroup`'s wording):
 its line, its refusal where refused, and its failure, the refusal's text
-located with `located` (`FilePlans.locatedRefusal`). -/
+located with `located` (`FilePlans.placeRefusal`), deferred: a settling
+run's failure is read only where it is the member's last. -/
 def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (observe : Option String) (counting located : Bool) (given : Option (Std.HashMap String Json)) (i : Nat) :
-    String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option String :=
+    String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option (Thunk String) :=
   match g.passMember fuel i compare debugNode repeats given observe counting with
   | .ok m =>
-    let failure := match m.outcome with
+    -- (deferred: only the settled run's failure is reported, `inferredStep`)
+    let failure : Option (Thunk String) := match m.outcome with
       | .accepted => none
-      | .refused w _ =>
-        let raw := s!"single pass: {m.outcome} ({w.length})"
-        some (if !located then raw else match g.locatedRefusal i w with
-          | some l => s!"{l}\n{raw}"
-          | none => raw)
-      | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
-      | o => some s!"single pass: {o} ({(toString o).length})"
+      | .refused w _ pre => some (Thunk.mk fun _ =>
+        g.placeRefusal fuel located i w s!"single pass: {m.outcome} ({w.length})" pre)
+      | .notHandled w => some (Thunk.pure s!"single pass: {m.outcome} ({w.length})")
+      | o => some (Thunk.pure s!"single pass: {o} ({(toString o).length})")
     let why := match m.outcome with
-      | .refused w lacks => some (w, lacks)
+      | .refused w lacks _ => some (w, lacks)
       | _ => none
     (s!"{m.name}: {m.outcome}; {m.line}", why, failure)
   | .error reason =>
@@ -285,7 +284,7 @@ def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNo
       match g.fr.units[i]? with
       | some (fn, _, _) => s!"source refusal at [{fn.namePos.1},{fn.namePos.2}): {reason}"
       | none => reason
-    (s!"refused before the pass: {reason.take 200}", none, some reason)
+    (s!"refused before the pass: {reason.take 200}", none, some (Thunk.pure reason))
 
 /-- An implication left out, as a line names it. -/
 def implicationShown : Option (Nat × Nat) → String
@@ -439,7 +438,7 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
     (given : Option (Std.HashMap String Json)) (i : Nat) :
     Settled FilePlans (Option (Std.HashMap String Json))
-      (String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option String) :=
+      (String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option (Thunk String)) :=
   let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []
@@ -498,7 +497,7 @@ def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKn
       [(s.state.inferredRun fuel compare debugNode repeats observe counting located s.given i).1]
     | none => []
   { plans := s.state, given := s.given, lines := acc.lines ++ shown ++ s.lines ++ [s.last.1] ++ observedLine,
-    failed := acc.failed.orElse fun _ => s.last.2.2, dropped := acc.dropped + s.dropped, runs := acc.runs + s.runs }
+    failed := acc.failed.orElse fun _ => s.last.2.2.map Thunk.get, dropped := acc.dropped + s.dropped, runs := acc.runs + s.runs }
 
 /-- **The pass over a group with proposed loop-head facts dropped where an
 edge refuses them** (`passGroup`'s verdicts and lines): each member run

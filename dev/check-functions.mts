@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
 import { checkApart, memberName } from "../pipeline/verify-source.mts";
 import { readDiagnostic, type SourceMapEntry } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
-import { indexFact as fact } from "./fact-text.mts";
+import { indexFact as fact } from "../tools/fact-text.mts";
 
 const [checkout, file, names] = process.argv.slice(2);
 if (checkout === undefined || file === undefined || names === undefined) {
@@ -58,14 +58,16 @@ function bindings(map: SourceMapEntry | null): string[] {
 /** Every line a refused unit's check emitted, each source place located. */
 function refusal(detail: string): string[] {
   const out: string[] = [];
+  const record = readDiagnostic(detail);
+  const summary = record === undefined ? undefined : presentObligation(record, source).summary;
   for (const line of detail.split("\n")) {
     if (line === "" || line.startsWith("obligation-diagnostic: ")) continue;
+    // (the record's summary, printed below in full)
+    if (summary !== undefined && line === `obligation: ${summary}`) continue;
     out.push(line.slice(0, 400));
     for (const m of line.matchAll(/\[(\d+),(\d+)\)/g)) out.push(`  at ${located(Number(m[1]), Number(m[2]))}`);
   }
-  const record = readDiagnostic(detail);
   if (record === undefined) return out;
-  const summary = presentObligation(record, source).summary;
   if (summary) out.push(`  obligation: ${summary.length > 600 ? summary.slice(0, 600) + "…" : summary}`);
   for (const d of record.candidatesLeftOut ?? []) {
     const names = bindings(d.sourceMap);

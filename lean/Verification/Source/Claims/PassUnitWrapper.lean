@@ -17,15 +17,11 @@ open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs 
 private def groupStep (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (given : Option (Std.HashMap String Json)) (observe : Option String) (counting located : Bool)
     (acc : List String × Option String) (i : Nat) : List String × Option String :=
-  let place := fun (i : Nat) (w raw : String) =>
-    if !located then raw else match f.locatedRefusal i w with
-      | some l => s!"{l}\n{raw}"
-      | none => raw
   match f.passMember fuel i compare debugNode repeats given observe counting with
   | .ok m =>
     let failure := match m.outcome with
       | .accepted => none
-      | .refused w _ => some (place i w s!"single pass: {m.outcome} ({w.length})")
+      | .refused w _ pre => some (f.placeRefusal fuel located i w s!"single pass: {m.outcome} ({w.length})" pre)
       | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
       | o => some s!"single pass: {o} ({(toString o).length})"
     (acc.1 ++ [s!"{m.name}: {m.outcome}; {m.line}"], acc.2.orElse fun _ => failure)

@@ -352,13 +352,32 @@ structure Observation (ι : Type) where
   /-- The implications on entry, at its slots. -/
   implies : List (PromiseCalls.Implication ι) := []
 
+/-- One signature's precondition at a call, as the diagnostic of a refused
+call reads it: its elements precondition on the receiver slot, with whether
+the facts entail it (`PromiseCalls.atomFor`), and each index fact of its
+`pre`, at the call's slots, with whether the facts connected to those slots
+entail it alone (`HeapKnowledge.indicesCheckWith`, as
+`PromiseCalls.preconditionHolds` decides their conjunction). -/
+structure StatedPrecondition where
+  requires : Option (Nat × CallEffects.ElemPred × Bool) := none
+  atoms : List (HeapKnowledge.IndexFact × Bool) := []
+
+/-- What a refused call's diagnostic carries: the precondition of each of
+the callee's signatures stating one (`StatedPrecondition`), and the facts
+connected to the call's slots (`component`). -/
+structure CallPreconditions where
+  signatures : List StatedPrecondition
+  known : Knowledge
+
 /-- The verdict: refused at a located obligation, a construct the pass
 does not handle, or the state observed at a chosen node. A refusal of an
 edge into a statement entry for lacking given facts carries the entry and
-those facts (`lacks`), as data. -/
+those facts (`lacks`), as data; a refusal of a step, the preconditions of
+its call (`CallPreconditions`), deferred to where the refusal is printed. -/
 inductive Outcome (ι : Type) where
   | accepted
   | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
+      (preconditions : Option (Thunk (Option CallPreconditions)) := none)
   /-- Refused at node `l`'s footprint check (`GraphCode.nodeChecked`): the
   one refusal a regional check may still answer. -/
   | outsideBound (l : Nat)
@@ -368,7 +387,7 @@ inductive Outcome (ι : Type) where
 instance : ToString (Outcome ι) where
   toString
     | .accepted => "accepted"
-    | .refused w _ => s!"refused: {w}"
+    | .refused w _ _ => s!"refused: {w}"
     | .outsideBound l => s!"refused: footprint at node {l}"
     | .notHandled w => s!"not handled: {w}"
     | .observed o => s!"observed node {o.label}"
@@ -691,6 +710,24 @@ def admitsNear (k : Knowledge) (eff : CallEffects.Effect) (t : Tm) : Bool := tim
   | some (_, slots) => PromiseCalls.preconditionHolds (component k slots) eff t
   | none => PromiseCalls.preconditionHolds k eff t
 
+/-- A signature's precondition at the call `t` over the facts `k`, each
+atom decided apart; none where it states none. -/
+def statedAt (k : Knowledge) (eff : CallEffects.Effect) (t : Tm) : Option StatedPrecondition :=
+  if eff.requires.isNone && eff.pre.isEmpty then none else
+  let requires := eff.requires.bind fun R =>
+    (PromiseCalls.receiverSlot t).map fun x => (x, R, PromiseCalls.atomFor k x R)
+  let atoms := match PromiseCalls.callSlots t with
+    | some (recv, slots) =>
+      let near := component k slots
+      eff.pre.map fun F =>
+        let N := F.toNow
+        let holds := N.slots.all (fun p => p < slots.length && (p != 0 || recv)) &&
+          HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags near) (HeapLinks.aliases near.links) near.links
+            near.indices [⟨N, none, false⟩] (some slots)
+        ((N.mapM fun p => slots[p]?).getD N, holds)
+    | none => eff.pre.map fun F => (F.toNow, false)
+  some { requires, atoms }
+
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
@@ -848,6 +885,29 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
       let some sub := res.value | continue
       return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
   return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
+
+/-- **A refused call's preconditions** at node `l`'s step from the state
+`entry` (its claim `c`, the slots `ms` its expression reads): for a call of
+a slot, the facts the step reads (`materialize`, as `checkedStep` reads
+them), each signature of the callee's type stating a precondition, once per
+precondition, at those facts (`statedAt`), and the facts connected to the
+call's slots; none for another term or a callee stating none. Explanatory:
+read only where the refusal is printed. -/
+def callPreconditionsAt (G : NormalGraph ι) (c : PointClaim ι) (node : Node) (entry : State) (ms : List Nat) :
+    Option CallPreconditions := do
+  let .invoke (.var f) _ _ := node.expression | none
+  let F ← c.context[f]?
+  let L : List (CallEffects.Arrow (Ty ι)) ← match PositiveRules.expand G F with
+    | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] => some L
+    | _ => none
+  let (k, _, _) := materialize entry c.context.length ms false
+  let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
+  let effects := L.foldl (fun (acc : List CallEffects.Effect) p =>
+    if acc.any fun e => e.requires == p.effect.requires && e.pre == p.effect.pre then acc else acc ++ [p.effect]) []
+  let signatures := effects.filterMap fun e => statedAt kE e node.expression
+  if signatures.isEmpty then none
+  let slots := ((PromiseCalls.callSlots node.expression).map (·.2)).getD []
+  pure { signatures, known := component kE slots }
 
 /-- The facts one store holds and the other does not, each way. -/
 def Store.diff (s t : Store) : List Atom × List Atom :=
@@ -2028,7 +2088,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
           (some admits) answers
     answers := keepSummaries answers a
     stats := { stats with rules := stats.rules + 1, directCalls := stats.directCalls + (if direct.isSome then 1 else 0) }
-    let some (deriv, effect, searched) := r.value | return (.error s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", stats, answers)
+    let some (deriv, effect, searched) := r.value | return (.error s!"expression at node {l}: {(reprStr node.expression).take 300}", stats, answers)
     -- The output the checker selects for the step the search returned,
     -- computed here: the search's own output is not applied.
     let out? : Option Knowledge := if direct.isSome then some searched
@@ -2189,13 +2249,14 @@ facts an edge into it lacks, where it is that refusal), a refusal at a
 footprint, a construct not handled, an observation. -/
 inductive StopOutcome (ι : Type) where
   | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
+      (preconditions : Option (Thunk (Option CallPreconditions)) := none)
   | outsideBound (l : Nat)
   | notHandled (what : String)
   | observed (o : Observation ι)
 
 /-- A stop's outcome as a verdict. -/
 def StopOutcome.outcome : StopOutcome ι → Outcome ι
-  | .refused why lacks => .refused why lacks
+  | .refused why lacks pre => .refused why lacks pre
   | .outsideBound l => .outsideBound l
   | .notHandled what => .notHandled what
   | .observed o => .observed o
@@ -2644,7 +2705,10 @@ def stepRun (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv 
       env.passChecker env.undefTy l node c entry ms fresh answers
     match stepped with
     | .ok st => .ok (ms, st, stats, a)
-    | .error why => .error (WalkStop.mk (.refused why) (addStats counts stats) a trace)
+    -- A refused call's preconditions, computed only where the refusal is
+    -- printed (`callPreconditionsAt`).
+    | .error why => .error (WalkStop.mk (.refused why none (some (Thunk.mk fun _ => callPreconditionsAt G c node entry ms)))
+        (addStats counts stats) a trace)
 
 /-- The step's derivation as the checks after it read it: the step's, else
 a variable read at the node's sequent. -/

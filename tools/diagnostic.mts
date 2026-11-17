@@ -114,21 +114,30 @@ export interface HeapKnowledge {
 type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
   { pastSafe: { slot: number } } |
-  { linear: { fact: { le: { form: [LinearTerm, number][]; bound: number } } | { ne: { form: [LinearTerm, number][]; bound: number } } } } |
+  { linear: { fact: { le: { form: [LinearTerm, number][]; bound: Integer } } | { ne: { form: [LinearTerm, number][]; bound: Integer } } } } |
   { either: { left: IndexFact; right: IndexFact } } |
   { guarded: { slot: number; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } } |
   { element: { value: number; array: number; index: number } } |
   { every: { slot: number; path: string[]; stop: LinearTerm; body: BodyFormula[] } } |
   { apart: { slot: number; other: number } } |
   { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
+/** A linear fact's bound: a safe integer, or past that range the decimal
+ * digits the writer states it by. */
+type Integer = number | string;
+/** A linear fact's bound, decoded. */
+function integer(v: Json | undefined): Integer {
+  if (typeof v === "number" && Number.isSafeInteger(v)) return v;
+  if (typeof v === "string" && /^-?(0|[1-9][0-9]*)$/.test(v)) return v;
+  throw Error("a linear fact's bound");
+}
 /** A variable of a quantified fact's body: the index, the element, or a term. */
-type BodyFormula = { form: [BodyVariable, number][]; bound: number; ne: boolean } |
+type BodyFormula = { form: [BodyVariable, number][]; bound: Integer; ne: boolean } |
   { either: { left: BodyFormula; right: BodyFormula } };
 type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array spine, or the length of its typed array. */
-type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[] };
+type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[]; atEntry?: true };
 type SeparationKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
@@ -225,12 +234,26 @@ interface Common {
   };
 }
 
+/** A refused call's preconditions (Json.lean, `preconditionsJson`): per
+signature of the callee stating one, its elements precondition on the
+receiver slot and each index fact at the call's slots, each with whether
+the facts entail it; and the facts connected to the call's slots. */
+export interface CallPreconditions {
+  signatures: {
+    requires: { slot: number; pred: ElemKind[]; entailed: boolean } | null;
+    atoms: { fact: IndexFact; entailed: boolean }[];
+  }[];
+  known: HeapKnowledge;
+}
+
 /** A node of the certificate graph could not be typed. */
 interface NodeTyping extends Common {
   kind: "node-typing";
   id: string;
   source: DiagnosticNode;
   sequent: Sequent;
+  /** On a refused call whose callee's preconditions are not established. */
+  callPreconditions?: CallPreconditions;
 }
 
 /** An edge's destination was not justified by what its source carries. */
@@ -407,14 +430,8 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
   const elems: HeapKnowledge["elems"] = [];
   for (const atom of k.elems) {
     const a = record(atom,["slot","pred","negated"],["cond"]);
-    const p = record(a.pred,[...ELEM_KINDS]);
     if (typeof a.negated !== "boolean") throw Error("invalid elements fact");
-    const pred: ElemKind[] = [];
-    for (const kind of ELEM_KINDS) {
-      const holds = p[kind];
-      if (typeof holds !== "boolean") throw Error("invalid elements predicate");
-      if (holds) pred.push(kind);
-    }
+    const pred = elemPred(a.pred);
     elems.push({ slot: nat(a.slot), pred, negated: a.negated, ...(a.cond === undefined ? {} : { cond: nat(a.cond) }) });
   }
   if (!Array.isArray(k.indices)) throw Error("invalid index facts");
@@ -430,6 +447,45 @@ function indexAtom(atom: Json | undefined): HeapKnowledge["indices"][number] {
   if (typeof a.negated !== "boolean") throw Error("invalid index fact");
   const fact = indexFact(a.fact);
   return { fact, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) };
+}
+
+/** An elements predicate (`CallEffects.ElemPred`): the kinds it admits. */
+function elemPred(v: Json | undefined): ElemKind[] {
+  const p = record(v,[...ELEM_KINDS]);
+  const pred: ElemKind[] = [];
+  for (const kind of ELEM_KINDS) {
+    const holds = p[kind];
+    if (typeof holds !== "boolean") throw Error("invalid elements predicate");
+    if (holds) pred.push(kind);
+  }
+  return pred;
+}
+
+/** A refused call's preconditions (Json.lean, `preconditionsJson`). */
+function callPreconditions(v: Json | undefined): CallPreconditions {
+  const c = record(v,["signatures","known"]);
+  if (!Array.isArray(c.signatures)) throw Error("invalid call preconditions");
+  const entailed = (x: Json | undefined): boolean => {
+    if (typeof x !== "boolean") throw Error("invalid entailment flag");
+    return x;
+  };
+  const signatures = c.signatures.map((entry: Json): CallPreconditions["signatures"][number] => {
+    const s = record(entry,["requires","atoms"]);
+    let requires: CallPreconditions["signatures"][number]["requires"] = null;
+    if (s.requires !== null) {
+      const r = record(s.requires,["slot","pred","entailed"]);
+      requires = { slot: nat(r.slot), pred: elemPred(r.pred), entailed: entailed(r.entailed) };
+    }
+    if (!Array.isArray(s.atoms)) throw Error("invalid precondition atoms");
+    const atoms = s.atoms.map((atom: Json) => {
+      const a = record(atom,["fact","entailed"]);
+      return { fact: indexFact(a.fact), entailed: entailed(a.entailed) };
+    });
+    return { requires, atoms };
+  });
+  const known = knowledge(c.known);
+  if (known === null) throw Error("invalid known facts");
+  return { signatures, known };
 }
 
 /** The candidates the search left out (RequestJson.lean, `failureDiagnostic`). */
@@ -517,44 +573,44 @@ function indexFact(f: Json | undefined): IndexFact {
     const le = isParsedObject(stated) && "le" in stated;
     const F = record(stated, le ? ["le"] : ["ne"]);
     const body = record(le ? F.le : F.ne, ["form","bound"]);
-    if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
+    if (!Array.isArray(body.form)) throw Error("a linear fact's form and bound");
+    const bound = integer(body.bound);
     const form: [LinearTerm, number][] = body.form.map((t: Json): [LinearTerm, number] => {
       if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
-      const term = record(t[0], ["kind", "slot", "path"]);
-      const kind = term.kind;
-      if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") throw Error("a linear term's kind");
-      const path = term.path;
-      if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
-      return [{ kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") }, t[1]];
+      return [linearTerm(t[0]), t[1]];
     });
-    fact = { linear: { fact: le ? { le: { form, bound: body.bound } } : { ne: { form, bound: body.bound } } } };
+    fact = { linear: { fact: le ? { le: { form, bound } } : { ne: { form, bound } } } };
   }
   return fact;
 }
 
-/** A linear term of a knowledge, decoded field by field. */
+/** A linear term of a knowledge, decoded field by field; a term read at
+ * the entry state (`old(t)`) carries `atEntry`. */
 function linearTerm(t: Json | undefined): LinearTerm {
-  const term = record(t, ["kind", "slot", "path"]);
+  const term = record(t, ["kind", "slot", "path"], ["atEntry"]);
   const kind = term.kind;
   if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") throw Error("a linear term's kind");
   const path = term.path;
   if (!Array.isArray(path) || !path.every((f: Json) => typeof f === "string")) throw Error("a linear term's path");
-  return { kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string") };
+  if (term.atEntry !== undefined && term.atEntry !== true) throw Error("a linear term's entry flag");
+  return { kind, slot: nat(term.slot), path: path.filter((f: Json): f is string => typeof f === "string"),
+    ...(term.atEntry === true ? { atEntry: true } : {}) };
 }
 
 /** A linear fact over variables `variable` decodes: its form, its bound, and
  * whether it is `≠`. */
 function linearForm<V>(stated: Json | undefined, variable: (x: Json | undefined) => V):
-    { form: [V, number][]; bound: number; ne: boolean } {
+    { form: [V, number][]; bound: Integer; ne: boolean } {
   const le = isParsedObject(stated) && "le" in stated;
   const F = record(stated, le ? ["le"] : ["ne"]);
   const body = record(le ? F.le : F.ne, ["form","bound"]);
-  if (!Array.isArray(body.form) || typeof body.bound !== "number") throw Error("a linear fact's form and bound");
+  if (!Array.isArray(body.form)) throw Error("a linear fact's form and bound");
+  const bound = integer(body.bound);
   const form = body.form.map((t: Json): [V, number] => {
     if (!Array.isArray(t) || t.length !== 2 || typeof t[1] !== "number") throw Error("a linear fact's term");
     return [variable(t[0]), t[1]];
   });
-  return { form, bound: body.bound, ne: !le };
+  return { form, bound, ne: !le };
 }
 
 /** A node record with its node decoded in place of its wire form, as the
@@ -587,7 +643,8 @@ export function readDiagnostic(
     // Looked up at the parsed kind in a Map, which holds no inherited member.
     const fields = new Map<string, readonly string[]>(KIND_FIELDS).get(kind);
     if (!fields) return undefined;
-    record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names","candidatesLeftOut"]);
+    record(d,["phase","outcome","fuel","types","kind",...fields],
+      ["requiredResult","names","candidatesLeftOut",...(kind === "node-typing" ? ["callPreconditions"] : [])]);
     const outcome = diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
@@ -706,7 +763,8 @@ export function readDiagnostic(
     const id = d.id;
     if (typeof id !== "string") return undefined;
     if (kind === "node-typing" && source && sequent) {
-      const result: NodeTyping = { ...common, kind: "node-typing", id, source, sequent };
+      const result: NodeTyping = { ...common, kind: "node-typing", id, source, sequent,
+        ...(d.callPreconditions === undefined ? {} : { callPreconditions: callPreconditions(d.callPreconditions) }) };
       return result;
     }
     if (kind === "expression-claim" && map && sequent) {

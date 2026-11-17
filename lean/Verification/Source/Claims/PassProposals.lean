@@ -461,7 +461,7 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
       match g.passMember fuel i false 1000000000 1 gv none false true with
       | .ok m =>
         let why : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) := match m.outcome with
-          | .refused w lacks => some (w, lacks)
+          | .refused w lacks _ => some (w, lacks)
           | _ => none
         -- The main graph's walk with no bound, where the run made it
         -- (`openUnbounded`, the direct route): its visits' records

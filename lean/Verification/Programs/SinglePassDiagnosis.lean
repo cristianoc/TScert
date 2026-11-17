@@ -63,7 +63,7 @@ def exitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppabl
     match exitStep G images env l en sd ysAll outAll acc exi with
     | .ok acc' => .ok (env, dropped, acc')
     | .error stop => match k, stop.outcome with
-      | k + 1, .refused why lacks => match lacks with
+      | k + 1, .refused why lacks _ => match lacks with
         | some (t, missing) =>
           let left := (dropped.filter (·.1 == t)).flatMap fun x => match x.2 with
             | .facts fs => fs
