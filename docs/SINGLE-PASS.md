@@ -810,8 +810,7 @@ theorem](SINGLE-PASS-THEOREM.md) states each with its hypotheses.
   `passUnitVerdict_sound`, proved, with both discharged). Where
   `--verify-interface-stage 8` prints a unit accepted, every member of its
   group is safe ([the final statement](SINGLE-PASS-THEOREM.md#the-final-statement)).
-- **The acceptance theorem** (`mode8Accepted_sound`, proved, the theorem
-  `AxiomCheck` names as acceptance's). A unit printed accepted at either of
+- **The acceptance theorem** (`mode8Accepted_sound`, proved). A unit printed accepted at either of
   mode 8's print sites, the file's own check and a module's in the
   interface stage, has every member of its group safe.
 - **A file** (`passFile_safe_kinds`, proved under its hypotheses). Every

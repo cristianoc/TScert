@@ -556,9 +556,11 @@ increasing trust silently.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms.
   [AxiomCheck.lean](lean/Verification/Tests/AxiomCheck.lean) fails the build
-  when `PassUnit.mode8Accepted_sound`, or a `@[csimp]` lemma whose right-hand side the
-  compiled verifier runs, depends on an axiom other than `propext`,
-  `Classical.choice` and `Quot.sound`. No warnings: `lakefile.toml` sets
+  when a safe declaration of the library (`PassUnit.mode8Accepted_sound`,
+  each `@[csimp]` lemma whose right-hand side the compiled verifier runs,
+  and every other) depends on an axiom other than `propext`,
+  `Classical.choice` and `Quot.sound`; it imports every module of the
+  library, which the fast check `tests/axiom-check-imports.mts` checks. No warnings: `lakefile.toml` sets
   `warningAsError`, so a warning fails the build; fix it (a deprecated name's
   replacement, an unused variable as `_`, an unused simp argument dropped)
   rather than silencing it. Build only the module you changed while

@@ -204,8 +204,8 @@ member's plan crosses the exhaustive certification and its request is safe
 by `runKeepsSummaries` (both proved, [the graph proof](SINGLE-PASS-PROOF.md)):
 its only premises are the file's plans and the accepted verdict.
 
-**Theorem** `mode8Accepted_sound` (proved, PassUnitRun, the theorem
-`AxiomCheck` names as the acceptance theorem). `Mode8Accepted f i` holds at
+**Theorem** `mode8Accepted_sound` (proved, PassUnitRun, the
+acceptance theorem). `Mode8Accepted f i` holds at
 either of mode 8's print sites: the file's own check
 (`--verify-interface-stage 8` and `--file-worker 8`, one preparation and one
 unit check, the case `main`, whose premises are `passUnitVerdict_sound`'s) and a module's group checked in the interface
