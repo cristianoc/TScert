@@ -110,8 +110,9 @@ Paper I's notation throughout: a heap $`h`$, an environment $`\rho`$, the
 action $`h\xrightarrow{\Phi}_\rho h'`$ of an effect, changes
 $`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$
 (Paper I, §3, the changes' definition: $`\mathsf{scalar}`$ keeps a location
-that holds an object, and $`\mathsf{grow}`$ keeps every cell a spine lists), regions read
-at the entry heap, $`\Phi\triangleleft_K S`$ for respect and
+that holds an object; $`\mathsf{grow}`$ keeps a spine's length and density,
+and may replace a listed cell by a fresh one, `[1]` to `[10]` at a heap of 10
+locations), regions read at the entry heap, $`\Phi\triangleleft_K S`$ for respect and
 $`\Box_\Phi F`$ for the modality.
 
 ### Definitions
@@ -134,13 +135,15 @@ around it, so they share it.
   staging fields ([the class shape](#the-class-shape-the-rule-requires))
   are in none. $`\mathsf{priv}_C`$ is their union.
 - $`\mathsf{own}_C(\rho,h)`$ is every location reachable in $`h`$ from a
-  location of $`\mathsf{priv}_C`$, through fields, cells, element cells and
-  the entries of collections, stopping at instances of classes with private
-  state, whose state is $`\mathsf{priv}`$ of their own body. It has one part
-  per kind of Paper I's world: $`\mathsf{own}_C.\mathsf{spines}`$ (array
-  and view spines), $`\mathsf{own}_C.\mathsf{cells}`$ (element cells) and
-  $`\mathsf{own}_C.\mathsf{fields}`$ (field and cell locations, a
-  collection's entries at the kind the model gives them).
+  location of $`\mathsf{priv}_C`$ through fields, spines and element cells,
+  stopping at instances of classes with private state, whose state is
+  $`\mathsf{priv}`$ of their own body, and at collections (`Map`, `Set`,
+  `WeakMap`), whose entries the model holds in no location of the heap
+  (cited: [native footprints](../SOURCE-CONTRACTS.md#native-footprints), the row of `Set` and `Map`: they write only the receiver's internal slots, which no location of the model holds).
+  A collection is never owned storage (*No collections*, below). It has one
+  part per kind of Paper I's world: $`\mathsf{own}_C.\mathsf{spines}`$
+  (array and view spines), $`\mathsf{own}_C.\mathsf{cells}`$ (element
+  cells) and $`\mathsf{own}_C.\mathsf{fields}`$ (field and cell locations).
 - $`R_C=\mathsf{priv}_C\cup\mathsf{own}_C`$.
 
 **Code that is not the body's.** A step runs code that is not the body's
@@ -219,10 +222,11 @@ object; the private read is the elimination that gives $`I_C`$.
 
 **Reentrancy.** A callback may call any member on any instance. A member
 `truncate(h)` that pops `h.#widths` gives $`\psi_s=\mathsf{any}`$, beyond
-the bound the class shape states, so the class is refused; under Node a
+the *Reference-preserving protocol* the class shape states, so the class is
+refused; under Node a
 visitor calling it makes a walker that cached the length read
 `[1, undefined, undefined]` (observed). A member that pushes onto `#widths`
-and then onto `#flags` stays within the bound, and breaks $`I_C`$ until its
+and then onto `#flags` preserves the references, and breaks $`I_C`$ until its
 second push; the class is refused by *Tolerant invariant*.
 
 ### What must be proved
@@ -240,8 +244,8 @@ conjectured until its Lean exists; the statement each cites is labelled.
   until the audit of [the natives that enumerate keys](#what-tscert-must-change).
 - **(P2) Confinement.** Every path from a frame of code outside the body to
   a location of $`\mathsf{own}_C`$ passes through a location of
-  $`\mathsf{priv}_C`$. Paths run through fields, cells, element cells and
-  collections' entries; a closure's environment is not reachable from a
+  $`\mathsf{priv}_C`$. Paths run through fields, cells, spines and element
+  cells; a closure's environment is not reachable from a
   holder of the closure. Contents are (P2)'s: a member may return a number
   read from a private field. Conjectured, from the
   [confinement check](#the-class-shape-the-rule-requires).
@@ -255,15 +259,22 @@ conjectured until its Lean exists; the statement each cites is labelled.
   the budget $`k`$: the run changes $`R_C`$ only inside calls of members,
   each bounded by its certificate at $`\Psi_C`$, whose own steps that run
   code that is not the body's are bounded by the rule at a smaller budget.
-- **(L3) Rigidity.** For every transition of such a run,
-  $`\mathsf{own}_C(h)\subseteq\mathsf{own}_C(h')`$: the bounded protocol
-  keeps every reference a location of $`R_C`$ holds ($`\mathsf{scalar}`$
-  keeps an object, $`\mathsf{grow}`$ every listed cell), and code outside
-  the body changes none (L1). Locations enter $`\mathsf{own}_C`$ only by
-  *Ownership at construction*. Then $`\Phi\oplus_C\Psi_C`$ is rigid when
-  $`\Phi`$ and $`\Psi_C`$ are rigid and $`\Psi_C\sqsubseteq\Phi`$, as for
-  $`\Phi=\top`$ and for `{ values: "any"; spines: "grow" }` with every
-  bounded protocol.
+- **(L3) Rigidity.** For every pair
+  $`h\xrightarrow{\Phi\oplus_C\Psi_C}_\rho h'`$ of the action, not only the
+  transitions of checked runs,
+  $`\mathsf{own}_C(h)\subseteq\mathsf{own}_C(h')`$: a location of
+  $`R_C(h)`$ changes within $`\Psi_C`$, which preserves the references
+  ([*Reference-preserving protocol*](#the-class-shape-the-rule-requires)),
+  so every reference to storage held in $`R_C(h)`$ is held in $`R_C(h')`$
+  and every cell a spine or view spine of $`R_C(h)`$ lists is listed in
+  $`h'`$; reachability from $`\mathsf{priv}_C`$ is then kept by induction
+  on the length of the path. Hence a location's region is the same in
+  $`h'`$ as in $`h`$ for every location of $`h`$ in $`R_C(h)`$, and
+  $`\Phi\oplus_C\Psi_C`$ is rigid when $`\Phi`$ and $`\Psi_C`$ are rigid
+  and $`\Psi_C\sqsubseteq\Phi`$: a location outside $`R_C(h)`$ that enters
+  $`R_C(h')`$ changes in the second step within $`\Psi_C`$, hence within
+  $`\Phi`$. Both hold for $`\Phi=\top`$ and for
+  `{ values: "any"; spines: "grow" }`.
 - **(L4) The class invariant.** In every state of every run, $`I_C(o,h)`$
   holds of every complete instance $`o`$. Its construction establishes it
   for every caller; every change the body makes to a location of $`R_C`$ of
@@ -302,19 +313,26 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   private names, and the model identifies a name by its declaring member. A
   class with private state is declared at the top level of its module, or in
   a static block of such a class, which runs once.
-- **Bounded protocol.** Every entry of $`\Psi_C`$ on a private field, on
-  $`\mathsf{own}_C.\mathsf{cells}`$ and on $`\mathsf{own}_C.\mathsf{fields}`$
-  is at most $`\mathsf{scalar}`$, and on $`\mathsf{own}_C.\mathsf{spines}`$
-  at most $`\mathsf{grow}`$. A class whose protocol exceeds it is refused.
-  Its reason: (L3), a member taking a reference out of $`R_C`$ (a `pop`, a
-  cell overwritten, a field written with another object) lets storage leave
-  $`\mathsf{own}_C`$ while other code may still reach it.
+- **Reference-preserving protocol.** Every entry of $`\Psi_C`$ preserves
+  the references: in each pair of its action, every reference to storage
+  held at a location of $`R_C`$ of the entry heap is held at a location of
+  $`R_C`$ of the exit heap, and every cell a spine or view spine of $`R_C`$
+  lists stays listed. The entries that meet it: $`\mathsf{keep}`$; on a
+  private field, a cell or a field, $`\mathsf{scalar}`$ (a location holding
+  an object keeps it); on a spine, an extension, the old spine a prefix of
+  the new, as `push` gives by its audited postcondition. Paper I's
+  $`\mathsf{grow}`$ does not meet it, since a growth may replace a listed
+  cell. A class whose protocol exceeds it is refused. Its reason: (L3),
+  storage leaving $`\mathsf{own}_C`$ while other code may still reach it.
+  It is wider than that reason: a `pop` of an owned array of numbers drops a
+  cell no other code reaches, and is refused all the same, a restriction of
+  the language ([WORK](../../WORK.md#status), "Shrinking owned arrays").
 - **Construction.** An instance field's initializer reads `this` only as
   `this.#f` of an earlier field, gives `this` to nothing, and runs no code
   that is not the body's. The instance is complete, and meets $`I_C`$, only
   once construction has returned; a private read of an incomplete instance
-  is checked without $`I_C`$. A field that holds storage is written by its
-  initializer, from a *staging field*: a private static that the body sets
+  is checked without $`I_C`$. A field that holds storage from construction
+  is written by its initializer, from a *staging field*: a private static that the body sets
   to parts it allocated and holds nowhere else, immediately before `new`,
   and that the first initializer takes. The staging field holds `null` or
   such parts in every state, and is `null` again before every return and
@@ -323,12 +341,15 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   so it takes no storage from its caller; an initializer cannot read the
   constructor's arguments; and a field declared and then assigned in the
   constructor costs the walkers 15–19% on V8 ([performance](#performance)).
-  A field that holds no storage may be written anywhere within the bounded
-  protocol.
+  A field that holds no storage may be written anywhere within the
+  protocol; a field holding `null` or `undefined` may take storage after
+  construction by the checked write of *Ownership at construction*.
 - **Confinement.** A value is *confined* when it is read from a private
   field or from confined storage, or stored into either; confined storage is
   that of $`\mathsf{own}_C`$, and storage the body keeps in its own bindings
-  and gives to no code outside (a cache). A confined value that may be
+  and gives to no code outside. A write the body makes through such a
+  binding to storage that may also be owned counts on the entries of
+  $`\mathsf{own}_C`$ in $`\Psi_C`$. A confined value that may be
   storage flows only to: a binding of the body; the object of an element or
   field read or write, or of a `length` read; an initializer of a private
   field, or a write into confined storage; an argument of a call naming a
@@ -343,10 +364,18 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   confined value; a closure given out is a member, and its own flows are
   checked the same.
 - **Ownership at construction.** Storage enters private state, or confined
-  storage, only where a location holding no object is written (an
-  initializer, or a $`\mathsf{scalar}`$ write of a location holding `null`
-  or `undefined`), and only storage allocated during the current call of the
-  body, an unconfined copy made there, or storage already confined.
+  storage, only where a location holding no object is written, and only
+  storage allocated during the current call of the body, an unconfined copy
+  made there, or storage already confined. During construction that write
+  is an initializer. After it, it is a checked $`\mathsf{scalar}`$ write of
+  a location of a complete instance holding `null` or `undefined`, of fresh
+  storage complete before the write, which keeps every instance invariant
+  that reads the location (*Tolerant invariant*'s checked single write).
+- **No collections.** No collection is owned storage: a collection held in
+  private state is refused, and storage reached through a collection is
+  copied, as an unconfined copy, before private state holds it. The model
+  holds a collection's entries in no heap location, so no reachability or
+  effect of its natives states which storage it keeps.
 - **Tolerant invariant.** Every change the body makes to a location of
   $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
   $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
@@ -459,7 +488,7 @@ instance in every state, by (L4), and its paths are private fields.
 its members, the proposed $`\Psi_C`$ and $`I_C`$. `FunctionPlan.certify`
 checks each member at $`\Psi_C`$ and each step that runs code that is not
 the body's at $`\Phi\oplus_C\Psi_C`$; the module-interface check checks the
-shape restrictions, the bound on $`\Psi_C`$, the confinement and ownership
+shape restrictions, that $`\Psi_C`$ preserves the references, the confinement and ownership
 of every flow, *Tolerant invariant*, and that every function of the body
 reads the same $`\Psi_C`$. Every proposal is untrusted: a $`\Psi_C`$ too
 small fails a member's check.
@@ -535,7 +564,13 @@ export type PreparedTextWithSegments = PreparedText & {
   user-defined guard on the three public fields, checked by TScert's guard
   rules. The public `segments`, `kinds` and `widths` are copies their own
   initializers make from the private fields, of strings and numbers, so
-  unconfined; `#parts` holds no public value. Upstream's `layout.ts:150`
+  unconfined; `#parts` holds no public value. The public fields are ordinary
+  fields: external code may store an array in `segments` of a handle
+  `prepare()` made, which then meets `PreparedTextWithSegments` while its
+  `#segments` is `null`. So the guard gives no fact about the private
+  fields, and each function taking `PreparedTextWithSegments` tests
+  `#segments !== null` and throws a `TypeError` where it fails, a test
+  upstream does not have. Upstream's `layout.ts:150`
   write of `prepared.kinds` after preparation becomes a part computed before
   construction.
 - **`PreparedRichInline`** holds `#data: PreparedText`, an instance whose
@@ -559,13 +594,15 @@ export type PreparedTextWithSegments = PreparedText & {
   (`prepare.ts:379–383`; `rich-inline.ts:479–573`), it returns a plain record
   of the item's results, which no class's invariant reads.
 - **The measurement caches** of `measurement.ts` (cited: the `Map` of fonts,
-  `:1379`, each font's record holding `Map`s, `:1447–1448`) are bindings of
-  the body, confined storage: `breakableFitAdvances`' entries come from
-  them and enter a handle's private state by *Ownership at construction*.
-  `clearCache` (`layout.ts:360–363`) is a member whose effect on them is
-  their maps' `clear`, outside $`R_C`$: entries a handle holds stay owned
-  through the handle, and the entry of $`\Psi`$ it contributes is
-  $`\mathsf{keep}`$.
+  `:1379`, each font's record holding `Map`s, `:1447–1448`) are collections
+  in bindings of the body. Under *No collections*, every advances list
+  `breakableFitAdvances` takes from them is a copy. Upstream copies a cached
+  list where it changes it (cited: `prepare.ts:533–541`, a `slice()` before
+  each adjustment, the cached lists being shared by every occurrence of a
+  text) and holds the cached list itself otherwise; the rewrite copies it
+  in every case, a cost not measured. `clearCache` (`layout.ts:360–363`)
+  is a member whose effect is on the caches' entries, which are in no
+  location of $`R_C`$; its entry in $`\Psi`$ is $`\mathsf{keep}`$.
 - **The internal cursor** is a `LineCursor`, whose two private number
   fields `#segment` and `#grapheme` the steppers write. The walker allocates
   it and passes it only to functions of the body that it calls by name.
@@ -580,7 +617,9 @@ export type PreparedTextWithSegments = PreparedText & {
 The protocol for pretext (conjectured): $`\mathsf{scalar}`$ on
 `PreparedRichInline.#sources`, from `materializeRichInlineLineRange`, and
 $`\mathsf{keep}`$ on every other private field and on every part of
-$`\mathsf{own}`$. It is within the bound. No walker reads `#sources`.
+$`\mathsf{own}`$. It preserves the references: `#sources` changes only
+from `null` to a fresh record, and no member writes an owned spine, cell or
+field after construction. No walker reads `#sources`.
 
 ### What each site gets
 
@@ -662,9 +701,10 @@ figure is the median of the process medians. Apple M2 Max, load average
 | rich: stats | 0.756 | 0.929 | 0.795 | 1.011 |
 | rich: stream | 0.870 | 0.953 | 0.918 | 1.106 |
 
-- **`designscalar` is at or below upstream** on every operation in both
-  engines; its largest ratio, 1.011 (JSC, `prepareWithSegments`), is
-  inside the spread of `plain`'s own processes.
+- **No regression of `designscalar` against upstream is detected within
+  the measured spread**: its largest ratio, 1.011 (JSC,
+  `prepareWithSegments`), is inside the spread of `plain`'s own processes,
+  and the ranges of the two variants overlap on several operations.
 - **The cursor behind an owned array regresses**: `design` is slower than
   upstream wherever a cursor is read or made, up to +21% (V8) and +28%
   (JSC) on `layoutNextLineRange`. The cursor's indices are private number
@@ -696,6 +736,12 @@ hand-written rewrite, and differ from this design in two points:
 `measureAnalysis` in paragraph mode constructs an instance, and `#sources`
 holds the three lists in three fields. Retained memory was not measured.
 
+**The specified shape and retained memory.** *(To be filled: the
+measurement of exactly the shape this draft specifies, `measureAnalysis` in
+paragraph mode returning a plain record, `#sources` one field, every cached
+advances list copied, with retained heap per handle, against `plain` and
+`plainw` on the setup above.)*
+
 ## Negatives and controls
 
 **Negative cases**, each unsafe under Node (observed: each program, as
@@ -716,15 +762,15 @@ JavaScript, run with `node`, printing the reads), each refused:
   `[0, 0, undefined]`. Refused by *Ownership at construction*.
 - `invalid-private-reentrant-member`: a member pops `#widths`; the walker
   caches the length; the visitor calls the member:
-  `[1, undefined, undefined]`. Refused by *Bounded protocol*, its spines
-  entry $`\mathsf{any}`$.
+  `[1, undefined, undefined]`. Refused by *Reference-preserving protocol*:
+  a `pop` drops a listed cell.
 - `invalid-private-rewritten-field`: a member writes another array to
   `#widths`; the walker reads through the field after the visitor calls it:
-  `[undefined, undefined, undefined]`. Refused by *Bounded protocol*, the
-  field's entry beyond $`\mathsf{scalar}`$.
+  `[undefined, undefined, undefined]`. Refused by *Reference-preserving protocol*:
+  the field's old array leaves $`R_C`$.
 - `invalid-private-await-between`: a body function tests
   `#pos < #widths.length`, awaits, and reads `#widths[#pos]`; a member
-  setting `#pos` to the length, within the bound, runs while it is
+  setting `#pos` to the length, within a reference-preserving protocol, runs while it is
   suspended: `undefined`. Refused at the read: the `await` runs code that is
   not the body's, and $`\psi_{\#\mathit{pos}}=\mathsf{scalar}`$ does not
   keep the test.
@@ -745,6 +791,8 @@ restriction (observed):
 - `private-two-evaluations-refused`: a class evaluated twice in a function;
   one evaluation's static method given the other's instance throws a
   `TypeError`. *Evaluated once*.
+- `private-collection-uncopied-refused`: a handle holds an array it took
+  uncopied from a cache `Map` the body keeps: `[1, 1]`. *No collections*.
 - `private-open-invariant-refused`: a member pushes onto `#widths` and then
   onto `#flags` under $`|\mathit{flags}|=|\mathit{widths}|`$, with a walker
   reading `#flags[i]` before `visit`: `[0, 0, 0, 0]`. *Tolerant
@@ -797,7 +845,7 @@ explicit restriction, documented in SOURCE-FRAGMENT.md and enforced.
 Cost (conjectured):
 
 - Lean: (L2) and (L4) by one induction over runs with member certificates
-  at $`\Psi_C`$; (L3) from the bound; (P1) in the model by the native audit;
+  at $`\Psi_C`$; (L3) from reference preservation; (P1) in the model by the native audit;
   the effect $`\Phi\oplus_C\Psi_C`$ joins the effect language as a bound per
   region. Two to four weeks.
 - Front: the fixed point over members and the confinement check, a flow
