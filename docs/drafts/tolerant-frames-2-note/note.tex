@@ -171,7 +171,7 @@ invariant does not help; the function is refused in the same way.
 
 \entry{What an extension must provide} A quantified fact is kept across a write to a field of a
 fresh object. The written location is neither a spine nor an element
-cell that the fact reads. Theorem ``frame'' of Paper~I keeps
+cell that the fact reads. Theorem ``Tolerant frame'' of Paper~I keeps
 the fact, since the write respects its support.
 
 \section{P4: an upper bound of a length across a call growing spines (18 sites)}
@@ -417,8 +417,9 @@ the element of a string.
 \code{text.charCodeAt(i)}.
 
 \entry{What an extension must provide} A rule for the step \code{y = s[i]}: under
-$0\le i<\strl(s)$ the result is a string. Paper~I states this rule as
-a conjecture (\nI{Future work}, reading a string's element).
+$0\le i<\strl(s)$ the result is a string. Paper~I states this rule,
+\textsc{Str-Read}, with the result's length 1; the verifier does not
+apply it.
 
 \section{P12: a pointwise relation of two arrays (5 sites)}
 
@@ -727,7 +728,7 @@ P6 & 12 & an effect writing fields alone & in neither paper\\
 P7 & 10 & captured facts in a function literal & in neither paper\\
 P9 & 7 & a product of two variables & in neither paper\\
 P10 & 7 & a count two functions share & in neither paper\\
-P11 & 5 & a string's element below its length & a conjecture of Paper~I\\
+P11 & 5 & a string's element below its length & stated in Paper~I, not implemented\\
 P12 & 5 & two arrays related at an index & in neither paper\\
 P13 & 5 & a prefix at a paired index & in neither paper\\
 P14 & 4 & the length of \code{replace}'s result & in neither paper\\
