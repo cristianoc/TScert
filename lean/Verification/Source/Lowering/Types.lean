@@ -468,13 +468,13 @@ singleton; NaN, which no equality test finds, is not one. -/
     | .numLit b => if numberEqual b b then some (.numEq b, .str (numberToString b)) else none
     | _ => none
 
-/-- Whether a key's claim is numbers alone: `number`, a numeric literal, or
-a union of them — a key whose every value is a number, however spelled —
+/-- Whether a key's claim is numbers alone: every clause of the number kind
+(`Clause.primKind`) — a key whose every value is a number, however spelled —
 whose write into a homogeneous writable array is certified where the
 knowledge bounds it (PROGRAM-TYPING.md, "Writes at a checked index"). -/
 def runtimeNumberKey (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
   let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
-  !cs.isEmpty && cs.all fun c => match c with | .num | .numLit _ => true | _ => false
+  !cs.isEmpty && cs.all fun c => c.primKind == some .num
 
 /-- Whether an expression is claimed at a homogeneous writable array, whose
 spine a write at a `number` key may write (`IndexWrites.writableElement`). -/
@@ -592,17 +592,17 @@ claim `R` that is not proto-free, located at the write. -/
     throw (locatedRefusal T pos .expressionClaim
       "a write at a key that may be `message`, `stack` or `cause` onto an object that may hold a prototype: an instance of the `Error` family owns them as non-enumerable properties the model does not state, so the write is typed only on a receiver whose type excludes every object holding a prototype")
 
-/-- Whether a key's claim is of keys known only at run time: every clause a
-string, a number or a symbol, singletons or families, and not one key the
+/-- Whether a key's claim is of keys known only at run time: every clause of
+a kind with a key class (`PrimKind.keyClass`), a number singleton other than
+NaN, and not one key the
 source spells (one string or number singleton, which `growingWrite` reads as
 a named write). -/
 @[nospecialize] def computedKeyClaim (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
   let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
   G.plainTy K && !cs.isEmpty &&
   cs.all (fun c => match c with
-    | .strLit _ | .str | .num | .symbolLit _ | .symbol => true
     | .numLit b => numberEqual b b
-    | _ => false) &&
+    | c => (c.primKind.bind PositiveNormalization.PrimKind.keyClass).isSome) &&
   match keySingletons G K with
   | some ks => (ks.map (·.2)).eraseDups.length > 1
   | none => true

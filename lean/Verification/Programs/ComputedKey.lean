@@ -40,17 +40,15 @@ def oneField (f : PropKey) (A : List ι) : Clause (List ι) :=
   .refs [(f, .field, A)] [] [] [] [] [⟨true, [f]⟩]
 
 /-- The object an allocation at a key of clause `c`, holding a value of `A`,
-is of: the one field a literal key names, or the dictionary over the class of
-every key of a family. No other clause holds a key. -/
+is of: the one field a literal key names, or the dictionary over the key
+class of the clause's primitive kind (`PrimKind.keyClass`). No other clause
+holds a key. -/
 def keyedClause (c : Clause (List ι)) (A : List ι) : Option (Clause (List ι)) :=
   match c with
   | .strLit s => some (oneField (.str (escapeKey s)) A)
   | .numLit b => some (oneField (.str (numberToString b)) A)
   | .symbolLit i => some (oneField (.sym i) A)
-  | .str => some (classDict .strings A)
-  | .num => some (classDict .numeric A)
-  | .symbol => some (classDict .symbols A)
-  | _ => none
+  | c => (c.primKind.bind PrimKind.keyClass).map (classDict · A)
 
 /-- **The rule's premise.** Every clause of the key's type `K` holds keys,
 and the object each gives at the initializer's type `A` is a clause of the
@@ -115,32 +113,28 @@ theorem keyed_key {G : NormalGraph ι} {c d : Clause (List ι)} {A : List ι}
     (hk : keyedClause c A = some d) {n W v} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v) :
     ∃ f, propertyKey v = some f ∧ Unreserved f ∧
       (d = oneField f A ∨ ∃ K, d = classDict K A ∧ K.Admits f) := by
-  match c, hk with
-  | .str, hk =>
-    cases hk
-    obtain ⟨s, rfl⟩ := hv
-    exact ⟨_, rfl, unreserved_str (reservedSpelling_escapeKey s), .inr ⟨.strings, rfl, trivial⟩⟩
-  | .strLit s, hk =>
-    cases hk
+  unfold keyedClause at hk
+  split at hk
+  · cases hk
     simp only [semWithArgs] at hv; subst hv
-    exact ⟨_, rfl, unreserved_str (reservedSpelling_escapeKey s), .inl rfl⟩
-  | .num, hk =>
-    cases hk
-    obtain ⟨b, rfl⟩ := hv
-    exact ⟨_, rfl, unreserved_str (numberToString_unreserved b),
-      .inr ⟨.numeric, rfl, numeric_admits_number b⟩⟩
-  | .numLit b, hk =>
-    cases hk
+    exact ⟨_, rfl, unreserved_str (reservedSpelling_escapeKey _), .inl rfl⟩
+  · cases hk
     simp only [semWithArgs] at hv; subst hv
-    exact ⟨_, rfl, unreserved_str (numberToString_unreserved b), .inl rfl⟩
-  | .symbol, hk =>
-    cases hk
-    obtain ⟨i, rfl⟩ := hv
-    exact ⟨_, rfl, unreserved_sym i, .inr ⟨.symbols, rfl, trivial⟩⟩
-  | .symbolLit i, hk =>
-    cases hk
+    exact ⟨_, rfl, unreserved_str (numberToString_unreserved _), .inl rfl⟩
+  · cases hk
     simp only [semWithArgs] at hv; subst hv
-    exact ⟨_, rfl, unreserved_sym i, .inl rfl⟩
+    exact ⟨_, rfl, unreserved_sym _, .inl rfl⟩
+  · simp only [Option.map_eq_some_iff, Option.bind_eq_some_iff] at hk
+    obtain ⟨K, ⟨k, hk1, hk2⟩, rfl⟩ := hk
+    have hh := primKind_sound hk1 hv
+    cases k <;> simp only [PrimKind.keyClass, reduceCtorEq, Option.some.injEq] at hk2 <;> subst hk2 <;>
+      simp only [PrimKind.Holds] at hh
+    · obtain ⟨b, rfl⟩ := hh
+      exact ⟨_, rfl, unreserved_str (numberToString_unreserved b), .inr ⟨.numeric, rfl, numeric_admits_number b⟩⟩
+    · obtain ⟨s, rfl⟩ := hh
+      exact ⟨_, rfl, unreserved_str (reservedSpelling_escapeKey s), .inr ⟨.strings, rfl, trivial⟩⟩
+    · obtain ⟨i, rfl⟩ := hh
+      exact ⟨_, rfl, unreserved_sym i, .inr ⟨.symbols, rfl, trivial⟩⟩
 
 /-- **An allocation at a computed key of two values is safe at a result the
 rule states.** The key converts, running no code, to a key the model does not
