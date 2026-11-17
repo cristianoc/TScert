@@ -136,8 +136,8 @@ function exportedRules(): RulesDocument {
 
 /** How a notation sets the pieces of a rule. */
 type Notation = {
-  /** The names of a rule's variables. */
-  left: string; right: string; result: string;
+  /** The name of a rule's result. */
+  result: string;
   le: string; lt: string; eq: string; and: string; minus: string; times: string;
   power: (exponent: string) => string;
   /** The normalised constant's name: a shift count `d` reads `d'`. */
@@ -168,7 +168,7 @@ function operator(op: string, notation: "latex" | "markdown" | "text"): string {
 const boundName = (c: Constant, prime: string): string => (c.normalisation === "shiftCount" ? `${c.symbol}${prime}` : c.symbol);
 
 const LATEX: Notation = {
-  left: "x", right: "x'", result: "y", le: "\\le ", lt: "<", eq: "=", and: "\\wedge ", minus: "-", times: "\\,",
+  result: "y", le: "\\le ", lt: "<", eq: "=", and: "\\wedge ", minus: "-", times: "\\,",
   power: (e) => `2^{${e}}`, bound: (c) => boundName(c, "'"),
   apply: (op, a, b) => {
     const symbol = operator(op, "latex");
@@ -176,12 +176,12 @@ const LATEX: Notation = {
   },
 };
 const MARKDOWN: Notation = {
-  left: "a", right: "b", result: "r", le: "\\le ", lt: "<", eq: "=", and: ",\\ ", minus: "-", times: "\\,",
+  result: "r", le: "\\le ", lt: "<", eq: "=", and: ",\\ ", minus: "-", times: "\\,",
   power: (e) => `2^{${e}}`, bound: (c) => boundName(c, "'"),
   apply: (op, a, b) => `r\\leftarrow ${a}${operator(op, "markdown")}${b}`,
 };
 const TEXT: Notation = {
-  left: "x", right: "x′", result: "y", le: " ≤ ", lt: " < ", eq: " = ", and: ", ", minus: "−", times: "·",
+  result: "y", le: " ≤ ", lt: " < ", eq: " = ", and: ", ", minus: "−", times: "·",
   power: (e) => `2^{${e}}`, bound: (c) => boundName(c, "′"),
   apply: (op, a, b) => `\`y = ${a} ${operator(op, "text")} ${b}\``,
 };
@@ -276,21 +276,35 @@ function conjunction(facts: RuleFact[], names: { [v in RuleVar]: string }, k: st
 
 const constantOf = (r: Rule): Constant | undefined => ("constant" in r.right ? r.right.constant : undefined);
 
+/** The letter of an operand by its sort, one convention for every rule: a
+ * safe integer is `a` as the first operand and `b` as the second, any
+ * number is `x`. */
+function operandLetter(d: Domain, position: "left" | "right"): string {
+  return d === "number" ? "x" : position === "left" ? "a" : "b";
+}
+
+/** The right operand's slot: the operand's letter, `b` for a constant. */
+function rightSlot(r: Rule): string {
+  return "operand" in r.right ? operandLetter(r.right.operand, "right") : "b";
+}
+
+/** The names of a rule's variables: its operands' letters by sort, a
+ * constant's symbol, and the notation's result. */
 function names(r: Rule, notation: Notation): { [v in RuleVar]: string } {
   const c = constantOf(r);
-  return { left: notation.left, right: c === undefined ? notation.right : c.symbol, result: notation.result };
+  return { left: operandLetter(r.left, "left"), right: c === undefined ? rightSlot(r) : c.symbol, result: notation.result };
 }
 
 /** The sorts of a rule's operands: `Num` for any number, `SafeInt` for a
  * safe integer, a constant being a safe integer; operands of one sort
  * grouped, in the order left, right. */
-function sorts(r: Rule, variables: { left: string; right: string },
+function sorts(r: Rule,
     sort: (s: "Num" | "SafeInt") => string, of: string, sep: string): string {
   const c = constantOf(r);
   const right: Domain = c === undefined && "operand" in r.right ? r.right.operand : "safeInteger";
   const vars: [string, "Num" | "SafeInt"][] = [
-    [variables.left, r.left === "number" ? "Num" : "SafeInt"],
-    [c === undefined ? variables.right : c.symbol, right === "number" ? "Num" : "SafeInt"],
+    [operandLetter(r.left, "left"), r.left === "number" ? "Num" : "SafeInt"],
+    [c === undefined ? rightSlot(r) : c.symbol, right === "number" ? "Num" : "SafeInt"],
   ];
   const groups: { names: string[]; sort: "Num" | "SafeInt" }[] = [];
   for (const [name, s] of vars) {
@@ -316,7 +330,7 @@ function paperTriple(r: Rule): string {
 export function paperRows(doc: RulesDocument): string {
   return doc.rules.map((r, i) => {
     const name = i > 0 && doc.rules[i - 1]?.name === r.name ? "" : `\\textsc{${r.name}}`;
-    const sorted = sorts(r, { left: LATEX.left, right: LATEX.right }, (s) => `\\mathit{${s}}`, ":", ",\\ ");
+    const sorted = sorts(r, (s) => `\\mathit{${s}}`, ":", ",\\ ");
     return `${name} & ${sorted} & ${paperTriple(r)}`;
   }).join("\\\\[3pt]\n") + "\n";
 }
@@ -335,24 +349,18 @@ function markdownRule(r: Rule): string {
   const c = constantOf(r);
   const k = c === undefined ? "" : MARKDOWN.bound(c);
   const n = names(r, MARKDOWN);
-  n.right = notationRight(r, MARKDOWN);
+  const slot = rightSlot(r);
   const above = [
     ...(r.left === "safeInteger" ? [`\\mathrm{int}(${n.left})`] : []),
-    ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`\\mathrm{int}(${MARKDOWN.right})`] : [])
-      : [`K\\vdash ${MARKDOWN.right}=${r.right.constant.symbol}`, ...constantPremises(r.right.constant, MARKDOWN)]),
+    ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`\\mathrm{int}(${slot})`] : [])
+      : [`K\\vdash ${slot}=${r.right.constant.symbol}`, ...constantPremises(r.right.constant, MARKDOWN)]),
     ...conjunction(r.premises, n, k, MARKDOWN).map((p) => `K\\vdash ${p}`),
   ];
   const below = [...(r.result === "safeInteger" ? [`\\mathrm{int}(${n.result})`] : []), ...conjunction(r.conclusion, n, k, MARKDOWN)];
-  const sorted = sorts(r, { left: MARKDOWN.left, right: MARKDOWN.right }, (s) => `\\mathit{${s}}`, ":", ",\\ ");
-  return `\\frac{${above.join("\\quad ")}}\n     {K\\vdash ${MARKDOWN.apply(r.op, n.left, MARKDOWN.right)}\\dashv ${below.join(",\\ ")}}\n     \\ \\textsf{${r.name}}\\quad ${sorted}`;
+  const sorted = sorts(r, (s) => `\\mathit{${s}}`, ":", ",\\ ");
+  return `\\frac{${above.join("\\quad ")}}\n     {K\\vdash ${MARKDOWN.apply(r.op, n.left, slot)}\\dashv ${below.join(",\\ ")}}\n     \\ \\textsf{${r.name}}\\quad ${sorted}`;
 }
 
-/** In ARITHMETIC.md a constant operand is the slot `b` the knowledge states
- * equal to the constant; the facts name the constant. */
-function notationRight(r: Rule, notation: Notation): string {
-  const c = constantOf(r);
-  return c === undefined ? notation.right : c.symbol;
-}
 
 /** ARITHMETIC.md's rules: each a comment with the rule's JSON, then its `math` block. */
 export function markdownRules(doc: RulesDocument): string {
@@ -366,9 +374,9 @@ function textRule(r: Rule): string[] {
   const k = c === undefined ? "" : TEXT.bound(c);
   const n = names(r, TEXT);
   const above = [
-    sorts(r, { left: TEXT.left, right: TEXT.right }, (s) => s, " : ", ", "),
+    sorts(r, (s) => s, " : ", ", "),
     ...(r.left === "safeInteger" ? [`int(${n.left})`] : []),
-    ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`int(${TEXT.right})`] : []) : constantPremises(r.right.constant, TEXT)),
+    ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`int(${n.right})`] : []) : constantPremises(r.right.constant, TEXT)),
     ...conjunction(r.premises, n, k, TEXT),
   ];
   const below = [...(r.result === "safeInteger" ? [`int(${n.result})`] : []), ...conjunction(r.conclusion, n, k, TEXT)];
