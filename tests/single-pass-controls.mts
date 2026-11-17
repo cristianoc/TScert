@@ -574,6 +574,37 @@ control("forged fragment: an index parameter forged to SafeInt", async (): Promi
   say("forged SafeInt: an index parameter forged from `number` to the safe integers, refused at the call passing a fraction");
 });
 
+control("forged fragment: Number.isSafeInteger's integer fact removed", async (): Promise<void> => {
+  const artifacts = run("safe-int-is-safe-integer");
+  const ast = fragmentAst(artifacts);
+  const unit = unitOf(ast, "asInt");
+  honest("safe-int-is-safe-integer", unit);
+  const number = must(ast.declarations.definitions.find((d) => d.declaration.name === "Number"), "Number");
+  const expression = number.expression;
+  assert.ok(expression !== null && expression.k === "object", "Number's type is an object");
+  const member = must(expression.fields.find((f) => f.name === "isSafeInteger"), "isSafeInteger");
+  const type = member.type;
+  assert.ok(type.k === "function" && type.effect.exits.normal.ensures.length > 0, "isSafeInteger states its fact");
+  member.type = { ...type, effect: { ...type.effect, exits: { ...type.effect.exits,
+    normal: { ...type.effect.exits.normal, ensures: [] } } } };
+  refused(pass(forged(artifacts, "forged-is-safe-integer-fact", ast)), unit, "forged",
+    /its operands. claims are number; its claim is SafeInt/);
+  say("forged int fact: Number.isSafeInteger stating no fact of its argument, its true branch's binding at SafeInt refused");
+});
+
+control("forged fragment: a return's integer fact removed", async (): Promise<void> => {
+  const artifacts = run("safe-int-arith-field");
+  const ast = fragmentAst(artifacts);
+  const fn = must(ast.functions.find((f) => f.name === "next"), "next");
+  const unit = unitOf(ast, "next");
+  honest("safe-int-arith-field", unit);
+  assert.equal(fn.requires.length, 2, "next states its range");
+  fn.requires = fn.requires.slice(0, 1);
+  refused(pass(forged(artifacts, "forged-safe-int-return-range", ast)), unit, "forged",
+    /its operands. claims are number; its claim is SafeInt/);
+  say("forged refinement at a return: `n + 1` with no upper bound on `n`, its return at SafeInt refused");
+});
+
 control("forged fragment: spine regions moved", async (): Promise<void> => {
   const artifacts = run("stated-argument-store");
   const ast = fragmentAst(artifacts);

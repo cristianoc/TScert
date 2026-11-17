@@ -127,6 +127,184 @@ theorem envOk_refineBy [DecidableEq ι] {G : NormalGraph ι} {ρ n W shift} {h :
       · exact he
     exact envOk_refineBy hh step (fun g hg => hf g (by simp [hg]))
 
+/-! ## Refinement by integer facts
+
+A slot a step's facts state a safe integer (`HeapKnowledge.intSlot`) is read
+at its type met with the clause `int` (docs/drafts/integer-types.md, "The
+bridge"). The meet is represented where it is `int`: where a clause of the
+slot's type includes `int`, at the graph's `int` label, whose row is checked
+to be that one clause. -/
+
+/-- The graph's `int` label, its row checked to be the one clause `int`. -/
+def intLabel (G : NormalGraph ι) : Option ι :=
+  G.intLabel.filter fun l => match G l with
+    | [.int] => true
+    | _ => false
+
+/-- Whether a clause of a plain type includes the safe integers, so that the
+type's meet with `int` is `int`. -/
+def includesInt (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (PositiveRules.expand G A).any fun c => match c with
+    | .num | .int | .source | .top => true
+    | _ => false
+
+/-- **A context refined by integer facts**: each slot the atoms `as` state a
+safe integer whose type includes the safe integers, at the `int` label. -/
+def intRefine (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) : List (Ty ι) :=
+  match intLabel G with
+  | some L => Γ.mapIdx fun i A => if HeapKnowledge.intSlot as i && includesInt G A then [L] else A
+  | none => Γ
+
+/-- Whether `Δ` is `Γ` refined by integer facts: as long, each slot its type
+in `Γ` or the `int` label at a slot the atoms `as` state a safe integer. -/
+def intRefines [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) : Bool :=
+  Δ.length == Γ.length && (List.range Δ.length).all fun i =>
+    Δ[i]? == Γ[i]? || match intLabel G, Δ[i]? with
+      | some L, some D => D == [L] && HeapKnowledge.intSlot as i
+      | _, _ => false
+
+theorem intLabel_meaning {G : NormalGraph ι} {L : ι} (hL : intLabel G = some L) {n W b}
+    (hb : SafeIntegers.safeIntOfBits b ≠ none) : meaning G [L] n W (.num b) := by
+  unfold intLabel at hL
+  obtain ⟨-, hrow⟩ := Option.filter_eq_some_iff.mp hL
+  have hG : G L = [.int] := by
+    split at hrow
+    · assumption
+    · cases hrow
+  refine expand_sem_mpr ⟨.int, by simp [clausesOf, hG], ?_,
+    builtinInvariant_of_withoutInvariant (by simp [PositiveNormalization.Clause.carriesInvariant]) _ _ _⟩
+  simpa [PositiveNormalization.semWithArgs, PositiveNormalization.intT] using hb
+
+theorem intSlot_meaning {G : NormalGraph ι} {L : ι} (hL : intLabel G = some L)
+    {as : List HeapKnowledge.IndexAtom} {ρ : Env} {h : Heap} (hk : HeapKnowledge.IndexHolds ε as ρ h)
+    {i : Nat} (hi : HeapKnowledge.intSlot as i = true) {n W} : meaning G [L] n W (ρ i) := by
+  have hv := HeapKnowledge.intSlot_sound hk hi
+  cases hρ : ρ i with
+  | num b =>
+    rw [hρ] at hv
+    exact intLabel_meaning hL (by simpa [HeapKnowledge.intValue, Option.isSome_iff_ne_none] using hv)
+  | _ => rw [hρ] at hv; simp [HeapKnowledge.intValue] at hv
+
+/-- **The refined context types the environment** where the atoms hold. -/
+theorem envOk_intRefine {G : NormalGraph ι} {Γ : List (Ty ι)} {as : List HeapKnowledge.IndexAtom}
+    {ρ : Env} {h : Heap} {n W} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.IndexHolds ε as ρ h) :
+    EnvOk G (intRefine G Γ as) ρ n W := by
+  unfold intRefine
+  split
+  · rename_i L hL
+    refine ⟨he.1, fun i A hA => ?_⟩
+    rw [List.getElem?_mapIdx] at hA
+    cases hB : Γ[i]? with
+    | none => rw [hB] at hA; cases hA
+    | some B =>
+      rw [hB] at hA
+      simp only [Option.map_some, Option.some.injEq] at hA
+      subst hA
+      split
+      · rename_i hc
+        exact intSlot_meaning hL hk (Bool.and_eq_true_iff.mp hc).1
+      · exact he.2 i B hB
+  · exact he
+
+/-- **A context the check accepts as refined types the environment** where
+the atoms hold. -/
+theorem envOk_intRefines [DecidableEq ι] {G : NormalGraph ι} {Γ Δ : List (Ty ι)} {as : List HeapKnowledge.IndexAtom}
+    {ρ : Env} {h : Heap} {n W} (hr : intRefines G Γ Δ as = true) (he : EnvOk G Γ ρ n W)
+    (hk : HeapKnowledge.IndexHolds ε as ρ h) : EnvOk G Δ ρ n W := by
+  simp only [intRefines, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at hr
+  refine ⟨he.1, fun i A hA => ?_⟩
+  have hi : i < Δ.length := (List.getElem?_eq_some_iff.mp hA).1
+  have hc := hr.2 i hi
+  rcases Bool.or_eq_true_iff.mp hc with hc | hc
+  · rw [beq_iff_eq, hA] at hc
+    exact he.2 i A hc.symm
+  · split at hc
+    · rename_i L D hL hD
+      rw [hA] at hD
+      cases hD
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      rw [hc.1]
+      exact intSlot_meaning hL hk hc.2
+    · cases hc
+
+/-- The unconditional atoms that state a slot a safe integer, as `intSlot`
+reads them. -/
+def intAtoms (as : List HeapKnowledge.IndexAtom) : List HeapKnowledge.IndexAtom :=
+  as.filter fun a => a.cond.isNone && match a.fact with
+    | .int _ | .length _ _ | .linear _ => true
+    | _ => false
+
+/-- Knowledge `k` with the atoms of `k₀` stating safe integers: a writing
+step's facts over every location, with the integer facts its context was
+refined by (`checkedStep`). -/
+def withInts (k k₀ : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  { k with indices := k.indices ++ intAtoms k₀.indices }
+
+theorem intSlot_intAtoms (as : List HeapKnowledge.IndexAtom) (i : Nat) :
+    HeapKnowledge.intSlot (intAtoms as) i = HeapKnowledge.intSlot as i := by
+  unfold HeapKnowledge.intSlot intAtoms
+  rw [Bool.eq_iff_iff, List.any_eq_true, List.any_eq_true]
+  constructor
+  · rintro ⟨a, ha, h⟩; exact ⟨a, (List.mem_filter.mp ha).1, h⟩
+  · rintro ⟨a, ha, h⟩
+    refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, h⟩
+    simp only [Bool.and_eq_true] at h ⊢
+    refine ⟨h.1, ?_⟩
+    obtain ⟨-, h2⟩ := h
+    split at h2 <;> simp_all
+
+theorem intSlot_withInts (k k₀ : HeapKnowledge.Knowledge) (i : Nat)
+    (h : HeapKnowledge.intSlot k₀.indices i = true) : HeapKnowledge.intSlot (withInts k k₀).indices i = true := by
+  simp only [withInts, HeapKnowledge.intSlot, List.any_append, Bool.or_eq_true] at h ⊢
+  right
+  have := intSlot_intAtoms k₀.indices i
+  simp only [HeapKnowledge.intSlot] at this
+  rw [this]; exact h
+
+theorem holds_withInts {k k₀ : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds k ε ρ h) (hk₀ : HeapKnowledge.Holds k₀ ε ρ h) :
+    HeapKnowledge.Holds (withInts k k₀) ε ρ h := by
+  refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
+  rcases List.mem_append.mp ha with ha | ha
+  · exact hk.2.2.2.2.2 a ha hc
+  · exact hk₀.2.2.2.2.2 a (List.mem_filter.mp ha).1 hc
+
+theorem holds_of_withInts {k k₀ : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds (withInts k k₀) ε ρ h) : HeapKnowledge.Holds k ε ρ h :=
+  ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1,
+    fun a ha hc => hk.2.2.2.2.2 a (List.mem_append_left _ ha) hc⟩
+
+/-- **A context refined by the integer facts of `as` types the environment
+wherever atoms `bs` stating each of them hold.** -/
+theorem envOk_intRefine_of {G : NormalGraph ι} {Γ : List (Ty ι)} {as bs : List HeapKnowledge.IndexAtom}
+    {ρ : Env} {h : Heap} {n W} (hsub : ∀ i, HeapKnowledge.intSlot as i = true → HeapKnowledge.intSlot bs i = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.IndexHolds ε bs ρ h) :
+    EnvOk G (intRefine G Γ as) ρ n W := by
+  unfold intRefine
+  split
+  · rename_i L hL
+    refine ⟨he.1, fun i A hA => ?_⟩
+    rw [List.getElem?_mapIdx] at hA
+    cases hB : Γ[i]? with
+    | none => rw [hB] at hA; cases hA
+    | some B =>
+      rw [hB] at hA
+      simp only [Option.map_some, Option.some.injEq] at hA
+      subst hA
+      split
+      · rename_i hc
+        exact intSlot_meaning hL hk (hsub i (Bool.and_eq_true_iff.mp hc).1)
+      · exact he.2 i B hB
+  · exact he
+
+theorem intRefines_self [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) :
+    intRefines G Γ Γ as = true := by
+  simp [intRefines]
+
+theorem intRefine_length (G : NormalGraph ι) (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) :
+    (intRefine G Γ as).length = Γ.length := by
+  unfold intRefine; split <;> simp
+
 /-- The implications a state establishes on an edge, in its own slots: the
 entry's, and, where the result is pushed into slot 0, the result's
 conditional yields as implications on it. -/

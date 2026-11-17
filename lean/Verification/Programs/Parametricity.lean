@@ -459,6 +459,14 @@ theorem requiresApp_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι
   · simp only [LocalRequires_reassign, checkTree_reassign]
   · rfl
 
+/-- The refinement by integer facts reads no assignment. -/
+theorem intRefines_reassign (Γ Δ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) :
+    PromiseCalls.intRefines (reassign G η) Γ Δ as = PromiseCalls.intRefines G Γ Δ as := rfl
+
+omit [DecidableEq ι] in
+theorem intRefine_reassign (Γ : List (Ty ι)) (as : List HeapKnowledge.IndexAtom) :
+    PromiseCalls.intRefine (reassign G η) Γ as = PromiseCalls.intRefine G Γ as := rfl
+
 theorem requiresTree_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (p : ProgramCertificates.Evidence ι) :
     PromiseCalls.requiresTree (reassign G η) (images.reassign η) k codes sums p =

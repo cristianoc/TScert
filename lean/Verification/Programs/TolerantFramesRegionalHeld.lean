@@ -40,7 +40,7 @@ theorem regionalDerivChecked_reassign (G : NormalGraph ι) (η : MixedAssignment
       regionalDerivChecked G images codes sums c node stepK deriv := by
   cases deriv with
   | none => rfl
-  | some d => exact derivChecked_reassign G η images codes sums c node stepK d
+  | some d => exact stepDerivChecked_reassign G η images codes sums c node stepK d
 
 end Reassign
 
@@ -61,7 +61,7 @@ theorem regionNodeEntry_checked {G : NormalGraph ι} {I : InstanceImageCheck G} 
     {pc : PassChecker G I} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G I codes pc P w startNames ctx l)
     (hc : CodesSound G codes) {m : Nat}
-    (hent : ControlFlow.entry (passRegionalEvidenceOf r) = r.c.context)
+    (hent : PromiseCalls.intRefines G r.c.context (ControlFlow.entry (passRegionalEvidenceOf r)) r.st.stepK.indices = true)
     (ρ : Env) (s : IndexedHeap) (hp : passPreT G w startNames ε ctx l ρ m s) :
     EnvOk G (ControlFlow.entry (passRegionalEvidenceOf r)) ρ s.n s.W ∧
       PromiseCalls.ImpliesOk G (passRegionalEvidenceOf r).implies ρ s.n s.W ∧
@@ -69,7 +69,8 @@ theorem regionNodeEntry_checked {G : NormalGraph ι} {I : InstanceImageCheck G} 
   have he : EnvOk G r.c.context ρ s.n s.W := r.hctx ▸ hp.2
   have hS : StateHolds G r.entry (w.implies l) startNames ε ρ m s := r.hentry ▸ hp.1.2
   have hk := (stepChecked_parts r.hstep hS r.wf r.below r.width he hc r.sums).2.1
-  refine ⟨hent ▸ he, PromiseCalls.ImpliesOk.nil G ρ s.n s.W, entryFacts_holds (hent ▸ he) ?_⟩
+  have he' := PromiseCalls.envOk_intRefines hent he hk.2.2.2.2.2
+  refine ⟨he', PromiseCalls.ImpliesOk.nil G ρ s.n s.W, entryFacts_holds he' ?_⟩
   exact regionalFacts_holds (stateHolds_materialize_whole hS _ _ true) hk
 
 variable (ι) in
@@ -96,7 +97,8 @@ def RegionsTyped : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r →
       ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
-        ∀ l (hl : r.w.visited l), ControlFlow.entry (passRegionalEvidenceOf (r.node l hl)) = (r.node l hl).c.context ∧
+        ∀ l (hl : r.w.visited l), PromiseCalls.intRefines G (r.node l hl).c.context
+            (ControlFlow.entry (passRegionalEvidenceOf (r.node l hl))) (r.node l hl).st.stepK.indices = true ∧
           ∀ η, admits η → RegionalTyped (reassign G η) (passRegionalEvidenceOf (r.node l hl)) (r.node l hl).node
 
 /-- **The regional evidence typed where the step's derivation passes its
@@ -110,7 +112,7 @@ theorem regionsTyped_of_tree {G : NormalGraph ι} {I : InstanceImageCheck G} {co
     {sums : List (ReadSummary ι)} {d : ProgramCertificates.Evidence ι} (hd : r.st.stepDeriv = some d)
     (hrd : regionalDerivChecked G I codes sums r.c r.node r.st.stepK r.st.stepDeriv = true)
     (htree : checkTreeUsing G I d codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G I sums) :
-    ControlFlow.entry (passRegionalEvidenceOf r) = r.c.context ∧
+    PromiseCalls.intRefines G r.c.context (ControlFlow.entry (passRegionalEvidenceOf r)) r.st.stepK.indices = true ∧
       ∀ η, RegionalTyped (reassign G η) (passRegionalEvidenceOf r) r.node := by
   unfold passRegionalEvidenceOf
   rw [hd] at hrd ⊢

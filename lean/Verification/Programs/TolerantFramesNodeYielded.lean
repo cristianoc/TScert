@@ -113,17 +113,17 @@ section Judged
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
 /-- **A promise call's derivation checked**: where the step's derivation
-states a promise, `derivChecked` accepts it at the step's facts and its
+states a promise, `stepDerivChecked` accepts it at the step's facts and its
 claim's type is the node's. -/
 def PromiseDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : HeapKnowledge.Knowledge)
     (deriv : ProgramCertificates.Evidence ι) : Prop :=
   (PromiseCalls.promiseOf G deriv).isSome = true →
-    derivChecked G images codes sums c node stepK deriv = true ∧ (ProgramCertificates.claim deriv).type = c.type
+    stepDerivChecked G images codes sums c node stepK deriv = true ∧ (ProgramCertificates.claim deriv).type = c.type
 
 omit [Hashable ι] in
 /-- **The pass's promise check gives `PromiseDerivChecked`**
-(`SinglePass.promiseDerivChecked`: `derivChecked` and the claim's type the
+(`SinglePass.promiseDerivChecked`: `stepDerivChecked` and the claim's type the
 node's). -/
 theorem promiseDerivChecked_of {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node} {stepK : HeapKnowledge.Knowledge}
@@ -149,11 +149,11 @@ theorem yieldsJudged_of_promise {G : NormalGraph ι} {images : InstanceImageChec
     YieldsJudged G c.type c.context node.expression entry I startNames ε m stepK ys := by
   intro ρ s Q R _ he hk hj
   obtain ⟨hdc, hty⟩ := hpd (by rw [hp]; rfl)
-  simp only [derivChecked, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hdc
+  simp only [stepDerivChecked, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hdc
   obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
   exact SafePostExc.conj_post hj
-    (PromiseCalls.promiseCall_yields_checked hp htree hctx hterm hty hcodes hsums hy he s.adm s.ok
-      (SafePostExcW.refs hj))
+    (PromiseCalls.promiseCall_yields_checked hp htree rfl hterm hty hcodes hsums hy
+      (PromiseCalls.envOk_intRefines hctx he hk.2.2.2.2.2) s.adm s.ok (SafePostExcW.refs hj))
 
 omit [DecidableEq ι] [Hashable ι] in
 /-- No yields are judged. -/

@@ -116,8 +116,9 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
       ((en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) = false →
         SubtypesPass G I (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context
           (differing (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context t.mapping) ∨
-        EdgeFound G I tc.context (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) t none
-          (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping)) ∧
+        EdgeFound G I tc.context (PromiseCalls.intRefine G (handlerCtx env.claimed[l]! (sd.thrownTy.getD []))
+          (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping).indices)
+          t none (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping)) ∧
       (env.isHead[t.label]! = true → ∃ req,
         HeadChecks env l t tc (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) (sd.thrown :: en.entry.names)
           (handlerStore G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown) true
@@ -145,8 +146,9 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
   have htcheck : (en.here || ControlFlow.unsatisfiable G [sd.thrownTy.getD []]) = false →
       SubtypesPass G I (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context
         (differing (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) tc.context t.mapping) ∨
-      EdgeFound G I tc.context (handlerCtx env.claimed[l]! (sd.thrownTy.getD [])) t none
-        (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping) := by
+      EdgeFound G I tc.context (PromiseCalls.intRefine G (handlerCtx env.claimed[l]! (sd.thrownTy.getD []))
+        (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping).indices)
+        t none (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping) := by
     intro hv
     have hv' : vacuous = false := hv
     simp only [hv', Bool.false_eq_true, if_false] at ht

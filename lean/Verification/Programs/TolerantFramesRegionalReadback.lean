@@ -156,35 +156,11 @@ theorem regionalAt_head_target {env : WalkEnv ι G I} {l t : Nat} {en : Entered 
     rw [hf]
     exact he
 
-/-- The selected regional proof has the source claim's context. -/
-theorem regionalAt_entry_header
-    {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
-    {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
-    (hd : regionalAt G I env l en sd rg a incoming = .ok done) :
-    entry done.cEv = (env.claimed[l]!).context := by
-  obtain ⟨hc, hev, _⟩ := regionalAt_checks hd
-  rw [hev]
-  cases hderiv : sd.st.stepDeriv with
-  | some d =>
-    rw [hderiv] at hc
-    simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, beq_iff_eq] at hc
-    simpa [entry, passRegionalEvidence, NodeEvidence.expression] using hc.1.2
-  | none =>
-    have hp := fun p => regionalAt_header hd hderiv (p := p)
-    simp only [passRegionalEvidence, entry, NodeEvidence.expression, NodeEvidence.header]
-    cases he : sd.st.stepEffect with
-    | none => rfl
-    | some e =>
-      cases hep : e.proof? with
-      | none => simp only [Option.bind_some, hep]; rfl
-      | some p => simpa [hep] using (hp p (by simp [he, hep])).1
-
 /-- A successful self-edge check retains the head's cells and fields. -/
 theorem regionalAt_own_head {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
     {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
     (h : regionalAt G I env l en sd rg a incoming = .ok done) (hl : l < env.n)
-    (hm : l ∈ nodeSucc env.nodes l) (hh : env.isHead[l]! = true) (hn : l ≠ env.start)
-    (hentry : entry done.cEv = (env.claimed[l]!).context) :
+    (hm : l ∈ nodeSucc env.nodes l) (hh : env.isHead[l]! = true) (hn : l ≠ env.start) :
     regionalTableState done l = done.state := by
   have ht := regionalAt_head_target h hl hm hh
   have hc := (regionalAt_checks h).2.2
@@ -212,7 +188,7 @@ theorem regionalAt_own_head {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {
       apply List.filter_eq_self.mpr
       intro p hp
       have hf := List.all_eq_true.mp hfields p (hhere ▸ hp)
-      simpa only [hentry] using hf
+      exact hf
     rw [ht]
     change ((rg.heads[l]?).join).getD {} = { here with cells := C, fields := Fs }
     rw [hcells, hfields']
@@ -350,7 +326,7 @@ theorem regionalRecordedReadback :
   have own : regionalTableState done l = done.state := by
     by_cases hloop : l ∈ nodeSucc env.nodes l
     · exact regionalAt_own_head hd (hi.visR l hl).1 hloop (returnedWalk_self_head hw hE hl hloop)
-        (returnedWalk_regional_no_start hw hE hi hreg hl l hloop) (regionalAt_entry_header hd)
+        (returnedWalk_regional_no_start hw hE hi hreg hl l hloop)
     · exact regionalAt_own_no_self hd (hi.visR l hl).1 hloop
   have noStart : ∀ t ∈ nodeSucc env.nodes l, t ≠ env.start :=
     returnedWalk_regional_no_start hw hE hi hreg hl

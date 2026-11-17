@@ -385,24 +385,26 @@ theorem regionsTyped_of_visitTables (hv : RegionalVisitTables ι) (hb : Regional
       RegionalStepFacts H (passRegionalEvidenceOf rn) rn.st.stepK →
       (rn.st.stepDeriv = none → ControlFlow.entry (passRegionalEvidenceOf rn) = rn.c.context ∧
         ControlFlow.result (passRegionalEvidenceOf rn) = rn.c.type) →
-      ControlFlow.entry (passRegionalEvidenceOf rn) = rn.c.context ∧
-        RegionalTyped H (passRegionalEvidenceOf rn) rn.node := by
+      RegionalTyped H (passRegionalEvidenceOf rn) rn.node := by
     intro H J pc rn hder hc hs hk hshape
     cases hd' : rn.st.stepDeriv with
-    | none => exact regionalTyped_of_step rn (hshape hd') hc hk
+    | none => exact (regionalTyped_of_step rn (hshape hd') hc hk).2
     | some d =>
       unfold passRegionalEvidenceOf at hk ⊢
       rw [hd'] at hder hk ⊢
-      exact regionalTyped_of_derivation hder hk hc hs
-  have hshape : ControlFlow.entry (passRegionalEvidenceOf (r.node l hl)) = (r.node l hl).c.context := by
+      exact (regionalTyped_of_derivation hder hk hc hs).2
+  have hshape : PromiseCalls.intRefines G (r.node l hl).c.context
+      (ControlFlow.entry (passRegionalEvidenceOf (r.node l hl))) (r.node l hl).st.stepK.indices = true := by
     cases hd' : (r.node l hl).st.stepDeriv with
     | none =>
       have hh := (hb G I env σ l en sd hstep rg a incoming done hr G.env).2
       rw [hclaim, hnode, hentry, hst] at hh
-      exact (hh hd').1
+      have he : ControlFlow.entry (passRegionalEvidenceOf (r.node l hl)) = (r.node l hl).c.context := (hh hd').1
+      rw [he]
+      exact PromiseCalls.intRefines_self G _ _
     | some d =>
       rw [hd'] at hd
-      simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
+      simp only [regionalDerivChecked, stepDerivChecked, Bool.and_eq_true] at hd
       simpa [passRegionalEvidenceOf, hd', passRegionalEvidence, ControlFlow.entry, NodeEvidence.expression] using hd.1.2
   refine ⟨hshape, ?_⟩
   intro η hη
@@ -414,6 +416,6 @@ theorem regionsTyped_of_visitTables (hv : RegionalVisitTables ι) (hb : Regional
   exact (localTyped rn
     ((regionalDerivChecked_reassign G η I c.codes a.summaries.toList _ _ _ _).trans hd)
     (codesSound_reassign hp.2.2.1 η)
-    (Parametricity.summariesSound_reassign G η I hsums) (regionalStepFacts_of_relations rfl hb'.1) hb'.2).2
+    (Parametricity.summariesSound_reassign G η I hsums) (regionalStepFacts_of_relations rfl hb'.1) hb'.2)
 
 end Verification.TolerantFrames

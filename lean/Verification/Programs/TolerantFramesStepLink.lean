@@ -91,8 +91,6 @@ variable {ι : Type} [DecidableEq ι]
 
 /-! ## `checkedStep` read as its conditions -/
 
-/-- The node's sequent (`SinglePass.lean` 1228). -/
-def jOf (c : PointClaim ι) (node : Node) : Sequent ι := ⟨c.context, node.expression, c.type⟩
 
 /-- Whether the step reads every fact (`wholeStep`, line 1221). -/
 def wholeOf : Tm → Bool
@@ -105,6 +103,16 @@ def kOf (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) (ms 
     HeapKnowledge.Knowledge :=
   IndexWrites.typedKnowledge G c.context
     (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) (materialize entry c.context.length ms whole).1) ms
+
+/-- The step's context: the claim's refined by the step's facts' safe
+integers (`PromiseCalls.intRefine`). -/
+def ctxOfStep (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) (ms : List Nat) (t : Tm) :
+    List (Ty ι) :=
+  PromiseCalls.intRefine G c.context (kOf G c entry ms (wholeOf t)).indices
+
+/-- The node's sequent, at the step's context. -/
+def jOf (G : NormalGraph ι) (c : PointClaim ι) (node : Node) (entry : SinglePass.State) (ms : List Nat) : Sequent ι :=
+  ⟨ctxOfStep G c entry ms node.expression, node.expression, c.type⟩
 
 /-- The copy test (lines 1202–1205). -/
 def copiedOf (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) : Tm → Option Nat
@@ -134,24 +142,26 @@ def StepAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : Pass
     (codes : CodeEntry ι → Bool) (c : PointClaim ι) (node : Node) (entry : SinglePass.State) (ms : List Nat)
     (fresh : Nat) (effect : HeapExpressionRules.StepEvidence ι) (sums : List (ReadSummary ι))
     (st : Stepped ι) : Prop :=
-  ∃ out pre, (pc.checker.select (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums).value =
+  ∃ out pre, (pc.checker.select (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect codes sums).value =
       some out ∧
     passTreeCheck pc (kOf G c entry ms (wholeOf node.expression)) codes sums effect = some pre ∧
     st.result = (resultOf node.expression entry.names fresh).1 ∧ st.fresh = (resultOf node.expression entry.names fresh).2 ∧
     st.copied = false ∧ st.stepEffect = some effect ∧
-    ((pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+    ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
         Footprints.Closed.empty) = true →
       st.store = applyDelta entry.store (materialize entry c.context.length ms (wholeOf node.expression)).2.1 out true
         (passBack (materialize entry c.context.length ms (wholeOf node.expression)).2.2 entry.names st.result) ∧
       st.stepK = kOf G c entry ms (wholeOf node.expression) ∧ st.stepOut = out) ∧
-    ((pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
+    ((pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect codes sums ==
         Footprints.Closed.empty) = false →
       ∃ out', passWholeCheck G images (kOf G c entry ms true) codes sums pre = true ∧
-        (pc.checker.select (jOf c node) (kOf G c entry ms true) effect codes sums).value = some out' ∧
+        (pc.checker.select (jOf G c node entry ms) (kOf G c entry ms true) effect codes sums).value = some out' ∧
         st.store = applyDelta (entry.store.dropHeap (handedSet (materialize entry c.context.length ms true).2.1).contains)
           (materialize entry c.context.length ms true).2.1 out' true
           (passBack (materialize entry c.context.length ms true).2.2 entry.names st.result) ∧
-        st.stepK = kOf G c entry ms true ∧ st.stepOut = out')
+        st.stepK = (if ctxOfStep G c entry ms node.expression == c.context then kOf G c entry ms true
+          else PromiseCalls.withInts (kOf G c entry ms true) (kOf G c entry ms (wholeOf node.expression))) ∧
+        st.stepOut = out')
 
 /-- The tree the pass checks, as `checkedStep` computes it (line 1273–1275). -/
 def passTreeCode (effect : HeapExpressionRules.StepEvidence ι) : Option (ProgramCertificates.Evidence ι) :=
@@ -309,14 +319,15 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
     (copiedOf G c entry node.expression = none ∧
       ∃ (effect : HeapExpressionRules.StepEvidence ι) (a0 a1 : Answered G),
         (a0 = answers ∨
-          ∃ adm, a0 = keepSummaries answers (directCall G images c.context node.expression c.type adm undefTy answers).2) ∧
+          ∃ adm, a0 = keepSummaries answers (directCall G images (ctxOfStep G c entry ms node.expression)
+            node.expression c.type adm undefTy answers).2) ∧
         (a1 = a0 ∨ ∃ k own adm, a1 = keepSummaries a0 (expressionEffectUsing G images pool fuel
-          (jOf c node) k suggestions index codes aliases passChecker.checker own adm a0).2) ∧
+          (jOf G c node entry ms) k suggestions index codes aliases passChecker.checker own adm a0).2) ∧
         StepAccepted G images passChecker codes c node entry ms fresh effect a1.summaries.toList st ∧
         ans = a1) := by
   unfold checkedStep at h
   simp only [Id.run, timedKind] at h
-  generalize hD : directCall G images c.context node.expression c.type _ undefTy answers = D at h
+  generalize hD : directCall G images _ node.expression c.type _ undefTy answers = D at h
   generalize hS : expressionEffectUsing G images pool fuel _ _ suggestions index codes aliases _ _ _ = S at h
   generalize hM : materialize entry c.context.length ms _ = M at h
   generalize hW : materialize entry c.context.length ms true = MW at h
@@ -333,9 +344,10 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
   obtain ⟨Df, a0⟩ := DO
   have ha0 : keepSummaries answers a0 = answers ∨
       ∃ adm, keepSummaries answers a0 =
-        keepSummaries answers (directCall G images c.context node.expression c.type adm undefTy answers).2 := by
+        keepSummaries answers (directCall G images (ctxOfStep G c entry ms node.expression) node.expression c.type adm
+          undefTy answers).2 := by
     split at hDO
-    · exact .inr ⟨_, by rw [hD, hDO]⟩
+    · exact .inr ⟨_, by erw [hD, hDO]⟩
     · cases hDO; exact .inl (keepSummaries_self _)
   rcases Df with _ | ⟨e, b⟩ <;> try dsimp only at h
   · generalize hR : S (keepSummaries answers a0) = R at h

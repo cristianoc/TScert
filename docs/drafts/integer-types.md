@@ -116,34 +116,35 @@ primitive atom of its own.
   location's contract, an argument at its parameter, a binding's or storage
   contract's coercion and a return of a slot at the result read
   $`\Gamma^{k}_i`$. A writing step is selected again over every fact at
-  the same refined sequent.
-- **Re-checks of a step's derivation**: wherever a step's derivation or
-  context is read again against its node's claim, a derivation at a context
-  refined by the step's facts `stepK` is accepted as one at $`\Gamma`$, each
-  of its slots $`\Gamma_i`$ or the `int` label at a slot `stepK` states a
-  safe integer, its length $`|\Gamma|`$: `derivChecked` (read by
-  `footprintCheck`, `stepGrades`, `stepCertificate` and `outFreshOf`, and
-  its proof's copy `passDerivChecked`), `promiseDerivChecked`,
-  `regionalDerivChecked`, `regionalHeaderChecked`, the header of the
-  regional node evidence, and the yields (`checkYsAt`, `stepYields`,
-  reading `checkedYields` and `nodeYields` at the derivation's context).
-  The regional checks of stable fields and nullish slots read $`\Gamma`$,
-  which is sound.
-  - **Soundness**: $`\mathrm{EnvOk}(\Gamma,\rho)`$ and
-    $`\mathrm{Holds}(k,\rho,h)`$ give $`\mathrm{EnvOk}(\Gamma^{k},\rho)`$:
-    an atom `intSlot` reads states $`\rho(x_i)=\mathtt{num}\,b`$ with
-    $`\mathrm{safeIntOfBits}\ b\ne\mathrm{none}`$ (`intSlot_sound`),
-    the meaning of the clause `int`, through `PromiseCalls.envOk_set`. Each
-    consumer of a re-checked derivation holds `stepK` at the node's
-    environment, an ordinary tree's as a `requiresTree`'s does, so it has
-    the refined context's typing too.
-  - **The exit**: an edge needs the refinement only into a slot its target
-    already claims within `int`. Such a slot is a binding or field declared
-    `SafeInt`, every write of which is a step checked at the contract
-    (a storage-contract coercion or a write), so the edge into it carries a
-    value already at `int`; the exit (`refinedContext`) adds no refinement.
-  - **Mutable storage** is unchanged: the refinement types a read, and a
-    location's contract is established at its allocation and every write.
+  the same refined sequent (`PromiseCalls.withInts`).
+- **Re-checks of a step's derivation**: the footprint and freshness checks
+  (`footprintCheck`, `stepGrades`, `stepCertificate`, `outFreshOf`, and the
+  proof's `passDerivChecked`) read the step's derivation through
+  `stepDerivChecked`, which accepts a derivation at a context refined by the
+  step's facts `stepK`, each of its slots $`\Gamma_i`$ or the `int` label
+  at a slot `stepK` states a safe integer, its length $`|\Gamma|`$. A
+  regional check reads it through `stepDerivChecked` too, its evidence's
+  entry the refined context (`RegionsTyped`, `regionNodeEntry_checked`), and
+  its fields' stability at that entry, and a promise call's
+  (`promiseDerivChecked`). The regional header of a step with no
+  derivation (`regionalHeaderChecked`) and the yields' check of a step's
+  output (`checkYsAt`, `stepYields`) read the claimed context, which is
+  sound. A writing step's facts carry the integer facts its context was
+  refined by only where they refined it.
+- **Soundness**: $`\mathrm{EnvOk}(\Gamma,\rho)`$ and
+  $`\mathrm{Holds}(k,\rho,h)`$ give $`\mathrm{EnvOk}(\Gamma^{k},\rho)`$:
+  an atom `intSlot` reads states $`\rho(x_i)=\mathtt{num}\,b`$ with
+  $`\mathrm{safeIntOfBits}\ b\ne\mathrm{none}`$ (`intSlot_sound`), the
+  meaning of the clause `int` (`envOk_intRefine`, `envOk_intRefines`,
+  `envOk_intRefine_of`). Each consumer of a re-checked derivation holds
+  `stepK` at the node's environment.
+- **The edge**: an edge into a slot its target claims within `int` needs
+  the refinement where the value is a slot read rather than a step's result
+  (a binding initialized from a parameter `Number.isSafeInteger` tested):
+  the edge search reads the edge's context refined by the edge's facts
+  (`exitTypes`, `ExitTyped.env`).
+- **Mutable storage** is unchanged: the refinement types a read, and a
+  location's contract is established at its allocation and every write.
 
 Both directions are proved against `safeIntOfBits` with `intValue_safe` and
 `intValue_num`. Subtyping stays a relation between types, for every value;
@@ -224,8 +225,8 @@ clauses.
    query. `SafeInt` operands then serve as indices without
    `safeInteger(i)`.
 3. Fact to type: each step checked at its context refined by its
-   knowledge's integer facts, and the re-checks of its derivation reading
-   that refinement; the exit refinement into slots claimed within `int`;
+   knowledge's integer facts, the footprint checks of its derivation and
+   the edge search reading that refinement;
    typed-array elements of an integer format and `Number.isSafeInteger`'s
    true branch stating $`\mathrm{int}`$. Arithmetic results known to be
    safe integers are then stored at, passed as and returned at `SafeInt`.

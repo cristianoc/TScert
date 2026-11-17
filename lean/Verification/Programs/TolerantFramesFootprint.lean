@@ -39,12 +39,13 @@ def passWrites (G : NormalGraph ι) (Γ : List (Ty ι)) (kS : HeapKnowledge.Know
 
 /-- The pass's check of the step's derivation `d` where its signature bounds
 the step (`derivChecked` in `SinglePass.footprintCheck`): claimed at the
-node's term and context, its tree accepted with the codes or by `requiresTree` at the step's
+node's term and at its context refined by `kS`'s safe integers
+(`PromiseCalls.intRefines`), its tree accepted with the codes or by `requiresTree` at the step's
 knowledge `kS`. -/
 def passDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (kS : HeapKnowledge.Knowledge) (j : Sequent ι)
     (d : ProgramCertificates.Evidence ι) : Bool :=
-  (claim d).term == j.term && (claim d).context == j.context &&
+  (claim d).term == j.term && PromiseCalls.intRefines G j.context (claim d).context kS.indices &&
     (checkTreeUsing G images d codes sums || PromiseCalls.requiresTree G images kS codes sums d)
 
 /-- The pass's `within` (`SinglePass.lean` 1433–1435) at the node's sequent
@@ -123,11 +124,11 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-        · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (hctx ▸ he) hw hh (by rw [hterm]; exact hsafe.refs)
+        · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hw hh (by rw [hterm]; exact hsafe.refs)
         · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hreq
           rw [heff] at heff'
           cases heff'
-          exact hs (hctx ▸ he) hkS hw hh (by rw [hterm]; exact hsafe.refs)
+          exact hs (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hkS hw hh (by rw [hterm]; exact hsafe.refs)
       rw [hterm] at hs
       have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe) hs
@@ -174,11 +175,11 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-        · exact ExpressionEffects.selected_sound_exc d htree hops heff hcodes hsums (hctx ▸ he) hw hh (by rw [hterm]; exact hsafe.refs)
+        · exact ExpressionEffects.selected_sound_exc d htree hops heff hcodes hsums (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hw hh (by rw [hterm]; exact hsafe.refs)
         · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc hcodes hsums d hreq
           rw [heff] at heff'
           cases heff'
-          exact hs (hctx ▸ he) hkS hw hh (by rw [hterm]; exact hsafe.refs)
+          exact hs (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hkS hw hh (by rw [hterm]; exact hsafe.refs)
       rw [hterm] at hs
       have hboth := SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)

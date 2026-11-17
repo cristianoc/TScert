@@ -195,8 +195,11 @@ As a type, wherever a type is read: the safe integers, the numbers whose
 value is an integer of magnitude at most $`2^{53}-1`$, both zeros included.
 TypeScript reads it as `number`; the verifier reads it as the clause `int`
 ([the safe integers](POSITIVE-TYPES.md#the-safe-integers)), so a value
-reaches it only where its type is within the safe integers: a safe literal,
-or a value already typed `SafeInt`. A `SafeInt` is a `number`, and a
+reaches it where its type is within the safe integers (a safe literal, a
+value already typed `SafeInt`) or where the facts state it a safe integer
+([a type from integrality](ARITHMETIC.md#linear-facts)): a sum under a
+bound, an element of a `Uint8Array`, `Uint16Array` or `Int32Array`, a value
+`Number.isSafeInteger` answered `true` of. A `SafeInt` is a `number`, and a
 `number` is not a `SafeInt`. A computed type, a key type or a mapped type
 reading it is refused ([the source fragment](SOURCE-FRAGMENT.md#model-limits)),
 since TypeScript evaluates it reading `SafeInt` as `number`.
@@ -209,12 +212,18 @@ function keep(i: SafeInt): SafeInt {
 function answer(): SafeInt {
   return keep(42);
 }
+
+/** @requires 0 <= n && n < 100 */
+function next(n: SafeInt): SafeInt {
+  return keep(n + 1);
+}
 ```
 
 A `SafeInt` value is a safe integer in every fact the verifier reads of it
 ([integrality from a type](ARITHMETIC.md#linear-facts)), and a clause
-compares a parameter, a path or an element whose type is `SafeInt` with no
-`safeInteger(...)` ([integrality](ARITHMETIC.md#the-clause-language)):
+compares a parameter, a binding a loop invariant names, a path or an
+element whose type is `SafeInt` with no `safeInteger(...)`
+([integrality](ARITHMETIC.md#the-clause-language)):
 
 ```ts
 /** @requires 0 <= i && i < xs.length */

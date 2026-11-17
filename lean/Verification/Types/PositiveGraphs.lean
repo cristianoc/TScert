@@ -463,6 +463,11 @@ structure NormalGraph (ι : Type) where
   reader checks the label's row before reading it so; nothing else depends on
   this lookup. -/
   literal : LitKey → Option ι := fun _ => none
+  /-- A label of the graph whose row is the one clause `int`, where the graph
+  has one: the safe integers a fact refines a slot's type to
+  (`IndexWrites.intRefine`). A reader checks the label's row before reading
+  it so; nothing else depends on this lookup. -/
+  intLabel : Option ι := none
   /-- A hash of labels, for lookups that compare by equality within the
   bucket it names: any function serves, meaning reads none. -/
   labelHash : ι → UInt64 := fun _ => 0

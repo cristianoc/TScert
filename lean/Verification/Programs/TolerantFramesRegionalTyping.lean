@@ -53,9 +53,9 @@ theorem regionalTyped_of_requires {G : NormalGraph ι} {I : InstanceImageCheck G
     (hr : PromiseCalls.requiresTree G I stepK codes sums d = true)
     (hk : RegionalStepFacts G (passRegionalEvidence c node (some d) se kHere) stepK)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G I sums) :
-    ControlFlow.entry (passRegionalEvidence c node (some d) se kHere) = c.context ∧
+    PromiseCalls.intRefines G c.context (ControlFlow.entry (passRegionalEvidence c node (some d) se kHere)) stepK.indices = true ∧
       RegionalTyped G (passRegionalEvidence c node (some d) se kHere) node := by
-  simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
+  simp only [regionalDerivChecked, stepDerivChecked, Bool.and_eq_true, beq_iff_eq] at hd
   obtain ⟨⟨hterm, hctx⟩, -⟩ := hd
   refine ⟨by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using hctx, ?_⟩
   intro ε n W h ρ he _ hf hw hh hrf _
@@ -77,10 +77,10 @@ theorem regionalTyped_of_derivation {G : NormalGraph ι} {I : InstanceImageCheck
     (hd : regionalDerivChecked G I codes sums c node stepK (some d) = true)
     (hk : RegionalStepFacts G (passRegionalEvidence c node (some d) se kHere) stepK)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G I sums) :
-    ControlFlow.entry (passRegionalEvidence c node (some d) se kHere) = c.context ∧
+    PromiseCalls.intRefines G c.context (ControlFlow.entry (passRegionalEvidence c node (some d) se kHere)) stepK.indices = true ∧
       RegionalTyped G (passRegionalEvidence c node (some d) se kHere) node := by
   have hc := hd
-  simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, Bool.or_eq_true] at hc
+  simp only [regionalDerivChecked, stepDerivChecked, Bool.and_eq_true, Bool.or_eq_true] at hc
   rcases hc.2 with ht | hr
   · exact regionalTyped_of_tree hd ht hcodes hsums
   · exact regionalTyped_of_requires hd hr hk hcodes hsums
@@ -100,19 +100,27 @@ theorem stepChecked_safe {G : NormalGraph ι} {I : InstanceImageCheck G} {codes 
     exact value_safe (meaning G r.c.type) n W h (ρ i) (meaning_value (he.2 i _ hty)).1 (he.2 i _ hty) href
   · obtain ⟨out, pre, hsel, htree, _, _, _, _, hp, hn⟩ := ha
     have hs := (hsum r.sums).2
-    by_cases hpres : (pc.checker.normal (jOf r.c r.node)
+    by_cases hpres : (pc.checker.normal (jOf G r.c r.node r.entry r.ms)
         (kOf G r.c r.entry r.ms (wholeOf r.node.expression)) effect codes r.ans.summaries.toList ==
           Footprints.Closed.empty) = true
     · have hK := (hp hpres).2.1
       rw [hK] at hk
-      exact erase (pass_select_sound (fun h => passTreeCheck_ok htree h) hsel hc hs he hk hw hh href hρ)
-    · have hfalse : (pc.checker.normal (jOf r.c r.node)
+      exact erase (pass_select_sound (fun h => passTreeCheck_ok htree h) hsel hc hs
+        (PromiseCalls.envOk_intRefine he hk.2.2.2.2.2) hk hw hh href hρ)
+    · have hfalse : (pc.checker.normal (jOf G r.c r.node r.entry r.ms)
           (kOf G r.c r.entry r.ms (wholeOf r.node.expression)) effect codes r.ans.summaries.toList ==
             Footprints.Closed.empty) = false :=
         Bool.eq_false_iff.mpr hpres
       obtain ⟨out', hwhole, hsel', _, hK, _⟩ := hn hfalse
       rw [hK] at hk
-      exact erase ((passRunChecker pc).sound (pass_select_whole htree hwhole hsel') hc hs he hk hw hh href hρ)
+      split at hk
+      · rename_i heq
+        have he' : EnvOk G (jOf G r.c r.node r.entry r.ms).context ρ n W := by
+          simp only [jOf]; rw [beq_iff_eq.mp heq]; exact he
+        exact erase ((passRunChecker pc).sound (pass_select_whole htree hwhole hsel') hc hs he' hk hw hh href hρ)
+      · exact erase ((passRunChecker pc).sound (pass_select_whole htree hwhole hsel') hc hs
+          (PromiseCalls.envOk_intRefine_of (PromiseCalls.intSlot_withInts _ _) he hk.2.2.2.2.2)
+          (PromiseCalls.holds_of_withInts hk) hw hh href hρ)
 
 /-- Evidence without an ordinary derivation has the checked step's type. -/
 theorem regionalTyped_of_step {G : NormalGraph ι} {I : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
@@ -173,14 +181,16 @@ theorem visitStep_separation_partners {G : NormalGraph ι} {I : InstanceImageChe
     ⟨_, effect, a0, a1, _, _, ha, _⟩
   · rw [hk]; simp
   · obtain ⟨out, pre, _, _, _, _, _, _, hp, hn⟩ := ha
-    by_cases hpres : (env.passChecker.checker.normal (jOf env.claimed[l]! env.nodes[l]!)
+    by_cases hpres : (env.passChecker.checker.normal (jOf G env.claimed[l]! env.nodes[l]! en.entry ms)
         (kOf G env.claimed[l]! en.entry ms (wholeOf (env.nodes[l]!).expression)) effect env.codes
         a1.summaries.toList == Footprints.Closed.empty) = true
     · rw [(hp hpres).2.1]
       exact materialize_separation_partners _ _ _ _
     · obtain ⟨out', _, _, _, hk, _⟩ := hn (Bool.eq_false_iff.mpr hpres)
       rw [hk]
-      exact materialize_separation_partners _ _ _ _
+      split
+      · exact materialize_separation_partners _ _ _ _
+      · exact materialize_separation_partners _ _ _ _
 
 /-- A successful regional check aligns the selected effect proof's header
 with the source claim when no ordinary derivation is present. -/
