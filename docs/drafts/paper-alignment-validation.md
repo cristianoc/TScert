@@ -1,11 +1,17 @@
 # Paper alignment validation
 
+## Saved baseline at 2819388e
+
+The evidence in this section applies to the initial implementation and validation
+through commit `2819388e290f907d206c5c0bf26a925ef0fa7cb0`. Its module counts,
+correspondence counts and test runs do not validate subsequent source changes.
+
 Evidence from the cloud checkout on 2026-11-17. This records validation of the
 reviewed implementation, not completion of the full formalisation. The owning
 status is [WORK.md](../../WORK.md#status); the complete item comparison is
 [B against the paper](b-against-the-paper.md).
 
-## Reproduction and provenance
+### Reproduction and provenance
 
 The repository was cloned in the cloud workspace on `single-pass`. A fetch
 verified both the checkout and `origin/single-pass` at
@@ -29,7 +35,7 @@ installed in cloud scratch; `make setup` installed the locked repository
 Node dependencies. To reproduce, use those versions and the repository’s
 usual build/test commands, with `bc` available.
 
-## Proof and boundary checks
+### Proof and boundary checks
 
 Focused builds of each new dependency layer passed with warnings treated as
 errors. A clean full `lake build` passed (603 jobs); incremental full builds
@@ -51,7 +57,7 @@ inside it. All changed Lean files are under `Verification.Paper`; no shared
 assertion schema, heap/world/region semantics, acceptance decision, lowering,
 wire format, trust declaration or headline acceptance theorem changes.
 
-## Static and regression checks
+### Static and regression checks
 
 The following passed:
 
@@ -80,7 +86,7 @@ cover the final proof statements; the only source change after the fast
 suite was the Paper-only independence-domain correction, with no A importers.
 GitHub CI results are separate from these local results and are not assumed.
 
-## Independent statement review
+### Independent statement review
 
 An independent `gpt-6-astra` subagent performed read-only reviews against the
 paper’s actual premises and conclusions. It did not run compilation or the
@@ -106,7 +112,7 @@ overclaim in the reviewed correspondence statements. It accepted the
 **40 equal / 27 narrower / 9 absent / 13 assumed** table as a statement of
 those individual proof scopes, explicitly **not** a claim of full alignment.
 
-## Limits of the evidence
+### Limits of the evidence
 
 Compilation and axiom checks establish proof checking and axiom dependencies,
 not correspondence. The independent source review supplies the separate

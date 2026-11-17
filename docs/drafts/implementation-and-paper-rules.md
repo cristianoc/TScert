@@ -163,8 +163,35 @@ serialized certificate language. The general syntax does not change A’s shared
 schemas or acceptance. Semantic implication/quantification and the value-family
 write principles are in
 [Consequences.lean](../../lean/Verification/Paper/TolerantFrames/Consequences.lean);
-these ingredients do not establish complete postcondition syntax, substitution,
-structural supports, or command-level native rules.
+these ingredients do not establish complete postcondition syntax, general
+two-state substitution, structural supports, or command-level native rules.
+
+## Renaming, replacement and quantified rules
+
+[Renaming.lean](../../lean/Verification/Paper/TolerantFrames/Renaming.lean)
+proves complete simultaneous variable renaming for the general syntax. Images
+may alias; existential binders lift the map. Identity/composition and context
+validity are proved semantically.
+[RenamingAdmission.lean](../../lean/Verification/Paper/TolerantFrames/RenamingAdmission.lean)
+preserves declared region admission under type pullback, including shifted
+binder declarations. Runtime equality is not used to infer declared types.
+
+[PathReplacement.lean](../../lean/Verification/Paper/TolerantFrames/PathReplacement.lean)
+and [ModalReplacement.lean](../../lean/Verification/Paper/TolerantFrames/ModalReplacement.lean)
+state selected occurrence replacement with intact suffixes. Variable-only
+positions require variable-only output. Local replacement leaves boxes
+unchanged; changing a box transports its regional effect and body using future
+equality, derived from equality and rigidity of the two selected paths.
+Unrelated paths need no rigidity. Derivation constructors enforce input/output
+region admission. These are current-state rules; complete mixed old/current
+postcondition substitution is a separate obligation.
+
+[QuantifiedRules.lean](../../lean/Verification/Paper/TolerantFrames/QuantifiedRules.lean)
+instantiates a full body into actual assertion syntax at an arbitrary linear
+index. It retains partial definedness, shifted elements, fields and body
+connectives. Its Empty theorem derives collection entries from defined array
+or view length and valid root references; density is not a premise. General
+Inst, Prefix and Empty constructors are part of the sound derivation system.
 
 ## Commands, scope and transfer
 

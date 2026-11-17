@@ -1,3 +1,8 @@
+import Verification.Paper.TolerantFrames.Renaming
+import Verification.Paper.TolerantFrames.RenamingAdmission
+import Verification.Paper.TolerantFrames.PathReplacement
+import Verification.Paper.TolerantFrames.ModalReplacement
+import Verification.Paper.TolerantFrames.QuantifiedRules
 import Verification.Paper.TolerantFrames.AliasExample
 import Verification.Paper.TolerantFrames.Admission
 import Verification.Paper.TolerantFrames.Derivations

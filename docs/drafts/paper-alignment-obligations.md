@@ -37,6 +37,23 @@ a semantic proof of an entailment is not automatically a derivation in the
 particular calculus of Definition 23. General logical derivations and the
 serialized `Parity` checker have separately stated proof scopes.
 
+## Renaming is not arbitrary path substitution
+
+A variable renaming is total over every assertion constructor and lifts beneath
+logical binders. All occurrences in terms, bodies, witnesses, regions and modal
+effects must participate. Actual-variable images may alias. Declared-type
+admission follows from a declaration pullback, not heap equality.
+
+The paper’s path-replacement rule concerns selected occurring paths. A bare
+variable slot in density, apartness or an equality witness cannot silently
+become a field path: the output must still belong to the grammar. Prefix
+replacement retains the entire suffix. Beneath a binder the selected free
+paths shift. An unchanged box requires no rigidity; a changed effect/body
+requires equality at all admissible future states, which equality plus rigidity
+of the two selected paths supplies. General mixed old/current postcondition
+substitution must respect each phase’s environment and the frozen function
+entry; a current-state replacement theorem is not that theorem.
+
 ## State and command obligations
 
 The shared `IndexedHeap` contains the heap, world, budget and heap invariants.

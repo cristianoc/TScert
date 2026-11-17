@@ -1,4 +1,5 @@
 import Verification.Paper.TolerantFrames.Derivations
+import Verification.Paper.TolerantFrames.Renaming
 
 /-! # Regional checked transfer
 
@@ -31,6 +32,11 @@ structure Edge where
 capture-free because it is a map of free target names, not binder slots. -/
 def Target (θ : Nat → Nat) (A : Formula) : Postcondition :=
   fun _ ρ' m _ t => A.Holds (fun x => ρ' (θ x)) m t
+
+/-- The semantic target pullback is precisely capture-avoiding syntactic
+renaming, including target assertions with logical binders and modalities. -/
+theorem Target.syntactic (θ : Nat → Nat) (A : Formula) (ρ ρ' : Env) (m : Nat) (s t : IndexedHeap) :
+    Target θ A ρ ρ' m s t ↔ (A.rename θ).Holds ρ' m t := (A.holds_rename θ ρ' m t).symm
 
 /-- Definition 21's assembled sequent, instantiated in the sound general
 subcalculus. No regional effect or knowledge shape is discarded. -/
@@ -75,7 +81,7 @@ theorem transfer {host : NativeCode} {K : Knowledge} {edge : Edge} {A : Formula}
     ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + n = s.n ∧ ValidContext ρ' m t ∧ ExitValid exit t ∧
       A.Holds (fun x => ρ' (edge.rename x)) m t := by
   obtain ⟨t, ha, hh, hk, hvt, hve, hΦ, hQ, hB⟩ := hs _ _ _ _ _ _ _ hv hK hr he hn
-  refine ⟨t, ha, hh, hk, hvt, hve, hc.sound ρ ρ' m s t ?_⟩
+  refine ⟨t, ha, hh, hk, hvt, hve, hc.sound ρ ρ' m s t hv hvt ?_⟩
   intro F hF
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl | rfl | rfl

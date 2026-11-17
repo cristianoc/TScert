@@ -46,9 +46,13 @@ values, unrestricted assertion disjunction, existential source values, general
 separation and region freshness. Scalar literals cannot contain executable
 terms, and suffix conditions are enforced by the term constructors.
 `Consequences.lean` states semantic postcondition connectives and general
-value-family principles. These do not constitute a complete postcondition
-syntax, capture-avoiding substitution, or the complete derivations of
-Definition 23. A family of present element readings is not substituted for a
+value-family principles. These do not constitute a complete postcondition syntax or the complete derivations of Definition 23.
+`Renaming` covers every assertion constructor and lifts beneath binders;
+`RenamingAdmission` proves declared-type pullback admission.
+`PathReplacement` and `ModalReplacement` prove grammar-admissible selected
+path replacement, including prefixes, binders and changed modal effects/bodies.
+This is not arbitrary path-for-variable substitution into variable-only
+positions. General two-state substitution remains a separate obligation. A family of present element readings is not substituted for a
 body which may read no element.
 
 `Commands`, `CommandRules`, `Scopes` and `Loops` add actual command
@@ -97,11 +101,11 @@ The three proposition-summary rows in this report summarize their following cons
 | 9(c), antitonicity in effects — 944 | Shared `box_anti`, `Semantics/IndexedStates.lean`; general `Derivation.boxAnti`, `Derivations.lean` | **equal** | Inclusion of actions gives the stated antitonicity for arbitrary assertions. InclusionEvidence is only one certificate route to that premise. |
 | 9(d), invariant disjunction — 945 | `box_or_on`, `SemanticRules.lean` | **equal** | The guard is an arbitrary semantically invariant assertion on valid contexts. There is no syntactic invariant-guard restriction on disjunction or this law. |
 | 9(e), idempotence — 946 | `box_idem_on`, `RigidOn`, `SemanticRules.lean` | **equal** | The premise is transitivity of the action on valid contexts, not successful rigidity evidence. |
-| Proposition 10, Guards and quantified facts — 956 — summary | `guard`, `every_inst`, `every_prefix`, `every_empty`, `Assertions.lean` | **narrower** | General Guard and Prefix are stated exactly. Instantiation still lacks its syntactic substitution/derivation bridge, and the exact Empty corollary needs the valid-root defined-length bridge. |
+| Proposition 10, Guards and quantified facts — 956 — summary | `guard`, `Assertions.lean`; `inst_rule`, `prefix_rule`, `empty_rule`, `QuantifiedRules.lean` | **equal** | All four displayed assertion rules have general semantic statements; Inst produces actual formula syntax, and Empty covers defined ordinary/view lengths. The general derivation constructors include Inst, Prefix and Empty. |
 | (Guard) — 960 | `guard`, `equal_contradiction`, `contents_contradiction`, `Assertions.lean` | **equal** | The reading is any partial path reading, including optional final fields; disjunction requires no invariant guard. Unequal values contradict equality of the same reading. |
-| (Inst) — 961 | `every_inst`, `Assertions.lean`; older `Derivation.everyElim`, `D:463` | **narrower** | The general semantic lemma interprets the complete body at an evaluated integer index, including fields, shifts and disjunctions. Capture-avoiding syntactic body instantiation and its inclusion in the full derivation system are not supplied by it. |
+| (Inst) — 961 | `inst_rule`, `Body.holds_instantiate`, `QuantifiedRules.lean`; `Derivation.everyInst`, `Derivations.lean` | **equal** | The actual instantiated goal preserves arbitrary linear index expressions, offsets, projected element fields, all reading kinds and disjunctive/conjunctive bodies. Exactly Every and the defined 0≤k<bound premise are used; no density or unconditional presence premise is added. |
 | (Prefix) — 962 | `every_prefix`, `Assertions.lean` | **equal** | For arbitrary defined linear bounds t and t′, t′≤t restricts the full quantified predicate to its smaller range. No density, scalar-body or single-term restriction is imposed. |
-| (Empty) — 963 | `every_empty`, `Assertions.lean`; older `Derivation.everyEmpty`, `D:456` | **narrower** | The semantic lemma handles either collection kind and any nonpositive linear bound. Its explicit collection-entry premise needs the shared-model bridge from the paper’s defined-length premise at a valid root; the exact displayed corollary is not proved. |
+| (Empty) — 963 | `empty_rule`, `QuantifiedRules.lean`; `Derivation.everyEmpty`, `Derivations.lean` | **equal** | Defined array or view length and a defined nonpositive linear bound give the general quantified fact. Collection entries are derived from the shared heap/reference invariants at valid roots, without an extra premise or density requirement. |
 
 **§5 — Entering the modality**
 
@@ -117,7 +121,7 @@ The three proposition-summary rows in this report summarize their following cons
 | (Sep) — 1145 | `RawDerivation.sep`, `D:639`, checked at `D:881` | **narrower** | The fact must be linear over variables and the one array length, and both separated paths must read arrays. The paper allows any qualifying atom and includes the null/undefined case for the other value. |
 | (Every) — 1146 | `RawDerivation.everyFrame`, `D:640`; general `Every`, `Assertions.lean` | **narrower** | The general assertion no longer inserts density or unconditional element presence, and its complete body grammar is interpreted. The general Every framing schema and its support proof are not bridged to that interpretation; the old certificate has its original restrictions. |
 | (Init) — 1147 | `init_box`, `ModelRules.lean:82`; `init_path`, `:96`; `RawDerivation.init`, `D:641` | **narrower** | The atom is restricted to a linear fact over current terms. The paper quantifies over every atom whose heap reading is the displayed path length. |
-| (Rigid) — 1148 | `Derivation.rigidSubst`, `D:447` | **narrower** | Capture avoidance and absence of the fresh witness from the effect are represented, but both the atom and its modal derivation must belong to B’s restricted assertion and derivation languages. |
+| (Rigid) — 1148 | `FormulaReplacement.rigid`, `RigidFormula.holds_iff`, `ModalReplacement.lean`; older `Derivation.rigidSubst`, `D:447` | **narrower** | General current-state selected-path replacement under modalities is proved, including binder shifting and regional effects. Unrelated paths and unchanged boxes need no rigidity. The displayed atom axiom still needs its fresh-witness derivation bridge and nonoccurrence conditions; current-state replacement alone is not that complete axiom. |
 | (View) — 1149 | `view_box`, `ModelRules.lean:45`; `RawDerivation.view`, `D:642`, checked at `D:930` | **narrower** | `view_box` covers linear facts over variables and view lengths; the derivation route covers assertions recognized by `invNode`. Neither states the schema for every qualifying paper atom. |
 
 **§6 — Programs**
@@ -132,7 +136,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Frame — 1251 | `frame_rule`, `CommandRules.lean`; `scope_stable_of_avoids`, `Scopes.lean` | **equal** | Both normal and exceptional boxes are eliminated using their own effects. Scope transport is precisely the paper’s fresh-binding condition; it follows from dependence on names the command does not bind. No finite assertion/region certificate restriction is imposed. |
 | Frame⁺ — 1253 | `frame_plus_rule`, `CommandRules.lean`; `RigidOn`, `SemanticRules.lean` | **equal** | Semantic rigidity on valid contexts retains the box at the normal exit. Scope transport includes the effect under the modality and is proved from noncapture. |
 | Loop — 1255 | `loop_invariant`, `loop_rule`, `Loops.lean` | **equal** | Induction on actual loop execution handles normal iterations, break, return and throw. The body normal post gives I; its break obligation is I ∧ box R, as stated in the paper’s explanation. Semantic effect and rigidity plus noncapture retain the modality; no supplied prefix summary replaces the rule. |
-| Call — 1257 | `call_rule`, `ModelRules.lean:154` | **narrower** | B’s theorem is for a checked graph, its normal completion, slot renaming and a list of named caller facts. The two-exit signature theorem cited by the paper, `call_exits_exact`, is **outside B**, `Semantics/CallEffects.lean:541`. |
+| Call — 1257 | General `Formula.holds_rename`, `Renaming.lean`; `Formula.WellFormed.rename`, `RenamingAdmission.lean`; older `call_rule`, `ModelRules.lean:154` | **narrower** | Capture-avoiding actual-variable renaming covers all general assertions, effects and declared-path admission, and permits aliases. The full two-exit signature/command invocation, freshness-mark and recursive-body connections are not supplied by this renaming foundation; the older graph theorem remains narrower. |
 | Alloc, empty array — 1259 | `alloc_step`, `ModelRules.lean:177`; `alloc_post`, `:184` | **equal** | The allocated array has a fresh spine, length zero, and is apart from every pre-existing array. Freshness at the allocation heap length implies freshness at the enclosing invocation’s earlier mark. |
 | Seq-Eff — 1261 | `seq_eff`, `ModelRules.lean:310`; `CommandSummary.seq_sound`, `CommandComposition.lean:163` | **narrower** | B requires the computed `rebaseAll` with `RebaseOk` and a successful `Footprint.le` check. The paper permits any rebasing satisfying its coverage relation and semantic effect inclusion. The general `Post.compose_rebases` is outside B, `Semantics/ExitComposition.lean:110`. |
 | Fresh-Eff — 1263 | `fresh_eff`, `ModelRules.lean:320` | **equal** | For every location below the mark, the fresh spine’s entry is removable from the effect. The theorem does not remove effects on cells that spine lists. |
@@ -185,9 +189,9 @@ The three proposition-summary rows in this report summarize their following cons
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Definition 21, Checked transfer — 1793 | `Check`, `Edge`, `Target`, `Transfer.lean`; `Derivation`, `Derivations.lean` | **narrower** | Check assembles exactly old knowledge, the regional transition, node postcondition, branch condition and renamed target. Its proof datatype is explicitly a sound subcalculus; full Definition 23 and syntactic substitution/admission are separate obligations. |
+| Definition 21, Checked transfer — 1793 | `Check`, `Target.syntactic`, `Transfer.lean`; `Formula.holds_rename`, `Renaming.lean` | **narrower** | The assembled sequent has the paper’s five components, and target pullback equals actual capture-avoiding syntactic renaming through every assertion constructor. Full derivation admission and general two-state substitution remain separate obligations; the proof datatype is still a sound subcalculus. |
 | Theorem 22, Transfer — 1804 | `edge_sound_of_triple`, `transfer`, `Transfer.lean` | **narrower** | Execution-connected transfer handles arbitrary regional effects, knowledge and target interpretations, preserving valid environments and chosen exit worlds. Its Check predicate uses the sound general subcalculus, not the full derivations of Definition 23; graph-wide safety/prefix preservation is not inferred from the endpoint triple. |
-| Definition 23, Derivations — 1812 | `Derivation`, `.sound`, `Derivations.lean`; older `Derivation`, `RawDerivation`, `D:342,605` | **narrower** | The new finite proof datatype has general logical connectives, implication/index/value instantiation and modal laws, with soundness. Complete atom/term substitution, contradictions as rule constructors, structural/all-support framing, arithmetic and remaining paper schemas are not all represented. The serialized checker remains a separate restricted certificate layer. |
+| Definition 23, Derivations — 1812 | `Derivation`, `.sound`, `Derivations.lean`; `FormulaReplacement`, `ModalReplacement.lean`; `QuantifiedRules.lean` | **narrower** | Current-state selected path replacement is capture-avoiding and admission-checked; changed modalities transport effects and bodies under rigidity of the two selected paths only. Full Inst/Prefix/Empty are integrated. Consequence and modal premises range over valid contexts. General existential logic, mixed old/current postcondition substitution, remaining contradiction/support/arithmetic schemas and full admission are not all represented. |
 | Example 24, Example 1 in full — 1903 | `AliasExample.program`, `.program_scoped`, `.Head`, `.read_bound`, `.write_bound`, `.increment_range`, `.back_edge`, `.exit`, `AliasExample.lean` | **narrower** | The actual command contains both tests, RangeError construction/throw and the private loop cell. Head knowledge includes j≤to. Fresh scopes and the displayed arithmetic bounds/renaming consequence are proved. The dense-source typing premise and each primitive/edge connection still need a closed execution or graph proof; the older ModelLoop theorem is not used as a substitute. |
 
 **§8 — The patterns**
@@ -234,6 +238,6 @@ Each row except the three proposition summaries and the patterns of §8:
 
 | Equal | Narrower | Broader | Different | None in B | Assumed | Total |
 |---:|---:|---:|---:|---:|---:|---:|
-| 40 | 27 | 0 | 0 | 9 | 13 | 89 |
+| 42 | 25 | 0 | 0 | 9 | 13 | 89 |
 
 Imported shared statements are counted in the corresponding rows, rather than called absent merely because they live outside Paper. Equal compares that item’s semantic statement; it does not certify complete syntax admission, all of Definition 23, or implementation by A. Narrower rows state the missing premise/conclusion or unproved bridge explicitly.
