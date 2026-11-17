@@ -1668,27 +1668,29 @@ field of each element, such as $p[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
-operands and the empty effect. Each row states its operands' sorts; $c$
-and $d$ are constants, and $d'=d\bmod 32$ is the count a shift reads.
-The operands of $\mathbin{\&}$ and $\mathbin{|}$ may be given in either
-order:
+operands and the empty effect. Each row states its operands' sorts, and
+a letter has one sort in all the rows: $a$ and $b$, the first and the
+second operand, hold $\mathit{SafeInt}$s, $x$ holds any $\mathit{Num}$,
+$c$ and $d$ are constants, a factor and a shift count, and $y$ is the
+result. $d'=d\bmod 32$ is the count a shift reads. The operands of
+$\mathbin{\&}$ and $\mathbin{|}$ may be given in either order:
 \[
 \begin{array}{lll}
-\textsc{Add}, \textsc{Sub} & x,x':\mathit{SafeInt} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\\[3pt]
-\textsc{Scale} & x,c:\mathit{SafeInt} & \hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
+\textsc{Add}, \textsc{Sub} & a,b:\mathit{SafeInt} & \hoare{|a\pm b|\le M}{y=a\pm b}{y=a\pm b}\\[3pt]
+\textsc{Scale} & a,c:\mathit{SafeInt} & \hoare{|c\,a|\le M}{y=c\,a}{y=c\,a}\\[3pt]
 % generated: paper-arithmetic-rules
-\textsc{Shr} & x,d:\mathit{SafeInt} & \hoare{-2^{31}\le x<2^{31}}{y=x\gg d}{2^{d'}y\le x\le 2^{d'}y+2^{d'}-1}\\[3pt]
-\textsc{Mask} & x:\mathit{Num},\ x':\mathit{SafeInt} & \hoare{0\le x'<2^{31}}{y=x\mathbin{\&}x'}{0\le y\le x'}\\[3pt]
- & x:\mathit{SafeInt},\ x':\mathit{Num} & \hoare{0\le x}{y=x\mathbin{\&}x'}{y\le x}\\[3pt]
-\textsc{Shl} & x,d:\mathit{SafeInt} & \hoare{-2^{31}\le 2^{d'}x<2^{31}}{y=x\ll d}{y=2^{d'}x}\\[3pt]
-\textsc{Or} & x,x':\mathit{SafeInt} & \hoare{0\le x<2^{31}\wedge 0\le x'<2^{31}}{y=x\mathbin{|}x'}{x\le y\wedge x'\le y\wedge y\le x+x'}
+\textsc{Shr} & a,d:\mathit{SafeInt} & \hoare{-2^{31}\le a<2^{31}}{y=a\gg d}{2^{d'}y\le a\le 2^{d'}y+2^{d'}-1}\\[3pt]
+\textsc{Mask} & x:\mathit{Num},\ b:\mathit{SafeInt} & \hoare{0\le b<2^{31}}{y=x\mathbin{\&}b}{0\le y\le b}\\[3pt]
+ & a:\mathit{SafeInt},\ x:\mathit{Num} & \hoare{0\le a}{y=a\mathbin{\&}x}{y\le a}\\[3pt]
+\textsc{Shl} & a,d:\mathit{SafeInt} & \hoare{-2^{31}\le 2^{d'}a<2^{31}}{y=a\ll d}{y=2^{d'}a}\\[3pt]
+\textsc{Or} & a,b:\mathit{SafeInt} & \hoare{0\le a<2^{31}\wedge 0\le b<2^{31}}{y=a\mathbin{|}b}{a\le y\wedge b\le y\wedge y\le a+b}
 % end generated: paper-arithmetic-rules
 \end{array}
 \]
 The constants $c$ and $d$ are literals or variables with a known
 constant value. Outside the stated ranges the step runs and the rule
 gives nothing about $y$. One sum is given past the range: for
-$x=\len s$ of a string $s$, \code{y = x + 1} gives the safe integer $y=x+1$, or $y$
+$a=\len s$ of a string $s$, $y=a+1$ gives the safe integer $y=a+1$, or $y$
 is the number $2^{53}$. Example: for a table
 \code{index} with $\len{\mathit{index}}=4352$ and
 $0\le c<1114112$, \code{j = c >> 8} gives $256\,j\le c$, so
@@ -1696,7 +1698,7 @@ $j\le 4351$ and $0\le j<\len{\mathit{index}}$, the precondition
 of the read \code{index[j]}. With $0\le v<b$ for $v$ the block that
 \code{index[j]} gives, in a table \code{values} of $b$ blocks of 256,
 \textsc{Shl} gives $y_1=256\,v$ for \code{y1 = v << 8}, \textsc{Mask}
-gives $0\le y_2\le 255$ for \code{y2 = c \& 0xff}, at $x'=255$, and \textsc{Or} gives
+gives $0\le y_2\le 255$ for \code{y2 = c \& 0xff}, at $b=255$, and \textsc{Or} gives
 $0\le y\le 256\,v+255<256\,b$ for \code{y = y1 | y2}, the precondition
 of the read \code{values[y]} at $\len{\mathit{values}}=256\,b$.
 

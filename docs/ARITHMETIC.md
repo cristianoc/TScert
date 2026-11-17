@@ -300,7 +300,9 @@ applies to its operands in either order, so `0xff & c` is Mask's
 knowledge entails the rule's premises, the result $`r`$ states the rule's
 conclusion. Each rule's name is followed by its operands' sorts:
 $`\mathit{Num}`$, any number, and $`\mathit{SafeInt}`$, a safe integer,
-the sort $`\mathrm{int}`$ states of a slot:
+the sort $`\mathrm{int}`$ states of a slot. The operands are named by
+sort in every rule: $`a`$ and $`b`$, the first and the second, are safe
+integers, $`x`$ is any number, and $`d`$ is a shift count:
 
 <!-- generated: arithmetic-rules -->
 <!-- {"name":"Shr","declaration":"Verification.ArithmeticRules.shr","proof":"Verification.ArithmeticRules.shr_sound","op":"shr","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":1}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":-1,"byConstant":0,"byPower":1}}]} -->
@@ -315,16 +317,16 @@ the sort $`\mathrm{int}`$ states of a slot:
 
 ```math
 \frac{\mathrm{int}(b)\quad K\vdash 0\le b<2^{31}}
-     {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ 0\le r\le b}
-     \ \textsf{Mask}\quad a:\mathit{Num},\ b:\mathit{SafeInt}
+     {K\vdash r\leftarrow x\mathbin{\&}b\dashv \mathrm{int}(r),\ 0\le r\le b}
+     \ \textsf{Mask}\quad x:\mathit{Num},\ b:\mathit{SafeInt}
 ```
 
 <!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskBound","proof":"Verification.ArithmeticRules.maskBound_sound","op":"bitAnd","left":"safeInteger","right":{"operand":"number"},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
 
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash 0\le a}
-     {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ r\le a}
-     \ \textsf{Mask}\quad a:\mathit{SafeInt},\ b:\mathit{Num}
+     {K\vdash r\leftarrow a\mathbin{\&}x\dashv \mathrm{int}(r),\ r\le a}
+     \ \textsf{Mask}\quad a:\mathit{SafeInt},\ x:\mathit{Num}
 ```
 
 <!-- {"name":"Shl","declaration":"Verification.ArithmeticRules.shl","proof":"Verification.ArithmeticRules.shl_sound","op":"shl","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":1}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":1}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
