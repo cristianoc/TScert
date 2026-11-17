@@ -74,6 +74,26 @@ bridge cannot be counted as proved under either an added nonzero premise or
 a new axiom. Independent support and integer-consequence proofs do not depend
 on resolving this item.
 
+## Quantified-index instantiation across phases
+
+Definition 23 says: “A postcondition quantified over indices is instantiated
+at a term.” Its wording does not specify freezing or textual substitution.
+A logical index is fixed across states. Thus forall j, old(j=0) implies j=0
+is true. If a term reads zero at entry and one currently, textual replacement
+gives old(t=0) implies t=0, which is false even with both readings defined and
+without modalities. [The conditional obstruction and frozen construction](../../lean/Verification/Paper/TolerantFrames/IndexInstantiation.lean)
+formalise this distinction. The conditional theorem assumes those evaluations;
+it is not reported as a constructed valid/admissible execution countermodel.
+
+A defined frozen instance is expressible in the existing first-order grammar:
+defined(t) and forall j, j=t implies Q(j), where t is shifted below the index
+binder and appears only in the current-state guard. Its proved interpretation
+evaluates t once and gives Q that integer as a logical value. It is an auxiliary
+semantic result pending clarification of the paper sentence, not evidence for
+unrestricted textual substitution or an extra Definition 23 rule. A source
+term under a modality requires the same distinction between rigid logical
+values and heap readings at each future state.
+
 ## State and command obligations
 
 The shared `IndexedHeap` contains the heap, world, budget and heap invariants.

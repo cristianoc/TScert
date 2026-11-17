@@ -227,6 +227,54 @@ indexed heap at the valid mark zero and reads no heap location. The bridge
 is not supplied by a new premise or axiom. The paper’s text and A’s numeric
 model are unchanged; the decision is tracked in the owning WORK row.
 
+## First-order two-state postconditions
+
+[PostconditionSyntax.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionSyntax.lean)
+interprets first-order syntax in the existing semantic postcondition target.
+Program names, logical integer indices and logical values have separate
+namespaces; quantifier bodies are syntax rather than arbitrary predicates.
+Logical integers can exceed the safe-number range. Ordinary reads use the
+current focus, `old(t)` reads the entire term at frozen entry, and modalities
+advance focus without changing that entry. Universal source-value quantification does
+not imply reference validity at either state.
+
+[PostconditionScope.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionScope.lean)
+proves logical valuation agreement through all terms, bodies, assertions,
+quantifiers and regional actions. Closed admitted formulas do not depend on
+unused logical slots. Entry and current program scopes are separate: a result
+name available only at exit cannot be read under `old`.
+[PostconditionAdmission.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionAdmission.lean)
+adds declared-region admission using the existing seven-form judgment and
+excludes raw nested-old forms. Program and logical-value roots reuse shared
+region semantics through a disjoint encoding. Value binder lifting shifts only
+logical roots and reserves the fresh witness as undeclared; it does not claim
+valid references for universally quantified source values.
+
+[PostconditionRenaming.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionRenaming.lean)
+proves total semantic transport with independent maps for the three namespaces.
+Only the bound namespace lifts at a binder. Both entry/current program
+valuations and all modal effects participate; heaps and invocation mark stay
+fixed. This is not yet a theorem preserving scope/static admission under
+transformed declarations, or general path/term substitution.
+
+[PostconditionExamples.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionExamples.lean)
+encodes Q_< and Q_≠i as actual syntax, sharing each quantified index and value
+between old/current reads. Successful element readings are proved source values,
+including holes. The full Push and converted View-Write formulas are equivalent
+to their exact semantic relations under the stated receiver/index/conversion
+premises. These are interpretation bridges, not native execution proofs.
+
+[IndexInstantiation.lean](../../lean/Verification/Paper/TolerantFrames/IndexInstantiation.lean)
+expresses a defined frozen instance with the existing grammar: defined(t) and
+forall j, j=t implies Q(j), with the term shifted below the binder. It proves
+this evaluates t once and keeps the resulting integer through Q's old/modal
+parts. A conditional obstruction shows unrestricted textual substitution is
+false if the term reads zero at entry and one currently. It does not itself
+construct a valid/admissible execution or prove admission of the particular
+textual formula. The paper's index-at-term sentence does not specify this
+choice; the owner clarification is tracked in WORK, and the auxiliary frozen
+construction is not inserted as a claimed Definition 23 derivation rule.
+
 ## Commands, scope and transfer
 
 [Commands.lean](../../lean/Verification/Paper/TolerantFrames/Commands.lean)
