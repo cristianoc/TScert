@@ -1,6 +1,7 @@
 /- Check a source file's units by the single pass (mode 8), and the module
 interfaces its imports read. -/
 import Verification.Source.RequestCli
+import Verification.Source.RuleExport
 
 open Verification Lean
 
@@ -33,6 +34,9 @@ def command (start : Nat) (args : List String) : IO UInt32 := do
       | _, _ => usage
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath
+  | ["--export", "rules", "arithmetic"] => do
+      IO.println Verification.RuleExport.rulesJson.pretty
+      return 0
   | _ => usage
 where
   usage : IO UInt32 := do
@@ -41,6 +45,7 @@ where
     IO.eprintln "       verifier --module-interface-plan <ast.json> <selection.json>"
     IO.eprintln "       verifier --module-interface <request.json>"
     IO.eprintln "       verifier --lower-control-flow <ast.json>"
+    IO.eprintln "       verifier --export rules arithmetic   (the arithmetic rules as JSON)"
     IO.eprintln "       (any mode may be preceded by --subtype-rounds <rounds>; <names> selects units by a member's name, comma-separated)"
     return 2
 
