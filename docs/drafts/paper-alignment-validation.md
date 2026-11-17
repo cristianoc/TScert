@@ -1092,3 +1092,40 @@ availability/safety is derived. Function allocation/typing, recursive proof
 discharge, specifications and old/budget/mark transport, rest, spread and full
 Fun remain separate. All 91 correspondence rows are retained with unchanged
 counts: 41 equal, 28 narrower, 9 absent, 13 assumed.
+
+## Proved body specifications at actual invocation exits
+
+This measurement applies to exact source
+`c2e2a46556aaa4bf43890a535c2bfdbb92c3cb65`, over the same fifth fetched base
+`fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. It adds CallableReferences,
+PostconditionEnvironmentScope and CallableEntrySpecification, directly imported
+by the Paper axiom check. The [source scope](paper-call-function-bridge.md#scoped-body-specifications-at-actual-invocation-exits)
+is transport from proved fixed-arity body premises, not recursive Fun or function
+allocation/typing. No shared/A code, paper mathematics, host assumption, test
+expectation or outside-to-Paper dependency changes.
+
+Focused builds pass with warnings treated as errors. Both complete axiom audits
+pass together, 462 jobs. The log replays the same eight upstream informational
+PANIC traces from TolerantFramesStepLink already recorded for the prior batch;
+the audits exit zero, and no new module has a warning or error. Direct imports
+cover all 365 other A/shared modules and all 94 other Paper modules. A separate
+boundary scan finds zero outside-to-Paper imports.
+
+A supervised `timeout 1200 make test` exits zero: 673 Lean build jobs, all 24 fast
+suites, all 176 controls (3 operations executed and 494 replayed), and all
+3448 expected cases. The case report gives 4344 verified functions,
+1799 negative controls and 149 named gaps. Docs pass: 83 documents, 895 citations,
+zero problems. Whitespace and semantic commit-record checks pass.
+
+Astra independently checked both the design and actual source. It found no
+soundness blocker: self reference validity is derived from object/capture roles
+without assuming the specification, full syntax transports at admissible exits,
+the original old/return entry stays fixed, input scopes remove locals, and
+normal/exceptional effects retain their original entry environment. The review
+explicitly distinguishes caller phase-environment/mark conversion, recursion,
+function typing and rest/spread. The 91-row counts remain 41 equal, 28 narrower,
+9 absent and 13 assumed; improved body transport does not close the full Fun row.
+
+Cloud scratch logs are `callable-spec-build4.log`, `callable-spec-axioms.log`,
+`callable-spec-test.log` and `callable-spec-docs-final.log`. Builds used the pinned
+Lean/Node runtimes already recorded above; there were no overlapping Lake builds.
