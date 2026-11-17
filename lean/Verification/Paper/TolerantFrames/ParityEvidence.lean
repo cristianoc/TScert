@@ -1,4 +1,4 @@
-import Verification.Semantics.ParityAssertions
+import Verification.Paper.TolerantFrames.ParityAssertions
 import Verification.Semantics.Survival
 import Verification.Semantics.RegionBounds
 

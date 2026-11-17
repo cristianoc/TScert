@@ -1,4 +1,4 @@
-import Verification.Programs.TolerantFramesModelRules
+import Verification.Paper.TolerantFrames.ModelRules
 import Verification.Semantics.KindsNatives
 import Verification.Semantics.AdmissibleCells
 import Verification.Semantics.KindsCapabilities
@@ -6,7 +6,7 @@ import Verification.Semantics.ViewSpines
 /-!
 # Witnesses of (View), Alloc and the view write over kinded worlds
 
-The rules of `Programs/TolerantFramesModelRules.lean` (`view_box`,
+The rules of `Paper/TolerantFrames/ModelRules.lean` (`view_box`,
 `alloc_post`) shown on concrete well-formed heaps:
 
 - **Alloc**: the heap after an array's allocation is well-formed with the

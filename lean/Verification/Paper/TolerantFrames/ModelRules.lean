@@ -1,5 +1,5 @@
-import Verification.Programs.TolerantFramesModelTyped
-import Verification.Programs.TolerantFramesModelLoop
+import Verification.Paper.TolerantFrames.Bridges.ModelTyped
+import Verification.Paper.TolerantFrames.ModelLoop
 import Verification.Programs.TolerantFramesWrites
 
 /-! # Tolerant frames: the note's remaining atoms and rules in the model

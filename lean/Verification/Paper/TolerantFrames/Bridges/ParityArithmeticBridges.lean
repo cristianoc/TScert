@@ -1,5 +1,5 @@
 import Verification.Programs.IndexWrites
-import Verification.Semantics.ParityDerivations
+import Verification.Paper.TolerantFrames.ParityDerivations
 
 /-! # The pass's arithmetic atoms read as parity conclusions
 

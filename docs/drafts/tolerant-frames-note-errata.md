@@ -6,8 +6,8 @@ so that the note can be revised from this list. Each item gives the note's
 claim, the model's statement, and its label: **proved** (Lean name),
 **false as stated** (a Lean counter-model), or **not formalized** (observed in
 the definitions). The theorems are in
-`lean/Verification/Programs/TolerantFramesModelLoop.lean`,
-`TolerantFramesModelTyped.lean` and `TolerantFramesModelRules.lean` (namespace
+`lean/Verification/Paper/TolerantFrames/ModelLoop.lean`,
+`Bridges/ModelTyped.lean` and `ModelRules.lean` (namespace
 `Verification.TolerantFrames`), beside the modules
 [the Lean reading of the note](../SINGLE-PASS-PROOF.md) owns. The
 differences in the model's states and transitions themselves are listed in

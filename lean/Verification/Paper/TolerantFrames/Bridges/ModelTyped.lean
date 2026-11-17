@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesWrites
-import Verification.Programs.TolerantFramesRuns
+import Verification.Paper.TolerantFrames.Bridges.Grow
 
 /-! # Tolerant frames: the supports a typed environment gives
 

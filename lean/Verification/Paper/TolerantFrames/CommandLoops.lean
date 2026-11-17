@@ -1,4 +1,4 @@
-import Verification.Semantics.CommandComposition
+import Verification.Paper.TolerantFrames.CommandComposition
 
 /-! # The summary of a loop
 

@@ -1,4 +1,4 @@
-import Verification.Semantics.ParityDerivations
+import Verification.Paper.TolerantFrames.ParityDerivations
 
 /-! Research tests of the parity derivations, kept while the derivations
 are built and replaced by pipeline cases once the pass produces them: each

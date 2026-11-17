@@ -8,9 +8,9 @@ accepted call of `SinglePass.run` guarantees its graph (`RunSound`, the
 interface [the unit theorem](SINGLE-PASS-THEOREM.md#2-the-hypotheses)
 reads). Its definitions and theorems are in
 `lean/Verification/Semantics/IndexedStates.lean`,
-`lean/Verification/Semantics/TolerantFrames.lean`,
+`lean/Verification/Paper/TolerantFrames/Instances.lean`,
 `lean/Verification/Programs/SinglePass/GraphSafety.lean` and
-`lean/Verification/Programs/TolerantFramesRuns.lean` (and the modules each section names), namespace
+`lean/Verification/Paper/TolerantFrames/Bridges/Grow.lean` (and the modules each section names), namespace
 `Verification.TolerantFrames`. Each claim below is labelled **proved** (with
 its Lean name) or **not proved**.
 
@@ -167,7 +167,7 @@ its family above, and $`Q_e`$. Entering a node and each continuation or
 handler transition spend one level; no obligation is read at budget zero.
 
 TRANSFER (proved: `transfer`, module
-`lean/Verification/Programs/TolerantFramesTransfer.lean`) builds `NodeObligations` from the shape, the
+`lean/Verification/Paper/TolerantFrames/Bridges/Transfer.lean`) builds `NodeObligations` from the shape, the
 retained index facts $`K_n`$, $`K_e`$ under $`\Box_{c_n}`$, $`\Box_{c_e}`$ at
 $`s_0`$, and the per-exit target entailment, which receives the retained
 facts transported (`Transported`): each $`F\in K`$ holds as $`F'`$ at every
@@ -195,7 +195,7 @@ two edges:
   (`loop_back_edge`).
 
 Two graphs with an actual throw instantiate `graph_safe`
-(`lean/Verification/Programs/TolerantFramesExamples.lean`, proved): in
+(`lean/Verification/Paper/TolerantFrames/Examples.lean`, proved): in
 `handledGraph` node 0 throws `null` to a handler node returning the value it
 receives, the raise target the handler's assertion with the thrown value
 bound (`handled_safe`); in `escapingGraph` the throw escapes, the raise target
@@ -528,7 +528,7 @@ output states. Proved:
   and of $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
   by the tolerant frame at $`\{x.\mathsf{spine}:\mathsf{grow}\}`$
   (`named_lowerBound_grow`, `named_lowerBound_field`, module
-  `lean/Verification/Programs/TolerantFramesRuns.lean`); a step's exits carry
+  `lean/Verification/Paper/TolerantFrames/Bridges/Grow.lean`); a step's exits carry
   the named facts that hold after every action of each exit's effect
   (`writing_frame`);
 - a run only grows the heap: a normal-only judgment holds on both exits with
@@ -621,7 +621,7 @@ and keeps the heap-free ones (`Spine.dropHeap`, the handler's filter): a
 writing step's effect does not tolerate a heap fact it is not handed (a cell
 fact over a name fails after an action of $`\top`$, proved:
 `slotless_not_framed`, module
-`lean/Verification/Programs/TolerantFramesNamedCounterexample.lean`).
+`lean/Verification/Paper/TolerantFrames/NamedCounterexample.lean`).
 
 ## Allocated cells and separation
 

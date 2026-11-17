@@ -1,4 +1,4 @@
-import Verification.Semantics.CommandSummaries
+import Verification.Paper.TolerantFrames.CommandSummaries
 import Verification.Semantics.FootprintJoin
 
 /-! # Composing command summaries

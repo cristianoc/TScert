@@ -27,7 +27,7 @@ Claims are labelled **proved**, with the Lean name, in those modules and in
 [ElementWrites](../../lean/Verification/Semantics/ElementWrites.lean)
 (below the call effects, so that their postconditions can state the view
 write) and
-[KindsModelRules](../../lean/Verification/Programs/KindsModelRules.lean),
+[KindsModelRules](../../lean/Verification/Paper/TolerantFrames/KindsModelRules.lean),
 each theorem checked by the
 [axiom check](../../lean/Verification/Tests/AxiomCheck.lean) in its block
 for the kinds of the Tolerant-frames model. Claims not yet established are

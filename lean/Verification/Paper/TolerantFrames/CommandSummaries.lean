@@ -1,6 +1,6 @@
 import Verification.Semantics.ExitSummaries
 import Verification.Semantics.ExitComposition
-import Verification.Semantics.ParityDerivations
+import Verification.Paper.TolerantFrames.ParityDerivations
 
 /-! # Command summaries
 

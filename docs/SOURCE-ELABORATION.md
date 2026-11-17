@@ -3877,7 +3877,7 @@ closed language below the call's entry with a fresh receiver's spine
 discharged (Fresh-Eff); a write's the grade its typed-write rule accepts; a
 `throw`'s an exceptional exit leaving the heap it starts in. Each rule of
 composition is proved sound for runs (`ClassSummary.Sound`,
-[TolerantFramesExitProposals.lean](../lean/Verification/Programs/TolerantFramesExitProposals.lean)): sequence on
+[Bridges/ExitProposals.lean](../lean/Verification/Paper/TolerantFrames/Bridges/ExitProposals.lean)): sequence on
 both exits (a throw includes the prefix before it), choice, a handler (a
 caught throw continues in it), a finalizer, an async body (a throw a normal
 return of its call, which never throws) and a loop with rigid class
