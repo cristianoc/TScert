@@ -1,5 +1,5 @@
 import Verification.Semantics.KindsNatives
-import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.AdmissibleCells
 import Verification.Semantics.KindsCapabilities
 /-!
 # Call preservation over kinded worlds

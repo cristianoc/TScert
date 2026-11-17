@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesSteps
-import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.AdmissibleCells
 
 /-! # Tolerant frames: the pass's writing steps
 

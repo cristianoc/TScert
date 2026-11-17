@@ -1,4 +1,4 @@
-import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.AdmissibleCells
 import Verification.Semantics.FootprintRebase
 import Verification.Semantics.AssertionScopes
 

@@ -14,7 +14,7 @@ The kinded worlds are the active model
 satisfaction and reference validity in
 [Worlds](../../lean/Verification/Semantics/Worlds.lean) and
 [Heaps](../../lean/Verification/Semantics/Heaps.lean), states in
-[TolerantFramesCells](../../lean/Verification/Semantics/TolerantFramesCells.lean).
+[AdmissibleCells](../../lean/Verification/Semantics/AdmissibleCells.lean).
 Claims are labelled **proved**, with the Lean name, in those modules and in
 [Kinds](../../lean/Verification/Semantics/Kinds.lean),
 [KindsAllocation](../../lean/Verification/Semantics/KindsAllocation.lean),

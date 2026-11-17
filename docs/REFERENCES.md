@@ -114,7 +114,9 @@ The project takes from it the definitions of its logic of fact preservation:
 locations by kind, changes, regions, effects and their action, the modality,
 support and respect, the tolerant frame theorem, its axioms and rules, and
 two-state postconditions. Its model rules are the theorems of
-`lean/Verification/Semantics/TolerantFrames*.lean`, checked in their own
+`lean/Verification/Semantics/IndexedStates.lean`,
+`lean/Verification/Semantics/AdmissibleCells.lean` and
+`lean/Verification/Semantics/TolerantFrames.lean`, checked in their own
 block of `lean/Verification/Tests/AxiomCheck.lean`. The rule that the Lean
 states each of its notions as the note defines it is in
 [AGENTS.md](../AGENTS.md#general-statements-no-lists-of-special-cases).
