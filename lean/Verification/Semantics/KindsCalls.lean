@@ -291,7 +291,7 @@ well-formed under one world extending the callback's.** The callback ran to
 a value at the world `U` its own typing chose (`SafePostExcW.exit`), its
 allocations with whatever roles that typing gave. The native then appends
 fresh element cells holding source values valid in `U`, each meeting its
-contract, and writes an ordinary array's spine `s` to a spine listing cells
+contract, and writes an array's spine `s` to a spine listing cells
 of the old spine or fresh ones, a spine `s`'s contract admits. The result
 meets the one world `U'` that extends `U` by the fresh cells as E, in both
 parts of satisfaction; the callback's result keeps every property its type

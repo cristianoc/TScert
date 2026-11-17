@@ -285,7 +285,7 @@ def Selector.inter (a b : Selector) : Selector := ⟨a.value && b.value, a.array
 /-- The note's $\mathsf{values}$: field, cell, element and identity locations. -/
 @[simp] def Selector.values : Selector := ⟨true, false, false⟩
 
-/-- The spines of ordinary arrays. -/
+/-- The spines of arrays. -/
 @[simp] def Selector.arrays : Selector := ⟨false, true, false⟩
 
 /-- The note's $\mathsf{views}$: the view spines of typed arrays. -/

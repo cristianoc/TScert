@@ -146,7 +146,7 @@ assert.throws(() => runExample("invalid-splice-insert-sparse", 'broken(["a","b",
 
 assert.equal(runExample("invalid-array-rest-own-iterator",
   '(() => { const xs = [1], victim = [2]; changed(xs, victim); return victim.length; })()'), 0,
-  "an own array iterator can shrink another ordinary array during rest collection");
+  "an own array iterator can shrink another array during rest collection");
 assert.equal(runExample("invalid-array-rest-default-effect",
   '(() => { const victim = [2]; changed({}, victim); return victim.length; })()'), 0,
   "a default preceding nested rest collection retains its mutation");

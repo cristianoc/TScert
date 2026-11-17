@@ -452,7 +452,7 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (e : Derivation arena [.at .after a] (.at .after bx))
       (dr : Derivation arena Γ (.at p r)) (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ (.at p bc)
   /-- Bounded quantification over an empty range: `n ≤ 0` and `π` an
-  ordinary array give `every(π, n, φ)`. -/
+  array give `every(π, n, φ)`. -/
   | everyEmpty {Γ p a d} (π : Path) (n z : Term) (body : List (LinearClause Bound))
       (ha : arena.nodes[a.index]? = some (.atom (.every π n body)))
       (hd : arena.nodes[d.index]? = some (.atom (.dense π z))) (dd : Derivation arena Γ (.at p d))
@@ -584,7 +584,7 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (dl : Derivation arena Γ (.defined (lenB x))) : Derivation arena Γ (lengthStep x x' 0)
   /-- **Write-End** (the note, §6, "Exact postconditions"), its length:
   `i = |x| ∧ i < N` gives `|x| = old(|x|) + 1`. The element read `x[i] ≐ v`
-  and the dense prefix are not stated: an ordinary array's element has no
+  and the dense prefix are not stated: an array's element has no
   atom, and the dense prefix no theorem. -/
   | writeEnd {Γ} (x i x' : Nat) (dop : Derivation arena Γ (.operation (.boundedWrite x i x')))
       (de : Derivation arena Γ (atEndFacts x i)) : Derivation arena Γ (lengthStep x x' 1)

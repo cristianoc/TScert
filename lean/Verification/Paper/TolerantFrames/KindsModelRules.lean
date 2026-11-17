@@ -14,7 +14,7 @@ The rules of `Paper/TolerantFrames/ModelRules.lean` (`view_box`,
 
 A view-element write (`ViewWrite`) between two concrete well-formed heaps
 changes the view spines of two typed arrays over the written bytes, exact for
-the designated one, and keeps an ordinary array's spine
+the designated one, and keeps an array's spine
 (`viewWrite_overlap`).
 -/
 namespace Verification.Kinds
@@ -76,13 +76,13 @@ theorem roleWorld_ext {k : Nat} (rs tail : List Role) :
   ⟨tail.map fun r => (r, anyCtr), by simp [roleWorld]⟩
 
 /-- The roles of the entry heap: two view spines of format `uint8` and
-length 1, their two element cells, an ordinary array's spine and its element
+length 1, their two element cells, an array's spine and its element
 cell. -/
 def overlapRoles : List Role :=
   [.spine (.view .uint8 1), .spine (.view .uint8 1), .elem, .elem, .spine .array, .elem]
 
 /-- Two typed arrays over the same bytes (view spines at 0 and 1) and an
-ordinary array (spine at 4). -/
+array (spine at 4). -/
 def overlapBefore : Heap :=
   [.viewSpine .uint8 [2], .viewSpine .uint8 [3], .num 0, .num 0, .arr [some 5], .num 0]
 
@@ -154,10 +154,10 @@ theorem exactWrite_one {i s c c' : Nat} {before after : Heap}
   · simp at hl
 
 /-- **A view-element write changes two overlapping views' spines and keeps
-an ordinary array's.** Between the two well-formed heaps, at every budget,
+an array's.** Between the two well-formed heaps, at every budget,
 the exact write through the first view holds: both view spines (locations 0
 and 1) change, the designated one at the written index alone, and the
-ordinary array's spine (location 4) is kept. -/
+array's spine (location 4) is kept. -/
 theorem viewWrite_overlap (n : Nat) :
     HeapOk n (roleWorld overlapRoles) overlapBefore ∧
       ViewWriteOf (.exact .uint8) [overlapView, .num 0, .num oneBits] (roleWorld (k := n) overlapRoles)
@@ -184,10 +184,10 @@ theorem viewWrite_overlap (n : Nat) :
 
 A world with every role a builtin heap holds: a typed array (its view spine
 of format `uint8` and length 1, its element cell and its identity), an
-ordinary array (its spine, its element cell, its identity) and an object (a
+array (its spine, its element cell, its identity) and an object (a
 property and its identity). The heap meets it at every budget with all three
 objects valid, and the exact view-element write through the typed array
-inhabits the contract (`ViewWriteOf`) from it, keeping the ordinary array's
+inhabits the contract (`ViewWriteOf`) from it, keeping the array's
 spine and every other location. -/
 
 /-- The roles and contracts of the initial host world, by location. -/
@@ -211,7 +211,7 @@ def hostAfter : Heap :=
 /-- The typed array: its descriptor names its view spine at 0, its format
 and its length 1. -/
 def hostView : Val := .viewAt [] 2 0 .uint8 1
-/-- The ordinary array. -/
+/-- The array. -/
 def hostArray : Val := .objAt [(arraySpineKey, 3)] .absent 5
 /-- The object with one property. -/
 def hostObject : Val := .objAt [("p", 6)] .absent 7
@@ -297,7 +297,7 @@ theorem hostAfter_ok (n : Nat) : HeapOk n (hostWorld' (k := n)) hostAfter := by
 
 /-- **The three host objects are valid in the initial host world**: the
 typed array's identity is in I and its descriptor names a view spine of its
-format and length (`Ref.view`); the array's spine slot an ordinary array's
+format and length (`Ref.view`); the array's spine slot an array's
 spine; the object's property in F. -/
 theorem host_refs {k : Nat} :
     RefsOk (hostWorld (k := k)) hostView ∧ RefsOk (hostWorld (k := k)) hostArray ∧
@@ -322,7 +322,7 @@ theorem host_refs {k : Nat} :
 /-- **The view-element write is inhabited from the initial host world**: at
 every budget the exact write of `1` at index 0 through the typed array is a
 `ViewWriteOf` transition between the two well-formed heaps, changing the view
-spine and keeping the ordinary array's spine. -/
+spine and keeping the array's spine. -/
 theorem host_viewWrite (n : Nat) :
     ViewWriteOf (.exact .uint8) [hostView, .num 0, .num oneBits] (hostWorld (k := n)) hostBefore
       (hostWorld' (k := n)) hostAfter ∧ hostAfter[0]? ≠ hostBefore[0]? ∧ hostAfter[3]? = hostBefore[3]? := by
@@ -358,7 +358,7 @@ def hostProtoed : Val := .objAt [(CallArguments.protoField, 10)] .absent 11
 /-- Graph code capturing `hostObject`, with its code field. -/
 def hostClosure : Val := .objAt [(codeField, 12)] (.graph 0 [] [] 0 [hostObject] .call false) 13
 /-- A forwarding descriptor of the closure, its receiver `hostObject`, its
-prefix the ordinary array. -/
+prefix the array. -/
 def hostBound : Val := .objAt [] (.bound hostClosure hostObject [hostArray]) 14
 
 /-- The environment binding every structural family of host value. -/
@@ -390,7 +390,7 @@ theorem familiesWorld_ext {k : Nat} : WExt (hostWorld (k := k)) (familiesWorld (
     (.identity, idCtr), (.identity, idCtr)], by simp [hostWorld, familiesWorld, familiesEntries]⟩
 
 /-- **Every family's value is valid in the families' world**: a typed array
-with its view spine of its format and length, an ordinary array with its spine and
+with its view spine of its format and length, an array with its spine and
 element, an object, a binding cell, a prototype property, a closure with its
 capture and code field, and a forwarding descriptor of the closure. -/
 theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv := by
@@ -451,7 +451,7 @@ theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv :
 every budget, the families' heap meets the families' world, which is
 admissible, and every family's value is valid in it, all at once: an
 object's identity, a property and a prototype property (F), a binding cell
-(C), an ordinary array's spine and its element (S, E), a typed array's view
+(C), an array's spine and its element (S, E), a typed array's view
 spine of its format and length, a closure's capture and code field,
 and a forwarding descriptor's target, receiver and prefix. -/
 theorem families_state (n : Nat) :

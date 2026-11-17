@@ -62,7 +62,7 @@ def ElemsAt (R : ElemPred) (r : Tm) (h : Heap) : Prop :=
 /-- A change from `before` to `after` appending the actuals `args`, where each
 is a value, to the receiver `r`'s spine: the spine it held holds one longer
 by the actuals' number, whose element at the old length plus `j` is present
-and holds the `j`-th actual at a location beyond the input heap: `Array.prototype.push` on an ordinary array
+and holds the `j`-th actual at a location beyond the input heap: `Array.prototype.push` on an array
 (SOURCE-CONTRACTS.md, "Native footprints"). -/
 def ReceiverAppends (r : Tm) (args : List Tm) (before after : Heap) : Prop :=
   (∀ a ∈ args, isVal a = true) → ∀ s ls, Footprints.spineOf r = some s → before[s]? = some (.arr ls) →
@@ -141,7 +141,7 @@ def EffectAction (Φ : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
 of a typed array): the entries of the view spine its descriptor names
 (`HeapKnowledge.descriptorSpine`, `spineEntries`), of a value owning no
 array spine, which every well-formed typed array is
-(`HeapKnowledge.RefsOk.view_selects`). An ordinary array lists none here. -/
+(`HeapKnowledge.RefsOk.view_selects`). An array lists none here. -/
 def viewCells (h : Heap) (v : Val) : Option (List (Option Nat)) :=
   match spineOf v, HeapKnowledge.descriptorSpine v with
   | none, some s => h[s]?.bind spineEntries
@@ -222,7 +222,7 @@ def Atom.Holds (η : Env) (h : Heap) : Atom → Prop
   | .safeInt p => ∃ v, p.read η h = some v ∧ (intValue v).isSome
   | .pastSafe p => p.read η h = some (.num SafeIntegers.pastSafeBits)
 
-/-- **An ordinary array's spine** (the note, §2, "Arrays"): the value's `[]`
+/-- **An array's spine** (the note, §2, "Arrays"): the value's `[]`
 slot names a location holding an array spine listing `xs`, and the value
 names no typed array's spine, so the spine it owns is that one alone. -/
 def ArraySpine (h : Heap) (u : Val) (s : Nat) (xs : List (Option Nat)) : Prop :=

@@ -43,7 +43,7 @@ def regionEnvFree : Region → Bool
 /-- An effect every region of which is read without the name valuation. -/
 def effectEnvFree (Φ : Footprint) : Bool := Φ.all fun e => regionEnvFree e.1
 
-/-- **An ordinary array spine stays one** along every admissible
+/-- **An array spine stays one** along every admissible
 transition: its contents keep their category, an array spine
 (`Admissible.contentsCategory`). -/
 theorem _root_.Verification.TolerantFrames.Admissible.arraySpine {s s' : IndexedHeap} (ha : Admissible s s')
@@ -317,7 +317,7 @@ theorem Atom.holds_envOnly {a : Atom} (ha : a.envOnly = true) {η : Env} {h h' :
 
 /-! ## Separation and freshness -/
 
-/-- An ordinary array's cells, as the region `π[∗]` selects them
+/-- An array's cells, as the region `π[∗]` selects them
 (`spineCells`), are its spine's listing. -/
 theorem ArraySpine.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)} (ha : ArraySpine h u s xs) :
     spineCells h u = xs := by
@@ -325,7 +325,7 @@ theorem ArraySpine.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)}
   have hs' : (fieldsOf u).lookup arraySpineKey = some s := hs
   simp [spineCells, entriesAt, hs', hd, hx, spineEntries]
 
-/-- **The cells of two ordinary arrays are disjoint as regions exactly where
+/-- **The cells of two arrays are disjoint as regions exactly where
 their spine listings are** (the note's `apart` and the regions `π[∗]`). -/
 theorem cells_disjoint_iff {h : Heap} {u w : Val} {s t : Nat} {xs ys : List (Option Nat)}
     (hu : ArraySpine h u s xs) (hw : ArraySpine h w t ys) :

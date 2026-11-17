@@ -74,7 +74,7 @@ end Invalid
 namespace Regional
 private def r (n : Nat) : AssertionRef := ⟨n⟩
 private def arena : AssertionArena := ⟨#[
-  .atom (.dense (.var 0) (Term.value 1)),       -- 0 dense(xs, n): xs an ordinary array
+  .atom (.dense (.var 0) (Term.value 1)),       -- 0 dense(xs, n): xs an array
   .separated (.var 0) (.var 2),                 -- 1 xs # ys
   .and (r 0) (r 1),                             -- 2 K
   .atom (.equal ⟨1, ["items"]⟩ (.path (.var 0))), -- 3

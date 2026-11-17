@@ -374,7 +374,7 @@ variable {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT n'} {h' : Heap}
 theorem roleAt (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verification.roleAt W l = some r) :
     Verification.roleAt W' l = some r := WExt_roleAt hw.ext (by simpa using hl)
 
-/-- **An ordinary array's spine is kept.** -/
+/-- **An array's spine is kept.** -/
 theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Verification.roleAt W l = some (.spine .array)) :
     h'[l]? = h[l]? := hw.keep l _ hl (fun f N hN => by cases hN)
 

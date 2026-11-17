@@ -119,7 +119,7 @@ def field (f : PropKey) (A : Fam) : Capability := ⟨f, fun r T => r = .field �
 key. -/
 def binding (A : Fam) : Capability := ⟨valueField, fun r T => r = .cell ∧ T = A⟩
 
-/-- An ordinary array's spine, of the spine type `A`. -/
+/-- An array's spine, of the spine type `A`. -/
 def arraySpine (A : Fam) : Capability := ⟨arraySpineKey, fun r T => r = .spine .array ∧ T = A⟩
 
 theorem objectEntries_snd {k : Nat} {rs : List Role} {cs : List (Ctr k)}
