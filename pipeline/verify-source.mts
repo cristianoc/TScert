@@ -450,17 +450,19 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       changed = true;
     }
   }
-  // A refusal whose record has a source-named summary (`presentObligation`)
-  // and that states no `obligation:` line of its own: that summary after
-  // its first line.
+  // A refusal whose record has a source-named summary (`presentObligation`):
+  // that summary as an `obligation:` line, after the refusal's first line
+  // and any `obligation:` line the pass states.
   const source = readFileSync(fileKey, "utf8");
   const described = (text: string): string => {
-    if (text.split("\n").some((l) => l.startsWith("obligation: "))) return text;
     const record = readDiagnostic(text);
     const summary = record === undefined ? undefined : presentObligation(record, source).summary;
     if (summary === undefined) return text;
-    const [first, ...rest] = text.split("\n");
-    return [first, `obligation: ${summary}`, ...rest].join("\n");
+    const lines = text.split("\n");
+    if (lines.includes(`obligation: ${summary}`)) return text;
+    let at = 1;
+    while (at < lines.length && lines[at]?.startsWith("obligation: ")) at++;
+    return [...lines.slice(0, at), `obligation: ${summary}`, ...lines.slice(at)].join("\n");
   };
   const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
   const results: UnitResult[] = verdicts.filter((v) => !v.unit.startsWith("module:"))

@@ -517,7 +517,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     let outcome : SinglePass.Outcome _ := match o with
       | .accepted => if !sumsOk then .refused "a read summary"
         else if !obligations.accepted then .refused "an expression claim" else .accepted
-      | .refused w lacks _ => .refused w lacks
+      | .refused w lacks pre => .refused w lacks pre
       | .outsideBound l => .refused s!"footprint at node {l}"
       | .notHandled w => .notHandled w
       | .observed _ => .notHandled "observing a qualified body"
@@ -564,7 +564,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     match o.asRefusal with
     | .accepted => { index := ci, outcome := .accepted, answers := a, line := "" }
     | .notHandled w => { index := ci, outcome := .notHandled s!"{w} (in code {ci})", answers := a, line := "" }
-    | .refused w lacks _ =>
+    | .refused w lacks pre =>
       -- A refusal observed in a code request: its obligation, the facts
       -- over its names and those it lacks, as for the unit's own graph.
       let record := if observe.map observedWhat != some "refusal" then "" else
@@ -590,7 +590,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
           ("claim", toJson ((rq.claims[l]?).map (RequestJson.PointClaim.shown p))),
           ("facts", shown facts), ("missing", Json.arr missingJson.toArray)] ++ p.fields)
         observationLine "refusal-observation: " record
-      { index := ci, outcome := .refused s!"code {ci}: {w}" lacks, answers := a, line := record }
+      { index := ci, outcome := .refused s!"code {ci}: {w}" lacks pre, answers := a, line := record }
     | o => { index := ci, outcome := .refused s!"code {ci}: {o}", answers := a, line := "" }
   let (codeRuns, table, sumsAnswers) := codesInOrder (·.1.entry) codeStep [] next r.codes.zipIdx
   if let some c := codeRuns.find? fun c => !(c.outcome matches .accepted) then
@@ -653,8 +653,8 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
           | some rg => let (o', c', a', t') := walk .regions none (some rg)
             { route := .fallbackThenRegions, outcome := o'.asRefusal, counts := c', after := a', trace := t', fallbackAfter := some a }
           | none => { route := .fallback, outcome := .accepted, counts := c, after := a, trace := t, fallbackAfter := none }
-        | (.refused w' lacks _, c, a, t) =>
-          { route := .fallback, outcome := .refused s!"footprint by spine regions: {w'} (after footprint at node {l})" lacks,
+        | (.refused w' lacks pre, c, a, t) =>
+          { route := .fallback, outcome := .refused s!"footprint by spine regions: {w'} (after footprint at node {l})" lacks pre,
             counts := c, after := a, trace := t, fallbackAfter := none }
         | (o', c, a, t) => { route := .fallback, outcome := o'.asRefusal, counts := c, after := a, trace := t, fallbackAfter := none }
       else { route := .direct, outcome := o.asRefusal, counts, after, trace, fallbackAfter := none }
@@ -751,7 +751,7 @@ obligation has (`produceGraphUsing`, `footprintRefusal`, `ensuresRefusal`);
 a statement's spine regions refused at their entry conditions (`spine
 regions`) at the declaration; none where the refusal names no node with a
 source span. -/
-def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) (claims : Bool := true) : Option String := do
+def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
   let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
       match (w.drop 5).toString.splitOn ": " with
@@ -769,7 +769,7 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) (claims : Bo
     -- The types the node's claim states (its operands' slots, which the
     -- refused term names as `Tm.var k`, and its result), named by kind
     -- (`SourceTypes.renderIn`); of the unit's own graph only.
-    let claimed : String := if ci.isSome || !claims then "" else
+    let claimed : String := if ci.isSome then "" else
       match r.claims[l]? with
       | none => ""
       | some c =>
@@ -815,12 +815,15 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) (claims : Bo
     return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
   none
 
-/-- A refused call's preconditions as the record's `callPreconditions`
-field states them: per signature stating one, its elements precondition on
-the receiver slot and each index fact at the call's slots, each with
-whether the facts entail it; and the facts connected to the call's slots. -/
-def preconditionsJson (d : SinglePass.CallPreconditions) : Json :=
-  Json.mkObj [("signatures", Json.arr (d.signatures.map fun s => Json.mkObj [
+/-- A refused step's preconditions as the record's `preconditions` field
+states them: the step's form; per precondition, its elements precondition
+on the receiver slot and each atom of its index facts at the step's slots
+(null where it names a position the step holds no slot for), each with
+whether it holds; and the facts connected to the step's slots. -/
+def preconditionsJson (d : SinglePass.StepPreconditions) : Json :=
+  Json.mkObj [("step", toJson (match d.step with
+      | .call => "call" | .construction => "construction" | .write => "write")),
+    ("signatures", Json.arr (d.signatures.map fun s => Json.mkObj [
       ("requires", match s.requires with
         | some (x, R, held) => Json.mkObj [("slot", toJson x), ("pred", toJson R), ("entailed", toJson held)]
         | none => Json.null),
@@ -828,34 +831,44 @@ def preconditionsJson (d : SinglePass.CallPreconditions) : Json :=
         Json.mkObj [("fact", toJson F), ("entailed", toJson held)]).toArray)]).toArray),
     ("known", toJson d.known)]
 
-/-- **The record of a refused call** of unit `i`'s own graph (`expression
-at node l`) whose callee states a precondition the facts do not establish:
-the node's obligation (`RequestJson.failureDiagnostic`) with the call's
-preconditions (`preconditionsJson`), the deferred `pre` forced here. -/
+/-- **The record of a step refused for having no derivation** (`expression
+at node l`, of unit `i`'s own graph or, after `code c: `, of its code `c`'s)
+whose preconditions do not all hold: the node's obligation
+(`RequestJson.failureDiagnostic`, over that graph's request and source map)
+with the step's preconditions (`preconditionsJson`), the deferred `pre`
+forced here. -/
 def FilePlans.callRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
-    (pre : Option (Thunk (Option SinglePass.CallPreconditions))) : Option (List (String × Json)) := do
+    (pre : Option (Thunk (Option SinglePass.StepPreconditions))) : Option (List (String × Json)) := do
+  let .ok (.graph _ _ r) := (f.plans[i]?).getD (.error "") | none
+  let (ci, w) : Option Nat × String := if w.startsWith "code " then
+      match (w.drop 5).toString.splitOn ": " with
+      | n :: rest => (n.toNat?, ": ".intercalate rest)
+      | [] => (none, w)
+    else (none, w)
   guard (w.startsWith "expression at node ")
   let l ← refusalLabel w "expression at node "
-  let .ok (.graph _ _ r) := (f.plans[i]?).getD (.error "") | none
+  let fields ← match ci with
+    | some c => do
+      let q ← r.codes[c]?
+      let code ← r.codeSources[c]?
+      pure (RequestJson.failureDiagnostic (q.asRequest r.toRequest) fuel code.sourceMap (.expression l))
+    | none => pure (RequestJson.failureDiagnostic r.toRequest fuel r.sourceMap (.expression l))
   let d ← (← pre).get
   guard (d.signatures.any fun s => s.atoms.any (!·.2) || s.requires.any (!·.2.2))
-  pure (RequestJson.failureDiagnostic r.toRequest fuel r.sourceMap (.expression l) ++
-    [("callPreconditions", preconditionsJson d)])
+  pure (fields ++ [("preconditions", preconditionsJson d)])
 
 /-- **A pass refusal as a check reports it**: with `located`, the source
-obligation it names (`locatedRefusal`) before the pass's own text `raw`;
-for a refused call whose preconditions are not established
-(`callRecord`), that obligation's record after them in place of the
-located claims' line; the pass's own text alone otherwise. -/
+obligation it names (`locatedRefusal`) before the pass's own text `raw`,
+and, for a step refused for having no derivation whose preconditions do
+not all hold (`callRecord`), that obligation's record after them; the
+pass's own text alone otherwise. -/
 def FilePlans.placeRefusal (f : FilePlans) (fuel : Nat) (located : Bool) (i : Nat) (w raw : String)
-    (pre : Option (Thunk (Option SinglePass.CallPreconditions))) : String :=
-  if !located then raw else match f.callRecord fuel i w pre with
-    | some fields => match f.locatedRefusal i w (claims := false) with
-      | some l => RequestJson.withDiagnostic s!"{l}\n{raw}" fields
-      | none => raw
-    | none => match f.locatedRefusal i w with
-      | some l => s!"{l}\n{raw}"
-      | none => raw
+    (pre : Option (Thunk (Option SinglePass.StepPreconditions))) : String :=
+  if !located then raw else match f.locatedRefusal i w with
+    | some l => match f.callRecord fuel i w pre with
+      | some fields => RequestJson.withDiagnostic s!"{l}\n{raw}" fields
+      | none => s!"{l}\n{raw}"
+    | none => raw
 
 /-- The single forward pass over each member of a group
 (`FilePlans.passMember`), no certificate built: per member its line, its

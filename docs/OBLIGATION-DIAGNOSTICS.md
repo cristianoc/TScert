@@ -18,15 +18,15 @@ span the pass locates it at (`FilePlans.locatedRefusal`): `source
 expression obligation at [s,e): evidence search failed: no derivation of its
 <role> claim` for a node, `source incoming edge obligation at [s,e): … the
 edge from node N does not establish the claims at this point` for an edge.
-One line `obligation: <summary>` follows, the source-term account of the
+Lines `obligation: <summary>` follow, the source-term account of the
 obligation (which claim was available and what was required, or, for a term
 that is not a slot, its form and the claims of the slots it reads), so a
 refusal read in a log or a coverage row says why without opening the record:
-for a refusal carrying a record, the record's summary
-([presentation](#presentation)), which `verify-source.mts` adds; for a
-refusal of the single pass carrying none, the pass's located text states it
-(`FilePlans.locatedRefusal`). A line `single pass: refused: …` follows, the
-pass's own text (`TSCERT_PASS_REFUSALS=raw` prints it alone).
+for a refusal of the unit's own graph, the pass's located text states one
+(`FilePlans.locatedRefusal`); for a refusal carrying a record,
+`verify-source.mts` adds the record's summary
+([presentation](#presentation)) after it. A line `single pass: refused: …`
+follows, the pass's own text (`TSCERT_PASS_REFUSALS=raw` prints it alone).
 
 ### A refusal named by TypeScript
 
@@ -66,28 +66,38 @@ graph's entry, whose assumed knowledge does not), and the fact, an index atom
 over the entry's slots. `dev/check-functions.mts` prints each under the
 refused unit, with the edge.
 
-### Call preconditions
+### Step preconditions
 
-A refusal of the single pass at a call of a slot whose callee states a
-precondition the facts at the call do not establish carries the
-`node-typing` record of its node, with `callPreconditions`:
-`{ "signatures", "known" }`. Each entry of `signatures` is one precondition
-the signatures of the callee's type state, once each:
+A step of the single pass refused for having no derivation, its search
+having found none, whose preconditions do not all hold carries the
+`node-typing` record of its node, in the unit's graph or in a code's, with
+`preconditions`: `{ "step", "signatures", "known" }`. `step` is the step's
+form, `call`, `construction` or `write`. Each entry of `signatures` is one
+precondition: of a call or a construction of a slot, each distinct one the
+signatures of the callee's type state; of a write of an element at a
+run-time index, `xs[i] = v`, the bound its rule requires,
+`bound(xs, i)`, `i` an index at most `xs.length`. An entry has:
 
 - `requires`: the elements precondition on the receiver slot,
   `{ "slot", "pred", "entailed" }`, or null;
-- `atoms`: each index fact of the precondition at the node's slots,
-  `{ "fact", "entailed" }`.
+- `atoms`: each atom of its index facts, `{ "fact", "entailed" }`, `fact`
+  at the node's slots, null where it names a position the call holds no
+  slot for. A precondition's `bound(x, k)` is three linear atoms, `0 ≤ k`,
+  `k + 1 ≤ |x|` for a strict bound (`k + 0 ≤ |x|` and
+  `k ≤ 2^32 - 2` for one that is not); where those hold and the bound does
+  not (`k` a negative zero), the bound follows them as its own atom.
 
-`entailed` says whether the index facts connected to the call's slots, the
-facts the pass decides the precondition over (`admitsNear`), entail that
-atom alone, decided by the function that decides the whole precondition
-(`PromiseCalls.preconditionHolds`). `known` is those connected facts, a
-knowledge over the node's context slots and the names past them, which its
-links name. The pass's walk holds this record deferred, and only the check
-that reports the refusal computes it (`FilePlans.placeRefusal`): a run whose
-refusal is not reported, a proposal's search or a settling run, never
-computes it.
+`entailed` says whether the facts at the step establish that atom, decided
+by the check acceptance applies: of a precondition, `admitsNear` with the
+atom alone as the precondition, over the index facts connected to the
+call's slots for an index fact and over the elements facts for `requires`;
+of a write, `IndexWrites.bounded`. `known` is the facts connected to the
+step's slots (`component`), a knowledge over the node's context slots and
+the names past them, which its links name. The record's `phase` is
+`proof-search` and its `fuel` the depth of the step's search. The walk's
+refusal holds the record deferred, and the check that reports the refusal
+computes it (`FilePlans.placeRefusal`): a group's located failure, and the
+settled run of the inferred route.
 
 ## Common fields
 
@@ -191,8 +201,8 @@ A `node-typing` record has:
 - `source`: `{label, sourceMap, node, claim}`. `node` includes the expression and
   continuation; `claim` includes its entry context and required expression type.
 - `sequent`: the exact judgement attempted at that node.
-- `callPreconditions`, on a refused call whose callee's precondition is not
-  established ([above](#call-preconditions)).
+- `preconditions`, on a step refused for having no derivation whose
+  preconditions do not all hold ([above](#step-preconditions)).
 
 An `expression-claim` record has `sourceMap` and `sequent` directly. The kind
 identifies the obligation collection, not a claim of semantic blame.
@@ -328,10 +338,12 @@ from the record's structured fields, never from the human sentence:
   `true`;
 - a node or expression obligation on a compound term: its form and the
   claims of the slots it reads directly;
-- a refused call carrying `callPreconditions`: the requirements of each
-  stated precondition the facts do not establish, then the facts known
-  over the call's operands; a slot past the context is named by the link
-  whose value it is, and one no descriptor or link names by its position;
+- a node obligation carrying `preconditions`: the atoms of each
+  precondition the facts do not establish, then the index and elements
+  facts known over the step's operands, then the claims of the slots it
+  reads; a slot past the context is named by the link whose value it is,
+  and one no descriptor or link names by its position; a linear fact is
+  printed with a positive multiple of each term on its side;
 - an edge: the first destination slot whose mapped incoming claim differs
   from the requirement, or the required heap facts;
 - a direct obligation: the two compared types;
