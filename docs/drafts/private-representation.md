@@ -63,7 +63,8 @@ It reads three existing pieces:
 New machinery: the regions of a class body's private state, one protocol
 per body, one rule, one confinement check and two trust rows, one a
 property of the language, one a caller's use of a value given out at a
-read-only type. No new judgment form, no new modality, no world component.
+read-only type. No new judgment form, no new modality, no world component
+but the ghost set $`E_C`$ of exposed locations, which (P2) reads.
 
 ## The example
 
@@ -152,11 +153,15 @@ audited native, an `await`, or a `yield`. A call *names* its callee when the
 callee is a function of the body, a binding of the body written once with
 one, or a private method.
 
-**Read-only types and views.** A type is *read-only* when every storage
-it reaches is read-only in it: each array position a `readonly T[]`,
-`ReadonlyArray<T>` or `ArrayLike<T>`, each field `readonly`, each typed
-array none, recursively through element and field types, and no position a
-function type but `ReadonlyArray`'s own members. A reference the body gives
+**Read-only types and views.** A type is *read-only* when, read after
+expanding every alias (`Readonly<T>` and mapped types included), every
+storage it reaches is read-only in it: every array, tuple and index
+signature position readonly, every field `readonly`, no typed array, no
+`any`, no type parameter, and no function type but the members of
+`ReadonlyArray`; recursively through element, field and index types. A
+union or an intersection is read-only when each of its members is.
+`unknown`, `object` and `{}` are read-only: they grant no write, and the
+read-only views row covers what a caller does after narrowing. A reference the body gives
 to code that is not the body's at a read-only type (a member's result, an
 argument of a call it does not name, a value thrown or yielded, or the
 content of a public field) is a *view*; a location of
@@ -254,7 +259,10 @@ conjectured until its Lean exists; the statement each cites is labelled.
   until the audit of [the natives that enumerate keys](#what-tscert-must-change).
 - **(P2) Confinement.** Every path from a frame of code outside the body to
   a location of $`\mathsf{own}_C`$ passes through a location of
-  $`\mathsf{priv}_C`$ or starts at a view. Paths run through fields, cells,
+  $`\mathsf{priv}_C`$ or enters $`\mathsf{own}_C`$ at an exposed
+  location. Which locations are exposed is a ghost component of the state,
+  $`E_C`$, set by how a reference left the body and only growing; it is the
+  one exception to "no world component". Paths run through fields, cells,
   spines and element cells; a closure's environment is not reachable from a
   holder of the closure. Contents are (P2)'s: a member may return a number
   read from a private field. Conjectured, from the
@@ -463,10 +471,14 @@ callback's stated effect (a stand-in until applications are analyzed too):
 Analyzed code outside the body is checked, not trusted: the pass reads a
 view at its read-only type and refuses a write through it, a write through
 a widening to a writable type included (an obligation of
-[what TScert must change](#what-tscert-must-change)). A body write to a
-view that code outside froze throws, since modules are strict, which safety
-admits; that freezing changes no location of the model is checked by the
-native audit (conjectured).
+[what TScert must change](#what-tscert-must-change)). A body write to an
+exposed location that code outside froze throws, since modules are strict,
+which safety admits. The model has one outcome for a write, so the
+obligation is that every body write to a possibly exposed location, a
+spine extension included, has a throw edge leaving the heap unchanged, its
+handler checked from that heap; that freezing changes no location of the
+model is checked by the native audit (conjectured). Pretext makes no such
+write after construction.
 
 The row is stated in the API: the declaration of each value given out as a
 view states, in its doc comment, that callers must not change it. The
@@ -623,7 +635,7 @@ export class PreparedText {
   /** What each segment is. Callers must not change it. */
   readonly kinds: readonly SegmentBreakKind[] | null = this.#kinds
   /** Each segment's width in px. Callers must not change it. */
-  readonly widths: ArrayLike<number> | null = this.#segments === null ? null : this.#widths
+  readonly widths: ArrayLike<number> | null = this.#kinds === null ? null : this.#widths
 
   constructor() { PreparedText.#staged = null }
   static #check(): TextParts { /* as in the example */ }
@@ -843,9 +855,10 @@ upstream records differences of this size from V8's inlining budget alone
 longer inlined, 11–18% slower). The stand-in Canvas leaves out real
 measurement, so the handle's share of preparation is overstated. The
 variants are a mechanical transform of upstream's functions, not a
-hand-written rewrite, and differ from this design in two points:
-`measureAnalysis` in paragraph mode constructs an instance, and `#sources`
-holds the three lists in three fields. Retained memory was not measured.
+hand-written rewrite; the table's variants differ from this design in
+two points, `measureAnalysis` in paragraph mode constructing an instance
+and `#sources` holding the three lists in three fields, which `views`
+below does not.
 
 **The specified shape and retained memory.** Measured on `views`, the
 shape this draft specifies: `measureAnalysis` in paragraph mode returning a
@@ -926,6 +939,19 @@ JavaScript, run with `node`, printing the reads), each refused:
   prototype frozen and an own property of the instance shadowing the
   method: `[1, 1, undefined, undefined]`. Refused by *Lexical dispatch*.
 
+- `invalid-private-view-widened`: analyzed code outside the body passes a
+  view at `readonly number[]` where `{ length: number }` is expected and
+  sets its length to 0 during the visitor; the walker reads
+  `[undefined, undefined]`. Refused at the write: a write through a view
+  widened to a writable type (*Views in analyzed code*).
+- `invalid-private-incoming-view`: a member `trim(xs: { length: number })`
+  decrements the length of what it is given; the visitor passes it a view
+  of `#widths`, with no cast (both type-check under `tsc` 7.0.2
+  `--strict`); the walker, which cached the length, reads
+  `[1, undefined, undefined]`. Refused by *Incoming values*: the write is
+  charged to $`\mathsf{own}_C`$ and breaks *Reference-preserving
+  protocol*.
+
 **Restriction controls**, each safe under Node and refused by its stated
 restriction (observed):
 
@@ -947,6 +973,8 @@ array from a cache `Map` only the body reaches, its visitor preparing again
 number array that the client pushes onto (`[0, 0]`); `private-view`, a
 member returning `#widths` at `readonly number[]` and the walker's visitor
 reading it, the walker reading `#widths[i]` after each call (`[1, 1]`);
+`private-frozen-view`, the same with the view frozen by the client before
+the walk (`[1, 1]`);
 `bounds-pattern-unreachable-field-refused` and
 `bounds-pattern-unreachable-handle-refused` rewritten with a class with
 private state.
@@ -969,7 +997,9 @@ the analyzed sources.
 $`\Psi_C`$ forced smaller than a member's effect; a member forged as a
 non-member; a function used as a value forged as called by name only; an
 `await` forged as body code; a confined flow forged to an outside argument; a view forged at a type
-that is not read-only;
+that is not read-only; a type forged read-only; an incoming value forged as
+fresh; a body write to a possibly exposed location forged without its throw
+edge;
 a copy of an array of arrays forged unconfined; a write to a value from a confined collection forged
 uncharged; an exported collection forged confined; an owned store forged as
 fresh; a staging field forged left set on a throw; an initializer forged to
