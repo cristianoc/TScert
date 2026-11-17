@@ -7,6 +7,7 @@ Tolerant frames in the indexed model: the Lean reading of the working note
 accepted call of `SinglePass.run` guarantees its graph (`RunSound`, the
 interface [the unit theorem](SINGLE-PASS-THEOREM.md#2-the-hypotheses)
 reads). Its definitions and theorems are in
+`lean/Verification/Semantics/IndexedStates.lean`,
 `lean/Verification/Semantics/TolerantFrames.lean` and
 `lean/Verification/Programs/TolerantFramesRuns.lean` (and the modules each section names), namespace
 `Verification.TolerantFrames`. Each claim below is labelled **proved** (with
@@ -620,7 +621,7 @@ fact over a name fails after an action of $`\top`$, proved:
 
 ## Allocated cells and separation
 
-Module `lean/Verification/Semantics/TolerantFramesCells.lean`. A root's
+Module `lean/Verification/Semantics/AdmissibleCells.lean`. A root's
 allocated cells, $`\mathrm{cells}(x)`$ read at the heap, is
 `HeapKnowledge.ElementsBelow` of the spine $`x`$'s spine location holds:
 every listed cell below the heap's length (`RootCells`). It holds at every

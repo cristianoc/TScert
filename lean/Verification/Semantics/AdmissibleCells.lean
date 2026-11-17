@@ -1,4 +1,4 @@
-import Verification.Semantics.TolerantFrames
+import Verification.Semantics.IndexedStates
 
 /-! # Tolerant frames: allocated cells and separation
 

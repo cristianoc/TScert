@@ -1,7 +1,7 @@
 import Verification.Semantics.Purity
 import Verification.Semantics.HeapKnowledge
 import Verification.Semantics.LinkClasses
-import Verification.Semantics.TolerantFrames
+import Verification.Semantics.IndexedStates
 import Verification.Semantics.Survival
 import Verification.Semantics.SurvivalSeparation
 

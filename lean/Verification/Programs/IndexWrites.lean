@@ -1,6 +1,7 @@
 import Verification.Semantics.StringPostconditions
 
 import Verification.Programs.HeapExpressionRules
+import Verification.Semantics.ApartSupport
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
 import Verification.Semantics.StepRelations

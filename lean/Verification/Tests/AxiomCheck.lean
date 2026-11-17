@@ -49,9 +49,11 @@ import Verification.Semantics.Survival
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Semantics.TolerantFrames
+import Verification.Semantics.IndexedStates
+import Verification.Semantics.ApartSupport
 import Verification.Programs.TolerantFramesRuns
 import Verification.Programs.TolerantFramesNamed
-import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.AdmissibleCells
 import Verification.Programs.TolerantFramesInvocation
 import Verification.Programs.TolerantFramesExamples
 import Verification.Programs.TolerantFramesSteps
