@@ -1,3 +1,5 @@
+import Verification.Paper.TolerantFrames.Assertions
+import Verification.Paper.TolerantFrames.Consequences
 import Verification.Paper.TolerantFrames.SemanticRules
 import Verification.Paper.TolerantFrames.Bridges.ExitProposals
 import Verification.Paper.TolerantFrames.Bridges.Grow

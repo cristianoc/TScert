@@ -154,6 +154,18 @@ the first derivation's result family. Valid environment roots and the invocation
 mark are explicit context obligations. [Correspondence obligations](paper-alignment-obligations.md)
 distinguishes this layer from finite certificates and automatic proof search.
 
+The general assertion interpreter is
+[Assertions.lean](../../lean/Verification/Paper/TolerantFrames/Assertions.lean).
+Its recursive expressions cover the full term and body forms, linear bounds,
+unrestricted disjunction, optional equality, ordinary/view elements and
+separation’s defined-nonarray cases. The original arena remains the restricted
+serialized certificate language. The general syntax does not change A’s shared
+schemas or acceptance. Semantic implication/quantification and the value-family
+write principles are in
+[Consequences.lean](../../lean/Verification/Paper/TolerantFrames/Consequences.lean);
+these ingredients do not establish complete postcondition syntax, substitution,
+structural supports, or command-level native rules.
+
 ## How far B matches the paper
 
 Item by item in [B against the paper](b-against-the-paper.md). Of the
@@ -174,14 +186,14 @@ only where B can derive its premises, and B applies it also where A's
 entailment does not find them. The narrower ones
 share three restrictions:
 
-- **The assertion language.** B's atoms are a fixed grammar over ordinary
-  arrays: a quantified fact requires an element at every index below its
-  bound, its body reads scalars only, a disjunction needs a guard
-  recognised as invariant, and separation holds between two arrays only.
-- **Certificates for semantic premises.** Support, respect, rigidity and
-  effect inclusion are finite certificates with a soundness theorem, so a
-  rule applies where a certificate is found, which is less than where the
-  paper's semantic premise holds.
+- **Assertion certificates.** The older arena retains its single-term
+  bounds, presence requirement, scalar bodies and invariant guards. The
+  general interpreter has none of those restrictions; its complete
+  substitution and derivation bridges are separate obligations.
+- **Certificates for semantic premises.** The serialized checker uses
+  finite evidence for support, respect, rigidity and inclusion. This
+  restricts certificate coverage, not the general semantic statements. The
+  support table’s general syntax and soundness are separate obligations.
 - **Command summaries over runs.** A command is a relation between states
   and completions, with no command language (Definition 3), so the rules
   of §6 are stated as compositions of supplied summaries.
