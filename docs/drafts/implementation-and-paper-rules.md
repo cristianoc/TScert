@@ -147,12 +147,12 @@ them the laws of the modality (`box_elim` … `box_idem`, in
 
 Item by item in [B against the paper](b-against-the-paper.md). Of the
 paper's 91 items (its definitions, rules, axioms, laws and examples, the
-patterns of §8 aside), B states 15 equally, 35 more narrowly and 2
+patterns of §8 aside), B states 14 equally, 36 more narrowly and 2
 differently, none more broadly; it has no statement of 26, and none of the
 13 host contracts the paper states as assumed. Its equal
 statements are Alloc of an empty array, Fresh-Eff, Write-End, (Grow), and
 the arithmetic and string rules (Add, Sub, Scale, Shr, Mask, Shl, Or, the
-string-length successor, Str-Length, Str-Read, Concat). The seven
+string-length successor, Str-Length, Str-Read). The seven
 arithmetic rules are one datum, `ArithmeticRules.rules`, which A and B both instantiate
 and the paper's rows are generated from
 ([generated sections](../GENERATED-SECTIONS.md)): A and B substitute the same

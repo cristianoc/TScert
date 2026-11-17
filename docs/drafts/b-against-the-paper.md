@@ -133,9 +133,9 @@ The three proposition-summary rows in this report summarize their following cons
 | Shl — 1654 | `Derivation.arith` at `ArithmeticRules.shl`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: the exact product where it lies in the signed 32-bit range. |
 | Or — 1655 | `Derivation.arith` at `ArithmeticRules.bitOr`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: both operands in $`[0, 2^{31})`$ bound the result below by each and above by their sum. |
 | String-length successor — 1655 | `Derivation.lengthSuccessor`, `D:547`; `lengthSuccessor_sound`, `:1428` | **equal** | The result is the exact safe sum or the number $`2^{53}`$, under the stated string-length equality. |
-| Str-Length — 1668 | `Derivation.stringLengthRead`, `D:567` | **equal** | The conclusion is the string’s UTF-16 length, represented as the result’s safe integer. |
-| Str-Read — 1669 | `Derivation.stringRead`, `D:573`; `stringIndexFacts`, `:258` | **equal** | The premises include both the string bound and $`i<2^{32}-1`$; the conclusion is result length one. This is the current paper’s entire postcondition. |
-| Concat — 1670 | `Derivation.stringConcat`, `D:578`; `concatFacts`, `:242` | **equal** | For a normal string concatenation, the result length is the sum of the operand lengths. |
+| Str-Length — 1668 | `Derivation.stringLengthRead`, `D:567` | **equal** | The conclusion is the string’s UTF-16 length, represented as the result’s safe integer; B states also that the result is a safe integer, which the row's $`y=\|s\|`$ implies by the meaning of a defined term. |
+| Str-Read — 1669 | `Derivation.stringRead`, `D:573`; `stringIndexFacts`, `:258` | **equal** | B's premises are $`0\le i`$, $`i+1\le\|s\|`$ and $`i\le 2^{32}-2`$, the row's $`0\le i<\|s\|\wedge i<N`$ for $`N=2^{32}-1`$; the conclusion is result length one. The pass (A) has no producer of this fact. |
+| Concat — 1670 | `Derivation.stringConcat`, `D:578`; `concatFacts`, `:242` | **narrower** | For a normal string concatenation, the result length is the sum of the operand lengths. B takes the premises $`0\le\|s\|`$ and $`0\le\|s'\|`$, where the row's precondition is $`\mathsf{true}`$; a string's length is non-negative by the term's meaning. |
 | Library: `charCodeAt` range — 1685 | **none in B**. Cited outside B: `unit_bound`, `Semantics/StringPostconditions.lean:10`; `code_unit_safe`, `:23` | **assumed** | B has no corresponding host-call contract rule. The cited lemmas concern model code units. |
 | Library: `codePointAt` range — 1686 | **none in B** | **assumed** | The paper states an assumed host contract; no B declaration states it. |
 | Library: `codePointAt` two-unit implication — 1687 | **none in B** | **assumed** | No B declaration gives the displayed implication from the returned code point to the remaining string length. |
@@ -204,6 +204,6 @@ Each row except the three proposition summaries and the patterns of §8:
 
 | Equal | Narrower | Broader | Different | None in B | Assumed | Total |
 |---:|---:|---:|---:|---:|---:|---:|
-| 15 | 35 | 0 | 2 | 26 | 13 | 91 |
+| 14 | 36 | 0 | 2 | 26 | 13 | 91 |
 
 Of the rows with no statement in B, the shared model states Definitions 6 and 16 equally, and Theorem 7 from a safety premise; the others are recorded in their rows.
