@@ -189,6 +189,26 @@ async function log<T extends Awaitable>(value: T): Promise<void> {
 }
 ```
 
+### `SafeInt`
+
+As a type, wherever a type is read: the safe integers, the numbers whose
+value is an integer of magnitude at most $`2^{53}-1`$, both zeros included.
+TypeScript reads it as `number`; the verifier reads it as the clause `int`
+([the safe integers](POSITIVE-TYPES.md#the-safe-integers)), so a value
+reaches it only where its type is within the safe integers: a safe literal,
+or a value already typed `SafeInt`. A `SafeInt` is a `number`, and a
+`number` is not a `SafeInt`.
+
+```ts
+function keep(i: SafeInt): SafeInt {
+  return i;
+}
+
+function answer(): SafeInt {
+  return keep(42);
+}
+```
+
 ## What is inferred, and where an annotation is required
 
 TScert infers the types of locals and of functions written as arguments,

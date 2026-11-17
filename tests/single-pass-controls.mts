@@ -548,6 +548,18 @@ control("forged fragment: a fresh result stated of an identity function", async 
   say("forged fresh result: an identity function's statement forged to promise a fresh result, refused at its unit");
 });
 
+control("forged fragment: a fraction's result forged to SafeInt", async (): Promise<void> => {
+  const artifacts = run("safe-int");
+  const ast = fragmentAst(artifacts);
+  const fn = must(ast.functions.find((f) => f.name === "third"), "third");
+  const unit = unitOf(ast, "third");
+  honest("safe-int", unit);
+  assert.ok(fn.retType.k === "atom" && fn.retType.name === "number", "third's result is a number");
+  fn.retType = { ...fn.retType, name: "safeInt" };
+  refused(pass(forged(artifacts, "forged-safe-int-result", ast)), unit, "forged", /return-contract|return at node/);
+  say("forged SafeInt: a fraction's result forged from `number` to the safe integers, refused at its return");
+});
+
 control("forged fragment: spine regions moved", async (): Promise<void> => {
   const artifacts = run("stated-argument-store");
   const ast = fragmentAst(artifacts);
