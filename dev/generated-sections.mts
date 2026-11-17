@@ -38,20 +38,21 @@ export type Normalisation = "identity" | "shiftCount";
 export type Coef = { lit: number; byConstant: number; byPower: number };
 export type RuleFact = { terms: { term: Term; coef: Coef }[]; bound: Coef };
 export type Constant = { lower: number | null; upper: number | null; normalisation: Normalisation };
-export type Sort = "Num" | "SafeInt" | "String" | "Array" | "TypedArray";
-export type Role = "operand" | "index" | "written" | "constant" | "result";
+export type Sort = "Num" | "SafeInt" | "String" | "Array" | "TypedArray" | "Value";
+export type Role = "operand" | "index" | "written" | "argument" | "constant" | "result";
 export type RuleVariable = { var: Base; role: Role; sort: Sort; kind: Normalisation | null };
-export type Display = "arithmetic" | "strings" | "views";
+export type Display = "arithmetic" | "strings" | "views" | "library";
 export type Atom =
   | { kind: "elem"; coll: Term; index: Term; value: Term; converted: boolean }
-  | { kind: "kept"; coll: Term; index: Term };
+  | { kind: "kept"; coll: Term; index: Term }
+  | { kind: "implies"; hyp: RuleFact; concl: RuleFact };
 export type Region = { kind: "st" | "vw" | "val" } | { kind: "spine" | "cells" | "fields"; of: Term } | { kind: "field"; of: Term; field: string };
 export type Change = "keep" | "init" | "scalar" | "grow" | "any";
 export type Evidence = { kind: "proved"; proof: string } | { kind: "assumed"; contracts: string[] };
 export type Rule = {
-  name: string; declaration: string; evidence: Evidence; op: string; display: Display; variables: RuleVariable[];
-  constant: Constant | null; premises: RuleFact[]; conclusion: RuleFact[]; atoms: Atom[];
-  effect: { region: Region; change: Change }[];
+  name: string; declaration: string; evidence: Evidence; lemmas: string[]; op: string; display: Display;
+  variables: RuleVariable[]; constant: Constant | null; premises: RuleFact[]; conclusion: RuleFact[]; atoms: Atom[];
+  effect: { region: Region; change: Change }[]; allocates: boolean;
 };
 export type RulesDocument = { statement: string; soundness: string; rules: Rule[] };
 
@@ -96,7 +97,13 @@ const TERM = "\\w+|\\|\\w+\\|";
 
 /** A fact line, `` - `(a)·t + … ≤ b` ``. */
 function fact(text: string, line: number): RuleFact {
-  const m = /^- `(.*) ≤ (.*)`$/.exec(text);
+  const m = /^- `(.*)`$/.exec(text);
+  return m === null || m[1] === undefined ? refuse(line, "no fact") : factBody(m[1], line);
+}
+
+/** A fact, `(a)·t + … ≤ b`. */
+function factBody(text: string, line: number): RuleFact {
+  const m = /^(.*) ≤ (.*)$/.exec(text);
   if (m === null || m[1] === undefined || m[2] === undefined) return refuse(line, "no fact");
   const terms = m[1].split(/ \+ (?=\()/).map((piece) => {
     const tm = new RegExp(`^\\((.*)\\)·(${TERM})$`).exec(piece);
@@ -115,6 +122,8 @@ function atom(text: string, line: number): Atom {
   }
   const k = new RegExp(`^- \`kept (${TERM}) ≠ (${TERM})\`$`).exec(text);
   if (k !== null && k[1] !== undefined && k[2] !== undefined) return { kind: "kept", coll: term(k[1], line), index: term(k[2], line) };
+  const i = /^- `(.*) ⇒ (.*)`$/.exec(text);
+  if (i !== null && i[1] !== undefined && i[2] !== undefined) return { kind: "implies", hyp: factBody(i[1], line), concl: factBody(i[2], line) };
   return refuse(line, "no atom");
 }
 
@@ -134,14 +143,15 @@ function effect(text: string, line: number): { region: Region; change: Change } 
   return { region: kind === "spine" || kind === "cells" || kind === "fields" ? { kind, of } : { kind: "field", of, field: kind }, change };
 }
 
-const SORTS: readonly Sort[] = ["Num", "SafeInt", "String", "Array", "TypedArray"];
+const SORTS: readonly Sort[] = ["Num", "SafeInt", "String", "Array", "TypedArray", "Value"];
 
 /** A variable's row of a rule's table. */
 function variable(text: string, line: number): RuleVariable {
   const m = /^\| `(\w+)` \| ([^|]+) \| `(\w+)` \|$/.exec(text);
   if (m === null || m[1] === undefined || m[2] === undefined || m[3] === undefined) return refuse(line, "no variable row");
   const roles: { [r: string]: [Role, Normalisation | null] } = {
-    "operand": ["operand", null], "index": ["index", null], "written": ["written", null], "result": ["result", null],
+    "operand": ["operand", null], "index": ["index", null], "written": ["written", null], "argument": ["argument", null],
+    "result": ["result", null],
     "constant, a shift count": ["constant", "shiftCount"], "constant, read as itself": ["constant", "identity"],
   };
   const role = roles[m[2]];
@@ -167,7 +177,7 @@ function evidence(text: string, line: number): Evidence {
   return refuse(line, "no evidence");
 }
 
-const DISPLAYS: readonly Display[] = ["arithmetic", "strings", "views"];
+const DISPLAYS: readonly Display[] = ["arithmetic", "strings", "views", "library"];
 
 /** **The rules' document from the verifier's Markdown**, line by line in the
  * form `RuleExport.rulesMarkdown` writes; any other line is refused. */
@@ -196,10 +206,16 @@ export function decodeRules(source: string): RulesDocument {
     blank();
     const name = expect(/^## (.+)$/, "a rule's heading")[1] ?? "";
     blank();
-    const decl = expect(/^Operation `(\w+)`, in the display `(\w+)`\. Stated by `([\w.]+)`, (.+)\.$/, "the rule's operation and declaration");
+    const decl = expect(/^Operation `([^`]+)`, in the display `(\w+)`\. Stated by `([\w.]+)`, (.+)\.$/, "the rule's operation and declaration");
     const display = DISPLAYS.find((d) => d === decl[2]) ?? refuse(at, `${decl[2]} is no display`);
     const ev = evidence(decl[4] ?? "", at);
     blank();
+    let lemmas: string[] = [];
+    if (peek().startsWith("The Lean model proves ")) {
+      const m = expect(/^The Lean model proves (`[\w.]+`(?:, `[\w.]+`)*)\.$/, "the model's lemmas");
+      lemmas = (m[1] ?? "").split(", ").map((x) => x.slice(1, -1));
+      blank();
+    }
     expect(/^\| Variable \| Role \| Sort \|$/, "the variables' table"); expect(/^\| --- \| --- \| --- \|$/, "the table's rule");
     const variables: RuleVariable[] = [];
     while (peek().startsWith("| ")) variables.push(variable(next(), at));
@@ -213,8 +229,10 @@ export function decodeRules(source: string): RulesDocument {
     const atoms = list("Atoms", atom);
     blank();
     const effects = list("Effect", effect);
-    rules.push({ name, declaration: decl[3] ?? "", evidence: ev, op: decl[1] ?? "", display, variables, constant: c,
-      premises, conclusion, atoms, effect: effects });
+    let allocates = false;
+    if (peek() === "" && lines[at + 1] === "The result is allocated.") { blank(); next(); allocates = true; }
+    rules.push({ name, declaration: decl[3] ?? "", evidence: ev, lemmas, op: decl[1] ?? "", display, variables, constant: c,
+      premises, conclusion, atoms, effect: effects, allocates });
   }
   if (lines[at] !== "" || at !== lines.length - 1) refuse(at + 1, "text after the last rule");
   return { statement: intro[1] ?? "", soundness: intro[2] ?? "", rules };
@@ -252,6 +270,10 @@ type Notation = {
   effect: (entries: { region: Region; change: Change }[], name: (t: Term) => string) => string;
   /** The normalised constant's name: a shift count `d` reads `d'`. */
   bound: (c: Constant) => string;
+  /** A literal in hexadecimal, `0x10FFFF`. */
+  hex: (digits: string) => string;
+  /** The implication between two facts. */
+  implies: string;
 };
 
 /** The operators' symbols, keyed by the calculus's operator names. */
@@ -296,7 +318,7 @@ const LATEX: Notation = {
   kept: (_c, i) => `Q_{\\ne ${i}}`,
   effect: (entries, name) => entries.length === 0 ? "\\emptyset"
     : `\\{${effectEntries(entries, name, (x) => `\\kw{${x}}`, { st: "\\st", vw: "\\vw", val: "\\val", keep: "\\keep", init: "\\init", grow: "\\grow", any: "\\any" }).join(",")}\\}`,
-  bound: (c) => boundName(c, "'"),
+  bound: (c) => boundName(c, "'"), hex: (h) => `\\code{0x${h}}`, implies: "\\Rightarrow ",
 };
 const MARKDOWN: Notation = {
   result: "r", max: "M", maxLength: null, le: "\\le ", lt: "<", eq: "=", and: ",\\ ", minus: "-", times: "\\,",
@@ -306,7 +328,7 @@ const MARKDOWN: Notation = {
   kept: (_c, i) => `Q_{\\ne ${i}}`,
   effect: (entries, name) => entries.length === 0 ? "\\emptyset"
     : `\\{${effectEntries(entries, name, (x) => `\\mathsf{${x}}`, { st: "\\mathsf{spines}", vw: "\\mathsf{views}", val: "\\mathsf{values}" }).join(",\\ ")}\\}`,
-  bound: (c) => boundName(c, "'"),
+  bound: (c) => boundName(c, "'"), hex: (h) => `\\mathtt{0x${h}}`, implies: "\\Rightarrow ",
 };
 const TEXT: Notation = {
   result: "y", max: "M", maxLength: "N", le: " ≤ ", lt: " < ", eq: " = ", and: ", ", minus: "−", times: "·",
@@ -316,7 +338,7 @@ const TEXT: Notation = {
   kept: (_c, i) => `Q≠${i}`,
   effect: (entries, name) => entries.length === 0 ? "∅"
     : `{${effectEntries(entries, name, (x) => x, { st: "spines", vw: "views", val: "values" }).join(", ")}}`,
-  bound: (c) => boundName(c, "′"),
+  bound: (c) => boundName(c, "′"), hex: (h) => `0x${h}`, implies: " ⇒ ",
 };
 
 /** A signed summand of a side: its magnitude's text and its sign. */
@@ -324,7 +346,8 @@ type Summand = { negative: boolean; text: string };
 
 /** The text of a literal: the largest safe integer and the largest array
  * length by their names where the notation has them, a power of two `2^p`
- * with `p ≥ 8`, or `2^p − 1`. */
+ * with `p ≥ 8`, or `2^p − 1`; another from `2^16` in hexadecimal, as code
+ * points are written; any other in decimal. */
 function literal(n: number, notation: Notation): string {
   if (n === Number.MAX_SAFE_INTEGER && notation.max !== null) return notation.max;
   if (n === 2 ** 32 - 1 && notation.maxLength !== null) return notation.maxLength;
@@ -332,7 +355,7 @@ function literal(n: number, notation: Notation): string {
     if (n === 2 ** p) return notation.power(String(p));
     if (n === 2 ** p - 1) return `${notation.power(String(p))}${notation.minus}1`;
   }
-  return String(n);
+  return n >= 2 ** 16 ? notation.hex(n.toString(16).toUpperCase()) : String(n);
 }
 
 /** A coefficient's summands: its literal part, its multiple of the bound
@@ -379,11 +402,13 @@ const negated = (parts: Summand[]): Summand[] => parts.map((p) => ({ negative: !
 
 const plain = (c: Coef): boolean => c.byConstant === 0 && c.byPower === 0;
 
-/** A fact `Σ aᵢ·tᵢ ≤ b`, set as the paper reads it: a fact with the
- * result's value or length at coefficient ±1 bounds that term by the other
- * terms (`y ≤ E`, `E ≤ y`); a fact with no result's term and the bound
- * `−1` is its positive terms below its negative terms (`P < N`, over the
- * integers); any other with no result's term is its terms in order bounded
+/** A fact `Σ aᵢ·tᵢ ≤ b`, set as the paper reads it, over the integers: a
+ * fact with the result's value or length at coefficient ±1 bounds that term
+ * by the other terms (`y ≤ E`, `E ≤ y`), strictly at the bound `−1`
+ * (`y < E`, `E < y`); a fact with no result's term, positive and negative
+ * terms and a bound `−c ≤ 0` is its positive terms below its negative ones
+ * (`P ≤ N` at `c = 0`, `P < N` at `c = 1`, `P + c ≤ N` otherwise); any other with no result's
+ * term is its terms in order bounded
  * by `b`, read as `-b ≤ −Σ` where its first term is negative, and `Σ < B`
  * for a bound `B − 1` the notation names or writes as a power of two, `M`
  * excepted; any other fact has its positive terms bounded by its negative
@@ -395,6 +420,11 @@ function inequality(f: RuleFact, name: (t: Term) => string, k: string, notation:
   if (result !== undefined) {
     const others = f.terms.filter((t) => t !== result);
     const subject = name(result.term);
+    if (plain(f.bound) && f.bound.lit === -1 && others.length > 0) {
+      return unit(result.coef) > 0
+        ? { left: subject, strict: true, right: sum(others.map((t) => termSummand(t, name, k, notation, true)), notation) }
+        : { left: sum(others.map((t) => termSummand(t, name, k, notation, false)), notation), strict: true, right: subject };
+    }
     return unit(result.coef) > 0
       ? { left: subject, strict: false, right: sum([...others.map((t) => termSummand(t, name, k, notation, true)), ...bound], notation) }
       : { left: sum([...others.map((t) => termSummand(t, name, k, notation, false)), ...negated(bound)], notation), strict: false, right: subject };
@@ -406,8 +436,11 @@ function inequality(f: RuleFact, name: (t: Term) => string, k: string, notation:
     (s.negative ? negative : positive).push({ negative: false, text: s.text });
   }
   if (!f.terms.some((t) => t.term.var === "result")) {
-    if (plain(f.bound) && f.bound.lit === -1 && positive.length > 0 && negative.length > 0) {
-      return { left: sum(positive, notation), strict: true, right: sum(negative, notation) };
+    if (plain(f.bound) && f.bound.lit <= 0 && positive.length > 0 && negative.length > 0) {
+      const c = -f.bound.lit;
+      return c === 1 ? { left: sum(positive, notation), strict: true, right: sum(negative, notation) }
+        : { left: sum(c === 0 ? positive : [...positive, { negative: false, text: literal(c, notation) }], notation),
+          strict: false, right: sum(negative, notation) };
     }
     const first = f.terms[0];
     const flip = first !== undefined && termSummand(first, name, k, notation, false).negative;
@@ -422,24 +455,30 @@ function inequality(f: RuleFact, name: (t: Term) => string, k: string, notation:
 }
 
 /** Facts set as a conjunction: an equality where two facts bound each
- * other, and a chain `A ≤ X ≤ B` where one fact's right side is the next
- * one's left and no other fact bounds `X` from below. */
+ * other, and a chain `A ≤ X ≤ … ≤ B` where each fact's right side is the
+ * next one's left and no other fact bounds that side from below. */
 function conjunction(facts: RuleFact[], name: (t: Term) => string, k: string, notation: Notation): string[] {
   const parts = facts.map((f) => inequality(f, name, k, notation));
   const out: string[] = [];
   const below = (side: string, i: number): boolean => parts.some((p, j) => j !== i && p.right === side);
+  const rel = (x: Inequality): string => (x.strict ? notation.lt : notation.le);
   for (let i = 0; i < parts.length; i++) {
     const a = parts[i];
     if (a === undefined) continue;
     const b = parts[i + 1];
-    const rel = (x: Inequality): string => (x.strict ? notation.lt : notation.le);
     if (b !== undefined && !a.strict && !b.strict && a.left === b.right && a.right === b.left) {
       out.push(`${a.left}${notation.eq}${a.right}`);
       i++;
-    } else if (b !== undefined && a.right === b.left && !below(a.right, i)) {
-      out.push(`${a.left}${rel(a)}${a.right}${rel(b)}${b.right}`);
+      continue;
+    }
+    let text = `${a.left}${rel(a)}${a.right}`;
+    let last = a;
+    for (let next = parts[i + 1]; next !== undefined && last.right === next.left && !below(last.right, i); next = parts[i + 1]) {
+      text += `${rel(next)}${next.right}`;
+      last = next;
       i++;
-    } else out.push(`${a.left}${rel(a)}${a.right}`);
+    }
+    out.push(text);
   }
   return out;
 }
@@ -456,15 +495,26 @@ function variableOf(r: Rule, x: Base): RuleVariable {
 /** The letter of a variable by its role and sort, one convention for every
  * rule: an operand of `SafeInt` is `a` as the first operand and `b` as the
  * second, an operand of `Num` is `x`, a `String` `s` and `s'`, a
- * `TypedArray` `b`, an `Array` `xs`, an index `i`, a written value `v`, a
- * constant `d` as a shift count and `c` otherwise, and the result the
- * notation's. */
+ * `TypedArray` `b`, an `Array` `xs`, any value `v`, an index `i`, a written
+ * value `v`, a library function's argument of `SafeInt` `a` and `b`, of
+ * `Num` `n` and of `String` `u`, a constant `d` as a shift count and `c`
+ * otherwise, and the result the notation's. */
 function letter(v: RuleVariable, notation: Notation): string {
   switch (v.role) {
     case "result": return notation.result;
     case "constant": return v.kind === "shiftCount" ? "d" : "c";
     case "index": return "i";
     case "written": return "v";
+    case "argument":
+      switch (v.sort) {
+        case "Num": return "n";
+        case "SafeInt": return v.var === "third" ? "b" : "a";
+        case "String": return "u";
+        case "TypedArray": return "b";
+        case "Array": return notation.array;
+        case "Value": return "v";
+      }
+    // falls through
     case "operand":
       switch (v.sort) {
         case "Num": return "x";
@@ -472,9 +522,14 @@ function letter(v: RuleVariable, notation: Notation): string {
         case "String": return v.var === "left" ? "s" : notation.prime("s");
         case "TypedArray": return "b";
         case "Array": return notation.array;
+        case "Value": return "v";
       }
   }
 }
+
+/** A notation for a rule: the result `r` in the library functions' display,
+ * as a call's result is named there. */
+const forRule = (r: Rule, notation: Notation): Notation => (r.display === "library" ? { ...notation, result: "r" } : notation);
 
 /** The slot of a rule's right operand: its letter as an operand of its sort. */
 function slotOf(r: Rule): string {
@@ -513,12 +568,40 @@ function ints(r: Rule, roles: Role[], name: (v: RuleVariable) => string, int: (n
 /** A rule's conclusion: its facts, then its atoms. */
 function postcondition(r: Rule, name: (t: Term) => string, k: string, notation: Notation): string[] {
   return [...conjunction(r.conclusion, name, k, notation),
-    ...r.atoms.map((a) => a.kind === "elem" ? notation.element(name(a.coll), name(a.index), name(a.value), a.converted)
-      : notation.kept(name(a.coll), name(a.index)))];
+    ...r.atoms.map((a) => {
+      switch (a.kind) {
+        case "elem": return notation.element(name(a.coll), name(a.index), name(a.value), a.converted);
+        case "kept": return notation.kept(name(a.coll), name(a.index));
+        case "implies": {
+          const [h, c] = [a.hyp, a.concl].map((f) => conjunction([f], name, k, notation).join(""));
+          return `${h}${notation.implies}${c}`;
+        }
+      }
+    })];
+}
+
+/** A library function's call or construction: the methods a call is of
+ * (the rule holds of each), or none for a construction. */
+function libraryOp(r: Rule): { methods: string[] } | "construct" | null {
+  if (r.op === "construct") return "construct";
+  const m = /^call ([\w,]+)(?: \(indexed\))?$/.exec(r.op);
+  return m === null || m[1] === undefined ? null : { methods: m[1].split(",") };
+}
+
+/** A library function's call in source form, each method its own:
+ * `r = s.indexOf(u)`, `s.lastIndexOf(u)`; `r = new C(n)`. */
+function librarySteps(r: Rule, name: (t: Term) => string, result: string): string[] {
+  const op = libraryOp(r);
+  const v = (b: Base): string => name({ var: b, len: false });
+  const args = r.variables.filter((w) => w.role !== "result" && (op === "construct" || w.var !== "left")).map((w) => v(w.var));
+  if (op === null) throw new Error(`the rules' document: rule ${r.name}'s operation ${r.op} is no library function's`);
+  if (op === "construct") return [`${result} = new C(${args.join(", ")})`];
+  return op.methods.map((m, i) => `${i === 0 ? `${result} = ` : ""}${v("left")}.${m}(${args.join(", ")})`);
 }
 
 /** A step in source form, `y = s.length`, `y = b[i]`, `b[i] = v`, `y = s + s'`. */
 function sourceStep(r: Rule, name: (t: Term) => string, result: string): string {
+  if (r.display === "library") return librarySteps(r, name, result).join(", ");
   const l = name({ var: "left", len: false });
   const at = (): string => `${l}[${name({ var: "right", len: false })}]`;
   switch (r.op) {
@@ -532,6 +615,7 @@ function sourceStep(r: Rule, name: (t: Term) => string, result: string): string 
 /** The step of a rule in the paper: a binary operator of the arithmetic
  * display in mathematics, `y=a+b`, any other in code. */
 function paperStep(r: Rule, name: (t: Term) => string): string {
+  if (r.display === "library") return "\\cdot";
   if (r.display === "arithmetic") {
     const symbol = operator(r.op, "latex");
     return `y=${name({ var: "left", len: false })}${symbol}${/[A-Za-z]$/.test(symbol) ? " " : ""}${name({ var: "right", len: false })}`;
@@ -552,10 +636,11 @@ function checkEffect(r: Rule): void {
 /** The rule's triple in the paper's notation, `{P} y = x op c {Q}`. */
 function paperTriple(r: Rule): string {
   const c = constantOf(r);
-  const k = c === undefined ? "" : LATEX.bound(c);
-  const n = names(r, LATEX);
-  const pre = conjunction(r.premises, n, k, LATEX);
-  const post = postcondition(r, n, k, LATEX);
+  const latex = forRule(r, LATEX);
+  const k = c === undefined ? "" : latex.bound(c);
+  const n = names(r, latex);
+  const pre = conjunction(r.premises, n, k, latex);
+  const post = postcondition(r, n, k, latex);
   const set = (xs: string[]): string => (xs.length === 0 ? "\\kw{true}" : xs.join(LATEX.and));
   return `\\hoare{${set(pre)}}{${paperStep(r, n)}}{${set(post)}}`;
 }
@@ -566,18 +651,34 @@ const ofDisplay = (doc: RulesDocument, d: Display): Rule[] => doc.rules.filter((
 /** The paper's rule rows of a display: one row per triple, its operands'
  * sorts, then the triple; the rule's name on its first triple's row. Where
  * the display has an effect column, the sorts take a row of their own,
- * above the triple and its effect, so that the row fits the page. */
+ * above the triple and its effect, so that the row fits the page. A
+ * library function's row is headed by its call, `r = s.charCodeAt(i)`, a
+ * construction's with its class's sort, several methods one below the
+ * other, where a rule's row is headed by its name; its triple's step is
+ * `·`. */
 export function paperRows(doc: RulesDocument, display: Display): string {
   const rules = ofDisplay(doc, display);
+  const head = (r: Rule): string => {
+    if (r.display !== "library") return `\\textsc{${r.name}}`;
+    const calls = librarySteps(r, names(r, { ...forRule(r, LATEX), array: "xs" }), "r").map((c) => `\\code{${c}}`);
+    if (libraryOp(r) === "construct") return `${calls.join("")},\\ C\\text{ a ${sortWords[variableOf(r, "result").sort]}}`;
+    // Several methods stand one below the other, so that the column stays narrow.
+    return calls.length === 1 ? calls.join("") : `\\begin{array}[t]{@{}l@{}}${calls.join(",\\\\ ")}\\end{array}`;
+  };
   return rules.map((r, i) => {
     checkEffect(r);
-    const name = i > 0 && rules[i - 1]?.name === r.name ? "" : `\\textsc{${r.name}}`;
+    const name = i > 0 && rules[i - 1]?.name === r.name ? "" : head(r);
     const sorted = sorts(r, (s) => `\\mathit{${s}}`, ":", ",\\ ", LATEX);
     return effectColumn(display)
       ? `${name} & ${sorted} & \\\\\n & ${paperTriple(r)} & :${LATEX.effect(r.effect, names(r, LATEX))}`
       : `${name} & ${sorted} & ${paperTriple(r)}`;
   }).join("\\\\[3pt]\n") + "\n";
 }
+
+/** A sort in words, as a construction's class is named. */
+const sortWords: { [s in Sort]: string } = {
+  Num: "number", SafeInt: "safe integer", String: "string", Array: "array", TypedArray: "typed array", Value: "value",
+};
 
 /** A constant's side condition and normalisation, as premises. */
 function constantPremises(c: Constant, notation: Notation): string[] {
@@ -594,6 +695,11 @@ function markdownStep(r: Rule, name: (t: Term) => string): string {
   if (r.display === "arithmetic") {
     const symbol = operator(r.op, "markdown");
     return `r\\leftarrow ${name({ var: "left", len: false })}${symbol}${/[A-Za-z]$/.test(symbol) ? " " : ""}${slotOf(r)}`;
+  }
+  if (r.display === "library") {
+    const calls = librarySteps(r, name, "r").map((c) => c.replace(/^r = /, "").replace(/\.(\w+)\(/, ".\\mathtt{$1}(")
+      .replace(/^new /, "\\mathtt{new}\\ "));
+    return `r\\leftarrow ${calls.join(",\\ ")}`;
   }
   const l = name({ var: "left", len: false });
   const at = (): string => `${l}[${name({ var: "right", len: false })}]`;
@@ -614,8 +720,9 @@ function markdownRule(r: Rule): string {
   const c = constantOf(r);
   const k = c === undefined ? "" : MARKDOWN.bound(c);
   const n = names(r, MARKDOWN);
+  const indexed: Role[] = r.display === "library" ? ["operand", "index", "argument"] : ["operand", "index"];
   const above = [
-    ...ints(r, ["operand", "index"], (v) => (v.var === "right" ? slotOf(r) : letter(v, MARKDOWN)), (x) => `\\mathrm{int}(${x})`),
+    ...ints(r, indexed, (v) => (v.var === "right" ? slotOf(r) : letter(v, MARKDOWN)), (x) => `\\mathrm{int}(${x})`),
     ...(r.constant === null ? []
       : [`K\\vdash ${slotOf(r)}=${n({ var: "right", len: false })}`, ...constantPremises(r.constant, MARKDOWN)]),
     ...conjunction(r.premises, n, k, MARKDOWN).map((p) => `K\\vdash ${p}`),
@@ -626,29 +733,32 @@ function markdownRule(r: Rule): string {
   return `\\frac{${above.join("\\quad ")}}\n     {K\\vdash ${markdownStep(r, n)}${below.length === 0 ? "" : `\\dashv ${below.join(",\\ ")}`}}\n     \\ \\textsf{${r.name}}\\quad ${sorted}${effect}`;
 }
 
-/** The evidence in words: `proved by p`, `assumed of c, d`. */
-const evidenceWords = (e: Evidence): string => (e.kind === "proved" ? `proved by ${e.proof}` : `assumed of ${e.contracts.join(", ")}`);
+/** The evidence in words: `proved by p`, `assumed of c, d`, with the
+ * model's lemmas where the entry names any. */
+const evidenceWords = (r: Rule): string => (r.evidence.kind === "proved" ? `proved by ${r.evidence.proof}`
+  : `assumed of ${r.evidence.contracts.join(", ")}`) + (r.lemmas.length === 0 ? "" : `; the Lean model proves ${r.lemmas.join(", ")}`);
 
 /** A display's rules in the implementation's documents: each a comment
  * naming the rule's declaration and evidence, then its `math` block. */
 export function markdownRules(doc: RulesDocument, display: Display): string {
-  return ofDisplay(doc, display).map((r) => `<!-- ${r.declaration}, ${evidenceWords(r.evidence)} -->\n\n\`\`\`math\n${markdownRule(r)}\n\`\`\`\n`).join("\n");
+  return ofDisplay(doc, display).map((r) => `<!-- ${r.declaration}, ${evidenceWords(r)} -->\n\n\`\`\`math\n${markdownRule(r)}\n\`\`\`\n`).join("\n");
 }
 
 /** A rule in the record notation dev/record-render.mts draws: premises,
  * a bar with the rule's name, the conclusion. */
 function textRule(r: Rule): string[] {
   const c = constantOf(r);
-  const k = c === undefined ? "" : TEXT.bound(c);
-  const n = names(r, TEXT);
+  const text = forRule(r, TEXT);
+  const k = c === undefined ? "" : text.bound(c);
+  const n = names(r, text);
   const above = [
-    sorts(r, (s) => s, " : ", ", ", TEXT),
-    ...ints(r, ["operand", "index"], (v) => letter(v, TEXT), (x) => `int(${x})`),
+    sorts(r, (s) => s, " : ", ", ", text),
+    ...ints(r, ["operand", "index", "argument"], (v) => letter(v, text), (x) => `int(${x})`),
     ...(r.constant === null ? [] : constantPremises(r.constant, TEXT)),
     ...conjunction(r.premises, n, k, TEXT),
   ];
-  const below = [...ints(r, ["result"], (v) => letter(v, TEXT), (x) => `int(${x})`), ...postcondition(r, n, k, TEXT)];
-  const step = `\`${sourceStep(r, n, "y")}\``;
+  const below = [...ints(r, ["result"], (v) => letter(v, text), (x) => `int(${x})`), ...postcondition(r, n, k, text)];
+  const step = `\`${sourceStep(r, n, text.result)}\``;
   const effect = effectColumn(r.display) ? `   : ${TEXT.effect(r.effect, n)}` : "";
   return [above.length === 0 ? "true" : above.join("   "), `──────── (${r.name})`,
     `${step}${below.length === 0 ? "" : ` ⊣ ${below.join(", ")}`}${effect}`];
@@ -660,7 +770,8 @@ const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;"
 export function rulesPage(doc: RulesDocument): string {
   const cards = doc.rules.map((r) => {
     const ev = r.evidence.kind === "proved" ? `<dt>Proof</dt><dd><code>${esc(r.evidence.proof)}</code></dd>`
-      : `<dt>Assumed of</dt><dd>${r.evidence.contracts.map((c) => `<code>${esc(c)}</code>`).join(", ")}</dd>`;
+      : `<dt>Assumed of</dt><dd>${r.evidence.contracts.map((c) => `<code>${esc(c)}</code>`).join(", ")}</dd>` +
+        (r.lemmas.length === 0 ? "" : `<dt>Model</dt><dd>${r.lemmas.map((m) => `<code>${esc(m)}</code>`).join(", ")}</dd>`);
     return `<section class="card"><h3>${esc(r.name)}</h3>${ruleBlocks(textRule(r))}
 <dl class="facts"><dt>Rule</dt><dd><code>${esc(r.declaration)}</code></dd>${ev}</dl></section>`;
   });
@@ -695,12 +806,16 @@ export const registry: readonly Section[] = [
     produce: (): string => paperRows(arithmeticRules(), "strings") },
   { id: "paper-view-rules", destination: "docs/drafts/tolerant-frames-note/note.tex", format: "latex",
     produce: (): string => paperRows(arithmeticRules(), "views") },
+  { id: "paper-library-rules", destination: "docs/drafts/tolerant-frames-note/note.tex", format: "latex",
+    produce: (): string => paperRows(arithmeticRules(), "library") },
   { id: "arithmetic-rules", destination: "docs/ARITHMETIC.md", format: "markdown",
     produce: (): string => markdownRules(arithmeticRules(), "arithmetic") },
   { id: "string-rules", destination: "docs/ARITHMETIC.md", format: "markdown",
     produce: (): string => markdownRules(arithmeticRules(), "strings") },
   { id: "view-rules", destination: "docs/SOURCE-CONTRACTS.md", format: "markdown",
     produce: (): string => markdownRules(arithmeticRules(), "views") },
+  { id: "library-rules", destination: "docs/SOURCE-CONTRACTS.md", format: "markdown",
+    produce: (): string => markdownRules(arithmeticRules(), "library") },
 ];
 
 /** A marker line of a format: its kind and its section's identity. */

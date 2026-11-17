@@ -1729,15 +1729,17 @@ them. For atoms $i,a,b$ that hold $\mathit{SafeInt}$s, an atom $n$ that
 holds a $\mathit{Num}$, strings $s,u$, an array $\mathit{xs}$ and a value
 $v$:
 \[
-\begin{array}{ll}
-\code{r = s.charCodeAt(i)} & \hoare{0\le i<\len s}{\cdot}{0\le r\le 65535}\\[2pt]
-\code{r = s.codePointAt(i)} & \hoare{0\le i<\len s}{\cdot}{0\le r\le\code{0x10FFFF}}\\[2pt]
- & \hoare{0\le i<\len s}{\cdot}{r>\code{0xFFFF}\Rightarrow i+2\le\len s}\\[2pt]
-\code{r = s.indexOf(u)},\ \code{s.lastIndexOf(u)} & \hoare{\kw{true}}{\cdot}{-1\le r\le\len s}\\[2pt]
- & \hoare{1\le\len u}{\cdot}{r<\len s}\\[2pt]
-\code{r = s.slice(a, b)} & \hoare{0\le a\le b\le\len s}{\cdot}{\len r=b-a}\\[2pt]
-\code{r = xs.indexOf(v)},\ \mathit{xs}\text{ an array} & \hoare{\kw{true}}{\cdot}{-1\le r<\len{\mathit{xs}}}\\[2pt]
-\code{r = new C(n)},\ C\text{ a typed array} & \hoare{0\le n}{\cdot}{\len r=n}
+\begin{array}{lll}
+% generated: paper-library-rules
+\code{r = s.charCodeAt(i)} & s:\mathit{String},\ i:\mathit{SafeInt} & \hoare{0\le i<\len s}{\cdot}{0\le r\le 2^{16}-1}\\[3pt]
+\code{r = s.codePointAt(i)} & s:\mathit{String},\ i:\mathit{SafeInt} & \hoare{0\le i<\len s}{\cdot}{0\le r\le \code{0x10FFFF}}\\[3pt]
+ & s:\mathit{String},\ i:\mathit{SafeInt} & \hoare{0\le i<\len s}{\cdot}{2^{16}\le r\Rightarrow i+2\le \len s}\\[3pt]
+\begin{array}[t]{@{}l@{}}\code{r = s.indexOf(u)},\\ \code{s.lastIndexOf(u)}\end{array} & s,u:\mathit{String} & \hoare{\kw{true}}{\cdot}{-1\le r\le \len s}\\[3pt]
+ & s,u:\mathit{String} & \hoare{1\le \len u}{\cdot}{r<\len s}\\[3pt]
+\code{r = s.slice(a, b)} & s:\mathit{String},\ a,b:\mathit{SafeInt} & \hoare{0\le a\le b\le \len s}{\cdot}{\len r=b-a}\\[3pt]
+\code{r = xs.indexOf(v)} & \mathit{xs}:\mathit{Array},\ v:\mathit{Value} & \hoare{\kw{true}}{\cdot}{-1\le r<\len{\mathit{xs}}}\\[3pt]
+\code{r = new C(n)},\ C\text{ a typed array} & n:\mathit{Num} & \hoare{0\le n}{\cdot}{\len r=n}
+% end generated: paper-library-rules
 \end{array}
 \]
 Each of these has the effect $\emptyset$ on its normal exit; the
@@ -1748,7 +1750,7 @@ is still safe: \code{charCodeAt} gives a number with no fact, and
 \code{const j = text.indexOf("x"); if (j >= 0) return text.charCodeAt(j);}
 verifies: the string searched for has length 1, which gives $j<\len{\mathit{text}}$, and
 the test gives $0\le j$
-\status{assumed, as contracts of the host. In the Lean model of UTF-16 strings, \lean{unit\_bound} and \lean{code\_unit\_safe} prove the range of a code unit, \lean{slice\_length} the length of a slice, and \lean{search\_bounds} the bounds of a search in a string that fails or finds a match}.
+\status{assumed, as contracts of the host. Lean: the rows are the entries \lean{charCodeAt}, \lean{codePointAt}, \lean{codePointPair}, \lean{indexOf}, \lean{indexOfNonempty}, \lean{slice}, \lean{arrayIndexOf} and \lean{newView} of \lean{ArithmeticRules.rules}, each naming the contract the implementation reads. In the Lean model of UTF-16 strings, \lean{unit\_bound} and \lean{code\_unit\_safe} prove the range of a code unit, \lean{slice\_length} the length of a slice, and \lean{search\_bounds} the bounds of a search in a string that fails or finds a match}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be atoms that

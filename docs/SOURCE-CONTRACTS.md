@@ -3508,6 +3508,84 @@ Each is consumed by the proved
 continues to depend on the receiver and callback as the
 [native footprints](#native-footprints) specify.
 
+#### The note's library functions
+
+The contracts of the library functions the note *Tolerant frames* states
+(§6, "Library functions"), each assumed of the declaration the pass reads
+it from: an entry of the prototype overlay (`tools/array-prototype.mts`)
+or the typed arrays' construction form (`viewOfLength`,
+`tools/library-globals.mts`, [the standard library's typed
+arrays](#the-standard-librarys-typed-arrays)). Each has the empty effect on
+its normal exit, and the construction allocates its result; where the Lean
+model of UTF-16 strings proves a contract's arithmetic, its comment names
+the lemmas. The sections below state each contract's audit:
+
+<!-- generated: library-rules -->
+<!-- Verification.ArithmeticRules.charCodeAt, assumed of String.prototype.charCodeAt; the Lean model proves Verification.StringPostconditions.unit_bound, Verification.StringPostconditions.code_unit_safe -->
+
+```math
+\frac{\mathrm{int}(i)\quad K\vdash 0\le i<\mathrm{strLength}(s)}
+     {K\vdash r\leftarrow s.\mathtt{charCodeAt}(i)\dashv \mathrm{int}(r),\ 0\le r\le 2^{16}-1}
+     \ \textsf{Char-Code-At}\quad s:\mathit{String},\ i:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.codePointAt, assumed of String.prototype.codePointAt -->
+
+```math
+\frac{\mathrm{int}(i)\quad K\vdash 0\le i<\mathrm{strLength}(s)}
+     {K\vdash r\leftarrow s.\mathtt{codePointAt}(i)\dashv \mathrm{int}(r),\ 0\le r\le \mathtt{0x10FFFF}}
+     \ \textsf{Code-Point-At}\quad s:\mathit{String},\ i:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.codePointPair, assumed of String.prototype.codePointAt -->
+
+```math
+\frac{\mathrm{int}(i)\quad K\vdash 0\le i<\mathrm{strLength}(s)}
+     {K\vdash r\leftarrow s.\mathtt{codePointAt}(i)\dashv \mathrm{int}(r),\ 2^{16}\le r\Rightarrow i+2\le \mathrm{strLength}(s)}
+     \ \textsf{Code-Point-At}\quad s:\mathit{String},\ i:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.indexOf, assumed of String.prototype.indexOf, String.prototype.lastIndexOf; the Lean model proves Verification.StringPostconditions.search_bounds -->
+
+```math
+\frac{}
+     {K\vdash r\leftarrow s.\mathtt{indexOf}(u),\ s.\mathtt{lastIndexOf}(u)\dashv \mathrm{int}(r),\ -1\le r\le \mathrm{strLength}(s)}
+     \ \textsf{Index-Of}\quad s,u:\mathit{String}
+```
+
+<!-- Verification.ArithmeticRules.indexOfNonempty, assumed of String.prototype.indexOf, String.prototype.lastIndexOf; the Lean model proves Verification.StringPostconditions.search_bounds -->
+
+```math
+\frac{K\vdash 1\le \mathrm{strLength}(u)}
+     {K\vdash r\leftarrow s.\mathtt{indexOf}(u),\ s.\mathtt{lastIndexOf}(u)\dashv \mathrm{int}(r),\ r<\mathrm{strLength}(s)}
+     \ \textsf{Index-Of}\quad s,u:\mathit{String}
+```
+
+<!-- Verification.ArithmeticRules.slice, assumed of String.prototype.slice; the Lean model proves Verification.StringPostconditions.slice_length -->
+
+```math
+\frac{\mathrm{int}(a)\quad \mathrm{int}(b)\quad K\vdash 0\le a\le b\le \mathrm{strLength}(s)}
+     {K\vdash r\leftarrow s.\mathtt{slice}(a, b)\dashv \mathrm{strLength}(r)=b-a}
+     \ \textsf{Slice}\quad s:\mathit{String},\ a,b:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.arrayIndexOf, assumed of Array.prototype.indexOf -->
+
+```math
+\frac{}
+     {K\vdash r\leftarrow \mathit{xs}.\mathtt{indexOf}(v)\dashv \mathrm{int}(r),\ -1\le r<|\mathit{xs}|}
+     \ \textsf{Array-Index-Of}\quad \mathit{xs}:\mathit{Array},\ v:\mathit{Value}
+```
+
+<!-- Verification.ArithmeticRules.newView, assumed of viewOfLength -->
+
+```math
+\frac{K\vdash 0\le n}
+     {K\vdash r\leftarrow \mathtt{new}\ C(n)\dashv \mathrm{view}(r)=n}
+     \ \textsf{New-View}\quad n:\mathit{Num}
+```
+<!-- end generated: library-rules -->
+
 #### Array search bounds
 
 `Array.prototype.indexOf` returns a safe integer $`r`$ with
