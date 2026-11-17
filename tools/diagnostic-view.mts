@@ -8,8 +8,8 @@
 
 import { isJsonList, type CallCode, type JsonRead, type JsonValue, type Term } from "./calculus.mts";
 import surface from "./claim-text.mts";
-import type { DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapEntry, StepPreconditions } from "./diagnostic.mts";
-import { indexFact } from "./fact-text.mts";
+import type { DiagnosticOutcome, HeapKnowledge, EdgeFacts, ObligationDiagnostic, SourceMapEntry, StepPreconditions } from "./diagnostic.mts";
+import { indexFact, knowledgeFacts } from "./fact-text.mts";
 
 /** How a context binding is named in the source, as a source map states it. */
 type Descriptor = SourceMapEntry["context"][number];
@@ -73,6 +73,11 @@ function bindingText(descriptor: Descriptor, source: string): string {
     .trim();
 }
 
+/** A point's source span as the text it covers, quoted, or `other` where it
+ * has no source map. */
+const spanText = (map: SourceMapEntry | null, source: string, other: string): string =>
+  map === null ? other : `«${source.slice(map.pos[0], map.pos[1]).replace(/\s+/g, " ").trim()}»`;
+
 const bindingsOf = (map: SourceMapEntry | null, source: string): string[] =>
   (map === null ? [] : map.context).map((d) => bindingText(d, source));
 
@@ -123,14 +128,12 @@ function codeTerms(c: CallCode): Term[] {
   }
 }
 
-/* ---------- step preconditions ---------- */
-/** A refused step's preconditions in source names: each precondition's
- * requirements that do not hold, then the facts known over the step's
- * slots, index and elements facts. A slot past the context is named by the
- * read or alias link that gives its value, else by its position. */
-function preconditionsText(pre: StepPreconditions, binding: (slot: number) => string, width: number): string {
-  const links = pre.known.links;
-  const name = (slot: number, seen: ReadonlySet<number> = new Set()): string => {
+/* ---------- facts ---------- */
+/** A point's slots in source names: a slot of its context by its binding,
+ * one past the context by the read or alias link that gives its value, else
+ * by its position. */
+function slotNamer(links: HeapKnowledge["links"], binding: (slot: number) => string, width: number): (slot: number) => string {
+  const name = (slot: number, seen: ReadonlySet<number>): string => {
     if (slot < width) return binding(slot);
     const link = links.find((l) => l.value === slot && l.cell !== slot && !seen.has(l.cell));
     if (link === undefined) return "slot " + slot;
@@ -138,9 +141,21 @@ function preconditionsText(pre: StepPreconditions, binding: (slot: number) => st
     const field = typeof link.field === "string" ? link.field : `[Symbol ${link.field.symbol}]`;
     return link.alias ? cell : `${cell}${link.optional ? "?." : "."}${field}`;
   };
-  const named = (s: number): string => name(s);
-  const condition = (a: { cond?: number; negated: boolean }): string =>
-    a.cond === undefined ? "" : `${a.negated ? "!" : ""}${named(a.cond)} → `;
+  return (slot: number): string => name(slot, new Set());
+}
+
+/** The index and elements facts of a knowledge, each once, in source
+ * names. */
+function factsText(k: HeapKnowledge, named: (slot: number) => string): string[] {
+  return [...new Set(knowledgeFacts({ ...k, cells: [], values: [], links: [], separation: { depth: 0, facts: [] } }, named)
+    .map((f) => f.text))];
+}
+
+/** A refused step's preconditions in source names: each precondition's
+ * requirements that do not hold, then the facts known over the step's
+ * slots. */
+function preconditionsText(pre: StepPreconditions, binding: (slot: number) => string, width: number): string {
+  const named = slotNamer(pre.known.links, binding, width);
   const missing = pre.signatures.map((sig) => [
     ...(sig.requires !== null && !sig.requires.entailed
       ? [`every element of ${named(sig.requires.slot)} is ${sig.requires.pred.join(" | ")}`] : []),
@@ -151,12 +166,20 @@ function preconditionsText(pre: StepPreconditions, binding: (slot: number) => st
     pre.signatures.length > 1 ? "A signature of the callee" : "The callee";
   const requirement = missing.map((m) =>
     `${subject} requires ${m.join(" && ")}, which the facts here do not establish.`);
-  const known = [...new Set([
-    ...pre.known.indices.map((a) => `${condition(a)}${indexFact(a.fact, named)}`),
-    ...pre.known.elems.map((e) => `${condition(e)}every element of ${named(e.slot)} is ${e.pred.join(" | ")}`),
-  ])];
+  const known = factsText(pre.known, named);
   return [...requirement,
     known.length ? `Known over its operands: ${known.join(", ")}.` : "No fact is known over its operands."].join(" ");
+}
+
+/** A refused edge's facts in source names, at its target's slots: the edge
+ * by its source's span, the facts the target requires that it does not
+ * establish, then those it holds over the same slots. */
+function edgeFactsText(facts: EdgeFacts, from: string, binding: (slot: number) => string, width: number): string {
+  const named = slotNamer([...facts.known.links, ...facts.lacking.links], binding, width);
+  const lacking = [...new Set(knowledgeFacts(facts.lacking, named).map((f) => f.text))];
+  const known = factsText(facts.known, named);
+  return `The edge from ${from} does not establish ${lacking.join(" && ")}, which the next point requires. ` +
+    (known.length ? `Known on the edge over the same slots: ${known.join(", ")}.` : "No fact is known on the edge over the same slots.");
 }
 
 /** Uniform report contract: the source-named summary of a failed obligation and
@@ -185,6 +208,14 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       const mapping = ob.transfer.target.mapping;
       const required = ob.destination.claim?.context ?? [];
       const names = bindingsOf(ob.destination.sourceMap, source);
+      // An edge refused for facts its target requires: those facts and the
+      // facts known on the edge.
+      if (ob.edgeFacts !== undefined)
+        return {
+          summary: edgeFactsText(ob.edgeFacts, spanText(ob.source.sourceMap, source, `node ${ob.source.label}`),
+            (slot) => names[slot] || "slot " + slot, required.length),
+          searchOutcome: searched,
+        };
       // The available labels target slot i takes; none where the mapping
       // names no source slot for it.
       const availableAt = (i: number): readonly number[] | undefined => {

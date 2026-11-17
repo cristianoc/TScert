@@ -10,6 +10,7 @@ const common: { [key: string]: Json } = {
 const sourceMap: Json = { pos: [0, 1], role: "test", environmentStart: null, context: [] };
 const node: Json = { label: 0, sourceMap, node: null,
   claim: { context: [], type: [0] }, requiredKnowledge: null };
+const emptyKnowledge: Json = { cells: [], values: [], links: [], separation: { depth: 0, facts: [] }, elems: [], indices: [] };
 const sequent: Json = { context: [[0]], term: { var: { i: 0 } }, type: [0] };
 const edge = (mapping: Json): { [key: string]: Json } => ({
   ...common, kind: "edge-coverage", id: "c", edgeIndex: 0, source: node, destination: node,
@@ -27,6 +28,12 @@ const cases: { [key: string]: Json }[] = [
     judgment: { kind: "subtyping", subject: [0, 1], actual: [0], expected: [0] } },
   edge([0]),
   edge(null),
+  // A refused edge's facts and a refused step's preconditions, over empty
+  // knowledges (their heap data is decoded below).
+  { ...edge([0]), edgeFacts: { lacking: emptyKnowledge, known: emptyKnowledge } },
+  { ...common, kind: "node-typing", id: "p", source: node, sequent,
+    preconditions: { step: "call", known: emptyKnowledge, signatures: [{ requires: null,
+      atoms: [{ fact: { index: { slot: 0 } }, entailed: false }, { fact: null, entailed: true }] }] } },
 ];
 // Every kind of the union, so that a kind the reader does not decode fails
 // below: a kind added to `ObligationDiagnostic` and not here fails to compile.
@@ -56,6 +63,11 @@ assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common
   kind: "node-typing", id: "n", source: null, sequent })}`), undefined);
 assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common,
   kind: "production-failure", failure: "failed", unexpected: true })}`), undefined);
+// Each record's own diagnostic data, on its kind alone.
+assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common,
+  kind: "node-typing", id: "n", source: node, sequent, edgeFacts: { lacking: emptyKnowledge, known: emptyKnowledge } })}`), undefined);
+assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...edge([0]),
+  preconditions: { step: "call", known: emptyKnowledge, signatures: [] } })}`), undefined);
 const invalidMappings: Json[] = ["", [-1], [0.5], [1], [true]];
 for (const mapping of invalidMappings) {
   assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify(edge(mapping))}`), undefined);
@@ -78,7 +90,8 @@ const heap = readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common
   source: { label: 0, sourceMap, node: null, claim: null,
     requiredKnowledge: {
       cells: [{ slot: 0, field: "id", contents }],
-      values: [], links: [{ cell: 0, value: 1, alias: false, field: "id", optional: false }],
+      values: [], links: [{ cell: 0, value: 1, alias: false, field: "id", optional: false },
+        { cell: 0, value: 2, alias: false, field: { symbol: 3 }, optional: false }],
       separation: { depth: 2, facts: [{ slot: 0, fields: ["id"], partners: [[1, ["id", { symbol: 0 }]]] }] },
       elems: [{ slot: 1, pred, cond: null, negated: false }, { slot: 1, pred, cond: 0, negated: true }],
       indices: [{ fact: { bound: { array: 1, index: 2, strict: false } }, cond: null, negated: false },

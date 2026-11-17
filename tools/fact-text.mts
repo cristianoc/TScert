@@ -2,6 +2,7 @@
 // tools/diagnostic.mts's `HeapKnowledge`), printed over source names: each
 // slot named by a function the caller gives, from the point's bindings.
 import { isJsonList, isJsonObject, type JsonRead, type JsonValue } from "./calculus.mts";
+import type { HeapKnowledge, PropertyKey } from "./diagnostic.mts";
 
 const num = (v: JsonRead): number => (typeof v === "number" ? v : -1);
 const str = (v: JsonRead): string => (typeof v === "string" ? v : JSON.stringify(v ?? null) ?? "");
@@ -89,52 +90,44 @@ export function indexFact(f: JsonRead, name: (slot: number) => string): string {
   return JSON.stringify(f ?? null) ?? "";
 }
 
+/** A property key: a string, or a well-known symbol by its number. */
+const keyText = (k: PropertyKey): string => (typeof k === "string" ? k : `[Symbol ${k.symbol}]`);
+
 /** A value set: the kinds it admits, with their literal lists. */
-function contents(v: JsonRead): string {
+function contents(v: HeapKnowledge["cells"][number]["contents"]): string {
   const kinds: string[] = [];
-  for (const k of ["nul", "undef", "tru", "fls", "sym", "arr"]) if (field(v, k) === true) kinds.push(k);
-  for (const k of ["num", "str", "big"]) {
-    const s = field(v, k);
-    if (s === null || s === undefined) continue;
-    kinds.push(`${k}${JSON.stringify(s)}`);
-  }
-  const obj = field(v, "obj");
-  if (obj !== null && obj !== undefined) kinds.push(`obj${JSON.stringify(obj)}`);
+  for (const k of ["nul", "undef", "tru", "fls", "sym", "arr"] as const) if (v[k]) kinds.push(k);
+  for (const k of ["num", "str", "big"] as const) kinds.push(`${k}${JSON.stringify(v[k])}`);
+  if (v.obj !== null) kinds.push(`obj${JSON.stringify(v.obj)}`);
   return kinds.join(" | ") || "nothing";
 }
 
 /** What a condition slot adds before a fact: `x → ` or `!x → `. */
-function condition(f: JsonRead, name: (slot: number) => string): string {
-  const cond = field(f, "cond");
-  if (typeof cond !== "number") return "";
-  return `${field(f, "negated") === true ? "!" : ""}${name(cond)} → `;
+function condition(f: { cond?: number; negated: boolean }, name: (slot: number) => string): string {
+  return f.cond === undefined ? "" : `${f.negated ? "!" : ""}${name(f.cond)} → `;
 }
 
 /** Every fact of a knowledge, grouped by kind, each over source names. */
-export function knowledgeFacts(k: JsonRead, name: (slot: number) => string): { kind: string; text: string }[] {
+export function knowledgeFacts(k: HeapKnowledge, name: (slot: number) => string): { kind: string; text: string }[] {
   const out: { kind: string; text: string }[] = [];
-  for (const c of list(field(k, "cells")))
-    out.push({ kind: "cell", text: `${name(num(field(c, "slot")))}.${str(field(c, "field"))} : ${contents(field(c, "contents"))}` });
-  for (const c of list(field(k, "values")))
-    out.push({ kind: "value", text: `${name(num(field(c, "slot")))}${field(c, "field") === "" ? "" : "." + str(field(c, "field"))} : ${contents(field(c, "contents"))}` });
-  for (const l of list(field(k, "links"))) {
-    const cell = name(num(field(l, "cell"))), value = name(num(field(l, "value")));
-    out.push({ kind: "link", text: field(l, "alias") === true ? `${value} === ${cell}`
-      : `${value} === ${cell}${field(l, "optional") === true ? "?." : "."}${str(field(l, "field"))}` });
+  for (const c of k.cells) out.push({ kind: "cell", text: `${name(c.slot)}.${keyText(c.field)} : ${contents(c.contents)}` });
+  for (const c of k.values)
+    out.push({ kind: "value", text: `${name(c.slot)}${c.field === "" ? "" : "." + keyText(c.field)} : ${contents(c.contents)}` });
+  for (const l of k.links) {
+    const cell = name(l.cell), value = name(l.value);
+    out.push({ kind: "link", text: l.alias ? `${value} === ${cell}` : `${value} === ${cell}${l.optional ? "?." : "."}${keyText(l.field)}` });
   }
-  const separation = field(k, "separation");
-  const depth = num(field(separation, "depth"));
+  const depth = k.separation.depth;
   const level = (l: number): string => name(depth - 1 - l);
-  const keys = (fs: JsonRead): string => (fs === null ? "" : `.{${list(fs).map(str).join(",")}}`);
-  for (const s of list(field(separation, "facts")))
-    out.push({ kind: "separation", text: `${level(num(field(s, "slot")))}${keys(field(s, "fields"))} apart from ` +
-      list(field(s, "partners")).map((p) => isJsonList(p) ? `${level(num(p[0]))}${keys(p[1])}` : "?").join(", ") });
-  for (const e of list(field(k, "elems")))
-    out.push({ kind: "elements", text: `${condition(e, name)}elements of ${name(num(field(e, "slot")))} : ${list(field(e, "pred")).map(str).join(" | ")}` });
-  for (const i of list(field(k, "indices"))) {
-    const f = field(i, "fact");
-    const kind = field(field(f, "linear"), "fact") !== undefined ? "linear" :
-      field(f, "guarded") !== undefined ? "guarded" : field(f, "either") !== undefined ? "either" : "index";
+  const keys = (fs: readonly PropertyKey[] | null): string => (fs === null ? "" : `.{${fs.map(keyText).join(",")}}`);
+  for (const s of k.separation.facts)
+    out.push({ kind: "separation", text: `${level(s.slot)}${keys(s.fields)} apart from ` +
+      s.partners.map(([p, fs]) => `${level(p)}${keys(fs)}`).join(", ") });
+  for (const e of k.elems)
+    out.push({ kind: "elements", text: `${condition(e, name)}every element of ${name(e.slot)} is ${e.pred.join(" | ")}` });
+  for (const i of k.indices) {
+    const f = i.fact;
+    const kind = "linear" in f ? "linear" : "guarded" in f ? "guarded" : "either" in f ? "either" : "index";
     out.push({ kind, text: `${condition(i, name)}${indexFact(f, name)}` });
   }
   return out;

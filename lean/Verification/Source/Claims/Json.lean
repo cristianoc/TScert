@@ -831,41 +831,58 @@ def preconditionsJson (d : SinglePass.StepPreconditions) : Json :=
         Json.mkObj [("fact", toJson F), ("entailed", toJson held)]).toArray)]).toArray),
     ("known", toJson d.known)]
 
-/-- **The record of a step refused for having no derivation** (`expression
-at node l`, of unit `i`'s own graph or, after `code c: `, of its code `c`'s)
-whose preconditions do not all hold: the node's obligation
-(`RequestJson.failureDiagnostic`, over that graph's request and source map)
-with the step's preconditions (`preconditionsJson`), the deferred `pre`
-forced here. -/
-def FilePlans.callRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
-    (pre : Option (Thunk (Option SinglePass.StepPreconditions))) : Option (List (String × Json)) := do
+/-- A refused edge's facts as the record's `edgeFacts` field states them:
+the facts of the target's requirement the edge does not establish, and the
+facts the edge holds over the slots the mapping reads, both at the
+target's slots. -/
+def edgeFactsJson {ι : Type} (d : SinglePass.EdgeFacts ι) : Json :=
+  Json.mkObj [("lacking", toJson d.lacking), ("known", toJson d.known)]
+
+/-- **The record of a refusal carrying its diagnostic's data**, of unit
+`i`'s own graph or, after `code c: `, of its code `c`'s (over that graph's
+request and source map, `RequestJson.failureDiagnostic`), the deferred
+`detail` forced here: of a step refused for having no derivation
+(`expression at node l`) whose preconditions do not all hold, the node's
+obligation with the step's preconditions (`preconditionsJson`); of an edge
+refused for facts its target requires (`edge from node l into …`), the
+edge's obligation, its target requiring them, with the edge's facts
+(`edgeFactsJson`). -/
+def FilePlans.refusalRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
+    (detail : Option (Thunk (Option (SinglePass.RefusalDetail (EquationStore.CheckedLabel f.F.equations f.F.primitive))))) :
+    Option (List (String × Json)) := do
   let .ok (.graph _ _ r) := (f.plans[i]?).getD (.error "") | none
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
       match (w.drop 5).toString.splitOn ": " with
       | n :: rest => (n.toNat?, ": ".intercalate rest)
       | [] => (none, w)
     else (none, w)
-  guard (w.startsWith "expression at node ")
-  let l ← refusalLabel w "expression at node "
-  let fields ← match ci with
+  let diagnostic := fun (e : CertificateProducer.Failure _) (requirements : List (Nat × HeapKnowledge.Knowledge))
+      (thrown : Option (Ty _)) => match ci with
     | some c => do
       let q ← r.codes[c]?
       let code ← r.codeSources[c]?
-      pure (RequestJson.failureDiagnostic (q.asRequest r.toRequest) fuel code.sourceMap (.expression l))
-    | none => pure (RequestJson.failureDiagnostic r.toRequest fuel r.sourceMap (.expression l))
-  let d ← (← pre).get
-  guard (d.signatures.any fun s => s.atoms.any (!·.2) || s.requires.any (!·.2.2))
-  pure (fields ++ [("preconditions", preconditionsJson d)])
+      pure (RequestJson.failureDiagnostic (q.asRequest r.toRequest) fuel code.sourceMap e requirements (thrown := thrown))
+    | none => pure (RequestJson.failureDiagnostic r.toRequest fuel r.sourceMap e requirements (thrown := thrown))
+  if w.startsWith "expression at node " then
+    let l ← refusalLabel w "expression at node "
+    let .step d ← (← detail).get | none
+    guard (d.signatures.any fun s => s.atoms.any (!·.2) || s.requires.any (!·.2.2))
+    let fields ← diagnostic (.expression l) [] none
+    return fields ++ [("preconditions", preconditionsJson d)]
+  guard (w.startsWith "edge from node ")
+  let .edge d ← (← detail).get | none
+  let fields ← diagnostic (.edge d.source d.target d.exit) [(d.target, d.required)] d.thrown
+  return fields ++ [("edgeFacts", edgeFactsJson d)]
 
 /-- **A pass refusal as a check reports it**: with `located`, the source
 obligation it names (`locatedRefusal`) before the pass's own text `raw`,
-and, for a step refused for having no derivation whose preconditions do
-not all hold (`callRecord`), that obligation's record after them; the
-pass's own text alone otherwise. -/
+and, for a refusal carrying its diagnostic's data (`refusalRecord`), that
+obligation's record after them; the pass's own text alone otherwise. -/
 def FilePlans.placeRefusal (f : FilePlans) (fuel : Nat) (located : Bool) (i : Nat) (w raw : String)
-    (pre : Option (Thunk (Option SinglePass.StepPreconditions))) : String :=
+    (detail : Option (Thunk (Option (SinglePass.RefusalDetail (EquationStore.CheckedLabel f.F.equations f.F.primitive))))) :
+    String :=
   if !located then raw else match f.locatedRefusal i w with
-    | some l => match f.callRecord fuel i w pre with
+    | some l => match f.refusalRecord fuel i w detail with
       | some fields => RequestJson.withDiagnostic s!"{l}\n{raw}" fields
       | none => s!"{l}\n{raw}"
     | none => raw

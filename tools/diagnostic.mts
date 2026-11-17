@@ -263,6 +263,14 @@ interface NodeTyping extends Common {
   preconditions?: StepPreconditions;
 }
 
+/** An edge refused for facts its target requires (Json.lean,
+ * `edgeFactsJson`): those the edge does not establish, and the facts the
+ * edge holds over the slots the mapping reads, both at the target's slots. */
+export interface EdgeFacts {
+  lacking: HeapKnowledge;
+  known: HeapKnowledge;
+}
+
 /** An edge's destination was not justified by what its source carries. */
 interface EdgeCoverage extends Common {
   kind: "edge-coverage";
@@ -271,6 +279,8 @@ interface EdgeCoverage extends Common {
   source: DiagnosticNode;
   destination: DiagnosticNode;
   transfer: DiagnosticTransfer;
+  /** On an edge refused for facts its target requires. */
+  edgeFacts?: EdgeFacts;
 }
 
 /**
@@ -493,6 +503,14 @@ function stepPreconditions(v: Json | undefined): StepPreconditions {
   return { step, signatures, known };
 }
 
+/** A refused edge's facts (Json.lean, `edgeFactsJson`). */
+function edgeFacts(v: Json | undefined): EdgeFacts {
+  const e = record(v,["lacking","known"]);
+  const lacking = knowledge(e.lacking), known = knowledge(e.known);
+  if (lacking === null || known === null) throw Error("invalid edge facts");
+  return { lacking, known };
+}
+
 /** The candidates the search left out (RequestJson.lean, `failureDiagnostic`). */
 function leftOut(v: Json | undefined): LeftOutCandidate[] {
   if (!Array.isArray(v)) throw Error("invalid candidates left out");
@@ -649,7 +667,7 @@ export function readDiagnostic(
     const fields = new Map<string, readonly string[]>(KIND_FIELDS).get(kind);
     if (!fields) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...fields],
-      ["requiredResult","names","candidatesLeftOut",...(kind === "node-typing" ? ["preconditions"] : [])]);
+      ["requiredResult","names","candidatesLeftOut",...(kind === "node-typing" ? ["preconditions"] : kind === "edge-coverage" ? ["edgeFacts"] : [])]);
     const outcome = diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
@@ -786,7 +804,8 @@ export function readDiagnostic(
     }
     if (kind === "edge-coverage" && source && destinationNode && decodedTransfer) {
       const result: EdgeCoverage = { ...common, kind: "edge-coverage", id, edgeIndex: nat(d.edgeIndex), source,
-        destination: destinationNode, transfer: decodedTransfer };
+        destination: destinationNode, transfer: decodedTransfer,
+        ...(d.edgeFacts === undefined ? {} : { edgeFacts: edgeFacts(d.edgeFacts) }) };
       return result;
     }
     return undefined;
