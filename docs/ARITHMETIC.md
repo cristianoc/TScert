@@ -289,13 +289,14 @@ arithmetic rules of `>>`, `&`, `<<` and `|`, the rules of the note
 "Tolerant frames" (§6, "Arithmetic steps"), each stated once in Lean as
 data (`ArithmeticRules.rules`). A rule reads each operand as its domain
 asks: a safe integer $`a`$ by its linear form, with $`\mathrm{int}(a)`$,
-and any number by nothing; a constant operand $`b`$ is a literal or a slot
-the knowledge states equal to a constant, a safe integer meeting the rule's
-side condition, and a shift count $`d`$ is read as $`d'=d\bmod 32`$, as
-`>>` and `<<` read it through `ToUint32`. A rule of an operator whose step
-is the same with its operands exchanged (`&`, `|`, `^` and `*`,
-`Arith.commutes`, proved by `ArithmeticRules.binop_comm`) applies to its
-operands in either order, so `0xff & c` is Mask's `c & 0xff`. Where the
+and any number by nothing, so a mask $`b`$ is a literal or a slot the
+knowledge bounds by $`0\le b<2^{31}`$; a shift count $`b`$ is a literal or
+a slot the knowledge states equal to a constant $`d`$, read as
+$`d'=d\bmod 32`$, as `>>` and `<<` read it through `ToUint32`. A rule of an
+operator whose step is the same with its operands exchanged (`&`, `|`,
+`^` and `*`, `Arith.commutes`, proved by `ArithmeticRules.binop_comm`)
+applies to its operands in either order, so `0xff & c` is Mask's
+`c & 0xff`. Where the
 knowledge entails the rule's premises, the result $`r`$ states the rule's
 conclusion:
 
@@ -308,18 +309,18 @@ conclusion:
      \ \textsf{Shr}
 ```
 
-<!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskRange","proof":"Verification.ArithmeticRules.maskRange_sound","op":"bitAnd","left":"number","right":{"constant":{"symbol":"m","lower":0,"upper":2147483647,"normalisation":"identity"}},"premises":[],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":1,"byPower":0}}]} -->
+<!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskRange","proof":"Verification.ArithmeticRules.maskRange_sound","op":"bitAnd","left":"number","right":{"operand":"safeInteger"},"premises":[{"terms":[{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
 
 ```math
-\frac{K\vdash b=m\quad 0\le m<2^{31}}
-     {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ 0\le r\le m}
+\frac{\mathrm{int}(b)\quad K\vdash 0\le b<2^{31}}
+     {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ 0\le r\le b}
      \ \textsf{Mask}
 ```
 
-<!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskBound","proof":"Verification.ArithmeticRules.maskBound_sound","op":"bitAnd","left":"safeInteger","right":{"constant":{"symbol":"m","lower":0,"upper":2147483647,"normalisation":"identity"}},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
+<!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskBound","proof":"Verification.ArithmeticRules.maskBound_sound","op":"bitAnd","left":"safeInteger","right":{"operand":"number"},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
 
 ```math
-\frac{\mathrm{int}(a)\quad K\vdash b=m\quad 0\le m<2^{31}\quad K\vdash 0\le a}
+\frac{\mathrm{int}(a)\quad K\vdash 0\le a}
      {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ r\le a}
      \ \textsf{Mask}
 ```
@@ -350,7 +351,7 @@ facts. The quotient inequalities retain the relation to the input, so an
 input bound of 222 entails a result at most 27 for a shift by three. The
 source cases are `bounds-pattern-shift-or` (pretext's class table),
 `bounds-shift-right-negative`, `bounds-mask-any-number`,
-`bounds-mask-bound-large`, `bounds-shift-count-normalised`,
+`bounds-mask-bound-large`, `bounds-mask-variable`, `bounds-shift-count-normalised`,
 `bounds-commuted-operands`, `invalid-bounds-shift-left-overflow` (a shift
 past the signed 32-bit range) and `invalid-bounds-or-past-table` (an or
 past its table).
