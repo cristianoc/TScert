@@ -1642,12 +1642,15 @@ argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
 operands and the empty effect. Let $x,x'$ be safe integers, $c$ a
-safe-integer constant, and $d$ and $m$ integers:
+safe-integer constant, $d$ an integer constant with $d'=d\bmod 32$, the
+count a shift reads, and $m$ an integer constant with $0\le m<2^{31}$:
 \[
 \begin{array}{ll}
 \textsc{Add}, \textsc{Sub}, \textsc{Scale} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\qquad\hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
-\textsc{Shr} & \hoare{0\le x<2^{31}}{y=x\gg d}{0\le y\wedge 2^{d}y\le x\le 2^{d}y+2^{d}-1}\qquad 0\le d\le 31\\[3pt]
-\textsc{Mask} & \hoare{0\le x<2^{31}}{y=x\mathbin{\&}m}{0\le y\le m\wedge y\le x}\qquad 0\le m<2^{31}
+\textsc{Shr} & \hoare{-2^{31}\le x<2^{31}}{y=x\gg d}{2^{d'}y\le x\le 2^{d'}y+2^{d'}-1}\\[3pt]
+\textsc{Mask} & \hoare{\kw{true}}{y=x\mathbin{\&}m}{0\le y\le m}\qquad\hoare{0\le x}{y=x\mathbin{\&}m}{y\le x}\\[3pt]
+\textsc{Shl} & \hoare{-2^{31}\le 2^{d'}x<2^{31}}{y=x\ll d}{y=2^{d'}x}\\[3pt]
+\textsc{Or} & \hoare{0\le x<2^{31}\wedge 0\le x'<2^{31}}{y=x\mathbin{|}x'}{x\le y\wedge x'\le y\wedge y\le x+x'}
 \end{array}
 \]
 The constants $c$, $d$ and $m$ are literals or variables with a known
@@ -1658,7 +1661,12 @@ is the number $2^{53}$. Example: for a table
 \code{index} with $\kw{view}(\mathit{index})=4352$ and
 $0\le c<1114112$, \code{j = c >> 8} gives $256\,j\le c$, so
 $j\le 4351$ and $0\le j<\kw{view}(\mathit{index})$, the precondition
-of the read \code{index[j]}.
+of the read \code{index[j]}. With $0\le v<b$ for $v$ the block that
+\code{index[j]} gives, in a table \code{values} of $b$ blocks of 256,
+\textsc{Shl} gives $y_1=256\,v$ for \code{y1 = v << 8}, \textsc{Mask}
+gives $0\le y_2\le 255$ for \code{y2 = c \& 0xff}, and \textsc{Or} gives
+$0\le y\le 256\,v+255<256\,b$ for \code{y = y1 | y2}, the precondition
+of the read \code{values[y]} at $\kw{view}(\mathit{values})=256\,b$.
 
 A string is a scalar: it has no location, and $\slen(s)$ of a string in
 a variable $s$ is fixed, with $0\le\slen(s)\le M$. For strings $s,s'$
@@ -1672,7 +1680,7 @@ and an integer $i$:
 \]
 The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
 normal return
-\status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
+\status{Lean: \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{shr\_safe} and \lean{bitAnd\_safe} for \textsc{Shr} and \textsc{Mask} where $0\le x<2^{31}$; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules. conj.: \textsc{Shr} and \textsc{Mask} as stated, \textsc{Shl} and \textsc{Or}}.
 
 \paragraph{Library functions.} A library function is not analysed. It
 has a \emph{contract}: a triple with its effects, assumed of the host,
