@@ -979,3 +979,21 @@ citations, zero problems. Direct imports cover 365 other A/shared and 85 other
 Paper modules; the outside-to-Paper boundary count is zero. The complete
 pipeline outcome is recorded separately when observed. The fourth-base full
 run remains scoped to 65d5bf91.
+
+
+### Completed case phase on the fifth base
+
+The overall `make test` command on source 933ef9ef ended at its 1800-second
+limit, exit 124, after reporting 3105/3448 cases; it is not an exit-zero full
+`make test`. Its complete Lean build, both axiom audits, all 24 fast suites
+and 176 controls had passed as recorded above. No expectation was changed.
+
+The case phase alone was then rerun on the identical Lean/pipeline source
+(the intervening 37593c01 commit changes documentation only), with completed
+stages reused by content and a 900-second budget. Its observed exit is zero:
+3448/3448 cases as expected, 4344 verified functions, 1799 negative controls,
+149 named gaps. This completes the required case coverage without repeating
+the successful fast suites. The exact commands and full outputs are retained
+in cloud scratch as `fifth-rebase-test.log` and `fifth-rebase-cases.log`.
+The whole required validation is covered by those two runs; a single exit-zero
+`make test` on this source is not claimed.
