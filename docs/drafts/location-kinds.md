@@ -29,7 +29,9 @@ Claims are labelled **proved**, with the Lean name, in those modules and in
 write) and
 [KindsModelRules](../../lean/Verification/Paper/TolerantFrames/KindsModelRules.lean),
 each theorem checked by the
-[axiom check](../../lean/Verification/Tests/AxiomCheck.lean). Claims not yet established are
+[axiom check](../../lean/Verification/Tests/AxiomCheck.lean), and those of
+KindsModelRules by
+[the paper's axiom check](../../lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean). Claims not yet established are
 labelled **planned**.
 
 ## The existing mechanism this extends

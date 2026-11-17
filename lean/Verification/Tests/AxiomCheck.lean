@@ -1,22 +1,3 @@
-import Verification.Paper.TolerantFrames.Bridges.ExitProposals
-import Verification.Paper.TolerantFrames.Bridges.Grow
-import Verification.Paper.TolerantFrames.Bridges.ModelTyped
-import Verification.Paper.TolerantFrames.Bridges.ParityArithmeticBridges
-import Verification.Paper.TolerantFrames.Bridges.Transfer
-import Verification.Paper.TolerantFrames.CommandBodies
-import Verification.Paper.TolerantFrames.CommandComposition
-import Verification.Paper.TolerantFrames.CommandLoops
-import Verification.Paper.TolerantFrames.CommandSummaries
-import Verification.Paper.TolerantFrames.Examples
-import Verification.Paper.TolerantFrames.Instances
-import Verification.Paper.TolerantFrames.KindsModelRules
-import Verification.Paper.TolerantFrames.ModelLoop
-import Verification.Paper.TolerantFrames.ModelRules
-import Verification.Paper.TolerantFrames.NamedCounterexample
-import Verification.Paper.TolerantFrames.ParityAssertions
-import Verification.Paper.TolerantFrames.ParityDerivations
-import Verification.Paper.TolerantFrames.ParityEvidence
-import Verification.Paper.TolerantFrames.Tests.ParityDerivationTests
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Programs.ArgumentRegionFresh
@@ -384,13 +365,15 @@ import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 
 /-!
-The library rests on Lean's standard axioms alone. The build fails when a
-safe declaration of any module of the library depends on an axiom other than
-`propext`, `Classical.choice` and `Quot.sound` (`sorryAx`, or one the project
-declares). This module imports every module of the library, which
-`tests/axiom-check-imports.mts` checks.
+The implementation and the shared model rest on Lean's standard axioms
+alone. The build fails when a safe declaration of any module of the library
+outside `Verification.Paper` depends on an axiom other than `propext`,
+`Classical.choice` and `Quot.sound` (`sorryAx`, or one the project
+declares). This module imports every such module, which
+`tests/axiom-check-imports.mts` checks; the paper's formalisation has its
+own check, `Verification.Paper.TolerantFrames.Tests.AxiomCheck`.
 
-The library's declarations include the acceptance theorem
+These declarations include the acceptance theorem
 `SourceClaimJson.PassUnit.mode8Accepted_sound` and every theorem it rests on,
 and each `@[csimp]` lemma, whose right-hand side the compiled verifier runs in
 place of the definition the proofs reason about. An unsafe declaration (the
@@ -405,12 +388,16 @@ run_cmd do
   let env ← getEnv
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
   let library := `Verification
+  let paper := `Verification.Paper
   let imported := env.header.moduleNames
-  -- Every safe declaration of the library rests on the standard axioms.
+  -- Every safe declaration outside the paper's formalisation rests on the
+  -- standard axioms.
   let mut checked := 0
   for (decl, info) in env.constants.map₁.toList do
     let some i := env.getModuleIdxFor? decl | continue
-    unless library.isPrefixOf imported[i.toNat]! && !info.isUnsafe do continue
+    let module := imported[i.toNat]!
+    unless library.isPrefixOf module && !paper.isPrefixOf module && !info.isUnsafe do
+      continue
     checked := checked + 1
     for axiom_ in ← liftCoreM <| collectAxioms decl do
       unless standard.contains axiom_ do
