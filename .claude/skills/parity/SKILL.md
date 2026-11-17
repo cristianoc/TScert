@@ -219,8 +219,9 @@ asks.
 
 ### When Astra is used
 
-- **Before implementation:** every design and every plan that is not a small
-  local change. The design opens with "The existing mechanism this extends".
+- **Before implementation:** every design and every plan, as
+  [designs](../../../CLAUDE.md#designs-start-from-an-existing-mechanism)
+  states.
 - **After implementation, once per piece of work:** when the piece changes a
   decision of the pass, the acceptance path, a rule's statement, or what is
   assumed of the host. The review is asked rule by rule against the note.
