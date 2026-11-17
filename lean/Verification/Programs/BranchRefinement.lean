@@ -1246,9 +1246,8 @@ def familyMember (cs : List (Clause α)) : Tag → Bool → Bool
   -- Equality with one number other than a zero, or one string, holds of that
   -- value alone.
   | .numEq b, true => b &&& 0x7fffffffffffffff != 0 &&
-      cs.any fun c => match c with | .numLit b' => b' == b | .numIn S => S.contains b | _ => false
-  | .strEq s, true => cs.any fun c => match c with
-      | .strLit s' => s' == s | .strIn S => S.contains s | _ => false
+      cs.any fun c => !ClauseSelection.isUniverse c && ClauseSelection.admitsVal c (.num b)
+  | .strEq s, true => cs.any fun c => !ClauseSelection.isUniverse c && ClauseSelection.admitsVal c (.str s)
   | _, _ => false
 
 /-- A closed value a family test admits is in one of the family's clauses,
@@ -1265,17 +1264,15 @@ theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clau
     simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at ht
     rcases ht.2 with h | h
     · subst h
-      cases c <;> simp at hk
-      · subst hk; exact ⟨_, hc, by simp [semWithArgs], rfl⟩
-      · exact ⟨_, hc, ⟨_, hk, rfl⟩, rfl⟩
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hk
+      exact ⟨c, hc, ClauseSelection.admitsVal_sem hk.2 hk.1⟩
     · exact absurd h.2 hm.1
   case strEq.true s =>
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
     cases v <;> simp [tagHolds, isVal] at ht hv
     subst ht
-    cases c <;> simp at hk
-    · subst hk; exact ⟨_, hc, by simp [semWithArgs], rfl⟩
-    · exact ⟨_, hc, ⟨_, hk, rfl⟩, rfl⟩
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hk
+    exact ⟨c, hc, ClauseSelection.admitsVal_sem hk.2 hk.1⟩
   case isFun.true =>
     simp only [Bool.and_eq_true, List.any_eq_true] at hm
     obtain ⟨⟨a, ha, hka⟩, ⟨k, hk, hkk⟩⟩ := hm
@@ -1598,24 +1595,22 @@ A test answers on a tag set element by element (HOST-FAMILIES.md, "Tag
 sets"): what the slice keeps of a set is the elements the test does not
 contradict, each of which a clause of the target must hold. -/
 
-/-- Whether the literal `e` is a member of the primitive clause `d`: its
-family, itself, or a tag set holding it. -/
+/-- Whether the singleton `e` is a member of the clause `d`, no universe:
+`d` admits its value (`admitsVal`). -/
 def litIn (e d : Clause α) : Bool :=
-  match e, d with
-  | .numLit _, .num | .strLit _, .str => true
-  | .numLit a, .numLit b => a == b
-  | .strLit a, .strLit b => a == b
-  | .numLit a, .numIn S => S.contains a
-  | .strLit a, .strIn S => S.contains a
-  | _, _ => false
+  match ClauseSelection.litVal e with
+  | some v => !ClauseSelection.isUniverse d && ClauseSelection.admitsVal d v
+  | none => false
 
 theorem litIn_sound {X : α → Fam} {P : α → ArgFam} {e d : Clause α} (h : litIn e d = true) {n W v}
     (hv : semWithArgs Ξ X P e n W v) : semWithArgs Ξ X P d n W v ∧ d.carriesInvariant = false := by
-  cases e <;> cases d <;> simp [litIn] at h <;> simp only [semWithArgs] at hv ⊢ <;> subst hv
-  all_goals first
-    | exact ⟨⟨_, rfl⟩, rfl⟩
-    | (subst h; exact ⟨rfl, rfl⟩)
-    | exact ⟨⟨_, h, rfl⟩, rfl⟩
+  unfold litIn at h
+  split at h
+  · rename_i w hw
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+    rw [ClauseSelection.litVal_unique hw hv]
+    exact ClauseSelection.admitsVal_sem h.2 h.1
+  · cases h
 
 /-- Every label the tag slice keeps is in `B`, or each of its clauses the test
 contradicts, `B` holds, or is a tag set whose every element the test

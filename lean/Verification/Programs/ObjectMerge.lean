@@ -426,10 +426,11 @@ structure Obj (ι : Type) where
 
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
 Booleans, numbers, bigints and symbols. A spread of one copies nothing. -/
-@[nospecialize] def emptyClause : Clause (List ι) → Bool
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .symbol
-  | .symbolLit _ => true
-  | _ => false
+@[nospecialize] def emptyClause (c : Clause (List ι)) : Bool :=
+  match c.primKind with
+  | some .str | none => false
+  | some _ => true
+
 
 /-- What the semantics of a plain-object clause gives a merge. -/
 structure ObjFacts (G : NormalGraph ι) (o : Obj ι) (n : Nat) (W : WorldT n)
@@ -528,18 +529,15 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
     {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) (h : List Tm) :
     ownData h v = some [] ∧ isVal v = true := by
   obtain ⟨hv, -⟩ := hv
-  cases c <;> simp [emptyClause] at he <;> simp only [semWithArgs] at hv
-  · subst hv; exact ⟨rfl, rfl⟩
-  · rcases hv with rfl | rfl <;> exact ⟨rfl, rfl⟩
-  · rename_i b; subst hv; cases b <;> exact ⟨rfl, rfl⟩
-  · obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, rfl⟩
-  · subst hv; exact ⟨rfl, rfl⟩
-  · subst hv; exact ⟨rfl, rfl⟩
-  · obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, rfl⟩
-  · obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, rfl⟩
-  · subst hv; exact ⟨rfl, rfl⟩
-  · subst hv; exact ⟨rfl, rfl⟩
-  · obtain ⟨_, -, rfl⟩ := hv; exact ⟨rfl, rfl⟩
+  cases hk : c.primKind with
+  | none => simp [emptyClause, hk] at he
+  | some k =>
+    have hh := primKind_sound hk hv
+    cases k <;> simp [emptyClause, hk] at he <;> simp only [PrimKind.Holds] at hh
+    all_goals first
+      | (rcases hh with rfl | rfl <;> exact ⟨rfl, rfl⟩)
+      | (obtain ⟨_, rfl⟩ := hh; exact ⟨rfl, rfl⟩)
+      | (subst hh; exact ⟨rfl, rfl⟩)
 
 
 /-- The part of a function or class clause a merge's source reads: a
@@ -621,10 +619,16 @@ inductive Src (ι : Type) where
   | str
   | obj (o : Obj ι)
 
-/-- A clause of strings. -/
-@[nospecialize] def stringClause {α : Type} : Clause α → Bool
-  | .str | .strLit _ | .strIn _ => true
-  | _ => false
+/-- The clauses of strings: those of the string kind (`Clause.primKind`). -/
+@[nospecialize] def stringClause {α : Type} (c : Clause α) : Bool := c.primKind == some .str
+
+omit [DecidableEq ι] in
+/-- A clause whose values own no enumerable property, or of strings, is of a
+primitive kind. -/
+theorem primKind_of_empty_or_string {c : Clause (List ι)} (h : (emptyClause c || stringClause c) = true) :
+    c.primKind.isSome := by
+  unfold emptyClause stringClause at h
+  split at h <;> simp_all
 
 @[nospecialize] def srcOf (c : Clause (List ι)) : Option (Src ι) :=
   if emptyClause c then some .prim else
@@ -685,11 +689,9 @@ theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFre
     obtain ⟨fs, n, E, K, s', caps, rest, oid', he, -⟩ := hv.1.1.1
     cases he
   | _ =>
-    simp only [hostFree, emptyClause, stringClause, Bool.or_false, Bool.false_or] at hc
-    all_goals first
-      | (simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv; done)
-      | (simp only [semWithArgs] at hv; split at hv <;> cases hv; done)
-      | (cases hc; done)
+    simp only [hostFree] at hc
+    obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp (primKind_of_empty_or_string hc)
+    simpa [isPrim] using PrimKind.holds_prim (primKind_sound hk hv)
 
 /-- The source never gives the key: it is dropped or a reserved string key,
 or a bound excludes it and, if an array could give it as an index, the spine
@@ -760,10 +762,7 @@ theorem strIn_sound {G : NormalGraph ι} {T : List ι} (h : strIn G T = true) (n
 primitive's or a plain object's. A string index at such a type rules out the
 spine key, `[]`, which is a string. -/
 @[nospecialize] def noSpine (G : NormalGraph ι) (T : List ι) : Bool :=
-  G.plainTy T && (expand G T).all fun c => match c with
-    | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
-    | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .refs .. | .dict .. => true
-    | _ => false
+  G.plainTy T && (expand G T).all fun c => c.primKind.isSome || c.record
 
 omit [DecidableEq ι] in
 theorem noSpine_sound {G : NormalGraph ι} {T : List ι} (h : noSpine G T = true)
@@ -771,35 +770,13 @@ theorem noSpine_sound {G : NormalGraph ι} {T : List ι} (h : noSpine G T = true
   intro hm
   simp only [noSpine, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨c, hc, hs, -⟩ := (expand_sem G T h.1 _ _ _).mp hm
-  have hw := h.2 c hc
-  cases c with
-  | nul => simp only [semWithArgs, nulT] at hs; cases hs
-  | undef => simp only [semWithArgs, undefT] at hs; cases hs
-  | bool => simp only [semWithArgs, boolT] at hs; rcases hs with h1 | h1 <;> cases h1
-  | boolLit b => simp only [semWithArgs] at hs; cases b <;> cases hs
-  | num => simp only [semWithArgs, numT] at hs; obtain ⟨_, h1⟩ := hs; cases h1
-  | numLit _ => simp only [semWithArgs] at hs; cases hs
-  | str => simp only [semWithArgs, strT] at hs; obtain ⟨_, h1⟩ := hs; cases h1
-  | strLit _ => simp only [semWithArgs] at hs; cases hs
-  | bigint => simp only [semWithArgs, bigintT] at hs; obtain ⟨_, h1⟩ := hs; cases h1
-  | bigintLit _ => simp only [semWithArgs] at hs; cases hs
-  | symbol => simp only [semWithArgs, symbolT] at hs; obtain ⟨_, h1⟩ := hs; cases h1
-  | symbolLit _ => simp only [semWithArgs] at hs; cases hs
-  | refs a bs vs os ms ks =>
-    simp only [semWithArgs, ReferenceConjunctions.refsT, recT] at hs
-    obtain ⟨⟨⟨_, _, h1, -⟩, -⟩, -⟩ := hs; cases h1
-  | dict a bs vs ds os ms ks cs =>
-    simp only [semWithArgs, ReferenceConjunctions.refsT, recT] at hs
-    obtain ⟨⟨⟨_, _, h1, -⟩, -⟩, -⟩ := hs; cases h1
-  | arrs L S => simp at hw
-  | callable a bs L S ms => simp at hw
-  | top | source => simp at hw
-  | list a bs => simp at hw
-  | ctors L S => simp at hw
-  | pack a bs => simp at hw
-  | view f ms => simp at hw
-  | numIn _ => simp only [semWithArgs] at hs; obtain ⟨_, -, h1⟩ := hs; cases h1
-  | strIn _ => simp only [semWithArgs] at hs; obtain ⟨_, -, h1⟩ := hs; cases h1
+  rcases Bool.or_eq_true_iff.mp (h.2 c hc) with hp | hr
+  · obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp hp
+    simpa [isPrim] using PrimKind.holds_prim (primKind_sound hk hs)
+  · cases c <;> simp only [Clause.record, Bool.false_eq_true] at hr
+    all_goals
+      simp only [semWithArgs, ReferenceConjunctions.refsT, recT] at hs
+      obtain ⟨⟨⟨_, _, h1, -⟩, -⟩, -⟩ := hs; cases h1
 
 /-- Whatever the source gives under a key the class `K` admits is within `T`.
 The symbol class admits none of the string keys the model's copy gives;
@@ -1962,10 +1939,7 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
     -- A string: its code units at its indices.
     have hs : ∃ s, vb = .str s := by
       obtain ⟨hsb, -⟩ := hsb
-      cases cb <;> simp [stringClause] at hstr
-      · obtain ⟨s, rfl⟩ := hsb; exact ⟨s, rfl⟩
-      · rename_i s; simp only [semWithArgs] at hsb; exact ⟨s, hsb⟩
-      · simp only [semWithArgs] at hsb; obtain ⟨s, -, rfl⟩ := hsb; exact ⟨s, rfl⟩
+      exact primKind_sound (k := .str) (by simpa [stringClause] using hstr) hsb
     obtain ⟨s, rfl⟩ := hs
     have hq : ownData h (.str s) = some (firstKeys (stringData s)) := rfl
     exact ⟨_, _, ownAll_nodup hp,

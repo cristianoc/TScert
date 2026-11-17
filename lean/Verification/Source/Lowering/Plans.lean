@@ -590,9 +590,7 @@ inductive PrimitiveArm (ι : Type) where
 /-- Whether a type has a primitive's shape among its clauses: a string, a
 number, a bigint or a boolean, whose members are its prototype's. -/
 @[nospecialize] def Lowering.hasPrimitiveShape (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) : Bool :=
-  (PositiveRules.expand G O).any fun c => match c with
-    | .str | .strLit _ | .strIn _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .bool | .boolLit _ => true
-    | _ => false
+  (PositiveRules.expand G O).any fun c => (c.primKind.bind PositiveNormalization.PrimKind.wrapperTag).isSome
 
 /-- Whether every label of `O` reads `fld` at one row (`fieldRow`): its own
 field or view, or its prototype's where no own-key bound admits the key, as
@@ -630,12 +628,8 @@ shape needs none. -/
 @[nospecialize] def primitiveArms (scope : List (ScopeBinding Tree)) (K : List (Ty Tree)) (O : Ty Tree)
     (fld : PropKey) : Compiler (List (Tag × (PrimitiveArm Tree))) := do
   let G := SourceTypes.graph (← table)
-  let shapeOf (c : PositiveNormalization.Clause (Ty Tree)) : Option Tag := match c with
-    | .str | .strLit _ | .strIn _ => some .isStr
-    | .num | .numLit _ | .numIn _ => some .isNum
-    | .bigint | .bigintLit _ => some .isBigint
-    | .bool | .boolLit _ => some .isBool
-    | _ => none
+  let shapeOf (c : PositiveNormalization.Clause (Ty Tree)) : Option Tag :=
+    c.primKind.bind PositiveNormalization.PrimKind.wrapperTag
   let functionShape := fld == "toString" && (PositiveRules.expand G O).any fun
     | .arrs .. | .callable .. | .ctors .. => true
     | _ => false

@@ -352,10 +352,7 @@ def widen (A : Ty Tree) : Compiler (Ty Tree) := do
 
 def shapeOf (G : PositiveGraphs.NormalGraph Tree) (l : Tree) : Option Tag :=
   match PositiveRules.expand G [l] with
-  | [.str] | [.strLit _] | [.strIn _] => some .isStr
-  | [.num] | [.numLit _] | [.numIn _] => some .isNum
-  | [.bigint] | [.bigintLit _] => some .isBigint
-  | [.bool] | [.boolLit _] => some .isBool
+  | [c] => c.primKind.bind PositiveNormalization.PrimKind.wrapperTag
   | _ => none
 
 def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) : Compiler (Ty Tree) := do

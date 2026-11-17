@@ -277,10 +277,9 @@ copy takes: the copy of such an object holds all of it. -/
 `__proto__` setter would make the object's prototype. -/
 @[nospecialize] private def noPrototypeValue (G : PositiveGraphs.NormalGraph Tree) (V : Ty Tree) : Bool :=
   let cs := PositiveRules.expand G V
-  G.plainTy V && cs.all fun c => match c with
-    | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
-    | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
-    | _ => false
+  G.plainTy V && cs.all fun c => match c.primKind with
+    | some .nul | none => false
+    | some _ => true
 
 /-- A checked owned write replaces every reference to its object, each
     holder's slot or cell, with a fresh copy. Operand slots are supplied by the shared execution plan. A string key the
@@ -400,11 +399,8 @@ copy takes: the copy of such an object holds all of it. -/
     -- A value written where a writable index of the object admits the key
     -- is allocated at that index's type, as a literal meant for a dictionary
     -- is (`allocDict`): the copy then keeps the index.
-    let keyClass := fun (c : PositiveNormalization.Clause (Ty Tree)) => match c with
-      | .str | .strLit _ | .strIn _ => some IndexKeys.strings
-      | .num | .numLit _ | .numIn _ => some IndexKeys.numeric
-      | .symbol | .symbolLit _ => some IndexKeys.symbols
-      | _ => none
+    let keyClass := fun (c : PositiveNormalization.Clause (Ty Tree)) =>
+      c.primKind.bind PositiveNormalization.PrimKind.keyClass
     let classes := (cs.filterMap keyClass).eraseDups
     let cellType : Option (Ty Tree) := match PositiveRules.expand G X with
       | [.dict _ _ _ _ _ _ _ cells _] =>
