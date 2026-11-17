@@ -106,7 +106,7 @@ jobs:
     timeout-minutes: 60
     env:
       TSCERT_STAGE_MEMORY: "4"
-      PRETEXT_COMMIT: 9b32eb29e15312aeb618dda55c4e2e00f397c5d7
+      PRETEXT_COMMIT: aa8f7cc24a06880a91462586bb796d69fe31cea9
     steps:
       - uses: actions/checkout@v4
 
