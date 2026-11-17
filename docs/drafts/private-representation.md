@@ -73,14 +73,13 @@ let walk: (h: Handle, visit: (w: number) => void) => number[]
 /** @invariant this.#flags.length === this.#widths.length */
 class Handle {
   static #staged: Parts | null = null
-  readonly #parts: Parts = Handle.#take()
-  readonly #widths: number[] = this.#parts.widths
-  readonly #flags: number[] = this.#parts.flags
+  readonly #widths: number[] = Handle.#check().widths
+  readonly #flags: number[] = Handle.#staged!.flags
+  constructor() { Handle.#staged = null }
 
-  static #take(): Parts {
+  static #check(): Parts {
     const p = Handle.#staged
-    Handle.#staged = null
-    if (p === null || p.flags.length !== p.widths.length) throw new TypeError("made by prepare()")
+    if (p === null || p.flags.length !== p.widths.length) { Handle.#staged = null; throw new TypeError("made by prepare()") }
     return p
   }
 
@@ -140,7 +139,7 @@ around it, so they share it.
   $`\mathsf{priv}`$ of their own body, and at collections (`Map`, `Set`,
   `WeakMap`), whose entries the model holds in no location of the heap
   (cited: [native footprints](../SOURCE-CONTRACTS.md#native-footprints), the row of `Set` and `Map`: they write only the receiver's internal slots, which no location of the model holds).
-  A collection is never owned storage (*No collections*, below). It has one
+  A collection is never owned storage (*Confined collections*, below). It has one
   part per kind of Paper I's world: $`\mathsf{own}_C.\mathsf{spines}`$
   (array and view spines), $`\mathsf{own}_C.\mathsf{cells}`$ (element
   cells) and $`\mathsf{own}_C.\mathsf{fields}`$ (field and cell locations).
@@ -332,11 +331,14 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   that is not the body's. The instance is complete, and meets $`I_C`$, only
   once construction has returned; a private read of an incomplete instance
   is checked without $`I_C`$. A field that holds storage from construction
-  is written by its initializer, from a *staging field*: a private static that the body sets
-  to parts it allocated and holds nowhere else, immediately before `new`,
-  and that the first initializer takes. The staging field holds `null` or
-  such parts in every state, and is `null` again before every return and
-  every throw of the construction (`#take` clears it before it tests). Its
+  is written by its initializer, from a *staging field*: a private static
+  that the body sets to parts it allocated and holds nowhere else,
+  immediately before `new`. The first initializer checks the staged parts
+  (`#check`), the others read the staging field, whose value no code changes
+  between initializers, and the constructor's body sets it to `null`; no
+  field keeps the parts. The staging field holds `null` or such parts in
+  every state, and is `null` again before every return and every throw of
+  the construction (`#check` clears it before it throws). Its
   reasons: the constructor is a member, reached by `new h.constructor()`,
   so it takes no storage from its caller; an initializer cannot read the
   constructor's arguments; and a field declared and then assigned in the
@@ -371,11 +373,25 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   a location of a complete instance holding `null` or `undefined`, of fresh
   storage complete before the write, which keeps every instance invariant
   that reads the location (*Tolerant invariant*'s checked single write).
-- **No collections.** No collection is owned storage: a collection held in
-  private state is refused, and storage reached through a collection is
-  copied, as an unconfined copy, before private state holds it. The model
-  holds a collection's entries in no heap location, so no reachability or
-  effect of its natives states which storage it keeps.
+- **Confined collections.** A collection held only by a binding of the
+  body that no module exports, and never passed to, stored where, or
+  returned to code that is not the body's, is a *confined collection*.
+  A collection held in private state is refused, and one that is not
+  confined holds nothing private state takes uncopied. Every value the body
+  obtains from a confined collection is possibly owned storage, where its
+  type is one a private field's declared type reaches (contracts are fixed
+  at allocation, so storage of another type is never owned): every write the
+  body makes to such a value, or to anything reached from it, is charged to
+  the entries of $`\mathsf{own}_C`$ in $`\Psi_C`$, and meets
+  *Reference-preserving protocol* and *Tolerant invariant* as a write to
+  owned storage does. An insertion into a confined collection is a write of
+  the body, checked as a store into owned storage: what it stores is owned,
+  fresh, or already confined. Storage from a confined collection may enter
+  private state uncopied. The argument needs no location for a collection's
+  entries: (P2) holds since no code outside the body reaches the collection,
+  so no path from such code runs through it; and (L2) holds since every
+  write the body makes to storage it may share with private state is
+  charged.
 - **Tolerant invariant.** Every change the body makes to a location of
   $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
   $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
@@ -518,17 +534,17 @@ let api: Api | null = null
 /** @invariant this.#segmentFlags.length === this.#widths.length && … */
 export class PreparedText {
   static #staged: TextParts | null = null
-  readonly #parts: TextParts = PreparedText.#take() // clears the staging field, then checks I
-  readonly #widths: number[] = this.#parts.widths
-  readonly #segmentFlags: Uint8Array = this.#parts.segmentFlags
-  readonly #segments: string[] | null = this.#parts.segments
-  readonly #kinds: SegmentBreakKind[] | null = this.#parts.kinds
+  readonly #widths: number[] = PreparedText.#check().widths // checks I, clearing the staging field before it throws
+  readonly #segmentFlags: Uint8Array = PreparedText.#staged!.segmentFlags
+  readonly #segments: string[] | null = PreparedText.#staged!.segments
+  readonly #kinds: SegmentBreakKind[] | null = PreparedText.#staged!.kinds
   // … every field of PreparedLineBreakData, each by its initializer
   readonly segments: readonly string[] | null = this.#segments === null ? null : this.#segments.slice()
   readonly kinds: readonly SegmentBreakKind[] | null = this.#kinds === null ? null : this.#kinds.slice()
   readonly widths: ArrayLike<number> | null = this.#segments === null ? null : this.#widths.slice()
 
-  static #take(): TextParts { /* as in the example */ }
+  constructor() { PreparedText.#staged = null }
+  static #check(): TextParts { /* as in the example */ }
 
   static {
     let walkPreparedLinesRaw: (prepared: PreparedText, maxWidth: number, onLine?: InternalLineVisitor) => number
@@ -564,7 +580,7 @@ export type PreparedTextWithSegments = PreparedText & {
   user-defined guard on the three public fields, checked by TScert's guard
   rules. The public `segments`, `kinds` and `widths` are copies their own
   initializers make from the private fields, of strings and numbers, so
-  unconfined; `#parts` holds no public value. The public fields are ordinary
+  unconfined, and no private field holds them. The public fields are ordinary
   fields: external code may store an array in `segments` of a handle
   `prepare()` made, which then meets `PreparedTextWithSegments` while its
   `#segments` is `null`. So the guard gives no fact about the private
@@ -593,16 +609,25 @@ export type PreparedTextWithSegments = PreparedText & {
   with a `segmentFlags` of the paragraph's length and `widths` of the item's
   (`prepare.ts:379–383`; `rich-inline.ts:479–573`), it returns a plain record
   of the item's results, which no class's invariant reads.
-- **The measurement caches** of `measurement.ts` (cited: the `Map` of fonts,
-  `:1379`, each font's record holding `Map`s, `:1447–1448`) are collections
-  in bindings of the body. Under *No collections*, every advances list
-  `breakableFitAdvances` takes from them is a copy. Upstream copies a cached
-  list where it changes it (cited: `prepare.ts:533–541`, a `slice()` before
-  each adjustment, the cached lists being shared by every occurrence of a
-  text) and holds the cached list itself otherwise; the rewrite copies it
-  in every case, a cost not measured. `clearCache` (`layout.ts:360–363`)
-  is a member whose effect is on the caches' entries, which are in no
-  location of $`R_C`$; its entry in $`\Psi`$ is $`\mathsf{keep}`$.
+- **The measurement caches** of `measurement.ts` are confined collections:
+  the module binding `measureState` (cited: `:405`), which no module
+  exports, holds the record whose `Map`s of fonts (`:1379`, `:1447–1448`)
+  hold each font's measurement, its `Map`s of segment metrics and the
+  advances lists `getSegmentFit` caches (`:1262`); the code that reads them
+  moves into the body with the rest of preparation. `breakableFitAdvances`
+  shares the cached lists as upstream does. The body's writes to values
+  from the caches are charged: preparation copies a cached list before
+  changing it (cited: `prepare.ts:533–541`, a `slice()` before each
+  adjustment, the cached lists being shared by every occurrence of a text),
+  so no owned spine or cell is written; the insertions (`:697`, `:729`,
+  `:800`, `:1304`, `:1380`) store fresh values; the fields set lazily on a
+  font's measurement and on the state record (`:595`, `:731`, `:780`,
+  `:844`, `:879–914`, `:1055`, `:1072`) are of record types no private
+  field's type reaches, so not owned. `clearCache` (`layout.ts:360–363`)
+  calls `clearMeasurementCaches` (`measurement.ts:1453–1458`): two `clear`s
+  of confined collections, which hold no location of $`\mathsf{own}_C`$,
+  and a number written to the state record, which is not owned; its entry
+  in $`\Psi`$ is $`\mathsf{keep}`$ on every part of $`\mathsf{own}_C`$.
 - **The internal cursor** is a `LineCursor`, whose two private number
   fields `#segment` and `#grapheme` the steppers write. The walker allocates
   it and passes it only to functions of the body that it calls by name.
@@ -774,6 +799,10 @@ JavaScript, run with `node`, printing the reads), each refused:
   suspended: `undefined`. Refused at the read: the `await` runs code that is
   not the body's, and $`\psi_{\#\mathit{pos}}=\mathsf{scalar}`$ does not
   keep the test.
+- `invalid-private-escaping-collection`: a handle holds, uncopied, an
+  array from a cache `Map` the module exports; external code pops the cached
+  array during the visitor: `[1, undefined, undefined]`. Refused by
+  *Confined collections*: the `Map` is not confined.
 - `invalid-private-replaceable-method`: the walker bounds its loop by a
   public prototype method; external code replaces it:
   `[1, 1, undefined, undefined]`. Refused by *Lexical dispatch*: the bound
@@ -791,15 +820,15 @@ restriction (observed):
 - `private-two-evaluations-refused`: a class evaluated twice in a function;
   one evaluation's static method given the other's instance throws a
   `TypeError`. *Evaluated once*.
-- `private-collection-uncopied-refused`: a handle holds an array it took
-  uncopied from a cache `Map` the body keeps: `[1, 1]`. *No collections*.
 - `private-open-invariant-refused`: a member pushes onto `#widths` and then
   onto `#flags` under $`|\mathit{flags}|=|\mathit{widths}|`$, with a walker
   reading `#flags[i]` before `visit`: `[0, 0, 0, 0]`. *Tolerant
   invariant*.
 
 **Positive cases**: the example, its visitor calling every member
-(`[0, 0, 0]`); `private-escape-copy`, a member giving out a copy of a
+(`[0, 0, 0]`); `private-confined-collection`, a handle holding, uncopied, an
+array from a cache `Map` only the body reaches, its visitor preparing again
+(`[1, 1]`); `private-escape-copy`, a member giving out a copy of a
 number array that the client pushes onto (`[0, 0]`);
 `bounds-pattern-unreachable-field-refused` and
 `bounds-pattern-unreachable-handle-refused` rewritten with a class with
@@ -816,7 +845,8 @@ private state.
 $`\Psi_C`$ forced smaller than a member's effect; a member forged as a
 non-member; a function used as a value forged as called by name only; an
 `await` forged as body code; a confined flow forged to an outside argument;
-a copy of an array of arrays forged unconfined; an owned store forged as
+a copy of an array of arrays forged unconfined; a write to a value from a confined collection forged
+uncharged; an exported collection forged confined; an owned store forged as
 fresh; a staging field forged left set on a throw; an initializer forged to
 pass `this` to a call; $`I_C`$ forged to read a path outside $`R_C`$.
 
