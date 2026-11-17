@@ -406,9 +406,9 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   returned to code that is not the body's, is a *confined collection*.
   A collection held in private state is refused, and one that is not
   confined holds nothing private state takes uncopied. Every value the body
-  obtains from a confined collection is possibly owned storage unless its
-  storage is proved disjoint from $`\mathsf{own}_C`$ by *Owning
-  allocation sites*, below; a type gives no such proof, since storage of one
+  obtains from a confined collection, and everything reached from it, is
+  possibly owned storage, except an object *Owning allocation sites*,
+  below, proves disjoint from $`\mathsf{own}_C`$; a type gives no such proof, since storage of one
   object type is a value of every type it is assignable to: every write the
   body makes to such a value, or to anything reached from it, is charged to
   the entries of $`\mathsf{own}_C`$ in $`\Psi_C`$, and meets
@@ -441,9 +441,15 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   when storage it allocates may become reachable from $`\mathsf{priv}_C`$:
   stored into private state or into owned storage, directly or through a
   binding, a confined collection or a call naming a function of the body.
-  A value is proved disjoint from $`\mathsf{own}_C`$ when the body's flow
-  shows that every allocation site whose storage it may be is not owning;
-  a value received from code that is not the body's has no such proof. The
+  The test applies to the object each write changes: a write is uncharged
+  only when every allocation site the written object may come from,
+  propagated by the body's flow through the reads that reached it, is not
+  owning. A record's disjointness says nothing of what it references: a
+  record from a site that is not owning may hold an array from an owning
+  one, as pretext's cached measurement holds `fit.advances`
+  (`measurement.ts:1262`), which handles share (`prepare.ts:525–529`,
+  `:579`, `:628`). A value received from code that is not the body's has no
+  such proof. The
   flow is over the body's code alone, which is all the code that stores
   into confined storage (conjectured: a flow the front computes with
   $`\Psi_C`$, checked by the pass as a store into owned storage is).
@@ -1020,7 +1026,9 @@ $`\Psi_C`$ forced smaller than a member's effect; a member forged as a
 non-member; a function used as a value forged as called by name only; an
 `await` forged as body code; a confined flow forged to an outside argument; a view forged at a type
 that is not read-only; a type forged read-only; an incoming value forged as
-fresh; an owning allocation site forged not owning; a body write to a possibly exposed location forged without its throw
+fresh; an owning allocation site forged not owning; `cache.get(k).array.pop()`
+forged uncharged, where only `array` enters private state and the
+record from the cache comes from a site that is not owning; a body write to a possibly exposed location forged without its throw
 edge;
 a copy of an array of arrays forged unconfined; a write to a value from a confined collection forged
 uncharged; an exported collection forged confined; an owned store forged as
