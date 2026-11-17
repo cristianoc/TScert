@@ -8,7 +8,8 @@ accepted call of `SinglePass.run` guarantees its graph (`RunSound`, the
 interface [the unit theorem](SINGLE-PASS-THEOREM.md#2-the-hypotheses)
 reads). Its definitions and theorems are in
 `lean/Verification/Semantics/IndexedStates.lean`,
-`lean/Verification/Semantics/TolerantFrames.lean` and
+`lean/Verification/Semantics/TolerantFrames.lean`,
+`lean/Verification/Programs/SinglePass/GraphSafety.lean` and
 `lean/Verification/Programs/TolerantFramesRuns.lean` (and the modules each section names), namespace
 `Verification.TolerantFrames`. Each claim below is labelled **proved** (with
 its Lean name) or **not proved**.
@@ -165,7 +166,8 @@ exception family and $`R_{\mathrm{res}}`$ when it escapes), from an action of $`
 its family above, and $`Q_e`$. Entering a node and each continuation or
 handler transition spend one level; no obligation is read at budget zero.
 
-TRANSFER (proved: `transfer`) builds `NodeObligations` from the shape, the
+TRANSFER (proved: `transfer`, module
+`lean/Verification/Programs/TolerantFramesTransfer.lean`) builds `NodeObligations` from the shape, the
 retained index facts $`K_n`$, $`K_e`$ under $`\Box_{c_n}`$, $`\Box_{c_e}`$ at
 $`s_0`$, and the per-exit target entailment, which receives the retained
 facts transported (`Transported`): each $`F\in K`$ holds as $`F'`$ at every
@@ -525,7 +527,8 @@ output states. Proved:
   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{grow}\}`$
   and of $`\{\mathsf{values}:\mathsf{any},\ \mathsf{spines}:\mathsf{keep}\}`$
   by the tolerant frame at $`\{x.\mathsf{spine}:\mathsf{grow}\}`$
-  (`named_lowerBound_grow`, `named_lowerBound_field`); a step's exits carry
+  (`named_lowerBound_grow`, `named_lowerBound_field`, module
+  `lean/Verification/Programs/TolerantFramesRuns.lean`); a step's exits carry
   the named facts that hold after every action of each exit's effect
   (`writing_frame`);
 - a run only grows the heap: a normal-only judgment holds on both exits with
@@ -617,7 +620,8 @@ Before the step's delta the pass removes each such fact that reads the heap
 and keeps the heap-free ones (`Spine.dropHeap`, the handler's filter): a
 writing step's effect does not tolerate a heap fact it is not handed (a cell
 fact over a name fails after an action of $`\top`$, proved:
-`slotless_not_framed`).
+`slotless_not_framed`, module
+`lean/Verification/Programs/TolerantFramesNamedCounterexample.lean`).
 
 ## Allocated cells and separation
 

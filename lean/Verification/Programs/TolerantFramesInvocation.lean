@@ -1,4 +1,4 @@
-import Verification.Programs.TolerantFramesRuns
+import Verification.Programs.SinglePass.GraphSafety
 import Verification.Semantics.FootprintRebase
 
 /-! # Tolerant frames: one action per graph invocation

@@ -52,6 +52,9 @@ import Verification.Semantics.TolerantFrames
 import Verification.Semantics.IndexedStates
 import Verification.Semantics.ApartSupport
 import Verification.Programs.TolerantFramesRuns
+import Verification.Programs.SinglePass.GraphSafety
+import Verification.Programs.TolerantFramesTransfer
+import Verification.Programs.TolerantFramesNamedCounterexample
 import Verification.Programs.TolerantFramesNamed
 import Verification.Semantics.AdmissibleCells
 import Verification.Programs.TolerantFramesInvocation

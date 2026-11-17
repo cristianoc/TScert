@@ -419,4 +419,9 @@ theorem frame_run_top {Ξ T : Fam} {Q : Post} {E : Heap → Prop} {α : Type} {I
 target is unknown. -/
 def growEffect : Footprints.Closed := ⟨.any, .grow, .grow⟩
 
+/-! ## The effect of a typed field write -/
+
+/-- `{values: any, spines: keep}`: the effect of a typed field write. -/
+def fieldWriteEffect : Footprints.Closed := ⟨.any, .keep, .keep⟩
+
 end Verification.TolerantFrames
