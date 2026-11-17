@@ -9,8 +9,8 @@ natives that write them, and over a prefix a function fills and counts.
 ## The existing mechanism this extends
 
 [Quantified clauses](../ARITHMETIC.md#quantified-clauses): the index fact
-$`\mathrm{every}(x.p,t,\Phi)`$ over an array's or a typed array's element
-spine, read at an element by `every-read`, kept across a push, an exact
+$`\forall i<t.\ \Phi`$ over the elements $`x.p[i]`$ of an array's or a typed
+array's element spine, read at an element by `every-read`, kept across a push, an exact
 typed-array element write and a write apart from its
 [element region](../FOOTPRINTS.md#element-regions), and extended to a
 prefix by an exact write at its bound. A typed array's elements are the

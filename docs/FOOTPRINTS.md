@@ -275,7 +275,7 @@ its spine at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
 guard path's reads $`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$ and
 its body's; a spine separation its two paths' reads
 $`\mathrm{reads}_c^{\mathsf{keep},\mathsf{all}}`$; a region fact $`\mathrm{apart}(a, b)`$ the two spine
-locations at `keep`; a quantified fact $`\mathrm{every}(x.\pi, t, \varphi)`$
+locations at `keep`; a quantified fact $`\forall i<t.\ \varphi`$ over $`x.\pi[i]`$
 whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow},\mathsf{values}}(x.\pi)`$,
 the array's spine location at either key an array or a typed array holds its
 elements under, at `keep`, the locations of class value at `init` (an element
@@ -1018,7 +1018,7 @@ under $`\Sigma`$'s query (`region-grow`). Both proved (`writeAtoms_holds`,
 ```
 
 **Quantified facts across a write.** A write at a checked index of $`a`$'s
-spine keeps $`\mathrm{every}(z,t,\Phi)`$ where $`z`$ is an array slot with
+spine keeps $`\forall i<t.\ \Phi`$ over $`z[i]`$ where $`z`$ is an array slot with
 $`\mathrm{apart}_\Sigma(a,z)`$ and the bound and every free body term read
 nothing of $`a`$'s region: a slot's value, a string's length, or the length
 of a slot $`w`$ with $`\mathrm{apart}_\Sigma(a,w)`$ (`every-apart-write`,
@@ -1028,8 +1028,8 @@ slot apart from $`a`$ is kept (`growFirst`), so `every-grow` keeps such a
 fact too.
 
 ```math
-\frac{\mathrm{every}(z,t,\Phi)\in\Sigma\quad \mathrm{array}(z)\quad \mathrm{apart}_\Sigma(a,z)\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
-     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{every}(z,t,\Phi)}\ \textsf{every-apart-write}
+\frac{(\forall i<t.\ \Phi)\in\Sigma\quad \mathrm{array}(z)\quad \mathrm{apart}_\Sigma(a,z)\quad \mathrm{apart}_a(t)\quad \forall F\in\Phi.\ \mathrm{apart}_a(F)}
+     {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-apart-write}
 ```
 
 The separations at a unit's loop heads are inferred (`freshApartAt`,

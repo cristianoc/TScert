@@ -45,7 +45,7 @@ swap(r'\newcommand{\bx}[1]{\Box_{#1}}',r'\newcommand{\bx}[1]{\class{boxc}{\Box}_
 swap(r'F\text{ is \emph{invariant}}',r'F\text{ is }\textit{invariant}')
 swap(r'\newcommand{\sep}{\mathrel{\#}}',r'\newcommand{\sep}{\mathrel{\class{asr}{\#}}}')
 for n in ['keep','init','grow','any']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{chg}{\mathsf{%s}}}'%(n,n))
-for n in ['rigid','fresh','old','dense','every','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
+for n in ['rigid','fresh','old','dense','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
 swap(r'\newcommand{\val}{\kw{values}}',r'\newcommand{\val}{\class{reg}{\mathsf{values}}}')
 swap(r'\newcommand{\st}{\kw{spines}}',r'\newcommand{\st}{\class{reg}{\mathsf{spines}}}')
 src=src.replace(r'\kw{scalar}',r'\class{chg}{\mathsf{scalar}}').replace(r'\kw{spine}',r'\class{reg}{\mathsf{spine}}').replace(r'\kw{view}',r'\class{asr}{\mathsf{view}}')
