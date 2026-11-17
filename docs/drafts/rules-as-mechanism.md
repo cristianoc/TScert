@@ -238,6 +238,16 @@ a step counts:
   paper's rules of updates (Write-In, Write-Kept, Push-Every, View-Every),
   which step 7 owns.
 
+### The list of each step
+
+What a step still has to delete or restate is a list, built by reading
+the sources for every instance of what the step's row names, and kept in
+this plan beside the step. An item leaves the list in the commit that
+removes it from the code; an item found later joins it. Progress is
+reported as the number of items left. A round of work that leaves an item
+open brings it to the owner with its reason, and the discussion decides
+the way forward.
+
 ### What an audit checks
 
 A step judged done is audited from the sources by a reviewer who has not
