@@ -51,8 +51,7 @@ statements are open: rule Entry has no theorem stating it as displayed
 (the acceptance path states it for the linear consequences the composition
 derives, `HeapKnowledge.entry_sound`, and for the post's other forms over
 the same premises, `Composer.fact_holds`), and the Transfer theorem's connection to a run is proved for effects over
-classes only. `Derivation.sound` and `checkScoped_sound` are not in the
-axiom check.
+classes only.
 
 **No acceptance decision runs that layer.** Acceptance applies Call and
 Conj as the paper states them, and every other rule through deciders with
@@ -180,7 +179,7 @@ lost.
 | 3. Regions well-formed by the kind of their path | the tool and Lean refuse a region at a path of another kind | the class tags (`inCls`) on supports |
 | 4. Native steps carry the paper's effect and exact postcondition | the contracts of Push, Write-In, Write-End, View-Write, the field write and Alloc each state the regional effect of their rule | the class-wide frames of those contracts |
 | 5. A function's effect is composed from its steps | Seq-Eff, Fresh-Eff and rebasing run along the graph, on both exits, through the function's interface; a wrapper of `push` has the effect the paper derives for it | the closed bound of the steps' frames as the only inferred effect |
-| 6. A fact across a call is kept by Frame or by Entry | no other route keeps one | `postKeeps` and the alternative in `effectKept`; `withGrown`'s keeping of cell facts; `ownKept`'s keeping by the separation of field locations (`HeapSeparation`) |
+| 6. A fact across a call is kept by Frame or by Entry | no other route keeps one | `ownKept`'s keeping by the separation of field locations (`HeapSeparation`); the second Entry of `push` |
 | 7. Writes and quantified facts by the paper's rules | each of `cellKept`, `fieldEvery`, `everyGrown`, `appendKept`, `everyWritten`, `writtenPrefix`, `writeKept`, `writeAtoms`, `keepsLengths` and the arithmetic deciders is an application of Write-In, Write-Kept, Push-Every, View-Every, Guard, Inst, Prefix, Empty or an arithmetic rule | each of those deciders as an acceptor of its own, and the keeping relation they share (`Changes`, `IndexFact.keptBy`, `keptWith`, `keptIndices`) |
 | 8. Edges, merges, handlers and loops by the paper's transfer | checked transfer on every edge with the edge's effect, postcondition, condition and renaming; a merge keeps what every incoming edge establishes; Try; Loop with a rigid effect | `exitStep`, `edgeTransfer`, `assertionExit`, the merge checks, the handler edge's dropping of every heap fact |
 | 9. One assertion language | acceptance and the paper-shaped layer state facts in the paper's grammar, with one satisfaction relation | the second language and the translations between the two |
@@ -279,12 +278,15 @@ Keeping by Frame inside a decider, to go through `respects` and
 11. a typed-array write's quantified facts, their kept bound and terms
     (`everyWritten`, `writtenPrefix`, `writeKept`);
 12. `apart` and quantified facts across an element write (`writeAtoms`,
-    `termApart_kept`), proved over the write's heap.
+    `termApart_kept`), proved over the write's heap;
+13. `apart(x,y)` across a push (`withGrown`, `grownRegions`), kept against
+    an effect rebuilt from push's postconditions instead of the call's own,
+    which waits on push's regional effect (step 4).
 
 Keeping lemmas no acceptance theorem and no status tag of the paper uses,
 to delete:
 
-13. `rootCells_box`, `Admissible.elem_kept`, `box_idem_on`,
+14. `rootCells_box`, `Admissible.elem_kept`, `box_idem_on`,
     `stableAt_invariant`, `field_write_keeps_bound`, `grow_write_judgment`,
     `invocation_box`, `rebaseOk_stable`, `keepsCall_frame`,
     `named_le_box`, `slotless_not_framed`, `preserving_step_frame`,
@@ -294,13 +296,283 @@ to delete:
 Proofs of the paper's rules that no status tag cites, for the paper's tags
 to cite:
 
-14. `CommandSummary.frame_at_call`, `frame_at_call_below`,
+15. `CommandSummary.frame_at_call`, `frame_at_call_below`,
     `signature_holds`, `signature_holds_below` (rule Call), and
     `LoopEvidence.frame_at_head`, `frame_at_exit` (rule Loop).
 
 The counter-models `unrestricted_not_respects`, `allocation_not_respects`
 and `elementWrite_not_respects` are controls of an excluded behaviour and
 stay.
+
+### The lists of steps 2 to 10
+
+Built on 2026-11-17 at `16988ca6` by reading every instance of each
+step's row up to the acceptance path. "Pretext" names, by reading its
+sources at the commit CI pins, the functions that use the construct; it is
+not measured. An item marked **owner** waits for a decision of the owner,
+for the reason given. The branch `parity/fresh-facts` (paused) resolves
+the items marked *branch*.
+
+#### Step 2's list (10)
+
+1. The paper layer's own disjointness evidence (`DisjointEvidence`,
+   `DisjointUnder`, `ClassWitness`, `RespectEvidence.query`) answered by
+   the one check (`SepEvidence.query`) over evidence read from the
+   assertion.
+2. Freshness reaching the one check as `fresh(r)` against regions below
+   the mark; the typed-field stamps deleted. *branch*. Pretext: the
+   `for…of` loops of `measurement.ts`, `line-breaks.ts`,
+   `gecko-line-breaks.ts`.
+3. The evidence produced: freshness at allocation, Alloc's `apart`, and
+   below-the-mark evidence at rigid paths (entry values and fresh call
+   results: *branch*). Pretext: array literals followed by `push` in
+   `rich-inline.ts`, `analysis.ts`, `layout.ts`, `line-breaks.ts`,
+   `gecko-line-breaks.ts`, `measurement.ts`.
+4. **Owner.** The separation of field locations (`SepFact.locs`, fed by
+   `HeapSeparation`): of two objects allocated in one invocation, and of
+   two module cells, which the paper has no rule for; an array literal's
+   part becomes Alloc's `apart`. Pretext: `unpackClasses`
+   (`line-breaks.ts`), and the functions of item 3.
+5. The class evidence `SepEvidence.cl`, which repeats the kinds, deleted.
+6. `boundQuery` asked directly, replaced by the one check.
+7. `π # π'` answering the paper's region `π.spine`; `spineSite` deleted.
+8. One region form for a spine, `π.spine`, in place of `field x []` and
+   `path x p []`, in supports and effects.
+9. The class regions the paper lacks (`Selector` with `arrays` alone,
+   `Region.all`) restated as `val`, `st`, `vw`.
+10. **Owner.** Guarded separations (`factSeps .guarded`), which the paper's
+    list of evidence lacks: the paper states that a region at a path from
+    a value with no object is empty, or this waits for step 9.
+
+#### Step 3's list (11)
+
+1. to 6. The class tags on the supports of a path's reads (`pathReads`),
+   a spine read (`spineRead`), a quantified fact (`everyCells`), `apart`
+   (`apartSupport`, `regionOf_supported`), an element (`elementSupport`)
+   and the growth of `apart` (`apartGrowSupport`). Pretext: every fact at
+   a field path.
+7. **Owner.** Computed supports carry no kinds (`Term.support`,
+   `IndexFact.support?`): either supports read the slots' types, which may
+   lose facts at union-typed paths, or the paper's status "the regions of
+   supports are not kinded" stays.
+8. A decoded contract's regions checked by the kind of their path
+   (`EffectCodec.regionOf`).
+9. **Owner.** A stated spine region admits arrays only (`regionKindOk`)
+   where the paper also admits typed arrays; and the front end passes a
+   stated region to Lean unchecked (`statementOf`).
+10. The constructor `Region.inCls` and its cases, after step 4 removes the
+    tags from the native contracts.
+11. `spineOnly` and `spineOnly_mem`, unused, deleted.
+
+#### Step 4's list (12)
+
+1. The field write's effect `{x.f: any}` (`fieldWriteFrame`) in place of
+   the class-wide grade. Pretext: field writes in every module.
+2. **Owner.** The initializing write `x.f ??= v` has no rule in the paper;
+   Lean grants it `{value: init}` class-wide. Pretext: `getEngineProfile`,
+   `lazyRegExp`, `getWordSegmenter`, `unpackClasses`, `getScriptFacts`,
+   `getSpaceWidth`, `prepareRichInline`, `addWidthTrim`.
+3. The element write's effect `{x.spine: s, x.cells: any}`
+   (`elemWriteFrame`) in place of the class-wide grade.
+4. **Owner.** A write at a present literal index keeps the spine
+   (`litWriteChange`); the paper's displayed Write-In effect is `grow`, its
+   prose says `keep`.
+5. Write-In's postcondition `|π| = old(|π|)` for every `π`, stated by the
+   step.
+6. Push's frame stated a second time as a postcondition, deleted.
+7. View-Write's frame stated a second time as a postcondition, deleted.
+8. View-Write's exceptional exit `⊤` (the `%ByteSet%` contract, `fill`,
+   `copyWithin`, `set`) where the paper's step never throws.
+9. Alloc's effect stated as the empty effect.
+10. Alloc's postcondition `fresh ∧ |x| = k ∧ ⋀ apart` as one contract
+    (now in `literalArrayAtoms`, `regionAtoms`, `freshApart`,
+    `emptyArrays`, the walk's fresh names, the regional route and the
+    front).
+11. **Owner.** The order of steps 4, 5 and 8: acceptance's node judgment
+    carries closed effects only, and regional effects reach it through
+    Transfer for regions at paths, which the paper marks as a conjecture;
+    or through the regional composition that exists.
+12. `field_write_judgment` and `element_write_judgment`, unused, deleted.
+
+#### Step 5's list (11)
+
+1. The front's walk builds closed summaries (`Synthesis`); it composes
+   regional summaries per exit.
+2. `ExitProposals.lean`, read only by the axiom check, deleted; the
+   paper-shaped composition (`ThenEvidence`, `CommandSummary.seq_sound`,
+   `handle_sound`, `LoopEvidence`) runs.
+3. The pass's proposals by closed routes (`PassProposals`) replaced by
+   one regional route, with a widening.
+4. The interface formats of effects (`Effect.ofClosed`, `ofStated`,
+   `RunBound`, `CodeConditions`, the tools' `StatedFrame` and
+   `ClosedFootprint`) regional.
+5. A stated region reaches callers as `⊤` (`statedEffect`).
+6. **Owner.** `Modifies` admits regions only at `any`: whether written
+   effects gain the paper's changes.
+7. Acceptance's Seq-Eff over closed bounds (`footprintCheck`,
+   `StepGrades`, `boundOk`, `selectedGrades`) replaced by the regional
+   check sound by `Post.compose_rebases` and `Post.fresh_eff`.
+8. The regional route's second Seq-Eff (`ArgumentRegionGraph`,
+   `Post.compose_at`) merged with item 7.
+9. Fresh-Eff implemented three times, one left (`Post.fresh_eff`).
+10. Rebasing evidence from the paper's read equalities, not only `@stable`
+    one-field paths. Pretext: `readScriptRuns`, `getUnspacedGraphemes`,
+    `removeItemsSkippableSegmentBreaks`.
+11. A pipeline case: a wrapper of `push`, and a callee stating `out[*]`,
+    each keeping `cursor.at < flags.length` in its caller.
+
+Pretext has no annotations: every callee effect it relies on is inferred,
+so this step is on its path.
+
+#### Step 6's list (4)
+
+1. A call keeps its read links by Frame (`frameLinks`). *branch*.
+2. Freshness and entry-value evidence at calls. *branch*.
+3. `ownKept`, `ownOutput`, `ownCall` and `Checker.keepingOwnCalls`
+   deleted. *branch*.
+4. The second Entry of `push` (`appendEntry`, `linearAppendKept`) becomes
+   the general one (`callEntry`) once step 4 gives push its exact length
+   postcondition.
+
+#### Step 7's list (30)
+
+1. The keeping relation (`Changes`, `IndexFact.keptBy`, `keptWith`,
+   `everyKept`, `keptIndices`) deleted once nothing uses it.
+2. A step's change stated as a `Changes` value replaced by the paper's
+   postconditions of Write-In, Push, View-Write and Field-Write.
+3. A field write's written value (`writeOutput`) by Field-Write.
+4. `cellKept`'s `R ≤ V` branch by Write-Kept.
+5. `fieldEvery`'s branch for an aliased element cell deleted (Frame keeps
+   the fact).
+6. `keepsLengths`, `lengthOutput` by Write-In and Entry. Pretext: the
+   guarded writes of `prepare.ts`, `measurement.ts`, `analysis.ts`,
+   `han-kerning.ts`, `rich-inline.ts`.
+7. `atLengthAtoms`, `writeCarried` by Write-End, Arithmetic and Entry.
+8. `writtenCells`'s value branch deleted (Frame keeps the fact).
+9. `appendEntry`'s length by Push and Entry. Pretext: every `push`.
+10. `everyGrown`'s every-push branch and `appendKept` by Push-Every.
+11. **Owner.** `everyGrown` on the receiver: Push's `Q_<` and the
+    introduction of a quantified fact, which the paper lacks.
+12. `exactWriteOf` as the premise of View-Write and View-Every.
+13. `everyWritten`, `writeKept` by View-Every; **owner**: its branch at
+    or past the bound has no body premise, which View-Every lacks.
+    Pretext: the typed-array writes.
+14. `writtenPrefix` by View-Every and Prefix.
+15. `valueAtoms`, `copiedAtoms`, `pastCopies` by the binding `y ≐ a`.
+16. **Owner.** `litSlot`: a fact from a declared literal type.
+17. The range of an array's length by Arr-Length.
+18. A string's length by Str-Length.
+19. `concatAtoms` by Concat.
+20. Sums and products by Add, Sub and Scale.
+21. `stringLengthPlusOne`, `pastSafeAtoms` by the length successor.
+22. `smallOperand`, `bitAtoms` by Shr and Mask.
+23. **Owner.** `x & m` with `m` declared in `[0, 2^31)` gives an index for
+    any `x`; the paper's Mask requires `0 ≤ x < 2^31`. Pretext (read):
+    every guarded write, in `analysis.ts`, `han-kerning.ts`,
+    `measurement.ts`, `prepare.ts`, `rich-inline.ts`.
+24. `releasePast`, `releaseEither` by ∨-elimination; **owner**: the clash
+    of `pastSafe` with a safe integer is not among the paper's
+    contradictions.
+25. `unguardIndices` by Guard and the atoms' contradictions.
+26. `guardFollows`, `guardBodyFollows` by the rules of ∨ and Guard.
+27. `instantiateEvery`, `elementInstances` by Inst, `z[i].f` bodies
+    included; **owner**: bodies with an offset `z[i+d]` have no form in
+    the paper.
+28. `everyPrefix` by Prefix; **owner**: it also drops and renames body
+    clauses under conditions.
+29. `linearFollowsIn`'s quantified branch by Empty.
+30. `entailsKnown`, `linearEntailed` by Arithmetic, with a certificate.
+
+#### Step 8's list (19)
+
+1. `exitStep`, `visitExits`, `pushExit`: one checked transfer per exit,
+   the paper's Check against the target's knowledge.
+2. The normal branch's observations and promotions as the edge's
+   condition and postcondition.
+3. `edgeTransfer`, `mapNames`, `Store.drop`: renaming as substitution,
+   forgetting as `∃`-elimination.
+4. `assertionExit` deleted; Check against the target.
+5. `withStated` only proposes the target's knowledge.
+6. `headExit`: Check of the supplied head knowledge on every incoming
+   edge. Pretext: every loop.
+7. `mergeState` only proposes; each incoming edge's Check carries it.
+   Pretext: every conditional.
+8. The handler edge keeps by Frame what the node's exceptional effect
+   respects, in place of dropping every heap fact. Pretext:
+   `getExtraSpacings`.
+9. The regional facts along edges, handlers and merges by the same Check.
+10. **Owner.** Loop with a frame needs the modality in the knowledge,
+    which step 9 brings: a head's frame carried in step 8, or Loop after
+    step 9.
+11. The edge soundness proofs restated as one theorem through `transfer`.
+12. The merge's holding lemmas deleted.
+13. The handler soundness premises restated.
+14. Transfer's connection to a run proved for regions at paths.
+15. Check built as a typed `Derivation`.
+16. **Owner.** Types along edges (`exitTypes`, `refinedContext`,
+    `mixedContext`, vacuity): the paper's Check has no typing judgment.
+17. **Owner.** Implications along edges and merges (a test implies a
+    type).
+18. **Owner.** Facts read off declared types (`withTypedCells`,
+    `withTypedLinks`): the paper derives no atom from a type.
+19. Unused loop and example lemmas deleted (`loop_back_edge`,
+    `TolerantFramesModelLoop`, `TolerantFramesExamples`).
+
+#### Step 9's list (29)
+
+1. to 4. The three languages, the knowledge (`Knowledge.Holds`), the
+   pass's named atoms (`SinglePass.Atom`, `StateHolds`) and the paper
+   layer's (`Parity.Sat`), become one, in the paper's grammar.
+5. **Owner.** The separation of field locations (as step 2's item 4).
+6. **Owner.** Every element of a kind (`ElemAtom`): the paper's
+   quantified bodies are linear only.
+7. **Owner.** Entry terms in a body's knowledge (`Term.old`): the paper
+   puts `old` only in postconditions.
+8. **Owner.** Type implications (`Implication`): the paper keeps types
+   outside its assertions.
+9. Truthiness conditions on facts restated with the paper's value sets
+   and `∨`.
+10. to 14. `every`, the element, disjunction, `#` and `apart`: the paper
+    layer's meanings restated to the paper's.
+15. Three languages of value sets become the paper's.
+16. Field contents and links restated; **owner**: the paper's optional
+    read ignores prototypes.
+17. The special forms `index`, `length`, `bound`, `int`, `pastSafe`
+    restated as linear, `defined` and `π ≐ 2^53` atoms.
+18. Four forms of freshness become `fresh(r)`.
+19. Density.
+20. One satisfaction domain, the paper's `(ρ, m, s)`.
+21. One postcondition language, with `∨`, `⇒` and `∀`.
+22. `linear_holdsAt_iff` and its duplicate deleted.
+23. `ParityArithmeticBridges.lean`, imported by no module, deleted.
+24. The knowledge's facts embedded in postconditions and read back.
+25. Postconditions recognised by their syntax (`statesExtension`,
+    `statesAppend`, `exactWriteOf`).
+26. and 27. The two checkers of support evidence become one.
+28. The acceptance theorem's conclusion restated in the one language.
+29. The wire and the front end in one new shape.
+
+#### Step 10's list (12)
+
+1. The annotation: knowledge at each label in the one language.
+2. A structure of derivations per node and edge with rule Fun's four
+   obligations, and one theorem from it to the acceptance conclusion.
+3. Each step's precondition by a derivation.
+4. A Check derivation per edge (with step 8's item 14).
+5. Fun's entry: the precondition in the one language.
+6. Fun's returns: a derivation of `Q` at each return.
+7. Fun's throws: an exceptional postcondition, `true` by default.
+8. Fun's effect: one form.
+9. The derivation checkers no acceptance code calls (`checkDerivation`,
+   `checkScoped`, `RawDerivation`) replaced by typed derivations; the raw
+   checkers deleted.
+10. **Owner.** The derivation system is narrower than Definition
+    "Derivations": every form acceptance uses becomes derivable, or a
+    program is lost.
+11. **Owner.** The premise of the acceptance theorem stays the exact
+    command-line condition (CLAUDE.md); a sound annotation is then an
+    intermediate theorem it goes through.
+12. The duplicates left after steps 1 to 9.
 
 ### What an audit checks
 
