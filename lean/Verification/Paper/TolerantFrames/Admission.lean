@@ -66,6 +66,7 @@ def Operation.Scoped (Γ : Scope) : Operation → Prop
   | .elementWrite x i v | .viewWrite x i v => Γ x ∧ i.Scoped Γ ∧ v.Scoped Γ
   | .objectLiteral fs => ∀ p ∈ fs, p.2.Scoped Γ
   | .arrayLiteral as => ∀ a ∈ as, a.Scoped Γ
+  | .nativeCall f receiver as => Γ f ∧ receiver.Scoped Γ ∧ ∀ a ∈ as, a.Scoped Γ
   | .methodCall x _ as | .call x as | .construct x as => Γ x ∧ ∀ a ∈ as, a.Scoped Γ
 
 /-- Which listed paper steps bind a result, rather than mutate storage. -/

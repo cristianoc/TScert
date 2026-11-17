@@ -46,6 +46,7 @@ def Operation.symbolic (host : NativeCode) : Operation → Tm
   | .stringLength x => .lenOf (.var x)
   | .objectLiteral fs => .makeAt .absent (fs.map fun p => .str p.1) (fs.map fun p => p.2.code 0)
   | .arrayLiteral es => .makeAt .absent [arraySpineKey] [.arrLit (es.map (Argument.code 0))]
+  | .nativeCall f receiver args => .invoke (.var f) (receiver.code 0) (args.map (Argument.code 0))
   | .methodCall x f args => .invoke (.readAt (.str f) (.var x)) (.var x) (args.map (Argument.code 0))
   | .call f args => .invoke (.var f) .undef (args.map (Argument.code 0))
   | .construct f args => .construct (.var f) (args.map (Argument.code 0))

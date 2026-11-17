@@ -382,3 +382,42 @@ An owner decision is pending: freeze exported old before rest allocation and
 state the body premise with that anchor, or retain post-prologue body old with
 explicit anchor translation/distinct call-specification semantics. The paper is
 unchanged, and no rest/Fun gap is counted closed by this observation.
+
+
+## Resolved supplied native calls and execution safety
+
+Operation.nativeCall carries a callee name, a receiver argument and positional
+arguments. Its actual and symbolic code invoke that named value with a separate
+receiver. Scope, renaming, finite compiler bounds and generated-code reference
+proofs cover it. Ordinary method/property lookup retains its existing meaning;
+no method spelling is silently recognised as a builtin.
+
+[NativeContracts](../../lean/Verification/Paper/TolerantFrames/NativeContracts.lean)
+is an explicit parameterized interface for concrete supplied call-mode callees.
+Its source flag and world-reference premise are separate. The safety field covers
+the actual receiver/evaluated arguments under their state/type precondition and
+callee references; the call-site binding supplies the concrete identity and its
+references. It is not demanded in worlds missing that callee. The field uses
+shared SafePostExcV with source/reference result and exception families, exact
+normal/thrown-value predicates and the respective regional postconditions read
+at the original environment/heap. No contract instance or real native library
+implementation is globally postulated.
+
+[NativeExecution](../../lean/Verification/Paper/TolerantFrames/NativeExecution.lean)
+extends the existing deterministic indexed-run proof to that same value-aware
+safety predicate. Actual primitive runs therefore supply chosen admissible
+worlds, exact residual budgets, valid results/exceptions and both effects.
+Bind and perform preserve the original whole context, with result binding only
+for bind. The command-level exceptional post retains an existential value;
+the lower-level exit theorem retains the actual thrown value. The positive
+safety/progress theorem and NativeContract.can_step prove an actual invocation
+step for already evaluated inputs. They promise neither termination nor normal
+return, and a stuck invocation cannot satisfy such a supplied safety contract
+at positive budget for an actual precondition instance.
+
+The generic call rule does not instantiate the thirteen paper host contracts.
+Each still needs its concrete supplied callee, state/type domain, mode/receiver
+compatibility, exact raw outcomes/effects and paper-formula bridge. Construct
+mode and the dedicated three view-host forms need their respective integration;
+metadata, source-value flags and the generic bridge do not establish those
+instances. The 13 rows remain assumed. A and its trust boundary are unchanged.

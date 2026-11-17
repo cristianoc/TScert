@@ -646,3 +646,16 @@ no-freshness check is only sufficient. Constructing relative body proofs,
 aligning arbitrary actuals, deriving encoding premises from typing, function
 allocation/type membership, freshness rebasing and rest/spread remain distinct.
 No general exceptional/rebased bounded effect composition is claimed.
+
+
+## Supplied native execution
+
+The [native bridge](paper-call-function-bridge.md#resolved-supplied-native-calls-and-execution-safety)
+uses explicit callee names, receivers and positional arguments throughout code,
+scope, renaming and compilation. Parameterized NativeContract requires actual
+shared execution safety, exact normal/thrown-value outcomes and regional effects
+for valid callee references. Indexed-run inversion derives command triples and
+both effects; positive safety supplies a real invocation step. This generic
+call-mode interface is distinct from its thirteen still-required concrete host
+instances/formula bridges, constructor-mode integration and general B typing.
+No globally assumed contract, new axiom or real native implementation is added.

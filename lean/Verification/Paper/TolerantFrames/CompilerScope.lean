@@ -24,6 +24,7 @@ def Operation.names : Operation → List Nat
   | .elementWrite x i v | .viewWrite x i v => x :: (i.names ++ v.names)
   | .objectLiteral fs => fs.flatMap fun p => p.2.names
   | .arrayLiteral args => args.flatMap Argument.names
+  | .nativeCall f receiver args => f :: (receiver.names ++ args.flatMap Argument.names)
   | .methodCall x _ args | .call x args | .construct x args => x :: args.flatMap Argument.names
 
 theorem Operation.scoped_names (op : Operation) (Γ : Scope) :
@@ -107,6 +108,8 @@ theorem Operation.scoped_code_eq {Γ : Scope} {ρ ρ' : Env} {op : Operation}
     congr 1
     exact List.map_congr_left fun p hp => arg p.2 (scope p hp)
   | arrayLiteral as => simp only [Operation.code, args as scope]
+  | nativeCall f receiver as =>
+    simp only [Operation.code, agree f scope.1, arg receiver scope.2.1, args as scope.2.2]
   | methodCall x f as | call x as | construct x as =>
     simp only [Operation.code, agree x scope.1, args as scope.2]
 

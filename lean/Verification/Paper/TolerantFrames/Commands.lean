@@ -45,6 +45,9 @@ inductive Operation where
   | stringLength (x : Nat)
   | objectLiteral (fields : List (String × Argument))
   | arrayLiteral (elements : List Argument)
+  /-- A declared native's resolved callee is supplied explicitly; the receiver
+  is separate from its positional actuals. Ordinary method lookup is unchanged. -/
+  | nativeCall (callee : Nat) (receiver : Argument) (arguments : List Argument)
   | methodCall (x : Nat) (method : String) (arguments : List Argument)
   | call (f : Nat) (arguments : List Argument)
   | construct (f : Nat) (arguments : List Argument)
@@ -84,6 +87,7 @@ def Operation.code (host : NativeCode) (ρ : Env) : Operation → Tm
   | .stringLength x => .lenOf (ρ x)
   | .objectLiteral fs => .makeAt .absent (fs.map fun p => .str p.1) (fs.map fun p => p.2.eval ρ)
   | .arrayLiteral es => .makeAt .absent [arraySpineKey] [.arrLit (es.map (Argument.eval ρ))]
+  | .nativeCall f receiver args => .invoke (ρ f) (receiver.eval ρ) (args.map (Argument.eval ρ))
   | .methodCall x f args => .invoke (.readAt (.str f) (ρ x)) (ρ x) (args.map (Argument.eval ρ))
   | .call f args => .invoke (ρ f) .undef (args.map (Argument.eval ρ))
   | .construct f args => .construct (ρ f) (args.map (Argument.eval ρ))

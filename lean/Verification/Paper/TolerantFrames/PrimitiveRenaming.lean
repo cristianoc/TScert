@@ -38,6 +38,7 @@ def Operation.rename (σ : Nat → Nat) : Operation → Operation
   | .stringLength x => .stringLength (σ x)
   | .objectLiteral fs => .objectLiteral (fs.map fun p => (p.1, p.2.rename σ))
   | .arrayLiteral es => .arrayLiteral (es.map (Argument.rename σ))
+  | .nativeCall f receiver args => .nativeCall (σ f) (receiver.rename σ) (args.map (Argument.rename σ))
   | .methodCall x f args => .methodCall (σ x) f (args.map (Argument.rename σ))
   | .call f args => .call (σ f) (args.map (Argument.rename σ))
   | .construct f args => .construct (σ f) (args.map (Argument.rename σ))

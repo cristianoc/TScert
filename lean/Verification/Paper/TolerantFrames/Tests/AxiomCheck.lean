@@ -1,3 +1,5 @@
+import Verification.Paper.TolerantFrames.NativeContracts
+import Verification.Paper.TolerantFrames.NativeExecution
 import Verification.Paper.TolerantFrames.BoundedCommands
 import Verification.Paper.TolerantFrames.BoundedFrameRules
 import Verification.Paper.TolerantFrames.BoundedEffects
