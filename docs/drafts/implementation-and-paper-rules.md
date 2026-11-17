@@ -422,6 +422,32 @@ Actual rest-array/spread preparation, freshness-mark rebasing and Fun's body-to-
 callable-code correspondence remain distinct obligations, as the reviewed
 [operational design](paper-call-function-bridge.md) records.
 
+## Budget and raw-execution foundations for functions
+
+[BudgetTruncation.lean](../../lean/Verification/Paper/TolerantFrames/BudgetTruncation.lean)
+constructs positive restricted states from shared heap/world restriction.
+Projecting a future to budget one preserves its heap and exact regional post.
+Structural induction proves every syntactic assertion equivalent under source
+restriction, including modalities. This is not arbitrary-world independence or
+an unrestricted semantic-assertion theorem. Entry restriction for full two-state
+postconditions requires the exit budget below the new entry budget. Restricting
+an actual admissible exit preserves every syntactic postcondition, including
+arbitrary implication and transition atoms; contexts and returned/thrown source
+references remain valid. These facts account for administrative reduction costs
+only after actual compiler inversion proves the corresponding counts. Rest
+allocation and body/call anchors need their own operational arguments.
+
+Raw command completion now uses the shared machine-value predicate isVal.
+Internal results no longer disappear from the raw runs; Triple still requires
+source-valued world-valid environments and ExitValid at its exits. This
+strengthens Triple obligations and grants no contract to arbitrary native code.
+The actual Call proof obtains both source/reference validity of its bound result
+from the formal output context. Command scope joins retain every outer binding,
+and a caught name is excluded from the output. Input preservation and avoidance
+follow structurally, so lexical assertion scope supplies Frame's noncapture
+premise directly. The alias example's updated join proof retains its inputs;
+it is still not a closed execution proof.
+
 ## How far B matches the paper
 
 Every item is compared in [B against the paper](b-against-the-paper.md).

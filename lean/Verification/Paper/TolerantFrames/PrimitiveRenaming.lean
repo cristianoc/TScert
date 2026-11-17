@@ -95,10 +95,11 @@ theorem PrimitiveRun.actual_context {host} {p : Primitive} {σ : Nat → Nat} {�
   cases p with
   | bind y op =>
     cases hr with
-    | normal _ hsource =>
+    | normal _ _ =>
       apply (hv.admissible ha).bindName
       have href := ht.1 y
-      simp only [Primitive.rename, Primitive.bindResult, bindName, ↓reduceIte] at href
+      have hsource := ht.2.1 y
+      simp only [Primitive.rename, Primitive.bindResult, bindName, ↓reduceIte] at href hsource
       exact ⟨hsource, href⟩
     | thrown _ _ => exact hv.admissible ha
   | perform op => cases hr <;> exact hv.admissible ha

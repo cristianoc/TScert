@@ -116,9 +116,11 @@ def Primitive.bindResult (ρ : Env) (v : Val) : Primitive → Env
 
 /-- Primitive completion is actual execution in the shared deterministic
 calculus. Safety and world existence are conclusions of triples, not silently
-inserted premises of this execution relation. -/
+inserted premises of this execution relation. Raw completion uses every shared
+machine value; source-value guarantees belong to command/host typing and
+Triple contexts/exits. An internal value cannot silently disappear from runs. -/
 inductive PrimitiveRun (host : NativeCode) : Primitive → Env → Heap → Nat → Env → Heap → Exit → Prop where
-  | normal {p ρ h n h' v} : Steps n h (p.operation.code host ρ) h' v → isSourceVal v = true →
+  | normal {p ρ h n h' v} : Steps n h (p.operation.code host ρ) h' v → isVal v = true →
       PrimitiveRun host p ρ h n (p.bindResult ρ v) h' .normal
   | thrown {p ρ h n h' t v} : Steps n h (p.operation.code host ρ) h' t → Raises t v →
       PrimitiveRun host p ρ h n ρ h' (.thrown v)
@@ -148,8 +150,8 @@ inductive Executes (host : NativeCode) : Command → Env → Heap → Nat → En
       Executes host d (bindName ρ₁ x v) h₁ k ρ₂ h₂ e → Executes host (.handle b x d) ρ h (n + k) ρ₂ h₂ e
   | handle_exit {b x d ρ h n ρ' h' e} : Executes host b ρ h n ρ' h' e →
       (∀ v, e ≠ .thrown v) → Executes host (.handle b x d) ρ h n ρ' h' e
-  | return_ {a ρ h} : isSourceVal (a.eval ρ) = true → Executes host (.return_ a) ρ h 0 ρ h (.returned (a.eval ρ))
-  | throw_ {a ρ h} : isSourceVal (a.eval ρ) = true → Executes host (.throw_ a) ρ h 0 ρ h (.thrown (a.eval ρ))
+  | return_ {a ρ h} : isVal (a.eval ρ) = true → Executes host (.return_ a) ρ h 0 ρ h (.returned (a.eval ρ))
+  | throw_ {a ρ h} : isVal (a.eval ρ) = true → Executes host (.throw_ a) ρ h 0 ρ h (.thrown (a.eval ρ))
   | break_ {ρ h} : Executes host .break_ ρ h 0 ρ h .break
 
 /-- Returned and thrown values are valid values of the chosen exit world.

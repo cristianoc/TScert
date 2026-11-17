@@ -81,3 +81,48 @@ Logical binders leave program names unchanged. Their declaration shift commutes
 with program renaming of the shared even/odd root encoding. This extends the
 existing scope and DeclaredPaths pullback mechanisms, without inferring object
 or collection types from equality at one heap.
+
+## Administrative reductions and raw completion
+
+Astra reviewed these foundations before implementation. Shared graph code has
+dispatch/invocation reductions in addition to the primitive reductions B counts.
+For syntactic assertions, same-heap positive world truncation preserves truth:
+project any higher-budget future to budget one, keeping the exact footprint
+postcondition, and use induction on the assertion body. This is not arbitrary-
+world independence, nor a theorem for arbitrary semantic predicates such as
+budget greater than one. Full two-state transport preserves frozen anchors;
+transition atoms require an exit budget below the truncated entry, or explicit
+admissibility of both pairs. Implications follow by equivalence, not assumed
+monotonicity.
+
+After compiler inversion relates primitive count p to shared count N for the
+same body segment, with p≤N<S.n, apply the body Triple at the original entry
+budget and restrict its chosen exit from S.n-p to S.n-N. Exact syntactic
+current-state transport requires the original entry/exit pair admissible; both
+versions of each transition atom then have the same heap predicate. This
+retains the original entry anchor and needs no arbitrary postcondition
+monotonicity. Source/context validity survives the exit restriction. Only
+same-heap administrative steps can be erased this way. Rest prologue allocation
+changes the heap and can be observed even by quantifiers omitting the rest name;
+it needs a separate operational proof. Begin with fixed-arity bodies.
+
+Raw B completion should use shared isVal while ValidContext and ExitValid retain
+source-value and world-reference guarantees. Otherwise an unspecified native
+returning an internal machine value may complete graph code but disappear from
+B's raw runs, making a body Triple vacuous. Broadening raw executions strengthens
+Triple obligations; it supplies no source guarantee for arbitrary NativeCode.
+Typed/host contracts still supply source guarantees. Return/Throw rules use
+Argument.valid; actual Call validity recovers both source and references of a
+bound result from the formal exit context. A and the shared calculus are unchanged.
+
+## Outer lexical bindings remain in scope
+
+Astra identified an admission defect before the fixed-arity body bridge: a choice
+or handler join could forget an original input name, then a sequence could bind
+that numeric name again. The named environment would overwrite an immutable
+parameter. Require each join output to retain its input scope, then derive input
+scope preservation and avoidance by structural induction. Shadowing remains
+possible after alpha-renaming to a distinct identity. Keep raw execution general;
+this is an admission correction. A caught name is local to its handler and is
+excluded from the joined output, including when another branch reuses that raw
+numeric slot. This follows the existing locality documented by the judgment.

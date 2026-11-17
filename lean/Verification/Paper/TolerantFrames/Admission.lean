@@ -75,18 +75,19 @@ def Operation.Binds : Operation → Prop
 
 /-- A command's lexical scope. Loops discard iteration-local names; loop
 mutation of captured variables is represented by private cells. A handler's
-caught name is fresh and local to its handler. -/
+caught name is fresh and local to its handler. Joins retain outer names,
+so a forgotten input cannot later be rebound under its original identity. -/
 inductive Command.WellScoped : Scope → Command → Scope → Prop where
   | bind {Γ x op} : ¬ Γ x → op.Scoped Γ → op.Binds →
       Command.WellScoped Γ (.step (.bind x op)) (fun y => y = x ∨ Γ y)
   | perform {Γ op} : op.Scoped Γ → ¬ op.Binds → Command.WellScoped Γ (.step (.perform op)) Γ
   | seq {Γ Δ Θ a b} : Command.WellScoped Γ a Δ → Command.WellScoped Δ b Θ → Command.WellScoped Γ (.seq a b) Θ
   | choice {Γ Δ Θ Ω test a b} : test.Scoped Γ → Command.WellScoped Γ a Δ → Command.WellScoped Γ b Θ →
-      (∀ x, Ω x → Δ x ∧ Θ x) → Command.WellScoped Γ (.choice test a b) Ω
+      (∀ x, Ω x → Δ x ∧ Θ x) → (∀ x, Γ x → Ω x) → Command.WellScoped Γ (.choice test a b) Ω
   | loop {Γ Δ b} : Command.WellScoped Γ b Δ → Command.WellScoped Γ (.loop b) Γ
   | handle {Γ Δ Θ Ω b x d} : ¬ Γ x → Command.WellScoped Γ b Δ →
       Command.WellScoped (fun y => y = x ∨ Γ y) d Θ →
-      (∀ y, Ω y → Δ y ∧ Θ y) → Command.WellScoped Γ (.handle b x d) Ω
+      (∀ y, Ω y → Δ y ∧ Θ y) → (∀ y, Γ y → Ω y) → ¬ Ω x → Command.WellScoped Γ (.handle b x d) Ω
   | return_ {Γ a} : a.Scoped Γ → Command.WellScoped Γ (.return_ a) Γ
   | throw_ {Γ a} : a.Scoped Γ → Command.WellScoped Γ (.throw_ a) Γ
   | break_ {Γ} : Command.WellScoped Γ .break_ Γ

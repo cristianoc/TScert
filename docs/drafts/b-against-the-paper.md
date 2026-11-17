@@ -83,18 +83,29 @@ connection to complete typing and derivation admission is a separate obligation.
 assembles Check for that subcalculus with arbitrary regional effects. No
 completeness claim about certificates or search is made.
 
+`BudgetTruncation` proves exact positive same-heap world restriction for the
+complete syntactic assertion grammar, including boxes. This is not arbitrary-
+world independence or a theorem for arbitrary semantic predicates. Frozen-entry
+transport has an explicit exit-budget bound. Restricting a chosen admissible
+exit preserves complete first-order postconditions, including implication and
+transition atoms, plus source/reference validity; it is a foundation for graph
+administrative steps, not Fun itself. Scope admission retains inputs and keeps
+caught names local; its general preservation/avoidance theorems discharge Frame
+noncapture for scoped syntax. Raw completion uses shared machine values, while
+Triple's source/world guarantees are unchanged.
+
 **§1 — The problem**
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Example 1, aliasing loop — 75 | `AliasExample.program`, `.body`, `.program_scoped`, `.Head`, `AliasExample.lean`; older `loop_safe`, `ModelLoop.lean:601` | **narrower** | The new command has the output-length test, RangeError construction and throw, private loop cell and exact head bounds. Scopes and displayed integer obligations are proved. A closed execution/graph proof connecting the primitives and all edge obligations is not supplied. The old six-node graph remains a different example. |
+| Example 1, aliasing loop — 75 | `AliasExample.program`, `.body`, `.program_scoped`, `.Head`, `AliasExample.lean`; older `loop_safe`, `ModelLoop.lean:601` | **narrower** | The new command has the output-length test, RangeError construction and throw, private loop cell and exact head bounds. Scopes and displayed integer obligations are proved. A closed execution/graph proof connecting the primitives and all edge obligations is not supplied; the updated scope proof retains every outer binding at joins. The old six-node graph remains a different example. |
 | Example 2, rewriting call — 82 | `RawDerivation.sep`, `D:639`, checked at `D:881`; `Derivation.rigidSubst`, `D:447` | **narrower** | These establish the linear length-frame ingredient for arrays and certified rigid substitution. There is no declaration of the complete `readRuns` loop and its call. |
 
 **§2 — What exists: variables, locations, spines**
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Definition 3, Commands — 116 | `Operation`, `Primitive`, `Command`, `PrimitiveRun`, `Executes`, `Commands.lean`; `Command.WellScoped`, `Admission.lean` | **narrower** | The grammar and execution constructors include sequence, choice, loops, handlers, break, return, throw, named operations and native calls. Admission separates fresh binding steps from mutations. Full correspondence of admitted syntax, typing, recursive calls and the raw execution representation is not established by these datatype definitions. |
+| Definition 3, Commands — 116 | `Operation`, `Primitive`, `Command`, `PrimitiveRun`, `Executes`, `Commands.lean`; `Command.WellScoped`, `Admission.lean` | **narrower** | The grammar and execution constructors include sequence, choice, loops, handlers, break, return, throw, named operations and native calls. Raw completion includes shared internal machine values; source/world guarantees remain in Triple contexts/exits and typing, so malformed natives cannot disappear from the raw runs. Admission separates fresh binding steps from mutations, retains all outer names at joins and excludes caught names from outputs. Full correspondence of admitted syntax, typing, recursive calls and the raw execution representation is not established by these datatype definitions. |
 
 **§3 — Model**
 
@@ -210,7 +221,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
 | Definition 21, Checked transfer — 1793 | `Check`, `Target.syntactic`, `Transfer.lean`; `Formula.holds_rename`, `Renaming.lean` | **narrower** | The assembled sequent has the paper’s five components, and target pullback equals actual capture-avoiding syntactic renaming through every assertion constructor. Full derivation admission and general two-state substitution remain separate obligations; the proof datatype is still a sound subcalculus. |
-| Theorem 22, Transfer — 1804 | `edge_sound_of_triple`, `transfer`, `Transfer.lean` | **narrower** | Execution-connected transfer handles arbitrary regional effects, knowledge and target interpretations, preserving valid environments and chosen exit worlds. Its Check predicate uses the sound general subcalculus, not the full derivations of Definition 23; graph-wide safety/prefix preservation is not inferred from the endpoint triple. |
+| Theorem 22, Transfer — 1804 | `edge_sound_of_triple`, `transfer`, `Transfer.lean` | **narrower** | Execution-connected transfer handles arbitrary regional effects, knowledge and target interpretations, preserving valid environments and chosen exit worlds. Its Check predicate uses the sound general subcalculus, not the full derivations of Definition 23; graph-wide safety/prefix preservation is not inferred from the endpoint triple. Syntactic budget-transport foundations are auxiliary, not a completed lowering proof. |
 | Definition 23, Derivations — 1812 | `Derivation`, `.sound`, `Derivations.lean`; `FormulaReplacement`, `ModalReplacement.lean`; `QuantifiedRules.lean`; `Existentials.lean`, `AllSupport.lean`, `Arithmetic.lean` | **narrower** | Current-state selected path replacement is capture-avoiding and admission-checked; changed modalities transport effects and bodies under rigidity of the two selected paths only. Full Inst/Prefix/Empty are integrated. Consequence and modal premises range over heap-valid logical contexts; command transfer supplies them from world-valid program contexts. Heap-domain existential introduction/elimination, evaluated current-value universal instantiation with definedness and a fixed witness through old, and old monotonicity, exact all framing by the sufficient respect check, current-state integer consequence with recursive term definedness, and defined-length ranges are integrated. First-order mixed-phase syntax, static admission, valuation independence and semantic renaming are supplied by the TwoState modules; full path/term substitution and admission beyond the proved program-only transport, mixed-state arithmetic, the structural support table, remaining atom schemas and complete derivation admission are not all represented. The index-at-term sentence has an explicitly unresolved frozen-value versus textual-substitution interpretation; the auxiliary frozen construction is not inserted as a rule. The owner-corrected numeric literal clause is proved and integrated by `LiteralEquality`: value→integer always, integer→value for n≠0, and the +0/−0 disjunction at zero. The old negative-zero countermodel refutes only the former unrestricted reverse rule. Failed-prefix freshness support remains a separate mathematical obstruction. |
 | Example 24, Example 1 in full — 1903 | `AliasExample.program`, `.program_scoped`, `.Head`, `.read_bound`, `.write_bound`, `.increment_range`, `.back_edge`, `.exit`, `AliasExample.lean` | **narrower** | The actual command contains both tests, RangeError construction/throw and the private loop cell. Head knowledge includes j≤to. Fresh scopes and the displayed arithmetic bounds/renaming consequence are proved. The dense-source typing premise and each primitive/edge connection still need a closed execution or graph proof; the older ModelLoop theorem is not used as a substitute. |
 

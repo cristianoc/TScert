@@ -46,7 +46,7 @@ theorem program_scoped : Command.WellScoped (fun x => x < 5) program (fun x => x
   · apply Command.WellScoped.loop
     repeat first
       | apply Command.WellScoped.seq
-      | apply Command.WellScoped.choice (Ω := fun _ => False)
+      | apply Command.WellScoped.choice_input
       | apply Command.WellScoped.bind
       | apply Command.WellScoped.perform
       | apply Command.WellScoped.throw_

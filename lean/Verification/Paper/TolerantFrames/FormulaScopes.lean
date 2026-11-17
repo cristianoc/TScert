@@ -218,4 +218,9 @@ theorem Formula.Scoped.rename {Γ Δ σ F} (hm : ∀ x, Γ x → Δ (σ x)) (h :
   | fresh _ => exact RegionNames.rename hm h
   | box _ _ ih => exact ⟨effectNames_rename hm h.1, ih hm h.2⟩
 
+/-- Frame's noncapture premise follows from the actual lexical judgments. -/
+theorem Formula.Scoped.scope_stable {host Γ Δ c F} (hF : Formula.Scoped Γ F)
+    (hc : Command.WellScoped Γ c Δ) : ScopeStable host c F.meaning :=
+  scope_stable_of_avoids hF.dependsOn hc.avoids_inputs
+
 end Verification.Paper.TolerantFrames

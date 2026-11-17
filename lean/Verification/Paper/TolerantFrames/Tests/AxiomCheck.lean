@@ -1,3 +1,4 @@
+import Verification.Paper.TolerantFrames.BudgetTruncation
 import Verification.Paper.TolerantFrames.CallAdmission
 import Verification.Paper.TolerantFrames.CallRules
 import Verification.Paper.TolerantFrames.PrimitiveRenaming

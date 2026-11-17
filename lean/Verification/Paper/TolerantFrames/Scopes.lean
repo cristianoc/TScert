@@ -1,4 +1,5 @@
 import Verification.Paper.TolerantFrames.CommandRules
+import Verification.Paper.TolerantFrames.Admission
 
 /-! # Scope of a frame
 
@@ -47,6 +48,44 @@ theorem Executes.preserves_name {host c ρ h n ρ' h' e} (hr : Executes host c �
     exact h₂.trans h₁
   | handle_exit _ _ ih => exact ih hc.1
   | return_ _ | throw_ _ | break_ => rfl
+
+/-- Every outer lexical binding remains available after an admitted command. -/
+theorem Command.WellScoped.preserves_input {Γ Δ c} (hc : Command.WellScoped Γ c Δ) : ∀ x, Γ x → Δ x := by
+  induction hc with
+  | bind => exact fun _ hx => .inr hx
+  | perform => exact fun _ hx => hx
+  | seq _ _ ih₁ ih₂ => exact fun x hx => ih₂ x (ih₁ x hx)
+  | choice _ _ _ _ hkeep _ _ => exact hkeep
+  | loop => exact fun _ hx => hx
+  | handle _ _ _ _ hkeep _ _ _ => exact hkeep
+  | return_ | throw_ | break_ => exact fun _ hx => hx
+
+/-- A branch join may discard branch-local temporaries while retaining every
+outer name. Its intersection obligations follow from input preservation. -/
+theorem Command.WellScoped.choice_input {Γ Δ Θ test a b}
+    (ht : Argument.Scoped Γ test) (ha : Command.WellScoped Γ a Δ) (hb : Command.WellScoped Γ b Θ) :
+    Command.WellScoped Γ (.choice test a b) Γ :=
+  .choice ht ha hb (fun x hx => ⟨ha.preserves_input x hx, hb.preserves_input x hx⟩) (fun _ hx => hx)
+
+/-- An admitted command never overwrites an original input binding. -/
+theorem Command.WellScoped.avoids_inputs {Γ Δ c} (hc : Command.WellScoped Γ c Δ) :
+    ∀ x, Γ x → c.Avoids x := by
+  induction hc with
+  | bind hf _ _ =>
+    intro x hx heq
+    subst x
+    exact hf hx
+  | perform => exact fun _ _ => trivial
+  | seq ha _ ih₁ ih₂ => exact fun x hx => ⟨ih₁ x hx, ih₂ x (ha.preserves_input x hx)⟩
+  | choice _ _ _ _ _ ih₁ ih₂ => exact fun x hx => ⟨ih₁ x hx, ih₂ x hx⟩
+  | loop _ ih => exact ih
+  | handle hf _ _ _ _ _ ih₁ ih₂ =>
+    intro x hx
+    refine ⟨ih₁ x hx, ?_, ih₂ x (.inr hx)⟩
+    intro heq
+    subst x
+    exact hf hx
+  | return_ | throw_ | break_ => exact fun _ _ => trivial
 
 /-- An assertion reads only these variables. This semantic scope definition
 applies to complete assertions, including effects beneath modalities. -/
