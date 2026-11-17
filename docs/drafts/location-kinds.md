@@ -64,7 +64,7 @@ F holds an object's ordinary property, C a binding's storage, E an element,
 S a spine, I an object's identity (a location holding `null` that every
 object allocation adds, whose contract admits `null` alone: `idCtr`, the
 contract `objectEntries` gives every identity, and the representative host
-world's). An ordinary array's spine, $`S_{\mathrm{array}}`$, and a typed
+world's). An array's spine, $`S_{\mathrm{array}}`$, and a typed
 array's view spine of fixed format $`t`$ and length $`N`$,
 $`S_{\mathrm{view}(t,N)}`$, are two forms of S, distinguished by role and,
 in a well-formed state, by their contents' tags, $`\mathsf{arr}`$ and
@@ -190,7 +190,7 @@ constructions:
 
 - an ordinary property of type $`A`$: $`(f,\{(F,A)\})`$;
 - a binding's storage of type $`A`$: $`(\mathtt{value},\{(C,A)\})`$;
-- an ordinary array's spine: $`([\,],\{(S_{\mathrm{array}},A)\})`$.
+- an array's spine: $`([\,],\{(S_{\mathrm{array}},A)\})`$.
 
 **Proved** (`KindsCapabilities`): an allocation choosing role $`r_i`$ and
 type $`A_i`$ for its $`i`$-th key establishes every capability over that
@@ -445,7 +445,7 @@ number altered and every spine's length kept (`ViewWrite.changes`), and
 `ExactWrite` with `ExactPre` for the exact form; for the exact form the
 result is the value written (`Effect.viewPost`). The roles are the entry world's because a
 role assignment chosen only to fit the entry heap's categories may give an
-ordinary array's spine the role of a view spine, and so let the write change
+array's spine the role of a view spine, and so let the write change
 it. In a well-formed state the contents' tags tell the two apart too
 (`Shaped.category`).
 
@@ -453,13 +453,13 @@ It constrains every view spine, whichever view the call names: an
 overlapping view may change, exactness constraining the designated one. An
 updated view spine's newly listed cells are fresh, so old element cells keep
 their contents. The relation is a world-indexed postcondition
-(`Effect.viewPost`). **Proved**: an ordinary array's spine is kept
+(`Effect.viewPost`). **Proved**: an array's spine is kept
 (`ViewWrite.keeps_array`); an old $`S_{\mathrm{view}(t,N)}`$ location holds a
 view spine of format $`t`$ and length $`N`$ listing element cells of $`h'`$
 (`ViewWrite.view_spine`); from a well-formed entry heap, the coarse change
 of `ElementWrite` follows (`ViewWrite.changes`, `ViewWriteOf.holds`). Two
 views over the same bytes both change under one exact write while an
-ordinary array's spine is kept, between two well-formed heaps
+array's spine is kept, between two well-formed heaps
 (`viewWrite_overlap`). The numerical correspondence between overlapping
 views' elements and their shared bytes is part of the host contract's
 audit; kinds do not state it.
@@ -629,6 +629,6 @@ the entry world's roles (§5).
 **Non-vacuity** (**proved**, `families_state`, `families_refs`): at every
 budget one heap meets an admissible kinded world with every structural family
 of value valid at once: an object's identity, a property and a prototype
-property, a binding cell, an ordinary array's spine and element, a typed
+property, a binding cell, an array's spine and element, a typed
 array's view spine of its format and length, a closure's capture and
 code field, and a forwarding descriptor's target, receiver and prefix.

@@ -244,7 +244,7 @@ def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments
 /-- A change from `before` to `after` that alters no old location but the
 receiver `r`'s spine, which, where it changes, held a spine and holds one
 extending it, its old elements at their indices, at most `2^32 - 1` long:
-`Array.prototype.push` on an ordinary array (SOURCE-CONTRACTS.md, "Native
+`Array.prototype.push` on an array (SOURCE-CONTRACTS.md, "Native
 footprints"). -/
 def ReceiverGrows (r : Tm) (before after : Heap) : Prop :=
   ∀ l v, before[l]? = some v → after[l]? = some v ∨

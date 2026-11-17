@@ -344,7 +344,7 @@ contract before the array enters the request. `withProject` and
   supplies the field at its full contract; its other arm omits the key.
   The source keeps the shared `Set` expression at one site.
 - **Behaviour:** the initializer reads an initialized boolean and string,
-  allocating an ordinary array only on the true arm. These operations
+  allocating an array only on the true arm. These operations
   commute with the API's data-method read: the package declares
   `updateSnapshot` as a class method, and `openCompiler` installs its own
   ordinary wrapper before returning the API. The existing

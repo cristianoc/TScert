@@ -1,4 +1,4 @@
-// `Array.prototype.push` on an ordinary array changes no old location but its
+// `Array.prototype.push` on an array changes no old location but its
 // receiver's spine, which it grows (SOURCE-CONTRACTS.md, "Native
 // footprints"; ARITHMETIC.md, "Linear facts", `receiverGrows`): a push
 // preserves every fact over values, paths and typed-array lengths, and every fact

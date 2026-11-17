@@ -617,7 +617,7 @@ including `undefined` at any possible hole. Ordinary and construct calls
 use this same obligation.
 
 For a required tuple, source lowering instead reads its known positions in
-order into an ordinary array literal before evaluating later actuals. The
+order into an array literal before evaluating later actuals. The
 existing element-read and array-literal rules preserve the tuple's exact
 contract, including density. This avoids weakening a dense Boolean tuple to
 an unbounded spine that would require `undefined` when spread again.

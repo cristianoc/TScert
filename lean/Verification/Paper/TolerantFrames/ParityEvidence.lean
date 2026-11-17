@@ -305,7 +305,7 @@ def Included (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) : P
 
 /-! ### The class a region lies in -/
 
-/-- A node stating that the path reads an ordinary array: a dense prefix, a
+/-- A node stating that the path reads an array: a dense prefix, a
 bounded quantification, a linear fact reading its length, a spine
 separation or an apartness naming it. -/
 def arrayNode (n : AssertionNode) (π : Path) : Bool :=
@@ -348,7 +348,7 @@ theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : Asserti
 /-- **Evidence of the class a region's locations lie in** under `K` (the
 note, §3, "Regions": value locations, array spines and view spines partition
 the heap): the class every well-formed state gives it (`regionClass`); the
-spine at a path a conjunct of `K` shows an ordinary array's (arrays); the
+spine at a path a conjunct of `K` shows an array's (arrays); the
 field at a path a conjunct of `K` shows holding a value (values). -/
 inductive ClassWitness where
   | intrinsic

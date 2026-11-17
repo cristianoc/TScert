@@ -43,7 +43,7 @@ inductive Kind where
   deriving DecidableEq, Repr
 
 /-- The two forms of a spine location (the note *Tolerant frames*, §2,
-`array` and `view_N`): an ordinary array's spine, or a typed array's view
+`array` and `view_N`): an array's spine, or a typed array's view
 spine, whose format and length are fixed. -/
 inductive SpineForm where
   | array

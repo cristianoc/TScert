@@ -810,10 +810,10 @@ end Verification.Parity
 Interpretation is compositional:
 
 - Linear atoms require every term to be defined, then use `Linear.Fact.Holds`.
-- Density requires an ordinary array and a natural prefix bound.
+- Density requires an array and a natural prefix bound.
 - `every` requires the bounded cells to be present and their scalar bodies to hold.
 - Element equality observes a present typed-array element and a defined witness.
-- `separated` requires two ordinary arrays with different spines.
+- `separated` requires two arrays with different spines.
 - `apart` additionally requires disjoint element-cell sets.
 - `fresh` requires a selected spine at or above the invocation mark.
 - `box Φ A` quantifies over every `Action Φ` at the same environment and mark.
