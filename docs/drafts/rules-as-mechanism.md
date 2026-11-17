@@ -223,6 +223,21 @@ A verdict change the table does not expect is investigated before the next
 step; a loss is a defect in every step, the refusals step 3 intends
 excepted.
 
+### Which step owns a mechanism
+
+Two rules settle which step deletes a mechanism, and so what an audit of
+a step counts:
+
+- **A lemma nothing uses is deleted.** A Lean statement that no
+  acceptance theorem and no status tag of the paper uses is deleted, not
+  restated through the paper's rules.
+- **Keeping by Frame is step 1's.** A fact kept because what it depends on
+  is not changed is kept by the paper's Frame, whichever decider keeps it:
+  a call's, a write's or a step's. Step 1 owns every such keeping. A fact
+  kept because of what a write puts in its locations is kept by the
+  paper's rules of updates (Write-In, Write-Kept, Push-Every, View-Every),
+  which step 7 owns.
+
 ### What an audit checks
 
 A step judged done is audited from the sources by a reviewer who has not
