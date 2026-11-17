@@ -158,7 +158,7 @@ theorem Atom.holds_extend {h : Heap} (vs : List Val) {ρ : Env} {a : Atom}
 
 /-- A valid path cannot start reading a newly allocated location. -/
 theorem readPath_eq_append {s : IndexedHeap} (vs : List Val) : ∀ (p : List String) {v : Val},
-    RefsOk s.W v → readPath (s.h ++ vs) v p = readPath s.h v p
+    HeapRefs s.h v → readPath (s.h ++ vs) v p = readPath s.h v p
   | [], _, _ => rfl
   | f :: p, v, hv => by
     cases v with
@@ -166,15 +166,15 @@ theorem readPath_eq_append {s : IndexedHeap} (vs : List Val) : ∀ (p : List Str
       simp only [readPath]
       split
       · rename_i l hl
-        obtain ⟨r, hr, -⟩ := field_bound hv (by simpa [fieldsOf] using hl)
-        obtain ⟨u, hu, -, hru⟩ := s.ok.2 l r hr
-        rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1, hu]
-        exact readPath_eq_append vs p hru
+        have hb := hv.slot hl
+        obtain ⟨u, hu⟩ : ∃ u, s.h[l]? = some u := ⟨_, List.getElem?_eq_getElem hb⟩
+        rw [List.getElem?_append_left hb, hu]
+        exact readPath_eq_append vs p (HeapRefs.of_world (s.ok.refs_at hu))
       · rfl
     | _ => rfl
 
 /-- The spines reachable from an old valid value keep exactly their listing. -/
-theorem spineCells_eq_append {s : IndexedHeap} (vs : List Val) {v : Val} (hv : RefsOk s.W v) :
+theorem spineCells_eq_append {s : IndexedHeap} (vs : List Val) {v : Val} (hv : HeapRefs s.h v) :
     spineCells (s.h ++ vs) v = spineCells s.h v := by
   cases v with
   | objAt fs c i =>
@@ -182,21 +182,18 @@ theorem spineCells_eq_append {s : IndexedHeap} (vs : List Val) {v : Val} (hv : R
       cases hl : fs.lookup arraySpineKey with
       | none => rfl
       | some l =>
-        obtain ⟨r, hr, -⟩ := field_bound hv (by simpa [fieldsOf] using hl)
-        obtain ⟨u, hu, -⟩ := s.ok.2 l r hr
-        simp only [entriesAt, List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1]
+        simp only [entriesAt, List.getElem?_append_left (hv.slot hl)]
     simp only [spineCells, fieldsOf, hf]
     congr 1
     cases c <;> try rfl
     rename_i st f n
-    have hr := (hv (.view st f n (fs.lookup arraySpineKey).isNone) (by simp [refs])).2
-    obtain ⟨u, hu, -⟩ := s.ok.2 st _ hr
-    simp only [descriptorSpine, entriesAt, List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1]
+    have hr : st < s.h.length := HeapRefOk.allocated (hv (.view st f n (fs.lookup arraySpineKey).isNone) (by simp [refs]))
+    simp only [descriptorSpine, entriesAt, List.getElem?_append_left hr]
   | _ => rfl
 
 /-- Extension preserves every region's membership at old locations. -/
 theorem region_mem_eq_append {s t : IndexedHeap} (ha : Admissible s t) (vs : List Val)
-    (hh : t.h = s.h ++ vs) {ρ : Env} (hρ : RootsOk s.W ρ) :
+    (hh : t.h = s.h ++ vs) {ρ : Env} (hρ : ∀ x, HeapRefs s.h (ρ x)) :
     ∀ (r : Region) {l : Nat}, l < s.h.length → r.mem ρ t.h l = r.mem ρ s.h l
   | .field _ _, _, _ | .fields _, _, _ => rfl
   | .cls c, _, hl => ha.cls_mem hl ρ c
@@ -208,7 +205,7 @@ theorem region_mem_eq_append {s t : IndexedHeap} (ha : Admissible s t) (vs : Lis
     simp only [Region.mem, hh, readPath_eq_append vs p (hρ x)]
     split
     · rename_i v hv
-      rw [spineCells_eq_append vs (readPath_refs s.ok p (hρ x) hv)]
+      rw [spineCells_eq_append vs (readPath_heapRefs p (hρ x) hv)]
     · rfl
   | .inCls r c, _, hl => by
     have hm := region_mem_eq_append ha vs hh hρ r hl
@@ -230,7 +227,7 @@ theorem ValidContext.push {ρ m s} (hv : ValidContext ρ m s) {v : Val}
 /-- Allocation preserving old contents preserves the modality-free language.
 This is one-way: later existential witnesses need not exist at entry. -/
 theorem Formula.holds_prefix {F : Formula} (hn : F.ModalityFree) {ρ m s t}
-    (hv : ValidContext ρ m s) (ha : Admissible s t) (hp : s.h.IsPrefix t.h)
+    (hv : HeapContext ρ m s) (ha : Admissible s t) (hp : s.h.IsPrefix t.h)
     (hF : F.Holds ρ m s) : F.Holds ρ m t := by
   obtain ⟨vs, hvs⟩ := hp
   have hh : t.h = s.h ++ vs := hvs.symm
@@ -242,7 +239,7 @@ theorem Formula.holds_prefix {F : Formula} (hn : F.ModalityFree) {ρ m s t}
   | or F G ihF ihG => exact hF.imp (ihF hn.1 hv) (ihG hn.2 hv)
   | existsValue F ih =>
     obtain ⟨v, hsv, hrv, hF⟩ := hF
-    exact ⟨v, hsv, ha.refsOk hrv, ih hn (hv.push hsv hrv) hF⟩
+    exact ⟨v, hsv, HeapRefs.admissible ha hrv, ih hn (hv.push hsv hrv) hF⟩
   | separated p q => rw [Formula.Holds, hh]; exact PathSpinesApart.extend vs hF
   | apart x y =>
     obtain ⟨u, w, st, st', es, es', hu, hw, ⟨hs, hd, he⟩, ⟨hs', hd', he'⟩, hne, hdis⟩ := hF

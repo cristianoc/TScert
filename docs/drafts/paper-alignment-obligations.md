@@ -188,3 +188,65 @@ establish their axiom dependencies. Neither establishes paper correspondence:
 independent review must inspect the statements against the paper and report
 its actual scope. The full repository checks, regression cases and docs
 checks provide their separate validation evidence.
+
+
+## Heap-based logical witnesses (owner decision, 2026-11-17)
+
+The owner chose world-independent quantification, preserving the paper's
+Definition 16 and the surrounding Conj explanation. The former B interpretation
+required `RefsOk` in the current world and therefore violated this separation.
+The existing mechanisms extended are B's existential interpretation, logical
+context and shared successful heap traversal. Command environments, result
+validity and the shared heap/world model retain their existing meanings.
+
+`HeapRefOk` erases fine world roles: identities must be allocated; ordinary
+field slots and element references select source values; array-spine slots
+select array spines; view descriptors select a spine of the stated format and
+length and have no array-spine slot. `HeapRefs` checks all syntactic references,
+including captures. This is the explicit heap-domain interpretation of logical
+values. Identity targets are not required to contain null: a mutable field can
+also contain null, so such a requirement would not survive admissible updates.
+The source-value requirement on witnesses remains separate.
+
+Astra reviewed this design before the integration. Allocation alone would not
+justify Empty for a view whose descriptor has a length but selects the wrong
+heap shape. Heap-based shape requirements supply that fact. The domain survives
+admissible transitions by allocation monotonicity and the heap/world category
+connection. `RefsOk` implies `HeapRefs` at a well-formed state. The converse is
+not claimed: a heap-valid ghost identity need not have the identity role in the
+current world. World validity of actual heap readings comes from W3, and program
+roots retain `ValidContext`. Logical consequence and support use the larger
+`HeapContext`, with an explicit bridge from command contexts. No command
+acceptance or return-reference guarantee is weakened.
+
+Existential opening extends only the current logical environment; its witness
+need not be allocated at frozen entry. The separate-namespace two-state syntax
+likewise checks an existential at its focus, never at both phases. Equal-heap
+world-independence results cover the complete modality-free assertion grammar,
+including binders, and the corresponding postconditions without transition
+atoms. These statements supply Definition 16's actual Conj premise.
+
+
+### The value domain at each phase
+
+Astra's independent implementation review identified a latent mismatch: universal
+value quantification ranged over all encoded source values, while existential
+witnesses were heap-valid. Then even forall u, exists v, v=u could fail by choosing
+an object whose identity was not allocated. To implement the owner's heap-valid
+quantification consistently, the existing universal interpretation is revised too:
+a postcondition's universal value ranges over heap-valid source values of its
+current/exit heap. An existential uses its focused heap; old switches focus to
+entry. Thus a current value need not exist at entry, and no whole-valuation
+entry-validity premise is imposed. The paper's mathematics is unchanged.
+
+The universal-instance rule evaluates an actual syntactic Value once at the
+current phase, requires successful evaluation, derives its validity from
+HeapContext, and keeps the resulting value fixed throughout Q, including old.
+Its semantic result is an evaluated instance, not an unproved textual
+substitution. Q_< and Q_≠i interpretation bridges use explicit admissibility:
+a successful entry element reading is a source value valid in the entry heap
+(W3 for present cells, undef for holes); admissibility makes that same value
+valid currently. An arbitrary old assertion alone supplies no such validity.
+The old unrestricted-pair interpretation equivalences are not retained.
+This phase choice and its bridge obligations were independently reviewed before
+implementation.

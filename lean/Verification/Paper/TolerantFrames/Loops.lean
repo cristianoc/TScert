@@ -80,7 +80,7 @@ theorem loop_rule {host : NativeCode} {b : Command} {I E R : Assertion} {Ret : V
   refine ⟨t, ha, hh, hk, hvt, hve, ?_⟩
   cases e with
   | normal => exact ⟨hq, (hs _ _ _ _ _ _ hr m t).mp
-      (box_idem_on hΦ ρ m s hv hp.2 t ⟨ha, hh ▸ hφ⟩)⟩
+      (box_idem_on hΦ ρ m s hv.heap hp.2 t ⟨ha, hh ▸ hφ⟩)⟩
   | «break» => exact hq
   | returned _ => exact hq
   | thrown _ => exact hq

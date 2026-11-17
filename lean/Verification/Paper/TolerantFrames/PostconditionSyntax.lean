@@ -209,7 +209,7 @@ def Assertion.Holds (entry focus : State) (m : Nat) (η : LogicalEnv) : Assertio
   | .atom a => a.Holds entry focus η
   | .and F G => F.Holds entry focus m η ∧ G.Holds entry focus m η
   | .or F G => F.Holds entry focus m η ∨ G.Holds entry focus m η
-  | .existsValue F => ∃ v, isSourceVal v = true ∧ RefsOk focus.heap.W v ∧
+  | .existsValue F => ∃ v, isSourceVal v = true ∧ HeapRefs focus.heap.h v ∧
       F.Holds entry focus m { η with values := push v η.values }
   | .separated p q => PathSpinesApart focus.heap.h (p.root.eval focus.env η.values) p.fields
       (q.root.eval focus.env η.values) q.fields
@@ -227,7 +227,7 @@ def Post.Holds (c : Context) (η : LogicalEnv) : Post → Prop
   | .or Q R => Q.Holds c η ∨ R.Holds c η
   | .implication Q R => Q.Holds c η → R.Holds c η
   | .forallIndex Q => ∀ i : Int, Q.Holds c { η with indices := pushIndex i η.indices }
-  | .forallValue Q => ∀ v : Val, isSourceVal v = true → Q.Holds c { η with values := push v η.values }
+  | .forallValue Q => ∀ v : Val, isSourceVal v = true → HeapRefs c.current.heap.h v → Q.Holds c { η with values := push v η.values }
 
 /-- A logical valuation is explicit. Closed admission ensures its unused
 slots cannot affect interpretation. No proof-search completeness is claimed. -/

@@ -350,3 +350,40 @@ its repair and the interpretation of index-at-term instantiation await owner
 decisions. Other structural supports, full substitution/admission transport,
 primitive/host bridges, Call/Fun and closed examples remain explicit obligations.
 No full-alignment claim follows from this validation.
+
+
+## Owner-requested rebase on 2026-11-17
+
+The original fetched start remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+On the owner's instruction the implementation was rebased onto the newly fetched
+`single-pass` tip `56aaacc51899986d365a3853c94ac58420c1d1b8`. Its twelve commits
+were replayed; the rebased pre-continuation tip is
+`3224a2efc07734c76d31031e535e27a92f12078c`.
+
+The audit conflicts retain the new correspondence analysis and the owner's
+latest array terminology. The paper conflict retains upstream note.tex and PDF
+exactly: upstream commit `37c331eb` already contains the authorized signed-zero
+correction. The task adds no further mathematical edit. The draft PR is titled
+“Codex: align the Lean implementation with Tolerant frames” and still targets
+single-pass. The exact old remote tip was used as the force-with-lease value;
+no concurrent remote update was overwritten.
+
+The source-commit mapping makes the earlier evidence traceable; that evidence
+was measured before rebase and does not certify upstream A changes:
+
+| Earlier source | Rebased source | Scope |
+|---|---|---|
+| f4809394 | 72938dbb | Semantic premises |
+| 2bc3023d | 9aa4aef2 | General assertions |
+| f4e44a94 | c6b24bcd | Commands and transfer |
+| c71d1ec5 | daf6b169 | Assertion transport |
+| 1d11d168 | 05540a4c | All support, witnesses and arithmetic |
+| 9a410bd4 | cf5d397d | Two-state postconditions |
+| 3ad56a37 | 8ca78a78 | Literal and path supports; paper correction already upstream |
+
+The PR's code-impact comparison is now against the rebased tip, rather than
+against the original start. There are no task-authored Lean changes outside
+Verification.Paper. Changes to A present between the original start and this
+base belong to the owner's upstream branch. The new full regression run checks
+the resulting rebased repository; old acceptance results are not reused as
+proof that those upstream changes passed.

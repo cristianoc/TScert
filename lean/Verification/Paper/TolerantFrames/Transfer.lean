@@ -81,7 +81,7 @@ theorem transfer {host : NativeCode} {K : Knowledge} {edge : Edge} {A : Formula}
     ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + n = s.n ∧ ValidContext ρ' m t ∧ ExitValid exit t ∧
       A.Holds (fun x => ρ' (edge.rename x)) m t := by
   obtain ⟨t, ha, hh, hk, hvt, hve, hΦ, hQ, hB⟩ := hs _ _ _ _ _ _ _ hv hK hr he hn
-  refine ⟨t, ha, hh, hk, hvt, hve, hc.sound ρ ρ' m s t hv hvt ?_⟩
+  refine ⟨t, ha, hh, hk, hvt, hve, hc.sound ρ ρ' m s t hv.heap hvt.heap ?_⟩
   intro F hF
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl | rfl | rfl

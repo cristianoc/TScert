@@ -225,7 +225,7 @@ def Formula.Holds (ρ : Env) (m : Nat) (s : IndexedHeap) : Formula → Prop
   | .atom a => a.Holds ρ s.h
   | .and F G => F.Holds ρ m s ∧ G.Holds ρ m s
   | .or F G => F.Holds ρ m s ∨ G.Holds ρ m s
-  | .existsValue F => ∃ v : Val, isSourceVal v = true ∧ RefsOk s.W v ∧ F.Holds (Verification.push v ρ) m s
+  | .existsValue F => ∃ v : Val, isSourceVal v = true ∧ HeapRefs s.h v ∧ F.Holds (Verification.push v ρ) m s
   | .separated p q => PathSpinesApart s.h (ρ p.root) p.fields (ρ q.root) q.fields
   | .apart x y => Verification.Parity.Apart ρ s.h ⟨x, []⟩ ⟨y, []⟩
   | .fresh r => Fresh r ρ m s

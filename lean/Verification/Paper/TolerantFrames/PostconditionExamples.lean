@@ -61,6 +61,19 @@ def keptOther (x k : Nat) : Post :=
   .forallIndex (.implication unequal
     (.forallValue (.implication (.old (elementAtIndex x)) (.assertion (elementAtIndex x)))))
 
+/-- Heap validity of a successful element reading, including holes. The
+reference information for a present cell comes from W3 of the reading heap. -/
+theorem elementValue_heapRefs {s : IndexedHeap} {z u : Val} {i : Int}
+    (he : elementValue s.h z i = some u) : HeapRefs s.h u := by
+  by_cases hi : i < 0
+  · simp [elementValue, hi] at he
+  · simp only [elementValue, hi, ↓reduceIte, bind, Option.bind_eq_some_iff] at he
+    obtain ⟨es, _, he⟩ := he
+    split at he
+    · cases he
+    · cases he; exact HeapRefs.of_nil rfl
+    · exact HeapRefs.of_world (s.ok.refs_at he)
+
 /-- Interpretation of the bound-value equality at the selected phase. -/
 theorem elementAtIndex_holds (x : Nat) (entry focus : State) (m : Nat) (η : LogicalEnv) :
     (elementAtIndex x).Holds entry focus m η ↔
@@ -71,13 +84,13 @@ theorem elementAtIndex_holds (x : Nat) (entry focus : State) (m : Nat) (η : Log
 /-- The complete kept-prefix relation, with the universal source-value
 quantifier derived from successful old element readings. -/
 theorem keptPrefix_holds {x : Nat} {c : Context} {η : LogicalEnv} {n : Int}
-    (hn : lengthOf c.entry.heap.h (c.entry.env x) = some n) :
+    (ha : Admissible c.entry.heap c.current.heap) (hn : lengthOf c.entry.heap.h (c.entry.env x) = some n) :
     (keptPrefix x).Holds c η ↔
       ∀ j u, 0 ≤ j → j < n →
         elementValue c.entry.heap.h (c.entry.env x) j = some u →
         elementValue c.current.heap.h (c.current.env x) j = some u := by
   have hformula : (keptPrefix x).Holds c η ↔
-      ∀ j : Int, (0 ≤ j ∧ j + 1 ≤ n) → ∀ u : Val, isSourceVal u = true →
+      ∀ j : Int, (0 ≤ j ∧ j + 1 ≤ n) → ∀ u : Val, isSourceVal u = true → HeapRefs c.current.heap.h u →
         elementValue c.entry.heap.h (c.entry.env x) j = some u →
         elementValue c.current.heap.h (c.current.env x) j = some u := by
     simp [keptPrefix, Post.Holds, Assertion.Holds, Atom.Holds, indexExpression,
@@ -86,18 +99,18 @@ theorem keptPrefix_holds {x : Nat} {c : Context} {η : LogicalEnv} {n : Int}
   rw [hformula]
   constructor
   · intro h j u h0 hj he
-    exact h j ⟨h0, by omega⟩ u (elementValue_source he) he
-  · intro h j ⟨h0, hj⟩ u _ he
+    exact h j ⟨h0, by omega⟩ u (elementValue_source he) (HeapRefs.admissible ha (elementValue_heapRefs he)) he
+  · intro h j ⟨h0, hj⟩ u _ _ he
     exact h j u h0 (by omega) he
 
 /-- Other-index preservation uses the same bound j and u at both states. -/
 theorem keptOther_holds {x k : Nat} {c : Context} {η : LogicalEnv} {i : Int}
-    (hi : intValue (c.current.env k) = some i) :
+    (ha : Admissible c.entry.heap c.current.heap) (hi : intValue (c.current.env k) = some i) :
     (keptOther x k).Holds c η ↔
       ∀ j u, j ≠ i → elementValue c.entry.heap.h (c.entry.env x) j = some u →
         elementValue c.current.heap.h (c.current.env x) j = some u := by
   have hformula : (keptOther x k).Holds c η ↔
-      ∀ j : Int, (j + 1 ≤ i ∨ i + 1 ≤ j) → ∀ u : Val, isSourceVal u = true →
+      ∀ j : Int, (j + 1 ≤ i ∨ i + 1 ≤ j) → ∀ u : Val, isSourceVal u = true → HeapRefs c.current.heap.h u →
         elementValue c.entry.heap.h (c.entry.env x) j = some u →
         elementValue c.current.heap.h (c.current.env x) j = some u := by
     simp [keptOther, Post.Holds, Assertion.Holds, Atom.Holds, indexExpression,
@@ -106,8 +119,8 @@ theorem keptOther_holds {x k : Nat} {c : Context} {η : LogicalEnv} {i : Int}
   rw [hformula]
   constructor
   · intro h j u hne he
-    exact h j (by omega) u (elementValue_source he) he
-  · intro h j hj u _ he
+    exact h j (by omega) u (elementValue_source he) (HeapRefs.admissible ha (elementValue_heapRefs he)) he
+  · intro h j hj u _ _ he
     exact h j u (by omega) he
 
 /-- The quantified prefix formula has no free logical slot. Its only
@@ -135,7 +148,7 @@ def pushPost (x v : Nat) : Post :=
     (keptPrefix x))
 
 theorem pushPost_holds {x v : Nat} {c : Context} {η : LogicalEnv}
-    (hx : c.current.env x = c.entry.env x) :
+    (ha : Admissible c.entry.heap c.current.heap) (hx : c.current.env x = c.entry.env x) :
     (pushPost x v).Holds c η ↔
       PushPost c.entry.heap.h c.current.heap.h (c.entry.env x) (c.current.env v) := by
   have increased : (Assertion.and
@@ -159,9 +172,9 @@ theorem pushPost_holds {x v : Nat} {c : Context} {η : LogicalEnv}
   rw [increased]
   constructor
   · rintro ⟨⟨n, hn, hnext⟩, happ, hkeep⟩
-    exact ⟨n, hn, hnext, (appended hn).mp happ, (by simpa only [hx] using (keptPrefix_holds hn).mp hkeep)⟩
+    exact ⟨n, hn, hnext, (appended hn).mp happ, (by simpa only [hx] using (keptPrefix_holds ha hn).mp hkeep)⟩
   · rintro ⟨n, hn, hnext, happ, hkeep⟩
-    exact ⟨⟨n, hn, hnext⟩, (appended hn).mpr happ, (keptPrefix_holds hn).mpr (by simpa only [hx] using hkeep)⟩
+    exact ⟨⟨n, hn, hnext⟩, (appended hn).mpr happ, (keptPrefix_holds ha hn).mpr (by simpa only [hx] using hkeep)⟩
 
 theorem keptOther_scoped {x k : Nat} {entryPrograms currentPrograms : Nat → Prop}
     (he : entryPrograms x) (hc : currentPrograms x) (hk : currentPrograms k) :
@@ -183,7 +196,7 @@ def viewWritePost (x k v : Nat) (format : ViewFormat) : Post :=
     (.converted format (.root (.program v)))))) (keptOther x k)
 
 theorem viewWritePost_holds {x k v : Nat} {format : ViewFormat} {c : Context} {η : LogicalEnv}
-    {i : Int} {converted : Val} (hx : c.current.env x = c.entry.env x)
+    {i : Int} {converted : Val} (ha : Admissible c.entry.heap c.current.heap) (hx : c.current.env x = c.entry.env x)
     (hi : intValue (c.current.env k) = some i)
     (hv : (Value.converted format (.root (.program v))).eval c.current η.values = some converted) :
     (viewWritePost x k v format).Holds c η ↔
@@ -198,9 +211,9 @@ theorem viewWritePost_holds {x k v : Nat} {format : ViewFormat} {c : Context} {�
   rw [stored]
   constructor
   · rintro ⟨hs, ho⟩
-    exact ⟨hs, by simpa only [hx] using (keptOther_holds hi).mp ho⟩
+    exact ⟨hs, by simpa only [hx] using (keptOther_holds ha hi).mp ho⟩
   · rintro ⟨hs, ho⟩
-    exact ⟨hs, (keptOther_holds hi).mpr (by simpa only [hx] using ho)⟩
+    exact ⟨hs, (keptOther_holds ha hi).mpr (by simpa only [hx] using ho)⟩
 
 /-- All constructors have their existing semantic target interpretations. -/
 theorem Post.meaning_and (η : LogicalEnv) (Q R : Post) :

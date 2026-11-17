@@ -251,8 +251,8 @@ Program names, logical integer indices and logical values have separate
 namespaces; quantifier bodies are syntax rather than arbitrary predicates.
 Logical integers can exceed the safe-number range. Ordinary reads use the
 current focus, `old(t)` reads the entire term at frozen entry, and modalities
-advance focus without changing that entry. Universal source-value quantification does
-not imply reference validity at either state.
+advance focus without changing that entry. Universal source-value quantification requires current heap validity.
+Entry heap validity and fine world-role validity are not inferred.
 
 [PostconditionScope.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionScope.lean)
 proves logical valuation agreement through all terms, bodies, assertions,
@@ -263,8 +263,8 @@ name available only at exit cannot be read under `old`.
 adds declared-region admission using the existing seven-form judgment and
 excludes raw nested-old forms. Program and logical-value roots reuse shared
 region semantics through a disjoint encoding. Value binder lifting shifts only
-logical roots and reserves the fresh witness as undeclared; it does not claim
-valid references for universally quantified source values.
+logical roots and reserves the fresh witness as undeclared; it does not infer entry heap validity or fine world-role validity for
+universally quantified values; current heap validity is part of their domain.
 
 [PostconditionRenaming.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionRenaming.lean)
 proves total semantic transport with independent maps for the three namespaces.
@@ -277,7 +277,7 @@ transformed declarations, or general path/term substitution.
 encodes Q_< and Q_≠i as actual syntax, sharing each quantified index and value
 between old/current reads. Successful element readings are proved source values,
 including holes. The full Push and converted View-Write formulas are equivalent
-to their exact semantic relations under the stated receiver/index/conversion
+to their exact semantic relations under entry/current admissibility and the stated receiver/index/conversion
 premises. These are interpretation bridges, not native execution proofs.
 
 [IndexInstantiation.lean](../../lean/Verification/Paper/TolerantFrames/IndexInstantiation.lean)
@@ -290,6 +290,60 @@ construct a valid/admissible execution or prove admission of the particular
 textual formula. The paper's index-at-term sentence does not specify this
 choice; the owner clarification is tracked in WORK, and the auxiliary frozen
 construction is not inserted as a claimed Definition 23 derivation rule.
+
+## Heap-only logical values and further support proofs
+
+[HeapValidity.lean](../../lean/Verification/Paper/TolerantFrames/HeapValidity.lean)
+implements the owner's world-independent quantification decision. Identities
+are allocated; ordinary slots/elements contain source values; array-spine slots
+and view descriptors select matching heap shapes. This erases fine world roles,
+not heap/world semantics. World-valid program roots imply heap-valid logical
+roots; the converse is not assumed. Command ValidContext, ExitValid and triples
+retain their world-role meanings. Logical support and consequence use the larger
+HeapContext, so an existential can open a heap-valid logical value safely.
+
+[WorldIndependence.lean](../../lean/Verification/Paper/TolerantFrames/WorldIndependence.lean)
+proves the entire modality-free assertion grammar reads only environment, mark
+and heap, including existential binders. The first-order version allows old
+terms, quantified values/indices and arbitrary implication, with fixed entry and
+current heaps. It supplies the actual Independent premise of Conj. Transition
+atoms and boxes are excluded because their semantics reads worlds. Universal
+postcondition values use the current heap domain; existential assertions use
+their focus, including entry under old. A current witness need not exist at entry.
+The actual AST law forall u, exists v, v=u is proved for that common current
+domain. Evaluated universal instantiation fixes one successfully read Value
+throughout Q. Full syntactic substitution is a separate obligation.
+
+[PostconditionExamples.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionExamples.lean)
+now states its Q_<, Q_≠i, Push and View interpretation equivalences on admissible
+entry/current pairs. A successful old element reading is source-valued and
+heap-valid at entry (including undef at holes), and admissibility transports the
+same value into the current universal domain. These are not arbitrary-pair
+interpretation equivalences or native execution proofs.
+
+[PathTermSupports.lean](../../lean/Verification/Paper/TolerantFrames/PathTermSupports.lean),
+[ElementSupports.lean](../../lean/Verification/Paper/TolerantFrames/ElementSupports.lean)
+and [AtomSupports.lean](../../lean/Verification/Paper/TolerantFrames/AtomSupports.lean)
+prove the path-reading, numeric element-term, element-atom and density support
+rows, retaining arbitrary exactly supported indices/bounds, holes and view
+readings. [EverySupports.lean](../../lean/Verification/Paper/TolerantFrames/EverySupports.lean)
+handles the paper table's restricted body grammar: the unshifted numeric element
+and free exactly supported terms. Its ordinary-array condition is explicit; a
+bridge from declared receiver typing is separate. Other body terms have no
+support from this definition, as the paper states.
+
+[PolaritySupports.lean](../../lean/Verification/Paper/TolerantFrames/PolaritySupports.lean)
+separates semantic growth tolerance from a sufficient certificate. The tolerance
+criterion constrains actual successful readings at admissible transitions; it is
+independent of the support predicate. Integer-domain monotonicity is sufficient
+when the actual readings lie in that domain; it is not identified with maximal
+physical growth tolerance. Zero coefficients retain their syntactic terms and
+nested index dependencies. Canonical/maximal annotation selection is not proved.
+[BelowMark.lean](../../lean/Verification/Paper/TolerantFrames/BelowMark.lean)
+proves invocation-entry bounds for immutable descriptor regions, with heap-valid
+witnesses and world-valid sufficient corollaries. Spine cell sets are excluded
+because growth can add new cells. The fresh-versus-below-mark disjointness proof
+uses these bounds without conflating invocation entry and command entry.
 
 ## Commands, scope and transfer
 

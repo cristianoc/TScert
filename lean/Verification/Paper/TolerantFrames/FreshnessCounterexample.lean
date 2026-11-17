@@ -124,6 +124,6 @@ theorem failed_path_freshness_not_supported :
   intro hs
   have hc : OmissionCondition omitted env 6 (state false) (state true) := by
     intro p f h; cases h
-  exact not_fresh_after (hs env 6 (state false) (state true) transition ⟨valid false, hc⟩ fresh_before constraints)
+  exact not_fresh_after (hs env 6 (state false) (state true) transition ⟨(valid false).heap, hc⟩ fresh_before constraints)
 
 end Verification.Paper.TolerantFrames.FreshnessCounterexample

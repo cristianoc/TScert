@@ -63,7 +63,7 @@ theorem frame_plus_rule {host P c Q Qe J Ret Φ Φe} {R : Assertion}
   refine ⟨t, ha, hh, hk, hvt, hve, ?_⟩
   cases e with
   | normal => exact ⟨hq, (hs _ _ _ _ _ _ hr m t).mp
-      (box_idem_on hrigid ρ m s hv hb t ⟨ha, hh ▸ hφ⟩)⟩
+      (box_idem_on hrigid ρ m s hv.heap hb t ⟨ha, hh ▸ hφ⟩)⟩
   | thrown _ => exact hq
   | «break» => exact hq
   | returned _ => exact hq

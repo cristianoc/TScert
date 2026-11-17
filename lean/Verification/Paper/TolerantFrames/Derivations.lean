@@ -30,7 +30,7 @@ def Premises (Γ : List Postcondition) (ρ ρ' : Env) (m : Nat) (s t : IndexedHe
 
 /-- Semantic consequence of precisely these premises. -/
 def Consequence (Γ : List Postcondition) (Q : Postcondition) : Prop :=
-  ∀ ρ ρ' m s t, ValidContext ρ m s → ValidContext ρ' m t → Premises Γ ρ ρ' m s t → Q ρ ρ' m s t
+  ∀ ρ ρ' m s t, HeapContext ρ m s → HeapContext ρ' m t → Premises Γ ρ ρ' m s t → Q ρ ρ' m s t
 
 /-- General finite logical derivations. Semantic inclusion, invariance and
 rigidity are proof premises, and are not replaced by a finite case list. -/
@@ -47,7 +47,8 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
   | orElim {Γ Q R S} : Derivation Γ (PostOr Q R) → Derivation (Q :: Γ) S → Derivation (R :: Γ) S → Derivation Γ S
   | implication {Γ Q R} : Derivation Γ (PostImp Q R) → Derivation Γ Q → Derivation Γ R
   | indexInstance {Γ Q} : Derivation Γ (ForallIndex Q) → (i : Int) → Derivation Γ (Q i)
-  | valueInstance {Γ Q} : Derivation Γ (ForallValue Q) → (v : Val) → isSourceVal v = true → Derivation Γ (Q v)
+  | valueInstance {Γ Q} (v : Value) : Derivation Γ (ForallValue Q) →
+      Derivation Γ (Now (ValueDefined v)) → Derivation Γ (EvaluatedValueInstance Q v)
   | valueToInteger {Γ p bits n} : SafeIntegers.SafeInt bits n →
       Derivation Γ (Now (NumberEquality p bits).meaning) → Derivation Γ (Now (IntegerEquality p n).meaning)
   | integerToValue {Γ p bits n} : SafeIntegers.SafeInt bits n → n ≠ 0 →
@@ -66,7 +67,7 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
   | oldMono {Γ} {F G : Assertion} : Derivation [Now F] (Now G) →
       Derivation Γ (Old F) → Derivation Γ (Old G)
   | frameAll {Γ} {K F : Formula} {Φ : Footprint} {q : SepQuery} : F.ModalityFree → respects q allKeep Φ = true →
-      (∀ ρ m s, ValidContext ρ m s → K.Holds ρ m s → q.Sound ρ s.h) →
+      (∀ ρ m s, HeapContext ρ m s → K.Holds ρ m s → q.Sound ρ s.h) →
       Derivation Γ (Now K.meaning) → Derivation Γ (Now F.meaning) →
       Derivation Γ (Now (Box Φ F.meaning))
   | boxElim {Γ Φ} {F : Assertion} : Derivation Γ (Now (Box Φ F)) → Derivation Γ (Now F)
@@ -77,7 +78,7 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
   | boxRight {Γ Φ} {F G : Assertion} : Derivation Γ (Now (Box Φ (fun ρ m s => F ρ m s ∧ G ρ m s))) →
       Derivation Γ (Now (Box Φ G))
   | boxMono {Γ Φ} {F G : Assertion} : EntailsOn F G → Derivation Γ (Now (Box Φ F)) → Derivation Γ (Now (Box Φ G))
-  | boxAnti {Γ Φ Ψ} {F : Assertion} : (∀ ρ m s t, ValidContext ρ m s → Action Φ ρ s t → Action Ψ ρ s t) →
+  | boxAnti {Γ Φ Ψ} {F : Assertion} : (∀ ρ m s t, HeapContext ρ m s → Action Φ ρ s t → Action Ψ ρ s t) →
       Derivation Γ (Now (Box Ψ F)) → Derivation Γ (Now (Box Φ F))
   | boxOr {Γ Φ} {F G : Assertion} : InvariantOn G → Derivation Γ (PostOr (Now G) (Now (Box Φ F))) →
       Derivation Γ (Now (Box Φ (fun ρ m s => G ρ m s ∨ F ρ m s)))
@@ -143,9 +144,9 @@ theorem Derivation.sound {Γ Q} (d : Derivation Γ Q) : Consequence Γ Q := by
   | indexInstance _ i ih =>
     intro ρ ρ' m s t hv hvt hΓ
     exact ih ρ ρ' m s t hv hvt hΓ i
-  | valueInstance _ v hsv ih =>
+  | valueInstance v _ _ ih ihD =>
     intro ρ ρ' m s t hv hvt hΓ
-    exact ih ρ ρ' m s t hv hvt hΓ v hsv
+    exact value_instance hvt (ih ρ ρ' m s t hv hvt hΓ) (ihD ρ ρ' m s t hv hvt hΓ)
   | valueToInteger hn _ ih =>
     intro ρ ρ' m s t hv hvt hΓ
     exact value_equality_to_integer hn (ih ρ ρ' m s t hv hvt hΓ)

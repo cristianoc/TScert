@@ -1,4 +1,5 @@
 import Verification.Paper.TolerantFrames.ParityAssertions
+import Verification.Paper.TolerantFrames.HeapValidity
 import Verification.Semantics.ExitWorlds
 import Verification.Semantics.Support
 
@@ -14,7 +15,7 @@ namespace Verification.Paper.TolerantFrames
 open Verification Footprints
 open Verification.TolerantFrames
 
-/-- The environment and mark part of a paper state (Definition 5), alongside
+/-- The world-valid program environment and mark part of a paper state (Definition 5), alongside
 the shared indexed heap. The surrounding type system supplies variable types. -/
 def ValidContext (ρ : Env) (m : Nat) (s : IndexedHeap) : Prop :=
   RootsOk s.W ρ ∧ (∀ x, isSourceVal (ρ x) = true) ∧ m ≤ s.h.length
@@ -22,8 +23,13 @@ def ValidContext (ρ : Env) (m : Nat) (s : IndexedHeap) : Prop :=
 theorem ValidContext.admissible {ρ m s t} (hv : ValidContext ρ m s) (ha : Admissible s t) :
     ValidContext ρ m t := ⟨Verification.RootsOk.admissible ha hv.1, hv.2.1, Nat.le_trans hv.2.2 ha.length_le⟩
 
+/-- Program role validity supplies heap-only logical validity. The converse is
+not needed: logical witnesses do not assign fine roles to world locations. -/
+theorem ValidContext.heap {ρ m s} (hv : ValidContext ρ m s) : HeapContext ρ m s :=
+  ⟨fun x => HeapRefs.of_world (hv.1 x), hv.2.1, hv.2.2⟩
+
 /-- Entailment on the well-formed states of the paper. -/
-def EntailsOn (F G : Assertion) : Prop := ∀ ρ m s, ValidContext ρ m s → F ρ m s → G ρ m s
+def EntailsOn (F G : Assertion) : Prop := ∀ ρ m s, HeapContext ρ m s → F ρ m s → G ρ m s
 
 /-- The shared domain of well-formed indexed heaps. Environment validity is
 an additional premise of results that follow references from roots. -/
@@ -31,24 +37,24 @@ def domain : SupportDomain IndexedHeap := ⟨IndexedHeap.h, Admissible⟩
 
 /-- Definition 11, including its condition on transitions. -/
 abbrev Supports (C : ConditionOn IndexedHeap) (F : Assertion) (S : Footprint) : Prop :=
-  domain.Supports (fun ρ m s t => ValidContext ρ m s ∧ C ρ m s t) F S
+  domain.Supports (fun ρ m s t => HeapContext ρ m s ∧ C ρ m s t) F S
 
 /-- Definition 12: every action from K meets every support constraint. This
 is a semantic property, not the pairwise sufficient decision procedure. -/
 def Respects (K : Assertion) (Φ S : Footprint) : Prop :=
-  ∀ ρ m s s', ValidContext ρ m s → K ρ m s → Action Φ ρ s s' → Supported S ρ s.h s'.h
+  ∀ ρ m s s', HeapContext ρ m s → K ρ m s → Action Φ ρ s s' → Supported S ρ s.h s'.h
 
 /-- The pairwise check is sufficient for semantic respect. -/
 theorem respects_of_check {K : Assertion} {Φ S : Footprint} {q : SepQuery}
     (hc : respects q S Φ = true)
-    (hq : ∀ ρ m s, ValidContext ρ m s → K ρ m s → q.Sound ρ s.h) : Respects K Φ S :=
+    (hq : ∀ ρ m s, HeapContext ρ m s → K ρ m s → q.Sound ρ s.h) : Respects K Φ S :=
   fun ρ m s _ hv hK ha => respect_sound hc (hq ρ m s hv hK) ha.2
 
 /-- Theorem 13 with precisely semantic support, respect, and the condition
 on all actions. No certificate or search completeness premise is involved. -/
 theorem tolerant_frame {K F : Assertion} {Φ S : Footprint} {C : ConditionOn IndexedHeap}
     (hs : Supports C F S) (hr : Respects K Φ S)
-    (hc : ∀ ρ m s s', ValidContext ρ m s → K ρ m s → Action Φ ρ s s' → C ρ m s s') :
+    (hc : ∀ ρ m s s', HeapContext ρ m s → K ρ m s → Action Φ ρ s s' → C ρ m s s') :
     EntailsOn (fun ρ m s => K ρ m s ∧ F ρ m s) (Box Φ F) :=
   fun ρ m s hv ⟨hK, hF⟩ s' ha => hs ρ m s s' ha.1 ⟨hv, hc ρ m s s' hv hK ha⟩ hF (hr ρ m s s' hv hK ha)
 
@@ -85,13 +91,13 @@ theorem box_weakest_stable {Φ : Footprint} {F : Assertion} (hr : ∀ ρ, Rigid 
   intro G hGF hG ρ m s hg s' ha
   exact hGF ρ m s' (hG ρ m s s' ha hg)
 
-/-- Rigidity on the well-formed contexts of the paper. -/
+/-- Rigidity on heap-valid logical contexts, including opened witnesses. -/
 def RigidOn (Φ : Footprint) : Prop :=
-  ∀ ρ m s t u, ValidContext ρ m s → Action Φ ρ s t → Action Φ ρ t u → Action Φ ρ s u
+  ∀ ρ m s t u, HeapContext ρ m s → Action Φ ρ s t → Action Φ ρ t u → Action Φ ρ s u
 
-/-- Invariance on precisely the paper's contexts. -/
+/-- Invariance on heap-valid logical contexts. -/
 def InvariantOn (F : Assertion) : Prop :=
-  ∀ ρ m s t, ValidContext ρ m s → Admissible s t → F ρ m s → F ρ m t
+  ∀ ρ m s t, HeapContext ρ m s → Admissible s t → F ρ m s → F ρ m t
 
 /-- Law 9(b), with arbitrary semantic entailment on well-formed contexts. -/
 theorem box_mono_on {Φ : Footprint} {F G : Assertion} (hfg : EntailsOn F G) :
@@ -112,11 +118,11 @@ theorem box_idem_on {Φ : Footprint} {F : Assertion} (hr : RigidOn Φ) :
     EntailsOn (Box Φ F) (Box Φ (Box Φ F)) :=
   fun ρ m s hv hb t ha u hau => hb u (hr ρ m s t u hv ha hau)
 
-/-- Stability quantified only over well-formed paper contexts. -/
+/-- Stability on heap-valid logical contexts. -/
 def StableOn (Φ : Footprint) (F : Assertion) : Prop :=
-  ∀ ρ m s t, ValidContext ρ m s → Action Φ ρ s t → F ρ m s → F ρ m t
+  ∀ ρ m s t, HeapContext ρ m s → Action Φ ρ s t → F ρ m s → F ρ m t
 
-/-- Remark 8 on precisely the paper's valid contexts. A competing stable
+/-- Remark 8 on heap-valid logical contexts. A competing stable
 strengthening need not satisfy any property at an invalid environment. -/
 theorem box_weakest_stable_on {Φ : Footprint} {F : Assertion} (hr : RigidOn Φ) :
     EntailsOn (Box Φ F) F ∧ StableOn Φ (Box Φ F) ∧
@@ -166,13 +172,13 @@ theorem reliance {Φ : Footprint} {ρ : Env} {m : Nat} {F : Assertion} {s t : In
 /-- A rigid action bounds every prefix without requiring anything at invalid
 roots. This is the paper's Reliance at its full modal premise. -/
 theorem ActionChain.action_on {Φ : Footprint} {ρ : Env} {m : Nat} (hr : RigidOn Φ)
-    {s t : IndexedHeap} (hv : ValidContext ρ m s) (h : ActionChain Φ ρ s t) : Action Φ ρ s t := by
+    {s t : IndexedHeap} (hv : HeapContext ρ m s) (h : ActionChain Φ ρ s t) : Action Φ ρ s t := by
   induction h with
   | refl => exact Action.refl _ _ _
   | step _ ha ih => exact hr ρ m _ _ _ hv ih ha
 
 theorem reliance_on {Φ : Footprint} {ρ : Env} {m : Nat} {F : Assertion} {s t : IndexedHeap}
-    (hr : RigidOn Φ) (hv : ValidContext ρ m s) (hb : Box Φ F ρ m s) (h : ActionChain Φ ρ s t) : F ρ m t :=
+    (hr : RigidOn Φ) (hv : HeapContext ρ m s) (hb : Box Φ F ρ m s) (h : ActionChain Φ ρ s t) : F ρ m t :=
   hb t (h.action_on hr hv)
 
 end Verification.Paper.TolerantFrames

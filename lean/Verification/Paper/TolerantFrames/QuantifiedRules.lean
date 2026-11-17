@@ -123,25 +123,23 @@ private theorem entries_of_array_length {h : Heap} {v : Val} {n : Int} (hn : len
   exact ⟨es, by simp [collectionEntries, he, hes, spineEntries]⟩
 
 private theorem entries_of_view_length {s : IndexedHeap} {v : Val} {n : Int}
-    (hr : RefsOk s.W v) (hn : viewLengthOf v = some n) : ∃ es, collectionEntries s.h v = some es := by
+    (hr : HeapRefs s.h v) (hn : viewLengthOf v = some n) : ∃ es, collectionEntries s.h v = some es := by
   obtain ⟨fs, oid, st, f, N, rfl, _⟩ := viewLengthOf_inv hn
-  have hst : roleAt s.W st = some (.spine (.view f N)) :=
-    (hr (.view st f N (fs.lookup arraySpineKey).isNone) (by simp [refs])).2
-  obtain ⟨u, hu, hcat, _⟩ := s.ok.2 st _ hst
-  obtain ⟨cs, rfl, _⟩ := hcat
-  exact ⟨cs.map some, by simp [collectionEntries, (RefsOk.view_selects hr s.h).1, hu, spineEntries]⟩
+  obtain ⟨hp, cs, hu, _⟩ := hr (.view st f N (fs.lookup arraySpineKey).isNone) (by simp [refs])
+  have hfs : fs.lookup arraySpineKey = none := by simpa using hp
+  exact ⟨cs.map some, by simp [collectionEntries, elementsOf, hfs, hu, spineEntries]⟩
 
 /-- Empty from a defined array or typed-array length, without a density or
-pre-supplied collection-entry assumption. Valid roots are the paper's W3. -/
+pre-supplied collection-entry assumption. Heap-valid roots supply shapes; actual heap readings use W3. -/
 theorem empty_rule {kind : Reading} (hkind : kind = .length ∨ kind = .view)
     {z : Path} {bound : Expression} {body : Body} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hv : ValidContext ρ m s) (hd : (PathDefined kind z).Holds ρ m s)
+    (hv : HeapContext ρ m s) (hd : (PathDefined kind z).Holds ρ m s)
     (hb : (Formula.atom (.le bound (.constant 0))).Holds ρ m s) : Every ρ s.h z bound body := by
   obtain ⟨v, len, hz, hlen⟩ := PathDefined.holds_iff.mp hd
   obtain ⟨n, zero, hn, hz0, hle⟩ := hb
   have hz0' : zero = 0 := (Option.some.inj hz0).symm
   subst zero
-  have hr : RefsOk s.W v := readPath_refs s.ok z.fields (hv.1 z.root) hz
+  have hr : HeapRefs s.h v := readPath_heapRefs z.fields (hv.1 z.root) hz
   have hes : ∃ es, collectionEntries s.h v = some es := by
     rcases hkind with rfl | rfl
     · exact entries_of_array_length hlen

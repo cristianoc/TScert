@@ -1,3 +1,11 @@
+import Verification.Paper.TolerantFrames.WorldIndependence
+import Verification.Paper.TolerantFrames.HeapValidity
+import Verification.Paper.TolerantFrames.PathTermSupports
+import Verification.Paper.TolerantFrames.ElementSupports
+import Verification.Paper.TolerantFrames.AtomSupports
+import Verification.Paper.TolerantFrames.EverySupports
+import Verification.Paper.TolerantFrames.PolaritySupports
+import Verification.Paper.TolerantFrames.BelowMark
 import Verification.Paper.TolerantFrames.PathSupports
 import Verification.Paper.TolerantFrames.FreshnessCounterexample
 import Verification.Paper.TolerantFrames.LiteralEquality

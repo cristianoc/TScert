@@ -187,7 +187,7 @@ theorem Post.holds_agree {entryPrograms programs indices values η ζ} (ha : Log
   | or Q R ihQ ihR => exact or_congr (ihQ ha hQ.1) (ihR ha hQ.2)
   | implication Q R ihQ ihR => exact imp_congr (ihQ ha hQ.1) (ihR ha hQ.2)
   | forallIndex Q ih => exact forall_congr' fun i => ih (ha.pushIndex i) hQ
-  | forallValue Q ih => exact forall_congr' fun v => imp_congr_right fun _ => ih (ha.pushValue v) hQ
+  | forallValue Q ih => exact forall_congr' fun v => imp_congr_right fun _ => imp_congr_right fun _ => ih (ha.pushValue v) hQ
 
 /-- A closed postcondition's meaning is independent of the chosen total
 valuations for unused logical slots. -/

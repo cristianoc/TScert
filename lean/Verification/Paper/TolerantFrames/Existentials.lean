@@ -32,28 +32,43 @@ theorem ScalarLiteral.refs {n : Nat} {W : WorldT n} (v : ScalarLiteral) : RefsOk
   cases v <;> try rfl
   case boolean b => cases b <;> rfl
 
-theorem BaseValue.valid {ρ m s} (hv : ValidContext ρ m s) (v : BaseValue) :
-    isSourceVal (v.eval ρ) = true ∧ RefsOk s.W (v.eval ρ) := by
+theorem BaseValue.valid {ρ m s} (hv : HeapContext ρ m s) (v : BaseValue) :
+    isSourceVal (v.eval ρ) = true ∧ HeapRefs s.h (v.eval ρ) := by
   cases v with
   | «variable» x => exact ⟨hv.2.1 x, hv.1 x⟩
-  | literal v => exact ⟨v.source, v.refs⟩
+  | literal v => exact ⟨v.source, HeapRefs.of_world (v.refs (W := s.W))⟩
 
 /-- Conversion returns a numeric source value, with no references. -/
-theorem Value.valid {ρ m s} (hv : ValidContext ρ m s) {v : Value} {u : Val}
-    (he : v.eval ρ = some u) : isSourceVal u = true ∧ RefsOk s.W u := by
+theorem Value.valid {ρ m s} (hv : HeapContext ρ m s) {v : Value} {u : Val}
+    (he : v.eval ρ = some u) : isSourceVal u = true ∧ HeapRefs s.h u := by
   cases v with
   | base v => cases he; exact v.valid hv
   | converted f v =>
     simp only [Value.eval] at he
     split at he <;> try cases he
-    exact ⟨rfl, RefsOk_of_nil rfl⟩
+    exact ⟨rfl, HeapRefs.of_nil rfl⟩
 
 /-- The usual existential introduction, for an evaluated source value. -/
-theorem exists_intro {F : Formula} {v : Value} {ρ m s} (hv : ValidContext ρ m s)
+theorem exists_intro {F : Formula} {v : Value} {ρ m s} (hv : HeapContext ρ m s)
     (hi : ValueInstantiation F v ρ m s) : (Formula.existsValue F).Holds ρ m s := by
   obtain ⟨u, hu, hF⟩ := hi
   have hvalid := Value.valid hv hu
   exact ⟨u, hvalid.1, hvalid.2, hF⟩
+
+/-- Definedness of a syntactic value at its actual current phase. -/
+def ValueDefined (v : Value) : Assertion := fun ρ _ _ => ∃ u, v.eval ρ = some u
+
+/-- Freeze the successfully evaluated current value throughout the whole
+postcondition, including its old components. This is not textual substitution. -/
+def EvaluatedValueInstance (Q : Val → Postcondition) (v : Value) : Postcondition :=
+  fun ρ ρ' m s t => ∃ u, v.eval ρ' = some u ∧ Q u ρ ρ' m s t
+
+theorem value_instance {Q : Val → Postcondition} {v : Value} {ρ ρ' m s t}
+    (hv : HeapContext ρ' m t) (hq : ForallValue Q ρ ρ' m s t)
+    (hd : ValueDefined v ρ' m t) : EvaluatedValueInstance Q v ρ ρ' m s t := by
+  obtain ⟨u, hu⟩ := hd
+  have hvalid := Value.valid hv hu
+  exact ⟨u, hu, hq u hvalid.1 hvalid.2⟩
 
 /-- Variable instantiation has a total syntactic representative. Other
 values require literal substitution, which is a separate syntax obligation. -/

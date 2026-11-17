@@ -92,7 +92,7 @@ theorem PathEquality.read_eq {p q ρ m s} (he : (PathEquality p q).Holds ρ m s)
 
 /-- A rigid path reads one valid source value in every admissible future. -/
 def RigidPath (p : Path) : Assertion := fun ρ _ s =>
-  ∃ v, isSourceVal v = true ∧ RefsOk s.W v ∧ ∀ t, Admissible s t → p.read ρ t.h = some v
+  ∃ v, isSourceVal v = true ∧ HeapRefs s.h v ∧ ∀ t, Admissible s t → p.read ρ t.h = some v
 
 theorem future_equal_of_rigid {p q : Path} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hp : RigidPath p ρ m s) (hq : RigidPath q ρ m s) (he : p.read ρ s.h = q.read ρ s.h) :

@@ -110,7 +110,7 @@ def PostImp (Q R : Postcondition) : Postcondition := fun ρ ρ' m s t => Q ρ ρ
 def ForallIndex (Q : Int → Postcondition) : Postcondition := fun ρ ρ' m s t => ∀ i, Q i ρ ρ' m s t
 
 def ForallValue (Q : Val → Postcondition) : Postcondition :=
-  fun ρ ρ' m s t => ∀ v, isSourceVal v = true → Q v ρ ρ' m s t
+  fun ρ ρ' m s t => ∀ v, isSourceVal v = true → HeapRefs t.h v → Q v ρ ρ' m s t
 
 theorem implication_elim {Q R : Postcondition} {ρ ρ' m s t}
     (hi : PostImp Q R ρ ρ' m s t) (hq : Q ρ ρ' m s t) : R ρ ρ' m s t := hi hq
@@ -119,7 +119,7 @@ theorem instantiate_index {Q : Int → Postcondition} {ρ ρ' m s t}
     (hq : ForallIndex Q ρ ρ' m s t) (i : Int) : Q i ρ ρ' m s t := hq i
 
 theorem instantiate_value {Q : Val → Postcondition} {ρ ρ' m s t}
-    (hq : ForallValue Q ρ ρ' m s t) {v : Val} (hv : isSourceVal v = true) : Q v ρ ρ' m s t := hq v hv
+    (hq : ForallValue Q ρ ρ' m s t) {v : Val} (hv : isSourceVal v = true) (hr : HeapRefs t.h v) : Q v ρ ρ' m s t := hq v hv hr
 
 /-- Modal elimination across a regional action, with the same valuation.
 Fresh bindings require scope agreement on the assertion, not on all slots. -/
