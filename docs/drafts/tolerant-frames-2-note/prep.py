@@ -32,7 +32,7 @@ def swap(old,new):
 swap(r'\newcommand{\bx}[1]{\Box_{#1}}',r'\newcommand{\bx}[1]{\class{boxc}{\Box}_{#1}}')
 swap(r'\newcommand{\sep}{\mathrel{\#}}',r'\newcommand{\sep}{\mathrel{\class{asr}{\#}}}')
 for n in ['keep','init','grow','any']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{chg}{\mathsf{%s}}}'%(n,n))
-for n in ['rigid','fresh','old','dense','every','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
+for n in ['rigid','fresh','old','dense','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
 swap(r'\newcommand{\val}{\kw{values}}',r'\newcommand{\val}{\class{reg}{\mathsf{values}}}')
 swap(r'\newcommand{\st}{\kw{spines}}',r'\newcommand{\st}{\class{reg}{\mathsf{spines}}}')
 for n,w in [('fld','fields'),('cel','cells'),('elt','elements')]: swap(r'\newcommand{\%s}{\kw{all\text{-}%s}}'%(n,w),r'\newcommand{\%s}{\class{reg}{\mathsf{all\text{-}%s}}}'%(n,w))

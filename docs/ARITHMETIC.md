@@ -1334,10 +1334,12 @@ where the body states it a safe integer, as a path is. Its meaning is one
 index fact: the path reads a value whose spine of elements holds locations
 $`\ell`$, the bound term denotes $`n`$, and for every index below it each
 body fact holds, its variables denoting, the element only where it is
-present and a safe integer:
+present and a safe integer. The fact is written $`\forall i<t.\ \Phi`$, for a set
+$`\Phi`$ of body facts whose element terms read the path $`x.p`$ at the
+index $`i`$:
 
 ```math
-\mathrm{every}(x.p,\,t,\,\Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land \mathrm{entries}(h(s))=\ell\land⟦t⟧_{\rho,h}=n\land
+(\forall i<t.\ \Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land \mathrm{entries}(h(s))=\ell\land⟦t⟧_{\rho,h}=n\land
 \forall i<n.\ \forall F\in\Phi.\ F\ \text{holds at}\ (i,\ \ell_i,\ ⟦\cdot⟧_{\rho,h})
 ```
 
@@ -1379,9 +1381,9 @@ quantified fact over an array of $`a`$'s alias class, each body fact holds of
 $`k`$ and $`r`$ (proved):
 
 ```math
-\frac{\mathrm{element}(r,a,k)\in\Sigma\quad \mathrm{every}(x,t,\Phi)\in\Sigma\quad x\in[a]\quad
+\frac{\mathrm{element}(r,a,k)\in\Sigma\quad (\forall i<t.\ \Phi)\in\Sigma\quad x\in[a]\quad
       \mathrm{int}(k)\quad K\vdash 0\le k\quad K\vdash k\le t-1}
-     {\Sigma,\ F[\mathrm{index}\mapsto k,\ \mathrm{elem}\mapsto r]\ \ (F\in\Phi)}\ \textsf{every-read}
+     {\Sigma,\ F[k/i,\ r/x[i]]\ \ (F\in\Phi)}\ \textsf{every-read}
 ```
 
 so `itemSegments[index]!` under `forall i in itemSegments: safeInteger(itemSegments[i]) && 0 <= itemSegments[i] && itemSegments[i] <= data.widths.length`
@@ -1431,8 +1433,8 @@ at most the source's bound $`u`$ (`HeapKnowledge.everyPrefix`, proved
 `everyPrefix_sound`). Equal bounds are its instance.
 
 ```math
-\frac{\mathrm{every}(x.p,u,\Phi)\qquad K\vdash t\ \text{defined}\qquad K\vdash t\le u}
-     {\mathrm{every}(x.p,t,\Phi)}\ \textsf{every-prefix}
+\frac{\forall i<u.\ \Phi\qquad K\vdash t\ \text{defined}\qquad K\vdash t\le u}
+     {\forall i<t.\ \Phi}\ \textsf{every-prefix}
 ```
 
 **Empty arrays.** A quantified fact over an array of length zero holds for
@@ -1442,7 +1444,7 @@ defined and at most zero; array lengths are nonnegative.
 
 ```math
 \frac{K\vdash |x.p|=0}
-     {\Sigma,\ \mathrm{every}(x.p,|x.p|,\Phi)}\ \textsf{every-empty}
+     {\Sigma,\ \forall i<|x.p|.\ \Phi}\ \textsf{every-empty}
 ```
 
 An array literal without spreads states its result's length equal to its
@@ -1509,11 +1511,11 @@ or, in a fact $`\sum_t c_t\,t\le d`$, grown with $`c_t\le 0`$
 apart. Two rules follow (proved):
 
 ```math
-\frac{\mathrm{every}(x.p,t,\Phi)\in\Sigma\quad \mathrm{kept}_\chi(t)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)}
-     {\Sigma\vdash r\leftarrow y.\mathtt{push}(\vec a)\dashv\Sigma',\ \mathrm{every}(x.p,t,\Phi)}\ \textsf{every-grow}
+\frac{(\forall i<t.\ \Phi)\in\Sigma\quad \mathrm{kept}_\chi(t)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)}
+     {\Sigma\vdash r\leftarrow y.\mathtt{push}(\vec a)\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-grow}
 \qquad
-\frac{\mathrm{every}(x,|x|,\Phi)\in\Sigma\quad \mathrm{int}(a)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)\land K\vdash F[\mathrm{index}\mapsto|x|,\ \mathrm{elem}\mapsto a]}
-     {\Sigma\vdash r\leftarrow x.\mathtt{push}(a)\dashv\Sigma',\ \mathrm{every}(x,|x|,\Phi)}\ \textsf{every-push}
+\frac{(\forall i<|x|.\ \Phi)\in\Sigma\quad \mathrm{int}(a)\quad \forall F\in\Phi.\ \mathrm{kept}_\chi(F)\land K\vdash F[|x|/i,\ a/x[i]]}
+     {\Sigma\vdash r\leftarrow x.\mathtt{push}(a)\dashv\Sigma',\ \forall i<|x|.\ \Phi}\ \textsf{every-push}
 ```
 
 with $`\mathrm{kept}_\chi(t)`$ of a length $`|z|`$ holding where
@@ -1538,9 +1540,9 @@ element at $`k`$ denotes $`v`$'s integer, which every body fact reads
 (proved):
 
 ```math
-\frac{\mathrm{every}(x,t,\Phi)\in\Sigma\quad x\in[b]\quad \mathrm{int}(k)\quad
-      (K\vdash t\le k\ \lor\ \forall F\in\Phi.\ K\vdash F[\mathrm{index}\mapsto k,\ \mathrm{elem}\mapsto v])}
-     {\Sigma\vdash r\leftarrow \%\mathsf{ByteSet}\%(b,k,v)\dashv\Sigma',\ \mathrm{every}(x,t,\Phi)}\ \textsf{every-write}
+\frac{(\forall i<t.\ \Phi)\in\Sigma\quad x\in[b]\quad \mathrm{int}(k)\quad
+      (K\vdash t\le k\ \lor\ \forall F\in\Phi.\ K\vdash F[k/i,\ v/x[i]])}
+     {\Sigma\vdash r\leftarrow \%\mathsf{ByteSet}\%(b,k,v)\dashv\Sigma',\ \forall i<t.\ \Phi}\ \textsf{every-write}
 ```
 
 with the terms of $`t`$ and $`\Phi`$ kept by the write

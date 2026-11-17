@@ -78,7 +78,7 @@ when `xs` stays dense below the captured length throughout
 (`map-stable-push`; `invalid-map-unstable-pop`).
 
 **P6. A quantified element fact across a write to another array.**
-`every(z, t, Φ)`, every element of `z` below `t` satisfies `Φ`, across
+$`\forall i<t.\ \Phi`$, every element $`z[i]`$ below $`t`$ satisfies $`\Phi`$, across
 `a[k] = v` (`quantified-freshness-write`;
 `invalid-quantified-freshness-field-alias`).
 
@@ -192,7 +192,7 @@ F(\rho,h) \;\wedge\; \bigl(\forall o\in\mathrm{dep}_F(\rho,h).\ o\ \text{bounded
   (the read must stay defined), on its value where the guard holds, and
   on the body's observations where it does not; where the guard holds the
   body's reads may be undefined.
-- A quantified fact $`\mathrm{every}(z,t,\Phi)`$ depends on a family
+- A quantified fact $`\forall i<t.\ \Phi`$ over $`z[i]`$ depends on a family
   indexed by the state: its stop, and for each index below the stop in
   that state the observations of $`\Phi`$ at that element, at an offset
   and through a projection where the body has them (P13). The family's
@@ -206,7 +206,7 @@ kind "lower bound of a length" states $`\le`$, sound for every constant.
 Some preservation is not a conjunction of bounds on single observations.
 $`\mathrm{apart}(x,y)`$ survives the growth of one spine by fresh cells
 and not the growth of both, which may list the same fresh cell
-(`grownRegions_holds`); and $`\mathrm{every}(x,|x|,\Phi)`$ across an
+(`grownRegions_holds`); and $`\forall i<|x|.\ \Phi`$ over $`x[i]`$ across an
 append needs the old instances bounded and the new index established
 (`every_appended`). The first is a joint tolerance of two observations;
 the second is preservation together with an exact post (section 5).

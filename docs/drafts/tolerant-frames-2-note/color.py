@@ -70,7 +70,7 @@ rep(r'\newcommand{\bx}[1]{\Box_{#1}}', r'\newcommand{\bx}[1]{{\color{boxc}\Box}_
 rep(r'\newcommand{\sep}{\mathrel{\#}}', r'\newcommand{\sep}{\mathrel{\textcolor{asrc}{\#}}}')
 for n in ['keep', 'init', 'grow', 'any']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\chg{%s}}' % (n, n))
-for n in ['rigid', 'fresh', 'old', 'dense', 'every', 'apart']:
+for n in ['rigid', 'fresh', 'old', 'dense', 'apart']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\asr{%s}}' % (n, n))
 rep(r'\newcommand{\val}{\kw{values}}', r'\newcommand{\val}{\reg{values}}')
 rep(r'\newcommand{\st}{\kw{spines}}', r'\newcommand{\st}{\reg{spines}}')

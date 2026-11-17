@@ -33,7 +33,6 @@
 \newcommand{\fresh}{\kw{fresh}}
 \newcommand{\old}{\kw{old}}
 \newcommand{\dense}{\kw{dense}}
-\newcommand{\every}{\kw{every}}
 \newcommand{\apart}{\kw{apart}}
 \newcommand{\len}[1]{|#1|}
 \newcommand{\tr}[1]{\xrightarrow{#1}}
@@ -768,18 +767,21 @@ Section~6 write $a$ for both.
  & &\mid& \len{z[e].\vec f} \mid \kw{view}(z[e].\vec f) \mid \slen(z[e].\vec f) \mid \slen(z[e])\\[2pt]
 \text{linear combinations} & e &::=& c \mid c\cdot t \mid e+e\\[2pt]
 \text{atoms} & a &::=& e\le e \mid \pi\doteq v \mid \pi.f^{?}\doteq v \mid \dense(x,e) \mid \pi\in V\\
- & &\mid& z[e]\doteq v \mid \every(z,e,\varphi)\\[2pt]
+ & &\mid& z[e]\doteq v \mid \forall i<e.\ \varphi\\[2pt]
 \text{bodies} & \varphi &::=& \psi \mid \varphi\wedge\varphi\qquad\psi\ ::=\ e\le e \mid \psi\vee\psi\\[2pt]
-\text{body terms} & u &::=& i \mid z[i] \mid z[i+d] \mid z[i].\vec f \mid \len{z[i].\vec f}\\
- & &\mid& \kw{view}(z[i].\vec f) \mid \slen(z[i].\vec f) \mid \slen(z[i]) \mid t\\[2pt]
+\text{body terms} & u &::=& i \mid p[i] \mid p[i+d] \mid p[i].\vec f \mid \len{p[i].\vec f}\\
+ & &\mid& \kw{view}(p[i].\vec f) \mid \slen(p[i].\vec f) \mid \slen(p[i]) \mid t\\[2pt]
 \text{assertions} & F,G &::=& \kw{true} \mid \kw{false} \mid a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
  & &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
 \text{postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q \mid \forall u.\,Q
 \end{array}
 \]
 The linear combinations of a body are over body terms $u$ in place of
-terms $t$. In a body term, $d\ge 0$ is a literal and a term $t$ does
-not mention the index $i$. The other comparisons are written with
+terms $t$. The quantifier $\forall i<e.\ \varphi$ binds the index $i$
+in $\varphi$, and the element terms of $\varphi$ read one path $p$. The
+index is named $j$ or $k$ in a formula where $i$ is a variable. In a body
+term, $d\ge 0$ is a literal and a term $t$ does not mention the index
+$i$. The other comparisons are written with
 $\le$: $e=e'$ is $e\le e'\wedge e'\le e$, and $e<e'$ is $e+1\le e'$. We
 write $\pi\notin V$ for $\pi\in V'$, where $V'$ is the complement of
 $V$. The language has no negation. We write $\neg a$ only for a tested
@@ -841,31 +843,32 @@ the length of $z$, and $v$ is the value of the element cell the spine
 lists at $i$, or \code{undefined} where an array has a hole at $i$.
 Examples: for \code{a = [10, , 30]}, $a[0]\doteq 10$ and
 $a[1]\doteq\code{undefined}$; for a typed array, $b[1]\doteq 4$.
-\item[Bounded quantification $\every(z,t,\varphi)$] The path $z$ reads
-a collection, the bound $t$, a linear combination of
-terms, is defined, and the body
-$\varphi$ holds at each index $i$ with $0\le i<t$. The body is a
+\item[Bounded quantification $\forall i<t.\ \varphi$] The path $p$
+that the element terms of the body read reads a collection, the bound
+$t$, a linear combination of terms, is defined, and the body $\varphi$
+holds at each index $i$ with $0\le i<t$. The body is a
 conjunction of disjunctions of linear inequalities over the body terms
 of the grammar. The
-term $z[i]$ denotes the number the element at $i$ holds, $z[i].\vec f$ the
-number read from that element along the fields $\vec f$, and $\slen(z[i])$ the length
+term $p[i]$ denotes the number the element at $i$ holds, $p[i].\vec f$ the
+number read from that element along the fields $\vec f$, and $\slen(p[i])$ the length
 of an element that is a string. Each inequality of the body is true only
-where its terms are defined: $z[i]>0$ holds at $i$ only where $z$ has an
+where its terms are defined: $a[i]>0$ holds at $i$ only where $a$ has an
 element at $i$ that is a safe integer. A disjunction of the body holds
 where one of its inequalities does. A body that mentions no element
 states nothing about the elements, and where no index is below $t$ the
 fact states nothing about the body. Examples: for \code{a = [10, , 30]},
-$\every(a,1,z[i]>0)$ holds and $\every(a,3,z[i]>0)$ does not, because of
+$\forall i<1.\ a[i]>0$ holds and $\forall i<3.\ a[i]>0$ does not, because of
 the hole at index 1;
-$\every(\mathit{items},n,\ 0\le z[i].\mathit{at}<\len{\mathit{widths}})$
+$\forall i<n.\ 0\le\mathit{items}[i].\mathit{at}<\len{\mathit{widths}}$
 says that the field \code{at} of each of the first $n$ items is an index
 of \code{widths}; and for $n\ge 1$,
-$\every(\mathit{xs},n,\ z[i]\le z[i+1])$ says that the first $n+1$
+$\forall i<n.\ \mathit{xs}[i]\le\mathit{xs}[i+1]$ says that the first $n+1$
 elements are in order.
 \end{description}
-We write $\varphi(v)$ for a body over the one term $z[i]$, named $v$:
-$\every(a,1,v>0)$
-\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the four kinds of reading, and whether it is read at the entry; an element term occurs only in a body, and the bound of $\every$ is one term. The derivation system \lean{Parity.Derivation} states $\every$ for an array with each index below $t$ present, and the element atom for a typed array}.
+We write $\varphi(v)$ for a body over the one element term $p[i]$, with
+$v$ in its place: for $\varphi(v)$ the body $v>0$, $\forall i<1.\ \varphi(a[i])$
+is $\forall i<1.\ a[i]>0$
+\status{Lean: \lean{Term}, \lean{IndexFact}, \lean{HoldsAt}, \lean{termDefined\_sound}. A Lean term is a variable, a field path, one of the four kinds of reading, and whether it is read at the entry; an element term occurs only in a body, and the bound of a bounded quantification is one term. The derivation system \lean{Parity.Derivation} states a bounded quantification for an array with each index below $t$ present, and the element atom for a typed array}.
 
 \paragraph{Satisfaction.} An assertion is interpreted at a state
 $s=(\rho,h,W,k)$ and an \emph{entry mark} $m$; we write
@@ -954,23 +957,23 @@ Law (a) follows from reflexivity; (b), (c) and (d) from the definitions;
 the same spine in both heaps.
 
 \begin{proposition}[Guards and quantified facts]\label{prop:every}
-For terms $t,t',k$ and a body $\varphi$:
+For terms $t,t',k$ and a body $\varphi$ whose element terms read the path $p$:
 \[
 \begin{array}{ll}
 \textsc{(Guard)} & (\pi\doteq v\vee F)\wedge\pi\doteq w\ \vdash\ F\qquad v\ne w\\[2pt]
-\textsc{(Inst)} & \every(z,t,\varphi)\wedge 0\le k<t\ \vdash\ \varphi[k/i]\\[2pt]
-\textsc{(Prefix)} & \every(z,t,\varphi)\wedge t'\le t\ \vdash\ \every(z,t',\varphi)\\[2pt]
-\textsc{(Empty)} & \kw{defined}(\len z)\wedge t\le 0\ \vdash\ \every(z,t,\varphi)
+\textsc{(Inst)} & (\forall i<t.\ \varphi)\wedge 0\le k<t\ \vdash\ \varphi[k/i]\\[2pt]
+\textsc{(Prefix)} & (\forall i<t.\ \varphi)\wedge t'\le t\ \vdash\ \forall i<t'.\ \varphi\\[2pt]
+\textsc{(Empty)} & \kw{defined}(\len p)\wedge t\le 0\ \vdash\ \forall i<t.\ \varphi
 \end{array}
 \]
 In \textsc{(Guard)} the path may end at an optional field. In
-\textsc{(Inst)} the instance $\varphi[k/i]$ has the element at $k$ for
-$z[i]$: after a read \code{v = z[k]}, it is $\varphi$ of $v$. In
-\textsc{(Empty)} $\len z$ may be $\kw{view}(z)$
+\textsc{(Inst)} the instance $\varphi[k/i]$ has the element $p[k]$ for
+$p[i]$: after a read \code{v = p[k]}, it is $\varphi$ of $v$. In
+\textsc{(Empty)} $\len p$ may be $\kw{view}(p)$
 \status{The four rules follow from the definition of satisfaction. Lean proves instances of them: \lean{unguardIndices\_holds} and \lean{releaseEither\_holds}, for a guard whose path was read and for alternatives refuted by a linear fact; \lean{instantiateEvery\_holds} and \lean{elementInstances\_holds}, at an index whose element was read; \lean{everyPrefix\_sound}; \lean{Derivation.everyEmpty}, for an array known dense}.
 \end{proposition}
 \noindent
-Example: with $\every(\mathit{items},n,\ 0\le z[i].\mathit{at}<\len{\mathit{widths}})$
+Example: with $\forall i<n.\ 0\le\mathit{items}[i].\mathit{at}<\len{\mathit{widths}}$
 and $0\le k<n$, \textsc{(Inst)} gives
 $0\le\mathit{items}[k].\mathit{at}<\len{\mathit{widths}}$, the
 precondition of the read \code{widths[items[k].at]}. A fact
@@ -1064,7 +1067,7 @@ the last, $x.f_1\ldots f_k$, at $\delta$.
 \pi\doteq v,\ \pi\in V & \mathrm{reads}_{\keep}(\pi)\\[2pt]
 \pi.f^{?}\doteq v & \mathrm{reads}_{\keep}(\pi.f)\\[2pt]
 \dense(x,n) & \{x.\kw{spine}:\grow\}\cup\mathrm{supp}(n)\\[2pt]
-z[t]\doteq v,\ \every(z,t,\varphi) & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
+z[t]\doteq v,\ \forall i<t.\ \varphi & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
 F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
 \pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')
 \end{array}
@@ -1079,7 +1082,7 @@ region $\pi.f$ is then empty, and the fact stays true because an object
 keeps its fields (T3). A term $z[t].\vec f$ reads a field of an element, for which there
 is no region, and has no support. A field that a condition $C$ says
 keeps its contents is left out of $\mathrm{reads}$, and the support is
-then under $C$. In the row of $\every$, $z$ reads an array, the body
+then under $C$. In the row of $\forall i<t.\ \varphi$, $z$ reads an array, the body
 $\varphi$ is over the element $z[i]$ and terms that do not mention $i$,
 and $\mathrm{supp}(\varphi)$ is the support of those terms. A
 quantified fact whose body has another body term has no support by this
@@ -1143,7 +1146,7 @@ atom that reads, besides variables, only what is displayed:
 \textsc{(Grow)} & n\le\len x\ \vdash\ \bx{\val:\any,\ \st:\grow}\,(n\le\len x)\\[2pt]
 \textsc{(Dense)} & \dense(x,n)\ \vdash\ \bx{\val:\any,\ \st:\grow}\,\dense(x,n)\quad n\text{ a variable or a literal}\\[2pt]
 \textsc{(Sep)} & x\sep y\wedge a(\len x)\ \vdash\ \bx{\val:\any,\ y.\kw{spine}:\any}\ a(\len x)\\[2pt]
-\textsc{(Every)} & \apart(x,z)\wedge\every(z,t,\varphi)\ \vdash\ \bx{x[\ast]:\any}\,\every(z,t,\varphi)\quad t\text{ a variable, }\varphi\text{ over scalars}\\[2pt]
+\textsc{(Every)} & \apart(x,z)\wedge\forall i<t.\ \varphi\ \vdash\ \bx{x[\ast]:\any}\,\forall i<t.\ \varphi\quad t\text{ a variable, }\varphi\text{ over }z[i]\text{ and scalars}\\[2pt]
 \textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\ a(\len\pi)\\[2pt]
 \textsc{(Rigid)} & \rigid(\pi)\wedge a(\len{\pi})\ \vdash\ \bx{\Phi}\,a(\len\pi)\quad\text{if } a(\len y)\vdash\bx{\Phi}\,a(\len y)\text{ for a fresh }y\\[2pt]
 \textsc{(View)} & a(\kw{view}(w))\ \vdash\ \bx{\top}\,a(\kw{view}(w))\quad\kw{view}(w)\text{ a typed array's length}
@@ -1604,9 +1607,9 @@ terms the step keeps. The bound $n$ and the index $k$ are variables:
 \[
 \begin{array}{ll}
 \textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
-\textsc{Push-Every} & \hoare{\every(x,n,\varphi)\wedge n=\len x\wedge\varphi(n,v)}{\code{x.push(v)}}{\every(x,n+1,\varphi)}\\[3pt]
-\textsc{View-Every} & \{\every(b,n,\varphi)\wedge 0\le k<\kw{view}(b)\wedge\varphi(k,\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
- & \qquad\{\every(b,n,\varphi)\wedge(k=n\Rightarrow\every(b,n+1,\varphi))\}
+\textsc{Push-Every} & \hoare{(\forall i<n.\ \varphi(i,x[i]))\wedge n=\len x\wedge\varphi(n,v)}{\code{x.push(v)}}{\forall i<n+1.\ \varphi(i,x[i])}\\[3pt]
+\textsc{View-Every} & \{(\forall i<n.\ \varphi(i,b[i]))\wedge 0\le k<\kw{view}(b)\wedge\varphi(k,\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
+ & \qquad\{(\forall i<n.\ \varphi(i,b[i]))\wedge(k=n\Rightarrow\forall i<n+1.\ \varphi(i,b[i]))\}
 \end{array}
 \]
 In \textsc{Write-Kept} the written field may be the field $y.f$ itself:
@@ -1621,7 +1624,7 @@ stored value. With $k=n$ it extends the prefix, as in
 \code{while (n < b.length) \{ b[n] = n; n = n + 1; \}}, for a typed
 array \code{b} whose format stores each of its indices unchanged, such
 as an \code{Int32Array} of length at most $2^{31}$, with the fact
-$\every(b,n,\ v=i)$: each element holds its own index. The three rules are instances of one principle: a
+$\forall i<n.\ b[i]=i$: each element holds its own index. The three rules are instances of one principle: a
 fact that holds of each of a family of locations holds after a write
 when it holds of the written value at each location of the family the
 write can reach
@@ -1630,14 +1633,14 @@ write can reach
 A growth of a spine does not in general keep a quantified fact about
 elements: a spine that grows may list other cells at its old indices
 (Section~3). Across
-\code{x.push(v)} a fact $\every(x,t,\varphi)$ with $t\le\old(\len x)$
+\code{x.push(v)} a fact $\forall i<t.\ \varphi$ over $x[i]$ with $t\le\old(\len x)$
 is kept by the postcondition $Q_{<}$ of \textsc{Push}, where the bound
 and the other terms of the body are kept. Across a field write, a fact
 over an array held in a variable, with a bound the write keeps and a
 body over the element alone, is kept by Theorem~\ref{thm:frame}: its
 support is the spine and the cells of the array at $\keep$, and a field
 location is neither. A body that reads a
-field of each element, such as $z[i].n\ge 0$, is not kept by that
+field of each element, such as $p[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
@@ -1756,10 +1759,10 @@ unchanged}.
 \begin{example}[A write through a typed array]\label{ex:view}
 Let \code{xs} be an array, \code{o} an object, and \code{b} and \code{c}
 typed arrays. Before \code{b[0] = 7} let $3\le\len{\mathit{xs}}$,
-$\every(\mathit{xs},3,v>0)$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
+$\forall i<3.\ \mathit{xs}[i]>0$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
 $b[1]\doteq 4$ and $c[1]\doteq 5$ hold. After the write:
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[$3\le\len{\mathit{xs}}$ and $\every(\mathit{xs},3,v>0)$ hold]
+\item[{$3\le\len{\mathit{xs}}$ and $\forall i<3.\ \mathit{xs}[i]>0$ hold}]
 Their supports lie in $\mathit{xs}[\ast]$: an array spine, disjoint
 from $\vw$, and element cells, which are value locations. So
 $\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
@@ -1960,13 +1963,13 @@ Bound across a rewriting call (Ex.~\ref{ex:sep}) & $\mathit{flags}\sep y\wedge i
 Fresh array spine & a change of its spine is no part of the effect below the mark; right after the allocation, $\apart(x,y)$ for each older array $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
 Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{\val:\init\}}\,a$, by Theorem~\ref{thm:frame} at a support respected by $\Phi_{\mathit{build}}$ and tolerating $\init$\hfill\textsc{(Init)}\\[2pt]
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$\hfill Prop.~\ref{prop:rely}\\[2pt]
-Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$, $t$ a variable, $\varphi$ over scalars\hfill\textsc{(Every)}\\[2pt]
+Quantified fact across a write & $\apart(a,z)\wedge\forall i<t.\ \varphi\vdash\bx{a[\ast]:\any}\forall i<t.\ \varphi$, $t$ a variable, $\varphi$ over $z[i]$ and scalars\hfill\textsc{(Every)}\\[2pt]
 Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$\hfill postcondition, \textsc{(Sep)}\\[2pt]
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{spine}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
 Index from a shift or a mask & with $0\le c<2^{31}$: after \code{y = c >> d}, $0\le y\wedge 2^{d}y\le c$; after \code{y = c \& m}, $0\le y\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
-Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\every(\mathit{xs},t,\varphi)\vdash\bx{\vw:\grow}\every(\mathit{xs},t,\varphi)$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
+Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\forall i<t.\ \varphi\vdash\bx{\vw:\grow}\forall i<t.\ \varphi$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over $\mathit{xs}[i]$ and scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
 Fact at a handler & $\bx{\Phi^{e}}R^{e}$ at the entry of the command gives $R^{e}$ at its handler\hfill\textsc{Frame}\\
 \bottomrule
 \end{tabular}
@@ -2024,9 +2027,9 @@ of the value it returns.
 \paragraph{Extensions of the language.} Each of the four patterns below needs a form that the language of this paper lacks.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[A fact about a field of each element, across a change of such fields] Example:
-$\every(\mathit{rows},t,\ z[i].n\ge 0)$ across a write of a field
+$\forall i<t.\ \mathit{rows}[i].n\ge 0$ across a write of a field
 \code{n}. The fact is expressible. Keeping it needs a region
-$z[\ast].n$, a path from each element cell the spine lists, for its
+$\mathit{rows}[\ast].n$, a path from each element cell the spine lists, for its
 support and for the effect of the write.
 \item[Elements of one typed array across a write through another]
 Example: $c[1]=5$ across \code{b[0] = 7} when \code{b} and \code{c} are

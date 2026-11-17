@@ -29,7 +29,6 @@
 \newcommand{\fresh}{\kw{fresh}}
 \newcommand{\old}{\kw{old}}
 \newcommand{\dense}{\kw{dense}}
-\newcommand{\every}{\kw{every}}
 \newcommand{\apart}{\kw{apart}}
 \newcommand{\fld}{\kw{all\text{-}fields}}
 \newcommand{\cel}{\kw{all\text{-}cells}}
@@ -111,7 +110,7 @@ Paper~I.
 \code{widths[items[i]!]!} of line 6. The obligation is
 $0\le\mathit{items}[i]<\len{\mathit{widths}}$. It follows from the
 quantified fact
-$\every(\mathit{items},\kw{view}(\mathit{items}),0\le v<\len{\mathit{widths}})$,
+$\forall j<\kw{view}(\mathit{items}).\ 0\le\mathit{items}[j]<\len{\mathit{widths}}$,
 but the field write \code{fragment.width = s} removes that fact: a
 field write keeps a quantified fact only if the new value satisfies
 the fact's body. Stating the fact as a loop
@@ -215,7 +214,7 @@ the program establishes a fact about the contents of the table:
 \entry{The nearest form that verifies} A read of the decoded table at an index bounded by its
 stated length, \code{t[state]!}.
 
-\entry{What an extension must provide} The fact $\every(t,\kw{view}(t),0\le v<\kw{view}(t))$
+\entry{What an extension must provide} The fact $\forall i<\kw{view}(t).\ 0\le t[i]<\kw{view}(t)$
 about the decoded table, available where the decoder returns. The fact
 is true because of what the generator of the table wrote. Neither paper has such a rule.
 
@@ -393,7 +392,7 @@ of the selected element.
 
 \entry{What an extension must provide} A quantified fact that relates the elements of two
 arrays at the same index, here
-$\every(\mathit{fits},\len{\mathit{fits}},\ \mathit{extras}[k]\doteq\code{null}\vee\len{\mathit{extras}[k]}=\len{\mathit{fits}[k]})$,
+$\forall k<\len{\mathit{fits}}.\ \mathit{extras}[k]\doteq\code{null}\vee\len{\mathit{extras}[k]}=\len{\mathit{fits}[k]}$,
 and a rule that uses it at a read through elements of both arrays.
 Neither paper has such a fact.
 
