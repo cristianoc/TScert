@@ -135,7 +135,8 @@ function preconditionsText(pre: StepPreconditions, binding: (slot: number) => st
     const link = links.find((l) => l.value === slot && l.cell !== slot && !seen.has(l.cell));
     if (link === undefined) return "slot " + slot;
     const cell = name(link.cell, new Set([...seen, slot]));
-    return link.alias ? cell : `${cell}${link.optional ? "?." : "."}${link.field}`;
+    const field = typeof link.field === "string" ? link.field : `[Symbol ${link.field.symbol}]`;
+    return link.alias ? cell : `${cell}${link.optional ? "?." : "."}${field}`;
   };
   const named = (s: number): string => name(s);
   const condition = (a: { cond?: number; negated: boolean }): string =>
