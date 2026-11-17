@@ -85,6 +85,8 @@ function refusal(detail: string): string[] {
     out.push(`  edge from ${located(...record.source.sourceMap.pos)}`);
   const names = bindings(point.sourceMap);
   const name = (slot: number): string => names[slot] || `slot ${slot}`;
+  // (an edge's facts its target lacks, named in the summary above)
+  if (record.kind === "edge-coverage" && record.edgeFacts !== undefined) return out;
   for (const { fact: f, cond, negated } of point.requiredKnowledge?.indices ?? [])
     out.push(`  required: ${cond === undefined ? "" : `${negated ? "!" : ""}${name(cond)} → `}${fact(f, name)}`);
   return out;

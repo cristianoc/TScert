@@ -599,11 +599,14 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 @[nospecialize] def PointClaim.mentions (c : PointClaim ι) : List ι := c.type ++ c.context.flatten
 
 /-- A graph failure as a diagnostic: its types are the store's projection
-(`StoreView.project`) onto the labels the record mentions. -/
+(`StoreView.project`) onto the labels the record mentions. An edge with
+`thrown` is its source's handler edge, which pushes a thrown value of that
+type. -/
 @[nospecialize] def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure ι)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
-    (phaseOverride : Option String := none) (leftOut : List CertificateProducer.LeftOut := []) :
+    (phaseOverride : Option String := none) (leftOut : List CertificateProducer.LeftOut := [])
+    (thrown : Option (Ty ι) := none) :
     List (String × Json) := Id.run do
   let claimAt := fun l => (r.claims[l]? : Option (PointClaim ι))
   let mentionedAt := fun l => ((claimAt l).map PointClaim.mentions).getD []
@@ -611,7 +614,7 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     | .expression label => mentionedAt label
     | .exhaustedExpression label stop => mentionedAt label ++ stop.source ++ stop.target
     | .exhaustedEdge source destination _ stop => mentionedAt source ++ mentionedAt destination ++ stop.source ++ stop.target
-    | .edge source destination _ => mentionedAt source ++ mentionedAt destination
+    | .edge source destination _ => mentionedAt source ++ mentionedAt destination ++ thrown.getD []
     | .promise label actual promised => mentionedAt label ++ actual ++ promised
     | .claimCount | .rejected => []
   let p := StoreView.projection r.types (r.result ++ mentioned).eraseDups
@@ -649,17 +652,21 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     let transfer := do
       let node ← r.program[source]?
       let c := PointClaim.shown p (← claimAt source)
-      let (available, target, observation) ← (match node.continuation with
+      let (available, target, observation) ← (match thrown, node.handler with
+        | some T, some h => some (p.shown T :: c.context, h, (none : Option Bool))
+        | _, _ => match node.continuation with
         | .bind t => some (c.type :: c.context, t, (none : Option Bool))
         | .effect t => some (c.context, t, none)
         | .branch y n => some (c.context, if index == 0 then y else n, none)
         | .branchBind y n => some (c.type :: c.context, if index == 0 then y else n, some (index == 0))
         | .tagBind _ y n => some (c.type :: c.context, if index == 0 then y else n, none)
         | .ret => none)
+      let handler := thrown.isSome && node.handler.isSome
       pure (Json.mkObj [("available",toJson available),("target",toJson target),
         ("booleanObservation",toJson observation),
         ("tagObservation",match node.continuation with
-          | .tagBind t _ _ => Json.mkObj [("test",toJson t),("answer",toJson (index == 0)),("slot",toJson (0 : Nat))]
+          | .tagBind t _ _ => if handler then Json.null else
+            Json.mkObj [("test",toJson t),("answer",toJson (index == 0)),("slot",toJson (0 : Nat))]
           | _ => Json.null)])
     return common ++ [("kind",toJson "edge-coverage"),("id",toJson s!"edge:{source}:{index}"),
       ("edgeIndex",toJson index),("source",atNode source),("destination",atNode destination),

@@ -376,15 +376,39 @@ structure StepPreconditions where
   signatures : List StatedPrecondition
   known : Knowledge
 
+/-- What a refused edge's diagnostic carries: its node `source`, its target
+`target`, the exit it is among the node's (`Exit.ofNode`), the thrown
+value's type where it is the handler's; the facts the target requires
+(`required`) and those of them the edge does not establish (`lacking`, each
+decided alone by the check the edge's requirement is decided by), over the
+target's slots; and the facts the edge holds over the slots the mapping
+reads, restated at the target's slots (`known`), a name past the source's
+context kept past the target's. -/
+structure EdgeFacts (ι : Type) where
+  source : Nat
+  target : Nat
+  exit : Nat
+  thrown : Option (Ty ι)
+  required : Knowledge
+  lacking : Knowledge
+  known : Knowledge
+
+/-- The explanatory data a refusal carries for its diagnostic: of a step's,
+its preconditions; of an edge's, its facts. -/
+inductive RefusalDetail (ι : Type) where
+  | step (d : StepPreconditions)
+  | edge (d : EdgeFacts ι)
+
 /-- The verdict: refused at a located obligation, a construct the pass
 does not handle, or the state observed at a chosen node. A refusal of an
 edge into a statement entry for lacking given facts carries the entry and
-those facts (`lacks`), as data; a refusal of a step, the preconditions of
-its step (`StepPreconditions`), deferred to where the refusal is printed. -/
+those facts (`lacks`), as data; a refusal of a step or an edge, its
+diagnostic's data (`RefusalDetail`), deferred to where the refusal is
+printed. -/
 inductive Outcome (ι : Type) where
   | accepted
   | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
-      (preconditions : Option (Thunk (Option StepPreconditions)) := none)
+      (detail : Option (Thunk (Option (RefusalDetail ι))) := none)
   /-- Refused at node `l`'s footprint check (`GraphCode.nodeChecked`): the
   one refusal a regional check may still answer. -/
   | outsideBound (l : Nat)
@@ -2290,7 +2314,7 @@ facts an edge into it lacks, where it is that refusal), a refusal at a
 footprint, a construct not handled, an observation. -/
 inductive StopOutcome (ι : Type) where
   | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
-      (preconditions : Option (Thunk (Option StepPreconditions)) := none)
+      (detail : Option (Thunk (Option (RefusalDetail ι))) := none)
   | outsideBound (l : Nat)
   | notHandled (what : String)
   | observed (o : Observation ι)
@@ -2749,7 +2773,7 @@ def stepRun (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv 
     -- A step with no derivation: its preconditions, computed only where
     -- the refusal is printed (`stepPreconditionsAt`).
     | .error why => .error (WalkStop.mk (.refused why none
-        (if stats.underivable then some (Thunk.mk fun _ => stepPreconditionsAt G c node entry ms) else none))
+        (if stats.underivable then some (Thunk.mk fun _ => (stepPreconditionsAt G c node entry ms).map .step) else none))
         (addStats counts stats) a trace)
 
 /-- The step's derivation as the checks after it read it: the step's, else
@@ -3358,6 +3382,32 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
         .error (WalkStop.mk (.refused s!"edge from node {l} to node {t.label}{if l == env.debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (en.implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr (ys.map fun y => (y.target, y.conditional))}" else ""}") counts answers acc.trace)
       else .ok ({ acc with answers, counts }, typed)
 
+/-- **A refused edge's facts** (`EdgeFacts`), from node `l` to the target
+`t` (its claim `tc`), the edge's exit found among the node's exits by its
+target and whether it pushes a value (a continuation's exit before the
+handler's), the thrown value's type the head of the exit's context `Γ`
+where it is the handler's: the requirement `req` and its atoms `missing` the edge does not
+establish, over the target's slots, and the edge's facts `k` over the
+`width` slots of its source context, restated at the target's slots
+through the mapping (a name past that context past the target's), those
+sharing a name with a lacking fact. Read only where the refusal is
+printed. -/
+def edgeFactsAt (env : WalkEnv ι G images) (l : Nat) (t : Target) (tc : PointClaim ι) (Γ : List (Ty ι))
+    (pushed : Bool) (req k : Knowledge) (missing : List Atom) : EdgeFacts ι :=
+  let exits := Exit.ofNode env.nodes[l]!
+  let exit := (exits.findIdx? fun e => e.target == t && e.pushed == pushed).getD 0
+  let thrown := if (exits[exit]?).any Exit.isHandler then Γ.head? else none
+  let width := Γ.length
+  let tw := tc.context.length
+  let back := fun (x : Nat) => if x < width then
+      (List.range tw).find? fun j => PointClaims.slot t.mapping j == x
+    else some (tw + (x - width))
+  let lackingNames := missing.flatMap Atom.names
+  let known := (atomsOf k).filterMap (·.rename back) |>.filter fun a =>
+    (match a with | .link _ => true | _ => false) || a.names.any lackingNames.contains
+  { source := l, target := t.label, exit, thrown, required := req,
+    lacking := ofAtoms missing tw, known := ofAtoms known tw }
+
 /-- An edge into a head (`exitStep`): recorded; where the edge's context is
 met, the head's given implications and the slots it states to hold an
 input's entry value or the promised input hold on it; the head's given state
@@ -3398,8 +3448,9 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
         let trace := if env.tracing then
             { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
           else acc.trace
-        .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}"
-          (some (t.label, missing.filterMap fun a => match a with | .index x => some x | _ => none))) counts answers trace)
+        .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {missing.length} of its facts"
+          (some (t.label, missing.filterMap fun a => match a with | .index x => some x | _ => none))
+          (some (Thunk.mk fun _ => some (.edge (edgeFactsAt env l t tc Γ pushed req src missing))))) counts answers trace)
       else .ok { acc with edges, answers, counts }
 
 /-- A target's assertion established on an edge into a node other than a
@@ -3431,7 +3482,8 @@ def assertionExit (G : NormalGraph ι) {images : InstanceImageCheck G} (env : Wa
         let trace := if env.tracing then
             { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
           else acc.trace
-        .error (WalkStop.mk (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}") counts acc.answers trace)
+        .error (WalkStop.mk (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {missing.length} of its facts" none
+          (some (Thunk.mk fun _ => some (.edge (edgeFactsAt env l t tc Γe pushed req k missing))))) counts acc.answers trace)
       else .ok { acc with counts }
 
 /-- An edge into a node other than a head carried in (`exitStep`): the

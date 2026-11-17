@@ -257,10 +257,12 @@ node context (which includes the saved result).
 ## Edge obligations
 
 An `edge-coverage` record includes `source` and `destination` node records,
-`edgeIndex` (0 for the first edge, 1 for the second), and `transfer`:
+`edgeIndex` (0 for the first edge, 1 for the second, the handler's edge
+after the continuation's), and `transfer`:
 
 - `available`: the context before applying the destination map, including any
-  result pushed by bind or Boolean dispatch.
+  result pushed by bind or Boolean dispatch, or, on a handler's edge, the
+  thrown value.
 - `target`: exact destination label and slot mapping.
 - `booleanObservation`: true/false for a result-binding Boolean branch; otherwise
   null. The observed slot is 0. This is the premise of that edge, **not** a claim
@@ -274,6 +276,25 @@ The destination requirement is `destination.claim.context`. Both branch edges
 can have the same destination label and different maps; `edgeIndex` identifies
 which obligation failed. Refinement must be interpreted together with the
 observation, not as ordinary subtyping of `available` alone.
+
+### Edge facts
+
+An edge of the single pass refused for facts its target requires (a
+statement entry's given or written facts, a target's stated assertion), in
+the unit's graph or in a code's, carries the `edge-coverage` record of that
+edge, the full requirement as `destination.requiredKnowledge`, and
+`edgeFacts`: `{ "lacking", "known" }`, two knowledges over the target's
+slots. `lacking` holds the requirement's facts the edge does not establish,
+each decided alone by the check that decides the whole requirement
+(`KnowledgeExpand.checkIn`, from the edge's facts through the target's
+mapping); `known` holds the edge's facts over the slots the mapping reads,
+restated at the target's slots, those sharing a slot with a lacking fact,
+with the links that name the values past the context (a name past the
+source's context is kept past the target's). The facts are the encoding of
+`candidatesLeftOut`'s `fact` and of the knowledge of a record, over the
+target's slots as a candidate's are over its entry's. The pass's walk holds
+these facts deferred; the check that reports the refusal computes them
+(`FilePlans.placeRefusal`), as for [step preconditions](#step-preconditions).
 
 Current-content assertions in the supported cell profile reach checked
 obligations. Graph failures use `edge-coverage`, with destination `sourceMap` role
@@ -344,7 +365,11 @@ from the record's structured fields, never from the human sentence:
   reads; a slot past the context is named by the link whose value it is,
   and one no descriptor or link names by its position; a linear fact is
   printed with a positive multiple of each term on its side;
-- an edge: the first destination slot whose mapped incoming claim differs
+- an edge carrying `edgeFacts`: the edge by its source's span, the facts
+  the target requires that it does not establish, then the index and
+  elements facts known on it over the same slots, named by the target's
+  source map;
+- another edge: the first destination slot whose mapped incoming claim differs
   from the requirement, or the required heap facts;
 - a direct obligation: the two compared types;
 - a source refusal: its reason; a production failure: none.
