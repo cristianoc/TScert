@@ -39,8 +39,7 @@ row whose mechanism is separate, or absent, is work.
 | Write-In | `Derivation.writeIn` with `Bridges.lengthsKept_of_run`: the exact length equation | separate: `keepsLengths`, `boundedLength_sound` |
 | Write-End | `Derivation.writeEnd`: the growth of the length | separate: `atLengthAtoms` and the write rules |
 | Push | `Derivation.pushPost`: the growth of the length, from `ReceiverAppends` | separate: `statesAppend`, the append rules and the Entry mechanisms |
-| Add, Sub, Scale | `Derivation.integerOperation`: safe operands, multiplication by a constant, a safe result | separate: `linearAtoms`; the arithmetic bridges relate the two representations |
-| Shr, Mask, Shl, Or | `Derivation.arith` over `ArithmeticRules.rules`: each rule's domains, constant, premises and conclusion, known constants included, sound by `ArithmeticRules.rules_sound` | the same datum: `IndexWrites.ruleAtoms` emits each rule's conclusion where the knowledge entails its premises; `Bridges.ruleAtoms_iff` relates the two representations |
+| Add, Sub, Scale, Shr, Mask, Shl, Or | `Derivation.arith` over `ArithmeticRules.rules`: each rule's domains, constant, premises and conclusion, known constants included, sound by `ArithmeticRules.rules_sound` | the same datum: `IndexWrites.ruleAtoms` emits each rule's conclusion where the knowledge entails its premises; `Bridges.ruleAtoms_iff` relates the two representations |
 | String length successor | `Derivation.lengthSuccessor`: a safe result or 2⁵³ | separate: `stringLengthPlusOne`, `pastSafeAtoms` |
 | Str-Length, Concat | `stringLengthRead`, `stringConcat`: the equations; bridges relate them to the producers' facts | separate: those producers |
 | Str-Read | `Derivation.stringRead`: a result of length one, under the index bounds; no producer of the pass emits it | none |

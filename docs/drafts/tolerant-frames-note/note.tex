@@ -1677,9 +1677,10 @@ result. $M=2^{53}-1$ is the largest safe integer
 $\mathbin{\&}$ and $\mathbin{|}$ may be given in either order:
 \[
 \begin{array}{lll}
-\textsc{Add}, \textsc{Sub} & a,b:\mathit{SafeInt} & \hoare{|a\pm b|\le M}{y=a\pm b}{y=a\pm b}\\[3pt]
-\textsc{Scale} & a,c:\mathit{SafeInt} & \hoare{|c\,a|\le M}{y=c\,a}{y=c\,a}\\[3pt]
 % generated: paper-arithmetic-rules
+\textsc{Add} & a,b:\mathit{SafeInt} & \hoare{-M\le a+b\le M}{y=a+b}{y=a+b}\\[3pt]
+\textsc{Sub} & a,b:\mathit{SafeInt} & \hoare{-M\le a-b\le M}{y=a-b}{y=a-b}\\[3pt]
+\textsc{Scale} & a,c:\mathit{SafeInt} & \hoare{-M\le c\,a\le M}{y=a\cdot c}{y=c\,a}\\[3pt]
 \textsc{Shr} & a,d:\mathit{SafeInt} & \hoare{-2^{31}\le a<2^{31}}{y=a\gg d}{2^{d'}y\le a\le 2^{d'}y+2^{d'}-1}\\[3pt]
 \textsc{Mask} & x:\mathit{Num},\ b:\mathit{SafeInt} & \hoare{0\le b<2^{31}}{y=x\mathbin{\&}b}{0\le y\le b}\\[3pt]
  & x:\mathit{Num},\ b:\mathit{SafeInt} & \hoare{0\le b}{y=x\mathbin{\&}b}{y\le b}\\[3pt]
@@ -1715,7 +1716,7 @@ and an atom $i$ that holds a $\mathit{SafeInt}$:
 \]
 The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
 normal return
-\status{Lean: \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{rules\_sound} for \textsc{Shr}, \textsc{Mask}, \textsc{Shl} and \textsc{Or}, one lemma for each rule, and \lean{Derivation.arith}, with \lean{Derivation.sound}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
+\status{Lean: \lean{rules\_sound} for the rows above, one lemma for each rule, and \lean{add\_two53} for the sum past the range, and \lean{Derivation.arith}, with \lean{Derivation.sound}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
 
 \paragraph{Library functions.} A library function is not analysed. It
 has a \emph{contract}: a triple with its effects, assumed of the host,

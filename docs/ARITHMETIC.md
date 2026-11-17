@@ -191,9 +191,6 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 ```
 
 ```math
-\frac{K\vdash -(2^{53}-1)\le a\pm b\le 2^{53}-1}
-     {K\vdash r\leftarrow a\pm b\dashv\mathrm{int}(r),\ r=a\pm b}\ \textsf{int-exact}
-\qquad
 \frac{}{K\vdash c\leftarrow a\lhd b\dashv (a\lhd b\ \text{if}\ c),\ (\neg(a\lhd b)\ \text{if}\ \neg c)}\ \textsf{int-compare}
 \qquad
 \frac{}{K\vdash c\leftarrow a\ \texttt{===}\ b\dashv (a=b\ \text{if}\ c),\ (a\ne b\ \text{if}\ \neg c)}\ \textsf{int-equal}
@@ -213,8 +210,8 @@ the knowledge bounds by $`2^{53}`$, and not by $`2^{53}-1`$, add to their
 exact sum or to the double $`2^{53}`$, the least integer past the safe
 integers, $`\mathrm{past}(r)`$ (`IndexFact.pastSafe`): $`a+b<2^{53}`$ is
 exact, and $`a+b=2^{53}`$ is exactly representable (proved:
-`SafeIntegers.add_two53`). The step states each atom of `int-exact`'s
-conclusion as a disjunction with $`\mathrm{past}(r)`$:
+`SafeIntegers.add_two53`). The step states each atom of the conclusion of Add
+("Arithmetic rules" below) as a disjunction with $`\mathrm{past}(r)`$:
 
 ```math
 \frac{K\vdash 0\le a\qquad K\vdash 0\le b\qquad K\vdash a+b\le 2^{53}\qquad K\nvdash a+b\le 2^{53}-1}
@@ -261,31 +258,24 @@ the string test with no test of its own, so the step is `lenOf` of the
 string's slot.
 
 **A constant factor.** Multiplication by an integer constant states a linear
-fact where the knowledge bounds its result within the safe integers. A slot
-is constant here where two checked inequalities establish its equality to
-the constant; this includes the slots holding literals during evaluation.
-
-```math
-\frac{\mathrm{int}(a)\qquad K\vdash b=c\qquad
-      K\vdash -(2^{53}-1)\le c\,a\le 2^{53}-1}
-     {K\vdash r\leftarrow a*b\dashv\mathrm{int}(r),\ r=c\,a}
-     \ \textsf{int-scale}
-```
-
-with $`c`$ an integer constant and $`b`$ a safe-integer operand; the
-symmetric form reads $`b*a`$. Where $`c=0`$ the fact is $`r=0`$, naming no
-slot of $`a`$, so it outlives $`a`$'s slot (`-0` is the safe integer $`0`$,
-`stateful-source/arithmetic`). The clause language's constant coefficients
+fact where the knowledge bounds its result within the safe integers: the
+rule Scale ("Arithmetic rules" below). A slot is constant here where two
+checked inequalities establish its equality to the constant; this includes
+the slots holding literals during evaluation; the symmetric form $`b*a`$ is
+Scale with its operands exchanged. Where $`c=0`$ the fact is $`r=0`$,
+naming no slot of $`a`$, so it outlives $`a`$'s slot (`-0` is the safe
+integer $`0`$, `stateful-source/arithmetic`): a term whose coefficient is
+$`0`$ names no variable. The clause language's constant coefficients
 therefore bound computed row offsets such as `row * 28 + 27`. Proved:
-`SafeIntegers.mul_safe` establishes exact multiplication against the float
-model, `IndexWrites.knownConstant_sound` establishes the operand's constant
-value, and `IndexWrites.linearAtoms_holds` establishes the result's facts.
+`ArithmeticRules.scale_sound` establishes exact multiplication against the
+float model, `IndexWrites.knownConstant_sound` the operand's constant value,
+and `IndexWrites.ruleAtoms_holds` the result's facts.
 The source cases are `table-constant-stride` and
 `invalid-table-constant-stride` (a row starting at the length).
 
-**Bounded bitwise operands.** The linear postcondition extends
+**Arithmetic rules.** The linear postcondition extends
 [index-mask](PROGRAM-TYPING.md#writes-at-a-checked-index) by the
-arithmetic rules of `>>`, `&`, `<<` and `|`, the rules of the note
+arithmetic rules of `+`, `-`, `*`, `>>`, `&`, `<<` and `|`, the rules of the note
 "Tolerant frames" (§6, "Arithmetic steps"), each stated once in Lean as
 data (`ArithmeticRules.rules`). A rule reads each operand as its domain
 asks: a safe integer $`a`$ by its linear form, with $`\mathrm{int}(a)`$,
@@ -302,9 +292,34 @@ conclusion. Each rule's name is followed by its operands' sorts:
 $`\mathit{Num}`$, any number, and $`\mathit{SafeInt}`$, a safe integer,
 the sort $`\mathrm{int}`$ states of a slot. The operands are named by
 sort in every rule: $`a`$ and $`b`$, the first and the second, are safe
-integers, $`x`$ is any number, and $`d`$ is a shift count:
+integers, $`x`$ is any number, $`c`$ is a factor and $`d`$ a shift count,
+and $`M=2^{53}-1`$:
 
 <!-- generated: arithmetic-rules -->
+<!-- Verification.ArithmeticRules.add, proved by Verification.ArithmeticRules.add_sound -->
+
+```math
+\frac{\mathrm{int}(a)\quad \mathrm{int}(b)\quad K\vdash -M\le a+b\le M}
+     {K\vdash r\leftarrow a+b\dashv \mathrm{int}(r),\ r=a+b}
+     \ \textsf{Add}\quad a,b:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.sub, proved by Verification.ArithmeticRules.sub_sound -->
+
+```math
+\frac{\mathrm{int}(a)\quad \mathrm{int}(b)\quad K\vdash -M\le a-b\le M}
+     {K\vdash r\leftarrow a-b\dashv \mathrm{int}(r),\ r=a-b}
+     \ \textsf{Sub}\quad a,b:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.scale, proved by Verification.ArithmeticRules.scale_sound -->
+
+```math
+\frac{\mathrm{int}(a)\quad K\vdash b=c\quad K\vdash -M\le c\,a\le M}
+     {K\vdash r\leftarrow a\cdot b\dashv \mathrm{int}(r),\ r=c\,a}
+     \ \textsf{Scale}\quad a,c:\mathit{SafeInt}
+```
+
 <!-- Verification.ArithmeticRules.shr, proved by Verification.ArithmeticRules.shr_sound -->
 
 ```math
@@ -347,8 +362,9 @@ integers, $`x`$ is any number, and $`d`$ is a shift count:
 <!-- end generated: arithmetic-rules -->
 
 Proved: `ArithmeticRules.rules_sound` proves each rule against the
-calculus, whose `&`, `|`, `<<` and `>>` compute through `ToInt32`
-(`ArithmeticRules.shr_sound`, `maskRange_sound`, `maskBound_sound`,
+calculus, whose `+`, `-` and `*` compute on doubles and `&`, `|`, `<<` and
+`>>` through `ToInt32` (`ArithmeticRules.add_sound`, `sub_sound`,
+`scale_sound`, `shr_sound`, `maskRange_sound`, `maskBound_sound`,
 `shl_sound`, `bitOr_sound`); `IndexWrites.ruleAtoms_holds` connects a rule's
 conclusion, where the knowledge entails its premises, to the step's linear
 facts. The quotient inequalities retain the relation to the input, so an
@@ -480,7 +496,7 @@ state them and the [frame conditions](PROGRAM-TYPING.md#frame-conditions) preser
 update $`\texttt{++}x`$, $`x\texttt{++}`$, $`x\texttt{ += }n`$ or
 $`x\texttt{ -= }n`$, $`n`$ a safe-integer literal, is a read of
 $`c.\mathsf{value}`$ into a slot $`r`$, whose link restates the cell's facts
-of $`r`$; the sum $`r'=r\pm d`$, a safe integer by `int-exact`; and the write
+of $`r`$; the sum $`r'=r\pm d`$, a safe integer by Add or Sub; and the write
 $`c.\mathsf{value}:=r'`$, a number field's write, whose change drops the
 facts over the field and whose read link restates the facts of $`r'`$ of it
 (`write-link`, `read-bridge`). The update's value is $`r'`$ for a prefix

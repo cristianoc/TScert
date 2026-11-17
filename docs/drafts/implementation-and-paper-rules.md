@@ -152,8 +152,8 @@ differently, none more broadly; it has no statement of 26, and none of the
 13 host contracts the paper states as assumed. Its equal
 statements are Alloc of an empty array, Fresh-Eff, Write-End, (Grow), and
 the arithmetic and string rules (Add, Sub, Scale, Shr, Mask, Shl, Or, the
-string-length successor, Str-Length, Str-Read, Concat). Shr, Mask, Shl and
-Or are one datum, `ArithmeticRules.rules`, which A and B both instantiate
+string-length successor, Str-Length, Str-Read, Concat). The seven
+arithmetic rules are one datum, `ArithmeticRules.rules`, which A and B both instantiate
 and the paper's rows are generated from
 ([generated sections](../GENERATED-SECTIONS.md)): A and B substitute the same
 premises and conclusions, and `Bridges.ruleAtoms_agree` proves that A's

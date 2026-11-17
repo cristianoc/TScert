@@ -19,8 +19,7 @@ membership: the connectives, guards, witnesses, substitution, the laws of the
 modality (§4, Proposition "Laws"), the axioms (Grow) and (Dense) (§5,
 Proposition "Axioms of the atoms"), Frame and Frame⁺ (§6, "Programs"),
 linear arithmetic by `Linear.check` certificates, and the arithmetic of
-bound facts: exact integer operations, the arithmetic rules of
-`ArithmeticRules.rules`, the UTF-16 length of a string, a string's element
+bound facts: the arithmetic rules of `ArithmeticRules.rules`, the UTF-16 length of a string, a string's element
 read, the length of a concatenation, and the sum at the `2^53` boundary.
 `RawDerivation` is the untrusted finite proof data `checkDerivation` checks
 into a derivation, and `Derivation.sound` is the common consequence theorem. -/
@@ -221,18 +220,6 @@ def ruleConclusion (r : ArithmeticRules.ArithRule) (l rt : Operand) (y : Path) :
       fun cs => conj (resultFacts y r.result ++ cs.map lin)
   | none => none
 
-/-- The exact result of an integer operation on two operand forms: a sum, a
-difference, or a product with a constant factor, a zero factor giving the
-constant `0` (the pass's `linearAtoms` on `arith`). -/
-def resultForm (op : Arith) (fl : Linear.Form Term) (cl : Int) (fr : Linear.Form Term) (cr : Int) :
-    Option (Linear.Form Term × Int) :=
-  match op with
-  | .add => some (fl ++ fr, cl + cr)
-  | .sub => some (fl ++ fr.scale (-1), cl - cr)
-  | .mul => if fl = [] then some (if cl = 0 then [] else fr.scale cl, cl * cr)
-      else if fr = [] then some (if cr = 0 then [] else fl.scale cr, cl * cr) else none
-  | _ => none
-
 /-- `y = F + c` as two current linear facts. -/
 def exactTermFacts (y : Path) (F : Linear.Form Term) (c : Int) : Linear.Fact Term × Linear.Fact Term :=
   (.le ((vt y, 1) :: F.scale (-1)) c, .le ((vt y, -1) :: F) (-c))
@@ -240,10 +227,6 @@ def exactTermFacts (y : Path) (F : Linear.Form Term) (c : Int) : Linear.Fact Ter
 /-- `y` a safe integer and `y = F + c` (`IndexWrites.valueAtoms`). -/
 def valueFacts (y : Path) (F : Linear.Form Term) (c : Int) : Formula :=
   conj [safeFact y, lin (exactTermFacts y F c).1, lin (exactTermFacts y F c).2]
-
-/-- `|F + c| ≤ 2^53 − 1`: the exact result is a safe integer. -/
-def rangeFacts (F : Linear.Form Term) (c : Int) : Formula :=
-  conj [lin (.le F (2 ^ 53 - 1 - c)), lin (.le (F.scale (-1)) (2 ^ 53 - 1 + c))]
 
 /-- `x = |s|`: the operand is a string's length. -/
 def lengthEq (x s : Path) : Formula :=
@@ -552,14 +535,6 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (P G : Formula) (hP : rulePremises r l rt = some P) (hG : ruleConclusion r l rt y = some G)
       (dop : Derivation arena Γ (.operation (.arith r.op l.witness rt.witness y)))
       (de : Derivation arena Γ (ruleEvidence r l rt)) (dp : Derivation arena Γ P) : Derivation arena Γ G
-  /-- **Add, Sub, Scale** (the note, §6, "Arithmetic steps"): a sum, a difference or a product with a constant factor of
-  safe integers, its exact result a safe integer. -/
-  | integerOperation {Γ} (op : Arith) (l r : Operand) (y : Path) (fl : Linear.Form Term) (cl : Int)
-      (fr : Linear.Form Term) (cr : Int) (F : Linear.Form Term) (c : Int)
-      (hl : l.form = some (fl, cl)) (hr : r.form = some (fr, cr)) (hF : resultForm op fl cl fr cr = some (F, c))
-      (dop : Derivation arena Γ (.operation (.arith op l.witness r.witness y)))
-      (dl : Derivation arena Γ l.premise) (dr : Derivation arena Γ r.premise)
-      (drange : Derivation arena Γ (rangeFacts F c)) : Derivation arena Γ (valueFacts y F c)
   /-- **The sum given past the range** (the note, §6, "Arithmetic steps":
   for `x = slen(s)`, `y = x + 1` is the safe integer `x + 1` or `2^53`; the
   pass's `stringLengthPlusOne`): of
@@ -682,7 +657,6 @@ inductive RawDerivation where
       (de dc : RawDerivation)
   | commute (d : RawDerivation)
   | arith (rule : Nat) (l r : Operand) (y : Path) (dop de dp : RawDerivation)
-  | integerOperation (op : Arith) (l r : Operand) (y : Path) (dop dl dr drange : RawDerivation)
   | lengthSuccessor (l r : Operand) (y s : Path) (lengthLeft : Bool) (pg e e₀ e' e₁ e₂ : AssertionRef)
       (dop dl dr dlen done : RawDerivation)
   | stringLength (t : Term) (a : AssertionRef) (d : RawDerivation)
@@ -1094,18 +1068,6 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
           (← checkDerivation arena premises P dp))
       | _, _ => .error "arith: the operands do not bind the rule"
     | none => .error "arith: no such rule"
-  | .integerOperation op l r y dop dl dr drange => do
-    match hl : l.form, hr : r.form with
-    | some (fl, cl), some (fr, cr) =>
-      match hF : resultForm op fl cl fr cr with
-      | some (F, c) => do
-        let ⟨hg⟩ ← req (goal = valueFacts y F c) "integerOperation: goal is not the exact result"
-        pure (hg.symm ▸ .integerOperation op l r y fl cl fr cr F c hl hr hF
-          (← checkDerivation arena premises (.operation (.arith op l.witness r.witness y)) dop)
-          (← checkDerivation arena premises l.premise dl) (← checkDerivation arena premises r.premise dr)
-          (← checkDerivation arena premises (rangeFacts F c) drange))
-      | none => .error "integerOperation: no exact form"
-    | _, _ => .error "integerOperation: an operand is no safe integer"
   | .lengthSuccessor l r y s lengthLeft pg e e₀ e' e₁ e₂ dop dl dr dlen done => match goal with
     | .at .after g => do
       match hl : l.form, hr : r.form, hx : (if lengthLeft then l else r), hone : oneFacts (if lengthLeft then r else l) with
@@ -1390,61 +1352,6 @@ theorem valueFacts_of {arena : AssertionArena} {s : TwoState} {y : Path} {F : Li
     holds_lin.mpr (factAt_cons hyv hFs ?_), holds_lin.mpr (factAt_cons hyv hFd ?_), trivial⟩
   · rw [Linear.Form.eval_scale]; omega
   · omega
-
-theorem integerOperation_sound {arena : AssertionArena} {s : TwoState} {op : Arith} {l r : Operand} {y : Path}
-    {fl fr F : Linear.Form Term} {cl cr c : Int} (hl : l.form = some (fl, cl)) (hr : r.form = some (fr, cr))
-    (hF : resultForm op fl cl fr cr = some (F, c)) (hop : (OperationPostF.arith op l.witness r.witness y).Holds s)
-    (hpl : Holds arena s l.premise) (hpr : Holds arena s r.premise) (hrange : Holds arena s (rangeFacts F c)) :
-    Holds arena s (valueFacts y F c) := by
-  obtain ⟨hld, a, hav, has⟩ := Operand.sound hl hpl
-  obtain ⟨hrd, b, hbv, hbs⟩ := Operand.sound hr hpr
-  simp only [rangeFacts, conj, Holds] at hrange
-  have h1 := (holds_lin.mp hrange.1).2
-  have h2 := (holds_lin.mp hrange.2.1).2
-  simp only [Linear.Fact.Holds, Linear.Form.eval_scale] at h1 h2
-  generalize hv : (fun t => (termAt s.afterEnv s.after.h t).getD 0) = v at *
-  have hsub : (∀ t ∈ F.map (·.1), t ∈ fl.map (·.1) ∨ t ∈ fr.map (·.1)) ∧
-      ((op = .add ∧ Linear.Form.eval v F + c = (Linear.Form.eval v fl + cl) + (Linear.Form.eval v fr + cr)) ∨
-       (op = .sub ∧ Linear.Form.eval v F + c = (Linear.Form.eval v fl + cl) - (Linear.Form.eval v fr + cr)) ∨
-       (op = .mul ∧ Linear.Form.eval v F + c = (Linear.Form.eval v fl + cl) * (Linear.Form.eval v fr + cr))) := by
-    unfold resultForm at hF
-    split at hF
-    · simp only [Option.some.injEq, Prod.mk.injEq] at hF; obtain ⟨rfl, rfl⟩ := hF
-      refine ⟨fun t ht => by simpa [List.map_append] using ht, .inl ⟨rfl, ?_⟩⟩
-      rw [Linear.Form.eval_append]; omega
-    · simp only [Option.some.injEq, Prod.mk.injEq] at hF; obtain ⟨rfl, rfl⟩ := hF
-      refine ⟨fun t ht => by simpa [List.map_append, scale_vars] using ht, .inr (.inl ⟨rfl, ?_⟩)⟩
-      rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega
-    · split at hF
-      · rename_i h0; subst h0
-        simp only [Option.some.injEq, Prod.mk.injEq] at hF; obtain ⟨rfl, rfl⟩ := hF
-        split
-        · rename_i hc; subst hc
-          exact ⟨fun t ht => by simp at ht, .inr (.inr ⟨rfl, by simp [Linear.Form.eval]⟩)⟩
-        · refine ⟨fun t ht => .inr (by rwa [scale_vars] at ht), .inr (.inr ⟨rfl, ?_⟩)⟩
-          rw [Linear.Form.eval_scale]; simp only [Linear.Form.eval, Int.zero_add, Int.mul_add]
-      · split at hF
-        · rename_i _ h0; subst h0
-          simp only [Option.some.injEq, Prod.mk.injEq] at hF; obtain ⟨rfl, rfl⟩ := hF
-          split
-          · rename_i hc; subst hc
-            exact ⟨fun t ht => by simp at ht, .inr (.inr ⟨rfl, by simp [Linear.Form.eval]⟩)⟩
-          · refine ⟨fun t ht => .inl (by rwa [scale_vars] at ht), .inr (.inr ⟨rfl, ?_⟩)⟩
-            rw [Linear.Form.eval_scale]; simp only [Linear.Form.eval, Int.zero_add, Int.add_mul, Int.mul_comm cr]
-        · cases hF
-    · cases hF
-  obtain ⟨hvars, hcase⟩ := hsub
-  have hres : ∃ q, SafeIntegers.SafeInt (arithBits op a b) q ∧ q = Linear.Form.eval v F + c := by
-    rcases hcase with ⟨rfl, he⟩ | ⟨rfl, he⟩ | ⟨rfl, he⟩
-    · exact ⟨_, SafeIntegers.add_safe has hbs (by omega), he.symm⟩
-    · exact ⟨_, SafeIntegers.sub_safe has hbs (by omega), he.symm⟩
-    · exact ⟨_, SafeIntegers.mul_safe has hbs (by rw [← he]; omega), he.symm⟩
-  obtain ⟨q, hq, rfl⟩ := hres
-  have hcomp : op.relational = false ∧ op ≠ .eq ∧ op ≠ .looseEq := by
-    rcases hcase with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> decide
-  have hyv := result_term (binop_operands hcomp.1 hcomp.2.1 hcomp.2.2 hav hbv hop) hq
-  subst hv
-  exact valueFacts_of (fun t ht => (hvars t ht).elim (hld t) (hrd t)) hyv
 
 /-- **The sum at the `2^53` boundary**: two nonnegative safe integers whose
 sum is at most `2^53` add exactly, or to the double `2^53`
@@ -1936,8 +1843,6 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     exact ⟨b, a, c, hb, ha, hy, by rw [ArithmeticRules.binop_comm hc]; exact hu⟩
   | arith r hr l rt y P G hP hG _ _ _ ihop ihe ihp =>
     exact fun s hΓ => arith_sound hr hP hG (ihop s hΓ) (ihe s hΓ) (ihp s hΓ)
-  | integerOperation op l r y fl cl fr cr F c hl hr hF _ _ _ _ ihop ihl ihr ihrange =>
-    exact fun s hΓ => integerOperation_sound hl hr hF (ihop s hΓ) (ihl s hΓ) (ihr s hΓ) (ihrange s hΓ)
   | lengthSuccessor l r y sp lengthLeft x fl cl fr cr one hl hr hx hone hg hpg he he₀ he' he₁ he₂
       _ _ _ _ _ ihop ihl ihr ihlen ihone =>
     exact fun s hΓ => lengthSuccessor_sound hv hl hr hx hone hg hpg he he₀ he' he₁ he₂ (ihop s hΓ) (ihl s hΓ)

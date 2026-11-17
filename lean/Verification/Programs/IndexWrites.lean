@@ -655,11 +655,11 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
 
 A step on safe integers states the integer facts of its result (ARITHMETIC.md,
 "Linear facts"): a literal its value, a copy its equality with the copied
-slot, a spine's length its range `0 ≤ n ≤ 2^32 - 1`, a sum or a difference its
-value where the knowledge bounds it within the safe integers, a comparison
-its outcome on each answer, and an operation of an arithmetic rule
-(`ArithmeticRules.rules`) the rule's conclusion where the knowledge entails
-its premises (`ruleAtoms`). An operand is a slot the knowledge states a safe
+slot, a spine's length its range `0 ≤ n ≤ 2^32 - 1`, a comparison its
+outcome on each answer, a string's length plus one its sum or `2^53`, and
+an operation of an arithmetic rule (`ArithmeticRules.rules`: a sum, a
+difference, a product by a constant and the bitwise rules) the rule's
+conclusion where the knowledge entails its premises (`ruleAtoms`). An operand is a slot the knowledge states a safe
 integer, or a literal that is one; its value is a linear form plus a constant. -/
 
 /-- The largest safe integer, `2^53 - 1`. -/
@@ -895,11 +895,8 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     | some (x, y) => concatAtoms x y
     | none =>
       if operandIn Γ a && operandIn Γ b then
-        (match operandForm k (op == .mul) a, operandForm k (op == .mul) b with
+        (match operandForm k false a, operandForm k false b with
         | some (fa, ca), some (fb, cb) =>
-          let sum := fun (F : Linear.Form Nat) (c : Int) =>
-            if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
-                entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []
           match op with
           | .add => if !(entailsKnown k.indices (valueFact (.le (fa ++ fb) (maxSafe - (ca + cb)))) &&
                 entailsKnown k.indices (valueFact (.le ((fa ++ fb).scale (-1)) (maxSafe + (ca + cb))))) &&
@@ -909,11 +906,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
                 entailsKnown k.indices (valueFact (.le (fb.scale (-1)) cb)) &&
                 stringLengthPlusOne k fa ca fb cb then
                 pastSafeAtoms (fa ++ fb) (ca + cb)
-              else sum (fa ++ fb) (ca + cb)
-          | .sub => sum (fa ++ fb.scale (-1)) (ca - cb)
-          -- A zero factor gives the constant `0`, a form naming no slot.
-          | .mul => if fa = [] then sum (if ca = 0 then [] else fb.scale ca) (ca * cb)
-            else if fb = [] then sum (if cb = 0 then [] else fa.scale cb) (ca * cb) else []
+              else []
           | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
           | .eq => equalAtoms (fa ++ fb.scale (-1)) (ca - cb)
           | _ => []
@@ -1013,10 +1006,6 @@ theorem value_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
     · exact .inl (.inl ⟨hval, ht, hq, rfl, rfl⟩)
     · exact absurd hr (val_not_thrown hv)
     · exact absurd step (value_no_step hv)
-
-theorem binop_num_arith {op : Arith} {x y : UInt64} {u : Tm} (hop : op = .add ∨ op = .sub ∨ op = .mul)
-    (h : binop op (.num x) (.num y) = some u) : u = .num (arithBits op x y) := by
-  rcases hop with rfl | rfl | rfl <;> simp [binop, Arith.relational] at h <;> exact h.symm
 
 theorem spineSlot_bound {G : NormalGraph ι} {Γ : List (Ty ι)} {s : Nat} {ρ n W}
     (hc : spineSlot G Γ s = true) (he : EnvOk G Γ ρ n W) : ∃ ls, ρ s = .arr ls ∧ ls.length ≤ maxArrayLength :=
@@ -1393,23 +1382,6 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
           obtain ⟨hvb, xb, hxb, hsb⟩ := operandForm_sound hfb hk
           rw [hxa, hxb] at hu
           have hlin := linearFacts_holds hk.2.2.2.2.2
-          have hsum : ∀ (F : Linear.Form Nat) (c : Int) (v : Int) (bits : UInt64) {h'' : Heap},
-              (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) →
-              Linear.Form.eval (valuation ρ) F + c = v →
-              ((v.natAbs < 2 ^ 53) → SafeIntegers.SafeInt bits v) →
-              IndexHolds ε ((if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
-                entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
-                (push (.num bits) ρ) h'' := by
-            intro F c v bits h'' hF hv hsafe
-            split
-            · rename_i hc
-              simp only [Bool.and_eq_true] at hc
-              have h1 : Linear.Form.eval (valuation ρ) F ≤ maxSafe - c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.1)
-              have h2 : Linear.Form.eval (valuation ρ) (F.scale (-1)) ≤ maxSafe + c := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.2)
-              rw [Linear.Form.eval_scale] at h2
-              refine valueAtoms_holds hF ?_
-              rw [hv]; apply hsafe; simp only [maxSafe] at h1 h2; omega
-            · exact indexHolds_nil _ _
           have hvars : ∀ (G' : Linear.Form Nat), G'.map (·.1) = (fa ++ fb).map (·.1) →
               ∀ x ∈ G'.map (·.1), (intValue (ρ x)).isSome := by
             intro G' hG x hx
@@ -1419,7 +1391,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             · exact hvb x hx
           split
           · -- add
-            rw [binop_num_arith (.inl rfl) hu]
+            rw [ArithmeticRules.binop_num rfl (by decide) (by decide) hu]
             split
             · rename_i hc
               obtain ⟨hc, -⟩ := Bool.and_eq_true_iff.mp hc
@@ -1438,46 +1410,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
                   (Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb) by omega]
                 exact SafeIntegers.add_safe hsa hsb hr
               · exact .inr (by simp only [IndexFact.HoldsAt, push]; rw [SafeIntegers.add_two53 hsa hsb (by omega)])
-            · exact hsum (fa ++ fb) (ca + cb)
-                ((Linear.Form.eval (valuation ρ) fa + ca) + (Linear.Form.eval (valuation ρ) fb + cb)) _
-                (hvars (fa ++ fb) rfl)
-                (by rw [Linear.Form.eval_append]; omega)
-                (fun hr => SafeIntegers.add_safe hsa hsb hr)
-          · -- sub
-            rw [binop_num_arith (.inr (.inl rfl)) hu]
-            exact hsum (fa ++ fb.scale (-1)) (ca - cb)
-              ((Linear.Form.eval (valuation ρ) fa + ca) - (Linear.Form.eval (valuation ρ) fb + cb)) _
-              (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
-              (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega)
-              (fun hr => SafeIntegers.sub_safe hsa hsb hr)
-          · -- multiplication with one constant operand
-            rw [binop_num_arith (.inr (.inr rfl)) hu]
-            split
-            · rename_i hc
-              subst fa
-              exact hsum (if ca = 0 then [] else fb.scale ca) (ca * cb)
-                ((Linear.Form.eval (valuation ρ) [] + ca) * (Linear.Form.eval (valuation ρ) fb + cb)) _
-                (by split
-                    · simp
-                    · simpa only [scale_vars] using hvb)
-                (by split
-                    · rename_i h0; subst h0; simp [Linear.Form.eval]
-                    · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.mul_add])
-                (fun hr => SafeIntegers.mul_safe hsa hsb hr)
-            · split
-              · rename_i hc
-                subst fb
-                exact hsum (if cb = 0 then [] else fa.scale cb) (ca * cb)
-                  ((Linear.Form.eval (valuation ρ) fa + ca) * (Linear.Form.eval (valuation ρ) [] + cb)) _
-                  (by split
-                      · simp
-                      · simpa only [scale_vars] using hva)
-                  (by split
-                      · rename_i h0; subst h0; simp [Linear.Form.eval]
-                      · simp only [Linear.Form.eval_scale, Linear.Form.eval, Int.zero_add, Int.add_mul]
-                        rw [Int.mul_comm cb])
-                  (fun hr => SafeIntegers.mul_safe hsa hsb hr)
-              · exact indexHolds_nil _ _
+            · exact indexHolds_nil _ _
           all_goals first
             | (rw [binop_num_eq hu]
                exact equalAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
