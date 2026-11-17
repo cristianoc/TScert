@@ -30,7 +30,7 @@ section's text. Each producer's export is computed once per run.
 | Section | Destination | Producer |
 | --- | --- | --- |
 | `paper-arithmetic-rules` | [Tolerant frames](drafts/tolerant-frames-note/note.tex), the rows of the display "Arithmetic steps" | the paper's rule rows |
-| `arithmetic-rules` | [ARITHMETIC.md](ARITHMETIC.md#linear-facts), "Bounded bitwise operands" | the rules as `math` blocks, each preceded by a comment naming the rule's declarations |
+| `arithmetic-rules` | [ARITHMETIC.md](ARITHMETIC.md#linear-facts), "Arithmetic rules" | the rules as `math` blocks, each preceded by a comment naming the rule's declarations |
 
 ## The arithmetic rules' export
 

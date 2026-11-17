@@ -7,8 +7,8 @@ that is it, and how far it matches. Part 2 of B's first item in
 [the basis](implementation-and-paper-rules.md#the-first-item-b). Read by
 gpt-6-astra from the sources at commit `7a8c19f5` on 2026-11-17, with no
 build or test run; four of its claims (Example 1, Push, Fresh-Eff and the
-quantified atom's presence condition) were checked against the source. The rows Shr, Mask, Shl, Or and the index from a shift or a mask state
-the sources with `Derivation.arith`, after that commit.
+quantified atom's presence condition) were checked against the source. The rows Add, Sub, Scale, Shr, Mask, Shl, Or and the index from a shift
+or a mask state the sources with `Derivation.arith`, after that commit.
 
 The paper is the source of truth. Where B has no statement of an item, the
 row names the statement of the shared model (`Semantics/`) or of A
@@ -125,9 +125,9 @@ The three proposition-summary rows in this report summarize their following cons
 | Write-Kept — 1606 | **none in B**. Cited outside B: `keptCells_holds`, `Programs/HeapExpressionRules.lean:1404` | **none in B** | No B rule preserves arbitrary membership of the possibly aliased field using membership of the written value. |
 | Push-Every — 1607 | **none in B**. Cited outside B: `every_appended`, `Programs/PromiseCalls.lean:2375`; `appendKept_holds`, `:2485` | **none in B** | B has framing of quantified facts, not their extension by a pushed value. |
 | View-Every — 1608 | **none in B**. Cited outside B: `every_written`, `Programs/PromiseCalls.lean:2707`; `every_written_prefix`, `:2780`; `writeKept_holds`, `:2853` | **none in B** | B’s quantified assertion is over arrays. No B rule preserves or extends a typed-array prefix using the converted written value. |
-| Add — 1648 | `Derivation.integerOperation`, `D:536`; `integerOperation_sound`, `:1363` | **equal** | Safe operands and a safe mathematical sum give the exact sum. |
-| Sub — 1648 | `Derivation.integerOperation`, `D:536`; `integerOperation_sound`, `:1363` | **equal** | Safe operands and a safe mathematical difference give the exact difference. |
-| Scale — 1648 | `Derivation.integerOperation`, `D:536`; `resultForm`, `:205` | **equal** | Multiplication requires a constant factor and a safe mathematical result. |
+| Add — 1648 | `Derivation.arith` at `ArithmeticRules.add`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: safe operands and a safe mathematical sum give the exact sum. |
+| Sub — 1648 | `Derivation.arith` at `ArithmeticRules.sub`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: safe operands and a safe mathematical difference give the exact difference. |
+| Scale — 1648 | `Derivation.arith` at `ArithmeticRules.scale`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: a constant factor and a safe mathematical product; `Derivation.commute` applies it to `c * a`. |
 | Shr — 1652 | `Derivation.arith` at `ArithmeticRules.shr`, `D:551`; `ruleConclusion`, `:218`; `rules_sound`, `Semantics/ArithmeticRules.lean` | **equal** | The paper's row is generated from the rule B applies: an operand in the signed 32-bit range, the count read modulo 32 and both quotient bounds. A constant may be a literal or a value proved constant. |
 | Mask — 1653 | `Derivation.arith` at `ArithmeticRules.maskRange` and `maskBound`, `D:551`; `rules_sound` | **equal** | The paper's two triples are generated from the two rules: the range for any number and a mask in $`[0, 2^{31})`$, held in a variable or a literal, and the bound $`y\le b`$ by the same non-negative mask $`b`$ of any number $`x`$. `Derivation.commute`, `D:545`, applies them to `m & x`. |
 | Shl — 1654 | `Derivation.arith` at `ArithmeticRules.shl`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: the exact product where it lies in the signed 32-bit range. |

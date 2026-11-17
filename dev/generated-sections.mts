@@ -164,6 +164,8 @@ function exportedRules(): RulesDocument {
 type Notation = {
   /** The name of a rule's result. */
   result: string;
+  /** The name of the largest safe integer, `2^53 − 1`, where the notation has one. */
+  max: string | null;
   le: string; lt: string; eq: string; and: string; minus: string; times: string;
   power: (exponent: string) => string;
   /** The normalised constant's name: a shift count `d` reads `d'`. */
@@ -182,7 +184,7 @@ const OPERATORS: { [op: string]: { latex: string; markdown: string; text: string
   xor: { latex: "\\mathbin{\\hat{}}", markdown: "\\mathbin{\\hat{}}", text: "^" },
   add: { latex: "+", markdown: "+", text: "+" },
   sub: { latex: "-", markdown: "-", text: "-" },
-  mul: { latex: "*", markdown: "*", text: "*" },
+  mul: { latex: "\\cdot", markdown: "\\cdot", text: "*" },
 };
 
 function operator(op: string, notation: "latex" | "markdown" | "text"): string {
@@ -196,7 +198,7 @@ const constantLetter = (c: Constant): string => (c.normalisation === "shiftCount
 const boundName = (c: Constant, prime: string): string => (c.normalisation === "shiftCount" ? `d${prime}` : "c");
 
 const LATEX: Notation = {
-  result: "y", le: "\\le ", lt: "<", eq: "=", and: "\\wedge ", minus: "-", times: "\\,",
+  result: "y", max: "M", le: "\\le ", lt: "<", eq: "=", and: "\\wedge ", minus: "-", times: "\\,",
   power: (e) => `2^{${e}}`, bound: (c) => boundName(c, "'"),
   apply: (op, a, b) => {
     const symbol = operator(op, "latex");
@@ -204,12 +206,15 @@ const LATEX: Notation = {
   },
 };
 const MARKDOWN: Notation = {
-  result: "r", le: "\\le ", lt: "<", eq: "=", and: ",\\ ", minus: "-", times: "\\,",
+  result: "r", max: "M", le: "\\le ", lt: "<", eq: "=", and: ",\\ ", minus: "-", times: "\\,",
   power: (e) => `2^{${e}}`, bound: (c) => boundName(c, "'"),
-  apply: (op, a, b) => `r\\leftarrow ${a}${operator(op, "markdown")}${b}`,
+  apply: (op, a, b) => {
+    const symbol = operator(op, "markdown");
+    return `r\\leftarrow ${a}${symbol}${/[A-Za-z]$/.test(symbol) ? " " : ""}${b}`;
+  },
 };
 const TEXT: Notation = {
-  result: "y", le: " ≤ ", lt: " < ", eq: " = ", and: ", ", minus: "−", times: "·",
+  result: "y", max: "M", le: " ≤ ", lt: " < ", eq: " = ", and: ", ", minus: "−", times: "·",
   power: (e) => `2^{${e}}`, bound: (c) => boundName(c, "′"),
   apply: (op, a, b) => `\`y = ${a} ${operator(op, "text")} ${b}\``,
 };
@@ -217,8 +222,10 @@ const TEXT: Notation = {
 /** A signed summand of a side: its magnitude's text and its sign. */
 type Summand = { negative: boolean; text: string };
 
-/** The text of a power of two `2^p` with `p ≥ 8`, or of `2^p − 1`. */
+/** The text of a literal: the largest safe integer by its name where the
+ * notation has one, a power of two `2^p` with `p ≥ 8`, or `2^p − 1`. */
 function literal(n: number, notation: Notation): string {
+  if (n === Number.MAX_SAFE_INTEGER && notation.max !== null) return notation.max;
   for (let p = 8; p <= 53; p++) {
     if (n === 2 ** p) return notation.power(String(p));
     if (n === 2 ** p - 1) return `${notation.power(String(p))}${notation.minus}1`;
@@ -242,40 +249,65 @@ function coefSummands(c: Coef, k: string, notation: Notation): Summand[] {
   return parts;
 }
 
-/** A sum of summands; `0` when empty. */
+/** A sum of summands; `0` when empty. A negated summand of several parts
+ * is parenthesised. */
 function sum(parts: Summand[], notation: Notation): string {
   if (parts.length === 0) return "0";
-  return parts.map((p, i) => (i === 0 ? (p.negative ? notation.minus : "") + p.text
-    : `${p.negative ? notation.minus : "+"}${p.text}`)).join("");
+  const text = (p: Summand): string => (p.negative && /[-+−]/.test(p.text.slice(1)) ? `(${p.text})` : p.text);
+  return parts.map((p, i) => (i === 0 ? (p.negative ? notation.minus : "") + text(p)
+    : `${p.negative ? notation.minus : "+"}${text(p)}`)).join("");
 }
 
 /** One side of a fact: a relation's operands. */
 type Inequality = { left: string; strict: boolean; right: string };
 
-/** A fact `Σ aᵢ·vᵢ ≤ b` set as its positive terms bounded by its negative
- * ones and the bound: `-b ≤ N` where it has no positive term, and `P < B`
- * for a bound `B − 1` that is a power of two. */
+/** A term `a·v` as a summand, its sign that of its coefficient, flipped where
+ * `negate`. */
+function termSummand(t: { var: RuleVar; coef: Coef }, names: { [v in RuleVar]: string }, k: string,
+    notation: Notation, negate: boolean): Summand {
+  const c = coefSummands(t.coef, k, notation);
+  const single = c.length === 1 ? c[0] : undefined;
+  const magnitude = single !== undefined ? single.text : `(${sum(c, notation)})`;
+  const text = magnitude === "1" ? names[t.var]
+    : `${magnitude}${/(^[a-z]|[0-9)])$/.test(magnitude) || notation === TEXT ? notation.times : ""}${names[t.var]}`;
+  return { negative: (single !== undefined && single.negative) !== negate, text };
+}
+
+const negated = (parts: Summand[]): Summand[] => parts.map((p) => ({ negative: !p.negative, text: p.text }));
+
+/** A fact `Σ aᵢ·vᵢ ≤ b`, set as the paper reads it: a fact with the result
+ * at coefficient ±1 bounds the result by the other terms (`y ≤ E`, `E ≤ y`);
+ * a fact with no result is its terms in order bounded by `b`, read as
+ * `-b ≤ −Σ` where its first term is negative, and `Σ < B` for a bound
+ * `B − 1` that is a power of two; any other fact has its positive terms
+ * bounded by its negative terms and the bound. */
 function inequality(f: RuleFact, names: { [v in RuleVar]: string }, k: string, notation: Notation): Inequality {
+  const bound = coefSummands(f.bound, k, notation);
+  const unit = (c: Coef): number => (c.byConstant === 0 && c.byPower === 0 && Math.abs(c.lit) === 1 ? c.lit : 0);
+  const result = f.terms.find((t) => t.var === "result" && unit(t.coef) !== 0);
+  if (result !== undefined) {
+    const others = f.terms.filter((t) => t !== result);
+    return unit(result.coef) > 0
+      ? { left: names.result, strict: false, right: sum([...others.map((t) => termSummand(t, names, k, notation, true)), ...bound], notation) }
+      : { left: sum([...others.map((t) => termSummand(t, names, k, notation, false)), ...negated(bound)], notation), strict: false, right: names.result };
+  }
+  if (!f.terms.some((t) => t.var === "result")) {
+    const first = f.terms[0];
+    const flip = first !== undefined && termSummand(first, names, k, notation, false).negative;
+    const expr = sum(f.terms.map((t) => termSummand(t, names, k, notation, flip)), notation);
+    if (flip) return { left: sum(negated(bound), notation), strict: false, right: expr };
+    const only = bound.length === 1 ? bound[0] : undefined;
+    const strict = only !== undefined && !only.negative && f.bound.byConstant === 0 && f.bound.byPower === 0 &&
+      f.bound.lit !== Number.MAX_SAFE_INTEGER && Number.isInteger(Math.log2(f.bound.lit + 1)) && f.bound.lit + 1 >= 256;
+    return { left: expr, strict, right: strict ? literal(f.bound.lit + 1, notation) : sum(bound, notation) };
+  }
   const positive: Summand[] = [];
   const negative: Summand[] = [];
   for (const t of f.terms) {
-    const c = coefSummands(t.coef, k, notation);
-    const sign = c.length === 1 && c[0] !== undefined && c[0].negative;
-    const magnitude = c.length === 1 && c[0] !== undefined ? c[0].text : `(${sum(c, notation)})`;
-    const termText = magnitude === "1" ? names[t.var]
-      : `${magnitude}${/[0-9)]$/.test(magnitude) || notation === TEXT ? notation.times : ""}${names[t.var]}`;
-    (sign ? negative : positive).push({ negative: false, text: termText });
+    const s = termSummand(t, names, k, notation, false);
+    (s.negative ? negative : positive).push({ negative: false, text: s.text });
   }
-  const bound = coefSummands(f.bound, k, notation);
-  if (positive.length === 0) {
-    return { left: sum(bound.map((b) => ({ negative: !b.negative, text: b.text })), notation), strict: false,
-      right: sum(negative, notation) };
-  }
-  const only = bound.length === 1 ? bound[0] : undefined;
-  const strict = negative.length === 0 && only !== undefined && !only.negative && f.bound.byConstant === 0 &&
-    f.bound.byPower === 0 && Number.isInteger(Math.log2(f.bound.lit + 1)) && f.bound.lit + 1 >= 256;
-  const rightSide = strict ? literal(f.bound.lit + 1, notation) : sum([...negative, ...bound], notation);
-  return { left: sum(positive, notation), strict, right: rightSide };
+  return { left: sum(positive, notation), strict: false, right: sum([...negative, ...bound], notation) };
 }
 
 /** Facts set as a conjunction: an equality where two facts bound each

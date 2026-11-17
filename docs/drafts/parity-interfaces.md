@@ -951,7 +951,6 @@ Notation:
 | `reliance` | A box and a certified respecting prefix yield its body at that prefix. Repeated use additionally requires the recorded composition/rigidity evidence. |
 | `transfer` | A derivation of the substituted target assertion plus I5 substitution evidence establishes target knowledge. |
 | `linear` | Existing `Linear.check` over explicitly defined before/after observations. |
-| `integerOperation` | Exact addition, subtraction or constant multiplication, with safe-integer operands and exact-result range evidence. |
 | `arith` | A rule of `ArithmeticRules.rules`, below. |
 | `stringLength` | A defined string has its UTF-16 length, in `[0, maxStringLength]`. |
 | `stringRead` | A valid string index reads the corresponding code unit; the result has UTF-16 length one. Invalid-index conclusions follow the operation’s result rule. |
@@ -994,8 +993,8 @@ This allows the body to use its frame for safety. It does not require checking t
 
 ### Arithmetic indices and range conditions
 
-`arith` applies a rule of `ArithmeticRules.rules` (Shr, Mask, Shl and Or,
-[ARITHMETIC.md](../ARITHMETIC.md#linear-facts), "Bounded bitwise operands"):
+`arith` applies a rule of `ArithmeticRules.rules` (Add, Sub, Scale, Shr, Mask, Shl and Or,
+[ARITHMETIC.md](../ARITHMETIC.md#linear-facts), "Arithmetic rules"):
 its operands bound by the rule's domains and constant, the operation's
 evidence, the operands' evidence and a derivation of the substituted
 premises give the substituted conclusion. The certificate connects the

@@ -175,6 +175,43 @@ def fact (terms : List (RuleVar × Int)) (b : Int) : RuleFact :=
 /-- The shift count `d`, read modulo 32. -/
 def shiftCount : Constant := ⟨none, none, .shiftCount⟩
 
+/-- A factor, any safe integer read as itself. -/
+def factor : Constant := ⟨none, none, .identity⟩
+
+/-- The largest safe integer, `M = 2^53 − 1`. -/
+def maxSafeInt : Int := 2 ^ 53 - 1
+
+/-- **Add**: `|x + x'| ≤ M` gives `y = x + x'`. -/
+def add : ArithRule where
+  name := "Add"
+  op := .add
+  left := .safeInteger
+  right := .operand .safeInteger
+  premises := [fact [(.left, -1), (.right, -1)] maxSafeInt, fact [(.left, 1), (.right, 1)] maxSafeInt]
+  result := .safeInteger
+  conclusion := [fact [(.result, 1), (.left, -1), (.right, -1)] 0, fact [(.result, -1), (.left, 1), (.right, 1)] 0]
+
+/-- **Sub**: `|x − x'| ≤ M` gives `y = x − x'`. -/
+def sub : ArithRule where
+  name := "Sub"
+  op := .sub
+  left := .safeInteger
+  right := .operand .safeInteger
+  premises := [fact [(.left, -1), (.right, 1)] maxSafeInt, fact [(.left, 1), (.right, -1)] maxSafeInt]
+  result := .safeInteger
+  conclusion := [fact [(.result, 1), (.left, -1), (.right, 1)] 0, fact [(.result, -1), (.left, 1), (.right, -1)] 0]
+
+/-- **Scale**: `|c·x| ≤ M` gives `y = c·x`. -/
+def scale : ArithRule where
+  name := "Scale"
+  op := .mul
+  left := .safeInteger
+  right := .constant factor
+  premises := [⟨[(.left, { byConstant := -1 })], { lit := maxSafeInt }⟩, ⟨[(.left, { byConstant := 1 })], { lit := maxSafeInt }⟩]
+  result := .safeInteger
+  conclusion := [⟨[(.result, { lit := 1 }), (.left, { byConstant := -1 })], {}⟩,
+    ⟨[(.result, { lit := -1 }), (.left, { byConstant := 1 })], {}⟩]
+
 /-- **Shr**: `-2^31 ≤ x < 2^31` gives `2^{d'}·y ≤ x ≤ 2^{d'}·y + 2^{d'} − 1`. -/
 def shr : ArithRule where
   name := "Shr"
@@ -231,7 +268,7 @@ def bitOr : ArithRule where
     fact [(.result, 1), (.left, -1), (.right, -1)] 0]
 
 /-- The rules, in the paper's order. -/
-def rules : List ArithRule := [shr, maskRange, maskBound, shl, bitOr]
+def rules : List ArithRule := [add, sub, scale, shr, maskRange, maskBound, shl, bitOr]
 
 /-! ## Numbers through `ToInt32` -/
 
@@ -443,10 +480,48 @@ theorem bitOr_sound : bitOr.Sound := by
       simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
 /-- **Every rule is sound.** -/
+theorem add_sound : add.Sound := by
+  intro a b v ha hb hp
+  simp only [add, Domain.Admits, Right.Admits, Right.bound] at ha hb hp ⊢
+  have h := fun F hF => hp F hF
+  simp only [fact, maxSafeInt, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq, RuleFact.Holds, sumTerms, Coef.eval] at h
+  refine ⟨v .left + v .right, add_safe ha hb (by omega), fun F hF => ?_⟩
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;>
+    simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
+
+theorem sub_sound : sub.Sound := by
+  intro a b v ha hb hp
+  simp only [sub, Domain.Admits, Right.Admits, Right.bound] at ha hb hp ⊢
+  have h := fun F hF => hp F hF
+  simp only [fact, maxSafeInt, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq, RuleFact.Holds, sumTerms, Coef.eval] at h
+  refine ⟨v .left - v .right, sub_safe ha hb (by omega), fun F hF => ?_⟩
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;>
+    simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
+
+theorem scale_sound : scale.Sound := by
+  intro a b v ha hb hp
+  simp only [scale, factor, Domain.Admits, Right.Admits, Right.bound, Normalisation.apply] at ha hb hp ⊢
+  have h := fun F hF => hp F hF
+  simp only [maxSafeInt, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq, RuleFact.Holds, sumTerms, Coef.eval, Int.zero_mul, Int.zero_add, Int.add_zero,
+    Int.one_mul, Int.neg_mul] at h
+  refine ⟨v .left * v .right, mul_safe ha hb.1 (by rw [Int.mul_comm]; omega), fun F hF => ?_⟩
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;>
+    simp only [RuleFact.Holds, sumTerms, Coef.eval, resultAt, Int.zero_mul, Int.zero_add, Int.add_zero,
+      Int.one_mul, Int.neg_mul] <;> rw [Int.mul_comm] <;> omega
+
 theorem rules_sound : ∀ r ∈ rules, r.Sound := by
   intro r hr
   simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact add_sound
+  · exact sub_sound
+  · exact scale_sound
   · exact shr_sound
   · exact maskRange_sound
   · exact maskBound_sound
@@ -499,9 +574,13 @@ def Instance.rename {V W : Type} (g : V → W) (σ : Instance V) : Instance W :=
 @[nospecialize] def instTerms {V : Type} (σ : Instance V) (k : Int) :
     List (RuleVar × Coef) → Option (Linear.Form V × Int)
   | [] => some ([], 0)
-  | (x, a) :: t => match σ x, instTerms σ k t with
-    | some (F, c), some (G, d) => some (F.scale (a.eval k) ++ G, a.eval k * c + d)
-    | _, _ => none
+  | (x, a) :: t =>
+    -- A term whose coefficient is `0` at `k` names no variable (`0·x` is
+    -- the constant `0`), so a fact outlives the variable's slots.
+    if a.eval k = 0 then instTerms σ k t
+    else match σ x, instTerms σ k t with
+      | some (F, c), some (G, d) => some (F.scale (a.eval k) ++ G, a.eval k * c + d)
+      | _, _ => none
 
 /-- **A fact substituted**: `Σ aᵢ·(Fᵢ + cᵢ) ≤ b` as `Σ aᵢ·Fᵢ ≤ b − Σ aᵢ·cᵢ`;
 none where a variable it names has no form. -/
@@ -529,6 +608,10 @@ theorem instTerms_eval {V : Type} {σ : Instance V} {val : V → Int} {v : RuleV
   | (x, a) :: t, G, d, h => by
     simp only [instTerms] at h
     split at h
+    · rename_i h0
+      have := instTerms_eval hσ k h
+      simp only [sumTerms, h0, Int.zero_mul, Int.zero_add]; exact this
+    split at h
     · rename_i F c G' d' hx ht
       simp only [Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
@@ -544,6 +627,8 @@ theorem instTerms_vars {V : Type} {σ : Instance V} {k : Int} :
   | [], G, d, h => by simp only [instTerms, Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, rfl⟩ := h; simp
   | (x, a) :: t, G, d, h => by
     simp only [instTerms] at h
+    split at h
+    · exact instTerms_vars h
     split at h
     · rename_i F c G' d' hx ht
       simp only [Option.some.injEq, Prod.mk.injEq] at h
@@ -579,8 +664,10 @@ theorem instTerms_rename {V W : Type} (g : V → W) (σ : Instance V) (k : Int) 
   | [] => rfl
   | (x, a) :: t => by
     simp only [instTerms, Instance.rename, instTerms_rename g σ k t]
-    cases σ x <;> cases instTerms σ k t <;>
-      simp [Linear.Form.scale, Function.comp_def]
+    split
+    · rfl
+    · cases σ x <;> cases instTerms σ k t <;>
+        simp [Linear.Form.scale, Function.comp_def]
 
 /-- A linear fact with each variable renamed by `g`. -/
 def renameFact {V W : Type} (g : V → W) : Linear.Fact V → Linear.Fact W

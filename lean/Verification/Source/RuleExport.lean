@@ -32,7 +32,7 @@ elab "ruleEntry% " x:ident : term => do
 
 /-- The rules' entries, in the order of `rules`. -/
 def ruleEntries : List RuleEntry :=
-  [ruleEntry% shr, ruleEntry% maskRange, ruleEntry% maskBound, ruleEntry% shl, ruleEntry% bitOr]
+  [ruleEntry% add, ruleEntry% sub, ruleEntry% scale, ruleEntry% shr, ruleEntry% maskRange, ruleEntry% maskBound, ruleEntry% shl, ruleEntry% bitOr]
 
 #guard ruleEntries.map (·.rule) == rules
 

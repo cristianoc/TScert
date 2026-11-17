@@ -518,7 +518,7 @@ private def Γ : List Formula :=
 private def goal : Formula :=
   conj [.linear (.le [(av j, -1)] 0), .linear (.le [(av j, 1), (index, -1)] (-1))]
 
-/-- Shr's conclusion at `j = c >> 8` (`ArithmeticRules.shr`, rule 0):
+/-- Shr's conclusion at `j = c >> 8` (`ArithmeticRules.shr`, rule 3):
 `j` a safe integer, `256·j ≤ c` and `c ≤ 256·j + 255`. -/
 private def shrFacts : List Formula :=
   [safeFact j, lin (.le [(vt j, 256), (vt c, -1)] 0), lin (.le [(vt c, 1), (vt j, -256)] 255)]
@@ -545,7 +545,7 @@ private def boundFacts : List (Linear.Fact StepVar) :=
 /-- The shift by `amount`, its evidence `dk`, then the bound. -/
 private def rawWith (amount : Operand) (dk : RawDerivation) (bound : Int) : RawDerivation :=
   .cut (conj shrFacts)
-      (.arith 0 (.var c) amount j .assumption
+      (.arith 3 (.var c) amount j .assumption
         (.andIntro (.definedOfLinear (.le [(av c, 1)] 1114111) .assumption) (.andIntro dk .truth)) premises)
     (.andIntro nonneg
       (.andIntro
@@ -595,7 +595,7 @@ private def Γ : List Formula :=
 private def goal : Formula :=
   conj [.linear (.le [(av y, -1)] 0), .linear (.le [(av y, 1), (table, -1)] (-1))]
 
-/-- Mask's range at `y = x & 255` (`ArithmeticRules.maskRange`, rule 1). -/
+/-- Mask's range at `y = x & 255` (`ArithmeticRules.maskRange`, rule 4). -/
 private def msk : List Formula := [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le [(vt y, 1)] 255)]
 
 #guard ruleConclusion ArithmeticRules.maskRange (.var x) (.literal mask255) y = some (conj msk)
@@ -612,7 +612,7 @@ private def maskPremises : RawDerivation :=
 /-- The mask, its operation's evidence `dop`, then the bound. -/
 private def rawWith (dop : RawDerivation) : RawDerivation :=
   .cut (conj msk)
-    (.arith 1 (.var x) (.literal mask255) y dop (.andIntro .truth .truth) maskPremises)
+    (.arith 4 (.var x) (.literal mask255) y dop (.andIntro .truth .truth) maskPremises)
     (.andIntro (proj msk 1 .assumption)
       (.andIntro
         (linRaw boundFacts [(av y, 1), (table, -1)] (-1)
@@ -633,10 +633,10 @@ private def Γswapped : List Formula :=
   (.operation (.arith .sub (.path x) (.literal (.num mask255)) y)) (.commute .assumption)) =
   "commute: the operator does not commute"
 
--- Mask's bound `y ≤ b` (rule 2), at `255 & x`, needs `0 ≤ x`, which `Γ` does not state.
+-- Mask's bound `y ≤ b` (rule 5), at `255 & x`, needs `0 ≤ x`, which `Γ` does not state.
 #guard rulePremises ArithmeticRules.maskBound (.literal mask255) (.var x) = some (conj [lin (.le [(vt x, -1)] 0)])
 #guard errorOf (checkScoped empty ⟨0, 3⟩ Γ (conj [safeFact y, lin (.le [(vt y, 1), (vt x, -1)] 0)])
-  (.arith 2 (.literal mask255) (.var x) y (.commute .assumption)
+  (.arith 5 (.literal mask255) (.var x) y (.commute .assumption)
     (.andIntro (.definedOfLinear (.le [(av x, -1)] 0) .assumption) .truth)
     (premisesRaw 1))) = "assumption: not a premise"
 

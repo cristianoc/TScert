@@ -49,7 +49,7 @@ export const boundsList: Listed[] = [
     "field-path-reads", "invalid-field-path-read-at-length", "invalid-field-path-read-other-record",
     "invalid-field-path-read-replaced", "field-path-precondition-unestablished", "field-write-refinement",
     "loop-invariant-reads", "invalid-loop-invariant-back-edge", "invalid-loop-invariant-entry"]),
-  ...group("arithmetic rules (ARITHMETIC.md, \"Bounded bitwise operands\"; P21 extends them)", [
+  ...group("arithmetic rules (ARITHMETIC.md, \"Arithmetic rules\"; P21 extends them)", [
     "bounds-shift-right-negative", "bounds-mask-any-number", "bounds-mask-bound-large", "bounds-mask-variable", "bounds-shift-count-normalised",
     "bounds-commuted-operands", "invalid-bounds-shift-left-overflow", "invalid-bounds-or-past-table"]),
   ...group("written postconditions (P2's two-state posts extend them)", [

@@ -11,8 +11,8 @@ the result at slot `0` of the exit valuation and an input slot `x` at slot
 `x + 1`. A producer's operand form `F + c` over input slots is the rule's
 form `slotForm F` over the exit's terms.
 
-- `valueAtoms` (a sum, a difference, a product with a constant factor) is
-  `integerOperation`'s `valueFacts`.
+- `valueAtoms` (a literal's or a copy's value, and the exact sum of the
+  sum past the range) is `valueFacts`.
 - A rule's atoms (`ruleAtoms`) and `arith`'s premises and conclusion
   (`rulePremises`, `ruleConclusion`) agree (`ruleAtoms_agree`): binding and
   substitution commute with renaming slots to the exit's terms
@@ -86,7 +86,7 @@ theorem linear_iff (hs : s.afterEnv = push u ρ) (G : Linear.Fact Nat) :
 
 private theorem valueFact_le (F : Linear.Form Nat) (d : Int) : valueFact (.le F d) = .le (valueForm F) d := rfl
 
-/-- **`valueAtoms` is `integerOperation`'s conclusion.** -/
+/-- **`valueAtoms` is `valueFacts`.** -/
 theorem valueAtoms_iff (hs : s.afterEnv = push u ρ) (F : Linear.Form Nat) (c : Int) :
     IndexHolds ε (valueAtoms F c) (push u ρ) s.after.h ↔ Holds arena s (valueFacts (.var 0) (slotForm F) c) := by
   rw [indexHolds_uncond (by simp [valueAtoms])]
