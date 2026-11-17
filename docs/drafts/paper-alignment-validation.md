@@ -387,3 +387,73 @@ Verification.Paper. Changes to A present between the original start and this
 base belong to the owner's upstream branch. The new full regression run checks
 the resulting rebased repository; old acceptance results are not reused as
 proof that those upstream changes passed.
+
+## Heap-based quantifiers and structural supports at 0ff68167
+
+This evidence applies to source commit
+`0ff68167b90d7c9e177ce4b5a5539dfab0cf481f`, after the owner-requested rebase
+onto `56aaacc51899986d365a3853c94ac58420c1d1b8`. The original fetched start is
+still `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`. Scratch work on the next Call
+proof was outside the repository and is not part of this validation claim.
+
+### Proof and regression results
+
+Focused builds passed for heap validity, the refactored support/consequence and
+binder rules, Empty, rigidity, below-mark bounds, all first-order postcondition
+scope/renaming/interpretation modules, and complete modality-free/HeapOnly
+world independence. The universal/existential reflexivity law is a theorem in
+the actual AST; no test replaces a logical proof.
+
+Both A and Paper axiom audits passed together, exit zero, 422 build jobs. The
+same eight informational PANIC backtraces from upstream A's
+Programs/TolerantFramesStepLink.lean:294 are replayed; they were also present in
+the original baseline logs. The audit rejects nonstandard axioms and found none
+in Paper. No new-module warning or error was emitted.
+
+The full `make test` completed under timeout 1800 with exit zero:
+
+- 631 Lean build jobs;
+- 23 fast suites passed, none failed;
+- 175 controls on four lanes, 460 operations executed and 35 replayed;
+- 3431/3431 pipeline cases as expected;
+- 4323 functions verified, 1790 negative controls and 150 named gaps.
+
+The case inventory differs from the previous pre-rebase 3419-case report because
+this run includes the owner's new single-pass commits. This is a complete run
+on the rebased source, not reuse of the older acceptance results. GitHub CI is
+separate and is not assumed to pass.
+
+Direct import coverage passed: all 363 other A/shared modules and all 56 other
+Paper modules are imported by their respective axiom checks. A separate source
+scan found zero imports of Paper from outside Paper. The diff of task-owned
+Lean code against the rebased base has zero files outside Verification.Paper.
+The upstream note.tex and PDF are identical to that base. Final documentation
+check passed: 77 documents, 892 citations, zero problems; diff whitespace checks
+passed.
+
+Cloud logs: `/workspace/scratch/rebased-quantifier-support-test.log`,
+`quantifier-support-axioms.log`, `universal-heap-domain.log`,
+`world-independence-build.log`, `quantifier-support-docs-final.log`.
+Tool versions and the general reproduction commands remain as above.
+
+### Independent correspondence and soundness review
+
+The read-only Astra reviewer checked the stable heap-domain design before
+integration, then checked the implementation, phase-aware universal-domain
+revision, affected support proofs and documentation against the paper. It found
+no unsafe theorem. It specifically checked the unchanged world-valid command
+contexts and result guarantees, no inference of fine roles from null contents,
+actual heap W3 use, invocation-entry bounds, phase-local witness validity and
+equal-heap independence through quantifiers and old terms.
+
+The review caught the former universal/existential domain mismatch; the source
+now uses one current heap domain and the corresponding focused old domain.
+It also required explicit admissibility in old-element/Push/View interpretation
+bridges and corrected stale descriptions that equated logical HeapContext with
+program well-formedness. Those corrections are incorporated. The complete
+89-row recount remains 42 equal, 25 narrower, 9 absent, 13 assumed. Remaining
+substitution/admission, support assembly, Call/Fun/body realization, primitive
+and host bridges, derivation coverage and closed examples are not claimed done.
+The owner decisions on failed-path freshness support and index-at-term
+instantiation remain pending. The next Call/Fun operational design was reviewed
+without being claimed as an implemented rule.
