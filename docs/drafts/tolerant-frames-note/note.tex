@@ -1708,15 +1708,17 @@ A string is a scalar: it has no location, and the length $\len s$ of a
 string in a variable $s$ is fixed, with $0\le\len s\le M$. For strings $s,s'$
 and an atom $i$ that holds a $\mathit{SafeInt}$:
 \[
-\begin{array}{ll}
-\textsc{Str-Length} & \hoare{\kw{true}}{\code{y = s.length}}{y=\len s}\\[3pt]
-\textsc{Str-Read} & \hoare{0\le i<\len s\wedge i<N}{\code{y = s[i]}}{\len y=1}\\[3pt]
-\textsc{Concat} & \hoare{\kw{true}}{\code{y = s + s'}}{\len y=\len s+\len{s'}}
+\begin{array}{lll}
+% generated: paper-string-rules
+\textsc{Str-Length} & s:\mathit{String} & \hoare{\kw{true}}{\code{y = s.length}}{y=\len s}\\[3pt]
+\textsc{Str-Read} & s:\mathit{String},\ i:\mathit{SafeInt} & \hoare{0\le i<\len s\wedge i<N}{\code{y = s[i]}}{\len y=1}\\[3pt]
+\textsc{Concat} & s,s':\mathit{String} & \hoare{\kw{true}}{\code{y = s + s'}}{\len y=\len s+\len{s'}}
+% end generated: paper-string-rules
 \end{array}
 \]
 The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
 normal return
-\status{Lean: \lean{rules\_sound} for the rows above, one lemma for each rule, and \lean{add\_two53} for the sum past the range, and \lean{Derivation.arith}, with \lean{Derivation.sound}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
+\status{Lean: \lean{rules\_sound} for the arithmetic rows and the three string rows, one lemma for each rule, and \lean{add\_two53} for the sum past the range, and \lean{Derivation.arith}, with \lean{Derivation.sound}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules, their facts the rows' facts substituted (\lean{lengthReadFacts\_entry}, \lean{stringRead\_entry}, \lean{concatFacts\_entry})}.
 
 \paragraph{Library functions.} A library function is not analysed. It
 has a \emph{contract}: a triple with its effects, assumed of the host,
@@ -1764,10 +1766,16 @@ $\mathit{conv}_{\mathsf{Uint8}}(300)=44$. \code{Float64} stores the
 number itself, NaN as one value. The index $-0$ is the index 0.
 \[
 \begin{array}{lll}
-\textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\len b} & :\emptyset\\[3pt]
-\textsc{View-Read} & \hoare{0\le i<\len b}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
-\textsc{View-Write} & \hoare{0\le i<\len b}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}\\[3pt]
-\textsc{View-Write-Any} & \hoare{\kw{true}}{\code{b[i] = v}}{\kw{true}} & :\{\vw:\grow\}
+% generated: paper-view-rules
+\textsc{View-Length} & b:\mathit{TypedArray} & \\
+ & \hoare{\kw{true}}{\code{y = b.length}}{y=\len b} & :\emptyset\\[3pt]
+\textsc{View-Read} & b:\mathit{TypedArray},\ i:\mathit{SafeInt} & \\
+ & \hoare{0\le i<\len b}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
+\textsc{View-Write} & b:\mathit{TypedArray},\ i:\mathit{SafeInt},\ v:\mathit{Num} & \\
+ & \hoare{0\le i<\len b}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}\\[3pt]
+\textsc{View-Write-Any} & b:\mathit{TypedArray},\ i,v:\mathit{Num} & \\
+ & \hoare{\kw{true}}{\code{b[i] = v}}{\kw{true}} & :\{\vw:\grow\}
+% end generated: paper-view-rules
 \end{array}
 \]
 where $Q_{\ne i}$ says that every other index of $b$ reads after the
@@ -1787,7 +1795,7 @@ axiomatically by the rules above, and soundness is relative to the host
 satisfying them. The reason is that the model has no buffer: a reduction
 rule for the write would have to say what every other typed array over
 the same bytes then reads
-\status{assumed. Lean: the contracts of the three native operations;
+\status{assumed. Lean: the rows are the entries \lean{viewLength}, \lean{viewRead}, \lean{viewWrite} and \lean{viewWriteAny} of \lean{ArithmeticRules.rules}, each naming the contract it is assumed of; the contracts of the three native operations;
 \lean{ViewWrite} states the frame of the write as a postcondition and
 \lean{ExactWrite} the exact postcondition for integers the format stores
 unchanged}.

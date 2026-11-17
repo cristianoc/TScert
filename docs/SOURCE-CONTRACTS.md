@@ -2124,22 +2124,51 @@ throw; `subarray` allocates its view.
 
 **The three steps' rules.** The host is assumed to meet the rules of the
 note *Tolerant frames* for a typed array $`b`$ of format $`t`$, an index
-$`i`$ and a value $`v`$, numbers; the index is valid for $`b`$ where it is
+$`i`$ and a value $`v`$; the index is valid for $`b`$ where it is
 an integer with $`0\le i<\mathrm{view}(b)`$, $`-0`$ the index $`0`$
 (every typed array's length is below $`2^{53}`$, so a valid index is a safe
-integer):
+integer). $`Q_{\ne i}`$ states that every other index of $`b`$ reads what
+it read (`CallEffects.WriteAt`), and the effect
+$`\{\mathsf{views}:\mathsf{grow}\}`$ is proved equal, on well-formed
+states, to the view write's frame (`Kinds.ViewWrite.frame_iff`):
 
-- `b.length` (`%ByteLength%`) is $`\mathrm{view}(b)`$, with the empty
-  effect;
-- `b[i]` (`%ByteAt%`) at a valid index is the element, a number of the
-  format, and at any other number `undefined`, with the empty effect;
-- `b[i] = v` (`%ByteSet%`) at a valid index makes the index read
-  $`\mathrm{conv}_t(v)`$ and every other index of $`b`$ read what it read
-  (`CallEffects.WriteAt`); at a number that is no valid index no location
-  changes; the assignment is $`v`$ in either case (`Effect.viewPost`); its
-  effect is $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved equal,
-  on well-formed states, to the view write's frame:
-  `Kinds.ViewWrite.frame_iff`).
+<!-- generated: view-rules -->
+<!-- Verification.ArithmeticRules.viewLength, assumed of %ByteLength% -->
+
+```math
+\frac{}
+     {K\vdash r\leftarrow b.\mathtt{length}\dashv \mathrm{int}(r),\ r=\mathrm{view}(b)}
+     \ \textsf{View-Length}\quad b:\mathit{TypedArray}\quad :\emptyset
+```
+
+<!-- Verification.ArithmeticRules.viewRead, assumed of %ByteAt% -->
+
+```math
+\frac{\mathrm{int}(i)\quad K\vdash 0\le i<\mathrm{view}(b)}
+     {K\vdash r\leftarrow b[i]\dashv b[i]\doteq r}
+     \ \textsf{View-Read}\quad b:\mathit{TypedArray},\ i:\mathit{SafeInt}\quad :\emptyset
+```
+
+<!-- Verification.ArithmeticRules.viewWrite, assumed of %ByteSet%, ViewWrite, WriteAt -->
+
+```math
+\frac{\mathrm{int}(i)\quad K\vdash 0\le i<\mathrm{view}(b)}
+     {K\vdash b[i]\leftarrow v\dashv b[i]\doteq\mathrm{conv}_t(v),\ Q_{\ne i}}
+     \ \textsf{View-Write}\quad b:\mathit{TypedArray},\ i:\mathit{SafeInt},\ v:\mathit{Num}\quad :\{\mathsf{views}:\mathsf{grow}\}
+```
+
+<!-- Verification.ArithmeticRules.viewWriteAny, assumed of %ByteSet%, ViewWrite -->
+
+```math
+\frac{}
+     {K\vdash b[i]\leftarrow v}
+     \ \textsf{View-Write-Any}\quad b:\mathit{TypedArray},\ i,v:\mathit{Num}\quad :\{\mathsf{views}:\mathsf{grow}\}
+```
+<!-- end generated: view-rules -->
+
+At a number that is no valid index, `b[i]` is `undefined` and `b[i] = v`
+changes no location; the assignment is $`v`$ in either case
+(`Effect.viewPost`).
 
 None of the three throws. $`\mathrm{conv}_t`$ is total (`ViewFormat.conv`):
 `Uint8`, `Uint16` and `Int32` send a number that is not finite to $`0`$ and

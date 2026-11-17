@@ -183,12 +183,38 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 \frac{\mathrm{int}(x)}{r\leftarrow x\dashv\mathrm{int}(r),\ r=x}\ \textsf{int-copy}
 \qquad
 \frac{\Gamma(s)\equiv_G\mathsf{list}(\tau)}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ 0\le r\le 2^{32}-1}\ \textsf{length-range}
-\qquad
-\frac{\Gamma(s)\ \text{answers}\ \mathsf{isStr}}{r\leftarrow\mathsf{lenOf}(s)\dashv\mathrm{int}(r),\ r=\mathrm{strLength}(s)}\ \textsf{string-length}
-\qquad
-\frac{\Gamma(s),\Gamma(t)\ \text{answer}\ \mathsf{isStr}}
-{r\leftarrow s+t\dashv\mathrm{strLength}(r)=\mathrm{strLength}(s)+\mathrm{strLength}(t)}\ \textsf{string-concat}
 ```
+
+<!-- generated: string-rules -->
+<!-- Verification.ArithmeticRules.strLength, proved by Verification.ArithmeticRules.strLength_sound -->
+
+```math
+\frac{}
+     {K\vdash r\leftarrow s.\mathtt{length}\dashv \mathrm{int}(r),\ r=\mathrm{strLength}(s)}
+     \ \textsf{Str-Length}\quad s:\mathit{String}
+```
+
+<!-- Verification.ArithmeticRules.strRead, proved by Verification.ArithmeticRules.strRead_sound -->
+
+```math
+\frac{\mathrm{int}(i)\quad K\vdash 0\le i<\mathrm{strLength}(s)\quad K\vdash i<2^{32}-1}
+     {K\vdash r\leftarrow s[i]\dashv \mathrm{strLength}(r)=1}
+     \ \textsf{Str-Read}\quad s:\mathit{String},\ i:\mathit{SafeInt}
+```
+
+<!-- Verification.ArithmeticRules.concat, proved by Verification.ArithmeticRules.concat_sound -->
+
+```math
+\frac{}
+     {K\vdash r\leftarrow s+s'\dashv \mathrm{strLength}(r)=\mathrm{strLength}(s)+\mathrm{strLength}(s')}
+     \ \textsf{Concat}\quad s,s':\mathit{String}
+```
+<!-- end generated: string-rules -->
+
+The pass states Str-Length of `lenOf` of a slot whose type answers the
+string test, and Concat of `+` of two such slots: its atoms are the rules'
+conclusions substituted (`Bridges.lengthReadAtoms_entry`,
+`concatAtoms_entry`). It states no fact of Str-Read's result.
 
 ```math
 \frac{}{K\vdash c\leftarrow a\lhd b\dashv (a\lhd b\ \text{if}\ c),\ (\neg(a\lhd b)\ \text{if}\ \neg c)}\ \textsf{int-compare}
@@ -250,7 +276,7 @@ the spine contract's bound ([arrays](POSITIVE-TYPES.md#arrays)). Proved, from
 the exactness of safe-integer addition and subtraction and the order of two
 doubles that are safe integers. A length atom $`\mathrm{length}(x,n)`$ also
 states the spine's length at most $`2^{32}-1`$, which `length-observed` reads
-from the spine contract. `string-length` holds on the read's normal return:
+from the spine contract. Str-Length holds on the read's normal return:
 a string longer than $`2^{53}-1`$ code units throws there
 ([strings](SEMANTICS.md#operational-language)), and the length of any other
 is a safe integer. The lowering reads `length` of a value whose type answers
@@ -465,7 +491,7 @@ in `KnowledgeExpand.expandLinks`, with `released` for `guard-typed`), and
 dropped slot's is `restateReads` (proved: `restateReads_holds`). The steps
 are a layer of `Checker.indexing` (`IndexWrites.linearAtoms`; proved:
 `IndexWrites.linearAtoms_holds`, from `SafeIntegers.add_safe`, `sub_safe`
-and `doubleOrder_safe`; `string-length` from `stringSlot_sound` and
+and `doubleOrder_safe`; Str-Length from `stringSlot_sound` and
 `len_str_run`); `int-equal` is proved by
 `SafeIntegers.numberEqual_safe` and `numberEqual_of_safe`, `num-equal` by
 `HeapKnowledge.numEqIndices` (proved: `numEqIndices_holds`), which every tag

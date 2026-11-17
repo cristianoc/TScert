@@ -199,12 +199,12 @@ def ruleEvidence (r : ArithmeticRules.ArithRule) (l rt : Operand) : Formula :=
 reads, where the result is one. -/
 def resultTerm (y : Path) : ArithmeticRules.Domain → Option (Linear.Form Term × Int)
   | .safeInteger => some ([(vt y, 1)], 0)
-  | .number => none
+  | _ => none
 
 /-- The formula of the result's domain: the path reads a safe integer. -/
 def resultFacts (y : Path) : ArithmeticRules.Domain → List Formula
   | .safeInteger => [safeFact y]
-  | .number => []
+  | _ => []
 
 /-- A rule's premises at a two-state, each a linear fact over current terms. -/
 def rulePremises (r : ArithmeticRules.ArithRule) (l rt : Operand) : Option Formula :=
@@ -531,9 +531,10 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
   `ArithmeticRules.rules`): of `y = l op r`, the operation's evidence, the
   operands' evidence their domains need and a derivation of the premises
   give the conclusion. -/
-  | arith {Γ} (r : ArithmeticRules.ArithRule) (hr : r ∈ ArithmeticRules.rules) (l rt : Operand) (y : Path)
+  | arith {Γ} (r : ArithmeticRules.ArithRule) (hr : r ∈ ArithmeticRules.rules) {o : Arith}
+      (ho : r.op = .binary o) (l rt : Operand) (y : Path)
       (P G : Formula) (hP : rulePremises r l rt = some P) (hG : ruleConclusion r l rt y = some G)
-      (dop : Derivation arena Γ (.operation (.arith r.op l.witness rt.witness y)))
+      (dop : Derivation arena Γ (.operation (.arith o l.witness rt.witness y)))
       (de : Derivation arena Γ (ruleEvidence r l rt)) (dp : Derivation arena Γ P) : Derivation arena Γ G
   /-- **The sum given past the range** (the note, §6, "Arithmetic steps":
   for `x = slen(s)`, `y = x + 1` is the safe integer `x + 1` or `2^53`; the
@@ -1059,14 +1060,17 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
   | .arith i l rt y dop de dp => do
     match hr : ArithmeticRules.rules[i]? with
     | some r =>
-      match hP : rulePremises r l rt, hG : ruleConclusion r l rt y with
-      | some P, some G =>
-        let ⟨hg⟩ ← req (goal = G) "arith: goal is not the rule's conclusion"
-        pure (hg.symm ▸ .arith r (List.mem_of_getElem? hr) l rt y P G hP hG
-          (← checkDerivation arena premises (.operation (.arith r.op l.witness rt.witness y)) dop)
-          (← checkDerivation arena premises (ruleEvidence r l rt) de)
-          (← checkDerivation arena premises P dp))
-      | _, _ => .error "arith: the operands do not bind the rule"
+      match ho : r.op with
+      | .binary o =>
+        match hP : rulePremises r l rt, hG : ruleConclusion r l rt y with
+        | some P, some G =>
+          let ⟨hg⟩ ← req (goal = G) "arith: goal is not the rule's conclusion"
+          pure (hg.symm ▸ .arith r (List.mem_of_getElem? hr) ho l rt y P G hP hG
+            (← checkDerivation arena premises (.operation (.arith o l.witness rt.witness y)) dop)
+            (← checkDerivation arena premises (ruleEvidence r l rt) de)
+            (← checkDerivation arena premises P dp))
+        | _, _ => .error "arith: the operands do not bind the rule"
+      | _ => .error "arith: the rule's step is no binary operator"
     | none => .error "arith: no such rule"
   | .lengthSuccessor l r y s lengthLeft pg e e₀ e' e₁ e₂ dop dl dr dlen done => match goal with
     | .at .after g => do
@@ -1127,35 +1131,6 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
 /-! ## Soundness of the arithmetic rules -/
 
 section Arithmetic
-
-/-- Every code unit of a string is below `2^16`. -/
-theorem utf16Units_lt (str : String) : ∀ u ∈ utf16Units str, u < 0x10000 := by
-  intro u hu
-  simp only [utf16Units, List.mem_flatMap] at hu
-  obtain ⟨c, -, hc⟩ := hu
-  have hv := c.valid
-  have e : c.toNat = c.val.toNat := rfl
-  have hlt : c.val.toNat < 0x110000 := by
-    rcases hv with h | h
-    · have := h; simp at this; omega
-    · have := h.2; simp at this; omega
-  split at hc
-  · simp at hc; omega
-  · simp at hc; omega
-
-/-- **The string of one code unit has UTF-16 length one.** -/
-theorem unitString_length (u : Nat) (hu : u < 0x10000) : (utf16Units (unitString u)).length = 1 := by
-  unfold unitString
-  split
-  · decide
-  · simp only [utf16Units, String.toList_singleton, List.flatMap_cons, List.flatMap_nil, List.append_nil]
-    have : (Char.ofNat u).val.toNat < 0x10000 := by
-      unfold Char.ofNat
-      split
-      · simp [Char.ofNatAux]; omega
-      · decide
-    have h2 : (Char.ofNat u).toNat < 0x10000 := this
-    simp [h2]
 
 theorem av_eq (s : TwoState) (p : Path) : stepValue s (av p) = (p.read s.afterEnv s.after.h).bind intValue := rfl
 
@@ -1266,9 +1241,9 @@ theorem result_term {s : TwoState} {y : Path} {bits : UInt64} {r : Int}
 /-- **An arithmetic rule's conclusion holds** (`ArithmeticRules.ArithRule.apply`)
 where the operation, the operands' evidence and the premises hold. -/
 theorem arith_sound {arena : AssertionArena} {s : TwoState} {r : ArithmeticRules.ArithRule}
-    (hr : r ∈ ArithmeticRules.rules) {l rt : Operand} {y : Path} {P G : Formula}
-    (hP : rulePremises r l rt = some P) (hG : ruleConclusion r l rt y = some G)
-    (hop : (OperationPostF.arith r.op l.witness rt.witness y).Holds s) (he : Holds arena s (ruleEvidence r l rt))
+    (hr : r ∈ ArithmeticRules.rules) {o : Arith} (ho : r.op = .binary o) {l rt : Operand} {y : Path}
+    {P G : Formula} (hP : rulePremises r l rt = some P) (hG : ruleConclusion r l rt y = some G)
+    (hop : (OperationPostF.arith o l.witness rt.witness y).Holds s) (he : Holds arena s (ruleEvidence r l rt))
     (hp : Holds arena s P) : Holds arena s G := by
   simp only [rulePremises, ruleConclusion] at hP hG
   split at hP
@@ -1296,7 +1271,7 @@ theorem arith_sound {arena : AssertionArena} {s : TwoState} {r : ArithmeticRules
       obtain ⟨G, hG, he'⟩ := ArithmeticRules.instantiateAll_mem hps F hF
       have := holds_conj.mp hp (lin G) (List.mem_map.mpr ⟨G, hG, rfl⟩)
       exact ⟨G, he', (holds_lin.mp this).2⟩
-    obtain ⟨v, yv, bits, hσ, rfl, hres, hconc⟩ := ArithmeticRules.ArithRule.apply hr hbind hl hrt hu hprem
+    obtain ⟨v, yv, bits, hσ, rfl, hres, hconc⟩ := ArithmeticRules.ArithRule.apply hr ho hbind hl hrt hu hprem
     have hdef : ∀ x f, σ x = some f → ∀ t ∈ f.1.map (·.1), (termAt s.afterEnv s.after.h t).isSome := by
       intro x f hx t ht
       obtain ⟨hfl, hfr, hfy⟩ := ArithmeticRules.ArithRule.bind_forms hbind
@@ -1307,19 +1282,22 @@ theorem arith_sound {arena : AssertionArena} {s : TwoState} {r : ArithmeticRules
       | right =>
         obtain ⟨hd, hf⟩ := hfr f hx
         exact (Operand.sound hf (he _ (.inr (by simp [hd])))).1 t ht
-      | result => rw [hfy] at hx; cases hx
+      | result => simp [hfy .result (by simp) (by simp)] at hx
+      | third => simp [hfy .third (by simp) (by simp)] at hx
+      | len z => simp [hfy (.len z) (by simp) (by simp)] at hx
     have hyv : r.result = .safeInteger → termAt s.afterEnv s.after.h (vt y) = some yv := by
       intro hd; rw [hd] at hres; exact result_term hy hres
     have hσ' : (σ.withResult (resultTerm y r.result)).Denotes (fun t => (termAt s.afterEnv s.after.h t).getD 0)
         (ArithmeticRules.resultAt v yv) := by
       refine ArithmeticRules.Instance.denotes_withResult (fun x _ F c hx => hσ x F c hx) (fun F c hf => ?_)
-      cases hd : r.result <;> rw [hd] at hf <;> simp only [resultTerm, Option.some.injEq, Prod.mk.injEq,
-        reduceCtorEq] at hf
+      cases hd : r.result <;> rw [hd] at hf <;>
+        first | (simp [resultTerm] at hf; done) | simp only [resultTerm, Option.some.injEq, Prod.mk.injEq] at hf
       obtain ⟨rfl, rfl⟩ := hf
       simp [Linear.Form.eval, hyv hd]
     refine holds_conj.mpr fun F hF => ?_
     rcases List.mem_append.mp hF with hF | hF
-    · cases hd : r.result <;> rw [hd] at hF <;> simp only [resultFacts, List.mem_singleton, List.not_mem_nil] at hF
+    · cases hd : r.result <;> rw [hd] at hF <;>
+        first | (simp [resultFacts] at hF; done) | simp only [resultFacts, List.mem_singleton] at hF
       subst hF
       show (termAt s.afterEnv s.after.h (vt y)).isSome
       rw [hyv hd]; rfl
@@ -1329,14 +1307,16 @@ theorem arith_sound {arena : AssertionArena} {s : TwoState} {r : ArithmeticRules
       obtain ⟨x, f, c, hx, ht⟩ := ArithmeticRules.RuleFact.instantiate_vars he' t ht
       cases x with
       | result =>
-        cases hd : r.result <;> simp only [ArithmeticRules.Instance.withResult, hd, resultTerm,
-          Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hx
+        cases hd : r.result <;> simp only [ArithmeticRules.Instance.withResult, hd] at hx <;>
+          first | (simp [resultTerm] at hx; done) | simp only [resultTerm, Option.some.injEq, Prod.mk.injEq] at hx
         obtain ⟨rfl, rfl⟩ := hx
         simp only [List.map_cons, List.map_nil, List.mem_singleton] at ht
         subst ht
         rw [hyv hd]; rfl
       | left => exact hdef .left (f, c) hx t ht
       | right => exact hdef .right (f, c) hx t ht
+      | third => exact hdef .third (f, c) hx t ht
+      | len z => exact hdef (.len z) (f, c) hx t ht
   · cases hP
 
 /-- `y` is the safe integer `E + c`, `E` the value of `F`: the value facts. -/
@@ -1841,8 +1821,8 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     intro s hΓ
     obtain ⟨a, b, c, ha, hb, hy, hu⟩ := ih s hΓ
     exact ⟨b, a, c, hb, ha, hy, by rw [ArithmeticRules.binop_comm hc]; exact hu⟩
-  | arith r hr l rt y P G hP hG _ _ _ ihop ihe ihp =>
-    exact fun s hΓ => arith_sound hr hP hG (ihop s hΓ) (ihe s hΓ) (ihp s hΓ)
+  | arith r hr ho l rt y P G hP hG _ _ _ ihop ihe ihp =>
+    exact fun s hΓ => arith_sound hr ho hP hG (ihop s hΓ) (ihe s hΓ) (ihp s hΓ)
   | lengthSuccessor l r y sp lengthLeft x fl cl fr cr one hl hr hx hone hg hpg he he₀ he' he₁ he₂
       _ _ _ _ _ ihop ihl ihr ihlen ihone =>
     exact fun s hΓ => lengthSuccessor_sound hv hl hr hx hone hg hpg he he₀ he' he₁ he₂ (ihop s hΓ) (ihl s hΓ)
@@ -1890,11 +1870,11 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     have e2 := h2.2
     have e3 := h3.2
     simp only [Linear.Fact.Holds, Linear.Form.eval, hk, hn, Option.getD_some] at e1 e2 e3
-    have hidx : indexOfBits b = some k.toNat := indexOfBits_safe hks (by omega) (by simp [maxArrayLength]; omega)
+    have hidx : indexOfBits b = some k.toNat := SafeIntegers.indexOfBits_safe hks (by omega) (by simp [maxArrayLength]; omega)
     have hlt : k.toNat < (utf16Units str).length := by omega
     obtain ⟨u, hu⟩ : ∃ u, (utf16Units str)[k.toNat]? = some u := ⟨_, List.getElem?_eq_getElem hlt⟩
     have hcu : codeUnitAt str b = .str (unitString u) := by simp [codeUnitAt, hidx, hu]
-    have hlen := unitString_length u (utf16Units_lt str u (List.mem_of_getElem? hu))
+    have hlen := ArithmeticRules.unitString_length u (ArithmeticRules.utf16Units_lt str u (List.mem_of_getElem? hu))
     have hyv : stepValue s (alen y) = some 1 := by
       rw [alen_eq, hy, hcu]; simp [strLengthOf, hlen, maxStringLength]
     simp only [unitFacts, conj, Holds]
@@ -1959,7 +1939,7 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     have hk' : intValue (s.beforeEnv i) = some k := hk
     rw [hb] at hk'
     have hsafe := SafeIntegers.safeIntOfBits_sound hk'
-    have hidx' := indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at e3 ⊢; omega)
+    have hidx' := SafeIntegers.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at e3 ⊢; omega)
     rw [hidx] at hidx'; cases hidx'
     have hl' := hgrow (by omega)
     refine lengthStep_of (L := ls.length) hn ?_

@@ -22,7 +22,11 @@ form `slotForm F` over the exit's terms.
   where the derivation's conclusion holds. A rule's premises are
   established differently on each side: the pass by entailment from its
   knowledge, the derivation by a derivation of each.
-- `concatAtoms` is `stringConcat`'s facts.
+- `concatAtoms` is `stringConcat`'s facts, and both are Concat's
+  conclusion substituted (`concatAtoms_entry`, `concatFacts_entry`); the
+  length read's atoms and `lengthReadFacts` are Str-Length's
+  (`lengthReadAtoms_entry`, `lengthReadFacts_entry`), and B's string
+  read's facts Str-Read's premises and conclusion (`stringRead_entry`).
 - `pastSafeAtoms` (the sum at a string length plus one) is
   `lengthSuccessor`'s guarded conclusion.
 - The length read of a string is `stringLengthRead`'s facts.
@@ -150,7 +154,7 @@ theorem conclusionAtoms_iff (hs : s.afterEnv = push u ρ) (d : ArithmeticRules.D
   cases d
   · simp only [resultAtoms, resultFacts, List.mem_singleton, forall_eq]
     exact int_iff hs
-  · simp [resultAtoms, resultFacts]
+  all_goals simp [resultAtoms, resultFacts]
 
 /-- **The pass's atoms of a rule and the derivation's rule agree** (`ruleAtoms`,
 `rulePremises`, `ruleConclusion`): for operands whose derivation forms are
@@ -219,6 +223,76 @@ theorem lengthReadAtoms_iff (hs : s.afterEnv = push u ρ) (x : Nat) :
   simp only [lengthReadFacts, conj, Holds, and_true]
   rw [← hs]
   exact and_congr Iff.rfl (and_congr (factAt_tag s .after _).symm (factAt_tag s .after _).symm)
+
+/-! ## The string rules' entries
+
+The pass's atoms on a string's length read and on a concatenation, and the
+derivation's string facts, are the conclusions and premises of the datum's
+entries (`ArithmeticRules.strLength`, `strRead`, `concat`) substituted, each
+variable and length named by its term (`Instance.ofTerms`). The derivation's
+`stringConcat` takes two premises the entry does not, `0 ≤ |s|` and
+`0 ≤ |s'|`; `lengthReadFacts` adds `safeFact` of the result, which the
+entry's result sort states. -/
+
+/-- The pass's terms of a string step: a slot's value and string length,
+each input slot `x` at `x + 1`, the result at `0`. -/
+def slotTerms (l r : Nat) : ArithmeticRules.RuleVar → Option Term
+  | .result => some (.value 0)
+  | .len .result => some (.strLength 0)
+  | .left => some (.value (l + 1))
+  | .len .left => some (.strLength (l + 1))
+  | .right => some (.value (r + 1))
+  | .len .right => some (.strLength (r + 1))
+  | _ => none
+
+/-- The derivation's terms of a string step at the exit's paths. -/
+def pathTerms (l r y : Path) : ArithmeticRules.RuleVar → Option Term
+  | .result => some (vt y)
+  | .len .result => some (y.term .strLength)
+  | .left => some (vt l)
+  | .len .left => some (l.term .strLength)
+  | .right => some (vt r)
+  | .len .right => some (r.term .strLength)
+  | _ => none
+
+/-- **`concatAtoms` is Concat's conclusion substituted.** -/
+theorem concatAtoms_entry (a b : Nat) :
+    ∃ cs, ArithmeticRules.instantiateAll (.ofTerms (slotTerms a b)) 0 ArithmeticRules.concat.conclusion = some cs ∧
+      concatAtoms a b = cs.map fun G => ⟨.linear G, none, false⟩ :=
+  ⟨_, rfl, by simp [concatAtoms, Linear.Form.scale, ArithmeticRules.Coef.eval, ArithmeticRules.fact]⟩
+
+/-- **A string's length read's atoms are Str-Length's conclusion
+substituted**, after the result's `int`. -/
+theorem lengthReadAtoms_entry (x : Nat) :
+    ∃ cs, ArithmeticRules.instantiateAll (.ofTerms (slotTerms x x)) 0 ArithmeticRules.strLength.conclusion = some cs ∧
+      [⟨.int 0, none, false⟩, ⟨.linear (.le [(.value 0, 1), (.strLength (x + 1), -1)] 0), none, false⟩,
+        ⟨.linear (.le [(.value 0, -1), (.strLength (x + 1), 1)] 0), none, false⟩] =
+        (⟨.int 0, none, false⟩ : IndexAtom) :: cs.map fun G => ⟨.linear G, none, false⟩ :=
+  ⟨_, rfl, by simp [Linear.Form.scale, ArithmeticRules.Coef.eval, ArithmeticRules.fact]⟩
+
+/-- **`concatFacts` is Concat's conclusion substituted.** -/
+theorem concatFacts_entry (x z y : Path) :
+    ∃ cs, ArithmeticRules.instantiateAll (.ofTerms (pathTerms x z y)) 0 ArithmeticRules.concat.conclusion = some cs ∧
+      concatFacts x z y = conj (cs.map lin) :=
+  ⟨_, rfl, by simp [concatFacts, lin, tagFact, alen, renameFact, Linear.Form.scale, tagVar, ArithmeticRules.Coef.eval, ArithmeticRules.fact]⟩
+
+/-- **`lengthReadFacts` is Str-Length's conclusion substituted**, after the
+result's `safeFact`. -/
+theorem lengthReadFacts_entry (x y : Path) :
+    ∃ cs, ArithmeticRules.instantiateAll (.ofTerms (pathTerms x x y)) 0 ArithmeticRules.strLength.conclusion = some cs ∧
+      lengthReadFacts x y = conj (safeFact y :: cs.map lin) :=
+  ⟨_, rfl, by simp [lengthReadFacts, lin, tagFact, alen, av, renameFact, Linear.Form.scale, tagVar, ArithmeticRules.Coef.eval, ArithmeticRules.fact]⟩
+
+/-- **`stringIndexFacts` and `unitFacts` are Str-Read's premises and
+conclusion substituted.** -/
+theorem stringRead_entry (x i y : Path) :
+    (∃ ps, ArithmeticRules.instantiateAll (.ofTerms (pathTerms x i y)) 0 ArithmeticRules.strRead.premises = some ps ∧
+      stringIndexFacts x i = conj (ps.map lin)) ∧
+    (∃ cs, ArithmeticRules.instantiateAll (.ofTerms (pathTerms x i y)) 0 ArithmeticRules.strRead.conclusion = some cs ∧
+      unitFacts y = conj (cs.map lin)) :=
+  ⟨⟨_, rfl, by simp [stringIndexFacts, lin, tagFact, alen, av, renameFact, Linear.Form.scale, tagVar,
+      ArithmeticRules.maxLength, ArithmeticRules.Coef.eval, ArithmeticRules.fact]⟩,
+    ⟨_, rfl, by simp [unitFacts, lin, tagFact, alen, renameFact, Linear.Form.scale, tagVar, ArithmeticRules.Coef.eval, ArithmeticRules.fact]⟩⟩
 
 /-- **`pastSafeAtoms` is `lengthSuccessor`'s guarded conclusion**: each of
 the producer's alternatives `fact ∨ pastSafe(result)` holds exactly where

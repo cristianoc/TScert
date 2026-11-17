@@ -138,5 +138,6 @@ as generated sections, each row with its sort column, its triple and, for
 the typed array's steps, its effect column, and the implementation's
 documentation's matching sections (ARITHMETIC.md for strings,
 SOURCE-CONTRACTS.md for the typed array's natives), and marks an assumed
-rule with its contracts.
+rule with its contracts. In a display with an effect column, a rule's sorts
+take a row of their own above its triple, so that the rows fit the page.
 

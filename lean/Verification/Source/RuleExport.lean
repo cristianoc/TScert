@@ -1,38 +1,50 @@
 import Lean.Elab.Term
 import Verification.Semantics.ArithmeticRules
 
-/-! # The arithmetic rules as Markdown
+/-! # The step rules as Markdown
 
 `verifier --export rules arithmetic` writes the rules of
 `ArithmeticRules.rules` to standard output as a Markdown document, each
-rule with every semantic field, its variables' roles and sorts, and the
-declarations that state and prove it (`ruleEntries`). The document reads
+rule with every semantic field (its operation, its variables' roles and
+sorts, its premises, conclusion, atoms and effect, its display), and the
+declaration that states it with its evidence: the proof of a proved rule,
+the native contracts an assumed rule rests on (`ruleEntries`). The document reads
 on its own; the generated sections (docs/GENERATED-SECTIONS.md) are
 rendered from it by `dev/generated-sections.mts`, which reads exactly the
 form `rulesMarkdown` writes. -/
 namespace Verification.RuleExport
 open Lean Verification.ArithmeticRules
 
-/-- A rule with the declarations that state and prove it, and the proof:
-the proof term is checked to prove the rule's soundness. -/
+/-- How a rule's entry establishes it: a proved rule by the declaration of
+its proof, whose term proves the rule's soundness; an assumed rule by the
+native contracts its trust names. -/
+inductive Evidence (r : ArithRule) where
+  | proved (proof : Name) (trust : r.trust = .proved) (sound : r.Sound)
+  | assumed (contracts : List String) (trust : r.trust = .assumed contracts)
+
+/-- A rule with the declaration that states it and its evidence. -/
 structure RuleEntry where
   rule : ArithRule
   declaration : Name
-  proof : Name
-  sound : rule.Sound
+  evidence : Evidence rule
 
 open Elab Term in
-/-- `ruleEntry% r`: the entry of the rule `r`, its proof the declaration
-`r_sound`, both names resolved from `r`, so that a name cannot stand
-beside another rule's declaration. -/
+/-- `ruleEntry% r`: the entry of the rule `r`, its name resolved from `r`:
+a proved rule's proof the declaration `r_sound`, so that a name cannot
+stand beside another rule's declaration, and an assumed rule's contracts
+those of its trust. Either is checked against the rule's trust. -/
 elab "ruleEntry% " x:ident : term => do
   let n ← realizeGlobalConstNoOverloadWithInfo x
   let p := n.appendAfter "_sound"
-  elabTerm (← `(RuleEntry.mk $(mkIdent n) $(quote n) $(quote p) $(mkIdent p))) (some (mkConst ``RuleEntry))
+  let evidence ← if (← getEnv).contains p then `(Evidence.proved $(quote p) rfl $(mkIdent p))
+    else `(Evidence.assumed _ rfl)
+  elabTerm (← `(RuleEntry.mk $(mkIdent n) $(quote n) $evidence)) (some (mkConst ``RuleEntry))
 
 /-- The rules' entries, in the order of `rules`. -/
 def ruleEntries : List RuleEntry :=
-  [ruleEntry% add, ruleEntry% sub, ruleEntry% scale, ruleEntry% shr, ruleEntry% maskRange, ruleEntry% maskBound, ruleEntry% shl, ruleEntry% bitOr]
+  [ruleEntry% add, ruleEntry% sub, ruleEntry% scale, ruleEntry% shr, ruleEntry% maskRange, ruleEntry% maskBound,
+    ruleEntry% shl, ruleEntry% bitOr, ruleEntry% strLength, ruleEntry% strRead, ruleEntry% concat,
+    ruleEntry% viewLength, ruleEntry% viewRead, ruleEntry% viewWrite, ruleEntry% viewWriteAny]
 
 #guard ruleEntries.map (·.rule) == rules
 
@@ -50,10 +62,19 @@ def coefText (c : Coef) : String :=
   | [] => "0"
   | m :: ms => ms.foldl (fun acc t => if t.startsWith "-" then acc ++ " - " ++ (t.drop 1).toString else acc ++ " + " ++ t) m
 
+def baseText : Base → String
+  | .left => "left"
+  | .right => "right"
+  | .third => "third"
+  | .result => "result"
+
+/-- A variable, or its length `|x|`. -/
 def varText : RuleVar → String
   | .left => "left"
   | .right => "right"
+  | .third => "third"
   | .result => "result"
+  | .len x => s!"|{baseText x}|"
 
 /-- A fact `Σ aᵢ·vᵢ ≤ b`, each coefficient in parentheses. -/
 def factText (F : RuleFact) : String :=
@@ -61,18 +82,38 @@ def factText (F : RuleFact) : String :=
   s!"`{" + ".intercalate terms} ≤ {coefText F.bound}`"
 
 /-- The operator's name in the calculus (`Arith`). -/
-def opText : Arith → String
+def arithText : Arith → String
   | .add => "add" | .sub => "sub" | .mul => "mul" | .div => "div" | .pow => "pow" | .xor => "xor"
   | .rem => "rem" | .bitAnd => "bitAnd" | .bitOr => "bitOr" | .shl => "shl" | .shr => "shr" | .ushr => "ushr"
   | .lt => "lt" | .le => "le" | .gt => "gt" | .ge => "ge" | .eq => "eq" | .looseEq => "looseEq"
 
+/-- The operation's name: a binary operator's in the calculus, another
+step's as the datum names it. -/
+def opText : Operation → String
+  | .binary o => arithText o
+  | .strLength => "strLength"
+  | .strRead => "strRead"
+  | .viewLength => "viewLength"
+  | .viewRead => "viewRead"
+  | .viewWrite => "viewWrite"
+
+def displayText : Display → String
+  | .arithmetic => "arithmetic"
+  | .strings => "strings"
+  | .views => "views"
+
 def sortText : VarSort → String
   | .num => "Num"
   | .safeInt => "SafeInt"
+  | .string => "String"
+  | .array => "Array"
+  | .typedArray => "TypedArray"
 
 /-- A variable's role; a constant's with the way the rule reads it. -/
 def roleText (r : ArithRule) : Role → String
   | .operand => "operand"
+  | .index => "index"
+  | .written => "written"
   | .result => "result"
   | .constant => match r.right with
     | .constant { normalisation := .shiftCount, .. } => "constant, a shift count"
@@ -87,27 +128,50 @@ def constantText (c : Constant) : String :=
     | .shiftCount => "read as a shift count, modulo 32"
   s!"The constant: {lower}; {upper}; {read}."
 
-def factsText (title : String) (Fs : List RuleFact) : List String :=
-  if Fs.isEmpty then [s!"{title}: none."] else [s!"{title}:", ""] ++ Fs.map fun F => s!"- {factText F}"
+def listText {α : Type} (title : String) (item : α → String) (xs : List α) : List String :=
+  if xs.isEmpty then [s!"{title}: none."] else [s!"{title}:", ""] ++ xs.map fun x => s!"- {item x}"
+
+/-- An atom: `x[i] ≐ y`, the value converted to the format `conv(v)`, or
+every other index kept, `kept x ≠ i`. -/
+def atomText : RuleAtom → String
+  | .elem c i v false => s!"`{varText c}[{varText i}] ≐ {varText v}`"
+  | .elem c i v true => s!"`{varText c}[{varText i}] ≐ conv({varText v})`"
+  | .othersKept c i => s!"`kept {varText c} ≠ {varText i}`"
+
+def regionText : Region → String
+  | .st => "st" | .vw => "vw" | .val => "val"
+  | .spine x => s!"{varText x}.spine" | .cells x => s!"{varText x}.cells"
+  | .field x f => s!"{varText x}.{f}" | .fields x => s!"{varText x}.fields"
+
+def changeText : Change → String
+  | .keep => "keep" | .init => "init" | .scalar => "scalar" | .grow => "grow" | .any => "any"
+
+/-- The evidence's sentence. -/
+def evidenceText {r : ArithRule} : Evidence r → String
+  | .proved p _ _ => s!"proved by `{p}`"
+  | .assumed cs _ => "assumed of " ++ ", ".intercalate (cs.map fun c => s!"`{c}`")
 
 /-- A rule's section. -/
-def ruleMarkdown (r : ArithRule) (decl proof : Name) : List String :=
+def ruleMarkdown (r : ArithRule) (decl : Name) (e : Evidence r) : List String :=
   [s!"## {r.name}", "",
-    s!"Operator `{opText r.op}`. Stated by `{decl}`, proved by `{proof}`.", "",
+    s!"Operation `{opText r.op}`, in the display `{displayText r.display}`. Stated by `{decl}`, {evidenceText e}.", "",
     "| Variable | Role | Sort |", "| --- | --- | --- |"] ++
   r.variables.map (fun (x, role, sort) => s!"| `{varText x}` | {roleText r role} | `{sortText sort}` |") ++
   [""] ++
-  (match r.right with | .constant c => [constantText c, ""] | .operand _ => []) ++
-  factsText "Premises" r.premises ++ [""] ++ factsText "Conclusion" r.conclusion
+  (match r.right with | .constant c => [constantText c, ""] | _ => []) ++
+  listText "Premises" factText r.premises ++ [""] ++ listText "Conclusion" factText r.conclusion ++ [""] ++
+  listText "Atoms" atomText r.atoms ++ [""] ++
+  listText "Effect" (fun (g, d) => s!"`{regionText g}: {changeText d}`") r.effect
 
 /-- **The rules' document**: the soundness statement, its proof over every
 rule, and each rule in the paper's order. -/
 def rulesMarkdown : String :=
-  let header := ["# Arithmetic rules", "",
-    s!"The rules of `{``rules}`, in the paper's order. Each is sound by `{``ArithRule.Sound}`, " ++
-      s!"which `{``rules_sound}` proves of every rule.", "",
-    "A fact is `Σ (coefficient)·variable ≤ bound`; `k` is the rule's constant as the rule reads it."]
-  "\n".intercalate (header ++ (ruleEntries.flatMap fun e => [""] ++ ruleMarkdown e.rule e.declaration e.proof)) ++ "\n"
+  let header := ["# Step rules", "",
+    s!"The rules of `{``rules}`, in the paper's order. A proved rule is sound by `{``ArithRule.Sound}`, " ++
+      s!"which `{``rules_sound}` proves of every proved rule; an assumed rule names the native contracts it rests on.", "",
+    "A fact is `Σ (coefficient)·term ≤ bound`, a term a variable or its length `|variable|`; " ++
+      "`k` is the rule's constant as the rule reads it."]
+  "\n".intercalate (header ++ (ruleEntries.flatMap fun e => [""] ++ ruleMarkdown e.rule e.declaration e.evidence)) ++ "\n"
 
 #guard coefText { lit := -1, byPower := 1 } == "2^k - 1"
 #guard coefText { byPower := -1 } == "-2^k"

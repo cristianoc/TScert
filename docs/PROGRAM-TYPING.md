@@ -2185,7 +2185,7 @@ and $`r+2^{20}\,i-2^{20}\,\mathrm{strLength}(s)\le\mathtt{0xFFFF}-2^{20}`$ of th
 position $`i`$: a code point past `0xFFFF` is a surrogate pair's, so
 $`\mathtt{0xFFFF}<r`$ gives $`i+2\le\mathrm{strLength}(s)`$. So in
 `for (let i = 0; i < text.length;) { const c = text.codePointAt(i)!; i += c > 0xFFFF ? 2 : 1 }`,
-`string-length` and `int-compare` state $`i<\mathrm{strLength}(\mathit{text})`$ in the
+Str-Length and `int-compare` state $`i<\mathrm{strLength}(\mathit{text})`$ in the
 body, the read selects the second signature, and each arm's sum is exact:
 $`i+1\le\mathrm{strLength}(\mathit{text})`$, and $`i+2\le\mathrm{strLength}(\mathit{text})`$
 where the code point is past `0xFFFF`, each at most $`2^{53}-1`$. A clause names
