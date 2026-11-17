@@ -847,20 +847,39 @@ hand-written rewrite, and differ from this design in two points:
 `measureAnalysis` in paragraph mode constructs an instance, and `#sources`
 holds the three lists in three fields. Retained memory was not measured.
 
-**The specified shape and retained memory.** *(To be filled: the
-measurement of exactly the shape this draft specifies, `views`:
-`measureAnalysis` in paragraph mode returning a plain record, `#sources`
-one field, the cache's lists shared as upstream shares them, and the public
-`segments`, `kinds` and `widths` holding the private arrays, with retained
-heap per handle, against `plain` on the setup above.)* Measured on the
-nearest variants (setup above, 15 processes; `shared` 8): `shared`, the
-same with the public arrays copied at construction, shows no time
-regression outside `plain`'s spread on V8 or JSC, and retains 29–33% more
-per `prepareWithSegments` handle and 1–3% more per other handle;
-`sharedlazy`, the copies made by getters at first read, retains 0–1% more
-while no array is read and costs JSC 2.4% on `walkLineRanges`, 4.0% on its
-narrow widths and 17.6% for a visitor reading `h.segments` per line. That
-`views` costs neither is conjectured until measured.
+**The specified shape and retained memory.** Measured on `views`, the
+shape this draft specifies: `measureAnalysis` in paragraph mode returning a
+plain record, `#sources` one field, the staged parts kept by no field, the
+cache's lists shared as upstream shares them, and the public `segments`,
+`kinds` and `widths` holding the private arrays. Setup above, against
+`plain`, 15 processes each, load average 5.5–6.0, with four more
+operations: `layout` and `walkLineRanges` on `prepareWithSegments`
+handles, `walkLineRanges` at 12 and 30 px, and a visitor reading
+`h.segments` and `h.widths` of the handle for every line.
+
+- **Time**: no operation of the 19 is slower than `plain` outside the
+  spread of `plain`'s own processes, in either engine. On V8 every ratio
+  to `plain` is between 0.60 and 0.96. On JSC the ratios are between 0.89
+  and 1.013; the two above 1 (`prepare` of seen text, 1.001; rich prepare,
+  walk and materialize, 1.013) are below `plain`'s slowest process. The
+  visitor reading `h.segments` per line: 0.959 (V8), 0.934 (JSC).
+- **Retained heap** per handle, bytes after a full collection holding 20
+  handles of each text, `views` against `plain`: `prepare` 2020 against
+  1972 on V8 (×1.02) and 1929 against 1867 on JSC (×1.03);
+  `prepareWithSegments` 3592 against 3586 (×1.00) and 4839 against 4778
+  (×1.01), the same after every public array is read;
+  `prepareRichInline` 4335 against 4297 (×1.01) and 5717 against 5676
+  (×1.01). The difference on a `prepare` handle is six fields upstream's
+  record lacks there (`#items`, `#segments`, `#kinds` and the three
+  public fields).
+- **The alternatives measured** on the same setup: the public arrays copied
+  at construction (`shared`) retain 29–33% more per `prepareWithSegments`
+  handle; copied by getters at first read (`sharedlazy`) they cost JSC
+  17.6% for the visitor reading `h.segments` per line; every cached
+  advances list copied (`exactcopy`) costs JSC 4–6% on preparation and
+  49–98% of retained heap; frozen arrays (`frozen`) cost `layout` ×4.2 on
+  V8 and ×6.8 on JSC; a store's deep freeze freezes the same public arrays
+  of a handle, at a cost not measured.
 
 ## Negatives and controls
 
