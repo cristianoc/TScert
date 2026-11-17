@@ -197,7 +197,9 @@ TypeScript reads it as `number`; the verifier reads it as the clause `int`
 ([the safe integers](POSITIVE-TYPES.md#the-safe-integers)), so a value
 reaches it only where its type is within the safe integers: a safe literal,
 or a value already typed `SafeInt`. A `SafeInt` is a `number`, and a
-`number` is not a `SafeInt`.
+`number` is not a `SafeInt`. A computed type, a key type or a mapped type
+reading it is refused ([the source fragment](SOURCE-FRAGMENT.md#model-limits)),
+since TypeScript evaluates it reading `SafeInt` as `number`.
 
 ```ts
 function keep(i: SafeInt): SafeInt {

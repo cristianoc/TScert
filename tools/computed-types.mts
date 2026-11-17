@@ -53,7 +53,8 @@ export type ComputedContext = {
   /** Throws where `node` names a type declared in a block one of whose
    * captured binders a nearer declaration hides there (SOURCE-CONTRACTS.md,
    * "Block-scoped type declarations"): TypeScript's evaluation would read
-   * it past that refusal. */
+   * it past that refusal; and where `node` reads the verifier's `SafeInt`,
+   * which TypeScript's evaluation reads as `number`. */
   captures(node: TypeNode): void;
   /** The identity of the symbol a `unique symbol` type names: the index of
    * the `unique symbol` constant or well-known symbol declaring it among the
