@@ -61,40 +61,82 @@ Differences between Lean and the paper's rows, left as they are:
   entry's (B's Concat takes two more); the pass's atoms on a string's length
   read and on a concatenation are the entry's conclusion substituted. The
   differences are recorded in [B against the paper](b-against-the-paper.md).
-- **The pass gains no Str-Read producer.** A producer is added where a
-  refusal of a program calls for it (CLAUDE.md, "deciding what a refusal
-  calls for"); no case shows a refusal on a code unit's length, and the
-  datum's entry and the derivation's rule state the row without it.
-- **The derivation gains no view rules**: the view rules are assumed, and an
-  assumed contract is read where the pass reads it, at the native's call.
+- **The pass gains no Str-Read producer in this work.** The census orders
+  the work on the pass's producers (CLAUDE.md, "choosing the gap cases to
+  work on"), and no case or census reason asks for a code unit's length;
+  the datum's entry and the derivation's rule state the row.
+- **The derivation gains no view rules in this work.** The datum states the
+  view rules as assumed contracts, naming them; a derivation rule
+  conditional on those contracts is possible and outside this work.
 
-## The generalisation the datum needs
+## The datum, generalised
 
-## The generalisation the datum needs
+The arithmetic datum's types, extended to state every row of the three
+displays; each extension is the general form of what it states.
 
-1. **Terms by measure.** A fact's term is a variable with a measure: its
-   value, its string length (`strLength`), its typed array's length
-   (`view`) or its array's length. Lean keeps the three length terms
-   distinct; the paper's renderer writes each as `|x|` (`\len`), the
-   variable's sort, stated in the row's sort column, telling them apart.
-   ARITHMETIC.md keeps the implementation's names.
-2. **Sorts.** `Num`, `SafeInt`, `String`, `Array` and `TypedArray`, with
-   the format `t` of a typed array a parameter of the rule.
-3. **The step.** An operation beside `binop`: a string's length read and
-   element read, a typed array's length read, element read and element
-   write. A proved rule's soundness is stated over the operation's values:
-   for operand values in their sorts meeting the premises, the value the
-   calculus's operation gives (`binop`, `strLengthOf`, `codeUnitAt`) lies in
-   the result's sort and meets the conclusion; `arithBits` is its instance
-   for `binop` on numbers. An assumed rule has no such statement and names
-   its contract.
-4. **Conclusions beyond linear facts.** An element atom `b[i] ≐ y` and
-   `b[i] ≐ conv_t(v)`, and the frame `Q_{≠i}`, each an atom of the
-   assertion language with its own interpretation.
-5. **Effects.** Each rule's effect (`∅`, `{values: grow}`), exported and
-   rendered in the effect column.
+1. **Operations.** A rule's operation is one of the calculus's steps that
+   give a value of their operands: a binary operator (`binop`, the
+   arithmetic rows and Concat), a string's length read (`strLengthOf`), a
+   string's element read (`codeUnitAt`), and a typed array's length read,
+   element read and element write (`%ByteLength%`, `%ByteAt%`,
+   `%ByteSet%`). An operation has up to three operands (`left`, `right`,
+   `third`: the written value of an element write) and a result.
+2. **Sorts.** An operand or the result is `Num`, `SafeInt`, `String`,
+   `Array` or `TypedArray`. A `String` is a string whose UTF-16 length is
+   at most `M` (`strLengthOf` is defined), a `TypedArray` one of format `t`,
+   a parameter of the rule. A constant is a `SafeInt`.
+3. **Terms by measure.** A fact's term is a variable's value or its length,
+   `|x|`: the string's UTF-16 length, the typed array's fixed length, or the
+   array's spine length, as the variable's sort says. Lean keeps the three
+   length terms distinct; the paper's rows write each as `|x|`, the sort
+   column telling them apart; ARITHMETIC.md keeps the implementation's
+   names.
+4. **Atoms beyond linear facts.** A conclusion may state an element atom,
+   `b[i] ≐ y` or `b[i] ≐ conv_t(v)`, `conv_t` the format's conversion
+   (`ViewFormat.conv`) and `≐` the model's equality of numbers, and the frame
+   `Q_{≠i}`: every other index of the collection reads after the step what
+   it read before. The frame is the rule's local postcondition; the effect
+   (below) bounds what other typed arrays over the same bytes read.
+5. **Effects.** Each rule states its effect in the grammar of Paper I's
+   effects: `∅`, or entries `r : δ` with `r` among `st`, `vw`, `val`,
+   `π.spine`, `π.cells`, `π.f`, `π.fields` and `δ` among `keep`, `init`,
+   `scalar`, `grow`, `any`.
+6. **Trust.** A rule is proved, its soundness a theorem whose term the
+   export checks against its entry, or assumed, naming the native contracts
+   it rests on (`%ByteLength%`, `%ByteAt%`, `%ByteSet%`, the latter through
+   `ViewWrite` and `ViewAssign`/`WriteAt`, which state the conversion at the
+   view's format for any number).
+7. **Soundness.** For a proved rule, one statement by its operation, over
+   successful evaluation: for operand values in their sorts meeting the
+   premises, where the operation gives a value (Concat: `binop .add` of two
+   strings gives one only where the sum of their lengths is at most `M`;
+   the step throws otherwise, and the row's postcondition is for a normal
+   return), that value lies in the result's sort and meets the conclusion.
+   Str-Length connects the string's measure to the numeric result, a safe
+   integer; Str-Read takes a `SafeInt` index below `|s|` and `N`, where
+   `codeUnitAt` gives a string of UTF-16 length one, the model's surrogate
+   replacement included. `arithBits` is the binary operator's instance on
+   numbers.
 
-## Decided above
+## The bridges
 
-The open decisions of the first version (the view rules' soundness, B's
-view rules and A's Str-Read) are settled under "Decisions".
+The derivation's string constructors and the pass's atoms stay as they
+are. The existing bridges (`concatAtoms_iff`, `lengthReadAtoms_iff`) are
+extended to the datum's entries: each states that, for the operands' sorts
+with their measures defined and the operation's evidence, the entry's
+substituted premises are entailed by the constructor's (B's Concat adds two,
+`0 ≤ |s|` and `0 ≤ |s'|`, which its operands' defined lengths give), and the
+entry's substituted conclusion holds where the constructor's or the pass's
+atoms do, Str-Length's `safeFact` included. The pass's theorem is stated
+of the `linearAtoms` branch itself.
+
+## The renderer
+
+The export carries every field above. The renderer writes the paper's three
+displays (the arithmetic steps, the string steps, the typed array's steps)
+as generated sections, each row with its sort column, its triple and, for
+the typed array's steps, its effect column, and the implementation's
+documentation's matching sections (ARITHMETIC.md for strings,
+SOURCE-CONTRACTS.md for the typed array's natives), and marks an assumed
+rule with its contracts.
+
