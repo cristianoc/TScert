@@ -45,6 +45,8 @@ assert.equal(runExample("invalid-bounds-cell-invariant", "Number.isNaN(broken([1
 
 // The unsafe neighbours of the bounds patterns (`bounds-pattern-*`), refused
 // as the capability each pattern needs must keep refusing them.
+assert.equal(runExample("invalid-bounds-pattern-visitor-handle", "walk({ widths: [1], flags: new Uint8Array(1) }, (h) => { h.widths.push(2); })"), undefined,
+  "a visitor growing the handle's widths makes the walker read past its flags");
 assert.equal(runExample("invalid-bounds-pattern-visitor", "Number.isNaN(emptied([1, 2], 1))"), true,
   "a visitor emptying the array leaves the read after the walk past its end");
 assert.equal(runExample("invalid-bounds-pattern-known-growth", "Number.isNaN(overgrown(10))"), true,
