@@ -4,17 +4,19 @@ For each definition, rule, axiom, law and example of the paper
 [Tolerant frames](tolerant-frames-note/note.tex): the statement of B (the
 paper's formalisation in Lean, [where B lives](implementation-and-paper-rules.md#where-b-lives))
 that is it, and how far it matches. Part 2 of B's first item in
-[the basis](implementation-and-paper-rules.md#the-first-item-b). Read by
-gpt-6-astra from the sources at commit `7a8c19f5` on 2026-11-17, with no
-build or test run; four of its claims (Example 1, Push, Fresh-Eff and the
-quantified atom's presence condition) were checked against the source. The rows Add, Sub, Scale, Shr, Mask, Shl, Or and the index from a shift
-or a mask state the sources with `Derivation.arith`, after that commit.
+[the basis](implementation-and-paper-rules.md#the-first-item-b). The original audit was read by gpt-6-astra at commit `7a8c19f5` on
+2026-11-17 without a build. This table reconciles those rows with the
+additions based on fetched `single-pass` commit
+`ba681dfdab8ab41c7d73f3c573f449ab90fedab7`. The general semantic statements
+and command proofs received an independent Astra source review; validation
+is recorded in the implementation commits. An unchanged reference still
+describes the original certificate layer, not the whole of B.
 
 The paper is the source of truth. Where B has no statement of an item, the
 row names the statement of the shared model (`Semantics/`) or of A
 (`Programs/`, `Source/`) the paper's status tag cites, checked against the
 paper where the row says so. **Assumed** marks a host contract the paper
-states as assumed, which B does not state either.
+states as assumed, and identifies whether B supplies an explicit contract declaration.
 
 B is narrower than the paper. The semantic rules and the finite certificates have different coverage: a restricted checker does not narrow an imported theorem quantified over arbitrary assertions. `SemanticRules.lean` states semantic support and respect separately from the sufficient respect check. The assertion grammar and complete command/derivation rules require their own comparison. [Correspondence obligations](paper-alignment-obligations.md) states the domains and boundaries.
 
@@ -25,7 +27,9 @@ Notation for source references:
 - Outside-B filenames are relative to `lean/Verification/`.
 - Paper line numbers refer to `docs/drafts/tolerant-frames-note/note.tex`.
 - **Equal** compares the stated logical content, expressing an executed primitive through its semantic operation postcondition. It does not assert that acceptance applies the declaration.
-- Test declarations and `#guard` commands were read, not executed.
+- The original audit read test declarations without executing them. New
+  declarations are checked by focused Lean builds and the Paper axiom check;
+  compilation and axiom checks do not establish correspondence.
 
 The original `Parity` certificate layer validates assertions with
 `Atom.wellFormed` and `AssertionNode.wellFormed`. In that layer, quantified
@@ -47,27 +51,37 @@ syntax, capture-avoiding substitution, or the complete derivations of
 Definition 23. A family of present element readings is not substituted for a
 body which may read no element.
 
+`Commands`, `CommandRules`, `Scopes` and `Loops` add actual command
+execution and general partial-correctness rules. Runs are raw executions in
+the shared calculus; triples choose admissible exit worlds and preserve valid
+environments and returned/thrown values. `Admission` distinguishes the paper’s
+region forms and fresh lexical bindings from the raw representation. Its
+connection to complete typing and derivation admission is a separate obligation.
+`Derivations` is explicitly a sound subcalculus of Definition 23, and `Transfer`
+assembles Check for that subcalculus with arbitrary regional effects. No
+completeness claim about certificates or search is made.
+
 **§1 — The problem**
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Example 1, aliasing loop — 75 | `loop_safe`, `ModelLoop.lean:601`; `loopGraph`, `:444` | **different** | B’s graph has no `j > out.length` test or throw. Its element write permits writes beyond the current length; the paper’s example explicitly checks that the write is inside or at the end. |
+| Example 1, aliasing loop — 75 | `AliasExample.program`, `.body`, `.program_scoped`, `.Head`, `AliasExample.lean`; older `loop_safe`, `ModelLoop.lean:601` | **narrower** | The new command has the output-length test, RangeError construction and throw, private loop cell and exact head bounds. Scopes and displayed integer obligations are proved. A closed execution/graph proof connecting the primitives and all edge obligations is not supplied. The old six-node graph remains a different example. |
 | Example 2, rewriting call — 82 | `RawDerivation.sep`, `D:639`, checked at `D:881`; `Derivation.rigidSubst`, `D:447` | **narrower** | These establish the linear length-frame ingredient for arrays and certified rigid substitution. There is no declaration of the complete `readRuns` loop and its call. |
 
 **§2 — What exists: variables, locations, spines**
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Definition 3, Commands — 116 | **none in B** | **none in B** | `Runs` (`CommandSummaries.lean:41`) is an arbitrary relation on two completion kinds, not the paper’s inductive command language with steps, sequence, choice, loop, handler, return, throw and break. The definition has no Lean status citation. |
+| Definition 3, Commands — 116 | `Operation`, `Primitive`, `Command`, `PrimitiveRun`, `Executes`, `Commands.lean`; `Command.WellScoped`, `Admission.lean` | **narrower** | The grammar and execution constructors include sequence, choice, loops, handlers, break, return, throw, named operations and native calls. Admission separates fresh binding steps from mutations. Full correspondence of admitted syntax, typing, recursive calls and the raw execution representation is not established by these datatype definitions. |
 
 **§3 — Model**
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Definition 4, World — 357 | **none in B**. Outside B: `WorldT`, `Semantics/Worlds.lean:198`; `WExt`, `:257` | **none in B** | B imports worlds. The paper gives no status citation on this definition. |
-| Definition 5, Well-formed state — 373 | **none in B**. Shared model: `IndexedHeap`, `Semantics/TwoStateFormulas.lean:78` | **none in B** | The shared model's state is a budget, a world, a heap, its positivity, `WorldAdm` and `HeapOk`; it holds no environment, so the environment's part of (W3) and (W4) is stated apart where it is used (`RootsOk`). Whether `HeapOk` is exactly (W1)–(W4) for the heap is not checked here. |
-| Definition 6, Admissible transition — 405 | **none in B**. Shared model: `Admissible`, `WorldReach`, `Semantics/TwoStateFormulas.lean:88,104` | **none in B** | The shared model states it equally: `WorldReach W W'` is a budget $`k' \le k`$ with $`W`$ truncated to $`k'`$ extended by $`W'`$ (checked). |
-| Theorem 7, Preservation — 424 | **none in B**. Shared model: `safe_run`, `run`, `Semantics/IndexedStates.lean:131–150`; A: `HasTyUsing.sound`, `Programs/ProgramTyping.lean:712`; `ControlFlow.state_safe`, `Programs/ControlFlow.lean:1322` | **none in B** | The shared model states it from a safety premise (`Safe`) in place of acceptance by the type system: a run of $`j < k`$ steps reaches an admissible state with budget $`k - j`$ (checked). The step from typing to that premise, and (W1)–(W3), are A's. |
+| Definition 4, World — 357 | Shared `WorldT`, `WorldAdm`, `WExt`, `Semantics/Worlds.lean`; imported by `SemanticRules.lean` | **equal** | A finite initial segment of roles and step-indexed contracts, with contract admissibility supplied by WorldAdm. WExt appends a tail and preserves all old role/contract entries; truncation changes only the budget at which contracts are read. |
+| Definition 5, Well-formed state — 373 | Shared `IndexedHeap`, `Semantics/TwoStateFormulas.lean`; `ValidContext`, `SemanticRules.lean` | **narrower** | IndexedHeap supplies heap/world/budget invariants; ValidContext adds valid source-valued environment roots and a mark within the heap. A full environment-typing judgment for a declared variable type context, and the complete embedding of the paper’s value/object domain, are not given by ValidContext alone. |
+| Definition 6, Admissible transition — 405 | Shared `Admissible`, `WorldReach`, `Semantics/TwoStateFormulas.lean`; imported by `SemanticRules.lean` | **equal** | The indexed-state transition lowers the budget and extends the truncated world. The action keeps its name valuation fixed; fresh command bindings and graph renamings are accounted for separately in command scope and transfer. |
+| Theorem 7, Preservation — 424 | Shared `safe_run`, `Semantics/IndexedStates.lean`; A `HasTyUsing.sound`, `Programs/ProgramTyping.lean`; `ControlFlow.state_safe`, `Programs/ControlFlow.lean` | **narrower** | The imported run theorem gives admissible endpoints and residual budget from shared calculus safety; A supplies typing-to-safety results. A preservation theorem for the complete admitted B command language and its typing assumptions is not established by the endpoint partial-correctness rules. |
 
 **§4 — The assertion language**
 
@@ -76,14 +90,14 @@ The three proposition-summary rows in this report summarize their following cons
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
 | Remark 8, Reading — 930 | `box_eq_havoc_wlp`, `box_weakest_stable_on`, `SemanticRules.lean` | **equal** | The box is the wlp of one arbitrary action. For every rigid effect it strengthens F, is stable, and is implied by any stable strengthening G; G ranges over arbitrary assertions. |
-| Proposition 9, Laws — 940 — summary | `Derivation.boxElim` through `boxIdem`, `D:399–432` | **narrower** | The rules concern B’s represented assertions and, where applicable, checked inclusion, invariance and rigidity evidence. |
-| 9(a), elimination — 942 | `Derivation.boxElim`, `D:399` | **narrower** | The conclusion is the same for represented assertions; the quantification over every assertion of the paper is absent. Cited general theorem outside B: `box_elim`, `Semantics/IndexedStates.lean:183`. |
-| 9(b), conjunction equivalence — 943 | `Derivation.boxAndIntro`, `D:402`; `boxAndLeft`, `:407`; `boxAndRight`, `:411` | **narrower** | Both directions exist for represented assertions only. Cited general theorem outside B: `box_and`, `Semantics/IndexedStates.lean:186`. |
-| 9(b), monotonicity — 943 | `Derivation.boxMono`, `D:415` | **narrower** | B requires a context-free derivation of the premise entailment in its own system; arbitrary semantic entailment is insufficient. Cited outside B: `box_mono`, `Semantics/IndexedStates.lean:191`. |
-| 9(c), antitonicity in effects — 944 | `Derivation.boxAnti`, `D:420` | **narrower** | Semantic inclusion of actions is replaced by a successful `InclusionEvidence` certificate under an established assertion. Cited outside B: `box_anti`, `Semantics/IndexedStates.lean:195`. |
-| 9(d), invariant disjunction — 945 | `Derivation.boxGuard`, `D:424` | **narrower** | The guard must pass `invNode`; B does not accept an arbitrary proof that the guard is invariant. Cited outside B: `box_or`, `Semantics/IndexedStates.lean:211`. |
-| 9(e), idempotence — 946 | `Derivation.boxIdem`, `D:430`; `RigidityEvidence`, `E:563` | **narrower** | Rigidity evidence is either a closed effect or regions stable along certified rigid paths, with a recognized invariant domain. Transitivity of an arbitrary effect is not an accepted premise. Cited outside B: `box_idem`, `Semantics/IndexedStates.lean:219`. |
-| Proposition 10, Guards and quantified facts — 956 — summary | `guardCases`, `D:369`; `everyElim`, `:463`; `everyEmpty`, `:456` | **narrower** | B has restricted instances; it has no general Prefix rule. |
+| Proposition 9, Laws — 940 — summary | Semantic `box_elim`, `box_and`, `box_anti` in the shared model; `box_mono_on`, `box_or_on`, `box_idem_on` in `SemanticRules.lean` | **equal** | The constituent semantic laws are general; the serialized arena/checker supplies only a restricted certificate route. |
+| 9(a), elimination — 942 | Shared `box_elim`, `Semantics/IndexedStates.lean`; interpreted by `Formula.meaning`, `Assertions.lean` | **equal** | Reflexive elimination quantifies over arbitrary assertions, including the general interpreter; its scope is not limited by the old arena/checker. |
+| 9(b), conjunction equivalence — 943 | Shared `box_and`, `Semantics/IndexedStates.lean`; general `Derivation.boxAnd`, `.boxLeft`, `.boxRight`, `Derivations.lean` | **equal** | Both directions hold for arbitrary assertion interpretations. The general derivation constructors state the same conjunction laws. |
+| 9(b), monotonicity — 943 | `box_mono_on`, `SemanticRules.lean`; shared `box_mono`, `Semantics/IndexedStates.lean` | **equal** | The premise is arbitrary semantic entailment on valid contexts. No finite context-free certificate is required by the semantic law. |
+| 9(c), antitonicity in effects — 944 | Shared `box_anti`, `Semantics/IndexedStates.lean`; general `Derivation.boxAnti`, `Derivations.lean` | **equal** | Inclusion of actions gives the stated antitonicity for arbitrary assertions. InclusionEvidence is only one certificate route to that premise. |
+| 9(d), invariant disjunction — 945 | `box_or_on`, `SemanticRules.lean` | **equal** | The guard is an arbitrary semantically invariant assertion on valid contexts. There is no syntactic invariant-guard restriction on disjunction or this law. |
+| 9(e), idempotence — 946 | `box_idem_on`, `RigidOn`, `SemanticRules.lean` | **equal** | The premise is transitivity of the action on valid contexts, not successful rigidity evidence. |
+| Proposition 10, Guards and quantified facts — 956 — summary | `guard`, `every_inst`, `every_prefix`, `every_empty`, `Assertions.lean` | **narrower** | General Guard and Prefix are stated exactly. Instantiation still lacks its syntactic substitution/derivation bridge, and the exact Empty corollary needs the valid-root defined-length bridge. |
 | (Guard) — 960 | `guard`, `equal_contradiction`, `contents_contradiction`, `Assertions.lean` | **equal** | The reading is any partial path reading, including optional final fields; disjunction requires no invariant guard. Unequal values contradict equality of the same reading. |
 | (Inst) — 961 | `every_inst`, `Assertions.lean`; older `Derivation.everyElim`, `D:463` | **narrower** | The general semantic lemma interprets the complete body at an evaluated integer index, including fields, shifts and disjunctions. Capture-avoiding syntactic body instantiation and its inclusion in the full derivation system are not supplied by it. |
 | (Prefix) — 962 | `every_prefix`, `Assertions.lean` | **equal** | For arbitrary defined linear bounds t and t′, t′≤t restricts the full quantified predicate to its smaller range. No density, scalar-body or single-term restriction is imposed. |
@@ -99,7 +113,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Definition 14, Supports of the atoms — 1049 | `SupportEvidence`, `E:811`; general `supports_and`, `supports_or`, `SemanticRules.lean` | **narrower** | Arbitrary conjunction/disjunction supports are semantic theorems. The structural definition and soundness proof for the entire atom/term support table, freshness supports, and modality-free all support are not supplied; the older certificates remain restricted. |
 | Proposition 15, Axioms of the atoms — 1138 — summary | `RawDerivation.grow`, `.dense`, `.sep`, `.everyFrame`, `.init`, `.view`; `Derivation.rigidSubst` | **narrower** | The individual restrictions follow. |
 | (Grow) — 1143 | `grow`, `Bridges/Grow.lean:27`; `RawDerivation.grow`, `D:646`; `SupportEvidence.lengths`, `E:813` | **equal** | For the displayed lower bound over a variable or constant, B establishes preservation under arbitrary value changes and spine growth, without separation. Literal lower bounds can use the linear-support rule directly. |
-| (Dense) — 1144 | `RawDerivation.dense`, `D:647`, checked at `D:976` | **narrower** | The direct schema requires the bound to be a variable term. The paper also admits a literal bound directly; B’s density syntax has no literal-bound constructor. The cited fixed-number `dense_support` is outside B, `Semantics/FootprintProvenance.lean:88`. |
+| (Dense) — 1144 | General `Atom.dense`, `Assertions.lean`; old `RawDerivation.dense`, `D:647` | **narrower** | The general syntax admits every defined linear bound. The old finite certificate only accepts a variable bound directly. The displayed modal density schema at variables or literals is not connected to the new interpreter by a general support proof. |
 | (Sep) — 1145 | `RawDerivation.sep`, `D:639`, checked at `D:881` | **narrower** | The fact must be linear over variables and the one array length, and both separated paths must read arrays. The paper allows any qualifying atom and includes the null/undefined case for the other value. |
 | (Every) — 1146 | `RawDerivation.everyFrame`, `D:640`; general `Every`, `Assertions.lean` | **narrower** | The general assertion no longer inserts density or unconditional element presence, and its complete body grammar is interpreted. The general Every framing schema and its support proof are not bridged to that interpretation; the old certificate has its original restrictions. |
 | (Init) — 1147 | `init_box`, `ModelRules.lean:82`; `init_path`, `:96`; `RawDerivation.init`, `D:641` | **narrower** | The atom is restricted to a linear fact over current terms. The paper quantifies over every atom whose heap reading is the displayed path length. |
@@ -110,32 +124,32 @@ The three proposition-summary rows in this report summarize their following cons
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Break — 1209 | **none in B** | **none in B** | B has no general break rule requiring the enclosing loop’s postcondition. |
-| Return — 1210 | **none in B** | **none in B** | B has no displayed return rule substituting the returned atom into an arbitrary two-state function postcondition. |
-| Throw — 1211 | **none in B** | **none in B** | `throw_nul_safe` (`Examples.lean:53`) treats one thrown value and a safety judgment, not this general triple. |
-| Try — 1212 | `CommandSummary.handle_sound`, `CommandComposition.lean:193` | **narrower** | B composes encoded exit specifications through rebasing, inclusion and consequence evidence. The paper’s rule is over arbitrary one-state assertions and does not require those certificates. |
-| Entry — 1249 | `CommandSummary.Sound`, `CommandSummaries.lean:54`; `ExitSpec.facts`, `:61`; `holds_iff_facts`, `:64` | **narrower** | These definitions provide the exit transition and encoded postconditions; no B theorem states the full strengthening by arbitrary entry assertion and its `old` form. The cited acceptance theorem `entry_sound` is outside B, `Semantics/StepRelations.lean:409`. |
-| Frame — 1251 | `Derivation.frame`, `D:470` | **narrower** | B states modal elimination at a two-state with certified name transport. It does not state the complete two-exit command triple, and its framed assertion is restricted to the arena language. |
-| Frame⁺ — 1253 | `Derivation.framePlus`, `D:487`; `box_of_rigid`, `CommandLoops.lean:89` | **narrower** | The derivation constructor requires recognized rigidity evidence and represented assertions. The semantic lemma gives the modal consequence of an action, not the complete command-triple rule. |
-| Loop — 1255 | `LoopEvidence.prefix_sound`, `CommandLoops.lean:60`; `.loop_sound`, `:74`; `.frame_at_head`, `:97`; `frame_at_exit`, `:110` | **narrower** | B requires a separately supplied prefix summary, checked composition evidence and summaries of departures. It does not derive the displayed command rule from just the body triple, its effect and rigidity; break and return are not constructors of its runs. |
+| Break — 1209 | `break_rule`, `ExitPost`, `Triple`, `Commands.lean` | **equal** | The normal postcondition is false; the unchanged state meets the enclosing loop’s obligation. Break is a distinct control exit, consumed by the enclosing loop. |
+| Return — 1210 | `FunctionReturn`, `return_function_rule`, `Commands.lean` | **equal** | The obligation substitutes the returned atom for the result while explicitly freezing old at the enclosing function’s entry. It is threaded unchanged through local command entries; the normal postcondition is false. |
+| Throw — 1211 | `throw_rule`, `Commands.lean` | **equal** | Throw has false normal postcondition and retains arbitrary R at the handler state. The thrown value’s source/reference validity is the type-system part of the triple, distinct from R. |
+| Try — 1212 | `try_rule`, `CommandRules.lean` | **equal** | The handler runs after the actual throw and binding of its fresh caught name. R, Q and Qe are one-state assertions; R does not mention the caught name. Caught-value validity is derived from the body’s typed exit guarantee. |
+| Entry — 1249 | `entry_rule`, `CommandRules.lean` | **equal** | Both exit postconditions are strengthened by arbitrary old(B) and the corresponding regional action, with B supplied at entry. Scope and marks are explicit in the triple. |
+| Frame — 1251 | `frame_rule`, `CommandRules.lean`; `scope_stable_of_avoids`, `Scopes.lean` | **equal** | Both normal and exceptional boxes are eliminated using their own effects. Scope transport is precisely the paper’s fresh-binding condition; it follows from dependence on names the command does not bind. No finite assertion/region certificate restriction is imposed. |
+| Frame⁺ — 1253 | `frame_plus_rule`, `CommandRules.lean`; `RigidOn`, `SemanticRules.lean` | **equal** | Semantic rigidity on valid contexts retains the box at the normal exit. Scope transport includes the effect under the modality and is proved from noncapture. |
+| Loop — 1255 | `loop_invariant`, `loop_rule`, `Loops.lean` | **equal** | Induction on actual loop execution handles normal iterations, break, return and throw. The body normal post gives I; its break obligation is I ∧ box R, as stated in the paper’s explanation. Semantic effect and rigidity plus noncapture retain the modality; no supplied prefix summary replaces the rule. |
 | Call — 1257 | `call_rule`, `ModelRules.lean:154` | **narrower** | B’s theorem is for a checked graph, its normal completion, slot renaming and a list of named caller facts. The two-exit signature theorem cited by the paper, `call_exits_exact`, is **outside B**, `Semantics/CallEffects.lean:541`. |
 | Alloc, empty array — 1259 | `alloc_step`, `ModelRules.lean:177`; `alloc_post`, `:184` | **equal** | The allocated array has a fresh spine, length zero, and is apart from every pre-existing array. Freshness at the allocation heap length implies freshness at the enclosing invocation’s earlier mark. |
 | Seq-Eff — 1261 | `seq_eff`, `ModelRules.lean:310`; `CommandSummary.seq_sound`, `CommandComposition.lean:163` | **narrower** | B requires the computed `rebaseAll` with `RebaseOk` and a successful `Footprint.le` check. The paper permits any rebasing satisfying its coverage relation and semantic effect inclusion. The general `Post.compose_rebases` is outside B, `Semantics/ExitComposition.lean:110`. |
 | Fresh-Eff — 1263 | `fresh_eff`, `ModelRules.lean:320` | **equal** | For every location below the mark, the fresh spine’s entry is removable from the effect. The theorem does not remove effects on cells that spine lists. |
-| If — 1308 | `CommandSummary.choice_sound`, `CommandComposition.lean:246`; `.join_sound`, `:262` | **narrower** | B combines arbitrary run relations and encoded summaries; the guarded branches must already be supplied as those relations. There is no rule deriving the branch conditions from the paper’s command syntax. |
-| Seq — 1313 | `CommandSummary.seq_sound`, `CommandComposition.lean:163` | **narrower** | Composition requires encoded summaries and `ThenEvidence`, including rebasing and checked effect inclusion. It is not the general one-state triple rule as displayed. |
+| If — 1308 | `if_rule`, `if_effects`, `CommandRules.lean` | **equal** | The two branches are checked under the true/false truthiness of the named test atom, with arbitrary shared postconditions and regional effects. Test facts from the operation that produced that atom remain the separate Test rule obligation. |
+| Seq — 1313 | `seq_rule`, `CommandRules.lean` | **equal** | The intermediate and exit assertions are one-state assertions as displayed. The first execution supplies the intermediate world and valid environment; the second starts there, with the same invocation mark. |
 | Alloc, array literal — 1349 | **none in B**. Cited outside B: `literalArrayAtoms_holds`, `Programs/IndexWrites.lean:175` | **none in B** | B’s empty-array theorem does not establish arbitrary literal contents and density. The paper itself marks those parts conjectural. |
 | Alloc, object literal — 1350 | **none in B** | **none in B** | `alloc_state` (`KindsModelRules.lean:508`) establishes allocation/state properties, not the displayed freshness-and-field-equalities postcondition. |
-| Definition 16, Independence of the world — 1379 | **none in B**. Shared model: `IndependentFrom`, `Semantics/ExitWorlds.lean:179` | **none in B** | The shared model states it equally: equal truth at any two exit states admissible from the entry with the same heap and budget (checked). |
-| Conj — 1397 | `SafePostExcV.conj_independent`, `SemanticRules.lean`; shared `SafePostExcV.cross_independent`, `Semantics/ExitWorlds.lean` | **equal** | Retaining the first result family discharges CrossCompatUpTo by projection. Only the second normal and exceptional postconditions need independence. The extra family-combination parameter of the shared theorem is an encoding issue, not a missing paper premise. |
+| Definition 16, Independence of the world — 1379 | `Independent`, `Commands.lean`; shared `IndependentFrom`, `Semantics/ExitWorlds.lean` | **equal** | The entry and both exit contexts are valid; the entry is fixed and exit environments agree. Truth agrees at admissible exits with equal heap and budget, regardless of their worlds. No property at invalid environments or marks is required. |
+| Conj — 1397 | `conj_rule`, `Commands.lean`; `SafePostExcV.conj_independent`, `SemanticRules.lean` | **equal** | The first proof’s admissible world and shared break/return obligations are retained. Only the second normal and exceptional postconditions need independence. In the shared safety encoding, retaining the first result family discharges compatibility by projection. |
 | Definition 17, Rebasing — 1412 | **none in B**. Shared model: `Rebases`, `Semantics/ExitComposition.lean:77` | **none in B** | `Rebases` states the coverage relation with the absorption by $`\Phi`$ at `any` explicit, and holds no evidence $`\mathit{ev}`$: the paths reading each named value in both heaps are premises of `rebase_sound` for the computed rebasing (checked). |
 | Example 18, Freshness bounds effects, not facts — 1447 | **none in B** | **none in B** | `fresh_eff` proves the effect ingredient. `apart_not_kept_fresh` (`ModelRules.lean:251`) refutes preservation of apartness, not this shrink-and-read example or its length fact. |
 | Proposition 19, Reliance — 1459 | `ActionChain.action_on`, `reliance_on`, `SemanticRules.lean` | **equal** | An arbitrary finite chain of actions bounded by a rigid effect is one action. The initial box gives F at any selected prefix endpoint. Each native step and callback must supply its action bound; an endpoint summary alone does not supply these prefixes. |
-| Field-Read — 1478 | **none in B**. Shared model: `ReadGave`, `Semantics/HeapFacts.lean:13` | **none in B** | `ReadGave` defines a read's result (the field's location, or `undefined` for an absent key with no prototype); no statement gives the rule's postcondition $`x.f \doteq y`$ and its empty effect (checked). |
+| Field-Read — 1478 | `Operation.code`, `Commands.lean`; general `Atom.equal`, `.optionalEqual`, `Assertions.lean`; shared `ReadGave`, `Semantics/HeapFacts.lean` | **none in B** | Own-field command lookup explicitly bypasses prototype fallback when the own field is absent, matching optional equality. A full general primitive triple/effect proof from the required-field or optional-field typing assumptions is not supplied; code and assertion definitions alone are not that rule. |
 | Field-Write — 1479 | **none in B**. Cited outside B: `fieldWriteFrame`, `Programs/ExpressionEffects.lean:112`; `FieldWritten`, `:155`; `fieldWriteStep_sound`, `:229` | **none in B** | B proves preservation consequences of some writes, not the general exact field-write rule. |
-| Elem-Read — 1480 | **none in B** | **none in B** | B’s element atom denotes a typed-array element, not an array element or hole. The paper marks the ordinary element-read contract assumed. |
-| Arr-Length — 1481 | **none in B** | **none in B** | No B constructor states this primitive read’s equality and empty effect. The paragraph supplies no named Lean citation for it. |
-| Test — 1482 | **none in B** | **none in B** | `guard_safe` (`ModelLoop.lean:351`) treats the example’s numeric comparison. It does not state all the paper’s comparison, nullish, negation, conjunction and disjunction cases. |
+| Elem-Read — 1480 | `elementValue`, `Atom.element`, `Assertions.lean`; `Operation.elementRead`, `Commands.lean` | **none in B** | The general ordinary/view element assertion, including holes, and the executed ordinary read are defined. Their exact primitive triple/effect and typing/definedness bridge is not proved. |
+| Arr-Length — 1481 | `Operation.arrayLength`, `Commands.lean`; shared `lengthOf`, `Semantics/IndexFacts.lean` | **none in B** | The operation is interpreted through the shared calculus. The general displayed primitive triple with exact equality and empty effect is not proved. |
+| Test — 1482 | `Operation.binary`, `.not`, `.and`, `.or`, `Commands.lean`; `if_rule`, `CommandRules.lean` | **none in B** | Truthiness and Boolean operation execution are represented. The complete comparison/nullish/negation/conjunction/disjunction fact rules tying bindings to branch knowledge are not proved. |
 | Fun — 1547 | `CommandSummary.signature_holds`, `CommandBodies.lean:86`; `.signature_holds_below`, `:106` | **narrower** | B transports a supplied sound body summary to a supplied signature at call positions. It does not establish the recursive function rule, default `undefined` return, and return obligations from the displayed body premises. Cited outside B: `codeObligations_sound`, `Programs/CodeConditions.lean:218`. |
 | Write-In — 1572 | `Derivation.writeIn`, `D:583`; `lengthsKept_of_run`, `Bridges/ParityArithmeticBridges.lean:189` | **narrower** | The conclusion concerns an array held in corresponding entry/exit slots. The paper states preservation of the length read through every path; B does not package the preservation of those path reads into this rule. |
 | Write-End — 1573 | `Derivation.writeEnd`, `D:589`; `boundedWrite_of_run`, `Bridges/ParityArithmeticBridges.lean:209` | **equal** | Given the bounded-write operation postcondition and the displayed end-index premises, B concludes exactly the length increase by one. The current paper does not put element equality or density extension in this rule. |
@@ -171,10 +185,10 @@ The three proposition-summary rows in this report summarize their following cons
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Definition 21, Checked transfer — 1793 | `checkScoped`, `D:2049` | **narrower** | B checks supplied premises and a supplied goal in its restricted language. It has no definition assembling exactly the node’s entry knowledge, exit transition, postcondition, branch condition and renamed target assertion into the paper’s `Check`. |
-| Theorem 22, Transfer — 1804 | `checkScoped_sound`, `D:2064`; `transfer`, `Bridges/Transfer.lean:37` | **narrower** | The first proves semantic consequence once all premises hold. The second treats class effects and transported `IndexFact` lists, with target obligations supplied separately; it does not connect arbitrary regional exit effects and arbitrary paper knowledge to the stated run conclusion. Cited `sat_subst` and `graph_safe` are outside B, `Semantics/AssertionScopes.lean:627` and `Programs/SinglePass/GraphSafety.lean:329`. |
-| Definition 23, Derivations — 1812 | `Derivation`, `D:342`; `RawDerivation`, `:605`; `Derivation.sound`, `:1679` | **narrower** | Besides the assertion restrictions, B lacks general quantified-postcondition instantiation and implication elimination, general element substitution, the complete contradiction schemas and the general Prefix rule. Its arithmetic rule requires a checked certificate, and its modal introduction uses the finite evidence forms described above. |
-| Example 24, Example 1 in full — 1903 | `loopGraph`, `ModelLoop.lean:444`; `HeadAt`, `:454`; `loop_safe`, `:601` | **different** | B omits the output-length check and throw, does not put $`j\le\mathit{to}`$ in its head assertion, and permits sparse source arrays. It proves safety of that different graph, not the displayed annotation and all eight obligations. |
+| Definition 21, Checked transfer — 1793 | `Check`, `Edge`, `Target`, `Transfer.lean`; `Derivation`, `Derivations.lean` | **narrower** | Check assembles exactly old knowledge, the regional transition, node postcondition, branch condition and renamed target. Its proof datatype is explicitly a sound subcalculus; full Definition 23 and syntactic substitution/admission are separate obligations. |
+| Theorem 22, Transfer — 1804 | `edge_sound_of_triple`, `transfer`, `Transfer.lean` | **narrower** | Execution-connected transfer handles arbitrary regional effects, knowledge and target interpretations, preserving valid environments and chosen exit worlds. Its Check predicate uses the sound general subcalculus, not the full derivations of Definition 23; graph-wide safety/prefix preservation is not inferred from the endpoint triple. |
+| Definition 23, Derivations — 1812 | `Derivation`, `.sound`, `Derivations.lean`; older `Derivation`, `RawDerivation`, `D:342,605` | **narrower** | The new finite proof datatype has general logical connectives, implication/index/value instantiation and modal laws, with soundness. Complete atom/term substitution, contradictions as rule constructors, structural/all-support framing, arithmetic and remaining paper schemas are not all represented. The serialized checker remains a separate restricted certificate layer. |
+| Example 24, Example 1 in full — 1903 | `AliasExample.program`, `.program_scoped`, `.Head`, `.read_bound`, `.write_bound`, `.increment_range`, `.back_edge`, `.exit`, `AliasExample.lean` | **narrower** | The actual command contains both tests, RangeError construction/throw and the private loop cell. Head knowledge includes j≤to. Fresh scopes and the displayed arithmetic bounds/renaming consequence are proved. The dense-source typing premise and each primitive/edge connection still need a closed execution or graph proof; the older ModelLoop theorem is not used as a substitute. |
 
 **§8 — The patterns**
 
@@ -187,14 +201,14 @@ These are repeated applications, rather than additional numbered definitions or 
 | Fresh array spine — 1950 | `fresh_eff`, `ModelRules.lean:320`; `alloc_post`, `:184` | **equal** | The fresh spine contributes no change below the mark, and empty allocation establishes apartness from older arrays. |
 | Write-once cache — 1951 | `tolerant_frame`, `E:212`; `init_box`, `ModelRules.lean:82` | **narrower** | The atom and its support must be among B’s represented facts and accepted evidence; there is no rule for every atom tolerating initialization. |
 | Reliance during callbacks — 1952 | `RawDerivation.dense`, `D:647`; `reliance_at_prefix`, `CommandLoops.lean:124` | **narrower** | B supplies the density frame and a consequence of an already composed prefix bound, not the callback-chain proposition. |
-| Quantified fact across a write — 1953 | `RawDerivation.everyFrame`, `D:640` | **narrower** | B additionally requires presence at every quantified index, including when the body itself would not require it. |
+| Quantified fact across a write — 1953 | General `Every`, `Assertions.lean`; old `RawDerivation.everyFrame`, `D:640` | **narrower** | The general quantified assertion has no unconditional presence requirement. Its full support/Every framing schema is not bridged to the new syntax; the older certificate retains its presence and scalar restrictions. |
 | Structures built in step — 1954 | `Derivation.pushPost`, `D:595`; `RawDerivation.sep`, `:639` | **narrower** | The length ingredients exist, but there is no B command triple combining the actual push with preservation of the other array’s length. |
-| Separation where a value exists — 1955 | `Derivation.guardCases`, `D:369`; `RawDerivation.sep`, `:639` | **narrower** | The path guard must be recognized invariant, and separation is only between arrays. The displayed general guarded path case is not represented as stated. |
+| Separation where a value exists — 1955 | General `Formula.or`, `Formula.separated`, `Assertions.lean`; old `Derivation.guardCases`, `D:369` | **narrower** | The new language has unrestricted disjunction and the complete defined-nonarray separation meaning. A derivation of this guarded regional framing pattern using the full support/substitution infrastructure remains an obligation; the old certificate route retains invariant-guard restrictions. |
 | Fact through a field — 1956 | `grow_path`, `Bridges/Grow.lean:50`; `grow_path_typed`, `Bridges/ModelTyped.lean:150` | **narrower** | The typed bridge requires its particular stable-path and array-type evidence; the derivation route also requires certified substitution in B’s language. |
 | Typed-array length — 1957 | `view_box`, `ModelRules.lean:45` | **equal** | This particular linear fact over a variable and descriptor length is within the theorem’s scope. |
-| Index from a shift or mask — 1971 | `Derivation.arith` at `shr`, `maskRange` and `maskBound`, `D:551`; `Derivation.linear` | **equal** | The pattern's facts, under its ranges $`0\le c<2^{31}`$, $`0\le d<32`$, $`0\le m<2^{31}`$, are the rules' conclusions, and $`0\le y`$ after the shift follows from them by a linear certificate. |
-| Array facts across a typed-array write — 1959 | `SupportEvidence.everyCells`, `E:815`; `Derivation.tolerantFrame`, `D:437` | **narrower** | The quantified fact has B’s additional presence requirement and restricted scalar-body interpretation. |
-| Fact at a handler — 1960 | `Derivation.frame`, `D:470`; `CommandSummary.handle_sound`, `CommandComposition.lean:193` | **narrower** | The modal consequence exists for encoded facts; no general command rule connects every exceptional exit to its handler with arbitrary paper assertions. |
+| Index from a shift or mask — 1958 | `Derivation.shiftRight`, `D:522`; `.mask`, `:529` | **equal** | Their conclusions include the displayed bounds under the stated ranges. |
+| Array facts across a typed-array write — 1959 | General `Every`, `Assertions.lean`; `SupportEvidence.everyCells`, `E:815` | **narrower** | The new body semantics covers the paper’s facts, but the general structural support and its view-write command bridge are not proved. The cited old certificate has extra presence/scalar restrictions. |
+| Fact at a handler — 1960 | `frame_rule`, `try_rule`, `CommandRules.lean` | **equal** | The exceptional box gives the arbitrary framed assertion at the handler’s chosen valid state, and the handler consumes that assertion. Scope excludes the fresh caught name, as required by the paper. |
 
 **§9 — Relation to separation logic**
 
@@ -220,6 +234,6 @@ Each row except the three proposition summaries and the patterns of §8:
 
 | Equal | Narrower | Broader | Different | None in B | Assumed | Total |
 |---:|---:|---:|---:|---:|---:|---:|
-| 21 | 35 | 0 | 2 | 18 | 13 | 89 |
+| 40 | 27 | 0 | 0 | 9 | 13 | 89 |
 
-Of the rows with no statement in B, the shared model states Definitions 6 and 16 equally, and Theorem 7 from a safety premise; the others are recorded in their rows.
+Imported shared statements are counted in the corresponding rows, rather than called absent merely because they live outside Paper. Equal compares that item’s semantic statement; it does not certify complete syntax admission, all of Definition 23, or implementation by A. Narrower rows state the missing premise/conclusion or unproved bridge explicitly.

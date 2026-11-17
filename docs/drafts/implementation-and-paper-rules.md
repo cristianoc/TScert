@@ -58,10 +58,10 @@ Clarity on B, in three parts:
 
 The formalisation of B is the modules of
 [lean/Verification/Paper/TolerantFrames](../../lean/Verification/Paper/TolerantFrames):
-19 modules, about 8,600 lines and 1,989 declarations (counted 2026-11-17),
-with [their own axiom check](../../lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean).
-No module outside them imports one of them. Each module's header states
-what it proves; the modules fall in four groups.
+with [its own axiom check](../../lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean).
+No module outside them imports one of them. Each module's header states what it proves. The general assertion, command
+and semantic layers are described below; the original certificate and bridge
+modules fall in four groups.
 
 **The assertion language and its derivations** (the paper's §4–§6; the
 design [parity-interfaces.md](parity-interfaces.md), I4 and I5):
@@ -166,47 +166,49 @@ write principles are in
 these ingredients do not establish complete postcondition syntax, substitution,
 structural supports, or command-level native rules.
 
+## Commands, scope and transfer
+
+[Commands.lean](../../lean/Verification/Paper/TolerantFrames/Commands.lean)
+interprets named steps and command control flow through the shared calculus.
+Runs have heaps, environments and normal/break/return/throw exits. Triples
+supply admissible exit worlds and preserve valid environments and result
+values. Return freezes the function’s entry for old; Conj transports only the
+second normal/exceptional postcondition to the first proof’s world. An own
+field read does not use the shared calculus’s prototype extension on absence.
+Native typed-array code is an explicit parameter; selecting it proves no
+native contract.
+
+[CommandRules.lean](../../lean/Verification/Paper/TolerantFrames/CommandRules.lean)
+and [Loops.lean](../../lean/Verification/Paper/TolerantFrames/Loops.lean)
+state general partial-correctness rules. The loop theorem is induction on
+execution with actual abrupt exits, not a supplied prefix summary.
+[Scopes.lean](../../lean/Verification/Paper/TolerantFrames/Scopes.lean)
+derives frame transport from noncapture.
+[Admission.lean](../../lean/Verification/Paper/TolerantFrames/Admission.lean)
+states the seven paper region forms, declared path conditions and lexical
+scope/freshness conditions; raw shared implementation helpers are not extra
+paper region forms. Complete admission/typing/substitution bridges remain
+separate proof obligations.
+
+[Derivations.lean](../../lean/Verification/Paper/TolerantFrames/Derivations.lean)
+is explicitly a sound subcalculus of Definition 23, without an arbitrary
+semantic-entailment constructor. [Transfer.lean](../../lean/Verification/Paper/TolerantFrames/Transfer.lean)
+assembles Check and connects node triples and effects to regional transfer
+with arbitrary knowledge. It does not infer prefix safety from endpoints.
+[AliasExample.lean](../../lean/Verification/Paper/TolerantFrames/AliasExample.lean)
+encodes the actual loop, both tests and the throw, with scopes, full head
+bounds and arithmetic obligations proved. It does not claim a closed
+execution/graph proof or use the older six-node graph as that example.
+
 ## How far B matches the paper
 
-Item by item in [B against the paper](b-against-the-paper.md). Of the
-paper's 89 items (its definitions, rules, axioms, laws and examples, the
-patterns of §8 aside), the original source audit found 13 equal, 35 narrower and 2 different
-statements, 26 absent and 13 assumed host contracts. The reconciled table
-compares the semantic statements separately from their certificate coverage. Among its equal
-statements are Alloc of an empty array, Fresh-Eff, Write-End, (Grow), and
-the arithmetic and string rules (Add, Sub, Scale, Shr, Mask, Shl, Or, the
-string-length successor, Str-Length, Str-Read). The seven
-arithmetic rules are one datum, `ArithmeticRules.rules`, which A and B both instantiate
-and the paper's rows are generated from
-([generated sections](../GENERATED-SECTIONS.md)): A and B substitute the same
-premises and conclusions, and `Bridges.ruleAtoms_agree` proves that A's
-atoms and B's conclusion agree. They establish premises differently, A by
-entailment from its knowledge and B by derivations, so A applies a rule
-only where B can derive its premises, and B applies it also where A's
-entailment does not find them. The narrower ones
-share three restrictions:
-
-- **Assertion certificates.** The older arena retains its single-term
-  bounds, presence requirement, scalar bodies and invariant guards. The
-  general interpreter has none of those restrictions; its complete
-  substitution and derivation bridges are separate obligations.
-- **Certificates for semantic premises.** The serialized checker uses
-  finite evidence for support, respect, rigidity and inclusion. This
-  restricts certificate coverage, not the general semantic statements. The
-  support table’s general syntax and soundness are separate obligations.
-- **Command summaries over runs.** A command is a relation between states
-  and completions, with no command language (Definition 3), so the rules
-  of §6 are stated as compositions of supplied summaries.
-
-Of the items B has no statement of, the shared model states admissible
-transitions and independence of the world equally, and Preservation from
-a safety premise in place of typing; it states well-formed states,
-Rebasing and (Prefix) differently, each
-difference in its row. Break, Return, Throw, the primitive read and write
-rules and the command language have no statement in Lean, or one in A
-only. Example 1 and its derivation
-(Example 24) are stated of another loop: B's graph has no
-`j > out.length` test.
+Every item is compared in [B against the paper](b-against-the-paper.md).
+The original source audit found 13 equal, 35 narrower and 2 different
+statements, 26 absent and 13 assumed host contracts among its 89 items.
+The reconciled table counts exact imported shared theorems and new general
+statements, distinguishes semantic rules from certificate coverage, and keeps
+unproved syntax, support, primitive, derivation and example bridges explicit.
+The owning completion status is exclusively [WORK.md](../../WORK.md#status).
 
 ## Where C is met
 

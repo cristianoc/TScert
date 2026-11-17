@@ -1,5 +1,13 @@
-import Verification.Paper.TolerantFrames.Assertions
+import Verification.Paper.TolerantFrames.AliasExample
+import Verification.Paper.TolerantFrames.Admission
+import Verification.Paper.TolerantFrames.Derivations
+import Verification.Paper.TolerantFrames.Transfer
+import Verification.Paper.TolerantFrames.Scopes
+import Verification.Paper.TolerantFrames.Loops
+import Verification.Paper.TolerantFrames.CommandRules
+import Verification.Paper.TolerantFrames.Commands
 import Verification.Paper.TolerantFrames.Consequences
+import Verification.Paper.TolerantFrames.Assertions
 import Verification.Paper.TolerantFrames.SemanticRules
 import Verification.Paper.TolerantFrames.Bridges.ExitProposals
 import Verification.Paper.TolerantFrames.Bridges.Grow
