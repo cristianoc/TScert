@@ -582,3 +582,55 @@ broader integer-constant wording. Stale original-audit paper line anchors
 are removed; rule/definition labels identify the current statements.
 The own-key source continuation is validated separately below; older full
 runs are not claimed as validation of this rebase or of its shared changes.
+
+## Conservative own-key and fixed-operation code at 69d3e9ac
+
+Evidence applies to exact source `69d3e9acc3646d31e8304897e50d4ff4b5960434`,
+extending rebased `7fcd1a5c1266b2add64e3956fddf56af416e4c8c` on latest fetched
+single-pass `f2e33e7f35769d00dd6aa1763d86d3c6ef41983f`. Original fetched start
+remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+Focused shared foundations, fixed-operation prefix/inversion and forged nested
+JSON controls pass with warnings as errors. Both complete axiom audits exit
+zero, 433 jobs, with the same eight upstream informational backtraces. Full
+make test completes with exit zero: 642 Lean jobs, all 23 fast suites, 175
+controls (460 operations executed, 35 replayed), 3431/3431 expected cases,
+4323 verified functions, 1790 negative controls and 150 named gaps. This run
+executes the affected A controls and cases on the new binary, not merely the
+old cached acceptance outcomes. Final documentation passes at 78 documents,
+892 code citations and zero problems; whitespace checks pass. Direct import
+coverage checks 363 other A/shared and 67 other Paper modules; a separate
+scan finds zero outside-to-Paper imports. The current 91-row recount is
+40 equal, 27 narrower, 11 absent and 13 assumed, including all original 89.
+
+The precise shared changes are Calculus's pure internal tag/tagHolds case,
+ValueSets's appended key and object-dependent normalization, TypingBasics's
+conservative shape response for the new tag, RequestJson's frozen legacy Tag
+codec, and ExecutionModelTests's forged decoder controls. No A producer emits
+the new tag. All old tag meanings/keys and legacy JSON encodings remain; the
+accepted request-tag vocabulary is closed before all dependent codecs. Exact
+diagnostic bytes are not claimed unchanged. A's headline acceptance theorem
+and trust assumptions are unchanged. Source proofs of simulation/inversion
+remain on B's side. The task's paper source/PDF diff against the latest base
+is empty; owner paper changes in the rebase are retained exactly.
+
+Independent read-only Astra review checked pure own-key versus prototype
+semantics, arbitrary machine values and field maps, nonobject stuckness,
+normalization and conservative source typing, exact legacy constructor/payload
+names, nested decoder coverage, all symbolic operation cases, internal let
+binding and terminal deterministic cancellation. It found no soundness blocker.
+It required explicit host.close ρ and preserved host-capture compiler
+obligations; those qualifications are in source and correspondence documents.
+The reviewer also read the latest paper's arithmetic changes and confirmed
+both reclassifications and new absent rows. It identified the source-only
+Raises condition: full raw B forward throw simulation would be false, while
+completed graph-to-B inversion remains the required compiler direction.
+
+Full command lowering, body/call anchors, rest allocation, Fun, new arithmetic
+bridges and other previously listed gaps remain open. The two pending owner
+mathematical decisions are unchanged. No axiom audit is used as evidence of
+rule correspondence, and no native-library implementation is claimed verified.
+
+Logs: `/workspace/scratch/own-key-test.log`, `own-key-axioms.log`,
+`own-key-build1.log`, `own-key-build3.log` (for the nested decoder controls),
+`own-key-build5.log`, `operation-code-build2.log`, `own-key-docs-final.log`.
