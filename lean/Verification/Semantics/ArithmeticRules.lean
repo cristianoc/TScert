@@ -19,11 +19,11 @@ conclusion. `rules_sound` proves it of every rule of `rules`.
 The pass's producer (`IndexWrites.linearAtoms`) and the paper's derivation
 (`Parity.Derivation.arith`) instantiate the rules through one substitution
 (`RuleFact.instantiate`) and one interpretation lemma
-(`RuleFact.instantiate_holds`); `ruleDeclarations` names each rule's
-declarations, which the verifier exports with the rules
-(`verifier --export rules arithmetic`). -/
+(`RuleFact.instantiate_holds`). The verifier exports the rules with the
+declarations that state and prove each (`RuleExport.ruleEntries`,
+`verifier --export rules arithmetic`). -/
 namespace Verification.ArithmeticRules
-open Verification.SafeIntegers Verification.IndexNumbers
+open Verification.SafeIntegers Verification.IndexNumbers Float.Model Float.Model.UnpackedFloat
 
 /-! ## The datum -/
 
@@ -542,8 +542,39 @@ theorem instantiateAll_rename {V W : Type} (g : V → W) (σ : Instance V) (k : 
     simp only [instantiateAll, RuleFact.instantiate_rename, instantiateAll_rename g σ k Fs]
     cases F.instantiate σ k <;> cases instantiateAll σ k Fs <;> rfl
 
+/-- A form plus a constant with each variable renamed by `g`. -/
+def renamePair {V W : Type} (g : V → W) (f : Linear.Form V × Int) : Linear.Form W × Int :=
+  (f.1.map fun (y, a) => (g y, a), f.2)
+
 theorem Instance.rename_withResult {V W : Type} (g : V → W) (σ : Instance V) (y : Option (Linear.Form V × Int)) :
-    (σ.withResult y).rename g = (σ.rename g).withResult (y.map fun (F, c) => (F.map fun (x, a) => (g x, a), c)) := by
+    (σ.withResult y).rename g = (σ.rename g).withResult (y.map (renamePair g)) := by
+  funext x; cases x <;> rfl
+
+theorem Instance.rename_rename {U V W : Type} (f : U → V) (g : V → W) (σ : Instance U) :
+    (σ.rename f).rename g = σ.rename (g ∘ f) := by
+  funext x
+  simp only [Instance.rename, Option.map_map]
+  cases σ x <;> simp [Function.comp_def]
+
+/-- **Binding commutes with renaming**: the operands' forms renamed bind the
+renamed instance, at the same constant. -/
+theorem ArithRule.bind_rename {V W : Type} (g : V → W) (r : ArithRule) (lf rf : Option (Linear.Form V × Int)) :
+    r.bind (lf.map (renamePair g)) (rf.map (renamePair g)) = (r.bind lf rf).map fun (σ, K) => (σ.rename g, K) := by
+  have hl : r.left.bind (lf.map (renamePair g)) = (r.left.bind lf).map (·.map (renamePair g)) := by
+    cases r.left <;> cases lf <;> rfl
+  have hr : r.right.bind (rf.map (renamePair g)) = (r.right.bind rf).map fun (rt, K) => (rt.map (renamePair g), K) := by
+    cases r.right with
+    | operand d => cases d <;> cases rf <;> rfl
+    | constant c =>
+      match rf with
+      | none => rfl
+      | some ([], d) => simp only [Right.bind, Option.map_some, renamePair, List.map_nil]; split <;> rfl
+      | some ((_ :: _), _) => rfl
+  simp only [ArithRule.bind, hl, hr]
+  cases r.left.bind lf <;> cases r.right.bind rf <;> try rfl
+  rename_i rtK
+  obtain ⟨rt, K⟩ := rtK
+  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq, and_true]
   funext x; cases x <;> rfl
 
 /-- Each fact of a list substituted all at once has its substitution. -/
@@ -610,6 +641,78 @@ theorem binop_numberOnly {op : Arith} (h : op.numberOnly = true) {a b u : Tm} (h
   · exact ⟨_, _, rfl, rfl⟩
   · simp [hbig] at hu
   all_goals simp [hadd] at hu
+
+/-! ## Operands exchanged -/
+
+theorem sign_mul_comm (a b : Sign) : a * b = b * a := by cases a <;> cases b <;> rfl
+
+/-- The model's sum of two doubles is symmetric: its NaN is one value. -/
+theorem unpacked_add_comm (spec : Format) (x y : UnpackedFloat) :
+    UnpackedFloat.add spec x y = UnpackedFloat.add spec y x := by
+  cases x <;> cases y <;> simp only [UnpackedFloat.add]
+  all_goals first
+    | rfl
+    | (rename_i a b; cases a <;> cases b <;> rfl)
+    | (rw [Int.min_comm]; congr 1; omega)
+
+theorem unpacked_mul_comm (spec : Format) (x y : UnpackedFloat) :
+    UnpackedFloat.mul spec x y = UnpackedFloat.mul spec y x := by
+  cases x <;> cases y <;> simp only [UnpackedFloat.mul, sign_mul_comm, Nat.mul_comm, Int.add_comm]
+
+theorem intAnd_comm (a b : Int) : intAnd a b = intAnd b a := by
+  cases a <;> cases b <;> simp [intAnd, Nat.and_comm, Nat.or_comm]
+
+theorem intOr_comm (a b : Int) : intOr a b = intOr b a := by
+  cases a <;> cases b <;> simp [intOr, Nat.and_comm, Nat.or_comm]
+
+theorem intXor_comm (a b : Int) : intXor a b = intXor b a := by
+  cases a <;> cases b <;> simp [intXor, Nat.xor_comm]
+
+/-- **`arithBits` is symmetric** for `+`, `*`, `&`, `|` and `^`: the model's
+sum and product, and the two's-complement operations. -/
+theorem arithBits_comm {op : Arith} (h : op = .add ∨ op = .mul ∨ op = .bitAnd ∨ op = .bitOr ∨ op = .xor)
+    (x y : UInt64) : arithBits op x y = arithBits op y x := by
+  rcases h with rfl | rfl | rfl | rfl | rfl
+  · rw [arithBits_add, arithBits_add, unpacked_add_comm]
+  · rw [arithBits_mul, arithBits_mul, unpacked_mul_comm]
+  · simp only [arithBits, intAnd_comm]
+  · simp only [arithBits, intOr_comm]
+  · simp only [arithBits, intXor_comm]
+
+/-- **The operators whose step is the same with its operands exchanged**,
+on every pair of values (`binop_comm`): `&`, `|`, `^` and `*`. `+` is
+not one: on two strings it concatenates, and on numbers alone it is
+(`arithBits_comm`). -/
+def _root_.Verification.Arith.commutes : Arith → Bool
+  | .bitAnd | .bitOr | .xor | .mul => true
+  | _ => false
+
+theorem binop_comm_some {op : Arith} (h : op.commutes = true) {a b u : Tm} (hu : binop op a b = some u) :
+    binop op b a = some u := by
+  have hrel : op.relational = false := by cases op <;> simp_all [Arith.commutes, Arith.relational]
+  have heq : op ≠ .eq := by rintro rfl; simp [Arith.commutes] at h
+  have hloose : op ≠ .looseEq := by rintro rfl; simp [Arith.commutes] at h
+  have hadd : (op == .add) = false := by cases op <;> first | rfl | simp [Arith.commutes] at h
+  have hops : op = .add ∨ op = .mul ∨ op = .bitAnd ∨ op = .bitOr ∨ op = .xor := by
+    cases op <;> simp_all [Arith.commutes]
+  have hbig : ∀ i j, bigintArith op i j = bigintArith op j i := by
+    intro i j; cases op <;> simp_all [Arith.commutes, bigintArith, Int.mul_comm, intXor_comm]
+  unfold binop at hu ⊢
+  rw [if_neg heq, if_neg hloose, hrel] at hu ⊢
+  simp only [Bool.false_eq_true, if_false] at hu ⊢
+  split at hu
+  · rw [← hu, arithBits_comm hops]
+  · rw [hbig]; exact hu
+  all_goals simp [hadd] at hu
+
+/-- **A commuting operator's step is the same with its operands exchanged.** -/
+theorem binop_comm {op : Arith} (h : op.commutes = true) (a b : Tm) : binop op a b = binop op b a := by
+  cases hab : binop op a b with
+  | some u => exact (binop_comm_some h hab).symm
+  | none =>
+    cases hba : binop op b a with
+    | none => rfl
+    | some u => rw [binop_comm_some h hba] at hab; cases hab
 
 /-- **A step of a rule's operation**: its result is `arithBits` of its
 number operands, which an operand of a safe integer is. -/
@@ -757,13 +860,20 @@ theorem Instance.denotes_withResult {V : Type} {σ : Instance V} {val : V → In
   · exact hσ .right (by decide) F c hx
   · exact hy F c hx
 
-/-- Each rule with the declarations that state and prove it, as the export
-names them. -/
-def ruleDeclarations : List (ArithRule × Lean.Name × Lean.Name) :=
-  [(shr, ``shr, ``shr_sound), (maskRange, ``maskRange, ``maskRange_sound),
-    (maskBound, ``maskBound, ``maskBound_sound), (shl, ``shl, ``shl_sound),
-    (bitOr, ``bitOr, ``bitOr_sound)]
+/-- The variables a rule's facts may name: those whose values are safe
+integers (a constant is one). A fact naming any other has no form to
+substitute, and the rule would apply nowhere. -/
+def ArithRule.integerVar (r : ArithRule) : RuleVar → Bool
+  | .left => r.left == .safeInteger
+  | .right => match r.right with
+    | .operand d => d == .safeInteger
+    | .constant _ => true
+  | .result => r.result == .safeInteger
 
-#guard ruleDeclarations.map (·.1) == rules
+/-- Every fact of a rule names only variables of safe integers. -/
+def ArithRule.factsInteger (r : ArithRule) : Bool :=
+  (r.premises ++ r.conclusion).all fun F => F.terms.all fun (x, _) => r.integerVar x
+
+#guard rules.all (·.factsInteger)
 
 end Verification.ArithmeticRules

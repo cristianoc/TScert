@@ -13,10 +13,15 @@ form `slotForm F` over the exit's terms.
 
 - `valueAtoms` (a sum, a difference, a product with a constant factor) is
   `integerOperation`'s `valueFacts`.
-- A rule's atoms (`ruleAtoms`) are `arith`'s conclusion: renaming the
-  output slots to their value terms commutes with the rule's substitution
-  (`ArithmeticRules.instantiateAll_rename`), and the atoms hold where the
-  renamed facts do (`ruleAtoms_iff`).
+- A rule's atoms (`ruleAtoms`) and `arith`'s premises and conclusion
+  (`rulePremises`, `ruleConclusion`) agree (`ruleAtoms_agree`): binding and
+  substitution commute with renaming slots to the exit's terms
+  (`ArithmeticRules.ArithRule.bind_rename`, `instantiateAll_rename`), so the
+  derivation's premises hold where the pass's substituted premises hold at
+  the input, and, where the knowledge entails them, the pass's atoms hold
+  where the derivation's conclusion holds. A rule's premises are
+  established differently on each side: the pass by entailment from its
+  knowledge, the derivation by a derivation of each.
 - `concatAtoms` is `stringConcat`'s facts.
 - `pastSafeAtoms` (the sum at a string length plus one) is
   `lengthSuccessor`'s guarded conclusion.
@@ -98,13 +103,44 @@ theorem valueFact_rename (G : Linear.Fact Nat) : valueFact G = ArithmeticRules.r
 /-- The result's slot renamed to value terms is the result's term at the path
 of slot `0`. -/
 theorem resultSlot_rename (d : ArithmeticRules.Domain) :
-    (resultSlot d).map (fun (F, c) => (F.map fun (x, a) => (Term.value x, a), c)) = resultTerm (.var 0) d := by
+    (resultSlot d).map (ArithmeticRules.renamePair Term.value) = resultTerm (.var 0) d := by
   cases d <;> rfl
 
-/-- **A rule's atoms are `arith`'s conclusion**: the result's domain and the
-conclusion's facts at the output slots hold exactly where the derivation's
-result facts and the facts renamed to value terms hold. -/
-theorem ruleAtoms_iff (hs : s.afterEnv = push u ρ) (d : ArithmeticRules.Domain) (cs : List (Linear.Fact Nat)) :
+/-- An operand form over input slots, renamed to the exit's terms, is its
+`slotForm`. -/
+theorem slotForm_pair (f : Linear.Form Nat × Int) :
+    (slotForm f.1, f.2) = ArithmeticRules.renamePair (fun x => Term.value (x + 1)) f := by
+  simp [slotForm, valueForm, shiftForm, ArithmeticRules.renamePair, Function.comp_def]
+
+/-- An input slot's fact holds at the input exactly where the fact over the
+output slots, each one higher, holds at the output. -/
+theorem shifted_holdsAt (G : Linear.Fact Nat) {h h' : Heap} :
+    (IndexFact.linear (valueFact (ArithmeticRules.renameFact (· + 1) G))).HoldsAt ε (push u ρ) h' ↔
+      (IndexFact.linear (valueFact G)).HoldsAt ε ρ h := by
+  rw [IndexFact.holdsAt_valueFact, IndexFact.holdsAt_valueFact]
+  have hvars : ∀ F : Linear.Form Nat, (∀ x ∈ (shiftForm F).map (·.1), (intValue (push u ρ x)).isSome) ↔
+      ∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome := by
+    intro F
+    rw [shiftForm_vars]
+    constructor
+    · intro hv x hx
+      exact hv (x + 1) (List.mem_map.mpr ⟨x, hx, rfl⟩)
+    · intro hv y hy
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+      exact hv x hx
+  cases G with
+  | le F d =>
+    show (∀ x ∈ (shiftForm F).map (·.1), _) ∧ Linear.Form.eval _ (shiftForm F) ≤ d ↔ _
+    rw [hvars, eval_shiftForm]; rfl
+  | ne F d =>
+    show (∀ x ∈ (shiftForm F).map (·.1), _) ∧ Linear.Form.eval _ (shiftForm F) ≠ d ↔ _
+    rw [hvars, eval_shiftForm]; rfl
+
+/-- A rule's atoms' result and conclusion are `arith`'s conclusion: the
+result's domain and the conclusion's facts at the output slots hold exactly
+where the derivation's result facts and the facts renamed to value terms
+hold. -/
+theorem conclusionAtoms_iff (hs : s.afterEnv = push u ρ) (d : ArithmeticRules.Domain) (cs : List (Linear.Fact Nat)) :
     IndexHolds ε (resultAtoms d ++ cs.map fun G => ⟨.linear (valueFact G), none, false⟩) (push u ρ) s.after.h ↔
       Holds arena s (conj (resultFacts (.var 0) d ++ (cs.map valueFact).map lin)) := by
   rw [indexHolds_uncond (by cases d <;> simp [resultAtoms])]
@@ -115,6 +151,49 @@ theorem ruleAtoms_iff (hs : s.afterEnv = push u ρ) (d : ArithmeticRules.Domain)
   · simp only [resultAtoms, resultFacts, List.mem_singleton, forall_eq]
     exact int_iff hs
   · simp [resultAtoms, resultFacts]
+
+/-- **The pass's atoms of a rule and the derivation's rule agree** (`ruleAtoms`,
+`rulePremises`, `ruleConclusion`): for operands whose derivation forms are
+the `slotForm`s of the pass's forms, the derivation's premises hold exactly
+where the pass's substituted premises hold at the input, and, where the
+knowledge entails those premises, the pass's atoms hold of the result
+exactly where the derivation's conclusion holds. -/
+theorem ruleAtoms_agree (hs : s.afterEnv = push u ρ) {k : Knowledge} {r : ArithmeticRules.ArithRule} {a b : Tm}
+    {l rt : Operand} (hl : l.form = (operandForm k true a).map fun f => (slotForm f.1, f.2))
+    (hr : rt.form = (operandForm k true b).map fun f => (slotForm f.1, f.2))
+    {σ : ArithmeticRules.Instance Nat} {K : Int} {ps cs : List (Linear.Fact Nat)}
+    (hb : r.bind (operandForm k true a) (operandForm k true b) = some (σ, K))
+    (hps : ArithmeticRules.instantiateAll σ K r.premises = some ps)
+    (hcs : ArithmeticRules.instantiateAll ((σ.rename (· + 1)).withResult (resultSlot r.result)) K r.conclusion = some cs)
+    {h : Heap} :
+    ∃ P G, rulePremises r l rt = some P ∧ ruleConclusion r l rt (.var 0) = some G ∧
+      ((∀ g ∈ ps, (IndexFact.linear (valueFact g)).HoldsAt ε ρ h) ↔ Holds arena s P) ∧
+      (ps.all (fun g => entailsKnown k.indices (valueFact g)) = true →
+        (IndexHolds ε (ruleAtoms k r a b) (push u ρ) s.after.h ↔ Holds arena s G)) := by
+  have hpair : (fun f : Linear.Form Nat × Int => (slotForm f.1, f.2)) =
+      ArithmeticRules.renamePair (fun x => Term.value (x + 1)) := funext slotForm_pair
+  have hinst : ruleInstance r l rt = some (σ.rename (fun x => Term.value (x + 1)), K) := by
+    simp only [ruleInstance, hl, hr, hpair, ArithmeticRules.ArithRule.bind_rename, hb, Option.map_some]
+  have hrename : ∀ g : Linear.Fact Nat, ArithmeticRules.renameFact (fun x => Term.value (x + 1)) g =
+      valueFact (ArithmeticRules.renameFact (· + 1) g) := by
+    intro g; cases g <;> simp [ArithmeticRules.renameFact, valueFact, valueForm, Function.comp_def]
+  have hpsB : ArithmeticRules.instantiateAll (σ.rename (fun x => Term.value (x + 1))) K r.premises =
+      some (ps.map fun g => valueFact (ArithmeticRules.renameFact (· + 1) g)) := by
+    rw [ArithmeticRules.instantiateAll_rename, hps]; simp [hrename]
+  have hσ : (σ.rename (fun x => Term.value (x + 1))).withResult (resultTerm (.var 0) r.result) =
+      ((σ.rename (· + 1)).withResult (resultSlot r.result)).rename Term.value := by
+    rw [ArithmeticRules.Instance.rename_withResult, ArithmeticRules.Instance.rename_rename, resultSlot_rename]; rfl
+  have hcsB : ArithmeticRules.instantiateAll ((σ.rename (fun x => Term.value (x + 1))).withResult
+      (resultTerm (.var 0) r.result)) K r.conclusion = some (cs.map valueFact) := by
+    rw [hσ, ArithmeticRules.instantiateAll_rename, hcs]; simp [valueFact_rename]
+  refine ⟨_, _, by simp only [rulePremises, hinst, hpsB]; rfl, by simp only [ruleConclusion, hinst, hcsB]; rfl, ?_, ?_⟩
+  · rw [holds_conj]
+    simp only [List.map_map, List.forall_mem_map, Function.comp_def]
+    refine forall₂_congr fun g _ => ?_
+    rw [← linear_iff hs, shifted_holdsAt]
+  · intro hall
+    simp only [ruleAtoms, hb, hps, hcs, hall, if_true]
+    exact conclusionAtoms_iff hs r.result cs
 
 /-- **`concatAtoms` is `stringConcat`'s conclusion.** -/
 theorem concatAtoms_iff (hs : s.afterEnv = push u ρ) (a b : Nat) :

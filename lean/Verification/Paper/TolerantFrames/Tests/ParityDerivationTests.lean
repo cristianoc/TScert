@@ -602,16 +602,29 @@ private def msk : List Formula := [safeFact y, lin (.le [(vt y, -1)] 0), lin (.l
 
 private def boundFacts : List (Linear.Fact StepVar) := [.le [(av y, 1)] 255, .le [(table, -1)] (-256)]
 
-private def raw : RawDerivation :=
+/-- The mask, its operation's evidence `dop`, then the bound. -/
+private def rawWith (dop : RawDerivation) : RawDerivation :=
   .cut (conj msk)
-    (.arith 1 (.var x) (.literal mask255) y .assumption (.andIntro .truth .truth) .truth)
+    (.arith 1 (.var x) (.literal mask255) y dop (.andIntro .truth .truth) .truth)
     (.andIntro (proj msk 1 .assumption)
       (.andIntro
         (linRaw boundFacts [(av y, 1), (table, -1)] (-1)
           (.andIntro (proj msk 2 .assumption) (.andIntro .assumption .truth)))
         .truth))
 
+private def raw : RawDerivation := rawWith .assumption
+
 #guard isOk (checkScoped empty ⟨0, 3⟩ Γ goal raw)
+
+-- `255 & x`, the operands exchanged: `&` commutes.
+private def Γswapped : List Formula :=
+  [.operation (.arith .bitAnd (.literal (.num mask255)) (.path x) y), .linear (.le [(table, -1)] (-256))]
+
+#guard isOk (checkScoped empty ⟨0, 3⟩ Γswapped goal (rawWith (.commute .assumption)))
+-- `-` does not commute.
+#guard errorOf (checkScoped empty ⟨0, 3⟩ [.operation (.arith .sub (.literal (.num mask255)) (.path x) y)]
+  (.operation (.arith .sub (.path x) (.literal (.num mask255)) y)) (.commute .assumption)) =
+  "commute: the operator does not commute"
 
 -- Mask's bound `y ≤ x` (rule 2) needs `0 ≤ x`, which `Γ` does not state.
 #guard rulePremises ArithmeticRules.maskBound (.var x) (.literal mask255) = some (conj [lin (.le [(vt x, -1)] 0)])

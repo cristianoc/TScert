@@ -292,8 +292,12 @@ asks: a safe integer $`a`$ by its linear form, with $`\mathrm{int}(a)`$,
 and any number by nothing; a constant operand $`b`$ is a literal or a slot
 the knowledge states equal to a constant, a safe integer meeting the rule's
 side condition, and a shift count $`d`$ is read as $`d'=d\bmod 32`$, as
-`>>` and `<<` read it through `ToUint32`. Where the knowledge entails the
-rule's premises, the result $`r`$ states the rule's conclusion:
+`>>` and `<<` read it through `ToUint32`. A rule of an operator whose step
+is the same with its operands exchanged (`&`, `|`, `^` and `*`,
+`Arith.commutes`, proved by `ArithmeticRules.binop_comm`) applies to its
+operands in either order, so `0xff & c` is Mask's `c & 0xff`. Where the
+knowledge entails the rule's premises, the result $`r`$ states the rule's
+conclusion:
 
 <!-- generated: arithmetic-rules -->
 <!-- {"name":"Shr","declaration":"Verification.ArithmeticRules.shr","proof":"Verification.ArithmeticRules.shr_sound","op":"shr","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":1}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":-1,"byConstant":0,"byPower":1}}]} -->
@@ -346,8 +350,10 @@ facts. The quotient inequalities retain the relation to the input, so an
 input bound of 222 entails a result at most 27 for a shift by three. The
 source cases are `bounds-pattern-shift-or` (pretext's class table),
 `bounds-shift-right-negative`, `bounds-mask-any-number`,
-`invalid-bounds-shift-left-overflow` (a shift past the signed 32-bit range)
-and `invalid-bounds-or-past-table` (an or past its table).
+`bounds-mask-bound-large`, `bounds-shift-count-normalised`,
+`bounds-commuted-operands`, `invalid-bounds-shift-left-overflow` (a shift
+past the signed 32-bit range) and `invalid-bounds-or-past-table` (an or
+past its table).
 
 **Dropping a slot.** Where a step's output drops a slot, or an edge's mapping
 retains no slot of a fact's class, the slot is first eliminated from the

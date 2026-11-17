@@ -842,9 +842,11 @@ def ruleAtoms (k : Knowledge) (r : ArithmeticRules.ArithRule) (a b : Tm) : List 
     | _, _ => []
   | none => []
 
-/-- The atoms of every rule of an operator at a step. -/
+/-- The atoms of every rule of an operator at a step, at its operands in
+order and, where the operator commutes (`Arith.commutes`), exchanged. -/
 def ruleAtomsOf (k : Knowledge) (op : Arith) (a b : Tm) : List IndexAtom :=
-  (ArithmeticRules.rules.filter fun r => decide (r.op = op)).flatMap fun r => ruleAtoms k r a b
+  (ArithmeticRules.rules.filter fun r => decide (r.op = op)).flatMap fun r =>
+    ruleAtoms k r a b ++ (if op.commutes then ruleAtoms k r b a else [])
 
 /-- String-only addition operands whose types establish string membership. -/
 @[nospecialize] def concatOperands (G : NormalGraph ι) (Γ : List (Ty ι))
@@ -1226,7 +1228,13 @@ theorem ruleAtomsOf_holds {k : Knowledge} {op : Arith} {a b : Tm} {ρ h h'} {u :
   obtain ⟨r, hr, hat⟩ := List.mem_flatMap.mp hat
   obtain ⟨hr, hop⟩ := List.mem_filter.mp hr
   have hop' : r.op = op := of_decide_eq_true hop
-  exact ruleAtoms_holds hr hk (hop' ▸ hu) atom hat hc
+  rcases List.mem_append.mp hat with hat | hat
+  · exact ruleAtoms_holds hr hk (hop' ▸ hu) atom hat hc
+  · split at hat
+    · rename_i hcomm
+      rw [ArithmeticRules.binop_comm hcomm] at hu
+      exact ruleAtoms_holds hr hk (hop' ▸ hu) atom hat hc
+    · cases hat
 
 /-- **The linear atoms a step states hold of its result.** -/
 theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}

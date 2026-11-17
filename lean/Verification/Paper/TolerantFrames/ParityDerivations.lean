@@ -539,6 +539,11 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (he : arena.nodes[e.index]? = some (.atom (.equal π (.literal v))))
       (hc : arena.nodes[c.index]? = some (.atom (.contents π R)))
       (de : Derivation arena Γ (.at p e)) (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ F
+  /-- **Operands exchanged**: a step of a commuting operator
+  (`Arith.commutes`, `ArithmeticRules.binop_comm`) is the step with its
+  operands exchanged. -/
+  | commute {Γ op l r y} (hc : op.commutes = true) (d : Derivation arena Γ (.operation (.arith op l r y))) :
+      Derivation arena Γ (.operation (.arith op r l y))
   /-- **An arithmetic rule** (the note, §6, "Arithmetic steps";
   `ArithmeticRules.rules`): of `y = l op r`, the operation's evidence, the
   operands' evidence their domains need and a derivation of the premises
@@ -675,6 +680,7 @@ inductive RawDerivation where
   | linearToAtom (F : Linear.Fact Term) (d : RawDerivation)
   | atomClash (p : Phase) (π : Path) (v : Val) (R : CallEffects.ElemPred) (e c : AssertionRef)
       (de dc : RawDerivation)
+  | commute (d : RawDerivation)
   | arith (rule : Nat) (l r : Operand) (y : Path) (dop de dp : RawDerivation)
   | integerOperation (op : Arith) (l r : Operand) (y : Path) (dop dl dr drange : RawDerivation)
   | lengthSuccessor (l r : Operand) (y s : Path) (lengthLeft : Bool) (pg e e₀ e' e₁ e₂ : AssertionRef)
@@ -1071,6 +1077,11 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
     let ⟨hc⟩ ← node? arena c (.atom (.contents π R))
     pure (.atomClash π v R hv he hc (← checkDerivation arena premises (.at p e) de)
       (← checkDerivation arena premises (.at p c) dc))
+  | .commute d => match goal with
+    | .operation (.arith op r l y) => do
+      let ⟨hc⟩ ← req (op.commutes = true) "commute: the operator does not commute"
+      pure (.commute hc (← checkDerivation arena premises (.operation (.arith op l r y)) d))
+    | _ => .error "commute: goal is no arithmetic operation"
   | .arith i l rt y dop de dp => do
     match hr : ArithmeticRules.rules[i]? with
     | some r =>
@@ -1919,6 +1930,10 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     simp only [Witness.value, Option.some.injEq] at hv₁
     rw [hu] at hu'; cases hu'; subst hv₁
     rw [hv'] at hR; cases hR
+  | commute hc _ ih =>
+    intro s hΓ
+    obtain ⟨a, b, c, ha, hb, hy, hu⟩ := ih s hΓ
+    exact ⟨b, a, c, hb, ha, hy, by rw [ArithmeticRules.binop_comm hc]; exact hu⟩
   | arith r hr l rt y P G hP hG _ _ _ ihop ihe ihp =>
     exact fun s hΓ => arith_sound hr hP hG (ihop s hΓ) (ihe s hΓ) (ihp s hΓ)
   | integerOperation op l r y fl cl fr cr F c hl hr hF _ _ _ _ ihop ihl ihr ihrange =>
