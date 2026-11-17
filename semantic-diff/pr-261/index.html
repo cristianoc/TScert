@@ -1,0 +1,324 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">8 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-261"><code>5777ed2e08992863611715aa38f21b97f10145d5..pr-261</code></a><ul><li>8 commits</li><li>changes: 4 Docs, 6 Definition, 2 Theorem, 1 Semantics, 2 Rule, 2 Wire, 1 Lowering, 1 Refusal</li><li>parts: <span class="chip">docs</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip strong">lean-semantics</span> <span class="chip strong">wire</span> <span class="chip">parser</span> <span class="chip">tests</span></li><li>wire: the clause &quot;int&quot;</li><li>wire: the type-term atom &quot;safeInt&quot;</li></ul></li></ul></section>
+<h2 id="g-pr-261"><code>5777ed2e08992863611715aa38f21b97f10145d5..pr-261</code></h2><article class="card" id="c-0da3ea0d7"><header><div><div class="sha">0da3ea0d7 · Cristiano Calcagno · Nov 17, 13:42</div><h3>Draft a SafeInt type the verifier declares, read as the integer sort</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A bound on an index needs the index to be an integer, and TypeScript has one numeric type, so every precondition and quantified fact over an index repeats safeInteger(…). The owner asked for a proposal like other specification languages' integer sorts. The draft proposes SafeInt in resolvable.d.ts, read as a sort of the claim language rather than as sugar for a clause at listed positions.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/integer-types.md</span></h4><div class="prose"><p>the mechanisms it extends, two routes, the proposed sort's reading, production, subtyping and trust, ranges, cases, documentation and the questions for the reviews</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
+<details><summary>1 file changed, 112 insertions(+)</summary><pre class="code"> docs/drafts/integer-types.md | 112 +++++++++++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-ca13bdfc7"><header><div><div class="sha">ca13bdfc7 · Cristiano Calcagno · Nov 17, 13:45</div><h3>Revise the SafeInt draft by Astra's review</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Astra (revise): subtyping cannot depend on one slot's knowledge, so a checked bridge between number contents and index facts is needed, with membership defined by safeIntOfBits; number contents need a predicate algebra; clauses must accept type-established integrality; unions, generics, storage, arrays, Map values and signatures need stated obligations; route C, type-invariant elaboration, must be weighed; controls must follow the binding; ranges are deferred as SafeNat; two statements about the code were wrong. All taken into the draft.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/integer-types.md</span></h4><div class="prose"><p>the mechanisms named exactly, three routes, route B's contents algebra, bridge, clauses and obligations, ranges, compatibility and controls</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
+<details><summary>1 file changed, 135 insertions(+), 83 deletions(-)</summary><pre class="code"> docs/drafts/integer-types.md | 218 +++++++++++++++++++++++++++----------------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f1647855b"><header><div><div class="sha">f1647855b · Cristiano Calcagno · Nov 17, 13:53</div><h3>Revise the SafeInt draft by Fable's review: a type clause, not a value set</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Fable (revise): types are clauses of the normal graph, where subtyping, meets and selection are decided, so SafeInt is one clause, <code>int</code>, and knowledge keeps carrying integrality as the index fact; the bridge covers paths and quantified elements, replaces litSlot (type to fact) and goes through refineBy (fact to type); a linear clause already implies integrality, so the clause reader needs one type query; inferred generic instantiations stay number; the obligations are one statement, every reader of a type reads the clause, plus optional positions, storage, typed arrays, native results, JSON and signatures; SafeInt is the first declared type read as a type. All taken in, with three steps, the first landing alone.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/integer-types.md</span></h4><div class="prose"><p>the mechanisms, the routes, the clause int, the bridge, clauses, the values that reach SafeInt, ranges, controls and the steps</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts</dd></dl>
+<details><summary>1 file changed, 147 insertions(+), 122 deletions(-)</summary><pre class="code"> docs/drafts/integer-types.md | 269 +++++++++++++++++++++++--------------------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-1c7640467"><header><div><div class="sha">1c7640467 · Cristiano Calcagno · Nov 17, 14:55</div><h3>State the lists of primitive clauses by the clause's primitive kind</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Several consumers of types list the clauses of a primitive by hand: the number, bigint, string, numeric, printable, primitive and nullish clauses of the operator rules, the proto-free and the empty-spread clauses, the arrays' no-spine test, and the typeof, key-class and reserved-key dispatches of the lowering. A list of the members of an open class stands for a property, and a clause added to the language (the safe integers, next) is dropped by every list that does not name it. The equality-test and tag-set narrowings list, likewise, which clause holds a literal.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">primitive kind of a clause</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">primKind</span>(<var>c</var>) <span class="m-rel">=</span> <span class="m-text">the kind of</span> <span class="m-op">shape</span>(<var>c</var>), <span class="m-text">one of</span> <span class="m-lit">null</span>, <span class="m-con">Boolean</span>, <span class="m-lit">undefined</span>,</span></div><div class="row"><span><span class="m-text">number, string, bigint and symbol, or none for any other shape</span></span></div><div class="row"><span><var>k</var>.<span class="m-op">Holds</span>(<var>v</var>)<span class="m-rel">:</span> <var>v</var> <span class="m-text">is a value of the kind</span> <var>k</var></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">primKind_sound</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">primKind</span>(<var>c</var>) <span class="m-rel">=</span> <var>k</var></span><span><var>v</var> <span class="m-rel">∈</span> ⟦<var>c</var>⟧</span><span>⟹</span><span><var>k</var>.<span class="m-op">Holds</span>(<var>v</var>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">admitsVal_sem</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">admitsVal</span>(<var>d</var>, <var>v</var>)</span><span><var>d</var> <span class="m-text">no universe</span></span><span>⟹</span><span><var>v</var> <span class="m-rel">∈</span> ⟦<var>d</var>⟧ <span class="m-text">and</span> <var>d</var> <span class="m-text">is no record clause</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">consumers of primitive clauses</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each a list of clause constructors</span> (<code class="m-code">.num | .numLit _ | .numIn _ | …</code>)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each a set of primitive kinds read through primKind</span><span class="m-rel">:</span> <span class="m-text">numbers; bigints</span>;</span></div><div class="row"><span><span class="m-text">strings; every kind but strings and symbols (ToNumeric); every kind</span></span></div><div class="row"><span><span class="m-text">but symbols (ToString); every kind (strict equality, proto-free)</span>; <span class="m-lit">null</span></span></div><div class="row"><span><span class="m-text">or</span> <span class="m-lit">undefined</span>; <span class="m-text">every kind but strings (empty spread); every kind but</span></span></div><div class="row"><span><span class="m-lit">null</span> <span class="m-text">(no prototype value); the kinds with a wrapper prototype (typeof</span></span></div><div class="row"><span><span class="m-text">dispatch); the key class of a kind; every kind but strings (no</span></span></div><div class="row"><span><span class="m-text">reserved key</span>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">literal membership under a test</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code">x === n</code> <span class="m-text">and <code class="m-code">x === s</code>, and a tag set's element, land in a number or</span></span></div><div class="row"><span><span class="m-text">string literal or set listing the value</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each lands in any clause, no universe, that admits the value</span></span></div><div class="row"><span>(<code class="m-code">admitsVal</code>), <span class="m-text">the family clause and every literal kind included</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>every case as before: 3431 of 3431 as expected</code></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Each consumer's theorem is proved from primKind_sound or admitsVal_sem; a clause the general statement admits beyond the old list (a symbol literal for strict equality, a family clause under an equality test) is a member of the property the proof needs.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span></dd><dt>Lean</dt><dd>PrimKind · PrimKind.ofShape · PrimKind.Holds · PrimKind.holds_of_valueShape · PrimKind.holds_prim · PrimKind.wrapperTag · PrimKind.keyClass · Clause.primKind · primKind_sound · litVal_unique · admitsVal_sem · numberClause · bigintClause · numericClause · printableClause · primitiveClause · nullishClause · stringClause · emptyClause · primKind_of_empty_or_string · noSpine · ProtoFree.primitive · ProtoFree.clause_sound · familyMember · litIn</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build · node pipeline/run-cases.mts</dd></dl>
+<details><summary>11 files changed, 225 insertions(+), 198 deletions(-)</summary><pre class="code"> lean/Verification/Programs/BranchRefinement.lean   |  41 ++++----
+ lean/Verification/Programs/JsonTraversal.lean      |   7 +-
+ lean/Verification/Programs/ObjectMerge.lean        |  98 +++++++-----------
+ lean/Verification/Programs/OperatorTyping.lean     | 114 ++++++++++-----------
+ lean/Verification/Source/Lowering/Execution.lean   |  14 +--
+ lean/Verification/Source/Lowering/Plans.lean       |  12 +--
+ lean/Verification/Source/Lowering/Synthesis.lean   |   5 +-
+ lean/Verification/Source/Lowering/Types.lean       |   6 +-
+ lean/Verification/Types/ClauseSelection.lean       |  22 ++++
+ lean/Verification/Types/PositiveNormalization.lean |  67 ++++++++++++
+ lean/Verification/Types/ProtoFree.lean             |  37 +++----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-56d691042"><header><div><div class="sha">56d691042 · Cristiano Calcagno · Nov 17, 14:37</div><h3>Add the type clause int, the safe integers, with its meets and inclusions</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>TypeScript has one numeric type, so integrality reaches a contract only as a written <code>safeInteger(i)</code> clause. The SafeInt draft (docs/drafts/integer-types.md) makes the safe integers a type clause, read by every reader of a type; this commit adds that clause to the types, before any source spells it.</p></div>
+<h4 class="change"><span class="act added">added</span>Semantics <span class="target">type clause int</span></h4><div class="rules"><div class="formulas"><div class="row"><span>⟦<span class="m-text">int</span>⟧(<var>v</var>) ⟺ <span class="m-bind">∃</span> <var>b</var>. <var>v</var> <span class="m-rel">=</span> <span class="m-con">num</span> <var>b</var> ∧ <span class="m-op">safeIntOfBits</span> <var>b</var> <span class="m-rel">≠</span> <span class="m-con">none</span></span></div><div class="row"><span><span class="m-text">safeIntOfBits decodes a double's bits as an integer of magnitude at</span></span></div><div class="row"><span><span class="m-text">most</span> 2^53 − 1, <span class="m-text">both zeros included</span>. <span class="m-text">The clause is of the number shape</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">meets with the number clauses</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">num</span> ⊓ <span class="m-text">int</span> <span class="m-rel">=</span> <span class="m-con">int</span> ⊓ <span class="m-text">int</span> <span class="m-rel">=</span> <span class="m-con">int</span></span></div><div class="row"><span><span class="m-op">numLit</span> <var>b</var> ⊓ <span class="m-text">int</span> <span class="m-rel">=</span> <span class="m-op">numLit</span> <var>b</var> <span class="m-text">where safeIntOfBits</span> <var>b</var> <span class="m-rel">≠</span> <span class="m-text">none, empty otherwise</span></span></div><div class="row"><span><span class="m-op">numIn</span> <var>S</var> ⊓ <span class="m-text">int</span> <span class="m-rel">=</span> <span class="m-text">the numbers of</span> <var>S</var> <span class="m-text">that decode, as one set</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">inclusions</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">int</span> <span class="m-rel">≤</span> <span class="m-con">num</span></span></div></div><div class="infer"><div class="frac"><div class="premises"><span><span class="m-op">safeIntOfBits</span> <var>b</var> <span class="m-rel">≠</span> <span class="m-con">none</span></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-op">numLit</span> <var>b</var> <span class="m-rel">≤</span> <span class="m-con">int</span></div></div></div><span class="rule-name">(lit-int)</span></div><div class="infer"><div class="frac"><div class="premises"><span><span class="m-bind">∀</span> <var>b</var> <span class="m-rel">∈</span> <var>S</var>. <span class="m-op">safeIntOfBits</span> <var>b</var> <span class="m-rel">≠</span> <span class="m-con">none</span></span></div><div class="bar"></div><div class="conclusion"><div><span class="m-op">numIn</span> <var>S</var> <span class="m-rel">≤</span> <span class="m-con">int</span></div></div></div><span class="rule-name">(set-int)</span></div><div class="formulas"><div class="row"><span><span class="m-text">num</span> <span class="m-rel">≤</span> <span class="m-text">int does not hold</span>.</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">union selection over number clauses</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">int unknown to selection</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">int admits a number literal where it decodes; num and a set with a</span></span></div><div class="row"><span><span class="m-text">member that does not decode never select it as a target</span>. <span class="m-con">Every</span></span></div><div class="row"><span><span class="m-text">consumer reading a clause's primitive kind reads int as a number</span></span></div><div class="row"><span><span class="m-text">clause, its shape being the number shape</span><span class="m-rel">:</span> <span class="m-text">equality tests and tag-set</span></span></div><div class="row"><span><span class="m-text">elements land in it where it admits their value</span>. <span class="m-text">Knowledge keeps no</span></span></div><div class="row"><span><span class="m-text">atom of its own for it</span><span class="m-rel">:</span> <span class="m-text">a type with an int clause has no atoms</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Wire <span class="target">clause int</span></h4><div class="prose"><p>&quot;int&quot;, beside &quot;num&quot;, in both decoders.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>no case changes: no source spells the clause yet</code></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Each meet is proved equal in meaning to the intersection, each inclusion sound for every value, and every consumer's proof carries the case (no sorry, no new axiom).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">lean-semantics</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>Clause.int · intT · shape · meet_int_num · meet_int_int · meet_int_numLit · meet_int_numIn · meet_int_comm · meet_sound · CoversWith · Covers.sound_raw · admitsVal · admitsVal_sem · primExcl · not_admits · covers_prim · restricts_sound</dd><dt>Wire</dt><dd>the clause &quot;int&quot;</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build · node tests/json-field-names.mts · node tests/docs.mts</dd></dl>
+<details><summary>9 files changed, 154 insertions(+), 8 deletions(-)</summary><pre class="code"> docs/POSITIVE-TYPES.md                             | 43 +++++++++++
+ docs/REQUEST-PROTOCOL.md                           |  1 +
+ lean/Verification/Programs/BranchRefinement.lean   |  2 +-
+ lean/Verification/Source/SourceTypes.lean          |  1 +
+ lean/Verification/Types/ClauseSelection.lean       |  9 ++-
+ lean/Verification/Types/PositiveNormalization.lean | 89 +++++++++++++++++++++-
+ lean/Verification/Types/PositiveRules.lean         |  9 +++
+ tools/claim-text.mts                               |  3 +
+ tools/type-graph.mts                               |  5 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-c49231bce"><header><div><div class="sha">c49231bce · Cristiano Calcagno · Nov 17, 14:37</div><h3>Read the verifier's declared type SafeInt as the clause int</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A precondition bounding an index repeats <code>safeInteger(i)</code> because a signature cannot say a parameter is an integer. The SafeInt draft's first step declares <code>SafeInt</code> in tools/resolvable.d.ts and reads it, wherever a type is read, as the clause int: the first verifier-declared type read as a type.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">type reader: SafeInt</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a reference TypeScript binds to the alias <code class="m-code"><span class="tk-t">SafeInt</span></code> of the verifier's</span></span></div><div class="row"><span><span class="m-text">declaration file, directly or through an alias or an import, reads as</span></span></div><div class="row"><span><span class="m-text">the safe integers; another binding named <code class="m-code"><span class="tk-t">SafeInt</span></code> is what it declares</span>.</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">SafeInt</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-t">SafeInt</span></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">int</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">TypeScript and the shadow contracts read it as</span> <code class="m-code">number</code>.</span></div></div>
+<h4 class="change"><span class="act added">added</span>Wire <span class="target">type term safeInt</span></h4><div class="prose"><p>the atom &quot;safeInt&quot; of a type term, lowered to the clause int.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>safe-int</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">SafeInt passed on, widened to number, safe literals, an optional field</span></summary><pre class="code"><span class="tk-c">// The verifier's `SafeInt` read as the safe integers: a value typed</span>
+<span class="tk-c">// `SafeInt` passes to a `SafeInt` parameter and to a `number` one, a safe</span>
+<span class="tk-c">// literal is one (both zeros and the extremes `±(2^53 - 1)` included), and</span>
+<span class="tk-c">// an optional field holds one or `undefined`. `third` returns a fraction at</span>
+<span class="tk-c">// `number` (a control forges its result to `SafeInt`).</span>
+<span class="tk-k">function</span> keep(i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> i;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> pass(i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> keep(i);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> widen(i: <span class="tk-t">SafeInt</span>): number {
+  <span class="tk-k">return</span> i;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> literals(): <span class="tk-t">SafeInt</span>[] {
+  <span class="tk-k">return</span> [<span class="tk-n">0</span>, -<span class="tk-n">0</span>, <span class="tk-n">42</span>, -<span class="tk-n">7</span>, <span class="tk-n">9007199254740991</span>, -<span class="tk-n">9007199254740991</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Entry</span> = { <span class="tk-k">readonly</span> size?: <span class="tk-t">SafeInt</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> make(n: <span class="tk-t">SafeInt</span>): <span class="tk-t">Entry</span> {
+  <span class="tk-k">return</span> { size: n };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sizeOf(e: <span class="tk-t">Entry</span>): <span class="tk-t">SafeInt</span> | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> e.size;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> third(x: number): number {
+  <span class="tk-k">return</span> x / <span class="tk-n">3</span>;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-number</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">number ≤ SafeInt does not hold</span></summary><pre class="code"><span class="tk-c">// A `number` passed where `SafeInt` is declared: `number` is not within the</span>
+<span class="tk-c">// safe integers, so the call is refused. The refusal is of the type</span>
+<span class="tk-c">// contract, not of a run: no step reads the value as an integer here.</span>
+<span class="tk-k">function</span> keep(i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> i;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> pass(x: number): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> keep(x);
+}</pre></details></li><li><details><summary><code>invalid-safe-int-fraction</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">0.5 is no safe integer</span></summary><pre class="code"><span class="tk-c">// A fraction returned where `SafeInt` is declared: `0.5` is no integer, so</span>
+<span class="tk-c">// the return is refused. The refusal is of the type contract, not of a run.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> half(): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> <span class="tk-n">0.5</span>;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-past</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">2^53 is past the safe integers</span></summary><pre class="code"><span class="tk-c">// `2^53` returned where `SafeInt` is declared: it lies past the safe</span>
+<span class="tk-c">// integers, so the return is refused. The refusal is of the type contract,</span>
+<span class="tk-c">// not of a run.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> past(): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> <span class="tk-n">9007199254740992</span>;
+}</pre></details></li><li><details><summary><code>safe-int-alias-value-import</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a local alias and an imported one are SafeInt</span></summary><pre class="code"><span class="tk-c">// An alias of the verifier's `SafeInt` is `SafeInt`: recognition follows</span>
+<span class="tk-c">// the declaration TypeScript binds the name to, here through a local alias</span>
+<span class="tk-c">// and an exported one of another module.</span>
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">Count</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/safe-int-count&quot;</span>;
+
+<span class="tk-k">type</span> <span class="tk-t">Index</span> = <span class="tk-t">SafeInt</span>;
+
+<span class="tk-k">function</span> keep(i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> i;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> viaLocal(i: <span class="tk-t">Index</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> keep(i);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> viaImport(i: <span class="tk-t">Count</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> keep(i);
+}</pre></details></li><li><details><summary><code>safe-int-lookalike-declared</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a file's own SafeInt is its alias of number</span></summary><pre class="code"><span class="tk-c">// A file declaring its own `SafeInt`: an ordinary type alias of `number`,</span>
+<span class="tk-c">// so a `number` passes where it is written.</span>
+<span class="tk-k">type</span> <span class="tk-t">SafeInt</span> = number;
+
+<span class="tk-k">function</span> keep(i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> i;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> pass(x: number): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> keep(x);
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>A value reaches SafeInt only as a safe literal or a value already typed SafeInt: no fact gives the type and the type gives no fact yet (the draft's steps 2 and 3).</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>The three negative cases are refusals of the type contract, not of an unsafe run. A forged fragment states SafeInt at the result of <code>x / 3</code>, refused at its return.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>atomLabels</dd><dt>Wire</dt><dd>the type-term atom &quot;safeInt&quot;</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">safe-int</span> <span class="test pos">safe-int-alias-value-import</span> <span class="test pos">safe-int-lookalike-declared</span> <span class="test neg">invalid-safe-int-number</span> <span class="test neg">invalid-safe-int-fraction</span> <span class="test neg">invalid-safe-int-past</span> <span class="test forged">safe-int-result</span></dd></dl>
+<details><summary>21 files changed, 175 insertions(+), 4 deletions(-)</summary><pre class="code"> WORK.md                                           |  1 +
+ docs/ANNOTATIONS.md                               | 20 +++++++++++++
+ docs/CLAIM-LANGUAGE.md                            |  1 +
+ docs/POSITIVE-TYPES.md                            |  3 +-
+ lean/Verification/Source/Equations/Interning.lean |  2 ++
+ pipeline/cases.mts                                | 10 +++++++
+ pipeline/examples/invalid-safe-int-fraction.ts    |  5 ++++
+ pipeline/examples/invalid-safe-int-number.ts      | 10 +++++++
+ pipeline/examples/invalid-safe-int-past.ts        |  6 ++++
+ pipeline/examples/safe-int-alias-value-import.ts  | 18 ++++++++++++
+ pipeline/examples/safe-int-lookalike-declared.ts  | 11 ++++++++
+ pipeline/examples/safe-int.ts                     | 34 +++++++++++++++++++++++
+ pipeline/imports-project/safe-int-count.ts        |  3 ++
+ pipeline/imports-project/tsconfig.json            |  2 ++
+ tests/single-pass-controls.mts                    | 12 ++++++++
+ tools/declaration-graph.mts                       | 16 +++++++++++
+ tools/declaration-types.mts                       |  5 ++--
+ tools/fragment-parse.mts                          |  6 ++++
+ tools/resolvable.d.ts                             |  5 ++++
+ tools/shadow-contracts.mts                        |  2 +-
+ tools/type-term.mts                               |  7 +++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f2018dee1"><header><div><div class="sha">f2018dee1 · Cristiano Calcagno · Nov 17, 15:07</div><h3>Refuse a computed, key or mapped type that reads SafeInt</h3></div><span class="pill principled">refused</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Astra's review of the branch: TypeScript reads <code>SafeInt</code> as <code>number</code>, and the reader takes TypeScript's evaluation of a computed type, a key type and a mapped type's keys. So <code>{ value: SafeInt }[&quot;value&quot;]</code> or <code>typeof k</code>, with <code>k: SafeInt</code>, read as <code>number</code>, and a function returning <code>0.5</code> at such a result was accepted; an index signature <code>[k: SafeInt]: V</code> and <code>{ [K in SafeInt]: V }</code> read as indexes over every number, a contract wider than the one written.</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">type reader: forms TypeScript evaluates over SafeInt</span></h4><div class="prose"><p>a computed type, a key type or a mapped type that reads the verifier's <code>SafeInt</code> (a reference to it, or to a declaration outside the standard library and the installed packages that reads it, through a type reference, a <code>typeof</code> or a heritage clause) is refused where TypeScript would evaluate it</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, ANNOTATIONS.md</span></h4><div class="prose"><p>the restriction among the model limits; SafeInt's entry links it</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-safe-int-indexed</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an indexed access over SafeInt</span></summary><pre class="code"><span class="tk-c">// An indexed access reading `SafeInt`: TypeScript computes it at `number`,</span>
+<span class="tk-c">// which would erase the safe integers from the result contract (`0.5`</span>
+<span class="tk-c">// would pass), so the form is refused at the source boundary.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): { value: <span class="tk-t">SafeInt</span> }[<span class="tk-s">&quot;value&quot;</span>] {
+  <span class="tk-k">return</span> <span class="tk-n">0.5</span>;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-typeof</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">typeof a SafeInt binding</span></summary><pre class="code"><span class="tk-c">// `typeof` of a binding declared `SafeInt`: TypeScript computes it at</span>
+<span class="tk-c">// `number`, which would erase the safe integers from the result contract,</span>
+<span class="tk-c">// so the form is refused at the source boundary.</span>
+<span class="tk-k">const</span> k: <span class="tk-t">SafeInt</span> = <span class="tk-n">1</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bad(): <span class="tk-k">typeof</span> k {
+  <span class="tk-k">return</span> <span class="tk-n">0.5</span>;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-index-signature</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an index signature keyed by SafeInt</span></summary><pre class="code"><span class="tk-c">// An index signature keyed by `SafeInt`: TypeScript reads its key at</span>
+<span class="tk-c">// `number`, which would widen the keys it states to every number, so the</span>
+<span class="tk-c">// form is refused at the source boundary.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> <span class="tk-k">get</span>(r: { [k: <span class="tk-t">SafeInt</span>]: string }, k: number): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> r[k];
+}</pre></details></li><li><details><summary><code>invalid-safe-int-mapped</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a mapped type over SafeInt</span></summary><pre class="code"><span class="tk-c">// A mapped type over `SafeInt`: TypeScript computes its keys at `number`,</span>
+<span class="tk-c">// which would widen the keys it states to every number, so the form is</span>
+<span class="tk-c">// refused at the source boundary.</span>
+<span class="tk-k">type</span> <span class="tk-t">ByIndex</span> = { [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-t">SafeInt</span>]: string };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> <span class="tk-k">get</span>(r: <span class="tk-t">ByIndex</span>, k: number): string | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> r[k];
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The refusal keeps every contract reading SafeInt whole: a form whose meaning TypeScript computes with SafeInt erased never enters the fragment.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-safe-int-indexed</span> <span class="test neg">invalid-safe-int-typeof</span> <span class="test neg">invalid-safe-int-index-signature</span> <span class="test neg">invalid-safe-int-mapped</span></dd></dl>
+<details><summary>9 files changed, 77 insertions(+), 2 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |  4 ++-
+ docs/SOURCE-FRAGMENT.md                            |  1 +
+ pipeline/cases.mts                                 |  8 +++++
+ .../examples/invalid-safe-int-index-signature.ts   |  6 ++++
+ pipeline/examples/invalid-safe-int-indexed.ts      |  6 ++++
+ pipeline/examples/invalid-safe-int-mapped.ts       |  8 +++++
+ pipeline/examples/invalid-safe-int-typeof.ts       |  8 +++++
+ tools/computed-types.mts                           |  3 +-
+ tools/declaration-graph.mts                        | 35 ++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2d6c8fb6f"><header><div><div class="sha">2d6c8fb6f · Cristiano Calcagno · Nov 17, 15:16</div><h3>State the numeric-key consumers by the clause's primitive kind</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Astra's review of the branch: three consumers of key types still list clause constructors, so they leave out the safe integers: the test that a key is numbers alone (a write at a checked index, a dictionary read), the test that a key is computed at run time, and the object an allocation at a computed key gives. A SafeInt key fell to their fallbacks, which refuse or ask for another justification.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">key types read by their primitive kind</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">numbers alone</span><span class="m-rel">:</span> <code class="m-code">num</code> <span class="m-text">or a number literal; keys known at run time</span><span class="m-rel">:</span> <var>a</var></span></div><div class="row"><span><span class="m-text">string, number or symbol family or literal; the keyed object</span><span class="m-rel">:</span> <var>a</var></span></div><div class="row"><span><span class="m-text">literal's one field, or the dictionary over <code class="m-code">str</code>, <code class="m-code">num</code> or</span> <code class="m-code">symbol</code></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">numbers alone</span><span class="m-rel">:</span> <span class="m-text">every clause of the number kind; keys known at run</span></span></div><div class="row"><span><span class="m-text">time</span><span class="m-rel">:</span> <span class="m-text">every clause of a kind with a key class, a number literal other</span></span></div><div class="row"><span><span class="m-text">than</span> <span class="m-lit">NaN</span>; <span class="m-text">the keyed object</span><span class="m-rel">:</span> <span class="m-text">a literal's one field, or the dictionary</span></span></div><div class="row"><span><span class="m-text">over the key class of the clause's kind</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>every case as before</code></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>keyed_key is proved from primKind_sound: a member of a clause whose kind has a key class converts to a key that class admits.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span></dd><dt>Lean</dt><dd>runtimeNumberKey · computedKeyClaim · keyedClause · keyed_key · PrimKind.keyClass</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build · node pipeline/run-cases.mts</dd></dl>
+<details><summary>2 files changed, 30 insertions(+), 36 deletions(-)</summary><pre class="code"> lean/Verification/Programs/ComputedKey.lean  | 52 ++++++++++++----------------
+ lean/Verification/Source/Lowering/Types.lean | 14 ++++----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
