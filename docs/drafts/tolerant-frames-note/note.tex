@@ -1672,7 +1672,8 @@ operands and the empty effect. Each row states its operands' sorts, and
 a letter has one sort in all the rows: $a$ and $b$, the first and the
 second operand, hold $\mathit{SafeInt}$s, $x$ holds any $\mathit{Num}$,
 $c$ and $d$ are constants, a factor and a shift count, and $y$ is the
-result. $d'=d\bmod 32$ is the count a shift reads. The operands of
+result. $M=2^{53}-1$ is the largest safe integer
+(Section~\ref{sec:model}), and $d'=d\bmod 32$ is the count a shift reads. The operands of
 $\mathbin{\&}$ and $\mathbin{|}$ may be given in either order:
 \[
 \begin{array}{lll}
