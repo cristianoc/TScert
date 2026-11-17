@@ -997,3 +997,49 @@ the successful fast suites. The exact commands and full outputs are retained
 in cloud scratch as `fifth-rebase-test.log` and `fifth-rebase-cases.log`.
 The whole required validation is covered by those two runs; a single exit-zero
 `make test` on this source is not claimed.
+
+## Canonical unified lengths at 1bbaf0a7
+
+Evidence applies to exact source `1bbaf0a7433a3aaf9f3c9032d8304ada0b778915`,
+on fetched single-pass base `fbc7078c22426e2ccc42938cce8e4a33bf903f4f`.
+The original fetched start remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+The source commit changes 26 files: 21 Paper Lean modules and five documents.
+It adds LengthReading, PaperTermForms and LengthBridges; no module outside
+Paper changes. The paper source/PDF diff relative to the owner base is empty.
+
+Focused repository builds and both complete axiom audits pass, 456 jobs.
+Every affected Paper module was also rebuilt in isolated outputs during source
+review (67 affected modules, including the complete Paper audit). The final
+repository run is the authoritative validation of the committed combination.
+
+Full `make test`, with the pinned Lean/Node and a 1200-second budget, exits zero:
+
+- 667 Lean jobs;
+- all 24 fast suites, zero failures;
+- all 176 controls, 3 operations executed and 494 replayed;
+- 3448/3448 cases as expected;
+- 4344 functions verified, 1799 negative controls, 149 named gaps.
+
+Direct axiom-check imports cover 365 other A/shared modules and 88 other
+Paper modules. A separate scan finds zero imports into Paper from outside it.
+Docs pass: 83 documents, 895 code citations, zero problems. Whitespace and
+semantic commit-record checks pass. No test expectation changed. No source
+change followed those checks; final correspondence/status edits reran docs.
+
+Independent Astra source review found no soundness blocker in the canonical
+runtime dispatch, empty suffixes, both term phases, recursive definedness,
+all-keep support, world independence, scopes/admission, selected replacement,
+actual instantiation or qualified Option-result bridges. A follow-up review
+checked `Derivation.canonicalLengthRange` and its direct soundness branch.
+Canonical forms reuse the existing three readers and do not alter A's enum or
+heap/world semantics. PaperTerms is a term-form predicate, not complete
+admission. A qualified bridge assumes actual reads/category evidence and
+preserves possible final undefinedness; it proves no declaration-to-category
+judgment. Legacy sorted growth/exactness remains restricted to those forms.
+
+Inst/Prefix's unified-length syntax gap is closed, but the audit retains
+narrower for the unresolved element-free receiver interpretation. Empty also
+needs the declared-collection-to-runtime-receiver bridge. The exact count
+therefore remains 91 rows: 41 equal, 28 narrower, 9 absent, 13 assumed. Full
+Definition 23 integration, mixed-state arithmetic/substitution and the exact
+support table are not inferred from these new structural proofs.
