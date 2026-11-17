@@ -1043,3 +1043,52 @@ needs the declared-collection-to-runtime-receiver bridge. The exact count
 therefore remains 91 rows: 41 equal, 28 narrower, 9 absent, 13 assumed. Full
 Definition 23 integration, mixed-state arithmetic/substitution and the exact
 support table are not inferred from these new structural proofs.
+
+## Actual fixed-arity callable entry at 4760a0f3
+
+Evidence applies to exact source `4760a0f37340ef8ef08ffb0f475b3fa82c7e8c45`
+on fetched single-pass `fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. This batch
+changes three new Paper modules, two existing Paper modules and four documents.
+No shared/A module, expectation or paper mathematics changes. The original
+start remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+Focused builds of the finite layout, ambient inversion, adapter and completed
+invocation proofs pass with warnings as errors. Both complete repository axiom
+audits pass, 459 jobs. Complete `make test` exits zero within its 1200-second
+budget:
+
+- 670 Lean jobs;
+- all 24 fast suites, zero failures;
+- all 176 controls, 3 operations executed and 494 replayed;
+- 3448/3448 cases as expected;
+- 4344 functions verified, 1799 negative controls, 149 named gaps.
+
+Direct imports cover 365 other A/shared modules and 91 other Paper modules.
+No outside module imports Paper. Documentation passes at 83 documents and
+895 code citations, zero problems; whitespace and semantic commit-record
+checks pass. The axiom log replays the same eight informational upstream
+TolerantFramesStepLink:294 backtraces recorded at the baseline; both audits
+exit zero and no new-module warning/error occurs.
+
+The cloud exec transport briefly disconnected after the full run. Runtime
+status and a retry confirmed the same running workspace; the existing test
+session subsequently returned exit zero and its complete results were read.
+No test restart or source recovery was needed.
+
+Astra independently designed and source-reviewed the fixed-arity foundation,
+including finite source selectors, shared parameter padding, capture/self
+indices, exact slot maps/default, generated-code lookup agreement, actual
+three-step prefix and strict count decrease. It found no blocker. The
+source selector list can retain unused logical inputs beyond frameBound;
+restore preserves them. Both completed values and throws yield identical heap,
+decoded named environment and structured body exit at N=3+q and p≤q<N.
+Escaping break is retained as a distinct exit.
+
+Raw inversion requires machine values. Entry ValidContext is separately proved
+from actual valid receiver/arguments/self and selected program captures. Self
+reference validity may include capture references; it is not a consequence of
+machine representability. No callable type/contract membership or native
+availability/safety is derived. Function allocation/typing, recursive proof
+discharge, specifications and old/budget/mark transport, rest, spread and full
+Fun remain separate. All 91 correspondence rows are retained with unchanged
+counts: 41 equal, 28 narrower, 9 absent, 13 assumed.
