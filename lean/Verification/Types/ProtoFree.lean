@@ -19,11 +19,9 @@ def OwnsProto (v : Val) : Prop :=
 /-- A bound that keeps the prototype key out. -/
 def excludesProto (b : KeyBound) : Bool := !b.admits CallArguments.protoField
 
-/-- A clause of primitives: no member is an object. -/
-def primitive {α : Type} : Clause α → Bool
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _
-  | .str | .strLit _ | .strIn _ | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
-  | _ => false
+/-- A clause of primitives: a clause of a primitive kind (`Clause.primKind`),
+no member of which is an object. -/
+def primitive {α : Type} (c : Clause α) : Bool := c.primKind.isSome
 
 /-- A clause none of whose members owns the prototype key: a primitive, a
 dictionary with an index view or a writable index, or a record or
@@ -71,32 +69,23 @@ private theorem notObj {v : Val} (h : ∀ flds r oid, v ≠ .objAt flds r oid) :
 interpretation of its operands. -/
 theorem clause_sound {α : Type} {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c : Clause α}
     (hc : clause c = true) {n W v} (h : semWithArgs Ξ X P c n W v) : ¬ OwnsProto v := by
-  match c, hc, h with
-  | .boolLit b, _, h =>
-    exact notObj fun _ _ _ he => by
-      simp only [semWithArgs] at h; cases b <;> simp at h <;> subst h <;> cases he
-  | .nul, _, h | .undef, _, h | .numLit _, _, h | .strLit _, _, h
-  | .bigintLit _, _, h | .symbolLit _, _, h =>
-    exact notObj fun _ _ _ he => by simp only [semWithArgs, nulT, undefT] at h; subst h; cases he
-  | .bool, _, h =>
-    exact notObj fun _ _ _ he => by
-      simp only [semWithArgs, boolT] at h; rcases h with rfl | rfl <;> cases he
-  | .num, _, h | .str, _, h | .bigint, _, h | .symbol, _, h =>
-    exact notObj fun _ _ _ he => by
-      simp only [semWithArgs, numT, strT, bigintT, symbolT] at h; obtain ⟨_, rfl⟩ := h; cases he
-  | .numIn _, _, h | .strIn _, _, h =>
-    exact notObj fun _ _ _ he => by
-      simp only [semWithArgs] at h; obtain ⟨_, _, rfl⟩ := h; cases he
-  | .refs _ _ _ _ _ ks _, hc, h => exact bounds_exclude (by simpa [clause, primitive] using hc) h.2.2.2.2.1
-  | .dict _ _ _ ds _ _ ks cs _, hc, h =>
+  by_cases hp : primitive c = true
+  · obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp hp
+    exact notObj fun _ _ _ he => by subst he; simpa [isPrim] using PrimKind.holds_prim (primKind_sound hk h)
+  cases c
+  case refs ks _ =>
+    exact bounds_exclude (by simpa [clause, hp] using hc) h.2.2.2.2.1
+  case dict ds _ _ ks cs _ =>
     obtain ⟨_, _, ⟨hd, hcs⟩, _, _, hks, -⟩ := h
-    simp only [clause, primitive, Bool.false_or, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at hc
+    simp only [clause, hp, Bool.false_or, Bool.or_eq_true, Bool.not_eq_true',
+      List.isEmpty_eq_false_iff] at hc
     rcases hc with (hc | hc) | hc
     · obtain ⟨d, hd'⟩ := List.exists_mem_of_ne_nil ds hc
       exact dictView_excludes (hd d hd')
     · obtain ⟨d, hd'⟩ := List.exists_mem_of_ne_nil cs hc
       exact dictCell_excludes (hcs d hd')
     · exact bounds_exclude hc hks
+  all_goals simp [clause, hp] at hc
 
 /-- A list of clauses each proto-free: no member of their union owns a
 prototype. -/

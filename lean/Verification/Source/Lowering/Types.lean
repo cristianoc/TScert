@@ -562,9 +562,9 @@ a key runs code), may be. -/
   !G.plainTy K || (PositiveNormalization.splitSets (PositiveRules.expand G K)).any fun c => match c with
     | .strLit s => errorOwnedKeys.contains s
     | .strIn ss => ss.any errorOwnedKeys.contains
-    | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .symbol | .symbolLit _
-    | .bool | .boolLit _ | .nul | .undef => false
-    | _ => true
+    | c => match c.primKind with
+      | some .str | none => true
+      | some _ => false
 
 /-- No value of `T` owns the prototype key (`ProtoFree.list_sound`): `T` is
 of clause rows, each proto-free. A type with a parameter or scheme row has no

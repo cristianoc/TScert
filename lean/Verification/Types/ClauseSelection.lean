@@ -84,6 +84,28 @@ def isUniverse : Clause α → Bool
   | .top | .source => true
   | _ => false
 
+/-- A singleton's member is its one value. -/
+theorem litVal_unique {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c : Clause α} {v w : Val}
+    (h : litVal c = some v) {n W} (hw : semWithArgs Ξ X P c n W w) : w = v := by
+  cases c <;> simp only [litVal, Option.some.injEq, reduceCtorEq] at h <;> subst h <;>
+    simp only [semWithArgs, nulT, undefT] at hw <;> exact hw
+
+/-- **A clause that is no universe and admits a primitive holds it**, and
+is not a record's: the converse of `not_admits`. -/
+theorem admitsVal_sem {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {d : Clause α} {v : Val}
+    (h : admitsVal d v = true) (hu : isUniverse d = false) {n W} :
+    semWithArgs Ξ X P d n W v ∧ d.carriesInvariant = false := by
+  cases d <;> simp only [isUniverse, Bool.true_eq_false] at hu <;> cases v <;>
+    simp [admitsVal] at h
+  all_goals first
+    | (subst h; exact ⟨rfl, rfl⟩)
+    | exact ⟨⟨_, rfl⟩, rfl⟩
+    | exact ⟨⟨_, h, rfl⟩, rfl⟩
+    | exact ⟨.inl rfl, rfl⟩
+    | exact ⟨.inr rfl, rfl⟩
+    | exact ⟨rfl, rfl⟩
+    | (rename_i b; cases b <;> simp_all [semWithArgs, Clause.carriesInvariant])
+
 /-- **R2.** A primitive target that cannot cover a primitive source: one not
 admitting the source's literal, a literal or a tag set under a family source,
 and a literal or a tag set not holding every element of a source tag set. -/

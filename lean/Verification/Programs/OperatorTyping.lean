@@ -23,36 +23,33 @@ inductive OpResult where
   | num | bigint | bool | str
   deriving DecidableEq, Repr
 
-def numberClause : Clause α → Bool
-  | .num | .numLit _ | .numIn _ => true
-  | _ => false
+/-- The clauses of numbers: those of the number kind (`Clause.primKind`). -/
+def numberClause (c : Clause α) : Bool := c.primKind == some .num
 
-def bigintClause : Clause α → Bool
-  | .bigint | .bigintLit _ => true
-  | _ => false
+/-- The clauses of bigints: those of the bigint kind. -/
+def bigintClause (c : Clause α) : Bool := c.primKind == some .bigint
 
 /-- Primitives `ToNumeric` converts to a number or a bigint without running
-code (`relNumeric`): numbers, bigints, Booleans, `null` and `undefined`. -/
-def numericClause : Clause α → Bool
-  | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .bool | .boolLit _ | .nul | .undef => true
-  | _ => false
+code (`relNumeric`): every primitive kind but strings and symbols. -/
+def numericClause (c : Clause α) : Bool :=
+  match c.primKind with
+  | some .str | some .symbol | none => false
+  | some _ => true
 
 /-- Primitives `ToString` converts without running code (`primString`):
-every primitive but a symbol. -/
-def printableClause : Clause α → Bool
-  | .str | .strLit _ | .strIn _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _
-  | .bool | .boolLit _ | .nul | .undef => true
-  | _ => false
+every primitive kind but symbols. -/
+def printableClause (c : Clause α) : Bool :=
+  match c.primKind with
+  | some .symbol | none => false
+  | some _ => true
 
-/-- A clause of primitives only, which strict equality compares by content. -/
-def primitiveClause : Clause α → Bool
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
-  | .bigint | .bigintLit _ | .symbol => true
-  | _ => false
+/-- A clause of primitives only, which strict equality compares by content:
+a clause of a primitive kind. -/
+def primitiveClause (c : Clause α) : Bool := c.primKind.isSome
 
-@[nospecialize] def nullishClause : Clause α → Bool
-  | .nul | .undef => true
-  | _ => false
+/-- A clause of `null` or of `undefined`. -/
+@[nospecialize] def nullishClause (c : Clause α) : Bool :=
+  c.primKind == some .nul || c.primKind == some .undef
 
 /-- Clauses whose members are JavaScript objects, including callable objects. -/
 @[nospecialize] def objectClause : Clause α → Bool
@@ -90,59 +87,53 @@ def OpResult.holds : OpResult → Val → Prop
   | .str, v => ∃ s, v = .str s
 
 theorem numberClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : numberClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ x, v = .num x := by
-  cases c <;> simp [numberClause] at hc
-  · exact hv
-  · exact ⟨_, hv⟩
-  · obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl⟩
+    (hc : numberClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ x, v = .num x :=
+  primKind_sound (k := .num) (by simpa [numberClause] using hc) hv
 
 theorem bigintClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : bigintClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ i, v = .bigint i := by
-  cases c <;> simp [bigintClause] at hc
-  · exact hv
-  · exact ⟨_, hv⟩
+    (hc : bigintClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ i, v = .bigint i :=
+  primKind_sound (k := .bigint) (by simpa [bigintClause] using hc) hv
 
 theorem stringClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
-    (hc : stringClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ s, v = .str s := by
-  cases c <;> simp [stringClause] at hc
-  · exact hv
-  · exact ⟨_, hv⟩
-  · obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl⟩
+    (hc : stringClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ s, v = .str s :=
+  primKind_sound (k := .str) (by simpa [stringClause] using hc) hv
 
 /-- A member of a printable clause converts by `ToString`. -/
 theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : printableClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ t, primString v = some t := by
-  cases c <;> simp [printableClause] at hc <;> simp only [semWithArgs] at hv
-  all_goals first
-    | (rcases hv with rfl | rfl <;> exact ⟨_, rfl⟩)
-    | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl⟩)
-    | (subst hv; exact ⟨_, rfl⟩)
-    | (split at hv <;> subst hv <;> exact ⟨_, rfl⟩)
-    | (obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl⟩)
+  cases hk : c.primKind with
+  | none => simp [printableClause, hk] at hc
+  | some k =>
+    have h := primKind_sound hk hv
+    cases k <;> simp [printableClause, hk] at hc <;> simp only [PrimKind.Holds] at h
+    all_goals first
+      | (rcases h with rfl | rfl <;> exact ⟨_, rfl⟩)
+      | (obtain ⟨_, rfl⟩ := h; exact ⟨_, rfl⟩)
+      | (subst h; exact ⟨_, rfl⟩)
 
 theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : primitiveClause c = true) (hv : semWithArgs Ξ X P c n W v) : isPrim v = true := by
-  cases c <;> simp [primitiveClause] at hc <;> simp only [semWithArgs] at hv
+  obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp (by simpa [primitiveClause] using hc)
+  have h := primKind_sound hk hv
+  cases k <;> simp only [PrimKind.Holds] at h
   all_goals first
-    | (rcases hv with rfl | rfl <;> rfl)
-    | (obtain ⟨_, rfl⟩ := hv; rfl)
-    | (obtain ⟨_, -, rfl⟩ := hv; rfl)
-    | (subst hv; rfl)
-    | (split at hv <;> subst hv <;> rfl)
-    | (simp only [nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv;
-       first | (subst hv; rfl) | (rcases hv with rfl | rfl <;> rfl) | (obtain ⟨_, rfl⟩ := hv; rfl))
+    | (rcases h with rfl | rfl <;> rfl)
+    | (obtain ⟨_, rfl⟩ := h; rfl)
+    | (subst h; rfl)
 
 /-- A member of a numeric clause converts by `ToNumeric` to a number or a bigint. -/
 theorem numericClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : numericClause c = true) (hv : semWithArgs Ξ X P c n W v) :
     ∃ x, relNumeric v = some x ∧ ((∃ y, x = .num y) ∨ ∃ i, x = .bigint i) := by
-  cases c <;> simp [numericClause] at hc <;> simp only [semWithArgs] at hv
-  all_goals first
-    | (rcases hv with rfl | rfl <;> exact ⟨_, rfl, by simp⟩)
-    | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl, by simp⟩)
-    | (obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl, by simp⟩)
-    | (subst hv; exact ⟨_, rfl, by simp⟩)
-    | (split at hv <;> subst hv <;> exact ⟨_, rfl, by simp⟩)
+  cases hk : c.primKind with
+  | none => simp [numericClause, hk] at hc
+  | some k =>
+    have h := primKind_sound hk hv
+    cases k <;> simp [numericClause, hk] at hc <;> simp only [PrimKind.Holds] at h
+    all_goals first
+      | (rcases h with rfl | rfl <;> exact ⟨_, rfl, by simp⟩)
+      | (obtain ⟨_, rfl⟩ := h; exact ⟨_, rfl, by simp⟩)
+      | (subst h; exact ⟨_, rfl, by simp⟩)
 
 /-- Two operands `ToNumeric` converts compare to a Boolean. -/
 theorem relationalValue_numeric {op : Arith} {v w x y : Tm}
@@ -160,8 +151,9 @@ theorem relationalValue_numeric {op : Arith} {v w x y : Tm}
 
 theorem nullishClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : nullishClause c = true) (hv : semWithArgs Ξ X P c n W v) : isNullish v = true := by
-  cases c <;> simp [nullishClause] at hc <;> simp only [semWithArgs] at hv
-  all_goals subst hv; rfl
+  simp only [nullishClause, Bool.or_eq_true, beq_iff_eq] at hc
+  rcases hc with hk | hk <;> have h := primKind_sound hk hv <;> simp only [PrimKind.Holds] at h <;>
+    subst h <;> rfl
 
 theorem looseEquals_some {v w : Tm} (hv : isVal v = true) (hw : isVal w = true)
     (h : (isPrim v && isPrim w || isNullish v || isNullish w) = true) :

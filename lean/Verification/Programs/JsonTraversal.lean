@@ -91,12 +91,13 @@ theorem shaped_of_clauses {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {L :
   · refine .inl fun fs code oid hvo => ?_
     subst hvo
     obtain ⟨hcv, -⟩ := hcv
-    cases c <;> simp_all [emptyClause, semWithArgs, nulT, undefT, boolT, numT, bigintT, symbolT]
-    split at hcv <;> cases hcv
+    obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp (primKind_of_empty_or_string (c := c) (by simp [he]))
+    simpa [isPrim] using PrimKind.holds_prim (primKind_sound hk hcv)
   · refine .inl fun fs code oid hvo => ?_
     subst hvo
     obtain ⟨hcv, -⟩ := hcv
-    cases c <;> simp_all [stringClause, semWithArgs, strT]
+    obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp (primKind_of_empty_or_string (c := c) (by simp [hs]))
+    simpa [isPrim] using PrimKind.holds_prim (primKind_sound hk hcv)
   · obtain ⟨-, -, ⟨hd, -⟩, -⟩ := hcv.1
     exact .inr (hd _ hds)
 

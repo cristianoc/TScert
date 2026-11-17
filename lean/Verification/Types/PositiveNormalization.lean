@@ -635,6 +635,73 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; rfl
   | view f ms => obtain ⟨⟨_, _, _, _, rfl⟩, -⟩ := h; rfl
 
+/-- The primitive kinds of JavaScript values: null, Boolean, undefined,
+number, string, bigint and symbol, each one shape of `shape`. -/
+inductive PrimKind where
+  | nul | bool | undef | num | str | bigint | symbol
+  deriving DecidableEq, Repr
+
+/-- The primitive kind a shape is, if it is one. -/
+def PrimKind.ofShape : Nat → Option PrimKind
+  | 0 => some .nul | 1 => some .bool | 4 => some .undef | 5 => some .num
+  | 6 => some .str | 9 => some .bigint | 10 => some .symbol | _ => none
+
+/-- The values of a primitive kind. -/
+def PrimKind.Holds : PrimKind → Val → Prop
+  | .nul, v => v = .nul
+  | .bool, v => v = .tru ∨ v = .fls
+  | .undef, v => v = .undef
+  | .num, v => ∃ b, v = .num b
+  | .str, v => ∃ s, v = .str s
+  | .bigint, v => ∃ i, v = .bigint i
+  | .symbol, v => ∃ i, v = .sym i
+
+/-- **A clause's primitive kind**: the kind of its shape. Every member of a
+clause with a primitive kind is a value of that kind (`primKind_sound`). -/
+def Clause.primKind (c : Clause α) : Option PrimKind := PrimKind.ofShape (shape c)
+
+/-- The `typeof` test the values of a primitive kind pass, for the kinds
+whose members read their properties from a wrapper's prototype
+(`ToObject`): strings, numbers, bigints and Booleans. -/
+def PrimKind.wrapperTag : PrimKind → Option Tag
+  | .str => some .isStr | .num => some .isNum | .bigint => some .isBigint | .bool => some .isBool
+  | .nul | .undef | .symbol => none
+
+/-- The class of property keys the values of a primitive kind are, as a
+computed key: every string key, the canonical numeric ones, or every symbol
+key (`keyClause`'s kinds). -/
+def PrimKind.keyClass : PrimKind → Option IndexKeys
+  | .str => some .strings | .num => some .numeric | .symbol => some .symbols
+  | .nul | .undef | .bool | .bigint => none
+
+/-- A value whose shape is a primitive kind's is a value of that kind. -/
+theorem PrimKind.holds_of_valueShape {v : Val} {k : PrimKind}
+    (h : PrimKind.ofShape (valueShape v) = some k) : k.Holds v := by
+  cases v
+  case objAt fs code oid =>
+    cases code with
+    | graph _ _ _ _ _ kind _ => cases kind <;> simp [valueShape, PrimKind.ofShape] at h
+    | _ => simp [valueShape, PrimKind.ofShape] at h
+  all_goals simp [valueShape, PrimKind.ofShape] at h
+  all_goals subst h
+  all_goals simp [PrimKind.Holds]
+
+/-- A value of a primitive kind is a primitive. -/
+theorem PrimKind.holds_prim {k : PrimKind} {v : Val} (h : k.Holds v) : isPrim v = true := by
+  cases k <;> simp only [PrimKind.Holds] at h
+  all_goals first
+    | (rcases h with rfl | rfl <;> rfl)
+    | (obtain ⟨_, rfl⟩ := h; rfl)
+    | (subst h; rfl)
+
+theorem primKind_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PrimKind} {n W v}
+    (h : c.primKind = some k) (hv : semWithArgs Ξ X P c n W v) : k.Holds v := by
+  have ht : c ≠ .top := by rintro rfl; simp [Clause.primKind, shape, PrimKind.ofShape] at h
+  have hj : c ≠ .source := by rintro rfl; simp [Clause.primKind, shape, PrimKind.ofShape] at h
+  apply PrimKind.holds_of_valueShape
+  rw [semWithArgs_shape ht hj hv]
+  exact h
+
 /-- Every inhabited clause other than calculus top or an element-spine clause
 contains only JavaScript values. Argument-pack clauses have no term members. -/
 theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
