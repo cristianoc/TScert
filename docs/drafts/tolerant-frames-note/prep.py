@@ -9,17 +9,24 @@ def grp(s,i):
             d-=1
             if d==0: return s[i+1:j], j+1
     raise Exception
-m=re.search(r'\\begin\{mathpar\}(.*?)\\end\{mathpar\}',src,re.S)
-body=m.group(1); out=[]
-for part in body.split(r'\and'):
-    part=part.strip()
+# every inference rule, inside a mathpar or a display, as a named fraction
+def rule(part):
     mm=re.match(r'\\inferrule\*\[left=(.*?)\]',part)
     name=mm.group(1).replace('$','')
     name=re.sub(r'\^\{\+\}',r'}^{+}\\text{',name)
-    a,i=grp(part,mm.end()); c,_=grp(part,i)
+    a,i=grp(part,mm.end()); c,j=grp(part,i)
     a=a.replace(r'\\',r'\qquad ')
-    out.append(r'\[\class{rulec}{\text{(%s)}}\quad \dfrac{%s}{%s}\]' % (name,a,c))
-src=src[:m.start()]+'\n\n'.join(out)+src[m.end():]
+    return r'\class{rulec}{\text{(%s)}}\quad \dfrac{%s}{%s}' % (name,a,c), j
+def rules(t):
+    out='';k=0
+    while True:
+        i=t.find(r'\inferrule*',k)
+        if i<0: return out+t[k:]
+        r,j=rule(t[i:]); out+=t[k:i]+r; k=i+j
+def mathpar(m):
+    return '\n\n'.join(r'\[%s\]' % rules(part.strip()) for part in m.group(1).split(r'\and'))
+src=re.sub(r'\\begin\{mathpar\}(.*?)\\end\{mathpar\}',mathpar,src,flags=re.S)
+src=rules(src)
 src=re.sub(r'\\begin\{description\}\[[^\]]*\]',r'\\begin{description}',src)
 # MathJax has no \textsc: inside display math a rule name is upright text
 def _names(m):
