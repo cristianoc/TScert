@@ -5,7 +5,7 @@ OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
 .PHONY: help setup build build-lean test test-checks test-infra test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
-  check-fmt setup-git-hooks clean-store census build-runner test-pretext generate-sections
+  check-fmt setup-git-hooks clean-store census build-runner test-pretext generate-sections rules-page
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
@@ -71,7 +71,14 @@ semantic-diff: ## render the commit records of REV (a commit or base..tip, defau
 	elif command -v xdg-open >/dev/null; then xdg-open $(OUT); fi
 
 generate-sections: build-lean ## rewrite every generated section of the documents from its producer (docs/GENERATED-SECTIONS.md)
-	node tools/generated-sections.mts
+	node dev/generated-sections.mts
+
+RULES_PAGE ?= $(or $(TMPDIR),/tmp)/arithmetic-rules.html
+
+rules-page: build-lean ## write the arithmetic rules' page to RULES_PAGE (default $$TMPDIR/arithmetic-rules.html) and open it
+	node dev/generated-sections.mts --page $(RULES_PAGE)
+	@if command -v open >/dev/null; then open $(RULES_PAGE); \
+	elif command -v xdg-open >/dev/null; then xdg-open $(RULES_PAGE); fi
 
 fmt: ## format with Prettier
 	npx prettier --write .

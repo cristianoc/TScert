@@ -1,15 +1,39 @@
 import Lean.Data.Json
+import Lean.Elab.Term
 import Verification.Semantics.ArithmeticRules
 
 /-! # The arithmetic rules as JSON
 
 `verifier --export rules arithmetic` writes the rules of
 `ArithmeticRules.rules` to standard output, each with every semantic field
-and the declarations that state and prove it (`ruleDeclarations`), for the
+and the declarations that state and prove it (`ruleEntries`), for the
 generated sections (docs/GENERATED-SECTIONS.md). The reader is
-`tools/generated-sections.mts`. -/
+`dev/generated-sections.mts`. -/
 namespace Verification.RuleExport
 open Lean Verification.ArithmeticRules
+
+/-- A rule with the declarations that state and prove it, and the proof:
+the proof term is checked to prove the rule's soundness. -/
+structure RuleEntry where
+  rule : ArithRule
+  declaration : Name
+  proof : Name
+  sound : rule.Sound
+
+open Elab Term in
+/-- `ruleEntry% r`: the entry of the rule `r`, its proof the declaration
+`r_sound`, both names resolved from `r`, so that a name cannot stand
+beside another rule's declaration. -/
+elab "ruleEntry% " x:ident : term => do
+  let n ← realizeGlobalConstNoOverloadWithInfo x
+  let p := n.appendAfter "_sound"
+  elabTerm (← `(RuleEntry.mk $(mkIdent n) $(quote n) $(quote p) $(mkIdent p))) (some (mkConst ``RuleEntry))
+
+/-- The rules' entries, in the order of `rules`. -/
+def ruleEntries : List RuleEntry :=
+  [ruleEntry% shr, ruleEntry% maskRange, ruleEntry% maskBound, ruleEntry% shl, ruleEntry% bitOr]
+
+#guard ruleEntries.map (·.rule) == rules
 
 def jInt (i : Int) : Json := toJson i
 
@@ -58,7 +82,7 @@ def ruleJson (r : ArithRule) (decl proof : Name) : Json :=
 and the rules in the paper's order. -/
 def rulesJson : Json :=
   Json.mkObj [("statement", ((``ArithRule.Sound).toString : Json)), ("soundness", ((``rules_sound).toString : Json)),
-    ("rules", Json.arr (ruleDeclarations.map fun (r, d, p) => ruleJson r d p).toArray)]
+    ("rules", Json.arr (ruleEntries.map fun e => ruleJson e.rule e.declaration e.proof).toArray)]
 
 #guard opJson .bitAnd == "bitAnd"
 

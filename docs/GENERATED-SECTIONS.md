@@ -14,14 +14,15 @@ a line of its own:
 - in LaTeX, `% generated: ID` and `% end generated: ID`.
 
 The lines between the markers are the section. A marker without its
-partner, a section opened inside another, a section appearing twice, a
-section registered for the destination with no markers, and markers naming
-a section registered for no producer there each fail the rewrite and the
-check, with the file and line.
+partner, a section opened inside another, a section appearing twice and
+markers naming a section registered for no producer there each fail the
+rewrite and the check, with the file and the marker's line; a section
+registered for the destination with no markers fails with the file. A
+destination's sections are registered in one format, or the run fails.
 
 ## The registry
 
-[`tools/generated-sections.mts`](../tools/generated-sections.mts) registers
+[`dev/generated-sections.mts`](../dev/generated-sections.mts) registers
 each section: its identity, its destination file, its format (Markdown or
 LaTeX) and its producer, a function from the code's export to the
 section's text. Each producer's export is computed once per run.
@@ -51,7 +52,7 @@ the one statement of the rules every section is rendered from:
   byPower}`, the value `lit + byConstant·k + byPower·2^k` at the normalised
   constant `k`.
 
-The reader in `tools/generated-sections.mts` requires every field and
+The reader in `dev/generated-sections.mts` requires every field and
 refuses an unknown one.
 
 ## The renderer
@@ -73,13 +74,14 @@ are an equality, and two facts sharing a side no other fact names a chain
 
 ## Checking and rewriting
 
-- `node tools/generated-sections.mts --check` writes nothing and fails
+- `node dev/generated-sections.mts --check` writes nothing and fails
   with the first lines where a section differs from what its producer
   gives; it is a fast check of `test-all.sh`.
 - `make generate-sections` rewrites every section from its producer,
   after building the verifier.
-- `node tools/generated-sections.mts --page F` writes the rules' page to
-  `F`.
+- `make rules-page` writes the rules' page to `$TMPDIR/arithmetic-rules.html`
+  (`RULES_PAGE=F` to `F`) and opens it; it runs
+  `node dev/generated-sections.mts --page F`.
 
 ## Adding a section
 
