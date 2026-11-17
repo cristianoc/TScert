@@ -406,9 +406,10 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   returned to code that is not the body's, is a *confined collection*.
   A collection held in private state is refused, and one that is not
   confined holds nothing private state takes uncopied. Every value the body
-  obtains from a confined collection is possibly owned storage, where its
-  type is one a private field's declared type reaches (contracts are fixed
-  at allocation, so storage of another type is never owned): every write the
+  obtains from a confined collection is possibly owned storage unless its
+  storage is proved disjoint from $`\mathsf{own}_C`$ by *Owning
+  allocation sites*, below; a type gives no such proof, since storage of one
+  object type is a value of every type it is assignable to: every write the
   body makes to such a value, or to anything reached from it, is charged to
   the entries of $`\mathsf{own}_C`$ in $`\Psi_C`$, and meets
   *Reference-preserving protocol* and *Tolerant invariant* as a write to
@@ -424,16 +425,28 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   the body's may be a view passed back, at a writable type TypeScript
   admits (observed: a member `change(x: { n: number })` given
   `{ readonly n: number }` type-checks, and its write changes the private
-  record). So every value the body receives from such code (a member's
-  argument or receiver, the result of a call it does not name, a callback's
-  result, a native's result or callback argument, a caught exception, a
-  read of storage that is not confined) is possibly owned storage where its
-  type is one a private field's declared type reaches, as a value from a
+  record). Private storage of type `{ n: number; extra: number }`, given out
+  at a read-only type, enters `change(x: { n: number })` the same way
+  (observed by Astra under `tsc` 7.0.2 `--strict` and Node). So every value
+  the body receives from such code (a member's argument or receiver, the
+  result of a call it does not name, a callback's result, a native's result
+  or callback argument, a caught exception, a read of storage that is not
+  confined) is possibly owned storage, whatever its type, as a value from a
   confined collection is: every write the body makes to it, or to anything
   reached from it, is charged to the entries of $`\mathsf{own}_C`$ in
   $`\Psi_C`$ and meets *Reference-preserving protocol* and *Tolerant
   invariant*. Member certificates carry the charge, so (L2) covers a
   member's write to a view passed back.
+- **Owning allocation sites.** An allocation site of the body is *owning*
+  when storage it allocates may become reachable from $`\mathsf{priv}_C`$:
+  stored into private state or into owned storage, directly or through a
+  binding, a confined collection or a call naming a function of the body.
+  A value is proved disjoint from $`\mathsf{own}_C`$ when the body's flow
+  shows that every allocation site whose storage it may be is not owning;
+  a value received from code that is not the body's has no such proof. The
+  flow is over the body's code alone, which is all the code that stores
+  into confined storage (conjectured: a flow the front computes with
+  $`\Psi_C`$, checked by the pass as a store into owned storage is).
 - **Tolerant invariant.** Every change the body makes to a location of
   $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
   $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
@@ -719,8 +732,10 @@ export type PreparedTextWithSegments = PreparedText & {
   so no owned spine or cell is written; the insertions (`:697`, `:729`,
   `:800`, `:1304`, `:1380`) store fresh values; the fields set lazily on a
   font's measurement and on the state record (`:595`, `:731`, `:780`,
-  `:844`, `:879–914`, `:1055`, `:1072`) are of record types no private
-  field's type reaches, so not owned. `clearCache` (`layout.ts:360–363`)
+  `:844`, `:879–914`, `:1055`, `:1072`) are fields of records allocated at
+  sites that are not owning, since a handle holds the advances lists and its
+  own arrays and no such record (conjectured until the flow runs), so not
+  owned. `clearCache` (`layout.ts:360–363`)
   calls `clearMeasurementCaches` (`measurement.ts:1453–1458`): two `clear`s
   of confined collections, which hold no location of $`\mathsf{own}_C`$,
   and a number written to the state record, which is not owned; its entry
@@ -944,6 +959,13 @@ JavaScript, run with `node`, printing the reads), each refused:
   sets its length to 0 during the visitor; the walker reads
   `[undefined, undefined]`. Refused at the write: a write through a view
   widened to a writable type (*Views in analyzed code*).
+- `invalid-private-incoming-record`: private storage
+  `{ n: number; extra: number }` given out at a read-only type; the visitor
+  passes it to a member `change(x: { n: number })`, which sets `n` to 0;
+  the walker, which tested `#rec.n <= #items.length` and reads
+  `#items[#rec.n - 1]` after each visitor, reads `[undefined, undefined]`
+  (both type-check under `tsc` 7.0.2 `--strict`). Refused by *Incoming
+  values*: the write is charged, whatever the parameter's type.
 - `invalid-private-incoming-view`: a member `trim(xs: { length: number })`
   decrements the length of what it is given; the visitor passes it a view
   of `#widths`, with no cast (both type-check under `tsc` 7.0.2
@@ -998,7 +1020,7 @@ $`\Psi_C`$ forced smaller than a member's effect; a member forged as a
 non-member; a function used as a value forged as called by name only; an
 `await` forged as body code; a confined flow forged to an outside argument; a view forged at a type
 that is not read-only; a type forged read-only; an incoming value forged as
-fresh; a body write to a possibly exposed location forged without its throw
+fresh; an owning allocation site forged not owning; a body write to a possibly exposed location forged without its throw
 edge;
 a copy of an array of arrays forged unconfined; a write to a value from a confined collection forged
 uncharged; an exported collection forged confined; an owned store forged as
