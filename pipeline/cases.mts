@@ -2952,6 +2952,7 @@ export const cases: Case[] = [
   positive("bounds-mask-any-number", "Mask of any number: `x & 0xff` indexes a table of 256 for a fractional, large or NaN `x`"),
   positive("bounds-commuted-operands", "a commuting operator's operands in either order: `0xff & c` is Mask's `c & 0xff` and `8 | x` Or's `x | 8`"),
   positive("bounds-shift-count-normalised", "a shift count read modulo 32: `c >> 40` is `c >> 8` and `c >> -1` is `c >> 31`"),
+  positive("bounds-mask-variable", "Mask by a mask held in a variable: `x & mask` indexes a table of 256 for `0 <= mask < 256`"),
   positive("bounds-mask-bound-large", "Mask's bound `x & m <= x` for any safe integer `0 <= x`, past `2^31` too"),
   positive("closure-precondition", "Pretext han-kerning's const and local arrow helpers assume their written bounds; callers establish them."),
   negative("invalid-closure-precondition-call", "A local arrow called at its array's length returns undefined at number (run under Node).",

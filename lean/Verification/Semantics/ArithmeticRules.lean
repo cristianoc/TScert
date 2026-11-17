@@ -151,9 +151,6 @@ def fact (terms : List (RuleVar × Int)) (b : Int) : RuleFact :=
 /-- The shift count `d`, read modulo 32. -/
 def shiftCount : Constant := ⟨"d", none, none, .shiftCount⟩
 
-/-- The mask `m`, with `0 ≤ m < 2^31`. -/
-def maskConstant : Constant := ⟨"m", some 0, some (2 ^ 31 - 1), .identity⟩
-
 /-- **Shr**: `-2^31 ≤ x < 2^31` gives `2^{d'}·y ≤ x ≤ 2^{d'}·y + 2^{d'} − 1`. -/
 def shr : ArithRule where
   name := "Shr"
@@ -165,22 +162,23 @@ def shr : ArithRule where
   conclusion := [⟨[(.result, { byPower := 1 }), (.left, { lit := -1 })], {}⟩,
     ⟨[(.left, { lit := 1 }), (.result, { byPower := -1 })], { lit := -1, byPower := 1 }⟩]
 
-/-- **Mask**, its range: for any number `x`, `0 ≤ y ≤ m`. -/
+/-- **Mask**, its range: for any number `x` and `0 ≤ x' < 2^31`,
+`0 ≤ y ≤ x'`. -/
 def maskRange : ArithRule where
   name := "Mask"
   op := .bitAnd
   left := .number
-  right := .constant maskConstant
-  premises := []
+  right := .operand .safeInteger
+  premises := [fact [(.right, -1)] 0, fact [(.right, 1)] (2 ^ 31 - 1)]
   result := .safeInteger
-  conclusion := [fact [(.result, -1)] 0, ⟨[(.result, { lit := 1 })], { byConstant := 1 }⟩]
+  conclusion := [fact [(.result, -1)] 0, fact [(.result, 1), (.right, -1)] 0]
 
-/-- **Mask**, its bound: `0 ≤ x` gives `y ≤ x`. -/
+/-- **Mask**, its bound: `0 ≤ x` gives `y ≤ x`, for any number `x'`. -/
 def maskBound : ArithRule where
   name := "Mask"
   op := .bitAnd
   left := .safeInteger
-  right := .constant maskConstant
+  right := .operand .number
   premises := [fact [(.left, -1)] 0]
   result := .safeInteger
   conclusion := [fact [(.result, 1), (.left, -1)] 0]
@@ -234,6 +232,42 @@ theorem intAnd_le_right (j : Int) (m : Nat) : 0 ≤ intAnd j m ∧ intAnd j m �
       simp only [Nat.testBit_xor, Nat.testBit_and] at h
       cases hm : m.testBit i <;> simp_all
     simp only [intAnd, Int.ofNat_eq_natCast]; omega
+
+/-- Clearing some of a natural's bits leaves at most it. -/
+theorem xor_and_le (a b : Nat) : b ^^^ (a &&& b) ≤ b := Nat.le_of_testBit fun i h => by
+  simp only [Nat.testBit_xor, Nat.testBit_and] at h
+  cases hm : b.testBit i <;> simp_all
+
+/-- The two's-complement conjunction of a natural with any integer is at
+most that natural. -/
+theorem intAnd_le_left (n : Nat) (j : Int) : intAnd n j ≤ n := by
+  cases j with
+  | ofNat b =>
+    have := Nat.and_le_left (n := n) (m := b)
+    simp only [intAnd, Int.ofNat_eq_natCast]; omega
+  | negSucc b =>
+    have := xor_and_le b n
+    rw [Nat.and_comm] at this
+    simp only [Int.ofNat_eq_natCast, intAnd]; omega
+
+/-- The two's-complement conjunction of two signed 32-bit integers is one. -/
+theorem intAnd_int32 {i j : Int} (hi : -2 ^ 31 ≤ i ∧ i < 2 ^ 31) (hj : -2 ^ 31 ≤ j ∧ j < 2 ^ 31) :
+    -2 ^ 31 ≤ intAnd i j ∧ intAnd i j < 2 ^ 31 := by
+  cases i with
+  | ofNat a =>
+    have := intAnd_le_left a j
+    cases j with
+    | ofNat b =>
+      have := Nat.and_le_left (n := a) (m := b); simp only [intAnd, Int.ofNat_eq_natCast] at *; omega
+    | negSucc b =>
+      have := xor_and_le b a; rw [Nat.and_comm] at this
+      simp only [intAnd, Int.ofNat_eq_natCast] at *; omega
+  | negSucc a =>
+    cases j with
+    | ofNat b => have := xor_and_le a b; simp only [intAnd, Int.ofNat_eq_natCast] at *; omega
+    | negSucc b =>
+      have := Nat.or_lt_two_pow (n := 31) (x := a) (y := b) (by omega) (by omega)
+      simp only [intAnd]; omega
 
 /-- The disjunction of two naturals is at most their sum. -/
 theorem or_le_add (a b : Nat) : a ||| b ≤ a + b := by
@@ -290,15 +324,17 @@ theorem shr_sound : shr.Sound := by
       simp only [RuleFact.Holds, sumTerms, Coef.eval, resultAt, Int.zero_mul, Int.zero_add, Int.add_zero, Int.one_mul, Int.neg_mul, hQ] <;> omega
 
 theorem maskRange_sound : maskRange.Sound := by
-  intro a b v _ hb _
-  simp only [maskRange, maskConstant, Right.Admits, Right.bound, Normalisation.apply, Constant.admits,
-    Option.all_some, Bool.and_eq_true, decide_eq_true_eq] at hb ⊢
-  obtain ⟨hb, hm0, hm1⟩ := hb
+  intro a b v _ hb hp
+  simp only [maskRange, Domain.Admits, Right.Admits, Right.bound] at hb hp ⊢
+  have h := fun F hF => hp F hF
+  simp only [fact, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq, RuleFact.Holds, sumTerms, Coef.eval] at h
+  obtain ⟨hm0, hm1⟩ := h
   have hm := toInt32_small hb (by omega) (by omega)
   obtain ⟨hr0, hr1⟩ := intAnd_le_right (toInt32 a) (v .right).toNat
-  rw [Int.toNat_of_nonneg hm0] at hr0 hr1
+  rw [Int.toNat_of_nonneg (by omega)] at hr0 hr1
   refine ⟨intAnd (toInt32 a) (v .right), ?_, ?_⟩
-  · simp only [arithBits, hm, Domain.Admits]
+  · simp only [arithBits, hm]
     exact safe_int32 (by omega) (by omega)
   · intro F hF
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
@@ -306,27 +342,21 @@ theorem maskRange_sound : maskRange.Sound := by
       simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
 theorem maskBound_sound : maskBound.Sound := by
-  intro a b v ha hb hp
-  simp only [maskBound, maskConstant, Domain.Admits, Right.Admits, Right.bound, Normalisation.apply,
-    Constant.admits, Option.all_some, Bool.and_eq_true, decide_eq_true_eq] at ha hb hp ⊢
-  obtain ⟨hb, hm0, hm1⟩ := hb
+  intro a b v ha _ hp
+  simp only [maskBound, Domain.Admits, Right.bound] at ha hp ⊢
   have h0 := hp _ (List.mem_cons_self ..)
   simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, List.map_cons, List.map_nil] at h0
-  have hm := toInt32_small hb (by omega) (by omega)
-  obtain ⟨hr0, hr1⟩ := intAnd_le_right (toInt32 a) (v .right).toNat
-  rw [Int.toNat_of_nonneg hm0] at hr0 hr1
-  have hle : intAnd (toInt32 a) (v .right) ≤ v .left := by
+  have hr := intAnd_int32 (toInt32_range a) (toInt32_range b)
+  have hle : intAnd (toInt32 a) (toInt32 b) ≤ v .left := by
     rcases Int.lt_or_le (v .left) (2 ^ 31) with hs | hs
     · rw [toInt32_small ha (by omega) hs]
       obtain ⟨n, hn⟩ := Int.eq_ofNat_of_zero_le (show 0 ≤ v .left by omega)
       rw [hn]
-      have := Nat.and_le_left (n := n) (m := (v .right).toNat)
-      rw [← Int.toNat_of_nonneg hm0]
-      simp only [intAnd, Int.ofNat_eq_natCast]; omega
+      exact intAnd_le_left n _
     · omega
-  refine ⟨intAnd (toInt32 a) (v .right), ?_, ?_⟩
-  · simp only [arithBits, hm]
-    exact safe_int32 (by omega) (by omega)
+  refine ⟨intAnd (toInt32 a) (toInt32 b), ?_, ?_⟩
+  · simp only [arithBits]
+    exact safe_int32 hr.1 hr.2
   · intro F hF
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
     subst hF

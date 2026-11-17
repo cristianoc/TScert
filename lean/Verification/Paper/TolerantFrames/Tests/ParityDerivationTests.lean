@@ -602,10 +602,17 @@ private def msk : List Formula := [safeFact y, lin (.le [(vt y, -1)] 0), lin (.l
 
 private def boundFacts : List (Linear.Fact StepVar) := [.le [(av y, 1)] 255, .le [(table, -1)] (-256)]
 
+-- Mask's premises at the literal `255`: `0 ≤ 255 ≤ 2^31 − 1`.
+#guard rulePremises ArithmeticRules.maskRange (.var x) (.literal mask255) =
+  some (conj [lin (.le [] 255), lin (.le [] (2 ^ 31 - 1 - 255))])
+
+private def maskPremises : RawDerivation :=
+  .andIntro (linRaw [] [] 255 .truth) (.andIntro (linRaw [] [] (2 ^ 31 - 1 - 255) .truth) .truth)
+
 /-- The mask, its operation's evidence `dop`, then the bound. -/
 private def rawWith (dop : RawDerivation) : RawDerivation :=
   .cut (conj msk)
-    (.arith 1 (.var x) (.literal mask255) y dop (.andIntro .truth .truth) .truth)
+    (.arith 1 (.var x) (.literal mask255) y dop (.andIntro .truth .truth) maskPremises)
     (.andIntro (proj msk 1 .assumption)
       (.andIntro
         (linRaw boundFacts [(av y, 1), (table, -1)] (-1)
@@ -630,7 +637,7 @@ private def Γswapped : List Formula :=
 #guard rulePremises ArithmeticRules.maskBound (.var x) (.literal mask255) = some (conj [lin (.le [(vt x, -1)] 0)])
 #guard errorOf (checkScoped empty ⟨0, 3⟩ Γ (conj [safeFact y, lin (.le [(vt y, 1), (vt x, -1)] 0)])
   (.arith 2 (.var x) (.literal mask255) y .assumption
-    (.andIntro (.definedOfLinear (.le [(av x, -1)] 0) .assumption) (.andIntro .truth .truth))
+    (.andIntro (.definedOfLinear (.le [(av x, -1)] 0) .assumption) .truth)
     (premisesRaw 1))) = "assumption: not a premise"
 
 end Mask

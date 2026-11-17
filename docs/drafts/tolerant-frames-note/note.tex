@@ -1656,22 +1656,23 @@ field of each element, such as $p[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
-operands and the empty effect. Let $x,x'$ be safe integers, but in the
-first triple of \textsc{Mask}, where $x$ is any number; $c$ a
-safe-integer constant, $d$ an integer constant with $d'=d\bmod 32$, the
-count a shift reads, and $m$ an integer constant with $0\le m<2^{31}$:
+operands and the empty effect. Let $x,x'$ be safe integers, but in
+\textsc{Mask}, where $x$ is any number in the first triple and $x'$ in
+the second; $c$ a safe-integer constant, and $d$ an integer constant
+with $d'=d\bmod 32$, the count a shift reads. The operands of
+$\mathbin{\&}$ and $\mathbin{|}$ may be given in either order:
 \[
 \begin{array}{ll}
 \textsc{Add}, \textsc{Sub}, \textsc{Scale} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\qquad\hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
 % generated: paper-arithmetic-rules
 \textsc{Shr} & \hoare{-2^{31}\le x<2^{31}}{y=x\gg d}{2^{d'}y\le x\le 2^{d'}y+2^{d'}-1}\\[3pt]
-\textsc{Mask} & \hoare{\kw{true}}{y=x\mathbin{\&}m}{0\le y\le m}\qquad\hoare{0\le x}{y=x\mathbin{\&}m}{y\le x}\\[3pt]
+\textsc{Mask} & \hoare{0\le x'<2^{31}}{y=x\mathbin{\&}x'}{0\le y\le x'}\qquad\hoare{0\le x}{y=x\mathbin{\&}x'}{y\le x}\\[3pt]
 \textsc{Shl} & \hoare{-2^{31}\le 2^{d'}x<2^{31}}{y=x\ll d}{y=2^{d'}x}\\[3pt]
 \textsc{Or} & \hoare{0\le x<2^{31}\wedge 0\le x'<2^{31}}{y=x\mathbin{|}x'}{x\le y\wedge x'\le y\wedge y\le x+x'}
 % end generated: paper-arithmetic-rules
 \end{array}
 \]
-The constants $c$, $d$ and $m$ are literals or variables with a known
+The constants $c$ and $d$ are literals or variables with a known
 constant value. Outside the stated ranges the step runs and the rule
 gives nothing about $y$. One sum is given past the range: for
 $x=\len s$ of a string $s$, \code{y = x + 1} gives the safe integer $y=x+1$, or $y$
@@ -1682,7 +1683,7 @@ $j\le 4351$ and $0\le j<\len{\mathit{index}}$, the precondition
 of the read \code{index[j]}. With $0\le v<b$ for $v$ the block that
 \code{index[j]} gives, in a table \code{values} of $b$ blocks of 256,
 \textsc{Shl} gives $y_1=256\,v$ for \code{y1 = v << 8}, \textsc{Mask}
-gives $0\le y_2\le 255$ for \code{y2 = c \& 0xff}, and \textsc{Or} gives
+gives $0\le y_2\le 255$ for \code{y2 = c \& 0xff}, at $x'=255$, and \textsc{Or} gives
 $0\le y\le 256\,v+255<256\,b$ for \code{y = y1 | y2}, the precondition
 of the read \code{values[y]} at $\len{\mathit{values}}=256\,b$.
 
