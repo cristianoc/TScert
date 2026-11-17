@@ -6,8 +6,9 @@ description: Work on pretext's bound rewrites one chain at a time - restore each
 # A bounds chain
 
 Pretext verifies whole under TScert in a rewritten form: the fork
-`cristianoc/pretext`, branch `tscert-rewrites` (`2b11a4c`), adds 501 bound
-rewrites to upstream `0d102a5c`. The work puts them back to their original
+`cristianoc/pretext`, branch `tscert-rewrites` (`2b11a4c`), adds 493 bound
+rewrites to upstream `0d102a5c`, and its branch `tscert-bounds` is the
+annotated pretext that the work moves forward. The work puts them back to their original
 form, a chain of functions at a time, each restored site justified by
 annotations in pretext and, where TScert lacks a rule, by a rule added to
 TScert. All 210 functions verify after every step.
@@ -25,28 +26,25 @@ refusal.
 
 ## Where everything lives
 
-GitHub holds the whole state; a local checkout is only a copy of it.
+One branch on each side, kept in sync; GitHub holds the whole state, and a
+local checkout or worktree is only a copy of it.
 
-- **TScert**, `cristianoc/TScert`:
-  - `main` holds the checked bound annotations, the base of the chains.
-  - `chainN-tscert`, one PR per chain into `main` (chain 1:
-    `chain1-tscert`, PR #129): the TScert rules of chain N.
-    Its description holds the table pairing each pretext commit with
-    the TScert commit it needs, and the trust under review.
-  - The chain's state, its sites left and their blockers, is its row of
-    the [status table](../../../WORK.md#status) on `chainN-tscert`.
-- **Pretext**, the fork `cristianoc/pretext`:
-  - `tscert-rewrites`, PR cristianoc/pretext#1 into the fork's `main`:
-    the rewritten baseline, one commit.
-  - `tscert-bounds`, PR cristianoc/pretext#2 into `tscert-rewrites`,
-    stacked on pretext#1:
-    every restored site, one commit per step, its message naming the sites
-    and the functions checked.
-  - Nothing goes to `chenglou/pretext`.
+- **TScert**, `cristianoc/TScert`: the line `single-pass`. Work lands on it
+  through short-lived pull requests, each branch deleted when it merges.
+  A chain's state, its sites left and their blockers, is its row of the
+  [status table](../../../WORK.md#status).
+- **Pretext**, the fork `cristianoc/pretext`: `tscert-bounds`, the
+  annotated pretext, one commit per step, its message naming the sites
+  and the functions checked. `tscert-rewrites` is its base, the rewritten
+  pretext, and is not worked on. Nothing goes to `chenglou/pretext`.
+- **In sync**: TScert's CI checks pretext at the tip of `tscert-bounds`
+  (`PRETEXT_COMMIT` in [ci.yml](../../../.github/workflows/ci.yml)), and
+  [the tier's record](../../../tests/pretext-tier-expected.json) holds
+  that commit alone. A step that commits to `tscert-bounds` moves both in
+  one TScert pull request, with any TScert change the step needs.
 
-Local copies: `~/GitHub/TScert` holds the TScert branches, each worked in
-a worktree of that repository; `~/GitHub/pretext` holds `tscert-bounds`,
-tracking `fork/tscert-bounds`, worked in a worktree of that repository.
+No other branch is made on either side: a worktree for a step is made on
+these branches, outside `~/GitHub`, and removed when the step lands.
 
 ## Starting from nothing
 
@@ -55,8 +53,8 @@ git clone https://github.com/cristianoc/TScert.git ~/GitHub/TScert
 git clone https://github.com/chenglou/pretext.git ~/GitHub/pretext
 git -C ~/GitHub/pretext remote add fork https://github.com/cristianoc/pretext.git
 git -C ~/GitHub/pretext fetch fork
-git -C ~/GitHub/TScert worktree add <dir>/tscert chain1-tscert
-git -C ~/GitHub/pretext worktree add -b tscert-bounds <dir>/pretext fork/tscert-bounds
+git -C ~/GitHub/TScert worktree add -b <step> <dir>/tscert origin/single-pass
+git -C ~/GitHub/pretext worktree add --detach <dir>/pretext fork/tscert-bounds
 ```
 
 Set up the TScert worktree as
@@ -79,15 +77,15 @@ with the edge that does not establish it
 Read them before forming a hypothesis: a refused read or loop invariant
 needs a fact, and an edge listed is where it is not established.
 
-Count the rewrites left, out of 501:
+Count the rewrites left, out of 493:
 
 ```sh
 git -C <pretext worktree> grep -o -E "\?\? missing\(\)|RangeError\('index'\)|RangeError\('missing value'\)" \
   -- 'src/*.ts' 'src/generated/*.ts' ':!src/checked.ts' | wc -l
 ```
 
-and subtract 34, the markers of `tscert-rewrites` that check something
-other than a bound (535 at `2b11a4c`, so 501).
+and subtract 42, the markers of `tscert-rewrites` whose operand is not an
+index read or write (535 at `2b11a4c`, so 493).
 
 ## A step
 
@@ -98,11 +96,14 @@ other than a bound (535 at `2b11a4c`, so 501).
 3. Restore the rewrites the facts justify, to upstream's form.
 4. Check every function touched, and every caller of a function whose
    annotation changed, in any file.
-5. Commit the step on `tscert-bounds` when they all verify, and add its
-   row to the PR's table.
+5. When they all verify, commit the step on `tscert-bounds` and push it
+   (`git push fork HEAD:tscert-bounds`, a fast-forward). In the step's
+   TScert pull request, set `PRETEXT_COMMIT` to that commit and record it
+   (`node tests/pretext-tier.mts --pretext <dir>/pretext --update`,
+   keeping that commit's record alone).
 
-When TScert refuses what it should accept, close the gap in
-`chainN-tscert`, as [CLAUDE.md](../../../CLAUDE.md) requires of any
+When TScert refuses what it should accept, close the gap in the step's
+TScert pull request, as [CLAUDE.md](../../../CLAUDE.md) requires of any
 TScert change:
 
 - a design is drafted and reviewed as
@@ -146,7 +147,7 @@ touches, the Lean module changed, `dev/check-functions.mts` for the pretext
 functions touched and their callers. All of pretext, every file with `*`,
 before a step's commit when its TScert rule could reach other files. At
 most 3 checks at once. No census, no `make test` or full `run-cases.mts`:
-CI's `test` job runs `make test` on the PR and again on `main`. It gates no
+CI's `test` job runs `make test` on the PR and again on `single-pass`. It gates no
 merge ([how a pull request lands](../../../CLAUDE.md#how-a-pull-request-lands)),
 so a step is reported as tested only with the `test` run it names.
 
@@ -165,34 +166,33 @@ branch stays linear on top of its parent.
   but not each other (two children of one branch) are separate pull
   requests on that parent, never one stack.
 - Before every push, check each pair:
-  `git merge-base --is-ancestor <parent> <child>`, from `origin/main`
+  `git merge-base --is-ancestor <parent> <child>`, from `origin/single-pass`
   upward. A pair that fails shows the parent's commits in the child's pull
   request.
 - When a parent moves, rebase each child onto it, from the bottom up:
   `git rebase --onto <parent> <parent's old head> <child>`, then push with
-  `--force-with-lease`. When the parent lands on `main`, rebase the child
-  onto `origin/main` the same way and `gh pr edit <child PR> --base main`.
+  `--force-with-lease`. When the parent lands on `single-pass`, rebase the
+  child onto `origin/single-pass` the same way and
+  `gh pr edit <child PR> --base single-pass`.
 - A branch that already contains merge commits is replayed onto its base
   (`git rebase -X theirs <base>`), then one commit restores the tested
   tree (`git checkout <tested head> -- .`, removing files that tree lacks),
   so the landed tree is byte-identical to the one CI tested.
 - GitHub refuses to rebase-merge a pull request of more than about 100
   commits ("This branch can't be rebased"). Such a branch, already linear
-  on `main`, lands by fast-forwarding `main`, which only the owner, on the
-  ruleset's bypass list, can push.
+  on `single-pass`, lands by fast-forwarding `single-pass` once its checks
+  pass, as [the parity skill](../parity/SKILL.md) states.
 
 ## Merging
 
-The green steps of `chainN-tscert` land once the owner reviewed their
-trust; later steps continue on the branch. When TScert steps land, the
-pretext steps they justify fold into the single commit of
-`tscert-rewrites`, and `tscert-bounds` is rebased on it. Each push needs
-the owner's instruction.
+A step lands when its TScert pull request is green: `render`, `test`, and
+`pretext` at the new pin. Its trust, if any, is reviewed by the owner
+first. Each push to the fork needs the owner's instruction.
 
 ## Report
 
 Numbers first: the chain's rewrites restored out of its total, pretext
-functions verified out of 210, rewrites left out of 501. Then the
+functions verified out of 210, rewrites left out of 493. Then the
 annotations added with what they state, the TScert commits with their
 cases, the trust stated plainly, and each site left with its exact
 refusal. Plain words; no either-or questions.

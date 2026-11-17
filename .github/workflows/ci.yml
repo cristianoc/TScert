@@ -95,7 +95,8 @@ jobs:
         run: make test-cases
 
   # The pretext tier (`make test-pretext`, tests/pretext-tier.mts) at the
-  # pinned commit of cristianoc/pretext's tscert-rewrites: it fails where a
+  # pinned commit of cristianoc/pretext's tscert-bounds, the annotated
+  # pretext, whose tip it follows: it fails where a
   # function recorded as verified for that commit
   # (tests/pretext-tier-expected.json) no longer verifies. It guards
   # pretext's functions while the work on the rules of the note "Tolerant
@@ -105,7 +106,7 @@ jobs:
     timeout-minutes: 60
     env:
       TSCERT_STAGE_MEMORY: "4"
-      PRETEXT_COMMIT: 2b11a4ce9c730945eea0280ac2aa5fa0f9cd3313
+      PRETEXT_COMMIT: 9b32eb29e15312aeb618dda55c4e2e00f397c5d7
     steps:
       - uses: actions/checkout@v4
 
