@@ -19,6 +19,7 @@ The printed text determines its type without a previous claim.
 | --- | --- |
 | `unknown`, `never` | Top and empty union |
 | `boolean`, `null`, `undefined`, `string`, `number` | Primitive types |
+| `SafeInt` | The safe integers ([the clause `int`](POSITIVE-TYPES.md#the-safe-integers)) |
 | `true`, `false`, `"text"`, `3` | Literal types |
 | `A \| B` | Union |
 | `{ name: A, optional?: B }` | Required and optional fields |

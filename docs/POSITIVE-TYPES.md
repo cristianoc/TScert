@@ -132,7 +132,8 @@ safe integer. A tag set's meet is written through `numSet`, so a set of one
 member is that member's literal. Selection reads the clause as any number
 clause: it admits a number literal exactly where the literal decodes
 (`admitsVal`), and excludes it as a target of `num` and of a tag set with a
-member that does not decode (`primExcl`).
+member that does not decode (`primExcl`). The verifier's declared type
+`SafeInt` denotes the clause ([ANNOTATIONS.md](ANNOTATIONS.md#types-the-verifier-declares)).
 
 Lean: `intT`, `meet_int_num`, `meet_int_int`, `meet_int_numLit`,
 `meet_int_numIn` (`Types/PositiveNormalization.lean`); the `int` rows of

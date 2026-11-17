@@ -875,6 +875,8 @@ export interface TypeAnswers {
   within?: (span: Span) => void;
   /** The verifier's `Fresh` (`resolvable.d.ts`), at a source name. */
   fresh?: (span: Span) => void;
+  /** The verifier's `SafeInt` (`resolvable.d.ts`), at a source name. */
+  safeInt?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   staticType?: (span: Span, result: Answered<TypeTerm>) => void;
@@ -1036,6 +1038,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       return declaration && isTypeAlias(declaration) &&
         verifierFile(declaration.getSourceFile()) ? declaration.name.text : null;
     };
+    // A reference to the verifier's `SafeInt`, by the declaration TypeScript
+    // binds it to: the safe integers, wherever a type is read.
+    const safeIntReference = (reference: ts.TypeReferenceNode): boolean =>
+      ts.isIdentifier(reference.typeName) && verifierAlias(reference.typeName) === "SafeInt";
     const ambient = (node: Node): boolean => {
       for (let at: Node | undefined = node; at; at = at.parent)
         if (at.flags & ts.NodeFlags.Ambient) return true;
@@ -1754,6 +1760,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         awaited,
         stated: part => statement(reading, part, null),
         fresh: part => statement(reading, part, null, "Fresh"),
+        safeInt: safeIntReference,
         associatedAlias: part => {
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
           return target && isTypeAlias(target) && associatedAlias(target) ? target : null;
@@ -2843,6 +2850,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             declaration.name.text === "Fresh") {
           typeAnswers.fresh?.(span);
+          continue;
+        }
+        if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
+            declaration.name.text === "SafeInt") {
+          typeAnswers.safeInt?.(span);
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
@@ -4585,6 +4597,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       guardPromises,
       keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: (part, owner) => statement({ owner, externalReads: 0 }, part, owner),
       fresh: (part, owner) => statement({ owner, externalReads: 0 }, part, owner, "Fresh"),
+      safeInt: safeIntReference,
       record: identity => {
         records.add(definitionKey(identity));
         observations.record?.(identity);
@@ -6048,6 +6061,8 @@ interface DeclarationElaborationContext {
    * definition `owner` reads one. */
   stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
   fresh: (reference: ts.TypeReferenceNode, owner: string) => boolean;
+  /** Whether a reference names the verifier's `SafeInt`. */
+  safeInt: (reference: ts.TypeReferenceNode) => boolean;
   /** A mapped type's keys as TypeScript computes them. */
   keys: KeysHook;
   /** Told each definition that is a record written as one (`NamedRecords`). */
@@ -6223,6 +6238,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     awaited: context.awaited,
     stated: part => context.stated(part, key),
     fresh: part => context.fresh(part, key),
+    safeInt: context.safeInt,
     ...(body ? { body } : {}),
     symbol,
     literalKey: context.literalKey,

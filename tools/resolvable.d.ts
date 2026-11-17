@@ -41,3 +41,8 @@ type Modifies<
   T,
 > = T;
 type Fresh<T> = T;
+// `SafeInt` is the safe integers: the numbers whose value is an integer of
+// magnitude at most 2^53 - 1, both zeros included. TypeScript reads it as
+// `number`; the verifier reads it as a type of its own, the clause `int`
+// (POSITIVE-TYPES.md, "The safe integers").
+type SafeInt = number;

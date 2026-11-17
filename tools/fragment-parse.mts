@@ -199,6 +199,8 @@ export class Gate {
   standardWithin: boolean = false;
   /** The file names the verifier's `Fresh` (`resolvable.d.ts`). */
   standardFresh: boolean = false;
+  /** The file names the verifier's `SafeInt` (`resolvable.d.ts`). */
+  standardSafeInt: boolean = false;
   qualificationHeader: boolean = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
@@ -735,6 +737,9 @@ export class Gate {
       // `Fresh`, likewise.
       fresh: node => this.standardFresh && ts.isIdentifier(node.typeName) && node.typeName.text === "Fresh" &&
         !this.hasTypeParam("Fresh") && !this.blockTypeAt(node) && !this.declaredTypes.has("Fresh"),
+      // `SafeInt`, likewise.
+      safeInt: node => this.standardSafeInt && ts.isIdentifier(node.typeName) && node.typeName.text === "SafeInt" &&
+        !this.hasTypeParam("SafeInt") && !this.blockTypeAt(node) && !this.declaredTypes.has("SafeInt"),
       associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text) &&
           !this.blockTypeAt(node)
         ? this.resolutionAliases.get(node.typeName.text) ?? null : null,
@@ -2514,6 +2519,7 @@ function lowerFile(file: string, carriesContext: boolean,
         awaitable: () => { gate.standardAwaitable = true; },
         within: () => { gate.standardWithin = true; },
         fresh: () => { gate.standardFresh = true; },
+        safeInt: () => { gate.standardSafeInt = true; },
         associatedAlias: (name, identity) => {
           const alias = aliasNodes.find(node => node.name.text === name &&
             node.getStart(source) === identity.span[0] && node.end === identity.span[1]);

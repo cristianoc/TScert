@@ -247,8 +247,9 @@ export type TypeTerm =
    * called. `class` is every class value, of which no construct signature is
    * known: a constructor type whose rest admits no argument list,
    * `abstract new (...args: never) => R`, through which nothing may be
-   * constructed. */
-  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object" | "nonHost" | "nonHostObject" | "function" | "class"; span: Span }
+   * constructed. `safeInt` is the safe integers, the verifier's declared
+   * type `SafeInt` (`resolvable.d.ts`). */
+  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "safeInt" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object" | "nonHost" | "nonHostObject" | "function" | "class"; span: Span }
   /* A number's `text` is its decimal spelling, a bigint's its canonical
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }

@@ -504,6 +504,8 @@ def atomLabels (term : Json) : M Union := do
   | "undefined" => return [← prim "undefined" .undef]
   | "boolean" => return [← prim "true" (.boolLit true), ← prim "false" (.boolLit false)]
   | "number" => return [← prim "number" .num]
+  -- The safe integers, the verifier's declared type `SafeInt`.
+  | "safeInt" => return [← prim "SafeInt" .int]
   | "string" => return [← prim "string" .str]
   | "bigint" => return [← prim "bigint" .bigint]
   | "symbol" => return [← prim "symbol" .symbol]

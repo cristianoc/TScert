@@ -212,6 +212,9 @@ export type TermScope = {
   stated?: (node: TypeReferenceNode) => Modifies<{ values: "any"; spines: "grow" }, boolean>;
   /** Whether a reference names the verifier's `Fresh` (`resolvable.d.ts`). */
   fresh?: (node: TypeReferenceNode) => Modifies<{ values: "any"; spines: "grow" }, boolean>;
+  /** Whether a reference names the verifier's `SafeInt` (`resolvable.d.ts`),
+   * by the declaration TypeScript binds it to: the safe integers. */
+  safeInt?: (node: TypeReferenceNode) => Modifies<{ values: "any"; spines: "grow" }, boolean>;
   /** The resolved standard-library Awaited alias. Its associated projection
    * is read only through the enclosing descriptor scope. */
   awaited?: AwaitedHook;
@@ -574,6 +577,10 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
       return scope.fail(node, WITHIN_PLACE);
     if (scope.fresh?.(node))
       return scope.fail(node, FRESH_PLACE);
+    if (scope.safeInt?.(node)) {
+      if (node.typeArguments?.length) return scope.fail(node, "`SafeInt` takes no type argument");
+      return atom("safeInt");
+    }
     if (scope.awaited?.(node)) {
       const [argument, ...others] = node.typeArguments ?? [];
       if (!argument || others.length) return scope.fail(node, "Awaited requires one type argument");
