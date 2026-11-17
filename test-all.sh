@@ -209,6 +209,9 @@ commit_records() {
 run_test 30 "Commit records: the commit-msg hook refuses malformed ones" commit_records
 # tests/docs.mts checks every document's links, anchors and math.
 run_test 30 "Documents: links, math" node tests/docs.mts
+# tools/generated-sections.mts --check: every generated section of the documents is what its producer, the verifier's
+# export, gives (docs/GENERATED-SECTIONS.md).
+run_test 30 "Generated sections match their producers" node tools/generated-sections.mts --check
 # tests/caught-errors.mts checks the makers and handlers of caught errors on real failures.
 run_test 30 "Caught error helpers" node tests/caught-errors.mts
 # tests/node-runs.mts runs examples and native-contract counterexamples under Node.

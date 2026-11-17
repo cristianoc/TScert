@@ -212,7 +212,7 @@ const formulas = (lines: string[]): string =>
 /** A `Rule:` block: groups separated by blank lines; a group with a line of
  * `─` is an inference rule (premises above, conclusion below, the name after
  * the bar); any other group is a list of formulas. The text is the record's. */
-function rules(block: string[], kind: string = ""): string {
+export function rules(block: string[], kind: string = ""): string {
   let current: string[] = [];
   const groups: string[][] = [current];
   for (const line of block) {

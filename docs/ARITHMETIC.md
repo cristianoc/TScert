@@ -295,11 +295,16 @@ side condition, and a shift count $`d`$ is read as $`d'=d\bmod 32`$, as
 `>>` and `<<` read it through `ToUint32`. Where the knowledge entails the
 rule's premises, the result $`r`$ states the rule's conclusion:
 
+<!-- generated: arithmetic-rules -->
+<!-- {"name":"Shr","declaration":"Verification.ArithmeticRules.shr","proof":"Verification.ArithmeticRules.shr_sound","op":"shr","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":1}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":-1,"byConstant":0,"byPower":1}}]} -->
+
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash b=d\quad d'=d\bmod 32\quad K\vdash -2^{31}\le a<2^{31}}
      {K\vdash r\leftarrow a\mathbin{\texttt{>>}}b\dashv \mathrm{int}(r),\ 2^{d'}r\le a\le 2^{d'}r+2^{d'}-1}
      \ \textsf{Shr}
 ```
+
+<!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskRange","proof":"Verification.ArithmeticRules.maskRange_sound","op":"bitAnd","left":"number","right":{"constant":{"symbol":"m","lower":0,"upper":2147483647,"normalisation":"identity"}},"premises":[],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":1,"byPower":0}}]} -->
 
 ```math
 \frac{K\vdash b=m\quad 0\le m<2^{31}}
@@ -307,11 +312,15 @@ rule's premises, the result $`r`$ states the rule's conclusion:
      \ \textsf{Mask}
 ```
 
+<!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskBound","proof":"Verification.ArithmeticRules.maskBound_sound","op":"bitAnd","left":"safeInteger","right":{"constant":{"symbol":"m","lower":0,"upper":2147483647,"normalisation":"identity"}},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
+
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash b=m\quad 0\le m<2^{31}\quad K\vdash 0\le a}
      {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ r\le a}
      \ \textsf{Mask}
 ```
+
+<!-- {"name":"Shl","declaration":"Verification.ArithmeticRules.shl","proof":"Verification.ArithmeticRules.shl_sound","op":"shl","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":1}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":1}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
 
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash b=d\quad d'=d\bmod 32\quad K\vdash -2^{31}\le 2^{d'}a<2^{31}}
@@ -319,11 +328,14 @@ rule's premises, the result $`r`$ states the rule's conclusion:
      \ \textsf{Shl}
 ```
 
+<!-- {"name":"Or","declaration":"Verification.ArithmeticRules.bitOr","proof":"Verification.ArithmeticRules.bitOr_sound","op":"bitOr","left":"safeInteger","right":{"operand":"safeInteger"},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}},{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
+
 ```math
 \frac{\mathrm{int}(a)\quad \mathrm{int}(b)\quad K\vdash 0\le a<2^{31}\quad K\vdash 0\le b<2^{31}}
      {K\vdash r\leftarrow a\mathbin{|}b\dashv \mathrm{int}(r),\ a\le r,\ b\le r,\ r\le a+b}
      \ \textsf{Or}
 ```
+<!-- end generated: arithmetic-rules -->
 
 Proved: `ArithmeticRules.rules_sound` proves each rule against the
 calculus, whose `&`, `|`, `<<` and `>>` compute through `ToInt32`

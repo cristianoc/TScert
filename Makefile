@@ -5,7 +5,7 @@ OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
 .PHONY: help setup build build-lean test test-checks test-infra test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
-  check-fmt setup-git-hooks clean-store census build-runner test-pretext
+  check-fmt setup-git-hooks clean-store census build-runner test-pretext generate-sections
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
@@ -69,6 +69,9 @@ semantic-diff: ## render the commit records of REV (a commit or base..tip, defau
 	node dev/commit-records.mts --out $(OUT) $(REV)
 	@if command -v open >/dev/null; then open $(OUT); \
 	elif command -v xdg-open >/dev/null; then xdg-open $(OUT); fi
+
+generate-sections: build-lean ## rewrite every generated section of the documents from its producer (docs/GENERATED-SECTIONS.md)
+	node tools/generated-sections.mts
 
 fmt: ## format with Prettier
 	npx prettier --write .
