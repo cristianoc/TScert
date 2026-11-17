@@ -1190,3 +1190,60 @@ of the new base.
 | `1698f4ea313a3c1e35bc021f414cdd7a3d5ec320` | `e47c2fdbb87f471b76e6959b6855cfea489fd76d` |
 | `c2e2a46556aaa4bf43890a535c2bfdbb92c3cb65` | `cc4080025cbed213c1c258dc40d18150d41b8f9e` |
 | `bd48403b6c4ca3a175ebe5f5a6bd4bf0365066e6` | `2874a9f2ce5a360d16ffa1312cb23f4864c60733` |
+
+## Resolved native calls on the sixth base
+
+Exact source `1868c47dbc4915578d79e3f76ff1e8678dff831b` is based on
+`cdef605ba381c5c047a053b6e5ed7d0af14c7a4a`, following the published recursion
+checkpoint `3412e5f4333d7661581ec4937a8b6fa53b5b7935`. The source adds explicit
+resolved native calls and the [parameterized execution-safety bridge](paper-call-function-bridge.md#resolved-supplied-native-calls-and-execution-safety).
+It does not instantiate the thirteen host contracts or their paper formulas.
+
+Focused source builds pass. Both complete A/Paper axiom audits pass, 471 jobs.
+A full Lean build passes, 682 jobs. Direct imports cover all 365 other A/shared
+and 103 other Paper modules. Outside-to-Paper imports remain zero. Docs pass:
+83 documents, 896 code citations, zero problems. Whitespace and semantic
+commit-record checks pass. No test/expectation or task-authored shared change
+was added; all native changes are inside Paper.
+
+Astra independently reread both final integrated native modules. It confirmed
+the explicit callee-reference premise, its derivation from the input binding,
+the chosen admissible exits/exact budgets, source/reference guarantees, both
+regional effects and the actual-step theorem. Its earlier inability to reread
+the final changes was removed. It found no blocker and explicitly retained the
+limitations on concrete host instances, constructor/view integration,
+termination and normal-return guarantees.
+
+### Regression failures in the cloud runtime
+
+No complete passing regression is claimed for this source/base. On recursion
+source `3412e5f4`, the full build, all 24 fast suites and all 177 controls passed
+(464 control operations executed, 35 replayed). Its case phase stopped after
+1730/3453 on Node spawn EAGAIN. A case-only continuation under a temporary
+child-reaping wrapper finished with 2050 expected cases and 1403 tooling failures,
+including pthread_create/EAGAIN, compiler EOFs and missing worker outcomes.
+
+The native source's full make test passed its 682-job build, then test-all.sh
+could not fork the parallel suites. A one-CPU case-only retry with
+LEAN_NUM_THREADS=1 and GOMAXPROCS=1 finished with 2161/3453 cases as expected and
+1292 tooling failures, including compiler-process EOFs. These are incomplete
+case results, not changed acceptance expectations. The previous source's fast
+suite success is not relabelled as a current full make test success.
+
+The container had over 31000 zombie processes under a tail PID 1 that did not
+reap orphans. One live worker from the failed case run was identified by exact
+command/parent and terminated. A temporary subreaper limited new accumulation;
+process/thread creation still failed, including creation of shell/sandbox
+workers. The first full-suite wrapper additionally failed to read its numeric
+/proc PID directory after make had already failed; a later wrapper avoided that
+lookup. This wrapper error is separate from repository check results. Cloud
+reconnects dropped terminal handles while preserving files. Commands later
+became available, allowing the reviewed checkpoints and latest rebase to be
+pushed. A workspace-preserving restart was requested; no owner machine was used.
+
+Logs in cloud scratch are native-contracts-stage-build3.log,
+native-main-test.log, native-main-axioms.log, native-main-docs-final.log,
+native-main-imports.log, native-main-cases.log, recursive-batch-test.log and
+recursive-batch-cases-resume.log. The failed full suites are retained as evidence;
+repeated runs are not reported as passing. The 91-row counts remain 41 equal,
+28 narrower, 9 absent and 13 assumed.
