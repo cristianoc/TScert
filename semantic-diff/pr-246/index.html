@@ -1,0 +1,254 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">10 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-246"><code>785514b728e65f4bfc1762ab14f212f2417ad834..pr-246</code></a><ul><li>10 commits</li><li>changes: 5 Tooling, 10 Docs, 5 Check</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip">docs</span> <span class="chip">tooling</span></li></ul></li></ul></section>
+<h2 id="g-pr-246"><code>785514b728e65f4bfc1762ab14f212f2417ad834..pr-246</code></h2><article class="card" id="c-3cf331cb2"><header><div><div class="sha">3cf331cb2 · Cristiano Calcagno · Nov 17, 04:58</div><h3>Place the indexed states, the modality, the apart supports and the cells in shared modules</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The paper's Lean formalisation is to be deletable without touching the implementation rules. The module Semantics/TolerantFrames.lean held three kinds of declaration together: the shared model the acceptance proof reads (indexed states, admissible transitions, run adequacy, actions, the modality and its laws, the tolerant frame, frame_run_top), the support of apart that the index writes' respect check reads, and instances of the paper alone (an effect that is not rigid, the length lower bounds). An implementation module importing it imported the paper's instances with it. This is the first of seven commits of the plan that separates the two; declarations, statements and proofs are unchanged.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the module structure</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Semantics/TolerantFrames.lean        states, modality, laws, adequacy, a non-rigid effect, lower bounds, apart supports</span><span class="ln">Semantics/TolerantFramesCells.lean   allocated cells and separation</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Semantics/IndexedStates.lean         states, admissible transitions, run adequacy, actions, the modality and its laws,</span><span class="ln">                                     tolerant_frame, frame_run_top, growEffect (shared)</span><span class="ln">Semantics/ApartSupport.lean          apartGrowSupport, RegionBelow, apartGrow_supports(_mirror) (shared)</span><span class="ln">Semantics/AdmissibleCells.lean       the former TolerantFramesCells, importing IndexedStates (shared)</span><span class="ln">Semantics/TolerantFrames.lean        the non-rigid effect and the length lower bounds, importing IndexedStates</span><span class="ln">HeapExpressionRules imports IndexedStates; IndexWrites imports ApartSupport.</span><span class="ln">Every declaration keeps its name and namespace.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">REFERENCES.md, SINGLE-PASS-PROOF.md, drafts/location-kinds.md</span></h4><div class="prose"><p>The module paths of the moved declarations.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (with the axiom check), no warnings · node tests/docs.mts</dd></dl>
+<details><summary>14 files changed, 520 insertions(+), 498 deletions(-)</summary><pre class="code"> docs/REFERENCES.md                                 |   4 +-
+ docs/SINGLE-PASS-PROOF.md                          |   3 +-
+ docs/drafts/location-kinds.md                      |   2 +-
+ .../Verification/Programs/HeapExpressionRules.lean |   2 +-
+ lean/Verification/Programs/IndexWrites.lean        |   1 +
+ lean/Verification/Programs/KindsModelRules.lean    |   2 +-
+ .../Programs/TolerantFramesWrites.lean             |   2 +-
+ ...lerantFramesCells.lean =&gt; AdmissibleCells.lean} |   2 +-
+ lean/Verification/Semantics/ApartSupport.lean      |  75 ++++
+ lean/Verification/Semantics/IndexedStates.lean     | 422 ++++++++++++++++++
+ lean/Verification/Semantics/KindsCalls.lean        |   2 +-
+ lean/Verification/Semantics/ParityAssertions.lean  |   2 +-
+ lean/Verification/Semantics/TolerantFrames.lean    | 495 +--------------------
+ lean/Verification/Tests/AxiomCheck.lean            |   4 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-4203a4ec6"><header><div><div class="sha">4203a4ec6 · Cristiano Calcagno · Nov 17, 05:03</div><h3>Place graph safety in a module of the pass's proof, apart from (Grow), transfer and their instances</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The acceptance proof reads graph safety (Reach, GraphInv, NodesChecked, NodeObligations, graph_safe_at and the graph machine's determinism) from Programs/TolerantFramesRuns.lean, which also held the paper's (Grow) through Parity.atom_frame, the theorem transfer and the note's worked loop. Through it, and through TolerantFramesWrites (the named form of (Grow)) and TolerantFramesNamed (a counterexample over the non-rigid effect's contract), every module of the pass's proof imported the paper's derivations. A constant-level reachability check over the built environment shows that no implementation constant uses any of these paper declarations. Second commit of the separation plan; declarations, statements and proofs are unchanged.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the module structure</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Programs/TolerantFramesRuns.lean     graph safety, transfer, (Grow), fieldWriteEffect, the typed-write and loop instances</span><span class="ln">Programs/TolerantFramesWrites.lean   named (Grow), safePost_grow, the write judgments, writing_frame</span><span class="ln">Programs/TolerantFramesNamed.lean    named facts and their frames, slotless_not_framed</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Programs/SinglePass/GraphSafety.lean            graph runs and graph safety (implementation)</span><span class="ln">Programs/TolerantFramesTransfer.lean            Transported, transported_of, mapEnv_push_slot, transfer (paper)</span><span class="ln">Programs/TolerantFramesRuns.lean                (Grow), grow_path, named_lowerBound_grow/field, the typed-write</span><span class="ln">                                                and loop instances; imports ParityDerivations explicitly (paper)</span><span class="ln">Programs/TolerantFramesNamedCounterexample.lean oneState, slotless_not_framed (paper)</span><span class="ln">Programs/TolerantFramesWrites.lean              safePost_grow, the write judgments, writing_frame (implementation)</span><span class="ln">Programs/TolerantFramesNamed.lean               named facts and their frames (implementation)</span><span class="ln">Semantics/IndexedStates.lean                    gains fieldWriteEffect, beside growEffect (shared)</span><span class="ln">Named imports IndexedStates and Invocation imports GraphSafety in place of TolerantFramesRuns;</span><span class="ln">Writes no longer imports the admissible cells, which it does not use; Examples and ModelTyped</span><span class="ln">import the (Grow) module they read. Every declaration keeps its name and namespace.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SINGLE-PASS-PROOF.md, drafts/parity-interfaces.md</span></h4><div class="prose"><p>The module paths of graph safety, transfer, the named (Grow) and the counterexample.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (with the axiom check), no warnings · node tests/docs.mts · constant-level closure of every non-paper module reaches no paper constant (only ExitProposals' definitions, split next)</dd></dl>
+<details><summary>13 files changed, 536 insertions(+), 483 deletions(-)</summary><pre class="code"> docs/SINGLE-PASS-PROOF.md                          |  12 +-
+ docs/drafts/parity-interfaces.md                   |   2 +-
+ .../Programs/SinglePass/GraphSafety.lean           | 351 +++++++++++++++++
+ .../Programs/TolerantFramesExamples.lean           |   1 +
+ .../Programs/TolerantFramesInvocation.lean         |   2 +-
+ .../Programs/TolerantFramesModelTyped.lean         |   1 +
+ .../Verification/Programs/TolerantFramesNamed.lean |  59 +--
+ .../TolerantFramesNamedCounterexample.lean         |  67 ++++
+ lean/Verification/Programs/TolerantFramesRuns.lean | 428 ++-------------------
+ .../Programs/TolerantFramesTransfer.lean           |  59 +++
+ .../Programs/TolerantFramesWrites.lean             |  29 --
+ lean/Verification/Semantics/IndexedStates.lean     |   5 +
+ lean/Verification/Tests/AxiomCheck.lean            |   3 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-7cfb109f2"><header><div><div class="sha">7cfb109f2 · Cristiano Calcagno · Nov 17, 05:07</div><h3>Place the soundness of the front's exit summaries for runs beside the paper's command summaries</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The front's class-level summaries (Source/Lowering/ExitProposals.lean) are computations the front proposes and the pass checks; acceptance reads none of their theorems. The module also held their soundness for a command's runs, stated over the paper's command summaries, run composition and loops, so the source front imported CommandComposition and CommandLoops, and through them the paper's derivations. A constant-level reachability check over the built environment shows that the front uses only the summaries' definitions. Third commit of the separation plan; statements and proofs are unchanged.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the module structure</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Source/Lowering/ExitProposals.lean      the class summaries, their algebra, then_into, within_weakens,</span><span class="ln">                                        ExitHolds, Sound and every run-soundness theorem, spec, sound_spec</span><span class="ln">Semantics/CommandComposition.lean       ThenEvidence, run composition, Footprint.insertMax/join/Covers</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Source/Lowering/ExitProposals.lean      the class summaries, their algebra, schema, project_covers,</span><span class="ln">                                        project_entails, within, within_close, iterated (implementation);</span><span class="ln">                                        imports FootprintJoin and FrameChecks only</span><span class="ln">Programs/TolerantFramesExitProposals.lean then_into, within_weakens, ExitHolds, Sound, Runs.finally,</span><span class="ln">                                        Runs.settle, the run-soundness theorems, iterates_holds,</span><span class="ln">                                        loop_sound, spec, schema_atArity, sound_spec (paper)</span><span class="ln">Semantics/FootprintJoin.lean            Footprint.insertMax, Footprint.join, Footprint.Covers and</span><span class="ln">                                        their laws (shared); CommandComposition imports it</span><span class="ln">ClassSummary.le_join, used on both sides, is no longer private: the bridge reads it from</span><span class="ln">the front's module. Every other declaration keeps its name and namespace.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md</span></h4><div class="prose"><p>Where the summaries' soundness for runs is proved.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (with the axiom check), no warnings · node tests/docs.mts · make build · node tests/rule-inventory.mts · cases push, fresh, cell, stable, region, bounds-pattern, blocker-pretext, write, two-state, loop: outcomes and verified counts as at the base · no Source module reaches a command module by import · constant-level closure of every non-paper module reaches no paper constant</dd></dl>
+<details><summary>6 files changed, 397 insertions(+), 354 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md                         |   3 +-
+ .../Programs/TolerantFramesExitProposals.lean      | 290 ++++++++++++++++++++
+ .../Verification/Semantics/CommandComposition.lean |  70 +----
+ lean/Verification/Semantics/FootprintJoin.lean     |  83 ++++++
+ .../Source/Lowering/ExitProposals.lean             | 303 ++-------------------
+ lean/Verification/Tests/AxiomCheck.lean            |   2 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-601d9a588"><header><div><div class="sha">601d9a588 · Cristiano Calcagno · Nov 17, 05:10</div><h3>Drop the single pass's and the frame checks' unused imports of the paper's derivations</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Programs/SinglePass.lean and Programs/FrameChecks.lean imported Semantics/ParityDerivations.lean, the paper's derivation checker, and through it its evidence and assertions; neither uses a declaration of them (the frame checks define their freshness, inclusion and heap-preservation checks themselves). Every implementation module importing either reached the paper's formalisation by import. Fourth commit of the separation plan.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the module structure</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">SinglePass and FrameChecks import Semantics.ParityDerivations</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">neither imports it; the build confirms that no declaration, instance or</span><span class="ln">simp lemma of the two modules or of their importers needed it</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (with the axiom check), no warnings · node tests/docs.mts · no module outside the paper's formalisation and the axiom check reaches one of its modules by import</dd></dl>
+<details><summary>2 files changed, 2 deletions(-)</summary><pre class="code"> lean/Verification/Programs/FrameChecks.lean | 1 -
+ lean/Verification/Programs/SinglePass.lean  | 1 -</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-c810d2bc4"><header><div><div class="sha">c810d2bc4 · Cristiano Calcagno · Nov 17, 05:13</div><h3>Place the paper's Lean formalisation and its bridges under lean/Verification/Paper/TolerantFrames</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>After the three splits and the dropped imports, no module of the implementation or of the shared model imports a module of the paper's formalisation, but those modules still lay among the implementation's in Semantics/, Programs/ and Tests/, so which modules are the paper's was not visible in the source tree. Fifth commit of the separation plan; files move, declarations keep their names and namespaces (Verification.Parity, Verification.TolerantFrames, Verification.CallEffects, Verification.SourceExtraction), so the paper's citations of Lean names resolve as before.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the module structure</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Semantics/ParityAssertions, ParityEvidence, ParityDerivations, CommandSummaries,</span><span class="ln">CommandComposition, CommandLoops, CommandBodies, TolerantFrames;</span><span class="ln">Programs/TolerantFramesExamples, TolerantFramesModelLoop, TolerantFramesModelRules,</span><span class="ln">TolerantFramesModelTyped, KindsModelRules, ParityArithmeticBridges, TolerantFramesTransfer,</span><span class="ln">TolerantFramesRuns, TolerantFramesNamedCounterexample, TolerantFramesExitProposals;</span><span class="ln">Tests/ParityDerivationTests</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Paper/TolerantFrames/ParityAssertions, ParityEvidence, ParityDerivations,</span><span class="ln">  CommandSummaries, CommandComposition, CommandLoops, CommandBodies,</span><span class="ln">  Instances (the former Semantics/TolerantFrames: a non-rigid effect, the length lower bounds),</span><span class="ln">  Examples, ModelLoop, ModelRules, KindsModelRules, NamedCounterexample</span><span class="ln">Paper/TolerantFrames/Bridges/ParityArithmeticBridges, ModelTyped, Transfer,</span><span class="ln">  Grow (the former TolerantFramesRuns), ExitProposals</span><span class="ln">Paper/TolerantFrames/Tests/ParityDerivationTests</span><span class="ln">The library Verification globs Verification.Paper.+ beside its other directories.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">REFERENCES.md, SINGLE-PASS-PROOF.md, SOURCE-ELABORATION.md, drafts/location-kinds.md, drafts/parity-interfaces.md, drafts/tolerant-frames-note-errata.md</span></h4><div class="prose"><p>The module paths of the moved modules, and the module comments that name them.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build (with the axiom check), no warnings · node tests/docs.mts · make build · node tests/rule-inventory.mts · cases push, fresh, cell, stable, region, bounds-pattern, blocker-pretext, write, two-state, loop: outcomes and verified counts as at the base · no module outside lean/Verification/Paper imports one inside it but the axiom check, split next</dd></dl>
+<details><summary>28 files changed, 54 insertions(+), 53 deletions(-)</summary><pre class="code"> docs/REFERENCES.md                                 |  2 +-
+ docs/SINGLE-PASS-PROOF.md                          | 12 +++++-----
+ docs/SOURCE-ELABORATION.md                         |  2 +-
+ docs/drafts/location-kinds.md                      |  2 +-
+ docs/drafts/parity-interfaces.md                   |  2 +-
+ docs/drafts/tolerant-frames-note-errata.md         |  4 ++--
+ .../TolerantFrames/Bridges/ExitProposals.lean}     | 12 +++++-----
+ .../TolerantFrames/Bridges/Grow.lean}              |  6 ++---
+ .../TolerantFrames/Bridges/ModelTyped.lean}        |  2 +-
+ .../Bridges}/ParityArithmeticBridges.lean          |  2 +-
+ .../TolerantFrames/Bridges/Transfer.lean}          |  0
+ .../TolerantFrames}/CommandBodies.lean             |  2 +-
+ .../TolerantFrames}/CommandComposition.lean        |  2 +-
+ .../TolerantFrames}/CommandLoops.lean              |  2 +-
+ .../TolerantFrames}/CommandSummaries.lean          |  2 +-
+ .../TolerantFrames/Examples.lean}                  |  2 +-
+ .../TolerantFrames/Instances.lean}                 |  2 +-
+ .../TolerantFrames}/KindsModelRules.lean           |  4 ++--
+ .../TolerantFrames/ModelLoop.lean}                 |  2 +-
+ .../TolerantFrames/ModelRules.lean}                |  4 ++--
+ .../TolerantFrames/NamedCounterexample.lean}       |  2 +-
+ .../TolerantFrames}/ParityAssertions.lean          |  0
+ .../TolerantFrames}/ParityDerivations.lean         |  2 +-
+ .../TolerantFrames}/ParityEvidence.lean            |  2 +-
+ .../Tests/ParityDerivationTests.lean               |  2 +-
+ .../Source/Lowering/ExitProposals.lean             |  2 +-
+ lean/Verification/Tests/AxiomCheck.lean            | 28 +++++++++++-----------
+ lean/lakefile.toml                                 |  1 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-dd2c2fb8e"><header><div><div class="sha">dd2c2fb8e · Cristiano Calcagno · Nov 17, 05:26</div><h3>Check every safe declaration of the library in the axiom check, in place of a list of names</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The axiom check listed 1512 theorems by name in twelve blocks. Checking the acceptance theorem already covers every theorem it rests on, and a theorem the list does not name is not checked at all, so the list stood for a property: every declaration of the library rests on Lean's standard axioms. The check now states that property. It reads the axioms each module's .olean records for its declarations, so it walks no proof: 56084 declarations in under 2 s. Unsafe declarations, the runtime implementations behind @[implemented_by], are outside it: safe code cannot refer to them, so no proof rests on them (the six of the library depend on the compiler's lcProof). Lake replays a module whose imports are unchanged, so that the check covers a module added later is a fast check of the imports, which runs every time. First step before the separation of the paper's check, made first because it replaces the list that step would otherwise split.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">lean/Verification/Tests/AxiomCheck.lean</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>collectAxioms over 1512 named theorems and the @[csimp] lemmas of the project's modules, in twelve run_cmd blocks</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>collectAxioms over every safe declaration of every imported module of the library (the acceptance theorem and the @[csimp] lemmas among them); the file imports every module of the library</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">tests/axiom-check-imports.mts</span></h4><div class="prose"><p>Every module under lean/Verification is imported by the axiom check; run by test-all.sh as &quot;Axiom check covers the library&quot;.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">AGENTS.md, WORK.md, REFERENCES.md, SINGLE-PASS.md, SINGLE-PASS-THEOREM.md, drafts/location-kinds.md</span></h4><div class="prose"><p>What the axiom check covers, and the passages that called the acceptance theorem the one the check names or placed theorems in a block of it.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">tooling</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build, no warnings · controls: a module declaring a project axiom and a theorem using it, imported by the axiom check, fails the build at that theorem · a module under lean/Verification not imported fails tests/axiom-check-imports.mts · tsc over tools/tsconfig.json · node tools/unchecked.mts · node tests/docs.mts · prettier</dd></dl>
+<details><summary>9 files changed, 439 insertions(+), 1823 deletions(-)</summary><pre class="code"> AGENTS.md                               |    8 +-
+ WORK.md                                 |    2 +-
+ docs/REFERENCES.md                      |    4 +-
+ docs/SINGLE-PASS-THEOREM.md             |    4 +-
+ docs/SINGLE-PASS.md                     |    3 +-
+ docs/drafts/location-kinds.md           |    3 +-
+ lean/Verification/Tests/AxiomCheck.lean | 2196 ++++++-------------------------
+ test-all.sh                             |    2 +
+ tests/axiom-check-imports.mts           |   40 +</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-fabc07aa0"><header><div><div class="sha">fabc07aa0 · Cristiano Calcagno · Nov 17, 05:28</div><h3>Give the paper's formalisation its own axiom check, with no import into it from outside</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>After the moves, the axiom check was the one module outside lean/Verification/Paper that imported modules inside it, so the formalisation of the paper was not deletable without editing the implementation's check. Each part of the library now has its own check of the same property, every safe declaration of its modules resting on Lean's standard axioms, and no module outside Verification.Paper imports one inside it. Last commit of the separation plan.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">lean/Verification/Tests/AxiomCheck.lean</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>every safe declaration of every module of the library; imports the modules under Verification.Paper</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>every safe declaration of the modules outside Verification.Paper; imports none under it</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean</span></h4><div class="prose"><p>Every safe declaration of the modules under Verification.Paper; imports each of them.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">tests/axiom-check-imports.mts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the axiom check imports every module of the library</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>each axiom check imports every module of its part, outside or under Verification.Paper</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">AGENTS.md, WORK.md, REFERENCES.md, drafts/location-kinds.md</span></h4><div class="prose"><p>The two checks and which covers which modules; the status of B's refactoring.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip">tooling</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>lake build, no warnings · no module outside lean/Verification/Paper imports one inside it · controls: a module under Verification.Paper declaring a project axiom and a theorem using it, imported by the paper's check, fails the build at that theorem · a module under Verification.Paper not imported fails tests/axiom-check-imports.mts · tsc over tools/tsconfig.json · node tools/unchecked.mts · node tests/docs.mts · prettier</dd></dl>
+<details><summary>8 files changed, 111 insertions(+), 53 deletions(-)</summary><pre class="code"> AGENTS.md                                          | 13 ++++--
+ WORK.md                                            |  2 +-
+ docs/REFERENCES.md                                 |  3 +-
+ docs/drafts/location-kinds.md                      |  4 +-
+ .../Paper/TolerantFrames/Tests/AxiomCheck.lean     | 53 ++++++++++++++++++++++
+ lean/Verification/Tests/AxiomCheck.lean            | 41 ++++++-----------
+ test-all.sh                                        |  4 +-
+ tests/axiom-check-imports.mts                      | 44 +++++++++++-------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-7a8c19f56"><header><div><div class="sha">7a8c19f56 · Cristiano Calcagno · Nov 17, 05:32</div><h3>State where B lives: its modules by group, what each states, and what it reads</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The first part of B's first item: the Lean modules, definitions and theorems that are the paper's formalisation, and what each states. With the separation done, B is the 19 modules under lean/Verification/Paper/TolerantFrames; the section groups them (the assertion language and its derivations, command summaries, the paper's rules in the indexed model, bridges), names what each imports from A and the shared model, and counts the Lean names the paper's status tags cite by the side that declares them: 39 in B, 120 in A or the shared model, 5 on both sides.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/implementation-and-paper-rules.md, WORK.md</span></h4><div class="prose"><p>The section &quot;Where B lives&quot;; the status of B's first item.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · counts from the built environment (declarations per module) and from note.tex's \lean{} citations resolved against it</dd></dl>
+<details><summary>2 files changed, 90 insertions(+), 1 deletion(-)</summary><pre class="code"> WORK.md                                       |  2 +-
+ docs/drafts/implementation-and-paper-rules.md | 89 +++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-d47f7116f"><header><div><div class="sha">d47f7116f · Cristiano Calcagno · Nov 17, 05:42</div><h3>State how far B matches the paper, item by item</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The second part of B's first item: for each definition, rule, axiom, law and example of the paper, the statement of B that is it and whether it is equal, narrower, broader or different, or that B has none. Of 92 items B states 13 equally, 35 more narrowly, 2 differently and none more broadly, and has no statement of 42. The narrower statements share three restrictions: B's assertion grammar, finite certificates in place of the semantic premises of support, respect, rigidity and inclusion, and command summaries over run relations with no command language. The model, Rebasing, Independence and Conj are stated by the shared model; several primitive, library and typed-array rules by A or by assumption.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/b-against-the-paper.md</span></h4><div class="prose"><p>The item-by-item match, one table per section of the paper, B's declarations with no counterpart, and the counts.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/implementation-and-paper-rules.md, WORK.md</span></h4><div class="prose"><p>The section &quot;How far B matches the paper&quot;; the status of B's first item.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · the match read by gpt-6-astra at 7a8c19f5 with no build · four of its claims checked against the source (Example 1's loop, Push, Fresh-Eff, the quantified atom's presence condition)</dd></dl>
+<details><summary>3 files changed, 239 insertions(+), 1 deletion(-)</summary><pre class="code"> WORK.md                                       |   2 +-
+ docs/drafts/b-against-the-paper.md            | 207 ++++++++++++++++++++++++++
+ docs/drafts/implementation-and-paper-rules.md |  31 ++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-ae3753085"><header><div><div class="sha">ae3753085 · Cristiano Calcagno · Nov 17, 05:52</div><h3>Record the shared model's statements of the items B does not state</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Of the 42 paper items with no statement in B, the paper's status tags cite statements of the shared model for 15, assume 13 as host contracts, and 3 are conjectures that state no claim. Each cited shared-model statement is read against the paper: admissible transitions and independence of the world are stated equally, Preservation from a safety premise in place of typing, and well-formed states, Respect, Rebasing, Conj, (Prefix), Reliance and Field-Read differently, each difference in its row. The file records the differences; the paper is the source of truth.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/b-against-the-paper.md, drafts/implementation-and-paper-rules.md</span></h4><div class="prose"><p>The rows of the shared-model items, the assumed host contracts marked as such, the conjectures' rows removed, the counts (89 items: 13 equal, 35 narrower, 2 different, 26 with no statement, 13 assumed), and the summary in the basis.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · each changed row read against note.tex and the cited Lean declaration</dd></dl>
+<details><summary>2 files changed, 46 insertions(+), 44 deletions(-)</summary><pre class="code"> docs/drafts/b-against-the-paper.md            | 73 +++++++++++++--------------
+ docs/drafts/implementation-and-paper-rules.md | 17 ++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
