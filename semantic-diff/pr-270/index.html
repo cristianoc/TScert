@@ -1,0 +1,364 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">6 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-270"><code>cdef605ba381c5c047a053b6e5ed7d0af14c7a4a..pr-270</code></a><ul><li>6 commits</li><li>changes: 6 Docs, 2 Rule, 1 Definition, 3 Check, 2 Trust, 2 Control, 1 Tooling</li><li>parts: <span class="chip">docs</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">trust</span> <span class="chip">tests</span> <span class="chip">parser</span></li><li>new trust: <span class="trust">Number.isSafeInteger; %ByteAt%</span></li></ul></li></ul></section>
+<h2 id="g-pr-270"><code>cdef605ba381c5c047a053b6e5ed7d0af14c7a4a..pr-270</code></h2><article class="card" id="c-32b5cc850"><header><div><div class="sha">32b5cc850 · Cristiano Calcagno · Nov 17, 17:43</div><h3>State SafeInt's fact to type as a step checked at its knowledge's refinement</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The draft's bridge refined a node's exit context (refinedContext), which is checked against the target's claimed context; the front lowers that context from TypeScript's types, so every value check still read <code>number</code>. Three probes (a Uint8Array element at <code>const k: SafeInt</code>, <code>const k: SafeInt = v</code> under <code>Number.isSafeInteger(v)</code>, and <code>c.count = c.count + 1</code> into <code>count: SafeInt</code> under a bound) were each refused at the value-check node with &quot;its operands' claims are number&quot;.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">integer-types draft, fact to type</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>at a node's exit, int(x) meets the slot's type with int through refinedContext and refineBy, and the return reads the refined context</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a step is checked at its claimed context refined by its knowledge's integer facts (each slot the facts state a safe integer, where a clause of its type includes int, at the int label); every re-check of the step's derivation against its claim accepts that refinement by the step's facts; the exit adds none, a slot claimed within int being written only through steps checked at its contract</p></div></figure></div>
+<h4 class="change">Review</h4><div class="prose"><p>Astra (read-only) on the draft: the refinement is an instance of refinement by knowledge and sound from EnvOk and Holds kE; it named the consumers the first list missed (stepGrades, stepCertificate, the yields' checks, passDerivChecked, the regional ordinary tree) and the unknown clause, all now stated.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 57 insertions(+), 8 deletions(-)</summary><pre class="code"> docs/drafts/integer-types.md | 65 ++++++++++++++++++++++++++++++++++++++------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-88b417773"><header><div><div class="sha">88b417773 · Cristiano Calcagno · Nov 17, 18:58</div><h3>Check each step at its context refined by its facts' safe integers</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A value the facts state a safe integer could not reach SafeInt: each value check reads its node's claimed context, which the front lowers from TypeScript's types, so <code>c.count = c.count + 1</code> into <code>count: SafeInt</code> under <code>c.count &lt; 100</code> was refused with &quot;its operands' claims are object, number; its claim is null&quot;, and a <code>Uint8Array</code> element or a value <code>Number.isSafeInteger</code> answered <code>true</code> of bound at <code>const k: SafeInt</code> with &quot;its operands' claims are number; its claim is SafeInt&quot;.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">int-refine</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a step is checked at its claimed context with each slot its facts state</span></span></div><div class="row"><span><span class="m-text">a safe integer, whose type has a clause including the safe integers</span></span></div><div class="row"><span>(<code class="m-code">number</code>, <code class="m-code">int</code>, <code class="m-code">unknown</code>, <code class="m-code">top</code>), <span class="m-text">read at the graph's <code class="m-code">int</code> label</span><span class="m-rel">:</span></span></div><div class="row"><span><span class="m-text">the type's meet with <code class="m-code">int</code> there (<code class="m-code"><span class="tk-t">PromiseCalls</span>.intRefine</code>); the</span></span></div><div class="row"><span><span class="m-text">sequent of its search, <code class="m-code">directCall</code> and its rule's selection</span></span></div><div class="row"><span>(<code class="m-code">jOf</code>); <span class="m-text">a writing step's facts keep the integer facts its context was</span></span></div><div class="row"><span><span class="m-text">refined by, where they refined it</span> (<code class="m-code"><span class="tk-t">PromiseCalls</span>.withInts</code>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">the graph's <code>int</code> label</span></h4><div class="rules"><div class="formulas"><div class="row"><span><code class="m-code"><span class="tk-t">NormalGraph</span>.intLabel</code>, <span class="m-text">the nullary head whose row is the one clause</span></span></div><div class="row"><span><code class="m-code">int</code> (<code class="m-code"><span class="tk-t">Equations</span>.memo</code>), <span class="m-text">read after its row is checked</span></span></div><div class="row"><span>(<code class="m-code"><span class="tk-t">PromiseCalls</span>.intLabel</code>), <span class="m-text">as <code class="m-code"><span class="tk-t">NormalGraph</span>.literal</code> is for literals</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">re-checks of a step's derivation</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>footprint, freshness and regional checks: the derivation claimed at the node's context</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the same checks through <code>stepDerivChecked</code>: the derivation's context the node's refined by the step's facts (<code>PromiseCalls.intRefines</code>); the regional evidence's entry that refined context, and its fields' stability read there; a promise call's derivation likewise; the regional header of a step with no derivation and the yields' output check read the claimed context</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">an edge's search</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="obligations"><div class="obligation"><span class="tgt"><span class="m-text">at the edge's context over the edge's facts</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="obligations"><div class="obligation"><span class="tgt"><span class="m-text">at the edge's context refined by the edge's facts' safe integers, a binding initialized from a tested parameter reaching its slot claimed SafeInt</span></span></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">Number.isSafeInteger</span></h4><div class="prose"><p>its argument a safe integer where it answers other than <code>false</code>, the guarded fact <code>int(2)</code> of its return, which a branch on its truth makes unconditional; ECMA-262's <code>Number.isSafeInteger</code> answers <code>true</code> exactly of a number that is an integer of magnitude at most 2^53 - 1</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">%ByteAt% of an integer format</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a bounded read of any view: a number, the element at the index</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>besides, of a <code>Uint8Array</code>, <code>Uint16Array</code> or <code>Int32Array</code>: a safe integer within the format's range, as a cell of a view spine of that format holds (<code>HeapOk.view_cell_stored</code>); listed after the read at any number, so an unbounded read still selects that one</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">forged fragment: Number.isSafeInteger's integer fact removed</span></h4><div class="control"><p>the declaration's ensures emptied in the fragment of safe-int-is-safe-integer: its true branch's binding at SafeInt refused</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">forged fragment: a return's integer fact removed</span></h4><div class="control"><p><code>next</code>'s upper bound dropped from its precondition in the fragment of safe-int-arith-field: <code>n + 1</code> returned at SafeInt refused</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md, ANNOTATIONS.md, SOURCE-CONTRACTS.md, integer-types draft</span></h4><div class="prose"><p>int-refine and what reads it; SafeInt reached from facts; the contracts of Number.isSafeInteger and of %ByteAt% by format; the draft's bridge as built</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>safe-int-arith-field</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a sum at a SafeInt field and return</span></summary><pre class="code"><span class="tk-c">// A sum known to be a safe integer stored at a field typed `SafeInt`: under</span>
+<span class="tk-c">// `c.count &lt; 100` the facts state `c.count + 1` a safe integer, so the write</span>
+<span class="tk-c">// reads it at `SafeInt` (docs/drafts/integer-types.md, &quot;The bridge&quot;: a step</span>
+<span class="tk-c">// is checked at its context refined by its facts' safe integers).</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Counter</span> = { count: <span class="tk-t">SafeInt</span> };
+
+<span class="tk-c">/** @requires 0 &lt;= c.count &amp;&amp; c.count &lt; 100 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> bump(c: <span class="tk-t">Counter</span>): <span class="tk-k">void</span> {
+  c.count = c.count + <span class="tk-n">1</span>;
+}
+
+<span class="tk-c">/** @requires 0 &lt;= n &amp;&amp; n &lt; 100 */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> next(n: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">const</span> m = n + <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> m;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-half</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">x / 2 at SafeInt</span></summary><pre class="code"><span class="tk-c">// `x / 2` returned at `SafeInt`: no fact states the quotient a safe integer,</span>
+<span class="tk-c">// so the return is refused. Under Node `middle([10, 20], 3)` reads</span>
+<span class="tk-c">// `xs[1.5]`, `undefined` at `number`.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> half(x: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> x / <span class="tk-n">2</span>;
+}
+
+<span class="tk-c">/** @requires 0 &lt;= i &amp;&amp; i &lt; xs.length */</span>
+<span class="tk-k">function</span> at(xs: number[], i: <span class="tk-t">SafeInt</span>): number {
+  <span class="tk-k">return</span> xs[i]!;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> middle(xs: number[], n: <span class="tk-t">SafeInt</span>): number {
+  <span class="tk-k">const</span> i = half(n);
+  <span class="tk-k">if</span> (<span class="tk-n">0</span> &lt;= i &amp;&amp; i &lt; xs.length) <span class="tk-k">return</span> at(xs, i);
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>safe-int-view-element</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Uint8Array and Int32Array elements</span></summary><pre class="code"><span class="tk-c">// An element of a `Uint8Array`, `Uint16Array` or `Int32Array` is a safe</span>
+<span class="tk-c">// integer within its format's range (`%ByteAt%`'s bounded signature of each</span>
+<span class="tk-c">// integer format), so its read is bound at `SafeInt` and used as an index</span>
+<span class="tk-c">// with no `safeInteger(...)`.</span>
+
+<span class="tk-c">/** @requires 0 &lt;= i &amp;&amp; i &lt; bytes.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> byteAt(bytes: <span class="tk-t">Uint8Array</span>, i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">const</span> k: <span class="tk-t">SafeInt</span> = bytes[i]!;
+  <span class="tk-k">return</span> k;
+}
+
+<span class="tk-c">/** @requires 0 &lt;= i &amp;&amp; i &lt; words.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> wordAt(words: <span class="tk-t">Int32Array</span>, i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> words[i]!;
+}
+
+<span class="tk-c">/** @requires 0 &lt;= i &amp;&amp; i &lt; codes.length &amp;&amp; 256 &lt;= table.length */</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lookup(table: number[], codes: <span class="tk-t">Uint8Array</span>, i: <span class="tk-t">SafeInt</span>): number {
+  <span class="tk-k">return</span> table[codes[i]!]!;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-view-float64</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a Float64Array element at SafeInt</span></summary><pre class="code"><span class="tk-c">// An element of a `Float64Array` is any number, so its read at `SafeInt` is</span>
+<span class="tk-c">// refused. Under Node, with `values[0]` holding `0.5`, `pick(values, [1, 2])`</span>
+<span class="tk-c">// reads `xs[0.5]`, `undefined` at `number`.</span>
+
+<span class="tk-c">/** @requires 0 &lt;= i &amp;&amp; i &lt; values.length */</span>
+<span class="tk-k">function</span> element(values: <span class="tk-t">Float64Array</span>, i: <span class="tk-t">SafeInt</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> values[i]!;
+}
+
+<span class="tk-c">/** @requires 0 &lt;= i &amp;&amp; i &lt; xs.length */</span>
+<span class="tk-k">function</span> at(xs: number[], i: <span class="tk-t">SafeInt</span>): number {
+  <span class="tk-k">return</span> xs[i]!;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> pick(values: <span class="tk-t">Float64Array</span>, xs: number[]): number {
+  <span class="tk-k">if</span> (values.length === <span class="tk-n">0</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> i = element(values, <span class="tk-n">0</span>);
+  <span class="tk-k">if</span> (<span class="tk-n">0</span> &lt;= i &amp;&amp; i &lt; xs.length) <span class="tk-k">return</span> at(xs, i);
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>safe-int-is-safe-integer</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">Number.isSafeInteger's true branch</span></summary><pre class="code"><span class="tk-c">// `Number.isSafeInteger(v)` answering other than `false` states `v` a safe</span>
+<span class="tk-c">// integer (SOURCE-CONTRACTS.md, &quot;Library globals&quot;): on its true branch</span>
+<span class="tk-c">// `v` is bound at `SafeInt` and bounds an index with no `safeInteger(v)`.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> asInt(v: number): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">if</span> (<span class="tk-t">Number</span>.isSafeInteger(v)) {
+    <span class="tk-k">const</span> k: <span class="tk-t">SafeInt</span> = v;
+    <span class="tk-k">return</span> k;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> <span class="tk-k">get</span>(xs: number[], v: number): number {
+  <span class="tk-k">if</span> (<span class="tk-t">Number</span>.isSafeInteger(v)) {
+    <span class="tk-k">if</span> (<span class="tk-n">0</span> &lt;= v &amp;&amp; v &lt; xs.length) <span class="tk-k">return</span> xs[v]!;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>invalid-safe-int-nan-field</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">NaN into a SafeInt field</span></summary><pre class="code"><span class="tk-c">// `NaN` written into a field typed `SafeInt`: the location's contract is</span>
+<span class="tk-c">// established at every write, and `NaN` is no integer, so the write is</span>
+<span class="tk-c">// refused. The refusal is of the type contract: under Node, after</span>
+<span class="tk-c">// `reset(c)`, `count(c)` returns `NaN` at `SafeInt`.</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Counter</span> = { count: <span class="tk-t">SafeInt</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(c: <span class="tk-t">Counter</span>): <span class="tk-k">void</span> {
+  c.count = <span class="tk-t">NaN</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(c: <span class="tk-t">Counter</span>): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">return</span> c.count;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-t">Under</span> <span class="tk-t">Node</span> <span class="tk-s">`middle([10, 20], 3)`</span> <span class="tk-k">of</span> invalid-safe-int-half reads</span><span class="ln"><span class="tk-s">`xs[1.5]`</span> and <span class="tk-s">`pick(new Float64Array([0.5]), [1, 2])`</span> <span class="tk-k">of</span></span><span class="ln">invalid-safe-int-view-float64 reads <span class="tk-s">`xs[0.5]`</span>, each <span class="tk-s">`undefined`</span> at</span><span class="ln"><span class="tk-s">`number`</span>; invalid-safe-int-nan-field is a refusal <span class="tk-k">of</span> the <span class="tk-k">type</span> contract,</span><span class="ln"><span class="tk-s">`count(c)`</span> then returning <span class="tk-s">`NaN`</span> at <span class="tk-t">SafeInt</span>.</span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>envOk_intRefine, envOk_intRefines and envOk_intRefine_of: the refined context types the environment where the facts hold, from intSlot_sound and the meaning of the clause <code>int</code>; stepChecked_parts, the footprint and freshness checks (passDerivChecked), the regional typing (regionNodeEntry_checked) and ExitTyped.env read it at the facts each holds. The headline theorem and its premise are unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>intLabel · includesInt · intRefine · intRefines · withInts · envOk_intRefine · envOk_intRefines · envOk_intRefine_of · holds_withInts · ctxOfStep · jOf · stepDerivChecked · ExitTyped</dd><dt>Trust</dt><dd><span class="trust">Number.isSafeInteger; %ByteAt%</span></dd><dt>Tests</dt><dd><span class="test pos">safe-int-arith-field</span> <span class="test pos">invalid-safe-int-half</span> <span class="test pos">safe-int-view-element</span> <span class="test pos">invalid-safe-int-view-float64</span> <span class="test pos">safe-int-is-safe-integer</span> <span class="test pos">invalid-safe-int-nan-field</span> <span class="test forged">is-safe-integer-fact</span> <span class="test forged">safe-int-return-range</span></dd></dl>
+<details><summary>38 files changed, 647 insertions(+), 170 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |  17 +-
+ docs/ARITHMETIC.md                                 |  32 ++++
+ docs/SOURCE-CONTRACTS.md                           |  34 +++-
+ docs/drafts/integer-types.md                       |  61 +++----
+ lean/Verification/Programs/Parametricity.lean      |   8 +
+ lean/Verification/Programs/PromiseCalls.lean       | 178 +++++++++++++++++++++
+ lean/Verification/Programs/SinglePass.lean         |  58 ++++---
+ .../Programs/TolerantFramesDriverEntry.lean        |   2 +-
+ .../Programs/TolerantFramesExitDelivers.lean       |   5 +-
+ .../Programs/TolerantFramesExitHeadExtraction.lean |  10 +-
+ .../Programs/TolerantFramesExitTypeChecks.lean     |  10 +-
+ .../Programs/TolerantFramesExitTyped.lean          |   9 +-
+ .../Programs/TolerantFramesFootprint.lean          |  13 +-
+ .../Programs/TolerantFramesNodeCallFresh.lean      |  15 +-
+ .../Programs/TolerantFramesNodeYieldChecks.lean    |  11 +-
+ .../Programs/TolerantFramesNodeYielded.lean        |  12 +-
+ .../Programs/TolerantFramesRegionalHeld.lean       |  12 +-
+ .../Programs/TolerantFramesRegionalReadback.lean   |  30 +---
+ .../Programs/TolerantFramesRegionalRecorded.lean   |  18 ++-
+ .../Programs/TolerantFramesRegionalRuns.lean       |   4 +-
+ .../Programs/TolerantFramesRegionalTyping.lean     |  30 ++--
+ .../Programs/TolerantFramesStepLink.lean           |  36 +++--
+ .../Programs/TolerantFramesStepLinkReturns.lean    |   2 +-
+ .../Programs/TolerantFramesStepLinkSound.lean      |  11 +-
+ .../Programs/TolerantFramesWalkReassignChecks.lean |   3 +-
+ lean/Verification/Types/EquationGraphs.lean        |   9 +-
+ lean/Verification/Types/EquationValidator.lean     |   8 +
+ lean/Verification/Types/PositiveGraphs.lean        |   5 +
+ pipeline/cases.mts                                 |   9 ++
+ pipeline/examples/invalid-safe-int-half.ts         |  18 +++
+ pipeline/examples/invalid-safe-int-nan-field.ts    |  14 ++
+ pipeline/examples/invalid-safe-int-view-float64.ts |  20 +++
+ pipeline/examples/safe-int-arith-field.ts          |  17 ++
+ pipeline/examples/safe-int-is-safe-integer.ts      |  18 +++
+ pipeline/examples/safe-int-view-element.ts         |  20 +++
+ tests/single-pass-controls.mts                     |  31 ++++
+ tools/intrinsics.mts                               |  18 ++-
+ tools/library-globals.mts                          |   9 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-3c1434cdf"><header><div><div class="sha">3c1434cdf · Cristiano Calcagno · Nov 17, 18:58</div><h3>Read a loop invariant's binding at its written annotation</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A loop invariant naming a binding declared <code>SafeInt</code> still needed <code>safeInteger(...)</code>: <code>/** @invariant j + 1 &lt;= count */</code> over <code>let j: SafeInt</code> was refused with &quot;the comparison names j, which neither its type nor the clause states a safe integer&quot;, the clause reader taking the binding's type from TypeScript, which reads <code>SafeInt</code> as <code>number</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">clause reader: a loop invariant's binding</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>read through the type TypeScript gives the binding's declaration</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>read through the binding's written annotation where it has one, as the fragment reads it, else TypeScript's type The elaborated facts are unchanged; Lean establishes them on every edge into the head.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md</span></h4><div class="prose"><p>a loop invariant's path kinds read through the written annotation</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>safe-int-loop-invariant</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a SafeInt counter and count, no safeInteger</span></summary><pre class="code"><span class="tk-c">// A loop invariant over bindings declared `SafeInt` with no</span>
+<span class="tk-c">// `safeInteger(...)`: the clause reader reads a binding at its written</span>
+<span class="tk-c">// annotation, and each write of `j` is a step checked at the binding's</span>
+<span class="tk-c">// contract, the sum `j - 1` refined by its facts.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> countDown(xs: number[]): number {
+  <span class="tk-k">const</span> count: <span class="tk-t">SafeInt</span> = xs.length;
+  <span class="tk-k">let</span> s = <span class="tk-n">0</span>;
+  <span class="tk-c">/** @invariant j + 1 &lt;= count &amp;&amp; count === xs.length */</span>
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> j: <span class="tk-t">SafeInt</span> = count - <span class="tk-n">1</span>; j &gt;= <span class="tk-n">0</span>; j--) s += xs[j]!;
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>safe-int-loop-start-gap</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">a counter starting at a merged SafeInt value</span></summary><pre class="code"><span class="tk-c">// A loop starting at a value merged from a call returning `SafeInt` and a</span>
+<span class="tk-c">// `number` (pretext's `analyzeText` reading `getTrailingCollapsibleStart`</span>
+<span class="tk-c">// typed `SafeInt`): the loop head's facts over the counter, `0 &lt;= i`, are</span>
+<span class="tk-c">// not established, so the bounded read `marks[i]` is refused. With the</span>
+<span class="tk-c">// callee's result typed `number` and `@ensures safeInteger(result)` the same</span>
+<span class="tk-c">// loop verifies.</span>
+
+<span class="tk-c">/** @ensures 0 &lt;= result &amp;&amp; result &lt;= s.length */</span>
+<span class="tk-k">function</span> trailing(s: string): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">if</span> (s.length &gt; <span class="tk-n">5</span>) <span class="tk-k">return</span> <span class="tk-n">5</span>;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sumFrom(s: string, b: boolean, c: boolean): number {
+  <span class="tk-k">const</span> marks = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(s.length + <span class="tk-n">1</span>);
+  <span class="tk-k">const</span> t = b ? trailing(s) : s.length;
+  <span class="tk-k">const</span> <span class="tk-k">from</span> = c ? t : <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> r = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-k">from</span>; i &lt; s.length; i++) r += marks[i]!;
+  <span class="tk-k">return</span> r;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>A loop counter starting at a value merged from a callee's SafeInt result and a number has no loop-head facts over it, so its bounded read is refused (safe-int-loop-start-gap); pretext's measureAnalysis, with <code>from: SafeInt</code>, is refused at its loop the same way.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">safe-int-loop-invariant</span> <span class="test pos">safe-int-loop-start-gap</span></dd></dl>
+<details><summary>5 files changed, 47 insertions(+), 5 deletions(-)</summary><pre class="code"> docs/ARITHMETIC.md                           |  6 ++++--
+ pipeline/cases.mts                           |  2 ++
+ pipeline/examples/safe-int-loop-invariant.ts | 11 +++++++++++
+ pipeline/examples/safe-int-loop-start-gap.ts | 21 +++++++++++++++++++++
+ tools/fragment-statements.mts                | 12 +++++++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-63d546395"><header><div><div class="sha">63d546395 · Cristiano Calcagno · Nov 17, 18:58</div><h3>Record SafeInt's fact to type, and state the type in paper 1</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>With fact to type built, the design's three steps are in place; the paper's model names the sort a program's SafeInt denotes.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, the &quot;Integer types&quot; row</span></h4><div class="prose"><p>what a fact now gives a type; what remains: a loop head's facts over a counter starting at a merged SafeInt value, a path's integrality from a type alone, a literal union's meet</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">paper 1, §2</span></h4><div class="prose"><p>the type SafeInt in a program denotes the sort SafeInt; the PDF rebuilt through the colour pass</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 3 insertions(+), 2 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/drafts/tolerant-frames-note/note.tex          |   3 ++-
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 498853 -&gt; 498846 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f15c5bae0"><header><div><div class="sha">f15c5bae0 · Cristiano Calcagno · Nov 17, 18:59</div><h3>Pin pretext at the commit typing its loop counters SafeInt</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>pretext's tscert-bounds at 0dafecb3 types analyzeText's, prepareRichInline's and getTrailingCollapsibleStart's loop counters SafeInt and drops the <code>safeInteger(...)</code> their invariants stated; CI's pretext job tests those annotations only at that commit.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">CI's pretext pin</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">PRETEXT_COMMIT 6837e821, and its recorded functions</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">PRETEXT_COMMIT 0dafecb3, the same 210 functions recorded</span></pre></figure></div>
+<h4 class="change">Validation</h4><div class="prose"><p>make test-pretext PRETEXT=&lt;tscert-bounds at 0dafecb3&gt;: 210 of 210 functions verified in 12 files</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>make test-pretext</dd></dl>
+<details><summary>2 files changed, 2 insertions(+), 2 deletions(-)</summary><pre class="code"> .github/workflows/ci.yml         | 2 +-
+ tests/pretext-tier-expected.json | 2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-29612c4a0"><header><div><div class="sha">29612c4a0 · Cristiano Calcagno · Nov 17, 19:14</div><h3>Read every plain type a fact states integral at int, not only one including int</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Astra's review of the branch: int-refine read a slot at <code>int</code> only where a clause of its type included the safe integers, so <code>1 | 0.5</code> under <code>Number.isSafeInteger</code> stayed <code>1 | 0.5</code> and <code>return x</code> at SafeInt was refused, although the fact alone places the value in <code>int</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Rule <span class="target">int-refine's premise</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the slot's type plain with a clause <code class="m-code">number</code>, <code class="m-code">int</code>, <code class="m-code">unknown</code> or</span> <code class="m-code">top</code></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the slot's type plain and not already within the safe integers</span></span></div><div class="row cont"><span>(<code class="m-code"><span class="tk-t">IndexWrites</span>.intClause</code>)<span class="m-rel">:</span> <span class="m-text">its meet with <code class="m-code">int</code> lies within</span> <code class="m-code">int</code>,</span></div><div class="row cont"><span><span class="m-text">equal to it where a clause includes <code class="m-code">int</code>; a type within the safe</span></span></div><div class="row cont"><span><span class="m-text">integers, or with a parameter, scheme or meet row, keeps its type</span></span></div><div class="row"><span>(<code class="m-code"><span class="tk-t">PromiseCalls</span>.intRefinable</code>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ARITHMETIC.md, integer-types draft, WORK.md</span></h4><div class="prose"><p>int-refine's premise; a literal union with other values read at <code>int</code> rather than at its safe literals, recorded</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>safe-int-is-safe-integer</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">pick: <code>1 | 0.5</code> tested, returned at SafeInt</span></summary><pre class="code"><span class="tk-c">// `Number.isSafeInteger(v)` answering other than `false` states `v` a safe</span>
+<span class="tk-c">// integer (SOURCE-CONTRACTS.md, &quot;Library globals&quot;): on its true branch</span>
+<span class="tk-c">// `v` is bound at `SafeInt` and bounds an index with no `safeInteger(v)`.</span>
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> asInt(v: number): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">if</span> (<span class="tk-t">Number</span>.isSafeInteger(v)) {
+    <span class="tk-k">const</span> k: <span class="tk-t">SafeInt</span> = v;
+    <span class="tk-k">return</span> k;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> <span class="tk-k">get</span>(xs: number[], v: number): number {
+  <span class="tk-k">if</span> (<span class="tk-t">Number</span>.isSafeInteger(v)) {
+    <span class="tk-k">if</span> (<span class="tk-n">0</span> &lt;= v &amp;&amp; v &lt; xs.length) <span class="tk-k">return</span> xs[v]!;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-c">// A union of a safe literal and a fraction, tested: read within `int` on</span>
+<span class="tk-c">// the true branch.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pick(b: boolean): <span class="tk-t">SafeInt</span> {
+  <span class="tk-k">const</span> x = b ? <span class="tk-n">1</span> : <span class="tk-n">0.5</span>;
+  <span class="tk-k">if</span> (<span class="tk-t">Number</span>.isSafeInteger(x)) <span class="tk-k">return</span> x;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>envOk_intRefine reads only the fact (intSlot_meaning), whatever the slot's type; the premise decides precision alone.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>intRefinable · intRefine</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>safe-int-is-safe-integer</dd></dl>
+<details><summary>6 files changed, 35 insertions(+), 25 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+ docs/ARITHMETIC.md                                 |  9 ++++----
+ docs/drafts/integer-types.md                       | 15 +++++++-------
+ lean/Verification/Programs/PromiseCalls.lean       | 24 +++++++++++-----------
+ .../Programs/TolerantFramesStepLink.lean           |  2 +-
+ pipeline/examples/safe-int-is-safe-integer.ts      |  8 ++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
