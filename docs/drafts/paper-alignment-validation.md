@@ -835,3 +835,78 @@ Logs: `/workspace/scratch/compiler-test.log`, `compiler-axioms.log`,
 `compiler-origins-build2.log`, `compiler-routes-build3.log`,
 `compiler-control-build4.log` (first control cases), `compiler-sinks-build2.log`
 (control completion), and `compiler-docs-final.log`.
+
+
+## Fourth owner-requested rebase, onto 65d5bf91
+
+A fetch in the cloud checkout recorded exact latest single-pass
+`65d5bf9136f4afab47bb76db447f74d400a136f3`, containing 21 upstream commits
+above the preceding base `5777ed2e08992863611715aa38f21b97f10145d5`. The
+pre-rebase task and remote tip was `dc8b08a3cf68f6a026829d31ad65c3483d2f63ba`.
+All 27 task commits replayed; only the two correspondence documents needed
+conflict resolution. Their arithmetic/string/view rows were then reconciled
+against the new shared rule datum and the actual paper, preserving the task's
+postcondition interpretation evidence. The task does not modify the owner's
+paper source or PDF relative to this base.
+
+The exact replay mapping is:
+
+- `ac2533b8332450e57c35db48bb8e46ea28f43a08` → `0d2e17bc3a722ff2a63821c449b730f752a1f949`: State semantic support and respect at the paper's generality.
+- `cb5565c22a5f2fe56b7f4a6af57413e34e1acf56` → `89d9796a9c99ab5c99cbdff7e6b720fda5d4a6dc`: Interpret general paper assertions and quantified consequences.
+- `13b4cecfc6ed92ead97159c4af0f55d13f74b709` → `77c125d547fe6066f5a6233d02f4ae2689f44c82`: Prove general command rules and regional checked transfer.
+- `093f111edc465a31d8e4a88257d527bdb81a841b` → `05799b5bb3c6cdf4aafdc38e5519dfbc6bdfcc41`: Record final Paper proof, regression and correspondence validation.
+- `00c4b4b35a653a6bef7b3da9b73ccd4cfb8e3b95` → `38cb22290e0563291bfa61f197ef088915030e84`: Prove capture-avoiding assertion transport and full quantified rules.
+- `e3d0aaaacab1853eb8b88b288a1b3ddf57675553` → `1ab330fa2b5896aea859208582650cc02fe236a5`: Record full validation of the assertion transport continuation.
+- `71cc41283ab6390efab93989f6ef361a7d0272c3` → `aa7c549875a307011d4338b6f8ba760fbf78eed2`: Prove general all support, witness rules and integer consequence.
+- `8c8048b29ea470e58242d6076ac61e163151826e` → `eaaccdd44736c8f582e6920058437f7b006b119c`: Record validation and the numeric equality obstruction.
+- `41c5cb107df7389959b76503a1ce258a00aa0de1` → `16d27f724e457dccb28b0af1b6d6ff61604c1b4c`: Formalise first-order two-state postconditions and their transport.
+- `6aee3ee7c6d05884ebe80beb11fd9c71a554372c` → `02223e86b0c08d9b94a9a0f28ef99173bd61bf69`: Record validation of first-order postcondition proofs.
+- `78ee65e9d7c40295d50f7e1ea0619fc9a1596578` → `49b179315ddb08c027747d4ae9ee61dadaa7cfa0`: Correct the zero bridge and prove conditional path supports.
+- `2d48f60aed43b4204de41993e0d3b93213d64e6f` → `3437b00e419a0e6d75942fbff6476b8a699b8099`: Record validation of the corrected literal and path support proofs.
+- `942b50883ac0d0c73f79afe3ed096f88bbc50b34` → `7d8c219ebca0617e7fd73630d2f61e944f9d3659`: Make logical witnesses heap-based and prove structural supports.
+- `bd26c84229721a9f60001361b792fc1496da38d5` → `033ab1dc5a9fd5f66a61b611fb4f8fb8c3c9a53e`: Record rebased quantifier and support validation.
+- `f2147af42f02ae90362b369f2a5a9449cb3aa0a6` → `4b84650fe2983bf5d476088cb071be1fd9068972`: Prove scoped Call instantiation on actual executions.
+- `e66d3bf7b0e9ec780c3a06a7bf91d2fe8b0e6374` → `27dc6c237d0562b8d292ee555d7c062d85f90213`: Record exact scoped Call validation and review.
+- `12d952d4f24421d513fbf95c219842ed723cd7c9` → `ee8155094fbc52ec5b74e01820622a7dba64ec95`: Observe raw completions and prove scoped budget transport.
+- `73cc9f4fc553cf31f60e3c7e8ce92b61f833ba08` → `4b47f52e71931b376413ecb9430a856718427c49`: Record raw execution and budget proof validation.
+- `876d9f67a38d969cf52d07b5a90974a97e538853` → `6a7fb62b97fbadb7ea1c0d6490540d8bfc047af5`: Compile fixed primitive terms with a conservative own-key test.
+- `2f329a34c0306a72c5743a176f7a9e1121cbad86` → `19de341fd8243b1977f3bd7d88da8a05ef0db8f8`: Record latest-rebase primitive code and shared regression evidence.
+- `c55a28d13f6c6e6926fcbdbf8a5bda8a2e68d050` → `e47694384c75018275212226745f16213ccf585f`: Prove general Mask and Or on actual arithmetic commands.
+- `cdb61b7406b08fc438dee65422d46229ec76927c` → `f97322756a29f30bc65a0b08102620ac948d39c7`: Record complete Mask and Or command validation.
+- `fd3857298cc866d871ab255c94cb4f13553657a3` → `ab77913300421c6bb26569e00da42d6f103384d4`: Prove finite graph frames and structured command trace inversion.
+- `0f3d1ba9aaad4a5a2aaa5b49b2ddb21ca6e139d6` → `6cb9414b2f40a99463c09f40751a29c07cdcabdb`: Record exact graph and control foundation validation.
+- `158878e222cf32f357142d03fcc91463f0c04380` → `6dc6de14dd1984730fd5b1739e2fbec4bdcd506a`: Rebase onto the latest unified-length paper and reconcile its scope.
+- `1883afc1d92222312f60a80abb2d6534aee48d42` → `8bf2b0171bd74251813cfba8a9b61396e43450e0`: Generate finite command graphs and invert their actual shared runs.
+- `dc8b08a3cf68f6a026829d31ad65c3483d2f63ba` → `6185a24a14a94a7bf9761b2574d8b091b6e4f451`: Record generated compiler validation and exact remaining boundaries.
+
+The upstream shared arithmetic reorganisation removes `toInt32_safe_nonneg`
+and `bitAnd_safe`. The task's `BitwiseArithmetic` now imports `ArithmeticRules`,
+uses `toInt32_small` at the same bounded conversion premises, and proves the
+small nonnegative-input mask corollary with `intAnd_le_left`. Its theorem
+statements are unchanged. Focused `BitwiseRules` passes (103 jobs); documentation
+passes (81 documents, 894 code citations, zero problems). The first axiom build
+failed on the removed references and is not passing evidence. A cache setup
+file collision during that failed build also required a sequential rebuild.
+
+Astra's independent read-only review found no blocker in the repaired proofs
+and checked the latest rule correspondences. Signed Shr and Shl are equal:
+the paper now explicitly requires SafeInt shift constants, with counts modulo
+32. Both Mask rows allow arbitrary numeric first operands and a variable
+safe-integer mask; its second row bounds by the nonnegative mask, without a
+small-mask bound. The shared Concat theorem has the paper's empty logical
+precondition for string operands; the older finite certificate's additional
+nonnegative-length premises do not narrow that shared theorem. The exact
+91-row recount is 41 equal, 28 narrower, 9 absent, 13 assumed. Unified-length
+syntax transport remains separate.
+
+The complete sequential `make test` on this compatibility repair and exact
+base 65d5bf91 exits zero: 664 Lean jobs, including both complete axiom audits;
+24 fast suites, zero failures; all 175 controls (460 operations executed,
+35 replayed); 3438/3438 expected cases, 4332 verified functions, 1792 negative
+controls and 149 named gaps. No test expectation was changed by this task.
+The direct-import check covers 365 other A/shared modules and 85 other Paper
+modules. A separate outside-to-Paper scan finds zero imports. Documentation
+passes at 81 documents and 894 citations, with zero problems; whitespace
+checks pass. These results apply to this combination on 65d5bf91, not later
+owner changes. The run log is `fourth-rebase-test.log` in cloud scratch. Its
+successful exit was observed; older runs are separate evidence.

@@ -29,5 +29,8 @@ separate from the old restricted finite Parity certificates.
 
 Astra independently reviewed the numerical and pure-execution prototypes before
 integration. It found no soundness blocker and required the entry/current and
-freshness distinction to stay explicit. Shift-count normalization for every
-paper integer constant remains separate; SafeInt count alone is narrower.
+freshness distinction to stay explicit. That original design compared the earlier paper's arbitrary integer shift
+constants. The current generated paper instead requires SafeInt shift counts;
+`ArithmeticRules.shr` and `.shl` prove the signed and modulo-32 cases. Its Mask
+upper-bound row also differs from the auxiliary nonnegative-input theorem:
+`maskBound` bounds by a nonnegative variable mask of any safe size.

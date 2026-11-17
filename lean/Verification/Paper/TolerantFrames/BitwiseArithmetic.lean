@@ -1,9 +1,10 @@
-import Verification.Semantics.SafeIntegers
+import Verification.Semantics.ArithmeticRules
 
 /-! # General Mask and Or arithmetic
 
-The current paper admits arbitrary safe first operands for Mask and bounded
-nonnegative operands for Or. These proofs use the existing shared IEEE integer
+These auxiliary corollaries bound Mask at arbitrary numeric first operands
+and Or at bounded nonnegative operands. The current paper's full numeric
+rules are the shared `ArithmeticRules` datum. These proofs use the existing shared IEEE integer
 conversion and bitwise definitions. Command execution is connected separately.
 -/
 namespace Verification.Paper.TolerantFrames
@@ -27,7 +28,7 @@ theorem intAnd_nonneg_mask {a m : Int} (hm : 0 ≤ m) :
 theorem mask_general {x y : UInt64} {m : Int} (hy : SafeInt y m)
     (hm : 0 ≤ m) (hmlt : m < 2 ^ 31) :
     ∃ r, SafeInt (arithBits .bitAnd x y) r ∧ 0 ≤ r ∧ r ≤ m := by
-  have hy32 := toInt32_safe_nonneg hy hm hmlt
+  have hy32 := toInt32_small hy (by omega) hmlt
   let r := intAnd (toInt32 x) m
   have hr := intAnd_nonneg_mask (a := toInt32 x) hm
   refine ⟨r, ?_, hr⟩
@@ -38,8 +39,16 @@ theorem mask_nonneg {x y : UInt64} {i m : Int} (hx : SafeInt x i) (hy : SafeInt 
     (hi : 0 ≤ i) (hm : 0 ≤ m) (hmlt : m < 2 ^ 31) :
     ∃ r, SafeInt (arithBits .bitAnd x y) r ∧ 0 ≤ r ∧ r ≤ m ∧ r ≤ i := by
   by_cases hsmall : i < 2 ^ 31
-  · obtain ⟨r, hs, h0, hi, hm⟩ := bitAnd_safe hx hy hi hsmall hm hmlt
-    exact ⟨r, hs, h0, hm, hi⟩
+  · have hx32 := toInt32_small hx (by omega) hsmall
+    have hy32 := toInt32_small hy (by omega) hmlt
+    let r := intAnd i m
+    have hr := intAnd_nonneg_mask (a := i) hm
+    have hi' : r ≤ i := by
+      obtain ⟨n, hn⟩ := Int.eq_ofNat_of_zero_le hi
+      simpa [r, hn] using ArithmeticRules.intAnd_le_left n m
+    refine ⟨r, ?_, hr.1, hr.2, hi'⟩
+    simp only [arithBits, hx32, hy32]
+    exact safeInt_int32Bits (by dsimp [r]; omega)
   · obtain ⟨r, hs, h0, hr⟩ := mask_general (x := x) hy hm hmlt
     exact ⟨r, hs, h0, hr, by omega⟩
 end Verification.Paper.TolerantFrames
@@ -66,8 +75,8 @@ theorem nat_or_le_add (a b : Nat) : a ||| b ≤ a + b := by
 theorem or_general {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : SafeInt y j)
     (hi : 0 ≤ i) (hlt : i < 2 ^ 31) (hj : 0 ≤ j) (hjlt : j < 2 ^ 31) :
     ∃ r, SafeInt (arithBits .bitOr x y) r ∧ i ≤ r ∧ j ≤ r ∧ r ≤ i + j := by
-  have hx32 := toInt32_safe_nonneg hx hi hlt
-  have hy32 := toInt32_safe_nonneg hy hj hjlt
+  have hx32 := toInt32_small hx (by omega) hlt
+  have hy32 := toInt32_small hy (by omega) hjlt
   have hl := Nat.left_le_or (n := i.toNat) (m := j.toNat)
   have hr := Nat.right_le_or (n := i.toNat) (m := j.toNat)
   have hu := nat_or_le_add i.toNat j.toNat

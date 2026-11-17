@@ -6,12 +6,12 @@ The basis of the work that relates the verifier to the paper
 
 
 The current comparison targets the owner’s latest single-pass paper at
-`5777ed2e08992863611715aa38f21b97f10145d5`. Its unified dynamic length is not yet
+`65d5bf9136f4afab47bb76db447f74d400a136f3`. Its unified dynamic length is not yet
 represented in B. Statements below about complete syntactic transport are about
 the represented kind-specific grammar, not that new paper grammar. The bounded
 universal’s receiver is independent of its bound, as already encoded by Every;
 the no-element case and mixed-length support admission await owner decisions.
-The current table has 91 rows: 39 equal, 29 narrower, 10 absent and 13 assumed.
+The current table has 91 rows: 41 equal, 28 narrower, 9 absent and 13 assumed.
 
 ## Three things
 
@@ -498,8 +498,14 @@ uses actual arithV reductions, derives current Formula conclusions, and assemble
 Triple/Effects with command scope. Fresh result bindings keep operand names
 unchanged; safeIntOfBits_complete supplies integer readings without conflating
 stored signed zeros. Full assertion admission and old finite-certificate
-coverage are not inferred. Shr's signed/count generality and Shl remain open;
-SafeInt counts alone would narrow the paper's integer-constant wording.
+coverage are not inferred. The current paper instead uses the shared
+`ArithmeticRules.rules` datum: signed Shr/Shl with SafeInt shift counts read
+modulo 32, variable-mask range and upper bound, and Or are proved there and
+instantiated by `Derivation.arith`. The second Mask rule bounds the result by
+its nonnegative mask, without requiring a small mask or nonnegative first
+operand. The task's earlier Mask command theorems remain restricted corollaries.
+The generated string rows also name their exact shared theorems and B bridges;
+transport to the unified-length grammar is a separate obligation.
 The reviewed design is [recorded separately](paper-arithmetic-command-rules.md).
 
 ## Operational graph and control foundations
