@@ -1129,3 +1129,64 @@ function typing and rest/spread. The 91-row counts remain 41 equal, 28 narrower,
 Cloud scratch logs are `callable-spec-build4.log`, `callable-spec-axioms.log`,
 `callable-spec-test.log` and `callable-spec-docs-final.log`. Builds used the pinned
 Lean/Node runtimes already recorded above; there were no overlapping Lake builds.
+
+
+## Sixth rebase: exact replay and source preservation
+
+The sixth fetch advanced the base from
+`fbc7078c22426e2ccc42938cce8e4a33bf903f4f` to
+`cdef605ba381c5c047a053b6e5ed7d0af14c7a4a`. The owner added six commits:
+SafeInt/integral slot facts, bound annotation handling, project declaration-copy
+recognition, regression/control cases, a pretext pin and both paper dates.
+All 36 existing task commits replayed without conflicts. The exact replay tip is
+`2874a9f2ce5a360d16ffa1312cb23f4864c60733`; the previous published tip was
+`bd48403b6c4ca3a175ebe5f5a6bd4bf0365066e6`.
+
+The uncommitted bounded-recursion batch was stashed with untracked files, then
+restored. SHA-256 comparison confirmed all nine reviewed Lean source files were
+byte-for-byte unchanged across the rebase. No paper source/PDF difference exists
+against this base. The same five task-authored shared files remain; the owner's
+new arithmetic/index changes belong to the base. No additional shared change or
+new interpretation of the paper was introduced by replay. The 91-row
+correspondence counts are unchanged. Historical validation measurements above
+remain tied to their named sources; this replay does not re-label them as tests
+of the new base.
+
+| Previous commit | Replayed commit |
+| --- | --- |
+| `ee30180d015f6041f643d96388c5658361389ddf` | `68e70f2f22c98229d750ad3c7e9362bcbdf15c1f` |
+| `33c326e09081dbf44eb996d38920d0ea1f7f58ac` | `723d4f397200f15d604a879e2027c1c5dad027b1` |
+| `d2d1555eae70316485f5cbcee588150b16b36e2c` | `495eaeedd4b5ea6263434477ebe1afb5aa3cc296` |
+| `df5e79b8cf688551a987867d88648e2bd215dad3` | `99a57582a50c08a8a6bc272765c205a78ad22c93` |
+| `02b2fb6f48f6d3f3498d1fab1234dd2673cfe278` | `9ab02e09620d53c85a93b0dccfcefa834a43b07b` |
+| `a3dded8f3416b544fd781a9ad584af4383d27176` | `75744186de9f43fabf34aa1f8447dff52377fac3` |
+| `f37eae805e2820497c4f2e66784f3ff09d2e6e49` | `6cc0551eec3b541e3138d7fb4d7fdb4ebf8d425d` |
+| `e0e14ff210fb63bd739067ae4bbdf758aea03128` | `1146753346fff40898b91be51c2a8d91d99f26ae` |
+| `f0c87ed4151c9a726c2dc7d755dda9c137df2246` | `2964b67ae2b8d528429a2d5929efeca4a823b9fb` |
+| `5ff4e2fbe9b8c617abd0f2f4bb79b6d229cca633` | `848444acf52cdd83bdb7da4a4d4c64734be1884d` |
+| `300f6f1808b5570ecc5969c4217ee73bd0416fad` | `6a2f0a77f9a80cb808bd2e19f74bb6dcd82dca8a` |
+| `ec1d83f1cd05c1f84c74043d6f5615bb58801667` | `9959ac0867937cd4dbef71a39be9a5be20fc5295` |
+| `a4ca0ae52caead06a256cf8531ec0d7241633e9b` | `eec503417b4722b0a54e5dad4d9263d197e6d787` |
+| `f8b2ab91347799c91c1582d8a09b3166a33546f9` | `2dc516471552ca4078379e38b18a90a5265d77a2` |
+| `7ccbc4069b31544f1ffeb4964a77407bd9cf0d99` | `e4cc6298d75c71eb1c5a6e1f381353ed26e0acf3` |
+| `1f5ee75fc1ab30956a6296d1344e67480958ef7e` | `6a67050e5513bc2baff982d2ccddc305ba7ab874` |
+| `8a142c3f5c9321da5765dda14479997bf259f216` | `dd111344836dea7c4f30de43fb78ce4ff4105705` |
+| `ad678f1f3d9949d9525d766483ff4d1ddbc000cc` | `27348f99c073e57b2bc383b076fa32fa1b9cdfda` |
+| `0d0222052872b4c923788926f5c3c4a66969dbcf` | `aa90a6a5acfad1dc7cbd4b0bb72c6d944bed91c8` |
+| `f02d1841baec530c7f14a8fa4586eca42478c998` | `7bfbce76c5149c2e2105fc397ca0582c3cd39d98` |
+| `26be9281be420ec81cf16368a7c16d495adc90bf` | `b3928555d70126527de59f592b6160ddff943f95` |
+| `6689de8003a2d7db3c03c4ba1074d425f17e4e61` | `deca364459412a07c9e6ea02db97975b9dac9146` |
+| `ea9b580832d842defc04726f76f77a510a1643a4` | `83ab39a8ac0dab3732e0eefc4a9111b16265e4a3` |
+| `ba994593b7e1d043df180c975667a60a9fdee12a` | `da1562d19580cb4c907b3a41650d09aaa69cfea0` |
+| `e8928b1aea06fefd665b1dd04596a8da3c268f54` | `71a427c33c39c70eb9e9448d827962b6479afd5a` |
+| `0f7d898dd1d02384ccf9fe00eda33ce9c7382bcf` | `1672e6cd2559ac1f6bf703264aec71ff9bb0ee31` |
+| `6da05c4f4601b32d297ae37c2355003530fafa4f` | `34cf9010d0da0d3ff446b8d4b6fe4f9b91143acb` |
+| `933ef9ef5573f6a369886fca0f64f615dc8244c8` | `e351ce6f7c7d1ce7d8ccb03db7216c0cffc45136` |
+| `37593c01c7a2c0a43b4512bf05737f2364a1613d` | `f0399588be1b800daf64709dab84a817d068813c` |
+| `220712dfd361d2ceb811783be926135a4a7a906f` | `6a7880e2657aee8a1bef85ad0ed12fa407eebaca` |
+| `1bbaf0a7433a3aaf9f3c9032d8304ada0b778915` | `be373a5d723ce27c499b637baa6b9cb9dae241e8` |
+| `56d8ee15bdd7b2ecb8eb1dbedfaab1da522b2285` | `e0f0ce60259d72eb61c403bdcbc59195d2a9bf8c` |
+| `4760a0f37340ef8ef08ffb0f475b3fa82c7e8c45` | `c875a9f82af8f391415ef3af689a2bc503c49858` |
+| `1698f4ea313a3c1e35bc021f414cdd7a3d5ec320` | `e47c2fdbb87f471b76e6959b6855cfea489fd76d` |
+| `c2e2a46556aaa4bf43890a535c2bfdbb92c3cb65` | `cc4080025cbed213c1c258dc40d18150d41b8f9e` |
+| `bd48403b6c4ca3a175ebe5f5a6bd4bf0365066e6` | `2874a9f2ce5a360d16ffa1312cb23f4864c60733` |

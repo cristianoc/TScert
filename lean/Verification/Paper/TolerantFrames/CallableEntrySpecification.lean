@@ -3,6 +3,7 @@ import Verification.Paper.TolerantFrames.CallableReferences
 import Verification.Paper.TolerantFrames.PostconditionEnvironmentScope
 import Verification.Paper.TolerantFrames.BudgetTruncation
 import Verification.Paper.TolerantFrames.Scopes
+import Verification.Paper.TolerantFrames.BoundedCommands
 
 /-! # Actual invocation satisfies its proved body postconditions
 
@@ -44,21 +45,21 @@ theorem entry_valid_from_roles {arity} {caps : List Tm} (c : Command) (layout : 
 /-- Exact body-premise transport. The output environment here is the original
 input environment: body locals are not observable in a scoped specification.
 Return is frozen at the same entry even when its local command entry differs. -/
-theorem body_exit_specification {host P c Γ Δ y ρ s p ρ' h' e N}
+theorem body_exit_specification_below {limit host P c Γ Δ y ρ s p ρ' h' e N}
     (Q Qe : TwoState.Post) (η : TwoState.LogicalEnv)
     (scope : c.WellScoped Γ Δ)
     (normalScope : Q.Scoped Γ (fun x => x = y ∨ Γ x) 0 0)
     (exceptionalScope : Qe.Scoped Γ Γ 0 0)
-    (body : Triple host P c (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
+    (body : TripleBelow limit host P c (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
       (FunctionReturn ρ s (ResultPost Q η y)))
     (valid : ValidContext ρ s.h.length s) (pre : P ρ s.h.length s)
-    (run : Executes host c ρ s.h p ρ' h' e) (count : p ≤ N) (budget : N < s.n) :
+    (run : Executes host c ρ s.h p ρ' h' e) (count : p ≤ N) (budget : N < s.n) (limited : p < limit) :
     ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + N = s.n ∧
       ValidContext ρ s.h.length t ∧ ExitValid e t ∧
       ExitPost (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
         (ResultPost Q η y) e ρ ρ s.h.length s t := by
   obtain ⟨t, admissible, heap, steps, valid', exitValid, post⟩ :=
-    body ρ s.h.length s p ρ' h' e valid pre run (by omega)
+    body ρ s.h.length s p ρ' h' e valid pre run (by omega) limited
   have positive : 0 < s.n - N := by omega
   have smaller : s.n - N ≤ t.n := by omega
   let u := truncateBudget t (s.n - N) positive smaller
@@ -90,6 +91,93 @@ theorem body_exit_specification {host P c Γ Δ y ρ s p ρ' h' e N}
 /-- Normal completion of the actual callable, including fallthrough and
 explicit return. The effect and postcondition retain the original entry;
 all administrative reductions are charged to the shared residual budget. -/
+theorem invocation_value_specification_below {limit arity} {caps : List Tm} (c : Command)
+    (layout : Layout arity caps.length) (fields : List (PropKey × Nat)) (identity : Nat)
+    (receiver : Tm) (args : List Tm) (s : IndexedHeap) {Γ Δ y P Φ Φe}
+    (Q Qe : TwoState.Post) (η : TwoState.LogicalEnv)
+    (scope : c.WellScoped Γ Δ)
+    (normalScope : Q.Scoped Γ (fun x => x = y ∨ Γ x) 0 0)
+    (exceptionalScope : Qe.Scoped Γ Γ 0 0)
+    (body : TripleBelow limit layout.host P c (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
+      (FunctionReturn (layout.env receiver args (function c layout fields identity)) s (ResultPost Q η y)))
+    (effects : EffectsBelow limit layout.host P c Φ Φe)
+    (valid : ValidContext (layout.env receiver args (function c layout fields identity)) s.h.length s)
+    (pre : P (layout.env receiver args (function c layout fields identity)) s.h.length s)
+    (hr : isVal receiver = true) (ha : CallArguments.Values args) (hc : CallArguments.Values caps)
+    {n h' v} (run : Steps n s.h (invocation c layout fields identity receiver args) h' v)
+    (value : isVal v = true) (budget : n < s.n) (limited : n ≤ limit) :
+    let ρ := layout.env receiver args (function c layout fields identity)
+    ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + n = s.n ∧
+      ValidContext (bindName ρ y v) s.h.length t ∧ isSourceVal v = true ∧ RefsOk t.W v ∧
+      ResultPost Q η y v ρ ρ s.h.length s t ∧ Footprints.Post Φ ρ s.h h' := by
+  obtain ⟨q, p, ρ', e, count, weight, less, execution, result⟩ :=
+    invocation_value c layout fields identity receiver args s.h hr ha hc run value
+  obtain ⟨t, admissible, heap, steps, valid', exitValid, post⟩ :=
+    body_exit_specification_below Q Qe η scope normalScope exceptionalScope body valid pre execution
+      (Nat.le_of_lt less) budget (Nat.lt_of_lt_of_le less limited)
+  have effect := effects _ _ _ _ _ _ _ valid pre execution (by omega) (Nat.lt_of_lt_of_le less limited)
+  cases e with
+  | normal =>
+    simp only [resultState] at result
+    cases result
+    exact ⟨t, admissible, heap, steps, valid'.bindName ⟨rfl, RefsOk_undef⟩,
+      rfl, RefsOk_undef, post, effect⟩
+  | «break» => exact post.elim
+  | returned w =>
+    simp only [resultState] at result
+    cases result
+    exact ⟨t, admissible, heap, steps, valid'.bindName exitValid,
+      exitValid.1, exitValid.2, post, effect⟩
+  | thrown w => cases result
+
+/-- Exceptional completion of the actual callable. No normal-result binding
+is observable; the exceptional postcondition and effect use the same entry. -/
+theorem invocation_raise_specification_below {limit arity} {caps : List Tm} (c : Command)
+    (layout : Layout arity caps.length) (fields : List (PropKey × Nat)) (identity : Nat)
+    (receiver : Tm) (args : List Tm) (s : IndexedHeap) {Γ Δ y P Φ Φe}
+    (Q Qe : TwoState.Post) (η : TwoState.LogicalEnv)
+    (scope : c.WellScoped Γ Δ)
+    (normalScope : Q.Scoped Γ (fun x => x = y ∨ Γ x) 0 0)
+    (exceptionalScope : Qe.Scoped Γ Γ 0 0)
+    (body : TripleBelow limit layout.host P c (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
+      (FunctionReturn (layout.env receiver args (function c layout fields identity)) s (ResultPost Q η y)))
+    (effects : EffectsBelow limit layout.host P c Φ Φe)
+    (valid : ValidContext (layout.env receiver args (function c layout fields identity)) s.h.length s)
+    (pre : P (layout.env receiver args (function c layout fields identity)) s.h.length s)
+    (hr : isVal receiver = true) (ha : CallArguments.Values args) (hc : CallArguments.Values caps)
+    {n h' term v} (run : Steps n s.h (invocation c layout fields identity receiver args) h' term)
+    (raised : Raises term v) (budget : n < s.n) (limited : n ≤ limit) :
+    let ρ := layout.env receiver args (function c layout fields identity)
+    ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + n = s.n ∧
+      ValidContext ρ s.h.length t ∧ isSourceVal v = true ∧ RefsOk t.W v ∧
+      Qe.meaning η ρ ρ s.h.length s t ∧ Footprints.Post Φe ρ s.h h' := by
+  obtain ⟨q, p, ρ', count, weight, less, execution⟩ :=
+    invocation_raise c layout fields identity receiver args s.h hr ha hc run raised
+  obtain ⟨t, admissible, heap, steps, valid', exitValid, post⟩ :=
+    body_exit_specification_below Q Qe η scope normalScope exceptionalScope body valid pre execution
+      (Nat.le_of_lt less) budget (Nat.lt_of_lt_of_le less limited)
+  exact ⟨t, admissible, heap, steps, valid', exitValid.1, exitValid.2, post,
+    effects _ _ _ _ _ _ _ valid pre execution (by omega) (Nat.lt_of_lt_of_le less limited)⟩
+
+
+/-- Unbounded body-premise API, derived from the bounded transport. -/
+theorem body_exit_specification {host P c Γ Δ y ρ s p ρ' h' e N}
+    (Q Qe : TwoState.Post) (η : TwoState.LogicalEnv)
+    (scope : c.WellScoped Γ Δ)
+    (normalScope : Q.Scoped Γ (fun x => x = y ∨ Γ x) 0 0)
+    (exceptionalScope : Qe.Scoped Γ Γ 0 0)
+    (body : Triple host P c (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
+      (FunctionReturn ρ s (ResultPost Q η y)))
+    (valid : ValidContext ρ s.h.length s) (pre : P ρ s.h.length s)
+    (run : Executes host c ρ s.h p ρ' h' e) (count : p ≤ N) (budget : N < s.n) :
+    ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + N = s.n ∧
+      ValidContext ρ s.h.length t ∧ ExitValid e t ∧
+      ExitPost (ResultPost Q η y .undef) (Qe.meaning η) (fun _ _ _ _ _ => False)
+        (ResultPost Q η y) e ρ ρ s.h.length s t := by
+  exact body_exit_specification_below Q Qe η scope normalScope exceptionalScope (body.below (p + 1))
+    valid pre run count budget (by omega)
+
+/-- Unbounded body-premise API, derived from the bounded transport. -/
 theorem invocation_value_specification {arity} {caps : List Tm} (c : Command)
     (layout : Layout arity caps.length) (fields : List (PropKey × Nat)) (identity : Nat)
     (receiver : Tm) (args : List Tm) (s : IndexedHeap) {Γ Δ y P Φ Φe}
@@ -109,28 +197,10 @@ theorem invocation_value_specification {arity} {caps : List Tm} (c : Command)
     ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + n = s.n ∧
       ValidContext (bindName ρ y v) s.h.length t ∧ isSourceVal v = true ∧ RefsOk t.W v ∧
       ResultPost Q η y v ρ ρ s.h.length s t ∧ Footprints.Post Φ ρ s.h h' := by
-  obtain ⟨q, p, ρ', e, count, weight, less, execution, result⟩ :=
-    invocation_value c layout fields identity receiver args s.h hr ha hc run value
-  obtain ⟨t, admissible, heap, steps, valid', exitValid, post⟩ :=
-    body_exit_specification Q Qe η scope normalScope exceptionalScope body valid pre execution
-      (Nat.le_of_lt less) budget
-  have effect := effects _ _ _ _ _ _ _ valid pre execution (by omega)
-  cases e with
-  | normal =>
-    simp only [resultState] at result
-    cases result
-    exact ⟨t, admissible, heap, steps, valid'.bindName ⟨rfl, RefsOk_undef⟩,
-      rfl, RefsOk_undef, post, effect⟩
-  | «break» => exact post.elim
-  | returned w =>
-    simp only [resultState] at result
-    cases result
-    exact ⟨t, admissible, heap, steps, valid'.bindName exitValid,
-      exitValid.1, exitValid.2, post, effect⟩
-  | thrown w => cases result
+  exact invocation_value_specification_below c layout fields identity receiver args s Q Qe η scope normalScope exceptionalScope
+    (body.below n) (effects.below n) valid pre hr ha hc run value budget (Nat.le_refl n)
 
-/-- Exceptional completion of the actual callable. No normal-result binding
-is observable; the exceptional postcondition and effect use the same entry. -/
+/-- Unbounded body-premise API, derived from the bounded transport. -/
 theorem invocation_raise_specification {arity} {caps : List Tm} (c : Command)
     (layout : Layout arity caps.length) (fields : List (PropKey × Nat)) (identity : Nat)
     (receiver : Tm) (args : List Tm) (s : IndexedHeap) {Γ Δ y P Φ Φe}
@@ -150,13 +220,8 @@ theorem invocation_raise_specification {arity} {caps : List Tm} (c : Command)
     ∃ t : IndexedHeap, Admissible s t ∧ t.h = h' ∧ t.n + n = s.n ∧
       ValidContext ρ s.h.length t ∧ isSourceVal v = true ∧ RefsOk t.W v ∧
       Qe.meaning η ρ ρ s.h.length s t ∧ Footprints.Post Φe ρ s.h h' := by
-  obtain ⟨q, p, ρ', count, weight, less, execution⟩ :=
-    invocation_raise c layout fields identity receiver args s.h hr ha hc run raised
-  obtain ⟨t, admissible, heap, steps, valid', exitValid, post⟩ :=
-    body_exit_specification Q Qe η scope normalScope exceptionalScope body valid pre execution
-      (Nat.le_of_lt less) budget
-  exact ⟨t, admissible, heap, steps, valid', exitValid.1, exitValid.2, post,
-    effects _ _ _ _ _ _ _ valid pre execution (by omega)⟩
+  exact invocation_raise_specification_below c layout fields identity receiver args s Q Qe η scope normalScope exceptionalScope
+    (body.below n) (effects.below n) valid pre hr ha hc run raised budget (Nat.le_refl n)
 
 end Compiler.Callable
 end Verification.Paper.TolerantFrames

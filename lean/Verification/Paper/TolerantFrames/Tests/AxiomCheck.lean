@@ -1,3 +1,10 @@
+import Verification.Paper.TolerantFrames.BoundedCommands
+import Verification.Paper.TolerantFrames.BoundedFrameRules
+import Verification.Paper.TolerantFrames.BoundedEffects
+import Verification.Paper.TolerantFrames.PostconditionValuationScope
+import Verification.Paper.TolerantFrames.MarkIndependence
+import Verification.Paper.TolerantFrames.RecursiveFunctions
+import Verification.Paper.TolerantFrames.RecursiveCallRules
 import Verification.Paper.TolerantFrames.CallableEntrySpecification
 import Verification.Paper.TolerantFrames.CallableReferences
 import Verification.Paper.TolerantFrames.PostconditionEnvironmentScope

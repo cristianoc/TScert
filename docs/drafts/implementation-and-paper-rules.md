@@ -630,3 +630,19 @@ anchors and the false escaping-break obligation. Input scope removes body locals
 result substitution affects only current state. Allocation/typing, recursive
 discharge, caller phase-environment/mark transport, rest, spread and full Fun
 remain separate.
+
+
+## Bounded recursive body obligations
+
+The [bounded recursion bridge](paper-call-function-bridge.md#separate-phase-environments-and-bounded-recursive-proofs)
+retains original entry states and adds an independent completed-run count bound.
+Full separate-phase scope transport, bounded state composition/framing, and
+common rigid-footprint effect composition support actual count induction. A
+relative body proof may use only smaller-count specifications of the concrete
+callable. The primitive oracle is connected to real call reductions and both
+caller postconditions/effects under explicit input/capture/layout conditions.
+Semantic mark independence is the displayed Call condition; a recursive
+no-freshness check is only sufficient. Constructing relative body proofs,
+aligning arbitrary actuals, deriving encoding premises from typing, function
+allocation/type membership, freshness rebasing and rest/spread remain distinct.
+No general exceptional/rebased bounded effect composition is claimed.

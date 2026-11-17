@@ -115,14 +115,19 @@ theorem region_mem_scope {Γ ρ ρ'} (ha : ∀ x, Γ x → ρ x = ρ' x) {r : Re
   | cls _ | all => rfl
   | inCls _ _ ih => simp only [Region.mem, ih hr]
 
-theorem action_scope {Γ ρ ρ'} (ha : ∀ x, Γ x → ρ x = ρ' x) {Φ : Footprint} (hΦ : EffectNames Γ Φ) (s t : IndexedHeap) : Action Φ ρ s t ↔ Action Φ ρ' s t := by
-  have allowed : ∀ l v v', Allowed Φ ρ s.h l v v' ↔ Allowed Φ ρ' s.h l v v' := by
+theorem post_scope {Γ ρ ρ'} (ha : ∀ x, Γ x → ρ x = ρ' x) {Φ : Footprint}
+    (hΦ : EffectNames Γ Φ) (h h' : Heap) : Footprints.Post Φ ρ h h' ↔ Footprints.Post Φ ρ' h h' := by
+  have allowed : ∀ l v v', Allowed Φ ρ h l v v' ↔ Allowed Φ ρ' h l v v' := by
     intro l v v'
     simp only [Allowed]
     apply or_congr Iff.rfl
     exact exists_congr fun e => and_congr_right fun he => and_congr (by rw [region_mem_scope ha (hΦ e he)]) Iff.rfl
-  exact and_congr Iff.rfl (and_congr Iff.rfl (forall_congr' fun l => forall_congr' fun v =>
-    imp_congr_right fun _ => exists_congr fun v' => and_congr Iff.rfl (allowed l v v')))
+  exact and_congr Iff.rfl (forall_congr' fun l => forall_congr' fun v =>
+    imp_congr_right fun _ => exists_congr fun v' => and_congr Iff.rfl (allowed l v v'))
+
+theorem action_scope {Γ ρ ρ'} (ha : ∀ x, Γ x → ρ x = ρ' x) {Φ : Footprint}
+    (hΦ : EffectNames Γ Φ) (s t : IndexedHeap) : Action Φ ρ s t ↔ Action Φ ρ' s t :=
+  and_congr Iff.rfl (post_scope ha hΦ s.h t.h)
 
 theorem Formula.Scoped.dependsOn {Γ F} (hF : Formula.Scoped Γ F) : DependsOn F.meaning Γ := by
   intro ρ ρ' m s ha

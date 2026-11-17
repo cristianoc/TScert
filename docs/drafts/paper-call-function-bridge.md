@@ -300,3 +300,85 @@ allocate/type the function, compare its finite decoded environment with a caller
 under separate phase scopes, rebase the caller mark, or allocate rest/spread.
 Thus they are not labelled the full Fun rule. Astra independently checked the
 transport design against the actual completed-execution semantics.
+
+
+## Separate phase environments and bounded recursive proofs
+
+[PostconditionValuationScope](../../lean/Verification/Paper/TolerantFrames/PostconditionValuationScope.lean)
+extends the existing scope-agreement proof jointly to program and logical
+valuations. Entry/current scopes are independent and corresponding IndexedHeaps
+remain identical, including worlds and budgets. Old selects entry agreement;
+boxes compare the same future states; transitions use entry names; binders lift
+logical agreement. This supplies the environment transport needed by actual calls.
+
+[BoundedCommands](../../lean/Verification/Paper/TolerantFrames/BoundedCommands.lean)
+adds n<N to completed-run premises while retaining n<S.n and the original entry
+state. Full triples/effects are equivalent to all such bounds. Sequence, choice,
+handlers and loop invariants compose at a fixed bound; sequence/handler/loop
+postconditions are state assertions, which can capture fixed function-entry
+parameters. Loop induction uses finite execution evidence, since iterations can
+cost zero. [BoundedFrameRules](../../lean/Verification/Paper/TolerantFrames/BoundedFrameRules.lean)
+provides Entry, Frame, Frame+ and the displayed modal Loop at the same bound.
+[BoundedEffects](../../lean/Verification/Paper/TolerantFrames/BoundedEffects.lean)
+composes sequence/handlers/loops for one common rigid footprint on both exits,
+using actual chosen admissible worlds through the final component and restoring
+the original footprint valuation. This is a sufficient mechanism for relative
+body proofs, not the general exceptional/rebased Seq-Eff rule.
+
+[RecursiveFunctions](../../lean/Verification/Paper/TolerantFrames/RecursiveFunctions.lean)
+proves actual count induction for a concrete represented callable. Its relative
+body proof may use that callable's specification only at counts k<N, and must
+construct TripleBelow/EffectsBelow N. Real invocation inversion gives body p<N;
+full postcondition exit truncation retains the original entry budget/old anchor.
+FunctionEntryPre freezes symbolic entry by equalities reflexively true at each
+actual valid P-entry; it imposes no new restriction on such calls. Normal and
+exceptional invocation specifications follow for every actual count by strong
+induction. This is a theorem schema with a genuine relative body-proof obligation,
+not a supplied compiler summary or an unrestricted self triple.
+
+[RecursiveCallRules](../../lean/Verification/Paper/TolerantFrames/RecursiveCallRules.lean)
+connects the restricted hypothesis to actual PrimitiveRun: direct-call code is
+exactly invocation of the concrete callable with its evaluated arguments. The
+oracle is used at that primitive's actual count below N. P depends on input scope
+and is mark-independent; Q/Qe have separate phase scopes and semantic mark
+independence; both effects have input scope. Decoded-entry validity, machine
+captures and equality of decoded/caller inputs are explicit encoding premises.
+The whole output environment is recovered from original caller validity plus
+admissibility, then a valid normal result is bound. Break/return obligations are
+arbitrary because a primitive call cannot produce those command exits.
+
+[MarkIndependence](../../lean/Verification/Paper/TolerantFrames/MarkIndependence.lean)
+distinguishes semantic independence from a recursive no-freshness sufficient
+check, traversing old, modalities, implication and both binders. The latter is
+not a characterization. No arbitrary freshness postcondition is silently moved
+to an earlier caller mark.
+
+The recursive primitive rule is identity-aligned: arbitrary actuals still need
+the existing scoped renaming layer connected to it. A relative body proof must
+actually be constructed from the command/primitive rules in each application.
+Function allocation/type membership, deriving capture/layout premises from
+source typing, freshness rebasing, and rest/spread remain separate. These
+results do not certify all recursive programs or establish a complete Fun rule.
+
+
+## Rest allocation and the old anchor
+
+The rest extension has a source-level anchor obstruction, independently reviewed
+by Astra. Let F be the closed assertion ∃v.(v∈object ∧ len(v)=0). A valid heap
+containing the function but no array/view spines makes F false; the empty rest
+array makes it true after prologue allocation. Thus old(F) distinguishes the
+invocation entry from the body entry after that allocation. It mentions neither
+rest nor result and is mark-independent, with no freshness-region admission issue.
+
+The paper says old selects the entry of the command whose triple contains it,
+and in Fun says old in Q/Qe refers to body entry. Those anchors coincide in the
+fixed-arity nonallocating adapter and differ for rest. Excluding the rest name
+from the exported member does not prove allocation invariance of quantification.
+The qualification matters: an unrestricted ordinary body triple from true alone
+would not prove old(F); this obstructs the rest extension using its stated
+rest-entry facts, whose incorporation into the body premise needs clarification.
+
+An owner decision is pending: freeze exported old before rest allocation and
+state the body premise with that anchor, or retain post-prologue body old with
+explicit anchor translation/distinct call-specification semantics. The paper is
+unchanged, and no rest/Fun gap is counted closed by this observation.
