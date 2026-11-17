@@ -1017,13 +1017,19 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const programFile = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
       !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
     // The verifier's declaration file (`resolvable.d.ts`): the repository's,
-    // or a file of exactly its bytes, which declares the same aliases (the
-    // census's copy of tools/ holds one).
+    // or a copy of some of its declarations (the census's copy of tools/
+    // holds one; a checked project keeps one written at an earlier
+    // version): a file each of whose statements is a statement of the
+    // repository's file, as written. Every statement there starts a line
+    // and every comment is a line comment, so a statement's text found
+    // between two line breaks is one of its statements.
     let verifierText: string | null = null;
     const verifierFile = (file: SourceFile): boolean => {
       if (file.fileName === resolvableDeclaration) return true;
-      verifierText ??= readText(resolvableDeclaration);
-      return file.text === verifierText;
+      verifierText ??= `\n${readText(resolvableDeclaration)}\n`;
+      const canonical = verifierText;
+      return file.statements.length > 0 &&
+        file.statements.every(statement => canonical.includes(`\n${statement.getText(file)}\n`));
     };
     // Statements (`Modifies<P, T>`, SOURCE-ELABORATION.md, "Stated effects"):
     // a reference to the verifier's `Modifies`, by the declaration TypeScript
