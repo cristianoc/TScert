@@ -199,7 +199,7 @@ theorem exitTypes_prefix {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd 
 theorem headExit_prefix {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed vacuous : Bool}
     {carried : List (PromiseCalls.Implication ι)} {acc result : ExitsDone ι G}
-    (h : headExit G I env l t tc Γ names store pushed vacuous carried acc = .ok result) :
+    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried acc = .ok result) :
     SumsPrefix acc.answers result.answers := by
   cases vacuous
   all_goals unfold headExit at h
@@ -214,7 +214,7 @@ theorem headExit_prefix {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poin
 theorem assertionExit_answers {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : Thunk (List (Ty ι))} {names : List Nat} {store : Store} {pushed vacuous : Bool}
     {obs : Option BranchRefinement.Observation} {acc result : ExitsDone ι G}
-    (h : assertionExit G env l t tc Γ names store pushed obs vacuous acc = .ok result) :
+    (h : assertionExit G env l exit t tc Γ names store pushed obs vacuous acc = .ok result) :
     result.answers = acc.answers := by
   unfold assertionExit at h
   repeat' (first | split at h | extract_lets at h)

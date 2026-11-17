@@ -599,9 +599,10 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 @[nospecialize] def PointClaim.mentions (c : PointClaim ι) : List ι := c.type ++ c.context.flatten
 
 /-- A graph failure as a diagnostic: its types are the store's projection
-(`StoreView.project`) onto the labels the record mentions. An edge with
-`thrown` is its source's handler edge, which pushes a thrown value of that
-type. -/
+(`StoreView.project`) onto the labels the record mentions. An edge at
+the index past its source's continuation edges is the handler's, which
+pushes the thrown value: of the type `thrown` where the check names one,
+else the type its target requires of the slot it lands in. -/
 @[nospecialize] def failureDiagnostic (r : Request σ ι) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure ι)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
@@ -652,16 +653,21 @@ type. -/
     let transfer := do
       let node ← r.program[source]?
       let c := PointClaim.shown p (← claimAt source)
-      let (available, target, observation) ← (match thrown, node.handler with
-        | some T, some h => some (p.shown T :: c.context, h, (none : Option Bool))
-        | _, _ => match node.continuation with
+      let landing := fun (h : Target) => ((claimAt h.label).toList.flatMap fun (tc : PointClaim ι) =>
+        (List.range tc.context.length).filterMap fun i =>
+          if PointClaims.slot h.mapping i == 0 then tc.context[i]? else none).head?
+      let (available, target, observation) ← (match node.handler with
+        | some h => if index == (CertificateProducer.successors node.continuation).length then
+            some (p.shown ((thrown.orElse fun _ => landing h).getD []) :: c.context, h, (none : Option Bool))
+          else none
+        | none => none).orElse fun _ => (match node.continuation with
         | .bind t => some (c.type :: c.context, t, (none : Option Bool))
         | .effect t => some (c.context, t, none)
         | .branch y n => some (c.context, if index == 0 then y else n, none)
         | .branchBind y n => some (c.type :: c.context, if index == 0 then y else n, some (index == 0))
         | .tagBind _ y n => some (c.type :: c.context, if index == 0 then y else n, none)
         | .ret => none)
-      let handler := thrown.isSome && node.handler.isSome
+      let handler := node.handler.isSome && index == (CertificateProducer.successors node.continuation).length
       pure (Json.mkObj [("available",toJson available),("target",toJson target),
         ("booleanObservation",toJson observation),
         ("tagObservation",match node.continuation with

@@ -76,7 +76,7 @@ function refusal(detail: string): string[] {
     const from = d.edgeFrom === d.label ? "the entry's assumptions" :
       d.edgeSourceMap === null ? `node ${d.edgeFrom}` : located(...d.edgeSourceMap.pos);
     const { fact: f, cond, negated } = d.fact;
-    out.push(`  left out at ${at}: ${cond === undefined ? "" : `${negated ? "!" : ""}${name(cond)} → `}${fact(f, name)}`);
+    out.push(`  left out at ${at}: ${cond === undefined ? "" : `${negated ? "!" : ""}${name(cond)} → `}${fact(f, name) ?? "true"}`);
     out.push(`    not established by the edge from ${from}`);
   }
   const point = record.kind === "edge-coverage" ? record.destination : record.kind === "node-typing" ? record.source : null;
@@ -88,7 +88,7 @@ function refusal(detail: string): string[] {
   // (an edge's facts its target lacks, named in the summary above)
   if (record.kind === "edge-coverage" && record.edgeFacts !== undefined) return out;
   for (const { fact: f, cond, negated } of point.requiredKnowledge?.indices ?? [])
-    out.push(`  required: ${cond === undefined ? "" : `${negated ? "!" : ""}${name(cond)} → `}${fact(f, name)}`);
+    out.push(`  required: ${cond === undefined ? "" : `${negated ? "!" : ""}${name(cond)} → `}${fact(f, name) ?? "true"}`);
   return out;
 }
 

@@ -36,7 +36,7 @@ theorem exitTypes_yields_source {env : WalkEnv ι G I} {l : Nat} {en : Entered �
 theorem headExit_yields {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed vacuous : Bool}
     {carried : List (PromiseCalls.Implication ι)} {a b : ExitsDone ι G}
-    (h : headExit G I env l t tc Γ names store pushed vacuous carried a = .ok b) : b.yields = a.yields := by
+    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried a = .ok b) : b.yields = a.yields := by
   unfold headExit at h
   repeat' (first | split at h | extract_lets at h)
   all_goals cases h <;> rfl
@@ -45,7 +45,7 @@ theorem headExit_yields {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Poin
 theorem assertionExit_yields {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γe : Thunk (List (Ty ι))} {names : List Nat} {store : Store} {pushed vacuous : Bool}
     {observed : Option BranchRefinement.Observation} {a b : ExitsDone ι G}
-    (h : assertionExit G env l t tc Γe names store pushed observed vacuous a = .ok b) : b.yields = a.yields := by
+    (h : assertionExit G env l exit t tc Γe names store pushed observed vacuous a = .ok b) : b.yields = a.yields := by
   unfold assertionExit at h
   repeat' (first | split at h | extract_lets at h)
   all_goals cases h <;> rfl

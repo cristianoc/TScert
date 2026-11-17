@@ -99,7 +99,7 @@ the context and edge facts the pass reads. -/
 theorem assertionExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γe : Thunk (List (Ty ι))} {names : List Nat} {edgeStore : Store} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {acc acc' : ExitsDone ι G}
-    (h : assertionExit G env l t tc Γe names edgeStore pushed observed false acc = .ok acc')
+    (h : assertionExit G env l exit t tc Γe names edgeStore pushed observed false acc = .ok acc')
     {req : HeapKnowledge.Knowledge} (hr : env.stated[t.label]! = some req) :
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context)
       (assertionSource G Γe.get req

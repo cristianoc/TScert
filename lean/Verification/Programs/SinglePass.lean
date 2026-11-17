@@ -376,28 +376,53 @@ structure StepPreconditions where
   signatures : List StatedPrecondition
   known : Knowledge
 
+/-- What an edge into a statement entry or an asserted target is refused
+for: facts the target requires; a given implication (from its test slot
+to its target slot); a slot stated to hold an input's entry value; a slot
+stated to hold the promised input; slots at the target. -/
+inductive EdgeRequirement where
+  | facts
+  | implication (test target : Nat)
+  | inputValue (slot input : Nat)
+  | promisedInput (slot : Nat)
+
 /-- What a refused edge's diagnostic carries: its node `source`, its target
-`target`, the exit it is among the node's (`Exit.ofNode`), the thrown
-value's type where it is the handler's; the facts the target requires
-(`required`) and those of them the edge does not establish (`lacking`, each
-decided alone by the check the edge's requirement is decided by), over the
-target's slots; and the facts the edge holds over the slots the mapping
-reads, restated at the target's slots (`known`), a name past the source's
-context kept past the target's. -/
+`target`, its exit's position among the node's (`Exit.ofNode`), the thrown
+value's type where it is the handler's, what it is refused for; the facts
+the target requires (`required`), split into those the edge establishes
+and those it does not, each decided alone, with the requirement's links,
+by the check that decides the whole; and the facts the edge holds over the
+slots the mapping reads, as the check reads them, restated at every target
+slot reading each (`known`), over the requirement's slots. All at the
+target's slots. -/
 structure EdgeFacts (ι : Type) where
   source : Nat
   target : Nat
   exit : Nat
   thrown : Option (Ty ι)
+  requirement : EdgeRequirement
   required : Knowledge
+  established : Knowledge
   lacking : Knowledge
   known : Knowledge
 
+/-- What a return refused for its postcondition carries: each fact of the
+postcondition (at the return's pushed slots, the result at 0; none for a
+fact over an input no slot holds the entry value of), with whether the
+return's facts entail it, decided alone by the check that decides the
+whole (`GraphCode.returnEntails`), and the return's facts over those
+slots. -/
+structure ReturnFacts where
+  facts : List (Option HeapKnowledge.IndexFact × Bool)
+  known : Knowledge
+
 /-- The explanatory data a refusal carries for its diagnostic: of a step's,
-its preconditions; of an edge's, its facts. -/
+its preconditions; of an edge's, its facts; of a return's postcondition,
+its facts. -/
 inductive RefusalDetail (ι : Type) where
   | step (d : StepPreconditions)
   | edge (d : EdgeFacts ι)
+  | postcondition (d : ReturnFacts)
 
 /-- The verdict: refused at a located obligation, a construct the pass
 does not handle, or the state observed at a chosen node. A refusal of an
@@ -2959,6 +2984,31 @@ def thrownTyOf {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkE
       if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none
     (landing ++ env.pool).find? (ControlFlow.admitsAll G)
 
+/-- **A return's postcondition facts** (`ReturnFacts`) at node `l` (its
+claim `c`) returning `result` from `entry` with the output store `store`:
+the facts `returnCheck` reads (the output's facts over the result and the
+slots holding the inputs' entry values), each fact of the postcondition
+`ensures` at the return's pushed slots, decided alone by
+`GraphCode.returnEntails`, and those facts, an input's entry value read at
+the slot holding it. Read only where the refusal is printed. -/
+def returnFactsAt (G : NormalGraph ι) (ensures : List HeapKnowledge.IndexFact) (c : PointClaim ι) (entry : State)
+    (store : Store) (result : Nat) (startNames : List Nat) : ReturnFacts :=
+  let width := c.context.length
+  let tracked : GraphCode.Tracked := (GraphCode.namedInputs ensures).filterMap fun (_, q) => do
+    let nm ← startNames[q]?
+    let j ← entry.names.idxOf? nm
+    pure (j, q)
+  let (k, _, _) := materialize { names := result :: entry.names, store } (width + 1) (0 :: tracked.map (·.1 + 1)) false
+  let kOut := KnowledgeExpand.expandLinks (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1) k
+  -- An input's entry value at the slot holding it (`old(x)`, input `q` at
+  -- the return's slot `trackedSlot (q + 1)`).
+  let entryAt := fun (q : Nat) => if tracked.any (·.2 == q) then some (GraphCode.trackedSlot tracked (q + 1)) else none
+  { facts := ensures.map fun F =>
+      ((if GraphCode.namesTracked tracked [F] then (F.mapM fun j => some (GraphCode.trackedSlot tracked j)).bind
+          (·.mapEntry entryAt) else none),
+       GraphCode.returnEntails kOut tracked [F]),
+    known := { kOut with indices := kOut.indices.filterMap fun a => (a.fact.mapEntry entryAt).map ({ a with fact := · }) } }
+
 /-- The return check at a return node (`returnCheck`, at the step's store
 and result and the yields `yields`, from the answers `answers`); none at
 another node. -/
@@ -3093,7 +3143,10 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
               | some q => { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
               | none => counts
             match refusal with
-            | some why => .error (WalkStop.mk (.refused why) counts a2 trace)
+            | some why => .error (WalkStop.mk (.refused why none (if env.ensures.isEmpty then none else
+                some (Thunk.mk fun _ => some (.postcondition (returnFactsAt G env.ensures env.claimed[l]! entry st.store
+                  st.result env.startNames)))))
+                counts a2 trace)
             | none =>
               .ok { stepAnswers := σ.answers, steppedAnswers := a, yieldAnswers := a1, answers := a2, counts, trace,
                     fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown,
@@ -3382,37 +3435,62 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
         .error (WalkStop.mk (.refused s!"edge from node {l} to node {t.label}{if l == env.debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (en.implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr (ys.map fun y => (y.target, y.conditional))}" else ""}") counts answers acc.trace)
       else .ok ({ acc with answers, counts }, typed)
 
-/-- **A refused edge's facts** (`EdgeFacts`), from node `l` to the target
-`t` (its claim `tc`), the edge's exit found among the node's exits by its
-target and whether it pushes a value (a continuation's exit before the
-handler's), the thrown value's type the head of the exit's context `Γ`
-where it is the handler's: the requirement `req` and its atoms `missing` the edge does not
-establish, over the target's slots, and the edge's facts `k` over the
-`width` slots of its source context, restated at the target's slots
-through the mapping (a name past that context past the target's), those
-sharing a name with a lacking fact. Read only where the refusal is
-printed. -/
-def edgeFactsAt (env : WalkEnv ι G images) (l : Nat) (t : Target) (tc : PointClaim ι) (Γ : List (Ty ι))
-    (pushed : Bool) (req k : Knowledge) (missing : List Atom) : EdgeFacts ι :=
-  let exits := Exit.ofNode env.nodes[l]!
-  let exit := (exits.findIdx? fun e => e.target == t && e.pushed == pushed).getD 0
-  let thrown := if (exits[exit]?).any Exit.isHandler then Γ.head? else none
+/-- **A refused edge's facts** (`EdgeFacts`), from node `l` at its exit
+`exit` to the target `t` (its claim `tc`), refused for `requirement`, the
+exit's context `Γ` (its head the thrown value's type at the handler's
+exit): of the requirement `req`, its atoms split by whether the check that
+decides it (`KnowledgeExpand.checkIn`, from the edge's facts `src` through
+the mapping) establishes each with the requirement's links; the edge's
+facts restated at the target's slots as a step reads its predecessor's
+(`materialize`): its index facts over a name no target slot reads restated
+through the read links giving it (`HeapKnowledge.restateReads`), those
+names eliminated (`HeapKnowledge.eliminateIndices`), each fact renamed to
+every target slot reading each of its slots (`Atom.renameEach`), those over
+the requirement's slots `slots` or a lacking fact's. Read only where the
+refusal is printed. -/
+def edgeFactsAt (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l exit : Nat) (t : Target) (tc : PointClaim ι)
+    (Γ : List (Ty ι)) (requirement : EdgeRequirement) (req src : Knowledge) (slots : List Nat) : EdgeFacts ι :=
+  let thrown := if ((Exit.ofNode env.nodes[l]!)[exit]?).any Exit.isHandler then Γ.head? else none
   let width := Γ.length
   let tw := tc.context.length
-  let back := fun (x : Nat) => if x < width then
-      (List.range tw).find? fun j => PointClaims.slot t.mapping j == x
-    else some (tw + (x - width))
-  let lackingNames := missing.flatMap Atom.names
-  let known := (atomsOf k).filterMap (·.rename back) |>.filter fun a =>
-    (match a with | .link _ => true | _ => false) || a.names.any lackingNames.contains
-  { source := l, target := t.label, exit, thrown, required := req,
-    lacking := ofAtoms missing tw, known := ofAtoms known tw }
+  let ctx := KnowledgeExpand.ctxOf G tc.context
+  let held := fun (a : Atom) => KnowledgeExpand.checkIn ctx src (ofAtoms (a :: req.links.map .link) tw) t.mapping
+  let (established, lacking) := (atomsOf req).partition held
+  let targetsOf : Std.HashMap Nat (List Nat) := (List.range tw).foldl (fun m j =>
+    let x := PointClaims.slot t.mapping j
+    if x < width then m.insert x (m.getD x [] ++ [j]) else m) {}
+  let read := fun (x : Nat) => targetsOf.contains x
+  let dropped := ((atomsOf src).flatMap Atom.names).eraseDups.filter (!read ·)
+  let indices := HeapKnowledge.eliminateIndices dropped
+    (src.indices ++ HeapKnowledge.restateReads src.links (!read ·) src.indices)
+  let focus := slots ++ lacking.flatMap Atom.names
+  let known := (atomsOf { src with indices }).flatMap (fun a =>
+      if a.names.all read then a.renameEach targetsOf else []) |>.filter fun a => a.names.any focus.contains
+  { source := l, target := t.label, exit, thrown, requirement, required := req,
+    established := ofAtoms established tw, lacking := ofAtoms lacking tw, known := ofAtoms known.eraseDups tw }
+
+/-- The edge's facts over the target slots `slots`, as a head's query
+reads them (`headExit`): the facts its store holds over the source slots
+the mapping reads for them, with the links its context's types state. -/
+def edgeKnowledge (G : NormalGraph ι) (t : Target) (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store)
+    (slots : List Nat) : Knowledge :=
+  let (k, _, _) := materialize { names, store := edgeStore } Γ.length (slots.map (PointClaims.slot t.mapping)) true
+  HeapKnowledge.withTypedLinks G Γ k
+
+/-- The deferred facts of an edge refused for a requirement other than
+facts, `due` (the requirement and its target slots), where it names one
+(`edgeFactsAt`, over the edge's facts at those slots, `edgeKnowledge`). -/
+def requirementDetail (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l exit : Nat)
+    (t : Target) (tc : PointClaim ι) (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store)
+    (due : Option (EdgeRequirement × List Nat)) : Option (Thunk (Option (RefusalDetail ι))) :=
+  due.map fun (r, slots) => Thunk.mk fun _ =>
+    some (.edge (edgeFactsAt G env l exit t tc Γ r {} (edgeKnowledge G t Γ names edgeStore slots) slots))
 
 /-- An edge into a head (`exitStep`): recorded; where the edge's context is
 met, the head's given implications and the slots it states to hold an
 input's entry value or the promised input hold on it; the head's given state
 entailed on it. -/
-def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l exit : Nat)
     (t : Target) (tc : PointClaim ι) (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store) (pushed : Bool)
     (vacuous : Bool) (carried : List (PromiseCalls.Implication ι)) (acc : ExitsDone ι G) :
     Except (WalkStop ι G) (ExitsDone ι G) :=
@@ -3421,15 +3499,23 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
   -- The head's given implications hold on every edge into it.
   let (implOk, answers) := if vacuous then (true, acc.answers) else headImplies G images env t names carried acc.answers
   if !implOk then
-    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an implication{match headImpliesFailing G images env t names carried acc.answers with
+    let failing := headImpliesFailing G images env t names carried acc.answers
+    let due := failing.map (fun (a, b) => (EdgeRequirement.implication a b, [a, b]))
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an implication{match failing with
       | some (a, b) => s!" {a} {b}"
-      | none => ""}") acc.counts answers acc.trace)
+      | none => ""}" none (requirementDetail G env l exit t tc Γ names edgeStore due)) acc.counts answers acc.trace)
   -- The slots it states hold the promised input, or an input's entry
   -- value, hold it on every edge.
   else if !vacuous && ((env.givenInputs[t.label]?).getD []).any (fun (j, q) => names[PointClaims.slot t.mapping j]? != env.startNames[q]?) then
-    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an input's value") acc.counts answers acc.trace)
+    let failing := ((env.givenInputs[t.label]?).getD []).find? (fun (j, q) => names[PointClaims.slot t.mapping j]? != env.startNames[q]?)
+    let due := failing.map (fun (j, q) => (EdgeRequirement.inputValue j q, [j]))
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an input's value" none
+      (requirementDetail G env l exit t tc Γ names edgeStore due)) acc.counts answers acc.trace)
   else if !vacuous && ((env.givenArgs[t.label]?).getD []).any (fun j => names[PointClaims.slot t.mapping j]? != env.argName) then
-    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: the promised input") acc.counts answers acc.trace)
+    let failing := ((env.givenArgs[t.label]?).getD []).find? (fun j => names[PointClaims.slot t.mapping j]? != env.argName)
+    let due := failing.map (fun j => (EdgeRequirement.promisedInput j, [j]))
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: the promised input" none
+      (requirementDetail G env l exit t tc Γ names edgeStore due)) acc.counts answers acc.trace)
   else
     -- The head's given state is entailed on every edge into it.
     match env.given[t.label]! with
@@ -3450,7 +3536,7 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
           else acc.trace
         .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {missing.length} of its facts"
           (some (t.label, missing.filterMap fun a => match a with | .index x => some x | _ => none))
-          (some (Thunk.mk fun _ => some (.edge (edgeFactsAt env l t tc Γ pushed req src missing))))) counts answers trace)
+          (some (Thunk.mk fun _ => some (.edge (edgeFactsAt G env l exit t tc Γ .facts req src []))))) counts answers trace)
       else .ok { acc with edges, answers, counts }
 
 /-- A target's assertion established on an edge into a node other than a
@@ -3458,7 +3544,7 @@ head, as the edge test into a statement entry establishes it
 (`checkTargetResult`): over the edge's facts, its context `Γe` as the
 yields refine it, with the facts that context's types state of the cells
 and links it reads; the counters and trace after it, or the refusal. -/
-def assertionExit (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+def assertionExit (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l exit : Nat)
     (t : Target) (tc : PointClaim ι) (Γe : Thunk (List (Ty ι))) (names : List Nat) (edgeStore : Store) (pushed : Bool)
     (observed : Option BranchRefinement.Observation) (vacuous : Bool) (acc : ExitsDone ι G) :
     Except (WalkStop ι G) (ExitsDone ι G) :=
@@ -3483,7 +3569,7 @@ def assertionExit (G : NormalGraph ι) {images : InstanceImageCheck G} (env : Wa
             { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
           else acc.trace
         .error (WalkStop.mk (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {missing.length} of its facts" none
-          (some (Thunk.mk fun _ => some (.edge (edgeFactsAt env l t tc Γe pushed req k missing))))) counts acc.answers trace)
+          (some (Thunk.mk fun _ => some (.edge (edgeFactsAt G env l exit t tc Γe .facts req k []))))) counts acc.answers trace)
       else .ok { acc with counts }
 
 /-- An edge into a node other than a head carried in (`exitStep`): the
@@ -3582,11 +3668,11 @@ def exitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
           (entry.names[y.target]?).map fun tgt => ⟨st.result, tgt, y.type⟩ else none)
       let record : ExitRecord ι := { index := exi.2, target := t, Γ, names, edgeStore, typed, head := false, Γe := none, carried := none }
       if env.isHead[t.label]! then
-        (headExit G images env l t tc Γ names edgeStore pushed vacuous (en.implies ++ freshImpl) acc).map fun acc =>
+        (headExit G images env l exi.2 t tc Γ names edgeStore pushed vacuous (en.implies ++ freshImpl) acc).map fun acc =>
           { acc with exits := acc.exits.push { record with head := true } }
       else
         let Γe : Thunk (List (Ty ι)) := Thunk.mk fun _ => if isHandler then Γ else refinedContext G c node.continuation ysAll outAll.get first
-        match assertionExit G env l t tc Γe names edgeStore pushed observed vacuous acc with
+        match assertionExit G env l exi.2 t tc Γe names edgeStore pushed observed vacuous acc with
         | .error stop => .error stop
         | .ok acc =>
           let (target, carried) := edgeTransfer names t.mapping pushed isHandler sd.outFresh entry st.result edgeStore

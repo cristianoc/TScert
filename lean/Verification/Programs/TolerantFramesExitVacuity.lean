@@ -92,7 +92,7 @@ theorem exitTypes_unsat {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd :
 theorem headExit_unsat {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι} {Γ : List (Ty ι)}
     {names : List Nat} {edgeStore : Store} {pushed vacuous : Bool} {carried : List (PromiseCalls.Implication ι)}
     {acc acc' : ExitsDone ι G}
-    (h : headExit G I env l t tc Γ names edgeStore pushed vacuous carried acc = .ok acc') :
+    (h : headExit G I env l exit t tc Γ names edgeStore pushed vacuous carried acc = .ok acc') :
     acc'.unsat = acc.unsat := by
   unfold headExit at h
   repeat' (first | split at h | extract_lets at h)
@@ -102,7 +102,7 @@ theorem headExit_unsat {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : Point
 theorem assertionExit_unsat {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γe : Thunk (List (Ty ι))} {names : List Nat} {edgeStore : Store} {pushed vacuous : Bool}
     {observed : Option BranchRefinement.Observation} {acc acc' : ExitsDone ι G}
-    (h : assertionExit G env l t tc Γe names edgeStore pushed observed vacuous acc = .ok acc') :
+    (h : assertionExit G env l exit t tc Γe names edgeStore pushed observed vacuous acc = .ok acc') :
     acc'.unsat = acc.unsat := by
   unfold assertionExit at h
   repeat' (first | split at h | extract_lets at h)

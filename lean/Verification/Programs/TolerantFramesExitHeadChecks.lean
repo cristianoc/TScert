@@ -91,7 +91,7 @@ implications, input and argument slots, and heap facts. -/
 theorem headExit_checked {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed : Bool}
     {carried : List (PromiseCalls.Implication ι)} {a b : ExitsDone ι G}
-    (h : headExit G I env l t tc Γ names store pushed false carried a = .ok b) :
+    (h : headExit G I env l exit t tc Γ names store pushed false carried a = .ok b) :
     (∀ x ∈ (env.givenImplies[t.label]?).getD [], ∃ y ∈ carried,
       names[PointClaims.slot t.mapping x.test]? = some y.test ∧
       names[PointClaims.slot t.mapping x.target]? = some y.target ∧

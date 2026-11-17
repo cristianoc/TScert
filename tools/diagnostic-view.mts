@@ -6,9 +6,9 @@
  * See docs/OBLIGATION-DIAGNOSTICS.md.
  */
 
-import { isJsonList, type CallCode, type JsonRead, type JsonValue, type Term } from "./calculus.mts";
+import { isJsonList, isJsonObject, type CallCode, type JsonRead, type JsonValue, type Term } from "./calculus.mts";
 import surface from "./claim-text.mts";
-import type { DiagnosticOutcome, HeapKnowledge, EdgeFacts, ObligationDiagnostic, SourceMapEntry, StepPreconditions } from "./diagnostic.mts";
+import type { DiagnosticOutcome, HeapKnowledge, EdgeFacts, ObligationDiagnostic, ReturnFacts, SourceMapEntry, StepPreconditions } from "./diagnostic.mts";
 import { indexFact, knowledgeFacts } from "./fact-text.mts";
 
 /** How a context binding is named in the source, as a source map states it. */
@@ -63,14 +63,15 @@ function recordType(table: Table, labels: JsonRead): string {
 // so a position should never reach a reader. The `slot N` fallback below is for
 // a record that arrives without a source map at all; seeing one means
 // extraction broke that invariant.
+// A name lowering makes up for a value no source binding holds (`%next@264%`,
+// `.path:0`) is shown by the source expression it holds where the descriptor
+// gives one.
 function bindingText(descriptor: Descriptor, source: string): string {
-  if (descriptor.name) return descriptor.name;
   const span = descriptor.span;
-  if (span === null) return "";
-  return source
-    .slice(span[0], span[1])
-    .replace(/\s+/g, " ")
-    .trim();
+  const spanned = span === null ? "" : source.slice(span[0], span[1]).replace(/\s+/g, " ").trim();
+  if (descriptor.name && (/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(descriptor.name) || spanned === ""))
+    return descriptor.name;
+  return spanned;
 }
 
 /** A point's source span as the text it covers, quoted, or `other` where it
@@ -144,12 +145,34 @@ function slotNamer(links: HeapKnowledge["links"], binding: (slot: number) => str
   return (slot: number): string => name(slot, new Set());
 }
 
-/** The index and elements facts of a knowledge, each once, in source
- * names. */
-function factsText(k: HeapKnowledge, named: (slot: number) => string): string[] {
-  return [...new Set(knowledgeFacts({ ...k, cells: [], values: [], links: [], separation: { depth: 0, facts: [] } }, named)
-    .map((f) => f.text))];
+/** Whether a type, lifted, is a variable's cell: one record, of no index
+ * and no prototype, whose one field is `value`, the field a cell holds its
+ * variable's value in (`valueField`). */
+function isCell(table: Table, labels: JsonRead): boolean {
+  if (!isJsonList(labels)) return false;
+  const lifted = surface.lift(table.types, labels, 1, table.names ?? []);
+  if (!isJsonObject(lifted)) return false;
+  const atoms = lifted["atoms"];
+  if (!isJsonList(atoms) || atoms.length !== 1) return false;
+  const record = atoms[0];
+  if (!isJsonObject(record) || record["a"] !== "record") return false;
+  const fields = record["fields"];
+  return isJsonList(fields) && fields.length === 1 && isJsonObject(fields[0]) && fields[0]["name"] === "value";
 }
+
+/** The facts of a knowledge but its links (which name its slots), each
+ * once, in source names, but the texts of `except`; a variable's cell (of
+ * the slots `variable` states) by the variable's binding. */
+function factsText(k: HeapKnowledge, named: (slot: number) => string, except: readonly string[] = [],
+    variable: (slot: number) => boolean = () => false): string[] {
+  return [...new Set(knowledgeFacts(k, named, variable).filter((f) => f.kind !== "link").map((f) => f.text))]
+    .filter((t) => !except.includes(t));
+}
+
+/** Facts as one conjunction: a disjunction, guarded or conditional fact in
+ * parentheses where there is more than one. */
+const conjunction = (facts: readonly string[]): string =>
+  facts.length < 2 ? facts.join("") : facts.map((f) => (/ \|\| | → /.test(f) ? `(${f})` : f)).join(" && ");
 
 /** A refused step's preconditions in source names: each precondition's
  * requirements that do not hold, then the facts known over the step's
@@ -160,26 +183,51 @@ function preconditionsText(pre: StepPreconditions, binding: (slot: number) => st
     ...(sig.requires !== null && !sig.requires.entailed
       ? [`every element of ${named(sig.requires.slot)} is ${sig.requires.pred.join(" | ")}`] : []),
     ...sig.atoms.filter((a) => !a.entailed).map((a) =>
-      a.fact === null ? "a fact over a position the call holds no slot for" : indexFact(a.fact, named)),
+      a.fact === null ? "a fact over a position the call holds no slot for" : indexFact(a.fact, named) ?? "true"),
   ]).filter((m) => m.length > 0);
   const subject = pre.step === "write" ? "This write" :
     pre.signatures.length > 1 ? "A signature of the callee" : "The callee";
   const requirement = missing.map((m) =>
-    `${subject} requires ${m.join(" && ")}, which the facts here do not establish.`);
-  const known = factsText(pre.known, named);
+    `${subject} requires ${conjunction(m)}, which the facts here do not establish.`);
+  // (its index and elements facts: what a precondition reads)
+  const known = factsText({ ...pre.known, cells: [], values: [], separation: { depth: 0, facts: [] } }, named);
   return [...requirement,
     known.length ? `Known over its operands: ${known.join(", ")}.` : "No fact is known over its operands."].join(" ");
 }
 
 /** A refused edge's facts in source names, at its target's slots: the edge
- * by its source's span, the facts the target requires that it does not
- * establish, then those it holds over the same slots. */
-function edgeFactsText(facts: EdgeFacts, from: string, binding: (slot: number) => string, width: number): string {
-  const named = slotNamer([...facts.known.links, ...facts.lacking.links], binding, width);
-  const lacking = [...new Set(knowledgeFacts(facts.lacking, named).map((f) => f.text))];
-  const known = factsText(facts.known, named);
-  return `The edge from ${from} does not establish ${lacking.join(" && ")}, which the next point requires. ` +
-    (known.length ? `Known on the edge over the same slots: ${known.join(", ")}.` : "No fact is known on the edge over the same slots.");
+ * by its source's span, what the target requires that it does not
+ * establish, the required facts it does establish, then the other facts it
+ * holds over the same slots; none where it names no requirement it does not
+ * establish. */
+function edgeFactsText(facts: EdgeFacts, from: string, binding: (slot: number) => string, width: number,
+    variable: (slot: number) => boolean): string | undefined {
+  const named = slotNamer([...facts.known.links, ...facts.lacking.links, ...facts.established.links], binding, width);
+  const r = facts.requirement;
+  const lacking = r.kind === "facts" ? factsText(facts.lacking, named, [], variable)
+    : r.kind === "implication" ? [`the implication from ${named(r.test)} to the type it states of ${named(r.target)}`]
+    : r.kind === "input-value" ? [`that ${named(r.slot)} holds the entry value of the function's input ${r.input + 1}`]
+    : [`that ${named(r.slot)} holds the input the promise is about`];
+  if (lacking.length === 0) return undefined;
+  const established = factsText(facts.established, named, [], variable);
+  const known = factsText(facts.known, named, established, variable);
+  return [`The edge from ${from} does not establish ${conjunction(lacking)}, which the next point requires.`,
+    ...(established.length ? [`It establishes ${established.join(", ")}.`] : []),
+    known.length ? `Known on the edge over the same slots${established.length ? ", beside those" : ""}: ${known.join(", ")}.`
+      : `No other fact is known on the edge over the same slots.`].join(" ");
+}
+
+/** A return refused for its postcondition, in source names over its pushed
+ * slots (the result at 0): the postcondition's facts it does not establish,
+ * then the return's facts. */
+function postconditionText(post: ReturnFacts, binding: (slot: number) => string, width: number): string | undefined {
+  const named = slotNamer(post.known.links, (slot) => (slot === 0 ? "result" : binding(slot - 1)), width + 1);
+  const lacking = post.facts.filter((f) => !f.entailed).map((f) =>
+    f.fact === null ? "a fact over an input whose entry value no slot holds" : indexFact(f.fact, named) ?? "true");
+  if (lacking.length === 0) return undefined;
+  const known = factsText(post.known, named);
+  return `This return does not establish ${conjunction(lacking)} of the postcondition. ` +
+    (known.length ? `Known at the return: ${known.join(", ")}.` : "No fact is known at the return over those slots.");
 }
 
 /** Uniform report contract: the source-named summary of a failed obligation and
@@ -210,12 +258,10 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       const names = bindingsOf(ob.destination.sourceMap, source);
       // An edge refused for facts its target requires: those facts and the
       // facts known on the edge.
-      if (ob.edgeFacts !== undefined)
-        return {
-          summary: edgeFactsText(ob.edgeFacts, spanText(ob.source.sourceMap, source, `node ${ob.source.label}`),
-            (slot) => names[slot] || "slot " + slot, required.length),
-          searchOutcome: searched,
-        };
+      const facts = ob.edgeFacts === undefined ? undefined : edgeFactsText(ob.edgeFacts,
+        spanText(ob.source.sourceMap, source, `node ${ob.source.label}`), (slot) => names[slot] || "slot " + slot, required.length,
+        (slot) => isCell(ob, required[slot]));
+      if (facts !== undefined) return { summary: facts, searchOutcome: searched };
       // The available labels target slot i takes; none where the mapping
       // names no source slot for it.
       const availableAt = (i: number): readonly number[] | undefined => {
@@ -248,6 +294,10 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       const binding = (slot: number) => names[slot] || "slot " + slot;
       const inContext = (slot: number) => Number.isInteger(slot) && slot >= 0 && slot < q.context.length;
       const term = q.term;
+      // A return refused for its postcondition: its facts.
+      const post = ob.kind === "node-typing" && ob.postcondition !== undefined
+        ? postconditionText(ob.postcondition, binding, q.context.length) : undefined;
+      if (post !== undefined) return { summary: post, searchOutcome: searched };
       if (term.kind === "var" && inContext(term.i)) {
         const slot = term.i;
         const required = recordType(ob, q.type);
