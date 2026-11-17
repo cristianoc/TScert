@@ -16,3 +16,11 @@ export function get(xs: number[], v: number): number {
   }
   return 0;
 }
+
+// A union of a safe literal and a fraction, tested: read within `int` on
+// the true branch.
+export function pick(b: boolean): SafeInt {
+  const x = b ? 1 : 0.5;
+  if (Number.isSafeInteger(x)) return x;
+  return 0;
+}

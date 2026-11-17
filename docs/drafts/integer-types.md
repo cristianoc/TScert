@@ -103,13 +103,14 @@ primitive atom of its own.
   refined by the facts of its knowledge $`k`$ (`kE`, the facts the step
   reads): each slot $`x_i`$ that $`k`$ states a safe integer
   (`HeapKnowledge.intSlot`: an unconditional $`\mathrm{int}(x_i)`$, a length
-  or a linear fact naming it) is read at $`\Gamma_i\sqcap\mathtt{int}`$.
-  The pass represents that meet where it is `int`, where a clause of
-  $`\Gamma_i`$ includes `int` (`number`, `int`, `unknown`), at the graph's
-  `int` label, a lookup as `NormalGraph.literal` is for literals, read after
-  its row is checked to be the one clause `int`; every other slot keeps
-  $`\Gamma_i`$, which is sound and loses the meet of a literal union with
-  `int` (`1 | string` at `1`). The refined context $`\Gamma^{k}`$ is the
+  or a linear fact naming it) is read within $`\Gamma_i\sqcap\mathtt{int}`$:
+  a plain type not already within the safe integers is read at the
+  graph's `int` label, a lookup as `NormalGraph.literal` is for literals,
+  read after its row is checked to be the one clause `int`; a type within
+  the safe integers, or with a parameter, scheme or meet row, keeps
+  $`\Gamma_i`$. `int` contains the meet, and equals it where a clause of
+  $`\Gamma_i`$ includes `int` (`number`, `int`, `unknown`); of a literal
+  union with other values (`1 | string`) the meet is its safe literals. The refined context $`\Gamma^{k}`$ is the
   sequent of the step's own checks: the search of its derivation and
   `directCall` (an operand at its parameter), and the selection and normal
   effect of the step (`jOf`, `StepAccepted`), so a write's value at its
