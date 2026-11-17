@@ -677,3 +677,45 @@ not counted as implemented code in this source.
 
 Logs: `/workspace/scratch/bitwise-test.log`, `bitwise-axioms.log`,
 `bitwise-rules-build4.log`, and `bitwise-docs-final.log`.
+
+## Operational graph/control foundations at 1fc40c5e
+
+Evidence applies to exact source `1fc40c5e41873c227d977bab594034a8033614bf`,
+extending `1e0016aff64de23e3b977badf25f02602728b3ba` on single-pass
+`f2e33e7f35769d00dd6aa1763d86d3c6ef41983f`. A fresh fetch before validation
+confirmed that exact base was still the remote tip. The original fetched start
+remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+All five modules pass focused builds with warnings as errors. Both complete
+axiom audits pass, exit zero, 441 jobs, with only the same eight cached upstream
+informational backtraces. Full make test exits zero: 650 Lean build jobs,
+23 passing fast suites, 175 controls (3 operations executed, 492 replayed),
+3431/3431 expected cases, 4323 verified functions, 1790 negative controls and
+150 named gaps. Direct import coverage checks 363 other A/shared and 75 other
+Paper modules. A separate scan finds zero outside-to-Paper imports. This batch
+changes no A/shared Lean or paper mathematics; the preceding shared-impact
+account remains exact. Final documentation passes at 79 documents, 892 code
+citations and zero problems; whitespace checks pass.
+
+Independent read-only Astra reviewed the layout/control design before
+implementation and all source afterward. It found no soundness blocker.
+It specifically checked finite bounds include bind/catch IDs; slot-map defaults
+remain machine values; host/payload slots are not silently required to meet
+program-root validity; restoring source/world validity has the correct finite
+slot and persistence premises; graph inversion retains every real step/count;
+evaluation segments expose genuine values/raises; and finite control traces
+produce existing structured execution with exact primitive weight. Handlers
+use the thrown-time environment and pop before their own execution. Operational
+control carries no worlds, marks or entry anchors.
+
+The 91-row table remains 42 equal, 26 narrower, 10 absent and 13 assumed.
+These proofs are operational prerequisites: generated finite graphs, their
+metadata/offset/routing proofs, whole-command inversion and Fun are not yet
+implemented by this source. In particular, zero-weight administrative control
+alone supplies no termination argument. The reviewed next CPS prototype exists
+only in scratch and is not counted as formalized compiler correctness.
+
+Logs: `/workspace/scratch/graph-foundations-test.log`,
+`graph-foundations-axioms.log`, `graph-layout-inversion-build1.log` (layout),
+`graph-inversion-build3.log`, `command-machine-build3.log`,
+`graph-segments-build1.log` and `graph-foundations-docs-final.log`.
