@@ -238,3 +238,52 @@ Definitions 14 and 23. They do not establish the structural support table,
 full mixed old/current syntax and substitution, all primitive/host bridges,
 Call/Fun, complete derivation admission or closed paper example proofs.
 Those limitations remain explicit in the audit and the owning WORK row.
+
+## First-order postconditions at 9a410bd4
+
+Evidence from the cloud checkout on 2026-11-17 for source commit
+`9a410bd4c065980e3adeae9c791fca8ecc5b6a9a`, following validation commit
+`bb126d9414adf27f70e6c0eb4d1d12c26cdf33fe`. All six new modules passed focused
+builds: syntax, scope, admission, renaming, exact postcondition formulas and
+frozen index instantiation. Both axiom checks passed together (411 jobs).
+The same eight cached informational Lean PANIC traces from unchanged A code
+were replayed, with no new module warning or error; the command exited zero.
+
+A complete supervised `make test` exited zero under pinned Lean 4.33.1 and
+Node 26.13.0 with `bc`, within its 1800-second budget:
+
+- full Lean build: 620 jobs;
+- all 23 fast suites and all 175 controls;
+- **3419 of 3419 pipeline cases as expected**, 4322 functions verified,
+  1782 negative controls and 147 named gaps.
+
+The controls ran on four lanes, with 3 operations executed and 492 replayed.
+Axiom-check direct import coverage includes 363 other A/shared modules and
+45 other Paper modules. A source scan found no imports of Paper outside Paper;
+all Lean changes remain inside Paper. Documentation checking passed with
+76 documents, 892 code citations and zero problems; diff and commit-record
+checks passed. No shared semantics, trust assumption or expected outcome
+changed. Logs are `/workspace/scratch/postcondition-test.log`,
+`/workspace/scratch/postcondition-axioms.log` and
+`/workspace/scratch/postcondition-docs.log` in the cloud environment.
+
+Independent read-only Astra review checked the raw/admitted distinction,
+separate entry/current name scopes, logical valuation agreement, odd-only
+value-binder lifting, total semantic renaming and whole regional-action
+transport. It checked Q_<, Q_≠i, Push and converted View-Write interpretation
+proofs, including the role proof of source-valued old element reads. It also
+checked frozen instance evaluation and the conditional phase obstruction.
+It found no blocking soundness defect or correspondence overclaim and
+recounted **42 equal / 25 narrower / 9 absent / 13 assumed**, 89 main rows.
+It did not rerun builds or regression tests.
+
+These proofs establish first-order syntax, static admission, interpretation,
+logical valuation independence and semantic renaming. They do not establish
+admission preservation under declaration pullback, full mixed-state/path/term
+substitution, mixed-state arithmetic or actual native command execution.
+The frozen-index theorem is auxiliary and is not a new Definition 23 rule.
+Its textual-substitution obstruction assumes term evaluations zero at entry
+and one currently; it does not construct an admissible execution or prove
+that particular textual formula admitted. The owner was asked to clarify the
+index-at-term sentence. The earlier raw-value negative-zero obstruction also
+remains unresolved. The paper's mathematics is unchanged.
