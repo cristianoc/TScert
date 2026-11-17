@@ -394,7 +394,11 @@ smallest change come after.
 
 ### Designs start from an existing mechanism
 
-A design draft (`docs/drafts/`) opens with a section **The existing
+A new mechanism, or a change to a rule acceptance applies, is designed in
+a draft (`docs/drafts/`) before it is built. A small change (a diagnostic,
+a fix or an extension inside an existing mechanism) has no design step: it
+is implemented, then reviewed by Astra or Fable, the review asking the
+first question below. A design draft opens with a section **The existing
 mechanism this extends**, citing the document that owns it (for a fact a
 construct relies on across code, [footprints](docs/FOOTPRINTS.md): the
 fact, its stable operations, the checked contract, the construct's rule).

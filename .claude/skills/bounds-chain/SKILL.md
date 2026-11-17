@@ -105,9 +105,9 @@ When TScert refuses what it should accept, close the gap in
 `chainN-tscert`, as [CLAUDE.md](../../../CLAUDE.md) requires of any
 TScert change:
 
-- a design starts from the [existing mechanism](../../../docs/DESIGN.md#general-mechanisms)
-  it extends; a new one is drafted in `docs/drafts/` and reviewed by
-  Astra before it is built;
+- a design is drafted and reviewed as
+  [designs](../../../CLAUDE.md#designs-start-from-an-existing-mechanism)
+  states;
 - a rule is general, never shaped to a pretext site;
 - a pipeline case, positive and negative, for each rule, the negative run
   under Node; Lean with no `sorry`, axiom or warning; a commit record on
