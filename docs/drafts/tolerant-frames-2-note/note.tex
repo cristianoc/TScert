@@ -667,9 +667,12 @@ behind P5.
 \code{index[c >{}> 8]! + (c \& 0xff)}, which the rules \textsc{Shr}
 and \textsc{Mask} cover.
 
-\entry{What an extension must provide} Rules for the results of \code{<{}<} and \code{|}: for
-integers $0\le a<2^{23}$ and $0\le d\le255$, the value of
-\code{(a <{}< 8) | d} is $256a+d$. Neither paper has such a rule.
+\entry{What an extension must provide} The rules \textsc{Shl} and
+\textsc{Or} of Paper~I (\nI{Arithmetic steps}): $\mathit{hi}\ll 8$ is
+$256\,\mathit{hi}$, and the or of two non-negative 32-bit integers lies
+between the larger and their sum, so the index is at most
+$256\,\mathit{hi}+255<256\cdot\mathit{blocks}$. The verifier does not
+apply them.
 
 \section{P22: a fact about a location a callback cannot reach (1 site, as second blocker)}
 
@@ -739,7 +742,7 @@ P17 & 3 & an index into a selected element & in neither paper\\
 P18 & 2 & a guard through two \code{@stable} fields & stated in Paper~I, not implemented\\
 P19 & 2 & a sum of element lengths & in neither paper\\
 P20 & 1 & the invariant of a \code{Map} value & in neither paper\\
-P21 & 1 & the results of \code{<{}<} and \code{|} & in neither paper\\
+P21 & 1 & the results of \code{<{}<} and \code{|} & stated in Paper~I, not implemented\\
 P22 & 1 & a callback's effect bounded by what it reaches & in neither paper\\
 \bottomrule
 \end{tabular}}
