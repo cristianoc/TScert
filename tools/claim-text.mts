@@ -419,6 +419,7 @@ const _handled = {
   bool: 1,
   undef: 1,
   num: 1,
+  int: 1,
   str: 1,
   top: 1,
   source: 1,
@@ -495,6 +496,8 @@ function liftClause(
   if (clause === "bool") return { a: "boolean" };
   if (clause === "undef") return { a: "undefined" };
   if (clause === "num") return { a: "number" };
+  // The safe integers have no claim form; the reader names their type.
+  if (clause === "int") return "SafeInt";
   if (clause === "str") return { a: "string" };
   if (clause === "bigint") return { a: "bigint" };
   if (clause === "symbol") return { a: "symbol" };

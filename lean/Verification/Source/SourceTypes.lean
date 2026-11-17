@@ -103,6 +103,7 @@ private def clauseName : Clause (List ι) → String
   | .view .uint16 _ => "Uint16Array"
   | .view .int32 _ => "Int32Array"
   | .view .float64 _ => "Float64Array"
+  | .int => "SafeInt"
 
 /-- A type of any graph by its clauses' kinds, as `render` names them, an
 array's as `array`. -/

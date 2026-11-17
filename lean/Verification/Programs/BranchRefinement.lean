@@ -559,7 +559,7 @@ theorem restricts_sound [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty
           refine ⟨e, hmem, literal_sem hlit hev, ?_⟩
           exact builtinInvariant_of_withoutInvariant (by cases e <;> simp_all [literalClause, Clause.carriesInvariant]) _ _ _
     | _ => simp [restricts] at hr
-  | _ => cases c' <;> simp [restricts] at hr
+  | _ => simp [restricts] at hr
 
 /-- A label of `candidates` the one record clause of `a` restricts to the
 rest of its stable key `f`'s type (`restricts`). -/

@@ -467,6 +467,9 @@ export type Clause<L = number> =
   | "bool"
   | "undef"
   | "num"
+  /** The safe integers (Lean's `Clause.int`): the numbers whose bits denote
+   * an integer of magnitude at most 2^53 - 1, both zeros included. */
+  | "int"
   /** Semantic top: every value, and no operation through it. */
   | "top"
   | "source"
@@ -593,7 +596,7 @@ type OnlyClauseKeys = Covers<Exclude<ClauseKey, KeysOf<Exclude<Clause, string>>>
  * string no clause is, does not compile. With `CLAUSE_KEYS`, these are the
  * only places a clause kind is enumerated. */
 const STRING_CLAUSE_KEYS = [
-  "nul", "bool", "undef", "num", "str", "top", "source", "bigint", "symbol",
+  "nul", "bool", "undef", "num", "int", "str", "top", "source", "bigint", "symbol",
 ] as const;
 type EveryStringClause = Covers<Exclude<StringClause, (typeof STRING_CLAUSE_KEYS)[number]>>;
 type OnlyStringClauses = Covers<Exclude<(typeof STRING_CLAUSE_KEYS)[number], StringClause>>;

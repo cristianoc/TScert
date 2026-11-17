@@ -1337,6 +1337,11 @@ checks over the supplied subtype relation. -/
   | .numIn _, .num => True
   | .numLit a, .numIn S => a ∈ S
   | .numIn S, .numIn T => ∀ b ∈ S, b ∈ T
+  -- The safe integers are numbers; a literal or a tag set is within them
+  -- where every number it holds decodes as a safe integer.
+  | .int, .num | .int, .int => True
+  | .numLit a, .int => SafeIntegers.safeIntOfBits a ≠ none
+  | .numIn S, .int => ∀ b ∈ S, SafeIntegers.safeIntOfBits b ≠ none
   | .strIn _, .str => True
   | .strLit a, .strIn S => a ∈ S
   | .strIn S, .strIn T => ∀ s ∈ S, s ∈ T
@@ -3229,6 +3234,10 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
   case numIn.num => rintro ⟨b, -, rfl⟩; exact ⟨b, rfl⟩
   case numLit.numIn a S => intro hv; cases hv; exact ⟨a, hc, rfl⟩
   case numIn.numIn S T => rintro ⟨b, hb, rfl⟩; exact ⟨b, hc b hb, rfl⟩
+  case int.num => rintro ⟨b, rfl, -⟩; exact ⟨b, rfl⟩
+  case int.int => exact id
+  case numLit.int a => intro hv; cases hv; exact ⟨a, rfl, hc⟩
+  case numIn.int S => rintro ⟨b, hb, rfl⟩; exact ⟨b, rfl, hc b hb⟩
   case strIn.str => rintro ⟨s, -, rfl⟩; exact ⟨s, rfl⟩
   case strLit.strIn a S => intro hv; cases hv; exact ⟨a, hc, rfl⟩
   case strIn.strIn S T => rintro ⟨s, hs, rfl⟩; exact ⟨s, hc s hs, rfl⟩

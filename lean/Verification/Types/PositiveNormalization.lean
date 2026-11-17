@@ -138,12 +138,20 @@ inductive Clause (α : Type) where
   typed array by its descriptor alone; no field or signature shape makes
   one. Appended last so every earlier case order holds. -/
   | view (format : ViewFormat) (methods : List (MethodMembers.Sig α) := [])
+  /-- The safe integers: the numbers whose bits denote an integer `i` with
+  `|i| ≤ 2^53 - 1`, both zeros included (`SafeIntegers.safeIntOfBits`).
+  The declared type `SafeInt` denotes it. Appended last so every earlier
+  case order holds. -/
+  | int
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
 def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
 
 def sourceT : Fam := fun _ _ v => isSourceVal v = true ∧ Scoped 0 v
+
+/-- The safe integers: a number whose bits decode as a safe integer. -/
+def intT : Fam := fun _ _ v => ∃ b, v = .num b ∧ SafeIntegers.safeIntOfBits b ≠ none
 
 /-! ### The semantic sorts
 
@@ -208,6 +216,7 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
   | .bigintLit i => fun _ _ v => v = .bigint i
   | .symbolLit i => fun _ _ v => v = .sym i
   | .numIn bs => fun _ _ v => ∃ b ∈ bs, v = .num b
+  | .int => intT
   | .strIn ss => fun _ _ v => ∃ s ∈ ss, v = .str s
   | .symbol => symbolT
   | .refs a bs vs os ms ks st => fun n W v =>
@@ -453,6 +462,12 @@ def meet : Clause α → Clause α → List (Clause α)
   | .str, .strIn S | .strIn S, .str => [.strIn S]
   | .strLit s, .strIn S | .strIn S, .strLit s => if S.contains s then [.strLit s] else []
   | .strIn S, .strIn T => strSet (S.filter T.contains)
+  -- The safe integers within the numbers: a literal or tag set keeps the
+  -- numbers whose bits decode.
+  | .num, .int | .int, .num | .int, .int => [.int]
+  | .numLit b, .int | .int, .numLit b =>
+      if (SafeIntegers.safeIntOfBits b).isSome then [.numLit b] else []
+  | .numIn S, .int | .int, .numIn S => numSet (S.filter fun b => (SafeIntegers.safeIntOfBits b).isSome)
   -- Object contracts meet on one object: their first operands are one record
   -- (`ReferenceConjunctions.flatten`), whose named fields the read rules find.
   | .refs a bs vs os ms ks st, .refs c ds ws ps ns ls su =>
@@ -547,7 +562,7 @@ private theorem nil_sem (X : α → Fam) (P : α → ArgFam) (n W v) : ¬ semLis
 
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. | .dict .. => 2 | .arrs .. | .callable .. => 3
-  | .undef => 4 | .num | .numLit _ | .numIn _ => 5 | .str | .strLit _ | .strIn _ => 6
+  | .undef => 4 | .num | .numLit _ | .numIn _ | .int => 5 | .str | .strLit _ | .strIn _ => 6
   | .top => 7 | .list .. => 8 | .bigint | .bigintLit _ => 9 | .symbol | .symbolLit _ => 10 | .ctors .. => 11
   | .pack .. => 12
   | .source => 7
@@ -594,6 +609,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | numIn bs => obtain ⟨b, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | view f ms => obtain ⟨⟨_, _, _, _, rfl⟩, -⟩ := h; exact ⟨rfl, trivial⟩
+  | int => obtain ⟨b, rfl, -⟩ := h; exact ⟨rfl, trivial⟩
 
 
 /-- A member's shape is its clause's, except under the two value universes. -/
@@ -634,6 +650,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | numIn bs => obtain ⟨b, -, rfl⟩ := h; rfl
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; rfl
   | view f ms => obtain ⟨⟨_, _, _, _, rfl⟩, -⟩ := h; rfl
+  | int => obtain ⟨b, rfl, -⟩ := h; rfl
 
 /-- The primitive kinds of JavaScript values: null, Boolean, undefined,
 number, string, bigint and symbol, each one shape of `shape`. -/
@@ -874,6 +891,50 @@ theorem meet_strIn_strIn (X : α → Fam) (P : α → ArgFam) (S T : List String
     cases he
     exact ⟨b, ⟨hs, by simpa using ht⟩, rfl⟩
 
+theorem meet_int_num (X : α → Fam) (P : α → ArgFam) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet .int .num) n W v ↔
+      interT (semWithArgs Ξ X P .int) (semWithArgs Ξ X P .num) n W v := by
+  simp only [meet, singleton_sem, semWithArgs, interT, numT]
+  exact ⟨fun h => ⟨h, by obtain ⟨b, rfl, -⟩ := h; exact ⟨b, rfl⟩⟩, And.left⟩
+
+theorem meet_int_int (X : α → Fam) (P : α → ArgFam) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet .int .int) n W v ↔
+      interT (semWithArgs Ξ X P .int) (semWithArgs Ξ X P .int) n W v := by
+  simp only [meet, singleton_sem, semWithArgs, interT]
+  exact ⟨fun h => ⟨h, h⟩, And.left⟩
+
+/-- A number literal within the safe integers is the literal where its bits
+decode, and nothing otherwise. -/
+theorem meet_int_numLit (X : α → Fam) (P : α → ArgFam) (c : UInt64) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet .int (.numLit c)) n W v ↔
+      interT (semWithArgs Ξ X P .int) (semWithArgs Ξ X P (.numLit c)) n W v := by
+  simp only [meet, interT, semWithArgs, intT]
+  by_cases hc : (SafeIntegers.safeIntOfBits c).isSome
+  · simp only [hc, if_true, singleton_sem, semWithArgs]
+    refine ⟨fun h => ⟨⟨c, h, ?_⟩, h⟩, And.right⟩
+    exact Option.isSome_iff_ne_none.mp hc
+  · simp only [hc, Bool.false_eq_true, if_false, semList, setSem, List.not_mem_nil, false_and,
+      exists_false, false_iff, not_and]
+    rintro ⟨b, rfl, hb⟩ he
+    cases he
+    exact hc (Option.isSome_iff_ne_none.mpr hb)
+
+/-- A tag set within the safe integers keeps the members whose bits decode. -/
+theorem meet_int_numIn (X : α → Fam) (P : α → ArgFam) (S : List UInt64) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet .int (.numIn S)) n W v ↔
+      interT (semWithArgs Ξ X P .int) (semWithArgs Ξ X P (.numIn S)) n W v := by
+  simp only [meet, semList, numSet_sem, interT, semWithArgs, intT, List.mem_filter]
+  constructor
+  · rintro ⟨b, ⟨hs, hb⟩, rfl⟩
+    exact ⟨⟨b, rfl, Option.isSome_iff_ne_none.mp hb⟩, ⟨b, hs, rfl⟩⟩
+  · rintro ⟨⟨b, rfl, hb⟩, ⟨c, hc, he⟩⟩
+    cases he
+    exact ⟨b, ⟨hc, Option.isSome_iff_ne_none.mpr hb⟩, rfl⟩
+
+/-- The meet with the safe integers is symmetric. -/
+theorem meet_int_comm (c : Clause α) : meet c .int = meet .int c := by
+  cases c <;> rfl
+
 theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList Ξ X P (meet a b) n W v ↔ interT (semWithArgs Ξ X P a) (semWithArgs Ξ X P b) n W v := by
   by_cases ha : a = .top
@@ -894,16 +955,31 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     rw [hm, meet_source]
     exact and_comm
   by_cases hs : shape a = shape b
-  · by_cases hna : ∃ S, a = .numIn S
+  · -- The safe integers meet each number clause, on either side.
+    have intCase : ∀ c : Clause α, shape c = 5 →
+        (semList Ξ X P (meet .int c) n W v ↔ interT (semWithArgs Ξ X P .int) (semWithArgs Ξ X P c) n W v) := by
+      intro c hc
+      cases c <;> (try simp [shape] at hc)
+      · exact meet_int_num X P n W v
+      · rename_i b; exact meet_int_numLit X P b n W v
+      · rename_i S; exact meet_int_numIn X P S n W v
+      · exact meet_int_int X P n W v
+    by_cases hia : a = .int
+    · subst hia; exact intCase b (by simpa [shape] using hs.symm)
+    by_cases hib : b = .int
+    · subst hib
+      rw [meet_int_comm, intCase a (by simpa [shape] using hs)]
+      exact and_comm
+    by_cases hna : ∃ S, a = .numIn S
     · obtain ⟨S, rfl⟩ := hna
-      cases b <;> (try simp [shape] at hs)
+      cases b <;> (try simp [shape] at hs) <;> (try exact absurd rfl hib)
       · exact meet_numIn_num X P S n W v
       · rename_i c; exact meet_numIn_numLit X P S c n W v
       · rename_i T; exact meet_numIn_numIn X P S T n W v
     by_cases hnb : ∃ S, b = .numIn S
     · obtain ⟨S, rfl⟩ := hnb
       have swap : ∀ {p q : Prop}, (p ∧ q) ↔ (q ∧ p) := and_comm
-      cases a <;> (try simp [shape] at hs)
+      cases a <;> (try simp [shape] at hs) <;> (try exact absurd rfl hia)
       · exact (meet_numIn_num X P S n W v).trans swap
       · rename_i c; exact (meet_numIn_numLit X P S c n W v).trans swap
       · exact absurd ⟨_, rfl⟩ hna
@@ -927,6 +1003,8 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     all_goals try exact absurd ⟨_, rfl⟩ hnb
     all_goals try exact absurd ⟨_, rfl⟩ hsa
     all_goals try exact absurd ⟨_, rfl⟩ hsb
+    all_goals try exact absurd rfl hia
+    all_goals try exact absurd rfl hib
     · simp [singleton_sem, semWithArgs, interT]
     · simp [singleton_sem, semWithArgs, interT]
     · rename_i b
@@ -1216,6 +1294,7 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | num => exact numT_adm
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | numIn _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | int => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | strIn _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs vs os ms ks => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewsT_adm _).down n W v h.2.1,
         (optT_adm _).down n W v h.2.2.1, (methodT_adm _).down n W v h.2.2.2.1,
@@ -1371,6 +1450,7 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
   | num => rfl
   | numLit _ => rfl
   | numIn _ => rfl
+  | int => rfl
   | strIn _ => rfl
   | str => rfl
   | strLit _ => rfl
@@ -1481,6 +1561,7 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .numIn bs => .numIn bs
   | .strIn ss => .strIn ss
   | .view fm ms => .view fm (ms.map (Sig.map f))
+  | .int => .int
 
 theorem Clause.carriesInvariant_of_record {c : Clause α} (h : c.record = true) : c.carriesInvariant = true := by
   cases c <;> simp_all [Clause.record, Clause.carriesInvariant]
