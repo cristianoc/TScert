@@ -1042,6 +1042,38 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // binds it to: the safe integers, wherever a type is read.
     const safeIntReference = (reference: ts.TypeReferenceNode): boolean =>
       ts.isIdentifier(reference.typeName) && verifierAlias(reference.typeName) === "SafeInt";
+    // Whether a form reads the verifier's `SafeInt`: it references it, or
+    // names a declaration outside the standard library and the installed
+    // packages that reads it, by a type reference, a `typeof` or a
+    // heritage clause. TypeScript reads `SafeInt` as `number`, so its
+    // evaluation of such a form is a contract with `SafeInt` erased.
+    const readsSafeInt = (node: Node, seen: Set<Node> = new Set()): boolean => {
+      if (seen.has(node)) return false;
+      seen.add(node);
+      const nameOf = (n: Node): Identifier | null => {
+        const name = ts.isTypeReferenceNode(n) ? n.typeName : ts.isTypeQueryNode(n) ? n.exprName
+          : ts.isExpressionWithTypeArguments(n) ? n.expression : null;
+        if (!name) return null;
+        if (ts.isIdentifier(name)) return name;
+        if (ts.isQualifiedName(name)) return name.right;
+        return ts.isPropertyAccessExpression(name) && ts.isIdentifier(name.name) ? name.name : null;
+      };
+      let found = false;
+      const visit = (n: Node): void => {
+        if (found) return;
+        if (ts.isTypeReferenceNode(n) && safeIntReference(n)) { found = true; return; }
+        const name = nameOf(n);
+        if (name) for (const d of targetOf(checker, name)?.declarations ?? []) {
+          const declaration = d.resolve();
+          const file = declaration?.getSourceFile();
+          if (declaration && file && !libraryFile(file) && !file.fileName.split(sep).includes("node_modules") &&
+              readsSafeInt(declaration, seen)) { found = true; return; }
+        }
+        n.forEachChild(visit);
+      };
+      visit(node);
+      return found;
+    };
     const ambient = (node: Node): boolean => {
       for (let at: Node | undefined = node; at; at = at.parent)
         if (at.flags & ts.NodeFlags.Ambient) return true;
@@ -2224,6 +2256,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       equation: reference => valueScope(reading, client, "an alias's equation").equation?.(reference) ?? null,
       // Each block type the form names, at the binders it closes over.
       captures: node => {
+        if (readsSafeInt(node))
+          throw Error("TypeScript evaluates this form reading the verifier's `SafeInt` as `number`, which erases it: " +
+            "a computed type, a key type or a mapped type over `SafeInt` is outside the fragment");
         const visit = (n: Node): void => {
           if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName))
             for (const d of typeDeclarationsOf(n.typeName))
