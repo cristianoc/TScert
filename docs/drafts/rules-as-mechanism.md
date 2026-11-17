@@ -248,6 +248,60 @@ reported as the number of items left. A round of work that leaves an item
 open brings it to the owner with its reason, and the discussion decides
 the way forward.
 
+### Step 1's list
+
+Built on 2026-11-17 by reading every keeping decision that uses the
+change relation (`Changes`, `IndexFact.keptBy`, `keptWith`, `everyKept`,
+`keptIndices`, `IntoContents`) up to the acceptance path, and every keeping
+lemma that only the axiom check reads. Each frame item is the part of a
+decider that keeps a fact because what it depends on is unchanged; its
+other part, an update rule, stays with step 7.
+
+Keeping by Frame inside a decider, to go through `respects` and
+`frame_step`:
+
+1. a field write's index facts (`writeOutput`, its `keptIndicesWith`);
+2. a field write's quantified facts over another array (`fieldEvery`, its
+   kept spine, bound and free terms);
+3. a field write's cell facts apart from the written field (`cellKept`, its
+   `apart` branch, with `writeKeeps`);
+4. an element write's kept facts below the length (`lengthOutput`,
+   `keepsLengths`);
+5. an element write's kept facts at any index (`growOutput`);
+6. an element write's cell facts (`writtenCells`), which the field's
+   untouched location keeps;
+7. the terms an element write at the length keeps or grows
+   (`atLengthAtoms`, `keptOf`, `grownOf`);
+8. a call changing its receiver's own fields (`ownKept`);
+9. a push's quantified facts over another array (`everyGrown`,
+   `appendKept`, their kept bound and free terms);
+10. the terms a push keeps or grows (`appendEntry`, `linearAppendKept`);
+11. a typed-array write's quantified facts, their kept bound and terms
+    (`everyWritten`, `writtenPrefix`, `writeKept`);
+12. `apart` and quantified facts across an element write (`writeAtoms`,
+    `termApart_kept`), proved over the write's heap.
+
+Keeping lemmas no acceptance theorem and no status tag of the paper uses,
+to delete:
+
+13. `rootCells_box`, `Admissible.elem_kept`, `box_idem_on`,
+    `stableAt_invariant`, `field_write_keeps_bound`, `grow_write_judgment`,
+    `invocation_box`, `rebaseOk_stable`, `keepsCall_frame`,
+    `named_le_box`, `slotless_not_framed`, `preserving_step_frame`,
+    `stableAt_of_stableFirst`, `writing_frame`, `keep_across_call`,
+    `ArgumentPathTracking.read_stable`, `stableField_path`.
+
+Proofs of the paper's rules that no status tag cites, for the paper's tags
+to cite:
+
+14. `CommandSummary.frame_at_call`, `frame_at_call_below`,
+    `signature_holds`, `signature_holds_below` (rule Call), and
+    `LoopEvidence.frame_at_head`, `frame_at_exit` (rule Loop).
+
+The counter-models `unrestricted_not_respects`, `allocation_not_respects`
+and `elementWrite_not_respects` are controls of an excluded behaviour and
+stay.
+
 ### What an audit checks
 
 A step judged done is audited from the sources by a reviewer who has not
