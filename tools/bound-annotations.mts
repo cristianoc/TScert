@@ -708,7 +708,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";
           if (key.startsWith(`${a.array}[${a.binder}+`) && key.endsWith("]")) {
-            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...a.array.split(".").slice(1), "[]"]) !== "int")
+            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...a.array.split(".").slice(1), "[]"], excludedBy(guards.length, root)) !== "int")
               throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
             return { offset: { delta: Number(key.slice(`${a.array}[${a.binder}+`.length, -1)) } };
           }
@@ -716,7 +716,7 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
             const fields = key === elem ? [] : key.slice(elem.length + 1).split(".");
             const length = fields.at(-1) === "length";
             const path = length ? fields.slice(0, -1) : fields;
-            const kind = p.at([...a.array.split(".").slice(1), "[]", ...path]);
+            const kind = p.at([...a.array.split(".").slice(1), "[]", ...path], excludedBy(guards.length, root));
             if (length) {
               if (kind !== "array" && kind !== "view" && kind !== "string")
                 throw new ClauseError(`the element path ${key} has no length contract`);

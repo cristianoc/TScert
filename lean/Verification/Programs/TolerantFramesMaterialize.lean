@@ -392,19 +392,20 @@ theorem stateHolds_materialize {G : NormalGraph ι} {st : State} {implies : List
 
 /-- **The knowledge a step's rule reads holds** (`kE` and, over every fact, `kE'` in
 `SinglePass.run`): `KnowledgeExpand.expandLinks` of either materialization at the
-node's context, where the environment meets that context. Both hold at
+node's context with the integrality the types of the slots it reads state
+(`IndexWrites.typedKnowledge`), where the environment meets that context. Both hold at
 once; so a precondition decided at `kE` holds where the step reads `kE'`. -/
 theorem stateHolds_stepKnowledge {G : NormalGraph ι} {Γ : List (Ty ι)} {st : State}
     {implies : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G st implies start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W)
     (d : Nat) (ms : List Nat) (wholeStep : Bool) :
-    HeapKnowledge.Holds (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
-        (SinglePass.materialize st d ms wholeStep).1) ε ρ s.h ∧
-      HeapKnowledge.Holds (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
-        (SinglePass.materialize st d ms true).1) ε ρ s.h := by
+    HeapKnowledge.Holds (IndexWrites.typedKnowledge G Γ (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
+        (SinglePass.materialize st d ms wholeStep).1) ms) ε ρ s.h ∧
+      HeapKnowledge.Holds (IndexWrites.typedKnowledge G Γ (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
+        (SinglePass.materialize st d ms true).1) ms) ε ρ s.h := by
   have hc := KnowledgeExpand.ctxOf_ok he
-  refine ⟨KnowledgeExpand.expandLinks_holds hc ?_,
-    KnowledgeExpand.expandLinks_holds hc (stateHolds_materialize_whole hS d ms true)⟩
+  refine ⟨IndexWrites.typedKnowledge_holds he (KnowledgeExpand.expandLinks_holds hc ?_),
+    IndexWrites.typedKnowledge_holds he (KnowledgeExpand.expandLinks_holds hc (stateHolds_materialize_whole hS d ms true))⟩
   cases wholeStep with
   | true => exact stateHolds_materialize_whole hS d ms true
   | false => exact stateHolds_materialize hS d ms true
