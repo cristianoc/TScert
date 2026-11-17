@@ -202,11 +202,11 @@ may be inexact. Neither paper has the second rule.
 
 \entry{What is refused} The verifier refuses \code{next} at the outer read
 of line 11. The index of that read is \code{t[state]}, and the
-obligation requires it to be a known integer with
+obligation requires it to be a known $\mathit{SafeInt}$ with
 $0\le t[\mathit{state}]<\len{t}$. The
 postcondition of \code{decode} states the length of the table and
 nothing about its contents. The result of an element read is a known
-integer only where a clause says so. No step of
+$\mathit{SafeInt}$ only where a clause says so. No step of
 the program establishes a fact about the contents of the table:
 \code{decode} copies the bytes and does not test them.
 

@@ -298,7 +298,9 @@ operator whose step is the same with its operands exchanged (`&`, `|`,
 applies to its operands in either order, so `0xff & c` is Mask's
 `c & 0xff`. Where the
 knowledge entails the rule's premises, the result $`r`$ states the rule's
-conclusion:
+conclusion. Each rule's name is followed by its operands' sorts:
+$`\mathit{Num}`$, any number, and $`\mathit{SafeInt}`$, a safe integer,
+the sort $`\mathrm{int}`$ states of a slot:
 
 <!-- generated: arithmetic-rules -->
 <!-- {"name":"Shr","declaration":"Verification.ArithmeticRules.shr","proof":"Verification.ArithmeticRules.shr_sound","op":"shr","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":1}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":-1,"byConstant":0,"byPower":1}}]} -->
@@ -306,7 +308,7 @@ conclusion:
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash b=d\quad d'=d\bmod 32\quad K\vdash -2^{31}\le a<2^{31}}
      {K\vdash r\leftarrow a\mathbin{\texttt{>>}}b\dashv \mathrm{int}(r),\ 2^{d'}r\le a\le 2^{d'}r+2^{d'}-1}
-     \ \textsf{Shr}
+     \ \textsf{Shr}\quad a,d:\mathit{SafeInt}
 ```
 
 <!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskRange","proof":"Verification.ArithmeticRules.maskRange_sound","op":"bitAnd","left":"number","right":{"operand":"safeInteger"},"premises":[{"terms":[{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
@@ -314,7 +316,7 @@ conclusion:
 ```math
 \frac{\mathrm{int}(b)\quad K\vdash 0\le b<2^{31}}
      {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ 0\le r\le b}
-     \ \textsf{Mask}
+     \ \textsf{Mask}\quad a:\mathit{Num},\ b:\mathit{SafeInt}
 ```
 
 <!-- {"name":"Mask","declaration":"Verification.ArithmeticRules.maskBound","proof":"Verification.ArithmeticRules.maskBound_sound","op":"bitAnd","left":"safeInteger","right":{"operand":"number"},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
@@ -322,7 +324,7 @@ conclusion:
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash 0\le a}
      {K\vdash r\leftarrow a\mathbin{\&}b\dashv \mathrm{int}(r),\ r\le a}
-     \ \textsf{Mask}
+     \ \textsf{Mask}\quad a:\mathit{SafeInt},\ b:\mathit{Num}
 ```
 
 <!-- {"name":"Shl","declaration":"Verification.ArithmeticRules.shl","proof":"Verification.ArithmeticRules.shl_sound","op":"shl","left":"safeInteger","right":{"constant":{"symbol":"d","lower":null,"upper":null,"normalisation":"shiftCount"}},"premises":[{"terms":[{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":2147483648,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":1}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":-1}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":0,"byConstant":0,"byPower":1}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
@@ -330,7 +332,7 @@ conclusion:
 ```math
 \frac{\mathrm{int}(a)\quad K\vdash b=d\quad d'=d\bmod 32\quad K\vdash -2^{31}\le 2^{d'}a<2^{31}}
      {K\vdash r\leftarrow a\mathbin{\texttt{<<}}b\dashv \mathrm{int}(r),\ r=2^{d'}a}
-     \ \textsf{Shl}
+     \ \textsf{Shl}\quad a,d:\mathit{SafeInt}
 ```
 
 <!-- {"name":"Or","declaration":"Verification.ArithmeticRules.bitOr","proof":"Verification.ArithmeticRules.bitOr_sound","op":"bitOr","left":"safeInteger","right":{"operand":"safeInteger"},"premises":[{"terms":[{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":1,"byConstant":0,"byPower":0}}],"bound":{"lit":2147483647,"byConstant":0,"byPower":0}}],"result":"safeInteger","conclusion":[{"terms":[{"var":"left","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"right","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"result","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}},{"terms":[{"var":"result","coef":{"lit":1,"byConstant":0,"byPower":0}},{"var":"left","coef":{"lit":-1,"byConstant":0,"byPower":0}},{"var":"right","coef":{"lit":-1,"byConstant":0,"byPower":0}}],"bound":{"lit":0,"byConstant":0,"byPower":0}}]} -->
@@ -338,7 +340,7 @@ conclusion:
 ```math
 \frac{\mathrm{int}(a)\quad \mathrm{int}(b)\quad K\vdash 0\le a<2^{31}\quad K\vdash 0\le b<2^{31}}
      {K\vdash r\leftarrow a\mathbin{|}b\dashv \mathrm{int}(r),\ a\le r,\ b\le r,\ r\le a+b}
-     \ \textsf{Or}
+     \ \textsf{Or}\quad a,b:\mathit{SafeInt}
 ```
 <!-- end generated: arithmetic-rules -->
 

@@ -281,6 +281,26 @@ function names(r: Rule, notation: Notation): { [v in RuleVar]: string } {
   return { left: notation.left, right: c === undefined ? notation.right : c.symbol, result: notation.result };
 }
 
+/** The sorts of a rule's operands: `Num` for any number, `SafeInt` for a
+ * safe integer, a constant being a safe integer; operands of one sort
+ * grouped, in the order left, right. */
+function sorts(r: Rule, variables: { left: string; right: string },
+    sort: (s: "Num" | "SafeInt") => string, of: string, sep: string): string {
+  const c = constantOf(r);
+  const right: Domain = c === undefined && "operand" in r.right ? r.right.operand : "safeInteger";
+  const vars: [string, "Num" | "SafeInt"][] = [
+    [variables.left, r.left === "number" ? "Num" : "SafeInt"],
+    [c === undefined ? variables.right : c.symbol, right === "number" ? "Num" : "SafeInt"],
+  ];
+  const groups: { names: string[]; sort: "Num" | "SafeInt" }[] = [];
+  for (const [name, s] of vars) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.sort === s) last.names.push(name);
+    else groups.push({ names: [name], sort: s });
+  }
+  return groups.map((g) => `${g.names.join(",")}${of}${sort(g.sort)}`).join(sep);
+}
+
 /** The rule's triple in the paper's notation, `{P} y = x op c {Q}`. */
 function paperTriple(r: Rule): string {
   const c = constantOf(r);
@@ -291,15 +311,14 @@ function paperTriple(r: Rule): string {
   return `\\hoare{${pre.length === 0 ? "\\kw{true}" : pre.join(LATEX.and)}}{${LATEX.apply(r.op, n.left, n.right)}}{${post.join(LATEX.and)}}`;
 }
 
-/** The paper's rule rows: one row per rule name, its triples side by side. */
+/** The paper's rule rows: one row per triple, its operands' sorts, then the
+ * triple; the rule's name on its first triple's row. */
 export function paperRows(doc: RulesDocument): string {
-  const rows: { name: string; triples: string[] }[] = [];
-  for (const r of doc.rules) {
-    const last = rows[rows.length - 1];
-    if (last !== undefined && last.name === r.name) last.triples.push(paperTriple(r));
-    else rows.push({ name: r.name, triples: [paperTriple(r)] });
-  }
-  return rows.map((row) => `\\textsc{${row.name}} & ${row.triples.join("\\qquad")}`).join("\\\\[3pt]\n") + "\n";
+  return doc.rules.map((r, i) => {
+    const name = i > 0 && doc.rules[i - 1]?.name === r.name ? "" : `\\textsc{${r.name}}`;
+    const sorted = sorts(r, { left: LATEX.left, right: LATEX.right }, (s) => `\\mathit{${s}}`, ":", ",\\ ");
+    return `${name} & ${sorted} & ${paperTriple(r)}`;
+  }).join("\\\\[3pt]\n") + "\n";
 }
 
 /** A constant's side condition and normalisation, as premises. */
@@ -324,7 +343,8 @@ function markdownRule(r: Rule): string {
     ...conjunction(r.premises, n, k, MARKDOWN).map((p) => `K\\vdash ${p}`),
   ];
   const below = [...(r.result === "safeInteger" ? [`\\mathrm{int}(${n.result})`] : []), ...conjunction(r.conclusion, n, k, MARKDOWN)];
-  return `\\frac{${above.join("\\quad ")}}\n     {K\\vdash ${MARKDOWN.apply(r.op, n.left, MARKDOWN.right)}\\dashv ${below.join(",\\ ")}}\n     \\ \\textsf{${r.name}}`;
+  const sorted = sorts(r, { left: MARKDOWN.left, right: MARKDOWN.right }, (s) => `\\mathit{${s}}`, ":", ",\\ ");
+  return `\\frac{${above.join("\\quad ")}}\n     {K\\vdash ${MARKDOWN.apply(r.op, n.left, MARKDOWN.right)}\\dashv ${below.join(",\\ ")}}\n     \\ \\textsf{${r.name}}\\quad ${sorted}`;
 }
 
 /** In ARITHMETIC.md a constant operand is the slot `b` the knowledge states
@@ -346,6 +366,7 @@ function textRule(r: Rule): string[] {
   const k = c === undefined ? "" : TEXT.bound(c);
   const n = names(r, TEXT);
   const above = [
+    sorts(r, { left: TEXT.left, right: TEXT.right }, (s) => s, " : ", ", "),
     ...(r.left === "safeInteger" ? [`int(${n.left})`] : []),
     ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`int(${TEXT.right})`] : []) : constantPremises(r.right.constant, TEXT)),
     ...conjunction(r.premises, n, k, TEXT),
