@@ -654,6 +654,9 @@ Neither paper has such a rule.
 line 4. The obligation is
 $0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\kw{view}(\mathit{values})$.
 The operators \code{<{}<} and \code{|} give no fact.
+In pretext's \code{tscert-bounds} at \code{aa8f7cc2} the site is the
+outer read of \code{line-breaks.ts} line 138, in \code{getClass},
+behind P5.
 
 \entry{The nearest form that verifies} A shift right and a mask,
 \code{index[c >{}> 8]! + (c \& 0xff)}, which the rules \textsc{Shr}
@@ -663,7 +666,7 @@ and \textsc{Mask} cover.
 integers $0\le a<2^{23}$ and $0\le d\le255$, the value of
 \code{(a <{}< 8) | d} is $256a+d$. Neither paper has such a rule.
 
-\section{P22: a fact about a location a callback cannot reach (as second blocker)}
+\section{P22: a fact about a location a callback cannot reach (1 site, as second blocker)}
 
 {\footnotesize
 \begin{tabular}{@{}r@{\hspace{1em}}l@{}}
@@ -688,7 +691,14 @@ after the visit loses its invariant over its fields in the same way.
 The walkers of \code{line-break.ts} hold their index in a cursor
 object and pass their prepared handle on after \code{onLine}, so this
 pattern blocks the sites of P1 there once the visitor's effect is
-stated.
+stated. In pretext's \code{tscert-bounds} at \code{aa8f7cc2} the site
+is \code{walkPreparedLinesRaw}'s call
+\code{stepPreparedSimpleLineGeometry(prepared, cursor, maxWidth)} of
+\code{line-break.ts} line 316, reached again after the visit of line
+319. The verifier refuses it with the visitor's stated effect and
+accepts it with the empty effect: the reads in
+\code{stepPreparedSimpleLineGeometry} rely on the handle's relation of
+lengths, which the call passes on.
 
 \entry{The nearest form that verifies} The index in a variable, whose
 bound the stated effect keeps, and reads through locals taken before
@@ -724,8 +734,8 @@ P17 & 3 & an index into a selected element & in neither paper\\
 P18 & 2 & a guard through two \code{@stable} fields & stated in Paper~I, not implemented\\
 P19 & 2 & a sum of element lengths & in neither paper\\
 P20 & 1 & the invariant of a \code{Map} value & in neither paper\\
-P21 & 0 & the results of \code{<{}<} and \code{|} & in neither paper\\
-P22 & 0 & a callback's effect bounded by what it reaches & in neither paper\\
+P21 & 1 & the results of \code{<{}<} and \code{|} & in neither paper\\
+P22 & 1 & a callback's effect bounded by what it reaches & in neither paper\\
 \bottomrule
 \end{tabular}}
 
