@@ -94,18 +94,11 @@ The language below makes that the primitive.
 
 
 \paragraph{Variables and heap objects.} Let $\mathit{Var}$ be the set of variables, ranged over by $x,y$, and
-$\mathit{Val}$ the set of values, ranged over by $v$. The
-\emph{integers} $\mathbb{Z}$ are the mathematical integers, unbounded.
-Among the values, $\mathit{Num}$ is the set of JavaScript numbers, the
-doubles with NaN, the infinities and $-0$; a number is \emph{integral}
-when it is finite and its value is in $\mathbb{Z}$, $-0$ having the
-value 0. $\mathit{SafeInt}\subset\mathit{Num}$ is the set of \emph{safe
-integers}, the integral numbers $n$ with $|n|\le M$, where
-$M=2^{53}-1$: for each integer $n$ with $|n|\le M$, the numbers $n$, $n-1$
-and $n+1$ are doubles, so a sum of safe integers whose value is within
-the range is computed exactly. A safe integer is identified with the
-integer it denotes, both zeros with 0. Integral numbers past $M$ exist
-but are spaced apart: $2^{53}+1$ is no double. The annotation
+$\mathit{Val}$ the set of values, ranged over by $v$. Among the values,
+$\mathit{Num}$ is the set of JavaScript numbers, the doubles with NaN,
+the infinities and $-0$, and $\mathit{SafeInt}\subset\mathit{Num}$ the
+\emph{safe integers}, the numbers whose value is an integer in
+$[-M,M]$, where $M=2^{53}-1$ and $-0$ is 0; the annotation
 \code{safeInteger(x)} states that $x$ holds a $\mathit{SafeInt}$. An environment
 $\rho:\mathit{Var}\rightharpoonup\mathit{Val}$ maps variables to values.
 A variable holds a scalar or an object reference. A binding introduces a
@@ -833,7 +826,7 @@ defined, and an equality only where its path is. There are six forms:
 terms, with integer coefficients. Examples: $i<\len{\mathit{flags}}$,
 $\mathit{to}\le\len{\mathit{xs}}$ and
 $c.\mathit{at}<\len{\mathit{flags}}$. The combinations are taken
-over $\mathbb{Z}$; the arithmetic steps of Section~6 state
+over the integers; the arithmetic steps of Section~6 state
 when JavaScript arithmetic computes them exactly. The inequality
 $t\le t$ says that $t$ is defined; we write it $\kw{defined}(t)$.
 \item[Equality $\pi\doteq v$] The path $\pi$ reads the value $v$.
