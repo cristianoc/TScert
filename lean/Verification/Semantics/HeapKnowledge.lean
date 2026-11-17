@@ -796,19 +796,6 @@ def lengthBoundIn (K : Linear.Known Term) (M : List Nat) (a : List IndexAtom) (k
 @[inline] def lengthBound (M : List Nat) (a : List IndexAtom) (k : Nat) (strict : Bool) : Bool :=
   lengthBoundIn (knownOf a) M a k strict
 
-theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeIntegers.SafeInt b j) (h0 : 0 ≤ j)
-    (h1 : j < maxArrayLength) : indexOfBits b = some j.toNat := by
-  rcases hb.2 with ⟨-, he⟩ | ⟨hle, he⟩
-  · have : b = bitsOfNat j.natAbs := UInt64.toNat_inj.mp he
-    have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
-    have h1' : j < 4294967295 := by omega
-    rw [this, IndexNumbers.indexOfBits_bitsOfNat (by omega)]
-    congr 1; omega
-  · have hj : j = 0 := by omega
-    subst hj
-    have : b = 0x8000000000000000 := UInt64.toNat_inj.mp (by rw [he]; simp [SafeIntegers.bitsOfNat_zero])
-    subst this; rfl
-
 theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool}
     {ρ h} {v : Val} (hK : K.Holds (termValuation ε ρ h))
     (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBoundIn K M a k strict = true) (ha : IndexHolds ε a ρ h) :
@@ -832,7 +819,7 @@ theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List Ind
   rw [hvi, hvn] at f2; rw [hvi] at f1 f3
   have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
   refine ⟨s, ls, b, j.toNat, by rw [← hM y hy]; exact hs, hl, hb,
-    indexOfBits_safe hsafe (by omega) (by omega), by cases strict <;> simp at f2 ⊢ <;> omega⟩
+    SafeIntegers.indexOfBits_safe hsafe (by omega) (by omega), by cases strict <;> simp at f2 ⊢ <;> omega⟩
 
 theorem lengthBound_sound {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool} {ρ h} {v : Val}
     (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBound M a k strict = true) (ha : IndexHolds ε a ρ h) :
@@ -1371,7 +1358,7 @@ theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexA
   rw [hvi, hvn] at f2; rw [hvi] at f1 f3
   have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
   refine ⟨s, ls, b, j.toNat, by rw [← hM y hy]; exact hs, hl, hb,
-    indexOfBits_safe hsafe (by omega) (by omega), by cases strict <;> simp at f2 ⊢ <;> omega⟩
+    SafeIntegers.indexOfBits_safe hsafe (by omega) (by omega), by cases strict <;> simp at f2 ⊢ <;> omega⟩
 
 /-- Whether the facts `known`, prepared as `K` with the ranges of `a`'s safe
 integers, entail a target linear fact, each target term renamed to a source

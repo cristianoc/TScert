@@ -818,12 +818,12 @@ theorem indexHolds_cat {as bs : List IndexAtom} {ρ h}
 result is a safe integer. -/
 def resultSlot : ArithmeticRules.Domain → Option (Linear.Form Nat × Int)
   | .safeInteger => some ([(0, 1)], 0)
-  | .number => none
+  | _ => none
 
 /-- The atom of the result's domain: slot `0` a safe integer. -/
 def resultAtoms : ArithmeticRules.Domain → List IndexAtom
   | .safeInteger => [⟨.int 0, none, false⟩]
-  | .number => []
+  | _ => []
 
 /-- **A rule's atoms at a step** (`ArithmeticRules`): the operands read as
 `operandForm` reads them, known constants as constants, bound by the rule's
@@ -845,7 +845,7 @@ def ruleAtoms (k : Knowledge) (r : ArithmeticRules.ArithRule) (a b : Tm) : List 
 /-- The atoms of every rule of an operator at a step, at its operands in
 order and, where the operator commutes (`Arith.commutes`), exchanged. -/
 def ruleAtomsOf (k : Knowledge) (op : Arith) (a b : Tm) : List IndexAtom :=
-  (ArithmeticRules.rules.filter fun r => decide (r.op = op)).flatMap fun r =>
+  (ArithmeticRules.rules.filter fun r => decide (r.op = .binary op)).flatMap fun r =>
     ruleAtoms k r a b ++ (if op.commutes then ruleAtoms k r b a else [])
 
 /-- String-only addition operands whose types establish string membership. -/
@@ -1140,8 +1140,8 @@ theorem resultLinear_holds {F : Linear.Form Nat} {c a r : Int} {ρ h} {b : UInt6
 the premises the knowledge entails hold at the input slots, so the rule's
 conclusion holds at the output slots. -/
 theorem ruleAtoms_holds {k : Knowledge} {r : ArithmeticRules.ArithRule} (hr : r ∈ ArithmeticRules.rules)
-    {a b : Tm} {ρ h h'} {u : Tm} (hk : Holds k ε ρ h)
-    (hu : binop r.op (instantiate 0 ρ a) (instantiate 0 ρ b) = some u) :
+    {o : Arith} (ho : r.op = .binary o) {a b : Tm} {ρ h h'} {u : Tm} (hk : Holds k ε ρ h)
+    (hu : binop o (instantiate 0 ρ a) (instantiate 0 ρ b) = some u) :
     IndexHolds ε (ruleAtoms k r a b) (push u ρ) h' := by
   unfold ruleAtoms
   split
@@ -1158,16 +1158,16 @@ theorem ruleAtoms_holds {k : Knowledge} {r : ArithmeticRules.ArithRule} (hr : r 
           obtain ⟨G, hG, he⟩ := ArithmeticRules.instantiateAll_mem hps F hF
           have hc := List.all_eq_true.mp hall G hG
           exact ⟨G, he, holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc)⟩
-        obtain ⟨v, y, bits, hσ, rfl, hres, hconc⟩ := ArithmeticRules.ArithRule.apply hr hbind
+        obtain ⟨v, y, bits, hσ, rfl, hres, hconc⟩ := ArithmeticRules.ArithRule.apply hr ho hbind
           (fun _ F c hf => hop a F c hf) (fun _ F c hf => hop b F c hf) hu hprem
         -- Every input slot a form names holds a safe integer.
         have hdef : ∀ x f, σ x = some f → ∀ s ∈ f.1.map (·.1), (intValue (ρ s)).isSome := by
           intro x f hx s hs
           obtain ⟨hfl, hfr, hfy⟩ := ArithmeticRules.ArithRule.bind_forms hbind
-          cases x with
-          | left => exact (operandForm_sound (hfl f hx).2 hk).1 s hs
-          | right => exact (operandForm_sound (hfr f hx).2 hk).1 s hs
-          | result => rw [hfy] at hx; cases hx
+          cases x
+          · exact (operandForm_sound (hfl f hx).2 hk).1 s hs
+          · exact (operandForm_sound (hfr f hx).2 hk).1 s hs
+          all_goals (rw [hfy _ (by simp) (by simp)] at hx; cases hx)
         have hσ' : ((σ.rename (· + 1)).withResult (resultSlot r.result)).Denotes (valuation (push (.num bits) ρ))
             (ArithmeticRules.resultAt v y) := by
           refine ArithmeticRules.Instance.denotes_withResult (fun x _ F c hx => ?_) (fun F c hy => ?_)
@@ -1175,24 +1175,25 @@ theorem ruleAtoms_holds {k : Knowledge} {r : ArithmeticRules.ArithRule} (hr : r 
             obtain ⟨⟨F₀, c₀⟩, hx0, rfl, rfl⟩ := hx
             rw [← hσ x F₀ c₀ hx0]
             exact congrArg (· + c₀) (eval_shiftForm F₀ (.num bits) ρ)
-          · cases hd : r.result <;> rw [hd] at hy hres <;> simp only [resultSlot, Option.some.injEq,
-              Prod.mk.injEq, reduceCtorEq] at hy
+          · cases hd : r.result <;> rw [hd] at hy hres <;>
+              first | (simp [resultSlot] at hy; done) | simp only [resultSlot, Option.some.injEq, Prod.mk.injEq] at hy
             obtain ⟨rfl, rfl⟩ := hy
             simp [Linear.Form.eval, valuation, push, intValue_num (show SafeIntegers.SafeInt bits y from hres)]
         intro atom hat _
         rcases List.mem_append.mp hat with hat | hat
-        · cases hd : r.result <;> rw [hd] at hat hres <;> simp only [resultAtoms, List.mem_singleton,
-            List.not_mem_nil] at hat
+        · cases hd : r.result <;> rw [hd] at hat hres <;>
+            first | (simp [resultAtoms] at hat; done) | simp only [resultAtoms, List.mem_singleton] at hat
           subst hat
           simp [IndexFact.HoldsAt, push, intValue_num (show SafeIntegers.SafeInt bits y from hres)]
         · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hat
           obtain ⟨F, hF, he⟩ := ArithmeticRules.instantiateAll_mem' hcs G hG
           refine IndexFact.holdsAt_valueFact.mpr ⟨fun t ht => ?_, (ArithmeticRules.RuleFact.instantiate_holds hσ' he).mpr (hconc F hF)⟩
           obtain ⟨x, f, c, hx, ht⟩ := ArithmeticRules.RuleFact.instantiate_vars he t ht
+          have hfy := (ArithmeticRules.ArithRule.bind_forms hbind).2.2
           cases x with
           | result =>
-            cases hd : r.result <;> simp only [ArithmeticRules.Instance.withResult, hd, resultSlot,
-              Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hx
+            cases hd : r.result <;> simp only [ArithmeticRules.Instance.withResult, hd] at hx <;>
+              first | (simp [resultSlot] at hx; done) | simp only [resultSlot, Option.some.injEq, Prod.mk.injEq] at hx
             obtain ⟨rfl, rfl⟩ := hx
             simp only [List.map_cons, List.map_nil, List.mem_singleton] at ht
             subst ht
@@ -1205,6 +1206,12 @@ theorem ruleAtoms_holds {k : Knowledge} {r : ArithmeticRules.ArithRule} (hr : r 
             simp only [List.map_map, Function.comp_def, List.mem_map] at ht
             obtain ⟨⟨s, _⟩, hs, rfl⟩ := ht
             simpa [push] using hdef _ _ hx0 s (List.mem_map.mpr ⟨_, hs, rfl⟩)
+          | third =>
+            simp [ArithmeticRules.Instance.withResult, ArithmeticRules.Instance.rename,
+              hfy .third (by simp) (by simp)] at hx
+          | len z =>
+            simp [ArithmeticRules.Instance.withResult, ArithmeticRules.Instance.rename,
+              hfy (.len z) (by simp) (by simp)] at hx
       · exact indexHolds_nil _ _
     · exact indexHolds_nil _ _
   · exact indexHolds_nil _ _
@@ -1216,13 +1223,13 @@ theorem ruleAtomsOf_holds {k : Knowledge} {op : Arith} {a b : Tm} {ρ h h'} {u :
   intro atom hat hc
   obtain ⟨r, hr, hat⟩ := List.mem_flatMap.mp hat
   obtain ⟨hr, hop⟩ := List.mem_filter.mp hr
-  have hop' : r.op = op := of_decide_eq_true hop
+  have hop' : r.op = .binary op := of_decide_eq_true hop
   rcases List.mem_append.mp hat with hat | hat
-  · exact ruleAtoms_holds hr hk (hop' ▸ hu) atom hat hc
+  · exact ruleAtoms_holds hr hop' hk hu atom hat hc
   · split at hat
     · rename_i hcomm
       rw [ArithmeticRules.binop_comm hcomm] at hu
-      exact ruleAtoms_holds hr hk (hop' ▸ hu) atom hat hc
+      exact ruleAtoms_holds hr hop' hk hu atom hat hc
     · cases hat
 
 /-- **The linear atoms a step states hold of its result.** -/
@@ -1294,7 +1301,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         · refine IndexFact.holdsAt_valueFact.mpr ⟨by simp [Linear.Fact.vars, h0], ?_⟩
           show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv0]; simpa [maxArrayLength] using hmax
       · split
-        · -- `string-length`
+        · -- Str-Length
           rename_i hst
           obtain ⟨str, hstr⟩ := stringSlot_sound hst he
           simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hstr] at hs ⊢
@@ -1510,7 +1517,7 @@ theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val}
           have := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 h0)
           simp only [Linear.Fact.Holds, Linear.Form.eval, hj] at this; omega
         exact ⟨s, ls, bj, j.toNat, by simpa [push] using hs, hl, by simpa [push] using hbj,
-          HeapKnowledge.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by simp; omega⟩
+          SafeIntegers.indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at hmax; omega), by simp; omega⟩
       · cases hat
 
 theorem lengthAtoms_shape {k : Knowledge} {Γ : List (Ty ι)} {t : Tm} (h : lengthAtoms k Γ t ≠ []) :

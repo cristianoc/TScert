@@ -651,7 +651,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         "tag-dispatch" (scope := receiver :: scope)
       return ← finish (← operand (← behind test))
     -- A string's `length` is its count of code units, read with no test:
-    -- the step states it of the string (`string-length`).
+    -- the step states it of the string (Str-Length).
     if fld == "length" && decide (Answers G B .isStr true) then
       let node ← emitAt e.span (.lenOf (.var 0)) (.bind drop) (B::Γ) A
         (scope := held ⟨"",some a.span⟩ :: scope)

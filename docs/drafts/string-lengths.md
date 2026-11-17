@@ -10,8 +10,8 @@ string's element read below its length.
 
 [Linear facts](../ARITHMETIC.md#linear-facts): the term
 $`\mathrm{strLength}(x.p)`$, a string's count of UTF-16 code units, at most
-$`M=2^{53}-1`$; `string-length`, which states it of a `length` read on
-normal return; `string-concat`, the exact sum on normal return, a
+$`M=2^{53}-1`$; Str-Length, which states it of a `length` read on
+normal return; Concat, the exact sum on normal return, a
 concatenation past $`M`$ throwing; and the audited postconditions of
 `charCodeAt`, `codePointAt`, `slice` at
 $`0\le a\le b\le\mathrm{strLength}(s)`$, `indexOf` and `lastIndexOf`,

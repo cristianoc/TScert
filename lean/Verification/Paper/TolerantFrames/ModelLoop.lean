@@ -555,7 +555,7 @@ theorem loop_checked (m : Nat) :
     rw [hb] at hb'; cases hb'
     obtain ⟨st, ls, -, -, rfl, hmax⟩ := HeapKnowledge.lengthOf_spine hlen
     obtain ⟨x, hx, hsx⟩ := num_of_intValue ha
-    have hidx := HeapKnowledge.indexOfBits_safe hsx h0 (by omega)
+    have hidx := SafeIntegers.indexOfBits_safe hsx h0 (by omega)
     refine ⟨_, rfl, fun hr _ => ?_⟩
     refine ⟨noFam, nulT, growEffect, growEffect, fun _ _ => True, fun _ => True,
       write_safe (Ξ := noFam) (T := nulT) (fun _ _ => rfl) hv hx hidx s.n s.W s.h s.adm s.ok hout hr, ?_⟩

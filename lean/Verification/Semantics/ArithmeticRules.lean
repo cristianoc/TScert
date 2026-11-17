@@ -1,49 +1,74 @@
 import Verification.Semantics.SafeIntegers
 import Verification.Semantics.Linear
 
-/-! # The arithmetic rules, as data
+/-! # The step rules, as data
 
-The arithmetic rules of the note "Tolerant frames" (§6, "Arithmetic
-steps") that produce linear facts of a numeric operation's result, each
-stated once as an `ArithRule`: the operator, each operand's domain, the
-constant operand's side condition and normalisation, the premises and the
-conclusion as linear facts over the operands and the result, with
-coefficients computed from the bound constant, and the result's domain.
+The rules of the note "Tolerant frames" (§6) for the arithmetic steps, the
+string steps and the typed array's steps, each stated once as an
+`ArithRule`: the operation, each operand's domain, the constant operand's
+side condition and normalisation, the premises and the conclusion as
+linear facts over the operands, the result and their lengths, with
+coefficients computed from the bound constant, the result's domain, the
+conclusion's element atoms, the effect, the trust and the paper's display.
 `rules` lists them in the paper's order.
 
 `ArithRule.Sound` is the soundness of one rule against the calculus: for
-operand values in their domains meeting the premises, the result
-`arithBits` computes lies in the result's domain and meets the
-conclusion. `rules_sound` proves it of every rule of `rules`.
+operand values in their domains meeting the premises, where the operation
+gives a value, the value lies in the result's domain and meets the
+conclusion. `rules_sound` proves it of every proved rule of `rules`; an
+assumed rule names the native contracts it rests on.
 
 The pass's producer (`IndexWrites.linearAtoms`) and the paper's derivation
-(`Parity.Derivation.arith`) instantiate the rules through one substitution
-(`RuleFact.instantiate`) and one interpretation lemma
-(`RuleFact.instantiate_holds`). The verifier exports the rules with the
-declarations that state and prove each (`RuleExport.ruleEntries`,
+(`Parity.Derivation.arith`) instantiate the numeric rules through one
+substitution (`RuleFact.instantiate`) and one interpretation lemma
+(`RuleFact.instantiate_holds`); their string facts are the string rules'
+entries substituted (`Parity.Bridges.concatAtoms_entry` and its
+neighbours). The verifier exports the rules with the declaration that
+states each and its evidence (`RuleExport.ruleEntries`,
 `verifier --export rules arithmetic`). -/
 namespace Verification.ArithmeticRules
 open Verification.SafeIntegers Verification.IndexNumbers Float.Model Float.Model.UnpackedFloat
 
 /-! ## The datum -/
 
-/-- A rule's variables: its left operand `x`, its right operand (`x'`, or
-the constant), and its result `y`. -/
+/-- A variable of an operation, the term a fact reads it at being its value. -/
+inductive Base where
+  | left | right | third | result
+  deriving DecidableEq, Repr
+
+/-- A rule's variables: its left operand, its right operand (or the
+constant), its third operand (an element write's value), and its result,
+each read at its value; and the length of any of them, `|x|`: a string's
+UTF-16 length, a typed array's fixed length or an array's spine length, as
+the variable's sort says. -/
 inductive RuleVar where
-  | left | right | result
+  | left | right | third | result
+  | len (x : Base)
   deriving DecidableEq, Repr
 
 /-- The values an operand or a result ranges over: a safe integer, its
 integer value the variable's, or any number, which gives the variable no
 value a fact may read. -/
 inductive Domain where
-  | safeInteger | number
+  | safeInteger | number | string | array | typedArray
   deriving DecidableEq, Repr
 
-/-- A double in a domain, at an integer value. -/
+/-- A double in a domain, at an integer value; no double is a string or
+an object. -/
 def Domain.Admits : Domain → UInt64 → Int → Prop
   | .safeInteger, b, i => SafeInt b i
   | .number, _, _ => True
+  | .string, _, _ | .array, _, _ | .typedArray, _, _ => False
+
+/-- A value in a domain, at an integer value and a length: a safe integer's
+double; any number's; a string whose UTF-16 length `n` is at most
+`maxStringLength`. An object is admitted by a heap, which the datum's
+soundness, over values, does not read: a rule over an object is assumed. -/
+def Domain.AdmitsVal : Domain → Tm → Int → Int → Prop
+  | .safeInteger, t, i, _ => ∃ b, t = .num b ∧ SafeInt b i
+  | .number, t, _, _ => ∃ b, t = .num b
+  | .string, t, _, n => ∃ s, t = .str s ∧ (utf16Units s).length ≤ maxStringLength ∧ n = (utf16Units s).length
+  | .array, _, _, _ | .typedArray, _, _, _ => False
 
 /-- How a rule reads its constant: as itself, or as a shift count, the
 constant's `ToUint32` modulo 32 (`arithBits` on `<<`, `>>` and `>>>`). -/
@@ -70,10 +95,12 @@ structure Constant where
 def Constant.admits (c : Constant) (d : Int) : Bool :=
   (c.lower.all (· ≤ d)) && (c.upper.all (d ≤ ·))
 
-/-- A right operand: an operand of a domain, or a constant. -/
+/-- A right operand: an operand of a domain, a constant, or none, for an
+operation of one operand. -/
 inductive Right where
   | operand (d : Domain)
   | constant (c : Constant)
+  | absent
   deriving DecidableEq, Repr
 
 /-- A right operand's double in its domain, at an integer value: a
@@ -81,11 +108,18 @@ constant is a safe integer meeting its side condition. -/
 def Right.Admits : Right → UInt64 → Int → Prop
   | .operand d, b, i => d.Admits b i
   | .constant c, b, i => SafeInt b i ∧ c.admits i = true
+  | .absent, _, _ => True
+
+/-- A right operand's value in its domain, at an integer value and length. -/
+def Right.AdmitsVal : Right → Tm → Int → Int → Prop
+  | .operand d, t, i, n => d.AdmitsVal t i n
+  | .constant c, t, i, _ => ∃ b, t = .num b ∧ SafeInt b i ∧ c.admits i = true
+  | .absent, _, _, _ => True
 
 /-- The value a rule's coefficients read: the normalised constant, `0` for
 a rule without one. -/
 def Right.bound : Right → Int → Int
-  | .operand _, _ => 0
+  | .operand _, _ | .absent, _ => 0
   | .constant c, d => c.normalisation.apply d
 
 /-- A coefficient computed from the bound constant `k`:
@@ -112,58 +146,164 @@ def sumTerms (k : Int) (v : RuleVar → Int) : List (RuleVar × Coef) → Int
 def RuleFact.Holds (F : RuleFact) (k : Int) (v : RuleVar → Int) : Prop :=
   sumTerms k v F.terms ≤ F.bound.eval k
 
-/-- **An arithmetic rule**: the paper's name (several triples of one rule
-share it), the operator, the operands' domains, the premises, the result's
-domain and the conclusion. -/
+/-- **An operation** a rule states: one of the calculus's binary operators
+(`binop`), a string's length read (`Step.lenStr`) and element read
+(`Step.elemStr`), and a typed array's length read, element read and element
+write (the natives `%ByteLength%`, `%ByteAt%` and `%ByteSet%`). -/
+inductive Operation where
+  | binary (op : Arith)
+  | strLength | strRead
+  | viewLength | viewRead | viewWrite
+  deriving DecidableEq, Repr
+
+/-- **The value an operation gives** on its operands, the calculus's: `binop`,
+a string's length where the string is within `maxStringLength` (a longer
+model string throws), and the code unit at a numeric index. A typed array's
+operations read the heap, which this function of values does not: they have
+none here, and their rules are assumed. -/
+def Operation.eval : Operation → Tm → Tm → Tm → Option Tm
+  | .binary op, a, b, _ => binop op a b
+  | .strLength, .str s, _, _ =>
+    if (utf16Units s).length ≤ maxStringLength then some (.num (bitsOfNat (utf16Units s).length)) else none
+  | .strRead, .str s, .num i, _ => some (codeUnitAt s i)
+  | _, _, _, _ => none
+
+/-- Whether an operation's value is a function of its operands' values. -/
+def Operation.evaluates : Operation → Bool
+  | .binary _ | .strLength | .strRead => true
+  | .viewLength | .viewRead | .viewWrite => false
+
+/-- An atom of a rule's conclusion beyond linear facts: the element at an
+index of a collection is a variable's value, converted to the typed array's
+format where `converted` (`ViewFormat.conv`); and every other index of the
+collection reads what it read before the step. -/
+inductive RuleAtom where
+  | elem (coll index value : RuleVar) (converted : Bool)
+  | othersKept (coll index : RuleVar)
+  deriving DecidableEq, Repr
+
+/-- A region of an effect, Paper I's grammar: the spines (`st`), the views
+(`vw`), the values (`val`), and a variable's spine, cells, field or fields. -/
+inductive Region where
+  | st | vw | val
+  | spine (x : RuleVar) | cells (x : RuleVar) | field (x : RuleVar) (f : String) | fields (x : RuleVar)
+  deriving DecidableEq, Repr
+
+/-- A change of a region, Paper I's grammar. -/
+inductive Change where
+  | keep | init | scalar | grow | any
+  deriving DecidableEq, Repr
+
+/-- How a rule is established: by its soundness theorem, or assumed of the
+host, resting on the named native contracts. -/
+inductive Trust where
+  | proved
+  | assumed (contracts : List String)
+  deriving DecidableEq, Repr
+
+/-- The paper's display a rule's row belongs to (presentation only). -/
+inductive Display where
+  | arithmetic | strings | views
+  deriving DecidableEq, Repr
+
+/-- **A rule** of a step: the paper's name (several triples of one rule
+share it), the operation, the operands' domains, the premises, the result's
+domain, the conclusion's linear facts and atoms, the effect, the trust and
+the paper's display. -/
 structure ArithRule where
   name : String
-  op : Arith
+  op : Operation
   left : Domain
   right : Right
+  third : Option Domain := none
   premises : List RuleFact
   result : Domain
   conclusion : List RuleFact
+  atoms : List RuleAtom := []
+  effect : List (Region × Change) := []
+  trust : Trust := .proved
+  display : Display := .arithmetic
   deriving DecidableEq, Repr
 
-/-- The sort a rule's variable ranges over: any number, or a safe integer. -/
+/-- The sort a rule's variable ranges over. -/
 inductive VarSort where
-  | num | safeInt
+  | num | safeInt | string | array | typedArray
   deriving DecidableEq, Repr
 
 /-- The values of a domain, as a sort. -/
 def Domain.sort : Domain → VarSort
   | .safeInteger => .safeInt
   | .number => .num
+  | .string => .string
+  | .array => .array
+  | .typedArray => .typedArray
 
-/-- What a rule's variable is: an operand, a constant, or the result. -/
+/-- What a rule's variable is: an operand, the index of an element
+operation, the value an element write stores, a constant, or the result. -/
 inductive Role where
-  | operand | constant | result
+  | operand | index | written | constant | result
   deriving DecidableEq, Repr
 
-/-- **A rule's variables with their roles and sorts**: an operand of its
-domain's sort, a constant a safe integer (`Right.Admits`), and the result
-of its domain's sort. -/
+/-- Whether an operation reads or writes an element at its right operand. -/
+def Operation.indexed : Operation → Bool
+  | .strRead | .viewRead | .viewWrite => true
+  | _ => false
+
+/-- **A rule's variables with their roles and sorts**: each operand of its
+domain's sort, the right one an index where the operation is indexed, a
+constant a safe integer (`Right.AdmitsVal`), the third operand the written
+value, and the result of its domain's sort. -/
 def ArithRule.variables (r : ArithRule) : List (RuleVar × Role × VarSort) :=
-  [(.left, .operand, r.left.sort),
-    match r.right with
-    | .operand d => (.right, .operand, d.sort)
-    | .constant _ => (.right, .constant, .safeInt),
-    (.result, .result, r.result.sort)]
+  [(.left, .operand, r.left.sort)] ++
+    (match r.right with
+     | .operand d => [(.right, if r.op.indexed then .index else .operand, d.sort)]
+     | .constant _ => [(.right, .constant, .safeInt)]
+     | .absent => []) ++
+    (match r.third with
+     | some d => [(.third, .written, d.sort)]
+     | none => []) ++
+    [(.result, .result, r.result.sort)]
 
 /-- A valuation with the result set to `y`. -/
 def resultAt (v : RuleVar → Int) (y : Int) : RuleVar → Int
   | .result => y
   | x => v x
 
-/-- **A rule's soundness against the calculus**: for operand doubles `a`
-and `b` in their domains at the values `v`, meeting the premises, the
-result `arithBits` computes lies in the result's domain at a value `y`,
-and the conclusion holds with the result at `y`. -/
+/-- A valuation with the result at `y` and its length at `n`. -/
+def resultAtLen (v : RuleVar → Int) (y n : Int) : RuleVar → Int
+  | .result => y
+  | .len .result => n
+  | x => v x
+
+theorem resultAtLen_self (v : RuleVar → Int) (y : Int) : resultAtLen v y (v (.len .result)) = resultAt v y := by
+  funext x; cases x with
+  | len b => cases b <;> rfl
+  | _ => rfl
+
+/-- **A rule's soundness against the calculus**: for operand values `a`,
+`b` and `c` in their domains at the values and lengths `v`, meeting the
+premises, where the operation gives a value `u` (a normal return), `u` lies
+in the result's domain at a value `y` and length `n`, and the conclusion
+holds with the result at `y` and `n`. An operation without a value here
+(`Operation.evaluates`) makes it hold of no step: a proved rule has an
+operation that evaluates (`rules_evaluate`). -/
 def ArithRule.Sound (r : ArithRule) : Prop :=
+  ∀ (a b c u : Tm) (v : RuleVar → Int),
+    r.left.AdmitsVal a (v .left) (v (.len .left)) → r.right.AdmitsVal b (v .right) (v (.len .right)) →
+    (∀ d, r.third = some d → d.AdmitsVal c (v .third) (v (.len .third))) →
+    (∀ F ∈ r.premises, F.Holds (r.right.bound (v .right)) v) →
+    r.op.eval a b c = some u →
+    ∃ y n, r.result.AdmitsVal u y n ∧ ∀ F ∈ r.conclusion, F.Holds (r.right.bound (v .right)) (resultAtLen v y n)
+
+/-- **A binary rule's soundness on the doubles of numbers**: for operand
+doubles `a` and `b` in their domains at the values `v`, meeting the
+premises, the result `arithBits` computes lies in the result's domain at a
+value `y`, and the conclusion holds with the result at `y`. -/
+def ArithRule.SoundBits (r : ArithRule) (o : Arith) : Prop :=
   ∀ (a b : UInt64) (v : RuleVar → Int),
     r.left.Admits a (v .left) → r.right.Admits b (v .right) →
     (∀ F ∈ r.premises, F.Holds (r.right.bound (v .right)) v) →
-    ∃ y, r.result.Admits (arithBits r.op a b) y ∧
+    ∃ y, r.result.Admits (arithBits o a b) y ∧
       ∀ F ∈ r.conclusion, F.Holds (r.right.bound (v .right)) (resultAt v y)
 
 /-! ## The rules -/
@@ -184,7 +324,7 @@ def maxSafeInt : Int := 2 ^ 53 - 1
 /-- **Add**: `|x + x'| ≤ M` gives `y = x + x'`. -/
 def add : ArithRule where
   name := "Add"
-  op := .add
+  op := .binary .add
   left := .safeInteger
   right := .operand .safeInteger
   premises := [fact [(.left, -1), (.right, -1)] maxSafeInt, fact [(.left, 1), (.right, 1)] maxSafeInt]
@@ -194,7 +334,7 @@ def add : ArithRule where
 /-- **Sub**: `|x − x'| ≤ M` gives `y = x − x'`. -/
 def sub : ArithRule where
   name := "Sub"
-  op := .sub
+  op := .binary .sub
   left := .safeInteger
   right := .operand .safeInteger
   premises := [fact [(.left, -1), (.right, 1)] maxSafeInt, fact [(.left, 1), (.right, -1)] maxSafeInt]
@@ -204,7 +344,7 @@ def sub : ArithRule where
 /-- **Scale**: `|c·x| ≤ M` gives `y = c·x`. -/
 def scale : ArithRule where
   name := "Scale"
-  op := .mul
+  op := .binary .mul
   left := .safeInteger
   right := .constant factor
   premises := [⟨[(.left, { byConstant := -1 })], { lit := maxSafeInt }⟩, ⟨[(.left, { byConstant := 1 })], { lit := maxSafeInt }⟩]
@@ -215,7 +355,7 @@ def scale : ArithRule where
 /-- **Shr**: `-2^31 ≤ x < 2^31` gives `2^{d'}·y ≤ x ≤ 2^{d'}·y + 2^{d'} − 1`. -/
 def shr : ArithRule where
   name := "Shr"
-  op := .shr
+  op := .binary .shr
   left := .safeInteger
   right := .constant shiftCount
   premises := [fact [(.left, -1)] (2 ^ 31), fact [(.left, 1)] (2 ^ 31 - 1)]
@@ -227,7 +367,7 @@ def shr : ArithRule where
 `0 ≤ y ≤ x'`. -/
 def maskRange : ArithRule where
   name := "Mask"
-  op := .bitAnd
+  op := .binary .bitAnd
   left := .number
   right := .operand .safeInteger
   premises := [fact [(.right, -1)] 0, fact [(.right, 1)] (2 ^ 31 - 1)]
@@ -237,7 +377,7 @@ def maskRange : ArithRule where
 /-- **Mask**, its bound: for any number `x`, `0 ≤ x'` gives `y ≤ x'`. -/
 def maskBound : ArithRule where
   name := "Mask"
-  op := .bitAnd
+  op := .binary .bitAnd
   left := .number
   right := .operand .safeInteger
   premises := [fact [(.right, -1)] 0]
@@ -247,7 +387,7 @@ def maskBound : ArithRule where
 /-- **Shl**: `-2^31 ≤ 2^{d'}·x < 2^31` gives `y = 2^{d'}·x`. -/
 def shl : ArithRule where
   name := "Shl"
-  op := .shl
+  op := .binary .shl
   left := .safeInteger
   right := .constant shiftCount
   premises := [⟨[(.left, { byPower := -1 })], { lit := 2 ^ 31 }⟩, ⟨[(.left, { byPower := 1 })], { lit := 2 ^ 31 - 1 }⟩]
@@ -259,7 +399,7 @@ def shl : ArithRule where
 `y ≤ x + x'`. -/
 def bitOr : ArithRule where
   name := "Or"
-  op := .bitOr
+  op := .binary .bitOr
   left := .safeInteger
   right := .operand .safeInteger
   premises := [fact [(.left, -1)] 0, fact [(.left, 1)] (2 ^ 31 - 1), fact [(.right, -1)] 0, fact [(.right, 1)] (2 ^ 31 - 1)]
@@ -267,8 +407,105 @@ def bitOr : ArithRule where
   conclusion := [fact [(.left, 1), (.result, -1)] 0, fact [(.right, 1), (.result, -1)] 0,
     fact [(.result, 1), (.left, -1), (.right, -1)] 0]
 
+/-- The largest array length, `N = 2^32 − 1`. -/
+def maxLength : Int := 2 ^ 32 - 1
+
+/-- **Str-Length**: a string's length read gives `y = |s|`. -/
+def strLength : ArithRule where
+  name := "Str-Length"
+  op := .strLength
+  left := .string
+  right := .absent
+  premises := []
+  result := .safeInteger
+  conclusion := [fact [(.result, 1), (.len .left, -1)] 0, fact [(.result, -1), (.len .left, 1)] 0]
+  display := .strings
+
+/-- **Str-Read**: `0 ≤ i < |s|` and `i < N` give `|y| = 1`. -/
+def strRead : ArithRule where
+  name := "Str-Read"
+  op := .strRead
+  left := .string
+  right := .operand .safeInteger
+  premises := [fact [(.right, -1)] 0, fact [(.right, 1), (.len .left, -1)] (-1), fact [(.right, 1)] (maxLength - 1)]
+  result := .string
+  conclusion := [fact [(.len .result, 1)] 1, fact [(.len .result, -1)] (-1)]
+  display := .strings
+
+/-- **Concat**: a normal concatenation gives `|y| = |s| + |s'|`. -/
+def concat : ArithRule where
+  name := "Concat"
+  op := .binary .add
+  left := .string
+  right := .operand .string
+  premises := []
+  result := .string
+  conclusion := [fact [(.len .result, 1), (.len .left, -1), (.len .right, -1)] 0,
+    fact [(.len .result, -1), (.len .left, 1), (.len .right, 1)] 0]
+  display := .strings
+
+/-- **View-Length**: a typed array's length read gives `y = |b|`, assumed
+of `%ByteLength%`. -/
+def viewLength : ArithRule where
+  name := "View-Length"
+  op := .viewLength
+  left := .typedArray
+  right := .absent
+  premises := []
+  result := .safeInteger
+  conclusion := [fact [(.result, 1), (.len .left, -1)] 0, fact [(.result, -1), (.len .left, 1)] 0]
+  trust := .assumed ["%ByteLength%"]
+  display := .views
+
+/-- **View-Read**: `0 ≤ i < |b|` gives `b[i] ≐ y`, assumed of `%ByteAt%`. -/
+def viewRead : ArithRule where
+  name := "View-Read"
+  op := .viewRead
+  left := .typedArray
+  right := .operand .safeInteger
+  premises := [fact [(.right, -1)] 0, fact [(.right, 1), (.len .left, -1)] (-1)]
+  result := .number
+  conclusion := []
+  atoms := [.elem .left .right .result false]
+  trust := .assumed ["%ByteAt%"]
+  display := .views
+
+/-- **View-Write**: `0 ≤ i < |b|` gives `b[i] ≐ conv_t(v)` and every other
+index kept, with the effect `{vw: grow}`, assumed of `%ByteSet%`
+(`ViewWrite`, `WriteAt`). -/
+def viewWrite : ArithRule where
+  name := "View-Write"
+  op := .viewWrite
+  left := .typedArray
+  right := .operand .safeInteger
+  third := some .number
+  premises := [fact [(.right, -1)] 0, fact [(.right, 1), (.len .left, -1)] (-1)]
+  result := .number
+  conclusion := []
+  atoms := [.elem .left .right .third true, .othersKept .left .right]
+  effect := [(.vw, .grow)]
+  trust := .assumed ["%ByteSet%", "ViewWrite", "WriteAt"]
+  display := .views
+
+/-- **View-Write-Any**: a write at any number has the effect `{vw: grow}`,
+assumed of `%ByteSet%` (`ViewWrite`). -/
+def viewWriteAny : ArithRule where
+  name := "View-Write-Any"
+  op := .viewWrite
+  left := .typedArray
+  right := .operand .number
+  third := some .number
+  premises := []
+  result := .number
+  conclusion := []
+  effect := [(.vw, .grow)]
+  trust := .assumed ["%ByteSet%", "ViewWrite"]
+  display := .views
+
 /-- The rules, in the paper's order. -/
-def rules : List ArithRule := [add, sub, scale, shr, maskRange, maskBound, shl, bitOr]
+def rules : List ArithRule :=
+  [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat,
+    viewLength, viewRead, viewWrite, viewWriteAny]
 
 /-! ## Numbers through `ToInt32` -/
 
@@ -354,7 +591,7 @@ theorem or_le_add (a b : Nat) : a ||| b ≤ a + b := by
 theorem safe_int32 {i : Int} (hlo : -2 ^ 31 ≤ i) (hhi : i < 2 ^ 31) : SafeInt (int32Bits i) i :=
   safeInt_int32Bits (by omega)
 
-theorem shr_sound : shr.Sound := by
+theorem shr_bits : shr.SoundBits .shr := by
   intro a b v ha hb hp
   simp only [shr, shiftCount, Domain.Admits, Right.Admits, Right.bound, Normalisation.apply] at ha hb hp ⊢
   have h1 := hp _ (List.mem_cons_self ..)
@@ -387,7 +624,7 @@ theorem shr_sound : shr.Sound := by
     rcases hF with rfl | rfl <;>
       simp only [RuleFact.Holds, sumTerms, Coef.eval, resultAt, Int.zero_mul, Int.zero_add, Int.add_zero, Int.one_mul, Int.neg_mul, hQ] <;> omega
 
-theorem maskRange_sound : maskRange.Sound := by
+theorem maskRange_bits : maskRange.SoundBits .bitAnd := by
   intro a b v _ hb hp
   simp only [maskRange, Domain.Admits, Right.Admits, Right.bound] at hb hp ⊢
   have h := fun F hF => hp F hF
@@ -405,7 +642,7 @@ theorem maskRange_sound : maskRange.Sound := by
     rcases hF with rfl | rfl <;>
       simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
-theorem maskBound_sound : maskBound.Sound := by
+theorem maskBound_bits : maskBound.SoundBits .bitAnd := by
   intro a b v _ hb hp
   simp only [maskBound, Domain.Admits, Right.Admits, Right.bound] at hb hp ⊢
   have h0 := hp _ (List.mem_cons_self ..)
@@ -427,7 +664,7 @@ theorem maskBound_sound : maskBound.Sound := by
     subst hF
     simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil]; omega
 
-theorem shl_sound : shl.Sound := by
+theorem shl_bits : shl.SoundBits .shl := by
   intro a b v ha hb hp
   simp only [shl, shiftCount, Domain.Admits, Right.Admits, Right.bound, Normalisation.apply] at ha hb hp ⊢
   have h1 := hp _ (List.mem_cons_self ..)
@@ -456,7 +693,7 @@ theorem shl_sound : shl.Sound := by
     rcases hF with rfl | rfl <;>
       simp only [RuleFact.Holds, sumTerms, Coef.eval, resultAt, Int.zero_mul, Int.zero_add, Int.add_zero, Int.one_mul, Int.neg_mul, hQ] <;> omega
 
-theorem bitOr_sound : bitOr.Sound := by
+theorem bitOr_bits : bitOr.SoundBits .bitOr := by
   intro a b v ha hb hp
   simp only [bitOr, Domain.Admits, Right.Admits, Right.bound] at ha hb hp ⊢
   have h := fun F hF => hp F hF
@@ -480,7 +717,7 @@ theorem bitOr_sound : bitOr.Sound := by
       simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
 /-- **Every rule is sound.** -/
-theorem add_sound : add.Sound := by
+theorem add_bits : add.SoundBits .add := by
   intro a b v ha hb hp
   simp only [add, Domain.Admits, Right.Admits, Right.bound] at ha hb hp ⊢
   have h := fun F hF => hp F hF
@@ -491,7 +728,7 @@ theorem add_sound : add.Sound := by
   rcases hF with rfl | rfl <;>
     simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
-theorem sub_sound : sub.Sound := by
+theorem sub_bits : sub.SoundBits .sub := by
   intro a b v ha hb hp
   simp only [sub, Domain.Admits, Right.Admits, Right.bound] at ha hb hp ⊢
   have h := fun F hF => hp F hF
@@ -502,7 +739,7 @@ theorem sub_sound : sub.Sound := by
   rcases hF with rfl | rfl <;>
     simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
-theorem scale_sound : scale.Sound := by
+theorem scale_bits : scale.SoundBits .mul := by
   intro a b v ha hb hp
   simp only [scale, factor, Domain.Admits, Right.Admits, Right.bound, Normalisation.apply] at ha hb hp ⊢
   have h := fun F hF => hp F hF
@@ -514,19 +751,6 @@ theorem scale_sound : scale.Sound := by
   rcases hF with rfl | rfl <;>
     simp only [RuleFact.Holds, sumTerms, Coef.eval, resultAt, Int.zero_mul, Int.zero_add, Int.add_zero,
       Int.one_mul, Int.neg_mul] <;> rw [Int.mul_comm] <;> omega
-
-theorem rules_sound : ∀ r ∈ rules, r.Sound := by
-  intro r hr
-  simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-  · exact add_sound
-  · exact sub_sound
-  · exact scale_sound
-  · exact shr_sound
-  · exact maskRange_sound
-  · exact maskBound_sound
-  · exact shl_sound
-  · exact bitOr_sound
 
 /-! ## Instantiation
 
@@ -540,10 +764,12 @@ constant, or nothing. -/
 abbrev Instance (V : Type) := RuleVar → Option (Linear.Form V × Int)
 
 /-- An operand read by its domain: a safe integer by its form, which it
-needs; any number by nothing. -/
+needs; any number by nothing. A string or an object has no value a
+linear form denotes: a rule over one is not applied by substitution. -/
 def Domain.bind {V : Type} : Domain → Option (Linear.Form V × Int) → Option (Option (Linear.Form V × Int))
   | .safeInteger, f => f.map some
   | .number, _ => some none
+  | .string, _ | .array, _ | .typedArray, _ => none
 
 /-- A right operand read by its kind: an operand by its domain, the bound
 value `0`; a constant by its form, a constant `d` meeting the side
@@ -552,13 +778,14 @@ def Right.bind {V : Type} : Right → Option (Linear.Form V × Int) → Option (
   | .operand d, f => (d.bind f).map (·, 0)
   | .constant c, some ([], d) => if c.admits d then some (some ([], d), c.normalisation.apply d) else none
   | .constant _, _ => none
+  | .absent, _ => none
 
 /-- **A rule's operands bound**: the instance of its operands (the result
 has none) and the bound constant, from the forms the operands have. -/
 def ArithRule.bind {V : Type} (r : ArithRule) (lf rf : Option (Linear.Form V × Int)) :
     Option (Instance V × Int) :=
   match r.left.bind lf, r.right.bind rf with
-  | some l, some (rt, K) => some (fun | .left => l | .right => rt | .result => none, K)
+  | some l, some (rt, K) => some (fun | .left => l | .right => rt | _ => none, K)
   | _, _ => none
 
 /-- An instance with the result's form set. -/
@@ -569,6 +796,11 @@ def Instance.withResult {V : Type} (σ : Instance V) (y : Option (Linear.Form V 
 /-- An instance over `W`, each variable of each form renamed by `g`. -/
 def Instance.rename {V W : Type} (g : V → W) (σ : Instance V) : Instance W :=
   fun x => (σ x).map fun (F, c) => (F.map fun (y, a) => (g y, a), c)
+
+/-- The instance naming each variable, its value or its length, by a term
+where `term` gives one. -/
+def Instance.ofTerms {V : Type} (term : RuleVar → Option V) : Instance V :=
+  fun x => (term x).map fun t => ([(t, 1)], 0)
 
 /-- The terms of a fact substituted: their form and constant. -/
 @[nospecialize] def instTerms {V : Type} (σ : Instance V) (k : Int) :
@@ -715,6 +947,7 @@ theorem ArithRule.bind_rename {V W : Type} (g : V → W) (r : ArithRule) (lf rf 
       | none => rfl
       | some ([], d) => simp only [Right.bind, Option.map_some, renamePair, List.map_nil]; split <;> rfl
       | some ((_ :: _), _) => rfl
+    | absent => cases rf <;> rfl
   simp only [ArithRule.bind, hl, hr]
   cases r.left.bind lf <;> cases r.right.bind rf <;> try rfl
   rename_i rtK
@@ -757,11 +990,9 @@ theorem instantiateAll_mem' {V : Type} {σ : Instance V} {k : Int} :
 /-- **A rule's operation computes its result on numbers**: the operator is
 no comparison, and either it takes numbers alone, so that a step on it has
 number operands, or each operand is a safe integer. -/
-def ArithRule.numeric (r : ArithRule) : Bool :=
-  !r.op.relational && decide (r.op ≠ .eq) && decide (r.op ≠ .looseEq) &&
-    (r.op.numberOnly || (decide (r.left = .safeInteger) && decide (r.right ≠ .operand .number)))
-
-theorem rules_numeric : ∀ r ∈ rules, r.numeric = true := by decide
+def ArithRule.numeric (r : ArithRule) (o : Arith) : Bool :=
+  !o.relational && decide (o ≠ .eq) && decide (o ≠ .looseEq) &&
+    (o.numberOnly || (decide (r.left = .safeInteger) && decide (r.right ≠ .operand .number)))
 
 /-- A computing operator on two numbers gives `arithBits`. -/
 theorem binop_num {op : Arith} (hrel : op.relational = false) (heq : op ≠ .eq) (hloose : op ≠ .looseEq)
@@ -856,12 +1087,228 @@ theorem binop_comm {op : Arith} (h : op.commutes = true) (a b : Tm) : binop op a
     | none => rfl
     | some u => rw [binop_comm_some h hba] at hab; cases hab
 
+/-- Every code unit of a string is below `2^16`. -/
+theorem utf16Units_lt (str : String) : ∀ u ∈ utf16Units str, u < 0x10000 := by
+  intro u hu
+  simp only [utf16Units, List.mem_flatMap] at hu
+  obtain ⟨c, -, hc⟩ := hu
+  have hv := c.valid
+  have e : c.toNat = c.val.toNat := rfl
+  have hlt : c.val.toNat < 0x110000 := by
+    rcases hv with h | h
+    · have := h; simp at this; omega
+    · have := h.2; simp at this; omega
+  split at hc
+  · simp at hc; omega
+  · simp at hc; omega
+
+/-- **The string of one code unit has UTF-16 length one.** -/
+theorem unitString_length (u : Nat) (hu : u < 0x10000) : (utf16Units (unitString u)).length = 1 := by
+  unfold unitString
+  split
+  · decide
+  · simp only [utf16Units, String.toList_singleton, List.flatMap_cons, List.flatMap_nil, List.append_nil]
+    have : (Char.ofNat u).val.toNat < 0x10000 := by
+      unfold Char.ofNat
+      split
+      · simp [Char.ofNatAux]; omega
+      · decide
+    have h2 : (Char.ofNat u).toNat < 0x10000 := this
+    simp [h2]
+
+/-! ## Soundness of each rule -/
+
+/-- Whether a rule's operands and result are numbers, the domains whose
+values are doubles. -/
+def ArithRule.numericDomains (r : ArithRule) : Bool :=
+  (r.left == .safeInteger || r.left == .number) && r.third.isNone &&
+    (match r.right with
+     | .operand d => d == .safeInteger || d == .number
+     | .constant _ => true
+     | .absent => false) &&
+    (r.result == .safeInteger || r.result == .number)
+
+theorem admitsVal_num {d : Domain} (hd : d = .safeInteger ∨ d = .number) {t : Tm} {i n : Int}
+    (h : d.AdmitsVal t i n) : ∃ b, t = .num b ∧ d.Admits b i := by
+  rcases hd with rfl | rfl
+  · obtain ⟨b, rfl, hb⟩ := h; exact ⟨b, rfl, hb⟩
+  · obtain ⟨b, rfl⟩ := h; exact ⟨b, rfl, trivial⟩
+
+/-- **A binary rule over numbers is sound where it is sound on their
+doubles**: its operator computes (no comparison), so `binop` on two numbers
+gives `arithBits`. -/
+theorem ArithRule.sound_of_bits {r : ArithRule} {o : Arith} (ho : r.op = .binary o)
+    (hc : o.relational = false ∧ o ≠ .eq ∧ o ≠ .looseEq) (hd : r.numericDomains = true) (h : r.SoundBits o) :
+    r.Sound := by
+  intro a b c u v ha hb _ hp hu
+  simp only [ArithRule.numericDomains, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at hd
+  obtain ⟨⟨⟨hl, -⟩, hrt⟩, hres⟩ := hd
+  obtain ⟨x, rfl, hx⟩ := admitsVal_num hl ha
+  obtain ⟨y, rfl, hy⟩ : ∃ y, b = .num y ∧ r.right.Admits y (v .right) := by
+    cases hr : r.right with
+    | operand d =>
+      rw [hr] at hrt hb
+      exact admitsVal_num (by simpa using hrt) hb
+    | constant c =>
+      rw [hr] at hb
+      obtain ⟨y, rfl, hs, hadm⟩ := hb
+      exact ⟨y, rfl, hs, hadm⟩
+    | absent => rw [hr] at hrt; simp at hrt
+  rw [ho] at hu
+  simp only [Operation.eval] at hu
+  have hu' := binop_num hc.1 hc.2.1 hc.2.2 hu
+  subst hu'
+  obtain ⟨z, hz, hconc⟩ := h x y v hx hy hp
+  refine ⟨z, v (.len .result), ?_, by rw [resultAtLen_self]; exact hconc⟩
+  rcases hres with hres | hres <;> rw [hres] at hz ⊢
+  · exact ⟨_, rfl, hz⟩
+  · exact ⟨_, rfl⟩
+
+theorem add_sound : add.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl add_bits
+theorem sub_sound : sub.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl sub_bits
+theorem scale_sound : scale.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl scale_bits
+theorem shr_sound : shr.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl shr_bits
+theorem maskRange_sound : maskRange.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl maskRange_bits
+theorem maskBound_sound : maskBound.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl maskBound_bits
+theorem shl_sound : shl.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl shl_bits
+theorem bitOr_sound : bitOr.Sound := ArithRule.sound_of_bits rfl ⟨rfl, by decide, by decide⟩ rfl bitOr_bits
+
+/-- The double of a natural below `2^53` denotes it. -/
+theorem safeInt_bitsOfNat {L : Nat} (hL : L < 2 ^ 53) : SafeInt (bitsOfNat L) (L : Int) :=
+  ⟨by omega, .inl ⟨by omega, by simp⟩⟩
+
+theorem strLength_sound : strLength.Sound := by
+  intro a b c u v ha _ _ _ hu
+  simp only [strLength, Domain.AdmitsVal] at ha hu ⊢
+  obtain ⟨s, rfl, hmax, hn⟩ := ha
+  simp only [Operation.eval, if_pos hmax, Option.some.injEq] at hu
+  subst hu
+  refine ⟨(utf16Units s).length, 0, ⟨_, rfl, safeInt_bitsOfNat (by simp [maxStringLength] at hmax; omega)⟩, ?_⟩
+  intro F hF
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;>
+    simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAtLen, List.map_cons, List.map_nil] <;> omega
+
+theorem strRead_sound : strRead.Sound := by
+  intro a b c u v ha hb _ hp hu
+  simp only [strRead, Domain.AdmitsVal, Right.AdmitsVal] at ha hb hp hu ⊢
+  obtain ⟨s, rfl, hmax, hn⟩ := ha
+  obtain ⟨i, rfl, hi⟩ := hb
+  have h := fun F hF => hp F hF
+  simp only [fact, maxLength, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false,
+    forall_eq_or_imp, forall_eq, RuleFact.Holds, sumTerms, Coef.eval] at h
+  obtain ⟨h0, h1, h2⟩ := h
+  simp only [Operation.eval, Option.some.injEq] at hu
+  subst hu
+  have hidx : indexOfBits i = some (v .right).toNat :=
+    SafeIntegers.indexOfBits_safe hi (by omega) (by simp [maxArrayLength]; omega)
+  have hlt : (v .right).toNat < (utf16Units s).length := by omega
+  obtain ⟨w, hw⟩ : ∃ w, (utf16Units s)[(v .right).toNat]? = some w := ⟨_, List.getElem?_eq_getElem hlt⟩
+  have hcu : codeUnitAt s i = .str (unitString w) := by simp [codeUnitAt, hidx, hw]
+  have hlen := unitString_length w (utf16Units_lt s w (List.mem_of_getElem? hw))
+  refine ⟨0, 1, ⟨_, hcu, by simp [hlen, maxStringLength], by simp [hlen]⟩, ?_⟩
+  intro F hF
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;>
+    simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAtLen, List.map_cons, List.map_nil] <;> omega
+
+theorem concat_sound : concat.Sound := by
+  intro a b c u v ha hb _ _ hu
+  simp only [concat, Domain.AdmitsVal, Right.AdmitsVal] at ha hb hu ⊢
+  obtain ⟨s, rfl, hms, hns⟩ := ha
+  obtain ⟨t, rfl, hmt, hnt⟩ := hb
+  simp only [Operation.eval] at hu
+  have hc : concatString s t = some u := by
+    simpa (config := { decide := true }) [binop, Arith.relational] using hu
+  unfold concatString concatOver at hc
+  split at hc
+  · cases hc
+  · rename_i hover
+    simp only [Option.some.injEq] at hc
+    subst hc
+    have hlen : (utf16Units (s ++ t)).length = (utf16Units s).length + (utf16Units t).length := by
+      simp [utf16Units, String.toList_append]
+    simp only [decide_eq_true_eq] at hover
+    refine ⟨0, (utf16Units (s ++ t)).length, ⟨_, rfl, by omega, rfl⟩, ?_⟩
+    intro F hF
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hF
+    rcases hF with rfl | rfl <;>
+      simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAtLen, List.map_cons, List.map_nil] <;> omega
+
+/-- **Every proved rule is sound**; each other is assumed, naming its
+contracts. -/
+theorem rules_sound : ∀ r ∈ rules, r.trust = .proved → r.Sound := by
+  intro r hr ht
+  simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact add_sound
+  · exact sub_sound
+  · exact scale_sound
+  · exact shr_sound
+  · exact maskRange_sound
+  · exact maskBound_sound
+  · exact shl_sound
+  · exact bitOr_sound
+  · exact strLength_sound
+  · exact strRead_sound
+  · exact concat_sound
+  all_goals cases ht
+
+/-- **A binary rule over numbers is sound on doubles**, as the pass and the
+derivation apply it. -/
+theorem rules_bits : ∀ r ∈ rules, ∀ o, r.op = .binary o → r.numericDomains = true → r.SoundBits o := by
+  intro r hr o ho hd
+  simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp only [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat, viewLength,
+      viewRead, viewWrite, viewWriteAny, Operation.binary.injEq, reduceCtorEq] at ho
+  all_goals first
+    | (simp [ArithRule.numericDomains, concat] at hd; done)
+    | (subst ho; first
+        | exact add_bits
+        | exact sub_bits
+        | exact scale_bits
+        | exact shr_bits
+        | exact maskRange_bits
+        | exact maskBound_bits
+        | exact shl_bits
+        | exact bitOr_bits)
+
+/-- **The rules' operators compute on numbers**, for the binary rules over
+numbers. -/
+theorem rules_numeric : ∀ r ∈ rules, ∀ o, r.op = .binary o → r.numericDomains = true → r.numeric o = true := by
+  intro r hr o ho hd
+  simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp only [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat, viewLength,
+      viewRead, viewWrite, viewWriteAny, Operation.binary.injEq, reduceCtorEq] at ho
+  all_goals first
+    | (simp [ArithRule.numericDomains, concat] at hd; done)
+    | (subst ho; decide)
+
+/-- A rule whose left operand is a number has numbers for its result and no
+third operand. -/
+theorem rules_closed : ∀ r ∈ rules, (r.left = .safeInteger ∨ r.left = .number) →
+    r.third = none ∧ (r.result = .safeInteger ∨ r.result = .number) := by
+  intro r hr hl
+  simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp_all [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat, viewLength,
+      viewRead, viewWrite, viewWriteAny]
+
+/-- A proved rule's operation has a value: its soundness states something. -/
+theorem rules_evaluate : ∀ r ∈ rules, r.trust = .proved → r.op.evaluates = true := by
+  intro r hr ht
+  simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    first | rfl | cases ht
+
 /-- **A step of a rule's operation**: its result is `arithBits` of its
 number operands, which an operand of a safe integer is. -/
-theorem ArithRule.operation {r : ArithRule} (hn : r.numeric = true) {a b u : Tm}
-    (hu : binop r.op a b = some u) (ha : r.left = .safeInteger → ∃ x, a = .num x)
+theorem ArithRule.operation {r : ArithRule} {o : Arith} (hn : r.numeric o = true) {a b u : Tm}
+    (hu : binop o a b = some u) (ha : r.left = .safeInteger → ∃ x, a = .num x)
     (hb : r.right ≠ .operand .number → ∃ y, b = .num y) :
-    ∃ x y, a = .num x ∧ b = .num y ∧ u = .num (arithBits r.op x y) := by
+    ∃ x y, a = .num x ∧ b = .num y ∧ u = .num (arithBits o x y) := by
   simp only [ArithRule.numeric, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq, Bool.or_eq_true] at hn
   obtain ⟨⟨⟨hrel, heq⟩, hloose⟩, hnum⟩ := hn
   have hnum' : (∃ x, a = .num x) ∧ (∃ y, b = .num y) := by
@@ -878,11 +1325,12 @@ the step's operands, and its substituted premises hold, a step of its
 operation gives a number in the result's domain at a value `y`, and the
 conclusion holds at the values the instance denotes, with the result at
 `y`. -/
-theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {lf rf : Option (Linear.Form V × Int)}
+theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {o : Arith} (ho : r.op = .binary o)
+    {lf rf : Option (Linear.Form V × Int)}
     {σ : Instance V} {K : Int} (h : r.bind lf rf = some (σ, K)) {val : V → Int} {a b u : Tm}
     (hl : r.left = .safeInteger → ∀ F c, lf = some (F, c) → ∃ x, a = .num x ∧ SafeInt x (Linear.Form.eval val F + c))
     (hrt : r.right ≠ .operand .number → ∀ F c, rf = some (F, c) → ∃ y, b = .num y ∧ SafeInt y (Linear.Form.eval val F + c))
-    (hu : binop r.op a b = some u)
+    (hu : binop o a b = some u)
     (hp : ∀ F ∈ r.premises, ∃ G, F.instantiate σ K = some G ∧ G.Holds val) :
     ∃ v y bits, σ.Denotes val v ∧ u = .num bits ∧ r.result.Admits bits y ∧
       ∀ F ∈ r.conclusion, F.Holds K (resultAt v y) := by
@@ -894,7 +1342,8 @@ theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {lf rf : O
     -- The left operand's value and evidence.
     obtain ⟨vl, hdl, hal⟩ : ∃ vl : Int, (∀ F c, l = some (F, c) → Linear.Form.eval val F + c = vl) ∧
         (r.left = .safeInteger → ∃ x, a = .num x ∧ SafeInt x vl) := by
-      cases hd : r.left <;> rw [hd] at hlb <;> simp only [Domain.bind, Option.map_eq_some_iff, Option.some.injEq] at hlb
+      cases hd : r.left <;> rw [hd] at hlb <;>
+        first | (simp [Domain.bind] at hlb; done) | simp only [Domain.bind, Option.map_eq_some_iff, Option.some.injEq] at hlb
       · obtain ⟨⟨F, c⟩, hf, rfl⟩ := hlb
         obtain ⟨x, hx, hs⟩ := hl hd F c hf
         exact ⟨_, (fun F' c' he => by cases he; rfl), fun _ => ⟨x, hx, hs⟩⟩
@@ -907,6 +1356,8 @@ theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {lf rf : O
         rw [hd] at hrb
         cases d <;> simp only [Right.bind, Domain.bind, Option.map_eq_some_iff, Option.map_map,
           Function.comp_def, Prod.mk.injEq] at hrb
+        rotate_left 2
+        all_goals try (simp at hrb; done)
         · obtain ⟨⟨F, c⟩, hf, rfl, rfl⟩ := hrb
           obtain ⟨y, hy, hs⟩ := hrt (by rw [hd]; simp) F c hf
           exact ⟨_, (fun F' c' he => by cases he; rfl), rfl, fun _ => ⟨y, hy, hs⟩⟩
@@ -929,20 +1380,37 @@ theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {lf rf : O
           · cases hrb
         | some ((_ :: _), _), hrb => simp [Right.bind] at hrb
         | none, hrb => simp [Right.bind] at hrb
+      | absent => rw [hd] at hrb; simp [Right.bind] at hrb
     subst hK
-    let v : RuleVar → Int := fun | .left => vl | .right => vr | .result => 0
-    have hσ : Instance.Denotes (fun | .left => l | .right => rt | .result => none) val v := by
+    have hnd : r.numericDomains = true := by
+      have hleft : r.left = .safeInteger ∨ r.left = .number := by
+        cases hd : r.left <;> rw [hd] at hlb <;> simp [Domain.bind] at hlb ⊢
+      obtain ⟨h3, hres⟩ := rules_closed r hr hleft
+      have hright : (match r.right with
+          | .operand d => d == .safeInteger || d == .number
+          | .constant _ => true
+          | .absent => false) = true := by
+        cases hd : r.right with
+        | operand d => rw [hd] at hrb; cases d <;> simp [Right.bind, Domain.bind] at hrb ⊢
+        | constant c => rfl
+        | absent => rw [hd] at hrb; simp [Right.bind] at hrb
+      simp only [ArithRule.numericDomains, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+        Option.isNone_iff_eq_none]
+      exact ⟨⟨⟨hleft, h3⟩, hright⟩, hres⟩
+    let v : RuleVar → Int := fun | .left => vl | .right => vr | _ => 0
+    have hσ : Instance.Denotes (fun | .left => l | .right => rt | _ => none) val v := by
       intro x F c hx
       cases x
       · exact hdl F c hx
       · exact hdr F c hx
-      · cases hx
-    obtain ⟨x, y, rfl, rfl, rfl⟩ := ArithRule.operation (rules_numeric r hr) hu
+      all_goals cases hx
+    obtain ⟨x, y, rfl, rfl, rfl⟩ := ArithRule.operation (rules_numeric r hr o ho hnd) hu
       (fun hd => (hal hd).imp fun _ h => h.1) (fun hd => (har hd).imp fun _ h => h.1)
     have hadl : r.left.Admits x (v .left) := by
       cases hd : r.left
       · obtain ⟨x', hx', hs⟩ := hal hd; cases hx'; exact hs
       · trivial
+      all_goals rw [hd] at hlb; simp [Domain.bind] at hlb
     have hadr : r.right.Admits y (v .right) := by
       by_cases hd : r.right = .operand .number
       · rw [hd]; trivial
@@ -951,7 +1419,7 @@ theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {lf rf : O
       intro F hF
       obtain ⟨G, hG, hh⟩ := hp F hF
       exact (RuleFact.instantiate_holds hσ hG).mp hh
-    obtain ⟨res, hres, hconc⟩ := rules_sound r hr x y v hadl hadr hprem
+    obtain ⟨res, hres, hconc⟩ := rules_bits r hr o ho hnd x y v hadl hadr hprem
     exact ⟨v, res, _, hσ, rfl, hres, hconc⟩
   · cases h
 
@@ -961,14 +1429,16 @@ form for the result. -/
 theorem ArithRule.bind_forms {V : Type} {r : ArithRule} {lf rf : Option (Linear.Form V × Int)} {σ : Instance V}
     {K : Int} (h : r.bind lf rf = some (σ, K)) :
     (∀ f, σ .left = some f → r.left = .safeInteger ∧ lf = some f) ∧
-      (∀ f, σ .right = some f → r.right ≠ .operand .number ∧ rf = some f) ∧ σ .result = none := by
+      (∀ f, σ .right = some f → r.right ≠ .operand .number ∧ rf = some f) ∧
+      ∀ x, x ≠ .left → x ≠ .right → σ x = none := by
   simp only [ArithRule.bind] at h
   split at h
   · rename_i l rt K' hlb hrb
     simp only [Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    refine ⟨fun f hx => ?_, fun f hx => ?_, rfl⟩
-    · cases hd : r.left <;> rw [hd] at hlb <;> simp only [Domain.bind, Option.map_eq_some_iff, Option.some.injEq] at hlb
+    refine ⟨fun f hx => ?_, fun f hx => ?_, fun x h1 h2 => by cases x <;> simp_all⟩
+    · cases hd : r.left <;> rw [hd] at hlb <;>
+        first | (simp [Domain.bind] at hlb; done) | simp only [Domain.bind, Option.map_eq_some_iff, Option.some.injEq] at hlb
       · obtain ⟨f', hf, rfl⟩ := hlb; cases hx; exact ⟨rfl, hf⟩
       · subst hlb; cases hx
     · cases hd : r.right with
@@ -988,6 +1458,7 @@ theorem ArithRule.bind_forms {V : Type} {r : ArithRule} {lf rf : Option (Linear.
           · cases hrb
         | some ((_ :: _), _), hrb => simp [Right.bind] at hrb
         | none, hrb => simp [Right.bind] at hrb
+      | absent => rw [hd] at hrb; simp [Right.bind] at hrb
   · cases h
 
 /-- An instance denoting `v` with the result's form denoting `y` denotes
@@ -997,22 +1468,34 @@ theorem Instance.denotes_withResult {V : Type} {σ : Instance V} {val : V → In
     {yf : Option (Linear.Form V × Int)} {y : Int} (hy : ∀ F c, yf = some (F, c) → Linear.Form.eval val F + c = y) :
     (σ.withResult yf).Denotes val (resultAt v y) := by
   intro x F c hx
-  cases x
-  · exact hσ .left (by decide) F c hx
-  · exact hσ .right (by decide) F c hx
-  · exact hy F c hx
+  by_cases hr : x = .result
+  · subst hr; exact hy F c hx
+  · have he : (σ.withResult yf) x = σ x := by cases x <;> simp_all [Instance.withResult]
+    have hv : resultAt v y x = v x := by cases x <;> simp_all [resultAt]
+    rw [he] at hx
+    rw [hv]
+    exact hσ x hr F c hx
 
-/-- The variables a rule's facts may name: those whose values are safe
-integers (a constant is one). A fact naming any other has no form to
-substitute, and the rule would apply nowhere. -/
-def ArithRule.integerVar (r : ArithRule) : RuleVar → Bool
-  | .left => r.left == .safeInteger
-  | .right => match r.right with
-    | .operand d => d == .safeInteger
-    | .constant _ => true
-  | .result => r.result == .safeInteger
+/-- The base variable a variable reads. -/
+def RuleVar.base : RuleVar → Base
+  | .left => .left | .right => .right | .third => .third | .result => .result
+  | .len b => b
 
-/-- Every fact of a rule names only variables of safe integers. -/
+/-- The variable of a base. -/
+def Base.var : Base → RuleVar
+  | .left => .left | .right => .right | .third => .third | .result => .result
+
+/-- The terms a rule's facts may name: a variable's value where its sort is
+the safe integers (a constant is one), and its length where it is a
+string, an array or a typed array. A fact naming any other has no value. -/
+def ArithRule.integerVar (r : ArithRule) (x : RuleVar) : Bool :=
+  match ((r.variables.find? (·.1 == x.base.var)).map (·.2.2) : Option VarSort), x with
+  | some VarSort.safeInt, .left | some VarSort.safeInt, .right | some VarSort.safeInt, .third
+  | some VarSort.safeInt, .result => true
+  | some VarSort.string, .len _ | some VarSort.array, .len _ | some VarSort.typedArray, .len _ => true
+  | _, _ => false
+
+/-- Every fact of a rule names only terms with integer values. -/
 def ArithRule.factsInteger (r : ArithRule) : Bool :=
   (r.premises ++ r.conclusion).all fun F => F.terms.all fun (x, _) => r.integerVar x
 

@@ -866,4 +866,18 @@ theorem safeIntOfBits_pastSafe : safeIntOfBits pastSafeBits = none := by
   | none => rfl
   | some i => exact absurd (safeIntOfBits_sound h) (pastSafe_not_safe i)
 
+/-- A safe integer in `[0, 2^32 − 1)` is the array index its double denotes. -/
+theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeInt b j) (h0 : 0 ≤ j)
+    (h1 : j < maxArrayLength) : indexOfBits b = some j.toNat := by
+  rcases hb.2 with ⟨-, he⟩ | ⟨hle, he⟩
+  · have : b = bitsOfNat j.natAbs := UInt64.toNat_inj.mp he
+    have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
+    have h1' : j < 4294967295 := by omega
+    rw [this, indexOfBits_bitsOfNat (by omega)]
+    congr 1; omega
+  · have hj : j = 0 := by omega
+    subst hj
+    have : b = 0x8000000000000000 := UInt64.toNat_inj.mp (by rw [he]; simp [bitsOfNat_zero])
+    subst this; rfl
+
 end Verification.SafeIntegers

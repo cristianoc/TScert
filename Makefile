@@ -75,7 +75,7 @@ generate-sections: build-lean ## rewrite every generated section of the document
 
 RULES_PAGE ?= $(or $(TMPDIR),/tmp)/arithmetic-rules.html
 
-rules-page: build-lean ## write the arithmetic rules' page to RULES_PAGE (default $$TMPDIR/arithmetic-rules.html) and open it
+rules-page: build-lean ## write the step rules' page to RULES_PAGE (default $$TMPDIR/arithmetic-rules.html) and open it
 	node dev/generated-sections.mts --page $(RULES_PAGE)
 	@if command -v open >/dev/null; then open $(RULES_PAGE); \
 	elif command -v xdg-open >/dev/null; then xdg-open $(RULES_PAGE); fi
