@@ -626,7 +626,7 @@ def writeViews (h : Heap) (receiverSpine index : Nat)
 end Verification
 ```
 
-The extra choices make view writes nondeterministic in the abstract machine. Existing proofs that use determinism, including the route through `TolerantFramesRuns.graph_run`, must use universal safety over operational successors. Leg 3 owns this proof migration. No second evaluator supplies a deterministic “checking meaning.”
+The extra choices make view writes nondeterministic in the abstract machine. Existing proofs that use determinism, including the route through `GraphSafety.graph_run`, must use universal safety over operational successors. Leg 3 owns this proof migration. No second evaluator supplies a deterministic “checking meaning.”
 
 `Change.Holds .grow` is extended through a common spine observation covering `.arr` and `.viewSpine`. Its mathematical conditions remain dense-prefix preservation, nondecreasing length, the array-length bound where applicable, and old-or-fresh listed cells. For views, the unchanged role additionally fixes length and format.
 

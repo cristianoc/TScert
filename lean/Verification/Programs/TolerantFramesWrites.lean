@@ -1,5 +1,4 @@
 import Verification.Programs.TolerantFramesSteps
-import Verification.Semantics.AdmissibleCells
 
 /-! # Tolerant frames: the pass's writing steps
 
@@ -17,9 +16,6 @@ step:
   within `{values: keep, spines: keep}` (`allocated_judgment`), and a step
   with no effect judgment within `{values: any, spines: any}` on both exits
   (`top_judgment`, from `safePost_grow`: a run only grows the heap);
-- a length lower bound over names under the field write's and the element
-  write's effects, by the tolerant frame at `{x.spine: grow}` (Grow:
-  `named_lowerBound_grow`, `named_lowerBound_field`);
 - both exits of the step (`writing_frame`): the action of each exit's effect,
   the residual budget, the type, the rule's output and the named facts each
   exit's effect keeps. -/
@@ -27,31 +23,6 @@ namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
-
-/-! ## Named facts an effect keeps -/
-
-/-- **(Grow) as a named fact** (the note, Proposition "Axioms of the
-atoms"): a length lower bound over names survives every action of
-`{values: any, spines: grow}`: the tolerant frame at `{x.spine: grow}`
-(`grow`, `Parity.atom_frame`), the effect reading its classes at no name. -/
-theorem named_lowerBound_grow {y x : Nat} {η ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η ρ m s) :
-    Box growEffect.fp (Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η) ρ m s := by
-  intro s' ha a hm
-  simp only [List.mem_singleton] at hm
-  subst hm
-  intro a' ha' _
-  simp only [List.mem_singleton] at ha'
-  subst ha'
-  have hb : LowerBound ε y x η m s :=
-    hS _ (List.mem_singleton_self _) _ (List.mem_singleton_self _) (fun _ h => by cases h)
-  exact grow hb s' ⟨ha.1, Footprints.Closed.post_iff.mpr (Footprints.Closed.post_iff.mp ha.2)⟩
-
-/-- (Grow) under the field write's effect, within the element write's. -/
-theorem named_lowerBound_field {y x : Nat} {η ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η ρ m s) :
-    Box fieldWriteEffect.fp (Named ε [.index ⟨lowerBoundFact y x, none, false⟩] η) ρ m s :=
-  fun s' ha => named_lowerBound_grow hS s' (action_le_closed (by decide) ha)
 
 /-! ## A run only grows the heap -/
 
