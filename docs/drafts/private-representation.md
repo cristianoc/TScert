@@ -412,6 +412,20 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   so no path from such code runs through it; and (L2) holds since every
   write the body makes to storage it may share with private state is
   charged.
+- **Incoming values.** A value the body receives from code that is not
+  the body's may be a view passed back, at a writable type TypeScript
+  admits (observed: a member `change(x: { n: number })` given
+  `{ readonly n: number }` type-checks, and its write changes the private
+  record). So every value the body receives from such code (a member's
+  argument or receiver, the result of a call it does not name, a callback's
+  result, a native's result or callback argument, a caught exception, a
+  read of storage that is not confined) is possibly owned storage where its
+  type is one a private field's declared type reaches, as a value from a
+  confined collection is: every write the body makes to it, or to anything
+  reached from it, is charged to the entries of $`\mathsf{own}_C`$ in
+  $`\Psi_C`$ and meets *Reference-preserving protocol* and *Tolerant
+  invariant*. Member certificates carry the charge, so (L2) covers a
+  member's write to a view passed back.
 - **Tolerant invariant.** Every change the body makes to a location of
   $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
   $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
@@ -437,11 +451,22 @@ Two new rows of the [trust surface](../DESIGN.md#trust-surface).
 sources, of the kind of the rows on exported preconditions and on a
 callback's stated effect (a stand-in until applications are analyzed too):
 
-> A caller outside the analyzed sources, and every function it passes in,
-> changes nothing it reaches through a view: a value a class with private
-> state gives out at a read-only type, or any copy of that reference. It
-> writes no element, field or length of it, and freezes, seals, extends or
-> redefines none of it, by any operation, a native's included.
+> Code outside the analyzed sources, a function it passes in included,
+> changes by its own steps no element, field or length of storage it
+> reaches through a view (a reference a class with private state gives out
+> at a read-only type, or any copy of that reference), by any operation, a
+> native's included. A change made inside a call of a member of the class
+> is the member's, bounded by its certificate. Freezing, sealing and
+> preventing extension change no element, field or length, and are
+> admitted.
+
+Analyzed code outside the body is checked, not trusted: the pass reads a
+view at its read-only type and refuses a write through it, a write through
+a widening to a writable type included (an obligation of
+[what TScert must change](#what-tscert-must-change)). A body write to a
+view that code outside froze throws, since modules are strict, which safety
+admits; that freezing changes no location of the model is checked by the
+native audit (conjectured).
 
 The row is stated in the API: the declaration of each value given out as a
 view states, in its doc comment, that callers must not change it. The
@@ -459,10 +484,12 @@ What they replace:
   a handle throw a `TypeError` at the first private read (observed), which
   safety admits. Only what a handle gives out at a read-only type rests on
   the read-only views row.
-- **The invariant of a class with private state needs no caller trust.**
-  The row on exported preconditions ("the type invariant … of each type its
-  parameters' types name, a sealed handle's included") does not apply to
-  such a class: its invariant holds of every complete instance by (L4).
+- **The invariant of a class with private state needs no caller trust
+  but the read-only views row.** The row on exported preconditions ("the
+  type invariant … of each type its parameters' types name, a sealed
+  handle's included") does not apply to such a class: its invariant holds
+  of every complete instance by (L4), which rests on the read-only views
+  row wherever $`\mathrm{supp}(I_C)`$ reaches exposed storage.
 - **No owner boundary.** The boundary is the class body, a lexical fact.
 
 Rows used unchanged: ordinary arrays, fixed-length typed arrays, the public
@@ -489,8 +516,11 @@ Upstream pretext supports these uses; under this design each throws a
 
 Kept: **a frozen handle** (cited: Decisions Log, "2026-10-12: no line
 function writes to a frozen handle or to anything it holds", line
-6317). `Object.freeze` leaves private fields as they are, and a store's
-deep freeze reaches no owned storage (observed). Upstream's side table for
+6317). `Object.freeze` leaves private fields as they are (observed). A
+store's deep freeze reaches the exposed arrays through the public fields
+and freezes them (observed), which the read-only views row admits: no
+member writes them after construction, and a write to a frozen one
+throws. Upstream's side table for
 frozen paragraph handles (`rich-inline.ts:1141–1178`) is not needed.
 
 A worker that prepares and a page that lays out need an explicit pair of
@@ -535,7 +565,15 @@ rest, `%ForIn%` and `%Iterate:ForIn%`, `JSON.stringify`, `structuredClone`,
 `Object.freeze` and `%Freeze:K%`. The model's private slots are own keys of
 the instance that every such entry excludes, which is (P1) in the model.
 
-**The trust row** above, in [the trust surface](../DESIGN.md#trust-surface).
+**The trust rows** above, in [the trust surface](../DESIGN.md#trust-surface).
+
+**Views in analyzed code.** A value whose type is read-only is read at a
+readonly view ([records](../POSITIVE-TYPES.md#records), the views
+$`\psi`$), and the pass refuses a write through it in analyzed code outside
+the body, a write through a writable type it was widened to included: the
+subtyping from a readonly view to a writable field or element is checked
+to give no write capability (conjectured until checked against
+[subtyping](../POSITIVE-TYPES.md#subtyping)).
 
 **`@invariant` on a class.** [ANNOTATIONS.md](../ANNOTATIONS.md) gains the
 reading on a class with private state: the clause holds of every complete
