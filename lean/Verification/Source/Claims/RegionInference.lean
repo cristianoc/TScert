@@ -4,8 +4,8 @@ import Verification.Source.Claims.Json
 `heads`, `regionalFromJson`), inferred from its graph and claims where no
 given file states them: the slots holding entry argument paths
 (`SourceExtraction.regionTable`), the fresh values and cells
-(`claimedFreshIterate`) and the fresh fields (`freshFieldsIterate`), each the
-greatest fixed point the existing search computes from its certificate
+and the fresh fields, each propagated by `graphWorklist` to the
+fixed point of the existing transfers over its certificate
 (`regionalGiven`), here over the evidence each node's claim gives
 (`claimedCertificate`). The field
 names are those the unit's callees' spine regions read through one field.
@@ -64,14 +64,36 @@ keep is an entry the edge into the head does not establish. -/
         cells.modify t.label fun D => GraphCode.freshKept D CS true false t.mapping)
     | none => (values, cells)) tables
 
-@[nospecialize] def claimedFreshIterate (G : PositiveGraphs.NormalGraph ι)
-    (images : PositiveCertificates.InstanceImageCheck G) (Φ : Footprints.Closed)
-    (nodes : List ((ControlFlow.Node × ControlFlow.NodeEvidence ι) × Nat)) :
-    Nat → Array (List Nat) × Array (List Nat) → Option (Array (List Nat) × Array (List Nat))
-  | 0, _ => none
-  | fuel + 1, tables =>
-    let next := claimedFreshPass G images Φ nodes tables
-    if next = tables then some tables else claimedFreshIterate G images Φ nodes fuel next
+/-- A worklist for the graph's monotone proposal transfers. A
+node is revisited when its input table changes. The snapshots contain only
+its affected entries, so each transfer can update its arrays in place.
+The inferred data remains a proposal checked by the pass. -/
+@[nospecialize] def graphWorklist {S A β : Type} [BEq A]
+    (nodes : List ((ControlFlow.Node × β) × Nat))
+    (step : ((ControlFlow.Node × β) × Nat) → S → S)
+    (read : S → Nat → A) (limit : Nat) (initial : S) : Option S := Id.run do
+  let ns := nodes.toArray
+  let affected := ns.map fun ((node, _), l) =>
+    (l :: (CertificateProducer.successors node.continuation).map (·.label) ++
+      (node.handler.toList.map (·.label))).eraseDups.filter (· < ns.size)
+  let mut pending := (List.range ns.size).reverse
+  let mut queued := Array.replicate ns.size true
+  let mut state := initial
+  let mut remaining := limit * ns.size + 1
+  while !pending.isEmpty do
+    if remaining == 0 then return none
+    remaining := remaining - 1
+    let some l := pending.head? | return none
+    pending := pending.tail
+    queued := queued.set! l false
+    let some node := ns[l]? | return none
+    let snapshots := (affected.getD l []).map fun t => (t, read state t)
+    state := step node state
+    for (t, previous) in snapshots do
+      if read state t != previous && !queued.getD t false then
+        queued := queued.set! t true
+        pending := t :: pending
+  return some state
 
 /-- The field names the spine regions of a unit's callees read through one
 field: the effects each call node's context types state, read from their
@@ -100,13 +122,17 @@ def regionalInferred (r : SourceExtraction.SourceRequest σ ι) (Φ : Footprints
   let nodes := (P.zip C).zipIdx
   let init := (nodes.map fun ((_, c), l) =>
     if l = r.start then [] else List.range (ControlFlow.entry c).length).toArray
-  let (values, cells) := (claimedFreshIterate G images Φ nodes (2 * P.length + 2) (init, init)).getD
-    (#[], #[])
+  let (values, cells) := (graphWorklist nodes
+    (fun node tables => claimedFreshPass G images Φ [node] tables)
+    (fun tables l => (tables.1.getD l [], tables.2.getD l []))
+    (2 * P.length + 2) (init, init)).getD (#[], #[])
   let names := calleeRegionNames r
   let fields := if names.isEmpty || values.isEmpty then #[] else
     let start' := (nodes.map fun ((_, c), l) => if l = r.start then [] else
       (List.range (ControlFlow.entry c).length).flatMap fun j => names.map fun f => (j, f)).toArray
-    (SourceExtraction.freshFieldsIterate G names values nodes (2 * P.length + 2) start').getD #[]
+    (graphWorklist nodes
+      (fun node fields => SourceExtraction.freshFieldsPass G names values [node] fields)
+      (fun fields l => fields.getD l []) (2 * P.length + 2) start').getD #[]
   let width := fun (l : Nat) => ((r.claims[l]?).map (·.context.length)).getD 0
   -- (forced: one slot past those the table states at the entry, each kind)
   let extra := fun (k : String) (xs : List Nat) (l : Nat) =>
