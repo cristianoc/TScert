@@ -1,3 +1,6 @@
+import Verification.Paper.TolerantFrames.CallableEntryCorrectness
+import Verification.Paper.TolerantFrames.CallableEntryCode
+import Verification.Paper.TolerantFrames.CallableEntryLayout
 import Verification.Paper.TolerantFrames.LengthBridges
 import Verification.Paper.TolerantFrames.PaperTermForms
 import Verification.Paper.TolerantFrames.LengthReading

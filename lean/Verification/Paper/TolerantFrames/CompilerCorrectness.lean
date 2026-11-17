@@ -11,6 +11,10 @@ open Verification ControlFlow HeapObservations
 
 def graphProgram (nodes : List AnnotatedNode) : Program := GraphCode.program (expressions nodes) (continuations nodes)
 
+/-- Ambient code agrees at every generated node; extra labels are permitted. -/
+def CodeAgrees (nodes : List AnnotatedNode) (program : Program) : Prop :=
+  ∀ (i : Nat) (node : AnnotatedNode), nodes[i]? = some node → program[i]? = some node.node
+
 def Terminal : ControlFlow.State → Prop
   | .done _ | .raised _ => True
   | _ => False
@@ -43,10 +47,11 @@ theorem machineRuns_append {host ctrl ρ h p middle ρ₁ h₁ q final ρ₂ h�
 
 /-- Every real terminating graph run yields a finite command trace, retaining
 the final named environment before the graph sink discards its frame. -/
-theorem graph_trace {nodes bound outer host}
+theorem graph_trace_agree {program : Program} {nodes bound outer host}
+    (agreement : CodeAgrees nodes program)
     (origins : ∀ node ∈ nodes, Origin nodes bound node) :
     ∀ n {start ctrl ρ h h' final}, Matches nodes bound outer host start ctrl ρ →
-      Execution (graphProgram nodes) n h start h' final → Terminal final →
+      Execution program n h start h' final → Terminal final →
       ∃ p finalControl finalEnv, p ≤ n ∧ CommandMachine.Runs host ctrl ρ h p finalControl finalEnv h' ∧
         Matches nodes bound outer host final finalControl finalEnv := by
   intro n
@@ -60,7 +65,7 @@ theorem graph_trace {nodes bound outer host}
       | next first rest =>
         cases first with
         | enter actual =>
-          have encoded := program_lookup_annotated lookup
+          have encoded := agreement _ _ lookup
           have same := Option.some.inj (encoded.symm.trans actual)
           cases same
           obtain ⟨a, middleHeap, middleTerm, next, q, count, expressionRun, leave, outside, suffixRun⟩ :=
@@ -88,6 +93,15 @@ theorem graph_trace {nodes bound outer host}
       | refl => exact ⟨0, .exit (.thrown _) [], _, Nat.le_refl _, .refl, .thrown⟩
       | next first _ => cases first
 
+/-- The original generated program is an instance of ambient code agreement. -/
+theorem graph_trace {nodes bound outer host}
+    (origins : ∀ node ∈ nodes, Origin nodes bound node) :
+    ∀ n {start ctrl ρ h h' final}, Matches nodes bound outer host start ctrl ρ →
+      Execution (graphProgram nodes) n h start h' final → Terminal final →
+      ∃ p finalControl finalEnv, p ≤ n ∧ CommandMachine.Runs host ctrl ρ h p finalControl finalEnv h' ∧
+        Matches nodes bound outer host final finalControl finalEnv :=
+  graph_trace_agree (fun _ _ lookup => program_lookup_annotated lookup) origins
+
 theorem envOf_values {L : List Tm} {d : Tm}
     (values : ∀ v ∈ L, isVal v = true) (default : isVal d = true) : ∀ i, isVal (envOf L d i) = true := by
   intro i
@@ -98,11 +112,12 @@ theorem envOf_values {L : List Tm} {d : Tm}
 /-- Concrete generated graphs invert for EVERY finite raw command. A finite
 frame bound and all routing/node evidence are generated, never external premises.
 Host values are a representation condition, with no native safety inferred. -/
-theorem compiled_execution (c : Command) (host : NativeCode) (ρ : Env) (h : Heap)
+theorem compiled_execution_agree (c : Command) (host : NativeCode) (ρ : Env) (h : Heap)
     (values : ∀ i, isVal (ρ i) = true)
     (hostValues : isVal host.viewRead = true ∧ isVal host.viewWrite = true ∧ isVal host.viewLength = true)
+    {program : Program} (agreement : CodeAgrees (compile c.frameBound c) program)
     {n h' final}
-    (run : Execution (graphProgram (compile c.frameBound c)) n h
+    (run : Execution program n h
       (.at 4 (envOf (slots c.frameBound ρ host .undef) .undef)) h' final)
     (terminal : Terminal final) :
     ∃ p ρ' e, p ≤ n ∧ Executes host c ρ h p ρ' h' e ∧ final = resultState e := by
@@ -112,13 +127,25 @@ theorem compiled_execution (c : Command) (host : NativeCode) (ρ : Env) (h : Hea
       ((frontSite c []).control c.frameBound graph) (restore c.frameBound ρ graph) :=
     matches_at_site (compile_entry c.frameBound c) graphValues (slots_host _ _ _ _ _)
   obtain ⟨p, finalControl, finalEnv, count, trace, finalMatching⟩ :=
-    graph_trace (compile_origins c) n matching run terminal
+    graph_trace_agree agreement (compile_origins c) n matching run terminal
   obtain ⟨e, rfl, result⟩ := finalMatching.terminal terminal
   rw [frontSite_control] at trace
   have restored : restore c.frameBound ρ graph = ρ := restore_slots _ _ _ _ _
   rw [restored] at trace
   have whole := machineRuns_append (front_trace c [] host ρ h) trace
   exact ⟨p, finalEnv, e, count, CommandMachine.Runs.executes (by simpa only [Nat.zero_add] using whole), result⟩
+
+/-- Specialisation to the generated lists retains the established API. -/
+theorem compiled_execution (c : Command) (host : NativeCode) (ρ : Env) (h : Heap)
+    (values : ∀ i, isVal (ρ i) = true)
+    (hostValues : isVal host.viewRead = true ∧ isVal host.viewWrite = true ∧ isVal host.viewLength = true)
+    {n h' final}
+    (run : Execution (graphProgram (compile c.frameBound c)) n h
+      (.at 4 (envOf (slots c.frameBound ρ host .undef) .undef)) h' final)
+    (terminal : Terminal final) :
+    ∃ p ρ' e, p ≤ n ∧ Executes host c ρ h p ρ' h' e ∧ final = resultState e :=
+  compiled_execution_agree c host ρ h values hostValues
+    (fun _ _ lookup => program_lookup_annotated lookup) run terminal
 
 /-- Code is fixed by c; the values occur only in its runtime frame. -/
 def compiledEntry (c : Command) (host : NativeCode) (ρ : Env) : Tm :=

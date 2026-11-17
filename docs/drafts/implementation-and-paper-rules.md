@@ -610,3 +610,17 @@ Inst and Prefix include the canonical grammar; their element-free receiver
 interpretation and Empty's declared-collection bridge remain separate. The
 old sorted keep/grow exactness statements retain their original restricted
 meanings; no canonical support-table completeness is inferred.
+
+
+## Fixed-arity invocation and body inversion
+
+The [callable entry bridge](paper-call-function-bridge.md#fixed-arity-callable-entry)
+uses finite selectors, actual argument padding/captures/self and an appended
+three-step adapter into the generated frame. Exact generated-node lookup
+agreement generalises body inversion to ambient code without a body summary.
+Actual completed values/raises recover structured execution, identical heap
+and exit, and primitive p≤q<N for N=3+q. Entry source/world validity is proved
+from explicit valid caller inputs and selected program captures; machine flags
+alone supply neither self validity nor native safety. This is raw fixed-arity
+entry, separate from allocation/typing, signatures, budget/old-anchor transfer,
+escaping-break exclusion, rest, spread and Fun.

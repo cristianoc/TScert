@@ -221,3 +221,44 @@ outcomes/effects, not merely SourceVal or isFun. Construct-only or incompatible
 receivers show why those weaker conditions are insufficient. No real native
 library implementation or new global axiom is proposed. Astra independently
 confirmed this source-model obstruction and the explicit-callee design.
+
+
+## Fixed-arity callable entry
+
+The existing generated compiler and real `CallArguments.graphEntry` are joined
+by an appended adapter, preserving every original body label. The modules are
+[CallableEntryLayout](../../lean/Verification/Paper/TolerantFrames/CallableEntryLayout.lean),
+[CallableEntryCode](../../lean/Verification/Paper/TolerantFrames/CallableEntryCode.lean)
+and [CallableEntryCorrectness](../../lean/Verification/Paper/TolerantFrames/CallableEntryCorrectness.lean).
+
+A finite source-selector list identifies receiver, parameter, capture, self or
+undefined for each logical name. Parameter selection reuses actual padding and
+discarding of already evaluated extras. Finite indices supply capture/parameter
+bounds. The bind adapter receives [undefined, receiver, parameters, captures,
+self], then maps the source prefix, three captured host values and undefined
+payload into the existing canonical frame. The actual self comes from the last
+invocation slot; no cyclic capture construction is used. Unused logical inputs
+beyond the body frame remain in the restored outer environment.
+
+The raw prefix consists of exactly three heap-preserving shared reductions:
+callGraph, gotoEnter and frameBind. `CodeAgrees` requires exact lookup equality
+at generated body nodes; extra adapter labels need no fabricated Origin. The
+existing inversion proof is generalised once, retaining its original API as a
+corollary. Every actual completed invocation yields N=3+q and structured body
+execution with primitive p≤q<N, the same final heap and the same exit. Escaping
+break remains distinct even though its sink returns undefined.
+
+Machine values suffice for raw inversion. The separate entry-context theorem
+requires source/world-valid receiver, arguments and self, and each capture
+selected as a program input. Host-only slots have no program-root obligation.
+Self's reference validity can nevertheless constrain references inside its
+captures and is an explicit input, not inferred from machine representability.
+The heap and entry mark coincide with invocation's; no native availability or
+safety follows.
+
+This constructs an already represented graph callable and its raw invocation
+bridge. It does not allocate/type the function, establish a recursive signature,
+exclude an escaping break, transport old/specifications across budget choices,
+or implement rest allocation/spread. Those are the subsequent Fun obligations.
+The design uses the existing graph/frame mechanism and was independently checked
+against the actual shared call ABI before implementation.
