@@ -621,6 +621,12 @@ agreement generalises body inversion to ambient code without a body summary.
 Actual completed values/raises recover structured execution, identical heap
 and exit, and primitive p≤q<N for N=3+q. Entry source/world validity is proved
 from explicit valid caller inputs and selected program captures; machine flags
-alone supply neither self validity nor native safety. This is raw fixed-arity
-entry, separate from allocation/typing, signatures, budget/old-anchor transfer,
-escaping-break exclusion, rest, spread and Fun.
+alone supply neither self validity nor native safety. CallableReferences derives
+self refs from actual object/capture roles without assuming a specification.
+[Specification transport](paper-call-function-bridge.md#scoped-body-specifications-at-actual-invocation-exits)
+connects the proved body Triple/Effects to actual normal/exceptional invocation
+exits, exact shared residual budget, full syntactic postconditions, old/return
+anchors and the false escaping-break obligation. Input scope removes body locals;
+result substitution affects only current state. Allocation/typing, recursive
+discharge, caller phase-environment/mark transport, rest, spread and full Fun
+remain separate.

@@ -252,13 +252,51 @@ Machine values suffice for raw inversion. The separate entry-context theorem
 requires source/world-valid receiver, arguments and self, and each capture
 selected as a program input. Host-only slots have no program-root obligation.
 Self's reference validity can nevertheless constrain references inside its
-captures and is an explicit input, not inferred from machine representability.
+captures. CallableReferences derives it from actual identity/own-field roles
+and capture references: generated symbolic expressions contain no heap references.
+It assumes no callable behavior or desired function specification.
 The heap and entry mark coincide with invocation's; no native availability or
 safety follows.
 
 This constructs an already represented graph callable and its raw invocation
-bridge. It does not allocate/type the function, establish a recursive signature,
-exclude an escaping break, transport old/specifications across budget choices,
-or implement rest allocation/spread. Those are the subsequent Fun obligations.
+bridge. The specification transport below excludes escaping break by the body's
+false break obligation and preserves old across budget choices. Function
+allocation/typing, recursive discharge and rest allocation/spread remain separate.
 The design uses the existing graph/frame mechanism and was independently checked
 against the actual shared call ABI before implementation.
+
+
+## Scoped body specifications at actual invocation exits
+
+[CallableEntrySpecification](../../lean/Verification/Paper/TolerantFrames/CallableEntrySpecification.lean)
+uses the displayed body's Triple and Effects as premises, rather than a supplied
+callable summary. ResultPost binds an arbitrary returned value in the current
+phase only; fallthrough uses undefined. Return obligations freeze the same
+original function entry used by normal and exceptional postconditions. The body
+break obligation is false. An actual value or throw completion of the graph
+therefore has a source/world-valid result or exception and its respective full
+syntactic postcondition and regional effect.
+
+Apply the body proof at the original entry S, obtaining a chosen exit of budget
+S.n-p. Restrict this exit to positive budget S.n-N for the actual shared count
+N<S.n. Full syntactic current-state equivalence handles implication, modalities,
+transition atoms and both binders without changing the old anchor or mark.
+[PostconditionEnvironmentScope](../../lean/Verification/Paper/TolerantFrames/PostconditionEnvironmentScope.lean)
+uses the existing program renaming/agreement theorems to remove body locals:
+normal posts read entry scope Γ and current scope Γ plus result, exceptional
+posts read Γ in both phases. WellScoped implies all input names are preserved.
+Effects keep their original entry environment; caller renaming is not inferred.
+
+[CallableReferences](../../lean/Verification/Paper/TolerantFrames/CallableReferences.lean)
+proves symbolic code has no embedded references. Generated self's reference
+validity follows from actual object roles and captures; the combined entry
+context theorem also needs source-valid receiver, arguments and selected program
+captures. Host-only captures require raw machine-value representability for
+execution inversion. Neither role validity nor machine values imply native safety.
+
+These theorems transport proved body premises for a fixed-arity represented
+callable. They do not discharge recursive uses of its own specification,
+allocate/type the function, compare its finite decoded environment with a caller
+under separate phase scopes, rebase the caller mark, or allocate rest/spread.
+Thus they are not labelled the full Fun rule. Astra independently checked the
+transport design against the actual completed-execution semantics.

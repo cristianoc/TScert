@@ -120,8 +120,9 @@ Its computed predicate reads the entry state. `BitwiseArithmetic` proves full
 Mask and Or bounds; `BitwiseRules` connects arithV to actual command triples,
 empty effects and current-state syntax. Name agreement comes from existing
 fresh binding scope, and integer readings from SafeInt decoding. No arbitrary
-semantic predicate or stored signed-zero equality is transported. Shr's count
-normalization and signed generality, and Shl, remain open.
+semantic predicate or stored signed-zero equality is transported. The full Shr, Shl, Mask and Or semantic statements are supplied by shared
+ArithmeticRules in the rebased source; the task-specific command instances
+remain auxiliary.
 
 The next operational function foundations are proved without summary premises.
 `CompilerScope` derives a finite frame bound for every command, including bind
@@ -142,9 +143,12 @@ premise, not a native safety assumption. `CallableEntryLayout`, `CallableEntryCo
 and `CallableEntryCorrectness` map the actual fixed-arity ABI's padded parameters,
 captures and self through an appended adapter, with exact prefix count three.
 Completed invocations recover body execution with p≤q<N at N=3+q, preserving
-heap and exit. Entry validity requires actual source/world-valid inputs,
-including self; machine representability does not establish it. Function
-allocation/typing, specifications, budget/old-anchor transfer, break exclusion,
+heap and exit. CallableReferences derives self reference validity from actual
+object/capture roles without assuming its specification. CallableEntrySpecification
+transports the body's proved Triple/Effects to actual value/throw completions,
+with full syntactic postconditions, original old/mark, exact shared residual
+budget, false escaping-break obligation and input-scope restoration. Function
+allocation/typing, recursive discharge, caller phase-environment/mark transport,
 rest and full Fun remain separate.
 
 The latest paper uses one dynamic length for arrays, typed arrays and strings,
@@ -257,7 +261,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Elem-Read | `elementValue`, `Atom.element`, `Assertions.lean`; `Operation.elementRead`, `Commands.lean` | **none in B** | The general ordinary/view element assertion, including holes, and the executed ordinary read are defined. Their exact primitive triple/effect and typing/definedness bridge is not proved. |
 | Arr-Length | `Operation.arrayLength`, `Commands.lean`; shared `lengthOf`, `Semantics/IndexFacts.lean` | **none in B** | The operation is interpreted through the shared calculus. The general displayed primitive triple with exact equality and empty effect is not proved. |
 | Test | `Operation.binary`, `.not`, `.and`, `.or`, `Commands.lean`; `if_rule`, `CommandRules.lean` | **none in B** | Truthiness and Boolean operation execution are represented. The complete comparison/nullish/negation/conjunction/disjunction fact rules tying bindings to branch knowledge are not proved. |
-| Fun | `CommandSummary.signature_holds`, `CommandBodies.lean:86`; `.signature_holds_below`, `:106`; actual command graph inversion in `CompilerCorrectness.compiled_value`/`compiled_raise`, with generated `CompilerOrigins`/`CompilerRoutes` and operational foundations | **narrower** | The old signature transport still assumes a sound body summary. The generated finite compiler and all node/routing evidence are proved internally. Every completed shared graph run yields the existing command execution, same heap and exit, restored final environment, and primitive p≤shared N. Explicit host-value representability is required; forward simulation or progress is not inferred. The three CallableEntry modules construct fixed-arity receiver/parameter/capture/self setup and the actual three-step entry adapter; completed invocations yield body execution with strict primitive p<N and exact heap/exit. Source/world entry validity remains conditional on actual valid inputs, including self. Recursive Fun, allocation/typing, default/return obligations, specifications/old anchors, escaping-break exclusion and rest prologue remain separate. Cited outside B: `codeObligations_sound`, `Programs/CodeConditions.lean:218`. |
+| Fun | `CommandSummary.signature_holds`, `CommandBodies.lean:86`; `.signature_holds_below`, `:106`; actual command graph inversion in `CompilerCorrectness.compiled_value`/`compiled_raise`, with generated `CompilerOrigins`/`CompilerRoutes` and operational foundations | **narrower** | The old signature transport still assumes a sound body summary. The generated finite compiler and all node/routing evidence are proved internally. Every completed shared graph run yields the existing command execution, same heap and exit, restored final environment, and primitive p≤shared N. Explicit host-value representability is required; forward simulation or progress is not inferred. The three CallableEntry modules construct fixed-arity receiver/parameter/capture/self setup and the actual three-step entry adapter; completed invocations yield body execution with strict primitive p<N and exact heap/exit. CallableReferences derives self refs from object/capture roles without assuming its specification. CallableEntrySpecification transports the displayed proved body Triple/Effects to actual normal/exceptional invocations: current-only result substitution, undefined fallthrough, frozen return/old anchor, false escaping break, full syntactic exit-budget equivalence and scoped body-local removal are proved. Entry source/world validity follows from actual roles, arguments and selected source captures. Recursive Fun, allocation/typing, caller phase-environment/mark transport and rest prologue remain separate. Cited outside B: `codeObligations_sound`, `Programs/CodeConditions.lean:218`. |
 | Write-In | `Derivation.writeIn`, `D:583`; `lengthsKept_of_run`, `Bridges/ParityArithmeticBridges.lean:189` | **narrower** | The conclusion concerns an array held in corresponding entry/exit slots. The paper states preservation of the length read through every path; B does not package the preservation of those path reads into this rule. |
 | Write-End | `Derivation.writeEnd`, `D:589`; `boundedWrite_of_run`, `Bridges/ParityArithmeticBridges.lean:209` | **equal** | Given the bounded-write operation postcondition and the displayed end-index premises, B concludes exactly the length increase by one. The current paper does not put element equality or density extension in this rule. |
 | Push | `PushPost`, `Consequences.lean`; `TwoState.pushPost`, `.pushPost_holds`, `PostconditionExamples.lean`; older `Derivation.pushPost`, `D:595` | **narrower** | The complete first-order syntax, including Q_< with index/value binders, is equivalent to the semantic length/appended-element/kept-prefix relation under receiver identity and entry/current admissibility. A command-level rule deriving it from the explicit native contract is not proved. |

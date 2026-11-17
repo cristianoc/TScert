@@ -1,3 +1,6 @@
+import Verification.Paper.TolerantFrames.CallableEntrySpecification
+import Verification.Paper.TolerantFrames.CallableReferences
+import Verification.Paper.TolerantFrames.PostconditionEnvironmentScope
 import Verification.Paper.TolerantFrames.CallableEntryCorrectness
 import Verification.Paper.TolerantFrames.CallableEntryCode
 import Verification.Paper.TolerantFrames.CallableEntryLayout
