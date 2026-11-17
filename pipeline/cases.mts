@@ -1428,6 +1428,8 @@ export const cases: Case[] = [
   negative("invalid-safe-int-view-float64", "an element of a `Float64Array` returned at `SafeInt`: its format stores any number (under Node, `values[0]` holding `0.5`, `pick` reads `xs[0.5]`, `undefined` at `number`)",
     /its operands' claims are number; its claim is SafeInt/),
   positive("safe-int-is-safe-integer", "`Number.isSafeInteger(v)`'s true branch: `v` bound at `SafeInt` and bounding an index with no `safeInteger(v)` (SOURCE-CONTRACTS.md, `Number.isSafeInteger`)"),
+  positive("safe-int-loop-invariant", "a loop invariant over bindings declared `SafeInt` with no `safeInteger(...)`: the clause reader reads a binding at its written annotation, and each write of the counter is checked at the binding's contract (ARITHMETIC.md, \"Loop invariants\")"),
+  gap("safe-int-loop-start-gap", "a loop counter starting at a value merged from a callee's `SafeInt` result and a `number`: the loop head's facts over the counter are not established, so its bounded read is refused (pretext's `getTrailingCollapsibleStart` stays typed `number`)", "unverified", "search", /source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim/),
   negative("invalid-safe-int-nan-field", "`NaN` written into a field typed `SafeInt`: no integer (a refusal of the type contract; under Node `count(c)` then returns `NaN` at `SafeInt`)",
     /its operands' claims are object, number; its claim is null/),
   { file: "invalid-method-effect-overload", area: "a statement on an overload of the checked file: refused where the declaration is lowered", kind: "negative",
