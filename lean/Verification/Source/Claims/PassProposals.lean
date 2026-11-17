@@ -212,32 +212,33 @@ changed, each node `l` of local summary `S` at the bound `p` of the paths
 reaching it passes `p ⊔ S.normal` to its successors (to the body's normal
 exit at a return) and `p ⊔ S.exceptional` to its handler (to the body's
 exceptional exit where it has none); the paths reaching a node join. A node
-no visit reached has no local summary and passes nothing. Every round that
-does not stop raises some node's entry, each at most 13 times (unreached,
-then three components of rank at most 4), so `13 · n + 2` rounds reach the
-least fixed point; none where they do not (unreachable). -/
+no visit reached has no local summary and passes nothing. The graph
+worklist revisits a node when its entry rises, each at most 13 times (unreached, then three components of rank at
+most 4). The composition is the least fixed point; an exit no visited
+node reaches has no summary. -/
 def composeGraph (nodes : Array Node) (start : Nat) (locals : Array (Option SourceExtraction.ClassSummary)) :
-    Option SourceExtraction.ClassSummary := Id.run do
+    Option SourceExtraction.ClassSummary :=
   let n := nodes.size
-  let mut entry : Array (Option Closed) := (Array.replicate n none).set! start (some keepAll)
-  for _ in List.range (13 * n + 2) do
-    let mut next := entry
-    let mut out : SourceExtraction.ClassSummary := ⟨none, none⟩
-    for l in List.range n do
-      match entry.getD l none, locals.getD l none, nodes[l]? with
-      | some p, some S, some node =>
-        let N := SourceExtraction.ClassSummary.andThen (some p) S.normal
-        let X := SourceExtraction.ClassSummary.andThen (some p) S.exceptional
-        if node.continuation == .ret then out := { out with normal := SourceExtraction.ClassSummary.alt out.normal N }
-        for t in successors node.continuation do
-          next := next.set! t.label (SourceExtraction.ClassSummary.alt (next.getD t.label none) N)
-        match node.handler with
-        | some t => next := next.set! t.label (SourceExtraction.ClassSummary.alt (next.getD t.label none) X)
-        | none => out := { out with exceptional := SourceExtraction.ClassSummary.alt out.exceptional X }
-      | _, _, _ => pure ()
-    if next == entry then return some out
-    entry := next
-  return none
+  let initial : Array (Option Closed) × SourceExtraction.ClassSummary :=
+    ((Array.replicate n none).set! start (some keepAll), ⟨none, none⟩)
+  let graph := (nodes.toList.map fun node => (node, ())).zipIdx
+  let transfer := fun (((node, _), l) : (Node × Unit) × Nat)
+      ((entry, out) : Array (Option Closed) × SourceExtraction.ClassSummary) => Id.run do
+    match entry.getD l none, locals.getD l none with
+    | some p, some S =>
+      let N := SourceExtraction.ClassSummary.andThen (some p) S.normal
+      let X := SourceExtraction.ClassSummary.andThen (some p) S.exceptional
+      let mut entry := entry
+      let mut out := out
+      if node.continuation == .ret then out := { out with normal := SourceExtraction.ClassSummary.alt out.normal N }
+      for t in successors node.continuation do
+        entry := entry.set! t.label (SourceExtraction.ClassSummary.alt (entry.getD t.label none) N)
+      match node.handler with
+      | some t => entry := entry.set! t.label (SourceExtraction.ClassSummary.alt (entry.getD t.label none) X)
+      | none => out := { out with exceptional := SourceExtraction.ClassSummary.alt out.exceptional X }
+      return (entry, out)
+    | _, _ => return (entry, out)
+  (graphWorklist graph transfer (fun state l => state.1.getD l none) (13 * n + 2) initial).map (·.2)
 
 /-- A step whose result type is empty never returns normally
 (`ExpressionEffects.emptyType`, the pass's `deadNode`): its normal exit is
