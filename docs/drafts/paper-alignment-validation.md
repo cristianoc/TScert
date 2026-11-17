@@ -457,3 +457,52 @@ and host bridges, derivation coverage and closed examples are not claimed done.
 The owner decisions on failed-path freshness support and index-at-term
 instantiation remain pending. The next Call/Fun operational design was reviewed
 without being claimed as an implemented rule.
+
+## Actual scoped Call at 9a14cf79
+
+Evidence applies to source `9a14cf79b12544bfdf7213d65c63938570d99ca2`, extending
+`985650598f34ce169a178fc5ff4a6621eb2dadfb` on rebased single-pass
+`56aaacc51899986d365a3853c94ac58420c1d1b8`. The original fetched start remains
+`ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+All eight new scope/renaming/admission/Call modules passed focused builds under
+warnings as errors. Both complete axiom audits passed together, exit zero,
+430 jobs, with only the same eight cached informational upstream A backtraces.
+The full `make test` completed with exit zero:
+
+- 639 Lean build jobs;
+- 23 passing fast suites, none failed;
+- 175 controls; 3 operations executed and 492 replayed on four lanes;
+- 3431/3431 cases as expected;
+- 4323 functions verified, 1790 negative controls and 150 named gaps.
+
+Direct import coverage passed for all 363 other A/shared modules and 64 other
+Paper modules. Separate scans again found no outside-to-Paper imports and no
+task-authored A/shared Lean changes against the rebased base. Paper mathematics
+and upstream PDF remain untouched. Documentation passed at 77 documents,
+892 code citations and zero problems; whitespace checks passed. The semantic
+commit records render against the exact new base.
+
+Independent read-only Astra review checked actual primitive/formal-call execution
+correspondence, all-name output validity, chosen world/budget preservation,
+finite mapping extension, aliases, complete AST program-map agreement and
+phase-specific scope/declaration transport. It identified two admission gaps in
+an intermediate version: image freshness alone did not exclude unrelated caller
+bindings, and semantic dependence alone did not imply lexical precondition
+scope. The final theorem requires whole-caller freshness and returns actual
+Command.WellScoped; FormulaScopes supplies lexical scope for every mention,
+including tautologies, and proves dependence/renaming. The assembled theorem
+also handles both outer effect scopes and extension independence. Final source
+review found no unsafe theorem or remaining blocker to the stated finite
+variable-actual Call transport. Documentation corrections distinguish
+precondition meaning equality from postcondition AST equality.
+
+The formal call Triple is already uniform at command marks; the theorem retains
+that mark and chosen world. Declaration pullbacks are explicit assumptions,
+not inferred EnvTyping facts. The Call row stays narrower: actual rest/spread
+preparation and freshness-mark rebasing remain, while Fun still needs its
+operational body realization. All 89 counts remain 42 equal, 25 narrower,
+9 absent and 13 assumed. Full alignment is not claimed.
+
+Logs: `/workspace/scratch/call-scope-test.log`, `call-scope-axioms.log`,
+`call-scope-docs.log`, and the focused `*-build.log` files for these modules.
