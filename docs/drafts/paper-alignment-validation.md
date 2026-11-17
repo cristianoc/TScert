@@ -910,3 +910,72 @@ passes at 81 documents and 894 citations, with zero problems; whitespace
 checks pass. These results apply to this combination on 65d5bf91, not later
 owner changes. The run log is `fourth-rebase-test.log` in cloud scratch. Its
 successful exit was observed; older runs are separate evidence.
+
+
+## Fifth owner-requested rebase, onto fbc7078c
+
+The remote advanced during the fourth rebase's full regression. Fetching
+recorded latest single-pass `fbc7078c22426e2ccc42938cce8e4a33bf903f4f`,
+11 commits above 65d5bf91: the SafeInt type clause and source interpretation,
+explicit generated library-contract data, and clarified safe-number wording.
+The fourth compatibility source/validation commit is
+`c17ff993b64773469acb66d4bea3633c122c81a1`. All 28 task commits replayed onto
+this base; the resulting source is `933ef9ef5573f6a369886fca0f64f615dc8244c8`.
+Only the audit document conflicted. No task Paper source changes in this
+rebase, and the task's paper source/PDF diff relative to the owner base is
+empty. The only task-authored shared files remain the five own-key-test,
+normalization/shape/codec and decoder-control files documented above. Owner
+SafeInt changes belong to the base, not to the task's shared extension.
+
+Exact replay mapping:
+
+- `0d2e17bc3a722ff2a63821c449b730f752a1f949` → `ee30180d015f6041f643d96388c5658361389ddf`: State semantic support and respect at the paper's generality.
+- `89d9796a9c99ab5c99cbdff7e6b720fda5d4a6dc` → `33c326e09081dbf44eb996d38920d0ea1f7f58ac`: Interpret general paper assertions and quantified consequences.
+- `77c125d547fe6066f5a6233d02f4ae2689f44c82` → `d2d1555eae70316485f5cbcee588150b16b36e2c`: Prove general command rules and regional checked transfer.
+- `05799b5bb3c6cdf4aafdc38e5519dfbc6bdfcc41` → `df5e79b8cf688551a987867d88648e2bd215dad3`: Record final Paper proof, regression and correspondence validation.
+- `38cb22290e0563291bfa61f197ef088915030e84` → `02b2fb6f48f6d3f3498d1fab1234dd2673cfe278`: Prove capture-avoiding assertion transport and full quantified rules.
+- `1ab330fa2b5896aea859208582650cc02fe236a5` → `a3dded8f3416b544fd781a9ad584af4383d27176`: Record full validation of the assertion transport continuation.
+- `aa7c549875a307011d4338b6f8ba760fbf78eed2` → `f37eae805e2820497c4f2e66784f3ff09d2e6e49`: Prove general all support, witness rules and integer consequence.
+- `eaaccdd44736c8f582e6920058437f7b006b119c` → `e0e14ff210fb63bd739067ae4bbdf758aea03128`: Record validation and the numeric equality obstruction.
+- `16d27f724e457dccb28b0af1b6d6ff61604c1b4c` → `f0c87ed4151c9a726c2dc7d755dda9c137df2246`: Formalise first-order two-state postconditions and their transport.
+- `02223e86b0c08d9b94a9a0f28ef99173bd61bf69` → `5ff4e2fbe9b8c617abd0f2f4bb79b6d229cca633`: Record validation of first-order postcondition proofs.
+- `49b179315ddb08c027747d4ae9ee61dadaa7cfa0` → `300f6f1808b5570ecc5969c4217ee73bd0416fad`: Correct the zero bridge and prove conditional path supports.
+- `3437b00e419a0e6d75942fbff6476b8a699b8099` → `ec1d83f1cd05c1f84c74043d6f5615bb58801667`: Record validation of the corrected literal and path support proofs.
+- `7d8c219ebca0617e7fd73630d2f61e944f9d3659` → `a4ca0ae52caead06a256cf8531ec0d7241633e9b`: Make logical witnesses heap-based and prove structural supports.
+- `033ab1dc5a9fd5f66a61b611fb4f8fb8c3c9a53e` → `f8b2ab91347799c91c1582d8a09b3166a33546f9`: Record rebased quantifier and support validation.
+- `4b84650fe2983bf5d476088cb071be1fd9068972` → `7ccbc4069b31544f1ffeb4964a77407bd9cf0d99`: Prove scoped Call instantiation on actual executions.
+- `27dc6c237d0562b8d292ee555d7c062d85f90213` → `1f5ee75fc1ab30956a6296d1344e67480958ef7e`: Record exact scoped Call validation and review.
+- `ee8155094fbc52ec5b74e01820622a7dba64ec95` → `8a142c3f5c9321da5765dda14479997bf259f216`: Observe raw completions and prove scoped budget transport.
+- `4b47f52e71931b376413ecb9430a856718427c49` → `ad678f1f3d9949d9525d766483ff4d1ddbc000cc`: Record raw execution and budget proof validation.
+- `6a7fb62b97fbadb7ea1c0d6490540d8bfc047af5` → `0d0222052872b4c923788926f5c3c4a66969dbcf`: Compile fixed primitive terms with a conservative own-key test.
+- `19de341fd8243b1977f3bd7d88da8a05ef0db8f8` → `f02d1841baec530c7f14a8fa4586eca42478c998`: Record latest-rebase primitive code and shared regression evidence.
+- `e47694384c75018275212226745f16213ccf585f` → `26be9281be420ec81cf16368a7c16d495adc90bf`: Prove general Mask and Or on actual arithmetic commands.
+- `f97322756a29f30bc65a0b08102620ac948d39c7` → `6689de8003a2d7db3c03c4ba1074d425f17e4e61`: Record complete Mask and Or command validation.
+- `ab77913300421c6bb26569e00da42d6f103384d4` → `ea9b580832d842defc04726f76f77a510a1643a4`: Prove finite graph frames and structured command trace inversion.
+- `6cb9414b2f40a99463c09f40751a29c07cdcabdb` → `ba994593b7e1d043df180c975667a60a9fdee12a`: Record exact graph and control foundation validation.
+- `6dc6de14dd1984730fd5b1739e2fbec4bdcd506a` → `e8928b1aea06fefd665b1dd04596a8da3c268f54`: Rebase onto the latest unified-length paper and reconcile its scope.
+- `8bf2b0171bd74251813cfba8a9b61396e43450e0` → `0f7d898dd1d02384ccf9fe00eda33ce9c7382bcf`: Generate finite command graphs and invert their actual shared runs.
+- `6185a24a14a94a7bf9761b2574d8b091b6e4f451` → `6da05c4f4601b32d297ae37c2355003530fafa4f`: Record generated compiler validation and exact remaining boundaries.
+- `c17ff993b64773469acb66d4bea3633c122c81a1` → `933ef9ef5573f6a369886fca0f64f615dc8244c8`: Rebase over the shared arithmetic datum and preserve bitwise corollaries.
+
+Astra independently compared the new library data and paper formulas. All
+13 host rows remain assumed: the data names contracts and records conclusions,
+implication atoms, normal effects and allocation; `ArithRule.Sound` does not
+prove those metadata fields or execute `.call`/`.construct`. Native callable
+elaboration, receiver-compatible availability/safety and command-triple
+instantiation remain distinct. The exceptional construction-at-2^53 row is
+separate. The code-point threshold is the same integer predicate, and the
+clarified interpretation of -0 does not override distinct raw-value equality.
+No assertion/quantifier rule changed, so the exact counts remain 41 equal,
+28 narrower, 9 absent, 13 assumed among 91 rows.
+
+Validation measured on 2026-11-17 for source 933ef9ef: the full Lean build
+passes all 664 jobs, including both complete A/Paper axiom audits. All 24 fast
+suites and 176 controls pass (462 operations executed, 35 replayed). The
+pipeline run covers 3448 cases; only an incomplete progress measurement had
+been observed when this record was committed, so this is not an exit-zero
+full-regression result. Documentation passes at 82 documents and 895 code
+citations, zero problems. Direct imports cover 365 other A/shared and 85 other
+Paper modules; the outside-to-Paper boundary count is zero. The complete
+pipeline outcome is recorded separately when observed. The fourth-base full
+run remains scoped to 65d5bf91.

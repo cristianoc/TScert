@@ -6,7 +6,7 @@ The basis of the work that relates the verifier to the paper
 
 
 The current comparison targets the owner’s latest single-pass paper at
-`65d5bf9136f4afab47bb76db447f74d400a136f3`. Its unified dynamic length is not yet
+`fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. Its unified dynamic length is not yet
 represented in B. Statements below about complete syntactic transport are about
 the represented kind-specific grammar, not that new paper grammar. The bounded
 universal’s receiver is independent of its bound, as already encoded by Every;
@@ -582,3 +582,17 @@ derivation in the paper; whether A accepts the program is then a question
 of C, from B to A. Where A does not accept it, the way forward is decided
 with the owner: bring the aspects of A and B involved closer together, or
 another route.
+
+
+## Explicit host contract data
+
+The shared `ArithmeticRules.rules` includes the paper's generated library and
+view specifications, explicitly tagged `.assumed` with their host declaration
+names. Their result predicates, implication atoms, effects and allocation
+metadata are specifications. `ArithRule.Sound` concerns the supported normal
+value evaluator; it does not prove those atoms/effects or make a `.call` or
+`.construct` evaluate. B's native elaboration, supplied receiver-compatible
+callables, availability/safety and execution-connected contract instances are
+separate obligations. The construction-at-2^53 exceptional outcome is separate
+from the normal construction row. These named assumptions introduce no global
+axiom or proof of an actual native library.

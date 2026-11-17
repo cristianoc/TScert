@@ -255,7 +255,7 @@ implementation.
 ## Latest-paper length and bounded-universal decisions
 
 The current comparison targets exact fetched single-pass
-`65d5bf9136f4afab47bb76db447f74d400a136f3`. Unified length reads an array spine,
+`fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. Unified length reads an array spine,
 a fixed view descriptor or a UTF-16 string by runtime kind, including
 empty-suffix array/view element lengths. B’s shared-kind alias still separates
 these readings. A B-owned general evaluator must reuse those shared readers,
