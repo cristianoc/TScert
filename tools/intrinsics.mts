@@ -687,15 +687,17 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // surface"); that the element is a number of the format follows from
     // the view spine's canonical contract (`HeapOk.view_cell_stored`).
     [byteAtName]: () => {
-      const params = [views, atom("number")];
+      const value = (slot: number): LinearTerm => ({ kind: "value", slot, path: [] });
+      const le = (form: [LinearTerm, number][], bound: number): IndexFact => ({ linear: { fact: { le: { form, bound } } } });
+      const bounded = (view: TypeTerm, stored: IndexFact[]): TypeTerm => ({ ...fn([view, atom("number")], atom("number")),
+        effect: footprintEffect(emptyFootprint, { pre: [{ int: { slot: 2 } }, le([[value(2), -1]], 0),
+          le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1)],
+        ensures: [...stored, { element: { value: 0, array: 2, index: 3 } }] }) });
       return { typeParams: [], type: { k: "intersection", span, parts: [
-        { ...fn(params, either(atom("number"), atom("undefined"))), effect: emptyEffect },
-        { ...fn(params, atom("number")), effect: footprintEffect(emptyFootprint, { pre: [
-          { int: { slot: 2 } },
-          { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, -1]], bound: 0 } } } },
-          { linear: { fact: { le: { form: [[{ kind: "value", slot: 2, path: [] }, 1],
-            [{ kind: "view", slot: 1, path: [] }, -1]], bound: -1 } } } },
-        ], ensures: [{ element: { value: 0, array: 2, index: 3 } }] }) },
+        { ...fn([views, atom("number")], either(atom("number"), atom("undefined"))), effect: emptyEffect },
+        ...viewKinds.flatMap(({ type, range }): TypeTerm[] => range === null ? [] :
+          [bounded(type, [{ int: { slot: 0 } }, le([[value(0), -1]], -range[0]), le([[value(0), 1]], range[1])])]),
+        bounded(views, []),
       ] } };
     },
     // `%TypedArray%.prototype`'s `length` getter, the view's length, 0 where

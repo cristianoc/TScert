@@ -198,9 +198,9 @@ theorem regionalTyped_of_tree {G : NormalGraph ι} {images : InstanceImageCheck 
     {stepK : HeapKnowledge.Knowledge}
     (hd : SinglePass.regionalDerivChecked G images codes sums c node stepK (some d) = true)
     (htree : checkTreeUsing G images d codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
-    ControlFlow.entry (passRegionalEvidence c node (some d) se kHere) = c.context ∧
+    PromiseCalls.intRefines G c.context (ControlFlow.entry (passRegionalEvidence c node (some d) se kHere)) stepK.indices = true ∧
       RegionalTyped G (passRegionalEvidence c node (some d) se kHere) node := by
-  simp only [SinglePass.regionalDerivChecked, SinglePass.derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
+  simp only [SinglePass.regionalDerivChecked, SinglePass.stepDerivChecked, Bool.and_eq_true, beq_iff_eq] at hd
   obtain ⟨⟨hterm, hctx⟩, -⟩ := hd
   refine ⟨by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using hctx, ?_⟩
   intro ε n W h ρ he _ _ hw hh hr _

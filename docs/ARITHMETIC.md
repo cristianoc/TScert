@@ -251,6 +251,38 @@ slot by a read link above. The rule is stated of slots: a path's
 integrality $`P\le 2^{53}-1`$ and a quantified fact over a `SafeInt[]`'s
 elements follow from a type only through reads.
 
+**A type from integrality.** The converse reads the facts at a type: a
+step is checked at its claimed context refined by the safe integers its
+facts state (`PromiseCalls.intRefine`), each slot $`x`$ with
+$`K\vdash\mathrm{int}(x)`$ whose type has a clause including the safe
+integers (`number`, `int`, `unknown`) read at the graph's `int` label, which
+is the type's meet with `int` there:
+
+```math
+\frac{K\vdash\mathrm{int}(x)\qquad \mathsf{int}\le c\ \text{for a clause}\ c\ \text{of}\ \Gamma(x)}{\Gamma\vdash_K x:\mathsf{int}}\ \textsf{int-refine}
+```
+
+The refined context is the sequent of the step's own checks, its search,
+`directCall` and its rule's selection, so a sum the facts state integral is
+written into a `SafeInt` field, passed to a `SafeInt` parameter, bound or
+returned at `SafeInt` (`safe-int-arith-field`); a writing step's facts keep
+the integer facts its context was refined by, where they refined it
+(`PromiseCalls.withInts`).
+The footprint, freshness, regional and promise checks accept the step's
+derivation at the context refined by its facts
+(`SinglePass.stepDerivChecked`).
+An edge's search reads its context refined by the edge's facts, as an
+assignment's binding inherits it (`safe-int-is-safe-integer`). A location's
+contract stays its type: each write is checked at it
+(`invalid-safe-int-nan-field`), and the refinement types a read. Proved:
+`PromiseCalls.envOk_intRefine`, `envOk_intRefines` and `envOk_intRefine_of`
+(the refined context types the environment where the facts hold, from
+`HeapKnowledge.intSlot_sound` and the meaning of the clause `int`), used by
+the step theorem (`stepChecked_parts`), the footprint and freshness
+checks and the edge's types (`ExitTyped.env`); forged controls remove
+`Number.isSafeInteger`'s fact and a return's range, each refused. Negative
+`invalid-safe-int-half`, run under Node: `x / 2` returned at `SafeInt`.
+
 **A sum reaching $`2^{53}`$.** A string's length plus one, $`a`$ a slot the
 knowledge states equal to $`\mathrm{strLength}(s)`$ and $`b`$ the constant
 $`1`$, two safe integers $`a,b\ge 0`$ whose sum

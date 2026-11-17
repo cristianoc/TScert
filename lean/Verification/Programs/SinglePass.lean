@@ -1518,12 +1518,25 @@ def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : C
     (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
       PromiseCalls.requiresTree G images stepK codes sums deriv)
 
+/-- **A step's derivation checked where its call's signature bounds the
+step** (`footprintCheck`, `stepGrades`, `stepCertificate`, `outFreshOf`):
+`derivChecked`, its context the claim's refined by the step's facts' safe
+integers (`PromiseCalls.intRefines`), as the step was checked at
+(`checkedStep`). -/
+def stepDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) : Bool :=
+  (ProgramCertificates.claim deriv).term == node.expression &&
+    PromiseCalls.intRefines G c.context (ProgramCertificates.claim deriv).context stepK.indices &&
+    (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
+      PromiseCalls.requiresTree G images stepK codes sums deriv)
+
 /-- **A promise call's derivation checked** where its yields are kept
-(`checkedYields`): `derivChecked`, and its claim's type the node's. -/
+(`checkedYields`): `stepDerivChecked`, and its claim's type the node's. -/
 def promiseDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
     (deriv : ProgramCertificates.Evidence ι) : Bool :=
-  derivChecked G images codes sums c node stepK deriv && decide ((ProgramCertificates.claim deriv).type = c.type)
+  stepDerivChecked G images codes sums c node stepK deriv && decide ((ProgramCertificates.claim deriv).type = c.type)
 
 /-- **A node's shape** as the certificate checker checks a `branch`: its
 claim type the Boolean (`expand G A = [.bool]`); a return, a bind or an
@@ -1542,12 +1555,12 @@ def passShapeCheck' (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
   | k => passShapeCheck G A k
 
 /-- **The derivation a regional check reads** checked as `footprintCheck`
-checks it (`derivChecked`), where the step has one. -/
+checks it (`stepDerivChecked`), where the step has one. -/
 def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
     (deriv : Option (ProgramCertificates.Evidence ι)) : Bool :=
   match deriv with
-  | some d => derivChecked G images codes sums c node stepK d
+  | some d => stepDerivChecked G images codes sums c node stepK d
   | none => true
 
 /-- **The step evidence's header** where the regional evidence is typed by
@@ -1575,7 +1588,7 @@ def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
   -- The step's derivation, where its signature bounds the step: claimed
   -- at the node's term and context, its tree accepted (`GraphCode.nodeChecked`'s
   -- conjuncts beside `selectedWithinAt`).
-  let derivChecked : Thunk Bool := Thunk.mk fun _ => SinglePass.derivChecked G images codes sums c node stepK deriv
+  let derivChecked : Thunk Bool := Thunk.mk fun _ => SinglePass.stepDerivChecked G images codes sums c node stepK deriv
   let writes := fun (B : Footprints.Closed) => ExpressionEffects.writeWithin G c.context B node.expression ||
     ExpressionEffects.initWriteWithin G c.context stepK B node.expression
   let within := ExpressionEffects.check G c.context node.expression || writes Φ ||
@@ -1609,9 +1622,9 @@ def stepGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
   let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
   let selectedT := GraphCode.selectedThrowGrades F deriv
   let checked : Thunk (List Footprints.Closed) := Thunk.mk fun _ =>
-    if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
+    if selected.isEmpty then [] else if stepDerivChecked G images codes sums c node stepK deriv then selected else []
   let checkedT : Thunk (List Footprints.Closed) := Thunk.mk fun _ =>
-    if selectedT.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selectedT else []
+    if selectedT.isEmpty then [] else if stepDerivChecked G images codes sums c node stepK deriv then selectedT else []
   { within := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [⟨.keep, .keep, .keep⟩]
       else writes ++ checked.get
     throws := if inspection || emptyContext then [⟨.keep, .keep, .keep⟩]
@@ -1650,7 +1663,7 @@ theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageChe
   generalize ExpressionEffects.check G c.context node.expression = a
   generalize ExpressionEffects.emptyType G c.type = b
   generalize c.context.any (ExpressionEffects.emptyType G ·) = d
-  generalize derivChecked G images codes sums c node stepK deriv = dc
+  generalize stepDerivChecked G images codes sums c node stepK deriv = dc
   generalize GraphCode.selectedGrades F deriv = sel
   generalize GraphCode.selectedThrowGrades F deriv = selT
   generalize (Ψ == Footprints.Closed.top) = t
@@ -1683,7 +1696,7 @@ def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes 
   let inspection := ExpressionEffects.check G c.context node.expression
   let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
   let checked : Thunk (List (CallEffects.Exits CallEffects.ExitSpec)) := Thunk.mk fun _ =>
-    if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
+    if selected.isEmpty then [] else if stepDerivChecked G images codes sums c node stepK deriv then selected else []
   let keepsAll : CallEffects.ExitSpec := { frame := [], ensures := [] }
   { normal := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [keepsAll]
       else writes ++ checked.get.map (·.normal)
@@ -1731,7 +1744,7 @@ theorem stepCertificate_grades (G : NormalGraph ι) (images : InstanceImageCheck
     intro gs
     simp only [List.map_map, Function.comp_def, Footprints.Footprint.boundBelow_fp, List.map_id']
   simp only [stepCertificate, stepGrades, StepCertificate.grades, Thunk.get]
-  generalize derivChecked G images codes sums c node stepK deriv = dc
+  generalize stepDerivChecked G images codes sums c node stepK deriv = dc
   congr 1
   · split
     · rfl
@@ -2141,8 +2154,11 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     -- them also reads the linear facts they chain through.
     let (k, pairs, table) := materialize entry width ms wholeStep
     let kE := IndexWrites.typedKnowledge G c.context (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k) ms
-    let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
-    let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
+    -- The step is checked at its context refined by its facts' safe
+    -- integers (`PromiseCalls.intRefine`).
+    let Γr := PromiseCalls.intRefine G c.context kE.indices
+    let own := (keepFirst {} (c.type :: ms.filterMap fun i => Γr[i]?)).2.toList
+    let j : Sequent ι := ⟨Γr, node.expression, c.type⟩
     let kindKey := SinglePassStats.termKind node.expression
     -- Each precondition the call's signatures state, decided once, where the
     -- search first asks it (`admitsNear`).
@@ -2162,7 +2178,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     -- A call of a slot: its derivation read off the callee's signatures
     -- (`directCall`), its step `ordinary`; otherwise the search.
     let (direct, a0) := match node.expression with
-      | .invoke .. => timedKind "direct call" fun _ => directCall G images c.context node.expression c.type admits undefTy answers
+      | .invoke .. => timedKind "direct call" fun _ => directCall G images Γr node.expression c.type admits undefTy answers
       | _ => (none, answers)
     answers := keepSummaries answers a0
     let sums := answers.summaries.toList
@@ -2243,7 +2259,9 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
         checker.select j kE effect codes sums
       stats := { stats with rules := stats.rules + 1, fullRules := stats.fullRules + 1 }
       let some out := r.value | return (.error s!"expression at node {l} over every fact", stats, answers)
-      stepK := kE
+      -- With the integer facts the step's context was refined by, where
+      -- they refined it.
+      stepK := if Γr == c.context then kE else PromiseCalls.withInts kE stepK
       stepOut := out
       let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
       store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
@@ -2820,7 +2838,7 @@ def deadEvidence (c : PointClaim ι) (node : Node) : NodeEvidence ι :=
 
 /-- Whether the step's result holds a fresh spine: a copy of a fresh slot,
 or a call at a selected signature stating a fresh result
-(`GraphCode.varFresh`, `callFresh`) whose derivation `derivChecked`
+(`GraphCode.varFresh`, `callFresh`) whose derivation `stepDerivChecked`
 accepts at the step's facts `stepK`. -/
 def outFreshOf (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (entry : State)
@@ -2830,7 +2848,7 @@ def outFreshOf (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
     | _ => false) ||
     ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
       ExpressionEffects.selectedOperands deriv &&
-      derivChecked G images codes sums c node stepK deriv)
+      stepDerivChecked G images codes sums c node stepK deriv)
 
 /-- **The footprint check at a node** (`GraphCode.nodeChecked`): under no
 bound, it passes; under the bound $`(\Phi, \Psi, \mathit{ret})`$, at a
@@ -3277,7 +3295,8 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
     let C := if GraphCode.ArgumentRegionGraph.cellsKept G images sums rg.Φ F here.cells cEv t0 node.handler.isSome
       then here.cells else []
     let Fs := here.fields.filter fun p =>
-      HeapExpressionRules.stableFirst G c.context p.1 p.2 || GraphCode.ArgumentRegionFresh.nullishSlot G c.context p.1
+      HeapExpressionRules.stableFirst G (ControlFlow.entry cEv) p.1 p.2 ||
+        GraphCode.ArgumentRegionFresh.nullishSlot G (ControlFlow.entry cEv) p.1
     let origins := GraphCode.ArgumentRegionGraph.nodeOrigins rg.regions here.facts t0
     let pushes := GraphCode.pushes node.continuation
     let outR := if pushes then GraphCode.ArgumentPathTracking.afterPush here.facts origins else here.facts
@@ -3411,7 +3430,10 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
     -- Its links restated on every slot of their classes, as an edge reads
     -- a node's output (`ControlFlow.outFacts`).
     let ko := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ) ko
-    let (found, a) := timedKind "edge search" fun _ => checkedEdge G images env.claimed tc.context Γ t observed ko answers
+    -- The edge's context refined by its facts' safe integers
+    -- (`PromiseCalls.intRefine`), as a step's is.
+    let Γk := PromiseCalls.intRefine G Γ ko.indices
+    let (found, a) := timedKind "edge search" fun _ => checkedEdge G images env.claimed tc.context Γk t observed ko answers
     let answers := keepSummaries answers a
     if !found && isHandler then
       .error (WalkStop.mk (.refused s!"handler edge from node {l} to node {t.label}") counts answers acc.trace)

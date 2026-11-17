@@ -2253,7 +2253,23 @@ integral, not `-0`, below the length; the key `-0` is `0` after
 ToPropertyKey's canonical numeric string), so the read is the element there,
 of the view's element type, a number (a `Float64Array`'s any double, `NaN`
 included), and the element the view's element spine holds there, which the
-model's write keeps current. The getter reads the view's slots and the read
+model's write keeps current. A view of an integer format has a third signature,
+the bounded read stating its result a safe integer within the format's
+range, from $`0`$ to $`255`$ of a `Uint8Array`, to $`65535`$ of a
+`Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an `Int32Array`
+(`viewKinds`):
+
+```math
+\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset^{\ \mathrm{int}(2),\ 0\le 2,\ 2\le\mathrm{view}(1)-1;\ \mathsf{ensures}\ \mathrm{int}(0),\ 0\le 0\le 255,\ \mathrm{element}(0,2,3)}\mathtt{number}
+```
+
+It is assumed of the host as the second is, and agrees with the model: a
+cell of a view spine of an integer format holds a number of that format
+(`HeapOk.view_cell_stored`, `ViewFormat.Stored`). The signatures are
+listed with the read at any number first, so a read the facts do not bound
+still selects it (`typed-array-views`); a bounded read of a view of one
+integer format selects its format's (`safe-int-view-element`; negative,
+run under Node, `invalid-safe-int-view-float64`). The getter reads the view's slots and the read
 runs no code; neither writes. The key is never copied (`copiedKey`) and no source property
 names it (`RequestJson.reservedKey`);
 the term is defined only of a host object, which no allocation of the
@@ -3892,6 +3908,22 @@ allocates (`library-preserving-reflection`). `Object.keys` reads no value
 at all. The overloads at `{}` read the values of keys the object's type
 need not state, by [[Get]], and state no preservation
 (`object-entries-sparse`, `invalid-object-entries-preserving`).
+
+`Number.isSafeInteger(x)` also states its argument a safe integer where it
+answers other than `false`, the guarded fact at its return's positions (0
+the result, 2 the argument):
+
+```math
+\mathtt{Number.isSafeInteger}:(\mathtt{unknown})\Rightarrow_{\emptyset}^{\mathsf{ensures}\ 0=\mathtt{false}\ \lor\ \mathrm{int}(2)}\mathtt{boolean}
+```
+
+It is assumed of the host: ECMA-262's `Number.isSafeInteger` answers `true`
+exactly of a number that is an integer $`n`$ with $`|n|\le 2^{53}-1`$, both
+zeros included, which is $`\mathrm{int}`$'s meaning
+(`SafeIntegers.safeIntOfBits`), and converts nothing. A branch on the result's
+truth eliminates the guard ([guard-eliminate](ARITHMETIC.md#guarded-clauses)),
+so on the true branch the argument is read at `SafeInt`
+(`safe-int-is-safe-integer`; the control removing the fact refuses it).
 
 ### Reviewed entries
 

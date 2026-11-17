@@ -29,12 +29,21 @@ theorem derivChecked_reassign (codes : CodeEntry ι → Bool) (sums : List (Read
   simp only [derivChecked, Parametricity.checkTree_reassign, Parametricity.requiresTree_reassign]
 
 omit [Hashable ι] [Instantiates ι] in
+/-- **The step's derivation check at a reassignment.** -/
+theorem stepDerivChecked_reassign (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) (c : PointClaim ι)
+    (node : Node) (stepK : HeapKnowledge.Knowledge) (deriv : ProgramCertificates.Evidence ι) :
+    stepDerivChecked (reassign G η) (images.reassign η) codes sums c node stepK deriv =
+      stepDerivChecked G images codes sums c node stepK deriv := by
+  simp only [stepDerivChecked, Parametricity.checkTree_reassign, Parametricity.requiresTree_reassign,
+    Parametricity.intRefines_reassign]
+
+omit [Hashable ι] [Instantiates ι] in
 /-- **The promise check at a reassignment.** -/
 theorem promiseDerivChecked_reassign (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι))
     (c : PointClaim ι) (node : Node) (stepK : HeapKnowledge.Knowledge) (deriv : ProgramCertificates.Evidence ι) :
     promiseDerivChecked (reassign G η) (images.reassign η) codes sums c node stepK deriv =
       promiseDerivChecked G images codes sums c node stepK deriv := by
-  simp only [promiseDerivChecked, derivChecked_reassign]
+  simp only [promiseDerivChecked, stepDerivChecked_reassign]
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **The kept yields at a reassignment** (`checkedYields`, its promise

@@ -94,14 +94,15 @@ def EdgeFound (G : NormalGraph ι) (images : InstanceImageCheck G) (Δ Γ : List
 edge context's** (`mixedContext`). -/
 def MixedOf (Γm Γr Γ : List (Ty ι)) : Prop := ∀ (j : Nat) (X : Ty ι), Γm[j]? = some X → Γr[j]? = some X ∨ Γ[j]? = some X
 
-/-- **An exit's types checked** (`exitTypes`): at the edge's context `Γ`
-over the edge's facts `ko`, the refined context `Γr` over the step's
+/-- **An exit's types checked** (`exitTypes`): at the edge's context `Γ`,
+refined by the safe integers of the edge's facts `ko` (`PromiseCalls.intRefine`), over them, the refined context `Γr` over the step's
 output `outL`, by `diffSubtypes`, or the edge search at `Γ`, at `Γr`, or at
 a mixed context. -/
 def ExitTyped (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ Δ : List (Ty ι)) (t : Target)
     (observed : Option BranchRefinement.Observation) (ko : HeapKnowledge.Knowledge) (Γr : List (Ty ι))
     (outL : HeapKnowledge.Knowledge) : Prop :=
-  SubtypesPass G images Γ Δ (differing Γ Δ t.mapping) ∨ EdgeFound G images Δ Γ t observed ko ∨
+  SubtypesPass G images Γ Δ (differing Γ Δ t.mapping) ∨
+    EdgeFound G images Δ (PromiseCalls.intRefine G Γ ko.indices) t observed ko ∨
     EdgeFound G images Δ Γr t observed outL ∨ ∃ Γm, MixedOf Γm Γr Γ ∧ EdgeFound G images Δ Γm t observed outL
 
 theorem subtypesPass_of {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Δ : List (Ty ι)}
@@ -181,7 +182,7 @@ theorem ExitTyped.env {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ �
       obtain rfl := Option.some.inj hB'
       exact ⟨A, hA, hsub A B a hs⟩
     · exact ⟨B, differing_cover Γ Δ t.mapping hB hd, fun _ _ _ h => h⟩
-  · exact edgeFound_env h (fun _ => hk) he hh ho
+  · exact edgeFound_env h (fun _ => hk) (PromiseCalls.envOk_intRefine he hk.2.2.2.2.2) hh ho
   · exact edgeFound_env h hout her hh ho
   · refine edgeFound_env h hout ⟨he.1, fun j X hj => ?_⟩ hh ho
     rcases hm j X hj with hx | hx

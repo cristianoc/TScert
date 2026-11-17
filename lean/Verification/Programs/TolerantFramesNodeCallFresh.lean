@@ -35,7 +35,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 omit [Hashable ι] [Instantiates ι] in
 /-- `run`'s `outFresh` at a node (the pass's code): a copy of a slot holding
 a fresh name, or a call at a selected signature stating a fresh result,
-its operands selected, whose derivation `derivChecked` accepts at the
+its operands selected, whose derivation `stepDerivChecked` accepts at the
 step's knowledge `stepK`. -/
 def passOutFreshChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (entry : SinglePass.State)
@@ -45,7 +45,7 @@ def passOutFreshChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (co
     | _ => false) ||
     ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
       ExpressionEffects.selectedOperands deriv &&
-      SinglePass.derivChecked G images codes sums c node stepK deriv)
+      SinglePass.stepDerivChecked G images codes sums c node stepK deriv)
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **`outFresh`'s two cases**: a copy of a fresh slot, or a call stating a
@@ -63,7 +63,7 @@ theorem passOutFreshChecked_cases {G : NormalGraph ι} {images : InstanceImageCh
   simp only [passOutFreshChecked, Bool.or_eq_true, Bool.and_eq_true] at h
   refine h.imp id fun ⟨⟨hf, ho⟩, hd⟩ => ?_
   have hd' := hd
-  simp only [SinglePass.derivChecked, Bool.and_eq_true] at hd'
+  simp only [SinglePass.stepDerivChecked, Bool.and_eq_true] at hd'
   refine ⟨?_, hd⟩
   simp only [passCallFresh, Bool.and_eq_true]
   exact ⟨⟨hf, ho⟩, hd'.1.1⟩
@@ -100,11 +100,11 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
           (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) s.h) s.n s.W s.h
         (instantiate 0 ρ (claim d).term) := by
       rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-      · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (hctx ▸ he) s.adm s.ok (by rw [hterm]; exact href)
+      · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) s.adm s.ok (by rw [hterm]; exact href)
       · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hreq
         rw [heff] at heff'
         cases heff'
-        exact hs (hctx ▸ he) hkS s.adm s.ok (by rw [hterm]; exact href)
+        exact hs (PromiseCalls.envOk_intRefines hctx he hkS.2.2.2.2.2) hkS s.adm s.ok (by rw [hterm]; exact href)
     rw [hterm] at hs
     intro k h' v hk hst hv
     have hpost := GraphCode.returnsPost_of_safePost hs k h' v hk hst hv
@@ -135,8 +135,9 @@ theorem passOutFreshChecked_reassign (G : NormalGraph ι) (η : MixedAssignment 
     (entry : SinglePass.State) (stepK : HeapKnowledge.Knowledge) (deriv : ProgramCertificates.Evidence ι) :
     passOutFreshChecked (reassign G η) (images.reassign η) codes sums c node entry stepK deriv =
       passOutFreshChecked G images codes sums c node entry stepK deriv := by
-  simp only [passOutFreshChecked, SinglePass.derivChecked, Parametricity.checkTree_reassign,
-    Parametricity.requiresTree_reassign]
+  simp only [passOutFreshChecked, SinglePass.stepDerivChecked, Parametricity.checkTree_reassign,
+    Parametricity.requiresTree_reassign,
+    Parametricity.intRefines_reassign]
 
 omit [Instantiates ι] in
 /-- **The bound's check at a reassigned graph**: a node whose bound `run`

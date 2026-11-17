@@ -634,8 +634,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // write nothing.
   { host: contract, global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
   { host: contract, global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
+  // `Number.isSafeInteger(x)` answers `true` exactly of a number that is an
+  // integer `n` with |n| ≤ 2^53 − 1 (ECMA-262, "Number.isSafeInteger"), both
+  // zeros included: its argument is a safe integer where it answers other
+  // than `false`, the guarded fact `int(2)` at the return's positions (0 the
+  // result, 2 the argument), which a branch on the result's truth makes
+  // unconditional (ARITHMETIC.md, `guard-eliminate`).
   { host: contract, global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
-    effect: emptyEffect },
+    effect: footprintEffect(emptyFootprint, { ensures: [
+      { guarded: { slot: 0, path: [], tag: "false", body: { int: { slot: 2 } } } }] }) },
   { host: contract, global: "Number", member: "isNaN", signature: "isNaN(number: unknown): boolean;", effect: emptyEffect },
   // `Number.POSITIVE_INFINITY`, a non-writable, non-configurable data
   // property of `Number` holding the number +∞: its read runs no code.

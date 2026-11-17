@@ -449,8 +449,9 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
   admits : ControlFlow.admitsAll G TT = true
   typed : (here || ControlFlow.unsatisfiable G [TT]) = false →
     SubtypesPass G images (handlerCtx c TT) (ctx t.label) (differing (handlerCtx c TT) (ctx t.label) t.mapping) ∨
-      EdgeFound G images (ctx t.label) (handlerCtx c TT) t none
-        (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping)
+      EdgeFound G images (ctx t.label)
+        (PromiseCalls.intRefine G (handlerCtx c TT) (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping).indices)
+        t none (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping)
   asserted : given t.label = false → (here || ControlFlow.unsatisfiable G [TT]) = false → ∀ req,
     stated t.label = some req →
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))

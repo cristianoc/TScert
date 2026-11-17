@@ -57,12 +57,11 @@ theorem exitTypes_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd
       · rename_i hfound
         cases h
         refine ⟨acc.yields.getD [], rfl, rfl, .inr (.inl ?_)⟩
-        have hf' : (checkedEdge G I env.claimed tc.context Γ t observed ko a).1 = true :=
-          (congrArg Prod.fst hf).trans hfound
+        have hf' : (checkedEdge G I env.claimed tc.context (PromiseCalls.intRefine G Γ ko.indices) t observed ko a).1
+            = true := (congrArg Prod.fst hf).trans hfound
         have hh := edgeFound_of_checked hf'
         dsimp only [ko] at hh
         have hko := congrArg (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)) (congrArg Prod.fst hk)
-        change EdgeFound G I tc.context Γ t observed _
         rw [hko]
         exact hh
       · split at h
@@ -124,7 +123,10 @@ theorem exitTypes_handler_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered
     (h : exitTypes G I env l en sd outAll t tc Γ names edgeStore pushed true observed first
       (differing Γ tc.context t.mapping) acc = .ok (acc', et)) :
     SubtypesPass G I Γ tc.context (differing Γ tc.context t.mapping) ∨
-      EdgeFound G I tc.context Γ t observed
+      EdgeFound G I tc.context (PromiseCalls.intRefine G Γ (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
+          (materialize { names, store := edgeStore }
+            (if pushed then (env.claimed[l]!).context.length + 1 else (env.claimed[l]!).context.length)
+            (0 :: (differing Γ tc.context t.mapping).map (·.2)) false).1).indices) t observed
         (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
           (materialize { names, store := edgeStore }
             (if pushed then (env.claimed[l]!).context.length + 1 else (env.claimed[l]!).context.length)

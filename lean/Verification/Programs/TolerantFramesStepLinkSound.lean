@@ -349,6 +349,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
   have hS' := hS
   obtain ⟨η, hn, hst, hI, hF, hstart⟩ := hS'
   have hk := stateHolds_stepKnowledge hS he c.context.length ms (wholeOf node.expression)
+  have heR : EnvOk G (jOf G c node entry ms).context ρ s.n s.W := PromiseCalls.envOk_intRefine he hk.1.2.2.2.2.2
   rcases h with ⟨x, hc, hr, hstore, hfr, -, hK, hO, rfl⟩ |
       ⟨-, effect, a0, ⟨out, pre, hsel, htree, hres, hfresh, -, -, hpres, hwrit⟩, hss⟩
   · -- A copy of slot `i`: the term is the slot's value.
@@ -394,12 +395,12 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · exact .inr ⟨hres.trans hr1, hfresh.trans hf⟩
     have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf node.expression)) codes
         ans.summaries.toList effect = true := fun hs => passTreeCheck_ok htree hs
-    by_cases hp : (pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
+    by_cases hp : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect
         codes ans.summaries.toList == Footprints.Closed.empty) = true
     · obtain ⟨hstore, hK, hO⟩ := hpres hp
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
-      · intro href hρ; rw [hO]; exact preserving_judgment_two (beq_iff_eq.mp hp) hok hsel hcodes hs1 he hk.1 s.adm s.ok hρ href
+      · intro href hρ; rw [hO]; exact preserving_judgment_two (beq_iff_eq.mp hp) hok hsel hcodes hs1 heR hk.1 s.adm s.ok hρ href
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
@@ -407,13 +408,13 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
         exact preserving_spine hn (hkv k h' v hsteps)
           (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
-    · have hpf : (pc.checker.normal (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect
+    · have hpf : (pc.checker.normal (jOf G c node entry ms) (kOf G c entry ms (wholeOf node.expression)) effect
           codes ans.summaries.toList == Footprints.Closed.empty) = false := by simpa using hp
       obtain ⟨out', hwc, hsel', hstore, hK, hO⟩ := hwrit hpf
       have hrun := pass_select_whole htree hwc hsel'
-      refine ⟨hs1, by rw [hK]; exact hk.2, hres', Footprints.Closed.top, Footprints.Closed.top,
+      refine ⟨hs1, by rw [hK]; split; exact hk.2; exact PromiseCalls.holds_withInts hk.2 hk.1, hres', Footprints.Closed.top, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
-      · intro href hρ; rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 he hk.2 s.adm s.ok hρ href
+      · intro href hρ; rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 heR hk.2 s.adm s.ok hρ href
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
