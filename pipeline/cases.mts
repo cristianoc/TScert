@@ -1415,7 +1415,7 @@ export const cases: Case[] = [
   { file: "invalid-safe-int-mapped", area: "a mapped type over `SafeInt`: TypeScript computes its keys at `number`, widening the keys it states", kind: "negative",
     status: "unsupported", phase: "source", diagnostic: /reading the verifier's `SafeInt` as `number`, which erases it/ },
   positive("safe-int-lookalike-declared", "a file declaring its own `SafeInt`: an ordinary alias of `number`, so a `number` passes where it is written"),
-  positive("safe-int-index", "an index typed `SafeInt` under `@requires 0 <= i && i < xs.length`, with no `safeInteger(i)`: the type states the index a safe integer, in the clause and in the caller's tests (ARITHMETIC.md, \"Linear facts\")"),
+  positive("safe-int-index", "an index typed `SafeInt` under `@requires 0 <= i && i < xs.length`, with no `safeInteger(i)`: the type states the index a safe integer, in the clause, in the caller's tests, in a call's precondition `safeInteger(i)` and in a postcondition `safeInteger(result)` (ARITHMETIC.md, \"Linear facts\")"),
   { file: "invalid-safe-int-index-number", area: "the same precondition over an index typed `number`: the comparison names a value neither its type nor the clause states a safe integer (under Node `first([1, 2], 0.5)` passes the tests and returns `undefined` at `number`)", kind: "negative",
     status: "unsupported", phase: "source", diagnostic: /the comparison names i, which neither its type nor the clause states a safe integer/ },
   positive("safe-int-field-index", "a field `count: SafeInt` read through a path bounding an index: `b.count` in a precondition with no `safeInteger`, established by the caller's tests of the field"),

@@ -103,11 +103,12 @@ def wholeOf : Tm → Bool
 selects with `whole`. -/
 def kOf (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) (ms : List Nat) (whole : Bool) :
     HeapKnowledge.Knowledge :=
-  KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) (materialize entry c.context.length ms whole).1
+  IndexWrites.typedKnowledge G c.context
+    (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) (materialize entry c.context.length ms whole).1) ms
 
 /-- The copy test (lines 1202–1205). -/
 def copiedOf (G : NormalGraph ι) (c : PointClaim ι) (entry : SinglePass.State) : Tm → Option Nat
-  | .var i => if ((c.context[i]?).any (· == c.type) && (IndexWrites.typeInt G c.context i).join.isNone) = true then
+  | .var i => if ((c.context[i]?).any (· == c.type) && (IndexWrites.typeInt G c.context i).isNone) = true then
       entry.names[i]? else none
   | _ => none
 

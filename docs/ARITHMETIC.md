@@ -234,10 +234,12 @@ type of one literal holds that integer:
 \frac{\Gamma(x)=\mathsf{numLit}\,b\qquad\mathrm{SafeInt}(b,k)}{r\leftarrow x\dashv\mathrm{int}(r),\ r=k}\ \textsf{type-literal}
 ```
 
-A step reads the slots it names under its knowledge with type-int's
-conclusion for each (`IndexWrites.typedKnowledge`), so int-copy and the
-comparison and arithmetic rules below apply to a `SafeInt` operand as to one
-the knowledge states integral; a read of a slot of one literal, a module
+Every rule of a step reads the facts over the slots the step names with
+type-int's conclusion for each (`IndexWrites.typedKnowledge`), so int-copy,
+the comparison and arithmetic rules below and a call's precondition apply
+to a `SafeInt` operand as to one the knowledge states integral, and a copy
+of such a slot is a step stating int-copy of its result; a read of a slot
+of one literal, a module
 constant `const TEXT = 0` among them, states type-literal's conclusion, also
 where a binding is assigned or declared it (`IndexWrites.typeInt`, proved:
 `typeInt_sound`, from `intValue_num` and `SafeIntegers.safeIntOfBits_sound`;
@@ -245,7 +247,9 @@ cases `safe-int-index`, `literal-constant-value`; negative
 `invalid-literal-constant-value`, run under Node). A field or an element
 whose type is `SafeInt` reaches the rule through its read, whose result
 slot has the field's or the element's type; its path is linked to that
-slot by a read link above.
+slot by a read link above. The rule is stated of slots: a path's
+integrality $`P\le 2^{53}-1`$ and a quantified fact over a `SafeInt[]`'s
+elements follow from a type only through reads.
 
 **A sum reaching $`2^{53}`$.** A string's length plus one, $`a`$ a slot the
 knowledge states equal to $`\mathrm{strLength}(s)`$ and $`b`$ the constant

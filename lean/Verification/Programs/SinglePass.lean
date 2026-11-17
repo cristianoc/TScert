@@ -2117,7 +2117,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
   -- A read of a slot whose type is the claim's: the result is that slot's
   -- value, named as it (`HeapExpressionRules.copy`).
   let copied : Option Nat := timedKind "node copied" fun _ => match node.expression with
-    | .var i => if (c.context[i]?).any (· == c.type) && (IndexWrites.typeInt G c.context i).join.isNone then
+    | .var i => if (c.context[i]?).any (· == c.type) && (IndexWrites.typeInt G c.context i).isNone then
         entry.names[i]? else none
     | _ => none
   let mut store := entry.store
@@ -2140,7 +2140,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
     -- names and their aliases; a step that may need an entailment over
     -- them also reads the linear facts they chain through.
     let (k, pairs, table) := materialize entry width ms wholeStep
-    let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
+    let kE := IndexWrites.typedKnowledge G c.context (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k) ms
     let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
     let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
     let kindKey := SinglePassStats.termKind node.expression
@@ -2231,7 +2231,7 @@ def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : Lis
       -- fact stays.
       let renamed : Std.HashSet Atom := pairs.foldl (fun acc (a, _) => acc.insert a) {}
       store := store.dropHeap renamed.contains
-      let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
+      let kE := IndexWrites.typedKnowledge G c.context (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k) ms
       -- The step the search selected over the facts the expression names,
       -- its output over every fact.
       let sums := answers.summaries.toList
