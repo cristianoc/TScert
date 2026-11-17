@@ -2,46 +2,48 @@
 
 A type the verifier declares, `SafeInt`, that a program writes wherever it
 writes `number` for a value that is a safe integer. TypeScript reads it as
-`number`; TScert reads it as the sort $`\mathit{SafeInt}`$ of
-[Tolerant frames](tolerant-frames-note/note.tex): the JavaScript numbers in
-the safe-integer range, both zeros included, the values of which the clause
-predicate `safeInteger(x)` holds.
+`number`; TScert reads it as a type of its own: the JavaScript numbers in
+the safe-integer range, both zeros included, which the clause predicate
+`safeInteger(x)` states of a value and Lean's `SafeIntegers.SafeInt`
+defines. The papers' sort $`\mathit{SafeInt}`$ is the arithmetic-rules work's
+(pull request #259), not yet on this line.
 
 ## The existing mechanisms this extends
 
 - **Types the verifier declares** ([ANNOTATIONS.md](../ANNOTATIONS.md#types-the-verifier-declares)):
   `Modifies<P, T>`, `Fresh<T>`, `Resolvable` and `Awaitable` in
-  [`tools/resolvable.d.ts`](../../tools/resolvable.d.ts). The declaration
-  graph recognises each by the declaration its name binds to, the canonical
-  file or an exact-byte copy of it, and refuses external and ambient uses
-  (`tools/declaration-graph.mts`); `statedResult` (`tools/type-term.mts`)
-  reads the recognised ones at a signature's result. TypeScript reads each
-  as its argument or as `unknown`.
-- **Types as claims** ([CLAIM-LANGUAGE.md](../CLAIM-LANGUAGE.md)): source
-  `number` lowers to number contents, a `ValueSet` whose `num` component
-  is a finite set of literals or its complement (`Lit UInt64`,
-  `Semantics/ValueSets.lean`); inclusion, joins, meets and normalisation
-  are defined on that representation.
+  [`tools/resolvable.d.ts`](../../tools/resolvable.d.ts), recognised by the
+  declaration their name binds to, the canonical file or a file of the same
+  text (`tools/declaration-graph.mts`). Each is a bound or a statement:
+  `Modifies` and `Fresh` are refused wherever a type is read, and
+  `statedResult` reads a statement. `SafeInt` is the first read as a type,
+  which is new work in `tools/type-term.mts`.
+- **Types** (`Types/PositiveGraphs.lean`, `Types/PositiveNormalization.lean`):
+  a type is a node of the normal graph, whose rows are clauses; numbers are
+  the clauses `num`, `numLit` and `numIn`. Their meaning, meet, inclusion
+  (`Types/PositiveRules.lean`, through which `subtypeUsing` decides),
+  selection (`Types/ClauseSelection.lean`), renaming and decoding
+  (`Source/RequestJson.lean`) are defined over clauses. A union is a list of
+  clauses.
 - **Integer facts** ([DESIGN.md](../DESIGN.md#general-mechanisms)): the
-  index fact $`\mathrm{int}(x)`$ holds where the slot's value decodes by
-  `SafeIntegers.safeIntOfBits` (`IndexFacts.intValue`); the clause
-  `safeInteger(x)` elaborates to it ([the clause language](../ARITHMETIC.md#the-clause-language)),
-  and clause comparisons require each compared operand to be stated
-  integral (`tools/bound-annotations.mts`).
-- **Bridges from contents to arithmetic**: `IndexWrites.litSlot` reads a
-  singleton numeric literal type as an arithmetic constant;
-  `HeapKnowledge.typeAtoms` and `typeSets`, `KnowledgeExpand`'s context
-  extraction and `BranchRefinement`'s `factSlice` read facts off a slot's
-  contents.
-- **Type invariants** ([ARITHMETIC.md](../ARITHMETIC.md#type-invariants)):
-  a type's `@invariant` elaborates to boundary clauses at the parameters
-  and results of functions naming the type (`tools/fragment-statements.mts`).
+  index fact $`\mathrm{int}(x)`$ of a slot holds where its value decodes by
+  `SafeIntegers.safeIntOfBits` (`IndexFacts.intValue`); a linear fact
+  requires every term it names defined, so it implies the integrality of
+  each (`HeapKnowledge.intSlot`). For a path, integrality is $`P\le
+  2^{53}-1`$; for an element under `every`, an element bound.
+- **Type to fact**: `IndexWrites.litSlot` reads a slot whose one clause is a
+  decodable `numLit` as an arithmetic constant, in `linearAtoms`.
+- **Fact to type**: a node's exit refines its context by facts
+  (`SinglePass.refinedContext`, through `PromiseCalls.refineBy`, sound by
+  `envOk_refineBy`), with `(slot, type)` facts.
+- **The clause reader** (`tools/bound-annotations.mts`): a comparison
+  requires each operand stated integral, by `safeInteger(...)`, to keep the
+  clause's JavaScript reading ([ARITHMETIC.md](../ARITHMETIC.md#the-clause-language)).
 
 ## The problem
 
-TypeScript has one numeric type. A bound on an index needs the index to be
-an integer, so every precondition that bounds an index repeats
-`safeInteger(i)`, and every quantified fact repeats it on its elements:
+TypeScript has one numeric type, so every precondition bounding an index
+repeats `safeInteger(i)`:
 
 ```ts
 /** @requires safeInteger(i) && 0 <= i && i < xs.length */
@@ -49,55 +51,65 @@ export function at(xs: number[], i: number): number { return xs[i]!; }
 ```
 
 ACSL (`integer`), JML (`\bigint`), Dafny (`int`, subset types) and
-refinement-type systems (Liquid Haskell, Flux, Refined TypeScript) give
-integers a sort in the signature; the relation between values
-(`i < xs.length`) stays in the contract.
+refinement-type systems (Liquid Haskell, Flux, Refined TypeScript) put
+integrality in the signature's types; relations between values stay in the
+contract.
 
-## Three routes
+## Routes
 
-- **A. Sugar at named positions**: `i: SafeInt` elaborates to a clause at a
-  parameter, a result, a field. Each position is a case of its own, and the
-  meaning holds only where a case exists.
-- **C. Type-invariant elaboration, extended compositionally**: a type
-  carrying `SafeInt` elaborates to boundary clauses as `@invariant` does,
-  over the type grammar. It supplies contracts at boundaries only: the
-  mechanism excludes generic references and gives no fact from a field
-  read, a cast or a native result (ARITHMETIC.md, "Type invariants").
-  Making it hold everywhere a type is read would rebuild route B inside it.
-- **B. A sort in the claim language (proposed)**: `SafeInt` is a refinement
-  of number contents, so every place that reads a type reads it: a
-  parameter, a result, a field, an element, a union's arm, a generic
-  argument, a `Map`'s value.
+- **A. Sugar at named positions** (a parameter, a result, a field): each
+  position its own case, the meaning holding only where a case exists.
+- **C. Type-invariant elaboration, extended**: boundary obligations exist
+  only at function declarations, and optional types, unions with a
+  non-naming arm and generic references name none (ARITHMETIC.md, "Type
+  invariants"). It would give path facts at boundaries, and nothing where
+  a type is read elsewhere.
+- **B. A type clause (proposed)**: one clause, read by every reader of a
+  type.
 
-## Route B
+## The clause `int`
 
-**Number contents.** `num` becomes a small predicate algebra: a finite set
-of literals, its complement, the safe integers, and their meets and joins,
-with inclusion, normalisation, substitution, serialisation and printing
-defined on it and proved sound. Membership in the safe integers is
-`safeIntOfBits` decoding, the same definition `int(x)` reads. An
-observation may widen to `number`; a required annotation keeps its whole
-meaning. `SafeInt` lowers to these contents in the source graph, the Lean
-decoder and the native claim constructors.
+`Clause` gains `int`, meaning $`\exists b.\ v = \mathtt{num}\ b \wedge
+\mathrm{safeIntOfBits}\ b \ne \mathrm{none}`$:
 
-**The bridge, one checked step shared by every value check**:
+- **Meet**: `num ⊓ int = int`; `numLit b ⊓ int` is `numLit b` where `b`
+  decodes and empty otherwise; `numIn S ⊓ int` keeps the members of `S`
+  that decode.
+- **Inclusion**: `int ≤ num`; `numLit b ≤ int` and `numIn S ≤ int` where
+  every literal decodes; `num ≤ int` never.
+- **Decoding, renaming, rank and selection** read it as any clause.
+- `SafeInt` lowers to the clause `int` (`tools/type-term.mts`).
 
-- from a slot's certified contents admitting only safe integers, the index
-  fact $`\mathrm{int}(x)`$;
-- from an established $`\mathrm{int}(x)`$, the slot's current contents met
-  with the safe integers.
+Every reader of a type reads the clause: parameters, results, fields,
+elements, union arms, written generic arguments, `Map` values, readonly
+views, spread, destructuring and rest read the type they read today.
+`ValueSet` and knowledge are unchanged: knowledge carries integrality as
+$`\mathrm{int}`$, and `HeapKnowledge.primitive` maps the clause `int` to no
+primitive atom of its own.
 
-Both directions are proved against `safeIntOfBits`. Subtyping stays a
-relation between types, for every value, cached per pair: `number <:
-SafeInt` never holds; a value produced at `SafeInt` (an argument, a return,
-a field write, an element write) is checked by refining that slot's
-contents through the bridge, then checking the refined type against the
-required one.
+## The bridge
 
-**Clauses.** A clause comparison accepts an operand whose resolved type
-admits only safe integers, through one query over the type; a union with a
-non-integer arm answers no. The Lean checker establishes the integrality
-from the bridge, not from the clause reader's answer. Then
+- **Type to fact**: in `linearAtoms`, a slot whose clauses are all at most
+  `int` gives $`\mathrm{int}(x)`$. `litSlot` is its instance at a single
+  decodable literal and is removed. For a path whose type is `SafeInt`,
+  the fact is $`P\le 2^{53}-1`$; for an element of a `SafeInt[]` under
+  `every`, the element bound.
+- **Fact to type**: at a node's exit, $`\mathrm{int}(x)`$ refines the slot's
+  type by meeting it with `int`, through `refinedContext` and `refineBy`;
+  the graph gains an `int` label lookup, as `NormalGraph.literal` is for
+  literals, and the return's check reads the refined context too. Every
+  value check then reads `Γ[i]` as today.
+
+Both directions are proved against `safeIntOfBits` with `intValue_safe` and
+`intValue_num`. Subtyping stays a relation between types, for every value;
+`number <: SafeInt` never holds.
+
+## Clauses
+
+The clause reader's integrality checks become one query on the operand
+path's resolved type: integral where the type is `SafeInt` (every arm of a
+union), or where `safeInteger(...)` is written. The elaborated facts are
+unchanged, and Lean establishes them as today. Then
 
 ```ts
 /** @requires 0 <= i && i < xs.length */
@@ -106,59 +118,72 @@ export function at(xs: number[], i: SafeInt): number { return xs[i]!; }
 
 means what the clause with `safeInteger(i)` means.
 
-**Obligations at each kind of position**, stated over the type grammar:
+## Values that reach `SafeInt`
 
-- **Unions**: integrality holds where every arm admits only safe integers.
-- **Generics**: the refinement is preserved by substitution, bounds and
-  checked instantiation.
-- **Mutable storage**: a location typed `SafeInt` is established at its
-  allocation and at every write; refining one read never strengthens the
-  location's contract.
-- **Arrays**: `SafeInt[]` states its elements' contents; presence stays
-  separate, so an indexed read still needs its element present. A
-  quantified clause over the elements requires presence and is not what
-  `SafeInt[]` elaborates to.
-- **Map values**: the value parameter is preserved through the reviewed
-  host contracts; a possibly absent result is `SafeInt | undefined` until
-  presence is established.
+- **Inferred generic instantiations** are TypeScript's, at `number`, since
+  the alias is erased: `identity(i)`, `[i]`, `xs.map(x => x)` reach
+  `SafeInt` only through the bridge on the value; written arguments
+  (`Map<string, SafeInt>`) keep it.
+- **Optional positions**: `f?: SafeInt` is `SafeInt | undefined`, as a
+  `Map` lookup's result is, until presence is established.
+- **Mutable storage**: a location typed `SafeInt` is a storage contract,
+  established at its allocation and every write; a read's refinement never
+  strengthens it. `@invariant safeInteger(this.f)` states the same of a
+  field as a type invariant, a fact frames preserve; the type is the
+  contract every heap meets.
+- **Typed arrays**: an element of a `uint8`, `uint16` or `int32` view is a
+  safe integer by its format (`Semantics/ViewFormats.lean`); its read
+  gives $`\mathrm{int}`$, or its element type is `int`, so `const k: SafeInt
+  = bytes[i]` holds. A `float64` view's element is a `number`.
+- **Native results**: their reviewed contracts keep their declared result
+  types (`number`); results their postconditions state integral
+  (`indexOf`, string lengths) reach `SafeInt` through the bridge.
+- **`JSON.parse`**: a `JsonValue`'s numbers are `number`; a value reaches
+  `SafeInt` through a test that gives $`\mathrm{int}`$
+  (`Number.isSafeInteger`), whose fact is part of this work where it is
+  missing.
 - **Signatures**: a checked definition or import establishes its results;
-  an exported parameter's type is assumed of external callers, as every
-  exported type is (DESIGN.md's trust surface), since TypeScript does not
-  enforce the refinement.
-
-These obligations are on the acceptance path that `mode8Accepted_sound`
-covers.
+  an exported parameter's `SafeInt` is assumed of external callers, as
+  every exported type is (DESIGN.md's trust surface); a `SafeInt` in an
+  external declaration with no body is assumed as its `number` would be.
 
 ## Ranges
 
-A non-negative safe integer is a unary predicate the contents algebra could
-carry beside the safe integers, with a bridge for $`0\le x`$ too; it is left
-for later, under the name `SafeNat`. Relations between values (`i <
-xs.length`) stay in clauses.
+A non-negative safe integer (`SafeNat`) would be a second clause with its
+own bridge; it is left for later. Relations between values stay in
+clauses.
 
 ## Compatibility and controls
 
-- A program that writes no `SafeInt` keeps its verdicts: the case set is
-  compared before and after, since normalisation and refinement are
-  shared.
+- A program that writes no `SafeInt` keeps its verdicts, except where the
+  bridge adds a fact (a slot of a single decodable literal already gives
+  one); the case set is compared before and after.
 - Recognition follows the binding: a re-export or alias reaching the
   declaration of `resolvable.d.ts` is `SafeInt`; another binding named
-  `SafeInt` is what it declares. Controls for shadowing, re-exports and
-  aliases.
-- Controls forging a `SafeInt` claim, a result at `SafeInt` and an
-  $`\mathrm{int}`$ fact; a refinement in one context followed by an
-  unrefined check of the same pair of types (no cache leak); unsafe writes
-  through aliases, absent elements and optional results.
+  `SafeInt` is what it declares.
+- Controls: a forged `int` clause, a forged result at `SafeInt`, a forged
+  $`\mathrm{int}`$ fact; a comparison whose operand is typed `number` with
+  no $`\mathrm{int}`$ fact (refused); a refinement in one context followed
+  by an unrefined check of the same pair of types.
 - Values at the edges: fractions, NaN, the infinities, both zeros,
-  $`\pm(2^{53}-1)`$ and $`2^{53}`$.
-- Negative cases run under Node: a return of `x / 2` at `SafeInt` with `x`
-  odd, read as an index (`xs[0.5]` is `undefined`); `NaN` written into a
-  `SafeInt` field.
+  $`\pm(2^{53}-1)`$ and $`2^{53}`$; negative cases run under Node (a return
+  of `x / 2` at `SafeInt` with `x` odd read as an index; `NaN` written into
+  a `SafeInt` field).
+
+## Steps
+
+1. The clause `int`: meaning, meet, inclusion, decoding; `SafeInt` read by
+   `tools/type-term.mts`; the case set compared. `SafeInt` then holds safe
+   literals and values already typed `SafeInt`; anything else is refused.
+2. Type to fact in `linearAtoms`, replacing `litSlot`; the clause reader's
+   query. `SafeInt` operands then serve as indices without
+   `safeInteger(i)`.
+3. Fact to type through `refineBy`, so arithmetic results are stored at
+   `SafeInt`; typed-array elements and `Number.isSafeInteger`.
 
 ## Documentation
 
 ANNOTATIONS.md (`SafeInt` beside the other declared types),
-CLAIM-LANGUAGE.md (the number contents), ARITHMETIC.md (the bridge and the
-clause reader), and the papers' $`\mathit{SafeInt}`$ (named on the branch
-of the arithmetic-rules work, `note.tex` §2), with the sentence that the
-type `SafeInt` denotes it.
+CLAIM-LANGUAGE.md and the types' documentation (the clause), ARITHMETIC.md
+(the bridge and the clause reader), and the papers, where the type
+`SafeInt` denotes $`\mathit{SafeInt}`$.
