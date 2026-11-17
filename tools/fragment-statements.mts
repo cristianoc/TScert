@@ -2352,9 +2352,32 @@ function clauseParameter(gate: Gate, name: string, position: number, type: TypeT
         t = field === null ? null : withoutTags(field, out);
       }
       return t === null ? null : t.k === "array" ? "array" : namesView(t) ? "view"
-        : t.k === "atom" && t.name === "string" ? "string" : "other";
+        : t.k === "atom" && t.name === "string" ? "string" : integral(gate, t) ? "int" : "other";
     },
   };
+}
+
+/** Whether every value of a type is a safe integer: each arm of the type,
+ * an alias followed to its equation, is the verifier's `SafeInt` or a
+ * numeric literal that is a safe integer (the clause `int` and the literals
+ * at most it, `PositiveRules`). */
+function integral(gate: Gate, t: TypeTerm, depth: number = 0): boolean {
+  if (depth > 16) return false;
+  if (t.k === "atom") return t.name === "safeInt";
+  if (t.k === "literal") return t.name === "number" && Number.isSafeInteger(Number(t.text));
+  if (t.k === "union") return t.parts.length > 0 && t.parts.every(p => integral(gate, p, depth + 1));
+  if (t.k === "reference") {
+    const records = gate.namedRecords();
+    if (records === null) return false;
+    try {
+      const meaning = aliasMeaning(t, records, (): never => { throw new UnresolvedField(); });
+      return meaning !== "record" && integral(gate, meaning, depth + 1);
+    } catch (e) {
+      if (e instanceof UnresolvedField) return false;
+      throw e;
+    }
+  }
+  return false;
 }
 
 /** A type without the parts a guard's failed test excludes: the arms of a

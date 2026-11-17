@@ -211,6 +211,18 @@ function answer(): SafeInt {
 }
 ```
 
+A `SafeInt` value is a safe integer in every fact the verifier reads of it
+([integrality from a type](ARITHMETIC.md#linear-facts)), and a clause
+compares a parameter, a path or an element whose type is `SafeInt` with no
+`safeInteger(...)` ([integrality](ARITHMETIC.md#the-clause-language)):
+
+```ts
+/** @requires 0 <= i && i < xs.length */
+function at(xs: number[], i: SafeInt): number {
+  return xs[i]!;
+}
+```
+
 ## What is inferred, and where an annotation is required
 
 TScert infers the types of locals and of functions written as arguments,

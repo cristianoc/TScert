@@ -18,7 +18,10 @@
 // with n an integer literal, x a parameter and f a field name: a path `p`
 // reads the named data fields from the parameter in turn, each a required
 // field of the record type the path before it has. A value term `p` is a
-// path the clause states a safe integer; `p.length` is the length of an
+// path the clause states a safe integer, or whose type, past the clause's
+// guards, is the verifier's `SafeInt` at every arm (`PathType` "int"): the
+// comparison's facts state its integrality of themselves, and every call
+// establishes them; `p.length` is the length of an
 // array or the length of a typed array the path's type names. Each
 // atom's meaning is the index facts it elaborates to: `safeInteger(x)` is
 // `int(x)`, `safeInteger(p.f)` the fact `p.f ≤ 2^53 - 1`, which holds of a
@@ -61,9 +64,11 @@ import type { BodyFact, BodyVariable, GuardTag, IndexFact, LinearFact, LinearTer
 
 /** What a path's type names: an array, whose `length` is its spine's length;
  * a typed array, whose `length` is its typed-array length (`view`); a string,
- * whose `length` is its count of code units (`string`); a record or any other
- * value (`other`); or no type a field resolves (`null`). */
-export type PathType = "array" | "view" | "string" | "other" | null;
+ * whose `length` is its count of code units (`string`); a safe integer, each
+ * arm of the type the verifier's `SafeInt` or a safe integer's literal
+ * (`int`); a record or any other value (`other`); or no type a field
+ * resolves (`null`). */
+export type PathType = "array" | "view" | "string" | "int" | "other" | null;
 /** The tags a clause's guards exclude of a path's prefix of `depth` fields,
  * where the clause holds past them. */
 export type Excluded = (depth: number) => readonly GuardTag[];
@@ -615,6 +620,11 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       const wrap = (f: IndexFact): IndexFact =>
         resolved.reduceRight<IndexFact>((body, g) => ({ guarded: { ...g, body } }), f);
       const path = (key: string): { p: ClauseParameter; path: string[] } => pathAt(guards.length, key);
+      /** Whether a path's type, past the clause's guards, is a safe integer. */
+      const integral = (key: string): boolean => {
+        const { p, path: fields } = path(key);
+        return p.at(fields, excludedBy(guards.length, key.split(".")[0] ?? "")) === "int";
+      };
       const value = (key: string): LinearTerm => {
         const { p, path: fields } = path(key);
         return { kind: "value", slot: p.position, path: fields };
@@ -642,7 +652,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
           if (at === "string") return { kind: "strLength", slot: p.position, path: fields };
         }
         const t = value(key);
-        if (!ints.has(JSON.stringify(t))) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+        if (!ints.has(JSON.stringify(t)) && !integral(key))
+          throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
         return t;
       };
       for (const a of atoms) {
@@ -697,7 +708,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
         const variable = (key: string): BodyVariable => {
           if (key === a.binder) return "index";
           if (key.startsWith(`${a.array}[${a.binder}+`) && key.endsWith("]")) {
-            if (!atoms.some(b => b.k === "safeInteger" && b.of === key)) throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && p.at([...a.array.split(".").slice(1), "[]"]) !== "int")
+              throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
             return { offset: { delta: Number(key.slice(`${a.array}[${a.binder}+`.length, -1)) } };
           }
           if (key === elem || key.startsWith(`${elem}.`)) {
@@ -710,8 +722,8 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
                 throw new ClauseError(`the element path ${key} has no length contract`);
               return { project: { kind: kind === "array" ? "length" : kind === "view" ? "view" : "strLength", path } };
             }
-            if (!atoms.some(b => b.k === "safeInteger" && b.of === key))
-              throw new ClauseError(`the comparison names ${key}, which the clause does not state a safe integer`);
+            if (!atoms.some(b => b.k === "safeInteger" && b.of === key) && kind !== "int")
+              throw new ClauseError(`the comparison names ${key}, which neither its type nor the clause states a safe integer`);
             if (path.length === 0) return "elem";
             if (kind === null) throw new ClauseError(`the element path ${key} has no field contract`);
             return { project: { kind: "value", path } };
