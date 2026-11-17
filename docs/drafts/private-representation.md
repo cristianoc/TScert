@@ -61,8 +61,9 @@ It reads three existing pieces:
   language states $`I_C`$ over the paths `this.#f`.
 
 New machinery: the regions of a class body's private state, one protocol
-per body, one rule, one confinement check and one trust row, a property of
-the language. No new judgment form, no new modality, no world component.
+per body, one rule, one confinement check and two trust rows, one a
+property of the language, one a caller's use of a value given out at a
+read-only type. No new judgment form, no new modality, no world component.
 
 ## The example
 
@@ -150,6 +151,16 @@ when it is a call whose callee is neither a function of the body nor an
 audited native, an `await`, or a `yield`. A call *names* its callee when the
 callee is a function of the body, a binding of the body written once with
 one, or a private method.
+
+**Read-only types and views.** A type is *read-only* when every storage
+it reaches is read-only in it: each array position a `readonly T[]`,
+`ReadonlyArray<T>` or `ArrayLike<T>`, each field `readonly`, each typed
+array none, recursively through element and field types, and no position a
+function type but `ReadonlyArray`'s own members. A reference the body gives
+to code that is not the body's at a read-only type (a member's result, an
+argument of a call it does not name, a value thrown or yielded, or the
+content of a public field) is a *view*; a location of
+$`\mathsf{own}_C`$ reachable from a view is *exposed*.
 
 **Members.** The members $`M_C`$ are the functions of the body that code
 that is not the body's can reach: the constructors of $`C`$'s classes,
@@ -243,16 +254,19 @@ conjectured until its Lean exists; the statement each cites is labelled.
   until the audit of [the natives that enumerate keys](#what-tscert-must-change).
 - **(P2) Confinement.** Every path from a frame of code outside the body to
   a location of $`\mathsf{own}_C`$ passes through a location of
-  $`\mathsf{priv}_C`$. Paths run through fields, cells, spines and element
-  cells; a closure's environment is not reachable from a
+  $`\mathsf{priv}_C`$ or starts at a view. Paths run through fields, cells,
+  spines and element cells; a closure's environment is not reachable from a
   holder of the closure. Contents are (P2)'s: a member may return a number
   read from a private field. Conjectured, from the
   [confinement check](#the-class-shape-the-rule-requires).
 - **(L1) Outside step.** From a state meeting (P1) and (P2), a step of code
   outside the body leaves every location of $`R_C`$ unchanged and keeps
   (P1) and (P2). A write at $`o.\sigma`$ needs $`\sigma`$ as a static key,
-  which the code lacks, or as a value, which (P1) excludes; a write to owned
-  storage needs a reference, which (P2) excludes.
+  which the code lacks, or as a value, which (P1) excludes; a change of
+  owned storage needs a reference, which (P2) gives only as a view, through
+  which the [read-only views row](#trust) states code outside changes
+  nothing. (L1) is conjectured from that row, which is trust: it holds of
+  external code that meets the row, and of no other.
 - **(L2) Outside run.** A run of code that is not the body's from $`h`$
   changes each location of $`R_C(h)`$ within $`\Psi_C`$. By induction on
   the budget $`k`$: the run changes $`R_C`$ only inside calls of members,
@@ -364,7 +378,13 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   into storage not confined, and an argument of a call that does not name a
   function of the body are refused. A closure of the body may capture a
   confined value; a closure given out is a member, and its own flows are
-  checked the same.
+  checked the same. A confined value may also leave the body as a view: a
+  return out of a member, an argument of a call that does not name a
+  function of the body, a `throw`, a `yield`, or a store into a public field
+  of an instance of the body's classes, each at a read-only type. A value
+  given as a view stays confined for the body, which may still write it
+  within $`\Psi_C`$; the body never takes a view back as owned storage, by
+  *Ownership at construction*.
 - **Ownership at construction.** Storage enters private state, or confined
   storage, only where a location holding no object is written, and only
   storage allocated during the current call of the body, an unconfined copy
@@ -401,8 +421,9 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
 
 ## Trust
 
-The new row of the [trust surface](../DESIGN.md#trust-surface), a property
-of the language:
+Two new rows of the [trust surface](../DESIGN.md#trust-surface).
+
+**Private names**, a property of the language:
 
 > ECMAScript private names behave as the specification states
 > ([ECMA-262](../REFERENCES.md#ecma-262), Private Names): code outside a class
@@ -412,12 +433,32 @@ of the language:
 > running outside the language's semantics (a debugger, an inspector
 > protocol) is outside the model.
 
-What it replaces:
+**Read-only views**, an assumption about code outside the analyzed
+sources, of the kind of the rows on exported preconditions and on a
+callback's stated effect (a stand-in until applications are analyzed too):
 
-- **No assumption about external code's use of a handle.** A copy, a JSON
-  copy, a `structuredClone` copy, a proxy and an object inheriting from a
-  handle throw a `TypeError` at the first private read (observed), which
-  safety admits.
+> A caller outside the analyzed sources, and every function it passes in,
+> changes nothing it reaches through a view: a value a class with private
+> state gives out at a read-only type, or any copy of that reference. It
+> writes no element, field or length of it, and freezes, seals, extends or
+> redefines none of it, by any operation, a native's included.
+
+The row is stated in the API: the declaration of each value given out as a
+view states, in its doc comment, that callers must not change it. The
+type check of a caller does not establish it. TypeScript's `readonly`
+constrains only the written type, and TypeScript admits a `readonly string[]`
+where `{ length: number }` is expected, and an `ArrayLike<number>` where
+`{ [i: number]: number; length: number }` is, whose writes then
+type-check (observed: `tsc` 7.0.2 under `strict` accepts both, and Node
+truncates both arrays); a cast or `any` removes it too.
+
+What they replace:
+
+- **No assumption about external code's use of a handle itself.** A copy, a
+  JSON copy, a `structuredClone` copy, a proxy and an object inheriting from
+  a handle throw a `TypeError` at the first private read (observed), which
+  safety admits. Only what a handle gives out at a read-only type rests on
+  the read-only views row.
 - **The invariant of a class with private state needs no caller trust.**
   The row on exported preconditions ("the type invariant … of each type its
   parameters' types name, a sealed handle's included") does not apply to
@@ -539,9 +580,12 @@ export class PreparedText {
   readonly #segments: string[] | null = PreparedText.#staged!.segments
   readonly #kinds: SegmentBreakKind[] | null = PreparedText.#staged!.kinds
   // … every field of PreparedLineBreakData, each by its initializer
-  readonly segments: readonly string[] | null = this.#segments === null ? null : this.#segments.slice()
-  readonly kinds: readonly SegmentBreakKind[] | null = this.#kinds === null ? null : this.#kinds.slice()
-  readonly widths: ArrayLike<number> | null = this.#segments === null ? null : this.#widths.slice()
+  /** Each segment's text. Callers must not change it. */
+  readonly segments: readonly string[] | null = this.#segments
+  /** What each segment is. Callers must not change it. */
+  readonly kinds: readonly SegmentBreakKind[] | null = this.#kinds
+  /** Each segment's width in px. Callers must not change it. */
+  readonly widths: ArrayLike<number> | null = this.#segments === null ? null : this.#widths
 
   constructor() { PreparedText.#staged = null }
   static #check(): TextParts { /* as in the example */ }
@@ -578,9 +622,12 @@ export type PreparedTextWithSegments = PreparedText & {
   constructs, so `#segments` and `#kinds` are written by their
   initializers; its result narrows to `PreparedTextWithSegments` by a
   user-defined guard on the three public fields, checked by TScert's guard
-  rules. The public `segments`, `kinds` and `widths` are copies their own
-  initializers make from the private fields, of strings and numbers, so
-  unconfined, and no private field holds them. The public fields are ordinary
+  rules. The public `segments`, `kinds` and `widths` hold the private
+  fields' own arrays as views, at upstream's read-only types (cited:
+  upstream `layout.ts:53–57`, `readonly string[]`,
+  `readonly SegmentBreakKind[]`, `ArrayLike<number>`), with no copy; their
+  doc comments state the read-only views row, and $`\psi`$ is
+  $`\mathsf{keep}`$ on every array they hold. The public fields are ordinary
   fields: external code may store an array in `segments` of a handle
   `prepare()` made, which then meets `PreparedTextWithSegments` while its
   `#segments` is `null`. So the guard gives no fact about the private
@@ -739,8 +786,9 @@ figure is the median of the process medians. Apple M2 Max, load average
   +11% (10.86 against 9.77 ms): the stream allocates one `LineCursor` per
   line, where upstream writes the result's own records. JSC's `plain` is
   slower there than both (11.96 ms).
-- The three public copies cost `prepareWithSegments` 1–2% on V8 and 3–4% on
-  JSC against `plainw`.
+- The three public copies of `designscalar` cost `prepareWithSegments`
+  1–2% on V8 and 3–4% on JSC against `plainw`; the specified shape gives
+  the private arrays out as views and makes no copy.
 - A field declared and then assigned in the constructor, in place of
   written by its initializer, cost the full walker 15–19% on V8 against
   `plainw` in an earlier run on the same setup without rich-inline
@@ -762,22 +810,32 @@ hand-written rewrite, and differ from this design in two points:
 holds the three lists in three fields. Retained memory was not measured.
 
 **The specified shape and retained memory.** *(To be filled: the
-measurement of exactly the shape this draft specifies, `measureAnalysis` in
-paragraph mode returning a plain record, `#sources` one field, every cached
-advances list copied, with retained heap per handle, against `plain` and
-`plainw` on the setup above.)*
+measurement of exactly the shape this draft specifies, `views`:
+`measureAnalysis` in paragraph mode returning a plain record, `#sources`
+one field, the cache's lists shared as upstream shares them, and the public
+`segments`, `kinds` and `widths` holding the private arrays, with retained
+heap per handle, against `plain` on the setup above.)* Measured on the
+nearest variants (setup above, 15 processes; `shared` 8): `shared`, the
+same with the public arrays copied at construction, shows no time
+regression outside `plain`'s spread on V8 or JSC, and retains 29–33% more
+per `prepareWithSegments` handle and 1–3% more per other handle;
+`sharedlazy`, the copies made by getters at first read, retains 0–1% more
+while no array is read and costs JSC 2.4% on `walkLineRanges`, 4.0% on its
+narrow widths and 17.6% for a visitor reading `h.segments` per line. That
+`views` costs neither is conjectured until measured.
 
 ## Negatives and controls
 
 **Negative cases**, each unsafe under Node (observed: each program, as
 JavaScript, run with `node`, printing the reads), each refused:
 
-- `invalid-private-escape-return`: a member returns `#widths`; the client
-  pushes onto it; the walker reads `#flags` past its end:
-  `[0, 0, undefined]`. Refused by *Confinement* at the return.
-- `invalid-private-escape-argument`: the walker passes `#widths` to the
-  user's callback, which pushes onto it: `[0, 0, undefined, undefined]`.
-  Refused by *Confinement* at the argument.
+- `invalid-private-escape-return`: a member returns `#widths` at
+  `number[]`; the client pushes onto it; the walker reads `#flags` past its
+  end: `[0, 0, undefined]`. Refused by *Confinement* at the return: the type
+  is not read-only.
+- `invalid-private-escape-argument`: the walker passes `#widths` at
+  `number[]` to the user's callback, which pushes onto it:
+  `[0, 0, undefined, undefined]`. Refused by *Confinement* at the argument.
 - `invalid-private-shallow-copy`: a member returns `#fits.slice()` of an
   array of arrays; the client truncates an inner array; the walker reads
   `[undefined, undefined, 3, 4]`. Refused by *Confinement*: the copy's
@@ -829,7 +887,9 @@ restriction (observed):
 (`[0, 0, 0]`); `private-confined-collection`, a handle holding, uncopied, an
 array from a cache `Map` only the body reaches, its visitor preparing again
 (`[1, 1]`); `private-escape-copy`, a member giving out a copy of a
-number array that the client pushes onto (`[0, 0]`);
+number array that the client pushes onto (`[0, 0]`); `private-view`, a
+member returning `#widths` at `readonly number[]` and the walker's visitor
+reading it, the walker reading `#widths[i]` after each call (`[1, 1]`);
 `bounds-pattern-unreachable-field-refused` and
 `bounds-pattern-unreachable-handle-refused` rewritten with a class with
 private state.
@@ -841,10 +901,18 @@ private state.
 `TypeError` at a private read; a frozen instance reads as before;
 `h.constructor` is the class.
 
+**The read-only views row is load-bearing** (observed): a client that
+passes `private-view`'s result where `{ length: number }` is expected and
+sets its length to 0 type-checks under `tsc` 7.0.2 `--strict` and leaves
+the walker reading `[undefined, undefined]`. The design accepts that program, whose
+client breaks the row; no case can refuse it, since the client is outside
+the analyzed sources.
+
 **Controls** (forged fragment or forced proposal), each refused:
 $`\Psi_C`$ forced smaller than a member's effect; a member forged as a
 non-member; a function used as a value forged as called by name only; an
-`await` forged as body code; a confined flow forged to an outside argument;
+`await` forged as body code; a confined flow forged to an outside argument; a view forged at a type
+that is not read-only;
 a copy of an array of arrays forged unconfined; a write to a value from a confined collection forged
 uncharged; an exported collection forged confined; an owned store forged as
 fresh; a staging field forged left set on a throw; an initializer forged to
@@ -882,7 +950,8 @@ Cost (conjectured):
   over the body's code.
 - The pass: one region test per entry of an effect at a step that runs code
   that is not the body's; no work per call site beyond respect.
-- Trust: one row, of the language. No row about external code's use of a
+- Trust: two rows, one of the language and one of callers' use of views,
+  stated in the API. No row about external code's use of a
   handle.
 - Sources: pretext's handle code moves into one class body; its public
   handle types become a class; the scope above is lost.
