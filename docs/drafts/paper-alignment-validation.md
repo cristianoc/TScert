@@ -186,3 +186,55 @@ complete derivation admission and closed paper examples remain outside the
 proved scope. The correspondence table states those limits individually.
 This validation does not establish full alignment or automatic proof-search
 completeness.
+
+## Support, witnesses and arithmetic at 1d11d168
+
+Evidence from the cloud checkout on 2026-11-17, for source commit
+`1d11d168133c9b85f1dc19c3b2a68df79d94dee4`, following continuation validation
+`4174ff63445258c2d82ae443613d3139113c25e8`. Focused builds passed for
+AllSupport, Existentials, Arithmetic and Obstructions, then their finite
+derivation and transfer integration. Both A and Paper axiom checks passed
+together (405 jobs). The same eight cached informational Lean PANIC traces
+from unchanged A code described above were replayed; they introduced no new
+module warning or error and did not change the exit-zero axiom result.
+
+A complete supervised `make test` invocation exited zero under the pinned
+Lean and Node versions with `bc`, within its 1800-second budget:
+
+- full Lean build: 614 jobs;
+- all 23 fast suites, including all 175 controls;
+- **3419 of 3419 pipeline cases as expected**, 4322 functions verified,
+  1782 negative controls and 147 named gaps.
+
+The controls ran on four lanes, with 3 operations executed and 492 replayed.
+Axiom-check direct import coverage includes 363 other A/shared modules and
+39 other Paper modules. The separate source scan found zero imports of Paper
+from outside Paper; every changed Lean file is under Paper. No shared
+semantics, acceptance decision or expected test result changed. Documentation
+checking passed with 76 documents, 892 code citations and zero problems;
+`git diff --check` and the commit-record hook passed.
+Raw cloud logs are `/workspace/scratch/support-test.log`,
+`/workspace/scratch/support-axioms.log` and
+`/workspace/scratch/support-docs.log`.
+
+Independent read-only Astra review checked the full modality-free all-support
+statement, the one-way preservation proof, current-only witness opening,
+old monotonicity, all framing, recursive term occurrence and exact arithmetic
+definedness, fixed literal interpretations, and the defined length ranges.
+It found no soundness defect and confirmed the unchanged 89-row accounting:
+**42 equal / 25 narrower / 9 absent / 13 assumed**. It did not rerun compilation
+or the regression suite.
+
+The review also identified the negative-zero obstruction and checked its
+kernel proof: in a valid environment containing only `-0`, integer term
+equality with zero holds while raw value equality with `+0` fails. The
+unrestricted reverse bridge is not admitted. This is an interpretation
+obstruction requiring an owner decision, not a false integer-arithmetic
+claim. The paper is unchanged. Earlier statements about no demonstrated
+obstruction apply only to their explicitly named saved source scope.
+
+All support and the new logic/arithmetic constructors close parts of
+Definitions 14 and 23. They do not establish the structural support table,
+full mixed old/current syntax and substitution, all primitive/host bridges,
+Call/Fun, complete derivation admission or closed paper example proofs.
+Those limitations remain explicit in the audit and the owning WORK row.
