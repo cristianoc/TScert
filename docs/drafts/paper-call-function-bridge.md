@@ -63,3 +63,21 @@ Do not add a polarity restriction or silently rebase arbitrary Q.
 Astra independently read the exact Call/Fun premises and designed this order
 on 2026-11-17. It identified the execution correspondence, actual-environment
 validity and freshness/mark questions as separate proof obligations.
+
+## Scope and declaration transport
+
+A total naming map is an implementation device, not an extra Call premise.
+Extend a finite input assignment with the fresh result, send unused names to a
+non-result default, and prove the constructed map has the required result
+fiber. Complete scoped AST rename-agreement proves unused images irrelevant;
+old uses input scope, the result is current-only, logical maps lift together,
+and both inner and outer regional effects participate. The displayed callee
+is fixed. A final scoped corollary must assemble precondition dependence,
+postcondition/effect scopes and declared-region admission; the raw total-map
+transport alone is not labelled a complete finite substitution rule.
+
+Program-only renaming must also preserve both scope and static admission.
+Logical binders leave program names unchanged. Their declaration shift commutes
+with program renaming of the shared even/odd root encoding. This extends the
+existing scope and DeclaredPaths pullback mechanisms, without inferring object
+or collection types from equality at one heap.

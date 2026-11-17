@@ -270,8 +270,7 @@ universally quantified values; current heap validity is part of their domain.
 proves total semantic transport with independent maps for the three namespaces.
 Only the bound namespace lifts at a binder. Both entry/current program
 valuations and all modal effects participate; heaps and invocation mark stay
-fixed. This is not yet a theorem preserving scope/static admission under
-transformed declarations, or general path/term substitution.
+fixed. Program-only renaming scope and declaration admission are proved by the linked modules below; arbitrary logical-map instantiation and general path/term substitution are separate obligations.
 
 [PostconditionExamples.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionExamples.lean)
 encodes Q_< and Q_≠i as actual syntax, sharing each quantified index and value
@@ -378,6 +377,50 @@ with arbitrary knowledge. It does not infer prefix safety from endpoints.
 encodes the actual loop, both tests and the throw, with scopes, full head
 bounds and arithmetic obligations proved. It does not claim a closed
 execution/graph proof or use the older six-node graph as that example.
+
+## Actual Call instantiation
+
+[PrimitiveRenaming.lean](../../lean/Verification/Paper/TolerantFrames/PrimitiveRenaming.lean)
+renames every primitive form and proves identity of the shared executed term,
+steps, heaps and exits at pulled-back actual environments. Input argument aliases
+are unrestricted. The result's total-map fiber condition is constructed from a
+finite assignment; unused names are sent away from the fresh result. Whole
+actual environment validity is recovered from the valid input and formal result,
+including actual slots outside the image of the formal map.
+
+[FormulaScopes.lean](../../lean/Verification/Paper/TolerantFrames/FormulaScopes.lean)
+gives lexical scope to every one-state assertion constructor, including all term
+mentions in a tautology or a zero-coefficient expression. Bound logical values
+shift outer slots. Scope implies semantic dependence through complete effects
+and modalities, and capture-avoiding renaming preserves it.
+[PostconditionProgramRenaming.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionProgramRenaming.lean)
+proves full syntax agreement when program maps agree on the entry/current names
+in scope. Logical maps lift together. This makes total-map extensions irrelevant
+through old, quantifiers and effects.
+
+[PostconditionScopeWeakening.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionScopeWeakening.lean)
+and [PostconditionRenamingScopes.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionRenamingScopes.lean)
+prove scope weakening and program renaming at separate entry/current scopes.
+[PostconditionRenamingAdmission.lean](../../lean/Verification/Paper/TolerantFrames/PostconditionRenamingAdmission.lean)
+proves logical-value declaration shifting commutes with program-only renaming of
+the even/odd root encoding, and preserves nested-old restrictions, both declaration
+contexts and complete Admitted judgments. No object/collection declaration is
+inferred from value equality or from the newly bound logical value.
+
+[CallRules.lean](../../lean/Verification/Paper/TolerantFrames/CallRules.lean)
+and [CallAdmission.lean](../../lean/Verification/Paper/TolerantFrames/CallAdmission.lean)
+assemble actual finite variable-argument Call transport. The callee stays fixed;
+all input aliases are allowed. The final rule requires the actual result fresh in
+the whole caller scope and proves the executed call WellScoped. Its specification
+has lexical precondition scope, separate normal/exceptional scopes (no result on
+throw), both outer effect scopes, and declaration pullback premises. The precondition meaning, both postcondition ASTs and both footprints
+are independent of unused total-map images. Both exits,
+effects, chosen world, residual budget and command mark come from actual execution.
+The formal Triple already holds uniformly at command marks; no body-only freshness
+specification is silently rebased. The theorem accepts any finite formal member.
+Actual rest-array/spread preparation, freshness-mark rebasing and Fun's body-to-
+callable-code correspondence remain distinct obligations, as the reviewed
+[operational design](paper-call-function-bridge.md) records.
 
 ## How far B matches the paper
 

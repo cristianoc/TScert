@@ -1,3 +1,11 @@
+import Verification.Paper.TolerantFrames.CallAdmission
+import Verification.Paper.TolerantFrames.CallRules
+import Verification.Paper.TolerantFrames.PrimitiveRenaming
+import Verification.Paper.TolerantFrames.FormulaScopes
+import Verification.Paper.TolerantFrames.PostconditionProgramRenaming
+import Verification.Paper.TolerantFrames.PostconditionRenamingScopes
+import Verification.Paper.TolerantFrames.PostconditionRenamingAdmission
+import Verification.Paper.TolerantFrames.PostconditionScopeWeakening
 import Verification.Paper.TolerantFrames.WorldIndependence
 import Verification.Paper.TolerantFrames.HeapValidity
 import Verification.Paper.TolerantFrames.PathTermSupports
