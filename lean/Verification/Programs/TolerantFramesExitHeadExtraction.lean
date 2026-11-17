@@ -35,7 +35,7 @@ structure HeadChecks (env : WalkEnv ι G I) (l : Nat) (t : Target) (tc : PointCl
 theorem headExit_contract {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed vacuous : Bool}
     {carried : List (PromiseCalls.Implication ι)} {a b : ExitsDone ι G}
-    (h : headExit G I env l t tc Γ names store pushed vacuous carried a = .ok b) :
+    (h : headExit G I env l exit t tc Γ names store pushed vacuous carried a = .ok b) :
     ∃ req, HeadChecks env l t tc Γ names store pushed vacuous carried req := by
   have hg : ∃ req, env.given[t.label]! = some req := by
     unfold headExit at h

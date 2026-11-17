@@ -261,8 +261,10 @@ An `edge-coverage` record includes `source` and `destination` node records,
 after the continuation's), and `transfer`:
 
 - `available`: the context before applying the destination map, including any
-  result pushed by bind or Boolean dispatch, or, on a handler's edge, the
-  thrown value.
+  result pushed by bind or Boolean dispatch, or, on a handler's edge (the
+  index past the continuation's edges), the thrown value: at the type the
+  check names for it, else at the type the handler's target requires of
+  the slot it lands in.
 - `target`: exact destination label and slot mapping.
 - `booleanObservation`: true/false for a result-binding Boolean branch; otherwise
   null. The observed slot is 0. This is the premise of that edge, **not** a claim
@@ -279,22 +281,44 @@ observation, not as ordinary subtyping of `available` alone.
 
 ### Edge facts
 
-An edge of the single pass refused for facts its target requires (a
-statement entry's given or written facts, a target's stated assertion), in
-the unit's graph or in a code's, carries the `edge-coverage` record of that
-edge, the full requirement as `destination.requiredKnowledge`, and
-`edgeFacts`: `{ "lacking", "known" }`, two knowledges over the target's
-slots. `lacking` holds the requirement's facts the edge does not establish,
-each decided alone by the check that decides the whole requirement
-(`KnowledgeExpand.checkIn`, from the edge's facts through the target's
-mapping); `known` holds the edge's facts over the slots the mapping reads,
-restated at the target's slots, those sharing a slot with a lacking fact,
-with the links that name the values past the context (a name past the
-source's context is kept past the target's). The facts are the encoding of
-`candidatesLeftOut`'s `fact` and of the knowledge of a record, over the
-target's slots as a candidate's are over its entry's. The pass's walk holds
-these facts deferred; the check that reports the refusal computes them
-(`FilePlans.placeRefusal`), as for [step preconditions](#step-preconditions).
+An edge of the single pass refused for what its target requires, in the
+unit's graph or in a code's, also as the regional fallback's refusal,
+carries the `edge-coverage` record of that edge, at its exit's position
+among its node's edges, the full requirement as
+`destination.requiredKnowledge`, and `edgeFacts`:
+`{ "requirement", "established", "lacking", "known" }`, the last three
+knowledges over the target's slots. `requirement` is what the edge is
+refused for: `{"kind": "facts"}`, facts a statement entry is given or
+written or a target's assertion states; `{"kind": "implication", "test",
+"target"}`, a statement entry's given implication between two of its
+slots; `{"kind": "input-value", "slot", "input"}`, a slot it states holds
+an input's entry value; `{"kind": "promised-input", "slot"}`, a slot it
+states holds the promised input.
+
+Of a `facts` requirement, `established` and `lacking` split its facts by
+whether the check that decides the whole (`KnowledgeExpand.checkIn`, from
+the edge's facts through the target's mapping) establishes each, decided
+alone with the requirement's links; the others are empty. `known` holds
+the edge's facts as that check reads them, restated at the target's slots
+as a step reads its predecessor's: an index fact over a name no target
+slot reads restated through the read links giving it, those names
+eliminated from the linear facts, each fact renamed to every target slot
+reading each of its slots; those over the requirement's slots or a
+lacking fact's. The facts are the encoding of `candidatesLeftOut`'s `fact`
+and of the knowledge of a record, over the target's slots as a candidate's
+are over its entry's. The pass's walk holds these facts deferred; the
+check that reports the refusal computes them (`FilePlans.placeRefusal`),
+as for [step preconditions](#step-preconditions).
+
+A return of the single pass refused for its postcondition carries the
+`node-typing` record of its node with `postcondition`: `{ "facts",
+"known" }`. Each of `facts` is `{ "fact", "entailed" }`: a fact of the
+postcondition at the return's slots, the result at 0 and each other slot
+the one after its context slot (an input's entry value, `old(x)`, read at
+the slot holding it; null where no slot holds the entry value of an input
+it names), with whether the return's facts entail it, decided alone by
+the check that decides the whole (`GraphCode.returnEntails`); `known` is
+those facts, over the same slots.
 
 Current-content assertions in the supported cell profile reach checked
 obligations. Graph failures use `edge-coverage`, with destination `sourceMap` role
@@ -363,17 +387,23 @@ from the record's structured fields, never from the human sentence:
   precondition the facts do not establish, then the index and elements
   facts known over the step's operands, then the claims of the slots it
   reads; a slot past the context is named by the link whose value it is,
-  and one no descriptor or link names by its position; a linear fact is
-  printed with a positive multiple of each term on its side;
-- an edge carrying `edgeFacts`: the edge by its source's span, the facts
-  the target requires that it does not establish, then the index and
-  elements facts known on it over the same slots, named by the target's
-  source map;
+  and one no descriptor or link names by its position;
+- an edge carrying `edgeFacts` that names a requirement it does not
+  establish: the edge by its source's span, that requirement, the required
+  facts it does establish, then the other facts known on it over the same
+  slots, of every kind, named by the target's source map; a value set by the
+  kinds and literals it admits, a variable's cell by the variable;
+- a return carrying `postcondition` that names a fact it does not
+  establish: those facts, then the facts known at the return;
 - another edge: the first destination slot whose mapped incoming claim differs
   from the requirement, or the required heap facts;
 - a direct obligation: the two compared types;
 - a source refusal: its reason; a production failure: none.
 
+A binding is shown by its descriptor's name where that is a source name
+(an identifier or a path of them), else by the source text of its span.
+A linear fact is printed with a positive multiple of each term on its
+side, `t <= 2^53 - 1` as `safeInteger(t)`, and a tautology not at all.
 Types are printed in the claim language ([CLAIM-LANGUAGE](CLAIM-LANGUAGE.md)),
 lifted from the record's table to depth 3, a row the record's `names` lists
 shown by its name. The presentation describes the failed requirement, not a

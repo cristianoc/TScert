@@ -11,6 +11,8 @@ const sourceMap: Json = { pos: [0, 1], role: "test", environmentStart: null, con
 const node: Json = { label: 0, sourceMap, node: null,
   claim: { context: [], type: [0] }, requiredKnowledge: null };
 const emptyKnowledge: Json = { cells: [], values: [], links: [], separation: { depth: 0, facts: [] }, elems: [], indices: [] };
+const edgeFacts: Json = { requirement: { kind: "facts" }, established: emptyKnowledge, lacking: emptyKnowledge,
+  known: emptyKnowledge };
 const sequent: Json = { context: [[0]], term: { var: { i: 0 } }, type: [0] };
 const edge = (mapping: Json): { [key: string]: Json } => ({
   ...common, kind: "edge-coverage", id: "c", edgeIndex: 0, source: node, destination: node,
@@ -30,7 +32,14 @@ const cases: { [key: string]: Json }[] = [
   edge(null),
   // A refused edge's facts and a refused step's preconditions, over empty
   // knowledges (their heap data is decoded below).
-  { ...edge([0]), edgeFacts: { lacking: emptyKnowledge, known: emptyKnowledge } },
+  { ...edge([0]), edgeFacts },
+  // A handler's edge: past the continuation's, the thrown value first.
+  { ...edge([0]), id: "edge:0:1", edgeIndex: 1, edgeFacts: { ...edgeFacts,
+    requirement: { kind: "implication", test: 0, target: 1 } } },
+  { ...edge([0]), edgeFacts: { ...edgeFacts, requirement: { kind: "input-value", slot: 0, input: 2 } } },
+  { ...edge([0]), edgeFacts: { ...edgeFacts, requirement: { kind: "promised-input", slot: 0 } } },
+  { ...common, kind: "node-typing", id: "r", source: node, sequent,
+    postcondition: { facts: [{ fact: { int: { slot: 0 } }, entailed: false }, { fact: null, entailed: true }], known: emptyKnowledge } },
   { ...common, kind: "node-typing", id: "p", source: node, sequent,
     preconditions: { step: "call", known: emptyKnowledge, signatures: [{ requires: null,
       atoms: [{ fact: { index: { slot: 0 } }, entailed: false }, { fact: null, entailed: true }] }] } },
@@ -65,7 +74,21 @@ assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common
   kind: "production-failure", failure: "failed", unexpected: true })}`), undefined);
 // Each record's own diagnostic data, on its kind alone.
 assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common,
-  kind: "node-typing", id: "n", source: node, sequent, edgeFacts: { lacking: emptyKnowledge, known: emptyKnowledge } })}`), undefined);
+  kind: "node-typing", id: "n", source: node, sequent, edgeFacts })}`), undefined);
+// An edge's facts field by field: a field missing, an unknown field, a null
+// knowledge, an unknown requirement.
+const malformedEdgeFacts: Json[] = [
+  { requirement: { kind: "facts" }, established: emptyKnowledge, lacking: emptyKnowledge },
+  { requirement: { kind: "facts" }, established: emptyKnowledge, lacking: emptyKnowledge, known: emptyKnowledge, extra: 1 },
+  { requirement: { kind: "facts" }, established: emptyKnowledge, lacking: null, known: emptyKnowledge },
+  { requirement: { kind: "facts", test: 0 }, established: emptyKnowledge, lacking: emptyKnowledge, known: emptyKnowledge },
+  { requirement: { kind: "other" }, established: emptyKnowledge, lacking: emptyKnowledge, known: emptyKnowledge },
+];
+for (const facts of malformedEdgeFacts)
+  assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...edge([0]), edgeFacts: facts })}`), undefined,
+    JSON.stringify(facts));
+assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common, kind: "node-typing", id: "r", source: node,
+  sequent, postcondition: { facts: [], known: null } })}`), undefined);
 assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...edge([0]),
   preconditions: { step: "call", known: emptyKnowledge, signatures: [] } })}`), undefined);
 const invalidMappings: Json[] = ["", [-1], [0.5], [1], [true]];

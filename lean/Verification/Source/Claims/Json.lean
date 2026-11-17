@@ -831,26 +831,44 @@ def preconditionsJson (d : SinglePass.StepPreconditions) : Json :=
         Json.mkObj [("fact", toJson F), ("entailed", toJson held)]).toArray)]).toArray),
     ("known", toJson d.known)]
 
-/-- A refused edge's facts as the record's `edgeFacts` field states them:
-the facts of the target's requirement the edge does not establish, and the
-facts the edge holds over the slots the mapping reads, both at the
-target's slots. -/
+/-- A refused edge's facts as the record's `edgeFacts` field states them,
+all at the target's slots: what the edge is refused for; the facts of the
+target's requirement it establishes and those it does not; the facts it
+holds over the requirement's slots. -/
 def edgeFactsJson {ι : Type} (d : SinglePass.EdgeFacts ι) : Json :=
-  Json.mkObj [("lacking", toJson d.lacking), ("known", toJson d.known)]
+  Json.mkObj [("requirement", match d.requirement with
+      | .facts => Json.mkObj [("kind", toJson "facts")]
+      | .implication a b => Json.mkObj [("kind", toJson "implication"), ("test", toJson a), ("target", toJson b)]
+      | .inputValue j q => Json.mkObj [("kind", toJson "input-value"), ("slot", toJson j), ("input", toJson q)]
+      | .promisedInput j => Json.mkObj [("kind", toJson "promised-input"), ("slot", toJson j)]),
+    ("established", toJson d.established), ("lacking", toJson d.lacking), ("known", toJson d.known)]
+
+/-- A return's postcondition facts as the record's `postcondition` field
+states them: each fact at the return's pushed slots (null where it names
+an input no slot holds the entry value of), with whether the return's
+facts entail it; and those facts. -/
+def returnFactsJson (d : SinglePass.ReturnFacts) : Json :=
+  Json.mkObj [("facts", Json.arr (d.facts.map fun (F, held) =>
+      Json.mkObj [("fact", toJson F), ("entailed", toJson held)]).toArray),
+    ("known", toJson d.known)]
 
 /-- **The record of a refusal carrying its diagnostic's data**, of unit
 `i`'s own graph or, after `code c: `, of its code `c`'s (over that graph's
 request and source map, `RequestJson.failureDiagnostic`), the deferred
 `detail` forced here: of a step refused for having no derivation
 (`expression at node l`) whose preconditions do not all hold, the node's
-obligation with the step's preconditions (`preconditionsJson`); of an edge
-refused for facts its target requires (`edge from node l into …`), the
-edge's obligation, its target requiring them, with the edge's facts
-(`edgeFactsJson`). -/
+obligation with the step's preconditions (`preconditionsJson`); of a
+return refused for its postcondition, the return's node obligation with
+the postcondition's facts (`returnFactsJson`); of an edge refused for what
+its target requires (`edge from node l into …`, also as the regional
+fallback's refusal), the edge's obligation, its target requiring the facts
+it requires, with the edge's facts (`edgeFactsJson`). -/
 def FilePlans.refusalRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
     (detail : Option (Thunk (Option (SinglePass.RefusalDetail (EquationStore.CheckedLabel f.F.equations f.F.primitive))))) :
     Option (List (String × Json)) := do
   let .ok (.graph _ _ r) := (f.plans[i]?).getD (.error "") | none
+  -- (the regional fallback's refusal, its walk's refusal after its prefix)
+  let w := if w.startsWith "footprint by spine regions: " then (w.drop 28).toString else w
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
       match (w.drop 5).toString.splitOn ": " with
       | n :: rest => (n.toNat?, ": ".intercalate rest)
@@ -869,6 +887,12 @@ def FilePlans.refusalRecord (f : FilePlans) (fuel : Nat) (i : Nat) (w : String)
     guard (d.signatures.any fun s => s.atoms.any (!·.2) || s.requires.any (!·.2.2))
     let fields ← diagnostic (.expression l) [] none
     return fields ++ [("preconditions", preconditionsJson d)]
+  if w.startsWith "return at node " then
+    let l ← refusalLabel w "return at node "
+    let .postcondition d ← (← detail).get | none
+    guard (d.facts.any (!·.2))
+    let fields ← diagnostic (.expression l) [] none
+    return fields ++ [("postcondition", returnFactsJson d)]
   guard (w.startsWith "edge from node ")
   let .edge d ← (← detail).get | none
   let fields ← diagnostic (.edge d.source d.target d.exit) [(d.target, d.required)] d.thrown

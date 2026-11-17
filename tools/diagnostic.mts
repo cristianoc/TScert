@@ -33,13 +33,14 @@ interface Sequent {
 }
 
 /** A set of literals: these, or every literal but these. */
-type LitSet<T> = { these: T[] } | { allBut: T[] };
+export type LitSet<T> = { these: T[] } | { allBut: T[] };
 /** What a fact states of a runtime slot (for a cell, of the named field of
  * the object it holds; for a value, of the slot itself): a set of values, one
- * component per kind of value; an object is in it when it meets one of the
- * `obj` clauses, each a list of tag answers, or any object where `obj` is
- * null and none where it is empty. */
-interface ValueSet {
+ * component per kind of value; an object is in it when it meets every one of
+ * the `obj` clauses, each a list of tag answers it meets one of
+ * (`ValueSets.Obj.mem`): any object where `obj` is empty, none where it is
+ * null. */
+export interface ValueSet {
   nul: boolean; undef: boolean; tru: boolean; fls: boolean; sym: boolean; arr: boolean;
   /** Numbers by their IEEE-754 bit patterns, as decimal digits. */
   num: LitSet<string>; str: LitSet<string>; big: LitSet<number>;
@@ -111,7 +112,7 @@ export interface HeapKnowledge {
    * truthy value, or a falsy one where `negated`. */
   indices: {fact: IndexFact; cond?: number; negated: boolean}[];
 }
-type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
+export type IndexFact = { index: { slot: number } } | { length: { array: number; length: number } } |
   { bound: { array: number; index: number; strict: boolean } } | { int: { slot: number } } |
   { pastSafe: { slot: number } } |
   { linear: { fact: { le: { form: [LinearTerm, Integer][]; bound: Integer } } | { ne: { form: [LinearTerm, Integer][]; bound: Integer } } } } |
@@ -123,7 +124,7 @@ type IndexFact = { index: { slot: number } } | { length: { array: number; length
   { spineApart: { slot: number; path: string[]; other: number; otherPath: string[] } };
 /** An integer of a linear fact, its bound or a coefficient: a safe integer,
  * or past that range the decimal digits the writer states it by. */
-type Integer = number | string;
+export type Integer = number | string;
 /** An integer of a linear fact, decoded. */
 function integer(v: Json | undefined): Integer {
   if (typeof v === "number" && Number.isSafeInteger(v)) return v;
@@ -131,13 +132,13 @@ function integer(v: Json | undefined): Integer {
   throw Error("a linear fact's integer");
 }
 /** A variable of a quantified fact's body: the index, the element, or a term. */
-type BodyFormula = { form: [BodyVariable, Integer][]; bound: Integer; ne: boolean } |
+export type BodyFormula = { form: [BodyVariable, Integer][]; bound: Integer; ne: boolean } |
   { either: { left: BodyFormula; right: BodyFormula } };
-type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm };
+export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTerm | { project: LinearTerm };
 /** A linear fact's term: a root slot, the named data fields read from it
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array spine, or the length of its typed array. */
-type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[]; atEntry?: true };
+export type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[]; atEntry?: true };
 /** A property key (`PropKey`): a string, or a well-known symbol by its
  * number. */
 export type PropertyKey = string | { symbol: number };
@@ -261,13 +262,34 @@ interface NodeTyping extends Common {
   /** On a step refused for having no derivation whose preconditions do
    * not all hold. */
   preconditions?: StepPreconditions;
+  /** On a return refused for its postcondition. */
+  postcondition?: ReturnFacts;
 }
 
-/** An edge refused for facts its target requires (Json.lean,
- * `edgeFactsJson`): those the edge does not establish, and the facts the
- * edge holds over the slots the mapping reads, both at the target's slots. */
+/** What an edge into a statement entry or an asserted target is refused
+ * for (`SinglePass.EdgeRequirement`): facts its target requires; a given
+ * implication from a test slot to a target slot; a slot stated to hold an
+ * input's entry value; a slot stated to hold the promised input. */
+export type EdgeRequirement = { kind: "facts" } | { kind: "implication"; test: number; target: number } |
+  { kind: "input-value"; slot: number; input: number } | { kind: "promised-input"; slot: number };
+
+/** An edge refused for what its target requires (Json.lean,
+ * `edgeFactsJson`), all at the target's slots: what it is refused for; the
+ * required facts it establishes and those it does not; the facts it holds
+ * over the requirement's slots. */
 export interface EdgeFacts {
+  requirement: EdgeRequirement;
+  established: HeapKnowledge;
   lacking: HeapKnowledge;
+  known: HeapKnowledge;
+}
+
+/** A return refused for its postcondition (Json.lean, `returnFactsJson`):
+ * each fact at the return's pushed slots (the result at 0; null where it
+ * names an input no slot holds the entry value of), with whether the
+ * return's facts entail it; and those facts. */
+export interface ReturnFacts {
+  facts: { fact: IndexFact | null; entailed: boolean }[];
   known: HeapKnowledge;
 }
 
@@ -503,12 +525,42 @@ function stepPreconditions(v: Json | undefined): StepPreconditions {
   return { step, signatures, known };
 }
 
+/** A knowledge a record requires present. */
+function present(v: Json | undefined): HeapKnowledge {
+  const k = knowledge(v);
+  if (k === null) throw Error("a knowledge is required");
+  return k;
+}
+
+/** What a refused edge is refused for (Json.lean, `edgeFactsJson`). */
+function edgeRequirement(v: Json | undefined): EdgeRequirement {
+  if (!isParsedObject(v)) throw Error("invalid edge requirement");
+  switch (v.kind) {
+    case "facts": record(v,["kind"]); return { kind: "facts" };
+    case "implication": { const r = record(v,["kind","test","target"]); return { kind: "implication", test: nat(r.test), target: nat(r.target) }; }
+    case "input-value": { const r = record(v,["kind","slot","input"]); return { kind: "input-value", slot: nat(r.slot), input: nat(r.input) }; }
+    case "promised-input": { const r = record(v,["kind","slot"]); return { kind: "promised-input", slot: nat(r.slot) }; }
+    default: throw Error("unknown edge requirement");
+  }
+}
+
 /** A refused edge's facts (Json.lean, `edgeFactsJson`). */
 function edgeFacts(v: Json | undefined): EdgeFacts {
-  const e = record(v,["lacking","known"]);
-  const lacking = knowledge(e.lacking), known = knowledge(e.known);
-  if (lacking === null || known === null) throw Error("invalid edge facts");
-  return { lacking, known };
+  const e = record(v,["requirement","established","lacking","known"]);
+  return { requirement: edgeRequirement(e.requirement), established: present(e.established),
+    lacking: present(e.lacking), known: present(e.known) };
+}
+
+/** A return's postcondition facts (Json.lean, `returnFactsJson`). */
+function returnFacts(v: Json | undefined): ReturnFacts {
+  const r = record(v,["facts","known"]);
+  if (!Array.isArray(r.facts)) throw Error("invalid postcondition facts");
+  const facts = r.facts.map((entry: Json) => {
+    const a = record(entry,["fact","entailed"]);
+    if (typeof a.entailed !== "boolean") throw Error("invalid entailment flag");
+    return { fact: a.fact === null ? null : indexFact(a.fact), entailed: a.entailed };
+  });
+  return { facts, known: present(r.known) };
 }
 
 /** The candidates the search left out (RequestJson.lean, `failureDiagnostic`). */
@@ -667,7 +719,7 @@ export function readDiagnostic(
     const fields = new Map<string, readonly string[]>(KIND_FIELDS).get(kind);
     if (!fields) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...fields],
-      ["requiredResult","names","candidatesLeftOut",...(kind === "node-typing" ? ["preconditions"] : kind === "edge-coverage" ? ["edgeFacts"] : [])]);
+      ["requiredResult","names","candidatesLeftOut",...(kind === "node-typing" ? ["preconditions", "postcondition"] : kind === "edge-coverage" ? ["edgeFacts"] : [])]);
     const outcome = diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
@@ -787,7 +839,8 @@ export function readDiagnostic(
     if (typeof id !== "string") return undefined;
     if (kind === "node-typing" && source && sequent) {
       const result: NodeTyping = { ...common, kind: "node-typing", id, source, sequent,
-        ...(d.preconditions === undefined ? {} : { preconditions: stepPreconditions(d.preconditions) }) };
+        ...(d.preconditions === undefined ? {} : { preconditions: stepPreconditions(d.preconditions) }),
+        ...(d.postcondition === undefined ? {} : { postcondition: returnFacts(d.postcondition) }) };
       return result;
     }
     if (kind === "expression-claim" && map && sequent) {

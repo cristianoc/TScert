@@ -76,7 +76,7 @@ theorem exitTypes_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : Sin
 theorem headExit_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {store : SinglePass.Store} {pushed vacuous : Bool}
     {carried : List (PromiseCalls.Implication ι)} {a b : SinglePass.ExitsDone ι G}
-    (h : SinglePass.headExit G I env l t tc Γ names store pushed vacuous carried a = .ok b) :
+    (h : SinglePass.headExit G I env l exit t tc Γ names store pushed vacuous carried a = .ok b) :
     b.regional = a.regional := by
   unfold SinglePass.headExit at h
   repeat' (first | split at h | extract_lets at h)
@@ -86,7 +86,7 @@ theorem headExit_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Targe
 theorem assertionExit_regional {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γe : Thunk (List (ProgramTyping.Ty ι))} {names : List Nat} {store : SinglePass.Store} {pushed vacuous : Bool}
     {observed : Option BranchRefinement.Observation} {a b : SinglePass.ExitsDone ι G}
-    (h : SinglePass.assertionExit G env l t tc Γe names store pushed observed vacuous a = .ok b) :
+    (h : SinglePass.assertionExit G env l exit t tc Γe names store pushed observed vacuous a = .ok b) :
     b.regional = a.regional := by
   unfold SinglePass.assertionExit at h
   repeat' (first | split at h | extract_lets at h)

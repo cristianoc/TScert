@@ -1,121 +1,188 @@
-// Facts of the verifier's heap knowledge (`HeapKnowledge.Knowledge` as JSON,
-// tools/diagnostic.mts's `HeapKnowledge`), printed over source names: each
-// slot named by a function the caller gives, from the point's bindings.
-import { isJsonList, isJsonObject, type JsonRead, type JsonValue } from "./calculus.mts";
-import type { HeapKnowledge, PropertyKey } from "./diagnostic.mts";
+// Facts of the verifier's heap knowledge (tools/diagnostic.mts's decoded
+// `HeapKnowledge`), printed over source names: each slot named by a function
+// the caller gives, from the point's bindings.
+import type { Tag } from "./calculus.mts";
+import type {
+  BodyFormula, BodyVariable, HeapKnowledge, IndexFact, Integer, LinearTerm, LitSet, PropertyKey, ValueSet,
+} from "./diagnostic.mts";
 
-const num = (v: JsonRead): number => (typeof v === "number" ? v : -1);
-const str = (v: JsonRead): string => (typeof v === "string" ? v : JSON.stringify(v ?? null) ?? "");
-const list = (v: JsonRead): readonly JsonValue[] => (isJsonList(v) ? v : []);
-const field = (v: JsonRead, k: string): JsonRead => (isJsonObject(v) ? v[k] : undefined);
+/** A slot's name. */
+type Namer = (slot: number) => string;
+
+/** Whether a term's text reads as one operand: a name, a path of names, or
+ * a call of a name on one. */
+const operand = (t: string): boolean => /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$|^\w+\([^()]*\)$/.test(t);
+/** A term's text as one operand: in parentheses where it is a source
+ * expression. */
+const asOperand = (t: string): string => (operand(t) ? t : `(${t})`);
+
+/** A path of data fields read from a slot. */
+const pathText = (slot: number, path: readonly string[], name: Namer): string =>
+  [asOperand(name(slot)), ...path].join(".");
 
 /** A linear term: the slot's value, length, view length or string length,
  * read through its path of data fields, at the entry state (`old`) where it
  * is read there. */
-function term(t: JsonRead, name: (slot: number) => string): string {
-  const at = [name(num(field(t, "slot"))), ...list(field(t, "path")).map(str)].join(".");
-  const kind = field(t, "kind");
-  const read = kind === "value" ? at : kind === "length" ? `${at}.length` : `${str(kind)}(${at})`;
-  return field(t, "atEntry") === true ? `old(${read})` : read;
-}
-/** An integer of a linear fact: a number, or the decimal digits of one past
- * the safe integers. */
-const integer = (v: JsonRead): bigint => {
-  if (typeof v === "string" && /^-?(0|[1-9][0-9]*)$/.test(v)) return BigInt(v);
-  return BigInt(num(v));
-};
-/** Whether a term's text reads as one operand: a name, a path of names, or
- * a call of a name on one. */
-const operand = (t: string): boolean => /^[A-Za-z_$%][\w$%@:]*(\.[A-Za-z_$][\w$]*)*$|^\w+\([^()]*\)$/.test(t);
-/** A linear fact `Σ cᵢ·tᵢ op b`, each side a sum of positive multiples:
- * the terms of positive coefficient and `-b` where it is positive on the
- * left, the others on the right; a term named by a source expression in
- * parentheses. */
-function sum(form: JsonRead, bound: JsonRead, op: string, name: (slot: number) => string): string {
-  const left: string[] = [], right: string[] = [];
-  // (a term named by a source expression, parenthesised)
-  const multiple = (c: bigint, t: string): string => `${c === 1n ? "" : `${c}*`}${operand(t) ? t : `(${t})`}`;
-  for (const p of list(form)) {
-    const c = integer(isJsonList(p) ? p[1] : undefined);
-    const t = term(isJsonList(p) ? p[0] : undefined, name);
-    if (c > 0n) left.push(multiple(c, t));
-    else if (c < 0n) right.push(multiple(-c, t));
-  }
-  const b = integer(bound);
-  if (b < 0n) left.push(String(-b));
-  else if (b > 0n || right.length === 0) right.push(String(b));
-  return `${left.join(" + ") || "0"} ${op} ${right.join(" + ")}`;
+function term(t: LinearTerm, name: Namer): string {
+  const at = pathText(t.slot, t.path, name);
+  const read = t.kind === "value" ? at : t.kind === "length" ? `${at}.length` : `${t.kind}(${at})`;
+  return t.atEntry === true ? `old(${read})` : read;
 }
 
-/** An index fact over the point's binding names. */
-export function indexFact(f: JsonRead, name: (slot: number) => string): string {
-  const linear = field(field(f, "linear"), "fact");
-  if (linear !== undefined) {
-    const le = field(linear, "le"), ne = field(linear, "ne");
-    if (le !== undefined) return sum(field(le, "form"), field(le, "bound"), "<=", name);
-    return sum(field(ne, "form"), field(ne, "bound"), "!==", name);
+/** The largest safe integer, the bound a linear fact over one term states
+ * `safeInteger` by (tools/bound-annotations.mts). */
+const MAX_SAFE = 9007199254740991n;
+
+/** A linear fact over variables printed by `text`: `safeInteger(t)` for
+ * `t <= 2^53 - 1`; otherwise each side a sum of positive multiples, equal
+ * variables merged, the terms of positive coefficient and `-b` where it is
+ * positive on the left, the others on the right; null for one whose form
+ * cancels and that holds (a tautology). */
+function linear<V>(form: readonly (readonly [V, Integer])[], bound: Integer, ne: boolean, text: (v: V) => string): string | null {
+  const merged = new Map<string, bigint>();
+  for (const [v, c] of form) {
+    const t = text(v);
+    merged.set(t, (merged.get(t) ?? 0n) + BigInt(c));
   }
-  const at = (k: string, s: string): string => name(num(field(field(f, k), s)));
-  if (field(f, "int") !== undefined) return `safeInteger(${at("int", "slot")})`;
-  if (field(f, "pastSafe") !== undefined) return `pastSafe(${at("pastSafe", "slot")})`;
-  if (field(f, "index") !== undefined) return `index(${at("index", "slot")})`;
-  if (field(f, "length") !== undefined) return `${at("length", "length")} === ${at("length", "array")}.length`;
-  const bound = field(f, "bound");
-  if (bound !== undefined)
-    return `index(${at("bound", "index")}) && ${at("bound", "index")} ${field(bound, "strict") === true ? "<" : "<="} ${at("bound", "array")}.length`;
-  const either = field(f, "either");
-  if (either !== undefined)
-    return `(${indexFact(field(either, "left"), name)}) || (${indexFact(field(either, "right"), name)})`;
-  const guarded = field(f, "guarded");
-  if (guarded !== undefined) {
-    const at = [name(num(field(guarded, "slot"))), ...list(field(guarded, "path")).map(str)].join(".");
-    return `${at} !== ${str(field(guarded, "tag"))} → ${indexFact(field(guarded, "body"), name)}`;
+  const terms = [...merged].filter(([, c]) => c !== 0n);
+  const b = BigInt(bound);
+  if (terms.length === 0 && (ne ? b !== 0n : b >= 0n)) return null;
+  const only = terms[0];
+  if (!ne && terms.length === 1 && only !== undefined && only[1] === 1n && b === MAX_SAFE) return `safeInteger(${only[0]})`;
+  const left: string[] = [], right: string[] = [];
+  const multiple = (c: bigint, t: string): string => `${c === 1n ? "" : `${c}*`}${c === 1n ? t : asOperand(t)}`;
+  for (const [t, c] of terms) {
+    if (c > 0n) left.push(multiple(c, t));
+    else right.push(multiple(-c, t));
   }
-  const element = field(f, "element");
-  if (element !== undefined)
-    return `${at("element", "value")} === ${at("element", "array")}[${at("element", "index")}]`;
-  const apart = field(f, "apart");
-  if (apart !== undefined) return `apart(${at("apart", "slot")}, ${at("apart", "other")})`;
-  const spineApart = field(f, "spineApart");
-  if (spineApart !== undefined) {
-    const a = [at("spineApart", "slot"), ...list(field(spineApart, "path")).map(str)].join(".");
-    const b = [at("spineApart", "other"), ...list(field(spineApart, "otherPath")).map(str)].join(".");
-    return `apart(${a}, ${b})`;
+  if (b < 0n) left.push(String(-b));
+  else if (b > 0n) right.push(String(b));
+  return `${left.join(" + ") || "0"} ${ne ? "!==" : "<="} ${right.join(" + ") || "0"}`;
+}
+
+/** A quantified fact's body variable: the index `k`, the element `e`, the
+ * element at `k + d` of the array, a term over the element, or a term. */
+function bodyVariable(v: BodyVariable, array: string, name: Namer): string {
+  if (v === "index") return "k";
+  if (v === "elem") return "e";
+  if ("offset" in v) return `${array}[k + ${v.offset.delta}]`;
+  if ("project" in v) {
+    const at = ["e", ...v.project.path].join(".");
+    return v.project.kind === "value" ? at : v.project.kind === "length" ? `${at}.length` : `${v.project.kind}(${at})`;
   }
-  const every = field(f, "every");
-  if (every !== undefined) {
-    const at = [name(num(field(every, "slot"))), ...list(field(every, "path")).map(str)].join(".");
-    return `every element of ${at} below ${term(field(every, "stop"), name)}: ${JSON.stringify(field(every, "body"))}`;
+  return term(v, name);
+}
+function body(f: BodyFormula, array: string, name: Namer): string {
+  if ("either" in f) return `(${body(f.either.left, array, name)}) || (${body(f.either.right, array, name)})`;
+  return linear(f.form, f.bound, f.ne, (v) => bodyVariable(v, array, name)) ?? "true";
+}
+
+/** An index fact over the point's binding names; null for a tautology. */
+export function indexFact(f: IndexFact, name: Namer): string | null {
+  if ("linear" in f) {
+    const F = f.linear.fact;
+    return "le" in F ? linear(F.le.form, F.le.bound, false, (t) => term(t, name))
+      : linear(F.ne.form, F.ne.bound, true, (t) => term(t, name));
   }
-  return JSON.stringify(f ?? null) ?? "";
+  if ("int" in f) return `safeInteger(${name(f.int.slot)})`;
+  if ("pastSafe" in f) return `pastSafe(${name(f.pastSafe.slot)})`;
+  if ("index" in f) return `index(${name(f.index.slot)})`;
+  if ("length" in f) return `${name(f.length.length)} === ${asOperand(name(f.length.array))}.length`;
+  if ("bound" in f)
+    return `index(${name(f.bound.index)}) && ${name(f.bound.index)} ${f.bound.strict ? "<" : "<="} ${asOperand(name(f.bound.array))}.length`;
+  if ("either" in f)
+    return `(${indexFact(f.either.left, name) ?? "true"}) || (${indexFact(f.either.right, name) ?? "true"})`;
+  if ("guarded" in f) {
+    const g = f.guarded;
+    return `${pathText(g.slot, g.path, name)} !== ${g.tag} → ${indexFact(g.body, name) ?? "true"}`;
+  }
+  if ("element" in f)
+    return `${name(f.element.value)} === ${asOperand(name(f.element.array))}[${name(f.element.index)}]`;
+  if ("apart" in f) return `apart(${name(f.apart.slot)}, ${name(f.apart.other)})`;
+  if ("spineApart" in f) {
+    const a = f.spineApart;
+    return `apart(${pathText(a.slot, a.path, name)}, ${pathText(a.other, a.otherPath, name)})`;
+  }
+  const e = f.every;
+  const array = pathText(e.slot, e.path, name);
+  return `every element e at k < ${term(e.stop, name)} of ${array}: ${e.body.map((b) => body(b, array, name)).join(" && ")}`;
 }
 
 /** A property key: a string, or a well-known symbol by its number. */
 const keyText = (k: PropertyKey): string => (typeof k === "string" ? k : `[Symbol ${k.symbol}]`);
 
-/** A value set: the kinds it admits, with their literal lists. */
-function contents(v: HeapKnowledge["cells"][number]["contents"]): string {
-  const kinds: string[] = [];
-  for (const k of ["nul", "undef", "tru", "fls", "sym", "arr"] as const) if (v[k]) kinds.push(k);
-  for (const k of ["num", "str", "big"] as const) kinds.push(`${k}${JSON.stringify(v[k])}`);
-  if (v.obj !== null) kinds.push(`obj${JSON.stringify(v.obj)}`);
-  return kinds.join(" | ") || "nothing";
+/** A number's IEEE-754 bit pattern, as decimal digits, as the number. */
+function double(bits: string): string {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setBigUint64(0, BigInt(bits));
+  const x = view.getFloat64(0);
+  return Object.is(x, -0) ? "-0" : String(x);
+}
+
+/** A set of literals of one kind: none, the kind, the kind but some, or
+ * some. */
+function literals<T>(kind: string, set: LitSet<T>, text: (x: T) => string): string | null {
+  if ("these" in set) return set.these.length === 0 ? null : set.these.map(text).join(" | ");
+  return set.allBut.length === 0 ? kind : `${kind} but ${set.allBut.map(text).join(", ")}`;
+}
+
+/** A tag test's text. */
+function tagText(t: Tag): string {
+  switch (t.kind) {
+    case "hasKey": return `has ${typeof t.key === "string" ? JSON.stringify(t.key) : `[Symbol ${t.key.symbol}]`}`;
+    case "numEq": return `=== ${double(t.bits)}`;
+    case "strEq": return `=== ${JSON.stringify(t.value)}`;
+    case "boolEq": return `=== ${t.value}`;
+    case "bigintEq": return `=== ${t.value}n`;
+    default: return t.kind;
+  }
+}
+
+/** A value set in source terms: the kinds and literals it admits, an
+ * object by the tag tests it meets (every clause, each by one of its tests);
+ * one admitting every value of all its kinds but a few, as the value but
+ * those. */
+export function valueSet(v: ValueSet): string {
+  const full = <T,>(set: LitSet<T>): boolean => "allBut" in set && set.allBut.length === 0;
+  const none = <T,>(set: LitSet<T>): boolean => "these" in set && set.these.length === 0;
+  const parts: [string, "all" | "none" | string][] = [
+    ["null", v.nul ? "all" : "none"], ["undefined", v.undef ? "all" : "none"],
+    ["boolean", v.tru && v.fls ? "all" : v.tru ? "true" : v.fls ? "false" : "none"],
+    ["symbol", v.sym ? "all" : "none"], ["array", v.arr ? "all" : "none"],
+    ["number", full(v.num) ? "all" : none(v.num) ? "none" : literals("number", v.num, double) ?? "none"],
+    ["string", full(v.str) ? "all" : none(v.str) ? "none" : literals("string", v.str, (x) => JSON.stringify(x)) ?? "none"],
+    ["bigint", full(v.big) ? "all" : none(v.big) ? "none" : literals("bigint", v.big, (x) => `${x}n`) ?? "none"],
+    ["object", v.obj === null ? "none" : v.obj.length === 0 ? "all" : `object where ${v.obj.map((clause) => {
+      const tests = clause.map((l) => `${l.answer ? "" : "!"}${tagText(l.tag)}`);
+      return tests.length === 1 ? tests.join("") : `(${tests.join(" || ")})`;
+    }).join(" && ")}`],
+  ];
+  const absent = parts.filter(([, p]) => p === "none").map(([k]) => k);
+  if (absent.length > 0 && parts.every(([, p]) => p === "all" || p === "none") && absent.length * 2 < parts.length)
+    return `any value but ${absent.join(" | ")}`;
+  return parts.filter(([, p]) => p !== "none").map(([k, p]) => (p === "all" ? k : p)).join(" | ") || "nothing";
 }
 
 /** What a condition slot adds before a fact: `x → ` or `!x → `. */
-function condition(f: { cond?: number; negated: boolean }, name: (slot: number) => string): string {
+function condition(f: { cond?: number; negated: boolean }, name: Namer): string {
   return f.cond === undefined ? "" : `${f.negated ? "!" : ""}${name(f.cond)} → `;
 }
 
-/** Every fact of a knowledge, grouped by kind, each over source names. */
-export function knowledgeFacts(k: HeapKnowledge, name: (slot: number) => string): { kind: string; text: string }[] {
+/** Every fact of a knowledge, grouped by kind, each over source names, but
+ * a tautology. The field a variable's cell holds its value in, of a slot
+ * `variable` states holds a variable's cell, is named by the variable's
+ * binding. */
+export function knowledgeFacts(k: HeapKnowledge, name: Namer, variable: (slot: number) => boolean = () => false):
+    { kind: string; text: string }[] {
   const out: { kind: string; text: string }[] = [];
-  for (const c of k.cells) out.push({ kind: "cell", text: `${name(c.slot)}.${keyText(c.field)} : ${contents(c.contents)}` });
+  const cellText = (slot: number, field: PropertyKey): string =>
+    field === "value" && variable(slot) ? name(slot) : `${asOperand(name(slot))}.${keyText(field)}`;
+  for (const c of k.cells) out.push({ kind: "cell", text: `${cellText(c.slot, c.field)} : ${valueSet(c.contents)}` });
   for (const c of k.values)
-    out.push({ kind: "value", text: `${name(c.slot)}${c.field === "" ? "" : "." + keyText(c.field)} : ${contents(c.contents)}` });
+    out.push({ kind: "value", text: `${c.field === "" ? name(c.slot) : cellText(c.slot, c.field)} : ${valueSet(c.contents)}` });
   for (const l of k.links) {
     const cell = name(l.cell), value = name(l.value);
-    out.push({ kind: "link", text: l.alias ? `${value} === ${cell}` : `${value} === ${cell}${l.optional ? "?." : "."}${keyText(l.field)}` });
+    out.push({ kind: "link", text: l.alias ? `${value} === ${cell}` : `${value} === ${asOperand(cell)}${l.optional ? "?." : "."}${keyText(l.field)}` });
   }
   const depth = k.separation.depth;
   const level = (l: number): string => name(depth - 1 - l);
@@ -126,9 +193,11 @@ export function knowledgeFacts(k: HeapKnowledge, name: (slot: number) => string)
   for (const e of k.elems)
     out.push({ kind: "elements", text: `${condition(e, name)}every element of ${name(e.slot)} is ${e.pred.join(" | ")}` });
   for (const i of k.indices) {
+    const text = indexFact(i.fact, name);
+    if (text === null) continue;
     const f = i.fact;
     const kind = "linear" in f ? "linear" : "guarded" in f ? "guarded" : "either" in f ? "either" : "index";
-    out.push({ kind, text: `${condition(i, name)}${indexFact(f, name)}` });
+    out.push({ kind, text: `${condition(i, name)}${text}` });
   }
   return out;
 }

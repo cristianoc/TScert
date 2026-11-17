@@ -14,6 +14,12 @@ import { cases } from "../pipeline/cases.mts";
 assert.ok(Number.isNaN(Number(runExample("invalid-disjunctive-test-facts", "sum([1], 0, 2, false)"))),
   "a disjunct bounding the index by a value past the length reads past it");
 assert.equal(runExample("native-length-literal", 'order()'), "0,1,2");
+assert.ok(Number.isNaN(Number(runExample("invalid-invariant-field-dropped-by-call", "walk([1, 2], { i: 0 })"))),
+  "a call moving the cursor's field below 0 reads xs[-1]");
+assert.ok(Number.isNaN(Number(runExample("invalid-invariant-local-index-lacking", "sum([1, 2])"))),
+  "a body moving the index below 0 reads xs[-1]");
+assert.ok(Number.isNaN(Number(runExample("invalid-handler-edge-lacking-invariant", "h([1], -1)"))),
+  "the catch block's loop starts at the index the try block set, -1");
 
 assert.throws(() => runExample("invalid-native-length-literal", 'past("a")'), /TypeError/);
 

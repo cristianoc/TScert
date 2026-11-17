@@ -45,7 +45,7 @@ theorem exitTypes_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
 theorem assertionExit_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γe : Thunk (List (ProgramTyping.Ty ι))} {names : List Nat} {edgeStore : SinglePass.Store} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {vacuous : Bool} {acc acc' : SinglePass.ExitsDone ι G}
-    (h : SinglePass.assertionExit G env l t tc Γe names edgeStore pushed observed vacuous acc = .ok acc') :
+    (h : SinglePass.assertionExit G env l exit t tc Γe names edgeStore pushed observed vacuous acc = .ok acc') :
     SameCore acc acc' ∧ acc'.edges = acc.edges := by
   unfold SinglePass.assertionExit at h
   repeat' (first | split at h | extract_lets at h)
@@ -54,7 +54,7 @@ theorem assertionExit_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Targ
 theorem headExit_core {env : SinglePass.WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
     {Γ : List (ProgramTyping.Ty ι)} {names : List Nat} {edgeStore : SinglePass.Store} {pushed vacuous : Bool}
     {carried : List (PromiseCalls.Implication ι)} {acc acc' : SinglePass.ExitsDone ι G}
-    (h : SinglePass.headExit G I env l t tc Γ names edgeStore pushed vacuous carried acc = .ok acc') :
+    (h : SinglePass.headExit G I env l exit t tc Γ names edgeStore pushed vacuous carried acc = .ok acc') :
     SameCore acc acc' ∧ acc'.edges = acc.edges.push { source := l, target := t, pushed, carried, meets := !vacuous } := by
   unfold SinglePass.headExit at h
   repeat' (first | split at h | extract_lets at h)
