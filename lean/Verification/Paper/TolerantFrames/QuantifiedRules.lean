@@ -24,6 +24,7 @@ def BodyTerm.instantiate (z : Path) (k : Expression) : BodyTerm → Expression
   | .index => k
   | .element d => .scale 1 (.element .value z (.add k (.constant d)) [] (.inl rfl))
   | .project kind fs valid => .scale 1 (.element kind z k fs valid)
+  | .lengthProject fs => .scale 1 (.lengthElement z k fs)
   | .free t => .scale 1 t
 
 def BodyExpression.instantiate (z : Path) (k : Expression) : BodyExpression → Expression

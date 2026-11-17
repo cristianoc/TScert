@@ -6,9 +6,10 @@ The basis of the work that relates the verifier to the paper
 
 
 The current comparison targets the owner’s latest single-pass paper at
-`fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. Its unified dynamic length is not yet
-represented in B. Statements below about complete syntactic transport are about
-the represented kind-specific grammar, not that new paper grammar. The bounded
+`fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. Canonical dynamic length is represented in both
+B grammars, with empty element suffixes and the structural transports described
+in [unified lengths](paper-unified-length.md). The older sorted readers are
+auxiliary encodings, distinguished by the recursive paper-term predicate. The bounded
 universal’s receiver is independent of its bound, as already encoded by Every;
 the no-element case and mixed-length support admission await owner decisions.
 The current table has 91 rows: 41 equal, 28 narrower, 9 absent and 13 assumed.
@@ -596,3 +597,16 @@ callables, availability/safety and execution-connected contract instances are
 separate obligations. The construction-at-2^53 exceptional outcome is separate
 from the normal construction row. These named assumptions introduce no global
 axiom or proof of an actual native library.
+
+
+## Canonical unified lengths
+
+[Unified lengths](paper-unified-length.md) describes the B-owned dispatch over
+the three existing shared readers, both canonical grammars, recursive term-form
+checks, qualified partial-read bridges, all-keep support, world independence,
+scope/renaming/admission, selected substitution, arithmetic and instantiation.
+`Derivation.canonicalLengthRange` supplies the common defined-length bounds.
+Inst and Prefix include the canonical grammar; their element-free receiver
+interpretation and Empty's declared-collection bridge remain separate. The
+old sorted keep/grow exactness statements retain their original restricted
+meanings; no canonical support-table completeness is inferred.

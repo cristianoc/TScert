@@ -257,11 +257,15 @@ implementation.
 The current comparison targets exact fetched single-pass
 `fbc7078c22426e2ccc42938cce8e4a33bf903f4f`. Unified length reads an array spine,
 a fixed view descriptor or a UTF-16 string by runtime kind, including
-empty-suffix array/view element lengths. B’s shared-kind alias still separates
-these readings. A B-owned general evaluator must reuse those shared readers,
-without changing A’s meanings, then propagate through both grammars, renaming,
-instantiation, scope, support and arithmetic. Explicitly sorted old lemmas stay
-sound but do not supply that general syntax. Empty additionally needs the
+empty-suffix array/view element lengths. B’s canonical constructors select among
+those existing readers by runtime category without a world read. Both grammars
+and their renaming, instantiation, scope/admission, all-keep support, world
+independence, current-state substitution and integer reasoning include these
+constructors. The recursive paper-term predicate distinguishes auxiliary
+sorted encodings; qualified bridges retain partial definedness. Explicitly
+sorted old exactness/growth lemmas keep their restricted meanings. The exact
+structural support table and complete mixed-state arithmetic/admission remain
+separate obligations. Empty additionally needs the
 paper’s declared collection-path restriction connected to receiver semantics;
 unified length definedness alone includes strings.
 

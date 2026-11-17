@@ -21,8 +21,11 @@ mutual
 inductive TermReplacement (p q : Path) : Term → Term → Prop where
   | same (t) : TermReplacement p q t t
   | path {k a b} : PathReplacement p q a b → TermReplacement p q (.path k a) (.path k b)
+  | lengthPath {a b} : PathReplacement p q a b → TermReplacement p q (.lengthPath a) (.lengthPath b)
   | element {k a b i j fs valid} : PathReplacement p q a b → ExpressionReplacement p q i j →
       TermReplacement p q (.element k a i fs valid) (.element k b j fs valid)
+  | lengthElement {a b i j fs} : PathReplacement p q a b → ExpressionReplacement p q i j →
+      TermReplacement p q (.lengthElement a i fs) (.lengthElement b j fs)
 inductive ExpressionReplacement (p q : Path) : Expression → Expression → Prop where
   | same (e) : ExpressionReplacement p q e e
   | scale {c t u} : TermReplacement p q t u → ExpressionReplacement p q (.scale c t) (.scale c u)
@@ -105,8 +108,8 @@ theorem TermReplacement.eval_eq {p q t u} (hr : TermReplacement p q t u)
     {ρ h} (he : p.read ρ h = q.read ρ h) : t.eval ρ h = u.eval ρ h := by
   cases hr with
   | same => rfl
-  | path hp => simp only [Term.eval, hp.read_eq he]
-  | element hp hi => simp only [Term.eval, hp.read_eq he, hi.eval_eq he]
+  | path hp | lengthPath hp => simp only [Term.eval, hp.read_eq he]
+  | element hp hi | lengthElement hp hi => simp only [Term.eval, hp.read_eq he, hi.eval_eq he]
 
 theorem ExpressionReplacement.eval_eq {p q a b} (hr : ExpressionReplacement p q a b)
     {ρ h} (he : p.read ρ h = q.read ρ h) : a.eval ρ h = b.eval ρ h := by

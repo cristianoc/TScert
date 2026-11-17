@@ -17,7 +17,7 @@ mutual
 Path prefixes and object-valued intermediate elements are not numeric terms. -/
 def Term.mentioned (t : Term) : List Term :=
   t :: match t with
-    | .element _ _ e _ _ => e.mentioned
+    | .element _ _ e _ _ | .lengthElement _ e _ => e.mentioned
     | _ => []
 
 def Expression.mentioned : Expression → List Term
@@ -57,10 +57,10 @@ def GoalTermsDefined (hypotheses : List Inequality) (goal : Inequality) : Prop :
 mutual
 theorem Term.mentioned_defined {ρ : Env} {h : Heap} : ∀ {t : Term} {n : Int},
     t.eval ρ h = some n → ∀ u ∈ t.mentioned, (u.eval ρ h).isSome = true
-  | .literal _, _, he, _, hm | .path _ _, _, he, _, hm => by
+  | .literal _, _, he, _, hm | .path _ _, _, he, _, hm | .lengthPath _, _, he, _, hm => by
     simp only [Term.mentioned, List.mem_cons, List.not_mem_nil, or_false] at hm
     subst hm; rw [he]; rfl
-  | .element _ _ _ _ _, _, he, u, hm => by
+  | .element _ _ _ _ _, _, he, u, hm | .lengthElement _ _ _, _, he, u, hm => by
     simp only [Term.mentioned, List.mem_cons] at hm
     rcases hm with rfl | hm
     · rw [he]; rfl
@@ -88,7 +88,7 @@ theorem Term.integerModel_eval {ρ : Env} {h : Heap} {t : Term} {n : Int}
     (he : t.eval ρ h = some n) : t.integerModel (fun t => (t.eval ρ h).getD 0) = n := by
   cases t with
   | literal v => exact Option.some.inj he
-  | path _ _ | element _ _ _ _ _ => simp only [Term.integerModel, he, Option.getD_some]
+  | path _ _ | element _ _ _ _ _ | lengthPath _ | lengthElement _ _ _ => simp only [Term.integerModel, he, Option.getD_some]
 
 theorem Expression.integerModel_eval {ρ : Env} {h : Heap} {e : Expression} {n : Int}
     (he : e.eval ρ h = some n) : e.integerModel (fun t => (t.eval ρ h).getD 0) = n := by
@@ -153,10 +153,10 @@ theorem defined_length_range {h : Heap} {v : Val} {k : Reading} {n : Int}
   · simpa using viewLengthOf_range he
   · simpa using strLengthOf_range he
 
-/-- The syntactic kind requested by a path or element projection. -/
+/-- The explicitly requested kind of an auxiliary sorted path/element reader. -/
 def Term.ReadsKind (k : Reading) : Term → Prop
   | .path k' _ | .element k' _ _ _ _ => k' = k
-  | .literal _ => False
+  | .literal _ | .lengthPath _ | .lengthElement _ _ _ => False
 
 /-- Defined length readings, including projected elements, have these bounds. -/
 theorem Term.eval_length_range {ρ : Env} {h : Heap} {t : Term} {k : Reading} {n : Int}
@@ -164,7 +164,7 @@ theorem Term.eval_length_range {ρ : Env} {h : Heap} {t : Term} {k : Reading} {n
     (he : t.eval ρ h = some n) :
     0 ≤ n ∧ n ≤ (if k = .length then maxArrayLength else 2 ^ 53 - 1) := by
   cases t with
-  | literal _ => exact hr.elim
+  | literal _ | lengthPath _ | lengthElement _ _ _ => exact hr.elim
   | path k' p =>
     cases hr
     simp only [Term.eval, Option.bind_eq_some_iff] at he
@@ -195,5 +195,34 @@ theorem length_bounds {ρ m s t k} (hr : t.ReadsKind k)
   have hrange := Term.eval_length_range hr hk hn
   by_cases hkl : k = .length <;>
     simpa [LengthBounds, Formula.Holds, Atom.Holds, Expression.eval, hn, hkl] using hrange
+
+/-- Canonical length syntax, distinct from the auxiliary sorted readers. -/
+def Term.IsLength : Term → Prop
+  | .lengthPath _ | .lengthElement _ _ _ => True
+  | _ => False
+
+/-- The unified operator has the paper's common range, including empty suffixes. -/
+theorem Term.eval_canonical_length_range {ρ : Env} {h : Heap} {t : Term} {n : Int}
+    (ht : t.IsLength) (he : t.eval ρ h = some n) : 0 ≤ n ∧ n ≤ 2 ^ 53 - 1 := by
+  cases t with
+  | lengthPath p =>
+    simp only [Term.eval, Option.bind_eq_some_iff] at he
+    obtain ⟨v, _, he⟩ := he
+    exact lengthReading_range he
+  | lengthElement p i fs =>
+    simp only [Term.eval, bind, Option.bind_eq_some_iff] at he
+    obtain ⟨_, _, _, _, _, _, v, _, he⟩ := he
+    exact lengthReading_range he
+  | _ => cases ht
+
+def CanonicalLengthBounds (t : Term) : Formula :=
+  .and (.atom (.le (.constant 0) (.scale 1 t)))
+    (.atom (.le (.scale 1 t) (.constant (2 ^ 53 - 1))))
+
+theorem canonical_length_bounds {ρ m s t} (ht : t.IsLength)
+    (hd : (TermDefined t).Holds ρ m s) : (CanonicalLengthBounds t).Holds ρ m s := by
+  obtain ⟨n, hn⟩ := TermDefined.holds_iff.mp hd
+  have hr := Term.eval_canonical_length_range ht hn
+  simpa [CanonicalLengthBounds, Formula.Holds, Atom.Holds, Expression.eval, hn] using hr
 
 end Verification.Paper.TolerantFrames

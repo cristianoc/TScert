@@ -46,8 +46,8 @@ theorem Term.eval_heap {entry entry' focus focus' : State}
     t.eval entry focus η = t.eval entry' focus' η := by
   cases t with
   | literal _ | index _ => rfl
-  | path k p => simp only [Term.eval, Path.read_heap hf, hf.2]
-  | element k p i fs valid => simp only [Term.eval, Path.read_heap hf, Expression.eval_heap he hf, hf.2]
+  | path k p | lengthPath p => simp only [Term.eval, Path.read_heap hf, hf.2]
+  | element k p i fs valid | lengthElement p i fs => simp only [Term.eval, Path.read_heap hf, Expression.eval_heap he hf, hf.2]
   | old t => exact Term.eval_heap he he η t
 
 theorem Expression.eval_heap {entry entry' focus focus' : State}

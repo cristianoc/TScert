@@ -24,8 +24,8 @@ def underLogicalValue (types : DeclaredPaths) : DeclaredPaths where
 
 mutual
 def Term.NoOld : Term → Prop
-  | .literal _ | .index _ | .path _ _ => True
-  | .element _ _ e _ _ => e.NoOld
+  | .literal _ | .index _ | .path _ _ | .lengthPath _ => True
+  | .element _ _ e _ _ | .lengthElement _ e _ => e.NoOld
   | .old _ => False
 
 def Expression.NoOld : Expression → Prop
@@ -36,8 +36,8 @@ end
 
 mutual
 def Term.WellFormed : Term → Prop
-  | .literal _ | .index _ | .path _ _ => True
-  | .element _ _ e _ _ => e.WellFormed
+  | .literal _ | .index _ | .path _ _ | .lengthPath _ => True
+  | .element _ _ e _ _ | .lengthElement _ e _ => e.WellFormed
   | .old t => t.NoOld
 
 def Expression.WellFormed : Expression → Prop

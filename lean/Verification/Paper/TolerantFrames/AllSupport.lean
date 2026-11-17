@@ -61,6 +61,10 @@ mutual
 theorem Term.eval_extend {h : Heap} (vs : List Val) {ρ : Env} : ∀ {t : Term} {n : Int},
     t.eval ρ h = some n → t.eval ρ (h ++ vs) = some n
   | .literal _, _, he => he
+  | .lengthPath _, _, he => by
+    simp only [Term.eval, Option.bind_eq_some_iff] at he ⊢
+    obtain ⟨v, hv, he⟩ := he
+    exact ⟨v, readPath_extend vs hv, lengthReading_extend vs he⟩
   | .path _ _, _, he => by
     simp only [Term.eval, Option.bind_eq_some_iff] at he ⊢
     obtain ⟨v, hv, he⟩ := he
@@ -70,6 +74,11 @@ theorem Term.eval_extend {h : Heap} (vs : List Val) {ρ : Env} : ∀ {t : Term} 
     obtain ⟨v, hv, i, hi, u, hu, w, hw, he⟩ := he
     exact ⟨v, readPath_extend vs hv, i, Expression.eval_extend vs hi, u,
       elementValue_extend vs hu, w, readPath_extend vs hw, kindValue_extend vs he⟩
+  | .lengthElement _ _ _, _, he => by
+    simp only [Term.eval, bind, Option.bind_eq_some_iff] at he ⊢
+    obtain ⟨v, hv, i, hi, u, hu, w, hw, he⟩ := he
+    exact ⟨v, readPath_extend vs hv, i, Expression.eval_extend vs hi, u,
+      elementValue_extend vs hu, w, readPath_extend vs hw, lengthReading_extend vs he⟩
 
 theorem Expression.eval_extend {h : Heap} (vs : List Val) {ρ : Env} : ∀ {e : Expression} {n : Int},
     e.eval ρ h = some n → e.eval ρ (h ++ vs) = some n
@@ -97,6 +106,10 @@ theorem BodyTerm.eval_extend {h : Heap} (vs : List Val) {ρ : Env} {z : Val} {i 
     simp only [BodyTerm.eval, Option.bind_eq_some_iff] at he ⊢
     obtain ⟨v, hv, w, hw, he⟩ := he
     exact ⟨v, elementValue_extend vs hv, w, readPath_extend vs hw, kindValue_extend vs he⟩
+  | lengthProject _ =>
+    simp only [BodyTerm.eval, Option.bind_eq_some_iff] at he ⊢
+    obtain ⟨v, hv, w, hw, he⟩ := he
+    exact ⟨v, elementValue_extend vs hv, w, readPath_extend vs hw, lengthReading_extend vs he⟩
 
 theorem BodyExpression.eval_extend {h : Heap} (vs : List Val) {ρ : Env} {z : Val} {i : Int} :
     ∀ {e : BodyExpression} {n : Int}, e.eval ρ h z i = some n → e.eval ρ (h ++ vs) z i = some n

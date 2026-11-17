@@ -39,8 +39,8 @@ theorem Term.Scoped.rename_program {Γ Δ : Nat → Prop} {indices values : Nat}
   cases t with
   | literal _ => trivial
   | index _ => exact h
-  | path _ _ => exact Path.Scoped.rename_program h
-  | element _ _ _ _ _ => exact ⟨Path.Scoped.rename_program h.1, Expression.Scoped.rename_program h.2⟩
+  | path _ _ | lengthPath _ => exact Path.Scoped.rename_program h
+  | element _ _ _ _ _ | lengthElement _ _ _ => exact ⟨Path.Scoped.rename_program h.1, Expression.Scoped.rename_program h.2⟩
   | old t => exact Term.Scoped.rename_program (t := t) (Δ := Γ) h
 
 theorem Expression.Scoped.rename_program {Γ Δ : Nat → Prop} {indices values : Nat} {σ : Nat → Nat} {e : Expression}

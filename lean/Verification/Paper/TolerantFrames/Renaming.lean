@@ -32,7 +32,9 @@ mutual
 def Term.rename (σ : Nat → Nat) : Term → Term
   | .literal n => .literal n
   | .path k p => .path k (renamePath σ p)
+  | .lengthPath p => .lengthPath (renamePath σ p)
   | .element k p e fs valid => .element k (renamePath σ p) (e.rename σ) fs valid
+  | .lengthElement p e fs => .lengthElement (renamePath σ p) (e.rename σ) fs
 
 def Expression.rename (σ : Nat → Nat) : Expression → Expression
   | .constant n => .constant n
@@ -44,8 +46,9 @@ mutual
 theorem Term.eval_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) : ∀ t : Term,
     (t.rename σ).eval ρ h = t.eval (fun x => ρ (σ x)) h
   | .literal _ => rfl
-  | .path _ _ => rfl
+  | .path _ _ | .lengthPath _ => rfl
   | .element k p e fs valid => by simp only [Term.rename, Term.eval, read_renamePath, Expression.eval_rename]
+  | .lengthElement p e fs => by simp only [Term.rename, Term.eval, read_renamePath, Expression.eval_rename]
 
 theorem Expression.eval_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) : ∀ e : Expression,
     (e.rename σ).eval ρ h = e.eval (fun x => ρ (σ x)) h
@@ -58,6 +61,7 @@ def BodyTerm.rename (σ : Nat → Nat) : BodyTerm → BodyTerm
   | .index => .index
   | .element d => .element d
   | .project k fs valid => .project k fs valid
+  | .lengthProject fs => .lengthProject fs
   | .free t => .free (t.rename σ)
 
 def BodyExpression.rename (σ : Nat → Nat) : BodyExpression → BodyExpression

@@ -25,8 +25,8 @@ theorem Term.Scoped.weaken {Γ Δ Γ' Δ' : Nat → Prop} {i v t}
   cases t with
   | literal _ => trivial
   | index _ => exact h
-  | path _ _ => exact Path.Scoped.weaken hc h
-  | element _ _ _ _ _ => exact ⟨Path.Scoped.weaken hc h.1, Expression.Scoped.weaken he hc h.2⟩
+  | path _ _ | lengthPath _ => exact Path.Scoped.weaken hc h
+  | element _ _ _ _ _ | lengthElement _ _ _ => exact ⟨Path.Scoped.weaken hc h.1, Expression.Scoped.weaken he hc h.2⟩
   | old t => exact Term.Scoped.weaken (t := t) he he h
 
 theorem Expression.Scoped.weaken {Γ Δ Γ' Δ' : Nat → Prop} {i v e}

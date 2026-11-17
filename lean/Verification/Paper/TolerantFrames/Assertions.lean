@@ -1,5 +1,6 @@
 import Verification.Paper.TolerantFrames.SemanticRules
 import Verification.Semantics.ViewConversion
+import Verification.Paper.TolerantFrames.LengthReading
 
 /-! # The paper's assertion syntax
 
@@ -17,18 +18,21 @@ open Verification.Parity (Path)
 /-- Safe integer literals of the term grammar. -/
 abbrev IntegerLiteral := { n : Int // -9007199254740991 ≤ n ∧ n ≤ 9007199254740991 }
 
-/-- The four integer readings of a value: numeric value, array length,
-view length, UTF-16 string length. These are the shared meanings. -/
+/-- Auxiliary sorted readings reused from the shared semantics. The paper's
+single length operator uses the canonical length constructors below. -/
 abbrev Reading := HeapKnowledge.Term.Kind
 
 mutual
-/-- Terms t of §4. The optional field suffix after an element is empty for
-z[e] or slen(z[e]); well-formedness below excludes the other empty suffixes. -/
+/-- The paper's terms, with auxiliary sorted readers for existing bridges.
+Canonical lengths choose their reader by runtime category, and their element
+suffix may be empty. The validity field belongs only to the auxiliary form. -/
 inductive Term where
   | literal (n : IntegerLiteral)
   | path (reading : Reading) (p : Path)
+  | lengthPath (p : Path)
   | element (reading : Reading) (z : Path) (index : Expression) (suffix : List String)
       (valid : reading = .value ∨ reading = .strLength ∨ suffix ≠ [])
+  | lengthElement (p : Path) (index : Expression) (suffix : List String)
 /-- Linear combinations e, with arbitrary integer coefficients. -/
 inductive Expression where
   | constant (n : Int)
@@ -55,12 +59,19 @@ mutual
 def Term.eval (ρ : Env) (h : Heap) : Term → Option Int
   | .literal n => some n.val
   | .path k p => (p.read ρ h).bind (kindValue h k)
+  | .lengthPath p => (p.read ρ h).bind (lengthReading h)
   | .element k z i fs _ => do
     let v ← z.read ρ h
     let j ← i.eval ρ h
     let e ← elementValue h v j
     let u ← readPath h e fs
     kindValue h k u
+  | .lengthElement z i fs => do
+    let v ← z.read ρ h
+    let j ← i.eval ρ h
+    let e ← elementValue h v j
+    let u ← readPath h e fs
+    lengthReading h u
 /-- Integer arithmetic on combinations; intermediate combinations need not
 be safe integers. Terms themselves must satisfy their reading's bounds. -/
 def Expression.eval (ρ : Env) (h : Heap) : Expression → Option Int
@@ -76,6 +87,7 @@ inductive BodyTerm where
   | element (offset : Nat)
   | project (reading : Reading) (suffix : List String)
       (valid : reading = .value ∨ reading = .strLength ∨ suffix ≠ [])
+  | lengthProject (suffix : List String)
   | free (term : Term)
 
 /-- Body expressions use exactly the same linear-combination grammar. -/
@@ -100,6 +112,7 @@ def BodyTerm.eval (ρ : Env) (h : Heap) (z : Val) (i : Int) : BodyTerm → Optio
   | .index => some i
   | .element d => (elementValue h z (i + d)).bind intValue
   | .project k fs _ => (elementValue h z i).bind fun v => (readPath h v fs).bind (kindValue h k)
+  | .lengthProject fs => (elementValue h z i).bind fun v => (readPath h v fs).bind (lengthReading h)
   | .free t => t.eval ρ h
 
 def BodyExpression.eval (ρ : Env) (h : Heap) (z : Val) (i : Int) : BodyExpression → Option Int

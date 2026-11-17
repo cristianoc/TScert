@@ -60,6 +60,8 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
       Derivation Γ (Now (Formula.atom (.le goal.1 goal.2)).meaning)
   | lengthRange {Γ t k} : t.ReadsKind k → (k = .length ∨ k = .view ∨ k = .strLength) →
       Derivation Γ (Now (TermDefined t).meaning) → Derivation Γ (Now (LengthBounds k t).meaning)
+  | canonicalLengthRange {Γ t} : t.IsLength → Derivation Γ (Now (TermDefined t).meaning) →
+      Derivation Γ (Now (CanonicalLengthBounds t).meaning)
   | existsIntro {Γ F v} : Derivation Γ (Now (ValueInstantiation F v)) →
       Derivation Γ (Now (Formula.existsValue F).meaning)
   | existsElim {Γ F Q} : Derivation Γ (Now (Formula.existsValue F).meaning) →
@@ -162,6 +164,9 @@ theorem Derivation.sound {Γ Q} (d : Derivation Γ Q) : Consequence Γ Q := by
   | lengthRange hr hk _ ih =>
     intro ρ ρ' m s t hv hvt hΓ
     exact length_bounds hr hk (ih ρ ρ' m s t hv hvt hΓ)
+  | canonicalLengthRange ht _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact canonical_length_bounds ht (ih ρ ρ' m s t hv hvt hΓ)
   | existsIntro _ ih =>
     intro ρ ρ' m s t hv hvt hΓ
     exact exists_intro hvt (ih ρ ρ' m s t hv hvt hΓ)

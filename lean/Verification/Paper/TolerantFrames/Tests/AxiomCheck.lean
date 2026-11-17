@@ -1,3 +1,6 @@
+import Verification.Paper.TolerantFrames.LengthBridges
+import Verification.Paper.TolerantFrames.PaperTermForms
+import Verification.Paper.TolerantFrames.LengthReading
 import Verification.Paper.TolerantFrames.CompilerCorrectness
 import Verification.Paper.TolerantFrames.CompilerNodeSimulation
 import Verification.Paper.TolerantFrames.CompilerSinks

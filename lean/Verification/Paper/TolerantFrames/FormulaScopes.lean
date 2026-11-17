@@ -24,8 +24,8 @@ def Value.Scoped (Γ : Scope) : Value → Prop | .base v | .converted _ v => v.S
 mutual
 def Term.Scoped (Γ : Scope) : Term → Prop
   | .literal _ => True
-  | .path _ p => Γ p.root
-  | .element _ p e _ _ => Γ p.root ∧ e.Scoped Γ
+  | .path _ p | .lengthPath p => Γ p.root
+  | .element _ p e _ _ | .lengthElement p e _ => Γ p.root ∧ e.Scoped Γ
 
 def Expression.Scoped (Γ : Scope) : Expression → Prop
   | .constant _ => True
@@ -70,8 +70,8 @@ mutual
 theorem Term.eval_scope {Γ ρ ρ'} (ha : ∀ x, Γ x → ρ x = ρ' x) {t : Term} (ht : t.Scoped Γ) (h : Heap) : t.eval ρ h = t.eval ρ' h := by
   cases t with
   | literal _ => rfl
-  | path _ p => simp only [Term.eval, Parity.Path.read, ha _ ht]
-  | element _ p e _ _ => simp only [Term.eval, Parity.Path.read, ha _ ht.1, Expression.eval_scope ha ht.2]
+  | path _ p | lengthPath p => simp only [Term.eval, Parity.Path.read, ha _ ht]
+  | element _ p e _ _ | lengthElement p e _ => simp only [Term.eval, Parity.Path.read, ha _ ht.1, Expression.eval_scope ha ht.2]
 
 theorem Expression.eval_scope {Γ ρ ρ'} (ha : ∀ x, Γ x → ρ x = ρ' x) {e : Expression} (he : e.Scoped Γ) (h : Heap) : e.eval ρ h = e.eval ρ' h := by
   cases e with
@@ -168,8 +168,8 @@ mutual
 theorem Term.Scoped.rename {Γ Δ σ t} (hm : ∀ x, Γ x → Δ (σ x)) (h : Term.Scoped Γ t) : (t.rename σ).Scoped Δ := by
   cases t with
   | literal _ => trivial
-  | path _ p => exact hm _ h
-  | element _ p e _ _ => exact ⟨hm _ h.1, Expression.Scoped.rename hm h.2⟩
+  | path _ p | lengthPath p => exact hm _ h
+  | element _ p e _ _ | lengthElement p e _ => exact ⟨hm _ h.1, Expression.Scoped.rename hm h.2⟩
 
 theorem Expression.Scoped.rename {Γ Δ σ e} (hm : ∀ x, Γ x → Δ (σ x)) (h : Expression.Scoped Γ e) : (e.rename σ).Scoped Δ := by
   cases e with

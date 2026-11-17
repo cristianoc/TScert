@@ -53,8 +53,10 @@ inductive Term where
   | literal (n : IntegerLiteral)
   | index (slot : Nat)
   | path (reading : Reading) (p : Path)
+  | lengthPath (p : Path)
   | element (reading : Reading) (p : Path) (index : Expression) (suffix : List String)
       (valid : reading = .value ∨ reading = .strLength ∨ suffix ≠ [])
+  | lengthElement (p : Path) (index : Expression) (suffix : List String)
   | old (term : Term)
 
 inductive Expression where
@@ -68,6 +70,7 @@ inductive BodyTerm where
   | element (offset : Nat)
   | project (reading : Reading) (suffix : List String)
       (valid : reading = .value ∨ reading = .strLength ∨ suffix ≠ [])
+  | lengthProject (suffix : List String)
   | free (term : Term)
 
 inductive BodyExpression where
@@ -151,12 +154,19 @@ def Term.eval (entry focus : State) (η : LogicalEnv) : Term → Option Int
   | .literal n => some n.val
   | .index x => some (η.indices x)
   | .path k p => (p.read focus η.values).bind (kindValue focus.heap.h k)
+  | .lengthPath p => (p.read focus η.values).bind (lengthReading focus.heap.h)
   | .element k p i fs _ => do
     let v ← p.read focus η.values
     let j ← i.eval entry focus η
     let e ← elementValue focus.heap.h v j
     let u ← readPath focus.heap.h e fs
     kindValue focus.heap.h k u
+  | .lengthElement p i fs => do
+    let v ← p.read focus η.values
+    let j ← i.eval entry focus η
+    let e ← elementValue focus.heap.h v j
+    let u ← readPath focus.heap.h e fs
+    lengthReading focus.heap.h u
   | .old t => t.eval entry entry η
 
 def Expression.eval (entry focus : State) (η : LogicalEnv) : Expression → Option Int
@@ -170,6 +180,7 @@ def BodyTerm.eval (entry focus : State) (η : LogicalEnv) (z : Val) (i : Int) : 
   | .element d => (elementValue focus.heap.h z (i + d)).bind intValue
   | .project k fs _ => (elementValue focus.heap.h z i).bind fun v =>
     (readPath focus.heap.h v fs).bind (kindValue focus.heap.h k)
+  | .lengthProject fs => (elementValue focus.heap.h z i).bind fun v => (readPath focus.heap.h v fs).bind (lengthReading focus.heap.h)
   | .free t => t.eval entry focus η
 
 def BodyExpression.eval (entry focus : State) (η : LogicalEnv) (z : Val) (i : Int) : BodyExpression → Option Int
@@ -253,8 +264,8 @@ mutual
 def Term.Scoped (entryPrograms programs : Nat → Prop) (indices values : Nat) : Term → Prop
   | .literal _ => True
   | .index x => x < indices
-  | .path _ p => p.Scoped programs values
-  | .element _ p e _ _ => p.Scoped programs values ∧ e.Scoped entryPrograms programs indices values
+  | .path _ p | .lengthPath p => p.Scoped programs values
+  | .element _ p e _ _ | .lengthElement p e _ => p.Scoped programs values ∧ e.Scoped entryPrograms programs indices values
   | .old t => t.Scoped entryPrograms entryPrograms indices values
 
 def Expression.Scoped (entryPrograms programs : Nat → Prop) (indices values : Nat) : Expression → Prop

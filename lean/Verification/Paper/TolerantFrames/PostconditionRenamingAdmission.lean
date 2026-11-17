@@ -56,7 +56,7 @@ theorem underLogicalValue_program_pullback (σ : Nat → Nat) (types : DeclaredP
 mutual
 theorem Term.noOld_rename (σ : Renaming) (t : Term) : (t.rename σ).NoOld ↔ t.NoOld := by
   cases t with
-  | element _ _ e _ _ => exact Expression.noOld_rename σ e
+  | element _ _ e _ _ | lengthElement _ e _ => exact Expression.noOld_rename σ e
   | _ => rfl
 
 theorem Expression.noOld_rename (σ : Renaming) (e : Expression) : (e.rename σ).NoOld ↔ e.NoOld := by
@@ -69,7 +69,7 @@ end
 mutual
 theorem Term.wellFormed_rename (σ : Renaming) (t : Term) : (t.rename σ).WellFormed ↔ t.WellFormed := by
   cases t with
-  | element _ _ e _ _ => exact Expression.wellFormed_rename σ e
+  | element _ _ e _ _ | lengthElement _ e _ => exact Expression.wellFormed_rename σ e
   | old t => exact t.noOld_rename σ
   | _ => rfl
 

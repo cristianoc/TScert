@@ -45,7 +45,9 @@ def Term.rename (σ : Renaming) : Term → Term
   | .literal n => .literal n
   | .index x => .index (σ.indices x)
   | .path k p => .path k (p.rename σ)
+  | .lengthPath p => .lengthPath (p.rename σ)
   | .element k p e fs valid => .element k (p.rename σ) (e.rename σ) fs valid
+  | .lengthElement p e fs => .lengthElement (p.rename σ) (e.rename σ) fs
   | .old t => .old (t.rename σ)
 
 def Expression.rename (σ : Renaming) : Expression → Expression
@@ -58,6 +60,7 @@ def BodyTerm.rename (σ : Renaming) : BodyTerm → BodyTerm
   | .index => .index
   | .element d => .element d
   | .project k fs valid => .project k fs valid
+  | .lengthProject fs => .lengthProject fs
   | .free t => .free (t.rename σ)
 
 def BodyExpression.rename (σ : Renaming) : BodyExpression → BodyExpression
@@ -156,8 +159,10 @@ theorem Term.eval_rename (σ : Renaming) (entry focus : State) (η : LogicalEnv)
     (t.rename σ).eval entry focus η = t.eval (entry.rename σ) (focus.rename σ) (η.rename σ) := by
   cases t with
   | literal _ | index _ => rfl
-  | path k p => simp only [Term.rename, Term.eval, Path.read_rename]; rfl
+  | path k p | lengthPath p => simp only [Term.rename, Term.eval, Path.read_rename]; rfl
   | element k p e fs valid =>
+    simp only [Term.rename, Term.eval, Path.read_rename, Expression.eval_rename]; rfl
+  | lengthElement p e fs =>
     simp only [Term.rename, Term.eval, Path.read_rename, Expression.eval_rename]; rfl
   | old t => exact Term.eval_rename σ entry entry η t
 

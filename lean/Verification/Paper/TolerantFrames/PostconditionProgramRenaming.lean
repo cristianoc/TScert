@@ -44,8 +44,8 @@ theorem Term.rename_program_agree {entryPrograms programs : Nat → Prop} {indic
     t.rename (programMap σ ι ν) = t.rename (programMap τ ι ν) := by
   cases t with
   | literal _ | index _ => rfl
-  | path _ _ => simp only [Term.rename, Path.rename_program_agree hc ι ν ht]
-  | element _ _ _ _ _ =>
+  | path _ _ | lengthPath _ => simp only [Term.rename, Path.rename_program_agree hc ι ν ht]
+  | element _ _ _ _ _ | lengthElement _ _ _ =>
     simp only [Term.rename, Path.rename_program_agree hc ι ν ht.1, Expression.rename_program_agree he hc ι ν ht.2]
   | old t => exact congrArg Term.old (Term.rename_program_agree he he ι ν ht)
 

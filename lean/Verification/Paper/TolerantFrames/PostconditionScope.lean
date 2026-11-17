@@ -59,8 +59,8 @@ theorem Term.eval_agree {entryPrograms programs indices values η ζ} (ha : Logi
   cases t with
   | literal _ => rfl
   | index x => exact congrArg some (ha.1 x ht)
-  | path k p => simp only [Term.eval, Path.read_agree ha ht]
-  | element k p i fs valid =>
+  | path k p | lengthPath p => simp only [Term.eval, Path.read_agree ha ht]
+  | element k p i fs valid | lengthElement p i fs =>
     simp only [Term.eval, Path.read_agree ha ht.1, Expression.eval_agree ha ht.2]
   | old t => exact Term.eval_agree (t := t) (programs := entryPrograms) ha ht entry entry
 
