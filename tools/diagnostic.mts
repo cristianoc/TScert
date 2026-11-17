@@ -88,19 +88,19 @@ function valueSet(v: Json): ValueSet {
 interface HeapFact {
   slot: number;
   contents: ValueSet;
-  field: string;
+  field: PropertyKey;
 }
 export interface HeapKnowledge {
   cells: HeapFact[]; values: HeapFact[];
   /** A read link (`alias` false) or a value equality (`alias` true). A read
    * link through an `optional` key also covers the object lacking the key,
    * where the read gave `undefined`. */
-  links: {cell: number; value: number; alias: boolean; field: string; optional: boolean}[];
+  links: {cell: number; value: number; alias: boolean; field: PropertyKey; optional: boolean}[];
   /** Which locations differ: facts addressed by level, level `l` naming slot
    * `depth - 1 - l`; a fact's subject `fields` (null: every own location)
    * differ from each partner's listed fields, each a property key: a
    * string, or a well-known symbol by its number. */
-  separation: {depth: number; facts: {slot: number; fields: SeparationKey[] | null; partners: [number, SeparationKey[]][]}[]};
+  separation: {depth: number; facts: {slot: number; fields: PropertyKey[] | null; partners: [number, PropertyKey[]][]}[]};
   /** Elements facts: every present element of the array slot `slot` holds is
    * of a kind `pred` lists, where the slot `cond`, if stated, holds a truthy
    * value, or a falsy one where `negated`. */
@@ -138,7 +138,9 @@ type BodyVariable = "index" | "elem" | { offset: { delta: number } } | LinearTer
  * (`path`), and what it reads of the value they end at: the value, the length
  * of its array spine, or the length of its typed array. */
 type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: number; path: string[]; atEntry?: true };
-type SeparationKey = string | { symbol: number };
+/** A property key (`PropKey`): a string, or a well-known symbol by its
+ * number. */
+export type PropertyKey = string | { symbol: number };
 /** The value kinds an elements fact's predicate names. */
 const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
 type ElemKind = (typeof ELEM_KINDS)[number];
@@ -386,14 +388,14 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
 function knowledge(v: Json | undefined): HeapKnowledge | null {
   if (v === null) return null;
   const k = record(v,["cells","values","links","separation","elems","indices"]);
+  const key = (f: Json | undefined): PropertyKey =>
+    typeof f === "string" ? f : { symbol: nat(record(f,["symbol"]).symbol) };
   const factsOf = (facts: Json | undefined): HeapFact[] => {
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
     const result: HeapFact[] = [];
     for (const fact of facts) {
       const f = record(fact,["slot","contents","field"]); const slot = nat(f.slot);
-      const field = f.field;
-      if (typeof field !== "string") throw Error("invalid heap fact field");
-      result.push({ slot, field, contents: valueSet(f.contents) });
+      result.push({ slot, field: key(f.field), contents: valueSet(f.contents) });
     }
     return result;
   };
@@ -404,17 +406,13 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     const l = record(link,["cell","value","alias","field","optional"]);
     const cell = nat(l.cell), value = nat(l.value);
     if (typeof l.optional !== "boolean") throw Error("invalid optional flag");
-    if (typeof l.field !== "string") throw Error("invalid heap link field");
     if (typeof l.alias !== "boolean") throw Error("invalid alias");
-    links.push({ cell, value, optional: l.optional, field: l.field, alias: l.alias });
+    links.push({ cell, value, optional: l.optional, field: key(l.field), alias: l.alias });
   }
-  const keys = (v: Json | undefined): SeparationKey[] => {
+  const keys = (v: Json | undefined): PropertyKey[] => {
     if (!Array.isArray(v)) throw Error("invalid separation fields");
-    const result: SeparationKey[] = [];
-    for (const f of v) {
-      if (typeof f === "string") result.push(f);
-      else result.push({ symbol: nat(record(f,["symbol"]).symbol) });
-    }
+    const result: PropertyKey[] = [];
+    for (const f of v) result.push(key(f));
     return result;
   };
   const s = record(k.separation,["depth","facts"]); const depth = nat(s.depth);
@@ -424,7 +422,7 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     const f = record(fact,["slot","fields","partners"]); const slot = nat(f.slot);
     const fields = f.fields === null ? null : keys(f.fields);
     if (!Array.isArray(f.partners)) throw Error("invalid separation partners");
-    const partners: [number, SeparationKey[]][] = [];
+    const partners: [number, PropertyKey[]][] = [];
     for (const p of f.partners) {
       if (!Array.isArray(p) || p.length !== 2) throw Error("invalid separation partner");
       partners.push([nat(p[0]), keys(p[1])]);
@@ -434,10 +432,10 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
   if (!Array.isArray(k.elems)) throw Error("invalid elements facts");
   const elems: HeapKnowledge["elems"] = [];
   for (const atom of k.elems) {
-    const a = record(atom,["slot","pred","negated"],["cond"]);
+    const a = record(atom,["slot","pred","cond","negated"]);
     if (typeof a.negated !== "boolean") throw Error("invalid elements fact");
     const pred = elemPred(a.pred);
-    elems.push({ slot: nat(a.slot), pred, negated: a.negated, ...(a.cond === undefined ? {} : { cond: nat(a.cond) }) });
+    elems.push({ slot: nat(a.slot), pred, negated: a.negated, ...(a.cond === null ? {} : { cond: nat(a.cond) }) });
   }
   if (!Array.isArray(k.indices)) throw Error("invalid index facts");
   const indices: HeapKnowledge["indices"] = [];
