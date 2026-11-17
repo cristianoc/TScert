@@ -9,6 +9,12 @@ gpt-6-astra from the sources at commit `7a8c19f5` on 2026-11-17, with no
 build or test run; four of its claims (Example 1, Push, Fresh-Eff and the
 quantified atom's presence condition) were checked against the source.
 
+The paper is the source of truth. Where B has no statement of an item, the
+row names the statement of the shared model (`Semantics/`) or of A
+(`Programs/`, `Source/`) the paper's status tag cites, checked against the
+paper where the row says so. **Assumed** marks a host contract the paper
+states as assumed, which B does not state either.
+
 B is narrower than the paper. Several general statements cited by the paper live entirely outside B. Within B, the main restrictions are the assertion grammar, the available support and rigidity certificates, and command summaries that do not state the complete displayed command rule.
 
 Notation for source references:
@@ -40,9 +46,9 @@ A restriction recurring below is worth stating once. B validates assertions with
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
 | Definition 4, World — 357 | **none in B**. Outside B: `WorldT`, `Semantics/Worlds.lean:198`; `WExt`, `:257` | **none in B** | B imports worlds. The paper gives no status citation on this definition. |
-| Definition 5, Well-formed state — 373 | **none in B**. Outside B: `IndexedHeap`, `Semantics/TwoStateFormulas.lean:78` | **none in B** | B does not declare the conjunction W1–W4, including the typing and reference validity of the environment. Its imported indexed heap packages the heap, world, positive budget and heap validity. |
-| Definition 6, Admissible transition — 405 | **none in B**. Cited outside B: `Admissible`, `Semantics/TwoStateFormulas.lean:104` | **none in B** | B imports admissibility; its reflexivity and composition lemmas do not redeclare this definition. |
-| Theorem 7, Preservation — 424 | **none in B**. Cited outside B: `run`, `run_normal`, `run_throw`, `safe_run`, `Semantics/IndexedStates.lean:81,131,141,150`; `HasTyUsing.sound`, `Programs/ProgramTyping.lean:712`; `ControlFlow.state_safe`, `Programs/ControlFlow.lean:1322` | **none in B** | B contains applications to particular commands and graphs, not the general preservation theorem for every accepted term and every execution prefix. |
+| Definition 5, Well-formed state — 373 | **none in B**. Shared model: `IndexedHeap`, `Semantics/TwoStateFormulas.lean:78` | **none in B** | The shared model's state is a budget, a world, a heap, its positivity, `WorldAdm` and `HeapOk`; it holds no environment, so the environment's part of (W3) and (W4) is stated apart where it is used (`RootsOk`). Whether `HeapOk` is exactly (W1)–(W4) for the heap is not checked here. |
+| Definition 6, Admissible transition — 405 | **none in B**. Shared model: `Admissible`, `WorldReach`, `Semantics/TwoStateFormulas.lean:88,104` | **none in B** | The shared model states it equally: `WorldReach W W'` is a budget $`k' \le k`$ with $`W`$ truncated to $`k'`$ extended by $`W'`$ (checked). |
+| Theorem 7, Preservation — 424 | **none in B**. Shared model: `safe_run`, `run`, `Semantics/IndexedStates.lean:131–150`; A: `HasTyUsing.sound`, `Programs/ProgramTyping.lean:712`; `ControlFlow.state_safe`, `Programs/ControlFlow.lean:1322` | **none in B** | The shared model states it from a safety premise (`Safe`) in place of acceptance by the type system: a run of $`j < k`$ steps reaches an admissible state with budget $`k - j`$ (checked). The step from typing to that premise, and (W1)–(W3), are A's. |
 
 **§4 — The assertion language**
 
@@ -61,7 +67,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Proposition 10, Guards and quantified facts — 956 — summary | `guardCases`, `D:369`; `everyElim`, `:463`; `everyEmpty`, `:456` | **narrower** | B has restricted instances; it has no general Prefix rule. |
 | (Guard) — 960 | `Derivation.guardCases`, `D:369`; `atomClash`, `:516` | **narrower** | B admits invariant-guard disjunctions and the displayed equality-versus-contents contradiction. It lacks the general optional-field guard and a constructor expressing every unequal-value contradiction in the paper. Cited outside B: `unguardIndices_holds`, `Semantics/HeapKnowledge.lean:3242`; `releaseEither_holds`, `:3855`. |
 | (Inst) — 961 | `Derivation.everyElim`, `D:463`; `everyInstances`, `:332` | **narrower** | B extracts only atomic clauses whose terms are the index and free parameters. It skips disjunctive clauses and clauses containing the element, its string length, its fields or shifted elements. Cited outside B: `instantiateEvery_holds`, `Semantics/HeapKnowledge.lean:3760`; `elementInstances_holds`, `:3829`. |
-| (Prefix) — 962 | **none in B**. Cited outside B: `everyPrefix_sound`, `Semantics/HeapKnowledge.lean:2173` | **none in B** | No B declaration gives arbitrary prefix restriction of a quantified fact. |
+| (Prefix) — 962 | **none in B**. Shared model: `everyPrefix_sound`, `Semantics/HeapKnowledge.lean:2173` | **none in B** | The cited theorem is the soundness of a check over the pass's index facts (`everyPrefix`), with that language's conditions; it is not the rule over the paper's assertions (checked). |
 | (Empty) — 963 | `Derivation.everyEmpty`, `D:456` | **narrower** | B additionally requires a density assertion establishing an ordinary array, uses a single-term bound, and admits scalar bodies only. The paper requires a defined array or view length and a nonpositive bound. |
 
 **§5 — Entering the modality**
@@ -69,7 +75,7 @@ The three proposition-summary rows in this report summarize their following cons
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
 | Definition 11, Support — 986 | `Supports`, `E:199` | **narrower** | The semantic support condition is instantiated at an arena assertion. Assertions of the paper outside that representation are excluded. |
-| Definition 12, Respect — 1012 | **none in B** as the semantic definition. Related: `RespectEvidence.check`, `E:733`. Cited outside B: `Supported`, `Semantics/Footprints.lean:735`; `respects`, `Semantics/Support.lean:160`; `respect_sound`, `:165` | **none in B** | B’s check implements a sufficient pairwise condition using certified disjointness. It is not the definition quantifying over every action from a state satisfying the premise. |
+| Definition 12, Respect — 1012 | **none in B**. Shared model: `Supported`, `Semantics/Footprints.lean:735`; `respects`, `respect_sound`, `Semantics/Support.lean:160,165` | **none in B** | No definition carries the paper's notion: it is expressible as `Supported S` of every action of $`\Phi`$ from a state of $`K`$. The declaration documented as "Respect (the note's Definition)", `respects`, is the sufficient pairwise check (each change of $`\Phi`$ within the support's change, or the regions disjoint by a query), which `respect_sound` proves sufficient (checked). |
 | Theorem 13, Tolerant frame — 1034 | `tolerant_frame`, `E:212`; `Derivation.tolerantFrame`, `D:437` | **narrower** | Besides the assertion restriction, B requires the pairwise sufficient respect check and a sound separation query, rather than arbitrary semantic respect. The derivation constructor further restricts support and context evidence. |
 | Definition 14, Supports of the atoms — 1049 | `SupportEvidence`, `E:811`; `.check`, `:822`; `.sound`, `:958` | **narrower** | There is no structural definition covering the whole displayed table. The certificates cover invariant assertions, linear facts, restricted density and scalar quantification, one-field literal equalities, initialization and literal view-element facts; they do not cover arbitrary contents predicates, optional equalities, arbitrary freshness regions, conjunction/disjunction supports, or the general modality-free support `all`. |
 | Proposition 15, Axioms of the atoms — 1138 — summary | `RawDerivation.grow`, `.dense`, `.sep`, `.everyFrame`, `.init`, `.view`; `Derivation.rigidSubst` | **narrower** | The individual restrictions follow. |
@@ -101,12 +107,12 @@ The three proposition-summary rows in this report summarize their following cons
 | Seq — 1313 | `CommandSummary.seq_sound`, `CommandComposition.lean:163` | **narrower** | Composition requires encoded summaries and `ThenEvidence`, including rebasing and checked effect inclusion. It is not the general one-state triple rule as displayed. |
 | Alloc, array literal — 1349 | **none in B**. Cited outside B: `literalArrayAtoms_holds`, `Programs/IndexWrites.lean:175` | **none in B** | B’s empty-array theorem does not establish arbitrary literal contents and density. The paper itself marks those parts conjectural. |
 | Alloc, object literal — 1350 | **none in B** | **none in B** | `alloc_state` (`KindsModelRules.lean:508`) establishes allocation/state properties, not the displayed freshness-and-field-equalities postcondition. |
-| Definition 16, Independence of the world — 1379 | **none in B**. Cited outside B: `IndependentFrom`, `Semantics/ExitWorlds.lean:179` | **none in B** | The definition is imported from the shared model. |
-| Conj — 1397 | **none in B**. Cited outside B: `SafePostExcV.cross_independent`, `Semantics/ExitWorlds.lean:188`; `PromiseWith.conj`, `Semantics/CallEffects.lean:403` | **none in B** | B has conjunction rules for assertions, not this rule combining two specifications of one computation across potentially different exit worlds. |
-| Definition 17, Rebasing — 1412 | **none in B**. Outside B: `Rebases`, `Semantics/ExitComposition.lean:77`; cited `rebaseAll`, `Semantics/FootprintRebase.lean:260`, and `rebase_sound`, `:313` | **none in B** | B uses rebasing evidence and proves composition instances; it does not own the semantic coverage definition. |
+| Definition 16, Independence of the world — 1379 | **none in B**. Shared model: `IndependentFrom`, `Semantics/ExitWorlds.lean:179` | **none in B** | The shared model states it equally: equal truth at any two exit states admissible from the entry with the same heap and budget (checked). |
+| Conj — 1397 | **none in B**. Shared model: `SafePostExcV.cross_independent`, `Semantics/ExitWorlds.lean:188`; `PromiseWith.conj`, `Semantics/CallEffects.lean:403` | **none in B** | `cross_independent` states it with a premise the rule lacks, `CrossCompatUpTo` of the two derivations' result families; `PromiseWith.conj` is its instance for native contracts whose second exit reads only the heap (checked). |
+| Definition 17, Rebasing — 1412 | **none in B**. Shared model: `Rebases`, `Semantics/ExitComposition.lean:77` | **none in B** | `Rebases` states the coverage relation with the absorption by $`\Phi`$ at `any` explicit, and holds no evidence $`\mathit{ev}`$: the paths reading each named value in both heaps are premises of `rebase_sound` for the computed rebasing (checked). |
 | Example 18, Freshness bounds effects, not facts — 1447 | **none in B** | **none in B** | `fresh_eff` proves the effect ingredient. `apart_not_kept_fresh` (`ModelRules.lean:251`) refutes preservation of apartness, not this shrink-and-read example or its length fact. |
-| Proposition 19, Reliance — 1459 | **none in B** as the chain theorem. Related: `reliance_at_prefix`, `CommandLoops.lean:124` | **none in B** | The B lemma assumes an already composed prefix bound. It does not quantify over sequences of native steps and callbacks and derive every observation’s bound. Cited outside B: `rely_chain`, `Semantics/FootprintNatives.lean:473`; `map_rely`, `:492`; `elems_rely`, `:521`. |
-| Field-Read — 1478 | **none in B**. Cited outside B: `ReadGave`, `Semantics/HeapFacts.lean:13` | **none in B** | No B command rule gives the required or optional field equality and empty effect. |
+| Proposition 19, Reliance — 1459 | **none in B**. Shared model: `rely_chain`, `Semantics/FootprintNatives.lean:473` | **none in B** | `rely_chain` states it for the facts of `FactKind`, under a stability check of each step's effect for the fact's support in place of a rigid bound with $`\Box_\Phi F`$ at the start (checked); the paper's status tag records this scope. |
+| Field-Read — 1478 | **none in B**. Shared model: `ReadGave`, `Semantics/HeapFacts.lean:13` | **none in B** | `ReadGave` defines a read's result (the field's location, or `undefined` for an absent key with no prototype); no statement gives the rule's postcondition $`x.f \doteq y`$ and its empty effect (checked). |
 | Field-Write — 1479 | **none in B**. Cited outside B: `fieldWriteFrame`, `Programs/ExpressionEffects.lean:112`; `FieldWritten`, `:155`; `fieldWriteStep_sound`, `:229` | **none in B** | B proves preservation consequences of some writes, not the general exact field-write rule. |
 | Elem-Read — 1480 | **none in B** | **none in B** | B’s element atom denotes a typed-array element, not an ordinary array element or hole. The paper marks the ordinary element-read contract assumed. |
 | Arr-Length — 1481 | **none in B** | **none in B** | No B constructor states this primitive read’s equality and empty effect. The paragraph supplies no named Lean citation for it. |
@@ -127,19 +133,19 @@ The three proposition-summary rows in this report summarize their following cons
 | Str-Length — 1668 | `Derivation.stringLengthRead`, `D:567` | **equal** | The conclusion is the string’s UTF-16 length, represented as the result’s safe integer. |
 | Str-Read — 1669 | `Derivation.stringRead`, `D:573`; `stringIndexFacts`, `:258` | **equal** | The premises include both the string bound and $`i<2^{32}-1`$; the conclusion is result length one. This is the current paper’s entire postcondition. |
 | Concat — 1670 | `Derivation.stringConcat`, `D:578`; `concatFacts`, `:242` | **equal** | For a normal string concatenation, the result length is the sum of the operand lengths. |
-| Library: `charCodeAt` range — 1685 | **none in B**. Cited outside B: `unit_bound`, `Semantics/StringPostconditions.lean:10`; `code_unit_safe`, `:23` | **none in B** | B has no corresponding host-call contract rule. The cited lemmas concern model code units. |
-| Library: `codePointAt` range — 1686 | **none in B** | **none in B** | The paper states an assumed host contract; no B declaration states it. |
-| Library: `codePointAt` two-unit implication — 1687 | **none in B** | **none in B** | No B declaration gives the displayed implication from the returned code point to the remaining string length. |
-| Library: string `indexOf`/`lastIndexOf` general bounds — 1688 | **none in B**. Cited outside B: `search_bounds`, `Semantics/StringPostconditions.lean:40` | **none in B** | B has no corresponding host-call contract. |
-| Library: nonempty-needle strict bound — 1689 | **none in B**. Cited outside B: `search_bounds`, `Semantics/StringPostconditions.lean:40` | **none in B** | No B rule derives the strict upper bound from the needle-length premise. |
-| Library: string `slice` length — 1690 | **none in B**. Cited outside B: `slice_length`, `Semantics/StringPostconditions.lean:32` | **none in B** | B has no host-call rule producing this exact length. |
-| Library: array `indexOf` bounds — 1691 | **none in B** | **none in B** | No B declaration states the displayed contract. |
-| Library: typed-array construction length — 1692 | **none in B** | **none in B** | No B declaration states the general constructor contract. |
-| Library: construction at $`2^{53}`$ throws — 1696 | **none in B** | **none in B** | No B theorem states this exceptional outcome. |
-| View-Length — 1720 | **none in B** | **none in B** | The paper cites assumed native contracts without a declaration name for this rule. B’s view-length invariance results concern preservation, not the primitive read. |
-| View-Read — 1721 | **none in B** | **none in B** | B has a view-element assertion and support evidence, but no primitive-read rule establishing that assertion. |
-| View-Write — 1722 | **none in B** as a general rule. Cited outside B: `ViewWrite`, `Semantics/ElementWrites.lean:361`; `ExactWrite`, `:184` | **none in B** | B supplies concrete witnesses such as `viewWrite_overlap` (`KindsModelRules.lean:161`), not the rule for every format, value and in-bounds index. |
-| View-Write-Any — 1723 | **none in B**. Related cited contract outside B: `ViewWrite`, `Semantics/ElementWrites.lean:361` | **none in B** | No B declaration states the effect for every numeric index, including out-of-bounds indices. |
+| Library: `charCodeAt` range — 1685 | **none in B**. Cited outside B: `unit_bound`, `Semantics/StringPostconditions.lean:10`; `code_unit_safe`, `:23` | **assumed** | B has no corresponding host-call contract rule. The cited lemmas concern model code units. |
+| Library: `codePointAt` range — 1686 | **none in B** | **assumed** | The paper states an assumed host contract; no B declaration states it. |
+| Library: `codePointAt` two-unit implication — 1687 | **none in B** | **assumed** | No B declaration gives the displayed implication from the returned code point to the remaining string length. |
+| Library: string `indexOf`/`lastIndexOf` general bounds — 1688 | **none in B**. Cited outside B: `search_bounds`, `Semantics/StringPostconditions.lean:40` | **assumed** | B has no corresponding host-call contract. |
+| Library: nonempty-needle strict bound — 1689 | **none in B**. Cited outside B: `search_bounds`, `Semantics/StringPostconditions.lean:40` | **assumed** | No B rule derives the strict upper bound from the needle-length premise. |
+| Library: string `slice` length — 1690 | **none in B**. Cited outside B: `slice_length`, `Semantics/StringPostconditions.lean:32` | **assumed** | B has no host-call rule producing this exact length. |
+| Library: array `indexOf` bounds — 1691 | **none in B** | **assumed** | No B declaration states the displayed contract. |
+| Library: typed-array construction length — 1692 | **none in B** | **assumed** | No B declaration states the general constructor contract. |
+| Library: construction at $`2^{53}`$ throws — 1696 | **none in B** | **assumed** | No B theorem states this exceptional outcome. |
+| View-Length — 1720 | **none in B** | **assumed** | The paper cites assumed native contracts without a declaration name for this rule. B’s view-length invariance results concern preservation, not the primitive read. |
+| View-Read — 1721 | **none in B** | **assumed** | B has a view-element assertion and support evidence, but no primitive-read rule establishing that assertion. |
+| View-Write — 1722 | **none in B** as a general rule. Cited outside B: `ViewWrite`, `Semantics/ElementWrites.lean:361`; `ExactWrite`, `:184` | **assumed** | B supplies concrete witnesses such as `viewWrite_overlap` (`KindsModelRules.lean:161`), not the rule for every format, value and in-bounds index. |
+| View-Write-Any — 1723 | **none in B**. Related cited contract outside B: `ViewWrite`, `Semantics/ElementWrites.lean:361` | **assumed** | No B declaration states the effect for every numeric index, including out-of-bounds indices. |
 | Example 20, A write through a typed array — 1748 | `ViewWrite.goal` and checked derivation, `Tests/ParityDerivationTests.lean:243,245`; `viewWrite_overlap`, `KindsModelRules.lean:161` | **narrower** | The test derives the first four preserved facts, using variables for the constant prefix/index. It omits preservation of the written view’s other element; failure of one framing certificate for the other view is not a counterexample, while `viewWrite_overlap` supplies a separate concrete overlap witness. |
 
 **§7 — Transfer along edges**
@@ -177,13 +183,8 @@ This section states no additional numbered item or formal rule. It explicitly le
 
 **§10 — Future work**
 
-| Paper item | B’s statement | Relation | Difference |
-|---|---|---|---|
-| Conjecture: which UTF-16 code unit a string read returns — 2002 | **none in B** | **none in B** | `Derivation.stringRead` proves length one. Its imported operation postcondition uses `codeUnitAt`, but that is not a B theorem stating this conjecture. |
-| Conjecture: stored value and density extension at Write-End — 2005 | **none in B** | **none in B** | `Derivation.writeEnd` concludes only the length increase. |
-| Conjecture: Push returns the new length — 2009 | **none in B** | **none in B** | `Derivation.pushPost` says nothing about the returned value. |
-
-The four subsequent language extensions state missing forms, not additional rules. §11 adds no numbered definition, theorem, proposition, example or rule display.
+Its conjectures and the language extensions it lists state no claim the
+paper makes, so they have no row. §11 adds no numbered definition, theorem, proposition, example or rule display.
 
 **B declarations without a paper counterpart**
 
@@ -196,12 +197,10 @@ Excluding proof infrastructure, representation lemmas and bridges implementing a
 
 **Count**
 
-Counting each table row except the three proposition summaries and the thirteen repeated §8 patterns:
+Each row except the three proposition summaries and the patterns of §8:
 
-| Equal | Narrower | Broader | Different | None in B | Total |
-|---:|---:|---:|---:|---:|---:|
-| 13 | 35 | 0 | 2 | 42 | 92 |
+| Equal | Narrower | Broader | Different | None in B | Assumed | Total |
+|---:|---:|---:|---:|---:|---:|---:|
+| 13 | 35 | 0 | 2 | 26 | 13 | 89 |
 
-Including the repeated §8 occurrences gives **17 equal, 44 narrower, 0 broader, 2 different, 42 none in B: 105 rows**.
-
-The outside-B names identify the cited source locations; their presence is not counted as a B formalization. No claim here depends on a build or on executing the checked-derivation tests.
+Of the rows with no statement in B, the shared model states Definitions 6 and 16 equally, and Theorem 7 from a safety premise; the others are recorded in their rows.
