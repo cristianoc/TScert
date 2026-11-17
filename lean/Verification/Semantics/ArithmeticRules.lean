@@ -213,55 +213,6 @@ def rules : List ArithRule := [shr, maskRange, maskBound, shl, bitOr]
 
 /-! ## Numbers through `ToInt32` -/
 
-set_option exponentiation.threshold 2048 in
-set_option maxRecDepth 4096 in
-/-- **`ToInt32` of a safe integer** is the integer modulo `2^32`, read as
-signed. -/
-theorem toInt32_safe {x : UInt64} {i : Int} (hx : SafeInt x i) : toInt32 x = wrapInt32 i := by
-  by_cases hz : i = 0
-  · subst i
-    rcases hx.2 with ⟨_, he⟩ | ⟨_, he⟩ <;>
-      simp only [Int.natAbs_zero, bitsOfNat_zero] at he <;>
-      simp only [toInt32, expo_toNat, frac_toNat, sign_toNat, he] <;> decide
-  have hp : 0 < i.natAbs := by omega
-  have hl : i.natAbs.log2 < 53 := log2_lt53 hp hx.1
-  obtain ⟨q, heq, hq⟩ : ∃ q : Bool, x.toNat = (bitsOfNat i.natAbs).toNat + (if q then 2 ^ 63 else 0) ∧
-      (q = true ↔ i < 0) := by
-    rcases hx.2 with ⟨h0, he⟩ | ⟨h0, he⟩
-    · exact ⟨false, by simpa using he, by simp; omega⟩
-    · exact ⟨true, by simpa using he, by simp; omega⟩
-  obtain ⟨hE, hM, hS, -⟩ := bitsOfNat_fields hp hx.1 q
-  rw [← heq] at hE hM hS
-  have he0 : (1023 + i.natAbs.log2 == 0) = false := by simp
-  have heInf : (1023 + i.natAbs.log2 == 2047) = false := by simp; omega
-  have h32 : ¬32 ≤ (1023 + (i.natAbs.log2 : Int)) - 1075 := by omega
-  have hmag : (if 0 ≤ (1023 + (i.natAbs.log2 : Int)) - 1075 then
-      (x.toNat % 2 ^ 52 + 2 ^ 52) * 2 ^ ((1023 + (i.natAbs.log2 : Int)) - 1075).toNat
-      else (x.toNat % 2 ^ 52 + 2 ^ 52) / 2 ^ (-((1023 + (i.natAbs.log2 : Int)) - 1075)).toNat) = i.natAbs := by
-    rw [hM]
-    split
-    · have h52 : i.natAbs.log2 = 52 := by omega
-      rw [h52]; simp
-    · rw [show (-((1023 + (i.natAbs.log2 : Int)) - 1075)).toNat = 52 - i.natAbs.log2 by omega,
-        Nat.mul_div_cancel _ (Nat.two_pow_pos _)]
-  unfold toInt32 wrapInt32
-  simp only [expo_toNat, frac_toNat, sign_toNat, hE, he0, heInf, Bool.false_eq_true, if_false,
-    Int.natCast_add, show ((1023 : Nat) : Int) = 1023 from rfl, h32, hmag]
-  cases q
-  · have hn : ¬ 2 ^ 63 ≤ x.toNat := by simp at hS; omega
-    simp only [decide_eq_true_eq, hn, if_false]
-    have : 0 ≤ i := by simp at hq; omega
-    split <;> split <;> omega
-  · have hn : 2 ^ 63 ≤ x.toNat := hS.mpr rfl
-    simp only [decide_eq_true_eq, hn, if_true]
-    have : i < 0 := hq.mp rfl
-    split <;> split <;> omega
-
-/-- `ToInt32` of a safe integer in the signed 32-bit range is itself. -/
-theorem toInt32_small {x : UInt64} {i : Int} (hx : SafeInt x i) (hlo : -2 ^ 31 ≤ i) (hhi : i < 2 ^ 31) :
-    toInt32 x = i := by
-  rw [toInt32_safe hx]; unfold wrapInt32; dsimp only; split <;> omega
-
 /-- **The shift count of a safe integer** `d` is `d mod 32`. -/
 theorem shiftCount_toUint32 {y : UInt64} {d : Int} (hy : SafeInt y d) :
     ((toUint32 y % 32 : Nat) : Int) = d % 32 := by

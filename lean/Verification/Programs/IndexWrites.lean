@@ -4,6 +4,7 @@ import Verification.Programs.HeapExpressionRules
 import Verification.Semantics.ApartSupport
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
+import Verification.Semantics.ArithmeticRules
 import Verification.Semantics.StepRelations
 import Verification.Semantics.SurvivalSeparation
 
@@ -655,8 +656,10 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
 A step on safe integers states the integer facts of its result (ARITHMETIC.md,
 "Linear facts"): a literal its value, a copy its equality with the copied
 slot, a spine's length its range `0 ≤ n ≤ 2^32 - 1`, a sum or a difference its
-value where the knowledge bounds it within the safe integers, and a comparison
-its outcome on each answer. An operand is a slot the knowledge states a safe
+value where the knowledge bounds it within the safe integers, a comparison
+its outcome on each answer, and an operation of an arithmetic rule
+(`ArithmeticRules.rules`) the rule's conclusion where the knowledge entails
+its premises (`ruleAtoms`). An operand is a slot the knowledge states a safe
 integer, or a literal that is one; its value is a linear form plus a constant. -/
 
 /-- The largest safe integer, `2^53 - 1`. -/
@@ -811,22 +814,37 @@ theorem indexHolds_cat {as bs : List IndexAtom} {ρ h}
     (ha : IndexHolds ε as ρ h) (hb : IndexHolds ε bs ρ h) : IndexHolds ε (as ++ bs) ρ h := fun a hm hc =>
   (List.mem_append.mp hm).elim (fun hm => ha a hm hc) (fun hm => hb a hm hc)
 
-/-- The checked range in which signed bitwise conversion preserves an operand. -/
-def smallOperand (k : Knowledge) (F : Linear.Form Nat) (c : Int) : Bool :=
-  entailsKnown k.indices (valueFact (.le (F.scale (-1)) c)) &&
-    entailsKnown k.indices (valueFact (.le F (2 ^ 31 - 1 - c)))
+/-- The result's form of a rule at a step: the output slot `0` where the
+result is a safe integer. -/
+def resultSlot : ArithmeticRules.Domain → Option (Linear.Form Nat × Int)
+  | .safeInteger => some ([(0, 1)], 0)
+  | .number => none
 
-/-- A bitwise result's integer range and its relation to the left operand. -/
-def bitAtoms (op : Arith) (F : Linear.Form Nat) (c d : Int) : List IndexAtom :=
-  match op with
-  | .shr => [⟨.int 0, none, false⟩,
-      ⟨.linear (valueFact (.le [(0, -1)] 0)), none, false⟩,
-      ⟨.linear (valueFact (.le ((0, 2 ^ d.toNat) :: shiftForm (F.scale (-1))) c)), none, false⟩,
-      ⟨.linear (valueFact (.le ((0, -(2 ^ d.toNat)) :: shiftForm F) (2 ^ d.toNat - 1 - c))), none, false⟩]
-  | _ => [⟨.int 0, none, false⟩,
-      ⟨.linear (valueFact (.le [(0, -1)] 0)), none, false⟩,
-      ⟨.linear (valueFact (.le [(0, 1)] d)), none, false⟩,
-      ⟨.linear (valueFact (.le ((0, 1) :: shiftForm (F.scale (-1))) c)), none, false⟩]
+/-- The atom of the result's domain: slot `0` a safe integer. -/
+def resultAtoms : ArithmeticRules.Domain → List IndexAtom
+  | .safeInteger => [⟨.int 0, none, false⟩]
+  | .number => []
+
+/-- **A rule's atoms at a step** (`ArithmeticRules`): the operands read as
+`operandForm` reads them, known constants as constants, bound by the rule's
+domains and constant; where the knowledge entails each premise at the
+input slots, the result's domain and each conclusion at the output slots,
+the result at slot `0` and an input slot `x` at `x + 1`. -/
+def ruleAtoms (k : Knowledge) (r : ArithmeticRules.ArithRule) (a b : Tm) : List IndexAtom :=
+  match r.bind (operandForm k true a) (operandForm k true b) with
+  | some (σ, K) =>
+    match ArithmeticRules.instantiateAll σ K r.premises,
+        ArithmeticRules.instantiateAll ((σ.rename (· + 1)).withResult (resultSlot r.result)) K r.conclusion with
+    | some ps, some cs =>
+      if ps.all fun G => entailsKnown k.indices (valueFact G) then
+        resultAtoms r.result ++ cs.map fun G => ⟨.linear (valueFact G), none, false⟩
+      else []
+    | _, _ => []
+  | none => []
+
+/-- The atoms of every rule of an operator at a step. -/
+def ruleAtomsOf (k : Knowledge) (op : Arith) (a b : Tm) : List IndexAtom :=
+  (ArithmeticRules.rules.filter fun r => decide (r.op = op)).flatMap fun r => ruleAtoms k r a b
 
 /-- String-only addition operands whose types establish string membership. -/
 @[nospecialize] def concatOperands (G : NormalGraph ι) (Γ : List (Ty ι))
@@ -875,7 +893,7 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
     | some (x, y) => concatAtoms x y
     | none =>
       if operandIn Γ a && operandIn Γ b then
-        match operandForm k (op == .mul || op == .shr || op == .bitAnd) a, operandForm k (op == .mul || op == .shr || op == .bitAnd) b with
+        (match operandForm k (op == .mul) a, operandForm k (op == .mul) b with
         | some (fa, ca), some (fb, cb) =>
           let sum := fun (F : Linear.Form Nat) (c : Int) =>
             if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
@@ -894,12 +912,10 @@ def linearAtoms (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
           -- A zero factor gives the constant `0`, a form naming no slot.
           | .mul => if fa = [] then sum (if ca = 0 then [] else fb.scale ca) (ca * cb)
             else if fb = [] then sum (if cb = 0 then [] else fa.scale cb) (ca * cb) else []
-          | .shr => if fb = [] ∧ 0 ≤ cb ∧ cb < 32 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
-          | .bitAnd => if fb = [] ∧ 0 ≤ cb ∧ cb < 2 ^ 31 ∧ smallOperand k fa ca then bitAtoms op fa ca cb else []
           | .lt | .le | .gt | .ge => compareAtoms op (fa ++ fb.scale (-1)) (ca - cb)
           | .eq => equalAtoms (fa ++ fb.scale (-1)) (ca - cb)
           | _ => []
-        | _, _ => []
+        | _, _ => []) ++ ruleAtomsOf k op a b
       else []
   | _ => []
 
@@ -1114,15 +1130,6 @@ theorem binop_num_relational {op : Arith} {x y : UInt64} {u : Tm} (hop : op.rela
     (h : binop op (.num x) (.num y) = some u) : u = boolVal (relationHolds op (doubleOrder x y)) :=
   binop_relational hop h
 
-theorem smallOperand_sound {k : Knowledge} {F : Linear.Form Nat} {c : Int} {ρ h}
-    (hc : smallOperand k F c = true) (hk : Holds k ε ρ h) :
-    0 ≤ Linear.Form.eval (valuation ρ) F + c ∧ Linear.Form.eval (valuation ρ) F + c < 2 ^ 31 := by
-  simp only [smallOperand, Bool.and_eq_true] at hc
-  have hlo := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.1)
-  have hhi := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.2)
-  simp only [Linear.Fact.Holds, Linear.Form.eval_scale] at hlo hhi
-  omega
-
 theorem resultLinear_holds {F : Linear.Form Nat} {c a r : Int} {ρ h} {b : UInt64}
     (hF : ∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome)
     (hb : SafeIntegers.SafeInt b r) (hle : a * r + Linear.Form.eval (valuation ρ) F ≤ c) :
@@ -1138,42 +1145,88 @@ theorem resultLinear_holds {F : Linear.Form Nat} {c a r : Int} {ρ h} {b : UInt6
       simpa [push] using hF y hy
   · simpa [Linear.Fact.Holds, Linear.Form.eval, eval_shiftForm, valuation, h0] using hle
 
-theorem bitAtoms_holds {op : Arith} {F : Linear.Form Nat} {c d : Int} {ρ h} {x y : UInt64}
-    (hF : ∀ a ∈ F.map (·.1), (intValue (ρ a)).isSome)
-    (hx : SafeIntegers.SafeInt x (Linear.Form.eval (valuation ρ) F + c))
-    (hy : SafeIntegers.SafeInt y d)
-    (hi : 0 ≤ Linear.Form.eval (valuation ρ) F + c)
-    (hlt : Linear.Form.eval (valuation ρ) F + c < 2 ^ 31)
-    (hd : 0 ≤ d) (hop : (op = .shr ∧ d < 32) ∨ (op = .bitAnd ∧ d < 2 ^ 31)) :
-    IndexHolds ε (bitAtoms op F c d) (push (.num (arithBits op x y)) ρ) h := by
-  have hneg : ∀ a ∈ (F.scale (-1)).map (·.1), (intValue (ρ a)).isSome := by
-    simpa only [scale_vars] using hF
-  rcases hop with ⟨rfl, hdk⟩ | ⟨rfl, hdm⟩
-  · have hb := SafeIntegers.shr_safe hx hy hi hlt hd hdk
-    have hp : (0 : Int) < 2 ^ d.toNat := Int.pow_pos (by decide)
-    have hr0 := Int.ediv_nonneg hi (Int.le_of_lt hp)
-    have hr := Int.emod_nonneg (Linear.Form.eval (valuation ρ) F + c) (Int.ne_of_gt hp)
-    have hrlt := Int.emod_lt_of_pos (Linear.Form.eval (valuation ρ) F + c) hp
-    have he := Int.emod_add_mul_ediv (Linear.Form.eval (valuation ρ) F + c) (2 ^ d.toNat)
-    intro atom hat _
-    simp only [bitAtoms, List.mem_cons, List.not_mem_nil, or_false] at hat
-    rcases hat with rfl | rfl | rfl | rfl
-    · simp [IndexFact.HoldsAt, push, intValue_num hb]
-    · exact resultLinear_holds (F := []) (by simp) hb (by simp [Linear.Form.eval]; omega)
-    · apply resultLinear_holds hneg hb
-      rw [Linear.Form.eval_scale]; omega
-    · apply resultLinear_holds hF hb
-      simp only [Int.neg_mul]
-      omega
-  · obtain ⟨r, hb, hr0, hri, hrm⟩ := SafeIntegers.bitAnd_safe hx hy hi hlt hd hdm
-    intro atom hat _
-    simp only [bitAtoms, List.mem_cons, List.not_mem_nil, or_false] at hat
-    rcases hat with rfl | rfl | rfl | rfl
-    · simp [IndexFact.HoldsAt, push, intValue_num hb]
-    · exact resultLinear_holds (F := []) (by simp) hb (by simp [Linear.Form.eval]; omega)
-    · exact resultLinear_holds (F := []) (by simp) hb (by simpa [Linear.Form.eval] using hrm)
-    · apply resultLinear_holds hneg hb
-      rw [Linear.Form.eval_scale]; omega
+/-- **A rule's atoms hold of a step's result** (`ArithmeticRules.ArithRule.apply`):
+the premises the knowledge entails hold at the input slots, so the rule's
+conclusion holds at the output slots. -/
+theorem ruleAtoms_holds {k : Knowledge} {r : ArithmeticRules.ArithRule} (hr : r ∈ ArithmeticRules.rules)
+    {a b : Tm} {ρ h h'} {u : Tm} (hk : Holds k ε ρ h)
+    (hu : binop r.op (instantiate 0 ρ a) (instantiate 0 ρ b) = some u) :
+    IndexHolds ε (ruleAtoms k r a b) (push u ρ) h' := by
+  unfold ruleAtoms
+  split
+  · rename_i σ K hbind
+    split
+    · rename_i ps cs hps hcs
+      split
+      · rename_i hall
+        have hop : ∀ (t : Tm) F c, operandForm k true t = some (F, c) →
+            ∃ x, instantiate 0 ρ t = .num x ∧ SafeIntegers.SafeInt x (Linear.Form.eval (valuation ρ) F + c) :=
+          fun t F c ht => (operandForm_sound ht hk).2
+        have hprem : ∀ F ∈ r.premises, ∃ G, F.instantiate σ K = some G ∧ G.Holds (valuation ρ) := by
+          intro F hF
+          obtain ⟨G, hG, he⟩ := ArithmeticRules.instantiateAll_mem hps F hF
+          have hc := List.all_eq_true.mp hall G hG
+          exact ⟨G, he, holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc)⟩
+        obtain ⟨v, y, bits, hσ, rfl, hres, hconc⟩ := ArithmeticRules.ArithRule.apply hr hbind
+          (fun _ F c hf => hop a F c hf) (fun _ F c hf => hop b F c hf) hu hprem
+        -- Every input slot a form names holds a safe integer.
+        have hdef : ∀ x f, σ x = some f → ∀ s ∈ f.1.map (·.1), (intValue (ρ s)).isSome := by
+          intro x f hx s hs
+          obtain ⟨hfl, hfr, hfy⟩ := ArithmeticRules.ArithRule.bind_forms hbind
+          cases x with
+          | left => exact (operandForm_sound (hfl f hx).2 hk).1 s hs
+          | right => exact (operandForm_sound (hfr f hx).2 hk).1 s hs
+          | result => rw [hfy] at hx; cases hx
+        have hσ' : ((σ.rename (· + 1)).withResult (resultSlot r.result)).Denotes (valuation (push (.num bits) ρ))
+            (ArithmeticRules.resultAt v y) := by
+          refine ArithmeticRules.Instance.denotes_withResult (fun x _ F c hx => ?_) (fun F c hy => ?_)
+          · simp only [ArithmeticRules.Instance.rename, Option.map_eq_some_iff, Prod.mk.injEq] at hx
+            obtain ⟨⟨F₀, c₀⟩, hx0, rfl, rfl⟩ := hx
+            rw [← hσ x F₀ c₀ hx0]
+            exact congrArg (· + c₀) (eval_shiftForm F₀ (.num bits) ρ)
+          · cases hd : r.result <;> rw [hd] at hy hres <;> simp only [resultSlot, Option.some.injEq,
+              Prod.mk.injEq, reduceCtorEq] at hy
+            obtain ⟨rfl, rfl⟩ := hy
+            simp [Linear.Form.eval, valuation, push, intValue_num (show SafeIntegers.SafeInt bits y from hres)]
+        intro atom hat _
+        rcases List.mem_append.mp hat with hat | hat
+        · cases hd : r.result <;> rw [hd] at hat hres <;> simp only [resultAtoms, List.mem_singleton,
+            List.not_mem_nil] at hat
+          subst hat
+          simp [IndexFact.HoldsAt, push, intValue_num (show SafeIntegers.SafeInt bits y from hres)]
+        · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hat
+          obtain ⟨F, hF, he⟩ := ArithmeticRules.instantiateAll_mem' hcs G hG
+          refine IndexFact.holdsAt_valueFact.mpr ⟨fun t ht => ?_, (ArithmeticRules.RuleFact.instantiate_holds hσ' he).mpr (hconc F hF)⟩
+          obtain ⟨x, f, c, hx, ht⟩ := ArithmeticRules.RuleFact.instantiate_vars he t ht
+          cases x with
+          | result =>
+            cases hd : r.result <;> simp only [ArithmeticRules.Instance.withResult, hd, resultSlot,
+              Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hx
+            obtain ⟨rfl, rfl⟩ := hx
+            simp only [List.map_cons, List.map_nil, List.mem_singleton] at ht
+            subst ht
+            rw [hd] at hres
+            simp [push, intValue_num (show SafeIntegers.SafeInt bits y from hres)]
+          | left | right =>
+            simp only [ArithmeticRules.Instance.withResult, ArithmeticRules.Instance.rename, Option.map_eq_some_iff,
+              Prod.mk.injEq] at hx
+            obtain ⟨⟨F₀, c₀⟩, hx0, rfl, rfl⟩ := hx
+            simp only [List.map_map, Function.comp_def, List.mem_map] at ht
+            obtain ⟨⟨s, _⟩, hs, rfl⟩ := ht
+            simpa [push] using hdef _ _ hx0 s (List.mem_map.mpr ⟨_, hs, rfl⟩)
+      · exact indexHolds_nil _ _
+    · exact indexHolds_nil _ _
+  · exact indexHolds_nil _ _
+
+/-- The atoms of every rule of the step's operator hold of its result. -/
+theorem ruleAtomsOf_holds {k : Knowledge} {op : Arith} {a b : Tm} {ρ h h'} {u : Tm} (hk : Holds k ε ρ h)
+    (hu : binop op (instantiate 0 ρ a) (instantiate 0 ρ b) = some u) :
+    IndexHolds ε (ruleAtomsOf k op a b) (push u ρ) h' := by
+  intro atom hat hc
+  obtain ⟨r, hr, hat⟩ := List.mem_flatMap.mp hat
+  obtain ⟨hr, hop⟩ := List.mem_filter.mp hr
+  have hop' : r.op = op := of_decide_eq_true hop
+  exact ruleAtoms_holds hr hk (hop' ▸ hu) atom hat hc
 
 /-- **The linear atoms a step states hold of its result.** -/
 theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}
@@ -1322,13 +1375,14 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         simp only [Bool.and_eq_true] at hin
         have ha := operandIn_value hval hin.1
         have hb := operandIn_value hval hin.2
+        simp only [instantiate] at hs ⊢
+        refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run ha hb hs)
+        obtain ⟨-, -, hu⟩ := hq
+        refine indexHolds_cat ?_ (ruleAtomsOf_holds hk hu)
         split
         · rename_i fa ca fb cb hfa hfb
           obtain ⟨hva, xa, hxa, hsa⟩ := operandForm_sound hfa hk
           obtain ⟨hvb, xb, hxb, hsb⟩ := operandForm_sound hfb hk
-          simp only [instantiate] at hs ⊢
-          refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run ha hb hs)
-          obtain ⟨-, -, hu⟩ := hq
           rw [hxa, hxb] at hu
           have hlin := linearFacts_holds hk.2.2.2.2.2
           have hsum : ∀ (F : Linear.Form Nat) (c : Int) (v : Int) (bits : UInt64) {h'' : Heap},
@@ -1416,24 +1470,6 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
                         rw [Int.mul_comm cb])
                   (fun hr => SafeIntegers.mul_safe hsa hsb hr)
               · exact indexHolds_nil _ _
-          · -- signed right shift
-            have hu' : u = .num (arithBits .shr xa xb) := by simpa [binop, Arith.relational] using hu.symm
-            rw [hu']
-            split
-            · rename_i hc
-              obtain ⟨rfl, hd, hdk, hc⟩ := hc
-              have hr := smallOperand_sound hc hk
-              exact bitAtoms_holds hva hsa (by simpa [Linear.Form.eval] using hsb) hr.1 hr.2 hd (.inl ⟨rfl, hdk⟩)
-            · exact indexHolds_nil _ _
-          · -- nonnegative mask
-            have hu' : u = .num (arithBits .bitAnd xa xb) := by simpa [binop, Arith.relational] using hu.symm
-            rw [hu']
-            split
-            · rename_i hc
-              obtain ⟨rfl, hd, hdm, hc⟩ := hc
-              have hr := smallOperand_sound hc hk
-              exact bitAtoms_holds hva hsa (by simpa [Linear.Form.eval] using hsb) hr.1 hr.2 hd (.inr ⟨rfl, hdm⟩)
-            · exact indexHolds_nil _ _
           all_goals first
             | (rw [binop_num_eq hu]
                exact equalAtoms_holds (hvars (fa ++ fb.scale (-1)) (by simp only [List.map_append, scale_vars]))
@@ -1445,7 +1481,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
                  (i := Linear.Form.eval (valuation ρ) fa + ca) (j := Linear.Form.eval (valuation ρ) fb + cb)
                  (by rw [Linear.Form.eval_append, Linear.Form.eval_scale]; omega) hsa hsb)
             | exact indexHolds_nil _ _
-        · exact none_case
+        · exact indexHolds_nil _ _
       · exact none_case
   | _ => simp only [linearAtoms]; exact none_case
 

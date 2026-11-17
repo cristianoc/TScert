@@ -13,8 +13,10 @@ form `slotForm F` over the exit's terms.
 
 - `valueAtoms` (a sum, a difference, a product with a constant factor) is
   `integerOperation`'s `valueFacts`.
-- `bitAtoms .shr` and `bitAtoms .bitAnd` are `shiftRight`'s and `mask`'s
-  facts.
+- A rule's atoms (`ruleAtoms`) are `arith`'s conclusion: renaming the
+  output slots to their value terms commutes with the rule's substitution
+  (`ArithmeticRules.instantiateAll_rename`), and the atoms hold where the
+  renamed facts do (`ruleAtoms_iff`).
 - `concatAtoms` is `stringConcat`'s facts.
 - `pastSafeAtoms` (the sum at a string length plus one) is
   `lengthSuccessor`'s guarded conclusion.
@@ -89,23 +91,30 @@ theorem valueAtoms_iff (hs : s.afterEnv = push u ρ) (F : Linear.Form Nat) (c : 
     ← slotForm_scale]
   rfl
 
-/-- **`bitAtoms .shr` is `shiftRight`'s conclusion.** -/
-theorem shrAtoms_iff (hs : s.afterEnv = push u ρ) (F : Linear.Form Nat) (c d : Int) :
-    IndexHolds ε (bitAtoms .shr F c d) (push u ρ) s.after.h ↔ Holds arena s (shrFacts (.var 0) (slotForm F) c d) := by
-  rw [indexHolds_uncond (by simp [bitAtoms])]
-  simp only [bitAtoms, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq]
-  rw [int_iff hs, linear_iff hs, linear_iff hs, linear_iff hs]
-  simp only [shrFacts, conj, Holds, and_true, valueFact_le, valueForm, List.map_cons, ← slotForm_scale]
-  rfl
+/-- A slot's value fact is the fact renamed to value terms. -/
+theorem valueFact_rename (G : Linear.Fact Nat) : valueFact G = ArithmeticRules.renameFact Term.value G := by
+  cases G <;> rfl
 
-/-- **`bitAtoms .bitAnd` is `mask`'s conclusion.** -/
-theorem maskAtoms_iff (hs : s.afterEnv = push u ρ) (F : Linear.Form Nat) (c d : Int) :
-    IndexHolds ε (bitAtoms .bitAnd F c d) (push u ρ) s.after.h ↔ Holds arena s (maskFacts (.var 0) (slotForm F) c d) := by
-  rw [indexHolds_uncond (by simp [bitAtoms])]
-  simp only [bitAtoms, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq]
-  rw [int_iff hs, linear_iff hs, linear_iff hs, linear_iff hs]
-  simp only [maskFacts, conj, Holds, and_true, valueFact_le, valueForm, List.map_cons, ← slotForm_scale]
-  rfl
+/-- The result's slot renamed to value terms is the result's term at the path
+of slot `0`. -/
+theorem resultSlot_rename (d : ArithmeticRules.Domain) :
+    (resultSlot d).map (fun (F, c) => (F.map fun (x, a) => (Term.value x, a), c)) = resultTerm (.var 0) d := by
+  cases d <;> rfl
+
+/-- **A rule's atoms are `arith`'s conclusion**: the result's domain and the
+conclusion's facts at the output slots hold exactly where the derivation's
+result facts and the facts renamed to value terms hold. -/
+theorem ruleAtoms_iff (hs : s.afterEnv = push u ρ) (d : ArithmeticRules.Domain) (cs : List (Linear.Fact Nat)) :
+    IndexHolds ε (resultAtoms d ++ cs.map fun G => ⟨.linear (valueFact G), none, false⟩) (push u ρ) s.after.h ↔
+      Holds arena s (conj (resultFacts (.var 0) d ++ (cs.map valueFact).map lin)) := by
+  rw [indexHolds_uncond (by cases d <;> simp [resultAtoms])]
+  rw [holds_conj]
+  simp only [List.forall_mem_append, List.map_map, List.forall_mem_map, Function.comp_def]
+  refine and_congr ?_ (forall₂_congr fun G _ => linear_iff hs G)
+  cases d
+  · simp only [resultAtoms, resultFacts, List.mem_singleton, forall_eq]
+    exact int_iff hs
+  · simp [resultAtoms, resultFacts]
 
 /-- **`concatAtoms` is `stringConcat`'s conclusion.** -/
 theorem concatAtoms_iff (hs : s.afterEnv = push u ρ) (a b : Nat) :

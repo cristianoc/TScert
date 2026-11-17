@@ -518,28 +518,40 @@ private def Γ : List Formula :=
 private def goal : Formula :=
   conj [.linear (.le [(av j, -1)] 0), .linear (.le [(av j, 1), (index, -1)] (-1))]
 
-private def F : Linear.Form Term := [(vt c, 1)]
-private def shr : List Formula :=
-  [safeFact j, lin (.le [(vt j, -1)] 0), lin (.le ((vt j, 2 ^ 8) :: F.scale (-1)) 0),
-    lin (.le ((vt j, -(2 ^ 8)) :: F) (2 ^ 8 - 1 - 0))]
+/-- Shr's conclusion at `j = c >> 8` (`ArithmeticRules.shr`, rule 0):
+`j` a safe integer, `256·j ≤ c` and `c ≤ 256·j + 255`. -/
+private def shrFacts : List Formula :=
+  [safeFact j, lin (.le [(vt j, 256), (vt c, -1)] 0), lin (.le [(vt c, 1), (vt j, -256)] 255)]
+
+/-- Shr's premises at `c`: `-2^31 ≤ c ≤ 2^31 − 1`. -/
+private def shrPremises : List Formula := [lin (.le [(vt c, -1)] (2 ^ 31)), lin (.le [(vt c, 1)] (2 ^ 31 - 1))]
+
+#guard ruleConclusion ArithmeticRules.shr (.var c) (.literal eight) j = some (conj shrFacts)
+#guard rulePremises ArithmeticRules.shr (.var c) (.literal eight) = some (conj shrPremises)
+
+/-- The premises from `0 ≤ c ≤ 1114111`. -/
+private def premises : RawDerivation :=
+  .andIntro (linRaw [.le [(av c, -1)] 0] [(av c, -1)] (2 ^ 31) (premisesRaw 1))
+    (.andIntro (linRaw [.le [(av c, 1)] 1114111] [(av c, 1)] (2 ^ 31 - 1) (premisesRaw 1)) .truth)
+
+/-- `0 ≤ j` from `c ≤ 256·j + 255` and `0 ≤ c`, rounding. -/
+private def nonneg : RawDerivation :=
+  linRaw [tagFact .after (.le [(vt c, 1), (vt j, -256)] 255), .le [(av c, -1)] 0] [(av j, -1)] 0
+    (.andIntro (proj shrFacts 2 .assumption) (.andIntro .assumption .truth))
 
 private def boundFacts : List (Linear.Fact StepVar) :=
-  [tagFact .after (.le ((vt j, 2 ^ 8) :: F.scale (-1)) 0), .le [(av c, 1)] 1114111, .le [(index, -1)] (-4352)]
+  [tagFact .after (.le [(vt j, 256), (vt c, -1)] 0), .le [(av c, 1)] 1114111, .le [(index, -1)] (-4352)]
 
-/-- `0 ≤ c ≤ 2^31 − 1` from the premises. -/
-private def small : RawDerivation :=
-  .andIntro .assumption (.andIntro (linRaw [.le [(av c, 1)] 1114111] [(av c, 1)] (2 ^ 31 - 1 - 0) (premisesRaw 1)) .truth)
-
-/-- The shift by `amount`, then the bound. -/
+/-- The shift by `amount`, its evidence `dk`, then the bound. -/
 private def rawWith (amount : Operand) (dk : RawDerivation) (bound : Int) : RawDerivation :=
-  .cut (smallFacts F 0) small
-    (.cut (conj shr) (.shiftRight (.var c) amount j .assumption (.definedOfLinear (.le [(av c, 1)] 1114111) .assumption)
-        dk .assumption)
-      (.andIntro (proj shr 1 .assumption)
-        (.andIntro
-          (linRaw boundFacts [(av j, 1), (index, -1)] bound
-            (.andIntro (proj shr 2 .assumption) (.andIntro .assumption (.andIntro .assumption .truth))))
-          .truth)))
+  .cut (conj shrFacts)
+      (.arith 0 (.var c) amount j .assumption
+        (.andIntro (.definedOfLinear (.le [(av c, 1)] 1114111) .assumption) (.andIntro dk .truth)) premises)
+    (.andIntro nonneg
+      (.andIntro
+        (linRaw boundFacts [(av j, 1), (index, -1)] bound
+          (.andIntro (proj shrFacts 1 .assumption) (.andIntro .assumption (.andIntro .assumption .truth))))
+        .truth))
 
 private def raw : RawDerivation := rawWith (.literal eight) .truth (-1)
 
@@ -564,7 +576,7 @@ private def Γk : List Formula :=
 #guard isOk (checkScoped empty ⟨0, 4⟩ Γk goal (rawWith (.const k 8) (premisesRaw 2) (-1)))
 -- Without the evidence the amount is no constant.
 #guard errorOf (checkScoped empty ⟨0, 4⟩ Γk goal (rawWith (.var k) (.definedOfLinear (.le [(av k, 1)] 8) .assumption) (-1))) =
-  "shiftRight: the shift is no constant safe integer"
+  "arith: the operands do not bind the rule"
 
 end Shift
 
@@ -576,24 +588,23 @@ private def y : Path := .var 0
 private def table : StepVar := .after (Term.length 2)
 private def mask255 : UInt64 := bitsOfNat 255
 
+/-- After `y = x & 255`, `x` any number: the operation and `|table| ≥ 256`. -/
 private def Γ : List Formula :=
-  [.operation (.arith .bitAnd (.path x) (.literal (.num mask255)) y),
-    .linear (.le [(av x, -1)] 0), .linear (.le [(av x, 1)] (2 ^ 31 - 1)),
-    .linear (.le [(table, -1)] (-256))]
+  [.operation (.arith .bitAnd (.path x) (.literal (.num mask255)) y), .linear (.le [(table, -1)] (-256))]
 
 private def goal : Formula :=
   conj [.linear (.le [(av y, -1)] 0), .linear (.le [(av y, 1), (table, -1)] (-1))]
 
-private def F : Linear.Form Term := [(vt x, 1)]
-private def msk : List Formula :=
-  [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le [(vt y, 1)] 255), lin (.le ((vt y, 1) :: F.scale (-1)) 0)]
+/-- Mask's range at `y = x & 255` (`ArithmeticRules.maskRange`, rule 1). -/
+private def msk : List Formula := [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le [(vt y, 1)] 255)]
+
+#guard ruleConclusion ArithmeticRules.maskRange (.var x) (.literal mask255) y = some (conj msk)
 
 private def boundFacts : List (Linear.Fact StepVar) := [.le [(av y, 1)] 255, .le [(table, -1)] (-256)]
 
 private def raw : RawDerivation :=
   .cut (conj msk)
-    (.mask (.var x) (.literal mask255) y .assumption (.definedOfLinear (.le [(av x, -1)] 0) .assumption) .truth
-      (premisesRaw 2))
+    (.arith 1 (.var x) (.literal mask255) y .assumption (.andIntro .truth .truth) .truth)
     (.andIntro (proj msk 1 .assumption)
       (.andIntro
         (linRaw boundFacts [(av y, 1), (table, -1)] (-1)
@@ -602,10 +613,12 @@ private def raw : RawDerivation :=
 
 #guard isOk (checkScoped empty ⟨0, 3⟩ Γ goal raw)
 
--- Without the operand's upper bound the range premise is missing.
-private def Γnarrow : List Formula := Γ.take 2 ++ Γ.drop 3
-
-#guard errorOf (checkScoped empty ⟨0, 3⟩ Γnarrow goal raw) = "assumption: not a premise"
+-- Mask's bound `y ≤ x` (rule 2) needs `0 ≤ x`, which `Γ` does not state.
+#guard rulePremises ArithmeticRules.maskBound (.var x) (.literal mask255) = some (conj [lin (.le [(vt x, -1)] 0)])
+#guard errorOf (checkScoped empty ⟨0, 3⟩ Γ (conj [safeFact y, lin (.le [(vt y, 1), (vt x, -1)] 0)])
+  (.arith 2 (.var x) (.literal mask255) y .assumption
+    (.andIntro (.definedOfLinear (.le [(av x, -1)] 0) .assumption) (.andIntro .truth .truth))
+    (premisesRaw 1))) = "assumption: not a premise"
 
 end Mask
 

@@ -1,6 +1,7 @@
 import Verification.Paper.TolerantFrames.ParityEvidence
 import Verification.Semantics.StepRelations
 import Verification.Semantics.HeapKnowledge
+import Verification.Semantics.ArithmeticRules
 
 /-! # Parity derivations: two-state formulas and the checked consequence
 
@@ -18,9 +19,9 @@ membership: the connectives, guards, witnesses, substitution, the laws of the
 modality (§4, Proposition "Laws"), the axioms (Grow) and (Dense) (§5,
 Proposition "Axioms of the atoms"), Frame and Frame⁺ (§6, "Programs"),
 linear arithmetic by `Linear.check` certificates, and the arithmetic of
-bound facts: exact integer operations, a signed right shift and a mask by a
-constant, the UTF-16 length of a string, a string's element read, the length
-of a concatenation, and the sum at the `2^53` boundary.
+bound facts: exact integer operations, the arithmetic rules of
+`ArithmeticRules.rules`, the UTF-16 length of a string, a string's element
+read, the length of a concatenation, and the sum at the `2^53` boundary.
 `RawDerivation` is the untrusted finite proof data `checkDerivation` checks
 into a derivation, and `Derivation.sound` is the common consequence theorem. -/
 namespace Verification.Parity
@@ -183,21 +184,42 @@ def Operand.premise : Operand → Formula
 /-- The result a path reads is a safe integer (`IndexFact.int`). -/
 def safeFact (y : Path) : Formula := .defined (.after (vt y))
 
-/-- `0 ≤ F + c ≤ 2^31 − 1` (`IndexWrites.smallOperand`). -/
-def smallFacts (F : Linear.Form Term) (c : Int) : Formula :=
-  conj [lin (.le (F.scale (-1)) c), lin (.le F (2 ^ 31 - 1 - c))]
+/-- **A rule's operands bound at a two-state** (`ArithmeticRules.ArithRule.bind`):
+the operands' forms over current terms. -/
+def ruleInstance (r : ArithmeticRules.ArithRule) (l rt : Operand) :
+    Option (ArithmeticRules.Instance Term × Int) :=
+  r.bind l.form rt.form
 
-/-- **Shift right by a constant** (the note, §6, "Arithmetic steps", Shr): of `y = x >> d` with
-`x = F + c`, `y` a safe integer, `0 ≤ y` and
-`2^d·y ≤ x ≤ 2^d·y + (2^d − 1)` (`IndexWrites.bitAtoms .shr`). -/
-def shrFacts (y : Path) (F : Linear.Form Term) (c d : Int) : Formula :=
-  conj [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le ((vt y, 2 ^ d.toNat) :: F.scale (-1)) c),
-    lin (.le ((vt y, -(2 ^ d.toNat)) :: F) (2 ^ d.toNat - 1 - c))]
+/-- The evidence a rule's operands need: each operand's that its domain
+reads as a safe integer, a constant's. -/
+def ruleEvidence (r : ArithmeticRules.ArithRule) (l rt : Operand) : Formula :=
+  conj ((if r.left = .safeInteger then [l.premise] else []) ++
+    (if r.right = .operand .number then [] else [rt.premise]))
 
-/-- **Mask by a constant** (the note, §6, "Arithmetic steps", Mask): of `y = x & m` with `x = F + c`, `y` a
-safe integer, `0 ≤ y ≤ m` and `y ≤ x` (`IndexWrites.bitAtoms .bitAnd`). -/
-def maskFacts (y : Path) (F : Linear.Form Term) (c m : Int) : Formula :=
-  conj [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le [(vt y, 1)] m), lin (.le ((vt y, 1) :: F.scale (-1)) c)]
+/-- The result's form of a rule at a two-state: the safe integer the path
+reads, where the result is one. -/
+def resultTerm (y : Path) : ArithmeticRules.Domain → Option (Linear.Form Term × Int)
+  | .safeInteger => some ([(vt y, 1)], 0)
+  | .number => none
+
+/-- The formula of the result's domain: the path reads a safe integer. -/
+def resultFacts (y : Path) : ArithmeticRules.Domain → List Formula
+  | .safeInteger => [safeFact y]
+  | .number => []
+
+/-- A rule's premises at a two-state, each a linear fact over current terms. -/
+def rulePremises (r : ArithmeticRules.ArithRule) (l rt : Operand) : Option Formula :=
+  match ruleInstance r l rt with
+  | some (σ, K) => (ArithmeticRules.instantiateAll σ K r.premises).map fun ps => conj (ps.map lin)
+  | none => none
+
+/-- **A rule's conclusion at a two-state**: the result's domain and each
+conclusion over current terms, the result the path `y` reads. -/
+def ruleConclusion (r : ArithmeticRules.ArithRule) (l rt : Operand) (y : Path) : Option Formula :=
+  match ruleInstance r l rt with
+  | some (σ, K) => (ArithmeticRules.instantiateAll (σ.withResult (resultTerm y r.result)) K r.conclusion).map
+      fun cs => conj (resultFacts y r.result ++ cs.map lin)
+  | none => none
 
 /-- The exact result of an integer operation on two operand forms: a sum, a
 difference, or a product with a constant factor, a zero factor giving the
@@ -517,20 +539,14 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (he : arena.nodes[e.index]? = some (.atom (.equal π (.literal v))))
       (hc : arena.nodes[c.index]? = some (.atom (.contents π R)))
       (de : Derivation arena Γ (.at p e)) (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ F
-  /-- **Shr** (the note, §6, "Arithmetic steps"): a constant `d ∈ [0, 31]` (a literal or a path proved
-  constant) of an operand in `[0, 2^31 − 1]`. -/
-  | shiftRight {Γ} (x k : Operand) (y : Path) (F : Linear.Form Term) (c d : Int) (hx : x.form = some (F, c))
-      (hk : k.form = some ([], d)) (hd : 0 ≤ d ∧ d < 32)
-      (dop : Derivation arena Γ (.operation (.arith .shr x.witness k.witness y)))
-      (dx : Derivation arena Γ x.premise) (dk : Derivation arena Γ k.premise)
-      (ds : Derivation arena Γ (smallFacts F c)) : Derivation arena Γ (shrFacts y F c d)
-  /-- **Mask** (the note, §6, "Arithmetic steps"): a constant `m ∈ [0, 2^31 − 1]` of an operand in
-  `[0, 2^31 − 1]`. -/
-  | mask {Γ} (x k : Operand) (y : Path) (F : Linear.Form Term) (c m : Int) (hx : x.form = some (F, c))
-      (hk : k.form = some ([], m)) (hm : 0 ≤ m ∧ m < 2 ^ 31)
-      (dop : Derivation arena Γ (.operation (.arith .bitAnd x.witness k.witness y)))
-      (dx : Derivation arena Γ x.premise) (dk : Derivation arena Γ k.premise)
-      (ds : Derivation arena Γ (smallFacts F c)) : Derivation arena Γ (maskFacts y F c m)
+  /-- **An arithmetic rule** (the note, §6, "Arithmetic steps";
+  `ArithmeticRules.rules`): of `y = l op r`, the operation's evidence, the
+  operands' evidence their domains need and a derivation of the premises
+  give the conclusion. -/
+  | arith {Γ} (r : ArithmeticRules.ArithRule) (hr : r ∈ ArithmeticRules.rules) (l rt : Operand) (y : Path)
+      (P G : Formula) (hP : rulePremises r l rt = some P) (hG : ruleConclusion r l rt y = some G)
+      (dop : Derivation arena Γ (.operation (.arith r.op l.witness rt.witness y)))
+      (de : Derivation arena Γ (ruleEvidence r l rt)) (dp : Derivation arena Γ P) : Derivation arena Γ G
   /-- **Add, Sub, Scale** (the note, §6, "Arithmetic steps"): a sum, a difference or a product with a constant factor of
   safe integers, its exact result a safe integer. -/
   | integerOperation {Γ} (op : Arith) (l r : Operand) (y : Path) (fl : Linear.Form Term) (cl : Int)
@@ -659,8 +675,7 @@ inductive RawDerivation where
   | linearToAtom (F : Linear.Fact Term) (d : RawDerivation)
   | atomClash (p : Phase) (π : Path) (v : Val) (R : CallEffects.ElemPred) (e c : AssertionRef)
       (de dc : RawDerivation)
-  | shiftRight (x k : Operand) (y : Path) (dop dx dk ds : RawDerivation)
-  | mask (x k : Operand) (y : Path) (dop dx dk ds : RawDerivation)
+  | arith (rule : Nat) (l r : Operand) (y : Path) (dop de dp : RawDerivation)
   | integerOperation (op : Arith) (l r : Operand) (y : Path) (dop dl dr drange : RawDerivation)
   | lengthSuccessor (l r : Operand) (y s : Path) (lengthLeft : Bool) (pg e e₀ e' e₁ e₂ : AssertionRef)
       (dop dl dr dlen done : RawDerivation)
@@ -1056,26 +1071,18 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
     let ⟨hc⟩ ← node? arena c (.atom (.contents π R))
     pure (.atomClash π v R hv he hc (← checkDerivation arena premises (.at p e) de)
       (← checkDerivation arena premises (.at p c) dc))
-  | .shiftRight x k y dop dx dk ds => do
-    match hx : x.form, hk : k.form with
-    | some (F, c), some ([], d) =>
-      let ⟨hd⟩ ← req (0 ≤ d ∧ d < 32) "shiftRight: the shift is not in [0, 31]"
-      let ⟨hg⟩ ← req (goal = shrFacts y F c d) "shiftRight: goal is not the shift's facts"
-      pure (hg.symm ▸ .shiftRight x k y F c d hx hk hd
-        (← checkDerivation arena premises (.operation (.arith .shr x.witness k.witness y)) dop)
-        (← checkDerivation arena premises x.premise dx) (← checkDerivation arena premises k.premise dk)
-        (← checkDerivation arena premises (smallFacts F c) ds))
-    | _, _ => .error "shiftRight: the shift is no constant safe integer"
-  | .mask x k y dop dx dk ds => do
-    match hx : x.form, hk : k.form with
-    | some (F, c), some ([], m) =>
-      let ⟨hm⟩ ← req (0 ≤ m ∧ m < 2 ^ 31) "mask: the mask is not in [0, 2^31 - 1]"
-      let ⟨hg⟩ ← req (goal = maskFacts y F c m) "mask: goal is not the mask's facts"
-      pure (hg.symm ▸ .mask x k y F c m hx hk hm
-        (← checkDerivation arena premises (.operation (.arith .bitAnd x.witness k.witness y)) dop)
-        (← checkDerivation arena premises x.premise dx) (← checkDerivation arena premises k.premise dk)
-        (← checkDerivation arena premises (smallFacts F c) ds))
-    | _, _ => .error "mask: the mask is no constant safe integer"
+  | .arith i l rt y dop de dp => do
+    match hr : ArithmeticRules.rules[i]? with
+    | some r =>
+      match hP : rulePremises r l rt, hG : ruleConclusion r l rt y with
+      | some P, some G =>
+        let ⟨hg⟩ ← req (goal = G) "arith: goal is not the rule's conclusion"
+        pure (hg.symm ▸ .arith r (List.mem_of_getElem? hr) l rt y P G hP hG
+          (← checkDerivation arena premises (.operation (.arith r.op l.witness rt.witness y)) dop)
+          (← checkDerivation arena premises (ruleEvidence r l rt) de)
+          (← checkDerivation arena premises P dp))
+      | _, _ => .error "arith: the operands do not bind the rule"
+    | none => .error "arith: no such rule"
   | .integerOperation op l r y dop dl dr drange => do
     match hl : l.form, hr : r.form with
     | some (fl, cl), some (fr, cr) =>
@@ -1207,10 +1214,6 @@ theorem factAt_defined {V : Type} {val : V → Option Int} {F : Linear.Fact V} (
 theorem safeInt_nat {L : Nat} (hL : L ≤ maxStringLength) : SafeIntegers.SafeInt (bitsOfNat L) (L : Int) :=
   ⟨by simp [maxStringLength] at hL ⊢; omega, .inl ⟨by omega, by simp⟩⟩
 
-theorem binop_num_of {op : Arith} (hop : op = .add ∨ op = .sub ∨ op = .mul ∨ op = .shr ∨ op = .bitAnd)
-    {x y : UInt64} {c : Val} (h : binop op (.num x) (.num y) = some c) : c = .num (arithBits op x y) := by
-  rcases hop with rfl | rfl | rfl | rfl | rfl <;> simp [binop, Arith.relational] at h <;> exact h.symm
-
 theorem scale_vars {V : Type} (k : Int) (f : Linear.Form V) : (f.scale k).map (·.1) = f.map (·.1) := by
   simp [Linear.Form.scale, Function.comp_def]
 
@@ -1270,14 +1273,16 @@ theorem Operand.sound {arena : AssertionArena} {s : TwoState} {o : Operand} {F :
     obtain ⟨i, hi, rfl, rfl⟩ := hf
     exact ⟨by simp, b, rfl, by simpa [Linear.Form.eval] using SafeIntegers.safeIntOfBits_sound hi⟩
 
-theorem binop_operands {op : Arith} (hop : op = .add ∨ op = .sub ∨ op = .mul ∨ op = .shr ∨ op = .bitAnd)
+/-- An operation computing on two numbers gives `arithBits` at its result
+(`ArithmeticRules.binop_num`). -/
+theorem binop_operands {op : Arith} (hrel : op.relational = false) (heq : op ≠ .eq) (hloose : op ≠ .looseEq)
     {s : TwoState} {l r : Witness} {y : Path} {a b : UInt64} (hl : l.value s.afterEnv s.after.h = some (.num a))
     (hr : r.value s.afterEnv s.after.h = some (.num b)) (h : (OperationPostF.arith op l r y).Holds s) :
     y.read s.afterEnv s.after.h = some (.num (arithBits op a b)) := by
   obtain ⟨a', b', c', ha, hb, hy, hbin⟩ := h
   rw [hl] at ha; cases ha
   rw [hr] at hb; cases hb
-  rw [binop_num_of hop hbin] at hy
+  rw [ArithmeticRules.binop_num hrel heq hloose hbin] at hy
   exact hy
 
 theorem result_term {s : TwoState} {y : Path} {bits : UInt64} {r : Int}
@@ -1285,66 +1290,81 @@ theorem result_term {s : TwoState} {y : Path} {bits : UInt64} {r : Int}
     termAt s.afterEnv s.after.h (vt y) = some r := by
   rw [Path.termAt_term, hy]; exact intValue_num hs
 
-/-- The facts `0 ≤ F + c ≤ 2^31 − 1`. -/
-theorem small_sound {arena : AssertionArena} {s : TwoState} {F : Linear.Form Term} {c : Int}
-    (h : Holds arena s (smallFacts F c)) :
-    0 ≤ Linear.Form.eval (fun t => (termAt s.afterEnv s.after.h t).getD 0) F + c ∧
-      Linear.Form.eval (fun t => (termAt s.afterEnv s.after.h t).getD 0) F + c < 2 ^ 31 := by
-  simp only [smallFacts, conj, Holds] at h
-  have h1 := (holds_lin.mp h.1).2
-  have h2 := (holds_lin.mp h.2.1).2
-  simp only [Linear.Fact.Holds, Linear.Form.eval_scale] at h1 h2
-  omega
-
-theorem shiftRight_sound {arena : AssertionArena} {s : TwoState} {x k : Operand} {y : Path} {F : Linear.Form Term}
-    {c d : Int} (hx : x.form = some (F, c)) (hk : k.form = some ([], d)) (hd : 0 ≤ d ∧ d < 32)
-    (hop : (OperationPostF.arith .shr x.witness k.witness y).Holds s) (hpx : Holds arena s x.premise)
-    (hpk : Holds arena s k.premise) (hsm : Holds arena s (smallFacts F c)) : Holds arena s (shrFacts y F c d) := by
-  obtain ⟨hFd, xb, hxv, hxs⟩ := Operand.sound hx hpx
-  obtain ⟨-, kb, hkv, hks⟩ := Operand.sound hk hpk
-  simp only [Linear.Form.eval, Int.zero_add] at hks
-  obtain ⟨h0, h1⟩ := small_sound hsm
-  have hy := binop_operands (by simp) hxv hkv hop
-  generalize hE : Linear.Form.eval (fun t => (termAt s.afterEnv s.after.h t).getD 0) F = E at *
-  have hsafe := SafeIntegers.shr_safe hxs hks h0 h1 hd.1 hd.2
-  have hyv := result_term hy hsafe
-  generalize hP : (2 : Int) ^ d.toNat = P at *
-  have hp : (0 : Int) < P := by rw [← hP]; exact Int.pow_pos (by decide)
-  have hr0 := Int.ediv_nonneg h0 (Int.le_of_lt hp)
-  have hrlt := Int.emod_lt_of_pos (E + c) hp
-  have hr := Int.emod_nonneg (E + c) (Int.ne_of_gt hp)
-  have he := Int.emod_add_mul_ediv (E + c) P
-  have hFs : ∀ t ∈ (F.scale (-1)).map (·.1), (termAt s.afterEnv s.after.h t).isSome := by
-    rw [scale_vars]; exact hFd
-  simp only [shrFacts, conj, Holds]
-  refine ⟨(show (termAt s.afterEnv s.after.h (vt y)).isSome by rw [hyv]; rfl),
-    holds_lin.mpr (factAt_cons hyv (by simp) ?_), holds_lin.mpr (factAt_cons hyv hFs ?_),
-    holds_lin.mpr (factAt_cons hyv hFd ?_), trivial⟩
-  · simp only [Linear.Form.eval]; omega
-  · simp only [Linear.Form.eval_scale, hE, hP]; omega
-  · simp only [hE, Int.neg_mul, hP]; omega
-
-theorem mask_sound {arena : AssertionArena} {s : TwoState} {x k : Operand} {y : Path} {F : Linear.Form Term}
-    {c m : Int} (hx : x.form = some (F, c)) (hk : k.form = some ([], m)) (hm : 0 ≤ m ∧ m < 2 ^ 31)
-    (hop : (OperationPostF.arith .bitAnd x.witness k.witness y).Holds s) (hpx : Holds arena s x.premise)
-    (hpk : Holds arena s k.premise) (hsm : Holds arena s (smallFacts F c)) : Holds arena s (maskFacts y F c m) := by
-  obtain ⟨hFd, xb, hxv, hxs⟩ := Operand.sound hx hpx
-  obtain ⟨-, kb, hkv, hks⟩ := Operand.sound hk hpk
-  simp only [Linear.Form.eval, Int.zero_add] at hks
-  obtain ⟨h0, h1⟩ := small_sound hsm
-  have hy := binop_operands (by simp) hxv hkv hop
-  generalize hE : Linear.Form.eval (fun t => (termAt s.afterEnv s.after.h t).getD 0) F = E at *
-  obtain ⟨r, hsafe, hr0, hri, hrm⟩ := SafeIntegers.bitAnd_safe hxs hks h0 h1 hm.1 hm.2
-  have hyv := result_term hy hsafe
-  have hFs : ∀ t ∈ (F.scale (-1)).map (·.1), (termAt s.afterEnv s.after.h t).isSome := by
-    rw [scale_vars]; exact hFd
-  simp only [maskFacts, conj, Holds]
-  refine ⟨(show (termAt s.afterEnv s.after.h (vt y)).isSome by rw [hyv]; rfl),
-    holds_lin.mpr (factAt_cons hyv (by simp) ?_), holds_lin.mpr (factAt_cons hyv (by simp) ?_),
-    holds_lin.mpr (factAt_cons hyv hFs ?_), trivial⟩
-  · simp only [Linear.Form.eval]; omega
-  · simp only [Linear.Form.eval]; omega
-  · rw [Linear.Form.eval_scale, hE]; omega
+/-- **An arithmetic rule's conclusion holds** (`ArithmeticRules.ArithRule.apply`)
+where the operation, the operands' evidence and the premises hold. -/
+theorem arith_sound {arena : AssertionArena} {s : TwoState} {r : ArithmeticRules.ArithRule}
+    (hr : r ∈ ArithmeticRules.rules) {l rt : Operand} {y : Path} {P G : Formula}
+    (hP : rulePremises r l rt = some P) (hG : ruleConclusion r l rt y = some G)
+    (hop : (OperationPostF.arith r.op l.witness rt.witness y).Holds s) (he : Holds arena s (ruleEvidence r l rt))
+    (hp : Holds arena s P) : Holds arena s G := by
+  simp only [rulePremises, ruleConclusion] at hP hG
+  split at hP
+  · rename_i σ K hbind
+    simp only [hbind, Option.map_eq_some_iff] at hP hG
+    obtain ⟨ps, hps, rfl⟩ := hP
+    obtain ⟨cs, hcs, rfl⟩ := hG
+    simp only [ruleEvidence, holds_conj, List.mem_append] at he
+    obtain ⟨a, b, c, ha, hb, hy, hu⟩ := hop
+    have hl : r.left = .safeInteger → ∀ F c, l.form = some (F, c) →
+        ∃ x, a = .num x ∧ SafeIntegers.SafeInt x (Linear.Form.eval (fun t => (termAt s.afterEnv s.after.h t).getD 0) F + c) := by
+      intro hd F c hf
+      obtain ⟨-, x, hx, hs⟩ := Operand.sound hf (he _ (.inl (by simp [hd])))
+      rw [hx] at ha; cases ha
+      exact ⟨x, rfl, hs⟩
+    have hrt : r.right ≠ .operand .number → ∀ F c, rt.form = some (F, c) →
+        ∃ x, b = .num x ∧ SafeIntegers.SafeInt x (Linear.Form.eval (fun t => (termAt s.afterEnv s.after.h t).getD 0) F + c) := by
+      intro hd F c hf
+      obtain ⟨-, x, hx, hs⟩ := Operand.sound hf (he _ (.inr (by simp [hd])))
+      rw [hx] at hb; cases hb
+      exact ⟨x, rfl, hs⟩
+    have hprem : ∀ F ∈ r.premises, ∃ G, F.instantiate σ K = some G ∧
+        G.Holds (fun t => (termAt s.afterEnv s.after.h t).getD 0) := by
+      intro F hF
+      obtain ⟨G, hG, he'⟩ := ArithmeticRules.instantiateAll_mem hps F hF
+      have := holds_conj.mp hp (lin G) (List.mem_map.mpr ⟨G, hG, rfl⟩)
+      exact ⟨G, he', (holds_lin.mp this).2⟩
+    obtain ⟨v, yv, bits, hσ, rfl, hres, hconc⟩ := ArithmeticRules.ArithRule.apply hr hbind hl hrt hu hprem
+    have hdef : ∀ x f, σ x = some f → ∀ t ∈ f.1.map (·.1), (termAt s.afterEnv s.after.h t).isSome := by
+      intro x f hx t ht
+      obtain ⟨hfl, hfr, hfy⟩ := ArithmeticRules.ArithRule.bind_forms hbind
+      cases x with
+      | left =>
+        obtain ⟨hd, hf⟩ := hfl f hx
+        exact (Operand.sound hf (he _ (.inl (by simp [hd])))).1 t ht
+      | right =>
+        obtain ⟨hd, hf⟩ := hfr f hx
+        exact (Operand.sound hf (he _ (.inr (by simp [hd])))).1 t ht
+      | result => rw [hfy] at hx; cases hx
+    have hyv : r.result = .safeInteger → termAt s.afterEnv s.after.h (vt y) = some yv := by
+      intro hd; rw [hd] at hres; exact result_term hy hres
+    have hσ' : (σ.withResult (resultTerm y r.result)).Denotes (fun t => (termAt s.afterEnv s.after.h t).getD 0)
+        (ArithmeticRules.resultAt v yv) := by
+      refine ArithmeticRules.Instance.denotes_withResult (fun x _ F c hx => hσ x F c hx) (fun F c hf => ?_)
+      cases hd : r.result <;> rw [hd] at hf <;> simp only [resultTerm, Option.some.injEq, Prod.mk.injEq,
+        reduceCtorEq] at hf
+      obtain ⟨rfl, rfl⟩ := hf
+      simp [Linear.Form.eval, hyv hd]
+    refine holds_conj.mpr fun F hF => ?_
+    rcases List.mem_append.mp hF with hF | hF
+    · cases hd : r.result <;> rw [hd] at hF <;> simp only [resultFacts, List.mem_singleton, List.not_mem_nil] at hF
+      subst hF
+      show (termAt s.afterEnv s.after.h (vt y)).isSome
+      rw [hyv hd]; rfl
+    · obtain ⟨G', hG', rfl⟩ := List.mem_map.mp hF
+      obtain ⟨F', hF', he'⟩ := ArithmeticRules.instantiateAll_mem' hcs G' hG'
+      refine holds_lin.mpr ⟨fun t ht => ?_, (ArithmeticRules.RuleFact.instantiate_holds hσ' he').mpr (hconc F' hF')⟩
+      obtain ⟨x, f, c, hx, ht⟩ := ArithmeticRules.RuleFact.instantiate_vars he' t ht
+      cases x with
+      | result =>
+        cases hd : r.result <;> simp only [ArithmeticRules.Instance.withResult, hd, resultTerm,
+          Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hx
+        obtain ⟨rfl, rfl⟩ := hx
+        simp only [List.map_cons, List.map_nil, List.mem_singleton] at ht
+        subst ht
+        rw [hyv hd]; rfl
+      | left => exact hdef .left (f, c) hx t ht
+      | right => exact hdef .right (f, c) hx t ht
+  · cases hP
 
 /-- `y` is the safe integer `E + c`, `E` the value of `F`: the value facts. -/
 theorem valueFacts_of {arena : AssertionArena} {s : TwoState} {y : Path} {F : Linear.Form Term} {c : Int}
@@ -1409,9 +1429,9 @@ theorem integerOperation_sound {arena : AssertionArena} {s : TwoState} {op : Ari
     · exact ⟨_, SafeIntegers.sub_safe has hbs (by omega), he.symm⟩
     · exact ⟨_, SafeIntegers.mul_safe has hbs (by rw [← he]; omega), he.symm⟩
   obtain ⟨q, hq, rfl⟩ := hres
-  have hop' : op = .add ∨ op = .sub ∨ op = .mul ∨ op = .shr ∨ op = .bitAnd := by
-    rcases hcase with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp
-  have hyv := result_term (binop_operands hop' hav hbv hop) hq
+  have hcomp : op.relational = false ∧ op ≠ .eq ∧ op ≠ .looseEq := by
+    rcases hcase with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> decide
+  have hyv := result_term (binop_operands hcomp.1 hcomp.2.1 hcomp.2.2 hav hbv hop) hq
   subst hv
   exact valueFacts_of (fun t ht => (hvars t ht).elim (hld t) (hrd t)) hyv
 
@@ -1441,7 +1461,7 @@ theorem lengthSuccessor_sound {arena : AssertionArena} (hv : arena.Valid) {s : T
     Holds arena s (.at .after g) := by
   obtain ⟨hld, a, hav, has⟩ := Operand.sound hl hpl
   obtain ⟨hrd, b, hbv, hbs⟩ := Operand.sound hr hpr
-  have hy := binop_operands (by simp) hav hbv hop
+  have hy := binop_operands rfl (by decide) (by decide) hav hbv hop
   -- the length operand is in [0, 2^53 − 1], the other one is 1
   simp only [lengthEq, conj, Holds] at hlen
   have hl1 := holds_lin.mp hlen.1
@@ -1899,10 +1919,8 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     simp only [Witness.value, Option.some.injEq] at hv₁
     rw [hu] at hu'; cases hu'; subst hv₁
     rw [hv'] at hR; cases hR
-  | shiftRight x k y F c d hx hk hd _ _ _ _ ihop ihx ihk ihs =>
-    exact fun s hΓ => shiftRight_sound hx hk hd (ihop s hΓ) (ihx s hΓ) (ihk s hΓ) (ihs s hΓ)
-  | mask x k y F c m hx hk hm _ _ _ _ ihop ihx ihk ihs =>
-    exact fun s hΓ => mask_sound hx hk hm (ihop s hΓ) (ihx s hΓ) (ihk s hΓ) (ihs s hΓ)
+  | arith r hr l rt y P G hP hG _ _ _ ihop ihe ihp =>
+    exact fun s hΓ => arith_sound hr hP hG (ihop s hΓ) (ihe s hΓ) (ihp s hΓ)
   | integerOperation op l r y fl cl fr cr F c hl hr hF _ _ _ _ ihop ihl ihr ihrange =>
     exact fun s hΓ => integerOperation_sound hl hr hF (ihop s hΓ) (ihl s hΓ) (ihr s hΓ) (ihrange s hΓ)
   | lengthSuccessor l r y sp lengthLeft x fl cl fr cr one hl hr hx hone hg hpg he he₀ he' he₁ he₂
