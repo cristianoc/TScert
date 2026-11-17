@@ -1,3 +1,4 @@
+import Verification.Paper.TolerantFrames.SemanticRules
 import Verification.Paper.TolerantFrames.Bridges.ExitProposals
 import Verification.Paper.TolerantFrames.Bridges.Grow
 import Verification.Paper.TolerantFrames.Bridges.ModelTyped

@@ -16,7 +16,7 @@ row names the statement of the shared model (`Semantics/`) or of A
 paper where the row says so. **Assumed** marks a host contract the paper
 states as assumed, which B does not state either.
 
-B is narrower than the paper. Several general statements cited by the paper live entirely outside B. Within B, the main restrictions are the assertion grammar, the available support and rigidity certificates, and command summaries that do not state the complete displayed command rule.
+B is narrower than the paper. The semantic rules and the finite certificates have different coverage: a restricted checker does not narrow an imported theorem quantified over arbitrary assertions. `SemanticRules.lean` states semantic support and respect separately from the sufficient respect check. The assertion grammar and complete command/derivation rules require their own comparison. [Correspondence obligations](paper-alignment-obligations.md) states the domains and boundaries.
 
 Notation for source references:
 
@@ -57,7 +57,7 @@ The three proposition-summary rows in this report summarize their following cons
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Remark 8, Reading — 930 | **none in B** | **none in B** | No declaration identifies the modality with weakest liberal precondition or proves the stated weakest stable strengthening characterization. |
+| Remark 8, Reading — 930 | `box_eq_havoc_wlp`, `box_weakest_stable_on`, `SemanticRules.lean` | **equal** | The box is the wlp of one arbitrary action. For every rigid effect it strengthens F, is stable, and is implied by any stable strengthening G; G ranges over arbitrary assertions. |
 | Proposition 9, Laws — 940 — summary | `Derivation.boxElim` through `boxIdem`, `D:399–432` | **narrower** | The rules concern B’s represented assertions and, where applicable, checked inclusion, invariance and rigidity evidence. |
 | 9(a), elimination — 942 | `Derivation.boxElim`, `D:399` | **narrower** | The conclusion is the same for represented assertions; the quantification over every assertion of the paper is absent. Cited general theorem outside B: `box_elim`, `Semantics/IndexedStates.lean:183`. |
 | 9(b), conjunction equivalence — 943 | `Derivation.boxAndIntro`, `D:402`; `boxAndLeft`, `:407`; `boxAndRight`, `:411` | **narrower** | Both directions exist for represented assertions only. Cited general theorem outside B: `box_and`, `Semantics/IndexedStates.lean:186`. |
@@ -75,9 +75,9 @@ The three proposition-summary rows in this report summarize their following cons
 
 | Paper item | B’s statement | Relation | Difference |
 |---|---|---|---|
-| Definition 11, Support — 986 | `Supports`, `E:199` | **narrower** | The semantic support condition is instantiated at an arena assertion. Assertions of the paper outside that representation are excluded. |
-| Definition 12, Respect — 1012 | **none in B**. Shared model: `Supported`, `Semantics/Footprints.lean:735`; `respects`, `respect_sound`, `Semantics/Support.lean:160,165` | **none in B** | No definition carries the paper's notion: it is expressible as `Supported S` of every action of $`\Phi`$ from a state of $`K`$. The declaration documented as "Respect (the note's Definition)", `respects`, is the sufficient pairwise check (each change of $`\Phi`$ within the support's change, or the regions disjoint by a query), which `respect_sound` proves sufficient (checked). |
-| Theorem 13, Tolerant frame — 1034 | `tolerant_frame`, `E:212`; `Derivation.tolerantFrame`, `D:437` | **narrower** | Besides the assertion restriction, B requires the pairwise sufficient respect check and a sound separation query, rather than arbitrary semantic respect. The derivation constructor further restricts support and context evidence. |
+| Definition 11, Support — 986 | `Supports`, `SemanticRules.lean`; shared `SupportDomain.Supports`, `Semantics/Support.lean` | **equal** | The shared support-domain definition is instantiated at arbitrary assertions, with valid roots and mark supplied by `ValidContext`. It includes the condition on every admissible transition, rather than just a particular run. |
+| Definition 12, Respect — 1012 | `Respects`, `respects_of_check`, `SemanticRules.lean` | **equal** | Semantic respect quantifies over every effect action from K. The existing Boolean pairwise test is proved sufficient, and is not used as the definition. |
+| Theorem 13, Tolerant frame — 1034 | `tolerant_frame`, `SemanticRules.lean` | **equal** | The premises are general semantic support under C, semantic respect under K, and C on every action. The conclusion is K ∧ F entailing the box on the well-formed contexts of the paper; no finite evidence premise is substituted. |
 | Definition 14, Supports of the atoms — 1049 | `SupportEvidence`, `E:811`; `.check`, `:822`; `.sound`, `:958` | **narrower** | There is no structural definition covering the whole displayed table. The certificates cover invariant assertions, linear facts, restricted density and scalar quantification, one-field literal equalities, initialization and literal view-element facts; they do not cover arbitrary contents predicates, optional equalities, arbitrary freshness regions, conjunction/disjunction supports, or the general modality-free support `all`. |
 | Proposition 15, Axioms of the atoms — 1138 — summary | `RawDerivation.grow`, `.dense`, `.sep`, `.everyFrame`, `.init`, `.view`; `Derivation.rigidSubst` | **narrower** | The individual restrictions follow. |
 | (Grow) — 1143 | `grow`, `Bridges/Grow.lean:27`; `RawDerivation.grow`, `D:646`; `SupportEvidence.lengths`, `E:813` | **equal** | For the displayed lower bound over a variable or constant, B establishes preservation under arbitrary value changes and spine growth, without separation. Literal lower bounds can use the linear-support rule directly. |
@@ -109,10 +109,10 @@ The three proposition-summary rows in this report summarize their following cons
 | Alloc, array literal — 1349 | **none in B**. Cited outside B: `literalArrayAtoms_holds`, `Programs/IndexWrites.lean:175` | **none in B** | B’s empty-array theorem does not establish arbitrary literal contents and density. The paper itself marks those parts conjectural. |
 | Alloc, object literal — 1350 | **none in B** | **none in B** | `alloc_state` (`KindsModelRules.lean:508`) establishes allocation/state properties, not the displayed freshness-and-field-equalities postcondition. |
 | Definition 16, Independence of the world — 1379 | **none in B**. Shared model: `IndependentFrom`, `Semantics/ExitWorlds.lean:179` | **none in B** | The shared model states it equally: equal truth at any two exit states admissible from the entry with the same heap and budget (checked). |
-| Conj — 1397 | **none in B**. Shared model: `SafePostExcV.cross_independent`, `Semantics/ExitWorlds.lean:188`; `PromiseWith.conj`, `Semantics/CallEffects.lean:403` | **none in B** | `cross_independent` states it with a premise the rule lacks, `CrossCompatUpTo` of the two derivations' result families; `PromiseWith.conj` is its instance for native contracts whose second exit reads only the heap (checked). |
+| Conj — 1397 | `SafePostExcV.conj_independent`, `SemanticRules.lean`; shared `SafePostExcV.cross_independent`, `Semantics/ExitWorlds.lean` | **equal** | Retaining the first result family discharges CrossCompatUpTo by projection. Only the second normal and exceptional postconditions need independence. The extra family-combination parameter of the shared theorem is an encoding issue, not a missing paper premise. |
 | Definition 17, Rebasing — 1412 | **none in B**. Shared model: `Rebases`, `Semantics/ExitComposition.lean:77` | **none in B** | `Rebases` states the coverage relation with the absorption by $`\Phi`$ at `any` explicit, and holds no evidence $`\mathit{ev}`$: the paths reading each named value in both heaps are premises of `rebase_sound` for the computed rebasing (checked). |
 | Example 18, Freshness bounds effects, not facts — 1447 | **none in B** | **none in B** | `fresh_eff` proves the effect ingredient. `apart_not_kept_fresh` (`ModelRules.lean:251`) refutes preservation of apartness, not this shrink-and-read example or its length fact. |
-| Proposition 19, Reliance — 1459 | **none in B**. Shared model: `rely_chain`, `Semantics/FootprintNatives.lean:473` | **none in B** | `rely_chain` states it for the facts of `FactKind`, under a stability check of each step's effect for the fact's support in place of a rigid bound with $`\Box_\Phi F`$ at the start (checked); the paper's status tag records this scope. |
+| Proposition 19, Reliance — 1459 | `ActionChain.action_on`, `reliance_on`, `SemanticRules.lean` | **equal** | An arbitrary finite chain of actions bounded by a rigid effect is one action. The initial box gives F at any selected prefix endpoint. Each native step and callback must supply its action bound; an endpoint summary alone does not supply these prefixes. |
 | Field-Read — 1478 | **none in B**. Shared model: `ReadGave`, `Semantics/HeapFacts.lean:13` | **none in B** | `ReadGave` defines a read's result (the field's location, or `undefined` for an absent key with no prototype); no statement gives the rule's postcondition $`x.f \doteq y`$ and its empty effect (checked). |
 | Field-Write — 1479 | **none in B**. Cited outside B: `fieldWriteFrame`, `Programs/ExpressionEffects.lean:112`; `FieldWritten`, `:155`; `fieldWriteStep_sound`, `:229` | **none in B** | B proves preservation consequences of some writes, not the general exact field-write rule. |
 | Elem-Read — 1480 | **none in B** | **none in B** | B’s element atom denotes a typed-array element, not an array element or hole. The paper marks the ordinary element-read contract assumed. |
@@ -204,6 +204,6 @@ Each row except the three proposition summaries and the patterns of §8:
 
 | Equal | Narrower | Broader | Different | None in B | Assumed | Total |
 |---:|---:|---:|---:|---:|---:|---:|
-| 14 | 36 | 0 | 2 | 26 | 13 | 91 |
+| 19 | 33 | 0 | 2 | 22 | 13 | 89 |
 
 Of the rows with no statement in B, the shared model states Definitions 6 and 16 equally, and Theorem 7 from a safety premise; the others are recorded in their rows.

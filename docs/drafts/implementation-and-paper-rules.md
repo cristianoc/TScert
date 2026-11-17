@@ -143,13 +143,24 @@ them the laws of the modality (`box_elim` … `box_idem`, in
 5 name declarations on both sides (`transfer`, `seq_eff`, `grow`, `cells`,
 `ConditionOnActions`).
 
+## General semantic rules
+
+[SemanticRules.lean](../../lean/Verification/Paper/TolerantFrames/SemanticRules.lean)
+extends the existing indexed-state modality and support domain with arbitrary
+assertions. Semantic respect is distinct from its sufficient pairwise check.
+It states the general tolerant frame theorem, weakest stable strengthening,
+freshness against any region below the mark, prefix reliance, and Conj retaining
+the first derivation's result family. Valid environment roots and the invocation
+mark are explicit context obligations. [Correspondence obligations](paper-alignment-obligations.md)
+distinguishes this layer from finite certificates and automatic proof search.
+
 ## How far B matches the paper
 
 Item by item in [B against the paper](b-against-the-paper.md). Of the
-paper's 91 items (its definitions, rules, axioms, laws and examples, the
-patterns of §8 aside), B states 14 equally, 36 more narrowly and 2
-differently, none more broadly; it has no statement of 26, and none of the
-13 host contracts the paper states as assumed. Its equal
+paper's 89 items (its definitions, rules, axioms, laws and examples, the
+patterns of §8 aside), the original source audit found 13 equal, 35 narrower and 2 different
+statements, 26 absent and 13 assumed host contracts. The reconciled table
+compares the semantic statements separately from their certificate coverage. Among its equal
 statements are Alloc of an empty array, Fresh-Eff, Write-End, (Grow), and
 the arithmetic and string rules (Add, Sub, Scale, Shr, Mask, Shl, Or, the
 string-length successor, Str-Length, Str-Read). The seven
@@ -178,7 +189,7 @@ share three restrictions:
 Of the items B has no statement of, the shared model states admissible
 transitions and independence of the world equally, and Preservation from
 a safety premise in place of typing; it states well-formed states,
-Respect, Rebasing, Conj, (Prefix) and Reliance differently, each
+Rebasing and (Prefix) differently, each
 difference in its row. Break, Return, Throw, the primitive read and write
 rules and the command language have no statement in Lean, or one in A
 only. Example 1 and its derivation
