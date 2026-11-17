@@ -54,6 +54,26 @@ of the two selected paths supplies. General mixed old/current postcondition
 substitution must respect each phase’s environment and the frozen function
 entry; a current-state replacement theorem is not that theorem.
 
+## Numeric literal equality obstruction
+
+Definition 23 says that equality of a path to a safe-integer literal and
+term equality with that integer imply each other. Shared integer reading
+maps both IEEE zero representations to the integer zero. B’s value equality
+in `Atom.equal` compares the stored values, which distinguish their bits.
+[The proved countermodel](../../lean/Verification/Paper/TolerantFrames/Obstructions.lean)
+has every variable hold `-0`, in any indexed heap at mark zero. Both integer
+inequalities defining `x = 0` hold; `x ≐ +0` fails. All roots are valid source
+values and no heap location is used.
+
+This is a correspondence obstruction to the bridge under B’s current equality
+interpretation, not a counterexample to integer arithmetic. Changing literal
+equality alone also requires checking Guard, contents/literal membership and
+replacement soundness: those notions currently share raw value identity.
+An alternative paper statement needs an owner decision. The unrestricted
+bridge cannot be counted as proved under either an added nonzero premise or
+a new axiom. Independent support and integer-consequence proofs do not depend
+on resolving this item.
+
 ## State and command obligations
 
 The shared `IndexedHeap` contains the heap, world, budget and heap invariants.

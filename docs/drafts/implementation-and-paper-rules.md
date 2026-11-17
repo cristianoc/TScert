@@ -193,6 +193,40 @@ connectives. Its Empty theorem derives collection entries from defined array
 or view length and valid root references; density is not a premise. General
 Inst, Prefix and Empty constructors are part of the sound derivation system.
 
+## General supports, witnesses and arithmetic
+
+[AllSupport.lean](../../lean/Verification/Paper/TolerantFrames/AllSupport.lean)
+proves the exact support `{val:keep, st:keep}` for every assertion without a
+modality. Partial element projections, holes, optional fields, separation,
+freshness and existential witnesses are included. This is forward preservation
+under allocation; allocation may introduce new witnesses, so equivalence is
+not claimed. The structural support table and its polarity/omission conditions
+are separate obligations.
+
+[Existentials.lean](../../lean/Verification/Paper/TolerantFrames/Existentials.lean)
+scopes logical witness introduction and elimination to the current state.
+Opening an existential extends the exit environment only. Inherited premises
+and the conclusion remove that fresh binder from their current valuation;
+old assertions keep the entry environment. The finite derivation system also
+contains old monotonicity, proved at the diagonal entry pair, and the all
+frame rule by the paper’s sufficient respect check.
+
+[Arithmetic.lean](../../lean/Verification/Paper/TolerantFrames/Arithmetic.lean)
+states integer consequence from a finite list of inequalities, fixing literal
+values and requiring every goal term to occur in a premise or be literal.
+Recursively mentioned element-index terms count, and zero coefficients retain
+definedness obligations. Length ranges cover ordinary, view and string
+readings, including projected elements. These are current-state arithmetic
+rules, without a claim of complete automatic search or mixed-state syntax.
+
+[Obstructions.lean](../../lean/Verification/Paper/TolerantFrames/Obstructions.lean)
+proves a precise incompatibility between the displayed reverse literal bridge
+and B’s raw value equality: a variable holding -0 has integer value zero,
+while its stored value differs from +0. The countermodel works in every
+indexed heap at the valid mark zero and reads no heap location. The bridge
+is not supplied by a new premise or axiom. The paper’s text and A’s numeric
+model are unchanged; the decision is tracked in the owning WORK row.
+
 ## Commands, scope and transfer
 
 [Commands.lean](../../lean/Verification/Paper/TolerantFrames/Commands.lean)

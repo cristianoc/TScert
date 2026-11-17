@@ -2,6 +2,8 @@ import Verification.Paper.TolerantFrames.Loops
 import Verification.Paper.TolerantFrames.ModalReplacement
 import Verification.Paper.TolerantFrames.Admission
 import Verification.Paper.TolerantFrames.QuantifiedRules
+import Verification.Paper.TolerantFrames.Existentials
+import Verification.Paper.TolerantFrames.Arithmetic
 
 /-! # General logical derivations
 
@@ -12,8 +14,8 @@ entailment. The logic and modal laws below apply to arbitrary postconditions on 
 entry/exit contexts. Quantified bodies instantiate into the actual syntax;
 modal rule premises use semantic validity, rather than raw invalid environments.
 This is a sound subcalculus of Definition 23: current-state path replacement
-and full bounded-body instantiation are included; general existential logic,
-two-state substitution, structural-support and arithmetic schemas remain
+and full bounded-body instantiation are included; literal existential substitution,
+two-state substitution, the structural atom-support table and mixed-state arithmetic remain
 separate obligations. In
 particular this file makes no completeness claim about proof search.
 -/
@@ -45,6 +47,21 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
   | implication {Γ Q R} : Derivation Γ (PostImp Q R) → Derivation Γ Q → Derivation Γ R
   | indexInstance {Γ Q} : Derivation Γ (ForallIndex Q) → (i : Int) → Derivation Γ (Q i)
   | valueInstance {Γ Q} : Derivation Γ (ForallValue Q) → (v : Val) → isSourceVal v = true → Derivation Γ (Q v)
+  | arithmetic {Γ hypotheses goal} : IntegerConsequence hypotheses goal → GoalTermsDefined hypotheses goal →
+      (∀ p ∈ hypotheses, Derivation Γ (Now (Formula.atom (.le p.1 p.2)).meaning)) →
+      Derivation Γ (Now (Formula.atom (.le goal.1 goal.2)).meaning)
+  | lengthRange {Γ t k} : t.ReadsKind k → (k = .length ∨ k = .view ∨ k = .strLength) →
+      Derivation Γ (Now (TermDefined t).meaning) → Derivation Γ (Now (LengthBounds k t).meaning)
+  | existsIntro {Γ F v} : Derivation Γ (Now (ValueInstantiation F v)) →
+      Derivation Γ (Now (Formula.existsValue F).meaning)
+  | existsElim {Γ F Q} : Derivation Γ (Now (Formula.existsValue F).meaning) →
+      Derivation (Now F.meaning :: Γ.map ExitLift) (ExitLift Q) → Derivation Γ Q
+  | oldMono {Γ} {F G : Assertion} : Derivation [Now F] (Now G) →
+      Derivation Γ (Old F) → Derivation Γ (Old G)
+  | frameAll {Γ} {K F : Formula} {Φ : Footprint} {q : SepQuery} : F.ModalityFree → respects q allKeep Φ = true →
+      (∀ ρ m s, ValidContext ρ m s → K.Holds ρ m s → q.Sound ρ s.h) →
+      Derivation Γ (Now K.meaning) → Derivation Γ (Now F.meaning) →
+      Derivation Γ (Now (Box Φ F.meaning))
   | boxElim {Γ Φ} {F : Assertion} : Derivation Γ (Now (Box Φ F)) → Derivation Γ (Now F)
   | boxAnd {Γ Φ} {F G : Assertion} : Derivation Γ (PostAnd (Now (Box Φ F)) (Now (Box Φ G))) →
       Derivation Γ (Now (Box Φ (fun ρ m s => F ρ m s ∧ G ρ m s)))
@@ -80,42 +97,119 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
 /-- Every represented derivation proves its semantic entailment. This does
 not claim the omitted schemas have been represented. -/
 theorem Derivation.sound {Γ Q} (d : Derivation Γ Q) : Consequence Γ Q := by
-  intro ρ ρ' m s t _hv hvt hΓ
   induction d with
-  | assumption hm => exact hΓ _ hm
-  | truth => trivial
-  | absurd _ ih => exact (ih hΓ).elim
+  | assumption hm =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact hΓ _ hm
+  | truth =>
+    intro ρ ρ' m s t hv hvt hΓ
+    trivial
+  | absurd _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (ih ρ ρ' m s t hv hvt hΓ).elim
   | cut _ _ ih₁ ih₂ =>
-    exact ih₂ (fun F hF => by rcases List.mem_cons.mp hF with rfl | hm; exact ih₁ hΓ; exact hΓ F hm)
-  | andIntro _ _ ih₁ ih₂ => exact ⟨ih₁ hΓ, ih₂ hΓ⟩
-  | andLeft _ ih => exact (ih hΓ).1
-  | andRight _ ih => exact (ih hΓ).2
-  | orLeft _ ih => exact .inl (ih hΓ)
-  | orRight _ ih => exact .inr (ih hΓ)
+    intro ρ ρ' m s t hv hvt hΓ
+    exact ih₂ ρ ρ' m s t hv hvt (fun F hF => by rcases List.mem_cons.mp hF with rfl | hm; exact ih₁ ρ ρ' m s t hv hvt hΓ; exact hΓ F hm)
+  | andIntro _ _ ih₁ ih₂ =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact ⟨ih₁ ρ ρ' m s t hv hvt hΓ, ih₂ ρ ρ' m s t hv hvt hΓ⟩
+  | andLeft _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (ih ρ ρ' m s t hv hvt hΓ).1
+  | andRight _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (ih ρ ρ' m s t hv hvt hΓ).2
+  | orLeft _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact .inl (ih ρ ρ' m s t hv hvt hΓ)
+  | orRight _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact .inr (ih ρ ρ' m s t hv hvt hΓ)
   | orElim _ _ _ ih ih₁ ih₂ =>
-    rcases ih hΓ with hQ | hR
-    · exact ih₁ (fun F hF => by rcases List.mem_cons.mp hF with rfl | hm; exact hQ; exact hΓ F hm)
-    · exact ih₂ (fun F hF => by rcases List.mem_cons.mp hF with rfl | hm; exact hR; exact hΓ F hm)
-  | implication _ _ ih₁ ih₂ => exact ih₁ hΓ (ih₂ hΓ)
-  | indexInstance _ i ih => exact ih hΓ i
-  | valueInstance _ v hv ih => exact ih hΓ v hv
-  | boxElim _ ih => exact box_elim (ih hΓ)
-  | boxAnd _ ih => exact box_and.mpr (ih hΓ)
-  | boxLeft _ ih => exact (box_and.mp (ih hΓ)).1
-  | boxRight _ ih => exact (box_and.mp (ih hΓ)).2
-  | boxMono hfg _ ih => exact box_mono_on hfg ρ' m t hvt (ih hΓ)
-  | boxAnti hΦ _ ih => exact box_anti (hΦ ρ' m t · hvt) (ih hΓ)
-  | boxOr hG _ ih => exact box_or_on hG ρ' m t hvt (ih hΓ)
-  | boxIdem hΦ _ ih => exact box_idem_on hΦ ρ' m t hvt (ih hΓ)
+    intro ρ ρ' m s t hv hvt hΓ
+    rcases ih ρ ρ' m s t hv hvt hΓ with hQ | hR
+    · exact ih₁ ρ ρ' m s t hv hvt (fun F hF => by rcases List.mem_cons.mp hF with rfl | hm; exact hQ; exact hΓ F hm)
+    · exact ih₂ ρ ρ' m s t hv hvt (fun F hF => by rcases List.mem_cons.mp hF with rfl | hm; exact hR; exact hΓ F hm)
+  | implication _ _ ih₁ ih₂ =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact ih₁ ρ ρ' m s t hv hvt hΓ (ih₂ ρ ρ' m s t hv hvt hΓ)
+  | indexInstance _ i ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact ih ρ ρ' m s t hv hvt hΓ i
+  | valueInstance _ v hsv ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact ih ρ ρ' m s t hv hvt hΓ v hsv
+  | arithmetic hc hd _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact integer_consequence hc hd (fun p hp => ih p hp ρ ρ' m s t hv hvt hΓ)
+  | lengthRange hr hk _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact length_bounds hr hk (ih ρ ρ' m s t hv hvt hΓ)
+  | existsIntro _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact exists_intro hvt (ih ρ ρ' m s t hv hvt hΓ)
+  | @existsElim Γ F Q _ _ ihE ihBody =>
+    intro ρ ρ' m s t hv hvt hΓ
+    obtain ⟨v, hsv, hrv, hF⟩ := ihE ρ ρ' m s t hv hvt hΓ
+    have hΓ' : Premises (Now F.meaning :: List.map ExitLift Γ) ρ (push v ρ') m s t := by
+      intro R hR
+      rcases List.mem_cons.mp hR with rfl | hR
+      · exact hF
+      · obtain ⟨Q, hQ, rfl⟩ := List.mem_map.mp hR
+        exact hΓ Q hQ
+    exact ihBody ρ (push v ρ') m s t hv (hvt.push hsv hrv) hΓ'
+  | oldMono _ _ ihFG ihF =>
+    intro ρ ρ' m s t hv hvt hΓ
+    apply ihFG ρ ρ m s s hv hv
+    intro R hR
+    have hR' : R = Now _ := List.mem_singleton.mp hR
+    subst R
+    exact ihF ρ ρ' m s t hv hvt hΓ
+  | frameAll hn hc hq _ _ ihK ihF =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact tolerant_frame_unconditional (Formula.all_support hn) (respects_of_check hc hq)
+      ρ' m t hvt ⟨ihK ρ ρ' m s t hv hvt hΓ, ihF ρ ρ' m s t hv hvt hΓ⟩
+  | boxElim _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact box_elim (ih ρ ρ' m s t hv hvt hΓ)
+  | boxAnd _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact box_and.mpr (ih ρ ρ' m s t hv hvt hΓ)
+  | boxLeft _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (box_and.mp (ih ρ ρ' m s t hv hvt hΓ)).1
+  | boxRight _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (box_and.mp (ih ρ ρ' m s t hv hvt hΓ)).2
+  | boxMono hfg _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact box_mono_on hfg ρ' m t hvt (ih ρ ρ' m s t hv hvt hΓ)
+  | boxAnti hΦ _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact box_anti (hΦ ρ' m t · hvt) (ih ρ ρ' m s t hv hvt hΓ)
+  | boxOr hG _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact box_or_on hG ρ' m t hvt (ih ρ ρ' m s t hv hvt hΓ)
+  | boxIdem hΦ _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact box_idem_on hΦ ρ' m t hvt (ih ρ ρ' m s t hv hvt hΓ)
 
   | replacePath _ _ _ hr _ _ ihE ihF =>
-    exact (hr.local (PathEquality.read_eq (ihE hΓ))).mp (ihF hΓ)
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (hr.local (PathEquality.read_eq (ihE ρ ρ' m s t hv hvt hΓ))).mp (ihF ρ ρ' m s t hv hvt hΓ)
   | replaceRigidPath _ _ _ hr _ _ _ _ ihE ihP ihQ ihF =>
-    exact (hr.rigid (RigidFormula.holds_iff.mp (ihP hΓ))
-      (RigidFormula.holds_iff.mp (ihQ hΓ)) (ihE hΓ)).mp (ihF hΓ)
+    intro ρ ρ' m s t hv hvt hΓ
+    exact (hr.rigid (RigidFormula.holds_iff.mp (ihP ρ ρ' m s t hv hvt hΓ))
+      (RigidFormula.holds_iff.mp (ihQ ρ ρ' m s t hv hvt hΓ)) (ihE ρ ρ' m s t hv hvt hΓ)).mp (ihF ρ ρ' m s t hv hvt hΓ)
 
-  | everyInst _ _ ihE ihK => exact inst_rule (ihE hΓ) (ihK hΓ)
-  | everyPrefix _ _ ihE ihL => exact prefix_rule (m := m) (ihE hΓ) (ihL hΓ)
-  | everyEmpty hkind _ _ ihD ihB => exact empty_rule hkind hvt (ihD hΓ) (ihB hΓ)
+  | everyInst _ _ ihE ihK =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact inst_rule (ihE ρ ρ' m s t hv hvt hΓ) (ihK ρ ρ' m s t hv hvt hΓ)
+  | everyPrefix _ _ ihE ihL =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact prefix_rule (m := m) (ihE ρ ρ' m s t hv hvt hΓ) (ihL ρ ρ' m s t hv hvt hΓ)
+  | everyEmpty hkind _ _ ihD ihB =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact empty_rule hkind hvt (ihD ρ ρ' m s t hv hvt hΓ) (ihB ρ ρ' m s t hv hvt hΓ)
 
 end Verification.Paper.TolerantFrames

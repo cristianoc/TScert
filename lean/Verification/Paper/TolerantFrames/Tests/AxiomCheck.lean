@@ -1,3 +1,7 @@
+import Verification.Paper.TolerantFrames.Arithmetic
+import Verification.Paper.TolerantFrames.Obstructions
+import Verification.Paper.TolerantFrames.AllSupport
+import Verification.Paper.TolerantFrames.Existentials
 import Verification.Paper.TolerantFrames.Renaming
 import Verification.Paper.TolerantFrames.RenamingAdmission
 import Verification.Paper.TolerantFrames.PathReplacement
