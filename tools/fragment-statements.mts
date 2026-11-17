@@ -2299,8 +2299,9 @@ function callPosition(f: ts.FunctionLikeDeclaration, p: ts.ParameterDeclaration)
 /** A loop's invariant (`@invariant` in the JSDoc before it; ARITHMETIC.md,
  * "Loop invariants"): its clauses elaborated to index facts at positions, the
  * i-th the i-th name its clauses' paths start at, each a binding in scope at
- * the loop's head named as the fragment names it, its paths read through the type TypeScript gives the
- * binding's declaration (`loopBindings`). Null where the loop states none. */
+ * the loop's head named as the fragment names it, its paths read through the
+ * binding's written annotation, else the type TypeScript gives its
+ * declaration (`loopBindings`). Null where the loop states none. */
 function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
   const clauses = loopInvariantTags(gate.file, loop);
   if (clauses.length === 0) return null;
@@ -2322,7 +2323,12 @@ function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
     const declaration = id.parent;
     const entry = enclosing !== undefined && ts.isFunctionLikeDeclaration(enclosing) && ts.isParameterDeclaration(declaration) &&
         declaration.parent === enclosing ? callPosition(enclosing, declaration) : undefined;
-    return { ...clauseParameter(gate, name, i, answered?.ok ? answered.value : undefined), ...(entry === undefined ? {} : { entry }) };
+    // The binding's type: its written annotation, as the fragment reads it
+    // (the verifier's `SafeInt` among the types), else TypeScript's.
+    const written = (ts.isVariableDeclaration(declaration) || ts.isParameterDeclaration(declaration)) &&
+      declaration.type !== undefined ? gate.typeOf(declaration.type) : undefined;
+    const type = written ?? (answered?.ok ? answered.value : undefined);
+    return { ...clauseParameter(gate, name, i, type), ...(entry === undefined ? {} : { entry }) };
   });
   const elaborated = elaborateRequires(clauses, params);
   if ("refused" in elaborated) gate.fail(loop, `a loop invariant (\`@invariant\`): ${elaborated.refused}`);

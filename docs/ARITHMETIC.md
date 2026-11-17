@@ -1825,8 +1825,10 @@ and $`I`$ the clause's facts rooted at the bindings it names: a value
 binding's slot, or an initialized cell's `value` field
 ([cell terms](#terms-for-bindings-held-in-cells)), including quantified
 bounds and free body terms. A clause naming any other
-binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field) is
-read through the type the binding's declaration has. The invariant states
+binding is refused at the loop. A path's kind (an array's length, a typed-array length, a field, a
+safe integer) is read through the binding's written annotation, else the
+type TypeScript gives its declaration, so a binding declared `SafeInt` is
+compared with no `safeInteger(...)` (`safe-int-loop-invariant`). The invariant states
 what the loop needs that no fact of its entry names, such as `j <= 2 * i` of
 two counters stepping by 2 and by 1.
 
