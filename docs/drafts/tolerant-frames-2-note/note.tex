@@ -23,8 +23,8 @@
 \newcommand{\init}{\kw{init}}
 \newcommand{\grow}{\kw{grow}}
 \newcommand{\any}{\kw{any}}
-\newcommand{\val}{\kw{all\text{-}values}}
-\newcommand{\st}{\kw{all\text{-}stores}}
+\newcommand{\val}{\kw{values}}
+\newcommand{\st}{\kw{spines}}
 \newcommand{\rigid}{\kw{rigid}}
 \newcommand{\fresh}{\kw{fresh}}
 \newcommand{\old}{\kw{old}}
@@ -130,7 +130,7 @@ step with the effect $\top$ keeps no fact about a length. The verifier refuses \
 
 \entry{The nearest form that verifies} There are two. In the first, the type of the visitor
 states its effect,
-\code{Modifies<\{ values: "any"; stores: "grow" \}, void>}; the rule
+\code{Modifies<\{ values: "any"; spines: "grow" \}, void>}; the rule
 \textsc{(Grow)} then keeps $i<\len{\mathit{xs}}$. In the second, the
 walker bounds its count by the length of a typed array; the rule
 \textsc{(View)} keeps that bound across any visitor.
@@ -170,11 +170,11 @@ invariant does not help; the function is refused in the same way.
 \entry{The nearest form that verifies} The same loop without the field write.
 
 \entry{What an extension must provide} A quantified fact is kept across a write to a field of a
-fresh object. The written location is neither the store nor an element
+fresh object. The written location is neither a spine nor an element
 cell that the fact reads. Theorem ``frame'' of Paper~I keeps
 the fact, since the write respects its support.
 
-\section{P4: an upper bound of a length across a call growing stores (18 sites)}
+\section{P4: an upper bound of a length across a call growing spines (18 sites)}
 
 {\footnotesize
 \begin{tabular}{@{}r@{\hspace{1em}}l@{}}
@@ -182,7 +182,7 @@ the fact, since the write respects its support.
   & \code{~~~~~~~~~~~~~~~~~~~~~~~~/** @stable */ readonly flags: number[] \};} \\
 2 & \code{type Lists = \{ /** @stable */ readonly widths: number[] \};} \\
 3 & \code{function measure(n: number, p: Lists | null):} \\
-4 & \code{~~~~Modifies<\{ values: "any"; stores: "keep"; "p.widths[*]": "any" \}, number> \{} \\
+4 & \code{~~~~Modifies<\{ values: "any"; spines: "keep"; "p.widths[*]": "any" \}, number> \{} \\
 5 & \code{~~if (p !== null) p.widths.push(n); return n;} \\
 6 & \code{\}} \\
 7 & \code{/** @requires a.flags.length === a.starts.length */} \\
@@ -204,7 +204,7 @@ the fact, since the write respects its support.
 \noindent
 Here \code{noteIn(out, v)} pushes \code{v} onto \code{out}. Its effect
 is
-\code{Modifies<\{ values: "any"; stores: "keep"; "out[*]": "any" \}, void>}.
+\code{Modifies<\{ values: "any"; spines: "keep"; "out[*]": "any" \}, void>}.
 
 \entry{What is refused} The verifier refuses two functions. It refuses
 \code{paths} at the entry edge of its loop. The stated invariant
@@ -274,7 +274,7 @@ is true because of what the generator of the table wrote. Neither paper has such
 {\footnotesize
 \begin{tabular}{@{}r@{\hspace{1em}}l@{}}
 1 & \code{type Cache = \{ value: number | null \};} \\
-2 & \code{function touch(c: Cache): Modifies<\{ values: "any"; stores: "keep" \}, void> \{ c.value = null; \}} \\
+2 & \code{function touch(c: Cache): Modifies<\{ values: "any"; spines: "keep" \}, void> \{ c.value = null; \}} \\
 3 & \code{/** @requires forall i in starts: safeInteger(starts[i]) \&\& 0 <= starts[i]} \\
   & \code{~*~~~~~~~~~~~\&\& starts[i] < offsets.length */} \\
 4 & \code{export function acrossTouch(starts: number[], offsets: Int32Array, c: Cache): number \{} \\
@@ -295,7 +295,7 @@ $\val:\any$. A step with that entry may alter any location that holds
 a number, and the element cells of \code{starts} are such locations.
 
 \entry{The nearest form that verifies} A callee with the effect
-\code{\{ values: "init"; stores: "keep" \}}, such as one that executes
+\code{\{ values: "init"; spines: "keep" \}}, such as one that executes
 \code{c.value ??= 5}. This effect alters no location that holds a
 number.
 
@@ -621,7 +621,7 @@ changes the heap.
 \code{this.extras === null || this.extras.length === this.widths.length}.
 
 \entry{What an extension must provide} A guarded fact whose guard is read through two
-\code{@stable} fields is kept across a call that changes no store.
+\code{@stable} fields is kept across a call that changes no spine.
 Axiom \textsc{(Rigid)} of Paper~I states it: a fact that holds of a
 value named by a variable holds of the value at a rigid path.
 
