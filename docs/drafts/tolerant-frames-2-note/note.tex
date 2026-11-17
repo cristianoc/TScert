@@ -75,9 +75,10 @@ commit \code{9268edb1}.
 Each blocked site belongs to one of 21 patterns, P1 to P21. A pattern
 is the smallest program that has the first obligation that fails at the
 site. The patterns P1, P2 and P8, with 91 sites together, verify today,
-P1 once the type of the visitor states its effect. The 18 entries below
-cover the other 124 sites, in decreasing number of sites, and P22 the
-pattern that blocks P1's sites once that effect is stated.
+P1 once the type of the visitor states its effect, and so does P21, whose
+one site stays behind P5. The 17 entries below cover the other 124
+sites, in decreasing number of sites, and P22 the pattern that blocks
+P1's sites once that effect is stated.
 
 Each entry has four parts: the program, shortened from the verifier's
 test case for the pattern; the function the verifier refuses and the
@@ -636,41 +637,6 @@ gives the type invariant of a value read from a \code{Map} when every
 write to that \code{Map} stores a value that meets the invariant.
 Neither paper has such a rule.
 
-\section{P21: shift left and bitwise or (1 site, as second blocker)}
-
-{\footnotesize
-\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
-1 & \code{/** @requires safeInteger(blocks) \&\& 0 <= blocks \&\& blocks <= 4352 \&\& values.length === 256 * blocks} \\
-2 & \code{~*~~~~~~~~~~~\&\& safeInteger(hi) \&\& 0 <= hi \&\& hi < blocks} \\
-3 & \code{~*~~~~~~~~~~~\&\& safeInteger(c) \&\& 0 <= c \&\& c < 1114112 */} \\
-4 & \code{export function badBits(values: Uint8Array, blocks: number, hi: number, c: number): number \{} \\
-5 & \code{~~return values[(hi <{}< 8) | (c \& 0xff)]!;} \\
-6 & \code{\}} \\
-\end{tabular}}
-
-\entry{What is refused} The verifier refuses \code{badBits} at the read of
-line 5. The obligation is
-$0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\len{\mathit{values}}=256\cdot\mathit{blocks}$.
-The operators \code{<{}<} and \code{|} give no fact. The program is
-pretext's read of a generated class table: \code{values} holds
-\code{blocks} blocks of 256 classes, \code{hi} stands for the block
-number \code{index[c >{}> 8]}, and $\mathit{blocks}\le 4352$, the number
-of 256-blocks up to U+10FFFF.
-In pretext's \code{tscert-bounds} at \code{aa8f7cc2} the site is the
-outer read of \code{line-breaks.ts} line 138, in \code{getClass},
-behind P5.
-
-\entry{The nearest form that verifies} A shift right and a mask,
-\code{index[c >{}> 8]! + (c \& 0xff)}, which the rules \textsc{Shr}
-and \textsc{Mask} cover.
-
-\entry{What an extension must provide} The rules \textsc{Shl} and
-\textsc{Or} of Paper~I (\nI{Arithmetic steps}): $\mathit{hi}\ll 8$ is
-$256\,\mathit{hi}$, and the or of two non-negative 32-bit integers lies
-between the larger and their sum, so the index is at most
-$256\,\mathit{hi}+255<256\cdot\mathit{blocks}$. The verifier does not
-apply them.
-
 \section{P22: a fact about a location a callback cannot reach (1 site, as second blocker)}
 
 {\footnotesize
@@ -739,7 +705,6 @@ P17 & 3 & an index into a selected element & in neither paper\\
 P18 & 2 & a guard through two \code{@stable} fields & stated in Paper~I, not implemented\\
 P19 & 2 & a sum of element lengths & in neither paper\\
 P20 & 1 & the invariant of a \code{Map} value & in neither paper\\
-P21 & 1 & the results of \code{<{}<} and \code{|} & stated in Paper~I, not implemented\\
 P22 & 1 & a callback's effect bounded by what it reaches & in neither paper\\
 \bottomrule
 \end{tabular}}
@@ -749,7 +714,11 @@ between reads (50 sites), once the type of the visitor states its
 effect, \code{Modifies<\{ values: "any"; spines: "grow" \}, void>}: the
 rule \textsc{(Grow)} keeps a length bound across the visit. P2, growth by
 a known count across a callee (31 sites), and P8, the length after a
-write at the length (10 sites).
+write at the length (10 sites). P21, a shift left and a bitwise or at a
+generated class table, \code{values[(hi <{}< 8) | (c \& 0xff)]}, verifies
+at its pattern program by the rules \textsc{Shl}, \textsc{Mask} and
+\textsc{Or} (\nI{Arithmetic steps}); in pretext its one site,
+the outer read of \code{getClass}, stays behind P5.
 
 \paragraph{Sites in no pattern.} Three sites belong to no pattern: the
 reads \code{scanStarts[k]} and \code{sourceBreaks[after]} in

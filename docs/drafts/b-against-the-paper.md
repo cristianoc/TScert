@@ -7,7 +7,8 @@ that is it, and how far it matches. Part 2 of B's first item in
 [the basis](implementation-and-paper-rules.md#the-first-item-b). Read by
 gpt-6-astra from the sources at commit `7a8c19f5` on 2026-11-17, with no
 build or test run; four of its claims (Example 1, Push, Fresh-Eff and the
-quantified atom's presence condition) were checked against the source.
+quantified atom's presence condition) were checked against the source. The rows Shr, Mask, Shl, Or and the index from a shift or a mask state
+the sources with `Derivation.arith`, after that commit.
 
 The paper is the source of truth. Where B has no statement of an item, the
 row names the statement of the shared model (`Semantics/`) or of A
@@ -127,8 +128,10 @@ The three proposition-summary rows in this report summarize their following cons
 | Add — 1648 | `Derivation.integerOperation`, `D:536`; `integerOperation_sound`, `:1363` | **equal** | Safe operands and a safe mathematical sum give the exact sum. |
 | Sub — 1648 | `Derivation.integerOperation`, `D:536`; `integerOperation_sound`, `:1363` | **equal** | Safe operands and a safe mathematical difference give the exact difference. |
 | Scale — 1648 | `Derivation.integerOperation`, `D:536`; `resultForm`, `:205` | **equal** | Multiplication requires a constant factor and a safe mathematical result. |
-| Shr — 1649 | `Derivation.shiftRight`, `D:522`; `shrFacts`, `:193`; `shiftRight_sound`, `:1299` | **equal** | The operand and shift ranges, nonnegative result, and both quotient bounds agree. A constant may be a literal or a value proved constant. |
-| Mask — 1650 | `Derivation.mask`, `D:529`; `maskFacts`, `:199`; `mask_sound`, `:1327` | **equal** | Both upper bounds—by the mask and by the operand—and the stated ranges agree. |
+| Shr — 1652 | `Derivation.arith` at `ArithmeticRules.shr`, `D:551`; `ruleConclusion`, `:218`; `rules_sound`, `Semantics/ArithmeticRules.lean` | **equal** | The paper's row is generated from the rule B applies: an operand in the signed 32-bit range, the count read modulo 32 and both quotient bounds. A constant may be a literal or a value proved constant. |
+| Mask — 1653 | `Derivation.arith` at `ArithmeticRules.maskRange` and `maskBound`, `D:551`; `rules_sound` | **equal** | The paper's two triples are generated from the two rules: the range for any number, the bound by a non-negative safe integer. `Derivation.commute`, `D:545`, applies them to `m & x`. |
+| Shl — 1654 | `Derivation.arith` at `ArithmeticRules.shl`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: the exact product where it lies in the signed 32-bit range. |
+| Or — 1655 | `Derivation.arith` at `ArithmeticRules.bitOr`, `D:551`; `rules_sound` | **equal** | The paper's row is generated from the rule: both operands in $`[0, 2^{31})`$ bound the result below by each and above by their sum. |
 | String-length successor — 1655 | `Derivation.lengthSuccessor`, `D:547`; `lengthSuccessor_sound`, `:1428` | **equal** | The result is the exact safe sum or the number $`2^{53}`$, under the stated string-length equality. |
 | Str-Length — 1668 | `Derivation.stringLengthRead`, `D:567` | **equal** | The conclusion is the string’s UTF-16 length, represented as the result’s safe integer. |
 | Str-Read — 1669 | `Derivation.stringRead`, `D:573`; `stringIndexFacts`, `:258` | **equal** | The premises include both the string bound and $`i<2^{32}-1`$; the conclusion is result length one. This is the current paper’s entire postcondition. |
@@ -173,7 +176,7 @@ These are repeated applications, rather than additional numbered definitions or 
 | Separation where a value exists — 1955 | `Derivation.guardCases`, `D:369`; `RawDerivation.sep`, `:639` | **narrower** | The path guard must be recognized invariant, and separation is only between arrays. The displayed general guarded path case is not represented as stated. |
 | Fact through a field — 1956 | `grow_path`, `Bridges/Grow.lean:50`; `grow_path_typed`, `Bridges/ModelTyped.lean:150` | **narrower** | The typed bridge requires its particular stable-path and array-type evidence; the derivation route also requires certified substitution in B’s language. |
 | Typed-array length — 1957 | `view_box`, `ModelRules.lean:45` | **equal** | This particular linear fact over a variable and descriptor length is within the theorem’s scope. |
-| Index from a shift or mask — 1958 | `Derivation.shiftRight`, `D:522`; `.mask`, `:529` | **equal** | Their conclusions include the displayed bounds under the stated ranges. |
+| Index from a shift or mask — 1971 | `Derivation.arith` at `shr`, `maskRange` and `maskBound`, `D:551`; `Derivation.linear` | **equal** | The pattern's facts, under its ranges $`0\le c<2^{31}`$, $`0\le d<32`$, $`0\le m<2^{31}`$, are the rules' conclusions, and $`0\le y`$ after the shift follows from them by a linear certificate. |
 | Array facts across a typed-array write — 1959 | `SupportEvidence.everyCells`, `E:815`; `Derivation.tolerantFrame`, `D:437` | **narrower** | The quantified fact has B’s additional presence requirement and restricted scalar-body interpretation. |
 | Fact at a handler — 1960 | `Derivation.frame`, `D:470`; `CommandSummary.handle_sound`, `CommandComposition.lean:193` | **narrower** | The modal consequence exists for encoded facts; no general command rule connects every exceptional exit to its handler with arbitrary paper assertions. |
 
@@ -201,6 +204,6 @@ Each row except the three proposition summaries and the patterns of §8:
 
 | Equal | Narrower | Broader | Different | None in B | Assumed | Total |
 |---:|---:|---:|---:|---:|---:|---:|
-| 13 | 35 | 0 | 2 | 26 | 13 | 89 |
+| 15 | 35 | 0 | 2 | 26 | 13 | 91 |
 
 Of the rows with no statement in B, the shared model states Definitions 6 and 16 equally, and Theorem 7 from a safety premise; the others are recorded in their rows.
