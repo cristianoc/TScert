@@ -782,3 +782,56 @@ has no identified implicit receiver. The correspondence obligations state the
 smallest static/interpretation obstructions. Neither the paper nor B's region
 admission or quantifier meaning is silently changed. Independent command-graph
 work continues. Full alignment remains incomplete.
+
+## Generated-command compiler at 1883afc1
+
+Evidence applies to exact source `1883afc1d92222312f60a80abb2d6534aee48d42`,
+extending `158878e222cf32f357142d03fcc91463f0c04380` on current single-pass base
+`5777ed2e08992863611715aa38f21b97f10145d5`. The original fetched start remains
+`ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+All ten generated-compiler modules pass focused builds with warnings as errors.
+Both complete axiom audits pass, exit zero, 451 jobs, with only the same eight
+cached upstream informational backtraces. Full make test exits zero on the
+newer paper/base:
+
+- 660 Lean build jobs;
+- all 23 fast suites and 175 controls (3 operations executed, 492 replayed);
+- 3431/3431 cases as expected;
+- 4323 verified functions, 1790 negative controls and 150 named gaps.
+
+Direct import coverage checks 363 other A/shared and 85 other Paper modules.
+An independent source scan finds zero outside-to-Paper imports. All new source
+is in Paper; preceding task-authored shared changes remain exactly as already
+recorded. Paper mathematics/PDF are untouched by this implementation. Final
+docs pass at 79 documents, 892 code citations and zero problems; whitespace
+checks pass. The latest-paper recount remains 91 rows: 39 equal, 29 narrower,
+10 absent and 13 assumed.
+
+Independent read-only Astra reviewed the design and complete source chain:
+concrete finite offsets and front normalization, structural Origin/Routes
+generation, real mapped environments, actual primitive/control/throw evaluation,
+full sink expressions, terminal environment retention, and shared-count whole
+inversion. It found no blocker. The theorem derives all compiler/routing evidence
+internally for every finite raw command. Actual shared value/raise Steps yield
+existing structured Executes with the same heap/exit, recovered final environment
+and primitive p≤N. Enter/leave overhead strictly decreases the suffix count,
+including around zero-weight B loops. This is not a supplied body summary.
+
+The result is completed-run inversion under explicit machine-value representability
+of the three host values. It does not prove forward simulation, progress,
+callable argument/capture entry, physical-budget postcondition transfer, Fun,
+rest allocation or full typing/admission. Standalone break remains distinct
+although its graph sink returns undefined; function premises must exclude it.
+A separate source inspection confirmed that ordinary lookup does not represent
+literal-array push or scalar string native execution. Explicit resolved native
+callees and availability/safety contracts are the next representation repair;
+a vacuous partial Triple is not claimed to supply that missing execution.
+Unified length and the four pending owner mathematical/interpretation decisions
+remain as recorded. Full alignment is incomplete.
+
+Logs: `/workspace/scratch/compiler-test.log`, `compiler-axioms.log`,
+`compiler-correctness-build3.log`, `compiler-node-build2.log`,
+`compiler-origins-build2.log`, `compiler-routes-build3.log`,
+`compiler-control-build4.log` (first control cases), `compiler-sinks-build2.log`
+(control completion), and `compiler-docs-final.log`.
