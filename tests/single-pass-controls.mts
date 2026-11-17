@@ -560,6 +560,20 @@ control("forged fragment: a fraction's result forged to SafeInt", async (): Prom
   say("forged SafeInt: a fraction's result forged from `number` to the safe integers, refused at its return");
 });
 
+control("forged fragment: an index parameter forged to SafeInt", async (): Promise<void> => {
+  const artifacts = run("safe-int-index");
+  const ast = fragmentAst(artifacts);
+  const fn = must(ast.functions.find((f) => f.name === "readAt"), "readAt");
+  const unit = unitOf(ast, "middle");
+  honest("safe-int-index", unit);
+  const i = must(fn.params[1], "readAt's index");
+  assert.ok(i.type?.k === "atom" && i.type.name === "number", "readAt's index is a number");
+  i.type = { ...i.type, name: "safeInt" };
+  refused(pass(forged(artifacts, "forged-safe-int-parameter", ast)), unit, "forged",
+    /its operands. claims are function, array, number; its claim is number/);
+  say("forged SafeInt: an index parameter forged from `number` to the safe integers, refused at the call passing a fraction");
+});
+
 control("forged fragment: spine regions moved", async (): Promise<void> => {
   const artifacts = run("stated-argument-store");
   const ast = fragmentAst(artifacts);

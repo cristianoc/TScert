@@ -241,7 +241,7 @@ the knowledge states integral; a read of a slot of one literal, a module
 constant `const TEXT = 0` among them, states type-literal's conclusion, also
 where a binding is assigned or declared it (`IndexWrites.typeInt`, proved:
 `typeInt_sound`, from `intValue_num` and `SafeIntegers.safeIntOfBits_sound`;
-case `literal-constant-value`; negative
+cases `safe-int-index`, `literal-constant-value`; negative
 `invalid-literal-constant-value`, run under Node). A field or an element
 whose type is `SafeInt` reaches the rule through its read, whose result
 slot has the field's or the element's type; its path is linked to that
@@ -643,11 +643,17 @@ $`P\ \texttt{!==}\ Q`$ of two paths whose types are arrays elaborates to a
 [spine separation](#spine-separation); one of a path whose type may be a
 typed array, or is no array, is refused.
 
-**Integrality.** A value term is an integer only where a clause states it:
-a comparison names a path's value, or an element, only where its
-conjunction or an unconditional clause states it a safe integer
-(`safeInteger(P)`, `safeInteger(P[x])`), and the clause
-`0 <= from && from <= to` alone admits `from = 0.5`. A length, a typed-array
+**Integrality.** A comparison names a path's value, or an element, where
+its type or the clause states it a safe integer: where the type the path
+resolves to, past the clause's guards, is `SafeInt` at every arm of a union
+(or a safe integer's literal), or where its conjunction or an unconditional
+clause states it (`safeInteger(P)`, `safeInteger(P[x])`). Over
+`x: number`, the clause `0 <= x && x <= to` alone admits `x = 0.5`, and is
+refused (negative `invalid-safe-int-index-number`, run under Node); over
+`x: SafeInt` it means what it means with `safeInteger(x)` written, and
+elaborates to the comparison's facts, which state $`\mathrm{int}(x)`$ of
+themselves, every caller establishing them under the type's integrality
+([integrality from a type](#linear-facts)). A length, a typed-array
 length and a string's length are integers by their terms' ranges
 ([linear facts](#linear-facts)). A clause whose constants leave the safe
 integers is refused.
