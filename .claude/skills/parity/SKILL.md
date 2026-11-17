@@ -60,8 +60,10 @@ statement, 2026-11-15).
 
 The order of the work:
 
-1. acceptance is brought to apply the note's definitions and rules, rule
-   by rule, from the [rule table](../../../docs/drafts/parity-rule-table.md);
+1. the implementation rules (A), the paper rules (B) and their
+   correspondence (C) are made clear, B first, as
+   [the basis](../../../docs/drafts/implementation-and-paper-rules.md)
+   states;
 2. the checking round: every example of the note is run through the
    verifier and through the paper-only agent, and the two notes are read
    again against the result;
@@ -119,7 +121,7 @@ note changes only with the owner's approval.
   into the line it is fast-forwarded
   (`git -C ~/GitHub/TScert merge --ff-only origin/single-pass` after a
   fetch). Nothing is built, edited or created in it.
-- The plan and its status: the row "The pass implements the note's rules" of
+- The plan and its status: the row "Implementation rules and paper rules" of
   [WORK.md](../../../WORK.md#status). Status is written there and nowhere
   else; a commit that moves an item updates the row.
 - The comparison of the note with the implementation, rule by rule:

@@ -1804,7 +1804,7 @@ run_cmd do
   check ``Verification.CallEffects.frameActualsIndependent_of_scoped
   check ``Verification.CallEffects.Exits.forgetActuals_sound
   check ``Verification.CallEffects.Exits.callExit_held
-  -- One support relation, one respect check, one frame theorem (rules-as-mechanism, step 1)
+  -- One support relation, one respect check, one frame theorem
   check ``Verification.Parity.atom_frame
   check ``Verification.Parity.linear_holdsAt_iff
   check ``Verification.Footprints.grow_arr
