@@ -58,6 +58,7 @@ The clauses, with what each denotes:
 | `bigint`, `bigintLit i` | any bigint; exactly the bigint $`i\in\mathbb Z`$ |
 | `symbol`, `symbolLit n` | any symbol (an opaque identity); exactly the symbol $`\mathsf{sym}(n)`$ |
 | `numIn S`, `strIn S` | exactly the numbers whose bit pattern is in $`S`$; exactly the strings in $`S`$ ([tag sets](HOST-FAMILIES.md#tag-sets)) |
+| `int` | the safe integers: the numbers whose bit pattern decodes as an integer of magnitude at most $`2^{53}-1`$, both zeros included ([the safe integers](#the-safe-integers)) |
 | `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
 | `dict` | a `refs` object whose present keys of each index's class (every string key, the canonical numeric ones, or every symbol key) also meet readonly and writable index contracts |
 | `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |
@@ -96,6 +97,48 @@ Lean: `meet_sound` (the meets), `Covers.sound` (both subtypings).
 
 Lean: `Clause`, `semWithArgs`, `shape`, `valueShape`
 (`Types/PositiveNormalization.lean`).
+
+### The safe integers
+
+The clause `int` is of the number shape. With $`\mathrm{safeIntOfBits}`$
+the decoding of a double's bit pattern as a safe integer
+(`SafeIntegers.safeIntOfBits`, sound and complete for `SafeIntegers.SafeInt`
+by `safeIntOfBits_sound` and `safeIntOfBits_complete`), its meaning, its
+meets with the number clauses and its inclusions are
+
+```math
+⟦\mathsf{int}⟧_k(W,v)\iff\exists b.\ v=\mathsf{num}\,b\wedge\mathrm{safeIntOfBits}\,b\ne\mathrm{none}
+```
+
+```math
+\mathsf{num}\sqcap\mathsf{int}=\mathsf{int}\sqcap\mathsf{int}=\mathsf{int}
+\qquad
+\mathsf{numLit}\,b\sqcap\mathsf{int}=
+\begin{cases}\mathsf{numLit}\,b & \mathrm{safeIntOfBits}\,b\ne\mathrm{none}\\ \bot & \text{otherwise}\end{cases}
+\qquad
+\mathsf{numIn}\,S\sqcap\mathsf{int}=\mathsf{numIn}\,\{b\in S\mid\mathrm{safeIntOfBits}\,b\ne\mathrm{none}\}
+```
+
+```math
+\mathsf{int}\le\mathsf{num}
+\qquad
+\frac{\mathrm{safeIntOfBits}\,b\ne\mathrm{none}}{\mathsf{numLit}\,b\le\mathsf{int}}
+\qquad
+\frac{\forall b\in S.\ \mathrm{safeIntOfBits}\,b\ne\mathrm{none}}{\mathsf{numIn}\,S\le\mathsf{int}}
+```
+
+and $`\mathsf{num}\le\mathsf{int}`$ does not hold: $`0.5`$ is a number and no
+safe integer. A tag set's meet is written through `numSet`, so a set of one
+member is that member's literal. Selection reads the clause as any number
+clause: it admits a number literal exactly where the literal decodes
+(`admitsVal`), and excludes it as a target of `num` and of a tag set with a
+member that does not decode (`primExcl`).
+
+Lean: `intT`, `meet_int_num`, `meet_int_int`, `meet_int_numLit`,
+`meet_int_numIn` (`Types/PositiveNormalization.lean`); the `int` rows of
+`CoversWith` and their cases of `Covers.sound_raw`
+(`Types/PositiveRules.lean`); `admitsVal`, `primExcl`
+(`Types/ClauseSelection.lean`).
 
 ### Records
 

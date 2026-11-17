@@ -34,6 +34,7 @@ def admitsVal (c : Clause α) (v : Val) : Bool :=
   | .strLit t, .str s => t == s
   | .numLit a, .num b => a == b
   | .numIn S, .num b => S.contains b
+  | .int, .num b => (SafeIntegers.safeIntOfBits b).isSome
   | .strIn S, .str s => S.contains s
   | .boolLit true, .tru | .boolLit false, .fls => true
   | .bigintLit i, .bigint j => i == j
@@ -66,7 +67,7 @@ theorem not_admits {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {a : Clause �
         strT, bigintT, symbolT]
   all_goals (simp only [litVal, Option.some.injEq, reduceCtorEq] at hl <;> subst hl <;>
     cases b <;> simp_all [admitsVal, valueShape, shape, semWithArgs, nulT, undefT, boolT, numT,
-      strT, bigintT, symbolT])
+      strT, bigintT, symbolT, intT])
 
 /-! ### R1, R2: shapes and primitive cells -/
 
@@ -101,6 +102,7 @@ theorem admitsVal_sem {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {d : Claus
     | (subst h; exact ⟨rfl, rfl⟩)
     | exact ⟨⟨_, rfl⟩, rfl⟩
     | exact ⟨⟨_, h, rfl⟩, rfl⟩
+    | exact ⟨⟨_, rfl, Option.isSome_iff_ne_none.mp h⟩, rfl⟩
     | exact ⟨.inl rfl, rfl⟩
     | exact ⟨.inr rfl, rfl⟩
     | exact ⟨rfl, rfl⟩
@@ -117,13 +119,16 @@ def primExcl (a b : Clause α) : Bool :=
     | .symbol, .symbolLit _ | .num, .numIn _ | .str, .strIn _ => true
     | .numIn _, .numLit _ | .strIn _, .strLit _ => true
     | .numIn S, .numIn T => !S.all T.contains
+    | .num, .int => true
+    | .numIn S, .int => !S.all fun b => (SafeIntegers.safeIntOfBits b).isSome
     | .strIn S, .strIn T => !S.all T.contains
     | _, _ => false
 
 theorem covers_prim [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {R : List ι → List ι → Prop} {known : Known ι} {arrows self} {a b : Clause (List ι)}
     (h : CoversWith G sub R known arrows self a b) : primExcl a b = false := by
-  cases a <;> cases b <;> simp_all [CoversWith, primExcl, litVal, admitsVal, isUniverse] <;>
+  cases a <;> cases b <;>
+    simp_all [CoversWith, primExcl, litVal, admitsVal, isUniverse, Option.isSome_iff_ne_none] <;>
     (try split) <;> simp_all
 
 /-! ### R3, R4: discriminants and required keys of object clauses -/
