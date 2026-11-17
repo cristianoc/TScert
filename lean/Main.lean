@@ -35,7 +35,7 @@ def command (start : Nat) (args : List String) : IO UInt32 := do
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath
   | ["--export", "rules", "arithmetic"] => do
-      IO.println Verification.RuleExport.rulesJson.pretty
+      IO.print Verification.RuleExport.rulesMarkdown
       return 0
   | _ => usage
 where
@@ -45,7 +45,7 @@ where
     IO.eprintln "       verifier --module-interface-plan <ast.json> <selection.json>"
     IO.eprintln "       verifier --module-interface <request.json>"
     IO.eprintln "       verifier --lower-control-flow <ast.json>"
-    IO.eprintln "       verifier --export rules arithmetic   (the arithmetic rules as JSON)"
+    IO.eprintln "       verifier --export rules arithmetic   (the arithmetic rules as Markdown)"
     IO.eprintln "       (any mode may be preceded by --subtype-rounds <rounds>; <names> selects units by a member's name, comma-separated)"
     return 2
 

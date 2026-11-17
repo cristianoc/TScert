@@ -18,12 +18,11 @@
  * `ArithmeticRules.rules` (`verifier --export rules arithmetic`); one
  * renderer sets the rules in three notations: the paper's rule rows, the
  * `math` blocks of ARITHMETIC.md, each preceded by a comment carrying the
- * rule's JSON, and a page drawn as dev/record-render.mts draws records.
+ * rule's declarations, and a page drawn as dev/record-render.mts draws records.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { hasExactly, isParsedObject, type Json } from "../tools/calculus.mts";
 import { CSS, rules as ruleBlocks } from "./record-render.mts";
 import { FACES } from "./style-tokens.mts";
 
@@ -32,98 +31,125 @@ const root: string = resolve(import.meta.dirname, "..");
 /* ---- The rules' document, as the verifier exports it ---- */
 
 export type RuleVar = "left" | "right" | "result";
-export type Domain = "safeInteger" | "number";
 export type Normalisation = "identity" | "shiftCount";
 export type Coef = { lit: number; byConstant: number; byPower: number };
 export type RuleFact = { terms: { var: RuleVar; coef: Coef }[]; bound: Coef };
-export type Constant = { symbol: string; lower: number | null; upper: number | null; normalisation: Normalisation };
-export type Right = { operand: Domain } | { constant: Constant };
+export type Constant = { lower: number | null; upper: number | null; normalisation: Normalisation };
+export type Sort = "Num" | "SafeInt";
+export type Role = "operand" | "constant" | "result";
+export type RuleVariable = { var: RuleVar; role: Role; sort: Sort; kind: Normalisation | null };
 export type Rule = {
-  name: string; declaration: string; proof: string; op: string;
-  left: Domain; right: Right; premises: RuleFact[]; result: Domain; conclusion: RuleFact[];
+  name: string; declaration: string; proof: string; op: string; variables: RuleVariable[];
+  constant: Constant | null; premises: RuleFact[]; conclusion: RuleFact[];
 };
 export type RulesDocument = { statement: string; soundness: string; rules: Rule[] };
 
-/** A decoding failure: the path of the value and what it is not. */
-function refuse(path: string, what: string): never {
-  throw new Error(`the rules' document: ${path} is not ${what}`);
+/** A reading failure: the line and what it is not. */
+function refuse(line: number, what: string): never {
+  throw new Error(`the rules' document, line ${line}: ${what}`);
 }
 
-/** An object holding exactly the keys `keys`. */
-function object(v: Json | undefined, path: string, keys: readonly string[]): { [key: string]: Json } {
-  if (!isParsedObject(v) || !hasExactly(v, keys)) return refuse(path, `an object of the fields ${keys.join(", ")}`);
-  return v;
+function integer(text: string, line: number): number {
+  const n = Number(text);
+  return /^-?\d+$/.test(text) && Number.isSafeInteger(n) ? n : refuse(line, `${text} is no safe integer`);
 }
 
-function text(v: Json | undefined, path: string): string {
-  return typeof v === "string" ? v : refuse(path, "a string");
+/** A coefficient: monomials `n`, `n·k`, `n·2^k`, a factor 1 written as its
+ * sign, joined by ` + ` and ` - `. */
+function coef(text: string, line: number): Coef {
+  const c: Coef = { lit: 0, byConstant: 0, byPower: 0 };
+  if (text === "0") return c;
+  for (const m of text.replace(/ - /g, " + -").split(" + ")) {
+    const unit = /^(-?)(?:(\d+)·)?(2\^k|k)$/.exec(m);
+    if (unit !== null) {
+      const n = (unit[1] === "-" ? -1 : 1) * (unit[2] === undefined ? 1 : integer(unit[2], line));
+      if (unit[3] === "k") c.byConstant += n;
+      else c.byPower += n;
+    } else c.lit += integer(m, line);
+  }
+  return c;
 }
 
-function integer(v: Json | undefined, path: string): number {
-  return typeof v === "number" && Number.isSafeInteger(v) ? v : refuse(path, "a safe integer");
+function ruleVar(text: string, line: number): RuleVar {
+  return text === "left" || text === "right" || text === "result" ? text : refuse(line, `${text} is no variable`);
 }
 
-function list(v: Json | undefined, path: string): Json[] {
-  return Array.isArray(v) ? v : refuse(path, "an array");
+/** A fact line, `` - `(a)·v + … ≤ b` ``. */
+function fact(text: string, line: number): RuleFact {
+  const m = /^- `(.*) ≤ (.*)`$/.exec(text);
+  if (m === null || m[1] === undefined || m[2] === undefined) return refuse(line, "no fact");
+  const terms = m[1].split(/ \+ (?=\()/).map((piece) => {
+    const tm = /^\((.*)\)·(\w+)$/.exec(piece);
+    if (tm === null || tm[1] === undefined || tm[2] === undefined) return refuse(line, `${piece} is no term`);
+    return { var: ruleVar(tm[2], line), coef: coef(tm[1], line) };
+  });
+  return { terms, bound: coef(m[2], line) };
 }
 
-function domain(v: Json | undefined, path: string): Domain {
-  return v === "safeInteger" || v === "number" ? v : refuse(path, "a domain");
-}
-
-function ruleVar(v: Json | undefined, path: string): RuleVar {
-  return v === "left" || v === "right" || v === "result" ? v : refuse(path, "a rule variable");
-}
-
-function coef(v: Json | undefined, path: string): Coef {
-  const o = object(v, path, ["lit", "byConstant", "byPower"]);
-  return { lit: integer(o.lit, `${path}.lit`), byConstant: integer(o.byConstant, `${path}.byConstant`),
-    byPower: integer(o.byPower, `${path}.byPower`) };
-}
-
-function fact(v: Json | undefined, path: string): RuleFact {
-  const o = object(v, path, ["terms", "bound"]);
-  return {
-    terms: list(o.terms, `${path}.terms`).map((t, i) => {
-      const term = object(t, `${path}.terms[${i}]`, ["var", "coef"]);
-      return { var: ruleVar(term.var, `${path}.terms[${i}].var`), coef: coef(term.coef, `${path}.terms[${i}].coef`) };
-    }),
-    bound: coef(o.bound, `${path}.bound`),
+/** A variable's row of a rule's table. */
+function variable(text: string, line: number): RuleVariable {
+  const m = /^\| `(\w+)` \| ([^|]+) \| `(\w+)` \|$/.exec(text);
+  if (m === null || m[1] === undefined || m[2] === undefined || m[3] === undefined) return refuse(line, "no variable row");
+  const roles: { [r: string]: [Role, Normalisation | null] } = {
+    "operand": ["operand", null], "result": ["result", null],
+    "constant, a shift count": ["constant", "shiftCount"], "constant, read as itself": ["constant", "identity"],
   };
+  const role = roles[m[2]];
+  if (role === undefined) return refuse(line, `${m[2]} is no role`);
+  const sort = m[3] === "Num" || m[3] === "SafeInt" ? m[3] : refuse(line, `${m[3]} is no sort`);
+  return { var: ruleVar(m[1], line), role: role[0], sort, kind: role[1] };
 }
 
-function optionalInteger(v: Json | undefined, path: string): number | null {
-  return v === null ? null : integer(v, path);
+/** The constant's sentence. */
+function constant(text: string, line: number): Constant {
+  const m = /^The constant: (no lower bound|at least (-?\d+)); (no upper bound|at most (-?\d+)); (read as itself|read as a shift count, modulo 32)\.$/.exec(text);
+  if (m === null) return refuse(line, "no constant's sentence");
+  return { lower: m[2] === undefined ? null : integer(m[2], line), upper: m[4] === undefined ? null : integer(m[4], line),
+    normalisation: m[5] === "read as itself" ? "identity" : "shiftCount" };
 }
 
-function right(v: Json | undefined, path: string): Right {
-  if (isParsedObject(v) && hasExactly(v, ["operand"])) return { operand: domain(v.operand, `${path}.operand`) };
-  const o = object(v, path, ["constant"]);
-  const c = object(o.constant, `${path}.constant`, ["symbol", "lower", "upper", "normalisation"]);
-  const normalisation = c.normalisation === "identity" || c.normalisation === "shiftCount" ? c.normalisation
-    : refuse(`${path}.constant.normalisation`, "a normalisation");
-  return { constant: { symbol: text(c.symbol, `${path}.constant.symbol`), lower: optionalInteger(c.lower, `${path}.constant.lower`),
-    upper: optionalInteger(c.upper, `${path}.constant.upper`), normalisation } };
-}
-
-function rule(v: Json | undefined, path: string): Rule {
-  const o = object(v, path, ["name", "declaration", "proof", "op", "left", "right", "premises", "result", "conclusion"]);
-  return {
-    name: text(o.name, `${path}.name`), declaration: text(o.declaration, `${path}.declaration`),
-    proof: text(o.proof, `${path}.proof`), op: text(o.op, `${path}.op`), left: domain(o.left, `${path}.left`),
-    right: right(o.right, `${path}.right`),
-    premises: list(o.premises, `${path}.premises`).map((f, i) => fact(f, `${path}.premises[${i}]`)),
-    result: domain(o.result, `${path}.result`),
-    conclusion: list(o.conclusion, `${path}.conclusion`).map((f, i) => fact(f, `${path}.conclusion[${i}]`)),
-  };
-}
-
-/** The rules' document from its JSON text. */
+/** **The rules' document from the verifier's Markdown**, line by line in the
+ * form `RuleExport.rulesMarkdown` writes; any other line is refused. */
 export function decodeRules(source: string): RulesDocument {
-  const parsed: Json = JSON.parse(source);
-  const o = object(parsed, "the document", ["statement", "soundness", "rules"]);
-  return { statement: text(o.statement, "statement"), soundness: text(o.soundness, "soundness"),
-    rules: list(o.rules, "rules").map((r, i) => rule(r, `rules[${i}]`)) };
+  const lines = source.split("\n");
+  let at = 0;
+  const peek = (): string => lines[at] ?? "";
+  const next = (): string => lines[at++] ?? refuse(at, "the document ends early");
+  const expect = (re: RegExp, what: string): RegExpExecArray => re.exec(next()) ?? refuse(at, `expected ${what}`);
+  const blank = (): void => { if (next() !== "") refuse(at, "expected a blank line"); };
+  expect(/^# Arithmetic rules$/, "the title"); blank();
+  const intro = expect(/^The rules of `[\w.]+`, in the paper's order\. Each is sound by `([\w.]+)`, which `([\w.]+)` proves of every rule\.$/, "the soundness sentence");
+  blank();
+  expect(/^A fact is `Σ \(coefficient\)·variable ≤ bound`; `k` is the rule's constant as the rule reads it\.$/, "the facts' sentence");
+  const rules: Rule[] = [];
+  const facts = (title: string): RuleFact[] => {
+    const head = next();
+    if (head === `${title}: none.`) return [];
+    if (head !== `${title}:`) refuse(at, `expected ${title}`);
+    blank();
+    const out: RuleFact[] = [];
+    while (peek().startsWith("- ")) out.push(fact(next(), at));
+    return out;
+  };
+  while (at < lines.length - 1) {
+    blank();
+    const name = expect(/^## (.+)$/, "a rule's heading")[1] ?? "";
+    blank();
+    const decl = expect(/^Operator `(\w+)`\. Stated by `([\w.]+)`, proved by `([\w.]+)`\.$/, "the rule's operator and declarations");
+    blank();
+    expect(/^\| Variable \| Role \| Sort \|$/, "the variables' table"); expect(/^\| --- \| --- \| --- \|$/, "the table's rule");
+    const variables: RuleVariable[] = [];
+    while (peek().startsWith("| ")) variables.push(variable(next(), at));
+    blank();
+    let c: Constant | null = null;
+    if (peek().startsWith("The constant:")) { c = constant(next(), at); blank(); }
+    const premises = facts("Premises");
+    blank();
+    const conclusion = facts("Conclusion");
+    rules.push({ name, declaration: decl[2] ?? "", proof: decl[3] ?? "", op: decl[1] ?? "", variables, constant: c, premises, conclusion });
+  }
+  if (lines[at] !== "" || at !== lines.length - 1) refuse(at + 1, "text after the last rule");
+  return { statement: intro[1] ?? "", soundness: intro[2] ?? "", rules };
 }
 
 /** The verifier's export of the arithmetic rules. */
@@ -165,7 +191,9 @@ function operator(op: string, notation: "latex" | "markdown" | "text"): string {
   return symbol[notation];
 }
 
-const boundName = (c: Constant, prime: string): string => (c.normalisation === "shiftCount" ? `${c.symbol}${prime}` : c.symbol);
+/** A constant's letter by its kind, `d` for a shift count and `c` otherwise. */
+const constantLetter = (c: Constant): string => (c.normalisation === "shiftCount" ? "d" : "c");
+const boundName = (c: Constant, prime: string): string => (c.normalisation === "shiftCount" ? `d${prime}` : "c");
 
 const LATEX: Notation = {
   result: "y", le: "\\le ", lt: "<", eq: "=", and: "\\wedge ", minus: "-", times: "\\,",
@@ -274,45 +302,55 @@ function conjunction(facts: RuleFact[], names: { [v in RuleVar]: string }, k: st
   return out;
 }
 
-const constantOf = (r: Rule): Constant | undefined => ("constant" in r.right ? r.right.constant : undefined);
+const constantOf = (r: Rule): Constant | undefined => r.constant ?? undefined;
 
-/** The letter of an operand by its sort, one convention for every rule: a
- * safe integer is `a` as the first operand and `b` as the second, any
- * number is `x`. */
-function operandLetter(d: Domain, position: "left" | "right"): string {
-  return d === "number" ? "x" : position === "left" ? "a" : "b";
+/** A rule's variable, as the export states it. */
+function variableOf(r: Rule, x: RuleVar): RuleVariable {
+  const v = r.variables.find((w) => w.var === x);
+  if (v === undefined) throw new Error(`the rules' document: rule ${r.name} states no variable ${x}`);
+  return v;
 }
 
-/** The right operand's slot: the operand's letter, `b` for a constant. */
-function rightSlot(r: Rule): string {
-  return "operand" in r.right ? operandLetter(r.right.operand, "right") : "b";
+/** The letter of a variable by its role and sort, one convention for every
+ * rule: an operand of `SafeInt` is `a` as the first operand and `b` as the
+ * second, an operand of `Num` is `x`, a constant `d` as a shift count and
+ * `c` otherwise, and the result the notation's. */
+function letter(v: RuleVariable, notation: Notation): string {
+  switch (v.role) {
+    case "result": return notation.result;
+    case "constant": return v.kind === "shiftCount" ? "d" : "c";
+    case "operand": return v.sort === "Num" ? "x" : v.var === "left" ? "a" : "b";
+  }
 }
 
-/** The names of a rule's variables: its operands' letters by sort, a
- * constant's symbol, and the notation's result. */
+/** The slot of a rule's right operand: its letter as an operand of its sort. */
+function slotOf(r: Rule): string {
+  const v = variableOf(r, "right");
+  return v.role === "constant" ? (v.sort === "Num" ? "x" : "b") : letter(v, MARKDOWN);
+}
+
+/** The names of a rule's variables. */
 function names(r: Rule, notation: Notation): { [v in RuleVar]: string } {
-  const c = constantOf(r);
-  return { left: operandLetter(r.left, "left"), right: c === undefined ? rightSlot(r) : c.symbol, result: notation.result };
+  return { left: letter(variableOf(r, "left"), notation), right: letter(variableOf(r, "right"), notation),
+    result: letter(variableOf(r, "result"), notation) };
 }
 
-/** The sorts of a rule's operands: `Num` for any number, `SafeInt` for a
- * safe integer, a constant being a safe integer; operands of one sort
- * grouped, in the order left, right. */
-function sorts(r: Rule,
-    sort: (s: "Num" | "SafeInt") => string, of: string, sep: string): string {
-  const c = constantOf(r);
-  const right: Domain = c === undefined && "operand" in r.right ? r.right.operand : "safeInteger";
-  const vars: [string, "Num" | "SafeInt"][] = [
-    [operandLetter(r.left, "left"), r.left === "number" ? "Num" : "SafeInt"],
-    [c === undefined ? rightSlot(r) : c.symbol, right === "number" ? "Num" : "SafeInt"],
-  ];
-  const groups: { names: string[]; sort: "Num" | "SafeInt" }[] = [];
-  for (const [name, s] of vars) {
+/** The sorts of a rule's operands and constant, as the export states them;
+ * those of one sort grouped, in the order left, right. */
+function sorts(r: Rule, sort: (s: Sort) => string, of: string, sep: string): string {
+  const groups: { names: string[]; sort: Sort }[] = [];
+  for (const v of r.variables.filter((w) => w.role !== "result")) {
     const last = groups[groups.length - 1];
-    if (last !== undefined && last.sort === s) last.names.push(name);
-    else groups.push({ names: [name], sort: s });
+    const name = letter(v, LATEX);
+    if (last !== undefined && last.sort === v.sort) last.names.push(name);
+    else groups.push({ names: [name], sort: v.sort });
   }
   return groups.map((g) => `${g.names.join(",")}${of}${sort(g.sort)}`).join(sep);
+}
+
+/** The facts `int(v)` of a rule's operands and result of `SafeInt`. */
+function ints(r: Rule, role: "operand" | "result", name: (v: RuleVariable) => string, int: (n: string) => string): string[] {
+  return r.variables.filter((v) => v.role === role && v.sort === "SafeInt").map((v) => int(name(v)));
 }
 
 /** The rule's triple in the paper's notation, `{P} y = x op c {Q}`. */
@@ -337,10 +375,10 @@ export function paperRows(doc: RulesDocument): string {
 
 /** A constant's side condition and normalisation, as premises. */
 function constantPremises(c: Constant, notation: Notation): string[] {
-  const bounds = [c.lower === null ? "" : `${literal(c.lower, notation)}${notation.le}`, c.symbol,
+  const bounds = [c.lower === null ? "" : `${literal(c.lower, notation)}${notation.le}`, constantLetter(c),
     c.upper === null ? "" : `${notation.lt}${literal(c.upper + 1, notation)}`].join("");
   const side = c.lower === null && c.upper === null ? [] : [bounds];
-  return c.normalisation === "shiftCount" ? [...side, `${boundName(c, notation === TEXT ? "′" : "'")}${notation.eq}${c.symbol}${notation === TEXT ? " mod " : "\\bmod "}32`] : side;
+  return c.normalisation === "shiftCount" ? [...side, `${boundName(c, notation === TEXT ? "′" : "'")}${notation.eq}${constantLetter(c)}${notation === TEXT ? " mod " : "\\bmod "}32`] : side;
 }
 
 /** A rule as an inference in the notation of ARITHMETIC.md:
@@ -349,22 +387,22 @@ function markdownRule(r: Rule): string {
   const c = constantOf(r);
   const k = c === undefined ? "" : MARKDOWN.bound(c);
   const n = names(r, MARKDOWN);
-  const slot = rightSlot(r);
+  const slot = slotOf(r);
   const above = [
-    ...(r.left === "safeInteger" ? [`\\mathrm{int}(${n.left})`] : []),
-    ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`\\mathrm{int}(${slot})`] : [])
-      : [`K\\vdash ${slot}=${r.right.constant.symbol}`, ...constantPremises(r.right.constant, MARKDOWN)]),
+    ...ints(r, "operand", (v) => (v.var === "right" ? slot : letter(v, MARKDOWN)), (x) => `\\mathrm{int}(${x})`),
+    ...(r.constant === null ? []
+      : [`K\\vdash ${slot}=${n.right}`, ...constantPremises(r.constant, MARKDOWN)]),
     ...conjunction(r.premises, n, k, MARKDOWN).map((p) => `K\\vdash ${p}`),
   ];
-  const below = [...(r.result === "safeInteger" ? [`\\mathrm{int}(${n.result})`] : []), ...conjunction(r.conclusion, n, k, MARKDOWN)];
+  const below = [...ints(r, "result", (v) => letter(v, MARKDOWN), (x) => `\\mathrm{int}(${x})`), ...conjunction(r.conclusion, n, k, MARKDOWN)];
   const sorted = sorts(r, (s) => `\\mathit{${s}}`, ":", ",\\ ");
   return `\\frac{${above.join("\\quad ")}}\n     {K\\vdash ${MARKDOWN.apply(r.op, n.left, slot)}\\dashv ${below.join(",\\ ")}}\n     \\ \\textsf{${r.name}}\\quad ${sorted}`;
 }
 
 
-/** ARITHMETIC.md's rules: each a comment with the rule's JSON, then its `math` block. */
+/** ARITHMETIC.md's rules: each a comment naming the rule's declarations, then its `math` block. */
 export function markdownRules(doc: RulesDocument): string {
-  return doc.rules.map((r) => `<!-- ${JSON.stringify(r)} -->\n\n\`\`\`math\n${markdownRule(r)}\n\`\`\`\n`).join("\n");
+  return doc.rules.map((r) => `<!-- ${r.declaration}, proved by ${r.proof} -->\n\n\`\`\`math\n${markdownRule(r)}\n\`\`\`\n`).join("\n");
 }
 
 /** A rule in the record notation dev/record-render.mts draws: premises,
@@ -375,11 +413,11 @@ function textRule(r: Rule): string[] {
   const n = names(r, TEXT);
   const above = [
     sorts(r, (s) => s, " : ", ", "),
-    ...(r.left === "safeInteger" ? [`int(${n.left})`] : []),
-    ...("operand" in r.right ? (r.right.operand === "safeInteger" ? [`int(${n.right})`] : []) : constantPremises(r.right.constant, TEXT)),
+    ...ints(r, "operand", (v) => letter(v, TEXT), (x) => `int(${x})`),
+    ...(r.constant === null ? [] : constantPremises(r.constant, TEXT)),
     ...conjunction(r.premises, n, k, TEXT),
   ];
-  const below = [...(r.result === "safeInteger" ? [`int(${n.result})`] : []), ...conjunction(r.conclusion, n, k, TEXT)];
+  const below = [...ints(r, "result", (v) => letter(v, TEXT), (x) => `int(${x})`), ...conjunction(r.conclusion, n, k, TEXT)];
   return [above.length === 0 ? "true" : above.join("   "), `──────── (${r.name})`, `${TEXT.apply(r.op, n.left, n.right)} ⊣ ${below.join(", ")}`];
 }
 
