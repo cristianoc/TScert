@@ -59,12 +59,16 @@ refuses an unknown one.
 
 One renderer sets a rule in three notations, from the same facts:
 
-- the paper's rows: `\textsc{Name} & \hoare{P}{y=x op c}{Q}`, the triples
-  of one rule side by side;
+- the paper's rows, one per triple: the rule's name on its first triple,
+  the operands' sorts, $`x:\mathit{Num}`$ for an operand of any number and
+  $`x:\mathit{SafeInt}`$ for a safe integer or a constant, then
+  `\hoare{P}{y=x op c}{Q}`;
 - ARITHMETIC.md's inference rules, `int(a)`, `K ⊢ b = d` and the premises
-  over `K ⊢ r ← a op b ⊣ int(r), …`;
+  over `K ⊢ r ← a op b ⊣ int(r), …`, the rule's name followed by the
+  operands' sorts;
 - a page of the rules, drawn as `dev/record-render.mts` draws the rules of
-  a commit record, with each rule's declarations.
+  a commit record, the sorts first among the premises, with each rule's
+  declarations.
 
 A fact `Σ aᵢ·vᵢ ≤ b` is set with its positive terms on the left and its
 negative terms and bound on the right, `-b ≤ N` where it has no positive

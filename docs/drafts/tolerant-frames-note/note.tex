@@ -94,7 +94,12 @@ The language below makes that the primitive.
 
 
 \paragraph{Variables and heap objects.} Let $\mathit{Var}$ be the set of variables, ranged over by $x,y$, and
-$\mathit{Val}$ the set of values, ranged over by $v$. An environment
+$\mathit{Val}$ the set of values, ranged over by $v$. Among the values,
+$\mathit{Num}$ is the set of JavaScript numbers, the doubles with NaN,
+the infinities and $-0$, and $\mathit{SafeInt}\subset\mathit{Num}$ the
+\emph{safe integers}, the integers $n$ with $|n|\le M$, where
+$M=2^{53}-1$; the annotation \code{safeInteger(x)} states that $x$ holds
+a $\mathit{SafeInt}$. An environment
 $\rho:\mathit{Var}\rightharpoonup\mathit{Val}$ maps variables to values.
 A variable holds a scalar or an object reference. A binding introduces a
 fresh variable; existing variables retain their values. Object fields and
@@ -798,7 +803,7 @@ grammars.
 
 \paragraph{Terms.} A \emph{term} denotes an integer at a state, or is
 undefined there.
-A literal $n$, a safe integer, denotes itself. A variable $x$ and a path $\pi$ denote
+A literal $n$, a $\mathit{SafeInt}$, denotes itself. A variable $x$ and a path $\pi$ denote
 the number they hold or read. $\len\pi$ is the length of what $\pi$
 reads, JavaScript's \code{length} of it: it is defined where $\pi$ reads
 an array, a typed array or a string, and denotes the length of the
@@ -810,8 +815,7 @@ term $\len{z[e].\vec f}$ is the length of what $z[e].\vec f$ reads,
 and $\len{z[e]}$ the length of the element at $e$, each by the same
 cases. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
-value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
-$M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
+value is a $\mathit{SafeInt}$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
 the term $o.n$ denotes 1, $\len a$ denotes 3, and $\len{o}$ is undefined.
 
 \paragraph{Atoms.} An atom is a fact of a first-order language over the
@@ -960,7 +964,8 @@ Law (a) follows from reflexivity; (b), (c) and (d) from the definitions;
 the same spine in both heaps.
 
 \begin{proposition}[Guards and quantified facts]\label{prop:every}
-For terms $t,t',k$ and a body $\varphi$ whose element terms read the path $p$:
+For terms $t,t',k$, a body $\varphi$ whose element terms read the path
+$p$, a path $\pi$, values $v,w$ and an assertion $F$:
 \[
 \begin{array}{ll}
 \textsc{(Guard)} & (\pi\doteq v\vee F)\wedge\pi\doteq w\ \vdash\ F\qquad v\ne w\\[2pt]
@@ -1149,7 +1154,8 @@ same new cell
 
 \begin{proposition}[Axioms of the atoms]\label{prop:axioms}
 For variables $x,y,z,w$, with $x$, $y$ and $\pi$ array paths and $w$ a
-typed-array path where their length is displayed, any effect $\Phi$, and $a$ an
+typed-array path where their length is displayed, a term $n$, any effect
+$\Phi$, and $a$ an
 atom that reads, besides variables, only what is displayed:
 \[
 \begin{array}{ll}
@@ -1216,7 +1222,8 @@ A command \emph{completes normally} when it reaches its end, and
 \emph{exceptionally} by a throw that it does not handle. A \code{break}
 and a \code{return} do neither: they leave the enclosing loop and the
 enclosing function, and what must hold at them is stated by the rule of
-that loop and of that function:
+that loop and of that function. For assertions $J,P,Q,Q^{e},R$, commands
+$c,d$, an atom $a$ and variables $x,y$:
 \[
 \begin{array}{ll}
 \textsc{Break} & \hoare{J}{\code{break}}{\kw{false}}\qquad J\text{ the postcondition of the enclosing loop}\\[3pt]
@@ -1257,7 +1264,9 @@ For example, \code{x.push(v)} has postcondition $\len x=\old(\len x)+1$.
 The variable that a step binds is fresh (Section~2). So an assertion $R$
 over the variables in scope before $c$ is unaffected by the binding.
 
-\paragraph{Rules.}
+\paragraph{Rules.} For assertions $P,Q,Q^{e},R,R^{e},B,I$, commands
+$c,c_1,c_2$, effects $\Phi,\Phi^{e},\Psi,\Psi'$, variables $x,y$, atoms
+$\vec x$ and parameters $\vec p$:
 \begin{mathpar}
 \inferrule*[left=Entry]{\hoarex PcQ{Q^{e}} \\ c:\Phi\mid\Phi^{e}}{\hoarex{P\wedge B}{c}{Q\wedge\old(B)\wedge\kw{tr}_{\Phi}}{Q^{e}\wedge\old(B)\wedge\kw{tr}_{\Phi^{e}}}}
 \and
@@ -1354,9 +1363,9 @@ $\dense(r,n)$ and $r[j]\doteq r_j$ for each $j<n$ hold. Example: for
 for $n=2$, with $a$ for $r_0$ and $b$ for $r_1$.
 Lean: \lean{call\_exits\_exact}, for both exits of a signature, rest arguments included; \lean{call\_rule}, for a checked graph and the normal exit.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
-array $y$ that exists before the step. An array literal
-\code{x = [a1, ..., ak]} and an object literal \code{y = \{f: a, ...\}}
-allocate in the same way:
+array $y$ that exists before the step. For atoms $a,a_1,\ldots,a_k$, an
+array literal \code{x = [a1, ..., ak]} and an object literal
+\code{y = \{f: a, ...\}} allocate in the same way:
 \[
 \begin{array}{l}
 \hoare{\kw{true}}{\code{x = [a1, ..., ak]}}{\fresh(x)\wedge\len x=k\wedge\dense(x,k)\wedge\textstyle\bigwedge_{j<k}x[j]\doteq a_{j+1}\wedge\bigwedge_y\apart(x,y)}\\[3pt]
@@ -1486,7 +1495,8 @@ builds it, and belongs to its postcondition.
 
 \paragraph{Reads, writes and tests.} With $x$ a variable that holds an
 object or an array, an array in \textsc{Elem-Read} and
-\textsc{Arr-Length}, $a$ an atom and $i$ an integer:
+\textsc{Arr-Length}, $a$ an atom, $i$ an atom that holds a
+$\mathit{SafeInt}$ and $P$ an assertion:
 \[
 \begin{array}{lll}
 \textsc{Field-Read} & \hoare{\kw{true}}{\code{y = x.f}}{x.f\doteq y} & :\emptyset\\[3pt]
@@ -1580,7 +1590,8 @@ $n\le\len y$. The equality $\len y=n$ can become false when $y=x$.
 \textsc{Entry} combines these facts with the postcondition.
 
 The steps that change a length have exact postconditions. With $N=2^{32}-1$ the
-maximal array length, $x$ an array and $i$ an integer:
+maximal array length, $x$ an array, $v$ a value and $i$ an atom that
+holds a $\mathit{SafeInt}$:
 \[
 \begin{array}{ll}
 \textsc{Write-In} & \hoare{0\le i<\len x\wedge\kw{defined}(\len\pi)}{\code{x[i] = v}}{\len\pi=\old(\len\pi)}\qquad\text{for every array path }\pi\\[3pt]
@@ -1615,7 +1626,8 @@ keep or extend a fact across a write that can reach it, because of the
 value written. Let $y$ and $x$ be variables, $x$ an array in
 \textsc{Push-Every}, $b$ a typed array of format $t$, $V$ a set of values, and
 $\varphi(i,v)$ a body over the index $i$, the one element term $v$ and
-terms the step keeps. The bound $n$ and the index $k$ are variables:
+terms the step keeps, and $b$ a typed array. The bound $n$ and the index
+$k$ are variables that hold $\mathit{SafeInt}$s:
 \[
 \begin{array}{ll}
 \textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
@@ -1656,19 +1668,20 @@ field of each element, such as $p[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
-operands and the empty effect. Let $x,x'$ be safe integers, but in
-\textsc{Mask}, where $x$ is any number in the first triple and $x'$ in
-the second; $c$ a safe-integer constant, and $d$ an integer constant
-with $d'=d\bmod 32$, the count a shift reads. The operands of
-$\mathbin{\&}$ and $\mathbin{|}$ may be given in either order:
+operands and the empty effect. Each row states its operands' sorts; $c$
+and $d$ are constants, and $d'=d\bmod 32$ is the count a shift reads.
+The operands of $\mathbin{\&}$ and $\mathbin{|}$ may be given in either
+order:
 \[
-\begin{array}{ll}
-\textsc{Add}, \textsc{Sub}, \textsc{Scale} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\qquad\hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
+\begin{array}{lll}
+\textsc{Add}, \textsc{Sub} & x,x':\mathit{SafeInt} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\\[3pt]
+\textsc{Scale} & x,c:\mathit{SafeInt} & \hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
 % generated: paper-arithmetic-rules
-\textsc{Shr} & \hoare{-2^{31}\le x<2^{31}}{y=x\gg d}{2^{d'}y\le x\le 2^{d'}y+2^{d'}-1}\\[3pt]
-\textsc{Mask} & \hoare{0\le x'<2^{31}}{y=x\mathbin{\&}x'}{0\le y\le x'}\qquad\hoare{0\le x}{y=x\mathbin{\&}x'}{y\le x}\\[3pt]
-\textsc{Shl} & \hoare{-2^{31}\le 2^{d'}x<2^{31}}{y=x\ll d}{y=2^{d'}x}\\[3pt]
-\textsc{Or} & \hoare{0\le x<2^{31}\wedge 0\le x'<2^{31}}{y=x\mathbin{|}x'}{x\le y\wedge x'\le y\wedge y\le x+x'}
+\textsc{Shr} & x,d:\mathit{SafeInt} & \hoare{-2^{31}\le x<2^{31}}{y=x\gg d}{2^{d'}y\le x\le 2^{d'}y+2^{d'}-1}\\[3pt]
+\textsc{Mask} & x:\mathit{Num},\ x':\mathit{SafeInt} & \hoare{0\le x'<2^{31}}{y=x\mathbin{\&}x'}{0\le y\le x'}\\[3pt]
+ & x:\mathit{SafeInt},\ x':\mathit{Num} & \hoare{0\le x}{y=x\mathbin{\&}x'}{y\le x}\\[3pt]
+\textsc{Shl} & x,d:\mathit{SafeInt} & \hoare{-2^{31}\le 2^{d'}x<2^{31}}{y=x\ll d}{y=2^{d'}x}\\[3pt]
+\textsc{Or} & x,x':\mathit{SafeInt} & \hoare{0\le x<2^{31}\wedge 0\le x'<2^{31}}{y=x\mathbin{|}x'}{x\le y\wedge x'\le y\wedge y\le x+x'}
 % end generated: paper-arithmetic-rules
 \end{array}
 \]
@@ -1689,7 +1702,7 @@ of the read \code{values[y]} at $\len{\mathit{values}}=256\,b$.
 
 A string is a scalar: it has no location, and the length $\len s$ of a
 string in a variable $s$ is fixed, with $0\le\len s\le M$. For strings $s,s'$
-and an integer $i$:
+and an atom $i$ that holds a $\mathit{SafeInt}$:
 \[
 \begin{array}{ll}
 \textsc{Str-Length} & \hoare{\kw{true}}{\code{y = s.length}}{y=\len s}\\[3pt]
@@ -1706,7 +1719,9 @@ has a \emph{contract}: a triple with its effects, assumed of the host,
 which \textsc{Call} instantiates like the specification of any function.
 A contract may give two triples for one function, a general one and one
 with a stronger precondition and postcondition; \textsc{Conj} combines
-them. For integers $i,a,b$ and strings $s,u$:
+them. For atoms $i,a,b$ that hold $\mathit{SafeInt}$s, an atom $n$ that
+holds a $\mathit{Num}$, strings $s,u$, an array $\mathit{xs}$ and a value
+$v$:
 \[
 \begin{array}{ll}
 \code{r = s.charCodeAt(i)} & \hoare{0\le i<\len s}{\cdot}{0\le r\le 65535}\\[2pt]
@@ -1730,7 +1745,8 @@ the test gives $0\le j$
 \status{assumed, as contracts of the host. In the Lean model of UTF-16 strings, \lean{unit\_bound} and \lean{code\_unit\_safe} prove the range of a code unit, \lean{slice\_length} the length of a slice, and \lean{search\_bounds} the bounds of a search in a string that fails or finds a match}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
-format $t$, and let the index $i$ and the written value $v$ be numbers.
+format $t$, and let the index $i$ and the written value $v$ be atoms that
+hold $\mathit{Num}$s.
 The precondition of \textsc{View-Read} and of \textsc{View-Write} is
 the linear atom $0\le i<\len b$; as a linear atom it holds only of
 an integer $i$ (Section~4). A write has two rules: \textsc{View-Write}
