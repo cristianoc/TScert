@@ -197,15 +197,15 @@ def maskRange : ArithRule where
   result := .safeInteger
   conclusion := [fact [(.result, -1)] 0, fact [(.result, 1), (.right, -1)] 0]
 
-/-- **Mask**, its bound: `0 ≤ x` gives `y ≤ x`, for any number `x'`. -/
+/-- **Mask**, its bound: for any number `x`, `0 ≤ x'` gives `y ≤ x'`. -/
 def maskBound : ArithRule where
   name := "Mask"
   op := .bitAnd
-  left := .safeInteger
-  right := .operand .number
-  premises := [fact [(.left, -1)] 0]
+  left := .number
+  right := .operand .safeInteger
+  premises := [fact [(.right, -1)] 0]
   result := .safeInteger
-  conclusion := [fact [(.result, 1), (.left, -1)] 0]
+  conclusion := [fact [(.result, 1), (.right, -1)] 0]
 
 /-- **Shl**: `-2^31 ≤ 2^{d'}·x < 2^31` gives `y = 2^{d'}·x`. -/
 def shl : ArithRule where
@@ -293,6 +293,9 @@ theorem intAnd_int32 {i j : Int} (hi : -2 ^ 31 ≤ i ∧ i < 2 ^ 31) (hj : -2 ^ 
       have := Nat.or_lt_two_pow (n := 31) (x := a) (y := b) (by omega) (by omega)
       simp only [intAnd]; omega
 
+theorem intAnd_comm (a b : Int) : intAnd a b = intAnd b a := by
+  cases a <;> cases b <;> simp [intAnd, Nat.and_comm, Nat.or_comm]
+
 /-- The disjunction of two naturals is at most their sum. -/
 theorem or_le_add (a b : Nat) : a ||| b ≤ a + b := by
   induction a using Nat.div2Induction generalizing b with
@@ -366,18 +369,19 @@ theorem maskRange_sound : maskRange.Sound := by
       simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, resultAt, List.map_cons, List.map_nil] <;> omega
 
 theorem maskBound_sound : maskBound.Sound := by
-  intro a b v ha _ hp
-  simp only [maskBound, Domain.Admits, Right.bound] at ha hp ⊢
+  intro a b v _ hb hp
+  simp only [maskBound, Domain.Admits, Right.Admits, Right.bound] at hb hp ⊢
   have h0 := hp _ (List.mem_cons_self ..)
   simp only [fact, RuleFact.Holds, sumTerms, Coef.eval, List.map_cons, List.map_nil] at h0
   have hr := intAnd_int32 (toInt32_range a) (toInt32_range b)
-  have hle : intAnd (toInt32 a) (toInt32 b) ≤ v .left := by
-    rcases Int.lt_or_le (v .left) (2 ^ 31) with hs | hs
-    · rw [toInt32_small ha (by omega) hs]
-      obtain ⟨n, hn⟩ := Int.eq_ofNat_of_zero_le (show 0 ≤ v .left by omega)
+  have hle : intAnd (toInt32 a) (toInt32 b) ≤ v .right := by
+    rw [intAnd_comm]
+    rcases Int.lt_or_le (v .right) (2 ^ 31) with hs | hs
+    · rw [toInt32_small hb (by omega) hs]
+      obtain ⟨n, hn⟩ := Int.eq_ofNat_of_zero_le (show 0 ≤ v .right by omega)
       rw [hn]
       exact intAnd_le_left n _
-    · omega
+    · have := intAnd_int32 (toInt32_range b) (toInt32_range a); omega
   refine ⟨intAnd (toInt32 a) (toInt32 b), ?_, ?_⟩
   · simp only [arithBits]
     exact safe_int32 hr.1 hr.2
@@ -712,9 +716,6 @@ theorem unpacked_add_comm (spec : Format) (x y : UnpackedFloat) :
 theorem unpacked_mul_comm (spec : Format) (x y : UnpackedFloat) :
     UnpackedFloat.mul spec x y = UnpackedFloat.mul spec y x := by
   cases x <;> cases y <;> simp only [UnpackedFloat.mul, sign_mul_comm, Nat.mul_comm, Int.add_comm]
-
-theorem intAnd_comm (a b : Int) : intAnd a b = intAnd b a := by
-  cases a <;> cases b <;> simp [intAnd, Nat.and_comm, Nat.or_comm]
 
 theorem intOr_comm (a b : Int) : intOr a b = intOr b a := by
   cases a <;> cases b <;> simp [intOr, Nat.and_comm, Nat.or_comm]
