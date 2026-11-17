@@ -9,8 +9,8 @@ share its structure. It proposes no design. Each claim is labelled:
 - **cited**, with the document and the scope of what it states;
 - **conjectured**.
 
-Pretext is the `tscert-bounds` branch at `6837e821`; its file names are
-under `src/`. TScert is `single-pass` at `ac7ec4f9`. "Paper I" is
+Pretext is the fork's `tscert-bounds` branch at `6837e821`; "upstream" is
+chenglou/pretext at `0d102a5`, the fork's base; file names are under `src/`. TScert is `single-pass` at `ac7ec4f9`. "Paper I" is
 [Tolerant frames](tolerant-frames-note/note.tex), "Paper II" the note above.
 The check command is
 `TSCERT_STEP_LIMIT=300 node dev/check-functions.mts <pretext checkout> <file> <functions>`,
@@ -53,25 +53,109 @@ it, and passes only to its own helpers.
 
 ### (b) The handle
 
-The prepared handle the user creates with `prepare()` and holds.
+The prepared handle the user creates with `prepare()`,
+`prepareWithSegments()` or `prepareRichInline()` and passes back.
 
-- `PreparedText` is `PreparedLineData` (`layout.ts:43`), and
-  `getInternalPrepared` returns its argument (`layout.ts:146–148`; observed).
-  Upstream declares `PreparedText` as an opaque branded type and
-  `getInternalPrepared` as a cast (`git show origin/main:src/layout.ts`,
-  lines 40–46 and 154–156; observed); the branch's type is the record itself.
-- The user's `onLine`, passed to `walkLineRanges` (`layout.ts:237`), may
-  capture the handle the user passed beside it, so it can reach the handle's
-  fields and arrays (conjectured of any callback; no pretext code does it).
-  `walkPreparedLinesRaw` passes the same handle to the stepper after the
-  visit (line 316, reached again after line 319; observed).
-- The only protection is the comment `// contract on callers:` above
-  `walkLineRanges` (`layout.ts:234–236`) and `walkRichInlineLineRanges`
-  (`rich-inline.ts:1349–1351`), restated in §3.
-- The visitor can break a relation of the handle's lengths within its stated
-  effect: `invalid-bounds-pattern-visitor-handle` pushes onto `widths` and
-  `last(h)` reads past `flags`, which Node runs to `undefined` (cited: the
-  case's header and `pipeline/cases.mts:2886`; refused, observed above).
+**Upstream's handles are opaque.** At `0d102a5` (chenglou/pretext, the
+fork's base; `git show 0d102a5:src/…` in the checkout; observed):
+
+- `layout.ts:40–46`: `declare const preparedTextBrand: unique symbol` and
+  `export type PreparedText = { readonly [preparedTextBrand]: true }`, under
+  the comment "Keep the compact height-prediction handle opaque so the public
+  API does not accidentally calcify around the current parallel-array
+  representation".
+- `layout.ts:53–57`: `PreparedTextWithSegments = PreparedText & { readonly segments: readonly string[]; readonly kinds: readonly SegmentBreakKind[]; readonly widths: ArrayLike<number> }`.
+- `layout.ts:154–156`: `getInternalPrepared` returns `prepared as InternalPreparedText`.
+- `rich-inline.ts:53` and `81–83`: `declare const preparedRichInlineBrand: unique symbol`
+  and `export type PreparedRichInline = { readonly [preparedRichInlineBrand]: true }`;
+  `InternalPreparedRichInline = PreparedRichInline & { data: …; onlyItem: …; … }`
+  (line 136); `getInternalPreparedRichInline` returns
+  `prepared as InternalPreparedRichInline` (lines 182–184).
+- `README.md:32` and `139`: `prepare()` "return[s] an opaque handle", "an
+  opaque value to pass to `layout()`".
+
+So upstream exposes no writable representation of any handle: the two
+prepared handles are branded, `PreparedTextWithSegments`'s three fields are
+read-only views. (The coordinator's brief states that upstream's
+`PreparedRichInline` is `InternalPreparedRichInline` with plain fields; at
+`0d102a5` it is branded, and the plain form at `rich-inline.ts:79` and `132`
+is the fork's: observed.)
+
+**The fork's rewrite.** Commit `2b11a4c` ("Rewrites under which TScert
+verifies all of src/") replaces both brands with the records:
+`export type PreparedText = PreparedLineData`,
+`export type PreparedRichInline = InternalPreparedRichInline`, each accessor
+returning its argument, and drops `readonly widths: ArrayLike<number>` from
+`PreparedTextWithSegments` (observed: `git show 2b11a4c -- src/layout.ts`).
+Its reasons, from the rewrite list of cristianoc/pretext#1, "Handle types",
+which TScert issue #94 points to (cited, read with `gh pr view 1 -R cristianoc/pretext`):
+
+- "A brand is a field no handle has; the downcast back to the record relies
+  on every handle coming from preparation, which TScert cannot check. The
+  structural type states the record, so a handle is checked like any
+  argument."
+- Gap workaround: with `readonly widths: ArrayLike<number>`,
+  `{ ...prepared, segments, kinds }` "is not derived at the return type".
+- The case it names, `blocker-pretext-opaque-handle-cast`, is a gap: a
+  branded handle cast with `as` to its internal record, refused with "no
+  claim of the handle meets the internal type's fields" (cited:
+  `pipeline/cases.mts:113`). Observed: `node pipeline/run-cases.mts
+  blocker-pretext-opaque-handle-cast sealed-handle`, 11 of 11 as expected,
+  that case a gap and `sealed-handle`, `sealed-handle-value-import` and
+  `sealed-handle-intersection-representation` verified.
+
+**What TScert reads of an opaque handle today.** A brand with no
+`@representation` is refused at the cast (above). A brand stating
+`@representation T` is a **sealed handle**: "`H` means `T`: its equation is
+the reference to `T`, and the members `H` declares, a brand no value holds,
+are no requirement", so a cast out holds of every value of `H` (cited:
+[a handle means its representation](../PROGRAM-TYPING.md#a-handle-means-its-representation),
+rule `handle-meaning`). Its invariant is assumed at each function taking
+it and established at each call and return (cited:
+[type invariants](../ARITHMETIC.md#type-invariants)); a caller outside the
+analysed sources is assumed to pass a value of `T` meeting it (cited:
+[trust surface](../DESIGN.md#trust-surface), line 539).
+
+**Form (b) with the opaque type restored.** Observed with a probe of
+upstream's shape, a sealed handle
+`/** @invariant this.flags.length === this.widths.length @representation Rep */ type Handle = { readonly [brand]: true }`,
+`Rep = { widths: number[]; flags: Uint8Array }`, an opener cast
+`h as Handle & Rep`, `last(h: Handle)` reading `flags[widths.length - 1]!`,
+and `walk(h: Handle, visit)` calling `visit(0)` (a number only) then
+`last(h)`, run by `node pipeline/verify-source.mts` (files placed in
+`pipeline/examples/` for the run and removed):
+
+- visitor stated `{ values: "any"; spines: "grow" }`: unverified, at
+  `last(h)`: "The callee requires view(h.flags) <= h.widths.length &&
+  h.widths.length <= view(h.flags), which the facts here do not establish";
+- visitor stated `{}`: verified (`open`, `last`, `walk`).
+
+So TScert refuses form (b) at an opaque handle as it does at the record:
+the handle means its representation, the visitor's stated effect covers
+every location of class value and lets every spine grow, and no assumption
+states that external code holding a value at an opaque or read-only type
+writes none of its locations. Under upstream's types, a user callback
+reaches a `PreparedText` or `PreparedRichInline` only at a branded type,
+and a `PreparedTextWithSegments` at read-only fields; that it then writes
+none of its locations is what the types say to TypeScript code, and is no
+statement of TScert's model or trust surface (observed: the rows at
+[trust surface](../DESIGN.md#trust-surface) lines 537–539, 570 and 573
+state preconditions, invariants at calls, plain data, and the preservation
+of function fields and prototypes; none states it).
+
+**The fork's form.** `PreparedText` is `PreparedLineData` (`layout.ts:43`),
+`PreparedRichInline` is `InternalPreparedRichInline` (`rich-inline.ts:79`),
+and the accessors return their arguments (`layout.ts:146–148`,
+`rich-inline.ts:178–180`; observed). There a user callback that captures
+the handle can write its fields and arrays at their declared types
+(conjectured of any callback; no pretext code does it), and
+`walkPreparedLinesRaw` passes the same handle to the stepper after the
+visit (line 316, reached again after line 319; observed). The visitor can
+break a relation of the handle's lengths within its stated effect:
+`invalid-bounds-pattern-visitor-handle` pushes onto `widths` and `last(h)`
+reads past `flags`, which Node runs to `undefined` (cited: the case's header
+and `pipeline/cases.mts:2886`; refused, observed above). The fork's only
+statement about it is the comment `// contract on callers:` (§3).
 
 ### Re-observation at `walkPreparedLinesRaw`
 
@@ -170,6 +254,15 @@ shows its writes removing the fresh cursor's facts.
 | `walkRichInlineLineRanges`, `rich-inline.ts:1352–1367` | `flow`'s fields read by `createOnlyItemLine` / `createLine` inside the lambda after each step, and `flow.data` passed to the walker | `prepareRichInline` | the lambda captures `flow`; the user's `onLine` may capture the handle (`getInternalPreparedRichInline` returns its argument, line 178–180) | verified |
 | `layoutWithLines`, `layout.ts:335–351` | the handle, read by its own lambda; `lines`, fresh, pushed by the lambda | the user; `lines` at 336 | the lambda reaches both by capture; its effect is `InternalLineVisitor`'s statement | verified |
 
+The column "Can the callee reach them?" is the fork's. Under upstream's
+types the user's `onLine` reaches each of these handles only at a branded
+type (`PreparedText`, `PreparedRichInline`) or through read-only fields
+(`PreparedTextWithSegments`), and pretext's own lambdas, which TScert
+checks, reach them at their internal records (observed: `0d102a5`'s
+declarations, §1 (b)). The user's callback then writes the handle only by
+going outside its exported types; which assumption would say it does not is
+an open question (§7).
+
 ### Calls whose stated effect exceeds what they write (1 site)
 
 `measureAnalysis` (`prepare.ts:357–695`) allocates
@@ -198,27 +291,56 @@ edge in its smaller program (cited: §P4).
 
 ## 3. What the API exposes
 
-**Entries** (observed, `package.json` `exports`): `.` (`dist/layout.js`,
-from `layout.ts`) and `./rich-inline` (from `rich-inline.ts`).
+**Entries** (observed, `package.json` `exports`, the same at `0d102a5` and
+`6837e821`): `.` (`dist/layout.js`, from `layout.ts`) and `./rich-inline`
+(from `rich-inline.ts`).
 
 **Exported functions taking a callback** (observed): `walkLineRanges`
-(`layout.ts:237`) and `walkRichInlineLineRanges` (`rich-inline.ts:1352`), each
-an `onLine` stated `Modifies<{ values: "any"; spines: "grow" }, void>`. No
-other exported function takes a function (observed: a search of `src/` for
+(`layout.ts:237`; upstream `242`) and `walkRichInlineLineRanges`
+(`rich-inline.ts:1352`; upstream `1241`). Upstream types each `onLine` as
+`(line: …) => void` (`layout.ts:245`, `rich-inline.ts:1244`); the fork
+states `Modifies<{ values: "any"; spines: "grow" }, void>`. No other
+exported function takes a function (observed: a search of `src/` for
 function-typed parameters finds these two and the internal
-`InternalLineVisitor`).
+`InternalLineVisitor`). The handle each takes beside the callback:
+`walkLineRanges` a `PreparedText`, `walkRichInlineLineRanges` a
+`PreparedRichInline`.
 
-**Handles a user holds** (observed, the declarations): `PreparedText`
-(`layout.ts:43`) and `PreparedTextWithSegments` (`layout.ts:50`, built by
-`{ ...prepared, segments, kinds }` at 143, sharing the arrays of `prepared`),
-and `PreparedRichInline` (`rich-inline.ts:79`, the internal type itself).
-Values the user passes back: cursors (`LayoutCursor`, `RichInlineCursor`) as
-`start`, and line ranges to `materializeLineRange` /
-`materializeRichInlineLineRange`. None of these types states `@invariant`,
-`@stable` or `@representation` (observed: `grep` of the four tags in
-`layout.ts`, `line-break.ts`, `rich-inline.ts`).
+**Handles a user holds, under upstream's types** (observed, `0d102a5`):
 
-**The markers** (observed, both identical but for the function):
+| Handle | Its exported type | Made by | Taken by |
+| --- | --- | --- | --- |
+| `PreparedText` | branded, `{ readonly [preparedTextBrand]: true }` (`layout.ts:44–46`) | `prepare` | `layout`, `walkLineRanges` (with `onLine`), `measureLineStats`, `measureNaturalWidth`, `layoutNextLineRange` |
+| `PreparedTextWithSegments` | `PreparedText & { readonly segments; readonly kinds; readonly widths: ArrayLike<number> }` (`layout.ts:53–57`) | `prepareWithSegments` | the above, and `materializeLineRange`, `layoutNextLine`, `layoutWithLines` |
+| `PreparedRichInline` | branded, `{ readonly [preparedRichInlineBrand]: true }` (`rich-inline.ts:81–83`) | `prepareRichInline` | `layoutNextRichInlineLineRange`, `materializeRichInlineLineRange`, `walkRichInlineLineRanges` (with `onLine`), `measureRichInlineStats` |
+
+**A writable alias of a handle.** No exported function of `0d102a5`
+returns a handle's array or record at a writable type: the results are
+`LayoutResult`, `LineStats`, `RichInlineStats`, `number`, and
+`LayoutLine`, `LayoutLineRange`, `LayoutLinesResult`, `RichInlineLine`,
+`RichInlineLineRange`, whose fields are numbers, strings, and cursors and
+fragments each function allocates (observed: the exported signatures,
+`git show 0d102a5:src/layout.ts`, `…:src/rich-inline.ts`; that the cursors
+and fragments are fresh, observed for `createLayoutLineRange`,
+`layout.ts:195–212` at `6837e821`, and `createOnlyItemLine`,
+`rich-inline.ts:1024–1035`; conjectured for `createLine`). The read-only
+`widths` of `PreparedTextWithSegments` is the walkers' own array: upstream's
+`prepareWithSegments` writes `prepared.kinds = kinds` and returns the
+prepared record itself (observed: `git show 2b11a4c -- src/layout.ts`, its
+removed lines). Pretext writes no handle's array after preparation
+(conjectured). The callback's arguments hold no handle (observed, the same
+functions). So under upstream's types the user's callback reaches a handle
+only by capturing the value the user holds, at its exported type.
+
+**Handles whose type exposes their representation** are, in the fork,
+both: `PreparedText = PreparedLineData` (`layout.ts:43`) and
+`PreparedRichInline = InternalPreparedRichInline` (`rich-inline.ts:79`,
+fields `data`, `onlyItem`, `wholeWidth`, … at 132–170), and
+`PreparedTextWithSegments` keeps `widths` writable through
+`PreparedLineData` (observed). Upstream exposes no handle's representation
+(above).
+
+**The markers** (observed, fork only, both identical but for the function):
 
 > contract on callers: onLine changes no typed array and shortens no array; it may change any value and grow any array. Assumed, not checked outside pretext.
 
@@ -226,18 +348,18 @@ It states the callback's closed footprint, `{ values: any, spines: grow }`.
 It assumes the trust row "A caller outside the analyzed sources passes, for a
 parameter of an exported function whose type states a callback's effect, a
 function within that effect" (cited: [DESIGN.md](../DESIGN.md#trust-surface),
-line 538).
+line 538). A conforming function "respects its contract across every future
+heap, callback effects included" (cited: the same, line 570); its contract
+is that footprint, which covers every location of the handle.
 
 **What a user callback reaches** (conjectured, from the source): its
-arguments, which pretext allocates for each line (`createLayoutLineRange`,
-`layout.ts:195–212`; `createLine` and `createOnlyItemLine`,
-`rich-inline.ts:1014–1205`) and which hold numbers and fresh objects only;
-whatever it captures, the handle included; and pretext's module state
+arguments, fresh per line and holding no handle (above); whatever it
+captures, a handle the user holds included; and pretext's module state
 through the exported functions it may call, among them `clearCache` and
 `setLocale` (`layout.ts:355–367`) and the `textSources` `WeakMap`
 (`rich-inline.ts:1259`). The marker allows it to change any value location
-of all of these and grow any array. It does not say that the callback leaves
-the handle unchanged; nothing in the source states that.
+of all of these and grow any array, a handle's included, whether the
+handle's type is the record (fork) or branded (upstream).
 
 ## 4. Other patterns of Paper II with shared structure
 
@@ -353,7 +475,11 @@ ownership, freshness or confinement; **(iv)** a contract on callers.
   call and return; kept "between boundaries" by frame conditions. Falls
   short: a call with `values: any` keeps no invariant over fields of a
   non-`@stable` record (P18; `invalid-bounds-pattern-visitor-handle`), and
-  pretext's handles state none.
+  the fork's handles state none. A sealed handle "means" its representation
+  (rule `handle-meaning`), so its brand bounds no write: the probe of §1 (b)
+  is refused at the opaque type as at the record. A brand with no
+  `@representation` is refused at the cast out
+  (`blocker-pretext-opaque-handle-cast`, a gap; observed, §1 (b)).
 - **Footprints** ([FOOTPRINTS.md](../FOOTPRINTS.md); cited) is the mechanism
   [DESIGN.md](../DESIGN.md#general-mechanisms) names for "a fact a construct
   relies on while other code runs": the fact, its stable operations as closed
@@ -364,9 +490,11 @@ ownership, freshness or confinement; **(iv)** a contract on callers.
   Gives: exported preconditions and type invariants, callbacks within their
   stated effect, sealed handles' representations, all assumed of callers
   outside the analysed sources; "External code preserves every
-  effect-bearing contract of the program's values it holds". Falls short: no
-  row states that a callback leaves a handle's invariant or a handle's
-  fields unchanged.
+  effect-bearing contract of the program's values it holds", which names
+  function fields, members and prototypes. Falls short: no row states that
+  external code holding a program value at an opaque or read-only type
+  writes none of its locations, nor that a callback leaves a handle's
+  invariant or fields unchanged.
 - **Effect variables** (Paper I, Future work, "A callback that writes what
   it captured", and Limits, "Effects are closed"; cited): "A specification
   that gives each call the effect of its own callback needs an effect
@@ -402,6 +530,12 @@ From [CLAUDE.md](../../CLAUDE.md) (cited):
   effects need the definition's check before an application consumes them
   ([inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 
+From the owner (cited: the coordinator's brief for this revision): a handle
+meant to be encapsulated stays encapsulated, so the design does not solve a
+problem the fork's rewrite created. Upstream's handles are branded or
+read-only (§1 (b), §3); the fork's writable handle types come from
+`2b11a4c`.
+
 From Paper I (cited): its subtitle and abstract, "fact preservation
 without ownership": "TypeScript programs are not written against an
 ownership discipline, and TScert imposes none". Assertions "describe the
@@ -411,6 +545,10 @@ resource model".
 
 ## 7. Open questions
 
+Form (b) under upstream's types is a question of encapsulation: the user's
+callback holds the handle only at a branded or read-only type (§3). The
+questions are those it raises, beside those of form (a).
+
 1. What is the semantic notion of "a location a call can reach": the
    locations reachable through references from its callee value's
    captures, its receiver and arguments at the call, the module bindings its
@@ -419,36 +557,50 @@ resource model".
    locations so reachable, or allocated during it, and is that theorem in
    Lean?
 2. For a callback passed as a parameter, whose captures are unknown, what
-   bounds its reach: its type, a caller contract, or the caller's own
-   knowledge that a location was allocated after the callback value existed
-   and never published?
+   bounds its reach over a location the caller allocated: its type, or the
+   caller's knowledge that the location was allocated after the callback
+   value existed and never published?
 3. Which steps publish a location (a store into an older location, an
    argument, a capture, a return, a throw), and how is "never published"
    stated and checked along a graph, loops and handlers included?
 4. Is the bound on the callee's side (an effect over what its inputs reach)
    or on the caller's side (a frame rule for locations the callee cannot
    reach), and how does it compose with Seq-Eff, rebasing and Fresh-Eff?
-5. Forms (a) and (b) differ in whether the callback can reach the location:
-   does one mechanism serve both, (b) through a stated contract, or is (b) a
-   separate decision about what external code may do to a handle?
-6. Should a field-only effect (P6), the freshness separation at a write to
+5. What must TScert support for upstream's opaque handles: a
+   `unique symbol` brand, the identity cast out
+   (`prepared as InternalPreparedText`), the cast in at preparation, the
+   spread `{ ...prepared, segments, kinds }` at a type with a read-only
+   `ArrayLike<number>` view, and a brand with no `@representation`
+   (`blocker-pretext-opaque-handle-cast`)? Does a sealed handle, which means
+   its representation, carry encapsulation at all, or does encapsulation need
+   a reading in which the brand stands for locations external code does not
+   write?
+6. How is "external code honours an opaque or read-only type" stated: as a
+   trust row beside lines 537–539, 570 and 573 of the
+   [trust surface](../DESIGN.md#trust-surface), as a statement in Paper I's
+   model (a class of locations, a region, a part of the world, or a contract
+   on the locations a brand covers), or both, with the Lean and the note
+   stating one definition? Where is it checked of the program's own code
+   (pretext's lambdas reach the handles at their internal records), and
+   where only assumed of external code?
+7. How does that statement meet the callback's stated effect: does a
+   conforming function's footprint `{ values: any, spines: grow }` range over
+   the handle's locations, or only over locations external code may write?
+8. Should a field-only effect (P6), the freshness separation at a write to
    another object's field (§1, attribution 3; P3) and the guard through
-   `@stable` fields (P18) be instances of the same mechanism, or of the
-   existing support and respect with more disjointness evidence?
-7. How is the mechanism stated in Paper I's language (regions, effects,
+   `@stable` fields (P18) be instances of the mechanism of form (a), or of
+   the existing support and respect with more disjointness evidence?
+9. How is the mechanism stated in Paper I's language (regions, effects,
    supports), so that the Lean definition and the note's are one?
-8. What does `Modifies` gain, if anything: a region form for callbacks,
-   or none, the bound read from elsewhere?
-9. What trust row, if any, does form (b) add, and how does it relate to
-   "External code preserves every effect-bearing contract of the program's
-   values it holds"?
-10. Does the mechanism cover natives' callbacks (`map`, `forEachChild`) and
+10. What does `Modifies` gain, if anything: a region form for callbacks,
+    or none, the bound read from elsewhere?
+11. Does the mechanism cover natives' callbacks (`map`, `forEachChild`) and
     pretext's own lambdas, which capture both the handle and the user's
     callback (`walkLineRanges`, `walkRichInlineLineRanges`)?
-11. Does it subsume Paper I's effect variables
+12. Does it subsume Paper I's effect variables
     ($`\forall\varepsilon.\ \Phi\cup\varepsilon`$), or does each need the other?
-12. Where does acceptance read it: which premise of `mode8Accepted_sound`,
+13. Where does acceptance read it: which premise of `mode8Accepted_sound`,
     which certificate, and which controls (forged fragments, forced
     proposals) and Node-run negatives show its refusals?
-13. What does it cost in the pass's time per call site, against the
+14. What does it cost in the pass's time per call site, against the
     performance goal of no function over 1 s?
