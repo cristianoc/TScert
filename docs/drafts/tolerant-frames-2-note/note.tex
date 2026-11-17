@@ -77,9 +77,10 @@ commit \code{9268edb1}.
 
 Each blocked site belongs to one of 21 patterns, P1 to P21. A pattern
 is the smallest program that has the first obligation that fails at the
-site. The patterns P2 and P8, with 41 sites together, verify today. The
-19 entries below cover the other 174 sites, in decreasing number of
-sites.
+site. The patterns P1, P2 and P8, with 91 sites together, verify today,
+P1 once the type of the visitor states its effect. The 18 entries below
+cover the other 124 sites, in decreasing number of sites, and P22 the
+pattern that blocks P1's sites once that effect is stated.
 
 Each entry has four parts: the program, shortened from the verifier's
 test case for the pattern; the function the verifier refuses and the
@@ -91,57 +92,6 @@ what an extension of the verifier must provide.
 
 This paper needs revision once the verifier applies the rules of
 Paper~I.
-
-\section{P1: a visitor of unknown effect between reads (50 sites)}
-
-{\footnotesize
-\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
-1 & \code{type Visitor = (w: number) => void; type Prepared = \{ widths: number[]; flags: Uint8Array \};} \\
-2 & \code{function walk(xs: number[], visit: Visitor | undefined): number \{} \\
-3 & \code{~~let s = 0;} \\
-4 & \code{~~for (let i = 0; i < xs.length; i++) \{ s += xs[i]!; if (visit !== undefined) visit(s); \}} \\
-5 & \code{~~return s;} \\
-6 & \code{\}} \\
-7 & \code{/** @requires safeInteger(i) \&\& 0 <= i \&\& i < xs.length */} \\
-8 & \code{export function afterWalk(xs: number[], i: number): number \{} \\
-9 & \code{~~const w = walk(xs, undefined);} \\
-10 & \code{~~return w + xs[i]!;} \\
-11 & \code{\}} \\
-12 & \code{/** @requires prepared.flags.length === prepared.widths.length */} \\
-13 & \code{export function widthsWalk(prepared: Prepared, visit: Visitor): number \{} \\
-14 & \code{~~const \{ widths \} = prepared; const count = widths.length; let s = 0;} \\
-15 & \code{~~/** @invariant safeInteger(i) \&\& 0 <= i \&\& safeInteger(count) \&\& count <= widths.length */} \\
-16 & \code{~~for (let i = 0; i < count; i++) \{ visit(i); s += widths[i]!; \}} \\
-17 & \code{~~return s;} \\
-18 & \code{\}} \\
-\end{tabular}}
-
-\entry{What is refused} The verifier refuses \code{afterWalk} at the read
-\code{xs[i]!} of line 10. The obligation of the read is
-$0\le i<\len{\mathit{xs}}$, and the known facts
-after the call of line 9 do not entail it. The reason is the effect of
-\code{walk}. Its parameter \code{visit} has a type that states no
-\code{Modifies}, so a call of \code{visit} has the effect $\top$. The inferred effect of \code{walk}
-contains that call's effect, and every call of \code{walk} has the
-inferred effect, including the call that passes \code{undefined}. A
-step with the effect $\top$ keeps no fact about a length. The verifier refuses \code{widthsWalk} at
-\code{widths[i]!} of line 16 for the same reason: the call
-\code{visit(i)} removes $\mathit{count}\le\len{\mathit{widths}}$.
-
-\entry{The nearest form that verifies} There are two. In the first, the type of the visitor
-states its effect,
-\code{Modifies<\{ values: "any"; spines: "grow" \}, void>}; the rule
-\textsc{(Grow)} then keeps $i<\len{\mathit{xs}}$. In the second, the
-walker bounds its count by the length of a typed array; the rule
-\textsc{(View)} keeps that bound across any visitor.
-
-\entry{What an extension must provide} Two rules. First, a call of a function that takes a
-callback has the effect of the callback actually passed, and the empty
-effect when \code{undefined} is passed. Second, inside the walker, a
-bound on the effect of a visitor passed by code outside the analysed
-files. Neither paper has such a rule. Paper~I lists a callback that needs an
-effect variable among the extensions of its language
-(\nI{Future work}).
 
 \section{P3: a quantified fact across a write outside its array (19 sites)}
 
@@ -737,11 +687,12 @@ cannot reach \code{c}. A handle that the walker builds and passes on
 after the visit loses its invariant over its fields in the same way.
 The walkers of \code{line-break.ts} hold their index in a cursor
 object and pass their prepared handle on after \code{onLine}, so this
-pattern is the second blocker at the sites of P1 there, once the
-visitor's effect is stated.
+pattern blocks the sites of P1 there once the visitor's effect is
+stated.
 
-\entry{The nearest form that verifies} The index in a variable, as in
-P1's nearest form, and reads through locals taken before the visit.
+\entry{The nearest form that verifies} The index in a variable, whose
+bound the stated effect keeps, and reads through locals taken before
+the visit.
 
 \entry{What an extension must provide} A bound on a callback's effect by
 the locations it can reach: a location the caller allocated and never
@@ -756,7 +707,6 @@ rule.
 \toprule
 pattern & sites & what is missing & the rule\\
 \midrule
-P1 & 50 & the effect of the callback passed & in neither paper\\
 P3 & 19 & quantified facts across a field write & stated in Paper~I, not implemented\\
 P4 & 18 & separation at paths; an inexact sum & the first stated in Paper~I, not implemented; the second in neither paper\\
 P5 & 16 & contents of a generated table & in neither paper\\
@@ -779,14 +729,12 @@ P22 & 0 & a callback's effect bounded by what it reaches & in neither paper\\
 \bottomrule
 \end{tabular}}
 
-\medskip
-\noindent
-P1 has the most sites, 50, and is the first candidate for an
-extension.
-
-\paragraph{Patterns that verify today.} P2, growth by a known count
-across a callee (31 sites), and P8, the length after a write at the
-length (10 sites).
+\paragraph{Patterns that verify today.} P1, a visitor of unknown effect
+between reads (50 sites), once the type of the visitor states its
+effect, \code{Modifies<\{ values: "any"; spines: "grow" \}, void>}: the
+rule \textsc{(Grow)} keeps a length bound across the visit. P2, growth by
+a known count across a callee (31 sites), and P8, the length after a
+write at the length (10 sites).
 
 \paragraph{Sites in no pattern.} Three sites belong to no pattern: the
 reads \code{scanStarts[k]} and \code{sourceBreaks[after]} in
@@ -795,12 +743,13 @@ reads \code{scanStarts[k]} and \code{sourceBreaks[after]} in
 The catalogue also leaves out the 34 rewrite markers whose operand is
 not an index read.
 
-\paragraph{Facts about code outside the analysed files.} Three entries
+\paragraph{Facts about code outside the analysed files.} Two entries
 depend on a fact about code the verifier does not analyse. Such a fact
 can only be assumed, and the owner of the verifier decides whether to
-assume it. The three facts are the effect of the visitor that the
-application passes (P1), the lengths of the results of library
-functions (P14), and the contents of the tables that pretext's
-generator packs (P5).
+assume it. The two facts are the lengths of the results of library
+functions (P14) and the contents of the tables that pretext's generator
+packs (P5). P1's effect, stated on a callback that the application
+passes to a public function, is such a fact too: the application's
+callback is assumed to stay within it.
 
 \end{document}
