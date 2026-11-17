@@ -1,14 +1,15 @@
-import Lean.Data.Json
 import Lean.Elab.Term
 import Verification.Semantics.ArithmeticRules
 
-/-! # The arithmetic rules as JSON
+/-! # The arithmetic rules as Markdown
 
 `verifier --export rules arithmetic` writes the rules of
-`ArithmeticRules.rules` to standard output, each with every semantic field
-and the declarations that state and prove it (`ruleEntries`), for the
-generated sections (docs/GENERATED-SECTIONS.md). The reader is
-`dev/generated-sections.mts`. -/
+`ArithmeticRules.rules` to standard output as a Markdown document, each
+rule with every semantic field, its variables' roles and sorts, and the
+declarations that state and prove it (`ruleEntries`). The document reads
+on its own; the generated sections (docs/GENERATED-SECTIONS.md) are
+rendered from it by `dev/generated-sections.mts`, which reads exactly the
+form `rulesMarkdown` writes. -/
 namespace Verification.RuleExport
 open Lean Verification.ArithmeticRules
 
@@ -35,55 +36,81 @@ def ruleEntries : List RuleEntry :=
 
 #guard ruleEntries.map (·.rule) == rules
 
-def jInt (i : Int) : Json := toJson i
+/-- A monomial of a coefficient: `n`, `n·k` or `n·2^k`, a factor `1` or `-1`
+written as its sign. -/
+def monomial (n : Int) (unit : String) : String :=
+  if unit = "" then toString n
+  else if n = 1 then unit else if n = -1 then "-" ++ unit else s!"{n}·{unit}"
 
-def jOptInt : Option Int → Json
-  | some i => jInt i
-  | none => .null
+/-- A coefficient `lit + byConstant·k + byPower·2^k`, its nonzero parts in
+the order `2^k`, `k`, the literal, joined by `+` and `-`; `0` when none. -/
+def coefText (c : Coef) : String :=
+  let parts := [(c.byPower, "2^k"), (c.byConstant, "k"), (c.lit, "")].filter (·.1 ≠ 0)
+  match parts.map fun (n, u) => monomial n u with
+  | [] => "0"
+  | m :: ms => ms.foldl (fun acc t => if t.startsWith "-" then acc ++ " - " ++ (t.drop 1).toString else acc ++ " + " ++ t) m
 
-def domainJson : Domain → Json
-  | .safeInteger => "safeInteger"
-  | .number => "number"
-
-def normalisationJson : Normalisation → Json
-  | .identity => "identity"
-  | .shiftCount => "shiftCount"
-
-def coefJson (c : Coef) : Json :=
-  Json.mkObj [("lit", jInt c.lit), ("byConstant", jInt c.byConstant), ("byPower", jInt c.byPower)]
-
-def varJson : RuleVar → Json
+def varText : RuleVar → String
   | .left => "left"
   | .right => "right"
   | .result => "result"
 
-def factJson (F : RuleFact) : Json :=
-  Json.mkObj [("terms", Json.arr (F.terms.map fun (x, a) => Json.mkObj [("var", varJson x), ("coef", coefJson a)]).toArray),
-    ("bound", coefJson F.bound)]
-
-def rightJson : Right → Json
-  | .operand d => Json.mkObj [("operand", domainJson d)]
-  | .constant c => Json.mkObj [("constant", Json.mkObj [("symbol", (c.symbol : Json)), ("lower", jOptInt c.lower),
-      ("upper", jOptInt c.upper), ("normalisation", normalisationJson c.normalisation)])]
+/-- A fact `Σ aᵢ·vᵢ ≤ b`, each coefficient in parentheses. -/
+def factText (F : RuleFact) : String :=
+  let terms := F.terms.map fun (x, a) => s!"({coefText a})·{varText x}"
+  s!"`{" + ".intercalate terms} ≤ {coefText F.bound}`"
 
 /-- The operator's name in the calculus (`Arith`). -/
-def opJson : Arith → Json
+def opText : Arith → String
   | .add => "add" | .sub => "sub" | .mul => "mul" | .div => "div" | .pow => "pow" | .xor => "xor"
   | .rem => "rem" | .bitAnd => "bitAnd" | .bitOr => "bitOr" | .shl => "shl" | .shr => "shr" | .ushr => "ushr"
   | .lt => "lt" | .le => "le" | .gt => "gt" | .ge => "ge" | .eq => "eq" | .looseEq => "looseEq"
 
-def ruleJson (r : ArithRule) (decl proof : Name) : Json :=
-  Json.mkObj [("name", (r.name : Json)), ("declaration", (decl.toString : Json)), ("proof", (proof.toString : Json)),
-    ("op", opJson r.op), ("left", domainJson r.left), ("right", rightJson r.right),
-    ("premises", Json.arr (r.premises.map factJson).toArray), ("result", domainJson r.result),
-    ("conclusion", Json.arr (r.conclusion.map factJson).toArray)]
+def sortText : VarSort → String
+  | .num => "Num"
+  | .safeInt => "SafeInt"
 
-/-- The rules' document: the soundness statement, its proof over every rule,
-and the rules in the paper's order. -/
-def rulesJson : Json :=
-  Json.mkObj [("statement", ((``ArithRule.Sound).toString : Json)), ("soundness", ((``rules_sound).toString : Json)),
-    ("rules", Json.arr (ruleEntries.map fun e => ruleJson e.rule e.declaration e.proof).toArray)]
+/-- A variable's role; a constant's with the way the rule reads it. -/
+def roleText (r : ArithRule) : Role → String
+  | .operand => "operand"
+  | .result => "result"
+  | .constant => match r.right with
+    | .constant { normalisation := .shiftCount, .. } => "constant, a shift count"
+    | _ => "constant, read as itself"
 
-#guard opJson .bitAnd == "bitAnd"
+/-- The constant's side condition and normalisation, as a sentence. -/
+def constantText (c : Constant) : String :=
+  let lower := match c.lower with | some l => s!"at least {l}" | none => "no lower bound"
+  let upper := match c.upper with | some u => s!"at most {u}" | none => "no upper bound"
+  let read := match c.normalisation with
+    | .identity => "read as itself"
+    | .shiftCount => "read as a shift count, modulo 32"
+  s!"The constant: {lower}; {upper}; {read}."
+
+def factsText (title : String) (Fs : List RuleFact) : List String :=
+  if Fs.isEmpty then [s!"{title}: none."] else [s!"{title}:", ""] ++ Fs.map fun F => s!"- {factText F}"
+
+/-- A rule's section. -/
+def ruleMarkdown (r : ArithRule) (decl proof : Name) : List String :=
+  [s!"## {r.name}", "",
+    s!"Operator `{opText r.op}`. Stated by `{decl}`, proved by `{proof}`.", "",
+    "| Variable | Role | Sort |", "| --- | --- | --- |"] ++
+  r.variables.map (fun (x, role, sort) => s!"| `{varText x}` | {roleText r role} | `{sortText sort}` |") ++
+  [""] ++
+  (match r.right with | .constant c => [constantText c, ""] | .operand _ => []) ++
+  factsText "Premises" r.premises ++ [""] ++ factsText "Conclusion" r.conclusion
+
+/-- **The rules' document**: the soundness statement, its proof over every
+rule, and each rule in the paper's order. -/
+def rulesMarkdown : String :=
+  let header := ["# Arithmetic rules", "",
+    s!"The rules of `{``rules}`, in the paper's order. Each is sound by `{``ArithRule.Sound}`, " ++
+      s!"which `{``rules_sound}` proves of every rule.", "",
+    "A fact is `Σ (coefficient)·variable ≤ bound`; `k` is the rule's constant as the rule reads it."]
+  "\n".intercalate (header ++ (ruleEntries.flatMap fun e => [""] ++ ruleMarkdown e.rule e.declaration e.proof)) ++ "\n"
+
+#guard coefText { lit := -1, byPower := 1 } == "2^k - 1"
+#guard coefText { byPower := -1 } == "-2^k"
+#guard coefText {} == "0"
 
 end Verification.RuleExport

@@ -30,38 +30,40 @@ section's text. Each producer's export is computed once per run.
 | Section | Destination | Producer |
 | --- | --- | --- |
 | `paper-arithmetic-rules` | [Tolerant frames](drafts/tolerant-frames-note/note.tex), the rows of the display "Arithmetic steps" | the paper's rule rows |
-| `arithmetic-rules` | [ARITHMETIC.md](ARITHMETIC.md#linear-facts), "Bounded bitwise operands" | the rules as `math` blocks, each preceded by a comment carrying the rule's JSON |
+| `arithmetic-rules` | [ARITHMETIC.md](ARITHMETIC.md#linear-facts), "Bounded bitwise operands" | the rules as `math` blocks, each preceded by a comment naming the rule's declarations |
 
 ## The arithmetic rules' export
 
-`verifier --export rules arithmetic` prints `ArithmeticRules.rules` as JSON,
-the one statement of the rules every section is rendered from:
+`verifier --export rules arithmetic` prints `ArithmeticRules.rules` as a
+Markdown document that reads on its own, the one statement of the rules
+every section is rendered from:
 
-- `statement` and `soundness`: the names of the soundness statement
-  (`ArithmeticRules.ArithRule.Sound`) and of its proof over every rule
+- a title and a sentence naming the rules, the soundness statement
+  (`ArithmeticRules.ArithRule.Sound`) and its proof over every rule
   (`ArithmeticRules.rules_sound`);
-- `rules`, in the paper's order, each with `name` (the paper's; the
-  triples of one rule share it), `declaration` and `proof` (the Lean
-  declarations that state and prove it), `op` (the calculus's operator),
-  `left` (a domain: `safeInteger` or `number`), `right` (`{"operand":
-  domain}` or `{"constant": {symbol, lower, upper, normalisation}}`, the
-  bounds `null` where absent, the normalisation `identity` or
-  `shiftCount`), `premises` and `conclusion` (linear facts, each `terms`, a
-  list of `{var, coef}` with `var` one of `left`, `right` and `result`, and
-  `bound`), and `result` (a domain). A coefficient is `{lit, byConstant,
-  byPower}`, the value `lit + byConstant·k + byPower·2^k` at the normalised
-  constant `k`.
+- for each rule, in the paper's order, a section headed by its name (the
+  paper's; the triples of one rule share it), with its operator in the
+  calculus and the Lean declarations that state and prove it;
+- a table of the rule's variables, `left`, `right` and `result`, each with
+  its role (an operand, a constant read as itself or as a shift count, or
+  the result) and its sort (`Num` or `SafeInt`), both computed in Lean
+  from the rule's domains (`ArithRule.variables`): a constant is a
+  `SafeInt`, as the rule's soundness reads it;
+- for a rule with a constant, a sentence with its bounds and how the rule
+  reads it;
+- the premises and the conclusion, each fact a line
+  `(coefficient)·variable + … ≤ bound`, a coefficient written in the
+  rule's constant `k` as read: `2^k - 1`, `-1`, `k`.
 
-The reader in `dev/generated-sections.mts` requires every field and
-refuses an unknown one.
+The reader in `dev/generated-sections.mts` reads exactly that form, line
+by line, and refuses any other line.
 
 ## The renderer
 
 One renderer sets a rule in three notations, from the same facts:
 
 - the paper's rows, one per triple: the rule's name on its first triple,
-  the operands' sorts, $`x:\mathit{Num}`$ for an operand of any number and
-  $`x:\mathit{SafeInt}`$ for a safe integer or a constant, then
+  the operands' sorts as the export states them, then
   `\hoare{P}{y=x op c}{Q}`;
 - ARITHMETIC.md's inference rules, `int(a)`, `K ⊢ b = d` and the premises
   over `K ⊢ r ← a op b ⊣ int(r), …`, the rule's name followed by the
@@ -69,6 +71,12 @@ One renderer sets a rule in three notations, from the same facts:
 - a page of the rules, drawn as `dev/record-render.mts` draws the rules of
   a commit record, the sorts first among the premises, with each rule's
   declarations.
+
+A variable's letter follows from its role and sort as the export states
+them, one convention for every rule: $`a`$ and $`b`$ for the first and
+the second operand of `SafeInt`, $`x`$ for an operand of `Num`, $`d`$ for
+a constant read as a shift count and $`c`$ for another, and $`y`$ for the
+result ($`r`$ in ARITHMETIC.md).
 
 A fact `Σ aᵢ·vᵢ ≤ b` is set with its positive terms on the left and its
 negative terms and bound on the right, `-b ≤ N` where it has no positive

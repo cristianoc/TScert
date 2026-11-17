@@ -59,9 +59,8 @@ def Normalisation.apply : Normalisation → Int → Int
 
 /-- A constant operand: a safe integer, a literal or a value known to be
 constant, within the bounds of its side condition, read by its
-normalisation; `symbol` names it in the paper. -/
+normalisation. -/
 structure Constant where
-  symbol : String
   lower : Option Int
   upper : Option Int
   normalisation : Normalisation
@@ -126,6 +125,31 @@ structure ArithRule where
   conclusion : List RuleFact
   deriving DecidableEq, Repr
 
+/-- The sort a rule's variable ranges over: any number, or a safe integer. -/
+inductive VarSort where
+  | num | safeInt
+  deriving DecidableEq, Repr
+
+/-- The values of a domain, as a sort. -/
+def Domain.sort : Domain → VarSort
+  | .safeInteger => .safeInt
+  | .number => .num
+
+/-- What a rule's variable is: an operand, a constant, or the result. -/
+inductive Role where
+  | operand | constant | result
+  deriving DecidableEq, Repr
+
+/-- **A rule's variables with their roles and sorts**: an operand of its
+domain's sort, a constant a safe integer (`Right.Admits`), and the result
+of its domain's sort. -/
+def ArithRule.variables (r : ArithRule) : List (RuleVar × Role × VarSort) :=
+  [(.left, .operand, r.left.sort),
+    match r.right with
+    | .operand d => (.right, .operand, d.sort)
+    | .constant _ => (.right, .constant, .safeInt),
+    (.result, .result, r.result.sort)]
+
 /-- A valuation with the result set to `y`. -/
 def resultAt (v : RuleVar → Int) (y : Int) : RuleVar → Int
   | .result => y
@@ -149,7 +173,7 @@ def fact (terms : List (RuleVar × Int)) (b : Int) : RuleFact :=
   ⟨terms.map fun (x, a) => (x, { lit := a }), { lit := b }⟩
 
 /-- The shift count `d`, read modulo 32. -/
-def shiftCount : Constant := ⟨"d", none, none, .shiftCount⟩
+def shiftCount : Constant := ⟨none, none, .shiftCount⟩
 
 /-- **Shr**: `-2^31 ≤ x < 2^31` gives `2^{d'}·y ≤ x ≤ 2^{d'}·y + 2^{d'} − 1`. -/
 def shr : ArithRule where
