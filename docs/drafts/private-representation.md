@@ -454,9 +454,11 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   `:579`, `:628`). A value received from code that is not the body's has no
   such proof. *Owning* is a component of a location's contract, fixed at
   allocation: the front proposes it per allocation site, and the pass
-  checks every store into private state, into owned storage or into a
-  confined collection to store a value marked owning, or fresh storage
-  from a site marked owning. A write is uncharged only through a reference
+  checks every store into private state or into owned storage to store a
+  value marked owning, or fresh storage from a site marked owning. A
+  confined collection holds values of either mark, which insertion and
+  lookup preserve, so a cached record unmarked stays unmarked while the
+  owning lists it holds stay marked. A write is uncharged only through a reference
   whose possible contracts are all unmarked. Disjointness is then a typing
   fact, and a forged mark fails a store's check (conjectured).
 - **Tolerant invariant.** Every change the body makes to a location of
