@@ -1,13 +1,13 @@
 import Verification.Source.Lowering.ExitProposals
-import Verification.Semantics.CommandComposition
-import Verification.Semantics.CommandLoops
+import Verification.Paper.TolerantFrames.CommandComposition
+import Verification.Paper.TolerantFrames.CommandLoops
 
 /-! # Proposed exit summaries: soundness for runs
 
 The rules composing the front's class-level summaries
 (`Source/Lowering/ExitProposals.lean`) are the class instances of the note's
-rules over command summaries (`Semantics/CommandSummaries.lean`,
-`Semantics/CommandComposition.lean`, `Semantics/CommandLoops.lean`):
+rules over command summaries (`Paper/TolerantFrames/CommandSummaries.lean`,
+`Paper/TolerantFrames/CommandComposition.lean`, `Paper/TolerantFrames/CommandLoops.lean`):
 
 - one exit followed by another, at the class level, is Seq-Eff
   (`ClassSummary.then_into`, `ThenEvidence.Into`);
@@ -64,7 +64,7 @@ meeting `P` completes by an exit the summary reaches, within that exit's
 bound (`Sound`). Each composition rule above is sound for the runs of the
 composite command (`Runs.seq`, `Runs.choice`, `Runs.handle`, `Runs.loop`,
 and a finalizer's and an async body's runs), and a sound summary gives the
-command's summary of `Semantics/CommandSummaries.lean` (`sound_spec`). -/
+command's summary of `Paper/TolerantFrames/CommandSummaries.lean` (`sound_spec`). -/
 
 /-- An exit's bound holds of a two-state: an action of its class entries; an
 unreached exit holds of none. -/
@@ -262,7 +262,7 @@ def spec (S : ClassSummary) : CommandSummary :=
 theorem schema_atArity (S : ClassSummary) (n : Nat) : S.schema.atArity n = S.spec := rfl
 
 /-- **A sound class summary is a sound command summary** (proved;
-`CommandSummary.Sound` of `Semantics/CommandSummaries.lean`). -/
+`CommandSummary.Sound` of `Paper/TolerantFrames/CommandSummaries.lean`). -/
 theorem sound_spec {P : TolerantFrames.Assertion} {R : CallEffects.Runs} {S : ClassSummary}
     (h : Sound P R S) (arena : AssertionArena) : CommandSummary.Sound arena P R S.spec := by
   intro c s hP hr

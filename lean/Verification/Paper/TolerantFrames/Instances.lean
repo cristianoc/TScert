@@ -6,7 +6,7 @@ Two instances of the note "Tolerant frames" over the indexed states of
 `IndexedStates`: the effect `x[∗]` at `any`, which is not rigid
 (`cells_not_rigid`), and a length lower bound, at a variable and at a path,
 which enters the modality of `{values: any, spines: grow}` in
-`TolerantFramesRuns` (`grow`, `grow_path`). -/
+`Bridges/Grow` (`grow`, `grow_path`). -/
 namespace Verification.TolerantFrames
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations

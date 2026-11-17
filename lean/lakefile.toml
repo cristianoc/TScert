@@ -9,6 +9,7 @@ globs = [
   "Verification.Programs.+",
   "Verification.Source.+",
   "Verification.Tests.+",
+  "Verification.Paper.+",
 ]
 # A warning fails the build: the development keeps none.
 leanOptions = { warningAsError = true }

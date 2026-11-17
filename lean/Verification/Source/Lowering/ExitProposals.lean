@@ -31,7 +31,7 @@ Class entries rebase to themselves (`rebaseAll_fp`), so composition at the
 class level is the join of the closed bounds (`ClassSummary.fp_join_covers`).
 The soundness of each rule for a command's runs, and the command summary a
 sound summary gives, are stated over the paper's command summaries in
-`Programs/TolerantFramesExitProposals.lean`.
+`Paper/TolerantFrames/Bridges/ExitProposals.lean`.
 
 **The walk is an untrusted proposal heuristic.** The walk has no run
 semantics of the source: the walk of the literal's body at the effect it is

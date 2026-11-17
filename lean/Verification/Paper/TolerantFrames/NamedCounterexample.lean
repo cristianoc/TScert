@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesNamed
-import Verification.Semantics.TolerantFrames
+import Verification.Paper.TolerantFrames.Instances
 
 /-! # Tolerant frames: a fact the effect does not tolerate
 

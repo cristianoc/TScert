@@ -1,4 +1,4 @@
-import Verification.Semantics.CommandSummaries
+import Verification.Paper.TolerantFrames.CommandSummaries
 import Verification.Semantics.FormulaScopes
 
 /-! # From a function body's summary to its signature

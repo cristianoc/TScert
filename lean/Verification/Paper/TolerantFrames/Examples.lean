@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesInvocation
-import Verification.Programs.TolerantFramesRuns
+import Verification.Paper.TolerantFrames.Bridges.Grow
 
 /-! # Tolerant frames: two graphs with throws
 

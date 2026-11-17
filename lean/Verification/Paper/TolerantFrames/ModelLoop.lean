@@ -1,4 +1,4 @@
-import Verification.Programs.TolerantFramesExamples
+import Verification.Paper.TolerantFrames.Examples
 
 /-! # Tolerant frames: the note's loop, one closed instance of graph safety
 

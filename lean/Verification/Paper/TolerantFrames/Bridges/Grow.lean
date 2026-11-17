@@ -1,7 +1,7 @@
-import Verification.Programs.TolerantFramesTransfer
+import Verification.Paper.TolerantFrames.Bridges.Transfer
 import Verification.Programs.TolerantFramesNamed
-import Verification.Semantics.TolerantFrames
-import Verification.Semantics.ParityDerivations
+import Verification.Paper.TolerantFrames.Instances
+import Verification.Paper.TolerantFrames.ParityDerivations
 
 /-! # Tolerant frames: (Grow) and its instances
 

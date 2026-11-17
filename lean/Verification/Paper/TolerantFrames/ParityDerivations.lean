@@ -1,4 +1,4 @@
-import Verification.Semantics.ParityEvidence
+import Verification.Paper.TolerantFrames.ParityEvidence
 import Verification.Semantics.StepRelations
 import Verification.Semantics.HeapKnowledge
 
