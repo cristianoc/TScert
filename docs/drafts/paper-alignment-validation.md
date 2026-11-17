@@ -129,3 +129,60 @@ owning status. Host contracts remain assumptions; no actual native library is
 claimed verified. No demonstrated false paper statement requires an owner
 decision, and the apparent extra premise in Conj was resolved as an encoding
 issue.
+
+## Assertion transport continuation at c71d1ec5
+
+Evidence from the cloud checkout on 2026-11-17, starting from
+`2819388e290f907d206c5c0bf26a925ef0fa7cb0` and covering the source and
+correspondence in `c71d1ec509464c63016bdab7f7864a3d65359aa7`. A fetch confirmed
+`origin/single-pass` remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+This continuation adds total assertion renaming and admission transport,
+grammar-admissible selected path replacement through binders and modalities,
+and full syntactic Inst, Prefix and Empty. It also restricts consequence and
+modal premises to valid paper contexts. The paper and A/shared code are
+unchanged.
+
+Focused builds passed for every added module and its derivation/transfer
+integration. Both axiom checks passed together (401 jobs). The build replayed
+eight informational `Lean.Meta.whnfEasyCases` PANIC backtraces from the
+unchanged A module `Verification.Programs.TolerantFramesStepLink:294`.
+The same eight backtraces occur in the saved initial full-build and axiom logs;
+the command exited zero and no new module emitted a warning or error.
+These cached informational traces are not described as warning-free output.
+The axiom dependency results themselves passed with the existing permitted
+axioms.
+
+The complete supervised `make test` invocation exited zero under pinned Lean
+4.33.1, Node 26.13.0 and `bc`, within an 1800-second budget. It passed:
+
+- the full Lean build (610 jobs);
+- all 23 fast suites, including type checking, JSON field names, unchecked
+  boundaries, documentation, import coverage and all 175 controls;
+- **3419 of 3419 pipeline cases as expected**, 4322 functions verified,
+  1782 negative controls and 147 named gaps.
+
+The controls ran on four lanes, with 3 operations executed and 492 replayed
+from the repository's content-addressed store. No expected result changed.
+Direct axiom-check coverage includes 363 other A/shared modules and 35 other
+Paper modules. A separate import scan found no importer of Paper outside
+Paper. `git diff --check` and the commit-record hook passed. The final
+documentation check reported 76 documents, 892 code citations and no problems.
+The raw cloud logs are `/workspace/scratch/continuation-test.log` and
+`/workspace/scratch/continuation-axioms.log`; those scratch paths are evidence
+locations in this execution environment, not required repository inputs.
+
+Independent read-only Astra review compared all five added modules, their
+integration and the revised audit with the paper. It checked capture under
+binders, aliased renaming images, definedness of zero-coefficient terms,
+all element readings and fields, whole modal action transport, independent
+declared admission, and derivation of collection entries for Empty. It found
+no soundness or correspondence defect. It confirmed the Inst and Empty
+upgrades and the **42 equal / 25 narrower / 9 absent / 13 assumed** accounting.
+The reviewer did not run the checks recorded above.
+
+General existential logic, full mixed old/current substitution and
+postcondition syntax, structural supports, Call/Fun, primitive/host bridges,
+complete derivation admission and closed paper examples remain outside the
+proved scope. The correspondence table states those limits individually.
+This validation does not establish full alignment or automatic proof-search
+completeness.
