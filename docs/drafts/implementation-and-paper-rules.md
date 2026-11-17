@@ -143,6 +143,37 @@ them the laws of the modality (`box_elim` … `box_idem`, in
 5 name declarations on both sides (`transfer`, `seq_eff`, `grow`, `cells`,
 `ConditionOnActions`).
 
+## How far B matches the paper
+
+Item by item in [B against the paper](b-against-the-paper.md). Of the
+paper's 92 items (its definitions, rules, axioms, laws and examples, the
+patterns of §8 aside), B states 13 equally, 35 more narrowly and 2
+differently, none more broadly, and has no statement of 42. Its equal
+statements are Alloc of an empty array, Fresh-Eff, Write-End, (Grow), and
+the arithmetic and string rules (Add, Sub, Scale, Shr, Mask, the
+string-length successor, Str-Length, Str-Read, Concat). The narrower ones
+share three restrictions:
+
+- **The assertion language.** B's atoms are a fixed grammar over ordinary
+  arrays: a quantified fact requires an element at every index below its
+  bound, its body reads scalars only, a disjunction needs a guard
+  recognised as invariant, and separation holds between two arrays only.
+- **Certificates for semantic premises.** Support, respect, rigidity and
+  effect inclusion are finite certificates with a soundness theorem, so a
+  rule applies where a certificate is found, which is less than where the
+  paper's semantic premise holds.
+- **Command summaries over runs.** A command is a relation between states
+  and completions, with no command language (Definition 3), so the rules
+  of §6 are stated as compositions of supplied summaries.
+
+B has no statement of the paper's model (worlds, well-formed states,
+admissible transitions, Preservation), of Rebasing, Independence and Conj,
+which the shared model states, nor of Break, Return, Throw, the primitive
+read and write rules, the library contracts and the typed-array rules,
+which the paper cites in A or assumes. Example 1 and its derivation
+(Example 24) are stated of another loop: B's graph has no
+`j > out.length` test.
+
 ## Where C is met
 
 A new pretext case meets C. Supporting a pattern of
