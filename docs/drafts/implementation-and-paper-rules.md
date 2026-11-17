@@ -448,6 +448,34 @@ follow structurally, so lexical assertion scope supplies Frame's noncapture
 premise directly. The alias example's updated join proof retains its inputs;
 it is still not a closed execution proof.
 
+## Fixed primitive code and the shared own-key observation
+
+[OperationCode.lean](../../lean/Verification/Paper/TolerantFrames/OperationCode.lean)
+compiles every Operation to one fixed symbolic term using shared instantiate.
+Element-write's result is shifted under its internal let. Host code is closed
+by the same graph environment, so it may be captured in dedicated slots; no
+native safety or contract is inferred. After closing, at most six pure steps
+reach exactly Operation.code. Terminal-run inversion retains the primitive
+count plus those administrative steps.
+
+[OwnFieldCode.lean](../../lean/Verification/Paper/TolerantFrames/OwnFieldCode.lean)
+uses the shared test/branch mechanism for B's own fields, covering every
+machine value and arbitrary field maps and prototypes. Nonobjects still reach
+readAt and retain its raw stuckness. This is not yet command/graph lowering.
+
+The required shared extension is one pure internal Tag.hasOwnKey constructor
+in Calculus, object-dependent normalization in ValueSets, and conservative
+unknown answers for object shapes in TypingBasics. Existing tags keep their
+meanings and numerical keys; the new key is appended at 18. RequestJson decodes
+only a private copy of its original eighteen-constructor vocabulary, installed
+before dependent term/continuation/code codecs. Every old constructor's encoding
+is proved equal, for arbitrary payloads; successful decoding excludes the new
+tag. ExecutionModelTests includes forged direct, expression, continuation and
+nested graph tags, and malformed two-tag input. A emits no new tag, its
+headline theorem is unchanged, and no outside module imports Paper. The exact
+accepted tag language is retained. Decoder error strings are not claimed
+byte-for-byte identical. The design is [documented separately](paper-own-key-test.md).
+
 ## How far B matches the paper
 
 Every item is compared in [B against the paper](b-against-the-paper.md).

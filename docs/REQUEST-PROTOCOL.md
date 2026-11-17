@@ -502,6 +502,11 @@ The tests (`Tag`) are:
 | equality with one number, string, Boolean or bigint    | `{"numEq":{"bits":"…"}}`, `{"strEq":{"value":"a"}}`, `{"boolEq":{"value":true}}`, `{"bigintEq":{"value":5}}` |
 | `key in v`: an own key or one the prototype chain reaches | `{"hasKey":{"key":"k"}}`                |
 
+The model’s internal `hasOwnKey` observation is excluded from this closed
+request vocabulary, including inside terms, continuations and nested graph
+code. Its presence in the semantic Tag datatype does not expose it on the
+wire.
+
 ### Nodes, continuations and targets
 
 A node is `{"expression": t, "continuation": k, "handler": T | null}`, `T` a

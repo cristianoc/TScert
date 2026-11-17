@@ -126,3 +126,35 @@ possible after alpha-renaming to a distinct identity. Keep raw execution general
 this is an admission correction. A caught name is local to its handler and is
 excluded from the joined output, including when another branch reuses that raw
 numeric slot. This follows the existing locality documented by the judgment.
+
+## Fixed finite slot layout for command graphs
+
+The next operational construction uses the existing graph envMap mechanism.
+Choose B above every program name occurring anywhere in the command (bind and
+catch names included). Slots 0 through B-1 retain those named values. Three
+extra slots hold viewRead/viewWrite/viewLength; the symbolic host template is
+var B, var (B+1), var (B+2). Every edge carries B+3 slots. A binding x maps its
+output slot x to the newly pushed result (index zero), and every other slot i
+to its previous index i+1. Perform uses effect with the complete identity map.
+Catch uses the same replacement map on the actual raised value. Reconstruct
+the total B environment using the original environment beyond B; finite command
+scope ensures no command reads or binds those fallback names.
+
+First prove replacement/identity envMap equations, named-environment agreement
+and unchanged host slots. Native code slots must hold machine values when the
+shared graph dispatch requires value environments. This is an explicit
+representability condition of the function embedding, not a native safety or
+contract assumption. The shared graph-entry/capture construction and its
+reference/scoping validity still require proofs.
+
+Compile explicit throw as an actual shared throw expression with its current
+handler. Shared Raises.throwV requires a source value, whereas B's broadened
+raw throw grammar admits any machine value. Therefore the required terminal
+graph-to-B inversion may be general, but a forward simulation of every raw B
+throw would be false for an internal spine. Do not implement catch as an
+unconditional bind/jump, which would invent a shared catch of that stuck throw.
+Any forward theorem must state its source-value condition. This distinction
+strengthens, rather than weakens, the body Triple obligation.
+
+Astra independently designed this finite layout and identified the raw throw
+asymmetry. These are the next compiler obligations, not implemented Fun premises.

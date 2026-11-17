@@ -63,5 +63,9 @@ that a real native library implementation has been verified.
 Astra independently inspected the paper, shared prototype semantics and derived
 JSON instances before this design. It confirmed the reification gap, accepted
 this conservative extension of the existing mechanism, and identified the wire
-boundary as a required proof obligation. Implementation and validation are
-separate from this design.
+boundary as a required proof obligation. The implementation supplies fixed symbolic terms for all operations, bounded
+pure prefix simulation and terminal inversion, legacy encoding/range proofs
+and forged nested decoder controls. Exact command-to-graph correspondence and
+Fun remain separate. Source-specific final validation is recorded in
+[the validation record](paper-alignment-validation.md). No byte-for-byte
+diagnostic preservation is claimed.

@@ -1,3 +1,5 @@
+import Verification.Paper.TolerantFrames.OperationCode
+import Verification.Paper.TolerantFrames.OwnFieldCode
 import Verification.Paper.TolerantFrames.BudgetTruncation
 import Verification.Paper.TolerantFrames.CallAdmission
 import Verification.Paper.TolerantFrames.CallRules

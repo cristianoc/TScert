@@ -16,7 +16,55 @@ open ProgramCertificates PointClaims ControlFlow CertificateProducer
 open CallEffects (Arrow RestArrow Contract Effect)
 open LabelStore
 
-deriving instance ToJson, FromJson for Tag
+/-- The request's original eighteen tag constructors. This closed wire
+vocabulary deliberately excludes model-only observations. Payload names are
+part of the existing derived JSON format, including at nested code sites. -/
+private inductive WireTag where
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr
+  | numEq (bits : UInt64)
+  | strEq (value : String)
+  | isBigint | isSymbol | truthy | isArray
+  | boolEq (value : Bool)
+  | bigintEq (value : Int)
+  | typeofObject
+  | hasKey (key : PropKey)
+  deriving ToJson, FromJson
+
+private def WireTag.toTag : WireTag → Tag
+  | .isNul => .isNul | .isBool => .isBool | .isRef => .isRef | .isFun => .isFun
+  | .isUndef => .isUndef | .isNullish => .isNullish | .isNum => .isNum | .isStr => .isStr
+  | .numEq bits => .numEq bits | .strEq value => .strEq value
+  | .isBigint => .isBigint | .isSymbol => .isSymbol | .truthy => .truthy | .isArray => .isArray
+  | .boolEq value => .boolEq value | .bigintEq value => .bigintEq value
+  | .typeofObject => .typeofObject | .hasKey key => .hasKey key
+
+deriving instance ToJson for Tag
+
+/-- Decode the unchanged wire vocabulary before deriving any enclosing
+term/graph codec. An internal own-key tag is refused at every depth. -/
+instance : FromJson Tag := ⟨fun j => (fromJson? (α := WireTag) j).map WireTag.toTag⟩
+
+/-- Every legacy constructor, for arbitrary payloads, keeps its exact JSON. -/
+private theorem wireTag_encoding (t : WireTag) : toJson t.toTag = toJson t := by
+  cases t <;> rfl
+
+/-- The decoder is the legacy decoder on all JSON, including noncanonical
+inputs; only its successful result is embedded into the model's tags. -/
+private theorem wireTag_decoding (j : Json) :
+    fromJson? (α := Tag) j = (fromJson? (α := WireTag) j).map WireTag.toTag := rfl
+
+/-- Model-only tags cannot enter through requests, including nested graph
+expressions and continuations whose codecs use this instance. -/
+theorem decoded_tag_legacy {j : Json} {t : Tag} (h : fromJson? j = .ok t) :
+    ∀ key, t ≠ .hasOwnKey key := by
+  rw [wireTag_decoding] at h
+  cases hw : fromJson? (α := WireTag) j with
+  | error _ => simp [hw, Except.map] at h
+  | ok w =>
+    simp only [hw, Except.map, Except.ok.injEq] at h
+    subst t
+    cases w <;> simp [WireTag.toTag]
+
 deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Invoke
 deriving instance ToJson, FromJson for Target

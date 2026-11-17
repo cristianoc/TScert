@@ -541,3 +541,44 @@ the full alignment is incomplete.
 Logs: `/workspace/scratch/raw-scope-budget-test.log`,
 `raw-scope-budget-axioms.log`, `raw-scope-budget-build2.log`,
 `budget-truncation-build.log` and `raw-scope-budget-docs.log`.
+
+
+## Second owner-requested rebase, onto the newer paper
+
+A fresh fetch found three additional owner commits on single-pass. The
+implementation was rebased without conflicts from `56aaacc51899986d365a3853c94ac58420c1d1b8`
+onto exact fetched tip `f2e33e7f35769d00dd6aa1763d86d3c6ef41983f`.
+The original fetched start remains `ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+All owner note.tex/PDF and pipeline changes are retained exactly. This rebase
+adds no task-owned paper mathematics or A acceptance changes. Rewritten source
+and record commits map as follows:
+
+- `72938dbb5d2acca1e128945da1b531e1a914c6e2` → `26d0fbd2c264bf97b34a9203cb98fb9ef3bf130f`: State semantic support and respect at the paper's generality.
+- `9aa4aef2723f4fbc7c94381ee2b5d25af59cdfa3` → `0e0d4113e18dcda0b219d8cb8548240478a832a6`: Interpret general paper assertions and quantified consequences.
+- `c6b24bcd3f32de7347327ce6baf40f7c5e9f4f42` → `c5dfad3867728aec83c0537e1c46a769687c9a6c`: Prove general command rules and regional checked transfer.
+- `8d90138ec1f95c910d0bed677d18427c4009a55d` → `1c5a117d9e84336b1cec0259d5333315999bc85b`: Record final Paper proof, regression and correspondence validation.
+- `daf6b1692d91b4ee332a6b3a2d8c33e471f3d20e` → `9065f4535d24cd15f5042e9764b0519de5014351`: Prove capture-avoiding assertion transport and full quantified rules.
+- `d7259435dbdbe455415a557dfd87ed6f88eb2c4e` → `4f99c4ab08f26552989361987f1e7205f671ecac`: Record full validation of the assertion transport continuation.
+- `05540a4c061a3527f85344866afe4f7b5b102e8c` → `7a6c41b524e4b08a1e0c6f51b76178a2044c9a74`: Prove general all support, witness rules and integer consequence.
+- `af3da32a15a90146ee1b346defb718b8cc8ff011` → `b029933092b487ac695c79762502fdd7191edbb3`: Record validation and the numeric equality obstruction.
+- `cf5d397deded2809842d157f58641f2981158a81` → `6b2df2341132bd4ab8e54509b3c837d9442fbafb`: Formalise first-order two-state postconditions and their transport.
+- `e10a35cfafa90dabf52614fc58530797f711e6d2` → `a6a692473432e8b2412b22483d3e6652eaf6d4b7`: Record validation of first-order postcondition proofs.
+- `8ca78a780f5f7474c229f8043b58475b065c8c84` → `b907a21a5fff67b20e1f8a7905dfd7073026073a`: Correct the zero bridge and prove conditional path supports.
+- `3224a2efc07734c76d31031e535e27a92f12078c` → `2a1c50d28dfddfd0bca2a8cc8d2b608522b0fdd1`: Record validation of the corrected literal and path support proofs.
+- `0ff68167b90d7c9e177ce4b5a5539dfab0cf481f` → `c735b67546c32b6333acc75444a469aefe6ca40a`: Make logical witnesses heap-based and prove structural supports.
+- `985650598f34ce169a178fc5ff4a6621eb2dadfb` → `47af13f28534ff27e11ffa0b41fa30d2542b718d`: Record rebased quantifier and support validation.
+- `9a14cf79b12544bfdf7213d65c63938570d99ca2` → `a082e3d8b0765b69fe607b46fa10a4e2ee0a2859`: Prove scoped Call instantiation on actual executions.
+- `9d708349a34bf9d7788c2203cb4a8be4005ea9f1` → `e88e2d9e2d7d8980a5afa2c6d8b94c2fa6a52f08`: Record exact scoped Call validation and review.
+- `72d0295c9b775746a35cb1ac7501e46c08fc210d` → `b703b5de9b7a1c3f67d96ff4972ca43fcf7fca33`: Observe raw completions and prove scoped budget transport.
+- `7c627ecd1ccabc81f4206f66b29c150032f6cb3f` → `7fcd1a5c1266b2add64e3956fddf56af416e4c8c`: Record raw execution and budget proof validation.
+
+The newer paper gives signed Shr with integer shift-count normalization,
+Mask at arbitrary safe operands, and new Shl/Or rules. The original 89 rows
+are all retained, with Shr/Mask reclassified narrower; the new two absent
+rows give 91 total: 40 equal, 27 narrower, 11 absent and 13 assumed. The
+independent Astra source review confirms these classifications. In particular,
+a proof assuming a safe shift count would not by itself cover the paper's
+broader integer-constant wording. Stale original-audit paper line anchors
+are removed; rule/definition labels identify the current statements.
+The own-key source continuation is validated separately below; older full
+runs are not claimed as validation of this rebase or of its shared changes.

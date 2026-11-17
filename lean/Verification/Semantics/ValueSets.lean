@@ -105,6 +105,7 @@ def tagKey : Tag → List Nat
   | .strEq s => 9 :: s.toList.map Char.toNat | .isBigint => [10] | .isSymbol => [11]
   | .truthy => [12] | .isArray => [13] | .boolEq b => [14, if b then 1 else 0]
   | .bigintEq i => [15, zig i] | .typeofObject => [16] | .hasKey k => 17 :: propKey k
+  | .hasOwnKey k => 18 :: propKey k
 
 theorem chars_inj {s t : String} (h : s.toList.map Char.toNat = t.toList.map Char.toNat) : s = t := by
   apply String.toList_inj.mp
@@ -370,14 +371,14 @@ theorem tagBig_mem {t : Tag} {q : Bool} {i : Int} (h : tagHolds t (.bigint i) = 
 the object, every object or none where it does not. -/
 def tagObj (t : Tag) (q : Bool) : Obj :=
   match t with
-  | .isRef | .isFun | .isArray | .typeofObject | .hasKey _ => some [[⟨t, q⟩]]
+  | .isRef | .isFun | .isArray | .typeofObject | .hasKey _ | .hasOwnKey _ => some [[⟨t, q⟩]]
   | t => if tagHolds t (.objAt [] .absent 0) == q then some [] else none
 
 theorem tagObj_mem {t : Tag} {q : Bool} {flds c oid}
     (h : tagHolds t (.objAt flds c oid) = q ∨ protoFree t (.objAt flds c oid) = false) :
     (tagObj t q).mem (.objAt flds c oid) = true := by
   cases t
-  case isRef | isFun | isArray | typeofObject | hasKey =>
+  case isRef | isFun | isArray | typeofObject | hasKey | hasOwnKey =>
     simp only [tagObj, Obj.mem, List.all_cons, List.all_nil, Clause.sat, List.any_cons, List.any_nil,
       Literal.sat, Bool.and_true, Bool.or_false, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true']
     exact h
@@ -633,7 +634,7 @@ def strConst : Tag → Bool | .strEq _ | .truthy => false | _ => true
 def bigConst : Tag → Bool | .bigintEq _ | .truthy => false | _ => true
 
 /-- The tags whose answer on an object depends on the object. -/
-def objTag : Tag → Bool | .isRef | .isFun | .isArray | .typeofObject | .hasKey _ => true | _ => false
+def objTag : Tag → Bool | .isRef | .isFun | .isArray | .typeofObject | .hasKey _ | .hasOwnKey _ => true | _ => false
 
 def numAnswers (t : Tag) (q : Bool) : Lit UInt64 → Bool
   | .these bs => bs.all fun b => tagHolds t (.num b) == q

@@ -1096,7 +1096,7 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   -- `typeof` answers "object" for null and a plain object, array included.
   | .typeofObject => some (s == 0 || s == 2 || s == 13)
   -- An object's clause decides its keys (`keyAnswer`); a primitive owns none.
-  | .hasKey _ => if s == 2 || s == 3 || s == 11 || s == 13 then none else some false
+  | .hasKey _ | .hasOwnKey _ => if s == 2 || s == 3 || s == 11 || s == 13 then none else some false
 
 /-- Whether an object clause's members own the key `k`: a clause stating the
 key present says they do; one whose own-key bound excludes it says they do
