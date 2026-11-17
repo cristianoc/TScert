@@ -27,7 +27,6 @@
 \newcommand{\val}{\kw{values}}
 \newcommand{\st}{\kw{spines}}
 \newcommand{\vw}{\kw{views}}
-\newcommand{\slen}{\kw{strlen}}
 \newcommand{\LV}{\mathit{Loc}_{\mathsf{view}}}
 \newcommand{\rigid}{\kw{rigid}}
 \newcommand{\fresh}{\kw{fresh}}
@@ -574,11 +573,15 @@ the members of the union that are object types, and the members
 \emph{collection path} when every member of its type is a collection
 type, \code{null} or \code{undefined}. A path is an \emph{object path}
 when every member of its type is an object type, \code{null} or
-\code{undefined}; a collection type is an object type. Example: with
+\code{undefined}; a collection type is an object type. A path is an
+\emph{array path}, a \emph{typed-array path} or a \emph{string path}
+when every member of its type other than \code{null} and
+\code{undefined} is an array type, a typed-array type or
+\code{string}. Example: with
 \code{xs: number[]}, \code{z: \{ open: number[] \} | null} and
 \code{u: number[] | string}, the paths $\mathit{xs}$ and
-$z.\mathit{open}$ are collection paths, $z$ is an object path, and $u$
-is neither. The type of a path is its declared type: a test that narrows
+$z.\mathit{open}$ are collection paths and array paths, $z$ is an object path, and $u$
+is none of these. The type of a path is its declared type: a test that narrows
 it does not change which regions are well-formed. A substitution of a
 path for a variable is defined where the regions it produces are
 well-formed.
@@ -763,14 +766,12 @@ Section~6 write $a$ for both.
 \[
 \begin{array}{llcl}
 \text{paths} & \pi &::=& x \mid \pi.f\\[2pt]
-\text{terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[e] \mid z[e].\vec f\\
- & &\mid& \len{z[e].\vec f} \mid \kw{view}(z[e].\vec f) \mid \slen(z[e].\vec f) \mid \slen(z[e])\\[2pt]
+\text{terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid z[e] \mid z[e].\vec f \mid \len{z[e].\vec f} \mid \len{z[e]}\\[2pt]
 \text{linear combinations} & e &::=& c \mid c\cdot t \mid e+e\\[2pt]
 \text{atoms} & a &::=& e\le e \mid \pi\doteq v \mid \pi.f^{?}\doteq v \mid \dense(x,e) \mid \pi\in V\\
  & &\mid& z[e]\doteq v \mid \forall i<e.\ \varphi\\[2pt]
 \text{bodies} & \varphi &::=& \psi \mid \varphi\wedge\varphi\qquad\psi\ ::=\ e\le e \mid \psi\vee\psi\\[2pt]
-\text{body terms} & u &::=& i \mid p[i] \mid p[i+d] \mid p[i].\vec f \mid \len{p[i].\vec f}\\
- & &\mid& \kw{view}(p[i].\vec f) \mid \slen(p[i].\vec f) \mid \slen(p[i]) \mid t\\[2pt]
+\text{body terms} & u &::=& i \mid p[i] \mid p[i+d] \mid p[i].\vec f \mid \len{p[i].\vec f} \mid \len{p[i]} \mid t\\[2pt]
 \text{assertions} & F,G &::=& \kw{true} \mid \kw{false} \mid a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
  & &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
 \text{postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q \mid \forall u.\,Q
@@ -798,14 +799,16 @@ grammars.
 \paragraph{Terms.} A \emph{term} denotes an integer at a state, or is
 undefined there.
 A literal $n$, a safe integer, denotes itself. A variable $x$ and a path $\pi$ denote
-the number they hold or read. $\len\pi$ is the length of the array that
-$\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
-$\slen(\pi)$ the length of the string. $z[e]$ is the number that the
+the number they hold or read. $\len\pi$ is the length of what $\pi$
+reads, JavaScript's \code{length} of it: it is defined where $\pi$ reads
+an array, a typed array or a string, and denotes the length of the
+array's spine, the fixed length of the typed array, or the length of
+the string. $z[e]$ is the number that the
 collection $z$ holds at the index $e$, and $z[e].\vec f$ the
 number read from the element at $e$ along the fields $\vec f$. The
-terms $\len{z[e].\vec f}$, $\kw{view}(z[e].\vec f)$ and
-$\slen(z[e].\vec f)$ are the three lengths of what $z[e].\vec f$ reads,
-and $\slen(z[e])$ is the length of an element that is a string. A term is \emph{defined} when the
+term $\len{z[e].\vec f}$ is the length of what $z[e].\vec f$ reads,
+and $\len{z[e]}$ the length of the element at $e$, each by the same
+cases. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
 value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
 $M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
@@ -818,7 +821,7 @@ defined, and an equality only where its path is. There are six forms:
 \item[Linear inequality] An inequality between linear combinations of
 terms, with integer coefficients. Examples: $i<\len{\mathit{flags}}$,
 $\mathit{to}\le\len{\mathit{xs}}$ and
-$c.\mathit{at}<\kw{view}(\mathit{flags})$. The combinations are taken
+$c.\mathit{at}<\len{\mathit{flags}}$. The combinations are taken
 over the mathematical integers; the arithmetic steps of Section~6 state
 when JavaScript arithmetic computes them exactly. The inequality
 $t\le t$ says that $t$ is defined; we write it $\kw{defined}(t)$.
@@ -850,8 +853,8 @@ holds at each index $i$ with $0\le i<t$. The body is a
 conjunction of disjunctions of linear inequalities over the body terms
 of the grammar. The
 term $p[i]$ denotes the number the element at $i$ holds, $p[i].\vec f$ the
-number read from that element along the fields $\vec f$, and $\slen(p[i])$ the length
-of an element that is a string. Each inequality of the body is true only
+number read from that element along the fields $\vec f$, and $\len{p[i]}$ the length
+of the element. Each inequality of the body is true only
 where its terms are defined: $a[i]>0$ holds at $i$ only where $a$ has an
 element at $i$ that is a safe integer. A disjunction of the body holds
 where one of its inequalities does. A body that mentions no element
@@ -969,7 +972,7 @@ For terms $t,t',k$ and a body $\varphi$ whose element terms read the path $p$:
 In \textsc{(Guard)} the path may end at an optional field. In
 \textsc{(Inst)} the instance $\varphi[k/i]$ has the element $p[k]$ for
 $p[i]$: after a read \code{v = p[k]}, it is $\varphi$ of $v$. In
-\textsc{(Empty)} $\len p$ may be $\kw{view}(p)$
+\textsc{(Empty)} $p$ is a collection path
 \status{The four rules follow from the definition of satisfaction. Lean proves instances of them: \lean{unguardIndices\_holds} and \lean{releaseEither\_holds}, for a guard whose path was read and for alternatives refuted by a linear fact; \lean{instantiateEvery\_holds} and \lean{elementInstances\_holds}, at an index whose element was read; \lean{everyPrefix\_sound}; \lean{Derivation.everyEmpty}, for an array known dense}.
 \end{proposition}
 \noindent
@@ -1059,9 +1062,10 @@ the last, $x.f_1\ldots f_k$, at $\delta$.
 \begin{array}{ll}
 \kw{true},\ \kw{false} & \emptyset\\[2pt]
 \text{a literal or a variable} & \emptyset\\[2pt]
-\text{a path }\pi\text{ read as a number},\ \slen(\pi) & \mathrm{reads}_{\init}(\pi)\\[2pt]
-\kw{view}(\pi) & \mathrm{reads}_{\grow}(\pi)\\[2pt]
-\len\pi & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{spine}:\delta\}\\[2pt]
+\text{a path }\pi\text{ read as a number} & \mathrm{reads}_{\init}(\pi)\\[2pt]
+\len\pi,\ \pi\text{ a string path} & \mathrm{reads}_{\init}(\pi)\\[2pt]
+\len\pi,\ \pi\text{ a typed-array path} & \mathrm{reads}_{\grow}(\pi)\\[2pt]
+\len\pi,\ \pi\text{ an array path} & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{spine}:\delta\}\\[2pt]
 \text{a term }z[t] & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\\[2pt]
 \text{an inequality} & \text{the union of the supports of its terms}\\[2pt]
 \pi\doteq v,\ \pi\in V & \mathrm{reads}_{\keep}(\pi)\\[2pt]
@@ -1072,7 +1076,11 @@ F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
 \pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')
 \end{array}
 \]
-For a length $\len\pi$ in an inequality, $\delta$ is $\grow$ where the
+Only an array's length has a spine that a growth changes: a typed
+array's length is fixed (T2) and a string is a scalar, so the length of
+either depends only on the path that reads it. Where the type of $\pi$
+admits more than one of the three sorts, the support of $\len\pi$ is
+the union of the rows of those sorts. For the length of an array path in an inequality, $\delta$ is $\grow$ where the
 inequality stays true when the length increases, as in
 $n\le\len\pi$, and $\keep$ otherwise. In the index of an element term
 or fact, in the bound of a density, and in the bound and the body of a
@@ -1117,7 +1125,8 @@ the states admissible from $h'$ depend on the world as well
 \status{Lean: \lean{HeapKnowledge.alloc\_frames}, \lean{atomHolds\_extend}, for the facts the Lean represents: they hold after any extension of the heap that keeps its old locations; conj. for the language}.
 \end{definition}
 \noindent
-Example: $\mathrm{supp}(c.\mathit{at}<\kw{view}(\mathit{flags}))$ is
+Example: for a typed array \code{flags}, the support of
+$c.\mathit{at}<\len{\mathit{flags}}$ is
 $\{c.\mathit{at}:\init\}$, the one field the fact reads. An effect that
 grows spines respects it, since a field location is no spine
 \status{Lean: \lean{Term.support\_sound}, \lean{IndexFact.support?\_supports}: the support supports the fact, where Lean computes a support. It computes none for an element fact; \lean{Parity.SupportEvidence} has one for the element of a typed array}.
@@ -1139,7 +1148,8 @@ same new cell
 \status{Lean: \lean{apart\_grow\_keep}, the frame at the first support (\lean{apartGrow\_supports}) where every other spine is kept, with valid roots; conj. for the mirror image and for the failure of the third}.
 
 \begin{proposition}[Axioms of the atoms]\label{prop:axioms}
-For variables $x,y,z,w$, any effect $\Phi$, and $a$ an
+For variables $x,y,z,w$, with $x$, $y$ and $\pi$ array paths and $w$ a
+typed-array path where their length is displayed, any effect $\Phi$, and $a$ an
 atom that reads, besides variables, only what is displayed:
 \[
 \begin{array}{ll}
@@ -1149,7 +1159,7 @@ atom that reads, besides variables, only what is displayed:
 \textsc{(Every)} & \apart(x,z)\wedge\forall i<t.\ \varphi\ \vdash\ \bx{x[\ast]:\any}\,\forall i<t.\ \varphi\quad t\text{ a variable, }\varphi\text{ over }z[i]\text{ and scalars}\\[2pt]
 \textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\ a(\len\pi)\\[2pt]
 \textsc{(Rigid)} & \rigid(\pi)\wedge a(\len{\pi})\ \vdash\ \bx{\Phi}\,a(\len\pi)\quad\text{if } a(\len y)\vdash\bx{\Phi}\,a(\len y)\text{ for a fresh }y\\[2pt]
-\textsc{(View)} & a(\kw{view}(w))\ \vdash\ \bx{\top}\,a(\kw{view}(w))\quad\kw{view}(w)\text{ a typed array's length}
+\textsc{(View)} & a(\len w)\ \vdash\ \bx{\top}\,a(\len w)
 \end{array}
 \]
 \end{proposition}
@@ -1475,7 +1485,8 @@ array \code{map} returns is dense is a separate fact, of how \code{map}
 builds it, and belongs to its postcondition.
 
 \paragraph{Reads, writes and tests.} With $x$ a variable that holds an
-object or an array, $a$ an atom and $i$ an integer:
+object or an array, an array in \textsc{Elem-Read} and
+\textsc{Arr-Length}, $a$ an atom and $i$ an integer:
 \[
 \begin{array}{lll}
 \textsc{Field-Read} & \hoare{\kw{true}}{\code{y = x.f}}{x.f\doteq y} & :\emptyset\\[3pt]
@@ -1569,10 +1580,10 @@ $n\le\len y$. The equality $\len y=n$ can become false when $y=x$.
 \textsc{Entry} combines these facts with the postcondition.
 
 The steps that change a length have exact postconditions. With $N=2^{32}-1$ the
-maximal array length and $i$ an integer:
+maximal array length, $x$ an array and $i$ an integer:
 \[
 \begin{array}{ll}
-\textsc{Write-In} & \hoare{0\le i<\len x\wedge\kw{defined}(\len\pi)}{\code{x[i] = v}}{\len\pi=\old(\len\pi)}\qquad\text{for every path }\pi\\[3pt]
+\textsc{Write-In} & \hoare{0\le i<\len x\wedge\kw{defined}(\len\pi)}{\code{x[i] = v}}{\len\pi=\old(\len\pi)}\qquad\text{for every array path }\pi\\[3pt]
 \textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1}\\[3pt]
 \textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1\wedge x[\old(\len x)]\doteq v\wedge Q_{<}}
 \end{array}
@@ -1601,14 +1612,15 @@ postcondition on normal return
 \paragraph{Writes that keep or extend a fact.} \textsc{Frame} keeps a
 fact across a write that cannot reach what the fact reads. Three rules
 keep or extend a fact across a write that can reach it, because of the
-value written. Let $y$ and $x$ be variables, $V$ a set of values, and
+value written. Let $y$ and $x$ be variables, $x$ an array in
+\textsc{Push-Every}, $b$ a typed array of format $t$, $V$ a set of values, and
 $\varphi(i,v)$ a body over the index $i$, the one element term $v$ and
 terms the step keeps. The bound $n$ and the index $k$ are variables:
 \[
 \begin{array}{ll}
 \textsc{Write-Kept} & \hoare{y.f\in V\wedge v\in V}{\code{x.g = v}}{y.f\in V}\\[3pt]
 \textsc{Push-Every} & \hoare{(\forall i<n.\ \varphi(i,x[i]))\wedge n=\len x\wedge\varphi(n,v)}{\code{x.push(v)}}{\forall i<n+1.\ \varphi(i,x[i])}\\[3pt]
-\textsc{View-Every} & \{(\forall i<n.\ \varphi(i,b[i]))\wedge 0\le k<\kw{view}(b)\wedge\varphi(k,\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
+\textsc{View-Every} & \{(\forall i<n.\ \varphi(i,b[i]))\wedge 0\le k<\len b\wedge\varphi(k,\mathit{conv}_t(v))\}\ \code{b[k] = v}\\
  & \qquad\{(\forall i<n.\ \varphi(i,b[i]))\wedge(k=n\Rightarrow\forall i<n+1.\ \varphi(i,b[i]))\}
 \end{array}
 \]
@@ -1659,26 +1671,26 @@ count a shift reads, and $m$ an integer constant with $0\le m<2^{31}$:
 The constants $c$, $d$ and $m$ are literals or variables with a known
 constant value. Outside the stated ranges the step runs and the rule
 gives nothing about $y$. One sum is given past the range: for
-$x=\slen(s)$, \code{y = x + 1} gives the safe integer $y=x+1$, or $y$
+$x=\len s$ of a string $s$, \code{y = x + 1} gives the safe integer $y=x+1$, or $y$
 is the number $2^{53}$. Example: for a table
-\code{index} with $\kw{view}(\mathit{index})=4352$ and
+\code{index} with $\len{\mathit{index}}=4352$ and
 $0\le c<1114112$, \code{j = c >> 8} gives $256\,j\le c$, so
-$j\le 4351$ and $0\le j<\kw{view}(\mathit{index})$, the precondition
+$j\le 4351$ and $0\le j<\len{\mathit{index}}$, the precondition
 of the read \code{index[j]}. With $0\le v<b$ for $v$ the block that
 \code{index[j]} gives, in a table \code{values} of $b$ blocks of 256,
 \textsc{Shl} gives $y_1=256\,v$ for \code{y1 = v << 8}, \textsc{Mask}
 gives $0\le y_2\le 255$ for \code{y2 = c \& 0xff}, and \textsc{Or} gives
 $0\le y\le 256\,v+255<256\,b$ for \code{y = y1 | y2}, the precondition
-of the read \code{values[y]} at $\kw{view}(\mathit{values})=256\,b$.
+of the read \code{values[y]} at $\len{\mathit{values}}=256\,b$.
 
-A string is a scalar: it has no location, and $\slen(s)$ of a string in
-a variable $s$ is fixed, with $0\le\slen(s)\le M$. For strings $s,s'$
+A string is a scalar: it has no location, and the length $\len s$ of a
+string in a variable $s$ is fixed, with $0\le\len s\le M$. For strings $s,s'$
 and an integer $i$:
 \[
 \begin{array}{ll}
-\textsc{Str-Length} & \hoare{\kw{true}}{\code{y = s.length}}{y=\slen(s)}\\[3pt]
-\textsc{Str-Read} & \hoare{0\le i<\slen(s)\wedge i<N}{\code{y = s[i]}}{\slen(y)=1}\\[3pt]
-\textsc{Concat} & \hoare{\kw{true}}{\code{y = s + s'}}{\slen(y)=\slen(s)+\slen(s')}
+\textsc{Str-Length} & \hoare{\kw{true}}{\code{y = s.length}}{y=\len s}\\[3pt]
+\textsc{Str-Read} & \hoare{0\le i<\len s\wedge i<N}{\code{y = s[i]}}{\len y=1}\\[3pt]
+\textsc{Concat} & \hoare{\kw{true}}{\code{y = s + s'}}{\len y=\len s+\len{s'}}
 \end{array}
 \]
 The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
@@ -1693,30 +1705,30 @@ with a stronger precondition and postcondition; \textsc{Conj} combines
 them. For integers $i,a,b$ and strings $s,u$:
 \[
 \begin{array}{ll}
-\code{r = s.charCodeAt(i)} & \hoare{0\le i<\slen(s)}{\cdot}{0\le r\le 65535}\\[2pt]
-\code{r = s.codePointAt(i)} & \hoare{0\le i<\slen(s)}{\cdot}{0\le r\le\code{0x10FFFF}}\\[2pt]
- & \hoare{0\le i<\slen(s)}{\cdot}{r>\code{0xFFFF}\Rightarrow i+2\le\slen(s)}\\[2pt]
-\code{r = s.indexOf(u)},\ \code{s.lastIndexOf(u)} & \hoare{\kw{true}}{\cdot}{-1\le r\le\slen(s)}\\[2pt]
- & \hoare{1\le\slen(u)}{\cdot}{r<\slen(s)}\\[2pt]
-\code{r = s.slice(a, b)} & \hoare{0\le a\le b\le\slen(s)}{\cdot}{\slen(r)=b-a}\\[2pt]
-\code{r = xs.indexOf(v)} & \hoare{\kw{true}}{\cdot}{-1\le r<\len{\mathit{xs}}}\\[2pt]
-\code{r = new C(n)},\ C\text{ a typed array} & \hoare{0\le n}{\cdot}{\kw{view}(r)=n}
+\code{r = s.charCodeAt(i)} & \hoare{0\le i<\len s}{\cdot}{0\le r\le 65535}\\[2pt]
+\code{r = s.codePointAt(i)} & \hoare{0\le i<\len s}{\cdot}{0\le r\le\code{0x10FFFF}}\\[2pt]
+ & \hoare{0\le i<\len s}{\cdot}{r>\code{0xFFFF}\Rightarrow i+2\le\len s}\\[2pt]
+\code{r = s.indexOf(u)},\ \code{s.lastIndexOf(u)} & \hoare{\kw{true}}{\cdot}{-1\le r\le\len s}\\[2pt]
+ & \hoare{1\le\len u}{\cdot}{r<\len s}\\[2pt]
+\code{r = s.slice(a, b)} & \hoare{0\le a\le b\le\len s}{\cdot}{\len r=b-a}\\[2pt]
+\code{r = xs.indexOf(v)},\ \mathit{xs}\text{ an array} & \hoare{\kw{true}}{\cdot}{-1\le r<\len{\mathit{xs}}}\\[2pt]
+\code{r = new C(n)},\ C\text{ a typed array} & \hoare{0\le n}{\cdot}{\len r=n}
 \end{array}
 \]
 Each of these has the effect $\emptyset$ on its normal exit; the
 construction also allocates. For $n$ the number $2^{53}$, the value of
-$\slen(s)+1$ past the range, the construction throws. Without the stated precondition the call
+$\len s+1$ past the range, the construction throws. Without the stated precondition the call
 is still safe: \code{charCodeAt} gives a number with no fact, and
 \code{codePointAt} a number or \code{undefined}. Example:
 \code{const j = text.indexOf("x"); if (j >= 0) return text.charCodeAt(j);}
-verifies: the string searched for has length 1, which gives $j<\slen(\mathit{text})$, and
+verifies: the string searched for has length 1, which gives $j<\len{\mathit{text}}$, and
 the test gives $0\le j$
 \status{assumed, as contracts of the host. In the Lean model of UTF-16 strings, \lean{unit\_bound} and \lean{code\_unit\_safe} prove the range of a code unit, \lean{slice\_length} the length of a slice, and \lean{search\_bounds} the bounds of a search in a string that fails or finds a match}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
 The precondition of \textsc{View-Read} and of \textsc{View-Write} is
-the linear atom $0\le i<\kw{view}(b)$; as a linear atom it holds only of
+the linear atom $0\le i<\len b$; as a linear atom it holds only of
 an integer $i$ (Section~4). A write has two rules: \textsc{View-Write}
 states what the write stores, and \textsc{View-Write-Any} holds of a
 write at every number $i$. The format has a total conversion
@@ -1728,9 +1740,9 @@ $\mathit{conv}_{\mathsf{Uint8}}(300)=44$. \code{Float64} stores the
 number itself, NaN as one value. The index $-0$ is the index 0.
 \[
 \begin{array}{lll}
-\textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\kw{view}(b)} & :\emptyset\\[3pt]
-\textsc{View-Read} & \hoare{0\le i<\kw{view}(b)}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
-\textsc{View-Write} & \hoare{0\le i<\kw{view}(b)}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}\\[3pt]
+\textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\len b} & :\emptyset\\[3pt]
+\textsc{View-Read} & \hoare{0\le i<\len b}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
+\textsc{View-Write} & \hoare{0\le i<\len b}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}\\[3pt]
 \textsc{View-Write-Any} & \hoare{\kw{true}}{\code{b[i] = v}}{\kw{true}} & :\{\vw:\grow\}
 \end{array}
 \]
@@ -1759,7 +1771,7 @@ unchanged}.
 \begin{example}[A write through a typed array]\label{ex:view}
 Let \code{xs} be an array, \code{o} an object, and \code{b} and \code{c}
 typed arrays. Before \code{b[0] = 7} let $3\le\len{\mathit{xs}}$,
-$\forall i<3.\ \mathit{xs}[i]>0$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
+$\forall i<3.\ \mathit{xs}[i]>0$, $o.n\doteq 1$, $2\le\len c$,
 $b[1]\doteq 4$ and $c[1]\doteq 5$ hold. After the write:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[{$3\le\len{\mathit{xs}}$ and $\forall i<3.\ \mathit{xs}[i]>0$ hold}]
@@ -1767,8 +1779,8 @@ Their supports lie in $\mathit{xs}[\ast]$: an array spine, disjoint
 from $\vw$, and element cells, which are value locations. So
 $\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
 \item[$o.n\doteq 1$ holds] Its support is a field location.
-\item[$2\le\kw{view}(c)$ holds] By \textsc{(View)}.
-\item[{$b[1]\doteq 4$ holds}] It gives $1<\kw{view}(b)$, so the
+\item[$2\le\len c$ holds] By \textsc{(View)}.
+\item[{$b[1]\doteq 4$ holds}] It gives $1<\len b$, so the
 precondition of the write at index 0 holds; by the postcondition of \textsc{View-Write}.
 \item[{$c[1]\doteq 5$ may fail}] Its support holds the view spine of
 \code{c} at $\keep$, and the effect lets that spine change. Let \code{c}
@@ -1832,8 +1844,8 @@ both paths are rigid; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
 \item[Arithmetic] A linear inequality that follows over the integers
 from the linear inequalities at hand, where each term of the conclusion
 is defined: it occurs in a premise, or is a literal. A defined length
-is within its range: $0\le\len\pi\le N$, $0\le\kw{view}(\pi)\le M$ and
-$0\le\slen(\pi)\le M$. For a safe-integer literal $n$, $\pi\doteq n$
+is within its range: $0\le\len\pi\le M$, and $\len\pi\le N$ for an
+array path $\pi$. For a safe-integer literal $n$, $\pi\doteq n$
 gives the equality $\pi=n$ of terms; $\pi=n$ gives $\pi\doteq n$ where
 $n\ne 0$, and $\pi\doteq 0\vee\pi\doteq -0$ where $n=0$: a term reads
 $-0$ as 0, and $-0$ is a value of its own.
@@ -1967,7 +1979,7 @@ Quantified fact across a write & $\apart(a,z)\wedge\forall i<t.\ \varphi\vdash\b
 Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$\hfill postcondition, \textsc{(Sep)}\\[2pt]
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{spine}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
-Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
+Typed-array length & $i<\len w\vdash\bx{\top}(i<\len w)$, $w$ a typed-array path\hfill\textsc{(View)}\\[2pt]
 Index from a shift or a mask & with $0\le c<2^{31}$: after \code{y = c >> d}, $0\le y\wedge 2^{d}y\le c$; after \code{y = c \& m}, $0\le y\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
 Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\forall i<t.\ \varphi\vdash\bx{\vw:\grow}\forall i<t.\ \varphi$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over $\mathit{xs}[i]$ and scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
 Fact at a handler & $\bx{\Phi^{e}}R^{e}$ at the entry of the command gives $R^{e}$ at its handler\hfill\textsc{Frame}\\

@@ -76,9 +76,9 @@ rep(r'\newcommand{\val}{\kw{values}}', r'\newcommand{\val}{\reg{values}}')
 rep(r'\newcommand{\st}{\kw{spines}}', r'\newcommand{\st}{\reg{spines}}')
 for n, w in [('fld', 'fields'), ('cel', 'cells'), ('elt', 'elements')]:
     rep(r'\newcommand{\%s}{\kw{all\text{-}%s}}' % (n, w), r'\newcommand{\%s}{\reg{all\text{-}%s}}' % (n, w))
-for n, w in [('slen', 'strLength'), ('rowt', 'table'), ('esum', 'sum')]:
+for n, w in [('rowt', 'table'), ('esum', 'sum')]:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, w), r'\newcommand{\%s}{\asr{%s}}' % (n, w))
-t = t.replace(r'\kw{scalar}', r'\chg{scalar}').replace(r'\kw{store}', r'\reg{store}').replace(r'\kw{view}', r'\asr{view}')
+t = t.replace(r'\kw{scalar}', r'\chg{scalar}').replace(r'\kw{store}', r'\reg{store}')
 rep(r'\newcommand{\code}[1]{\texttt{#1}}', r'\newcommand{\code}[1]{\textcolor{codec}{\texttt{#1}}}')
 rep(r'\newcommand{\lean}[1]{\texttt{\small #1}}', r'\newcommand{\lean}[1]{\textcolor{leanc}{\texttt{\small #1}}}')
 rep(r'\newcommand{\status}[1]{\textsf{\small[#1]}}',
