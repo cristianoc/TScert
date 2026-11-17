@@ -55,18 +55,19 @@ It extends four existing pieces:
   The front proposes the protocol, the tags and the seal points; Lean
   certifies each function at them.
 
-New machinery: one contract component, one world component, two clauses of
-well-formedness, one clause of admissibility, one ghost command, and one
-region of the effect language, the sealed map $`\Sigma_O`$, which an effect
-may grow. No new judgment form and no new modality.
+New machinery: one contract component, two world components (the sealed
+map and the sealed roots), two clauses of well-formedness, one clause of
+admissibility, one ghost command, and world entries in the effect
+language, whose action is on pairs of a heap and a world. No new judgment
+form and no new modality.
 
 ## The example
 
 ```ts
 declare const brand: unique symbol
-/** @opaque Pass back only a value this package returned at this type, never a
- *  copy or a substitute, and do nothing with it, or with anything reached
- *  from it, but read the members this type states.
+/** @opaque Pass back only a value this package gave you at this type, never a
+ *  copy or a substitute. Of it and of anything reached from it, read only the
+ *  members its type states; change nothing.
  *  @invariant this.flags.length === this.widths.length
  *  @representation Rep */
 export type Handle = { readonly [brand]: true }
@@ -101,23 +102,52 @@ states `@opaque` and `@representation R_A`, and declares no member but a
 brand under a `unique symbol` key no module exports; $`I_A`$ is its
 invariant (`true` where none is stated).
 
-**Paths.** The paths of a type are defined by induction on the type:
+**Intersected handles.** A type $`A\mathbin{\&}V`$ an entry exports, with
+$`V`$ a record of read-only members, is an abstract type of $`O`$ when it
+states its own `@representation R'` with $`R'`$ a subtype of $`R_A`$, and
+`@opaque`. Its roots are $`(o,A\mathbin{\&}V)`$, each also a root of $`A`$;
+its paths are $`\mathit{Path}(R')`$, with $`\delta_{A\&V.p}=\delta_{A.p}`$
+on the paths it shares with $`R_A`$; each member of $`V`$ is checked as a
+read-only view, at every depth, of the field of $`R'`$ with that name.
+Upstream's `PreparedTextWithSegments` is
+`PreparedText & { readonly segments; readonly kinds; readonly widths }`
+(cited: `layout.ts:53–57`) over the representation
+`PreparedSegments & { kinds }` (cited: `layout.ts:64`), so `segments` and
+`kinds` are paths of it and get entries.
+
+**The admitted types.** The types an abstract type's representation, and a
+signature crossing the owner's boundary, may use are given by
+
+```math
+T ::= \beta \mid A \mid \{f_i:T_i\}_i \mid \mathsf{readonly}\ T \mid E[\,] \mid T_1\mid T_2 \mid T_1\mathbin{\&}T_2 \mid (\vec T)\Rightarrow_\Phi T
+```
+
+with $`\beta`$ a scalar type, a typed array, or a type no clause names
+(a collection, a class instance): a leaf. Any other form (a generic, a
+conditional or mapped type, an index signature) that names an abstract
+type is refused where it names it (`invalid-abstract-type-form`).
+
+**Paths.** The paths of a type, by induction on the grammar:
 
 ```math
 \begin{aligned}
 \mathit{Path}(\{f_i:T_i\}_i) &= \{f_i\}\cup\{f_i.q \mid q\in\mathit{Path}(T_i)\}\\
 \mathit{Path}(E[\,]) &= \{\mathsf{spine},\ \mathsf{cells}\}\cup\{[*].q\mid q\in\mathit{Path}(E)\}\\
 \mathit{Path}(T_1\mid T_2) &= \mathit{Path}(T_1)\cup\mathit{Path}(T_2)\\
-\mathit{Path}(T) &= \emptyset\ \text{for a scalar type, a typed array, or a type untagged by } O
+\mathit{Path}(T_1\mathbin{\&}T_2) &= \mathit{Path}(T_1)\cup\mathit{Path}(T_2)\\
+\mathit{Path}(T) &= \emptyset\ \text{for every other type}
 \end{aligned}
 ```
 
-A path ends at an untagged type, such as a read-only view of external data.
-A field holding a typed array is a path; its view spine is none, and its
-length is kept by every transition, by Paper I's rule (View) (cited:
-Paper I, §"Entering the modality", (View)). So nested arrays such as
-`breakableFitAdvances: (number[] | null)[]` have paths through their inner
-arrays, and no path reads a typed array's elements.
+A path ends at a leaf, an abstract type, a read-only type or a function:
+such a value is tagged where it is the owner's and never sealed, and
+$`I_A`$ reads nothing of it. A field holding a typed array is a path; the
+typed array's view spine carries no owner tag, so a write through a typed
+array is an ordinary write, and its length is kept by every transition, by
+Paper I's rule (View) (cited: Paper I, §"Entering the modality", (View)).
+So nested arrays such as `breakableFitAdvances: (number[] | null)[]` have
+paths through their inner arrays, and no path reads a typed array's
+elements.
 
 **Owner tags.** A contract may carry an owner $`O`$:
 $`W(l)=(\kappa,T,O)`$, fixed by world extension as $`\kappa`$ and $`T`$
@@ -132,10 +162,11 @@ checks the function at it.
 handle's identity location and its abstract type. The world carries, for
 each owner, a finite map $`\Sigma_O`$ from locations to changes and a set
 $`\mathit{Roots}_O`$ of sealed roots. Extension only extends both:
-$`W\sqsubseteq W'`$ requires $`\Sigma_O\subseteq\Sigma'_O`$ as maps. A
-location's entry is fixed where it is sealed, as its contract is where it
-is allocated. For a root $`(o,A)`$ and a path $`p\in\mathit{Path}(R_A)`$,
-$`o.p(h)`$ is the set of locations $`p`$ reaches from $`o`$ in $`h`$.
+$`W\sqsubseteq W'`$ requires $`\Sigma_O\subseteq\Sigma'_O`$ as maps and
+$`\mathit{Roots}_O\subseteq\mathit{Roots}'_O`$. A location's entry is fixed
+where it is sealed, as its contract is where it is allocated. For a root
+$`(o,A)`$ and a path $`p\in\mathit{Path}(R_A)`$, $`o.p(h)`$ is the set of
+locations $`p`$ reaches from $`o`$ in $`h`$.
 
 **The protocol.** Each owner has an effect
 $`\Gamma_O=\{A.p:\delta_{A.p}\}`$ over the paths of its abstract types.
@@ -153,22 +184,37 @@ entry world with $`l<|h|`$ satisfies $`\Sigma_O(l)_{|h|}(h(l),h'(l))`$. The
 clause reads no heap to find a location's bound, so it is transitive, each
 change being a preorder, and rigid.
 
-**Meaning of an abstract type.** Inside its owner, `handle-meaning` holds:
-$`⟦A⟧=⟦R_A^O⟧`$, the representation at contracts tagged $`O`$. At every
-type outside the owner (an entry's signature, an exported binding's type,
-an external function's parameter or result, a callback's argument), $`A`$
-means its sealed roots:
+**Meaning of an abstract type, and the boundary conversion.** Inside its
+owner, `handle-meaning` holds: $`⟦A⟧=⟦R_A^O⟧`$, the representation at
+contracts tagged $`O`$. Outside it, $`A`$ means its sealed roots, and the
+external meaning of every admitted type follows by structure:
 
 ```math
-v\in⟦A⟧^{\mathrm{ext}}_W \iff v\in⟦R_A^O⟧_W \land (\mathrm{id}(v),A)\in\mathit{Roots}_O
+\begin{aligned}
+v\in⟦A⟧^{\mathrm{ext}} &\iff v\in⟦R_A^O⟧ \land (\mathrm{id}(v),A)\in\mathit{Roots}_O\\
+⟦\{f_i:T_i\}⟧^{\mathrm{ext}},\ ⟦E[\,]⟧^{\mathrm{ext}},\ ⟦T_1\mid T_2⟧^{\mathrm{ext}},\ ⟦T_1\&T_2⟧^{\mathrm{ext}} &= \text{the same constructor over the parts' external meanings, at untagged contracts}\\
+v\in⟦(\vec S)\Rightarrow_\Phi T⟧^{\mathrm{ext}} &\iff \text{every call of } v \text{ with arguments in } ⟦\vec S⟧^{\mathrm{ext}} \text{ ends in } ⟦T⟧^{\mathrm{ext}} \text{ within } \Phi
+\end{aligned}
 ```
 
-so every value of $`A`$ that crosses the owner's boundary meets $`I_A`$, by
-(W6). Every value the owner gives code outside it is at an untagged type
-of its signature, so a handle crosses only sealed and the representation
-only as a read-only view: one typing obligation at every outward
-transfer, a result, an argument of an external call, an exported binding,
-a store where external code reads, a throw.
+A value of $`R_A^O`$ has the external meaning of no type but a read-only
+view, since its contracts are tagged. The boundary conversion is the
+identity on values with one obligation: a value the owner gives code
+outside it, at any position (a result, an argument of an external call,
+an exported binding, a store where external code reads, a throw), is in
+the external meaning of the type there. For a function the owner gives
+out, the obligation is its certificate at the external meaning of its
+type: an escaped closure returning $`A`$ seals its result before each
+return. Every value of $`A`$ that crosses the boundary meets $`I_A`$, by
+(W6).
+
+**Undeclared views are refused.** A representation part may cross the
+boundary only as a member $`V`$ declares on an abstract type's
+intersection: an outward transfer of a representation part at any other
+read-only type is refused (`invalid-abstract-undeclared-view`). **This is
+an explicit restriction**: assumption (ii) of the [trust](#trust) covers
+only values reached from an abstract type, so a view given out otherwise
+has no assumption behind it. It is documented in SOURCE-FRAGMENT.md.
 
 **Declaration side conditions** (refused otherwise):
 
@@ -188,31 +234,67 @@ protocol clause; *Tolerant* gives that each such transition keeps
 $`I_A`$ of every sealed root; (W6) after the transition follows. No step of
 the argument assumes (W6) of the endpoint (conjectured; Lean item 1).
 
-**Sealing**, $`\mathsf{seal}_A(e)`$: a ghost command, its place proposed by
-the front at or before the first point where the value reaches code
-outside the owner. Obligations: $`e`$ meets $`R_A^O`$; $`I_A(e,h)`$; each
-location at a path $`p`$ of $`e`$ is unsealed, or already in
-$`\Sigma_O`$ with entry $`\delta_{A.p}`$. It adds $`(\mathrm{id}(e),A)`$ to
-$`\mathit{Roots}_O`$ and maps each location at a path $`p`$ of $`e`$ to
-$`\delta_{A.p}`$. Its effect is $`\{\Sigma_O:\mathsf{grow}\}`$ on those
-locations, an entry on the world component. A write that stores a value
-into a location at a path $`p`$ of a sealed root seals the value's
-locations at the continuing paths, with the same obligations and the same
-effect: a sealing store is a seal.
+**Sealing.** A step seals when it makes a location reachable at a path of
+a sealed root that was reachable at none: the ghost command
+$`\mathsf{seal}_A(e)`$, its place proposed by the front at or before the
+first point where the value reaches code outside the owner; a store into a
+location at a path of a sealed root; and any write that extends some
+$`o.p(h)`$, a `push` adding a cell to a sealed spine included. Its
+obligations are collected over the heap after the step, from every root
+and every path:
+
+- every location newly reached at some path $`p`$ of some root $`(o,A)`$
+  is unsealed or already in $`\Sigma_O`$, and every path of every root
+  reaching it, the new root's included, has the same entry
+  $`\delta_{A.p}`$, equal to its existing entry where it has one;
+- for $`\mathsf{seal}_A(e)`$: $`e`$ meets $`R_A^O`$ and $`I_A(e,h)`$.
+
+Its world change maps each newly reached location to that entry and, for
+$`\mathsf{seal}_A(e)`$, adds $`(\mathrm{id}(e),A)`$ to
+$`\mathit{Roots}_O`$. (W5) after the step follows from the agreement
+obligation, since the entries of every other location and every other
+root are unchanged (conjectured; Lean item 2).
+
+**Effects on the world.** An effect acts on pairs of a heap and a world.
+Its heap entries act as Paper I states. Its world entries are regions
+$`\Sigma_O[r]`$ and $`\mathit{Roots}_O[r]`$ of locations, at one change,
+$`\mathsf{init}`$-shaped: a location of $`r`$ with no entry may gain one,
+and an entry, once present, is fixed; a location outside every world entry
+gains none:
+
+```math
+(h,W)\xrightarrow{\Phi}(h',W') \iff h\xrightarrow{\Phi_{\mathrm{heap}}}h' \land W\sqsubseteq W' \land \mathrm{dom}\,\Sigma'_O\setminus\mathrm{dom}\,\Sigma_O\subseteq\textstyle\bigcup\{r(\rho,h)\mid\Sigma_O[r]\in\Phi\}
+```
+
+and the same for $`\mathit{Roots}_O`$. A seal's effect is
+$`\{\Sigma_O[e.\mathit{paths}]:\mathsf{init},\ \mathit{Roots}_O[\mathrm{id}(e)]:\mathsf{init}\}`$.
+Effects compose per exit as Paper I's do: a call's normal exit and its
+exceptional exit each carry their world entries, `seq_eff` joins them, and
+`fresh_eff` drops entries on locations above the caller's mark. A callee
+that seals and then throws carries its world entry on its exceptional
+exit, so the caller's handler holds no $`\mathsf{unsealed}`$ fact the seal
+falsified. Independence of the world (cited: Paper I, Definition
+"Independence of the world") holds of every assertion without a world
+fact; the two facts below read the world and are kept by their world
+supports.
 
 **Sealed and unsealed facts.** The fact
 $`\Sigma_O(x.p)\sqsubseteq\delta`$, the location $`x.p`$ reaches is sealed
 with an entry at most $`\delta`$, is monotone in the world; it is kept by
-every transition that keeps the path's prefix, and a prefix sealed at
-$`\mathsf{keep}`$ is kept by every admissible transition. The fact
-$`\mathsf{unsealed}(x.p)`$ holds of a fresh allocation and is supported by
-$`\{\Sigma_O:\mathsf{keep}\}`$: a seal removes it unless $`x.p`$ is known
-separate from the locations the seal maps, by Paper I's separation facts.
-A call's summary carries its $`\Sigma_O`$ entry, composed by `Frame` and
-`Fresh-Eff` as any entry is. External code seals only by calling the
-owner's entries ([trust](#trust)), so an external call's $`\Sigma_O`$ entry
-is the join of the entries' entries. Both facts are ordinary
-preconditions and postconditions, inferred.
+every transition that keeps the path's proper prefixes, and a prefix
+sealed at $`\mathsf{keep}`$ is kept by every admissible transition. The
+fact $`\mathsf{unsealed}(x.p)`$ holds of a fresh allocation; its support
+is $`\{x.q:\mathsf{keep}\mid q\ \text{a proper prefix of}\ p\}\cup\{\Sigma_O[x.p]:\mathsf{keep}\}`$:
+a write to a prefix, or a world entry that may cover $`x.p`$, removes it,
+unless $`x.p`$ is known separate from that entry's region by Paper I's
+separation facts. A call's summary carries its world entries, composed as
+above. An external call's $`\Sigma_O`$ entry is empty when every entry of
+the owner has an empty $`\Sigma_O`$ entry after `fresh_eff`, and otherwise
+covers every location tagged $`O`$, since external code seals only by
+calling the owner's entries ([trust](#trust)) with arguments it chooses.
+For pretext it is empty: its one sealing store after preparation,
+`rich-inline.ts:1176–1178`, seals arrays fresh in the call. Both facts are
+ordinary preconditions and postconditions, inferred.
 
 **Elimination**, `h as R_A` or `h as A & R_A`, only in the owner: the
 identity, as `handle-meaning` gives it. Where $`(\mathrm{id}(h),A)`$ is a
@@ -222,18 +304,21 @@ owner is refused.
 
 **Writes.** A write whose target location is tagged $`O`$ is checked as one
 of: the target is $`\mathsf{unsealed}`$, and the write is an ordinary one;
-or the target is known at a path $`p`$ of a sealed root, and the write is
-within $`\delta_{A.p}`$. A write through an alias known at no path is
-charged in $`\Gamma_O`$ to every path of $`O`$ whose contract admits the
-target; a $`\Gamma_O`$ that this makes intolerant is refused at that write.
+or $`\Sigma_O(\mathit{target})\sqsubseteq\delta`$ is known, and the write is
+within $`\delta`$. A walker or helper holding only location facts at a
+structural type writes by the second. The target's path is needed only
+where the written value has continuing paths, for the sealing obligation
+above. A write to a target with neither fact is charged in $`\Gamma_O`$ to
+every path of $`O`$ whose contract admits the target; a $`\Gamma_O`$ that
+this makes intolerant is refused at that write.
 
-**Effects.** A class entry $`(c:\delta)`$ of any effect, stated or inferred,
-bounds a location $`l`$ of class $`c`$ outside $`\mathrm{dom}\,\Sigma_O`$ by
-$`\delta`$ and a location $`l\in\mathrm{dom}\,\Sigma_O`$ by
-$`\delta\sqcap\Sigma_O(l)`$. This is a consequence of the admissibility
-clause, which every transition already meets. So
-`{ values: "any"; spines: "grow" }` bounds a sealed location by its entry,
-and `{}` keeps it.
+**Effects of class entries.** A class entry $`(c:\delta)`$ of any effect,
+stated or inferred, bounds a location $`l`$ of class $`c`$ outside
+$`\mathrm{dom}\,\Sigma_O`$ by $`\delta`$ and a location
+$`l\in\mathrm{dom}\,\Sigma_O`$ by $`\delta\sqcap\Sigma_O(l)`$. This is a
+consequence of the admissibility clause, which every transition already
+meets. So `{ values: "any"; spines: "grow" }` bounds a sealed location by
+its entry, and `{}` keeps it.
 
 **The protocol is inferred, and closed under the owner's operations.** The
 front proposes the least $`\Gamma_O`$ covering every write of the owner's
@@ -291,10 +376,12 @@ the support does not tolerate.
   an untagged type (`invalid-abstract-return-rep`). A fresh copy is
   admitted.
 - **`PreparedTextWithSegments`'s `readonly widths: ArrayLike<number>`**
-  (cited: upstream `layout.ts:53–57`). A member a type intersected with an
-  abstract type declares is a view: checked to be a read-only supertype of
-  the representation's field at every depth. A writable declared member is
-  refused (`invalid-abstract-writable-view`).
+  (cited: upstream `layout.ts:53–57`). An intersected handle's member is a
+  view: checked to be a read-only supertype, at every depth, of its own
+  representation's field. A writable declared member is refused
+  (`invalid-abstract-writable-view`); a representation part given out at a
+  read-only type no intersected handle declares is refused
+  (`invalid-abstract-undeclared-view`).
 - **Spreading a handle.** In the owner: the result is a fresh record whose
   fields hold already-sealed locations; sealing it is an introduction,
   admitted where the shared paths have the same protocol entries. In
@@ -339,11 +426,17 @@ The new row of the [trust surface](../DESIGN.md#trust-surface):
 > For each type an entry of the analysed sources exports with `@opaque`
 > (an abstract type), external code (i) passes, at every position whose
 > type names the abstract type, only a value identical to one it received
-> from the analysed sources at a type naming it, and (ii) takes no step on
-> a value it holds at a type naming the abstract type or at a read-only view
-> such a type or an entry's signature states, or on any value reached from
-> one, but a read of a member that type states. A type without `@opaque`
-> is read under neither assumption.
+> from the analysed sources at a type naming it, and (ii) every step it
+> takes on the properties, attributes or prototype of a value it holds at
+> a type naming the abstract type, or of one reached from such a value, is
+> a read of a member its type states. A type without `@opaque` is read
+> under neither assumption.
+
+Assumption (ii) restricts only steps on the properties, attributes and
+prototype of values reached from an abstract type: holding such a value,
+comparing it and using it as a key are no such steps. A read-only view
+the owner gives out otherwise has no assumption behind it, and its
+transfer is refused ([undeclared views](#the-definition)).
 
 Where it is stated: the `@opaque` annotation of each such type, whose text
 is the assumption in the words a user of the package reads; `@opaque` in
@@ -384,15 +477,21 @@ exclude; under them, acceptance says nothing of a program that makes one:
    reentrancy, the induction is over the length of the run, every owner
    function's certificate assuming the bound of the calls it makes.
 2. **Sealing** extends the world and keeps (W1) to (W6), from its
-   obligations.
-3. **Effect denotation**: the class-entry reading is sound for every
-   certified summary; the $`\Sigma_O`$ region composes by `seq_eff`,
-   rebasing and `fresh_eff` with their statements unchanged; respect gains
+   obligations collected over every root and path, every write that
+   extends a path's locations included.
+3. **Effect denotation**: the action on heap-and-world pairs; the
+   class-entry reading is sound for every certified summary; world entries
+   compose on normal and exceptional exits by `seq_eff`, rebasing and
+   `fresh_eff`, whose statements gain the world component; respect gains
    the disjointness of $`\mathrm{dom}\,\Sigma_O`$ from the untagged
-   classes.
-4. **Reliance**: $`\Sigma_O`$ is rigid and bounds every admissible
+   classes; Independence of the world holds of every assertion without a
+   world fact.
+4. **The boundary conversion**: the external meaning of every admitted
+   type, arrows included, is met by every value the owner gives out, from
+   each function's certificate at its type's external meaning.
+5. **Reliance**: $`\Sigma_O`$ is rigid and bounds every admissible
    transition; the class effects meet with it are rigid.
-5. `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its statement;
+6. `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its statement;
    `PassUnitSafe`'s entry condition reads the extended well-formedness, and
    its premise and conclusion are reviewed again, as a change of the
    accepted plan type requires.
@@ -418,7 +517,8 @@ too-small $`\Gamma_O`$ fails a function's check.
 > **`@opaque TEXT`**
 >
 > On an exported type alias or interface that states `@representation` and
-> declares only a brand under a `unique symbol` key no module exports: the
+> declares only a brand under a `unique symbol` key no module exports, or
+> that is such a type intersected with a record of read-only members: the
 > type is an abstract type of its owner, and external code is assumed to
 > meet the two assumptions of the abstract-type row of the trust surface.
 > `TEXT` must be the sentence below, up to white space, so that a user of
@@ -426,9 +526,9 @@ too-small $`\Gamma_O`$ fails a function's check.
 > text is refused. A type without `@opaque` is a sealed handle and gets no
 > abstract-type trust.
 >
-> "Pass back only a value this package returned at this type, never a copy
-> or a substitute, and do nothing with it, or with anything reached from
-> it, but read the members this type states."
+> "Pass back only a value this package gave you at this type, never a copy
+> or a substitute. Of it and of anything reached from it, read only the
+> members its type states; change nothing."
 
 Upstream pretext's two handles, as they would be written (the
 representation of `PreparedRichInline` named by an alias of its fields,
@@ -438,9 +538,9 @@ representation of `PreparedRichInline` named by an alias of its fields,
 ```ts
 declare const preparedTextBrand: unique symbol
 
-/** @opaque Pass back only a value this package returned at this type, never a
- *  copy or a substitute, and do nothing with it, or with anything reached
- *  from it, but read the members this type states.
+/** @opaque Pass back only a value this package gave you at this type, never a
+ *  copy or a substitute. Of it and of anything reached from it, read only the
+ *  members its type states; change nothing.
  *  @invariant this.segmentFlags.length === this.widths.length
  *  @representation PreparedLineBreakData */
 export type PreparedText = {
@@ -449,9 +549,9 @@ export type PreparedText = {
 
 declare const preparedRichInlineBrand: unique symbol
 
-/** @opaque Pass back only a value this package returned at this type, never a
- *  copy or a substitute, and do nothing with it, or with anything reached
- *  from it, but read the members this type states.
+/** @opaque Pass back only a value this package gave you at this type, never a
+ *  copy or a substitute. Of it and of anything reached from it, read only the
+ *  members its type states; change nothing.
  *  @representation RichInlineFlow */
 export type PreparedRichInline = {
   readonly [preparedRichInlineBrand]: true
@@ -468,7 +568,8 @@ $`\Gamma_O`$ forced smaller than a writer needs; a tag dropped at an
 allocation; a seal point removed; a summary's $`\Sigma_O`$ entry forced
 empty on a sealing callee; a declared member forged writable; $`I_A`$
 forged to read an untagged path or a typed array's element; an entry forged
-as a non-entry; `@opaque` forged onto a type whose declaration has no
+as a non-entry; a path's agreement obligation forged to pass with two
+entries for one location; `@opaque` forged onto a type whose declaration has no
 `@opaque`.
 
 Negative cases, each unsafe under Node (observed: the programs, as
@@ -489,6 +590,15 @@ JavaScript, in the session scratchpad, `node <file>` printing the reads):
 - `invalid-abstract-intolerant-invariant`: $`|flags|\ge|widths|`$ with an
   exported writer setting `widths.length`, called by the visitor:
   `[0, 0, undefined]`.
+- `invalid-abstract-undeclared-view`: an entry returns `widths` at
+  `readonly number[]`, a view declared on no abstract type's intersection,
+  so no assumption covers it; the client pushes through it in the visitor:
+  `[0, 0, undefined]`. It is also the control of the undeclared-view
+  restriction.
+- `invalid-abstract-seal-then-throw`: a callee seals its argument and
+  throws; the caller's handler pushes onto `widths` and calls `walk`,
+  refused at the push, the handler holding no $`\mathsf{unsealed}`$ fact:
+  `[0, 0, undefined]`.
 - Existing: `invalid-sealed-handle-forged`, `-builder`, `-resize`,
   `-invariant-cast`.
 
@@ -496,7 +606,8 @@ Restriction controls, safe under Node and refused by a stated restriction:
 `abstract-open-invariant-refused`, an exported `truncate` popping `widths`
 then `flags` under $`|flags|=|widths|`$, with a walker reading `flags[i]`
 before `visit` (Node: `[0, 0]`); `abstract-view-element-refused`, an
-invariant reading a typed array's element.
+invariant reading a typed array's element; `abstract-type-form-refused`,
+a mapped type over an abstract type in an entry's signature.
 
 Positive: the example above; `bounds-pattern-unreachable-handle-refused`
 with its handle stating `@opaque`; `blocker-pretext-opaque-handle-cast`
@@ -593,8 +704,10 @@ Paper II with shared structure"); what each gets is conjectured.
 - **`walkRichInlineLineRanges`**: `flow`'s fields read by its lambda after
   each step survive the user's `onLine` ($`\mathsf{keep}`$ on every path
   they read).
-- **`layoutWithLines`**: its lambda is analysed code; the handle's facts
-  survive by their entries, `lines` by the lambda's inferred effect.
+- **`layoutWithLines`**: its lambda is analysed code; the handle's facts,
+  `prepared.segments` included as a path of the intersected handle
+  `PreparedTextWithSegments`, survive by their entries, `lines` by the
+  lambda's inferred effect.
 - **P18**: at pretext's sites `Prepared` is an abstract type, so its
   invariant holds after `step(c)` by (W6) and elimination, and its fields
   are $`\mathsf{keep}`$. Paper II's own program, with `Prepared` an exported
@@ -620,7 +733,8 @@ Paper II with shared structure"); what each gets is conjectured.
    abstract types, owners and entries, casts, declared views, seal points,
    $`\Gamma_O`$ and the $`\Sigma_O`$ entries. The cases and controls above.
    Covers the example.
-2. Owner-side spread, intersected handles (`PreparedTextWithSegments`);
+2. Owner-side spread, intersected handles (`PreparedTextWithSegments`,
+   stating `@opaque` and `@representation PreparedSegments & { kinds }`);
    upstream's brands restored in the pretext fork with `@opaque`; the five
    handle sites measured.
 3. Paths whose single write restores the invariant (P16).
