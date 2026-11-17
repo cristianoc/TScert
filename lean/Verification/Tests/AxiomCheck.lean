@@ -6,6 +6,8 @@ import Verification.Semantics.CommandSummaries
 import Verification.Semantics.CommandComposition
 import Verification.Semantics.CommandLoops
 import Verification.Semantics.CommandBodies
+import Verification.Semantics.FootprintJoin
+import Verification.Programs.TolerantFramesExitProposals
 import Verification.Semantics.FormulaScopes
 import Verification.Programs.FrameChecks
 import Verification.Programs.TolerantFramesExitStructural
