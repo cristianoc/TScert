@@ -634,3 +634,46 @@ rule correspondence, and no native-library implementation is claimed verified.
 Logs: `/workspace/scratch/own-key-test.log`, `own-key-axioms.log`,
 `own-key-build1.log`, `own-key-build3.log` (for the nested decoder controls),
 `own-key-build5.log`, `operation-code-build2.log`, `own-key-docs-final.log`.
+
+## General Mask and Or commands at 38b31705
+
+Evidence applies to exact source `38b317059e56dd0dc9f155dcceca7f8f8d7c2e48`,
+extending `7dcd069f6f306430400b1e1c76a998fcef633ad6` on fetched single-pass
+`f2e33e7f35769d00dd6aa1763d86d3c6ef41983f`. The original fetched start remains
+`ba681dfdab8ab41c7d73f3c573f449ab90fedab7`.
+
+All three new modules pass focused builds with warnings as errors. Both complete
+axiom audits pass, exit zero, 436 jobs, with only the same eight cached upstream
+informational backtraces. Full make test completes with exit zero:
+
+- 645 Lean build jobs;
+- 23 passing fast suites and 175 controls (3 operations executed, 492 replayed);
+- 3431/3431 cases as expected;
+- 4323 verified functions, 1790 negative controls and 150 named gaps.
+
+Direct import coverage checks 363 other A/shared and 70 other Paper modules.
+There are no outside-to-Paper imports. This continuation changes only Paper
+Lean code; the preceding precise shared-impact account remains unchanged.
+Documentation passes at 79 documents, 892 code citations and zero problems;
+whitespace checks pass. The 91-row recount is 42 equal, 26 narrower, 10 absent
+and 13 assumed. All original 89 rows are retained; Mask's general rule and the
+new Or rule now have complete displayed semantic command statements/proofs.
+
+Independent read-only Astra reviewed the numerical/pure-execution design before
+integration, then the actual arithV bridges, chosen worlds, integer readings,
+current-state formulas and admitted Triple/Effects bundles. It found no
+soundness or correspondence blocker and confirmed those two equal rows.
+Safe-integer operands are the paper's ambient domain; Mask permits negative
+and large first operands. Freshness follows from existing command binding
+scope and preserves current operand readings; aliases between inputs remain
+allowed. The generic computed predicate reads entry state. No arbitrary
+semantic predicate or raw signed-zero equality is transported.
+
+Complete assertion admission and the old finite certificate coverage remain
+separate. Shr's signed/count generality and Shl remain open, including the
+paper's integer-constant count domain beyond SafeInt. No full Fun or complete
+alignment is claimed. The independent next graph-layout design/prototype is
+not counted as implemented code in this source.
+
+Logs: `/workspace/scratch/bitwise-test.log`, `bitwise-axioms.log`,
+`bitwise-rules-build4.log`, and `bitwise-docs-final.log`.
