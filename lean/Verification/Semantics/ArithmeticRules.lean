@@ -4,7 +4,8 @@ import Verification.Semantics.Linear
 /-! # The step rules, as data
 
 The rules of the note "Tolerant frames" (§6) for the arithmetic steps, the
-string steps and the typed array's steps, each stated once as an
+string steps, the library functions and the typed array's steps, each
+stated once as an
 `ArithRule`: the operation, each operand's domain, the constant operand's
 side condition and normalisation, the premises and the conclusion as
 linear facts over the operands, the result and their lengths, with
@@ -47,17 +48,17 @@ inductive RuleVar where
   deriving DecidableEq, Repr
 
 /-- The values an operand or a result ranges over: a safe integer, its
-integer value the variable's, or any number, which gives the variable no
-value a fact may read. -/
+integer value the variable's, any number, which gives the variable no
+value a fact may read, a string, an array, a typed array, or any value. -/
 inductive Domain where
-  | safeInteger | number | string | array | typedArray
+  | safeInteger | number | string | array | typedArray | value
   deriving DecidableEq, Repr
 
 /-- A double in a domain, at an integer value; no double is a string or
 an object. -/
 def Domain.Admits : Domain → UInt64 → Int → Prop
   | .safeInteger, b, i => SafeInt b i
-  | .number, _, _ => True
+  | .number, _, _ | .value, _, _ => True
   | .string, _, _ | .array, _, _ | .typedArray, _, _ => False
 
 /-- A value in a domain, at an integer value and a length: a safe integer's
@@ -69,6 +70,7 @@ def Domain.AdmitsVal : Domain → Tm → Int → Int → Prop
   | .number, t, _, _ => ∃ b, t = .num b
   | .string, t, _, n => ∃ s, t = .str s ∧ (utf16Units s).length ≤ maxStringLength ∧ n = (utf16Units s).length
   | .array, _, _, _ | .typedArray, _, _, _ => False
+  | .value, _, _, _ => True
 
 /-- How a rule reads its constant: as itself, or as a shift count, the
 constant's `ToUint32` modulo 32 (`arithBits` on `<<`, `>>` and `>>>`). -/
@@ -154,6 +156,12 @@ inductive Operation where
   | binary (op : Arith)
   | strLength | strRead
   | viewLength | viewRead | viewWrite
+  /-- A call of a library method of the receiver `left`, at the arguments
+  `right` and `third`, one of `methods` (the rule holds of each), the first
+  argument a position in the receiver where `indexed`. -/
+  | call (methods : List String) (indexed : Bool)
+  /-- A construction of a library class at the argument `left`. -/
+  | construct
   deriving DecidableEq, Repr
 
 /-- **The value an operation gives** on its operands, the calculus's: `binop`,
@@ -171,7 +179,7 @@ def Operation.eval : Operation → Tm → Tm → Tm → Option Tm
 /-- Whether an operation's value is a function of its operands' values. -/
 def Operation.evaluates : Operation → Bool
   | .binary _ | .strLength | .strRead => true
-  | .viewLength | .viewRead | .viewWrite => false
+  | .viewLength | .viewRead | .viewWrite | .call _ _ | .construct => false
 
 /-- An atom of a rule's conclusion beyond linear facts: the element at an
 index of a collection is a variable's value, converted to the typed array's
@@ -180,6 +188,8 @@ collection reads what it read before the step. -/
 inductive RuleAtom where
   | elem (coll index value : RuleVar) (converted : Bool)
   | othersKept (coll index : RuleVar)
+  /-- Where the first fact holds, the second does. -/
+  | implies (hyp concl : RuleFact)
   deriving DecidableEq, Repr
 
 /-- A region of an effect, Paper I's grammar: the spines (`st`), the views
@@ -203,7 +213,7 @@ inductive Trust where
 
 /-- The paper's display a rule's row belongs to (presentation only). -/
 inductive Display where
-  | arithmetic | strings | views
+  | arithmetic | strings | views | library
   deriving DecidableEq, Repr
 
 /-- **A rule** of a step: the paper's name (several triples of one rule
@@ -221,13 +231,15 @@ structure ArithRule where
   conclusion : List RuleFact
   atoms : List RuleAtom := []
   effect : List (Region × Change) := []
+  /-- The result is a fresh allocation, which the effect does not name. -/
+  allocates : Bool := false
   trust : Trust := .proved
   display : Display := .arithmetic
   deriving DecidableEq, Repr
 
 /-- The sort a rule's variable ranges over. -/
 inductive VarSort where
-  | num | safeInt | string | array | typedArray
+  | num | safeInt | string | array | typedArray | value
   deriving DecidableEq, Repr
 
 /-- The values of a domain, as a sort. -/
@@ -237,16 +249,24 @@ def Domain.sort : Domain → VarSort
   | .string => .string
   | .array => .array
   | .typedArray => .typedArray
+  | .value => .value
 
 /-- What a rule's variable is: an operand, the index of an element
 operation, the value an element write stores, a constant, or the result. -/
 inductive Role where
-  | operand | index | written | constant | result
+  | operand | index | written | argument | constant | result
   deriving DecidableEq, Repr
 
 /-- Whether an operation reads or writes an element at its right operand. -/
 def Operation.indexed : Operation → Bool
   | .strRead | .viewRead | .viewWrite => true
+  | .call _ indexed => indexed
+  | _ => false
+
+/-- Whether an operation is a library function's call or construction,
+whose operands other than the receiver are its arguments. -/
+def Operation.library : Operation → Bool
+  | .call _ _ | .construct => true
   | _ => false
 
 /-- **A rule's variables with their roles and sorts**: each operand of its
@@ -254,13 +274,13 @@ domain's sort, the right one an index where the operation is indexed, a
 constant a safe integer (`Right.AdmitsVal`), the third operand the written
 value, and the result of its domain's sort. -/
 def ArithRule.variables (r : ArithRule) : List (RuleVar × Role × VarSort) :=
-  [(.left, .operand, r.left.sort)] ++
+  [(.left, if r.op = .construct then .argument else .operand, r.left.sort)] ++
     (match r.right with
-     | .operand d => [(.right, if r.op.indexed then .index else .operand, d.sort)]
+     | .operand d => [(.right, if r.op.indexed then .index else if r.op.library then .argument else .operand, d.sort)]
      | .constant _ => [(.right, .constant, .safeInt)]
      | .absent => []) ++
     (match r.third with
-     | some d => [(.third, .written, d.sort)]
+     | some d => [(.third, if r.op.library then .argument else .written, d.sort)]
      | none => []) ++
     [(.result, .result, r.result.sort)]
 
@@ -502,9 +522,122 @@ def viewWriteAny : ArithRule where
   trust := .assumed ["%ByteSet%", "ViewWrite"]
   display := .views
 
+/-! ### Library functions
+
+Each a contract of the host, assumed of the declaration the pass reads it
+from: a method's entry of the prototype overlay (`tools/array-prototype.mts`)
+or the typed arrays' construction form (`viewOfLength`,
+`tools/library-globals.mts`). Each has the empty effect on its normal exit;
+the construction also allocates. -/
+
+/-- A valid position `i` of the receiver: `0 ≤ i < |s|`. -/
+def positionPremises : List RuleFact := [fact [(.right, -1)] 0, fact [(.right, 1), (.len .left, -1)] (-1)]
+
+/-- `s.charCodeAt(i)` at a valid position: `0 ≤ r ≤ 65535`. -/
+def charCodeAt : ArithRule where
+  name := "Char-Code-At"
+  op := .call ["charCodeAt"] true
+  left := .string
+  right := .operand .safeInteger
+  premises := positionPremises
+  result := .safeInteger
+  conclusion := [fact [(.result, -1)] 0, fact [(.result, 1)] 65535]
+  trust := .assumed ["String.prototype.charCodeAt"]
+  display := .library
+
+/-- `s.codePointAt(i)` at a valid position: `0 ≤ r ≤ 0x10FFFF`. -/
+def codePointAt : ArithRule where
+  name := "Code-Point-At"
+  op := .call ["codePointAt"] true
+  left := .string
+  right := .operand .safeInteger
+  premises := positionPremises
+  result := .safeInteger
+  conclusion := [fact [(.result, -1)] 0, fact [(.result, 1)] 0x10FFFF]
+  trust := .assumed ["String.prototype.codePointAt"]
+  display := .library
+
+/-- `s.codePointAt(i)` at a valid position: a code point past `0xFFFF`
+takes two positions, `r > 0xFFFF ⇒ i + 2 ≤ |s|`. -/
+def codePointPair : ArithRule where
+  name := "Code-Point-At"
+  op := .call ["codePointAt"] true
+  left := .string
+  right := .operand .safeInteger
+  premises := positionPremises
+  result := .safeInteger
+  conclusion := []
+  atoms := [.implies (fact [(.result, -1)] (-0x10000)) (fact [(.right, 1), (.len .left, -1)] (-2))]
+  trust := .assumed ["String.prototype.codePointAt"]
+  display := .library
+
+/-- `s.indexOf(u)` and `s.lastIndexOf(u)`: `-1 ≤ r ≤ |s|`. -/
+def indexOf : ArithRule where
+  name := "Index-Of"
+  op := .call ["indexOf", "lastIndexOf"] false
+  left := .string
+  right := .operand .string
+  premises := []
+  result := .safeInteger
+  conclusion := [fact [(.result, -1)] 1, fact [(.result, 1), (.len .left, -1)] 0]
+  trust := .assumed ["String.prototype.indexOf", "String.prototype.lastIndexOf"]
+  display := .library
+
+/-- `s.indexOf(u)` and `s.lastIndexOf(u)` at a nonempty `u`: `r < |s|`. -/
+def indexOfNonempty : ArithRule where
+  name := "Index-Of"
+  op := .call ["indexOf", "lastIndexOf"] false
+  left := .string
+  right := .operand .string
+  premises := [fact [(.len .right, -1)] (-1)]
+  result := .safeInteger
+  conclusion := [fact [(.result, 1), (.len .left, -1)] (-1)]
+  trust := .assumed ["String.prototype.indexOf", "String.prototype.lastIndexOf"]
+  display := .library
+
+/-- `s.slice(a, b)` at `0 ≤ a ≤ b ≤ |s|`: `|r| = b − a`. -/
+def slice : ArithRule where
+  name := "Slice"
+  op := .call ["slice"] false
+  left := .string
+  right := .operand .safeInteger
+  third := some .safeInteger
+  premises := [fact [(.right, -1)] 0, fact [(.right, 1), (.third, -1)] 0, fact [(.third, 1), (.len .left, -1)] 0]
+  result := .string
+  conclusion := [fact [(.len .result, 1), (.third, -1), (.right, 1)] 0,
+    fact [(.len .result, -1), (.third, 1), (.right, -1)] 0]
+  trust := .assumed ["String.prototype.slice"]
+  display := .library
+
+/-- `xs.indexOf(v)` of an array: `-1 ≤ r < |xs|`. -/
+def arrayIndexOf : ArithRule where
+  name := "Array-Index-Of"
+  op := .call ["indexOf"] false
+  left := .array
+  right := .operand .value
+  premises := []
+  result := .safeInteger
+  conclusion := [fact [(.result, -1)] 1, fact [(.result, 1), (.len .left, -1)] (-1)]
+  trust := .assumed ["Array.prototype.indexOf"]
+  display := .library
+
+/-- `new C(n)` of a typed array at `0 ≤ n`: `|r| = n`, a fresh view. -/
+def newView : ArithRule where
+  name := "New-View"
+  op := .construct
+  left := .number
+  right := .absent
+  premises := [fact [(.left, -1)] 0]
+  result := .typedArray
+  conclusion := [fact [(.len .result, 1), (.left, -1)] 0, fact [(.len .result, -1), (.left, 1)] 0]
+  allocates := true
+  trust := .assumed ["viewOfLength"]
+  display := .library
+
 /-- The rules, in the paper's order. -/
 def rules : List ArithRule :=
   [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat,
+    charCodeAt, codePointAt, codePointPair, indexOf, indexOfNonempty, slice, arrayIndexOf, newView,
     viewLength, viewRead, viewWrite, viewWriteAny]
 
 /-! ## Numbers through `ToInt32` -/
@@ -769,7 +902,7 @@ linear form denotes: a rule over one is not applied by substitution. -/
 def Domain.bind {V : Type} : Domain → Option (Linear.Form V × Int) → Option (Option (Linear.Form V × Int))
   | .safeInteger, f => f.map some
   | .number, _ => some none
-  | .string, _ | .array, _ | .typedArray, _ => none
+  | .string, _ | .array, _ | .typedArray, _ | .value, _ => none
 
 /-- A right operand read by its kind: an operand by its domain, the bound
 value `0`; a constant by its form, a constant `d` meeting the side
@@ -1240,7 +1373,7 @@ contracts. -/
 theorem rules_sound : ∀ r ∈ rules, r.trust = .proved → r.Sound := by
   intro r hr ht
   simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · exact add_sound
   · exact sub_sound
   · exact scale_sound
@@ -1259,9 +1392,10 @@ derivation apply it. -/
 theorem rules_bits : ∀ r ∈ rules, ∀ o, r.op = .binary o → r.numericDomains = true → r.SoundBits o := by
   intro r hr o ho hd
   simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp only [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat, viewLength,
-      viewRead, viewWrite, viewWriteAny, Operation.binary.injEq, reduceCtorEq] at ho
+      viewRead, viewWrite, viewWriteAny, charCodeAt, codePointAt, codePointPair, indexOf, indexOfNonempty, slice,
+      arrayIndexOf, newView, Operation.binary.injEq, reduceCtorEq] at ho
   all_goals first
     | (simp [ArithRule.numericDomains, concat] at hd; done)
     | (subst ho; first
@@ -1279,28 +1413,30 @@ numbers. -/
 theorem rules_numeric : ∀ r ∈ rules, ∀ o, r.op = .binary o → r.numericDomains = true → r.numeric o = true := by
   intro r hr o ho hd
   simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp only [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat, viewLength,
-      viewRead, viewWrite, viewWriteAny, Operation.binary.injEq, reduceCtorEq] at ho
+      viewRead, viewWrite, viewWriteAny, charCodeAt, codePointAt, codePointPair, indexOf, indexOfNonempty, slice,
+      arrayIndexOf, newView, Operation.binary.injEq, reduceCtorEq] at ho
   all_goals first
     | (simp [ArithRule.numericDomains, concat] at hd; done)
     | (subst ho; decide)
 
 /-- A rule whose left operand is a number has numbers for its result and no
 third operand. -/
-theorem rules_closed : ∀ r ∈ rules, (r.left = .safeInteger ∨ r.left = .number) →
+theorem rules_closed : ∀ r ∈ rules, ∀ o, r.op = .binary o → (r.left = .safeInteger ∨ r.left = .number) →
     r.third = none ∧ (r.result = .safeInteger ∨ r.result = .number) := by
-  intro r hr hl
+  intro r hr o ho hl
   simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp_all [add, sub, scale, shr, maskRange, maskBound, shl, bitOr, strLength, strRead, concat, viewLength,
-      viewRead, viewWrite, viewWriteAny]
+      viewRead, viewWrite, viewWriteAny, charCodeAt, codePointAt, codePointPair, indexOf, indexOfNonempty, slice,
+      arrayIndexOf, newView]
 
 /-- A proved rule's operation has a value: its soundness states something. -/
 theorem rules_evaluate : ∀ r ∈ rules, r.trust = .proved → r.op.evaluates = true := by
   intro r hr ht
   simp only [rules, List.mem_cons, List.not_mem_nil, or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     first | rfl | cases ht
 
 /-- **A step of a rule's operation**: its result is `arithBits` of its
@@ -1385,7 +1521,7 @@ theorem ArithRule.apply {V : Type} {r : ArithRule} (hr : r ∈ rules) {o : Arith
     have hnd : r.numericDomains = true := by
       have hleft : r.left = .safeInteger ∨ r.left = .number := by
         cases hd : r.left <;> rw [hd] at hlb <;> simp [Domain.bind] at hlb ⊢
-      obtain ⟨h3, hres⟩ := rules_closed r hr hleft
+      obtain ⟨h3, hres⟩ := rules_closed r hr o ho hleft
       have hright : (match r.right with
           | .operand d => d == .safeInteger || d == .number
           | .constant _ => true
@@ -1499,6 +1635,8 @@ def ArithRule.integerVar (r : ArithRule) (x : RuleVar) : Bool :=
 def ArithRule.factsInteger (r : ArithRule) : Bool :=
   (r.premises ++ r.conclusion).all fun F => F.terms.all fun (x, _) => r.integerVar x
 
-#guard rules.all (·.factsInteger)
+-- A proved rule's facts name integers alone; an assumed one may read a
+-- fact over a number as the note does, holding of an integer alone.
+#guard rules.all fun r => r.trust != .proved || r.factsInteger
 
 end Verification.ArithmeticRules
