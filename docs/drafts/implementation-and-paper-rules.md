@@ -20,7 +20,14 @@ it. Acceptance does not apply them; the paper's status tags cite them.
 
 **C. The correspondence between A and B.** Partial. For a rule of A, the
 rule of B it agrees with, how far, and where they differ, is to be
-studied.
+studied, first where pretext's functions rely on it. It has two
+directions:
+
+- **from A to B:** what A accepts is derivable by B's rules;
+- **from B to A:** what B derives, A accepts.
+
+Each is explored informally first: by examples and by reading the two
+side by side, not by a theorem.
 
 ## The first item: B
 
@@ -34,3 +41,12 @@ Clarity on B, in three parts:
 3. **How to make it identifiable.** A refactoring that places B where the
    source tree shows it as B, apart from A, and states what of B other
    code reads.
+
+## Where C is met
+
+A new pretext case meets C. Supporting a pattern of
+[Tolerant frames II](tolerant-frames-2-note/note.tex) starts with its
+derivation in the paper; whether A accepts the program is then a question
+of C, from B to A. Where A does not accept it, the way forward is decided
+with the owner: bring the aspects of A and B involved closer together, or
+another route.
