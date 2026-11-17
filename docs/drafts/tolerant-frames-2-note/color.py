@@ -72,8 +72,8 @@ for n in ['keep', 'init', 'grow', 'any']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\chg{%s}}' % (n, n))
 for n in ['rigid', 'fresh', 'old', 'dense', 'every', 'apart']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\asr{%s}}' % (n, n))
-rep(r'\newcommand{\val}{\kw{all\text{-}values}}', r'\newcommand{\val}{\reg{all\text{-}values}}')
-rep(r'\newcommand{\st}{\kw{all\text{-}stores}}', r'\newcommand{\st}{\reg{all\text{-}stores}}')
+rep(r'\newcommand{\val}{\kw{values}}', r'\newcommand{\val}{\reg{values}}')
+rep(r'\newcommand{\st}{\kw{spines}}', r'\newcommand{\st}{\reg{spines}}')
 for n, w in [('fld', 'fields'), ('cel', 'cells'), ('elt', 'elements')]:
     rep(r'\newcommand{\%s}{\kw{all\text{-}%s}}' % (n, w), r'\newcommand{\%s}{\reg{all\text{-}%s}}' % (n, w))
 for n, w in [('slen', 'strLength'), ('rowt', 'table'), ('esum', 'sum')]:
