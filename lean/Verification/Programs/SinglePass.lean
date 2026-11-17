@@ -4,7 +4,6 @@ import Verification.Programs.GraphCode
 import Verification.Programs.SinglePassStats
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Semantics.ExitSummaries
-import Verification.Semantics.ParityDerivations
 
 /-! One forward pass over a graph cut at its statement entries
 (docs/SINGLE-PASS.md): each node visited once, in a topological order

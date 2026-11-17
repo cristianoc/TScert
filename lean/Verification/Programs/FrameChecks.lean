@@ -1,5 +1,4 @@
 import Verification.Semantics.ExitSummaries
-import Verification.Semantics.ParityDerivations
 
 /-! # Frame checks
 
