@@ -476,6 +476,23 @@ headline theorem is unchanged, and no outside module imports Paper. The exact
 accepted tag language is retained. Decoder error strings are not claimed
 byte-for-byte identical. The design is [documented separately](paper-own-key-test.md).
 
+## General Mask and Or command rules
+
+[BitwiseArithmetic.lean](../../lean/Verification/Paper/TolerantFrames/BitwiseArithmetic.lean)
+proves Mask's full nonnegative result/mask bound at arbitrary numeric first
+operands, the operand upper bound at every nonnegative safe input, and Or's
+three displayed bounds. [PureOperations.lean](../../lean/Verification/Paper/TolerantFrames/PureOperations.lean)
+connects actual deterministic pure computation to exact bindings, valid chosen
+exit worlds and empty effects. Its result predicate reads the entry state.
+[BitwiseRules.lean](../../lean/Verification/Paper/TolerantFrames/BitwiseRules.lean)
+uses actual arithV reductions, derives current Formula conclusions, and assembles
+Triple/Effects with command scope. Fresh result bindings keep operand names
+unchanged; safeIntOfBits_complete supplies integer readings without conflating
+stored signed zeros. Full assertion admission and old finite-certificate
+coverage are not inferred. Shr's signed/count generality and Shl remain open;
+SafeInt counts alone would narrow the paper's integer-constant wording.
+The reviewed design is [recorded separately](paper-arithmetic-command-rules.md).
+
 ## How far B matches the paper
 
 Every item is compared in [B against the paper](b-against-the-paper.md).

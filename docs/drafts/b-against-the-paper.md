@@ -108,6 +108,15 @@ Stable captured host slots remain an obligation of the command compiler.
 Only those shared test/normalization/codec foundations are extended. Full
 command-to-graph execution correspondence and Fun are still open.
 
+`PureOperations` derives exact pure binding triples/effects from actual shared
+reductions by deterministic terminal cancellation and chosen-world restriction.
+Its computed predicate reads the entry state. `BitwiseArithmetic` proves full
+Mask and Or bounds; `BitwiseRules` connects arithV to actual command triples,
+empty effects and current-state syntax. Name agreement comes from existing
+fresh binding scope, and integer readings from SafeInt decoding. No arbitrary
+semantic predicate or stored signed-zero equality is transported. Shr's count
+normalization and signed generality, and Shl, remain open.
+
 **§1 — The problem**
 
 | Paper item | B’s statement | Relation | Difference |
@@ -210,9 +219,9 @@ The three proposition-summary rows in this report summarize their following cons
 | Sub | `Derivation.integerOperation`, `D:536`; `integerOperation_sound`, `:1363` | **equal** | Safe operands and a safe mathematical difference give the exact difference. |
 | Scale | `Derivation.integerOperation`, `D:536`; `resultForm`, `:205` | **equal** | Multiplication requires a constant factor and a safe mathematical result. |
 | Shr | `Derivation.shiftRight`, `D:522`; `shrFacts`, `:193`; `shiftRight_sound`, `:1299` | **narrower** | B requires a nonnegative signed-32-bit operand and a shift in [0,31]. The current paper admits signed operands and reads the integer shift constant modulo 32. Neither the negative case nor full count normalization is supplied. A SafeInt-only count proof would additionally narrow the paper’s integer-constant wording. |
-| Mask | `Derivation.mask`, `D:529`; `maskFacts`, `:199`; `mask_sound`, `:1327` | **narrower** | B requires 0≤x<2^31. The current paper gives 0≤y≤m for every safe integer x, and y≤x separately when x≥0, without that upper bound. The missing ToInt32/negative and large-operand cases are not inferred. |
+| Mask | `admitted_mask_rule`, `admitted_mask_nonneg_rule`, `BitwiseRules.lean`; `mask_general`, `mask_nonneg`, `BitwiseArithmetic.lean`; old restricted `Derivation.mask`, `D:529` | **equal** | Actual shared arithmetic execution establishes the current-state Formula 0≤y≤m for every safe input, and y≤x when x≥0, without x<2^31. Both empty effects and absence of throw are proved. Numeric operands match the ambient safe-integer domain; fresh result binding comes from Command.WellScoped. This is the displayed semantic command rule, not complete assertion admission or new finite-certificate coverage. |
 | Shl | **none in B** | **none in B** | The current paper gives y=2^(d mod 32)x when that product is signed-32-bit. Existing operation syntax and execution alone prove no such arithmetic postcondition. |
-| Or | **none in B** | **none in B** | The current paper requires both operands in [0,2^31) and concludes x≤y, x′≤y and y≤x+x′. No B or exact imported shared theorem states this rule. |
+| Or | `admitted_or_rule`, `or_rule_syntax`, `BitwiseRules.lean`; `or_general`, `nat_or_le_add`, `BitwiseArithmetic.lean` | **equal** | Both operands range over [0,2^31); actual shared arithmetic execution proves the exact current-state Formula x≤y ∧ x′≤y ∧ y≤x+x′ with empty effects and no throw. Result-name inequalities follow from existing command scope; aliases between input names are permitted. Complete assertion admission and finite-certificate coverage remain separate. |
 | String-length successor | `Derivation.lengthSuccessor`, `D:547`; `lengthSuccessor_sound`, `:1428` | **equal** | The result is the exact safe sum or the number $`2^{53}`$, under the stated string-length equality. |
 | Str-Length | `Derivation.stringLengthRead`, `D:567` | **equal** | The conclusion is the string’s UTF-16 length, represented as the result’s safe integer. |
 | Str-Read | `Derivation.stringRead`, `D:573`; `stringIndexFacts`, `:258` | **equal** | The premises include both the string bound and $`i<2^{32}-1`$; the conclusion is result length one. This is the current paper’s entire postcondition. |
@@ -282,11 +291,11 @@ Excluding proof infrastructure, representation lemmas and bridges implementing a
 **Count**
 
 Each row except the three proposition summaries and the patterns of §8.
-The original 89 rows are all retained (40 equal, 27 narrower, 9 absent,
-13 assumed); Shl and Or add two absent rows in the latest paper:
+The original 89 rows are all retained (41 equal, 26 narrower, 9 absent,
+13 assumed); the latest paper adds Shl (absent) and Or (equal):
 
 | Equal | Narrower | Broader | Different | None in B | Assumed | Total |
 |---:|---:|---:|---:|---:|---:|---:|
-| 40 | 27 | 0 | 0 | 11 | 13 | 91 |
+| 42 | 26 | 0 | 0 | 10 | 13 | 91 |
 
 Imported shared statements are counted in the corresponding rows, rather than called absent merely because they live outside Paper. Equal compares that item’s semantic statement; it does not certify complete syntax admission, all of Definition 23, or implementation by A. Narrower rows state the missing premise/conclusion or unproved bridge explicitly.

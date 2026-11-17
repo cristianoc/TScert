@@ -1,3 +1,6 @@
+import Verification.Paper.TolerantFrames.BitwiseArithmetic
+import Verification.Paper.TolerantFrames.PureOperations
+import Verification.Paper.TolerantFrames.BitwiseRules
 import Verification.Paper.TolerantFrames.OperationCode
 import Verification.Paper.TolerantFrames.OwnFieldCode
 import Verification.Paper.TolerantFrames.BudgetTruncation
