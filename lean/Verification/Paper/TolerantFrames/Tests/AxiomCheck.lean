@@ -1,3 +1,6 @@
+import Verification.Paper.TolerantFrames.PathSupports
+import Verification.Paper.TolerantFrames.FreshnessCounterexample
+import Verification.Paper.TolerantFrames.LiteralEquality
 import Verification.Paper.TolerantFrames.PostconditionSyntax
 import Verification.Paper.TolerantFrames.PostconditionScope
 import Verification.Paper.TolerantFrames.PostconditionAdmission

@@ -54,25 +54,62 @@ of the two selected paths supplies. General mixed old/current postcondition
 substitution must respect each phase’s environment and the frozen function
 entry; a current-state replacement theorem is not that theorem.
 
-## Numeric literal equality obstruction
+## Corrected numeric literal equality
 
-Definition 23 says that equality of a path to a safe-integer literal and
-term equality with that integer imply each other. Shared integer reading
-maps both IEEE zero representations to the integer zero. B’s value equality
-in `Atom.equal` compares the stored values, which distinguish their bits.
-[The proved countermodel](../../lean/Verification/Paper/TolerantFrames/Obstructions.lean)
-has every variable hold `-0`, in any indexed heap at mark zero. Both integer
-inequalities defining `x = 0` hold; `x ≐ +0` fails. All roots are valid source
-values and no heap location is used.
+Definition 23 uses the owner-authorized correction: value equality to a
+safe-integer literal implies integer term equality. Integer equality gives
+stored-value equality for a nonzero literal; at zero it gives the disjunction
+of stored `+0` and `-0`. Both stored representations read as integer zero.
+[LiteralEquality.lean](../../lean/Verification/Paper/TolerantFrames/LiteralEquality.lean)
+proves all three conclusions and their finite derivation constructors.
+Raw equality, literal membership and the shared integer/float model are
+preserved. [The negative-zero countermodel](../../lean/Verification/Paper/TolerantFrames/Obstructions.lean)
+remains evidence against the former unrestricted reverse implication; it is
+not an unresolved obstacle to the corrected clause.
 
-This is a correspondence obstruction to the bridge under B’s current equality
-interpretation, not a counterexample to integer arithmetic. Changing literal
-equality alone also requires checking Guard, contents/literal membership and
-replacement soundness: those notions currently share raw value identity.
-An alternative paper statement needs an owner decision. The unrestricted
-bridge cannot be counted as proved under either an added nonzero premise or
-a new axiom. Independent support and integer-consequence proofs do not depend
-on resolving this item.
+## Freshness support at a failed nullable prefix
+
+Definition 14 gives freshness of a spine/fields/field at a path the support
+reads_keep(path), whose intermediate reads tolerate grow. The path may fail,
+and its region is then empty. This combination does not support freshness.
+Take pre-existing values `a=[]`, `y={g:a}`, and `x={f:null}`, with
+`x.f` declared `{g:array}|null`. All their locations lie below the invocation
+mark. Changing only `x.f` to `y` gives:
+
+| Location | Role | Before | After |
+|---|---|---|---|
+| 0 | array spine | empty spine of a | same |
+| 1 | field | array a (spine 0, identity 2) | same |
+| 2 | identity | null | same |
+| 3 | identity | null, identity of y | same |
+| 4 | field | null, the contents of x.f | old object y (g at 1, identity 3) |
+| 5 | identity | null, identity of x | same |
+
+The mark is 6; x has f at 4 and identity 5. For path `x.f.g`, the
+support's first region is location 4 at grow, which allows null to become
+the old object y. Its final region is empty at entry. Initially the spine
+region is empty, so freshness holds; afterward it contains location 0 and
+freshness fails.
+
+[FreshnessCounterexample.lean](../../lean/Verification/Paper/TolerantFrames/FreshnessCounterexample.lean)
+constructs these indexed heaps, valid roots/mark, admissible transition and
+support constraints, and proves freshness is not supported. It also proves
+region/support admission for the indicated nullable path classifications.
+This is a concrete valid-context B countermodel with admitted regions. The
+classification record and role-based world are not a full source-language
+EnvTyping derivation or an executed command proof. The values have precisely
+the nullable layout described above.
+
+No successful-read premise is implicit in freshness: its definition is
+vacuous on an empty region, unlike equality, contents or separation. T3 keeps
+an object's field map; it does not prohibit a nullish intermediate from
+becoming an old object. A successful-read restriction or stronger intermediate
+support would change the displayed mathematical claim. That decision is
+tracked in WORK; the paper's freshness statement is unchanged. The exact
+successful-read support rows in
+[PathSupports.lean](../../lean/Verification/Paper/TolerantFrames/PathSupports.lean)
+use raw field regions and transition-local omission at arbitrary prefixes,
+reusing the shared traversal proof rather than redefining heap semantics.
 
 ## Quantified-index instantiation across phases
 

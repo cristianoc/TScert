@@ -219,13 +219,29 @@ definedness obligations. Length ranges cover ordinary, view and string
 readings, including projected elements. These are current-state arithmetic
 rules, without a claim of complete automatic search or mixed-state syntax.
 
-[Obstructions.lean](../../lean/Verification/Paper/TolerantFrames/Obstructions.lean)
-proves a precise incompatibility between the displayed reverse literal bridge
-and B’s raw value equality: a variable holding -0 has integer value zero,
-while its stored value differs from +0. The countermodel works in every
-indexed heap at the valid mark zero and reads no heap location. The bridge
-is not supplied by a new premise or axiom. The paper’s text and A’s numeric
-model are unchanged; the decision is tracked in the owning WORK row.
+[LiteralEquality.lean](../../lean/Verification/Paper/TolerantFrames/LiteralEquality.lean)
+proves the owner-corrected numeric clause of Definition 23: value equality
+implies integer equality; the reverse gives the same stored value at a nonzero
+integer and the disjunction of both stored zeros at zero. All three finite
+derivation rules are sound. Stored equality and A's numeric semantics are
+unchanged. [Obstructions.lean](../../lean/Verification/Paper/TolerantFrames/Obstructions.lean)
+records why the former unconditional reverse clause fails.
+
+[PathSupports.lean](../../lean/Verification/Paper/TolerantFrames/PathSupports.lean)
+states raw reads with intermediate grow and a chosen last tolerance. A
+transition-local condition handles omitted fields at any path prefix;
+reinstating them at keep and restricting regions permits reuse of the shared
+traversal proof. Equality, contents, optional equality and full separation
+have their exact successful-read supports. Optional equality preserves a
+strict receiver and permits only its final field absent.
+
+[FreshnessCounterexample.lean](../../lean/Verification/Paper/TolerantFrames/FreshnessCounterexample.lean)
+proves that failed nullable prefixes invalidate the paper's general freshness
+support: a nullish intermediate can become an old object under grow, changing
+an empty fresh region to one below the mark. The concrete six-location states
+have valid contexts, an admissible transition and admitted regions/support;
+this is not a full source EnvTyping or execution proof. The paper's freshness
+statement remains unchanged, with the owner decision tracked in WORK.
 
 ## First-order two-state postconditions
 

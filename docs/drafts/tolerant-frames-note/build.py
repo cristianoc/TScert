@@ -1,13 +1,13 @@
 import re,subprocess
 head=open('head.html').read()
 subprocess.run(['python3','prep.py','note.tex','note2.tex'],check=True)
-r=subprocess.run(['pandoc','note2.tex','-f','latex','-t','html','--math-method=mathjax','--number-sections','-o','body.html'],capture_output=True,text=True)
+r=subprocess.run(['pandoc','note2.tex','-f','latex','-t','html','--mathjax','--number-sections','-o','body.html'],capture_output=True,text=True)
 print(r.stderr[:500])
 src=open('note2.tex').read()
 ab=re.search(r'\\begin\{abstract\}(.*?)\\end\{abstract\}',src,re.S).group(1)
 pre=src[:src.index(r'\title')]
 open('ab.tex','w').write(pre+'\\begin{document}\n'+ab+'\n\\end{document}')
-abh=subprocess.run(['pandoc','ab.tex','-f','latex','-t','html','--math-method=mathjax'],capture_output=True,text=True).stdout
+abh=subprocess.run(['pandoc','ab.tex','-f','latex','-t','html','--mathjax'],capture_output=True,text=True).stdout
 rest=open('body.html').read()
 items=re.findall(r'<h1 data-number="(\d+)"\s+id="([^"]+)"[^>]*>(.*?)</h1>',rest,re.S)
 toc='<ul>'+''.join('<li><a href="#%s">%s</a></li>'%(i,re.sub(r'\s+',' ',t)) for n,i,t in items)+'</ul>'

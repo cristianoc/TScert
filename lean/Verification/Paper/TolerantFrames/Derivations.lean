@@ -4,6 +4,7 @@ import Verification.Paper.TolerantFrames.Admission
 import Verification.Paper.TolerantFrames.QuantifiedRules
 import Verification.Paper.TolerantFrames.Existentials
 import Verification.Paper.TolerantFrames.Arithmetic
+import Verification.Paper.TolerantFrames.LiteralEquality
 
 /-! # General logical derivations
 
@@ -47,6 +48,12 @@ inductive Derivation : List Postcondition → Postcondition → Prop where
   | implication {Γ Q R} : Derivation Γ (PostImp Q R) → Derivation Γ Q → Derivation Γ R
   | indexInstance {Γ Q} : Derivation Γ (ForallIndex Q) → (i : Int) → Derivation Γ (Q i)
   | valueInstance {Γ Q} : Derivation Γ (ForallValue Q) → (v : Val) → isSourceVal v = true → Derivation Γ (Q v)
+  | valueToInteger {Γ p bits n} : SafeIntegers.SafeInt bits n →
+      Derivation Γ (Now (NumberEquality p bits).meaning) → Derivation Γ (Now (IntegerEquality p n).meaning)
+  | integerToValue {Γ p bits n} : SafeIntegers.SafeInt bits n → n ≠ 0 →
+      Derivation Γ (Now (IntegerEquality p n).meaning) → Derivation Γ (Now (NumberEquality p bits).meaning)
+  | integerZeroValues {Γ p} : Derivation Γ (Now (IntegerEquality p 0).meaning) →
+      Derivation Γ (Now (ZeroValueEquality p).meaning)
   | arithmetic {Γ hypotheses goal} : IntegerConsequence hypotheses goal → GoalTermsDefined hypotheses goal →
       (∀ p ∈ hypotheses, Derivation Γ (Now (Formula.atom (.le p.1 p.2)).meaning)) →
       Derivation Γ (Now (Formula.atom (.le goal.1 goal.2)).meaning)
@@ -139,6 +146,15 @@ theorem Derivation.sound {Γ Q} (d : Derivation Γ Q) : Consequence Γ Q := by
   | valueInstance _ v hsv ih =>
     intro ρ ρ' m s t hv hvt hΓ
     exact ih ρ ρ' m s t hv hvt hΓ v hsv
+  | valueToInteger hn _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact value_equality_to_integer hn (ih ρ ρ' m s t hv hvt hΓ)
+  | integerToValue hn hn0 _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact integer_equality_to_value hn hn0 (ih ρ ρ' m s t hv hvt hΓ)
+  | integerZeroValues _ ih =>
+    intro ρ ρ' m s t hv hvt hΓ
+    exact integer_zero_to_values (ih ρ ρ' m s t hv hvt hΓ)
   | arithmetic hc hd _ ih =>
     intro ρ ρ' m s t hv hvt hΓ
     exact integer_consequence hc hd (fun p hp => ih p hp ρ ρ' m s t hv hvt hΓ)
