@@ -1822,8 +1822,10 @@ both paths are rigid; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
 from the linear inequalities at hand, where each term of the conclusion
 is defined: it occurs in a premise, or is a literal. A defined length
 is within its range: $0\le\len\pi\le N$, $0\le\kw{view}(\pi)\le M$ and
-$0\le\slen(\pi)\le M$. For a safe-integer literal $n$, $\pi\doteq n$ and
-the equality $\pi=n$ of terms give each other.
+$0\le\slen(\pi)\le M$. For a safe-integer literal $n$, $\pi\doteq n$
+gives the equality $\pi=n$ of terms; $\pi=n$ gives $\pi\doteq n$ where
+$n\ne 0$, and $\pi\doteq 0\vee\pi\doteq -0$ where $n=0$: a term reads
+$-0$ as 0, and $-0$ is a value of its own.
 \item[Atoms] Proposition~\ref{prop:every}. An element fact
 $z[t]\doteq v$ gives $0\le t$ and $t$ below the length of $z$, and
 where $z[t]\doteq y$ is at hand the term $z[t]$ and the variable $y$
