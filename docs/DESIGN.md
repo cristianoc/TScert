@@ -728,6 +728,7 @@ or design extends the mechanism of its concern
 | A construct outside the fragment | An explicit, enforced restriction with its reason and its control | [The refusal index](SOURCE-FRAGMENT.md) |
 | TScert's own code that does not verify | The seven routes, from support to a proof; a refusal only of a program shown unsafe under Node | [Source rewrites](SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for) |
 | Repeated work of the pipeline | Stage results keyed by content and replayed | [Stage store](STAGE-STORE.md) |
+| Text of a document that states what the code states (the paper's arithmetic rules, ARITHMETIC.md's) | Sections between markers, rendered from the verifier's export by one renderer, rewritten or checked by one path | [Generated sections](GENERATED-SECTIONS.md) |
 
 ## Documentation map
 
@@ -745,6 +746,7 @@ owner; other documents link to them and give only the context their readers need
 | [SINGLE-PASS-PROOF](SINGLE-PASS-PROOF.md) | The graph proof: tolerant frames in the indexed model and the proof of `run_sound_single_pass` over the pass's state, steps, edges, merges, heads and driver. |
 | [SINGLE-PASS-CONTROLS](SINGLE-PASS-CONTROLS.md) | The boundaries no proof covers and the controls that guard each. |
 | [STAGE-STORE](STAGE-STORE.md) | The stage store: keys, observed stages, retained declaration sessions, entries, publication, replay's trust, controls and timing. |
+| [GENERATED-SECTIONS](GENERATED-SECTIONS.md) | Generated sections: the markers, the registry, the verifier's export of the arithmetic rules, the renderer, and the check and rewrite. |
 | [WORK](../WORK.md) | Open work, its reasons and completion conditions; the one place progress is recorded. |
 | [Drafts](drafts/) | Designs kept for the owner's decision ([method effects](drafts/method-effects.md)); their status is WORK's. |
 | [SOURCE-MODEL](SOURCE-MODEL.md) | Source values, the heap and host assumptions, and how values map to the calculus. |

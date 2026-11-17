@@ -74,6 +74,9 @@ Excluded from every key (`unkeyed`), by role:
   the excluded controls;
 - `tools/compiler-processes.mts`: the attempt records' measurement of the
   compiler processes' CPU time and peak memory.
+- `tools/generated-sections.mts`: the documents' generated sections,
+  rendered from the verifier's export and checked, after the stages
+  ([generated sections](GENERATED-SECTIONS.md)).
 
 Excluded from process keys, beside those: the in-process stages' own
 modules (`inProcessOnly`), `pipeline/parse-stage.mts` and

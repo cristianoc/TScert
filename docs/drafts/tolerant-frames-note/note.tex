@@ -1656,16 +1656,19 @@ field of each element, such as $p[i].n\ge 0$, is not kept by that
 argument: the write may be to that field.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
-operands and the empty effect. Let $x,x'$ be safe integers, $c$ a
+operands and the empty effect. Let $x,x'$ be safe integers, but in the
+first triple of \textsc{Mask}, where $x$ is any number; $c$ a
 safe-integer constant, $d$ an integer constant with $d'=d\bmod 32$, the
 count a shift reads, and $m$ an integer constant with $0\le m<2^{31}$:
 \[
 \begin{array}{ll}
 \textsc{Add}, \textsc{Sub}, \textsc{Scale} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\qquad\hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
+% generated: paper-arithmetic-rules
 \textsc{Shr} & \hoare{-2^{31}\le x<2^{31}}{y=x\gg d}{2^{d'}y\le x\le 2^{d'}y+2^{d'}-1}\\[3pt]
 \textsc{Mask} & \hoare{\kw{true}}{y=x\mathbin{\&}m}{0\le y\le m}\qquad\hoare{0\le x}{y=x\mathbin{\&}m}{y\le x}\\[3pt]
 \textsc{Shl} & \hoare{-2^{31}\le 2^{d'}x<2^{31}}{y=x\ll d}{y=2^{d'}x}\\[3pt]
 \textsc{Or} & \hoare{0\le x<2^{31}\wedge 0\le x'<2^{31}}{y=x\mathbin{|}x'}{x\le y\wedge x'\le y\wedge y\le x+x'}
+% end generated: paper-arithmetic-rules
 \end{array}
 \]
 The constants $c$, $d$ and $m$ are literals or variables with a known
@@ -1695,7 +1698,7 @@ and an integer $i$:
 \]
 The read gives a string of length 1. The postcondition of \textsc{Concat} is for a
 normal return
-\status{Lean: \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{shr\_safe} and \lean{bitAnd\_safe} for \textsc{Shr} and \textsc{Mask} where $0\le x<2^{31}$; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules. conj.: \textsc{Shr} and \textsc{Mask} as stated, \textsc{Shl} and \textsc{Or}}.
+\status{Lean: \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; \lean{rules\_sound} for \textsc{Shr}, \textsc{Mask}, \textsc{Shl} and \textsc{Or}, one lemma for each rule, and \lean{Derivation.arith}, with \lean{Derivation.sound}; \lean{Derivation.stringLengthRead}, \lean{Derivation.stringRead} and \lean{Derivation.stringConcat}, with \lean{Derivation.sound}, for the three string rules}.
 
 \paragraph{Library functions.} A library function is not analysed. It
 has a \emph{contract}: a triple with its effects, assumed of the host,
