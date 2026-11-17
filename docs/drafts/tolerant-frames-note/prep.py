@@ -48,6 +48,6 @@ for n in ['keep','init','grow','any']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r
 for n in ['rigid','fresh','old','dense','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
 swap(r'\newcommand{\val}{\kw{values}}',r'\newcommand{\val}{\class{reg}{\mathsf{values}}}')
 swap(r'\newcommand{\st}{\kw{spines}}',r'\newcommand{\st}{\class{reg}{\mathsf{spines}}}')
-src=src.replace(r'\kw{scalar}',r'\class{chg}{\mathsf{scalar}}').replace(r'\kw{spine}',r'\class{reg}{\mathsf{spine}}').replace(r'\kw{view}',r'\class{asr}{\mathsf{view}}')
+src=src.replace(r'\kw{scalar}',r'\class{chg}{\mathsf{scalar}}').replace(r'\kw{spine}',r'\class{reg}{\mathsf{spine}}')
 swap(r'\newcommand{\lean}[1]{\texttt{\small #1}}',r'\newcommand{\lean}[1]{\emph{\texttt{#1}}}')
 open(sys.argv[2],'w').write(src)

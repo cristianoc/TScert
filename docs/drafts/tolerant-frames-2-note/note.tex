@@ -33,10 +33,8 @@
 \newcommand{\fld}{\kw{all\text{-}fields}}
 \newcommand{\cel}{\kw{all\text{-}cells}}
 \newcommand{\elt}{\kw{all\text{-}elements}}
-\newcommand{\slen}{\kw{strLength}}
 \newcommand{\rowt}{\kw{table}}
 \newcommand{\esum}{\kw{sum}}
-\newcommand{\strl}{\kw{strlen}}
 \newcommand{\len}[1]{|#1|}
 \newcommand{\tr}[1]{\xrightarrow{#1}}
 \newcommand{\resp}{\mathrel{\triangleleft}}
@@ -110,7 +108,7 @@ Paper~I.
 \code{widths[items[i]!]!} of line 6. The obligation is
 $0\le\mathit{items}[i]<\len{\mathit{widths}}$. It follows from the
 quantified fact
-$\forall j<\kw{view}(\mathit{items}).\ 0\le\mathit{items}[j]<\len{\mathit{widths}}$,
+$\forall j<\len{\mathit{items}}.\ 0\le\mathit{items}[j]<\len{\mathit{widths}}$,
 but the field write \code{fragment.width = s} removes that fact: a
 field write keeps a quantified fact only if the new value satisfies
 the fact's body. Stating the fact as a loop
@@ -204,7 +202,7 @@ may be inexact. Neither paper has the second rule.
 \entry{What is refused} The verifier refuses \code{next} at the outer read
 of line 11. The index of that read is \code{t[state]}, and the
 obligation requires it to be a known integer with
-$0\le t[\mathit{state}]<\kw{view}(t)$. The
+$0\le t[\mathit{state}]<\len{t}$. The
 postcondition of \code{decode} states the length of the table and
 nothing about its contents. The result of an element read is a known
 integer only where a clause says so. No step of
@@ -214,7 +212,7 @@ the program establishes a fact about the contents of the table:
 \entry{The nearest form that verifies} A read of the decoded table at an index bounded by its
 stated length, \code{t[state]!}.
 
-\entry{What an extension must provide} The fact $\forall i<\kw{view}(t).\ 0\le t[i]<\kw{view}(t)$
+\entry{What an extension must provide} The fact $\forall i<\len{t}.\ 0\le t[i]<\len{t}$
 about the decoded table, available where the decoder returns. The fact
 is true because of what the generator of the table wrote. Neither paper has such a rule.
 
@@ -366,7 +364,7 @@ the element of a string.
 \code{text.charCodeAt(i)}.
 
 \entry{What an extension must provide} A rule for the step \code{y = s[i]}: under
-$0\le i<\strl(s)$ the result is a string. Paper~I states this rule,
+$0\le i<\len{s}$ the result is a string. Paper~I states this rule,
 \textsc{Str-Read}, with the result's length 1; the verifier does not
 apply it.
 
@@ -450,7 +448,7 @@ by a known constant extends a quantified fact. Neither paper has such a rule.
 
 \entry{What is refused} The verifier refuses \code{bad} at the entry edge
 of its loop. The stated invariant contains
-$\strl(\mathit{normalized})\le\strl(\mathit{text})$, which does not
+$\len{\mathit{normalized}}\le\len{\mathit{text}}$, which does not
 hold on that edge. The reviewed contract of \code{replace} gives no
 fact about the length of its result.
 
@@ -459,7 +457,7 @@ of its result: \code{text.slice(0, k)} has length $k$.
 
 \entry{What an extension must provide} A postcondition about length for the library functions
 these sites use. For \code{r = s.replace(e, t)}, when every match is
-at least as long as \code{t}: $\strl(r)\le\strl(s)$. Neither paper has
+at least as long as \code{t}: $\len{r}\le\len{s}$. Neither paper has
 such a postcondition.
 
 \section{P15: a module constant array (4 sites)}
@@ -497,7 +495,7 @@ function keeps. Neither paper has such a rule.
 \end{tabular}}
 
 \entry{What is refused} The verifier refuses \code{bitsAt} at the read of
-line 5. The obligation is $\mathit{cp}<\kw{view}(\mathit{table})$. A
+line 5. The obligation is $\mathit{cp}<\len{\mathit{table}}$. A
 module \code{let} is a private cell. On the path where the cell already holds a typed
 array, the length of that array is not known. At the merge, only the
 facts that hold on every incoming edge are kept.
@@ -505,7 +503,7 @@ facts that hold on every incoming edge are kept.
 \entry{The nearest form that verifies} The table allocated in the function that reads it.
 
 \entry{What an extension must provide} The fact
-$\mathit{bmp}\doteq\code{null}\vee\kw{view}(\mathit{bmp})=65536$ at
+$\mathit{bmp}\doteq\code{null}\vee\len{\mathit{bmp}}=65536$ at
 the entry of every function. It is a fact about the contents of a
 module cell that every write to the cell keeps. Neither paper has such a rule.
 
@@ -593,7 +591,7 @@ value named by a variable holds of the value at a rigid path.
 
 \entry{What is refused} The verifier refuses \code{sources} at the read
 \code{offsets[at]!} of line 8. The obligation is
-$0\le\mathit{at}<\kw{view}(\mathit{offsets})$. Each iteration adds the
+$0\le\mathit{at}<\len{\mathit{offsets}}$. Each iteration adds the
 length of an element to \code{at}. That length is not a constant, so
 \code{at} is not a counter, and no fact about it is known at the loop
 head.
@@ -603,7 +601,7 @@ head.
 
 \entry{What an extension must provide} A term for the sum of the lengths of an array's elements
 over a range of indices. With it,
-$\mathit{at}+\sum_{i\le k<\len{\mathit{segments}}}\strl(\mathit{segments}[k])=\mathit{total}$
+$\mathit{at}+\sum_{i\le k<\len{\mathit{segments}}}\len{\mathit{segments}[k]}=\mathit{total}$
 is a loop invariant. Neither paper has such a term.
 
 \section{P20: a type invariant of a value read back from a Map (1 site)}
@@ -652,7 +650,7 @@ Neither paper has such a rule.
 
 \entry{What is refused} The verifier refuses \code{badBits} at the read of
 line 5. The obligation is
-$0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\kw{view}(\mathit{values})=256\cdot\mathit{blocks}$.
+$0\le(\mathit{hi}\ll8)\mathbin{|}(c\mathbin{\&}255)<\len{\mathit{values}}=256\cdot\mathit{blocks}$.
 The operators \code{<{}<} and \code{|} give no fact. The program is
 pretext's read of a generated class table: \code{values} holds
 \code{blocks} blocks of 256 classes, \code{hi} stands for the block
