@@ -2398,6 +2398,38 @@ holding outside storage (`VJ.entry`) and the heap meets the flow
 With the flow's facts, the frame then meets `ChkSound`
 (`chkSound_of_flow`).
 
+**The closures an entry may hold.** $`C`$'s code makes closures at a
+finite set of shapes (`Shape`: a signature, and for each capture the
+signature of the closure of $`C`$'s code it holds where one is known):
+lowered code's closures capture variables, so name none; the module's
+closure of a function captures the module's closures of the functions it
+calls. A well-formed value of an entry (`WfVal`, a premise of well-formed
+entries) holds values only, and every closure of $`C`$'s code it holds is
+of one of the shapes (`OfShape`). Where the proposal names a signature at
+a closure's entry only at a capture its shape names it for, or at its own
+slot (`ShapesOk`, the checker's condition), every such closure meets its
+proposal (`OfShape.fnsOk`), and a run of $`C`$'s code at a node whose
+named slots hold closures of their signatures, its environment's and its
+heap's values well formed, has the shape the fit reads (`entryShape_of`).
+
+**Calls between module functions.** A module function reaches the module
+functions its body names at the request's slots past its parameters
+(`SourceExtraction.extractNormalizedFn`, the siblings); a module cell is
+read from storage, and a call of what it holds is read at $`O`$
+(`Fits.invoke`).
+The calls the claim is about hold, at each sibling slot whose function's
+closure is a value, the module's closure of it (`enters`): the closure of
+the function's lowered code at a closure's entry, capturing the module's
+closures of the functions it names. A cycle among the module's functions
+has no such value; its calls are read at `O`. Pretext's walkers name
+`normalizePreparedLineStart`, `stepPreparedSimpleLineGeometry` and
+`walkPreparedComplexLines`, whose calls form no cycle (cited:
+`src/line-break.ts` on the `tscert-rewrites` branch), so each call passes
+the walker's cursor to a closure of a known signature (`Fits.invokeC`).
+Each of the three returns a boolean, a number or `null`, a value with no
+location, which meets every set: the rule that a return of $`C`$'s code
+meets $`O`$ (`ContOk` at `ret`) reads nothing of the cursor.
+
 Proof scope: the lemmas above are proved. Not proved here: the shape of
 the calls (`EntryShape`) from the frame's well-formed entries, and the
 checker that decides `CodeOk` and `Flow.Facts` from the lowered
