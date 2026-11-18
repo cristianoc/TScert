@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { DeclarationDocument, ExitSchema, Exits, Frame, IndexFact, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
+import type { Change, DeclarationDocument, ExitSchema, Exits, Frame, IndexFact, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
 // span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
 import type { GuardUndefined } from "./host-families.mts";
@@ -650,7 +650,11 @@ export interface CrossingAst {
  * - `clients`: the client obligation each exported type states (`@clients`,
  *   `stated`, else read-only), a frame over `this` at position 0.
  * - `guarantees`: the type invariants (`@invariant`) of the family's types,
- *   candidates of its guarantee, as index facts of `this` at position 0. */
+ *   candidates of its guarantee, as index facts of `this` at position 0.
+ * - `protocols`: each component's proposed protocol `Ψ_C`, a change for
+ *   each part it lists (`keep` at every other): the fields at a key
+ *   (`key` null every key), the spines or the cells of a site (`site` null
+ *   storage of code outside the component). */
 export interface ComponentsAst {
   components: ComponentAst[];
   codes: CodeAst[];
@@ -669,6 +673,15 @@ export interface ComponentsAst {
   escapes: { module: string; code: Span; component: number; via: "result" | "argument" | "throw" | "store"; at: Span }[];
   clients: { module: string; name: string; pos: Span; stated: boolean; frame: Frame }[];
   guarantees: { module: string; name: string; pos: Span; facts: IndexFact[] }[];
+  protocols: { component: number; entries: ProtocolEntryAst[] }[];
+}
+
+/** An entry of a proposed protocol: the change at a part. */
+export interface ProtocolEntryAst {
+  site: number | null;
+  kind: "field" | "spine" | "cell";
+  key: string | null;
+  change: Change;
 }
 
 export interface Ast {

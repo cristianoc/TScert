@@ -112,8 +112,11 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   units the selection checks in the order their checks run, each
   `{"unit","members"}`; the module units the interfaces establish; and each
   component's outcome of the read-only frame's checks
-  (`ComponentChecks.familyOutcome`), `{"component","kind","location","refusals"}`,
-  its certificate held where `refusals` is empty, which no verdict reads;
+  (`ComponentChecks.familyOutcome`),
+  `{"component","kind","location","protocol","guarantee","refusals"}`: its
+  checked protocol, one change at a part per line; each guarantee
+  candidate, kept or with the first write that changes its support; and its
+  certificate, held where `refusals` is empty, which no verdict reads;
   `--verify-interface-stage 8` prints the same outcomes first, on the line
   `{"components"}`;
 - a request line `{"units"}`: the identities of the units to check, each one

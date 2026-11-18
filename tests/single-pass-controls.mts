@@ -610,6 +610,50 @@ control("read-only frame checks: each module's certificate, held and refused", a
   say("read-only frame checks: the walker's, a slice copy's and a number-entry module's certified; a suspension, released and caller's installs, a lookalike slice, rows that come back and a void visitor's result refused, each at its code");
 });
 
+/** The module's outcome of a single-file case. */
+const moduleOutcome = (p: Pass): ComponentOutcome => must(componentOutcomes(p).find((c) => c.kind === "module"), "the module's outcome");
+
+control("read-only frame protocol: the members' writes and the guarantee", async (): Promise<void> => {
+  // The walker's members write only what they allocate: `keep` everywhere.
+  assert.deepEqual(moduleOutcome(pass(fragmentOf(run("readonly-frame-walker")))).protocol, [], "the walker's protocol");
+  // A member that pops a handle's widths: `any` at their spine.
+  const trim = familyCase("invalid-readonly-trim");
+  const widths = trim.at("[];\n  for");
+  const trimmed = moduleOutcome(pass(fragmentOf(trim.artifacts)));
+  assert.ok(trimmed.protocol.some((e) => new RegExp(`^any at the spines of the site \\S+ ${widths}-`).test(e)), JSON.stringify(trimmed.protocol));
+  assert.deepEqual(trimmed.refusals, [], "trim's module");
+  // The guarantee example: `any` at the replaced field.
+  const guarantee = moduleOutcome(pass(fragmentOf(run("readonly-frame-guarantee"))));
+  assert.ok(guarantee.protocol.some((e) => /^any at the fields of the site \S+ \d+-\d+ at widths$/.test(e)), JSON.stringify(guarantee.protocol));
+  // A member that empties the widths and restores them: the invariant is
+  // not kept, at the first write.
+  const restored = familyCase("readonly-frame-restored");
+  const write = restored.at("r.widths = [];");
+  const swap = moduleOutcome(pass(fragmentOf(restored.artifacts)));
+  assert.ok(swap.guarantee.some((g) => new RegExp(`^not kept: H: a write at \\S+ ${write}-`).test(g)), JSON.stringify(swap.guarantee));
+  say("read-only frame protocol: the walker's keep, a popping member's any at the spine, the guarantee example's any at the replaced field; an invariant broken and restored before return not kept");
+});
+
+control("forged fragment: a protocol omitting a member's write", async (): Promise<void> => {
+  const { artifacts, ast, at } = familyCase("invalid-readonly-trim");
+  const widths = siteIndex(ast, at("[];\n  for"));
+  ast.components.protocols = ast.components.protocols.map((p) => ({ ...p, entries: p.entries.filter((e) => e.site !== widths) }));
+  certificateRefused(pass(forged(artifacts, "forged-protocol-member", ast)), "trim's writes omitted",
+    new RegExp(`^\\(Ψ\\) \\S+ ${at("r.widths.pop()")}-\\d+: the protocol omits the change any of the spines of the site`));
+  say("forged protocol: the popping member's writes omitted, refused at its pop");
+});
+
+control("forged fragment: a protocol omitting an exceptional effect", async (): Promise<void> => {
+  // `xs.slice()` writes nothing when it returns; its reviewed contract states
+  // no effect at a throw, where its receiver, which enters from outside, may
+  // change: the protocol at the normal exit alone is too small.
+  const { artifacts, ast, at } = familyCase("readonly-frame-guarantee");
+  ast.components.protocols = ast.components.protocols.map((p) => ({ ...p, entries: p.entries.filter((e) => e.site !== null) }));
+  certificateRefused(pass(forged(artifacts, "forged-protocol-exceptional", ast)), "slice's exceptional effect omitted",
+    new RegExp(`^\\(Ψ\\) \\S+ ${at("xs.slice()")}-\\d+: the protocol omits the change any of the spines of storage of code outside the component`));
+  say("forged protocol: the outside storage a native may change at a throw omitted, refused at the native's call");
+});
+
 control("forged fragment: a suspension erased", async (): Promise<void> => {
   const { artifacts, ast } = familyCase("invalid-readonly-suspending");
   ast.components.suspensions = [];

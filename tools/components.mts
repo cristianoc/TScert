@@ -42,7 +42,7 @@ import { listDirectory, orAbsent, present, readText, realPath } from "./files.mt
 import { clientsTags, representationTags } from "./bound-annotations.mts";
 import type { CallEffect, Change, Frame, Region, Selector } from "./declaration-types.mts";
 import { overlay } from "./array-prototype.mts";
-import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, SiteAst, SourceAst, StoreAst,
+import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, ProtocolEntryAst, SiteAst, SourceAst, StoreAst,
   SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
@@ -131,7 +131,7 @@ export function shapeReadOnly(t: TypeShapeAst | null, types: ComponentsAst["type
 /** The empty description: no component. */
 export const noComponents: ComponentsAst = { components: [], codes: [], sites: [], values: [], crossings: [],
   stores: [], calls: [], throws: [], catches: [], holds: [], exports: [], thrown: null, suspensions: [], types: [],
-  escapes: [], clients: [], guarantees: [] };
+  escapes: [], clients: [], guarantees: [], protocols: [] };
 
 /** A build configuration: where it writes its outputs, the directory of
  * the sources they mirror, and the files it compiles. */
@@ -1636,8 +1636,107 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const siteList: SiteAst[] = sites.map((s, t) => ({ module: s.file.location, pos: span(s.file, s.node), kind: s.kind,
     keys: [...(keys.get(t) ?? [])].sort(), anyKey: anyKey.has(t), contents: contentRefs[t] ?? 0,
     marks: enclosing(s.component).map((c) => ({ component: c, mark: markOf(t, c) })) }));
-  return { components, codes: codesList, sites: siteList, values, crossings: crossingList, ...events, thrown: thrownRef,
-    suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees() };
+  const described: ComponentsAst = { components, codes: codesList, sites: siteList, values, crossings: crossingList, ...events,
+    thrown: thrownRef, suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees(), protocols: [] };
+  return { ...described, protocols: proposeProtocols(described) };
+}
+
+/** **Each component's proposed protocol** `Ψ_C` (the draft, "The
+ * protocol"): the join, part by part, of the charges of every write of its
+ * code, as `ComponentChecks.protocolDiags` checks them. A write charges
+ * nothing where it is an initial value of the record it allocates or its
+ * receiver is fresh in its frame (every location it may hold allocated by
+ * that frame); else each part it changes at each storage of the
+ * component's region it may write: its receiver's exposed and released
+ * sites and, where the receiver may enter from outside, every exposed and
+ * released site and outside storage. A field or a cell changes by `any`; an
+ * element's write lengthens a spine (`grow`), a write of no value or of
+ * `length` changes it by `any`; a native changes its receiver's spine,
+ * cells and fields by `any`, the reviewed contracts stating no effect at a
+ * throw. */
+export function proposeProtocols(F: ComponentsAst): ComponentsAst["protocols"] {
+  const codeAt = (module: string, at: Span): number | null => {
+    let best: number | null = null;
+    let width = Infinity;
+    F.codes.forEach((c, i) => {
+      if (c.module === module && c.pos[0] <= at[0] && at[1] <= c.pos[1] && c.pos[1] - c.pos[0] < width) {
+        best = i;
+        width = c.pos[1] - c.pos[0];
+      }
+    });
+    return best;
+  };
+  const boundary = new Set<number>([...F.codes.flatMap((c) => [c.receiver, c.result, ...c.params.map((p) => p.value)]),
+    ...F.catches.map((k) => k.value)]);
+  const resultOf = new Map<number, CallAst>();
+  for (const c of F.calls) if (!resultOf.has(c.result)) resultOf.set(c.result, c);
+  const freshIn = (k: number, v: number, fuel: number): boolean => {
+    const x = F.values[v];
+    if (fuel === 0 || x === undefined) return false;
+    const siteIn = (t: number): boolean => { const s = F.sites[t]; return s !== undefined && codeAt(s.module, s.pos) === k; };
+    if (x.incoming.length > 0 || x.incomingReadOnly.length > 0 || boundary.has(v) || codeAt(x.module, x.pos) !== k ||
+      !x.sites.every(siteIn)) return false;
+    const call = resultOf.get(v);
+    if (call !== undefined) return codeAt(call.module, call.at) === k && call.native !== null && call.native.member &&
+      call.native.array && call.native.fresh;
+    return x.from.length > 0 && x.from.every((s) => "site" in s ? siteIn(s.site) : "value" in s ? freshIn(k, s.value, fuel - 1) : false);
+  };
+  const freshAt = (module: string, at: Span, v: number): boolean => {
+    const k = codeAt(module, at);
+    return k !== null && freshIn(k, v, F.values.length + 1);
+  };
+  const chain = (c: number): number[] => {
+    const out: number[] = [];
+    for (let d: number | null | undefined = c; d !== null && d !== undefined && out.length <= F.components.length; d = F.components[d]?.parent)
+      out.push(d);
+    return out;
+  };
+  const markOf = (t: number, C: number): Mark | null => F.sites[t]?.marks.find((m) => m.component === C)?.mark ?? null;
+  const lent = (t: number, C: number): boolean => { const m = markOf(t, C); return m === "exposed" || m === "released"; };
+  const targets = (C: number, v: number): (number | null)[] => {
+    const x = F.values[v];
+    if (!x) return [];
+    const own = x.sites.filter((t) => lent(t, C));
+    const enters = x.incoming.includes(C) || x.incomingReadOnly.includes(C);
+    return enters ? [...own, ...F.sites.flatMap((_, t) => lent(t, C) ? [t] : []), null] : own;
+  };
+  type Part = Omit<ProtocolEntryAst, "site">;
+  const storeParts = (kind: SiteAst["kind"] | null, key: string | null, element: boolean, valued: boolean): Part[] => {
+    const numeric = key !== null && /^\d+$/.test(key);
+    const arr: Part[] = element || numeric
+      ? [{ kind: "cell", key: null, change: "any" }, { kind: "spine", key: null, change: valued ? "grow" : "any" }]
+      : key === "length" ? [{ kind: "spine", key: null, change: "any" }]
+      : key !== null ? [{ kind: "field", key, change: "any" }]
+      : [{ kind: "cell", key: null, change: "any" }, { kind: "spine", key: null, change: "any" }, { kind: "field", key: null, change: "any" }];
+    const rec: Part[] = [{ kind: "field", key: element ? null : key, change: "any" }];
+    return kind === "array" ? arr : kind === "native" || kind === null ? [...arr, ...rec] : rec;
+  };
+  const nativeParts: Part[] = [{ kind: "spine", key: null, change: "any" }, { kind: "cell", key: null, change: "any" },
+    { kind: "field", key: null, change: "any" }];
+  type Write = { component: number; module: string; at: Span; receiver: number; parts: (k: SiteAst["kind"] | null) => Part[]; initial: boolean };
+  const writes: Write[] = [
+    ...F.stores.map((s): Write => ({ component: s.component, module: s.module, at: s.at, receiver: s.receiver,
+      parts: (k) => storeParts(k, s.key, s.element, s.stored !== null), initial: s.initial })),
+    ...F.calls.flatMap((c): Write[] => c.native !== null && c.receiver !== null
+      ? [{ component: c.component, module: c.module, at: c.at, receiver: c.receiver, parts: () => nativeParts, initial: false }] : []),
+  ];
+  const rank: Record<Change, number> = { keep: 0, init: 1, scalar: 2, extend: 3, grow: 4, any: 5 };
+  const byComponent = new Map<number, Map<string, ProtocolEntryAst>>();
+  for (const w of writes) {
+    if (w.initial || freshAt(w.module, w.at, w.receiver)) continue;
+    for (const C of chain(w.component)) {
+      let entries = byComponent.get(C);
+      if (!entries) byComponent.set(C, entries = new Map());
+      for (const site of targets(C, w.receiver)) {
+        for (const p of w.parts(site === null ? null : F.sites[site]?.kind ?? null)) {
+          const id = JSON.stringify([site, p.kind, p.key]);
+          const known = entries.get(id);
+          if (!known || rank[known.change] < rank[p.change]) entries.set(id, { site, ...p });
+        }
+      }
+    }
+  }
+  return [...byComponent].sort(([a], [b]) => a - b).map(([component, entries]) => ({ component, entries: [...entries.values()] }));
 }
 
 const valuesClass: Selector = { value: true, array: false, view: false };

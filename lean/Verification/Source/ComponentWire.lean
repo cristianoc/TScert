@@ -293,6 +293,32 @@ structure Guarantee where
   pos : Span
   facts : List HeapKnowledge.IndexFact
 
+/-- The kind of a part's locations: a record's field locations, an array's
+spine, an array's element cells. -/
+inductive PartKind where
+  | field
+  | spine
+  | cell
+  deriving DecidableEq, Repr
+
+/-- **An entry of a proposed protocol** (the draft, "The protocol"): the
+change `change` at the part of the site `site` (`none` storage of code
+outside the component) of kind `kind`, at the key `key` of a field part
+(`none` every key). -/
+structure ProtocolEntry where
+  site : Option Nat
+  kind : PartKind
+  key : Option String
+  change : Footprints.Change
+  deriving Repr
+
+/-- A component's proposed protocol `Ψ_C`: a change for each part it lists,
+`keep` at every other. -/
+structure ProposedProtocol where
+  component : Nat
+  entries : List ProtocolEntry
+  deriving Repr
+
 structure Components where
   components : List Component
   codes : List Code
@@ -311,9 +337,10 @@ structure Components where
   escapes : List Escape
   clients : List Clients
   guarantees : List Guarantee
+  protocols : List ProposedProtocol
 
 /-- The empty family: no component. -/
-def Components.empty : Components := ⟨[], [], [], [], [], [], [], [], [], [], [], none, [], [], [], [], []⟩
+def Components.empty : Components := ⟨[], [], [], [], [], [], [], [], [], [], [], none, [], [], [], [], [], []⟩
 
 /-- **The family's nesting**: `inner` is nested in `outer` when `outer` is
 on `inner`'s chain of parents, itself included. A parent is an earlier
@@ -586,6 +613,33 @@ def decodeGuarantee (j : Json) : Except String Guarantee := do
   return ⟨← jStr (← jField j "module"), ← jStr (← jField j "name"), ← jSpanAt (← jField j "pos"),
     ← fromJson? (← jField j "facts")⟩
 
+def partKindOf (s : String) : Except String PartKind :=
+  match s with
+  | "field" => pure .field
+  | "spine" => pure .spine
+  | "cell" => pure .cell
+  | _ => throw s!"no part kind '{s}'"
+
+def changeNamed (s : String) : Except String Footprints.Change :=
+  match s with
+  | "keep" => pure .keep
+  | "init" => pure .init
+  | "scalar" => pure .scalar
+  | "extend" => pure .extend
+  | "grow" => pure .grow
+  | "any" => pure .any
+  | _ => throw s!"no change '{s}'"
+
+def decodeProtocolEntry (j : Json) : Except String ProtocolEntry := do
+  fieldsExactly j ["site", "kind", "key", "change"]
+  let key ← jField j "key"
+  return ⟨← jOptNat j "site", ← partKindOf (← jStr (← jField j "kind")),
+    ← if key == .null then pure none else some <$> key.getStr?, ← changeNamed (← jStr (← jField j "change"))⟩
+
+def decodeProtocol (j : Json) : Except String ProposedProtocol := do
+  fieldsExactly j ["component", "entries"]
+  return ⟨← jNat j "component", ← (← jArr j "entries").mapM decodeProtocolEntry⟩
+
 /-- **The family well formed**: each parent an earlier component, of the
 kind that nests it (a package none, a module none or a package, a class a
 module or a class), a span exactly where it is a class; every index of a
@@ -643,11 +697,14 @@ def Components.wellFormed (F : Components) : Except String Unit := do
   for v in F.thrown do inRange "the thrown value" v nv
   for x in F.suspensions do inRange "a suspension's component" x.component n
   for e in F.escapes do inRange "an escape's component" e.component n
+  for p in F.protocols do
+    inRange "a protocol's component" p.component n
+    for e in p.entries do for t in e.site do inRange "a protocol's site" t ns
 
 /-- **The fragment's family**, decoded and well formed. -/
 def decode (j : Json) : Except String Components := do
   fieldsExactly j ["components", "codes", "sites", "values", "crossings", "stores", "calls", "throws", "catches", "holds",
-    "exports", "thrown", "suspensions", "types", "escapes", "clients", "guarantees"]
+    "exports", "thrown", "suspensions", "types", "escapes", "clients", "guarantees", "protocols"]
   let F : Components := ⟨← (← jArr j "components").mapM decodeComponent, ← (← jArr j "codes").mapM decodeCode,
     ← (← jArr j "sites").mapM decodeSite, ← (← jArr j "values").mapM decodeValue,
     ← (← jArr j "crossings").mapM decodeCrossing, ← (← jArr j "stores").mapM decodeStore,
@@ -656,7 +713,8 @@ def decode (j : Json) : Except String Components := do
     ← (← jArr j "exports").mapM decodeExport, ← jOptNat j "thrown", ← (← jArr j "suspensions").mapM decodeSuspension,
     ← (← jArr j "types").mapM decodeTypeRow,
     ← (← jArr j "escapes").mapM decodeEscape,
-    ← (← jArr j "clients").mapM decodeClients, ← (← jArr j "guarantees").mapM decodeGuarantee⟩
+    ← (← jArr j "clients").mapM decodeClients, ← (← jArr j "guarantees").mapM decodeGuarantee,
+    ← (← jArr j "protocols").mapM decodeProtocol⟩
   F.wellFormed
   return F
 
@@ -664,6 +722,6 @@ def decode (j : Json) : Except String Components := do
 def emptyJson : Json := Json.mkObj [("components", .arr #[]), ("codes", .arr #[]), ("sites", .arr #[]),
   ("values", .arr #[]), ("crossings", .arr #[]), ("stores", .arr #[]), ("calls", .arr #[]), ("throws", .arr #[]),
   ("catches", .arr #[]), ("holds", .arr #[]), ("exports", .arr #[]), ("thrown", .null), ("suspensions", .arr #[]), ("types", .arr #[]),
-  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[])]
+  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[]), ("protocols", .arr #[])]
 
 end Verification.ComponentWire
