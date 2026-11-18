@@ -508,29 +508,30 @@ def stepSite (cur : Option (Code × ComponentTag)) (t : Tm) : Option P.Site :=
 
 variable (Fl) in
 /-- **A continuation's targets accept a node's environment and value**: the
-environment each edge maps to meets the target node's slots. -/
+environment each edge maps to meets the target node's slots, at every
+ghost and heap length. -/
 def ContOk (π : CodeFlow P) (l : Nat) : Continuation → Prop
   | .ret => Sub (π.val l) Fl.O
-  | .bind y => ∀ V, Mono V → ∀ L d v, EnvIn V (π.env l) L d → V (π.val l) v →
-      EnvIn V (π.env y.label) (envMap y.mapping (v :: L) d).1 (envMap y.mapping (v :: L) d).2
-  | .effect y => ∀ V, Mono V → ∀ L d, EnvIn V (π.env l) L d →
-      EnvIn V (π.env y.label) (envMap y.mapping L d).1 (envMap y.mapping L d).2
-  | .branch y n => ∀ V, Mono V → ∀ L d, EnvIn V (π.env l) L d →
-      EnvIn V (π.env y.label) (envMap y.mapping L d).1 (envMap y.mapping L d).2 ∧
-      EnvIn V (π.env n.label) (envMap n.mapping L d).1 (envMap n.mapping L d).2
-  | .branchBind y n => ∀ V, Mono V → ∀ L d, EnvIn V (π.env l) L d →
-      EnvIn V (π.env y.label) (envMap y.mapping (.tru :: L) d).1 (envMap y.mapping (.tru :: L) d).2 ∧
-      EnvIn V (π.env n.label) (envMap n.mapping (.fls :: L) d).1 (envMap n.mapping (.fls :: L) d).2
-  | .tagBind _ y n => ∀ V, Mono V → ∀ L d v, EnvIn V (π.env l) L d → V (π.val l) v →
-      EnvIn V (π.env y.label) (envMap y.mapping (v :: L) d).1 (envMap y.mapping (v :: L) d).2 ∧
-      EnvIn V (π.env n.label) (envMap n.mapping (v :: L) d).1 (envMap n.mapping (v :: L) d).2
+  | .bind y => ∀ (g : Ghost P) (ln : Nat) L d v, EnvIn (VJ Fl g ln) (π.env l) L d → VJ Fl g ln (π.val l) v →
+      EnvIn (VJ Fl g ln) (π.env y.label) (envMap y.mapping (v :: L) d).1 (envMap y.mapping (v :: L) d).2
+  | .effect y => ∀ (g : Ghost P) (ln : Nat) L d, EnvIn (VJ Fl g ln) (π.env l) L d →
+      EnvIn (VJ Fl g ln) (π.env y.label) (envMap y.mapping L d).1 (envMap y.mapping L d).2
+  | .branch y n => ∀ (g : Ghost P) (ln : Nat) L d, EnvIn (VJ Fl g ln) (π.env l) L d →
+      EnvIn (VJ Fl g ln) (π.env y.label) (envMap y.mapping L d).1 (envMap y.mapping L d).2 ∧
+      EnvIn (VJ Fl g ln) (π.env n.label) (envMap n.mapping L d).1 (envMap n.mapping L d).2
+  | .branchBind y n => ∀ (g : Ghost P) (ln : Nat) L d, EnvIn (VJ Fl g ln) (π.env l) L d →
+      EnvIn (VJ Fl g ln) (π.env y.label) (envMap y.mapping (.tru :: L) d).1 (envMap y.mapping (.tru :: L) d).2 ∧
+      EnvIn (VJ Fl g ln) (π.env n.label) (envMap n.mapping (.fls :: L) d).1 (envMap n.mapping (.fls :: L) d).2
+  | .tagBind _ y n => ∀ (g : Ghost P) (ln : Nat) L d v, EnvIn (VJ Fl g ln) (π.env l) L d → VJ Fl g ln (π.val l) v →
+      EnvIn (VJ Fl g ln) (π.env y.label) (envMap y.mapping (v :: L) d).1 (envMap y.mapping (v :: L) d).2 ∧
+      EnvIn (VJ Fl g ln) (π.env n.label) (envMap n.mapping (v :: L) d).1 (envMap n.mapping (v :: L) d).2
 
 variable (Fl) in
 /-- **A handler accepts every value of `O`.** -/
 def HandlerOk (π : CodeFlow P) (l : Nat) : Option Target → Prop
   | none => True
-  | some y => ∀ V, Mono V → ∀ L d v, EnvIn V (π.env l) L d → V Fl.O v →
-      EnvIn V (π.env y.label) (envMap y.mapping (v :: L) d).1 (envMap y.mapping (v :: L) d).2
+  | some y => ∀ (g : Ghost P) (ln : Nat) L d v, EnvIn (VJ Fl g ln) (π.env l) L d → VJ Fl g ln Fl.O v →
+      EnvIn (VJ Fl g ln) (π.env y.label) (envMap y.mapping (v :: L) d).1 (envMap y.mapping (v :: L) d).2
 
 /-- **A continuation's targets accept a node's signatures**: each slot of a
 target naming a signature holds a closure of it, where the node's slots

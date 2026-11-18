@@ -2435,6 +2435,39 @@ the calls (`EntryShape`) from the frame's well-formed entries, and the
 checker that decides `CodeOk` and `Flow.Facts` from the lowered
 graphs.
 
+### The checks of a code
+
+A proposal meets a code (`CodeOk`) when each node expression, instantiated
+at every environment meeting the node's slots and their signatures, fits
+the node's value set, and each continuation and handler maps such an
+environment to one meeting its target, at every ghost and heap length.
+The checks state this on the code itself (`ReadOnlyFitsCheck.lean`):
+
+- **An open term fits** (`OFits τ φ d Γ a o S e`): the rules of `Fits`
+  over a node expression whose variables below `d` are bound inside it
+  (`Γ`) and whose variable `d + i` is the node's slot `i`, of the sites
+  `τ i`, holding a closure of the signature `φ i` where it names one. A
+  call whose callee is a slot naming a signature is a call of a closure
+  of $`C`$'s code of a known signature (`invokeC`); a capture or a bound
+  part is a primitive or a variable (`OVOr`). At an environment meeting
+  the slots and signatures, the instantiated term fits (`ofits_sound`).
+- **The checks of an edge** (`ContChk`, `HandlerChk`): each slot of a
+  target holds the sites of the slot it reads (`mapIdx`: a mapping's
+  entry, or slot `0` past it; `Carries`), the value an edge binds at the
+  node's value set, a test's boolean at no site, a thrown value at
+  $`O`$, and names a signature only where the slot it reads names it
+  (`CarriesFn`). They give the edge's conditions (`contOk_of_chk`,
+  `handlerOk_of_chk`).
+- **The checks of a code** (`CodeChk`): each node expression fits openly
+  at its node's slots, a node value naming a signature is a slot naming
+  it, and each edge is checked; they give `CodeOk` (`codeOk_of_chk`).
+
+Proof scope: the lemmas above are proved. Not proved here: a decision
+procedure for the checks over a finite proposal (each node's slots past
+a width reading one default set, `readAt`'s closed set computed from the
+heap of sites), the proposal on the wire, and the facts of the flow
+(`Flow.Facts`) decided from it.
+
 ### Located reductions
 
 The checks of $`C`$ read each step at the node of the code performing it
