@@ -148,10 +148,10 @@ def KStep (a b : Conf × Ghost (fr.F.at fr.C)) : Prop :=
   AStep a.1 b.1 ∧ b.2 = fr.next a.2 a.1.s.h a.1.t b.1.s.h b.1.t ∧
     fr.Keeps a.2 a.1.s.n a.1.s.W a.1.s.h a.1.t b.1.s.h b.1.t
 
-/-- **A state reached** from an entry meeting the premises and a history the
+/-- **A state reached** from a call the claim is about and a history the
 frame starts from, by steps keeping the obligation. -/
 def Reached (b : Conf × Ghost (fr.F.at fr.C)) : Prop :=
-  ∃ a n, fr.Entry a.1.s.h a.1.t ∧ fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 ∧ Ex fr.KStep (fun _ => True) n a b
+  ∃ a n, fr.Call a.1.s.h a.1.t ∧ fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 ∧ Ex fr.KStep (fun _ => True) n a b
 
 /-- **What the checks give** (hypothesis, the interface of the checks (S),
 (K) and (O) of `C`'s code): at each step of `C`'s code from a reached
@@ -195,7 +195,7 @@ theorem entryStart_total (F : Family) (C : Nat) (tv : TypeView) (args : Heap →
 keeps them (`Entry.step`). -/
 theorem Reached.entry {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b) : fr.Entry b.1.s.h b.1.t := by
   obtain ⟨a, n, he, -, hex⟩ := hb
-  exact hex.carry (r := fun x => fr.Entry x.1.s.h x.1.t) (fun _ _ _ hk h => Entry.step fr h hk.1.step) he
+  exact hex.carry (r := fun x => fr.Entry x.1.s.h x.1.t) (fun _ _ _ hk h => Entry.step fr h hk.1.step) he.1
 
 /-- **A step from a reached state reaches a state** (proved). -/
 theorem Reached.step {a b : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hk : fr.KStep a b) : fr.Reached b := by
@@ -232,7 +232,7 @@ theorem reached_ok (hc : fr.ChkSound) (hi : fr.StartInv) {b : Conf × Ghost (fr.
     b.2.A.length = δ fr.F fr.C none b ∧ Inv (lift fr.F fr.C none b.1 b.2) ∧
       (0 < δ fr.F fr.C none b → Ok (δ fr.F fr.C none b) (lift fr.F fr.C none b.1 b.2)) := by
   obtain ⟨a, n, he, hs, hex⟩ := hb
-  have ⟨hI, hl⟩ := hi a.1 a.2 he hs
+  have ⟨hI, hl⟩ := hi a.1 a.2 he.1 hs
   exact Ex.inv (ex_xstep hc ⟨a, 0, he, hs, .refl a⟩ hex) hl hI
 
 /-- The running term of a state safe under an obligation has valid
@@ -291,10 +291,10 @@ theorem safeUnder_path {J : Heap → Tm → Prop} {Ξ T : Fam} {Q : HeapObservat
     · exact .inr ⟨(x, g), 0, h₁, t₁, .refl _, by omega, st, hK⟩
 
 /-- **A state of a framed execution from an entry is reached** (proved):
-from an entry meeting the premises and a history the frame starts from, a
+from a call the claim is about and a history the frame starts from, a
 state at the end of a path every step of which keeps the obligation is a
 reached state. -/
-theorem reached_of_path {x : Conf} {g : Ghost (fr.F.at fr.C)} (he : fr.Entry x.s.h x.t)
+theorem reached_of_path {x : Conf} {g : Ghost (fr.F.at fr.C)} (he : fr.Call x.s.h x.t)
     (hs : fr.start x.s.n x.s.W x.s.h x.t g) {j : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
     (hex : Ex fr.KStep (fun _ => True) j (x, g) e) : fr.Reached e :=
   ⟨(x, g), j, he, hs, hex⟩
