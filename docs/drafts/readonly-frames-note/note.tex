@@ -577,7 +577,7 @@ is then $\bigcup A\cup B$, so the stack is one set and a depth, and
 l\in R_\cC(s)\iff\mu(l)\in\{\kw{local},\kw{exposed}\}\ \vee\ \bigl(\mu(l)\in\{\kw{released},\kw{out}\}\wedge l\in{\textstyle\bigcup}A\cup B\bigr)
 \]
 with $\mu(l)$ the mark of $l$'s site
-\status{Lean: \lean{Ghost.cross}, \lean{HStep}, \lean{HStep.uniform}, \lean{exit\_unprotects}, \lean{Ghost.InR}; holding is a hypothesis. The Lean's history has a further transition, \lean{HStep.hold}, adding any set to every set of $A$, which the rule does not use}.
+\status{Lean: \lean{Ghost.cross}, \lean{HStep}, \lean{HStep.uniform}, \lean{exit\_unprotects}, \lean{Ghost.InR}; over an execution, \lean{Ghost.next}, the removal from $B$ at a step outside every call \lean{outsideNext}; holding is \lean{Held}. The Lean's history has a further transition, \lean{HStep.hold}, adding any set to every set of $A$, which the rule does not use}.
 
 \paragraph{Invariants of states.} A state is \emph{ok} for $\cC$ when a
 call of $\cC$ is active and:

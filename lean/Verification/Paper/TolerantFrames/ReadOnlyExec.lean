@@ -243,14 +243,47 @@ variable {tv : TypeView}
 noncomputable def midOf (chk : Conf → Conf → CheckData (F.at C) tv) (x y : Conf) (g : Ghost (F.at C)) : Ghost (F.at C) :=
   g.alloc x.s.h.length (chk x y).site (chk x y).key
 
+/-- **The ghost after a step of outside code**: it allocates outside
+storage; while no call of `C` is active (`A` empty) it also removes from
+`B` each location `C` no longer holds (`Held`, `HStep.drop`). -/
+noncomputable def outsideNext (F : Family) (C : Nat) (c : ComponentTag) (key : Nat → Option PropKey)
+    (x y : Conf) (g : Ghost (F.at C)) : Ghost (F.at C) :=
+  let g₁ := g.alloc x.s.h.length (fun _ => none) key
+  if g.A = [] then { g₁ with B := fun l => g₁.B l ∧ Held F C c y g₁ l } else g₁
+
+theorem outsideNext_A {key : Nat → Option PropKey} {x y : Conf} {g : Ghost (F.at C)} :
+    (outsideNext F C c key x y g).A = g.A := by
+  unfold outsideNext; split <;> rfl
+
+theorem outsideNext_of_ne {key : Nat → Option PropKey} {x y : Conf} {g : Ghost (F.at C)} (hA : g.A ≠ []) :
+    outsideNext F C c key x y g = g.alloc x.s.h.length (fun _ => none) key := by
+  unfold outsideNext; simp [hA]
+
+/-- **The trim is the history's `drop`**: outside every call of `C`, the
+ghost after an outside step is its allocation followed by `HStep.drop` at
+what `C` holds after the step. -/
+theorem outsideNext_drop {tv : TypeView} {key : Nat → Option PropKey} {x y : Conf} {g : Ghost (F.at C)}
+    (hA : g.A = []) :
+    HStep tv y.s.h (g.alloc x.s.h.length (fun _ => none) key) (outsideNext F C c key x y g) := by
+  unfold outsideNext; simp only [hA, if_true]
+  exact .drop _ _ hA
+
+/-- **The trim keeps the invariants**: outside every call of `C` the history
+is uniform whatever `B` is, and no other invariant reads `B`. -/
+theorem Inv.trim {P : Package} {st : St P} (hA : st.g.A = []) (B : Nat → Prop) (hi : Inv st) :
+    Inv ⟨st.s, { st.g with B := B }, st.roots⟩ :=
+  ⟨Ghost.uniform_empty (g := { st.g with B := B }) hA, hi.marks, hi.confined, hi.valid, hi.localClosed,
+    hi.bindings⟩
+
 /-- **The ghost after a step** (the draft, "Actual executions"): an outside
-step allocates outside storage; an entry pushes the protected set, then
-its incoming values cross; a step inside a call lets its values cross; an
-exit lets its outgoing values cross, then pops. -/
+step allocates outside storage, and outside every call of `C` keeps in `B`
+only what `C` holds; an entry pushes the protected set, then its incoming
+values cross; a step inside a call lets its values cross; an exit lets its
+outgoing values cross, then pops. -/
 noncomputable def Ghost.next (F : Family) (C : Nat) (c : ComponentTag) (chk : Conf → Conf → CheckData (F.at C) tv)
     (x y : Conf) (g : Ghost (F.at C)) : Ghost (F.at C) :=
   match kind F C c x y with
-  | .outside => g.alloc x.s.h.length (fun _ => none) (chk x y).key
+  | .outside => outsideNext F C c (chk x y).key x y g
   | .enter => Ghost.crosses tv y.s.h (chk x y).xs (midOf chk x y g).enter
   | .body => Ghost.crosses tv y.s.h (chk x y).xs (midOf chk x y g)
   | .exit => (Ghost.crosses tv y.s.h (chk x y).xs (midOf chk x y g)).pop (Held F C c y (midOf chk x y g))
@@ -473,7 +506,7 @@ theorem XStep.len {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
   cases hk : kind F C c a.1 b.1 with
   | outside =>
     have := (hs.1 hk).2
-    simp only [Ghost.next, hk, Ghost.alloc]; omega
+    simp only [Ghost.next, hk, outsideNext_A]; omega
   | enter =>
     have := hs.2.1 hk
     have : depthC F C c b.1.t ≤ depthC F C c a.1.t + 1 := by
@@ -531,7 +564,7 @@ an execution from a state whose active frame is outside `C` up to the
 first state of `C`'s code with `d + 1` calls active is a run of outside
 code one call deeper. By strong induction on the length. -/
 theorem decompose (off : Nat) : ∀ n : Nat,
-    (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), Ex (XStep F C c Θ chk) (QRun F C c d) n a e →
+    (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), 0 < d → Ex (XStep F C c Θ chk) (QRun F C c d) n a e →
       δ F C c a = d → δ F C c e = d → a.2.A.length = δ F C c a + off →
       ∀ k, n ≤ k → Run Θ Ψ G k d (lift F C c a.1 a.2) (lift F C c e.1 e.2)) ∧
     (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), Ex (XStep F C c Θ chk) (QCall F C c d) n a e →
@@ -544,7 +577,7 @@ theorem decompose (off : Nat) : ∀ n : Nat,
   have hlen : ∀ {q : Conf × Ghost (F.at C) → Prop} {m : Nat} {a b : Conf × Ghost (F.at C)},
       Ex (XStep F C c Θ chk) q m a b → a.2.A.length = δ F C c a + off → b.2.A.length = δ F C c b + off :=
     fun hx hl => hx.carry (r := fun x => x.2.A.length = δ F C c x + off) (fun _ _ _ hs h => hs.len h) hl
-  refine ⟨fun d a e hex hda hde hl k hk => ?_, fun d a e hex hda hde hl k hk => ?_⟩
+  refine ⟨fun d a e hd0 hex hda hde hl k hk => ?_, fun d a e hex hda hde hl k hk => ?_⟩
   · cases hex with
     | refl => exact Run.nil' _
     | next hq hx hrest =>
@@ -555,13 +588,15 @@ theorem decompose (off : Nat) : ∀ n : Nat,
       by_cases heq : depthC F C c b.1.t = depthC F C c a.1.t
       · -- A step of outside code.
         have hk' := kind_outside ho heq
+        have hA : a.2.A ≠ [] := by
+          intro h; rw [h] at hl; simp only [δ, List.length_nil] at hl hda; omega
         have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b.1).key := by
-          rw [hg]; simp only [Ghost.next, hk']
+          rw [hg]; simp only [Ghost.next, hk']; exact outsideNext_of_ne hA
         have hrow := hyp_row hk' hh
         rw [← hg, hb] at hrow
         have hos := outsideStep_of_step hs ho hrow
         rw [← hb] at hos
-        exact Run.outside' hos ((ih m (by omega)).1 d b e hrest (by simp only [δ] at hda ⊢; omega) hde
+        exact Run.outside' hos ((ih m (by omega)).1 d b e hd0 hrest (by simp only [δ] at hda ⊢; omega) hde
           (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k (by omega))
       · -- The entry of a call of `C`.
         have hlt : depthC F C c a.1.t < depthC F C c b.1.t := by omega
@@ -586,7 +621,7 @@ theorem decompose (off : Nat) : ∀ n : Nat,
             (lift F C c a.1 a.2) (lift F C c w.1 w.2) :=
           ⟨.step hpk hM, a, b, w, n₁, ⟨hs, hdisc, hg, hh⟩, rfl, h₁.mono fun x hx => by
             simp only [QCall]; simp only [QRun] at hx; omega, hda, hdb, hdw', rfl, rfl⟩
-        exact RunAt.member _ hcall ((ih n₂ (by omega)).1 d w e h₂ hdw' hde
+        exact RunAt.member _ hcall ((ih n₂ (by omega)).1 d w e hd0 h₂ hdw' hde
           (hlen h₁ (XStep.len ⟨hs, hdisc, hg, hh⟩ hl)) (k' + 1) (by omega))
   · by_cases ho : Outside F C c a.1
     · -- A run of outside code one call deeper, up to the first state of `C`'s code with `d + 1` calls.
@@ -609,7 +644,7 @@ theorem decompose (off : Nat) : ∀ n : Nat,
       have hn₂ : n₂ ≠ 0 := by
         rintro rfl
         have := h₂.zero; subst this; omega
-      have hin := (ih n₁ (by omega)).1 (d + 1) a v (h₁.mono fun x ⟨hx₁, hx₂⟩ => by
+      have hin := (ih n₁ (by omega)).1 (d + 1) a v (by omega) (h₁.mono fun x ⟨hx₁, hx₂⟩ => by
           unfold QRun
           exact ⟨hx₁, fun he => Classical.byContradiction fun hno => hx₂ (.inl ⟨by omega, hno⟩)⟩) hda hv'.1 hl k (by omega)
       exact .inner (by simp only [δ] at hl hda; simp only [lift]; omega) hin
@@ -638,7 +673,7 @@ theorem exec_bound (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (off : Nat) {d n : Nat
     (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) :
     RBound Ψ d (lift F C c a.1 a.2) (lift F C c e.1 e.2) ∧ Ok d (lift F C c e.1 e.2) :=
-  Run.bound hΘ n d _ _ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok
+  Run.bound hΘ n d _ _ ((decompose certs off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok
 
 /-- **(L4) of an actual execution**: an invariant of `G_C` that every
 outside step keeps survives such an execution. -/
@@ -647,7 +682,7 @@ theorem exec_keeps (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {I : St (F.at C) → P
     (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) (hi : I (lift F C c a.1 a.2)) :
     I (lift F C c e.1 e.2) :=
-  Run.keeps hΘ hG hout n d _ _ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hi
+  Run.keeps hΘ hG hout n d _ _ ((decompose certs off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hi
 
 /-- **The rule's consequence over an actual execution**: the call's run
 bounding the heap by its own effect `Φ`, a fact whose support meets the
@@ -661,7 +696,7 @@ theorem exec_rely (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {Cn : ConditionOn (St (
     (hΦ : TolerantFrames.Action Φ ρ a.1.s e.1.s)
     (hf : Framed Φ Ψ S ρ (lift F C c a.1 a.2)) (hc : Cn ρ mm (lift F C c a.1 a.2) (lift F C c e.1 e.2))
     (hA : A ρ mm (lift F C c a.1 a.2)) : A ρ mm (lift F C c e.1 e.2) :=
-  readOnly_rely hΘ hsup hΦ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
+  readOnly_rely hΘ hsup hΦ ((decompose certs off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
 
 end Decompose
 
@@ -680,10 +715,20 @@ theorem XStep.inv {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
   subst hg
   by_cases hk : kind F C c a.1 b = .outside
   · have hrow := hyp_row hk hh
-    have hn : Ghost.next F C c chk a.1 b a.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b).key := by
+    have hn : Ghost.next F C c chk a.1 b a.2 = outsideNext F C c (chk a.1 b).key a.1 b a.2 := by
       simp only [Ghost.next, hk]
     rw [hn] at hrow ⊢
-    exact outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow) hi
+    by_cases hA : a.2.A = []
+    · -- Outside every call: the step with its allocation, then the trim of `B`.
+      have hrow' : Row Θ (lift F C c a.1 a.2)
+          (lift F C c b (a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b).key)) := by
+        unfold outsideNext at hrow; simp only [hA, if_true] at hrow
+        exact hrow
+      have h₁ := outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow') hi
+      unfold outsideNext; simp only [hA, if_true]
+      exact Inv.trim (st := lift F C c b (a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b).key)) hA _ h₁
+    · rw [outsideNext_of_ne hA] at hrow ⊢
+      exact outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow) hi
   · refine pkg_step_inv (pkgStep_of (d := 0) hs hk (hyp_props hk hh) (Nat.zero_le _) fun hx => ?_) hi
     have := (kind_spec (F := F) (C := C) (c := c) a.1 b).2.2.1 hx
     simp only [δ] at hl; omega
