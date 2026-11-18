@@ -25,14 +25,17 @@ calculus's steps, with the history it reads:
 - **The history along an execution** (`ClientFrame.next`): the history of
   the paper's executions (`Ghost.stepAt`, `Ghost.next` at the
   configurations' heaps and terms, `next_conf`).
-- **The entries the claim is about** (`ClientFrame.Entry`), two named
+- **The entries the claim is about** (`ClientFrame.Entry`), four named
   premises beside the obligation: code provenance (`Provenance`: every code
   the term and the heap hold that carries a tag of `C` is one of `C`'s own
   codes, `codes`; Assumption "Clients", outside code enters `C` only
-  through its interface) and the call discipline (`Discipline`: the term
-  well formed, the heap free of runs, the configurations of `XStep.of_wf`).
-  Every step keeps both (`Entry.step`, by `step_prov` and `step_wf`), so
-  every state of an execution from an entry meets them (`Entry.steps`).
+  through its interface), the call discipline (`Discipline`: the term
+  well formed, the heap free of runs, the configurations of `XStep.of_wf`),
+  and two of well-formed entries: outside code is lowered source
+  (`Source`, `LoweredSrc`) and the values are closed (`ClosedAt`).
+  Every step keeps them (`Entry.step`, by `step_prov`, `step_wf` and
+  `step_scoped`), so every state of an execution from an entry meets them
+  (`Entry.steps`).
 
 The entry of a unit is a call from outside code: the top segment runs no
 component (`none`). -/
@@ -123,16 +126,30 @@ noncomputable def ok : Code → ComponentTag → Bool := fun code c => decide (f
 every code of the term and of the heap carrying a tag of `C` is `C`'s own. -/
 def Provenance (h : Heap) (t : Tm) : Prop := prov fr.ok t = true ∧ HeapProv fr.ok h
 
-/-- **An entry the framed claim is about**: code provenance and the call
-discipline. -/
-def Entry (h : Heap) (t : Tm) : Prop := fr.Provenance h t ∧ Discipline h t
+/-- **Outside code is lowered source at an entry** (named premise,
+well-formed entries): every code of outside code the term and the heap
+hold, of its closures and runs, is lowered source (`LoweredSrc`). -/
+def Source (h : Heap) (t : Tm) : Prop :=
+  prov (srcOk (fr.F.ofC fr.C)) t = true ∧ HeapProv (srcOk (fr.F.ofC fr.C)) h
 
-/-- **Every step keeps an entry's premises** (proved): code provenance by
-`step_prov`, the call discipline by `step_wf`. -/
+/-- **The values at an entry are closed** (named premise, well-formed
+entries): the term and every value the heap holds have no free
+variable. -/
+def ClosedAt (h : Heap) (t : Tm) : Prop := Scoped 0 t ∧ ∀ v ∈ h, Scoped 0 v
+
+/-- **An entry the framed claim is about**: code provenance, the call
+discipline, outside code lowered source and closed values. -/
+def Entry (h : Heap) (t : Tm) : Prop := fr.Provenance h t ∧ Discipline h t ∧ fr.Source h t ∧ ClosedAt h t
+
+/-- **Every step keeps an entry's premises** (proved): code provenance and
+outside code lowered source by `step_prov`, the call discipline by
+`step_wf`, closed values by `step_scoped`. -/
 theorem Entry.step {h h' : Heap} {t t' : Tm} (he : fr.Entry h t) (hs : Step h t h' t') : fr.Entry h' t' :=
   let hp := step_prov hs he.1.1 he.1.2
-  let hw := step_wf hs he.2.1 he.2.2
-  ⟨⟨hp.1, hp.2⟩, ⟨hw.1, hw.2.1⟩⟩
+  let hw := step_wf hs he.2.1.1 he.2.1.2
+  let hl := step_prov hs he.2.2.1.1 he.2.2.1.2
+  let hc := step_scoped hs he.2.2.2.1 he.2.2.2.2
+  ⟨⟨hp.1, hp.2⟩, ⟨hw.1, hw.2.1⟩, ⟨hl.1, hl.2⟩, ⟨hc.1, hc.2⟩⟩
 
 /-- **Every state of an execution from an entry meets its premises** (proved). -/
 theorem Entry.steps {j : Nat} {h h' : Heap} {t t' : Tm} (he : fr.Entry h t)
@@ -142,7 +159,7 @@ theorem Entry.steps {j : Nat} {h h' : Heap} {t t' : Tm} (he : fr.Entry h t)
   | next st _ ih => exact ih (Entry.step fr he st)
 
 /-- **A configuration at an entry's premises is well formed** (proved). -/
-theorem Entry.wf {x : Conf} (he : fr.Entry x.s.h x.t) : x.WF := he.2
+theorem Entry.wf {x : Conf} (he : fr.Entry x.s.h x.t) : x.WF := he.2.1
 
 /-- **Provenance excludes a closure tagged with `C` whose code is not `C`'s**
 (proved): a term holding such a closure meets no provenance. -/

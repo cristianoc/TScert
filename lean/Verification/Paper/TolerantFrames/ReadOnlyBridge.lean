@@ -210,7 +210,7 @@ theorem kstep_xstep (hc : fr.ChkSound) {a b : Conf × Ghost (fr.F.at fr.C)} (ha 
     (hk : fr.KStep a b) : XStep fr.F fr.C none fr.Θ fr.chkConf a b := by
   obtain ⟨hs, hg, hK⟩ := hk
   have hw := (Reached.entry ha)
-  refine XStep.of_wf hs hw.2 (hg.trans (fr.next_conf a.2 a.1 b.1)) ?_
+  refine XStep.of_wf hs hw.2.1 (hg.trans (fr.next_conf a.2 a.1 b.1)) ?_
   unfold StepHyp
   split
   · rename_i ho

@@ -2079,14 +2079,22 @@ a claim of its own beside the ordinary one (`PassUnit.FramedRequestSafe`,
   *code provenance* (`Provenance`: every code the term and the heap hold,
   of a closure or of a run, that carries a tag of $`C`$ is one of `codes`;
   Assumption "Clients", outside code enters $`C`$ only through its
-  interface) and *the call discipline* (`Discipline`: the term well formed
+  interface), *the call discipline* (`Discipline`: the term well formed
   and the heap free of runs, `wf` and `HeapFree`, the configurations
-  `XStep.of_wf` reads). Every step keeps both (`Entry.step`): a step builds
-  its result from the term's subterms, the code of the closure it calls and
-  the heap's values, every code at the tag it had (`step_prov`), and keeps
-  the discipline (`step_wf`). So every value outside code creates carries
-  a tag of no component $`C`$ but on $`C`$'s own code, at every state of
-  the execution (`Entry.steps`).
+  `XStep.of_wf` reads), and two of well-formed entries: *outside code is
+  lowered source* (`Source`: every code of outside code the term and the
+  heap hold is `LoweredSrc`, no located value, no run, captures and bound
+  parts variables or primitives, and every closure it creates outside
+  code, as the lowering tags a closure by the component of the source it
+  is written in) and *closed values* (`ClosedAt`: the term and every value
+  of the heap `Scoped 0`). Every step keeps them (`Entry.step`): a step
+  builds its result from the term's subterms, the code of the closure it
+  calls and the heap's values, every code at the tag it had (`step_prov`,
+  for provenance and for `Source`), keeps the discipline (`step_wf`), and
+  substitutes and stores closed values, instantiating a node expression at
+  a closed environment (`step_scoped`). So every value outside code
+  creates carries a tag of no component $`C`$ but on $`C`$'s own code, at
+  every state of the execution (`Entry.steps`).
 - **The six clauses** (`FramedSafeClause` to
   `FramedCodeAssertionsClause`): `RequestSafe`'s, each read at every call of
   the code (`gotoOf` at its arguments and receiver) meeting the entry
@@ -2283,7 +2291,9 @@ sets of sites:
   variable or a primitive (`CodePart`); every closure of $`C`$'s code it
   creates has a proposal whose entry names no signature but the
   closure's own (`SelfFn`). The lowering emits no object and no run;
-  outside code is lowered source, a premise of the entries.
+  outside code is lowered source (`LoweredSrc`, which creates no closure
+  of $`C`$'s code), a premise of the entries, and lowered source is
+  lowered code (`LoweredSrc.lowered`).
 - **A value meets a set** (`VJ`): a closed value referencing allocated
   locations only, whose first locations are of sites of the set; every
   value within it (`Within`: captures, node expressions' values, a bound
