@@ -815,7 +815,7 @@ came from a different context. No execution budget is inspected. -/
     -- has its receiver slot at a pool type that is exactly `undefined`, what
     -- `new` passes there. A callable object's (`Rule.callableGraph`) has the
     -- bag's initializers, then the captures.
-    | .makeAt (.graph _ _ _ _ caps kind rest) ns inits =>
+    | .makeAt (.graph _ _ _ _ caps kind rest _) ns inits =>
       let some slots := ProgramCertificates.varSlots caps | return none
       let some ps := slots.mapM (fun i => (Γ[i]?).map fun C => leaf' i C) | return none
       let arraysOf := fun (S : List (RestArrow (Ty ι))) =>

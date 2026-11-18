@@ -334,7 +334,7 @@ theorem mergeParts_vals {h : Heap} {d : List PropKey} {a b : Tm} {ps : List (Pro
 
 theorem graphEntry_refs {n : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
     {s : Nat} {caps : List Tm} {self : Tm} {rest : Bool} {recv : Tm} {args : List Tm} {r : Ref}
-    (hr : r ∈ refs (CallArguments.graphEntry n E K s caps self rest recv args)) :
+    (hr : r ∈ refs (CallArguments.graphEntry n E K s caps self rest comp recv args)) :
     r ∈ E.flatMap refs ∨ r ∈ caps.flatMap refs ∨ r ∈ refs self ∨ r ∈ refs recv ∨ r ∈ args.flatMap refs := by
   have hp : ∀ x ∈ CallArguments.parameters n args, r ∈ refs x → r ∈ args.flatMap refs := by
     intro x hx hrx

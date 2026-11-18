@@ -65,13 +65,13 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | funGraph {Γ : List (Ty ι)} {F : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-      {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)} :
+      {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)} {comp : ComponentTag} :
       Represents G F (.arrs L S) →
       KindOffers G kind L S →
       CodeOffers G arity E K start (caps.map Prod.fst) rest L S As →
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
-      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul) F
+      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest comp) .nul) F
   /-- **A recursive closure.** Graph code of fixed arity checked from the
   frame whose slot after its captures is its self entry, the invoked object,
   at the closure's own type `F` (`graphEntry`): the closure meets `F`, by
@@ -79,20 +79,20 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | funGraphSelf {Γ : List (Ty ι)} {F : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-      {caps : List (Ty ι × Nat)} {kind : Invoke} :
+      {caps : List (Ty ι × Nat)} {kind : Invoke} {comp : ComponentTag} :
       Represents G F (.arrs L S) →
       KindOffers G kind L S →
       CodeOffers G arity E K start (caps.map Prod.fst ++ [F]) false L S [] →
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
-      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind false) .nul) F
+      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind false comp) .nul) F
   /-- **A generic closure.** The code meets each signature at every permitted
   assignment of the scheme's binders. Its captures are slots whose types read
   none of those binders (`FreeOk`), so they mean the same at every instantiation.
   Arity and rest-spine formation are checked independently of the assignment. -/
   | funScheme {Γ : List (Ty ι)} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-      {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)} :
+      {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)} {comp : ComponentTag} :
       G.params j = false → G.schemes j = some s → s.construct = false →
       KindOffers G kind s.signatures s.variadic →
       (∀ η Bs, Bs.length = s.binders.length → G.domain.allowed s Bs →
@@ -102,7 +102,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       capturesFree G s (caps.map Prod.fst) = true →
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
-      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul) [j]
+      HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest comp) .nul) [j]
   /-- **A class value.** Construct-only graph code, checked at each construct
   signature, with its effect, from the frame with `undefined` for the receiver
   `new` passes, and at each variadic one, whose effect is plain, with an
@@ -113,7 +113,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (MethodArrow (Ty ι))}
       {S : List (MethodRestArrow (Ty ι))} {arity start : Nat}
       {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
-      {caps : List (Ty ι × Nat)} {parts : List (PropKey × Ty ι × Tm)} :
+      {caps : List (Ty ι × Nat)} {parts : List (PropKey × Ty ι × Tm)} {comp : ComponentTag} :
       Represents G F (.ctors L S (withRole .field (parts.map fun p => (p.1, p.2.1))) []) →
       Represents G U .undef →
       (codeField :: parts.map Prod.fst).Nodup →
@@ -126,7 +126,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       (∀ p ∈ parts, Payload G (.stored .field) p.2.1) →
       (∀ p ∈ parts, StorageRole.field.fitsKey p.1 = true) →
-      HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .construct)
+      HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .construct (comp := comp))
         (codeField :: parts.map Prod.fst) (.nul :: parts.map fun p => p.2.2)) F
   /-- **A callable object.** The bag is allocated as a record's is, its fields
   named by the program, with graph code that meets the signatures it offers,
@@ -136,7 +136,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {S : List (RestArrow (Ty ι))} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)}
-      {parts : List (PropKey × Ty ι × Tm)} :
+      {parts : List (PropKey × Ty ι × Tm)} {comp : ComponentTag} :
       Represents G F (.callable (withRole .field (parts.map fun p => (p.1, p.2.1))) [] L S) →
       (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
@@ -146,7 +146,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       (∀ p ∈ parts, Payload G (.stored .field) p.2.1) →
       (∀ p ∈ parts, StorageRole.field.fitsKey p.1 = true) →
-      HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) kind rest)
+      HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) kind rest comp)
         (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   /-- `new f(args)`: `f` at a construct signature with a plain effect, each
   actual at its parameter, whatever static fields its class states. As a call
@@ -749,7 +749,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
   | @str _ _ s hr =>
     intro n W h ρ he hw hh href
     exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨s, rfl⟩) href
-  | @funGraph Γ F L S arity start E K caps kind rest As hr hkind hspec hlt hcap ih =>
+  | @funGraph Γ F L S arity start E K caps kind rest As comp hr hkind hspec hlt hcap ih =>
     intro n W h ρ he hw hh href
     have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map] at href ⊢
@@ -757,12 +757,12 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh (hcr c hc)) hj hx
-    have ho := offers_sem (oid := h.length + 1) [(codeField, h.length)] hkind hspec henv (by simp) hsc (by
+    have ho := offers_sem (comp := comp) (oid := h.length + 1) [(codeField, h.length)] hkind hspec henv (by simp) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
     exact (represents_back hr j V _) ⟨ho.1, ho.2⟩
-  | @funGraphSelf Γ F L S arity start E K caps kind hr hkind hspec hlt hcap ih =>
+  | @funGraphSelf Γ F L S arity start E K caps kind comp hr hkind hspec hlt hcap ih =>
     intro n W h ρ he hw hh href
     have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map] at href ⊢
@@ -774,7 +774,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1) j V henv
-  | @funScheme Γ i s arity start E K caps kind rest Ss hp hq hcon hkind hspec _hshape hcf hlt hcap ih =>
+  | @funScheme Γ i s arity start E K caps kind rest Ss comp hp hq hcon hkind hspec _hshape hcf hlt hcap ih =>
     obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
     intro n W h ρ he hw hh href
     have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
@@ -799,9 +799,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         (hcapv c (List.mem_of_getElem? hc))
     have hsig : ∀ As : List MixedFamily, As.length = s.binders.length →
         G.domain.allowed s As → instanceTWithArgs (excOf G) (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
-          (Tm.fnObj h.length (.graph arity E K start vs kind rest)) := by
+          (Tm.fnObj h.length (.graph arity E K start vs kind rest comp)) := by
       intro As hlen hal
-      have ho := offers_sem (G := reassign G (assign G.env s.binders As)) (oid := h.length + 1)
+      have ho := offers_sem (comp := comp) (G := reassign G (assign G.env s.binders As)) (oid := h.length + 1)
         [(codeField, h.length)] hkind
         (hspec G.env As hlen hal) (henv As) (by simp [vs]) hsc (by
       intro v hv
@@ -816,7 +816,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
     simp only [Callee, hcon, Bool.false_eq_true, if_false]
     exact ⟨_, _, _, rfl, callable_of_kind hkind.1, by simpa [Scoped, vs, instantiate] using hsc⟩
-  | @ctorGraph Γ F U L S arity start E K caps parts hr hu hnd hp hspec hrest hlt hcap hpay hfit ih ihc =>
+  | @ctorGraph Γ F U L S arity start E K caps parts comp hr hu hnd hp hspec hrest hlt hcap hpay hfit ih ihc =>
     intro n W h ρ he hw hh href
     have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
     have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
@@ -828,7 +828,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     rw [← hmap] at href ⊢
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
-      (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) .construct)
+      (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) .construct (comp := comp))
         (codeField :: parts.map Prod.fst) (.nul :: args))
       (fun hs => CallArguments.Step.makeArgs (.tail rfl hs)) (fun hr => (CallArguments.ArgRaises.tail rfl hr).make)
       (fun args r => by simp [refs, refsArgs_eq] <;> grind)
@@ -857,7 +857,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rcases List.mem_cons.mp hA' with rfl | hA'
         · exact nulT_valOnly
         · obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
-      j U heap (.graph arity E K start (caps.map fun c => ρ c.2) .construct) _ (.nul :: args) hnd
+      j U heap (.graph arity E K start (caps.map fun c => ρ c.2) .construct (comp := comp)) _ (.nul :: args) hnd
       (by simpa using hlenA.symm) (by simpa using hlenA.symm)
       (by
         intro v hv
@@ -899,9 +899,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1
-    have hc := ctorsT_of_graph (oid := heap.length + (.nul :: args).length)
+    have hc := ctorsT_of_graph (comp := comp) (oid := heap.length + (.nul :: args).length)
       (slots heap.length (codeField :: parts.map Prod.fst)) hspec hu henv (by simp) hsc hvals
-    have hcr := ctorRestsT_of_graph (oid := heap.length + (.nul :: args).length)
+    have hcr := ctorRestsT_of_graph (comp := comp) (oid := heap.length + (.nul :: args).length)
       (slots heap.length (codeField :: parts.map Prod.fst)) hrest hu henv (by simp) hsc hvals
     have hfam : ReferenceConjunctions.famsOf (meaning G) (withRole .field (parts.map fun p => (p.1, p.2.1)))
         = (parts.map Prod.fst).zip ((parts.map fun _ => StorageRole.field).zip
@@ -920,7 +920,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact List.mem_cons_of_mem _ hm
     exact (represents_back hr k' V _)
       ⟨⟨hc, hcr⟩, ⟨⟨_, _, _, rfl, rfl, hbag⟩, by simp⟩, CallableConjunctions.views_nil⟩
-  | @callableGraph Γ F L S arity start E K caps kind rest As parts hr hnd hp hkind hspec hlt hcap hpay hfit
+  | @callableGraph Γ F L S arity start E K caps kind rest As parts comp hr hnd hp hkind hspec hlt hcap hpay hfit
       ih ihc =>
     intro n W h ρ he hw hh href
     have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
@@ -933,7 +933,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     rw [← hmap] at href ⊢
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
-      (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) kind rest)
+      (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) kind rest comp)
         (parts.map Prod.fst) args)
       (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make)
       (fun args r => by simp [refs, refsArgs_eq] <;> grind) hw hh href
@@ -952,7 +952,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (As := parts.map fun p => meaning G p.2.1) (by simp)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
-      j U heap (.graph arity E K start (caps.map fun c => ρ c.2) kind rest) _ args hnd
+      j U heap (.graph arity E K start (caps.map fun c => ρ c.2) kind rest comp) _ args hnd
       (by simpa using hlenA.symm) (by simpa using hlenA.symm)
       (ArgsT_values
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
@@ -972,7 +972,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hk') hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
       (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh (hcr c hc)) (by omega) hWV
-    have ho := offers_sem (oid := heap.length + args.length) (slots heap.length (parts.map Prod.fst)) hkind hspec henv (by simp) hsc (by
+    have ho := offers_sem (comp := comp) (oid := heap.length + args.length) (slots heap.length (parts.map Prod.fst)) hkind hspec henv (by simp) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)

@@ -432,12 +432,12 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hfieldStart : (fieldsAt ft.fields start).isEmpty = true)
     (hfields : ArgumentPathTracking.checkEntryFields G inputs regions = true)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d))
+    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d comp))
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' _ => ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      (fun h' => exc = true → ArgumentSpineRegionsWithin Φ regions (envOf L d) h h') n W h (.goto E K start L d) := by
+      (fun h' => exc = true → ArgumentSpineRegionsWithin Φ regions (envOf L d) h h') n W h (.goto E K start L d comp) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx

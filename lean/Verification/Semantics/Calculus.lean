@@ -198,6 +198,13 @@ inductive Continuation where
   deriving DecidableEq, Repr
 end ControlFlow
 
+/-- A ghost name of a component: a set of code with a complete interface, in
+a family of components any two of which are nested or disjoint; `none` for
+code outside every component. Graph code carries its component
+(`CallCode.graph`) and a run carries the component of the code it runs
+(`Tm.goto`, `Tm.frame`); no reduction rule reads it. -/
+abbrev ComponentTag := Option Nat
+
 mutual
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
 about the same objects. -/
@@ -295,16 +302,19 @@ inductive Tm where
   | makeKey (key init : Tm)
   /-- A run of graph code (`CallCode.graph`) at a node, before it is entered:
   the code's node expressions and continuations, the label, and the
-  environment, its slots in order and the value every slot past them holds.
-  A runtime form only: no source term has one. -/
+  environment, its slots in order and the value every slot past them holds,
+  and the frame's innermost component (`comp`), copied from the called code
+  at the call. A runtime form only: no source term has one. -/
   | goto (exprs : List Tm) (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
-      (label : Nat) (env : List Tm) (dflt : Tm)
+      (label : Nat) (env : List Tm) (dflt : Tm) (comp : ComponentTag)
   /-- A run of graph code evaluating a node's instantiated expression `t`, then
   continuing by `k`; a throw out of `t` goes to `handler`, when it has one, and
-  otherwise leaves the run as a throw of the same value. A runtime form only. -/
+  otherwise leaves the run as a throw of the same value. `comp` is the frame's
+  innermost component, copied from the called code at the call. A runtime
+  form only. -/
   | frame (exprs : List Tm) (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
       (t : Tm) (env : List Tm) (dflt : Tm) (k : ControlFlow.Continuation)
-      (handler : Option ControlFlow.Target)
+      (handler : Option ControlFlow.Target) (comp : ComponentTag)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -321,8 +331,8 @@ inductive CallCode where
   (`ControlFlow`): the node expressions, each node's continuation and
   handler, the entry label, the values the code captured where it was
   created, which internal method the code provides (`kind`: `[[Call]]`, or
-  `[[Construct]]` for a class constructor), and whether it collects a rest
-  (`rest`). Invocation starts the
+  `[[Construct]]` for a class constructor), whether it collects a rest
+  (`rest`), and the component of the code (`comp`). Invocation starts the
   graph at `start` in the environment
   `[this, parameter_0, …, parameter_{arity-1}] ++ captures ++ [self]`, self
   the invoked object; `new` on
@@ -334,6 +344,7 @@ inductive CallCode where
   | graph (arity : Nat) (exprs : List Tm)
       (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
       (start : Nat) (caps : List Tm) (kind : Invoke := .call) (rest : Bool := false)
+      (comp : ComponentTag)
   /-- A typed array's immutable descriptor (the note *Tolerant frames*, §2,
   a typed array; (W3)): the location of its view spine, its element format
   and its fixed length. An object carrying it is a typed array (`Tm.viewAt`):
@@ -354,7 +365,7 @@ fixed length. Execution tells a typed array by this value alone. -/
 object has none. -/
 def CallCode.callable : CallCode → Bool
   | .absent => false
-  | .graph _ _ _ _ _ .construct _ => false
+  | .graph _ _ _ _ _ .construct _ _ => false
   | .view .. => false
   | _ => true
 
@@ -1147,18 +1158,18 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.makeKey.injEq])
-  case goto.goto a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 =>
+  case goto.goto a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5 =>
     haveI : Decidable (a0 = b0) := argsDecEq a0 b0
     haveI : Decidable (a3 = b3) := argsDecEq a3 b3
     haveI : Decidable (a4 = b4) := tmDecEq a4 b4
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4)
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5)
       (by simp only [Tm.goto.injEq])
-  case frame.frame a0 a1 a2 a3 a4 a5 a6 b0 b1 b2 b3 b4 b5 b6 =>
+  case frame.frame a0 a1 a2 a3 a4 a5 a6 a7 b0 b1 b2 b3 b4 b5 b6 b7 =>
     haveI : Decidable (a0 = b0) := argsDecEq a0 b0
     haveI : Decidable (a2 = b2) := tmDecEq a2 b2
     haveI : Decidable (a3 = b3) := argsDecEq a3 b3
     haveI : Decidable (a4 = b4) := tmDecEq a4 b4
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6 ∧ a7 = b7)
       (by simp only [Tm.frame.injEq])
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -1170,10 +1181,10 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := argsDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.bound.injEq])
-  case graph.graph a0 a1 a2 a3 a4 a5 a6 b0 b1 b2 b3 b4 b5 b6 =>
+  case graph.graph a0 a1 a2 a3 a4 a5 a6 a7 b0 b1 b2 b3 b4 b5 b6 b7 =>
     haveI : Decidable (a1 = b1) := argsDecEq a1 b1
     haveI : Decidable (a4 = b4) := argsDecEq a4 b4
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6 ∧ a7 = b7)
       (by simp only [CallCode.graph.injEq])
   case view.view a0 a1 a2 b0 b1 b2 =>
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.view.injEq])
@@ -1326,26 +1337,26 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     (throw : ∀ a, P a → P (.throw a))
     (merge : ∀ d a b, P a → P b → P (.merge d a b))
     (makeKey : ∀ k a, P k → P a → P (.makeKey k a))
-    (objGraph : ∀ fs oid n E K s caps k r, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
-      P (.objAt fs (.graph n E K s caps k r) oid))
-    (makeGraph : ∀ n E K s caps k r ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
-      (∀ a ∈ args, P a) → P (.makeAt (.graph n E K s caps k r) ns args))
-    (goto : ∀ E K l L d, (∀ e ∈ E, P e) → (∀ a ∈ L, P a) → P d → P (.goto E K l L d))
-    (frame : ∀ E K t L d k x, (∀ e ∈ E, P e) → P t → (∀ a ∈ L, P a) → P d →
-      P (.frame E K t L d k x))
+    (objGraph : ∀ fs oid n E K s caps k r comp, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      P (.objAt fs (.graph n E K s caps k r comp) oid))
+    (makeGraph : ∀ n E K s caps k r comp ns args, (∀ e ∈ E, P e) → (∀ a ∈ caps, P a) →
+      (∀ a ∈ args, P a) → P (.makeAt (.graph n E K s caps k r comp) ns args))
+    (goto : ∀ E K l L d comp, (∀ e ∈ E, P e) → (∀ a ∈ L, P a) → P d → P (.goto E K l L d comp))
+    (frame : ∀ E K t L d k x comp, (∀ e ∈ E, P e) → P t → (∀ a ∈ L, P a) → P d →
+      P (.frame E K t L d k x comp))
     (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
       | .absent => True
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a
-      | .graph _ E _ _ caps _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a
+      | .graph _ E _ _ caps _ _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a
       | .view .. => True)
     (motive_3 := fun args => ∀ a ∈ args, P a)
     var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr viewSpine arrLit elemAt setElem lenOf spread throw merge makeKey
-    (fun E K l L d hE hL hd => goto E K l L d hE hL hd)
-    (fun E K t L d k x hE ht hL hd => frame E K t L d k x hE ht hL hd)
+    (fun E K l L d comp hE hL hd => goto E K l L d comp hE hL hd)
+    (fun E K t L d k x comp hE ht hL hd => frame E K t L d k x comp hE ht hL hd)
     True.intro (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩)
-    (fun _ _ _ _ _ _ _ hE hc => ⟨hE, hc⟩) (fun _ _ _ => True.intro) (by simp) (by
+    (fun _ _ _ _ _ _ _ _ hE hc => ⟨hE, hc⟩) (fun _ _ _ => True.intro) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -1354,13 +1365,13 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     cases c with
     | absent => exact objAbsent fs oid
     | bound t r pre => exact objBound fs oid t r pre ih.1 ih.2.1 ih.2.2
-    | graph n E K s caps k r => exact objGraph fs oid n E K s caps k r ih.1 ih.2
+    | graph n E K s caps k r comp => exact objGraph fs oid n E K s caps k r comp ih.1 ih.2
     | view s f n => exact objView fs oid s f n
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
     | bound t r pre => exact makeBound t r pre ns args ihc.1 ihc.2.1 ihc.2.2 iha
-    | graph n E K s caps k r => exact makeGraph n E K s caps k r ns args ihc.1 ihc.2 iha
+    | graph n E K s caps k r comp => exact makeGraph n E K s caps k r comp ns args ihc.1 ihc.2 iha
     | view s f n => exact makeView s f n ns args iha
 
 
@@ -1608,11 +1619,11 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .throw x => .throw (subst j a x)
   | .merge d x y => .merge d (subst j a x) (subst j a y)
   | .makeKey x y => .makeKey (subst j a x) (subst j a y)
-  | .objAt fs (.graph n E K s caps k r) oid => .objAt fs (.graph n E K s (substArgs j a caps) k r) oid
-  | .makeAt (.graph n E K s caps k r) ns xs =>
-      .makeAt (.graph n E K s (substArgs j a caps) k r) ns (substArgs j a xs)
-  | .goto E K l L d => .goto E K l (substArgs j a L) (subst j a d)
-  | .frame E K t L d k x => .frame E K (subst j a t) (substArgs j a L) (subst j a d) k x
+  | .objAt fs (.graph n E K s caps k r comp) oid => .objAt fs (.graph n E K s (substArgs j a caps) k r comp) oid
+  | .makeAt (.graph n E K s caps k r comp) ns xs =>
+      .makeAt (.graph n E K s (substArgs j a caps) k r comp) ns (substArgs j a xs)
+  | .goto E K l L d comp => .goto E K l (substArgs j a L) (subst j a d) comp
+  | .frame E K t L d k x comp => .frame E K (subst j a t) (substArgs j a L) (subst j a d) k x comp
 
 termination_by structural t => t
 
@@ -1644,18 +1655,20 @@ def protoField : PropKey := "[[proto]]"
 
 /-- What invoking graph code yields: a run at its entry, the receiver in slot
 0, then the `arity` parameters `parameters` binds, then the captures, then the
-invoked object itself, the code's self entry. Code with
+invoked object itself, the code's self entry; the run carries the code's
+component `comp`. Code with
 a rest first allocates the spine of the actuals past its parameters, a fresh
 array spine, and the run finds that spine in slot 0, before the receiver.
 Invocation itself allocates nothing: the spine is allocated by the ordinary
 steps of the term it yields. -/
 def graphEntry (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
-    (caps : List Tm) (self : Tm) (rest : Bool) (recv : Tm) (args : List Tm) : Tm :=
+    (caps : List Tm) (self : Tm) (rest : Bool) (comp : ComponentTag) (recv : Tm)
+    (args : List Tm) : Tm :=
   match rest with
-  | false => .goto E K start (recv :: parameters arity args ++ (caps ++ [self])) .nul
+  | false => .goto E K start (recv :: parameters arity args ++ (caps ++ [self])) .nul comp
   | true => .letE (.arrLit (args.drop arity))
-      (.goto E K start (.var 0 :: recv :: parameters arity args ++ (caps ++ [self])) .nul)
+      (.goto E K start (.var 0 :: recv :: parameters arity args ++ (caps ++ [self])) .nul comp)
 
 end CallArguments
 
@@ -1938,11 +1951,11 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .throw a => .throw (instantiate d ρ a)
   | .merge dr a b => .merge dr (instantiate d ρ a) (instantiate d ρ b)
   | .makeKey k a => .makeKey (instantiate d ρ k) (instantiate d ρ a)
-  | .objAt fs (.graph n E K s caps k r) oid => .objAt fs (.graph n E K s (instantiateArgs d ρ caps) k r) oid
-  | .makeAt (.graph n E K s caps k r) ns args =>
-      .makeAt (.graph n E K s (instantiateArgs d ρ caps) k r) ns (instantiateArgs d ρ args)
-  | .goto E K l L x => .goto E K l (instantiateArgs d ρ L) (instantiate d ρ x)
-  | .frame E K t L x k h => .frame E K (instantiate d ρ t) (instantiateArgs d ρ L) (instantiate d ρ x) k h
+  | .objAt fs (.graph n E K s caps k r comp) oid => .objAt fs (.graph n E K s (instantiateArgs d ρ caps) k r comp) oid
+  | .makeAt (.graph n E K s caps k r comp) ns args =>
+      .makeAt (.graph n E K s (instantiateArgs d ρ caps) k r comp) ns (instantiateArgs d ρ args)
+  | .goto E K l L x comp => .goto E K l (instantiateArgs d ρ L) (instantiate d ρ x) comp
+  | .frame E K t L x k h comp => .frame E K (instantiate d ρ t) (instantiateArgs d ρ L) (instantiate d ρ x) k h comp
   | t => t
 
 def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
@@ -2196,45 +2209,45 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   spine when it has one (`CallArguments.graphEntry`). Its kind binds the
   receiver (`Invoke.binds`): sloppy code is invoked only with an object. -/
   | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) → k.binds r = true →
-      Step h (.invoke (.objAt fs (.graph n E K s caps k rest) oid) r args) h
-        (CallArguments.graphEntry n E K s caps (.objAt fs (.graph n E K s caps k rest) oid) rest r args)
+      Step h (.invoke (.objAt fs (.graph n E K s caps k rest comp) oid) r args) h
+        (CallArguments.graphEntry n E K s caps (.objAt fs (.graph n E K s caps k rest comp) oid) rest comp r args)
   /-- `new` on construct-only graph code enters it as a call does, with
   `undefined` for the receiver. -/
   | constructGraph : (∀ a ∈ args, isVal a = true) →
-      Step h (.construct (.objAt fs (.graph n E K s caps .construct rest) oid) args) h
-        (CallArguments.graphEntry n E K s caps (.objAt fs (.graph n E K s caps .construct rest) oid) rest .undef args)
+      Step h (.construct (.objAt fs (.graph n E K s caps .construct rest comp) oid) args) h
+        (CallArguments.graphEntry n E K s caps (.objAt fs (.graph n E K s caps .construct rest comp) oid) rest comp .undef args)
   /-- Entering a node instantiates its expression in the run's environment. -/
   | gotoEnter : E[l]? = some e → K[l]? = some (k, x) →
-      Step h (.goto E K l L d) h (.frame E K (instantiate 0 (envOf L d) e) L d k x)
-  | frameC : Step h t h' t' → Step h (.frame E K t L d k x) h' (.frame E K t' L d k x)
+      Step h (.goto E K l L d comp) h (.frame E K (instantiate 0 (envOf L d) e) L d k x comp)
+  | frameC : Step h t h' t' → Step h (.frame E K t L d k x comp) h' (.frame E K t' L d k x comp)
   /-- A returned value is the run's value. -/
-  | frameRet : isVal v = true → Step h (.frame E K v L d .ret x) h v
+  | frameRet : isVal v = true → Step h (.frame E K v L d .ret x comp) h v
   | frameBind : isVal v = true →
-      Step h (.frame E K v L d (.bind l) x) h
-        (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2)
+      Step h (.frame E K v L d (.bind l) x comp) h
+        (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2 comp)
   | frameEffect : isVal v = true →
-      Step h (.frame E K v L d (.effect l) x) h
-        (.goto E K l.label (envMap l.mapping L d).1 (envMap l.mapping L d).2)
-  | frameYes : Step h (.frame E K .tru L d (.branch y n) x) h
-      (.goto E K y.label (envMap y.mapping L d).1 (envMap y.mapping L d).2)
-  | frameNo : Step h (.frame E K .fls L d (.branch y n) x) h
-      (.goto E K n.label (envMap n.mapping L d).1 (envMap n.mapping L d).2)
-  | frameYesBind : Step h (.frame E K .tru L d (.branchBind y n) x) h
-      (.goto E K y.label (envMap y.mapping (.tru :: L) d).1 (envMap y.mapping (.tru :: L) d).2)
-  | frameNoBind : Step h (.frame E K .fls L d (.branchBind y n) x) h
-      (.goto E K n.label (envMap n.mapping (.fls :: L) d).1 (envMap n.mapping (.fls :: L) d).2)
+      Step h (.frame E K v L d (.effect l) x comp) h
+        (.goto E K l.label (envMap l.mapping L d).1 (envMap l.mapping L d).2 comp)
+  | frameYes : Step h (.frame E K .tru L d (.branch y n) x comp) h
+      (.goto E K y.label (envMap y.mapping L d).1 (envMap y.mapping L d).2 comp)
+  | frameNo : Step h (.frame E K .fls L d (.branch y n) x comp) h
+      (.goto E K n.label (envMap n.mapping L d).1 (envMap n.mapping L d).2 comp)
+  | frameYesBind : Step h (.frame E K .tru L d (.branchBind y n) x comp) h
+      (.goto E K y.label (envMap y.mapping (.tru :: L) d).1 (envMap y.mapping (.tru :: L) d).2 comp)
+  | frameNoBind : Step h (.frame E K .fls L d (.branchBind y n) x comp) h
+      (.goto E K n.label (envMap n.mapping (.fls :: L) d).1 (envMap n.mapping (.fls :: L) d).2 comp)
   | frameTag : isVal v = true →
-      Step h (.frame E K v L d (.tagBind tag y n) x) h
+      Step h (.frame E K v L d (.tagBind tag y n) x comp) h
         (.goto E K (if tagHoldsIn h tag v then y else n).label
           (envMap (if tagHoldsIn h tag v then y else n).mapping (v :: L) d).1
-          (envMap (if tagHoldsIn h tag v then y else n).mapping (v :: L) d).2)
+          (envMap (if tagHoldsIn h tag v then y else n).mapping (v :: L) d).2 comp)
   /-- A throw out of a node with a handler goes there, the thrown value bound. -/
   | frameHandle : Raises t v →
-      Step h (.frame E K t L d k (some l)) h
-        (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2)
+      Step h (.frame E K t L d k (some l) comp) h
+        (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2 comp)
   /-- A throw out of a node without one leaves the run: a throw of the same
   value, which the run's own evaluation context then carries on. -/
-  | frameRaise : Raises t v → Step h (.frame E K t L d k none) h (.throw v)
+  | frameRaise : Raises t v → Step h (.frame E K t L d k none comp) h (.throw v)
 
 /-! ### The one-field rules
 

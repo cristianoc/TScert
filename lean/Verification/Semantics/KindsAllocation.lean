@@ -22,7 +22,7 @@ makes hold them; `plain` whether the object owns no array-spine slot. -/
 def codeRefs (plain : Bool) : CallCode → List Ref
   | .absent => []
   | .bound t r pre => refs t ++ refs r ++ refsArgs pre
-  | .graph _ E _ _ caps _ _ => refsArgs E ++ refsArgs caps
+  | .graph _ E _ _ caps _ _ _ => refsArgs E ++ refsArgs caps
   | .view s f n => [.view s f n plain]
 
 theorem refs_objAt (fs : List (PropKey × Nat)) (c : CallCode) (i : Nat) :

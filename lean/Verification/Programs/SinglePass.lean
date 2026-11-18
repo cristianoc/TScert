@@ -201,8 +201,8 @@ def mentioned (d : Nat) : Tm → Option (List Nat)
   | .objAt _ (.bound t r pre) _ => do pure ((← mentioned d t) ++ (← mentioned d r) ++ (← mentionedAll d pre))
   | .makeAt (.bound t r pre) _ args =>
     do pure ((← mentioned d t) ++ (← mentioned d r) ++ (← mentionedAll d pre) ++ (← mentionedAll d args))
-  | .objAt _ (.graph _ _ _ _ caps _ _) _ => mentionedAll d caps
-  | .makeAt (.graph _ _ _ _ caps _ _) _ args => do pure ((← mentionedAll d caps) ++ (← mentionedAll d args))
+  | .objAt _ (.graph _ _ _ _ caps _ _ _) _ => mentionedAll d caps
+  | .makeAt (.graph _ _ _ _ caps _ _ _) _ args => do pure ((← mentionedAll d caps) ++ (← mentionedAll d args))
   | .letE a b => do pure ((← mentioned d a) ++ (← mentioned (d+1) b))
   | .invoke f r args => do pure ((← mentioned d f) ++ (← mentioned d r) ++ (← mentionedAll d args))
   | .construct f args => do pure ((← mentioned d f) ++ (← mentionedAll d args))

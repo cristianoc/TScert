@@ -124,7 +124,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
       rw [hreg] at g'
       exact footprint_of_fallback g' hfr η n W h L d he href
   · intro hne η n W h L d he href
-    exact g.ensured hne _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g.source href)
+    exact g.ensured hne _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g.source href)
   · -- The stated regions: the direct run's, or the regional run after the fallback.
     intro Φ regions hr η n W h L d he href
     have hspec : regionalSpec r = some (Φ, regions, r.stated.any (·.onThrow)) := by
@@ -132,12 +132,12 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
     cases hmain with
     | direct c after hm _ hreg hacc hs =>
       have g' := guarantee c after hm hacc hs (stated c hreg)
-      exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g'.source href)
+      exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g'.source href)
     | fallback _ _ _ _ _ _ _ _ hrest =>
       rcases hrest with hnone' | ⟨c₂, a₂, hm, _, hreg, hacc, hs⟩
       · rw [hnone'] at hr; cases hr
       · have g' := guarantee c₂ a₂ hm hacc hs (stated c₂ hreg)
-        exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g'.source href)
+        exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g'.source href)
   · -- Each code's assertions, from its run's guarantee.
     intro ci q hci η n W h ρ he hρ l k hk j h' ρ' hj hreach
     have hmem : (q, ci) ∈ r.codes.zipIdx := List.mk_mem_zipIdx_iff_getElem?.mpr hci

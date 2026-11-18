@@ -1121,13 +1121,13 @@ theorem Callee.obj {c : Bool} {v : Val} (h : Callee c v) :
     ∃ fs code oid, v = .objAt fs code oid ∧ Scoped 0 v := by
   unfold Callee at h
   split at h
-  · obtain ⟨fs, n, E, K, s, caps, rest, oid, rfl, hs⟩ := h; exact ⟨_, _, _, rfl, hs⟩
+  · obtain ⟨fs, n, E, K, s, caps, rest, _, oid, rfl, hs⟩ := h; exact ⟨_, _, _, rfl, hs⟩
   · obtain ⟨fs, code, oid, rfl, -, hs⟩ := h; exact ⟨_, _, _, rfl, hs⟩
 
 theorem Callee.val {c : Bool} {v : Val} (h : Callee c v) : isVal v = true ∧ Scoped 0 v := by
   unfold Callee at h
   split at h
-  · obtain ⟨fs, n, E, K, s, caps, rest, oid, rfl, hs⟩ := h; exact ⟨rfl, hs⟩
+  · obtain ⟨fs, n, E, K, s, caps, rest, _, oid, rfl, hs⟩ := h; exact ⟨rfl, hs⟩
   · exact ⟨h.val, h.scoped⟩
 
 
@@ -1137,7 +1137,7 @@ theorem Callee.not_plain {c : Bool} {v : Val} (h : Callee c v) : ∀ flds oid, v
   subst he
   unfold Callee at h
   split at h
-  · obtain ⟨fs, n, E, K, s, caps, rest, oid', he, -⟩ := h; cases he
+  · obtain ⟨fs, n, E, K, s, caps, rest, _, oid', he, -⟩ := h; cases he
   · obtain ⟨fs, code, oid', he, hc, -⟩ := h; cases he; cases hc
 /-- Universal quantification has one implementation for both semantic sorts.
 The body still denotes a runtime callable; its parameters may denote lists. -/

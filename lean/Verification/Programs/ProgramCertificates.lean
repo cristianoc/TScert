@@ -909,7 +909,7 @@ declared bounds. -/
   -- entry of the unit's checked table.
   | .funGraph As =>
     match j.term, ps with
-    | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+    | .makeAt (.graph arity E K start caps kind rest _) ns inits, ps =>
       ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
       (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
       graphCodesChecked G j.type codes kind arity E K start (ps.map Sequent.type) rest As = true
@@ -918,7 +918,7 @@ declared bounds. -/
   -- with the self entry after the captures.
   | .funGraphSelf =>
     match j.term, ps with
-    | .makeAt (.graph arity E K start caps kind false) ns inits, ps =>
+    | .makeAt (.graph arity E K start caps kind false _) ns inits, ps =>
       ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
       (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
       graphCodesCheckedSelf G j.type codes kind arity E K start (ps.map Sequent.type) = true
@@ -928,7 +928,7 @@ declared bounds. -/
   -- premise per static field, then one per capture.
   | .ctorGraph U =>
     match j.term, ps with
-    | .makeAt (.graph arity E K start caps kind rest) (f :: ns) (.nul :: inits), ps =>
+    | .makeAt (.graph arity E K start caps kind rest _) (f :: ns) (.nul :: inits), ps =>
       kind = .construct ∧ rest = false ∧ f = codeField ∧ (f :: ns).Nodup ∧ ns.length = inits.length ∧
       (ps.take ns.length).map Sequent.term = inits ∧
       (∀ q ∈ ps, q.context = j.context) ∧
@@ -942,7 +942,7 @@ declared bounds. -/
   -- A callable object: one premise per named field, then one per capture.
   | .callableGraph As =>
     match j.term, ps with
-    | .makeAt (.graph arity E K start caps kind rest) ns inits, ps =>
+    | .makeAt (.graph arity E K start caps kind rest _) ns inits, ps =>
       match expand G j.type with
       | [.callable P [] L S] =>
         KindOffers G kind L S ∧ ns.Nodup ∧ ns.length = inits.length ∧
@@ -1511,10 +1511,10 @@ def checkScope (d : Nat) : Tm → Bool
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
-  | .objAt _ (.graph _ _ _ _ caps _ _) _ => checkScopes d caps
-  | .makeAt (.graph _ _ _ _ caps _ _) _ args => checkScopes d caps && checkScopes d args
-  | .goto _ _ _ L x => checkScopes d L && checkScope d x
-  | .frame _ _ t L x _ _ => checkScope d t && checkScopes d L && checkScope d x
+  | .objAt _ (.graph _ _ _ _ caps _ _ _) _ => checkScopes d caps
+  | .makeAt (.graph _ _ _ _ caps _ _ _) _ args => checkScopes d caps && checkScopes d args
+  | .goto _ _ _ L x _ => checkScopes d L && checkScope d x
+  | .frame _ _ t L x _ _ _ => checkScope d t && checkScopes d L && checkScope d x
   | _ => true
 
 def checkScopes (d : Nat) : List Tm → Bool
@@ -1600,7 +1600,7 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
     (hlt : ∀ c ∈ caps, c.2 < Γ.length)
     (hcap : ∀ c ∈ caps, HasTyUsing G images (subtyping := subtyping) Γ (.var c.2) c.1) :
     HasTyUsing G images (subtyping := subtyping) Γ
-      (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul) [j] :=
+      (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest comp) .nul) [j] :=
   .funScheme hp hs hcon hkind (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
 
 /-- A checked offer holds at every assignment: each entry does (`CodesSound`),
@@ -1676,7 +1676,7 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
     (hok : graphCodesChecked G A codes kind arity E K start (ps.map Sequent.type) rest As = true)
     (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) :
-    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) kind rest) .nul) A := by
+    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) kind rest comp) .nul) A := by
   obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
   rw [← hvar]
   unfold graphCodesChecked at hok
@@ -1714,7 +1714,7 @@ theorem funGraphSelf_of_local [DecidableEq ι] {G : NormalGraph ι}
     (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
     (hok : graphCodesCheckedSelf G A codes kind arity E K start (ps.map Sequent.type) = true)
     (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) :
-    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) kind false) .nul) A := by
+    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) kind false comp) .nul) A := by
   obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
   rw [← hvar]
   unfold graphCodesCheckedSelf at hok
@@ -1796,15 +1796,15 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · exact .str hl
   · exact .bigintLit hl
   · exact .bigint hl
-  · rename_i As ps _ _ arity E K start caps kind rest ns inits
+  · rename_i As ps _ _ arity E K start caps kind rest _ ns inits
     obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraph_of_local hcodes hctx hslots hok hp
-  · rename_i ps _ _ arity E K start caps kind ns inits
+  · rename_i ps _ _ arity E K start caps kind _ ns inits
     obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraphSelf_of_local hcodes hctx hslots hok hp
-  · rename_i U ps _ _ arity E K start caps kind rest f ns inits
+  · rename_i U ps _ _ arity E K start caps kind rest comp f ns inits
     obtain ⟨rfl, rfl, rfl, hnd, hlen, hterms, hctx, hcaps, hslots, hu, hpay, hfit, hok⟩ := hl
     have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
       fun q hq => hctx q (List.mem_of_mem_drop hq)
@@ -1847,7 +1847,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i L S P' hL
       simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hok
       obtain ⟨⟨rfl, hok⟩, hokS⟩ := hok
-      have := HasTyUsing.ctorGraph (G := G) (images := images) (Γ := Γ) (F := A) (parts := parts)
+      have := HasTyUsing.ctorGraph (comp := comp) (G := G) (images := images) (Γ := Γ) (F := A) (parts := parts)
         (caps := caps') (E := E) (K := K) (start := start) (arity := arity)
         (by rw [hP]; exact hL) hu (by rw [hfst']; exact hnd) hpart
         (fun p hp' => by rw [hfst]; exact hcodes _ (hok p hp') G.env)
@@ -1867,7 +1867,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       exact this
     · contradiction
   · split at hl
-    · rename_i _ As ps _ _ arity E K start caps kind rest ns inits _ P L S hF
+    · rename_i _ As ps _ _ arity E K start caps kind rest comp ns inits _ P L S hF
       obtain ⟨hkind, hnd, hlen, hterms, hctx, rfl, hpay, hfit, hcaps, hslots, hok⟩ := hl
       have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
         fun q hq => hctx q (List.mem_of_mem_drop hq)
@@ -1905,7 +1905,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         have h := hp r.2 (List.mem_of_mem_take hmem.2)
         rw [hctx r.2 (List.mem_of_mem_take hmem.2)] at h
         exact h
-      have := HasTyUsing.callableGraph (G := G) (images := images) (Γ := Γ) (F := A) (parts := parts) (caps := caps')
+      have := HasTyUsing.callableGraph (comp := comp) (G := G) (images := images) (Γ := Γ) (F := A) (parts := parts) (caps := caps')
         (E := E) (K := K) (start := start) (arity := arity) (rest := rest) (As := As)
         (by rw [hP]; exact hF) (by rw [hfst']; exact hnd) hpart hkind
         (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap

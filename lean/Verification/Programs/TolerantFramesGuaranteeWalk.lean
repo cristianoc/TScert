@@ -144,7 +144,7 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
       let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
       exact graph_safe_at (nodesChecked_of_walk (hp.walk ⟨ρ, h⟩ 0) (regionFields regional) h) passPreU_adminClosed
         (hp.start (s := s) hv hs hi (by simp)) hPn hρ
-  bounded Φ Ψ fr hb E K hP η hη n W h L d he hgo _ _ := by
+  bounded Φ Ψ fr hb E K hP η hη n W h L d _ he hgo _ _ := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     obtain ⟨dead, hkeep⟩ := hp.footprint Φ Ψ fr hb
@@ -154,7 +154,7 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
       n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
       (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
       (.inr (Footprints.Closed.Holds.refl Φ h))
-  ensured hne E K hP η hη n W h L d he hgo := by
+  ensured hne E K hP η hη n W h L d _ he hgo := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     subst hP
@@ -163,7 +163,7 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
       (fun _ _ _ h => h) n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
       (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
       trivial).post
-  regionally Φ regions exc hr E K hP η hη n W h L d he hgo := by
+  regionally Φ regions exc hr E K hP η hη n W h L d _ he hgo := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     obtain ⟨X, hX⟩ := hp.regions Φ regions exc hr

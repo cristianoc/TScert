@@ -570,9 +570,9 @@ def shape : Clause α → Nat
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent _ => 2 | .undef => 4
-  | .objAt _ (.bound _ _ _) _ | .objAt _ (.graph _ _ _ _ _ .call _) _
-  | .objAt _ (.graph _ _ _ _ _ .sloppy _) _ => 3
-  | .objAt _ (.graph _ _ _ _ _ .construct _) _ => 11
+  | .objAt _ (.bound _ _ _) _ | .objAt _ (.graph _ _ _ _ _ .call _ _) _
+  | .objAt _ (.graph _ _ _ _ _ .sloppy _ _) _ => 3
+  | .objAt _ (.graph _ _ _ _ _ .construct _ _) _ => 11
   | .objAt _ (.view ..) _ => 13
   | .num _ => 5
   | .str _ => 6
@@ -604,7 +604,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | bigintLit i => subst v; exact ⟨rfl, trivial⟩
   | symbolLit i => subst v; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
-  | ctors L S a bs vs => obtain ⟨_, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1.1; exact ⟨rfl, hs⟩
+  | ctors L S a bs vs => obtain ⟨_, _, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
   | numIn bs => obtain ⟨b, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
@@ -629,13 +629,13 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | arrs L S =>
     obtain ⟨fs, code, _, rfl, hc, -⟩ := h.1.1
     cases code
-    case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
+    case graph kind _ _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | undef => cases h; rfl
   | callable a bs L S ms =>
     obtain ⟨fs, code, _, rfl, hc, -⟩ := h.1.1.2.1
     cases code
-    case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
+    case graph kind _ _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | str => obtain ⟨s, rfl⟩ := h; rfl
   | strLit s => cases h; rfl
@@ -644,7 +644,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | symbolLit i => cases h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
   | ctors L S a bs vs =>
-    obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h.1.1.1
+    obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h.1.1.1
     rfl
   | pack a bs => exact h.elim
   | numIn bs => obtain ⟨b, -, rfl⟩ := h; rfl
@@ -697,7 +697,7 @@ theorem PrimKind.holds_of_valueShape {v : Val} {k : PrimKind}
   cases v
   case objAt fs code oid =>
     cases code with
-    | graph _ _ _ _ _ kind _ => cases kind <;> simp [valueShape, PrimKind.ofShape] at h
+    | graph _ _ _ _ _ kind _ _ => cases kind <;> simp [valueShape, PrimKind.ofShape] at h
     | _ => simp [valueShape, PrimKind.ofShape] at h
   all_goals simp [valueShape, PrimKind.ofShape] at h
   all_goals subst h
@@ -1141,11 +1141,11 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
         simp only [interT]
         constructor
         · rintro ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, hv⟩
-          obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+          obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
           obtain ⟨hv1, hv2⟩ := (CallableConjunctions.views_append _ _).mp hv
           exact ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
         · rintro ⟨⟨⟨h1, h3⟩, hp, hv1⟩, ⟨h2, h4⟩, hq, hv2⟩
-          obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
+          obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h1.1
           exact ⟨⟨⟨h1, h2⟩, h3, h4⟩, ⟨hp, hq⟩, (CallableConjunctions.views_append _ _).mpr ⟨hv1, hv2⟩⟩
     · -- pack ∩ pack: every contract of both, on the one list
       rename_i a bs c ds

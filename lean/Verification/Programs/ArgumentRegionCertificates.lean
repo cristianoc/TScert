@@ -876,13 +876,13 @@ theorem checkEntry_sound [DecidableEq ι] {G : NormalGraph ι}
     (hcodes : ProgramCertificates.CodesSound G codes)
     (hsums : ProgramCertificates.SummariesSound G images sums)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (.goto E K start L d))
+    (href : RefsOk W (.goto E K start L d comp))
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d))
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' _ => ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       (fun h' => exc = true → ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      n W h (.goto E K start L d) := by
+      n W h (.goto E K start L d comp) := by
   simp only [checkEntry, Bool.and_eq_true] at hc
   have hg := hc.1.1.1.1.1
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hg

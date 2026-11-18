@@ -686,7 +686,7 @@ theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFre
     cases he
     cases hcode
   | ctors L S a bs vs =>
-    obtain ⟨fs, n, E, K, s', caps, rest, oid', he, -⟩ := hv.1.1.1
+    obtain ⟨fs, n, E, K, s', caps, rest, _, oid', he, -⟩ := hv.1.1.1
     cases he
   | _ =>
     simp only [hostFree] at hc

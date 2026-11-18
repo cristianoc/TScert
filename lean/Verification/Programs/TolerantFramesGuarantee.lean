@@ -42,26 +42,26 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign G η)) P (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at start ρ)
   bounded : ∀ Φ Ψ fresh, bound = some (⟨Φ, Ψ⟩, fresh) → ∀ E K, GraphCode.program E K = P →
-    ∀ η, admits η → ∀ n W h L d,
-    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
+    ∀ η, admits η → ∀ n W h L d comp,
+    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
     (∀ v ∈ L, isVal v = true) → isVal d = true →
     SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-      (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto E K start L d)
-  ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d,
-    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
+      (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto E K start L d comp)
+  ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
+    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
     SafePost (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d)
+      (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d comp)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
-    ∀ η, admits η → ∀ n W h L d,
-    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
+    ∀ η, admits η → ∀ n W h L d comp,
+    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
     SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       (fun h' => exc = true → Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      n W h (.goto E K start L d)
+      n W h (.goto E K start L d comp)
   asserted : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     ∀ l k, (l, k) ∈ assertions → ∀ j h' ρ', j < n → Transitions P j h (.at start ρ) h' (.at l ρ') →

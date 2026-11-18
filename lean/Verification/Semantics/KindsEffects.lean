@@ -205,21 +205,21 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
     (hf : f ≠ arraySpineKey)
     (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
-    (hrefs : RefsOk W (.frame E K (.letE (literal f x) (.invoke g r args)) L d k (some l)))
+    (hrefs : RefsOk W (.frame E K (.letE (literal f x) (.invoke g r args)) L d k (some l) comp))
     (hscope : Scoped 0 (.invoke g r args)) (hrv : isVal r = true) (hargs : CallArguments.Values args)
     (hrc : ∀ j (U : WorldT j), Rc j U r) (hacc : ∀ j (U : WorldT j), Acc j U args)
     (hreq : ∀ h', h.IsPrefix h' → a.Requires r args h')
     (hnext : ∀ j (hj : j ≤ n + 2) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U →
       ∀ h' v, HeapOk j U h' → isVal v = true →
         gatePost a b r args (Capability.field f A) (slots h.length [f]) j U h' v →
-        SafePostExcW Ξ' B' Q' R' j U h' (.frame E K v L d k (some l)))
+        SafePostExcW Ξ' B' Q' R' j U h' (.frame E K v L d k (some l) comp))
     (hhandler : ∀ m (hm : m + 1 ≤ n + 2) (U : WorldT (m + 1)), WExt (trunc (m + 1) hm W) U → WorldAdm U →
       ∀ h' v, HeapOk (m + 1) U h' → Ξ (m + 1) U v → RefsOk U v →
         gateExc a b r args (Capability.field f A) (slots h.length [f]) (m + 1) U h' →
         SafePostExcW Ξ' B' Q' R' m (trunc m (Nat.le_succ m) U) h'
-          (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2)) :
-    SafePostExcW Ξ' B' Q' R' (n + 2) W h (.frame E K (.letE (literal f x) (.invoke g r args)) L d k (some l)) := by
-  have hctx : CtxRefs (fun t => Tm.frame E K t L d k (some l)) := fun t y => by
+          (.goto E K l.label (envMap l.mapping (v :: L) d).1 (envMap l.mapping (v :: L) d).2 comp)) :
+    SafePostExcW Ξ' B' Q' R' (n + 2) W h (.frame E K (.letE (literal f x) (.invoke g r args)) L d k (some l) comp) := by
+  have hctx : CtxRefs (fun t => Tm.frame E K t L d k (some l) comp) := fun t y => by
     show y ∈ refsArgs E ++ refs t ++ refsArgs L ++ refs d ↔
       y ∈ refs t ∨ y ∈ refsArgs E ++ refs .undef ++ refsArgs L ++ refs d
     simp only [List.mem_append, refs, List.not_mem_nil, or_false]
@@ -236,15 +236,15 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
       · exact .inr h
   have hinner : RefsOk W (.letE (literal f x) (.invoke g r args)) := fun y hy =>
     hrefs y ((hctx _ y).mpr (.inl hy))
-  have hC : RefsOk W (.frame E K .undef L d k (some l)) := fun y hy => by
+  have hC : RefsOk W (.frame E K .undef L d k (some l) comp) := fun y hy => by
     rcases (hctx .undef y).mp hy with h | h
     · simp [refs] at h
     · exact hrefs y ((hctx _ y).mpr (.inr h))
   have hgate := gate_write (D := D) hs hind ha hb hcross hadm hok hsrc hf hA hxA hinner hscope hrv hargs
     hrc hacc hreq
-  exact SafePostExcW.handle (fun t => Tm.frame E K t L d k (some l))
+  exact SafePostExcW.handle (fun t => Tm.frame E K t L d k (some l) comp)
     (fun t => .goto E K l.label (envMap l.mapping (t :: L) d).1
-      (envMap l.mapping (t :: L) d).2)
+      (envMap l.mapping (t :: L) d).2 comp)
     (fun st => .frameC st) (fun hr => .frameHandle hr) hctx (n + 2) W h _ hadm hok hC
     hgate (fun j hj U hx hu h' v hh' hv _ hq => hnext j hj U hx hu h' v hh' hv hq) hhandler
 

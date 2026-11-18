@@ -106,7 +106,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
     -- exceptional bound where that is not `⊤`, by the heap's growth where
     -- it is.
     have hg := ProgramTyping.SafePostExc.grow (b := h.length) (Nat.le_refl _)
-      (g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g.source hroots)
+      (g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g.source hroots)
         hvalues hd)
     refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun h' hq ho => ?_) hg
     by_cases ht : r.footprint = .top
@@ -157,7 +157,7 @@ theorem footprint_of_fallback {G : NormalGraph ι} {r : SourceRequest σ ι} {bo
   HeapObservations.SafePostExc.weaken
     (fun _ _ hq => ⟨Footprints.ArgumentSpineRegionsWithin.nil_holds hq, fun hf => by rw [hfr] at hf; cases hf⟩)
     (fun _ hq ho => Footprints.ArgumentSpineRegionsWithin.nil_holds (hq ho))
-    (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g.source hroots))
+    (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g.source hroots))
 
 end
 

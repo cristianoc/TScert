@@ -53,9 +53,10 @@ def Slot.valueAt {U : Type} (f : U → Tm) (i : Nat) : Slot U → Tm
   | .linked u => f u
   | .outside v => v i
 
-/-- The closure of a module function's code over the captured values `vs`. -/
+/-- The closure of a module function's code over the captured values `vs`.
+Its code is outside every component (`none`): the wire carries no component. -/
 def ModuleCode.closure {ι U : Type} (c : ModuleCode ι U) (vs : List Tm) : Tm :=
-  .objAt c.fields (.graph c.arity c.exprs c.conts c.start vs c.kind false) c.oid
+  .objAt c.fields (.graph c.arity c.exprs c.conts c.start vs c.kind false none) c.oid
 
 /-- The captured values of a function's closure at depth `i + 1`, its linked
 functions given by `f` (the depth-`i` environment). -/
@@ -114,28 +115,29 @@ variable {ι : Type}
 /-- **A module function's code at one of its signatures** (`RowSpec`): code
 of `arity`, collecting no rest, whose effect is one module code realizes
 (`Effect.belowRow`: below its arity, a postcondition over the result, the
-receiver and its parameters admitted), safe from every frame meeting the
-signature's, its precondition and the separation `sep`, at the signature's
-result and its specification on both exits (`Exits.exitPostW`). `GraphCodeSpec` at no rest spine, at `sep = {}` and with no
+receiver and its parameters admitted), run outside every component (`none`,
+as a module closure's code is: `ModuleCode.closure`) and safe from every
+frame meeting the signature's, its precondition and the separation `sep`, at
+the signature's result and its specification on both exits (`Exits.exitPostW`). `GraphCodeSpec` at no rest spine, at `sep = {}` and with no
 postcondition, is one (`rowSpec_of_graphCodeSpec`). -/
 def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
     (Cs : List (Ty ι)) (row : CallEffects.Arrow (Ty ι)) (sep : HeapSeparation.Separation) : Prop :=
   arity ≤ row.arguments.length ∧ row.effect.belowRow arity = true ∧
   ∀ n W h L, EnvOk G (codeFrame arity row Cs none) (envOf L .nul) n W → WorldAdm W →
-    HeapOk n W h → RefsOk W (.goto E K start L .nul) → CallArguments.Values L →
+    HeapOk n W h → RefsOk W (.goto E K start L .nul none) → CallArguments.Values L →
     PreAt row.effect (none : Option (Ty ι)) L h → HeapSeparation.Holds sep (envOf L .nul) →
     ∀ r args, FrameValues arity (none : Option (Ty ι)) L r args →
       HeapObservations.SafePostExcV (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset (none : Option (Ty ι))) L))
         (row.effect.schema.exitPostW .normal r args W h) (row.effect.schema.exitPostW .exceptional r args W h)
-        n W h (.goto E K start L .nul)
+        n W h (.goto E K start L .nul none)
 
 /-- **Graph code at a signature is module code at it** (proved). -/
 theorem rowSpec_of_graphCodeSpec {G : NormalGraph ι} {arity E K start Cs row}
     (hs : GraphCodeSpec G arity E K start Cs row) : RowSpec G arity E K start Cs row {} :=
   ⟨hs.1, hs.2.1,
-    fun n W h L he hw hh hgo hv hpre _ r args hf => hs.2.2.2 n W h L he hw hh hgo hv hpre r args hf⟩
+    fun n W h L he hw hh hgo hv hpre _ r args hf => hs.2.2.2 n W h L none he hw hh hgo hv hpre r args hf⟩
 
 /-- A promise's results meet a plain result admitting them (proved). -/
 theorem promiseAdmits_result [DecidableEq ι] {G : NormalGraph ι} {R T : Ty ι} {π : CallEffects.TypePromise}
@@ -188,10 +190,10 @@ theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
     (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul))
-    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
+    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul none)) :
     HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
-      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
+      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul none) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hb := CallEffects.Effect.belowRow_entry hs.2.1
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
@@ -237,13 +239,13 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     (hlen : Cs.length ≤ vs.length) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
     (hsep : ∀ r args more, HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ (vs ++ more)) .nul))
     {n : Nat} (hcaps : ∀ j < n, ∀ U : WorldT j, EnvOk G Cs (envOf vs .nul) j U) (W : WorldT n) :
-    meaning G F n W (.objAt fs (.graph arity E K start vs kind false) oid) := by
+    meaning G F n W (.objAt fs (.graph arity E K start vs kind false none) oid) := by
   obtain ⟨hkind, hrows⟩ := hk
   have hbL : ∀ p ∈ L, KindBinds G kind p.receiver :=
     fun p hp => kindOffers_binds (hrows p (List.mem_append_left _ hp))
   have hbS : ∀ s ∈ S, KindBinds G kind s.receiver :=
     fun s hs => kindOffers_binds (hrows _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hs, rfl⟩)))
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false) oid) := by simpa [Scoped] using hsc
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false none) oid) := by simpa [Scoped] using hsc
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
   · intro q hq
@@ -381,19 +383,19 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d none) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
+        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d none))
     (hensG : c.row.effect.schema.normal.facts ≠ [] → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.spine) sep (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d none) →
       HeapObservations.SafePost (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => GraphCode.EnsuresAt c.row.effect.schema.normal.facts ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
-        (.goto c.exprs c.conts c.start L d)) :
+        (.goto c.exprs c.conts c.start L d none)) :
     ∀ η, RowSpec (reassign G η) c.arity c.exprs c.conts c.start c.captures c.row sep := by
   intro η
   simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
@@ -440,7 +442,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
   have hadm : ∀ η, r.Admits η := fun η => by simp [SourceRequest.Admits, hu.unqualified]
   have hprog : r.program = GraphCode.program c.exprs c.conts := by
     rw [hu.exprs, hu.conts, program_nodes]
-  have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d := by
+  have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d none := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
   apply rowSpec_of_clauses hcond hspine
   · intro η n W h ρ he hP hρ

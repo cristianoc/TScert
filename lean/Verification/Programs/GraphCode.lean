@@ -47,13 +47,13 @@ theorem mapEnv_envOf (m : Option (List Nat)) (L : List Tm) (d : Tm) :
 
 /-- A term that runs graph code, and the graph machine's state it stands for. -/
 inductive Sim (E : List Tm) (K : List (Continuation × Option Target)) : Tm → State → Prop where
-  | goto : Sim E K (.goto E K l L d) (.at l (envOf L d))
-  | frame : Sim E K (.frame E K t L d k x) (.eval t (envOf L d) k x)
+  | goto : Sim E K (.goto E K l L d comp) (.at l (envOf L d))
+  | frame : Sim E K (.frame E K t L d k x comp) (.eval t (envOf L d) k x)
   | done : isVal v = true → Sim E K v (.done v)
   | raised : isVal v = true → isSourceVal v = true → Sim E K (.throw v) (.raised v)
 
 theorem sim_goto {E K l m L d} :
-    Sim E K (.goto E K l (envMap m L d).1 (envMap m L d).2) (.at l (mapEnv m (envOf L d))) := by
+    Sim E K (.goto E K l (envMap m L d).1 (envMap m L d).2 comp) (.at l (mapEnv m (envOf L d))) := by
   rw [mapEnv_envOf]; exact .goto
 
 /-- Each transition of the graph is one step of the term that runs it. -/
@@ -144,7 +144,7 @@ theorem program_refs {n : Nat} {W : WorldT n} {E : List Tm} {K : List (Continuat
 
 /-- A graph run's entry refers to its code's node expressions and its frame. -/
 theorem goto_refs {n : Nat} {W : WorldT n} {E : List Tm} {K : List (Continuation × Option Target)}
-    {l : Nat} {L : List Tm} {d : Tm} (href : RefsOk W (.goto E K l L d)) :
+    {l : Nat} {L : List Tm} {d : Tm} (href : RefsOk W (.goto E K l L d comp)) :
     (∀ e ∈ E, RefsOk W e) ∧ ∀ i, RefsOk W (envOf L d i) := by
   refine ⟨fun e he r h => href r (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inl ⟨e, he, h⟩)), ?_⟩
   apply envOf_refs_of
@@ -177,10 +177,10 @@ theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageC
       G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d))
+    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d comp))
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
-    Safe (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d))) n W h (.goto E K start L d) :=
+    Safe (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d))) n W h (.goto E K start L d comp) :=
   safe_of_sim n W h .goto (goto_refs href).1
     (accepted_inputs_safe hc n W h (envOf L d) he hw hh (program_refs (goto_refs href).1) (goto_refs href).2
       hcodes hsums hsep hidx)
@@ -813,12 +813,12 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hnodes : NodesWithin G Φ (program E K) C facts dead ret exc)
     (hstart : factsAt facts start = [])
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d))
+    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d comp))
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (ret = true → FreshAt h.length v))
-      (fun h' => exc = true → Φ.Holds h h') n W h (.goto E K start L d) := by
+      (fun h' => exc = true → Φ.Holds h h') n W h (.goto E K start L d comp) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
@@ -1202,11 +1202,11 @@ theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hens : returnsEnsure G (program E K) C ens start = true)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
-    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d))
+    (hh : HeapOk n W h) (href : RefsOk W (.goto E K start L d comp))
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePost (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
-      (fun h' v => EnsuresAt ens ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d) := by
+      (fun h' v => EnsuresAt ens ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d comp) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   have hstartT : startTracks (trackTable (program E K) C start (namedInputs ens)) start = true := by
