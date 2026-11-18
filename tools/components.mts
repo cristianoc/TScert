@@ -42,7 +42,7 @@ import { listDirectory, orAbsent, present, readText, realPath } from "./files.mt
 import { clientsTags, representationTags } from "./bound-annotations.mts";
 import type { CallEffect, Change, Frame, Region, Selector } from "./declaration-types.mts";
 import { overlay } from "./array-prototype.mts";
-import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, ProtocolEntryAst, SiteAst, SourceAst, StoreAst,
+import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, ProtocolEntryAst, SiteAst, SourceAst, StoreAst, ValueAst,
   SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
@@ -57,10 +57,16 @@ export type FamilyProgram = {
   /** The method of an interface of the standard library each name of a
    * member access resolves to, with whether the interface is `Array` or
    * `ReadonlyArray`, or null. */
-  libraryMembers: (nodes: readonly Node[]) => ({ name: string; array: boolean } | null)[];
+  libraryMembers: (nodes: readonly Node[]) => ({ name: string; array: boolean; calls: LibraryCalls } | null)[];
   /** Whether each node's type is an array or a tuple of primitives. */
   primitiveElements: (nodes: readonly Node[]) => boolean[];
 };
+
+/** **Which arguments a standard library method may call**, read off its
+ * declaration: each parameter's (`params`), the last applying to every
+ * further argument where it is a rest parameter (`rest`). A parameter the
+ * declaration types by a type parameter or a primitive is not called. */
+export type LibraryCalls = { params: readonly boolean[]; rest: boolean };
 
 /** What the analysis is given: the checked file's path in its project (where
  * its package is found) and its tree; the checked file alone as a program,
@@ -443,6 +449,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   // unannotated, as TypeScript types its name. A binding's other references
   // hold what its sources hold, a primitive source holding none.
   const primitiveNodes = new Set<Node>();
+  const libraryCallsOf = new Map<Node, LibraryCalls>();
   const arrayMemberCalls = new Map<Node, string>();
   /** The calls of a method of another interface of the standard library. */
   const libraryMemberCalls = new Map<Node, string>();
@@ -480,7 +487,10 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     const primitive = reading.primitiveElements(fresh);
     members.forEach((m, i) => {
       const n = calls[i];
-      if (m && n) (m.array ? arrayMemberCalls : libraryMemberCalls).set(n, m.name);
+      if (m && n) {
+        (m.array ? arrayMemberCalls : libraryMemberCalls).set(n, m.name);
+        libraryCallsOf.set(n, m.calls);
+      }
     });
     fresh.forEach((n, i) => { if (primitive[i]) primitiveElementCalls.add(n); });
   }
@@ -1401,7 +1411,11 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       }
       if (event) event.native = { site: result, passed: passedRef, given: givenRef, all: synthetic(n, f, allFrom), member: libraryMember,
         name: arrayMemberCalls.get(n) ?? otherMember ?? null, array: arrayMemberCalls.has(n),
-        fresh, primitiveElements };
+        fresh, primitiveElements, calls: args.map((a, i) => {
+          const c = libraryCallsOf.get(n);
+          if (!libraryMember || c === undefined || ts.isSpreadElement(a)) return true;
+          return c.params[i] ?? (c.rest && c.params.length > 0 ? c.params[c.params.length - 1] ?? true : true);
+        }) };
     }
     if (event) events.calls.push(event);
   };
@@ -1645,8 +1659,9 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
  * protocol"): the join, part by part, of the charges of every write of its
  * code, as `ComponentChecks.protocolDiags` checks them. A write charges
  * nothing where it is an initial value of the record it allocates or its
- * receiver is fresh in its frame (every location it may hold allocated by
- * that frame); else each part it changes at each storage of the
+ * receiver is fresh at the write (every location it may hold allocated by
+ * the write's frame or, through closures confined to their frames, by an
+ * enclosing frame, `Ctx.freshScope`); else each part it changes at each storage of the
  * component's region it may write: its receiver's exposed and released
  * sites and, where the receiver may enter from outside, every exposed and
  * released site and outside storage. A field or a cell changes by `any`; an
@@ -1655,7 +1670,11 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
  * cells and fields by `any`, the reviewed contracts stating no effect at a
  * throw. */
 export function proposeProtocols(F: ComponentsAst): ComponentsAst["protocols"] {
+  const codeMemo = new Map<string, number | null>();
   const codeAt = (module: string, at: Span): number | null => {
+    const id = `${module}\u0000${at[0]}\u0000${at[1]}`;
+    const known = codeMemo.get(id);
+    if (known !== undefined) return known;
     let best: number | null = null;
     let width = Infinity;
     F.codes.forEach((c, i) => {
@@ -1664,26 +1683,79 @@ export function proposeProtocols(F: ComponentsAst): ComponentsAst["protocols"] {
         width = c.pos[1] - c.pos[0];
       }
     });
+    codeMemo.set(id, best);
     return best;
   };
   const boundary = new Set<number>([...F.codes.flatMap((c) => [c.receiver, c.result, ...c.params.map((p) => p.value)]),
     ...F.catches.map((k) => k.value)]);
   const resultOf = new Map<number, CallAst>();
   for (const c of F.calls) if (!resultOf.has(c.result)) resultOf.set(c.result, c);
-  const freshIn = (k: number, v: number, fuel: number): boolean => {
+  const valueOf = (v: number): ValueAst | undefined => F.values[v];
+  const contentsOf = (t: number): ValueAst | undefined => { const s = F.sites[t]; return s === undefined ? undefined : valueOf(s.contents); };
+  const codeAtSite = new Map<number, number>();
+  F.codes.forEach((c, i) => { if (c.site !== null) codeAtSite.set(c.site, i); });
+  const calleeOutside = (c: CallAst): boolean => {
+    if (c.native?.member ?? false) return false;
+    const x = valueOf(c.callee);
+    return x !== undefined && (x.incoming.length > 0 || x.incomingReadOnly.length > 0);
+  };
+  const parentCode = (k: number): number | null => {
+    const c = F.codes[k];
+    if (!c) return null;
+    let best: number | null = null;
+    let width = Infinity;
+    F.codes.forEach((d, i) => {
+      if (i !== k && d.module === c.module && d.pos[0] <= c.pos[0] && c.pos[1] <= d.pos[1] && d.pos[1] - d.pos[0] < width) {
+        best = i;
+        width = d.pos[1] - d.pos[0];
+      }
+    });
+    return best;
+  };
+  // A closure confined to the frames that hold it, as `Ctx.confined`.
+  // The sites some storage, code result, throw, held or exported binding,
+  // stored value, native or outside callee may hold or be given.
+  const escaping = new Set<number>();
+  const escape = (v: number | null): void => { if (v !== null) for (const t of valueOf(v)?.sites ?? []) escaping.add(t); };
+  for (const site of F.sites) escape(site.contents);
+  for (const c of F.codes) escape(c.result);
+  escape(F.thrown);
+  for (const p of [...F.throws, ...F.holds]) escape(p.value);
+  for (const e of F.exports) escape(e.value);
+  for (const st of F.stores) escape(st.stored);
+  for (const c of F.calls) if (c.native !== null || calleeOutside(c)) {
+    escape(c.receiver);
+    for (const a of c.args) escape(a.value);
+  }
+  const confined = (k: number): boolean => {
+    const s = F.codes[k]?.site ?? null;
+    return s !== null && !escaping.has(s) && (F.sites[s]?.marks.every((m) => m.mark === "local" || m.mark === "internal") ?? false);
+  };
+  const freshIn = (scope: readonly number[], v: number, fuel: number): boolean => {
     const x = F.values[v];
     if (fuel === 0 || x === undefined) return false;
-    const siteIn = (t: number): boolean => { const s = F.sites[t]; return s !== undefined && codeAt(s.module, s.pos) === k; };
-    if (x.incoming.length > 0 || x.incomingReadOnly.length > 0 || boundary.has(v) || codeAt(x.module, x.pos) !== k ||
+    const inScope = (k: number | null): boolean => k !== null && scope.includes(k);
+    const siteIn = (t: number): boolean => { const s = F.sites[t]; return s !== undefined && inScope(codeAt(s.module, s.pos)); };
+    if (x.incoming.length > 0 || x.incomingReadOnly.length > 0 || boundary.has(v) || !inScope(codeAt(x.module, x.pos)) ||
       !x.sites.every(siteIn)) return false;
     const call = resultOf.get(v);
-    if (call !== undefined) return codeAt(call.module, call.at) === k && call.native !== null && call.native.member &&
+    if (call !== undefined) return inScope(codeAt(call.module, call.at)) && call.native !== null && call.native.member &&
       call.native.array && call.native.fresh;
-    return x.from.length > 0 && x.from.every((s) => "site" in s ? siteIn(s.site) : "value" in s ? freshIn(k, s.value, fuel - 1) : false);
+    return x.from.length > 0 && x.from.every((s) => "site" in s ? siteIn(s.site) : "value" in s ? freshIn(scope, s.value, fuel - 1) : false);
   };
+  // Fresh at a place, as `Ctx.freshAt`.
   const freshAt = (module: string, at: Span, v: number): boolean => {
     const k = codeAt(module, at);
-    return k !== null && freshIn(k, v, F.values.length + 1);
+    if (k === null) return false;
+    const fuel = F.values.length + 1;
+    let scope = [k];
+    for (let cur: number | null = k, n = 0; cur !== null && n <= F.codes.length; n++) {
+      if (freshIn(scope, v, fuel)) return true;
+      if (!confined(cur)) return false;
+      cur = parentCode(cur);
+      if (cur !== null) scope = [cur, ...scope];
+    }
+    return false;
   };
   const chain = (c: number): number[] => {
     const out: number[] = [];

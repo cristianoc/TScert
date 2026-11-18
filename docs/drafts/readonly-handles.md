@@ -1717,11 +1717,15 @@ cover, located at the write.
   by $`\mathsf{any}`$, the reviewed contracts stating no effect at a throw,
   so the exceptional exit is joined with the normal one at every part.
 - *Fresh storage.* A write charges nothing where it is an initial value of
-  the record it allocates, or where its receiver is fresh in its frame:
-  every location it may hold allocated by that frame, which a call of
-  $`C`$ entered from outside creates after its entry. A local site's
-  storage is not charged: a member entered from outside code reaches no
-  local location existing at its entry, by (K).
+  the record it allocates, or where its receiver is fresh at the write:
+  every location it may hold allocated by the write's frame or, through
+  closures confined to their frames (held by no storage, binding, result,
+  throw or export and given to no native or outside code, so called only
+  while the frame that created them is active), by an enclosing frame. A
+  call of $`C`$ entered from outside creates those frames after its entry,
+  since outside code holds no confined closure. A local site's storage is
+  not charged: a member entered from outside code reaches no local location
+  existing at its entry, by (K).
 - *The fixed point.* Runs of outside code inside a member are bounded by
   $`\Psi_C`$ itself, so the charges of every write of $`C`$'s code are its
   least solution. A member's call whose own steps are within $`\Psi_C`$
@@ -1743,13 +1747,22 @@ cover, located at the write.
   support's parts are within $`\Theta_C`$ keeps it (proved,
   `keeps_of_charges`).
 - *Storage no crossing reached.* (O) admits a store into released storage
-  whose receiver is fresh in its frame in a code that runs no outside code
+  whose receiver is fresh at the store in a scope of quiet codes
   (`unreached`): no crossing into $`C`$ can have reached it since its
   allocation, so no history protects it. A code runs outside code where it
   calls a callee that may enter from outside, a native given a value from
-  outside at a position it may call (a standard library method at a
-  position of function type or of no declared type, any other native at
-  every position), or a code that does.
+  outside at a position it may call (a standard library method at each
+  argument its declaration does not type by a type parameter or a
+  primitive, and at each spread one; any other native at every position),
+  or a code that does. A code is quiet where each of its calls runs no
+  outside code, or runs a code that does so only by calling its own
+  unassigned parameters, given there codes that run none.
+- *Local storage.* (O) constrains a store into local storage only where
+  the possible support of a guarantee candidate may read the part it
+  writes: by (K) no outside code reaches local storage, a fact reading
+  through a local field to unprotected storage is bounded by the callback's
+  effect there, and a re-entrant member could redirect a path of an
+  invariant's support.
 
 **The active frame and the roots of outside code** (in
 [ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)

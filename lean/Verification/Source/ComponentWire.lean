@@ -182,6 +182,10 @@ structure Native where
   array : Bool
   fresh : Bool
   primitiveElements : Bool
+  /-- Of a standard library method, whether its declared parameter at each
+  argument may be called: not where the declaration types it by a type
+  parameter or a primitive. -/
+  calls : List Bool
   deriving Repr
 
 /-- A call: its callee's, receiver's, arguments' and result's values, the
@@ -520,9 +524,10 @@ def decodeCall (j : Json) : Except String Call := do
     return (⟨← jNat a "value", ← jBoolAt a "spread", ← jSpanAt (← jField a "at"), ← jOptShape a "type"⟩ : Arg)
   let n ← jField j "native"
   let native ← if n == .null then pure none else do
-    fieldsExactly n ["site", "passed", "given", "all", "member", "name", "array", "fresh", "primitiveElements"]
+    fieldsExactly n ["site", "passed", "given", "all", "member", "name", "array", "fresh", "primitiveElements", "calls"]
     pure (some (⟨← jNat n "site", ← jNat n "passed", ← jNat n "given", ← jNat n "all", ← jBoolAt n "member",
-      ← jOptStr n "name", ← jBoolAt n "array", ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements"⟩ : Native))
+      ← jOptStr n "name", ← jBoolAt n "array", ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements",
+      ← (← jArr n "calls").mapM (·.getBool?)⟩ : Native))
   return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "callee",
     ← jOptNat j "receiver", args, ← jNat j "result", ← jNatList j "targets", ← jOptNat j "instance", native⟩
 

@@ -36,7 +36,7 @@ import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts
 import { clauseRoots, loopBindings, loopInvariantTags, type ImportedInvariants } from "./bound-annotations.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { fieldOf, messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
-import { describeFamily, noComponents } from "./components.mts";
+import { describeFamily, noComponents, type LibraryCalls } from "./components.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isImport, isStatic, nameOf, isTypeAlias, namedAccess } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
@@ -2767,15 +2767,30 @@ function lowerFile(file: string, carriesContext: boolean,
   // program (`isSourceFileDefaultLibrary`), its name, and whether the
   // interface is `Array` or `ReadonlyArray`, read at the overlay's entry.
   const libraryMembersOf = (asking: Checker, program: Project["program"]) =>
-      (nodes: readonly Node[]): ({ name: string; array: boolean } | null)[] => {
+      (nodes: readonly Node[]): ({ name: string; array: boolean; calls: LibraryCalls } | null)[] => {
     const symbols = nodes.length === 0 ? [] : asking.getSymbolAtLocation(nodes);
     return nodes.map((_, i) => {
       const declaration = symbols[i]?.declarations[0]?.resolve();
       const owner = declaration?.parent;
       if (!declaration || !owner || !ts.isInterfaceDeclaration(owner)) return null;
       if (!program.isSourceFileDefaultLibrary(declaration.getSourceFile())) return null;
-      return ts.isMethodSignatureDeclaration(declaration) && ts.isIdentifier(declaration.name)
-        ? { name: declaration.name.text, array: owner.name.text === "Array" || owner.name.text === "ReadonlyArray" } : null;
+      if (!ts.isMethodSignatureDeclaration(declaration) || !ts.isIdentifier(declaration.name)) return null;
+      // A parameter typed by a type parameter of the method or its
+      // interface, or by a primitive, holds data the method does not call.
+      const typeParameters = new Set([...(declaration.typeParameters ?? []), ...(owner.typeParameters ?? [])]
+        .flatMap((p) => ts.isIdentifier(p.name) ? [p.name.text] : []));
+      const data = (t: Node | undefined): boolean => t !== undefined && (
+        t.kind === ts.SyntaxKind.NumberKeyword || t.kind === ts.SyntaxKind.StringKeyword ||
+        t.kind === ts.SyntaxKind.BooleanKeyword || t.kind === ts.SyntaxKind.BigIntKeyword ||
+        t.kind === ts.SyntaxKind.UndefinedKeyword || t.kind === ts.SyntaxKind.NullKeyword ||
+        (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && (t.typeArguments?.length ?? 0) === 0 &&
+          typeParameters.has(t.typeName.text)));
+      const params = declaration.parameters;
+      const last = params[params.length - 1];
+      const rest = last !== undefined && last.dotDotDotToken !== undefined;
+      return { name: declaration.name.text, array: owner.name.text === "Array" || owner.name.text === "ReadonlyArray",
+        calls: { params: params.map((p, i) => !data(rest && i === params.length - 1 && p.type !== undefined && ts.isArrayTypeNode(p.type)
+          ? p.type.elementType : p.type)), rest } };
     });
   };
   // The checked file's project: the one named, else the file's own; its
