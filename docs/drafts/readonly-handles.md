@@ -152,12 +152,14 @@ outside code resumes.
 representation defines it ("Read-only types and views"); a sealed handle's
 type is read at its representation, every position of it read-only. A value
 *crosses* when it passes between $`P`$ and code that is not $`P`$'s, in
-either direction: an entry's argument, receiver or result, an argument or
-result of a call of code that is not $`P`$'s, a value thrown, caught or
-yielded, the content of storage both sides reach. A storage location is
-reached by a crossing *at a read-only position* when the path to it through
-the crossing type passes only read-only positions, and *at a writable
-position* otherwise.
+either direction, through any alias: an entry's argument, receiver or
+result; an argument or result of a call of code that is not $`P`$'s, a
+callback's included; a value thrown, caught or yielded; a function of
+$`P`$ given out, and what it later receives and returns; the content of
+storage both sides reach. This one definition is the rule's and the trust
+row's. A storage location is reached by a crossing *at a read-only
+position* when the path to it through the crossing type passes only
+read-only positions, and *at a writable position* otherwise.
 
 **Marks, one per allocation site.** Each allocation site of $`P`$ carries a
 mark, a component of the allocated location's contract fixed at
@@ -181,10 +183,14 @@ store against it; a forged mark fails a check (conjectured).
 
 **The exposed roots.** $`E_P`$ is a ghost component of the state: the
 locations reached by a crossing at a read-only position, whoever allocated
-them, from the crossing on. It only grows.
+them, from the crossing on. It only grows. A root of an exposed site is
+protected from the crossing on; a root of a released site or of storage
+outside code allocated is protected while it is *held*: while a frame,
+binding or storage of $`P`$ references it.
 
 **The protected region.** $`R_P(\rho,h)`$ is the storage of local and
-exposed sites, together with the storage reachable from $`E_P`$ through
+exposed sites, together with the storage reachable from the protected roots
+of $`E_P`$ through
 fields, spines and element cells, stopping at collections, whose entries
 the model holds in no location (cited:
 [native footprints](../SOURCE-CONTRACTS.md#native-footprints), the row of
@@ -202,7 +208,10 @@ from every exposed and released site and from $`\mathrm{in}`$, whatever its
 type: TypeScript admits a read-only view where a writable type is expected
 (cited: private representation, "Incoming values", observed under `tsc`
 7.0.2). A value from a confined collection may come from the sites inserted
-into it.
+into it. A reference a suspended function holds across an `await` or a
+`yield` keeps its possible sites at the resumption, and each object it
+reaches that was published during the suspension may come, at the
+resumption, from every site that crossed meanwhile.
 
 **The protocol.** $`\Psi_P`$ has one entry per part. It is the least such
 effect for which every member $`m\in M_P`$, entered from code that is not
@@ -215,10 +224,13 @@ $`R_s.k`$ for each site $`s`$ the written object may come from whose records
 have $`k`$, released sites included; a write to an internal site is not
 charged. A member that writes only what it allocated contributes
 $`\mathsf{keep}`$. A call by name is checked at the callee's effect on its
-actual arguments, not through $`\Psi_P`$. A resumption is a member, so a
-write a suspended function of $`P`$ makes after its caller returned is in
-$`\Psi_P`$; each function's effect is certified node by node, so it bounds
-every resumption's segment.
+actual arguments, not through $`\Psi_P`$. A resumption is a member: each
+segment of a suspended function, from a resumption to its next suspension
+or its completion, is certified against its own entry heap, the heap at the
+resumption, with the possible sites its captured references keep; storage
+the function allocated before the suspension is old for the segment, and
+both of the segment's exits are charged. So a write a suspended function of
+$`P`$ makes after its caller returned is in $`\Psi_P`$.
 
 **The bound on $`R_P`$.** $`\Phi\oplus_P\Psi_P`$ bounds the locations of
 $`R_P`$ by $`\Psi_P`$ and every other location by $`\Phi`$:
@@ -256,10 +268,21 @@ nothing, so every entry of $`\Psi`$ is $`\mathsf{keep}`$, and $`i<|w|`$
 crosses `visit` (conjectured, the design's claim).
 
 **At a handle's entry.** A parameter of a sealed handle type meets its
-invariant: from an analyzed caller by `invariant-ensures` at the value's
-source, from an outside caller by the row on handle parameters. A cast to
-the representation gives its fields (handle-meaning). The handle crossed at
-its read-only type, so its storage is in $`R_P`$ from entry.
+invariant: from an analyzed caller by `invariant-requires`, checked at the
+call from the caller's own facts, and from an outside caller by the row on
+handle parameters. A cast to the representation gives its fields
+(handle-meaning). The handle crossed at its read-only type, so its storage
+is in $`R_P`$ from entry.
+
+**The invariant at use.** A handle's invariant is a contract of function
+boundaries, and is assumed only where a boundary gives it: at a parameter,
+by `invariant-requires`, and at a result, by `invariant-ensures`. A value
+retained in a confined collection or in storage, or passed on internally,
+gets it again at the next boundary it passes, where the caller proves it
+from its facts, or by a check at use. Retention is no boundary, so no
+argument about the support's protection through retention is needed: the
+existing mechanism is the boundary contract, and a value read back is
+checked where it is used.
 
 ### What must be proved
 
@@ -277,8 +300,8 @@ conjectured until its Lean exists.
   frame but $`P`$'s; a location of an internal site is reachable from no
   crossing value.
 - **(L1) Outside step.** From a state meeting (P2) and (M), a step of code
-  that is not $`P`$'s leaves every location of $`R_P`$ unchanged and keeps
-  (P2) and (M). A local location is out of its reach; a location reachable
+  that is not $`P`$'s leaves unchanged every location of $`R_P`$ that is of
+  a local or exposed site or is held by $`P`$, and keeps (P2) and (M). A local location is out of its reach; a location reachable
   from $`E_P`$ it reaches only through a read-only crossing, and the
   [trust row](#trust) states it changes none. (L1) is conjectured from that
   row, which is trust: it holds of outside code that meets the row, and of
@@ -289,13 +312,17 @@ conjectured until its Lean exists.
   called and resumptions resumed, each bounded by its certificate at
   $`\Psi_P`$, whose own steps that run code that is not $`P`$'s are bounded
   by the rule at a smaller budget.
-- **(L3) Rigidity.** For every pair
-  $`h\xrightarrow{\Phi\oplus_P\Psi_P}_\rho h'`$ of the action,
-  $`R_P(h)\subseteq R_P(h')`$: the part by marks is fixed at allocation;
-  the part reachable from $`E_P`$ is kept because $`E_P`$ only grows and
-  $`\Psi_P`$ preserves the references (*Reference-preserving protocol*),
-  every reference held in $`R_P(h)`$ held in $`R_P(h')`$ and every listed
-  cell listed, by induction on the length of the path. Then
+- **(L3) Rigidity.** Persistence is needed only of the support of a fact
+  a live frame of $`P`$ relies on. For every pair
+  $`h\xrightarrow{\Phi\oplus_P\Psi_P}_\rho h'`$ of the action and every
+  such support $`S`$, $`R_P(h)\cap S\subseteq R_P(h')`$: the part by marks
+  is fixed at allocation; a root of $`E_P`$ the support reads stays held,
+  since the frame relying on the fact references it through the paths of
+  $`S`$; and $`\Psi_P`$ preserves the references (*Reference-preserving
+  protocol*), every reference held in $`R_P(h)`$ held in $`R_P(h')`$ and
+  every listed cell listed, by induction on the length of the path. Storage
+  that leaves $`R_P`$ because $`P`$ drops its last reference supports no
+  live fact. Then
   $`\Phi\oplus_P\Psi_P`$ is rigid when $`\Phi`$ and $`\Psi_P`$ are rigid and
   $`\Psi_P\sqsubseteq\Phi`$, as for $`\Phi=\top`$ and for
   `{ values: "any"; spines: "grow" }`.
@@ -351,18 +378,31 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   it is charged.
 - **Writes outside code may make fail.** The row admits freezing, sealing,
   preventing extension and making a data property non-writable or
-  non-configurable. A write by $`P`$ to a location of $`R_P`$ that outside
-  code may have made so throws in strict code, which safety admits. A single
-  store that throws leaves the heap unchanged; a native that throws part way
-  leaves the writes it completed, as `Object.seal([1, , 3]).fill(9)` leaves
-  element 0 at `9` (observed). So every such store has a throw edge leaving the
-  heap unchanged, and every such native call a throw edge carrying the
-  native's exceptional footprint, its audited partial writes; each handler
-  is checked from the heap its edge gives.
-- **Views in analyzed code.** Analyzed code is checked, not trusted: a
-  value read at a read-only type is read at a readonly view, and the pass
-  refuses a write through it, a write through a writable type it was widened
-  to included (cited: private representation, "Views in analyzed code").
+  non-configurable. A write by $`P`$ to storage outside code may have made
+  so throws in strict code, which safety admits. Only a store proved atomic
+  (a data property's assignment or definition at one key) has a throw edge
+  leaving the heap unchanged. An array's `length` assignment is not atomic:
+  with index 1 non-configurable, `xs.length = 0` of `[1, 2, 3]` deletes
+  index 2 and then throws, leaving length 2 (observed). A native that throws
+  part way leaves the writes it completed, as `Object.seal([1, , 3]).fill(9)`
+  leaves element 0 at `9` (observed). Each of these has a throw edge
+  carrying its audited partial-write footprint, and each handler is checked
+  from the heap its edge gives. On protected storage a shortening `length`
+  assignment is refused by *Reference-preserving protocol* anyway.
+- **Native writes charge every affected part.** A native's write is charged
+  through its audited footprint to every part it may change: each typed
+  array viewing a buffer it writes, overlapping views over the same buffer
+  included, and each element and length of an array it changes.
+- **Views in analyzed code.** Analyzed code outside the package, a client,
+  is checked, not trusted: a value it reads at a read-only type is read at a
+  readonly view, and the pass refuses a write through it, a write through a
+  writable type it was widened to included (cited: private representation,
+  "Views in analyzed code"). The package's own write to storage it gave out
+  as a view is a *representation write*: through a cast of the handle to its
+  representation, checked against the representation's type, its invariant
+  (*Tolerant invariant*), the throw edge of *Writes outside code may make
+  fail*, and charged at its key to every possible site of the written
+  object.
 
 ## Trust
 
@@ -376,14 +416,20 @@ until applications are analyzed too):
 > the package is outside this row. That code, a function it passes in
 > included, changes by its own steps, by any operation, a native's
 > included, no element, field, length, prototype or property kind (a data
-> property redefined as an accessor) of storage reached from a value that
-> crosses the package's entries through read-only positions of the
-> crossing's type, a handle's representation fields included: storage the
-> package allocated, from the crossing on; storage outside code allocated,
-> while the package holds a reference to it. A change made inside a call of
-> an entry, or of a function the package gave out, is that function's,
-> bounded by its certificate. Freezing, sealing, preventing extension and
-> making a data property non-writable or non-configurable are admitted.
+> property redefined as an accessor) of storage reached, through read-only
+> positions of the crossing's type, from a value that crosses between it and
+> the package in either direction, through any alias (an entry's argument,
+> receiver or result, a callback's argument or result, a value thrown,
+> caught or yielded, a function the package gives out and what it receives
+> and returns), a handle's representation fields included: storage the
+> package allocated at an exposed site, from the crossing on; storage it
+> allocated at a released site, and storage outside code allocated, while
+> the package holds a reference to it. Each step is the code's that executes
+> it: a change made inside a call of an entry, or of a function the package
+> gave out, is that function's, bounded by its certificate, and a step of a
+> callback an entry calls is the callback's. Freezing, sealing, preventing
+> extension and making a data property non-writable or non-configurable are
+> admitted.
 
 Where it is stated: in the API, in the doc comment of each read-only type
 the entry modules export (each handle type and each read-only member a
@@ -445,35 +491,57 @@ it gives is conjectured.
   `walkPreparedLinesRaw` with its own record and truncates it during
   `onLine` makes the walker read `[1, undefined, undefined]` (observed); the
   row excludes it. No change.
+- **The edits, applied and checked.** The edits below are applied to a
+  scratch copy of upstream `0d102a5c` and type-check under its
+  `tsconfig.build.json` with its pinned TypeScript, 7.0.2 (observed: no
+  error; under `tsconfig.json` the copy reports the same 282 errors as
+  upstream, each from the `bun` and `node` types the copy does not install).
+  Together they add 45 lines and remove 31 in `layout.ts`, `line-break.ts`,
+  `prepare.ts` and `rich-inline.ts`. `oxlint`, which upstream's `check` also
+  runs, was not run.
 - **Representation records free of brands.** `InternalPreparedText` and
   `InternalPreparedTextWithSegments` intersect the brand
   (`layout.ts:63–64`), as `InternalPreparedRichInline` does
-  (`rich-inline.ts:136`). The handles state `@representation` of the
-  brand-free records: `PreparedLineData` (`line-break.ts:65`) for
-  `PreparedText`, `PreparedSegments & { kinds: SegmentBreakKind[] }` for
-  `PreparedTextWithSegments`, and a record `RichInlineFlow` of
-  `InternalPreparedRichInline`'s fields for `PreparedRichInline`;
-  `prepareInternal`'s result type (`layout.ts:108–113`) names
-  `PreparedLineData`. One new alias and one result type.
-- **The invariants.** The walkers and steppers take the representation
-  records (`PreparedLineData`, `PreparedSegments`), so the invariant is
-  stated where they read it: `@invariant` on `PreparedLineBreakData`
-  (`line-break.ts:24`) and on `RichInlineFlow`, and the same clause on the
-  three handle types with their `@representation`. Each walker's entry then
-  gets it by `invariant-requires`, and the entries' casts to the
-  representation by handle-meaning. The doc comments of the three handle
-  types also state the row's sentence. Five annotation comments.
-- **`measureAnalysis`'s result.** Its result type names the handle and the
-  records (`prepare.ts:366`). In paragraph mode it shares the paragraph's
-  lists while they are still being filled (`prepare.ts:379–383`,
-  `rich-inline.ts:479`), so that result does not meet the records'
-  invariant (cited: private representation, "Preparation"). The change: in
-  paragraph mode it returns a record of the item's results that names no
-  invariant's type, its result type is the union of that record and
-  `PreparedSegments`, and an `@ensures` guarded by `paragraph === null`
-  states the invariant in text mode, which `prepareInternal` relies on.
-  The cast at `prepare.ts:638` is to the record. A result type, one return
-  record and one clause.
+  (`rich-inline.ts:136`). They become the brand-free records
+  `PreparedLineData` (`line-break.ts:65`),
+  `PreparedSegments & { kinds: SegmentBreakKind[] }` and the paragraph's
+  fields, and each handle states `@representation` of its record. The casts
+  between a handle and its record (`layout.ts:155`, `:185`, `:316`,
+  `rich-inline.ts:183`) become casts through `unknown`, read by
+  handle-meaning.
+- **The introductions of a handle.** A record becomes a handle where an
+  entry returns it: `prepare` (`layout.ts:140`), `prepareWithSegments`
+  (`:151`) and `prepareRichInline`'s two returns (`rich-inline.ts:218`,
+  `:666`), each a cast through `unknown` at a return whose type names the
+  handle. Each is a checked introduction: the cast states no fact, and the
+  return's `invariant-ensures` proves the handle's invariant from the
+  record's facts (cited: [type invariants](../ARITHMETIC.md#type-invariants),
+  "a cast into the handle states no fact, and a boundary requiring the
+  invariant proves it").
+- **The invariants.** The walkers and steppers take `PreparedLineData` and
+  `PreparedSegments`, so `@invariant` is stated on `PreparedLineData`, on the
+  paragraph record and on the three handle types, with the row's sentence on
+  the handle types. Each walker's entry then gets it by
+  `invariant-requires`, checked at each call by name, and each entry's cast
+  by handle-meaning. Five annotation comments.
+- **`measureAnalysis`'s three results.** Its result type names the handle
+  and the records (`prepare.ts:366`), and it has three results: a text's
+  record without segments, for `prepare`, which passes
+  `includeSegments = false` (`layout.ts:140`; `prepare.ts:384`,
+  `:639–640`); a text's record with segments, for `prepareWithSegments`; and
+  a paragraph item's measures, whose lists are the paragraph's, still being
+  filled (`prepare.ts:379–383`, `rich-inline.ts:479`), which do not meet the
+  invariant (cited: private representation, "Preparation"). The change:
+  three overload signatures, by `includeSegments` and `paragraph` at literal
+  types, returning `PreparedLineData`, `PreparedSegments` and
+  `PreparedLineBreakData`, which states no invariant; the literal at
+  `prepare.ts:638` is typed by an annotation in place of a cast through
+  `unknown`. `prepareInternal` (`layout.ts:108–121`) takes two overloads and
+  calls `measureAnalysis` at each literal. The cast at `rich-inline.ts:215`
+  is dropped: the overload gives `PreparedSegments`. Each overload is the
+  implementation's code checked at that overload (cited:
+  SOURCE-FRAGMENT.md, the row on overloads), so the text overloads'
+  `invariant-ensures` is proved in text mode only.
 - **The writes before a handle is returned.** `layout.ts:150`,
   `prepare.ts:639`, `rich-inline.ts:639` and `findWholeLine`'s writes
   (`:819–823`, called at `:221` and `:664`) write records allocated in the
@@ -487,14 +555,18 @@ it gives is conjectured.
   of the five modules for writes to a handle's fields, arrays and typed
   arrays). Three writes break the invariant relating them until the last,
   and moving `sourceStarts` last can replace a list an incoming handle
-  holds in `sourceEnds`, outside $`\mathsf{scalar}`$. The change, as
-  private representation makes it: one nullable field `sources`, holding the
-  `TextSources` record `findSegmentSources` already builds (`:1155`, its
-  `sourceUnits` widened to admit `null`), written once from `null` by a
-  checked single write; the fields' declarations (`:170–172`), the two
-  initializers (`:220`, `:663`), the write and the read (`:1198–1199`)
-  change. About six lines; a multi-item paragraph handle holds one record
-  more (not measured).
+  holds in `sourceEnds`, outside $`\mathsf{scalar}`$. The change: one
+  nullable field `sources`, holding the `TextSources` record
+  `findSegmentSources` already builds (`:1155`, its `sourceUnits` widened to
+  admit `null`), written once from `null`. The write is a representation
+  write (*Views in analyzed code*): through the handle's cast to its record,
+  checked to keep the lazy-list invariant (a checked single write), with an
+  atomic store's throw edge, and charged at the key `sources` to every
+  possible site of the handle, the paragraph handle's site and
+  $`R_{\mathrm{in}}`$, since a structured clone passed back is outside
+  storage. The fields' declarations (`:170–172`), the two initializers
+  (`:220`, `:663`), the write and the read (`:1198–1199`) change; a
+  multi-item paragraph handle holds one record more (not measured).
 - **The frozen side table** (`rich-inline.ts:1141–1178`) stays: the
   `Object.isFrozen` test, a `WeakMap` no module exports (a confined
   collection) holding the fresh record, and the write in the other branch.
@@ -514,23 +586,36 @@ it gives is conjectured.
   clears confined collections and writes a number to the internal state
   record: $`\mathsf{keep}`$ on $`R_P`$. The exported `noExtraSpacings`
   (`measurement.ts:661`) is no entry's; no handle holds it. No change.
-- **The cursors.** The cursors the walkers allocate (`line-break.ts:293`,
-  `:396`, `rich-inline.ts:360`, `:1120`) are of local sites: held by frames
-  and passed by name to the steppers and `normalizePreparedLineStart`, no
-  member. So $`\Psi`$ is $`\mathsf{keep}`$ on them and the walker's cursor
-  facts cross `onLine`. The cursors of `layoutNextLine` and
-  `layoutNextLineRange` (`layout.ts:305–333`) are the `start` and `end`
-  records of the result they return at `LayoutCursor`, a writable type: of
-  released sites. No callback runs between their writes and the return, so
-  their facts need no frame. The public `LayoutCursor` a caller passes is
-  validated on entry as upstream does. No change.
+- **The cursors**, each fact attributed to what establishes it (the six
+  sites of the dossier, §2, "Form (a)"):
+  - `walkPreparedLinesRaw`'s cursor (`line-break.ts:293`) is of a local
+    site: held by frames and passed by name to the steppers and
+    `normalizePreparedLineStart`, no member. Its facts cross `onLine` by
+    Read-only frame, $`\Psi`$ being $`\mathsf{keep}`$ on it. The same holds
+    in `walkPreparedComplexLines`, whose cursor is its caller's local one
+    where an `onLine` is given.
+  - `countSteppedLines` (`:396`), `layoutNextRichInlineLineRange`
+    (`rich-inline.ts:1120`) and `prepareRichInline`'s cursor and `own`
+    (`:359–365`) call no code that is not $`P`$'s between their reads: their
+    facts across the helpers come from the helpers' certified effects on
+    their actual arguments, which write the cursor alone, and so keep
+    `own.segmentFlags`.
+  - `stepNextLine` writes the `start` and `end` records of the result
+    `layoutNextLine` and `layoutNextLineRange` return at `LayoutCursor`, a
+    writable type (`layout.ts:305–333`): released sites. Its facts come from
+    the helpers' effects on those fresh records, with no callback before the
+    return.
 
-In all: five annotation comments, one alias and one result type in
-`layout.ts` and `rich-inline.ts`, a result type, a return record and a
-clause in `prepare.ts`, and about six lines for the lazy lists.
+  The public `LayoutCursor` a caller passes is validated on entry as
+  upstream does. No change.
+
+In all, checked as above: five annotation comments; brand-free records,
+casts through `unknown` and four checked introductions in `layout.ts` and
+`rich-inline.ts`; three overloads and a typed literal in `prepare.ts` and
+two overloads in `layout.ts`; and the lazy lists' one field.
 
 The protocol for pretext (conjectured): $`\mathsf{scalar}`$ at the key
-`sources` of the paragraph handle's site, from
+`sources` of the paragraph handle's site and of $`R_{\mathrm{in}}`$, from
 `materializeRichInlineLineRange`; $`\mathsf{keep}`$ on every other part.
 It preserves the references.
 
@@ -545,15 +630,15 @@ The sites are the dossier's (cited: [dossier](callback-frames-dossier.md),
   $`\mathsf{keep}`$. `walkLineRanges` holds no fact;
   `walkRichInlineLineRanges` and `layoutWithLines` as in private
   representation.
-- **P22, form (a)**: the six cursor sites, by the local mark of the walker's
-  cursor.
+- **P22, form (a)**: the six cursor sites, two by the local mark and four
+  by the helpers' certified effects, as attributed above.
 - **P18**: at pretext's sites, the handle's invariant at entry and its
   support kept by (L4). Paper II's own program, whose `Prepared` is a
   structural type external code may build and write, is outside: it is no
   read-only type.
-- **P20**: a value of a sealed handle type read from a `Map` meets its
-  invariant where the `Map` is a confined collection, each insertion checked
-  to store a value meeting it; a `Map` that is not confined gives nothing.
+- **P20**: a value of a sealed handle type read back from a `Map` gets its
+  invariant at the next boundary it passes or by a check at use
+  (*The invariant at use*); the `Map` gives none.
 - **P15**: a module constant array no entry exposes writably is of a local,
   internal or exposed site; if it is exposed or reaches a handle,
   $`\mathsf{keep}`$ on its spine keeps its length. Internal storage is not
@@ -594,8 +679,8 @@ What this design gives up:
   class's own code, and is recovered at the first private read of any
   instance, one read back from a `Map` included. Here it holds only of a
   handle that enters as an entry's parameter, by the row on handle
-  parameters; a value read back from a `Map` meets it only where the `Map`
-  is confined and each insertion is checked (P20).
+  parameters, and a value read back from a `Map` or storage gets it only at
+  the next boundary it passes or by a check at use (P20).
 - **Exclusions by trust where there they fail at run time.** Proxies,
   accessor copies and prototype changes are excluded by the caller contract,
   the proxy row and the new row; there, a proxy or a copy throws at its
@@ -603,9 +688,8 @@ What this design gives up:
 
 What it gains:
 
-- **Pretext's source stays upstream's** but for annotations, one alias, two
-  result types, a return record and a clause in `measureAnalysis`, and the
-  lazy lists' one field: no class, no static block, no staging field, no
+- **Pretext's source stays upstream's** but for the checked edits counted
+  above (45 lines added and 31 removed, annotations included): no class, no static block, no staging field, no
   `#segments !== null` test, no move of five modules into one class body.
 - **No class shape**: no base-class, evaluated-once, construction, staging,
   lexical-dispatch or distinct-name restriction; no lifting of the
@@ -650,6 +734,12 @@ JavaScript, run with `node`, printing the reads), each refused:
   truncates the kept array: `[1, undefined, undefined]`. Refused by
   *Reference-preserving protocol*: the truncation is charged to the
   released site, whose storage entered $`R_P`$ at the read-only crossing.
+- `invalid-readonly-partial-length`: a function of the package, given an
+  array by outside code that made its index 1 non-configurable, assigns
+  `length = 0` and, in its handler, reads the last index it read before:
+  `undefined`, the length being 2 after the throw. Refused by *Writes
+  outside code may make fail*: the assignment's throw edge carries its
+  partial deletion, so the handler holds no fact of the old length.
 
 **Restriction control**, safe under Node and refused (observed):
 `readonly-lazy-lists-order-refused`, the three lazy lists written one field
@@ -673,7 +763,10 @@ popping a representation field of a handle in the visitor
 `walkPreparedLinesRaw` given a record its caller truncates during `onLine`
 (`[1, undefined, undefined]`), outside the entry modules; a copy whose
 `widths` is an accessor, passed at the handle type
-(`[1, undefined, undefined]`), against the caller contract.
+(`[1, undefined, undefined]`), against the caller contract; an entry that
+makes a handle and passes it only to its visitor, at the handle type, whose
+visitor truncates its `widths` through a cast (`[1, undefined, undefined]`),
+a callback argument, so a crossing the row covers.
 
 **Observations**: a JSON copy's `flags` is no `Uint8Array` and has no
 `length`; a proxy's trap runs at a walker's field read.
@@ -688,7 +781,12 @@ value from a confined collection forged uncharged; an exported collection
 forged confined; a write that may fail forged without its throw edge, or a
 native's throw edge forged without its partial writes; a handle invariant
 forged to read a path outside its representation; a fact forged as
-supported in $`R_P`$ whose origin is a writable crossing.
+supported in $`R_P`$ whose origin is a writable crossing; a resumption's
+segment forged to start from its function's entry heap; a `length`
+assignment forged atomic; a native write forged to charge one typed-array
+view where its buffer has two; the `sources` write forged uncharged to
+$`R_{\mathrm{in}}`$; a value read from a `Map` forged to meet its type's
+invariant with no boundary or check.
 
 ## Stages and cost
 
