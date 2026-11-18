@@ -630,6 +630,24 @@ control("forged fragment: an omitted crossing", async (): Promise<void> => {
   say("forged crossing: the result lastWidths gives out omitted, its array marked exposed, refused at the crossing the events make");
 });
 
+control("forged fragment: a read-only bit", async (): Promise<void> => {
+  // The array lastWidths returns at `number[]` marked exposed, and its
+  // crossing stated read-only: the bit differs from the type the result
+  // declares, from which the verifier derives it.
+  const { artifacts, ast, at } = familyCase("invalid-readonly-leaked");
+  const site = must(ast.components.sites[siteIndex(ast, at("[];\n  for"))], "the widths' site");
+  site.marks = site.marks.map((m) => ({ ...m, mark: "exposed" }));
+  const result = at("export function lastWidths");
+  const crossing = must(ast.components.crossings.find((x) => x.direction === "out" && x.at[0] === result), "lastWidths' result");
+  assert.equal(crossing.readOnly, false, "lastWidths' result is writable");
+  crossing.readOnly = true;
+  const p = pass(forged(artifacts, "forged-read-only-bit", ast));
+  certificateRefused(p, "lastWidths' result stated read-only",
+    new RegExp(`^\\(K\\) \\S+ ${result}-\\d+: the crossing states its position read-only, its declared type is writable`));
+  certificateRefused(p, "lastWidths' result stated read-only", /^\(K\) .* a value crossing out at a writable position reaches the exposed site/);
+  say("forged read-only bit: a writable result stated read-only, refused against its declared type");
+});
+
 control("forged fragment: a released and a caller-owned install", async (): Promise<void> => {
   // The released array marked exposed, which (O) admits: its writable
   // crossing out refuses it.

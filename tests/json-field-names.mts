@@ -83,7 +83,6 @@ const equationReaders = [
     binder: "a type label, read by equation lowering",
     decl: "a type label, read by equation lowering",
     meet: "a type label, read by equation lowering",
-    types: "a store's rows, read by equation lowering",
   });
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",

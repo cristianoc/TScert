@@ -42,7 +42,7 @@ import { listDirectory, orAbsent, present, readText, realPath } from "./files.mt
 import { clientsTags, representationTags } from "./bound-annotations.mts";
 import type { Change, Frame, Region, Selector } from "./declaration-types.mts";
 import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, SiteAst, SourceAst, StoreAst,
-  SuspensionAst } from "./fragment.mts";
+  SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
 
@@ -72,9 +72,31 @@ export type FamilyInput = {
   fail: (node: Node | null, message: string) => never;
 };
 
+/** **Whether a type's shape is read-only throughout** (the draft, "Read-only
+ * types and crossings"): a primitive, `unknown` or a sealed handle; a
+ * read-only array or tuple of such types; a record whose every member is a
+ * `readonly` field of such a type; a union or an intersection of such types;
+ * a named type whose definition is one, a recursive reference read as
+ * writable. `ComponentChecks.readOnlyShape` states the same in Lean, which
+ * derives each crossing's bit from it. */
+export function shapeReadOnly(t: TypeShapeAst | null, types: ComponentsAst["types"], visiting: ReadonlySet<number> = new Set()): boolean {
+  if (t === null) return false;
+  if (t === "primitive" || t === "unknown" || t === "sealed") return true;
+  if (t === "function" || t === "other") return false;
+  if ("readonlyArray" in t) return shapeReadOnly(t.readonlyArray, types, visiting);
+  if ("array" in t) return false;
+  if ("tuple" in t) return t.tuple.readonly && t.tuple.elements.every((e) => shapeReadOnly(e, types, visiting));
+  if ("record" in t) return t.record.every((m) => m.readonly && m.field && shapeReadOnly(m.type, types, visiting));
+  if ("union" in t) return t.union.every((e) => shapeReadOnly(e, types, visiting));
+  if ("intersection" in t) return t.intersection.every((e) => shapeReadOnly(e, types, visiting));
+  if (visiting.has(t.named)) return false;
+  const row = types[t.named];
+  return row !== undefined && shapeReadOnly(row.definition, types, new Set([...visiting, t.named]));
+}
+
 /** The empty description: no component. */
 export const noComponents: ComponentsAst = { components: [], codes: [], sites: [], values: [], crossings: [],
-  stores: [], calls: [], throws: [], catches: [], holds: [], exports: [], thrown: null, suspensions: [],
+  stores: [], calls: [], throws: [], catches: [], holds: [], exports: [], thrown: null, suspensions: [], types: [],
   escapes: [], clients: [], guarantees: [] };
 
 /** A build configuration: where it writes its outputs, the directory of
@@ -665,7 +687,6 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   // read-only arrays and tuples of such types, records whose every member is a
   // readonly field of such a type, unions and intersections of such types, a
   // sealed handle, and a named type of the family whose definition is one.
-  const roCache = new Map<Node, boolean>();
   const typeDecl = (f: File, name: string): { node: Node; file: File } | null => {
     for (const s of f.source.statements)
       if ((ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s)) && s.name.text === name) return { node: s, file: f };
@@ -683,46 +704,67 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     }
     return null;
   };
-  const readOnly = (t: Node | undefined, f: File, depth: number = 0): boolean => {
-    if (t === undefined || depth > 24) return false;
-    const known = roCache.get(t);
-    if (known !== undefined) return known;
-    roCache.set(t, false);
-    let ro = false;
+  /** **A declared type's shape**, as the wire states it (`TypeShapeAst`):
+   * what decides whether it is read-only, each named type of the family by
+   * its index in `types`. */
+  const typeRows: ComponentsAst["types"] = [];
+  const typeIndex = new Map<Node, number>();
+  const shapeOf = (t: Node | undefined, f: File, depth: number = 0): TypeShapeAst | null => {
+    if (t === undefined) return null;
+    if (depth > 24) return "other";
     const k = t.kind;
+    if (k === ts.SyntaxKind.UnknownKeyword) return "unknown";
     if (k === ts.SyntaxKind.NumberKeyword || k === ts.SyntaxKind.StringKeyword || k === ts.SyntaxKind.BooleanKeyword ||
         k === ts.SyntaxKind.BigIntKeyword || k === ts.SyntaxKind.SymbolKeyword || k === ts.SyntaxKind.UndefinedKeyword ||
-        k === ts.SyntaxKind.VoidKeyword || k === ts.SyntaxKind.NeverKeyword || k === ts.SyntaxKind.UnknownKeyword ||
-        ts.isLiteralTypeNode(t) || ts.isTemplateLiteralTypeNode(t)) ro = true;
-    else if (ts.isParenthesizedTypeNode(t)) ro = readOnly(t.type, f, depth + 1);
-    else if (ts.isTypeOperatorNode(t) && t.operator === ts.SyntaxKind.ReadonlyKeyword) {
-      const inner = t.type;
-      ro = ts.isArrayTypeNode(inner) ? readOnly(inner.elementType, f, depth + 1)
-        : ts.isTupleTypeNode(inner) ? inner.elements.every((e) => readOnly(ts.isNamedTupleMember(e) ? e.type : e, f, depth + 1)) : false;
-    } else if (ts.isUnionTypeNode(t) || ts.isIntersectionTypeNode(t)) ro = t.types.every((p) => readOnly(p, f, depth + 1));
-    else if (ts.isTypeLiteralNode(t)) ro = t.members.every((m) => readOnlyMember(m, f, depth));
-    else if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
-      const name = t.typeName.text, args = t.typeArguments ?? [];
-      if (name === "ReadonlyArray" && args.length === 1) ro = readOnly(args[0], f, depth + 1);
-      else if (args.length === 0) {
-        const d = typeDecl(f, name);
-        if (d !== null) {
-          const trivia = leading(d.file.source, d.node);
-          ro = representationTags(trivia).length > 0 ||
-            (ts.isTypeAliasDeclaration(d.node) && readOnly(d.node.type, d.file, depth + 1)) ||
-            (ts.isInterfaceDeclaration(d.node) && !d.node.heritageClauses?.length &&
-              d.node.members.every((m) => readOnlyMember(m, d.file, depth)));
-        }
-      }
+        k === ts.SyntaxKind.VoidKeyword || k === ts.SyntaxKind.NeverKeyword || ts.isLiteralTypeNode(t) || ts.isTemplateLiteralTypeNode(t))
+      return "primitive";
+    const inner = (x: Node): TypeShapeAst => shapeOf(x, f, depth + 1) ?? "other";
+    const elements = (x: Node): TypeShapeAst[] => ts.isTupleTypeNode(x)
+      ? x.elements.map((e) => inner(ts.isNamedTupleMember(e) ? e.type : e)) : [];
+    if (ts.isParenthesizedTypeNode(t)) return inner(t.type);
+    if (ts.isTypeOperatorNode(t) && t.operator === ts.SyntaxKind.ReadonlyKeyword) {
+      const x = t.type;
+      return ts.isArrayTypeNode(x) ? { readonlyArray: inner(x.elementType) }
+        : ts.isTupleTypeNode(x) ? { tuple: { readonly: true, elements: elements(x) } } : "other";
     }
-    roCache.set(t, ro);
-    return ro;
+    if (ts.isArrayTypeNode(t)) return { array: inner(t.elementType) };
+    if (ts.isTupleTypeNode(t)) return { tuple: { readonly: false, elements: elements(t) } };
+    if (ts.isUnionTypeNode(t)) return { union: t.types.map(inner) };
+    if (ts.isIntersectionTypeNode(t)) return { intersection: t.types.map(inner) };
+    if (ts.isTypeLiteralNode(t)) return { record: t.members.map((m) => memberShape(m, f, depth)) };
+    if (ts.isFunctionTypeNode(t)) return "function";
+    if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
+      const name = t.typeName.text, args = t.typeArguments ?? [];
+      if (name === "ReadonlyArray" && args.length === 1 && args[0]) return { readonlyArray: inner(args[0]) };
+      if (args.length > 0) return "other";
+      const d = typeDecl(f, name);
+      if (d === null) return "other";
+      const known = typeIndex.get(d.node);
+      if (known !== undefined) return { named: known };
+      const index = typeRows.length;
+      typeIndex.set(d.node, index);
+      typeRows.push({ module: d.file.location, name, pos: span(d.file, d.node), definition: "other" });
+      const definition: TypeShapeAst = representationTags(leading(d.file.source, d.node)).length > 0 ? "sealed"
+        : ts.isTypeAliasDeclaration(d.node) ? shapeOf(d.node.type, d.file, depth + 1) ?? "other"
+        : ts.isInterfaceDeclaration(d.node) && !d.node.heritageClauses?.length
+          ? { record: d.node.members.map((m) => memberShape(m, d.file, depth)) } : "other";
+      const row = typeRows[index];
+      if (row) row.definition = definition;
+      return { named: index };
+    }
+    return "other";
   };
-  const readOnlyMember = (m: Node, f: File, depth: number): boolean =>
-    ts.isPropertySignatureDeclaration(m) ? !!m.modifiers?.some((x) => x.kind === ts.SyntaxKind.ReadonlyKeyword) &&
-      readOnly(m.type, f, depth + 1)
-    : ts.isIndexSignatureDeclaration(m) ? !!m.modifiers?.some((x) => x.kind === ts.SyntaxKind.ReadonlyKeyword) &&
-      readOnly(m.type, f, depth + 1) : false;
+  /** A member of a record type: a property or an index signature, with its
+   * `readonly` modifier and type; any other member. */
+  const memberShape = (m: Node, f: File, depth: number): { readonly: boolean; field: boolean; type: TypeShapeAst } => {
+    const field = ts.isPropertySignatureDeclaration(m) || ts.isIndexSignatureDeclaration(m);
+    const ro = (ts.isPropertySignatureDeclaration(m) || ts.isIndexSignatureDeclaration(m)) &&
+      !!m.modifiers?.some((x) => x.kind === ts.SyntaxKind.ReadonlyKeyword);
+    const type = ts.isPropertySignatureDeclaration(m) || ts.isIndexSignatureDeclaration(m) ? shapeOf(m.type, f, depth + 1) ?? "other" : "other";
+    return { readonly: ro, field, type };
+  };
+  /** **A read-only type** (`shapeReadOnly`, ComponentChecks.readOnlyShape). */
+  const readOnly = (t: Node | undefined, f: File): boolean => shapeReadOnly(shapeOf(t, f), typeRows);
   const typeOfParameter = (p: Node | undefined): TypeNode | undefined => p && ts.isParameterDeclaration(p) ? p.type : undefined;
   const resultType = (n: Node): TypeNode | undefined =>
     ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n) ||
@@ -1167,7 +1209,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     const event: CallAst | null = recording ? { module: f.location, at: span(f, n), component: componentAt(n, f),
       callee: exprRef(n.expression, f),
       receiver: ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee) ? exprRef(callee.expression, f) : null,
-      args: args.map((a) => ({ value: argRef(a), spread: ts.isSpreadElement(a), at: span(f, a) })), result: refNode(n), targets: [],
+      args: args.map((a, i) => ({ value: argRef(a), spread: ts.isSpreadElement(a), at: span(f, a),
+        type: shapeOf(calleeParameterTypes(n.expression)[i], f) })), result: refNode(n), targets: [],
       instance: null, native: null } : null;
     const target = (c: Code | null): void => {
       const i = c === null ? -1 : codes.indexOf(c);
@@ -1313,7 +1356,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         if (!ts.isIdentifier(id)) continue;
         const outs = [f.module, ...(packageIndex !== null && entryModules.includes(f.absolute) ? [packageIndex] : [])];
         const ref = recording ? refNode(id) : null;
-        if (ref !== null) events.exports.push({ module: f.location, at: span(f, id), name: id.text, components: outs, value: ref });
+        if (ref !== null) events.exports.push({ module: f.location, at: span(f, id), name: id.text, components: outs, value: ref,
+          type: shapeOf(d.type, f) });
         for (const c of outs) cross(f, id, c, "out", { binding: { name: id.text } }, readOnly(d.type, f), setOf(id), id, ref);
       }
     }
@@ -1403,7 +1447,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const contentRefs = sites.map((_, t) => refOf(contentKey(t)));
   const codesList: ComponentsAst["codes"] = codes.map((c) => ({ module: c.file.location, pos: span(c.file, c.node),
     component: c.component, site: siteOf.get(c.node) ?? null,
-    params: c.params.map((p) => ({ value: refNode(p), at: span(c.file, p) })), receiver: refOf(c.receiver), result: refOf(c.result),
+    params: c.params.map((p) => ({ value: refNode(p), at: span(c.file, p), type: shapeOf(typeOfParameter(p), c.file) })),
+    receiver: refOf(c.receiver), result: refOf(c.result), resultType: shapeOf(resultType(c.node), c.file),
     arrow: ts.isArrowFunction(c.node) }));
   const thrownRef = files.length > 0 ? refOf(thrownKey) : null;
   // Each value's tokens: a set's own; a computed one's, what it includes,
@@ -1461,7 +1506,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     keys: [...(keys.get(t) ?? [])].sort(), anyKey: anyKey.has(t), contents: contentRefs[t] ?? 0,
     marks: enclosing(s.component).map((c) => ({ component: c, mark: markOf(t, c) })) }));
   return { components, codes: codesList, sites: siteList, values, crossings: crossingList, ...events, thrown: thrownRef,
-    suspensions, escapes, clients, guarantees: input.guarantees() };
+    suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees() };
 }
 
 const valuesClass: Selector = { value: true, array: false, view: false };
