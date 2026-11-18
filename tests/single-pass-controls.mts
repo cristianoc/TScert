@@ -634,6 +634,38 @@ control("read-only frame protocol: the members' writes and the guarantee", async
   say("read-only frame protocol: the walker's keep, a popping member's any at the spine, the guarantee example's any at the replaced field; an invariant broken and restored before return not kept");
 });
 
+control("read-only frame (O): local storage, confined closures and the module's own map", async (): Promise<void> => {
+  // A store into local storage an invariant may read stays refused when it
+  // installs a caller's writable array; one no invariant reads is admitted.
+  const local = familyCase("readonly-frame-local-store");
+  const refusals = moduleRefusals(pass(fragmentOf(local.artifacts)));
+  assert.ok(refusals.some((r) => new RegExp(`^\\(O\\) \\S+ ${local.at("items: xs")}-\\d+: .* installs a value entering from outside`).test(r)),
+    JSON.stringify(refusals));
+  assert.ok(!refusals.some((r) => r.includes(` ${local.at("{ xs }")}-`)), JSON.stringify(refusals));
+  // A closure confined to its frame pushes into the frame's fresh row; held
+  // by a binding, it is not confined, and the push is refused.
+  const closure = familyCase("readonly-frame-confined-closure");
+  assert.deepEqual(moduleRefusals(pass(fragmentOf(closure.artifacts))), [], "the confined closure's push");
+  const site = siteIndex(closure.ast, closure.at("(i) => {"));
+  const value = closure.ast.components.values.findIndex((v) => v.sites.includes(site));
+  assert.ok(value >= 0, "a value holding the closure");
+  closure.ast.components.holds.push({ module: closure.ast.components.sites[site]?.module ?? "", at: [0, 0], component: 0, value, name: "kept" });
+  certificateRefused(pass(forged(closure.artifacts, "forged-closure-held", closure.ast)), "the closure held",
+    new RegExp(`^\\(O\\) \\S+ ${closure.at("row.push({ at: i })")}-\\d+: a store into storage that may be protected installs`));
+  // The module's own map's `get` at a key from outside calls nothing; read
+  // as one that may call it, the frame may run outside code and the push is
+  // refused.
+  const map = familyCase("readonly-frame-own-map-get");
+  assert.deepEqual(moduleRefusals(pass(fragmentOf(map.artifacts))), [], "the push after the map's get");
+  const get = must(map.ast.components.calls.find((c) => c.at[0] === map.at("cache.get(h)")), "the map's get");
+  const native = must(get.native, "get is a native");
+  assert.deepEqual(native.calls, [false], "get calls no argument");
+  native.calls = [true];
+  certificateRefused(pass(forged(map.artifacts, "forged-map-get-calls", map.ast)), "get read as calling its key",
+    new RegExp(`^\\(O\\) \\S+ ${map.at("out.push({ at: known ?? i })")}-\\d+: a store into storage that may be protected installs`));
+  say("read-only frame (O): a local store an invariant reads refused, one it does not admitted; a confined closure's push admitted, held refused; a push after the own map's get admitted, the get read as calling refused");
+});
+
 control("forged fragment: a protocol omitting a member's write", async (): Promise<void> => {
   const { artifacts, ast, at } = familyCase("invalid-readonly-trim");
   const widths = siteIndex(ast, at("[];\n  for"));
