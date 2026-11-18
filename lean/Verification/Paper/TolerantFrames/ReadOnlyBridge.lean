@@ -340,5 +340,54 @@ theorem call_premises (hc : fr.ChkSound) (hi : fr.StartInv) {d n : Nat} {a e : C
   refine ⟨call_segment (q := fun _ => True) (hx.mono fun _ h => ⟨trivial, h⟩) (by omega), by simpa using hok.1, ?_, hde⟩
   have := hok.2.2 (by omega); rwa [hda] at this
 
+/-! ## The certificates, indexed by the calls the claim's executions make -/
+
+/-- **A step of the paper's executions keeps the obligation** (proved): its
+ghost is the frame's history, and at a step of outside code its hypothesis
+is `Row`, which `Keeps` is (`keeps_conf`). -/
+theorem kstep_of_xstep {a b : Conf × Ghost (fr.F.at fr.C)} (hx : XStep fr.F fr.C none fr.Θ fr.chkConf a b) :
+    fr.KStep a b := by
+  obtain ⟨hs, -, hg, hh⟩ := hx
+  refine ⟨hs, hg.trans (fr.next_conf a.2 a.1 b.1).symm, ?_⟩
+  refine (fr.keeps_conf a.2 (Ghost.next fr.F fr.C none fr.chkConf a.1 b.1 a.2) a.1 b.1).mpr fun ho => ?_
+  unfold StepHyp at hh; rw [if_pos ho] at hh; exact hh
+
+/-- **Every step of the paper's executions from a reached state reaches a
+state** (proved): the admissible starts of `CallOf` the frame's
+certificates are indexed by. -/
+theorem Reached.xstep {a b : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a)
+    (hx : XStep fr.F fr.C none fr.Θ fr.chkConf a b) : fr.Reached b :=
+  Reached.step ha (kstep_of_xstep hx)
+
+variable (fr) in
+/-- **The certificates a frame's members carry**: for each code a call of
+`C` enters, a certificate for the calls of it made from the states the
+claim's executions reach, over every checked step. -/
+def Certs (Ψ : Protocol (fr.F.at fr.C)) (G : (St (fr.F.at fr.C) → Prop) → Prop) : Type :=
+  (m : Option Code) → Cert (StepRel.checked fr.view.view) Ψ G
+    (CallOf fr.F fr.C none fr.Θ fr.chkConf (fr.Reached) m)
+
+/-- **The rule's consequence at a call of outside code** (proved, by
+`call_premises` and `exec_rely`): from a reached state of outside code at
+depth `d > 0` to the first later state of `C`'s code at depth `d`, along
+steps keeping the obligation, a fact whose support meets the rule's
+premise at the first state, the call's run bounding the heap by its own
+effect `Φ`, holds at the last; the certificates are asked only of the
+calls such an execution makes. -/
+theorem call_rely (hc : fr.ChkSound) (hi : fr.StartInv) {Ψ : Protocol (fr.F.at fr.C)}
+    {G : (St (fr.F.at fr.C) → Prop) → Prop} (certs : fr.Certs Ψ G) (hΘ : ∀ p, (fr.Θ p).le (Ψ p) = true)
+    {Cn : Footprints.ConditionOn (St (fr.F.at fr.C))} {A : Footprints.AssertionOn (St (fr.F.at fr.C))}
+    {Φ S : Footprints.Footprint}
+    (hsup : (states (fr.F.at fr.C)).Supports Cn A S) {ρ : Env} {mm : Nat} {d n : Nat}
+    {a e : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hd : 0 < d) (hda : δ fr.F fr.C none a = d)
+    (hex : Ex fr.KStep (fun x => ¬ (δ fr.F fr.C none x = d ∧ ¬ Outside fr.F fr.C none x.1)) n a e)
+    (hde : δ fr.F fr.C none e = d) (hΦ : TolerantFrames.Action Φ ρ a.1.s e.1.s)
+    (hf : Framed Φ Ψ S ρ (lift fr.F fr.C none a.1 a.2))
+    (hcn : Cn ρ mm (lift fr.F fr.C none a.1 a.2) (lift fr.F fr.C none e.1 e.2))
+    (hA : A ρ mm (lift fr.F fr.C none a.1 a.2)) : A ρ mm (lift fr.F fr.C none e.1 e.2) := by
+  obtain ⟨hx, hl, hok, -⟩ := call_premises hc hi ha hd hda hex hde
+  exact exec_rely (fun a b h hx => Reached.xstep h hx) certs (fun hx p => XStep.checked hx p) hΘ hsup 0 hx ha
+    hda hde hl hok hΦ hf hcn hA
+
 end ClientFrame
 end Verification.TolerantFrames.ReadOnly
