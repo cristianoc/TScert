@@ -166,7 +166,7 @@ def regionText : Region → String
   | .field x f => s!"{varText x}.{f}" | .fields x => s!"{varText x}.fields"
 
 def changeText : Change → String
-  | .keep => "keep" | .init => "init" | .scalar => "scalar" | .grow => "grow" | .any => "any"
+  | .keep => "keep" | .init => "init" | .scalar => "scalar" | .extend => "extend" | .grow => "grow" | .any => "any"
 
 /-- The evidence's sentence. -/
 def evidenceText {r : ArithRule} : Evidence r → String

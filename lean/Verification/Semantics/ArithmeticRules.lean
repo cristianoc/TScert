@@ -201,7 +201,7 @@ inductive Region where
 
 /-- A change of a region, Paper I's grammar. -/
 inductive Change where
-  | keep | init | scalar | grow | any
+  | keep | init | scalar | extend | grow | any
   deriving DecidableEq, Repr
 
 /-- How a rule is established: by its soundness theorem, or assumed of the

@@ -3200,23 +3200,23 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
   exact writeAtoms_holds he hk hh hρ hoi hfl hl hval hsafe
 
-/-- The effect of a call growing the array spine of its receiver, the slot
-`r`: the note's Push, `{r.spine: grow}` (`CallEffects.receiverGrowFrame` at
-the caller's slot). -/
-def receiverGrowAt (r : Nat) : Footprints.Footprint :=
-  [((Footprints.Region.field r arraySpineKey).inCls .arrays, .grow)]
+/-- The effect of a call extending the array spine of its receiver, the
+slot `r`: the note's Push, `{r.spine: extend}` (`CallEffects.receiverExtendFrame`
+at the caller's slot). -/
+def receiverExtendAt (r : Nat) : Footprints.Footprint :=
+  [((Footprints.Region.field r arraySpineKey).inCls .arrays, .extend)]
 
 /-- The region facts a call growing its receiver's spine keeps
 (`region-grow`), between two array slots: each whose support
-(`apartGrowSupport`, or its mirror) the call's effect (`receiverGrowAt`)
+(`apartGrowSupport`, or its mirror) the call's effect (`receiverExtendAt`)
 respects under the knowledge's query, the note's Frame. -/
 def grownRegions (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm → List IndexAtom
   | .invoke _ (.var r) args => match slotVars args with
     | some is => if is.all (· < Γ.length) then
         k.indices.filter fun a => a.cond.isNone && match a.fact with
           | .apart x y => arraySlot G Γ x && arraySlot G Γ y &&
-              (Footprints.respects (Footprints.knowledgeQuery k) (apartGrowSupport x y) (receiverGrowAt r) ||
-                Footprints.respects (Footprints.knowledgeQuery k) (apartGrowSupport y x) (receiverGrowAt r))
+              (Footprints.respects (Footprints.knowledgeQuery k) (apartGrowSupport x y) (receiverExtendAt r) ||
+                Footprints.respects (Footprints.knowledgeQuery k) (apartGrowSupport y x) (receiverExtendAt r))
           | _ => false
       else []
     | none => []
@@ -3224,21 +3224,21 @@ def grownRegions (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Tm �
 
 /-- A growth of the receiver's spine at the callee's positions is one at the
 caller's slot holding the receiver. -/
-theorem receiverGrowAt_post {env ρ : Env} {r : Nat} {h h' : Heap}
-    (hp : Footprints.Post CallEffects.receiverGrowFrame env h h') (hr : env 0 = ρ r) :
-    Footprints.Post (receiverGrowAt r) ρ h h' := by
+theorem receiverExtendAt_post {env ρ : Env} {r : Nat} {h h' : Heap}
+    (hp : Footprints.Post CallEffects.receiverExtendFrame env h h') (hr : env 0 = ρ r) :
+    Footprints.Post (receiverExtendAt r) ρ h h' := by
   refine ⟨hp.1, fun l v hv => ?_⟩
   obtain ⟨v', hv', ha⟩ := hp.2 l v hv
   refine ⟨v', hv', ?_⟩
   rcases ha with h | ⟨e, he, hm, hh⟩
   · exact .inl h
-  · simp only [CallEffects.receiverGrowFrame, List.mem_singleton] at he
+  · simp only [CallEffects.receiverExtendFrame, List.mem_singleton] at he
     subst he
     exact .inr ⟨_, List.mem_singleton_self _, by simpa [Footprints.Region.mem, hr] using hm, hh⟩
 
 /-- **The region facts a growing call keeps hold after it**: the tolerant
 frame at each one's support (`apartGrow_supports` or its mirror), which the
-call's effect `receiverGrowAt r` respects under the knowledge's query
+call's effect `receiverExtendAt r` respects under the knowledge's query
 (`frame_step`); the support's condition, the other array's region in the
 heap, from the array slot's type (`arraySlot_region`). -/
 theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm} {ρ n W h h'}
@@ -3275,8 +3275,8 @@ theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
       have hm : m < h.length := by omega
       rcases hg m h[m] (List.getElem?_eq_getElem hm) with hk' | ⟨-, -, ls', -, hk', -⟩ <;>
         exact (List.getElem?_eq_some_iff.mp hk').1
-  have hp : Footprints.Post (receiverGrowAt r) ρ h h' :=
-    receiverGrowAt_post (CallEffects.receiverGrowFrame_post (args := []) hlen hg hv ha)
+  have hp : Footprints.Post (receiverExtendAt r) ρ h h' :=
+    receiverExtendAt_post (CallEffects.receiverExtendFrame_post (args := []) hlen hg hv ha)
       (by simp [CallEffects.callEnv, ExpressionEffects.receiverOf, instantiate])
   have hq := Footprints.knowledgeQuery_sound hk hh hρ
   intro a hm hcond

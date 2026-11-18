@@ -669,8 +669,8 @@ it, read at the call (`Effect.callPost_holds`), the receiver's growth from
 the frame `{receiver spine: any}` and the spine's extension
 (`Effect.callPost_spineGrows`, `receiverGrows_iff`), the append of the
 actuals (`Effect.callPost_appends`, `receiverAppends_iff`), the frame
-`{receiver spine: grow}` from the growth and the append
-(`Effect.callPost_receiverGrowFrame`), an element
+`{receiver spine: extend}` from the growth and the append
+(`Effect.callPost_receiverExtendFrame`), an element
 write's change from the views' growth (`Effect.callPost_viewGrowth`), and
 an exact element write from View-Write at its element type's format with
 its precondition's facts (`Effect.callPost_exactWrite`, `exactPre_iff`).
@@ -3483,7 +3483,7 @@ where the native is modelled, and audited otherwise:
 
 | Native | Footprint | Argument |
 | --- | --- | --- |
-| `push` | the receiver's spine at `grow` (`receiverGrowFrame`, the note's Push) | its normal frame follows from the growth and the append of the next row (`Effect.callPost_receiverGrowFrame`): the receiver's spine is the one old location they let change, its new cells are fresh; the growth of the spine is proved of the specification steps (`Arr.push_grow`, `array_native_post`) |
+| `push` | the receiver's spine at `extend` (`receiverExtendFrame`, within the note's Push `{x.spine: grow}`) | its normal frame follows from the growth and the append of the next row (`Effect.callPost_receiverExtendFrame`): the receiver's spine is the one old location they let change, extended at its end, its new cells fresh; the growth of the spine is proved of the specification steps (`Arr.push_grow`, `array_native_post`) |
 | `unshift` | `{value: any, spine: grow}` | proved of the specification steps: `Arr.unshift_grow`, `array_native_post`; that it changes nothing but its spine and element contents is audited |
 | `push` on an array | beside its frame, `receiverGrows`: no old location changes but the receiver's spine, which holds a spine extending it, its old elements at their indices, at most $`2^{32}-1`$ long (`CallEffects.ReceiverGrows`); and the append relation: where the actuals are values, the spine is longer by their number and its element at the old length plus $`j`$ is present and holds the $`j`$-th actual (`CallEffects.ReceiverAppends`) | audited against [ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.push`, under the approved assumption that standard objects are not tampered with: `push` reads `length`, then for each argument performs `Set(O, ToString(len + i), item, true)` and finally `Set(O, "length", len + n, true)`, on the receiver alone; the arguments are passed as they are, with no conversion. On an array an index `len + i` is no own property and neither `Array.prototype` nor `Object.prototype` holds one, so each `Set` defines a new element at a fresh location holding `item` (`Arr.set` at an absent index, `Arr.push`), the spine grows by one and no element below `len` changes; `Set` of `length` to the length it already has changes nothing. A non-extensible receiver or a length past $`2^{32}-1`$ throws (`TypeError`, `RangeError`), so a normal return leaves a spine of at most $`2^{32}-1`$ elements, `len + n` of them; the guarantee is stated of normal returns alone. The append relation is trust approved by the owner on 2026-11-08 |
 | `sort` at a comparator within `ε`, `ε` one of the four of the stable set | `{value: any, spine: grow}` | one signature per such `ε`: proved of the specification steps, the snapshot then the writeback grow the receiver's spine over the whole call when the comparator keeps its locations among the entry's and fresh ones, which `ε` states (`sort_grow`); beside the comparator's calls it reads the length and the present elements, data properties, converts the comparator's numeric answer, and changes only its receiver's spine and element contents (audited) |

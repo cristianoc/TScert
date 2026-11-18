@@ -47,7 +47,7 @@ export type Atom =
   | { kind: "kept"; coll: Term; index: Term }
   | { kind: "implies"; hyp: RuleFact; concl: RuleFact };
 export type Region = { kind: "st" | "vw" | "val" } | { kind: "spine" | "cells" | "fields"; of: Term } | { kind: "field"; of: Term; field: string };
-export type Change = "keep" | "init" | "scalar" | "grow" | "any";
+export type Change = "keep" | "init" | "scalar" | "extend" | "grow" | "any";
 export type Evidence = { kind: "proved"; proof: string } | { kind: "assumed"; contracts: string[] };
 export type Rule = {
   name: string; declaration: string; evidence: Evidence; lemmas: string[]; op: string; display: Display;
@@ -127,7 +127,7 @@ function atom(text: string, line: number): Atom {
   return refuse(line, "no atom");
 }
 
-const CHANGES: readonly Change[] = ["keep", "init", "scalar", "grow", "any"];
+const CHANGES: readonly Change[] = ["keep", "init", "scalar", "extend", "grow", "any"];
 
 /** An effect's entry, `` - `region: change` ``. */
 function effect(text: string, line: number): { region: Region; change: Change } {
@@ -317,7 +317,7 @@ const LATEX: Notation = {
   element: (c, i, v, conv) => `${c}[${i}]\\doteq${conv ? `\\mathit{conv}_t(${v})` : ` ${v}`}`,
   kept: (_c, i) => `Q_{\\ne ${i}}`,
   effect: (entries, name) => entries.length === 0 ? "\\emptyset"
-    : `\\{${effectEntries(entries, name, (x) => `\\kw{${x}}`, { st: "\\st", vw: "\\vw", val: "\\val", keep: "\\keep", init: "\\init", grow: "\\grow", any: "\\any" }).join(",")}\\}`,
+    : `\\{${effectEntries(entries, name, (x) => `\\kw{${x}}`, { st: "\\st", vw: "\\vw", val: "\\val", keep: "\\keep", init: "\\init", extend: "\\extend", grow: "\\grow", any: "\\any" }).join(",")}\\}`,
   bound: (c) => boundName(c, "'"), hex: (h) => `\\code{0x${h}}`, implies: "\\Rightarrow ",
 };
 const MARKDOWN: Notation = {

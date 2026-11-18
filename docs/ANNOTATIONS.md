@@ -124,9 +124,10 @@ by the declaration TypeScript binds the name to.
 As a written signature's result type, or a type guard's promised type. The
 call returns a `T`; on a normal return every previously allocated location
 keeps its contents but those `P` names, each changed at most as `P` says.
-`P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`, `"grow"`
-or `"any"`) bounds changes to locations holding a value, `spines` the same
-for array spines, and `onThrow: true` makes the bound hold on a throw too;
+`P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`,
+`"extend"`, `"grow"` or `"any"`) bounds changes to locations holding a
+value, `spines` the same for array spines, `"extend"` appending fresh
+cells at a spine's end, as `push` does, and `onThrow: true` makes the bound hold on a throw too;
 `{}` states that nothing previously allocated changes. On a function
 declaration, `"x[*]": "any"` excepts the spine parameter `x` holds at the
 call, and `"x.f[*]": "any"` the spine its `@stable` field `f` holds, which

@@ -759,7 +759,7 @@ $`\{\mathsf{values}:\mathsf{keep}\}`$ under the query by bounds changes no
 cell's contents, a value of no spine: every entry keeps its locations or has
 a bound apart from the values' (proved: `CellsHold.frame`, by `frame_step`,
 the frame's positions with valid roots). `push`'s frame names its
-receiver's spine at its part of class array (`receiverGrowFrame`).
+receiver's spine at its part of class array (`receiverExtendFrame`).
 The allocation rule holds of a run of the allocation with any initializers
 or binding before it (`alloc_fresh`, from `alloc_step`: the spine field's
 location is past the heap the allocation starts in); the others are
@@ -1011,7 +1011,7 @@ separating each of $`a`$'s spine field and cells from each of $`w`$'s
 (`apartFrom_sound`), and every region fact $`\mathrm{apart}(a',w)`$,
 $`a'`$ an alias of $`a`$, makes the check answer it (`apartFrom_of_atom`).
 A call growing its receiver $`r`$'s spine has the effect
-$`\{r.\mathsf{spine}{:}\,\mathsf{grow}\}`$ (`receiverGrowAt`, from the append
+$`\{r.\mathsf{spine}{:}\,\mathsf{extend}\}`$ (`receiverExtendAt`, from the append
 relation of `push`, [native footprints](SOURCE-CONTRACTS.md#native-footprints)),
 and keeps a fact $`\mathrm{apart}(x,y)`$ between two array slots by the
 tolerant frame at the note's support
@@ -1349,9 +1349,9 @@ check where every alternative a field read succeeds on states $`f`$ present
 and stable, and there is one (`entryField`).
 
 Push's step frame on normal return is its signature's, the receiver's spine
-at `grow` as its part of class array (`receiverGrowFrame`, which the
+at `extend` as its part of class array (`receiverExtendFrame`, which the
 growth's and the append's postconditions imply,
-`Effect.callPost_receiverGrowFrame`); on a throw it is every location
+`Effect.callPost_receiverExtendFrame`); on a throw it is every location
 (`⊤`). A destructuring read, `const { f } = x`, is a stable read: an
 empty frame and the result's provenance. A node's fresh positions are the
 slots its fresh facts name (`nodeFresh`).

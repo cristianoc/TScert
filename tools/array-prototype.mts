@@ -32,7 +32,7 @@ import { termText } from "./named-record.mts";
 import type { JsonObject } from "./calculus.mts";
 import type { DeclarationIdentity, ElementKind, IndexFact, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, frameEffect, ordinaryEffect,
-  receiverGrowFrame } from "./type-graph.mts";
+  receiverExtendFrame } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
@@ -402,7 +402,7 @@ export const overlay: readonly OverlayEntry[] = [
         params: [atomOf("undefined")], result: { k: "array", presence: "readable", readonly: false, element, span: at } },
     ] },
   // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` changes
-  // the receiver's spine by `grow` and nothing else (`receiverGrowFrame`,
+  // the receiver's spine by `extend` and nothing else (`receiverExtendFrame`,
   // the frame its growth and append postconditions imply); `unshift`
   // changes the receiver's spine by `grow` and only element contents beside
   // it; `pop`, `shift` and `reverse` change the receiver's
@@ -413,7 +413,7 @@ export const overlay: readonly OverlayEntry[] = [
   // specification steps (FootprintNatives.lean); that each native changes
   // nothing but its spine and element contents is this entry's audit.
   { name: "push", from: "Array", signature: "push(...items: T[]): number;",
-    effect: frameEffect(receiverGrowFrame, { receiverGrows: true }) },
+    effect: frameEffect(receiverExtendFrame, { receiverGrows: true }) },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverSpineEffect },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverSpineEffect },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
