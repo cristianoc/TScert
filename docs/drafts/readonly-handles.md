@@ -2198,6 +2198,33 @@ its evaluation path, a ghost threaded by the steps:
   (`allocAt`). A code is identified by its content, so two identical
   bodies have the same occurrences and the same checks.
 
+### The flow a component's checks read
+
+The checks of $`C`$ read a finite abstraction of its executions: at each
+node of each code, the sites and keys a location may have and the targets
+a call may reach. An untrusted proposal gives it, checked as a post-fixed
+point of constraints derived from the lowered graphs
+(`ReadOnlyFlow.lean`): no least solution is computed and no solver is
+trusted.
+
+- A key computed at run time is abstracted by `KeySet.any`, every concrete
+  key, `none` (the key of a location no key names) among them; a finite
+  set lists concrete keys. Inclusion and join are sound for membership
+  (`KeySet.le_sound`, `KeySet.mem_join_left`, `KeySet.mem_join_right`).
+- A constraint (`Constraint`) goes from a node to a node with a transfer
+  of the abstract state; a proposal is checked by one comparison per
+  constraint (`checkPost`, `checkPost_sound`). A join is a node with
+  several incoming constraints.
+- Where each concrete step from a realised state is covered by a
+  constraint whose transfer is sound for it (`Covered`), every state of an
+  execution from a realised state is realised at its node
+  (`realizes_along`).
+
+What the constraints of the lowered graphs are, with the coverage of each
+step of a located execution (transfer, call targets, sites, keys,
+bindings), is the next step; `chk` is then read from the located step and
+the checked proposal, and `ChkSound` proved from it.
+
 ## Stages and cost
 
 1. **The rule in the note and in Lean**: the marks, $`E_C`$, the history
