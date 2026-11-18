@@ -2576,7 +2576,10 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
 - **At a frame of $`C`$'s code** (`frame_sites`, `framed_of_frame`): a frame
   of $`C`$'s code fitting the flow runs a node of a code of the flow whose
   slots its environment meets; with a heap meeting the flow, the check at
-  that node's slots gives `Framed` at the frame's environment.
+  that node's slots gives `Framed` at the frame's environment. At a
+  reached state whose term is a frame of $`C`$'s code, the unit's own
+  frame, every reached state fitting the flow (`fitsAt_reached`), the
+  check at its node gives `Framed` there (`ClientFrame.framed_at_frame`).
 - **Live protection witnesses** (`entryStart_witness`, `Witness.grow`): a
   location an entry's argument reaches read-only at its parameter's type,
   inside a call of $`C`$, has a witness at the entry history, and at every
@@ -2589,10 +2592,9 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
   an argument reaches read-only at its parameter's type has a live witness
   at depth `1`.
 
-Proof scope: the lemmas above are proved. Not proved here: the frame of
-the call the pass reads (the innermost frame of $`C`$'s code at the call
-state, from a reached state's fit) and the keys of each region's
-locations.
+Proof scope: the lemmas above are proved. Not proved here: the innermost
+frame of $`C`$'s code at a call inside a nested call of $`C`$ (a frame under
+an evaluation context), and the keys of each region's locations.
 
 ### Located reductions
 
