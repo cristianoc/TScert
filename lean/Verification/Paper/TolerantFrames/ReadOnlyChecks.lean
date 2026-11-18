@@ -27,7 +27,15 @@ a member's certificate (`ReadOnlyFrame.Member`) built from them.
   keeps the invariants; with its certified effect within `Ψ_P` part by part
   (the protocol as a fixed point) it bounds `R_P` by `Ψ_P`; with every step
   keeping the invariants of complete handles (Tolerant invariant) it keeps
-  them. -/
+  them.
+- **The frame's premise, checked** (`frameCheck`, `frameCheck_sound`):
+  location by location, each possible part of a support region compared
+  with `Ψ` where its locations may lie in `R_P` and with `Φ` where they may
+  lie outside it, both where either is possible; its inputs, the possible
+  parts covering every location (`flow_of_sites`) and a live history
+  witness for every protected lent location (`prot_of_witness`).
+- **The entry conditions** where no protected storage exists yet
+  (`Ok.of_lent`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -376,37 +384,159 @@ def Part.lent (p : Part P) : Bool :=
   | some .released | none => true
   | _ => false
 
-/-- **The check of the frame's premise** (the draft, "At a callback"): for
-each region of the support and each part its locations may have (the flow
-of possible sites, `parts`), `Ψ_P`'s change at the part is within the
-region's, and the part is of a local or an exposed site, or is released or
-outside storage of a region a live incoming read-only crossing protects
-(`prot`). -/
-def insideCheck (Ψ : Protocol P) (S : Footprint) (parts : Region → List (Part P)) (prot : Region → Bool) : Bool :=
-  S.all fun e => (parts e.1).all fun p => (Ψ p).le e.2 && (p.held || (prot e.1 && p.lent))
+/-- **Where a part's locations may lie.** A part of a local or an exposed
+site lies in `R_P`, one of an internal site outside it; a released or
+outside one lies in it where protected. `prot` states of the region the
+part is read in that its released and outside locations are protected. -/
+def Part.mayIn (p : Part P) : Bool := p.held || p.lent
 
-/-- **The check is sound for the frame's premise**, where the flow of
-possible sites covers each location's part and a region the check reads as
-protected has its released and outside locations recorded in the history. -/
-theorem insideCheck_sound {Ψ : Protocol P} {S : Footprint} {parts : Region → List (Part P)}
-    {prot : Region → Bool} {ρ : Env} {st : St P} (hc : insideCheck Ψ S parts prot = true)
-    (hflow : ∀ e ∈ S, ∀ l, e.1.mem ρ st.s.h l = true → st.part l ∈ parts e.1)
-    (hprot : ∀ e ∈ S, prot e.1 = true → ∀ l, e.1.mem ρ st.s.h l = true → st.g.Lent l → st.g.Prot l) :
-    Inside Ψ S ρ st := by
-  intro e he l hm
-  have hp := List.all_eq_true.mp (List.all_eq_true.mp hc e he) _ (hflow e he l hm)
-  simp only [Bool.and_eq_true, Bool.or_eq_true] at hp
-  obtain ⟨hle, hs⟩ := hp
-  refine ⟨?_, hle⟩
+def Part.mayOut (p : Part P) (prot : Bool) : Bool := !(p.held || (prot && p.lent))
+
+/-- **The check of the premise of Proposition "Read-only reliance"**,
+location by location (the Read-only frames note): for each region `(r : δ)`
+of the support and each part its locations may have (the flow of possible
+sites, `parts`), `Ψ`'s change at the part is within `δ` where the part's
+locations may lie in `R_P`, and each entry of `Φ` that the query cannot
+separate from the region changes within `δ` where they may lie outside it.
+Where both are possible, both are checked. -/
+def frameCheck (q : SepQuery) (Ψ : Protocol P) (Φ S : Footprint) (parts : Region → List (Part P))
+    (prot : Region → Bool) : Bool :=
+  S.all fun e => (parts e.1).all fun p =>
+    (!p.mayIn || (Ψ p).le e.2) && (!p.mayOut (prot e.1) || Φ.all fun f => f.2.le e.2 || q.disjoint e.1 f.1)
+
+theorem Part.held_of_origin {st : St P} {l : Nat}
+    (h : st.g.origin l = some .local ∨ st.g.origin l = some .exposed) : (st.part l).held = true := by
   have ho : (st.part l).site.map P.mark = st.g.origin l := rfl
-  rcases hs with hh | ⟨hpr, hL⟩
-  · simp only [Part.held, ho] at hh
-    unfold Ghost.InR
-    split at hh <;> simp_all
-  · have hLent : st.g.Lent l := by
-      simp only [Part.lent, ho] at hL
-      unfold Ghost.Lent
-      split at hL <;> simp_all
-    exact .inr (.inr ⟨hLent, hprot e he hpr l hm hLent⟩)
+  simp only [Part.held, ho]
+  rcases h with h | h <;> rw [h]
+
+theorem Part.lent_of_lent {st : St P} {l : Nat} (h : st.g.Lent l) : (st.part l).lent = true := by
+  have ho : (st.part l).site.map P.mark = st.g.origin l := rfl
+  simp only [Part.lent, ho]
+  rcases h with h | h <;> rw [h]
+
+theorem Part.inR_of_held {st : St P} {l : Nat} (h : (st.part l).held = true) : st.g.InR l := by
+  have ho : (st.part l).site.map P.mark = st.g.origin l := rfl
+  simp only [Part.held, ho] at h
+  unfold Ghost.InR
+  split at h <;> simp_all
+
+theorem Part.lent_of_part {st : St P} {l : Nat} (h : (st.part l).lent = true) : st.g.Lent l := by
+  have ho : (st.part l).site.map P.mark = st.g.origin l := rfl
+  simp only [Part.lent, ho] at h
+  unfold Ghost.Lent
+  split at h <;> simp_all
+
+/-- **The check is sound for the premise**, where the flow of possible
+parts covers each location's part (`hflow`), each location of a region the
+check reads as protected that is released or outside storage is recorded
+in the history (`hprot`), and the query is sound at the state. -/
+theorem frameCheck_sound {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {parts : Region → List (Part P)}
+    {prot : Region → Bool} {ρ : Env} {st : St P} (hc : frameCheck q Ψ Φ S parts prot = true)
+    (hq : q.Sound ρ st.s.h)
+    (hflow : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.part l ∈ parts e.1)
+    (hprot : ∀ e ∈ S, prot e.1 = true → ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true →
+      st.g.Lent l → st.g.Prot l) :
+    Framed Φ Ψ S ρ st := by
+  intro e he l hl hm
+  have hp := List.all_eq_true.mp (List.all_eq_true.mp hc e he) _ (hflow e he l hl hm)
+  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hp
+  obtain ⟨hin, hout⟩ := hp
+  refine ⟨fun hr => ?_, fun hr f hf hfm => ?_⟩
+  · have hmay : (st.part l).mayIn = true := by
+      rcases hr with h | h | ⟨hL, -⟩
+      · simp [Part.mayIn, Part.held_of_origin (.inl h)]
+      · simp [Part.mayIn, Part.held_of_origin (.inr h)]
+      · simp [Part.mayIn, Part.lent_of_lent hL]
+    rcases hin with h | h
+    · rw [hmay] at h; cases h
+    · exact h
+  · have hmay : (st.part l).mayOut (prot e.1) = true := by
+      simp only [Part.mayOut, Bool.not_eq_true', Bool.or_eq_false_iff, Bool.and_eq_false_iff]
+      refine ⟨Bool.eq_false_iff.mpr fun hh => hr (Part.inR_of_held hh), ?_⟩
+      by_cases hpr : prot e.1 = true
+      · refine .inr (Bool.eq_false_iff.mpr fun hL => hr ?_)
+        have hLent := Part.lent_of_part hL
+        exact .inr (.inr ⟨hLent, hprot e he hpr l hl hm hLent⟩)
+      · exact .inl (Bool.eq_false_iff.mpr hpr)
+    rcases hout with h | h
+    · rw [hmay] at h; cases h
+    · have := List.all_eq_true.mp h f hf
+      simp only [Bool.or_eq_true] at this
+      rcases this with hle | hap
+      · exact hle
+      · exact (hq e.1 f.1 l hl hap hm hfm).elim
+
+/-! ## The check's inputs -/
+
+/-- **A live history witness** for a location: a crossing into the package
+at type `T` of a value `v`, at a heap `h` and a ghost `g` with a call
+active, reached it read-only while it was released or outside storage, and
+the history has grown since, inside a call at depth `d`. -/
+def Witness (tv : TypeView) (d : Nat) (st : St P) (l : Nat) : Prop :=
+  ∃ (g : Ghost P) (T : tv.Ty) (h : Heap) (v : Val), g.A ≠ [] ∧ ReachRO tv P.ofC T h v l ∧ g.Lent l ∧
+    Grows d (g.cross tv .into T h v) st.g
+
+/-- **A witnessed location is protected**: the crossing added it to every
+set of the history, and the history only grows inside a call. -/
+theorem Witness.prot {tv : TypeView} {d : Nat} {st : St P} {l : Nat} (hw : Witness tv d st l) : st.g.Prot l := by
+  obtain ⟨g, T, h, v, hA, hr, hL, hg⟩ := hw
+  refine hg.prot l ?_
+  obtain ⟨X, hX⟩ := List.exists_mem_of_ne_nil g.A hA
+  exact .inl ⟨_, List.mem_map.mpr ⟨X, hX, rfl⟩, .inr ⟨rfl, hr, hL⟩⟩
+
+/-- **Every lent location claimed protected has a live history witness**:
+the check's second input. -/
+theorem prot_of_witness {tv : TypeView} {d : Nat} {S : Footprint} {prot : Region → Bool} {ρ : Env} {st : St P}
+    (hw : ∀ e ∈ S, prot e.1 = true → ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.Lent l →
+      Witness tv d st l) :
+    ∀ e ∈ S, prot e.1 = true → ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.Lent l → st.g.Prot l :=
+  fun e he hp l hl hm hL => (hw e he hp l hl hm hL).prot
+
+/-- The kinds of the role classes a set holds. -/
+def roleKinds (b : RoleSet) : List (Option Kind) :=
+  (if b.field then [some .field] else []) ++ (if b.cell then [some .cell] else []) ++
+    (if b.elem then [some .elem] else []) ++ (if b.arraySpine || b.viewSpine then [some .spine] else []) ++
+    (if b.identity then [some .identity] else [])
+
+theorem roleKinds_mem {b : RoleSet} {r : Role} (h : b.contains r.cls = true) : some r.kind ∈ roleKinds b := by
+  cases r with
+  | spine f => cases f <;> simp_all [roleKinds, Role.cls, Role.kind, RoleSet.contains]
+  | _ => simp_all [roleKinds, Role.cls, Role.kind, RoleSet.contains]
+
+/-- **The parts a region's locations may have**: a possible site, a kind of
+a role class the region's bound holds, and a possible key. -/
+def partsOf (sites : List (Option P.Site)) (keys : List (Option PropKey)) (r : Region) : List (Part P) :=
+  sites.flatMap fun s => (roleKinds r.bound).flatMap fun k => keys.map fun key => ⟨s, k, key⟩
+
+/-- **The possible parts cover every concrete location**: the check's first
+input, from the flow's possible sites of each region (`hsite`) and the
+possible keys of its locations (`hkey`); the kind is the region's bound's
+(`Region.bound_sound`), at a heap meeting its world with valid roots. -/
+theorem flow_of_sites {S : Footprint} {ρ : Env} {st : St P} (hρ : RootsOk st.s.W ρ)
+    {sites : Region → List (Option P.Site)} {keys : Region → List (Option PropKey)}
+    (hsite : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.site l ∈ sites e.1)
+    (hkey : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.key l ∈ keys e.1) :
+    ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true →
+      st.part l ∈ partsOf (sites e.1) (keys e.1) e.1 := by
+  intro e he l hl hm
+  obtain ⟨role, hrole, hb⟩ := Region.bound_sound st.s.ok hρ e.1 hl hm
+  have hk : kindAt st.s.W l = some role.kind := by simp [kindAt, hrole]
+  simp only [partsOf, List.mem_flatMap, List.mem_map]
+  exact ⟨_, hsite e he l hl hm, _, hk ▸ roleKinds_mem hb, _, hkey e he l hl hm, rfl⟩
+
+/-! ## The ghost entry conditions -/
+
+/-- **The entry conditions where the package holds nothing protected yet**
+(at a caller from which no storage of a local, an internal or an exposed
+site is reachable, such as the first call of the package): a uniform
+history with a call active, every location of a released site or outside
+storage, and valid references in the frames give the invariants of states. -/
+theorem Ok.of_lent {d : Nat} {st : St P} (hd : 0 < d) (hl : d ≤ st.g.A.length) (hu : st.g.Uniform)
+    (hlent : ∀ l, st.g.Lent l) (hv : RootsValid st) : Ok d st := by
+  have hno : ∀ l, st.g.origin l ≠ some .local ∧ st.g.origin l ≠ some .internal ∧ st.g.origin l ≠ some .exposed :=
+    fun l => by rcases hlent l with h | h <;> rw [h] <;> simp
+  exact ⟨hd, hl, hu, fun l _ => ⟨(hno l).1, (hno l).2.1⟩, fun l _ he => ((hno l).2.2 he).elim, hv,
+    fun _ _ _ _ l _ hloc => ((hno l).1 hloc).elim, fun _ _ _ _ _ l _ hloc => ((hno l).1 hloc).elim⟩
 
 end Verification.TolerantFrames.ReadOnly

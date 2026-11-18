@@ -635,25 +635,28 @@ theorem exec_bound (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (off : Nat) {d n : Nat
     RBound Ψ d (lift F C c a.1 a.2) (lift F C c e.1 e.2) ∧ Ok d (lift F C c e.1 e.2) :=
   Run.bound hΘ n d _ _ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok
 
-/-- **(L4) of an actual execution**: an invariant of `G_C` whose support
-lies in `R_C` survives such an execution. -/
-theorem exec_keeps (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {I : St (F.at C) → Prop} (hG : G I) (hsupp : SupportInR Θ I)
+/-- **(L4) of an actual execution**: an invariant of `G_C` that every
+outside step keeps survives such an execution. -/
+theorem exec_keeps (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {I : St (F.at C) → Prop} (hG : G I) (hout : OutsideKeeps Θ I)
     (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
     (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) (hi : I (lift F C c a.1 a.2)) :
     I (lift F C c e.1 e.2) :=
-  Run.keeps hΘ hG hsupp n d _ _ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hi
+  Run.keeps hΘ hG hout n d _ _ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hi
 
-/-- **The rule's consequence over an actual execution**: a fact whose
-support lies inside `R_C` holds after such an execution. -/
+/-- **The rule's consequence over an actual execution**: the call's run
+bounding the heap by its own effect `Φ`, a fact whose support meets the
+premise of Proposition "Read-only reliance" location by location holds
+after such an execution. -/
 theorem exec_rely (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {Cn : ConditionOn (St (F.at C))}
-    {A : AssertionOn (St (F.at C))} {S : Footprint} (hsup : (states (F.at C)).Supports Cn A S) {ρ : Env}
+    {A : AssertionOn (St (F.at C))} {Φ S : Footprint} (hsup : (states (F.at C)).Supports Cn A S) {ρ : Env}
     {mm : Nat} (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
     (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2))
-    (hi : Inside Ψ S ρ (lift F C c a.1 a.2)) (hc : Cn ρ mm (lift F C c a.1 a.2) (lift F C c e.1 e.2))
+    (hΦ : TolerantFrames.Action Φ ρ a.1.s e.1.s)
+    (hf : Framed Φ Ψ S ρ (lift F C c a.1 a.2)) (hc : Cn ρ mm (lift F C c a.1 a.2) (lift F C c e.1 e.2))
     (hA : A ρ mm (lift F C c a.1 a.2)) : A ρ mm (lift F C c e.1 e.2) :=
-  readOnly_rely hΘ hsup ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hi hc hA
+  readOnly_rely hΘ hsup hΦ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
 
 end Decompose
 
