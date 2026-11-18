@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-285"><code>700e7dc9c1454cfcd5fc6a6f475c3c30e8c7f67d..pr-285</code></a><ul><li>2 commits</li><li>changes: 1 Theorem, 5 Check, 1 Wire</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>wire: none</li><li>wire: components.protocols; the components' outcome gains protocol and guarantee</li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-285"><code>700e7dc9c1454cfcd5fc6a6f475c3c30e8c7f67d..pr-285</code></a><ul><li>4 commits</li><li>changes: 1 Theorem, 8 Check, 2 Wire, 1 Docs</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">a standard library method calls no argument its declaration types by a type parameter or a primitive, under the policy that standard objects are not tampered with</span></li><li>wire: none</li><li>wire: components.protocols; the components' outcome gains protocol and guarantee</li><li>wire: a native's calls</li></ul></li></ul></section>
 <h2 id="g-pr-285"><code>700e7dc9c1454cfcd5fc6a6f475c3c30e8c7f67d..pr-285</code></h2><article class="card" id="c-c64cc0f7d"><header><div><div class="sha">c64cc0f7d · Cristiano Calcagno · Nov 18, 14:40</div><h3>Certify a member from its body's steps: the certificate PR 5's decomposition reads</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The decomposition of actual executions into runs of outside code (ReadOnlyExec.lean) takes, for each member, a certificate stating that every call of the member changes each protected location existing at its entry within the protocol at the location's part. Nothing built one: it was a hypothesis of the decomposition. A member's call is its own checked steps and the runs of outside code it makes one call deeper; the latter are bounded by the protocol by induction, so what the member's body must establish is a bound on its own steps.</p></div>
 <h4 class="change"><span class="act added">added</span>Theorem <span class="target">a member's certificate from its body</span></h4><div class="versions"><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A member call whose own steps change each protected location below the</span></span></div><div class="row"><span><span class="m-text">length of the heap at the call's entry within the protocol (locations the</span></span></div><div class="row"><span><span class="m-text">call allocates are free), and whose runs one call deeper are bounded by</span></span></div><div class="row"><span><span class="m-text">the protocol, bounds every protected location at its entry by the</span></span></div><div class="row"><span><span class="m-text">protocol</span>. <span class="m-text">The certificate's effect is the protocol itself; its</span></span></div><div class="row"><span><span class="m-text">invariants are kept by each checked step as before</span>.</span></div></div></div></figure></div>
@@ -224,6 +224,79 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tests/single-pass-controls.mts                |  44 ++++
  tools/components.mts                          | 107 ++++++++-
  tools/fragment.mts                            |  17 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8e18b94fd"><header><div><div class="sha">8e18b94fd · Cristiano Calcagno · Nov 18, 15:41</div><h3>Constrain (O) at local storage only where an invariant's possible support may read it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The note &quot;Read-only frames&quot; made (O) constrain every store into the protected region, local storage included. Pretext's package stores internal caches into local records (han-kerning.ts, prepare.ts, measurement.ts, line-breaks.ts) and keeps a caller's writable array in a local record (rich-inline.ts line 311); (O) refused all six, though no client can reach local storage, so none of them binds a client on anything. The owner approved the change.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/note.tex and PDF, the check (O)</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a store of v, an initial field value included, into R_C or into the support of an invariant of G_C is admitted when all storage reachable from v is exposed or in R_C</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a store into exposed, released or outside storage of R_C, or into storage the possible support of an invariant of G_C may read, is admitted when ...; a store into local storage outside every invariant's possible support is not constrained, since by (K) no outside code reaches local storage, a fact reading through a local field to unprotected storage is bounded by the callback's effect there, and only an invariant's support needs the check, a re-entrant member being able to redirect a path of it</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>none: the note; the check follows in the next commit.</code></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · pdflatex of the note's colour pass</dd></dl>
+<details><summary>2 files changed, 9 insertions(+), 3 deletions(-)</summary><pre class="code"> docs/drafts/readonly-frames-note/note.tex          |  12 +++++++++---
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 273494 -&gt; 273834 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-224e88fe1"><header><div><div class="sha">224e88fe1 · Cristiano Calcagno · Nov 18, 15:41</div><h3>Apply (O) at local storage by invariant support; read frames through confined closures and calls</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>After the note's change, (O) still refused pretext's local stores: the check read every local site as protected storage. Two released stores remained refused for the check's imprecision. layout.ts line 392 pushes into a result array its frame allocated, from a closure the frame gives <code>walkPreparedLinesRaw</code>; the array was read as fresh only in the closure's own frame. rich-inline.ts line 1251 pushes into a fresh array after <code>textSources.get(flow)</code>, a call of the module's own WeakMap with a value from outside; the call was read as one that may call its key, since the front read no declared parameter type of a library method.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">(O) at local storage</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a store into a local site is into possibly protected storage</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>only where the possible support of a guarantee candidate (a type invariant of the family) may read the part it writes</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">freshness</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a receiver is fresh when every location it may hold was allocated by the frame of the store's own code</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>or by the frame of an enclosing code, through closures confined to their frames: local or internal, held by no storage, binding, result, throw or export, given to no native or outside code. Such a closure runs only while the frame that created it is active, and inside every call from outside code that its store is in.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">codes that run no outside code</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a standard library method may call each argument of no declared type</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>each argument but those its declaration types by a type parameter or a primitive, a spread one always; and a frame is quiet where each call runs no outside code, or runs a code that does so only by calling its own unassigned parameters, given codes that run none there</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">a native's call</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>{site, passed, given, all, member, name, array, fresh, primitiveElements}</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the same and calls: one Boolean per argument, whether the method may call it, from its library declaration</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>readonly-frame-local-store</code> <span class="kind positive">positive</span> <span class="why">new: the invariant-read local store refused, the other admitted</span></summary><pre class="code"><span class="tk-c">// (O) at local storage (docs/drafts/readonly-frames-note/note.tex, &quot;The</span>
+<span class="tk-c">// rule&quot;): a store into local storage no invariant's possible support reads</span>
+<span class="tk-c">// is not constrained, so `spread` keeps the caller's writable array in a</span>
+<span class="tk-c">// local record; a store into a local record an invariant may read is, so</span>
+<span class="tk-c">// `boxed`'s record of type `Box`, whose invariant reads `items`, may not</span>
+<span class="tk-c">// hold the caller's writable array.</span>
+<span class="tk-c">/** @invariant safeInteger(this.count) &amp;&amp; this.items.length === this.count */</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Box</span> = { <span class="tk-k">readonly</span> items: <span class="tk-k">readonly</span> number[]; <span class="tk-k">readonly</span> count: number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(b: <span class="tk-t">Box</span>): number {
+  <span class="tk-k">return</span> b.count;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> spread(xs: number[], visit: () =&gt; <span class="tk-k">void</span>): number {
+  <span class="tk-k">const</span> keep = { xs };
+  visit();
+  <span class="tk-k">return</span> keep.xs.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> boxed(xs: number[], visit: () =&gt; <span class="tk-k">void</span>): number {
+  <span class="tk-k">const</span> box: <span class="tk-t">Box</span> = { items: xs, count: xs.length };
+  visit();
+  <span class="tk-k">return</span> box.count;
+}</pre></details></li><li><code>readonly-frame-confined-closure  positive</code> <span class="why">new: the confined closure's push admitted</span></li><li><details><summary><code>readonly-frame-own-map-get</code> <span class="kind positive">positive</span> <span class="why">new: the push after the own map's get admitted</span></summary><pre class="code"><span class="tk-c">// A frame that reads the module's own `WeakMap` at a key from outside and</span>
+<span class="tk-c">// pushes records into an array it allocated: `WeakMap.prototype.get` calls no</span>
+<span class="tk-c">// argument its declaration types by a type parameter, so the frame runs no</span>
+<span class="tk-c">// outside code, and (O) admits the push, though released arrays may come</span>
+<span class="tk-c">// back read-only through `walk`.</span>
+<span class="tk-k">const</span> cache = <span class="tk-k">new</span> <span class="tk-t">WeakMap</span>&lt;object, number&gt;();
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measure(h: object, n: number): { at: number }[] {
+  <span class="tk-k">const</span> out: { at: number }[] = [];
+  <span class="tk-k">const</span> known = cache.<span class="tk-k">get</span>(h);
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) out.push({ at: known ?? i });
+  <span class="tk-k">return</span> out;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> walk = (h: unknown, visit: () =&gt; <span class="tk-k">void</span>): number =&gt; {
+  visit();
+  <span class="tk-k">return</span> h === <span class="tk-k">undefined</span> ? <span class="tk-n">0</span> : <span class="tk-n">1</span>;
+};</pre></details></li><li><code>pretext package</code> <span class="why">(O) 31 failures at 8 stores -&gt; 5 at 2 stores</span></li></ul>
+<h4 class="change">Gap</h4><p>layout.ts 392: <code>layoutWithLines</code> calls <code>createLayoutLine</code>, whose callees call <code>cache.get(segmentIndex)</code> on a cache read from the client's handle, a callee that may enter from outside, so the frame is not quiet. rich-inline.ts 1251: its frame calls <code>findSegmentSources</code>, which calls <code>Object.isFrozen(flow)</code> at a parameter declared <code>any</code>, which may call it. Both need an order-aware account of when the pushed array first becomes reachable from outside code.</p>
+<h4 class="change">Soundness</h4><p>a store into local storage no invariant's support reads binds no client: (K) keeps local storage unreachable from outside code. A confined closure is reachable only from the frame that created it and the calls it makes, so its frame is created after the entry of every call from outside code it runs in, and a quiet scope runs no outside code that could cross a value in.</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>ComponentChecks.Ctx.supported · Ctx.candidates · Ctx.freshScope · Ctx.confined · Ctx.escaping · Ctx.parentCode · Ctx.callSteps · Ctx.paramCallee · Ctx.runsOutsideBut · Ctx.quiet · ComponentWire.Native.calls</dd><dt>Wire</dt><dd>a native's calls</dd><dt>Trust</dt><dd><span class="trust">a standard library method calls no argument its declaration types by a type parameter or a primitive, under the policy that standard objects are not tampered with</span></dd><dt>Tests</dt><dd><span class="test pos">readonly-frame-local-store</span> <span class="test pos">readonly-frame-confined-closure</span> <span class="test pos">readonly-frame-own-map-get</span> <span class="test forged">closure-held</span> <span class="test forged">map-get-calls</span></dd></dl>
+<details><summary>12 files changed, 522 insertions(+), 194 deletions(-)</summary><pre class="code"> docs/FRAGMENT-FORMAT.md                            |   2 +-
+ docs/drafts/readonly-handles.md                    |  31 +-
+ lean/Verification/Source/ComponentChecks.lean      | 447 +++++++++++++--------
+ lean/Verification/Source/ComponentWire.lean        |   9 +-
+ pipeline/cases.mts                                 |   3 +
+ .../examples/readonly-frame-confined-closure.ts    |  22 +
+ pipeline/examples/readonly-frame-local-store.ts    |  24 ++
+ pipeline/examples/readonly-frame-own-map-get.ts    |  18 +
+ tests/single-pass-controls.mts                     |  32 ++
+ tools/components.mts                               |  96 ++++-
+ tools/fragment-parse.mts                           |  23 +-
+ tools/fragment.mts                                 |   9 +-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
