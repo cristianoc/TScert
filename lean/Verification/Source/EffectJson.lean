@@ -29,14 +29,15 @@ private def changeOf (allowed : List Footprints.Change) (name : String) : Except
 instance : ToJson Footprints.Closed :=
   ⟨fun c => Json.mkObj [("value", toJson (changeName c.value)), ("spine", toJson (changeName c.spines))]⟩
 
-/-- On a value `grow` is `scalar`, so `value` is `keep`, `init`, `scalar` or
-`any`; on a spine `init` and `scalar` are `keep`, so `spine` is `keep`,
-`grow` or `any`. The wire's `spine` is the change of both spine components
+/-- On a value `extend` and `grow` are `scalar`, so `value` is `keep`,
+`init`, `scalar` or `any`; on a spine `init` and `scalar` are `keep`, so
+`spine` is `keep`, `extend`, `grow` or `any` (`extend` keeps a view spine,
+`Change.onView`). The wire's `spine` is the change of both spine components
 (`Footprints.Closed.ofSpines`), and a closed footprint is written with its
 spine bound (`Footprints.Closed.spines`). -/
 instance : FromJson Footprints.Closed := ⟨fun j => do
   let c : Footprints.Closed := .ofSpines (← changeOf [.keep, .init, .scalar, .any] (← j.getObjValAs? String "value"))
-    (← changeOf [.keep, .grow, .any] (← j.getObjValAs? String "spine"))
+    (← changeOf [.keep, .extend, .grow, .any] (← j.getObjValAs? String "spine"))
   if toJson c != j then throw "a closed footprint has exactly the fields value and spine"
   pure c⟩
 

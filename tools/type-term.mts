@@ -1274,13 +1274,13 @@ function promisedType(scope: TermScope, node: ts.TypePredicateNode): Modifies<{ 
   return written && ts.isTypeReferenceNode(written) && scope.stated?.(written) ? written.typeArguments?.[1] : node.type;
 }
 
-type Change = "keep" | "init" | "scalar" | "grow" | "any";
-const CHANGES: readonly string[] = ["keep", "init", "scalar", "grow", "any"];
+type Change = "keep" | "init" | "scalar" | "extend" | "grow" | "any";
+const CHANGES: readonly string[] = ["keep", "init", "scalar", "extend", "grow", "any"];
 const isChange = (text: string | null): text is Change => text !== null && CHANGES.includes(text);
 
-/** A class key's change on the locations holding a value: `grow` is
- * `scalar` there, since a value is no spine. */
-const onValue = (c: Change): ClosedFootprint["value"] => c === "grow" ? "scalar" : c;
+/** A class key's change on the locations holding a value: `extend` and
+ * `grow` are `scalar` there, since a value is no spine (`Change.onValue`). */
+const onValue = (c: Change): ClosedFootprint["value"] => c === "extend" || c === "grow" ? "scalar" : c;
 /** A class key's change on the locations holding a spine: `init` and
  * `scalar` keep a spine. */
 const onSpine = (c: Change): ClosedFootprint["spine"] => c === "init" || c === "scalar" ? "keep" : c;
@@ -1304,7 +1304,7 @@ const locationKey = (key: string): boolean => {
  * §3.1). */
 function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modifies<{ values: "any"; spines: "grow" }, StatedFrame> {
   const node = unwrap(written);
-  const shape = "a frame is written in place as a type literal `{ values?: c; spines?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"grow\", \"any\"";
+  const shape = "a frame is written in place as a type literal `{ values?: c; spines?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"extend\", \"grow\", \"any\"";
   if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);
   let value: ClosedFootprint["value"] = "keep";
   let spine: ClosedFootprint["spine"] = "keep";
@@ -1330,7 +1330,7 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
         (m.name.text === "values" || m.name.text === "spines") && ts.isLiteralTypeNode(unwrap(m.type)) &&
         isChange(literalText(unwrap(m.type))));
       if (!isChange(text) && !classMap)
-        return scope.fail(member, `a location key's change is one of "keep", "init", "scalar", "grow", "any", or a class map \`{ values?: c; spines?: c }\``);
+        return scope.fail(member, `a location key's change is one of "keep", "init", "scalar", "extend", "grow", "any", or a class map \`{ values?: c; spines?: c }\``);
       const spine = /^([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))?\[\*\]$/.exec(key);
       if (spine?.[1] !== undefined && text === "any")
         regions.push({ position: regionPosition(scope, member, spine[1], at), path: spine[2] === undefined ? [] : [spine[2]] });

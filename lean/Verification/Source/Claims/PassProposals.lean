@@ -63,11 +63,11 @@ abbrev Closed := Verification.Footprints.Closed
 
 /-- Every closed footprint stating one change for both spines
 (`Footprints.Closed.ofSpines`), each a change the closed footprint's wire
-names (`EffectJson`: `keep`, `init`, `scalar`, `grow`, `any`), in an order
+names (`EffectJson`: `keep`, `init`, `scalar`, `extend`, `grow`, `any`), in an order
 extending the components' rank order: a footprint comes after every
 footprint below it. -/
 def ascending : List Closed :=
-  let cs := [Footprints.Change.keep, .init, .scalar, .grow, .any]
+  let cs := [Footprints.Change.keep, .init, .scalar, .extend, .grow, .any]
   ((cs.flatMap fun v => cs.map fun s => Footprints.Closed.ofSpines v s).mergeSort fun a b =>
     a.value.rank + a.spines.rank ≤ b.value.rank + b.spines.rank)
 

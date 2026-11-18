@@ -45,7 +45,11 @@ export type Labels<L = number> = L[];
 export const topFootprint: ClosedFootprint = { value: "any", spine: "any" };
 /** The footprint letting no location change: heap preservation. */
 export const emptyFootprint: ClosedFootprint = { value: "keep", spine: "keep" };
-/** The six closed footprints, each after every one within it. */
+/** The closed footprints a native's callback-dependent signatures are stated
+ * at, one signature each, each after every one within it: the value change
+ * `keep` or `any` and the spine change `keep`, `grow` or `any`. A callback
+ * within another closed footprint meets the least of them above it
+ * (`extend` within `grow`). */
 export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", spine: "keep" }, { value: "any", spine: "keep" },
   { value: "keep", spine: "grow" }, { value: "any", spine: "grow" },
@@ -120,14 +124,14 @@ export const topFrame: Frame = classFrame(topFootprint);
 export const viewWriteFrame: Frame = [
   { region: { cls: valuesClass }, change: "keep" }, { region: { cls: arraysClass }, change: "keep" },
   { region: { cls: viewsClass }, change: "grow" }];
-/** **The frame of a growth of the receiver's spine** (the note *Tolerant
- * frames*, Push, `{x.spine: grow}`): the receiver's spine, its `[]` slot
- * holding a spine, at `grow`, every other location kept; the frame the
- * growth's postconditions imply (`CallEffects.receiverGrowFrame`,
- * `Effect.callPost_receiverGrowFrame`). */
-export const receiverGrowFrame: Frame = [
+/** **The frame of an extension of the receiver's spine** (the note
+ * *Tolerant frames*, Push, within its `{x.spine: grow}`): the receiver's
+ * spine, its `[]` slot holding a spine, at `extend`, every other location
+ * kept; the frame the growth's and the append's postconditions imply
+ * (`CallEffects.receiverExtendFrame`, `Effect.callPost_receiverExtendFrame`). */
+export const receiverExtendFrame: Frame = [
   { region: { inCls: { region: { field: { x: 0, key: "[]" } }, selector: { value: false, array: true, view: false } } },
-    change: "grow" }];
+    change: "extend" }];
 /** **An exit's guarantee**: its frame and its postconditions (`ExitSchema`). */
 export const exitSchema = (frame: Frame, ensures: readonly Formula[] = []): Modifies<{}, ExitSchema> =>
   ({ frame, ensures });

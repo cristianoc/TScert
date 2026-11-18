@@ -3996,9 +3996,10 @@ a file of exactly its bytes, which declares the same aliases (the census's
 copy of `tools/` holds one). $`P`$ is a type literal written in place,
 one map from what may change to how much: `values: c` for the locations
 holding a value and `spines: c` for those holding an array spine, `c` one
-of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
-`"keep"`; on a value `grow` is `scalar`, and on a spine `init` and `scalar`
-are `keep`. `onThrow: true` makes the frame hold on a throw too. A spine
+of `"keep"`, `"init"`, `"scalar"`, `"extend"`, `"grow"`, `"any"`, an
+omitted class key `"keep"`; on a value `extend` and `grow` are `scalar`, on
+a spine `init` and `scalar` are `keep`, and on a view spine `extend` is
+`keep` ([changes](FOOTPRINTS.md#changes-and-footprints)). `onThrow: true` makes the frame hold on a throw too. A spine
 region `"x[*]": "any"`, `x` a parameter of a function declaration (`this`
 its `this` parameter), excepts from the frame the spine `x` holds at the
 call, and `"x.f[*]": "any"` the spine its field `f` holds there, which may

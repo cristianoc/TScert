@@ -8,10 +8,12 @@ import type { ArrayPresence, ViewFormat } from "./type-graph.mts";
 import type { Span } from "./span.mts";
 /** A closed footprint (`Footprints.Closed`): the change a call may make, on
  * normal return, to the locations of its entry heap holding a value and to
- * those holding an array spine. `keep` changes nothing, `grow` keeps every
- * dense prefix of a spine, `any` allows every change; on a value `grow` is
- * `keep`. Fresh locations are unconstrained. */
-export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "any"; readonly spine: "keep" | "grow" | "any" };
+ * those holding a spine, an array's or a view spine. `keep` changes nothing,
+ * `extend` appends fresh cells at an array spine's end and keeps a view
+ * spine, `grow` keeps every dense prefix of a spine, `any` allows every
+ * change; on a value `extend` and `grow` are `scalar`, on a spine `init` and
+ * `scalar` are `keep`. Fresh locations are unconstrained. */
+export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "any"; readonly spine: "keep" | "extend" | "grow" | "any" };
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
 export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |
