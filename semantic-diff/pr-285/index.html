@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-285"><code>700e7dc9c1454cfcd5fc6a6f475c3c30e8c7f67d..pr-285</code></a><ul><li>4 commits</li><li>changes: 1 Theorem, 8 Check, 2 Wire, 1 Docs</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">a standard library method calls no argument its declaration types by a type parameter or a primitive, under the policy that standard objects are not tampered with</span></li><li>wire: none</li><li>wire: components.protocols; the components' outcome gains protocol and guarantee</li><li>wire: a native's calls</li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-285"><code>700e7dc9c1454cfcd5fc6a6f475c3c30e8c7f67d..pr-285</code></a><ul><li>5 commits</li><li>changes: 1 Theorem, 10 Check, 3 Wire, 1 Docs</li><li>parts: <span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">a standard library method calls no argument its declaration types by a type parameter or a primitive, under the policy that standard objects are not tampered with</span></li><li>new trust: <span class="trust">existing rows: no object a program holds is a proxy, and external code supplies none (DESIGN.md, Trust surface); callers pass values of the declared types (exported preconditions; Read-only frames, Assumption Clients); standard objects are not tampered with (owner-approved policy)</span></li><li>wire: none</li><li>wire: components.protocols; the components' outcome gains protocol and guarantee</li><li>wire: a native's calls</li><li>wire: a call's library; a native's calls removed</li></ul></li></ul></section>
 <h2 id="g-pr-285"><code>700e7dc9c1454cfcd5fc6a6f475c3c30e8c7f67d..pr-285</code></h2><article class="card" id="c-c64cc0f7d"><header><div><div class="sha">c64cc0f7d · Cristiano Calcagno · Nov 18, 14:40</div><h3>Certify a member from its body's steps: the certificate PR 5's decomposition reads</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The decomposition of actual executions into runs of outside code (ReadOnlyExec.lean) takes, for each member, a certificate stating that every call of the member changes each protected location existing at its entry within the protocol at the location's part. Nothing built one: it was a hypothesis of the decomposition. A member's call is its own checked steps and the runs of outside code it makes one call deeper; the latter are bounded by the protocol by induction, so what the member's body must establish is a bound on its own steps.</p></div>
 <h4 class="change"><span class="act added">added</span>Theorem <span class="target">a member's certificate from its body</span></h4><div class="versions"><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">A member call whose own steps change each protected location below the</span></span></div><div class="row"><span><span class="m-text">length of the heap at the call's entry within the protocol (locations the</span></span></div><div class="row"><span><span class="m-text">call allocates are free), and whose runs one call deeper are bounded by</span></span></div><div class="row"><span><span class="m-text">the protocol, bounds every protected location at its entry by the</span></span></div><div class="row"><span><span class="m-text">protocol</span>. <span class="m-text">The certificate's effect is the protocol itself; its</span></span></div><div class="row"><span><span class="m-text">invariants are kept by each checked step as before</span>.</span></div></div></div></figure></div>
@@ -297,6 +297,61 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tools/components.mts                               |  96 ++++-
  tools/fragment-parse.mts                           |  23 +-
  tools/fragment.mts                                 |   9 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-4adf406aa"><header><div><div class="sha">4adf406aa · Cristiano Calcagno · Nov 18, 16:13</div><h3>Read library calls by their reviewed overlay entries, and frames through forwarded parameters</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Two pushes of pretext's package stayed refused by (O) because their frames were read as possibly running outside code. rich-inline.ts line 1251: <code>Object.isFrozen(flow)</code> takes a parameter declared <code>any</code>, read as one the method may call. layout.ts line 392: below its frame, <code>cache.get(segmentIndex)</code> calls <code>get</code> on a map read from the client's handle, read as an outside callee; and <code>walkPreparedLinesRaw</code> forwards its <code>onLine</code> to the walker that calls it, so the frame's own callback was read through every callback any caller passes.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">a call of a standard library method</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a native's arguments may be called unless the method's declaration types them by a type parameter or a primitive; a method of a value from outside is an outside callee</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a call TypeScript resolves to a standard library method a reviewed overlay entry states (the arrays', a collection's, a typed array's, a global constructor's) is that native method whatever its receiver's value, and may call only the arguments the reviewed declaration types a function, those on which the entry states the host runs code, and spread ones; <code>any</code> is not called, no object being a proxy</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">codes that run outside code only through parameters</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a callee that calls its own parameter is bounded only when the call passes it a quiet value</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>also when the call passes its own parameter, which the calling code then calls in turn (a joint least fixed point over the codes and the parameters they call); a closure an ordinary call passes runs only at the parameter it binds, while a native or a library method runs every closure it is given</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">a call</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>native: {..., primitiveElements, calls}</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>native: {..., primitiveElements}; library: one Boolean per argument, or null where no reviewed entry states the method</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>readonly-frame-library-calls</code> <span class="kind positive">positive</span> <span class="why">new: the push after a handle's map's get and isFrozen admitted; after map of a callback calling the caller's, refused</span></summary><pre class="code"><span class="tk-c">// Standard library methods called on values from outside</span>
+<span class="tk-c">// (docs/drafts/readonly-handles.md, &quot;Storage no crossing reached&quot;): a</span>
+<span class="tk-c">// caller's handle holds a standard `Map`, whose `get` is the native method,</span>
+<span class="tk-c">// and `Object.isFrozen` of a caller's record runs no code, no object being a</span>
+<span class="tk-c">// proxy; neither calls its argument, so `read`'s frame runs no outside code</span>
+<span class="tk-c">// and its push is admitted. `Array.prototype.map` calls its callback, here</span>
+<span class="tk-c">// one calling the caller's, so `mapped`'s push is refused, though released</span>
+<span class="tk-c">// arrays may come back through `walk`.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Handle</span> = { <span class="tk-k">readonly</span> cache: <span class="tk-t">Map</span>&lt;number, number&gt; };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> read(
+  h: <span class="tk-t">Handle</span>,
+  o: { items: string[] },
+  n: number,
+): { at: number }[] {
+  <span class="tk-k">const</span> out: { at: number }[] = [];
+  <span class="tk-k">const</span> k = h.cache.<span class="tk-k">get</span>(n);
+  <span class="tk-k">if</span> (<span class="tk-t">Object</span>.isFrozen(o)) <span class="tk-k">return</span> out;
+  out.push({ at: k ?? <span class="tk-n">0</span> });
+  <span class="tk-k">return</span> out;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> mapped(
+  xs: <span class="tk-k">readonly</span> number[],
+  f: (x: number) =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, number&gt;,
+): { at: number }[] {
+  <span class="tk-k">const</span> res: { at: number }[] = [];
+  <span class="tk-k">const</span> ys = xs.map((x) =&gt; f(x));
+  res.push({ at: ys.length });
+  <span class="tk-k">return</span> res;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> walk = (h: unknown, visit: () =&gt; <span class="tk-k">void</span>): number =&gt; {
+  visit();
+  <span class="tk-k">return</span> h === <span class="tk-k">undefined</span> ? <span class="tk-n">0</span> : <span class="tk-n">1</span>;
+};</pre></details></li><li><code>pretext package</code> <span class="why">(O) 5 failures at 2 stores -&gt; certificate held</span></li></ul>
+<h4 class="change">Soundness</h4><p>the library reading rests on the existing rows below; the fixed point follows each closure from where it is passed to where a code calls it, so a frame is quiet only where no outside code runs below it.</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">lean-rules</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>ComponentChecks.Ctx.callSteps · Ctx.paramOf · Ctx.paramBounded · Ctx.quiet · ComponentWire.Call.library</dd><dt>Wire</dt><dd>a call's library · a native's calls removed</dd><dt>Trust</dt><dd><span class="trust">existing rows: no object a program holds is a proxy, and external code supplies none (DESIGN.md, Trust surface); callers pass values of the declared types (exported preconditions; Read-only frames, Assumption Clients); standard objects are not tampered with (owner-approved policy)</span></dd><dt>Tests</dt><dd><span class="test pos">readonly-frame-library-calls</span></dd></dl>
+<details><summary>10 files changed, 276 insertions(+), 111 deletions(-)</summary><pre class="code"> docs/FRAGMENT-FORMAT.md                           |   2 +-
+ docs/drafts/readonly-handles.md                   |  23 ++--
+ lean/Verification/Source/ComponentChecks.lean     | 147 ++++++++++++++--------
+ lean/Verification/Source/ComponentWire.lean       |  18 +--
+ pipeline/cases.mts                                |   1 +
+ pipeline/examples/readonly-frame-library-calls.ts |  36 ++++++
+ tests/single-pass-controls.mts                    |  22 +++-
+ tools/components.mts                              |  95 +++++++++++---
+ tools/fragment-parse.mts                          |  29 ++---
+ tools/fragment.mts                                |  14 ++-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
 </main></body></html>
