@@ -43,7 +43,8 @@
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\lean}[1]{\texttt{\small #1}}
 \newcommand{\status}[1]{\textsf{\small[#1]}}
-\newcommand{\nI}[1]{Paper~I, \emph{#1}}
+\newcommand{\nI}[1]{\emph{Tolerant frames}, \emph{#1}}
+\newcommand{\nR}[1]{\emph{Read-only frames}, \emph{#1}}
 \newcommand{\entry}[1]{\paragraph{#1.}}
 \frenchspacing\sloppy
 
@@ -57,9 +58,9 @@
 \begin{abstract}
 \noindent
 This paper lists the program patterns of the text-layout library
-pretext that the verifier TScert refuses. It accompanies the paper
-\emph{Tolerant frames} (Paper~I), which states when a function
-verifies.
+pretext that the verifier TScert refuses. It accompanies the papers
+\emph{Tolerant frames} and \emph{Read-only frames}, which state when a
+function verifies; ``neither paper'' below means neither of the two.
 
 Pretext verifies only after it is rewritten. The rewritten source has
 422 \emph{bound rewrite sites}. A bound rewrite site is an index read
@@ -89,7 +90,7 @@ what an extension of the verifier must provide.
 \section*{The status of this paper}
 
 This paper needs revision once the verifier applies the rules of
-Paper~I.
+\emph{Tolerant frames} and \emph{Read-only frames}.
 
 \section{P3: a quantified fact across a write outside its array (19 sites)}
 
@@ -119,7 +120,7 @@ invariant does not help; the function is refused in the same way.
 
 \entry{What an extension must provide} A quantified fact is kept across a write to a field of a
 fresh object. The written location is neither a spine nor an element
-cell that the fact reads. Theorem ``Tolerant frame'' of Paper~I keeps
+cell that the fact reads. Theorem ``Tolerant frame'' of \emph{Tolerant frames} keeps
 the fact, since the write respects its support.
 
 \section{P4: an upper bound of a length across a call growing spines (18 sites)}
@@ -176,7 +177,7 @@ precondition. Alternatively, the separations at the paths
 the callee's effect names its region.
 
 \entry{What an extension must provide} Two rules. First, a new array is apart from the arrays
-reached through fields of the variables in scope. Rule \textsc{Alloc} of Paper~I
+reached through fields of the variables in scope. Rule \textsc{Alloc} of \emph{Tolerant frames}
 states it: a new array is apart from every array that existed before.
 Second, a test
 \code{i + 1 < n} against a length $n$ gives $i+1<n$ even where the sum
@@ -249,7 +250,7 @@ number.
 
 \entry{What an extension must provide} An effect for a callee that writes field locations only.
 Under such an effect, a quantified fact over the element cells of an
-array is kept. The model of Paper~I distinguishes field locations from
+array is kept. The model of \emph{Tolerant frames} distinguishes field locations from
 element cells by their kind, and its region $\pi.f$ names one field.
 The effects a program can state, however, name only $\val$, $\st$ and
 $p[\ast]$. For a callee that writes a field of an object it receives, neither
@@ -365,7 +366,7 @@ the element of a string.
 \code{text.charCodeAt(i)}.
 
 \entry{What an extension must provide} A rule for the step \code{y = s[i]}: under
-$0\le i<\len{s}$ the result is a string. Paper~I states this rule,
+$0\le i<\len{s}$ the result is a string. \emph{Tolerant frames} states this rule,
 \textsc{Str-Read}, with the result's length 1; the verifier does not
 apply it.
 
@@ -484,7 +485,7 @@ function. It is a fact about a module array that every step of every
 function keeps. Neither paper has such a rule.
 
 \entry{Read-only frame, to revisit} Rule \textsc{Read-only frame}
-(\nI{Calls of code outside a component}) might keep
+(\nR{The rule}) might keep
 $\len{\mathit{KINDS}}=4$ across calls of outside code when the array is
 protected storage of a component: of an exposed site, such as one a
 handle reaches at a read-only type, where $\keep$ bounds its spine. A
@@ -591,7 +592,7 @@ changes the heap.
 
 \entry{What an extension must provide} A guarded fact whose guard is read through two
 \code{@stable} fields is kept across a call that changes no spine.
-Axiom \textsc{(Rigid)} of Paper~I states it: a fact that holds of a
+Axiom \textsc{(Rigid)} of \emph{Tolerant frames} states it: a fact that holds of a
 value named by a variable holds of the value at a rigid path.
 
 \entry{Read-only frame, to revisit} At pretext's sites the record is a
@@ -713,15 +714,15 @@ bound the stated effect keeps, and reads through locals taken before
 the visit.
 
 \entry{The rule that covers it} Rule \textsc{Read-only frame}
-(\nI{Calls of code outside a component}) gives the visit the effect
+(\nR{The rule}) gives the visit the effect
 $\Phi\oplus_{\mathcal{C}}(\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}})$, where $\Phi$
 is the visitor's stated effect, $\mathcal{C}$ the module, and
 $\Psi_{\mathcal{C}}=\keep$, since \code{walk} writes only the cursor it
 allocates; the module states no client obligation, so
-$\Theta_{\mathcal{C}}=\keep$. Proposition ``Read-only reliance'' of Paper~I
+$\Theta_{\mathcal{C}}=\keep$. Proposition ``Read-only reliance'' of \emph{Read-only frames}
 tests, by its bound route, location by location, the support
 $\{c.i:\keep,\ \mathit{xs}.\kw{spine}:\grow\}$ of the facts the visit
-must keep. Paper~I's table gives the obligation $c.i<\len{\mathit{xs}}$
+must keep. The support table of \emph{Tolerant frames} gives the obligation $c.i<\len{\mathit{xs}}$
 the field at $\init$, and the loop invariant's
 $\mathit{safeInteger}(c.i)$, a contents atom, the field at $\keep$; the
 derivation keeps both across the visit, so it needs $\keep$. The field $c.i$ is of a local site,
@@ -730,7 +731,7 @@ $\keep$. The spine of \code{xs} crossed in at the writable type
 \code{number[]}: outside $R_{\mathcal{C}}$, $\Phi$ bounds it by
 $\st:\grow$, and $\grow\sqsubseteq\grow$; were it inside, $\keep$ would
 bound it. So $0\le c.i<\len{\mathit{xs}}$ holds after the visit
-\status{conj.: Paper~I states the rule's connection to the calculus as a conjecture}.
+\status{conj.: \emph{Read-only frames} states the rule's connection to the calculus as a conjecture}.
 
 \entry{The premises at pretext's sites} At the call of
 \code{stepPreparedSimpleLineGeometry} after \code{onLine} in
@@ -784,24 +785,24 @@ exported functions (Section ``Summary'').
 \toprule
 pattern & sites & what is missing & the rule\\
 \midrule
-P3 & 19 & quantified facts across a field write & stated in Paper~I, not implemented\\
-P4 & 18 & separation at paths; an inexact sum & the first stated in Paper~I, not implemented; the second in neither paper\\
+P3 & 19 & quantified facts across a field write & stated in \emph{Tolerant frames}, not implemented\\
+P4 & 18 & separation at paths; an inexact sum & the first stated in \emph{Tolerant frames}, not implemented; the second in neither paper\\
 P5 & 16 & contents of a generated table & in neither paper\\
 P6 & 12 & an effect writing fields alone & in neither paper\\
 P7 & 10 & captured facts in a function literal & in neither paper\\
 P9 & 7 & a product of two variables & in neither paper\\
 P10 & 7 & a count two functions share & in neither paper\\
-P11 & 5 & a string's element below its length & stated in Paper~I, not implemented\\
+P11 & 5 & a string's element below its length & stated in \emph{Tolerant frames}, not implemented\\
 P12 & 5 & two arrays related at an index & in neither paper\\
 P13 & 5 & a prefix at a paired index & in neither paper\\
 P14 & 4 & the length of \code{replace}'s result & in neither paper\\
 P15 & 4 & a module array's length at entry & in neither paper\\
 P16 & 4 & a module cell's contents at entry & in neither paper\\
 P17 & 3 & an index into a selected element & in neither paper\\
-P18 & 2 & a guard through two \code{@stable} fields & stated in Paper~I, not implemented\\
+P18 & 2 & a guard through two \code{@stable} fields & stated in \emph{Tolerant frames}, not implemented\\
 P19 & 2 & a sum of element lengths & in neither paper\\
 P20 & 1 & the invariant of a \code{Map} value & in neither paper\\
-P22 & 1 & a local cursor field kept across the visitor; an array spine may grow & \textsc{Read-only frame}, stated in Paper~I, not implemented\\
+P22 & 1 & a local cursor field kept across the visitor; an array spine may grow & \textsc{Read-only frame}, stated in \emph{Read-only frames}, not implemented\\
 \bottomrule
 \end{tabular}}
 
@@ -832,7 +833,7 @@ packs (P5). P1's effect, stated on a callback that the application
 passes to a public function, is such a fact too: the application's
 callback is assumed to stay within it. P22's derivation reads two more:
 a client of pretext that the verifier does not analyse changes no storage
-it reaches at a handle's read-only type (Paper~I, Assumption ``Clients''),
+it reaches at a handle's read-only type (\emph{Read-only frames}, Assumption ``Clients''),
 and a handle it passes to an entry meets the handle type's
 \code{@invariant}, as the precondition of an exported function is assumed
 of the callers the verifier does not analyse.
