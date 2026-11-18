@@ -37,7 +37,8 @@ inductive CodeMode (ι : Type) where
 
 /-- A lambda's checked graph code, as its creation names it: the code, the
 captured slots with the types it was checked with, whether it collects a rest
-and the rest-spine type at each signature, and the type the code offers. -/
+and the rest-spine type at each signature, the type the code offers and its
+component. -/
 structure LambdaCode (ι : Type) where
   arity : Nat
   exprs : List Tm
@@ -48,11 +49,13 @@ structure LambdaCode (ι : Type) where
   rest : Bool
   arrays : List (Ty ι)
   type : Ty ι
+  /-- The component whose code contains the lambda (`componentOf`). -/
+  comp : ComponentTag
 
-/-- The graph code a lambda's creation allocates. It is outside every
-component (`none`): the wire carries no component. -/
+/-- The graph code a lambda's creation allocates, its frames tagged with the
+component whose code contains the lambda. -/
 @[nospecialize] def LambdaCode.code (c : LambdaCode ι) (kind : Verification.Invoke) : CallCode :=
-  .graph c.arity c.exprs c.conts c.start (c.captures.map fun (_, i) => .var i) kind c.rest none
+  .graph c.arity c.exprs c.conts c.start (c.captures.map fun (_, i) => .var i) kind c.rest c.comp
 
 @[nospecialize] def LambdaCode.capturePlans (c : LambdaCode ι) (Γ : List (Ty ι)) : List (DirectProof.Plan ι) :=
   c.captures.map fun (C, i) => DirectProof.var Γ i C

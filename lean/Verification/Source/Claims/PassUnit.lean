@@ -28,10 +28,10 @@ export Verification.TolerantFrames.Target (ReachesIn EntryHolds GraphGuarantee C
 section
 variable {ι : Type} [Labels ι]
 
-/-- The term that runs a program graph from `start`, frame `L`, receiver `d`.
-The run is outside every component (`none`): the wire carries no component. -/
-def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) : Tm :=
-  .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d none
+/-- The term that runs a program graph from `start`, frame `L`, receiver `d`,
+its frames tagged `comp`, the component whose code it is. -/
+def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) (comp : ComponentTag) : Tm :=
+  .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d comp
 
 end
 
@@ -65,7 +65,7 @@ def FootprintClause (r : SourceRequest σ ι) : Prop :=
       HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
         (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
         (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
-        (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d)
+        (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d r.comp)
 
 /-- Meeting the stated postcondition where the declaration states one. -/
 def EnsuresClause (r : SourceRequest σ ι) : Prop :=
@@ -74,7 +74,7 @@ def EnsuresClause (r : SourceRequest σ ι) : Prop :=
       (envOf L d) n W h → RootsOk W (envOf L d) →
     HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (gotoOf r.program r.start L d)
+      (fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (gotoOf r.program r.start L d r.comp)
 
 /-- Within the stated regional bound where the declaration states regions. -/
 def RegionalClause (r : SourceRequest σ ι) : Prop :=
@@ -86,7 +86,7 @@ def RegionalClause (r : SourceRequest σ ι) : Prop :=
       (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
       (fun h' => r.stated.any (·.onThrow) = true →
         Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
-      n W h (gotoOf r.program r.start L d)
+      n W h (gotoOf r.program r.start L d r.comp)
 
 /-- Each stated assertion of the graph true at every state reached at its
 label within the budget, at every admitted assignment. -/

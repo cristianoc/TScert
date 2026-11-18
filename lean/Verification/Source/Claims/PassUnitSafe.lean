@@ -55,9 +55,9 @@ theorem envOf_roots {n : Nat} {W : WorldT n} {L : List Tm} {d : Tm} (h : RootsOk
 omit [Labels ι] [StoreView σ ι] in
 /-- **The term running a checked graph has valid references** where its
 frame does: the graph's node expressions mention no location. -/
-theorem gotoOf_refsOk {P : Program} {start : Nat} {n : Nat} {W : WorldT n} {L : List Tm} {d : Tm}
+theorem gotoOf_refsOk {P : Program} {start : Nat} {n : Nat} {W : WorldT n} {L : List Tm} {d : Tm} {comp : ComponentTag}
     (hsrc : P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
-    (hρ : RootsOk W (envOf L d)) : RefsOk W (gotoOf P start L d) := by
+    (hρ : RootsOk W (envOf L d)) : RefsOk W (gotoOf P start L d comp) := by
   obtain ⟨hL, hd⟩ := envOf_roots hρ
   intro r hr
   simp only [gotoOf, refs, refsArgs_eq, List.mem_append, List.mem_flatMap, List.mem_map] at hr
@@ -69,13 +69,13 @@ theorem gotoOf_refsOk {P : Program} {start : Nat} {n : Nat} {W : WorldT n} {L : 
 omit [Labels ι] [StoreView σ ι] in
 /-- A guarantee's safety, as the term running the graph. -/
 theorem guarantee_goto {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}
-    {goal : Goal ι} {inputs sep idx assertions bound ensures regional}
+    {goal : Goal ι} {inputs sep idx assertions bound ensures regional} {comp : ComponentTag}
     (g : GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional)
     {η} (hη : admits η) {n W h L d}
     (he : EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h) (hroots : RootsOk W (envOf L d)) :
     Safe (excOf (reassign G η)) (GoalHolds (reassign G η) goal (goal.argument (envOf L d))) n W h
-      (gotoOf P start L d) := by
-  obtain ⟨hE, hρ⟩ := GraphCode.goto_refs (gotoOf_refsOk (start := start) g.source hroots)
+      (gotoOf P start L d comp) := by
+  obtain ⟨hE, hρ⟩ := GraphCode.goto_refs (gotoOf_refsOk (start := start) (comp := comp) g.source hroots)
   have hs := g.safe η hη n W h (envOf L d) he (program_source_refsOk g.source W) hρ
   rw [← program_nodes P] at hs
   exact GraphCode.safe_of_sim n W h .goto hE hs
@@ -94,7 +94,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) r.goal (r.goal.argument (envOf L d)))
       (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
-      (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d) := by
+      (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d r.comp) := by
   cases hb : mainBound r with
   | some x =>
     have hx : x = RunBound.ofRequest r.footprint r.onThrow r.fresh := by
@@ -106,7 +106,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
     -- exceptional bound where that is not `⊤`, by the heap's growth where
     -- it is.
     have hg := ProgramTyping.SafePostExc.grow (b := h.length) (Nat.le_refl _)
-      (g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g.source hroots)
+      (g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d r.comp he (gotoOf_refsOk g.source hroots)
         hvalues hd)
     refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun h' hq ho => ?_) hg
     by_cases ht : r.footprint = .top
@@ -134,7 +134,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
       intro e he
       obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
       exact List.all_eq_true.mp hall node hn
-    have hs := guarantee_goto g trivial he hroots
+    have hs := guarantee_goto (comp := r.comp) g trivial he hroots
     exact HeapObservations.SafePostExc.weaken
       (fun _ _ h => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
         h, fun hf => by rw [hfresh] at hf; cases hf⟩)
@@ -153,11 +153,11 @@ theorem footprint_of_fallback {G : NormalGraph ι} {r : SourceRequest σ ι} {bo
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) r.goal (r.goal.argument (envOf L d)))
       (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
-      (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d) :=
+      (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d r.comp) :=
   HeapObservations.SafePostExc.weaken
     (fun _ _ hq => ⟨Footprints.ArgumentSpineRegionsWithin.nil_holds hq, fun hf => by rw [hfr] at hf; cases hf⟩)
     (fun _ hq ho => Footprints.ArgumentSpineRegionsWithin.nil_holds (hq ho))
-    (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d none he (gotoOf_refsOk g.source hroots))
+    (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d r.comp he (gotoOf_refsOk g.source hroots))
 
 end
 

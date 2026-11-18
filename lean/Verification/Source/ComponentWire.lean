@@ -11,7 +11,7 @@ fields exactly and every index in range, and a family laminar by
 construction: each component's parent an earlier component, a package's none,
 a module's none or a package, a class's a module or a class. Each code's
 innermost component is the ghost tag its frames carry (`ComponentTag`,
-`Components.tagAt`). Nothing here is evidence: the read-only frame's checks
+`Components.componentAt`). Nothing here is evidence: the read-only frame's checks
 read these proposals and check them. -/
 namespace Verification.ComponentWire
 open Lean
@@ -386,10 +386,24 @@ where
       | some p => go n p
       | none => false
 
-/-- **The ghost tag of a code's frames**: the innermost component of the
-code at `module` and `pos`, `none` for code the family does not describe. -/
-def Components.tagAt (F : Components) (module : String) (pos : Span) : ComponentTag :=
-  (F.codes.find? fun c => c.module == module && c.pos == pos).map (·.component)
+/-- **The ghost tag of the frames of code at a place** (the draft, "Frames
+and whose code runs"): the innermost component whose code contains the
+place, the narrowest class of `module` whose span contains it, else
+`module`'s own component; `none` for a module the family does not
+describe. -/
+def Components.componentAt (F : Components) (module : String) (place : Span) : ComponentTag :=
+  let klass := F.components.zipIdx.foldl (fun (b : Option (Nat × Nat)) (k, i) =>
+    match k.kind, k.pos with
+    | .klass, some p =>
+      if k.location == module && p.1 ≤ place.1 && place.2 ≤ p.2 then
+        match b with
+        | some (_, w) => if p.2 - p.1 < w then some (i, p.2 - p.1) else b
+        | none => some (i, p.2 - p.1)
+      else b
+    | _, _ => b) none
+  match klass with
+  | some (i, _) => some i
+  | none => (F.components.zipIdx.find? fun (k, _) => k.kind == .module && k.location == module).map (·.2)
 
 /-! ## The decoder -/
 

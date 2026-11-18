@@ -269,6 +269,10 @@ private structure Built extends GraphFrame where
   /-- The module cells whose objects the module owns (`ownedModuleCells`):
   a key-adding write on one is the copy of its object written to the cell. -/
   moduleOwned : List String := []
+  /-- The component whose code contains each place of the unit's module
+  (`ComponentWire.Components.componentAt`): the ghost tag of the frames of
+  the graph code created there. -/
+  componentAt : Span → ComponentTag := fun _ => none
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -415,6 +419,9 @@ def executionBindings : Compiler ExecutionBindings :=
 
 def executionType (name : String) : Compiler (Option (Ty Tree)) :=
   readBuilt fun s => s.executionTypes.lookup name
+
+/-- The ghost tag of the frames of graph code created at `pos`. -/
+def componentOf (pos : Span) : Compiler ComponentTag := readBuilt (·.componentAt pos)
 
 def executionOrigins : Compiler (List (String × Fragment.Expr)) := readBuilt (·.executionOrigins)
 
@@ -630,10 +637,12 @@ def freshNativeConstructor (scope : List (ScopeBinding Tree)) (callee : Fragment
 
 /-- Run one source unit with its equation table and admitted ownership sites. -/
 def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α)
-    (freshConstructors : List (String × Span) := []) (moduleOwned : List String := []) :
+    (freshConstructors : List (String × Span) := []) (moduleOwned : List String := [])
+    (componentAt : Span → ComponentTag := fun _ => none) :
     Except String (α × LoweringResult) := do
   let (value,s) ← action.run
-    { types := types, grows := grows, freshConstructors := freshConstructors, moduleOwned := moduleOwned }
+    { types := types, grows := grows, freshConstructors := freshConstructors, moduleOwned := moduleOwned,
+      componentAt := componentAt }
   return (value,{
     toLoweredGraph := graphOutput s
     types := s.types

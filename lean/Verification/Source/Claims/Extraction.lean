@@ -159,6 +159,9 @@ structure Front where
   /-- The imported values at their declared types, by local name and span,
   which `Front.withQualified` reads again. -/
   imported : List (String × Span × List Tree)
+  /-- The component whose code contains each place of the file
+  (`ComponentWire.Components.componentAt`). -/
+  componentAt : Span → ComponentTag
 
 /-- A unit's identity on the wire: a function's name and its name's start,
 or `init` for the module's initialization. -/
@@ -422,7 +425,7 @@ def fileFront (ast claims : Json) (fileKey : String)
   return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
     SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
-    #[], #[], imported⟩
+    #[], #[], imported, (← Fragment.decodeComponents ast).componentAt (← jStr (← jField ast "file"))⟩
 
 /-- The front `fileFront` gives with the qualified reads `qualified`, of a
 front it gave with none (`lenient`, mode 8): each imported value the reads
@@ -465,7 +468,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _⟩ := fr
+    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _, componentAt⟩ := fr
   let (f, tps, initClaims) := u
   if let (some _, some reason) := (initClaims, initOrder) then throw reason
   let d := { d with types := T }
@@ -643,7 +646,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
           (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
       | none => pure (d.types, c.normalized)
     let request ← extractNormalizedFn types f claims module (SourceExtraction.sourceClasses init) freshConstructors
-      moduleOwned
+      moduleOwned componentAt
     return .graph f.name f.namePos { request with sourceScheme }
   -- A generic unit's graph extraction reports where it stops as a
   -- located refusal at the function, as the direct checker's do.
