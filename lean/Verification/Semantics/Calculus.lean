@@ -123,6 +123,10 @@ inductive Tag where
   prototype, so the answer never changes; which source keys this answers as
   JavaScript does is the lowering's business (`inKeyRefusal`). -/
   | hasKey (key : PropKey)
+  /-- A pure own-key observation, independent of the heap and prototypes.
+  Internal graph code may use it; the request codec retains its existing
+  tag vocabulary and does not decode this constructor. -/
+  | hasOwnKey (key : PropKey)
   deriving Repr, DecidableEq
 
 /-- The binary operators on primitive operands, JavaScript's own (`binop`
@@ -1568,7 +1572,7 @@ def tagHolds : Tag → Val → Bool
   | .typeofObject, .nul => true
   | .typeofObject, .objAt _ .absent _ => true
   | .typeofObject, .objAt _ (.view ..) _ => true
-  | .hasKey k, .objAt fs _ _ => (fs.lookup k).isSome
+  | .hasKey k, .objAt fs _ _ | .hasOwnKey k, .objAt fs _ _ => (fs.lookup k).isSome
   | _, _ => false
 
 mutual

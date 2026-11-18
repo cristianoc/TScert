@@ -382,4 +382,31 @@ private def patterns : List UInt64 :=
 #guard indexOfBits (4294967294.0 : Float).toBits == some 4294967294
 #guard indexOfBits (4294967295.0 : Float).toBits == none
 
+/-! ## The closed request-tag boundary
+
+The own-key observation is available to internal graph code, not to request
+producers. These forged JSON controls reach derived decoders at three depths;
+a source pipeline case cannot construct such model-only code. -/
+
+private def ownKeyTag : Tag := .hasOwnKey (.str "x")
+private def ownKeyJson : Lean.Json := Lean.toJson ownKeyTag
+
+#guard (Lean.fromJson? (α := Tag) ownKeyJson).toOption.isNone
+#guard (RequestJson.decodeStrict (α := Tag) "tag" ownKeyJson).toOption.isNone
+#guard (Lean.fromJson? (α := Tm) (Lean.toJson (Tm.test ownKeyTag .nul))).toOption.isNone
+#guard (Lean.fromJson? (α := Verification.ControlFlow.Continuation)
+  (Lean.toJson (Verification.ControlFlow.Continuation.tagBind ownKeyTag 0 1))).toOption.isNone
+#guard (Lean.fromJson? (α := Tm) (Lean.toJson (Tm.objAt []
+  (.graph 0 [.nul] [(.tagBind ownKeyTag 0 1, none)] 0 []) 0))).toOption.isNone
+
+/-- The legacy constructor decoder rejects an object spelling two tags. Both
+the direct and strict boundaries retain that rejection when the extra tag
+spells a model-only constructor. -/
+private def extraOwnKeyJson : Lean.Json := Lean.Json.mkObj
+  [("hasKey", Lean.Json.mkObj [("key", Lean.toJson (PropKey.str "x"))]),
+   ("hasOwnKey", Lean.Json.mkObj [("key", Lean.toJson (PropKey.str "y"))])]
+
+#guard (Lean.fromJson? (α := Tag) extraOwnKeyJson).toOption.isNone
+#guard (RequestJson.decodeStrict (α := Tag) "tag" extraOwnKeyJson).toOption.isNone
+
 end Verification.ExecutionModelTests
