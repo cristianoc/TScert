@@ -391,7 +391,8 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const log: string[] = prepared.components.flatMap((c) => [`component ${c.component} (${c.kind} ${c.location}): ${
     c.refusals.length === 0 ? "certificate held" : `refused: ${c.refusals.join("; ")}`}`,
     ...c.protocol.map((e) => `component ${c.component} protocol: ${e}`),
-    ...c.guarantee.map((g) => `component ${c.component} guarantee: ${g}`)]);
+    ...c.guarantee.map((g) => `component ${c.component} guarantee: ${g}`),
+    ...c.frames.map((f) => `component ${c.component} frame ${f}`)]);
   for (const part of checked.run.parts) {
     const unit = prepared.selected.find((u) => u.unit === part.part);
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);

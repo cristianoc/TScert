@@ -659,7 +659,12 @@ export interface CrossingAst {
  * - `protocols`: each component's proposed protocol `Ψ_C`, a change for
  *   each part it lists (`keep` at every other): the fields at a key
  *   (`key` null every key), the spines or the cells of a site (`site` null
- *   storage of code outside the component). */
+ *   storage of code outside the component).
+ * - `frames`: at a call of code outside a component, the proposed frame:
+ *   for each region of storage a value or a site may be (`root`), of kind
+ *   `kind` at `key` (null every key), the parts its locations may have by
+ *   site (null storage of code outside the component) and whether its
+ *   released and outside locations are protected. */
 export interface ComponentsAst {
   components: ComponentAst[];
   codes: CodeAst[];
@@ -679,6 +684,16 @@ export interface ComponentsAst {
   clients: { module: string; name: string; pos: Span; stated: boolean; frame: Frame }[];
   guarantees: { module: string; name: string; pos: Span; facts: IndexFact[] }[];
   protocols: { component: number; entries: ProtocolEntryAst[] }[];
+  frames: { call: number; entries: FrameEntryAst[] }[];
+}
+
+/** An entry of a proposed frame at a call: a region and its possible parts. */
+export interface FrameEntryAst {
+  root: { value: number } | { site: number };
+  kind: "field" | "spine" | "cell";
+  key: string | null;
+  parts: (number | null)[];
+  protected: boolean;
 }
 
 /** An entry of a proposed protocol: the change at a part. */

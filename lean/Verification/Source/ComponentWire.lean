@@ -322,6 +322,34 @@ structure ProposedProtocol where
   entries : List ProtocolEntry
   deriving Repr
 
+/-- The storage a frame's region is read in: the storage a value may be,
+or a site's. -/
+inductive FrameRoot where
+  | value (v : Nat)
+  | site (t : Nat)
+  deriving Repr
+
+/-- **An entry of a proposed frame at a call** (the Read-only frames note,
+Proposition "Read-only reliance", the premise location by location): the
+locations of kind `kind` (at the key `key` of a field part, `none` every
+key) of the storage `root` may be; the parts they may have, by site
+(`none` storage of code outside the component); and whether their released
+and outside locations are protected. -/
+structure FrameEntry where
+  root : FrameRoot
+  kind : PartKind
+  key : Option String
+  parts : List (Option Nat)
+  prot : Bool
+  deriving Repr
+
+/-- **A proposed frame**: the entries at the call `call` of code outside a
+component. -/
+structure ProposedFrame where
+  call : Nat
+  entries : List FrameEntry
+  deriving Repr
+
 structure Components where
   components : List Component
   codes : List Code
@@ -341,9 +369,10 @@ structure Components where
   clients : List Clients
   guarantees : List Guarantee
   protocols : List ProposedProtocol
+  frames : List ProposedFrame
 
 /-- The empty family: no component. -/
-def Components.empty : Components := ⟨[], [], [], [], [], [], [], [], [], [], [], none, [], [], [], [], [], []⟩
+def Components.empty : Components := ⟨[], [], [], [], [], [], [], [], [], [], [], none, [], [], [], [], [], [], []⟩
 
 /-- **The family's nesting**: `inner` is nested in `outer` when `outer` is
 on `inner`'s chain of parents, itself included. A parent is an earlier
@@ -645,6 +674,24 @@ def decodeProtocol (j : Json) : Except String ProposedProtocol := do
   fieldsExactly j ["component", "entries"]
   return ⟨← jNat j "component", ← (← jArr j "entries").mapM decodeProtocolEntry⟩
 
+def decodeFrameRoot (j : Json) : Except String FrameRoot := do
+  match j.getObjVal? "value", j.getObjVal? "site" with
+  | .ok v, .error _ => fieldsExactly j ["value"]; return .value (← v.getNat?)
+  | .error _, .ok t => fieldsExactly j ["site"]; return .site (← t.getNat?)
+  | _, _ => throw "a frame's root is a value or a site"
+
+def decodeFrameEntry (j : Json) : Except String FrameEntry := do
+  fieldsExactly j ["root", "kind", "key", "parts", "protected"]
+  let key ← jField j "key"
+  return ⟨← decodeFrameRoot (← jField j "root"), ← partKindOf (← jStr (← jField j "kind")),
+    ← if key == .null then pure none else some <$> key.getStr?,
+    ← (← jArr j "parts").mapM (fun p => if p == .null then pure none else some <$> p.getNat?),
+    ← jBoolAt j "protected"⟩
+
+def decodeFrame (j : Json) : Except String ProposedFrame := do
+  fieldsExactly j ["call", "entries"]
+  return ⟨← jNat j "call", ← (← jArr j "entries").mapM decodeFrameEntry⟩
+
 /-- **The family well formed**: each parent an earlier component, of the
 kind that nests it (a package none, a module none or a package, a class a
 module or a class), a span exactly where it is a class; every index of a
@@ -705,11 +752,18 @@ def Components.wellFormed (F : Components) : Except String Unit := do
   for p in F.protocols do
     inRange "a protocol's component" p.component n
     for e in p.entries do for t in e.site do inRange "a protocol's site" t ns
+  for f in F.frames do
+    inRange "a frame's call" f.call F.calls.length
+    for e in f.entries do
+      match e.root with
+      | .value v => inRange "a frame's value" v nv
+      | .site t => inRange "a frame's site" t ns
+      for t in e.parts do for t in t do inRange "a frame's part" t ns
 
 /-- **The fragment's family**, decoded and well formed. -/
 def decode (j : Json) : Except String Components := do
   fieldsExactly j ["components", "codes", "sites", "values", "crossings", "stores", "calls", "throws", "catches", "holds",
-    "exports", "thrown", "suspensions", "types", "escapes", "clients", "guarantees", "protocols"]
+    "exports", "thrown", "suspensions", "types", "escapes", "clients", "guarantees", "protocols", "frames"]
   let F : Components := ⟨← (← jArr j "components").mapM decodeComponent, ← (← jArr j "codes").mapM decodeCode,
     ← (← jArr j "sites").mapM decodeSite, ← (← jArr j "values").mapM decodeValue,
     ← (← jArr j "crossings").mapM decodeCrossing, ← (← jArr j "stores").mapM decodeStore,
@@ -719,7 +773,7 @@ def decode (j : Json) : Except String Components := do
     ← (← jArr j "types").mapM decodeTypeRow,
     ← (← jArr j "escapes").mapM decodeEscape,
     ← (← jArr j "clients").mapM decodeClients, ← (← jArr j "guarantees").mapM decodeGuarantee,
-    ← (← jArr j "protocols").mapM decodeProtocol⟩
+    ← (← jArr j "protocols").mapM decodeProtocol, ← (← jArr j "frames").mapM decodeFrame⟩
   F.wellFormed
   return F
 
@@ -727,6 +781,6 @@ def decode (j : Json) : Except String Components := do
 def emptyJson : Json := Json.mkObj [("components", .arr #[]), ("codes", .arr #[]), ("sites", .arr #[]),
   ("values", .arr #[]), ("crossings", .arr #[]), ("stores", .arr #[]), ("calls", .arr #[]), ("throws", .arr #[]),
   ("catches", .arr #[]), ("holds", .arr #[]), ("exports", .arr #[]), ("thrown", .null), ("suspensions", .arr #[]), ("types", .arr #[]),
-  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[]), ("protocols", .arr #[])]
+  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[]), ("protocols", .arr #[]), ("frames", .arr #[])]
 
 end Verification.ComponentWire

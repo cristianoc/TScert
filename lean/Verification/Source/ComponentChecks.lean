@@ -49,6 +49,16 @@ exports), which the front reads from the source.
   with the writes of the component's code that change its support beyond
   the client obligation, construction aside; kept where there is none.
 
+- **The frame at a call** (`Ctx.frames`): at each call of code outside a
+  component a frame names, each region's proposed parts cover every part
+  the flow gives its storage (`Ctx.frameParts`), and a region read as
+  protected has no value reaching it writable and no released or foreign
+  site (`Ctx.frameProtected`); each region is then in the protected
+  region within `Ψ_C ⊔ Θ_C`'s change at its parts, outside it, or either,
+  the comparison Proposition "Read-only reliance" makes location by
+  location (`ReadOnly.frameCheck`). A frame failing is refused at its call,
+  the others unaffected.
+
 Nothing in acceptance reads the outcome (`familyOutcome`): the verifier
 prints it beside the units' verdicts (`WorkerWire.componentOutcome`). -/
 namespace Verification.ComponentChecks
@@ -1104,23 +1114,139 @@ def suspensionDiags (cx : Ctx) (file : String) (fns : List (String × Span × Bo
           out := ⟨C, "S", file, pos, s!"the async function {name} states no suspension"⟩ :: out
   return out
 
+/-! ## The frame at a call of outside code -/
+
+/-- The storage a frame's root may be. -/
+def Ctx.rootTokens (cx : Ctx) : FrameRoot → Tokens
+  | .value v => cx.value v
+  | .site t => .ofSites [t]
+
+/-- **The parts a region of the storage `T` may have for `C`**, by site:
+each possible site of `C`'s code, storage of code outside `C` for a site of
+other code, and, where a value of `T` may enter `C` from outside, every
+exposed and released site of `C` and outside storage (`Ctx.targets`'s
+reading of an incoming value). -/
+def Ctx.frameParts (cx : Ctx) (C : Nat) (T : Tokens) : List (Option Nat) :=
+  let lent (t : Nat) : Bool := match cx.mark t C with
+    | some .exposed | some .released => true
+    | _ => false
+  let own := T.sites.map fun t => if (cx.mark t C).isSome then some t else none
+  (if T.components.contains C then own ++ ((List.range cx.F.sites.length).filter lent).map some ++ [none] else own).eraseDups
+
+/-- **Whether a region of the storage `T` is protected for `C`**: no value
+of it enters `C` from outside at a writable position, and every possible
+site is of `C`'s code and not released, so its released and outside
+locations are those a crossing in reached read-only (Paper I, the
+protected region). -/
+def Ctx.frameProtected (cx : Ctx) (C : Nat) (T : Tokens) : Bool :=
+  !T.incoming.contains C && T.sites.all fun t => match cx.mark t C with
+    | some .local | some .internal | some .exposed => true
+    | _ => false
+
+/-- Where a part's locations may lie (`ReadOnly.Part.mayIn`,
+`ReadOnly.Part.mayOut`): a local or an exposed site's in `C`'s region, an
+internal one's outside it, a released site's or outside storage in it where
+protected. -/
+def Ctx.partMayIn (cx : Ctx) (C : Nat) : Option Nat → Bool
+  | some t => match cx.mark t C with
+    | some .internal => false
+    | _ => true
+  | none => true
+
+def Ctx.partMayOut (cx : Ctx) (C : Nat) (prot : Bool) : Option Nat → Bool
+  | some t => match cx.mark t C with
+    | some .local | some .exposed => false
+    | some .internal => true
+    | _ => !prot
+  | none => !prot
+
+/-- **The client obligation's change at a part**: `keep` where no exported
+type states `@clients`, else `any`, a stated frame being read at no part. -/
+def Ctx.clientChange (cx : Ctx) : Footprints.Change :=
+  if cx.F.clients.any (·.stated) then .any else .keep
+
+/-- **`Ψ_C ⊔ Θ_C` at the parts of a site of one kind**, at the key `key`
+(`none` every key): the join of the proposed entries naming the part, and
+the client obligation's change. -/
+def Ctx.boundAt (cx : Ctx) (C : Nat) (site : Option Nat) (kind : PartKind) (key : Option String) : Footprints.Change :=
+  (cx.proposed C).foldl (fun δ e =>
+    if e.site == site && e.kind == kind && (e.key.isNone || key.isNone || e.key == key) then δ.max e.change else δ)
+    cx.clientChange
+
+def Ctx.rootName (cx : Ctx) : FrameRoot → String
+  | .value v => match cx.F.values[v]? with
+    | some x => s!"the value at {x.module} {x.pos.1}-{x.pos.2}"
+    | none => s!"value {v}"
+  | .site t => s!"the site {cx.siteName t}"
+
+/-- **A frame's failures for `C`**: an entry omitting a part its region may
+have, or reading as protected a region a value may reach writable, or whose
+storage may be released or outside storage no crossing in protected. -/
+def Ctx.frameFailures (cx : Ctx) (C : Nat) (f : ProposedFrame) : List String :=
+  f.entries.flatMap fun e =>
+    let T := cx.rootTokens e.root
+    let what := s!"the {partKindName e.kind} of {cx.rootName e.root}"
+    let omitted := (cx.frameParts C T).filter (!e.parts.contains ·) |>.map fun t =>
+      s!"the frame omits the possible part {cx.partName t e.kind e.key} of {what}"
+    let falseProt := if e.prot && !cx.frameProtected C T then
+      [s!"the frame reads {what} as protected, which a value may reach writable or which may be storage no crossing in protected"]
+    else []
+    omitted ++ falseProt
+
+/-- **A frame's entries for `C`**, each with where its locations may lie and
+the change `Ψ_C ⊔ Θ_C` allows where they lie in the region: the premise of
+Proposition "Read-only reliance" compares a support's change with it there,
+and with the call's own effect elsewhere (`ReadOnly.frameCheck`). -/
+def Ctx.frameText (cx : Ctx) (C : Nat) (f : ProposedFrame) : List String :=
+  f.entries.map fun e =>
+    let what := s!"the {partKindName e.kind}{match e.key with | some k => s!" at {k}" | none => ""} of {cx.rootName e.root}"
+    let ins := e.parts.filter (cx.partMayIn C)
+    let outs := e.parts.filter (cx.partMayOut C e.prot)
+    let δ := ins.foldl (fun δ p => δ.max (cx.boundAt C p e.kind e.key)) .keep
+    if outs.isEmpty then s!"{what}: in the region, within {changeName δ}"
+    else if ins.isEmpty then s!"{what}: outside the region, within the call's effect"
+    else s!"{what}: in the region within {changeName δ}, or outside it within the call's effect"
+
+/-- **Each frame of `C`**: at each call of code outside `C` inside `C`'s
+code that a frame names, its refusal or its entries, at the call's place. -/
+def Ctx.frames (cx : Ctx) (C : Nat) : List String :=
+  cx.F.frames.flatMap fun f => match cx.F.calls[f.call]? with
+    | some c =>
+      if (cx.outsideOf c).contains C && (cx.chain c.component).contains C then
+        let at_ := s!"{c.module} {c.place.1}-{c.place.2}"
+        match cx.frameFailures C f with
+        | [] => (cx.frameText C f).map (s!"at {at_}: " ++ ·)
+        | rs => [s!"refused at {at_}: {"; ".intercalate rs}"]
+      else []
+    | none => []
+
+/-- **A frame naming no call of outside code**: refused at the call, for
+the call's innermost component. -/
+def frameDiags (cx : Ctx) : List Diag :=
+  cx.F.frames.filterMap fun f => do
+    let c ← cx.F.calls[f.call]?
+    if (cx.outsideOf c).any (cx.chain c.component).contains then none
+    else some ⟨c.component, "frame", c.module, c.place, "a frame names a call that runs no code outside the component"⟩
+
 /-! ## The outcome -/
 
 /-- **Each component's outcome**: its kind, its location, the failures
-refusing its certificate, each once, its protocol and its guarantee. -/
+refusing its certificate, each once, its protocol, its guarantee and its
+frames. -/
 def familyOutcome (F : Components) (file : String) (fns : List (String × Span × Bool)) :
-    List (Nat × Component × List String × List String × List String) :=
+    List (Nat × Component × List String × List String × List String × List String) :=
   let cx := Ctx.of F
   let cx := { cx with escaped := cx.escaping }
   let boundary := cx.boundaryValues
   let quiet := cx.quiet cx.runsOutside
   let flow := flowDiags cx
-  let diags := suspensionDiags cx file fns ++ marksDiags cx ++ ownershipDiags cx boundary quiet ++ protocolDiags cx boundary
+  let diags := suspensionDiags cx file fns ++ marksDiags cx ++ ownershipDiags cx boundary quiet ++ protocolDiags cx boundary ++
+    frameDiags cx
   F.components.zipIdx.map fun (k, C) =>
     let own := flow.filterMap fun (c, module, place, message) =>
       if c.all (cx.chain · |>.contains C) then some s!"(flow) {module} {place.1}-{place.2}: {message}" else none
     (C, k, (own ++ (diags.filter (·.component == C)).map Diag.render).eraseDups, cx.protocolText C,
-      cx.guaranteeText boundary quiet C)
+      cx.guaranteeText boundary quiet C, cx.frames C)
 
 def kindName : ComponentWire.Kind → String
   | .package => "package"
