@@ -922,9 +922,13 @@ export type ComponentOutcome = { component: number; kind: string; location: stri
 export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[];
   components: readonly ComponentOutcome[] };
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
- * with the first extraction refusal among its group's members, or null. */
+ * with the first extraction refusal among its group's members, or null: its
+ * group accepted, accepted under client trust (for the executions in which
+ * outside code keeps a member's client obligation), or refused. */
 export type VerdictLine =
   { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; extraction: string | null } |
+  { unit: string; members: readonly string[]; acceptedUnderClientTrust: true; depends: readonly string[];
+    extraction: string | null } |
   { unit: string; members: readonly string[]; refusal: string; extraction: string | null };
 
 /** A parsed JSON value's own fields, exactly `fields`, or a refusal. */
@@ -942,7 +946,9 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const what = "a unit's verdict line";
   const value: unknown = JSON.parse(text);
   const accepted = typeof value === "object" && value !== null && "accepted" in value;
+  const trusted = typeof value === "object" && value !== null && "acceptedUnderClientTrust" in value;
   const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "extraction"]
+    : trusted ? ["unit", "members", "acceptedUnderClientTrust", "depends", "extraction"]
     : ["unit", "members", "refusal", "extraction"], what);
   const { unit, members, depends, refusal, extraction } = v;
   if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
@@ -950,6 +956,10 @@ export function decodeVerdictLine(text: string): VerdictLine {
   if (accepted) {
     if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
     return { unit, members, accepted: true, depends, extraction };
+  }
+  if (trusted) {
+    if (v["acceptedUnderClientTrust"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
+    return { unit, members, acceptedUnderClientTrust: true, depends, extraction };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
   return { unit, members, refusal, extraction };

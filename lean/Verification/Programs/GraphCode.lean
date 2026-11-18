@@ -169,6 +169,81 @@ theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
       exact Or.inr ⟨U, h', ts', hx, hu, st, hh,
         ih U h' hs' (fun e he => RefsOk_mono hx (RefsOk_trunc _ (hE e he))) hg⟩
 
+/-- A node of the lists is a node of the graph they describe. -/
+theorem program_node_of {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {e : Tm}
+    {k : Continuation} {x : Option Target} (he : E[l]? = some e) (hk : K[l]? = some (k, x)) :
+    (program E K)[l]? = some ⟨e, k, x⟩ := by
+  have hz : (E.zip K)[l]? = some (e, (k, x)) := List.getElem?_zip_eq_some.mpr ⟨he, hk⟩
+  simp [program, hz]
+
+/-- **Each step of the term that runs graph code is a transition of the
+graph** (proved): the converse of `sim_step`. -/
+theorem sim_step_back {E K ts s h h' ts'} (hs : Sim E K ts s) (step : Step h ts h' ts') :
+    ∃ s', Transition (program E K) h s h' s' ∧ Sim E K ts' s' := by
+  cases hs with
+  | goto =>
+    cases step with
+    | gotoEnter he hk => exact ⟨_, .enter (program_node_of he hk), .frame⟩
+  | frame =>
+    cases step with
+    | frameC st => exact ⟨_, .expr st, .frame⟩
+    | frameRet hv => exact ⟨_, .ret hv, .done hv⟩
+    | frameBind hv => exact ⟨_, .bind hv, by rw [push_envOf]; exact sim_goto⟩
+    | frameEffect hv => exact ⟨_, .effect hv, sim_goto⟩
+    | frameYes => exact ⟨_, .yes, sim_goto⟩
+    | frameNo => exact ⟨_, .no, sim_goto⟩
+    | frameYesBind => exact ⟨_, .yesBind, by rw [push_envOf]; exact sim_goto⟩
+    | frameNoBind => exact ⟨_, .noBind, by rw [push_envOf]; exact sim_goto⟩
+    | frameTag hv => exact ⟨_, .tagBind hv, by rw [push_envOf]; exact sim_goto⟩
+    | frameHandle hr => exact ⟨_, .handle hr, by rw [push_envOf]; exact sim_goto⟩
+    | frameRaise hr => exact ⟨_, .raise hr, .raised (raises_val hr) (raises_sourceVal hr)⟩
+  | done hv => exact absurd step (value_no_step hv)
+  | raised hv _ => exact absurd step (raises_no_step (.throwV hv ‹_›))
+
+/-- A graph state's references are those of the term that runs it. -/
+theorem stateRefs_of_sim {E K ts s} {n : Nat} {W : WorldT n} (hs : Sim E K ts s) (hr : RefsOk W ts) :
+    StateRefs W s := by
+  cases hs with
+  | goto =>
+    refine envOf_refs_of (fun a ha r h => hr r ?_) (fun r h => hr r ?_)
+    · simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inr ⟨a, ha, h⟩)
+    · simp only [refs, refsArgs_eq, List.mem_append]; exact .inr h
+  | frame =>
+    refine ⟨fun r h => hr r ?_, envOf_refs_of (fun a ha r h => hr r ?_) (fun r h => hr r ?_)⟩
+    · simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inl (.inr h))
+    · simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inl (.inr ⟨a, ha, h⟩)
+    · simp only [refs, refsArgs_eq, List.mem_append]; exact .inr h
+  | done => exact hr
+  | raised => exact fun r h => hr r (by simpa [refs] using h)
+
+/-- **The graph is as safe as the term that runs it** (proved): the
+converse of `safe_of_sim`. -/
+theorem safeGraph_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
+    Sim E K ts s → Safe Ξ T n W h ts → SafeGraph Ξ (program E K) T n W h s := by
+  intro n
+  induction n with
+  | zero => intro W h ts s hs ht; exact stateRefs_of_sim hs ht
+  | succ n ih =>
+    intro W h ts s hs ht
+    obtain ⟨hr, ht⟩ := ht
+    refine ⟨stateRefs_of_sim hs hr, ?_⟩
+    rcases ht with (⟨hv, hT⟩ | ⟨v, hrs, hsc⟩) | ⟨U, h', ts', hx, hu, st, hh, ht⟩
+    · cases hs with
+      | goto => simp [isVal] at hv
+      | frame => simp [isVal] at hv
+      | done => exact .inl (.inl ⟨_, rfl, hv, hT⟩)
+      | raised => simp [isVal] at hv
+    · cases hs with
+      | goto => cases hrs
+      | frame => cases hrs
+      | done hv => exact absurd hrs (fun h => by rw [raises_not_val h] at hv; contradiction)
+      | raised hv _ =>
+        cases hrs with
+        | throwV => exact .inl (.inr ⟨v, rfl, hsc⟩)
+        | throwC hr' => rw [raises_not_val hr'] at hv; contradiction
+    · obtain ⟨s', tr, hs'⟩ := sim_step_back hs st
+      exact .inr ⟨U, h', s', hx, hu, tr, hh, ih U h' hs' ht⟩
+
 /-- A graph run started at an entry the checker accepted is safe. -/
 theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι}
     {E K C start inputs} {codes : CodeEntry ι → Bool} {entrySeparation : HeapSeparation.Separation}

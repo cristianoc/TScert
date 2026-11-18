@@ -216,6 +216,7 @@ import Verification.Semantics.Purity
 import Verification.Semantics.RegionBounds
 import Verification.Semantics.Rules
 import Verification.Semantics.SafeIntegers
+import Verification.Semantics.SafeUnder
 import Verification.Semantics.Safety
 import Verification.Semantics.SeparationEvidence
 import Verification.Semantics.SeparationNormal
@@ -249,6 +250,7 @@ import Verification.Source.Claims.PassUnit
 import Verification.Source.Claims.PassUnitCodes
 import Verification.Source.Claims.PassUnitCross
 import Verification.Source.Claims.PassUnitFile
+import Verification.Source.Claims.PassUnitFramed
 import Verification.Source.Claims.PassUnitHeadline
 import Verification.Source.Claims.PassUnitInferred
 import Verification.Source.Claims.PassUnitInit

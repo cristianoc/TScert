@@ -454,7 +454,13 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
   let answers : CertificateProducer.Answered G := {}
   let plan ← (f.plans[i]?).getD (.error s!"no unit {i}")
-  let .graph name _ r ← plan.certify
+  let cert ← plan.certify
+  -- A framed plan: no check of the pass certifies the read-only frame's
+  -- obligations, so it is refused at its name.
+  let .graph name _ r := cert
+    | match cert with
+      | .framed name .. => return .before name (.refused "a framed plan, which no check certifies")
+      | .graph name .. => return .before name (.refused "a framed plan, which no check certifies")
   -- The request's own checks over its whole certificate the pass does
   -- not make: the graph is passed, and its verdict is not handled.
   -- A footprint (`effectResult`): its request-level conditions here, its

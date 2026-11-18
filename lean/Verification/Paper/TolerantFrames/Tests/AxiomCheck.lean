@@ -18,6 +18,7 @@ import Verification.Paper.TolerantFrames.ParityDerivations
 import Verification.Paper.TolerantFrames.ParityEvidence
 import Verification.Paper.TolerantFrames.ReadOnlyCert
 import Verification.Paper.TolerantFrames.ReadOnlyChecks
+import Verification.Paper.TolerantFrames.ReadOnlyClaim
 import Verification.Paper.TolerantFrames.ReadOnlyComponents
 import Verification.Paper.TolerantFrames.ReadOnlyExec
 import Verification.Paper.TolerantFrames.ReadOnlyFrame

@@ -10,17 +10,28 @@ namespace Verification.WorkerWire
 open Lean
 
 /-- A unit's verdict line: `{"unit","members","accepted","depends","extraction"}`,
-its group accepted with the units its verdict rests on, or
+its group accepted with the units its verdict rests on;
+`{"unit","members","acceptedUnderClientTrust","depends","extraction"}`, its
+group accepted for the executions in which outside code keeps a member's
+client obligation (`trusted`, `FilePlans.clientTrust`); or
 `{"unit","members","refusal","extraction"}`; `extraction` the first
 extraction refusal among its group's members, or null. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
-    (extraction : Option String) : String :=
+    (extraction : Option String) (trusted : Bool) : String :=
   let ext := ("extraction", match extraction with | some r => toJson r | none => Json.null)
   (match verdict with
-    | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
-        ("depends", toJson deps), ext]
+    | .ok deps => Json.mkObj ([("unit", toJson unit), ("members", toJson members)] ++
+        (if trusted then [("acceptedUnderClientTrust", toJson true)] else [("accepted", toJson true)]) ++
+        [("depends", toJson deps), ext])
     | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
         ("refusal", toJson reason), ext]).compress
+
+/-- Whether a verdict line accepts its unit under client trust
+(`verdictLine`). -/
+def lineTrusted (line : String) : Bool :=
+  match Json.parse line with
+  | .ok j => (j.getObjVal? "acceptedUnderClientTrust").toOption.isSome
+  | .error _ => false
 
 /-- A verdict line's extraction refusal (`verdictLine`). -/
 def lineExtraction (line : String) : Except String (Option String) := do

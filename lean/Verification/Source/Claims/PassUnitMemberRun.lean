@@ -85,8 +85,18 @@ theorem passMember_sound : PassMemberSound := by
   extract_lets G I answers reference line tracing at h
   obtain ⟨plan, hplan, h⟩ := except_bind_ok h
   obtain ⟨cp, hcert, h⟩ := except_bind_ok h
+  -- No plan certifies to a framed plan.
+  have hgraph : ∃ name pos r, cp = .graph name pos r := by
+    cases plan with
+    | graph n' p' r' =>
+      simp only [FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hcert
+      exact ⟨n', p', r', hcert.symm⟩
+  obtain ⟨name, pos, r, rfl⟩ := hgraph
   split at h
-  rename_i name pos r
+  rotate_left
+  · rename_i hne; exact absurd rfl (hne _ _ _)
+  rename_i name' pos' r' heq
+  cases heq
   have hplanAt : PlanAt f j name pos r := by
     unfold PlanAt
     cases hp : f.plans[j]? with
