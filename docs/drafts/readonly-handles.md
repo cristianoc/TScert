@@ -1512,6 +1512,14 @@ by the membership test (`Row`): it changes each exposed location of $`E`$
 and each released or outside location recorded in $`A`$ or $`B`$ within
 $`\Theta_C`$ at its part. $`\Theta_C`$ is an effect of the same type as
 $`\Psi_C`$ (`Protocol`); the read-only row is $`\Theta_C=\mathsf{keep}`$.
+Both take their changes in Paper I's lattice with $`\mathsf{extend}`$
+(`Footprints.Change`):
+$`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{extend}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$,
+$`\mathsf{extend}`$ appending fresh cells to an array spine's end, as
+`push` does, so every listed cell stays listed at its index
+(`Change.Holds.extend_entry`) and a view spine is kept; the lattice's
+lemmas (`Holds.mono`, `.lower`, `.trans`, `.seq`) cover it, and so do
+(L1)–(L4).
 
 **Read-only frame.**
 
