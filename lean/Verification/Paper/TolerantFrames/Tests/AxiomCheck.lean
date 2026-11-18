@@ -23,6 +23,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyClaim
 import Verification.Paper.TolerantFrames.ReadOnlyComponents
 import Verification.Paper.TolerantFrames.ReadOnlyExec
 import Verification.Paper.TolerantFrames.ReadOnlyFrame
+import Verification.Paper.TolerantFrames.ReadOnlyLocated
 import Verification.Paper.TolerantFrames.ReadOnlyOutside
 import Verification.Paper.TolerantFrames.ReadOnlyProvenance
 import Verification.Paper.TolerantFrames.ReadOnlyRegion
