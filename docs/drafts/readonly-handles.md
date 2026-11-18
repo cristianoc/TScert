@@ -2243,9 +2243,19 @@ a stored closure of outside code or bound function binds may reach first
   after it meeting the heap of sites and the roots after it meeting `O`
   (`SitesSound`, `chkSound_of_sites`).
 
+- Where `O` holds outside storage and every site of `O` may hold every
+  value of `O` (`OutsideWritable`), a step of outside code keeps the heap
+  meeting the heap of sites and the roots meeting `O` (`SitesAt`;
+  `sites_outside`, `sitesAt_outside`): it changes only what its roots
+  reach, leaves there only what they reach or what it allocates, outside
+  storage, and its roots reach afterwards nothing else
+  (`outsideStep_reach`, `outsideStep_writes`, `outsideStep_noForge`). The
+  entry history meets both (`sitesAt_lentStart`).
+
 What remains of `ChkSound` is `SitesSound` from the lowered graphs: the
 sites each value of a frame of $`C`$'s code may reach, at each node, and
-the heap of sites, checked against every step of $`C`$'s code.
+the heap of sites, checked against every step of $`C`$'s code, the entry
+of a call of $`C`$ and its exits included.
 
 ### Located reductions
 
