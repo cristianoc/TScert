@@ -201,6 +201,11 @@ that is not the package's has crossed read-only. -/
 def Confined (st : St P) : Prop :=
   ∀ l, ReachesFrom st.s.h st.roots l → st.g.origin l = some .exposed → st.g.E l
 
+/-- **The frames' values are valid references** (`RootsOk` of the paper's
+model): every reference a value of a frame of code that is not the
+package's holds has the role its position demands. -/
+def RootsValid (st : St P) : Prop := ∀ r ∈ st.roots, RefsOk st.s.W r
+
 /-- **A step of code that is not the package's**: it keeps the marks and
 the ghost history; what it allocates is outside storage; it changes only
 storage its frames reach, and its frames reach afterwards only storage they
@@ -214,6 +219,7 @@ structure OutsideStep (st st' : St P) : Prop where
   reach : ∀ l, Changes st st' l → ReachesFrom st.s.h st.roots l
   noForge : ∀ l, ReachesFrom st'.s.h st'.roots l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
   row : Row st st'
+  valid : RootsValid st'
 
 theorem OutsideStep.origin {st st' : St P} (ho : OutsideStep st st') (l : Nat) :
     st'.g.origin l = st.g.origin l ∨ st'.g.origin l = none := by
@@ -253,13 +259,15 @@ theorem outside_step {st st' : St P} (ho : OutsideStep st st') (hm : MarksOk st)
 /-! ## Runs of code that is not the package's -/
 
 /-- **The invariants of a state inside a call at depth `d`**: at least `d ≥
-1` calls of the package active, a uniform history, (M) and (P2). -/
+1` calls of the package active, a uniform history, (M), (P2), and valid
+references in the frames of code that is not the package's. -/
 structure Ok (d : Nat) (st : St P) : Prop where
   pos : 0 < d
   len : d ≤ st.g.A.length
   uniform : st.g.Uniform
   marks : MarksOk st
   confined : Confined st
+  valid : RootsValid st
 
 /-- **The bound a run gives `R_P`** (the draft, (L2)): the marks kept, the
 history growing, and every location of `R_P` at the first state changed
@@ -300,22 +308,23 @@ theorem outside_bound {Ψ : Protocol P} {d : Nat} {st st' : St P} (ho : OutsideS
     ⟨hok.pos, hok.len, by rw [ho.calls]; exact hok.len, ho.record,
       fun l hp => (Ghost.prot_congr ho.calls ho.record l).mpr hp, fun l he => by rw [ho.exposed]; exact he⟩
   exact ⟨⟨ho.kept, hg, fun l v hr hv => ⟨v, unchanged_of (hun l hr) hv, Change.Holds.refl _ _ _⟩⟩,
-    ⟨hok.pos, hg.len', Ghost.uniform_congr ho.calls ho.record hok.uniform, hm, hc⟩⟩
+    ⟨hok.pos, hg.len', Ghost.uniform_congr ho.calls ho.record hok.uniform, hm, hc, ho.valid⟩⟩
 
 /-- **A member's certificate** (the draft, "The protocol" and (L4)): a
-member's call, each run of code that is not the package's it makes inside
-it, one call deeper, related by `Inner`. Checked with every such run
+member's call inside a call at depth `d`, each run of code that is not the
+package's it makes inside it, one call deeper, related by `Inner`. Checked with every such run
 bounded on `R_P` by `Ψ_P`, its call bounds `R_P` by `Ψ_P` and keeps the
 invariants; with every such run keeping an invariant of `G_P`, its call
 keeps it. The pass's checks are what establish a certificate. -/
 structure Member (P : Package) (Ψ : Protocol P) (G : (St P → Prop) → Prop) where
-  Call : (St P → St P → Prop) → St P → St P → Prop
+  Call : Nat → (St P → St P → Prop) → St P → St P → Prop
   bound : ∀ (d : Nat) (Inner : St P → St P → Prop),
     (∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') →
-      ∀ st st', Call Inner st st' → Ok d st → RBound Ψ d st st' ∧ Ok d st'
+      ∀ st st', Call d Inner st st' → Ok d st → RBound Ψ d st st' ∧ Ok d st'
   keeps : ∀ I, G I → ∀ (d : Nat) (Inner : St P → St P → Prop),
+    (∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') →
     (∀ t t', Inner t t' → Ok (d + 1) t → I t → I t') →
-      ∀ st st', Call Inner st st' → Ok d st → I st → I st'
+      ∀ st st', Call d Inner st st' → Ok d st → I st → I st'
 
 /-- **A run of code that is not the package's inside a call at depth `d`**:
 a sequence of outside steps and member calls, each member call's own runs
@@ -324,7 +333,7 @@ inductive RunAt (Ψ : Protocol P) (G : (St P → Prop) → Prop) (Inner : Nat �
     St P → St P → Prop
   | nil (st : St P) : RunAt Ψ G Inner d st st
   | outside {st st' st'' : St P} : OutsideStep st st' → RunAt Ψ G Inner d st' st'' → RunAt Ψ G Inner d st st''
-  | member {st st' st'' : St P} (m : Member P Ψ G) : m.Call (Inner (d + 1)) st st' →
+  | member {st st' st'' : St P} (m : Member P Ψ G) : m.Call d (Inner (d + 1)) st st' →
       RunAt Ψ G Inner d st' st'' → RunAt Ψ G Inner d st st''
 
 /-- **A run within a budget of nested member calls `k`**. -/
@@ -377,7 +386,7 @@ theorem RunAt.keeps {Ψ : Protocol P} {G : (St P → Prop) → Prop} {I : St P �
     exact ih (outside_bound (Ψ := Ψ) ho hok).2 (hs _ _ hi ho.kept hun)
   | member m hc _ ih =>
     have ok₁ := (m.bound _ _ (fun t t' h ho => hIb _ t t' h ho) _ _ hc hok).2
-    exact ih ok₁ (m.keeps I hG _ _ (fun t t' h ho => hIk _ t t' h ho) _ _ hc hok hi)
+    exact ih ok₁ (m.keeps I hG _ _ (fun t t' h ho => hIb _ t t' h ho) (fun t t' h ho => hIk _ t t' h ho) _ _ hc hok hi)
 
 /-- **(L4) The handle invariant across a run**: an invariant of `G_P` whose
 support lies in `R_P` and that holds where the run starts holds where it

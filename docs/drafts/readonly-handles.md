@@ -1411,14 +1411,46 @@ package. `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its
 statement; `PassUnitSafe`'s entry condition gains the invariants and the
 ghost components, and its premise and conclusion are reviewed again.
 
+**The checks of a step** (`PkgStep`, in
+[ReadOnlyChecks.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyChecks.lean)).
+A step of the package's code inside a call at depth $`d`$ allocates, fixing
+every old location's site and key; its history transitions never pop below
+$`d`$; its crossings, read at the heap after it, update $`E`$ and meet the
+marks (`CrossOk`: no local or internal location reachable from the
+crossing value, an exposed one only through a read-only path, which is
+*Confinement* and the marks' definition). Every value it gives to code that
+is not the package's crosses, and so does every value it leaves, changed
+or allocated, in storage such code reaches after the step. The frames of
+code that is not the package's hold every value such code can reach without
+calling the package: the captures of its own closures among them, a
+closure of the package being reached only by a call, which is a member's
+call.
+
+- The step lemma (proved, `pkg_step_ok`): a checked step keeps the
+  invariants of states and the marks, and grows the history. A path the
+  frames have after the step either is one they had (`follows_split`), or
+  runs from the new contents of a location the step changed or allocated,
+  which crossed; a path of a well-formed heap from a valid value ends at an
+  allocated location (`follows_lt`).
+- *Incoming values* (proved, `incoming_site`, `incoming_charged`): a
+  location reachable from a value outside frames hold is exposed, released
+  or outside storage, so a write charged to every such part is charged to
+  its own.
+- A member from its checks (proved, `memberOfChecks`): its call is a
+  sequence of checked steps and runs of code that is not the package's one
+  call deeper (`MemberRun`); with its certified effect within $`\Psi_P`$
+  part by part (the protocol a fixed point over the members) it meets
+  `Member.bound`, and with every step keeping each invariant of complete
+  handles (`TolerantStep`, *Tolerant invariant*) it meets `Member.keeps`.
+
 **What Lean assumes.** The trust row (`OutsideStep.row`); the two
 properties of the language's steps (`OutsideStep.reach`,
-`OutsideStep.noForge`); each member's certificate (`Member`), which the
-pass's checks are to establish, the package's own steps keeping (M) and
-(P2) among it (a store into storage outside code reaches making its value
-cross); and the frame's premise `Inside`, which a check of $`S`$ against
-$`\Psi_P`$ at the possible sites of each object $`S`$ reads is to
-establish.
+`OutsideStep.noForge`); the validity of the frames' values
+(`RootsValid`, the model's `RootsOk`); for each member, the soundness of
+its certified effect on $`R_P`$ (`memberOfChecks`'s `certified`, what the
+pass's check of its body establishes) and its steps' checks; and the
+frame's premise `Inside`, which a check of $`S`$ against $`\Psi_P`$ at
+the possible sites of each object $`S`$ reads is to establish.
 
 ## Stages and cost
 
