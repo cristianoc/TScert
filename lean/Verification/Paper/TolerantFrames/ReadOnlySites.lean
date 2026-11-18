@@ -36,7 +36,14 @@ site may reference, outside storage included.
   root by itself, a value left where outside code reaches because its
   location is of a site of `O`, whose contents `O` holds. At a frame
   (`ClientFrame.SitesSound`, `chkSound_of_sites`), `ChkSound` holds where
-  the flow of `C`'s code gives these two at each step of its code. -/
+  the flow of `C`'s code gives these two at each step of its code.
+- **Outside code** (`sites_outside`, `ClientFrame.sitesAt_outside`): where
+  `O` holds outside storage and every site of `O` may hold every value of
+  `O` (`OutsideWritable`), a step of outside code keeps the heap meeting
+  the heap of sites and the roots meeting `O` (`SitesAt`): it changes only
+  what its roots reach, leaves there only what they reach or what it
+  allocates, outside storage, and its roots reach afterwards nothing else.
+  The entry history meets both (`ClientFrame.sitesAt_lentStart`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification
 
@@ -234,6 +241,87 @@ theorem escapeAt_of_sites (T : tv.Ty) {x y : Conf} {g g' mid : Ghost (F.at C)} {
   localStores := localStores_of_sites hH hL
   localBindings := localBindings_of_sites hH hB
 
+/-! ## A step of outside code -/
+
+/-- **Outside storage may hold every value outside code holds**: the
+contents and the bindings of each site of `O` hold `O`. -/
+def OutsideWritable (H : SiteHeap P) (O : List (Option P.Site)) : Prop :=
+  ∀ s ∈ O, ∀ s' ∈ O, s' ∈ H.contents s ∧ s' ∈ H.bindings s
+
+/-- The heap's values reference allocated locations (proved). -/
+theorem heap_leaves_lt {s : IndexedHeap} {ofC : ComponentTag → Bool} {w : Nat} {u : Val} (hu : s.h[w]? = some u) :
+    ∀ l, Leaves ofC u l → l < s.h.length :=
+  fun _ hl => Leaves.lt (s := s) (RefsOk.refsOkN (contents_valid (List.getElem?_eq_some_iff.mp hu).1 hu)) hl
+
+/-- **A step of outside code keeps the sites** (proved): where the heap
+meets a heap of sites, the roots of outside code meet a set `O` closed in
+it that holds outside storage, and outside storage may hold every value
+of `O`, after a step of outside code, with what it allocates outside
+storage, the heap meets the heap of sites and the roots meet `O`. Outside
+code changes only locations its roots reach and leaves in them only what
+they reach or what it allocates (`outsideStep_reach`,
+`outsideStep_writes`), and its roots reach afterwards only what they
+reached or what it allocated (`outsideStep_noForge`). -/
+theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option PropKey} {H : SiteHeap (F.at C)}
+    {O : List (Option (F.at C).Site)} (hs : AStep x y) (hact : Outside F C none x) (hO : Closed H O)
+    (hnone : none ∈ O) (hW : OutsideWritable H O) (hH : HeapSites g H x.s.h)
+    (hR : ∀ r ∈ rootsOf F C none x.t, SitesOf g O r) :
+    HeapSites (g.alloc x.s.h.length (fun _ => none) key) H y.s.h ∧
+      ∀ r ∈ rootsOf F C none y.t, SitesOf (g.alloc x.s.h.length (fun _ => none) key) O r := by
+  let g' := g.alloc x.s.h.length (fun _ => none) key
+  have hr0 : (lift F C none x g).roots = vals (F.ofC C) (!F.ofC C none) x.t := rfl
+  have hr1 : (lift F C none y g').roots = vals (F.ofC C) (!F.ofC C none) y.t := rfl
+  -- A location the old roots reach, or a fresh one, is of a site of `O`.
+  have hsite : ∀ l, ReachesFrom (F.at C).ofC x.s.h (rootsOf F C none x.t) l ∨ x.s.h.length ≤ l →
+      g'.site l ∈ O := by
+    intro l hl
+    by_cases hlt : l < x.s.h.length
+    · have he : g'.site l = g.site l := (Ghost.alloc_old hlt).1
+      rw [he]
+      rcases hl with ⟨r, hr, hreach⟩ | hge
+      · exact reach_sites hH hO (hR r hr) l hreach
+      · omega
+    · have he : g'.site l = none := by simp [g', Ghost.alloc, hlt]
+      rw [he]; exact hnone
+  have hwr := outsideStep_writes (st := lift F C none x g) (st' := lift F C none y g') hs.step hact hr0
+  have hreach := outsideStep_reach (st := lift F C none x g) (st' := lift F C none y g') hs.step hact hr0
+  have hnf := outsideStep_noForge (st := lift F C none x g) (st' := lift F C none y g') hs.step hact hr0 hr1
+  refine ⟨fun w u hu => ?_, fun r hr l hl => ?_⟩
+  · by_cases hsame : ∃ v : Val, x.s.h[w]? = some v ∧ y.s.h[w]? = some v
+    · obtain ⟨v, hv, hv'⟩ := hsame
+      obtain rfl : v = u := Option.some.inj (hv'.symm.trans hu)
+      have hw : w < x.s.h.length := (List.getElem?_eq_some_iff.mp hv).1
+      have he : g'.site w = g.site w := (Ghost.alloc_old hw).1
+      rw [he]
+      exact ⟨(hH w v hv).1.alloc (heap_leaves_lt hv), fun x' hx => ((hH w v hv).2 x' hx).alloc
+        (fun l hl => heap_leaves_lt hv l (Leaves.code hx hl))⟩
+    · -- A changed or allocated location: reached by the old roots, or fresh.
+      have hsw : g'.site w ∈ O := by
+        apply hsite
+        by_cases hlt : w < x.s.h.length
+        · obtain ⟨v, hv⟩ : ∃ v, x.s.h[w]? = some v := ⟨_, List.getElem?_eq_getElem hlt⟩
+          refine .inl (hreach w ⟨v, hv, fun h' => hsame ⟨v, hv, h'⟩⟩)
+        · exact .inr (by omega)
+      refine ⟨fun l hl => (hW _ hsw _ (hsite l (hwr w u hsame hu l hl))).1, fun x' hx l hl =>
+        (hW _ hsw _ (hsite l (hwr w u hsame hu l (Leaves.code hx hl)))).2⟩
+  · exact hsite l (hnf l ⟨r, hr, hl.reaches⟩)
+
+/-- **The sites read only the ghost's sites** (proved). -/
+theorem SitesOf.congr {g g' : Ghost P} {S : List (Option P.Site)} {v : Val} (he : g'.site = g.site)
+    (hv : SitesOf g S v) : SitesOf g' S v := by
+  intro l hl; rw [he]; exact hv l hl
+
+theorem HeapSites.congr {g g' : Ghost P} {H : SiteHeap P} {h : Heap} (he : g'.site = g.site)
+    (hH : HeapSites g H h) : HeapSites g' H h := by
+  intro w u hu
+  rw [he]
+  exact ⟨(hH w u hu).1.congr he, fun x hx => ((hH w u hu).2 x hx).congr he⟩
+
+/-- The sites after a step of outside code are its allocation's (proved). -/
+theorem outsideNextAt_site {key : Nat → Option PropKey} {len : Nat} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
+    (outsideNextAt F C none key len h' t' g).site = (g.alloc len (fun _ => none) key).site := by
+  unfold outsideNextAt; split <;> rfl
+
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
 
@@ -246,7 +334,37 @@ def SitesSound (H : SiteHeap (fr.F.at fr.C)) (O : List (Option (fr.F.at fr.C).Si
     HeapSites (midOf fr.chkConf a.1 b.1 a.2) H b.1.s.h ∧
       ∀ r ∈ rootsOf fr.F fr.C none b.1.t, SitesOf (midOf fr.chkConf a.1 b.1 a.2) O r
 
+/-- **The sites at a state**: its heap meets the heap of sites, and the
+roots of outside code meet `O`. -/
+def SitesAt (H : SiteHeap (fr.F.at fr.C)) (O : List (Option (fr.F.at fr.C).Site))
+    (a : Conf × Ghost (fr.F.at fr.C)) : Prop :=
+  HeapSites a.2 H a.1.s.h ∧ ∀ r ∈ rootsOf fr.F fr.C none a.1.t, SitesOf a.2 O r
+
+
 variable {fr}
+
+/-- **A step of outside code keeps the sites at a state** (proved,
+`sites_outside`): the history after it has its allocation's sites. -/
+theorem sitesAt_outside {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
+    (hO : Closed H O) (hnone : none ∈ O) (hW : OutsideWritable H O) {a b : Conf × Ghost (fr.F.at fr.C)}
+    (hk : fr.KStep a b) (ho : kind fr.F fr.C none a.1 b.1 = .outside) (ha : fr.SitesAt H O a) :
+    fr.SitesAt H O b := by
+  obtain ⟨hs, hg, -⟩ := hk
+  have hact := ((kind_spec (F := fr.F) (C := fr.C) (c := none) a.1 b.1).1 ho).1
+  have hsite : b.2.site = (a.2.alloc a.1.s.h.length (fun _ => none) (fr.chkConf a.1 b.1).key).site := by
+    rw [hg, fr.next_conf]
+    simp only [Ghost.next, Ghost.stepAt, stepKind_conf, ho]
+    exact outsideNextAt_site
+  obtain ⟨hH, hR⟩ := sites_outside (key := (fr.chkConf a.1 b.1).key) hs hact hO hnone hW ha.1 ha.2
+  exact ⟨hH.congr hsite, fun r hr => (hR r hr).congr hsite⟩
+
+/-- **The sites at an entry** (proved): every location of the entry history
+is outside storage, which `O` holds and outside storage may hold. -/
+theorem sitesAt_lentStart {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
+    (hnone : none ∈ O) (hW : OutsideWritable H O) (x : Conf) :
+    fr.SitesAt H O (x, lentStart fr.F fr.C x.t) := by
+  have hc := hW none hnone none hnone
+  refine ⟨fun w u _ => ⟨fun l _ => hc.1, fun _ _ l _ => hc.2⟩, fun r _ l _ => hnone⟩
 
 /-- **`ChkSound` from the flow** (proved): at the actual crossings, where
 `O` is closed in `H` and holds released sites and outside storage only,
