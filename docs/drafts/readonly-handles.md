@@ -2462,11 +2462,46 @@ The checks state this on the code itself (`ReadOnlyFitsCheck.lean`):
   at its node's slots, a node value naming a signature is a slot naming
   it, and each edge is checked; they give `CodeOk` (`codeOk_of_chk`).
 
-Proof scope: the lemmas above are proved. Not proved here: a decision
-procedure for the checks over a finite proposal (each node's slots past
-a width reading one default set, `readAt`'s closed set computed from the
-heap of sites), the proposal on the wire, and the facts of the flow
-(`Flow.Facts`) decided from it.
+Proof scope: the lemmas above are proved; their decision over a finite
+proposal is [deciding the flow](#deciding-the-flow).
+
+### Deciding the flow
+
+A finite proposal (`FFlow`, `ReadOnlyFitsDecide.lean`) holds $`O`$, the
+heap of sites as a list of entries (a site's contents and bindings, none
+for a site no entry names), and for each code of $`C`$ its nodes (`FCode`,
+one node standing for every label past them), each node's slots as a list
+with one set for every slot past it, its value set and its signatures (none
+past the list). The flow it stands for (`FFlow.flow`) reads a code's first
+entry.
+
+- **A term's least set** (`syn`), computed bottom-up from the node's slots:
+  a variable bound inside the term its binder's set, a slot its sites; a
+  read the contents of the closure of the sites it may read under the
+  contents (`closeQ`: grown as often as the heap of sites lists contents,
+  then checked closed); an allocation its site, each initial value checked
+  against its site's storage (`storesB`); a call `O`, its callee, receiver
+  and actuals within `O`, or a call of a slot naming a signature whose
+  entry's slots hold the receiver's and actuals' sets. Where it is
+  computed, the term fits it (`syn_sound`), and every larger set
+  (`OFits.sub`).
+- **Lowered code** (`lowB`, `lowB_sound`) and the closure's own slot alone
+  named at its entry (`selfFnB`), decided.
+- **The edges** (`carriesB`, `carriesFnB`): the slots of both ends and the
+  mapping are constant past a width (`Stable`), so the slots below it
+  decide `Carries`; a target names signatures only within its list, so
+  those decide `CarriesFn` (`contChkB_sound`, `handlerChkB_sound`).
+- **The checks of a flow** (`FFlow.check`): each code's checks
+  (`codeChkB_sound`), every node's slots accepting $`O`$, $`O`$ holding
+  outside storage, closed in the heap of sites, its storage able to hold
+  all of $`O`$; they give `Flow.Facts` (`FFlow.check_sound`). The marks the
+  checks at the crossings read (`Lendable`, `LocalHeld`, no binding
+  reaching a local site) are decided by `FFlow.marksB`, and the proposal
+  meeting the shapes of $`C`$'s closures by `FFlow.shapesB`.
+
+Proof scope: each decision is proved sound for the property it decides;
+none is proved complete. The proposal is produced by code the checks do
+not trust.
 
 ### Located reductions
 
