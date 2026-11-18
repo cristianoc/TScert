@@ -3490,6 +3490,7 @@ where the native is modelled, and audited otherwise:
 | `sort` at any other comparator, and at `undefined` | none stated | another comparator is client code that may change any spine (`invalid-sort-comparator-shrink`, run under Node); the conversion signature states no footprint |
 | `pop`, `shift`, `reverse`, `splice` | `{value: any, spine: keep}` but for the receiver's spine (`receiverSpine`) | each changes only its receiver's spine, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
 | `filter`, `map`, `flatMap`, `flat`, `slice`, `splice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a spine no earlier heap held (audited) |
+| `slice()` at a receiver of presence $`p`$ | the empty footprint, a fresh result of presence $`p`$ and the receiver's length | the [array slice copy](#array-slice-copy) (audited) |
 | `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |
 | `map` at any receiver and any callback | `{value: any, spine: any}` | the unrestricted signature, with a result that may hold holes |
 | `every` at a guard within the empty footprint promising `R`'s type, `R` one of `string`, `number`, `boolean` | the empty footprint, and on a `true` result every present element of the receiver of kind `R` (`elements R`) | `every` reads the length once, tests presence and calls the guard with each present element, answering `false` at the first falsy answer; the guard changes no location, so the spine and each element keep their contents through the call, and a guard's answer is a Boolean, so `true` follows only from `true` at every visit, which leaves that element in `R` ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.every`; audited) |
@@ -3614,6 +3615,28 @@ search. An unsuccessful search, including one of an empty array, returns
 $`-1`$ ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.indexOf`; audited).
 The postcondition is consumed by the proved
 [call-ensures rule](ARITHMETIC.md#postconditions).
+
+#### Array slice copy
+
+`Array.prototype.slice()`, called with no arguments, copies its receiver
+$`x`$: it reads the length once, then for each index below it tests
+presence and, where present, reads the element and defines it at that
+index of a fresh array of that length, which it returns
+([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.slice`; audited).
+Under ordinary construction (no own `constructor`, the standard species,
+the [trust surface](DESIGN.md#trust-surface)'s rows) the result is a new
+array; the indices are no arguments, so no conversion runs, and element
+reads of an array run no getters under the array contract, so the call
+runs no client code and its receiver keeps its contents throughout. Its
+signatures are stated per receiver presence: at a receiver of presence
+$`p`$ the result has presence $`p`$ (a hole of $`x`$ is a hole of the
+result), the receiver's element type (each present element is $`x`$'s own
+value, a shallow copy), a fresh spine and $`|\mathrm{result}|=|x|`$, with
+the empty effect on its normal exit. Called with arguments it copies a
+range, its result fresh and readable. The postcondition is consumed by the
+proved [call-ensures rule](ARITHMETIC.md#postconditions)
+(`array-slice-copy`; `invalid-array-slice-sparse-hole` and
+`invalid-array-slice-lookalike`, run under Node).
 
 #### `codePointAt` of a string
 

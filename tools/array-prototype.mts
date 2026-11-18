@@ -108,6 +108,8 @@ const element: TypeTerm = { k: "binder", name: "T", span: at };
 const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined")], span: at };
 const arrayOf = (value: TypeTerm, readonly: boolean, presence: ArrayPresence = "readable"): TypeTerm =>
   ({ k: "array", presence, readonly, element: value, span: at });
+/** The three presences of an array contract (`Types.ArrayPresence`). */
+const presences: readonly ArrayPresence[] = ["dense", "readable", "sparse"];
 const callback = (value: TypeTerm, result: TypeTerm,
     effect: CallEffect, presence: ArrayPresence = "readable"): TypeTerm =>
   ({ k: "function", effect, receiver: null, rest: null, span: at,
@@ -324,8 +326,30 @@ export const overlay: readonly OverlayEntry[] = [
   // elements meeting the standard conversion contract, compare by strict
   // equality or SameValueZero, and allocate only their result: they run no
   // client code and write no existing location.
+  //
+  // `slice()` copies its receiver: it reads the length once, then for each
+  // index below it tests presence and, where present, reads the element and
+  // defines it at that index of a fresh array of that length (ordinary
+  // construction: no own `constructor`, the standard species), which it
+  // returns. It runs no client code (the indices are no arguments to
+  // convert), so the receiver keeps its contents throughout: the result
+  // has the receiver's length, a hole of the receiver is a hole of the
+  // result and each present element is the receiver's own value, a shallow
+  // copy. Stated per receiver presence, the result at the receiver's
+  // presence and length (ECMA-262, `Array.prototype.slice`, audited).
+  // With arguments it copies a range, its result readable.
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
-    effect: footprintEffect(emptyFootprint, { fresh: true }) },
+    effect: footprintEffect(emptyFootprint, { fresh: true }),
+    stated: [
+      ...presences.map((presence): StatedSignature => ({ receiver: arrayOf(element, true, presence), params: [],
+        result: arrayOf(element, false, presence), effect: footprintEffect(emptyFootprint, { fresh: true, ensures: [
+          { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
+            [{ kind: "length", slot: 1, path: [] }, -1]], bound: 0 } } } },
+          { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, -1],
+            [{ kind: "length", slot: 1, path: [] }, 1]], bound: 0 } } } },
+        ] }) })),
+      { params: [optionalNumber], result: arrayOf(element, false) },
+      { params: [optionalNumber, optionalNumber], result: arrayOf(element, false) }] },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
     bounds: new Map([["T", stringConvertible]]), effect: emptyEffect,
     // Get at a missing numeric key yields undefined, converted to empty text.
