@@ -2058,8 +2058,9 @@ a claim of its own beside the ordinary one (`PassUnit.FramedRequestSafe`,
 [the single pass's theorem](../SINGLE-PASS-THEOREM.md#definitions)):
 
 - **The client frame** (`ReadOnly.ClientFrame`): the family of components,
-  its sites numbered; the component $`C`$; the types crossings are read
-  at; $`\Theta`$; what the checks give at each step (`chk`: the sites and
+  its sites numbered; the component $`C`$; $`C`$'s own lowered code
+  (`codes`: the unit's program, the closures it creates, the component's
+  members); the types crossings are read at; $`\Theta`$; what the checks give at each step (`chk`: the sites and
   keys of what it allocates, its crossings in order); and the histories an
   entry starts from (`start`), one at least at every state.
 - **The obligation at a step** (`ClientFrame.Keeps`): a step whose active
@@ -2074,9 +2075,22 @@ a claim of its own beside the ordinary one (`PassUnit.FramedRequestSafe`,
   and a typed heap, at every state of the execution, as in
   `SafePostExcW`; after a step of outside code that breaks the obligation
   nothing is claimed. Progress is never conditional on the obligation.
+- **The entry premises** (`ClientFrame.Entry`), beside the obligation:
+  *code provenance* (`Provenance`: every code the term and the heap hold,
+  of a closure or of a run, that carries a tag of $`C`$ is one of `codes`;
+  Assumption "Clients", outside code enters $`C`$ only through its
+  interface) and *the call discipline* (`Discipline`: the term well formed
+  and the heap free of runs, `wf` and `HeapFree`, the configurations
+  `XStep.of_wf` reads). Every step keeps both (`Entry.step`): a step builds
+  its result from the term's subterms, the code of the closure it calls and
+  the heap's values, every code at the tag it had (`step_prov`), and keeps
+  the discipline (`step_wf`). So every value outside code creates carries
+  a tag of no component $`C`$ but on $`C`$'s own code, at every state of
+  the execution (`Entry.steps`).
 - **The six clauses** (`FramedSafeClause` to
   `FramedCodeAssertionsClause`): `RequestSafe`'s, each read at every call of
-  the code (`gotoOf` at its arguments and receiver) and from every history
+  the code (`gotoOf` at its arguments and receiver) meeting the entry
+  premises and from every history
   the frame starts from, along those executions; an assertion is read at
   each state that runs the graph at its label (`AssertedAt`).
 
@@ -2108,20 +2122,16 @@ checks' interpretation of each step of $`C`$'s code (item 3 above), and
 `start` the histories of the executions that reach a call from a start
 holding no storage of $`C`$ (`Inv.of_lent`, `Ex.inv`).
 
-**A limit of the claim as stated** (a counter-model). Its entries include
-a callback whose code is tagged with $`C`$ (`.graph … (some C)`), which
-meets its arrow whatever its tag (a tag changes no step, `SameRun`). Each
-of its steps runs $`C`$'s code by its tag, so `Keeps` constrains none of
-them: a visitor so tagged that empties the walker's array through its own
-writable alias keeps the obligation at every step and breaks the walker's
-assertion `i < w.length` after the call. Assumption "Clients" excludes it
-(outside code enters $`C`$ only through its interface); the claim reads
-that clause at none of its entries. Read there (every code tagged with
-$`C`$ in the entry's environment and heap, and in what outside code
-creates, is $`C`$'s own lowered code), it leaves the call discipline: the
-paper's executions are of well-formed terms on heaps free of runs
-(`XStep.of_wf`: `wf`, `HeapFree`; `twoCalls_step` enters two calls in one
-step), which `EntryHolds` does not give.
+**The counter-model the premises exclude.** An entry may hold a callback
+whose code is tagged with $`C`$ (`.graph … (some C)`), which meets its
+arrow whatever its tag (a tag changes no step, `SameRun`). Each of its
+steps runs $`C`$'s code by its tag, so `Keeps` constrains none of them: a
+visitor so tagged that empties the walker's array through its own writable
+alias keeps the obligation at every step and breaks the walker's assertion
+`i < w.length` after the call. Its code is not one of $`C`$'s, so the
+entry meets no code provenance (`Entry.foreign`), and no step of an
+execution from an entry creates it. A closure whose code is one of
+$`C`$'s runs that code, which the checks of $`C`$ cover.
 
 ## Stages and cost
 
