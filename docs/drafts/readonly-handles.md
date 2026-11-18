@@ -1632,9 +1632,18 @@ over outside steps meeting their hypotheses.
   $`\Theta_C`$, rigidity at each part, which every change has, and
   $`\Psi_C\sqcup\Theta_C\sqsubseteq\Phi`$. $`\top`$ meets both premises
   for every protocol (`Leads.trans_top`).
-- (L4) Invariants (proved, `Run.keeps`). For $`I\in G_C`$ with
-  $`\mathrm{supp}(I)\subseteq R_C`$ tolerating $`\Theta_C`$ (`SupportInR`) and $`I`$ true at
-  $`s`$, a run as in (L2) ends in a state where $`I`$ holds.
+- (L4) Invariants (proved, `Run.keeps`). For $`I\in G_C`$ that every
+  outside step keeps (`OutsideKeeps`) and $`I`$ true at $`s`$, a run as in
+  (L2) ends in a state where $`I`$ holds. Every outside step keeps an
+  invariant whose support lies in $`R_C`$ tolerating $`\Theta_C`$
+  (`SupportInR.outside`), and one whose support, read at each state, lies
+  in $`R_C`$ and allows $`\Theta_C`$ (`SupportAt`, `InvIn`,
+  `SupportAt.outside`): a step changing that support within
+  $`\Theta_C`$ keeps the invariant and makes it read no new location, which
+  stays in $`R_C`$ as the history grows. A member's write keeps the support
+  in $`R_C`$ where every location it reads afterwards was read before, is in
+  $`R_C`$, or was admitted by (O) at the write (`InvIn.of_step`), a
+  replacing write among them.
 - (O) Ownership (proved, `ownership`). A write of $`C`$ that stores
   a value $`v`$ into a location of $`R_C(s)`$, or of
   $`\mathrm{supp}(I)`$ for $`I\in G_C`$, is admitted (`Admitted`) only when
@@ -1642,12 +1651,19 @@ over outside steps meeting their hypotheses.
   unconfined copy made in the call among them, or in $`R_C(s)`$; those
   locations are then in $`R_C(t)`$ for every later state $`t`$ of the call.
 
-**The consequence** (proved, `readOnly_frame`, `readOnly_rely`). For a fact
-$`F`$ with a support $`S`$ (*Tolerant frames*' Definition "Support", over the
-states keeping the marks) every location of which is in $`R_C`$ with
-$`\Psi_C(\mathrm{part}(l))`$ within its change (`Inside`, $`\Psi_C\triangleleft S`$
-on $`R_C`$), $`F`$ holds after every action of $`\Phi\oplus_C\Psi_C`$, and
-after every run of code that is not $`C`$'s inside a call of $`C`$. `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its
+**The consequence** (proved, `readOnly_frame`, `readOnly_rely`,
+`readOnly_guarantee`). For a fact $`F`$ with a support $`S`$ (*Tolerant
+frames*' Definition "Support", over the states keeping the marks), each
+location $`l`$ of each $`(r:\delta)\in S`$ meeting
+$`\Psi(\mathrm{part}(l))\sqsubseteq\delta`$ if $`l\in R_C`$ and
+$`\gamma\sqsubseteq\delta`$ for each entry $`(r':\gamma)`$ of $`\Phi`$
+with $`l\in r'`$ otherwise (`Framed`, at
+$`\Psi=\Psi_C\sqcup\Theta_C`$), $`F`$ holds after every action of
+$`\Phi\oplus_C\Psi`$, and after every run of code that is not $`C`$'s
+inside a call of $`C`$ whose run is an action of $`\Phi`$ (the bound
+route). An invariant of $`G_C`$ held with its support in $`R_C`$
+(`InvIn`), its support allowing $`\Theta_C`$ (`SupportAt`), holds after
+such a run (the guarantee route). `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its
 statement; `PassUnitSafe`'s entry condition gains the invariants and the
 ghost components, and its premise and conclusion are reviewed again.
 
@@ -1955,14 +1971,23 @@ outside code are both covered, the validity of the frames' values,
 identities aside (`RootsValid`), the marks kept by an outside step and its
 history fields are proved of actual steps (`outsideStep_of_step`).
 
-**The frame's premise, checked** (proved, `insideCheck_sound`). The check
-`insideCheck` reads, for each region of $`S`$, the parts its locations may
-have: each part's change in $`\Psi_C`$ is within the region's, and the part
-is of a local or an exposed site, or released or outside storage of a
-region a live incoming read-only crossing protects. Where the flow of
-possible sites covers each location's part, and each region read as
-protected has its released and outside locations recorded in the history,
-the check gives `Inside`.
+**The frame's premise, checked** (proved, `frameCheck_sound`). The check
+`frameCheck` reads, for each region $`(r:\delta)`$ of $`S`$, the parts its
+locations may have. A part of a local or an exposed site lies in $`R_C`$,
+one of an internal site outside it, and one of a released site or of
+outside storage in it where protected (`Part.mayIn`, `Part.mayOut`, the
+region's protection bit). Where a part's locations may lie in $`R_C`$, its
+change in $`\Psi`$ is within $`\delta`$; where they may lie outside it,
+every entry of $`\Phi`$ a separation query cannot set apart from $`r`$ is
+within $`\delta`$; where both are possible, both hold. The check gives
+`Framed` given its two inputs: the possible parts cover every location of
+each region (`flow_of_sites`, from the flow's possible sites and keys of the
+region's locations, the kind being the region's bound's), and every
+released or outside location of a region read as protected has a live
+history witness, a crossing in that reached it read-only, the history
+grown since (`Witness`, `prot_of_witness`). Where no storage of a local,
+an internal or an exposed site exists, a uniform history with a call
+active and valid frames give the invariants of states (`Ok.of_lent`).
 
 ## Stages and cost
 

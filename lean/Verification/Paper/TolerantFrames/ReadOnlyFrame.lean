@@ -18,13 +18,18 @@ other location by `Φ`.
 - (L2) `Run.bound`: a run of code that is not the package's inside a call,
   outside steps and member calls bounded by their certificates, changes
   every location of `R_P` within `Ψ_P` and keeps the region.
-- (L4) `Run.keeps`: an invariant of `G_P` whose support lies in `R_P`
-  survives such a run.
+- (L4) `Run.keeps`: an invariant of `G_P` every outside step keeps
+  survives such a run; one whose support lies in `R_P` (`SupportInR`), or
+  whose support read at each state does (`SupportAt`, `InvIn`), is one.
 - (O) `ownership`: storage an admitted install makes the support read stays
   in `R_P` for the rest of the call.
-- The rule (`readOnly_rule`) and its consequence (`readOnly_rely`): a fact
-  supported inside `R_P` at the parts' changes holds after the run, by the
-  definition of support the tolerant frame (`frame_step`) reads.
+- The rule (`readOnly_rule`) and its consequence, Proposition "Read-only
+  reliance" of the Read-only frames note: a fact whose support meets the
+  premise location by location (`Framed`: `Ψ` at a location of `R_P`, `Φ`
+  at any other) holds after the run (`readOnly_rely`, the bound route), by
+  the definition of support the tolerant frame (`frame_step`) reads; an
+  invariant of `G_P` held with its support in `R_P` holds after it
+  (`readOnly_guarantee`, the guarantee route).
 
 The trust row is a hypothesis on outside steps (`OutsideStep.row`), as are
 three properties of the language's steps: a step changes only storage its
@@ -502,27 +507,75 @@ def SupportInR (Θ : Protocol P) (I : St P → Prop) : Prop :=
   ∀ st st', I st → Kept st st' → (∀ l v, st.g.InR l → st.s.h[l]? = some v →
     ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v') → I st'
 
+/-- **An invariant every outside step keeps**, from a state meeting the
+invariants of states at some depth: the premise (L4) reads of outside steps. -/
+def OutsideKeeps (Θ : Protocol P) (I : St P → Prop) : Prop :=
+  ∀ (d : Nat) (st st' : St P), OutsideStep Θ st st' → Ok d st → I st → I st'
+
+/-- An invariant whose support lies in `R_P` is kept by every outside step
+(L1). -/
+theorem SupportInR.outside {Θ : Protocol P} {I : St P → Prop} (hs : SupportInR Θ I) : OutsideKeeps Θ I :=
+  fun _ _ _ ho hok hi => hs _ _ hi ho.kept (outside_step ho hok.marks hok.confined).1
+
+/-- **The support of an invariant, read at each state** (the Read-only
+frames note, Proposition "Read-only reliance", "whose support, read at `s`,
+lies in `R_C` and allows `Θ_C`"): `supp st` holds the locations the
+invariant reads at `st`. A transition keeping the marks that changes each
+of them within `Θ` at its part keeps the invariant (`keeps`) and makes it
+read no location it did not read before (`stays`). -/
+structure SupportAt (Θ : Protocol P) (I : St P → Prop) (supp : St P → Nat → Prop) : Prop where
+  keeps : ∀ st st', I st → Kept st st' → (∀ l v, supp st l → st.s.h[l]? = some v →
+    ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v') → I st'
+  stays : ∀ st st', I st → Kept st st' → (∀ l v, supp st l → st.s.h[l]? = some v →
+    ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v') → ∀ l, supp st' l → supp st l
+
+/-- **The invariant with its support in `R_P`**: it holds, and every location
+its support reads at the state is allocated and in `R_P`. A member keeping it
+keeps the invariant and its support in the region, a replacing write among
+its steps (the guarantee's check of the members' writes). -/
+def InvIn (I : St P → Prop) (supp : St P → Nat → Prop) (st : St P) : Prop :=
+  I st ∧ ∀ l, supp st l → l < st.s.h.length ∧ st.g.InR l
+
+/-- **An outside step keeps an invariant whose support lies in `R_P`**,
+read at each state: the step changes every location of `R_P` within `Θ`
+(L1), so each location the support reads, and the invariant holds after it;
+the support then reads only locations it read before, which stay in the
+region, the history growing (`InR.mono`). -/
+theorem SupportAt.outside {Θ : Protocol P} {I : St P → Prop} {supp : St P → Nat → Prop}
+    (hs : SupportAt Θ I supp) : OutsideKeeps Θ (InvIn I supp) := by
+  intro d st st' ho hok hi
+  have hun := (outside_step ho hok.marks hok.confined).1
+  have hb : ∀ l v, supp st l → st.s.h[l]? = some v →
+      ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v' :=
+    fun l v hl hv => hun l v (hi.2 l hl).2 hv
+  have hg : Grows d st.g st'.g :=
+    ⟨hok.pos, hok.len, by rw [ho.calls]; exact hok.len, ho.record,
+      fun l hp => (Ghost.prot_congr ho.calls ho.record l).mpr hp, fun l he => by rw [ho.exposed]; exact he⟩
+  refine ⟨hs.keeps st st' hi.1 ho.kept hb, fun l hl => ?_⟩
+  obtain ⟨hlt, hr⟩ := hi.2 l (hs.stays st st' hi.1 ho.kept hb l hl)
+  exact ⟨Nat.lt_of_lt_of_le hlt ho.kept.1.length_le, InR.mono hg (ho.kept.2 l hlt).1 hr⟩
+
 theorem RunAt.keeps {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
-    {I : St P → Prop} (hG : G I) (hs : SupportInR Θ I) {Inner : Nat → St P → St P → Prop}
+    {I : St P → Prop} (hG : G I) (hs : OutsideKeeps Θ I) {Inner : Nat → St P → St P → Prop}
     (hIb : ∀ d t t', Inner d t t' → Ok d t → RBound Ψ d t t' ∧ Ok d t')
     (hIk : ∀ d t t', Inner d t t' → Ok d t → I t → I t') {d : Nat} {st st' : St P}
     (hr : RunAt Θ Ψ G Inner d st st') (hok : Ok d st) (hi : I st) : I st' := by
   induction hr with
   | nil st => exact hi
   | outside ho _ ih =>
-    have hun := (outside_step ho hok.marks hok.confined).1
-    exact ih (outside_bound hΘ ho hok).2 (hs _ _ hi ho.kept hun)
+    exact ih (outside_bound hΘ ho hok).2 (hs _ _ _ ho hok hi)
   | member m hc _ ih =>
     have ok₁ := (m.bound _ _ (fun t t' h ho => hIb _ t t' h ho) _ _ hc hok).2
     exact ih ok₁ (m.keeps I hG _ _ (fun t t' h ho => hIb _ t t' h ho) (fun t t' h ho => hIk _ t t' h ho) _ _ hc hok hi)
 
-/-- **(L4) The handle invariant across a run**: an invariant of `G_P` whose
-support lies in `R_P` and that holds where the run starts holds where it
-ends. Each member's call keeps it by `G_P`, its runs of code that is not
-the package's by the induction, and every outside step changes no location
-of its support (L1). -/
+/-- **(L4) The handle invariant across a run**: an invariant of `G_P` that
+every outside step keeps (one whose support lies in `R_P`,
+`SupportInR.outside`, or whose support read at each state does,
+`SupportAt.outside`) and that holds where the run starts holds where it
+ends. Each member's call keeps it by `G_P`, its runs of code that is not the
+package's by the induction. -/
 theorem Run.keeps {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
-    {I : St P → Prop} (hG : G I) (hs : SupportInR Θ I) :
+    {I : St P → Prop} (hG : G I) (hs : OutsideKeeps Θ I) :
     ∀ (k d : Nat) (st st' : St P), Run Θ Ψ G k d st st' → Ok d st → I st → I st'
   | 0, _, _, _, hr, hok, hi =>
     RunAt.keeps hΘ hG hs (fun _ _ _ h _ => h.elim) (fun _ _ _ h _ _ => h.elim) hr hok hi
@@ -547,6 +600,23 @@ theorem ownership {d : Nat} {st t : St P} {L : Nat → Prop} (ha : Admitted st L
   have hr : st.g.InR l := (ha l hl).elim (fun h => .inr (.inl h)) id
   exact InR.mono hg (hk.2 l (hL l hl)).1 hr
 
+/-- **A member's write keeps the invariant's support in `R_P`** (the
+guarantee's check at a write, a replacing write among them): where the
+invariant holds after the step and every location its support reads
+afterwards was read before, is in `R_P` afterwards (a copy of an exposed
+site), or was admitted by (O) at the write, its support stays in `R_P`. -/
+theorem InvIn.of_step {I : St P → Prop} {supp : St P → Nat → Prop} {d : Nat} {t t' : St P}
+    (hi : InvIn I supp t) (hk : Kept t t') (hg : Grows d t.g t'.g) (hI : I t')
+    (hnew : ∀ l, supp t' l → l < t'.s.h.length ∧
+      (supp t l ∨ t'.g.InR l ∨ (Admitted t (· = l) ∧ l < t.s.h.length))) :
+    InvIn I supp t' := by
+  refine ⟨hI, fun l hl => ⟨(hnew l hl).1, ?_⟩⟩
+  rcases (hnew l hl).2 with hs | hr | ⟨ha, hlt⟩
+  · obtain ⟨hlt, hr⟩ := hi.2 l hs
+    exact InR.mono hg (hk.2 l hlt).1 hr
+  · exact hr
+  · exact ownership ha (fun _ h => h ▸ hlt) hk hg l rfl
+
 /-! ## The rule and its consequence -/
 
 /-- **Read-only frame** (the draft, the rule): a call of code that is not
@@ -569,43 +639,64 @@ theorem readOnly_rule {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true
 transitions keeping the marks. -/
 def states (P : Package) : SupportDomain (St P) := ⟨fun st => st.s.h, Kept⟩
 
-/-- **The frame's premise** (the draft, "At a callback"): each location a
-support region reads at the state is in `R_P`, and `Ψ_P`'s change at its
-part is within the region's (`Ψ_P ◁ S` on `R_P`). -/
-def Inside (Ψ : Protocol P) (S : Footprint) (ρ : Env) (st : St P) : Prop :=
-  ∀ e ∈ S, ∀ l, e.1.mem ρ st.s.h l = true → st.g.InR l ∧ (Ψ (st.part l)).le e.2 = true
+/-- **The premise of Proposition "Read-only reliance"** (the Read-only
+frames note), location by location: each allocated location `l` of each
+region `(r : δ)` of the support, read at the state, meets
+`Ψ(part(l)) ⊑ δ` if `l ∈ R_P`, and `γ ⊑ δ` for each entry `(r' : γ)` of
+`Φ` with `l ∈ r'` otherwise. `Ψ` is the protocol the rule bounds `R_P` by,
+`Ψ_P ⊔ Θ_P`. -/
+def Framed (Φ : Footprint) (Ψ : Protocol P) (S : Footprint) (ρ : Env) (st : St P) : Prop :=
+  ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true →
+    (st.g.InR l → (Ψ (st.part l)).le e.2 = true) ∧
+      (¬ st.g.InR l → ∀ f ∈ Φ, f.1.mem ρ st.s.h l = true → f.2.le e.2 = true)
 
-/-- A transition bounding `R_P` by `Ψ_P` meets every support inside `R_P`. -/
-theorem supported_of_inside {Ψ : Protocol P} {S : Footprint} {ρ : Env} {st st' : St P}
-    (hi : Inside Ψ S ρ st)
-    (hb : ∀ l v, st.g.InR l → st.s.h[l]? = some v →
-      ∃ v', st'.s.h[l]? = some v' ∧ (Ψ (st.part l)).Holds st.s.h.length v v') :
-    Supported S ρ st.s.h st'.s.h := by
+/-- **An action of `Φ ⊕_P Ψ` meets every support the premise holds of**:
+a location of `R_P` changes within `Ψ` at its part, within the region's
+change; any other within an entry of `Φ` covering it, within the region's
+change, or not at all. -/
+theorem supported_of_framed {Φ : Footprint} {Ψ : Protocol P} {S : Footprint} {ρ : Env} {st st' : St P}
+    (hf : Framed Φ Ψ S ρ st) (ha : OAction Φ Ψ ρ st st') : Supported S ρ st.s.h st'.s.h := by
   intro e he l v hm hv
-  obtain ⟨hr, hle⟩ := hi e he l hm
-  obtain ⟨v', hv', hc⟩ := hb l v hr hv
-  exact ⟨v', hv', hc.mono hle⟩
+  have hl : l < st.s.h.length := (List.getElem?_eq_some_iff.mp hv).1
+  obtain ⟨hin, hout⟩ := hf e he l hl hm
+  obtain ⟨v', hv', hb⟩ := ha.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  by_cases hr : st.g.InR l
+  · exact (hb.1 hr).mono (hin hr)
+  · rcases hb.2 hr with rfl | ⟨f, hfΦ, hfm, hh⟩
+    · exact Change.Holds.refl _ _ _
+    · exact hh.mono (hout hr f hfΦ hfm)
 
-/-- **The tolerant frame at `Φ ⊕_P Ψ_P`** (the Tolerant frames note, Theorem "Tolerant
-frame", `frame_step`, at this action): an assertion with a support inside
-`R_P` holds after every action of `Φ ⊕_P Ψ_P` meeting the support's
-condition, whatever `Φ`. -/
+/-- **The tolerant frame at `Φ ⊕_P Ψ`** (the Tolerant frames note, Theorem
+"Tolerant frame", `frame_step`, at this action): an assertion holds after
+every action of `Φ ⊕_P Ψ` meeting its support's condition, its support
+meeting the premise location by location. -/
 theorem readOnly_frame {Φ : Footprint} {Ψ : Protocol P} {C : ConditionOn (St P)} {A : AssertionOn (St P)}
     {S : Footprint} (hs : (states P).Supports C A S) {ρ : Env} {m : Nat} {st st' : St P}
-    (hi : Inside Ψ S ρ st) (ha : OAction Φ Ψ ρ st st') (hc : C ρ m st st') (hA : A ρ m st) : A ρ m st' :=
-  hs ρ m st st' ha.1 hc hA (supported_of_inside hi fun l v hr hv => by
-    obtain ⟨v', hv', hb⟩ := ha.2 l v hv
-    exact ⟨v', hv', hb.1 hr⟩)
+    (hf : Framed Φ Ψ S ρ st) (ha : OAction Φ Ψ ρ st st') (hc : C ρ m st st') (hA : A ρ m st) : A ρ m st' :=
+  hs ρ m st st' ha.1 hc hA (supported_of_framed hf ha)
 
-/-- **The rule's consequence** (the Read-only frames note, Proposition
-"Read-only reliance"; the Tolerant frames note, Proposition "Reliance"): a fact whose support lies inside `R_P`, with
-`Ψ_P ◁ S`, holds after every run of code that is not the package's inside a
-call of the package, from a state meeting the invariants. -/
-theorem readOnly_rely {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop} {C : ConditionOn (St P)}
-    {A : AssertionOn (St P)} {S : Footprint} (hs : (states P).Supports C A S) {ρ : Env} {m k d : Nat}
-    {st st' : St P} (hr : Run Θ Ψ G k d st st') (hok : Ok d st) (hi : Inside Ψ S ρ st) (hc : C ρ m st st')
-    (hA : A ρ m st) : A ρ m st' := by
-  obtain ⟨⟨hk, -, hb⟩, -⟩ := Run.bound hΘ k d st st' hr hok
-  exact hs ρ m st st' hk hc hA (supported_of_inside hi hb)
+/-- **Read-only reliance, the bound route** (the Read-only frames note,
+Proposition "Read-only reliance"; the Tolerant frames note, Proposition
+"Reliance"): a call of code that is not the package's, inside a call of the
+package at depth `d`, from a state meeting the invariants, whose run bounds
+the heap by its own effect `Φ`, keeps every fact whose support meets the
+premise location by location, at `Ψ = Ψ_P ⊔ Θ_P`. -/
+theorem readOnly_rely {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
+    {C : ConditionOn (St P)} {A : AssertionOn (St P)} {Φ S : Footprint} (hs : (states P).Supports C A S)
+    {ρ : Env} {m k d : Nat} {st st' : St P} (hΦ : TolerantFrames.Action Φ ρ st.s st'.s)
+    (hr : Run Θ Ψ G k d st st') (hok : Ok d st) (hf : Framed Φ Ψ S ρ st) (hc : C ρ m st st')
+    (hA : A ρ m st) : A ρ m st' :=
+  readOnly_frame hs hf (readOnly_rule hΘ hΦ hr hok).1 hc hA
+
+/-- **Read-only reliance, the guarantee route** (the Read-only frames note,
+Proposition "Read-only reliance"): an invariant of `G_P`, held with its
+support in `R_P` (`InvIn`, the members' guarantee), whose support read at
+each state allows `Θ` (`SupportAt`), holds after such a run. -/
+theorem readOnly_guarantee {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
+    {I : St P → Prop} {supp : St P → Nat → Prop} (hG : G (InvIn I supp)) (hs : SupportAt Θ I supp)
+    {k d : Nat} {st st' : St P} (hr : Run Θ Ψ G k d st st') (hok : Ok d st) (hi : InvIn I supp st) :
+    I st' :=
+  (Run.keeps hΘ hG hs.outside k d st st' hr hok hi).1
 
 end Verification.TolerantFrames.ReadOnly
