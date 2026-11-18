@@ -1720,7 +1720,11 @@ unsupported in Lean, and nothing is built on it.
 properties of the language's steps, which the calculus's steps meet at the
 roots of outside code (`OutsideStep.reach`, `outsideStep_reach`;
 `OutsideStep.writes`, `outsideStep_writes`; `OutsideStep.noForge`,
-`outsideStep_noForge`), a state's roots being those of its term; the validity of the frames' values, identities
+`outsideStep_noForge`), a state's roots being those of its term, the top
+segment's values among them exactly when the top segment's code is not
+$`C`$'s; these three hold whatever the top segment's code, so a client's
+top level outside $`C`$ and a module of $`C`$ whose top level calls outside
+code are both covered; the validity of the frames' values, identities
 aside (`RootsValid`, which the roots of a valid term meet,
 `rootsValid_of_term`); for each member, the soundness of
 its certified effect on $`R_C`$ (`memberOfChecks`'s `certified`, what the
