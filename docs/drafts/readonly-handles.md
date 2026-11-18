@@ -1930,9 +1930,13 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   (`PkgProps`, hypothesis), a step of $`C`$'s code is a checked step
   (proved, `pkgStep_of`), its history and `covers` by construction.
 - A member's certificate (`Cert R`, hypothesis) is for the actual calls of
-  one code (`CallOf`: an execution whose first step enters the code, up to
-  the first state with as many calls of $`C`$ active as before it, its
-  exit), over the steps of a checked component-step relation `R`: its
+  one code made from the admissible states `Adm` (`CallOf`: an execution
+  from a state meeting `Adm` whose first step enters the code, up to the
+  first state with as many calls of $`C`$ active as before it, its exit;
+  `decompose` carries `Adm` along every step, closed under them; under a
+  client frame `Adm` is `Reached`, closed under the paper's steps,
+  `Reached.xstep`, so a certificate is asked only of the calls the claim's
+  executions make, `ClientFrame.Certs`), over the steps of a checked component-step relation `R`: its
   effect's soundness over the calls whose steps are in `R`, and each
   invariant of $`G_C`$ kept by each step in `R` (`tolerant`);
   `Cert.member` is the member it gives. The decomposition reads, at each
@@ -2158,6 +2162,10 @@ $`C`$ active):
 - every such step is an `XStep` (`kstep_xstep`): `Disc` from the call
   discipline, `Row` at a step of outside code from `Keeps`, `PkgProps` at a
   step of $`C`$'s code from `ChkSound`;
+- at a call of outside code from a reached state, the rule's consequence
+  holds at the first later state of $`C`$'s code at the call's depth, with
+  the frame's certificates (`call_rely`, by `call_premises` and
+  `exec_rely`);
 - every reached state meets the invariants with one set per call and is
   `Ok` at its depth inside a call (`reached_ok`, by `Ex.inv`);
 - from a reached state of outside code at depth $`d > 0`$ to the first

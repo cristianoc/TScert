@@ -488,12 +488,15 @@ noncomputable abbrev δ (a : Conf × Ghost (F.at C)) : Nat := depthC F C c a.1.t
 /-- **A state a call at depth `d` leaves**: the call active. -/
 def QCall (d : Nat) (a : Conf × Ghost (F.at C)) : Prop := d + 1 ≤ δ F C c a
 
-/-- **An actual call of the code `m` at depth `d`**: the lifted states of
-an execution whose first step enters `m` from a state with `d` calls of
-`C` active, and which ends at the first state with `d` calls active
-again, its exit. -/
-def CallOf (m : Option Code) (d : Nat) (st st' : St (F.at C)) : Prop :=
-  ∃ a a₁ b n, XStep F C c Θ chk a a₁ ∧ entered c a₁.1.t = m ∧ Ex (XStep F C c Θ chk) (QCall F C c d) n a₁ b ∧
+/-- **An actual call of the code `m` at depth `d`**, from a state meeting
+`Adm`: the lifted states of an execution whose first step enters `m` from
+a state with `d` calls of `C` active, and which ends at the first state
+with `d` calls active again, its exit. The certificates are indexed by
+these entries and traces: `Adm` names the states an execution of the claim
+reaches (`ClientFrame.Reached`), so a certificate is asked only of the
+calls such an execution makes. -/
+def CallOf (Adm : Conf × Ghost (F.at C) → Prop) (m : Option Code) (d : Nat) (st st' : St (F.at C)) : Prop :=
+  ∃ a a₁ b n, Adm a ∧ XStep F C c Θ chk a a₁ ∧ entered c a₁.1.t = m ∧ Ex (XStep F C c Θ chk) (QCall F C c d) n a₁ b ∧
     δ F C c a = d ∧ δ F C c a₁ = d + 1 ∧ δ F C c b = d ∧ st = lift F C c a.1 a.2 ∧ st' = lift F C c b.1 b.2
 
 /-- **A state a run of outside code at depth `d` leaves**: at least `d`
@@ -590,11 +593,12 @@ def XStep.checked {d : Nat} {a b : Conf × Ghost (F.at C)} (_ : XStep F C c Θ c
     (StepRel.checked tv).Rel d (lift F C c a.1 a.2) (lift F C c b.1 b.2) := p
 
 section Decompose
-variable {R : StepRel (F.at C) tv}
-  (certs : (m : Option Code) → Cert R Ψ G (CallOf F C c Θ chk m))
+variable {R : StepRel (F.at C) tv} {Adm : Conf × Ghost (F.at C) → Prop}
+  (hAdm : ∀ a b, Adm a → XStep F C c Θ chk a b → Adm b)
+  (certs : (m : Option Code) → Cert R Ψ G (CallOf F C c Θ chk Adm m))
   (mk : ∀ {d : Nat} {a b : Conf × Ghost (F.at C)}, XStep F C c Θ chk a b →
     PkgStep tv d (lift F C c a.1 a.2) (lift F C c b.1 b.2) → R.Rel d (lift F C c a.1 a.2) (lift F C c b.1 b.2))
-include certs mk
+include hAdm certs mk
 
 /-- **An actual execution is a run of outside code** (the draft, "Actual
 executions"). An execution inside a call of `C` at depth `d` (`QRun`), from
@@ -609,10 +613,10 @@ an execution from a state whose active frame is outside `C` up to the
 first state of `C`'s code with `d + 1` calls active is a run of outside
 code one call deeper. By strong induction on the length. -/
 theorem decompose (off : Nat) : ∀ n : Nat,
-    (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), 0 < d → Ex (XStep F C c Θ chk) (QRun F C c d) n a e →
+    (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), 0 < d → Ex (XStep F C c Θ chk) (QRun F C c d) n a e → Adm a →
       δ F C c a = d → δ F C c e = d → a.2.A.length = δ F C c a + off →
       ∀ k, n ≤ k → Run Θ Ψ G k d (lift F C c a.1 a.2) (lift F C c e.1 e.2)) ∧
-    (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), Ex (XStep F C c Θ chk) (QCall F C c d) n a e →
+    (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), Ex (XStep F C c Θ chk) (QCall F C c d) n a e → Adm a →
       δ F C c a = d + 1 → δ F C c e = d → a.2.A.length = δ F C c a + off →
       ∀ k, n ≤ k → MemberRunOf R (Run Θ Ψ G k (d + 1)) d (lift F C c a.1 a.2) (lift F C c e.1 e.2)) := by
   intro n
@@ -622,7 +626,11 @@ theorem decompose (off : Nat) : ∀ n : Nat,
   have hlen : ∀ {q : Conf × Ghost (F.at C) → Prop} {m : Nat} {a b : Conf × Ghost (F.at C)},
       Ex (XStep F C c Θ chk) q m a b → a.2.A.length = δ F C c a + off → b.2.A.length = δ F C c b + off :=
     fun hx hl => hx.carry (r := fun x => x.2.A.length = δ F C c x + off) (fun _ _ _ hs h => hs.len h) hl
-  refine ⟨fun d a e hd0 hex hda hde hl k hk => ?_, fun d a e hex hda hde hl k hk => ?_⟩
+  -- The states of an execution from a state meeting `Adm` meet it.
+  have hcar : ∀ {q : Conf × Ghost (F.at C) → Prop} {m : Nat} {a b : Conf × Ghost (F.at C)},
+      Ex (XStep F C c Θ chk) q m a b → Adm a → Adm b :=
+    fun hx ha => hx.carry (r := Adm) (fun x y _ hxy hx' => hAdm x y hx' hxy) ha
+  refine ⟨fun d a e hd0 hex hAa hda hde hl k hk => ?_, fun d a e hex hAa hda hde hl k hk => ?_⟩
   · cases hex with
     | refl => exact Run.nil' _
     | next hq hx hrest =>
@@ -641,7 +649,8 @@ theorem decompose (off : Nat) : ∀ n : Nat,
         rw [← hg, hb] at hrow
         have hos := outsideStep_of_step hs ho hrow
         rw [← hb] at hos
-        exact Run.outside' hos ((ih m (by omega)).1 d b e hd0 hrest (by simp only [δ] at hda ⊢; omega) hde
+        exact Run.outside' hos ((ih m (by omega)).1 d b e hd0 hrest (hAdm _ _ hAa ⟨hs, hdisc, hg, hh⟩)
+          (by simp only [δ] at hda ⊢; omega) hde
           (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k (by omega))
       · -- The entry of a call of `C`.
         have hlt : depthC F C c a.1.t < depthC F C c b.1.t := by omega
@@ -661,12 +670,13 @@ theorem decompose (off : Nat) : ∀ n : Nat,
           · have := (hd'.2 hox).2; omega) (by omega)
         have hdw' : δ F C c w = d := by have hw' : δ F C c w ≤ d := hw; omega
         have hM := (ih n₁ (by omega)).2 d b w (h₁.mono fun x hx => by
-          simp only [QCall]; simp only [QRun] at hx; omega) hdb hdw' (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k' (by omega)
+          simp only [QCall]; simp only [QRun] at hx; omega) (hAdm _ _ hAa ⟨hs, hdisc, hg, hh⟩) hdb hdw'
+          (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k' (by omega)
         have hcall : (certs (entered c b.1.t)).member.Call d (Run Θ Ψ G k' (d + 1))
             (lift F C c a.1 a.2) (lift F C c w.1 w.2) :=
-          ⟨.step (mk ⟨hs, hdisc, hg, hh⟩ hpk) hM, a, b, w, n₁, ⟨hs, hdisc, hg, hh⟩, rfl, h₁.mono fun x hx => by
+          ⟨.step (mk ⟨hs, hdisc, hg, hh⟩ hpk) hM, a, b, w, n₁, hAa, ⟨hs, hdisc, hg, hh⟩, rfl, h₁.mono fun x hx => by
             simp only [QCall]; simp only [QRun] at hx; omega, hda, hdb, hdw', rfl, rfl⟩
-        exact RunAt.member _ hcall ((ih n₂ (by omega)).1 d w e hd0 h₂ hdw' hde
+        exact RunAt.member _ hcall ((ih n₂ (by omega)).1 d w e hd0 h₂ (hcar h₁ (hAdm _ _ hAa ⟨hs, hdisc, hg, hh⟩)) hdw' hde
           (hlen h₁ (XStep.len ⟨hs, hdisc, hg, hh⟩ hl)) (k' + 1) (by omega))
   · by_cases ho : Outside F C c a.1
     · -- A run of outside code one call deeper, up to the first state of `C`'s code with `d + 1` calls.
@@ -691,9 +701,9 @@ theorem decompose (off : Nat) : ∀ n : Nat,
         have := h₂.zero; subst this; omega
       have hin := (ih n₁ (by omega)).1 (d + 1) a v (by omega) (h₁.mono fun x ⟨hx₁, hx₂⟩ => by
           unfold QRun
-          exact ⟨hx₁, fun he => Classical.byContradiction fun hno => hx₂ (.inl ⟨by omega, hno⟩)⟩) hda hv'.1 hl k (by omega)
+          exact ⟨hx₁, fun he => Classical.byContradiction fun hno => hx₂ (.inl ⟨by omega, hno⟩)⟩) hAa hda hv'.1 hl k (by omega)
       exact .inner (by simp only [δ] at hl hda; simp only [lift]; omega) hin
-        ((ih n₂ (by omega)).2 d v e h₂ hv'.1 hde (hlen h₁ hl) k (by omega))
+        ((ih n₂ (by omega)).2 d v e h₂ (hcar h₁ hAa) hv'.1 hde (hlen h₁ hl) k (by omega))
     · cases hex with
       | refl => omega
       | next hq hx hrest =>
@@ -708,26 +718,27 @@ theorem decompose (off : Nat) : ∀ n : Nat,
         · -- The exit of the call.
           obtain ⟨-, rfl⟩ := hrest.stop (by simp only [QCall, δ]; omega)
           exact .step (mk ⟨hs, hdisc, hg, hh⟩ hpk) (.nil _)
-        · exact .step (mk ⟨hs, hdisc, hg, hh⟩ hpk) ((ih m (by omega)).2 d b e hrest (by simp only [δ] at hda ⊢; omega) hde
+        · exact .step (mk ⟨hs, hdisc, hg, hh⟩ hpk) ((ih m (by omega)).2 d b e hrest (hAdm _ _ hAa ⟨hs, hdisc, hg, hh⟩)
+            (by simp only [δ] at hda ⊢; omega) hde
             (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k (by omega))
 
 /-- **(L2) of an actual execution**: an execution inside a call of `C`, as
 in `decompose`, from a state meeting the invariants, changes every location
 of `R_C` within `Ψ_C` at its part and keeps the invariants. -/
 theorem exec_bound (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
-    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
+    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hAa : Adm a) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) :
     RBound Ψ d (lift F C c a.1 a.2) (lift F C c e.1 e.2) ∧ Ok d (lift F C c e.1 e.2) :=
-  Run.bound hΘ n d _ _ ((decompose certs mk off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok
+  Run.bound hΘ n d _ _ ((decompose hAdm certs mk off n).1 d a e hok.pos hex hAa hda hde hl n (Nat.le_refl _)) hok
 
 /-- **(L4) of an actual execution**: an invariant of `G_C` that every
 outside step keeps survives such an execution. -/
 theorem exec_keeps (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {I : St (F.at C) → Prop} (hG : G I) (hout : OutsideKeeps Θ I)
     (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
-    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
+    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hAa : Adm a) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) (hi : I (lift F C c a.1 a.2)) :
     I (lift F C c e.1 e.2) :=
-  Run.keeps hΘ hG hout n d _ _ ((decompose certs mk off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hi
+  Run.keeps hΘ hG hout n d _ _ ((decompose hAdm certs mk off n).1 d a e hok.pos hex hAa hda hde hl n (Nat.le_refl _)) hok hi
 
 /-- **The rule's consequence over an actual execution**: the call's run
 bounding the heap by its own effect `Φ`, a fact whose support meets the
@@ -736,24 +747,25 @@ after such an execution. -/
 theorem exec_rely (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {Cn : ConditionOn (St (F.at C))}
     {A : AssertionOn (St (F.at C))} {Φ S : Footprint} (hsup : (states (F.at C)).Supports Cn A S) {ρ : Env}
     {mm : Nat} (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
-    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
+    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hAa : Adm a) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2))
     (hΦ : TolerantFrames.Action Φ ρ a.1.s e.1.s)
     (hf : Framed Φ Ψ S ρ (lift F C c a.1 a.2)) (hc : Cn ρ mm (lift F C c a.1 a.2) (lift F C c e.1 e.2))
     (hA : A ρ mm (lift F C c a.1 a.2)) : A ρ mm (lift F C c e.1 e.2) :=
-  readOnly_rely hΘ hsup hΦ ((decompose certs mk off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
+  readOnly_rely hΘ hsup hΦ ((decompose hAdm certs mk off n).1 d a e hok.pos hex hAa hda hde hl n (Nat.le_refl _)) hok hf hc hA
 
 end Decompose
 
 /-- **(L2) over every checked step** (the instance `StepRel.checked`): with a
 certificate for each code over every `PkgStep`, `exec_bound` at the checked
 steps themselves. -/
-theorem exec_bound_checked (certs : (m : Option Code) → Cert (StepRel.checked tv) Ψ G (CallOf F C c Θ chk m))
+theorem exec_bound_checked {Adm : Conf × Ghost (F.at C) → Prop} (hAdm : ∀ a b, Adm a → XStep F C c Θ chk a b → Adm b)
+    (certs : (m : Option Code) → Cert (StepRel.checked tv) Ψ G (CallOf F C c Θ chk Adm m))
     (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
-    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
+    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hAa : Adm a) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) :
     RBound Ψ d (lift F C c a.1 a.2) (lift F C c e.1 e.2) ∧ Ok d (lift F C c e.1 e.2) :=
-  exec_bound certs (fun hx p => XStep.checked hx p) hΘ off hex hda hde hl hok
+  exec_bound hAdm certs (fun hx p => XStep.checked hx p) hΘ off hex hAa hda hde hl hok
 
 /-! ## The invariants at every depth -/
 
