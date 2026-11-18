@@ -2499,9 +2499,30 @@ entry.
   reaching a local site) are decided by `FFlow.marksB`, and the proposal
   meeting the shapes of $`C`$'s closures by `FFlow.shapesB`.
 
+**The proposal** (`solveFlow`, `ReadOnlyFlowSolve.lean`) is computed from
+the lowered graphs, the only place their nodes, slots and labels exist:
+each code of $`C`$ allocates at one object site and one array site; a
+slot names a signature where every edge into its node carries one naming
+it, from the entry's named slots and the closure's own slot; the sets are
+the least sets of each node expression with its stores, what it gives to
+outside code and the slots of a callee's entry added, carried along each
+edge, $`O`$ closed, until nothing changes. A site of $`O`$ is released and
+every other site local. `TSCERT_FLOW_PROBE=1` prints, for each member
+checked, whether the proposal meets the checks (`FilePlans.flowProbe`);
+no verdict reads it.
+
 Proof scope: each decision is proved sound for the property it decides;
-none is proved complete. The proposal is produced by code the checks do
-not trust.
+none is proved complete. Nothing is proved of the proposal: the checks
+read it as given.
+
+Measured 2026-11-18 by the probe: the walker of
+`bounds-pattern-unreachable-field-refused.ts` meets the checks with the
+cursor's site outside $`O`$. In pretext's `src/line-break.ts` every member
+probed meets the checks; `walkPreparedLinesRaw` has its object site in
+$`O`$, its cursor passed to the module's functions at slots naming no
+signature, read at $`O`$: the module's closures at the sibling slots
+([calls between module functions](#the-sites-of-a-term)) are what keeps it
+inside.
 
 ### Located reductions
 
