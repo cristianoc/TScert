@@ -644,12 +644,37 @@ array before changing it (cited: `CHANGELOG.md:15`).
 > non-writable or non-configurable are admitted.
 
 The row is stated per component, in that component's API, and applies only
-to a component whose API states it. For a component whose API does not
-state it, the rule holds only where all code outside it is analyzed, which
-*Views in analyzed code* checks. For pretext, $`C`$ is its package, its
-interface the modules `package.json`'s `exports` names, `.` and
-`./rich-inline`; its API states the row; the demo and any other analyzed
-code around it is outside $`C`$ and checked.
+to a component whose API states it. It is the instance $`\Theta=\mathsf{keep}`$
+of a row with a parameter $`\Theta`$, the client obligation: an effect in
+Paper I's change lattice bounding what code outside $`C`$ that TScert does
+not analyze may do to $`C`$'s protected storage. With $`\Theta`$, the
+rule's bound on a callback on $`R_C`$ is $`\Psi_C\sqcup\Theta`$ in place of
+$`\Psi_C`$, and (L3)'s rigidity needs $`\Theta`$ to preserve references, as
+*Reference-preserving protocol* requires of $`\Psi_C`$. For a component
+whose API does not state the row, the rule holds only where all code
+outside it is analyzed, which *Views in analyzed code* checks. For pretext,
+$`C`$ is its package, its interface the modules `package.json`'s `exports`
+names, `.` and `./rich-inline`; its API states the row with
+$`\Theta=\mathsf{keep}`$; the demo and any other analyzed code around it is
+outside $`C`$ and checked.
+
+### Other encapsulations
+
+Read-only is one encapsulation among several the parameter $`\Theta`$
+could state. Only $`\Theta=\mathsf{keep}`$ is supported; the others are
+recorded as possible in principle, each conjectured and not supported, with
+no mechanism for them:
+- **Read-only**, $`\Theta=\mathsf{keep}`$: outside code changes nothing it
+  reaches read-only. Pretext's instance, and the only one supported.
+- **Grow-only** (conjectured, not supported): $`\Theta`$ admits an
+  extension that keeps every listed cell, as `push` does, and so preserves
+  references; facts that tolerate growth survive.
+- **Freezing or not** (conjectured, not supported): a location's integrity
+  attributes (extensible, writable, configurable) are parts $`\Theta`$ keeps
+  or lets change, where the row now admits every change toward frozen.
+- **Not read at all**: no instance of $`\Theta`$, since a read changes no
+  location and so bounds no fact's support; it concerns information hiding
+  and representation independence, which are outside frames.
 
 The row covers own fields the crossing's type does not mention: a value
 crossing at `{ readonly n: number }` whose own field `extra` holds an array
