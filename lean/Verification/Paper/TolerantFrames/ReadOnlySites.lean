@@ -43,7 +43,7 @@ site may reference, outside storage included.
   the heap of sites and the roots meeting `O` (`SitesAt`): it changes only
   what its roots reach, leaves there only what they reach or what it
   allocates, outside storage, and its roots reach afterwards nothing else.
-  The entry history meets both (`ClientFrame.sitesAt_lentStart`). -/
+  The entry history meets both (`ClientFrame.sitesAt_entryStart`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification
 
@@ -360,11 +360,13 @@ theorem sitesAt_outside {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at
 
 /-- **The sites at an entry** (proved): every location of the entry history
 is outside storage, which `O` holds and outside storage may hold. -/
-theorem sitesAt_lentStart {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
-    (hnone : none ∈ O) (hW : OutsideWritable H O) (x : Conf) :
-    fr.SitesAt H O (x, lentStart fr.F fr.C x.t) := by
+theorem sitesAt_entryStart {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
+    (hnone : none ∈ O) (hW : OutsideWritable H O) (x : Conf) (args : List (fr.view.view.Ty × Val)) :
+    fr.SitesAt H O (x, entryStart fr.F fr.C fr.view.view x.s.h x.t args) := by
   have hc := hW none hnone none hnone
-  refine ⟨fun w u _ => ⟨fun l _ => hc.1, fun _ _ l _ => hc.2⟩, fun r _ l _ => hnone⟩
+  have hb : fr.SitesAt H O (x, bareStart fr.F fr.C x.t) :=
+    ⟨fun w u _ => ⟨fun l _ => hc.1, fun _ _ l _ => hc.2⟩, fun r _ l _ => hnone⟩
+  exact ⟨hb.1.congr entryStart_site, fun r hr => (hb.2 r hr).congr entryStart_site⟩
 
 /-- **`ChkSound` from the flow** (proved): at the actual crossings, where
 `O` is closed in `H` and holds released sites and outside storage only,
