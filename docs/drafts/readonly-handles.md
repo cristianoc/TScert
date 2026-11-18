@@ -1228,24 +1228,33 @@ invariant with no boundary or check.
 ## What the Lean states
 
 The definitions and statements below are the draft's, in Paper I's
-notation, for a formalizer. A state is $`s=(\rho,h,W,k,E,A,B)`$: Paper I's
-environment, heap, world and budget, with three ghost components, $`E`$ a
-set of locations, $`A`$ a stack of sets of locations and $`B`$ a set of
-locations. Each statement is conjectured until its Lean exists.
+notation, as Lean states them in
+[ReadOnlyRegion.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyRegion.lean)
+and [ReadOnlyFrame.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyFrame.lean)
+(namespace `TolerantFrames.ReadOnly`). A state is
+$`s=(\rho,h,W,k,\mathit{site},\mathit{key},E,A,B,\mathit{roots})`$: Paper
+I's environment, heap, world and budget; the site that allocated each
+location and each field location's key, fixed at allocation; $`E`$ a set of
+locations, $`A`$ a stack of sets of locations, one per active call of the
+package, and $`B`$ a set of locations; and the values the frames of code
+that is not the package's hold. Each statement is labelled **proved** with
+its Lean name, or **hypothesis** where Lean assumes it.
 
-**Marks.** The world gives each location $`l`$ of storage the package
-allocated a mark $`\mu(l)\in\{\mathsf{local},\mathsf{internal},\mathsf{exposed},\mathsf{released}\}`$,
-fixed at allocation: $`W\sqsubseteq W'`$ keeps $`\mu`$. A location outside
-code allocated has no mark; write $`\mu(l)=\mathsf{out}`$.
+**Marks.** A package's sites each carry a mark; a location's mark is its
+site's,
+$`\mu(l)\in\{\mathsf{local},\mathsf{internal},\mathsf{exposed},\mathsf{released}\}`$,
+and $`\mu(l)=\mathsf{out}`$ for a location outside code allocated. A
+transition *keeps the marks* (`Kept`) when it is admissible and fixes every
+old location's site and key; the world fixes its kind (`kindAt_kept`), so a
+location's part is fixed (`Kept.part`).
 
 **Paths and read-only reach.** A path $`\pi`$ from a value $`v`$ is a
-sequence of field keys, element indices and spine steps; $`h\vdash
-v\xrightarrow{\pi}l`$ when following $`\pi`$ from $`v`$ in $`h`$ reaches
-$`l`$, through fields, element cells and spines, never through a
-collection's entries. For a crossing type $`T`$ at the root position, each
-prefix of $`\pi`$ has a type $`T|_{\pi'}`$, an own field $`T`$ does not
-mention having type `unknown`. The path is *read-only* when some prefix's
-type is read-only throughout:
+sequence of field keys (the spine key among them), view-spine steps and
+element indices; $`h\vdash v\xrightarrow{\pi}l`$ (`Follows`) when following
+$`\pi`$ from $`v`$ in $`h`$ reaches $`l`$, never through a collection's
+entries. For a crossing type $`T`$ at the root position, each prefix of
+$`\pi`$ has a type $`T|_{\pi'}`$ (`TypeView`), an own field $`T`$ does not
+mention having type `unknown`:
 
 ```math
 \mathrm{ro}_T(\pi)\iff\exists\,\pi'\preceq\pi.\ \mathrm{RO}(T|_{\pi'}),
@@ -1253,11 +1262,15 @@ type is read-only throughout:
 \mathrm{Reach}^{\mathrm{ro}}_T(v,h)=\{\,l\mid\exists\pi.\ h\vdash v\xrightarrow{\pi}l\wedge\mathrm{ro}_T(\pi)\,\}
 ```
 
-with $`\mathrm{RO}(U)`$ the draft's read-only types, closed under subterms.
+with $`\mathrm{RO}(U)`$ the draft's read-only types, closed under the types
+of children; so $`\mathrm{ro}_T(\pi)\iff\mathrm{RO}(T|_\pi)`$ (proved,
+`TypeView.roPath_iff`).
 
-**Crossings.** A crossing is a step that passes a value $`v`$ at type
-$`T`$ between the package and code that is not its, with a direction
-$`d\in\{\mathsf{in},\mathsf{out}\}`$. It updates the ghosts:
+**Crossings.** A crossing passes a value $`v`$ at type $`T`$ between the
+package and code that is not its, with a direction
+$`d\in\{\mathsf{in},\mathsf{out}\}`$; a store of the package into storage
+outside code reaches is a crossing of the stored value at the type of its
+position. It updates the ghosts (`Ghost.cross`):
 
 ```math
 E'=E\cup\{\,l\in\mathrm{Reach}^{\mathrm{ro}}_T(v,h)\mid\mu(l)=\mathsf{exposed}\,\},
@@ -1270,41 +1283,59 @@ and adds $`N`$ to every set of $`A`$.
 **Holds.** $`\mathrm{Held}(l,s)`$ holds when a frame of the package, a
 binding of the package or a location of package storage references $`l`$
 or a location from which $`l`$ is reachable by a path; a key of a
-`WeakMap` is no reference.
+`WeakMap` is no reference. Lean takes it as the predicate an exit or a drop
+reads.
 
-**The history.** A call of the package pushes the set of the released and
-outside locations protected at its entry, with $`B`$ when the stack is
-empty; a crossing or a hold adds the locations it protects to every set;
-each exit, normal or exceptional, pops the top set; when the stack becomes
-empty, $`B'`$ is the popped set's locations $`l`$ with $`\mathrm{Held}(l,s')`$;
-a step outside every call removes from $`B`$ each location no longer held.
+**The history** (`HStep`). A call's entry pushes the protected set
+$`\bigcup A\cup B`$; a crossing updates $`E`$ and $`A`$; a hold that makes
+locations protected adds them to every set; each exit, normal or
+exceptional, pops the top set, and when the stack becomes empty $`B'`$ is
+the popped set's locations $`l`$ with $`\mathrm{Held}(l,s')`$; a step
+outside every call removes from $`B`$ each location no longer held. Every
+transition keeps each set of $`A`$ equal to $`\bigcup A\cup B`$ (proved,
+`HStep.uniform`): the sets of overlapping calls grow together, so the stack
+carries one set and its depth, and a location protected in any call stays
+protected until the outermost active call returns (`exit_unprotects`
+shows the outermost exit ending it).
 
-**The membership test.**
+**The membership test** (`Ghost.InR`).
 
 ```math
 l\in R_P(s)\iff\mu(l)\in\{\mathsf{local},\mathsf{exposed}\}\ \vee\ \bigl(\mu(l)\in\{\mathsf{released},\mathsf{out}\}\wedge(l\in{\textstyle\bigcup}A\ \vee\ l\in B)\bigr)
 ```
 
-A location $`l`$ an incoming crossing protects is in the top set of $`A`$
-from that crossing on, so the test reads $`A`$ and $`B`$ alone. It is the
-one test the region, the frame's premise, (P2), (L3) and the trust row read.
+It is the one test the region, the frame's premise, (P2), (L3) and the trust
+row read.
 
-**Parts and the protocol.** A part is $`(\sigma,\kappa,k)`$: a site
+**Parts and the protocol.** A part is $`(\sigma,\kappa,k)`$ (`Part`): a site
 $`\sigma`$ or $`\mathsf{out}`$, a kind $`\kappa`$ of Paper I's world and,
 for a field location, a key $`k`$. $`\mathrm{Keys}(\sigma)`$ is the set of
 keys its allocation gives and every key a write of the package may add to
 a record whose possible sites include $`\sigma`$; for $`\sigma`$ released
-or $`\mathsf{out}`$ it is every key. $`\Psi_P`$ maps each part to a change;
-it is the least such map for which each member $`m`$, entered from code
-that is not the package's with each parameter at the possible sites
-$`\{\sigma\mid\mu(\sigma)\in\{\mathsf{exposed},\mathsf{released}\}\}\cup\{\mathsf{out}\}`$,
-has a certificate whose normal and exceptional effects, after `fresh_eff`,
-bound every location of $`R_P`$ at its entry by $`\Psi_P`$ of its part,
-each step of code that is not the package's in $`m`$ bounded as the rule
-below bounds it. The action of $`\Phi\oplus_P\Psi_P`$ is the draft's, with
-$`R_P`$ read at the entry state. $`G_P`$ is a set of invariants $`I`$
+or $`\mathsf{out}`$ it is every key. $`\Psi_P`$ maps each part to a change
+(`Protocol`). The action of $`\Phi\oplus_P\Psi_P`$ (`OAction`) keeps the
+marks and bounds each old location $`l`$ by $`\Psi_P(\mathrm{part}(l))`$
+when $`l\in R_P(s)`$ and by $`\Phi`$ otherwise, $`R_P`$ and $`\Phi`$'s
+regions read at the entry state. A member's certificate (`Member`,
+hypothesis) states what the pass's check of the member establishes: with
+each run of code that is not the package's it makes bounded on $`R_P`$ by
+$`\Psi_P`$ and keeping the invariants of states, one call deeper, its call
+bounds every location of $`R_P`$ at its entry by $`\Psi_P`$ of its part,
+keeps the invariants and keeps each $`I\in G_P`$; $`\Psi_P`$ is the least
+map for which every member has one. $`G_P`$ is a set of invariants $`I`$
 with: every write of a member to a location of $`\mathrm{supp}(I)`$ of a
 complete handle, and every exit of a member, keeps $`I`$.
+
+**Runs of code that is not the package's** (`RunAt`, `Run`). Inside a call
+of the package at depth $`d`$, such a run is a sequence of outside steps
+and member calls, each member call's own runs of code that is not the
+package's one call deeper, within a budget of nesting. An outside step
+(`OutsideStep`) keeps the marks and the history, allocates outside storage
+and meets three hypotheses: it changes only storage its frames reach and
+afterwards reaches only storage it reached or allocated (properties of the
+language's steps), and it meets the trust row $`T_P`$ read by the
+membership test (`Row`): it changes no exposed location of $`E`$ and no
+released or outside location recorded in $`A`$ or $`B`$.
 
 **Read-only frame.**
 
@@ -1316,50 +1347,78 @@ complete handle, and every exit of a member, keeps $`I`$.
 under the side conditions of the checks: the package's code contains no
 `await`, `yield`, async function or generator; $`\Psi_P`$ preserves the
 references; *Ownership of installed storage* holds of every install.
+Proved (`readOnly_rule`): a call of code that is not the package's inside a
+call of it, whose run is bounded by $`\Phi`$ (by $`\Phi^{e}`$ at an
+exceptional exit), is an action of $`\Phi\oplus_P\Psi_P`$ with the history
+growing.
 
-**The invariants of states.**
+**The invariants of states** (`Ok`): at least one call of the package
+active, a uniform history, and
 
-- (M): every location's mark is its site's; a local location is reachable
-  from no binding, no storage and no frame but the package's; an internal
-  location is reachable from no value that has crossed.
-- (P2): every path from a frame of code that is not the package's to a
-  location $`l`$ with $`\mu(l)\in\{\mathsf{local},\mathsf{exposed}\}`$ passes a
-  location of $`E`$ and, from there on, only read-only positions.
+- (M) (`MarksOk`, `Kept`): every location's mark is its site's, fixed at
+  allocation; a local location is reachable from no binding, no storage
+  and no frame but the package's; an internal location is reachable from
+  no value that has crossed. Lean states the clauses an outside step reads:
+  no local or internal location is reachable from a frame of code that is
+  not the package's.
+- (P2) (`Confined`): every exposed location reachable from a frame of code
+  that is not the package's is in $`E`$. Every path from such a frame to a
+  local or exposed location then passes a location of $`E`$, from which on
+  every position is read-only.
 
-**The lemmas.** Each quantifies over states meeting (M) and (P2), and over
-outside code meeting the trust row $`T_P`$, stated in the trust section.
+**The lemmas.** Each quantifies over states meeting the invariants and
+over outside steps meeting their hypotheses.
 
-- (L1) Outside step. For a step $`s\to s'`$ of code that is not the
-  package's: $`h'(l)=h(l)`$ for every $`l\in R_P(s)`$, and $`s'`$ meets (M)
-  and (P2).
-- (L2) Outside run. For a run $`s\to^{*}s'`$ of code that is not the
-  package's inside an active call $`c`$ of the package: every
-  $`l\in R_P(s)`$ is in $`R_P(t)`$ for every state $`t`$ of the run, and
-  $`\Psi_P(\mathrm{part}(l))_{|h|}(h(l),h'(l))`$.
-- (L3) Rigidity. The relation $`s\leadsto s'`$, holding when the heaps are
-  related by the action of $`\Phi\oplus_P\Psi_P`$ at $`R_P(s)`$ and $`A'`$
-  extends $`A`$ from the bottom to the current call with each set
-  including its old one, is transitive, and $`R_P(s)\subseteq R_P(s')`$ for
-  $`s\leadsto s'`$ within a call; with $`\Phi`$ and $`\Psi_P`$ rigid and
-  $`\Psi_P\sqsubseteq\Phi`$, $`\Phi\oplus_P\Psi_P`$ is rigid on such
-  states.
-- (L4) Invariants. For $`I\in G_P`$ with $`\mathrm{supp}(I)\subseteq R_P(s)`$
-  and $`I`$ true at $`s`$, a run as in (L2) ends in a state where $`I`$
-  holds.
-- (O) Ownership. A write of the package that stores a value $`v`$ into a
-  location of $`R_P(s)`$, or of $`\mathrm{supp}(I)`$ for $`I\in G_P`$, is
-  admitted only when every location the support reads through $`v`$ is of
-  an exposed site, an unconfined copy made in the call, or in
-  $`R_P(s)`$; and then those locations are in $`R_P(t)`$ for every later
-  state $`t`$ of the run.
+- (L1) Outside step (proved, `outside_step`). For a step $`s\to s'`$ of
+  code that is not the package's: $`h'(l)=h(l)`$ for every
+  $`l\in R_P(s)`$, and $`s'`$ meets (M) and (P2).
+- (L2) Outside run (proved, `Run.bound`). For a run $`s\to^{*}s'`$ of code
+  that is not the package's inside an active call $`c`$ of the package:
+  every $`l\in R_P(s)`$ is in $`R_P(t)`$ for every state $`t`$ of the run,
+  $`\Psi_P(\mathrm{part}(l))_{|h|}(h(l),h'(l))`$, and $`s'`$ meets the
+  invariants. By induction on the budget, member calls by their
+  certificates.
+- (L3) Rigidity (proved, `HSteps.grows`, `InR.mono`, `Leads.trans`). The
+  relation $`s\leadsto s'`$, holding when the heaps are related by the
+  action of $`\Phi\oplus_P\Psi_P`$ at $`R_P(s)`$ and the history grows
+  (at least the calls of $`A`$ up to the current one active, $`B`$ kept,
+  every protected location protected, $`E`$ growing), is transitive, and
+  $`R_P(s)\subseteq R_P(s')`$ for $`s\leadsto s'`$ within a call: the test
+  reads the marks, fixed at allocation, and the history, which only grows
+  inside a call, so no argument about references is needed. With $`\Phi`$
+  rigid and $`\Psi_P\sqsubseteq\Phi`$ (a change within $`\Psi_P`$ at a
+  location of $`R_P`$ is one $`\Phi`$ allows there),
+  $`\Phi\oplus_P\Psi_P`$ is rigid on such states; $`\Psi_P`$ composes at
+  each part by itself (`Change.Holds.trans`). $`\top`$ meets both
+  premises for every $`\Psi_P`$ (`Leads.trans_top`).
+- (L4) Invariants (proved, `Run.keeps`). For $`I\in G_P`$ with
+  $`\mathrm{supp}(I)\subseteq R_P`$ (`SupportInR`) and $`I`$ true at
+  $`s`$, a run as in (L2) ends in a state where $`I`$ holds.
+- (O) Ownership (proved, `ownership`). A write of the package that stores
+  a value $`v`$ into a location of $`R_P(s)`$, or of
+  $`\mathrm{supp}(I)`$ for $`I\in G_P`$, is admitted (`Admitted`) only when
+  every location the support reads through $`v`$ is of an exposed site, an
+  unconfined copy made in the call among them, or in $`R_P(s)`$; those
+  locations are then in $`R_P(t)`$ for every later state $`t`$ of the call.
 
-**The consequence.** With (L1) to (L4) and (O), Paper I's Theorem
-"Tolerant frame" and Proposition "Reliance" give, for a fact $`F`$ whose
-support $`S\subseteq R_P`$ with $`\Psi_P\triangleleft_K S`$, that $`F`$
-holds after every call of code that is not the package's in a call of the
+**The consequence** (proved, `readOnly_frame`, `readOnly_rely`). For a fact
+$`F`$ with a support $`S`$ (Paper I's Definition "Support", over the
+states keeping the marks) every location of which is in $`R_P`$ with
+$`\Psi_P(\mathrm{part}(l))`$ within its change (`Inside`, $`\Psi_P\triangleleft S`$
+on $`R_P`$), $`F`$ holds after every action of $`\Phi\oplus_P\Psi_P`$, and
+after every run of code that is not the package's inside a call of the
 package. `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its
-statement; `PassUnitSafe`'s entry condition gains (M), (P2) and the ghost
-components, and its premise and conclusion are reviewed again.
+statement; `PassUnitSafe`'s entry condition gains the invariants and the
+ghost components, and its premise and conclusion are reviewed again.
+
+**What Lean assumes.** The trust row (`OutsideStep.row`); the two
+properties of the language's steps (`OutsideStep.reach`,
+`OutsideStep.noForge`); each member's certificate (`Member`), which the
+pass's checks are to establish, the package's own steps keeping (M) and
+(P2) among it (a store into storage outside code reaches making its value
+cross); and the frame's premise `Inside`, which a check of $`S`$ against
+$`\Psi_P`$ at the possible sites of each object $`S`$ reads is to
+establish.
 
 ## Stages and cost
 
