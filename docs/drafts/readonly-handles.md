@@ -1407,9 +1407,9 @@ checked by the pass), nested local storage is in $`R_C`$
 (`Family.nested_local_inR`) and nested exposed storage is not released
 for $`C`$ (`Family.nested_exposed`). Statements marked *(to connect)* take
 outside steps as hypotheses; of an outside step's three step properties,
-the calculus's steps meet two at the roots of outside code, and the third
-is false of the model's paths (*The active frame and the roots of outside
-code*, below).
+the calculus's steps meet two at the roots of outside code (*The active
+frame and the roots of outside code*, below), and the third is a
+hypothesis.
 The combination of two components' rules for a fact that relies on both is
 not stated. A state is
 $`s=(\rho,h,W,k,\mathit{site},\mathit{key},E,A,B,\mathit{roots})`$: Paper
@@ -1428,10 +1428,16 @@ old location's site and key; the world fixes its kind (`kindAt_kept`), so a
 location's part is fixed (`Kept.part`).
 
 **Paths and read-only reach.** A path $`\pi`$ from a value $`v`$ is a
-sequence of field keys (the spine key among them), view-spine steps and
-element indices; $`h\vdash v\xrightarrow{\pi}l`$ (`Follows`) when following
-$`\pi`$ from $`v`$ in $`h`$ reaches $`l`$, never through a collection's
-entries. For a crossing type $`T`$ at the root position, each prefix of
+sequence of field keys (the spine key among them), view-spine steps,
+element indices and code steps; $`h\vdash v\xrightarrow{\pi}l`$ (`Follows`)
+when following $`\pi`$ from $`v`$ in $`h`$ reaches $`l`$, never through a
+collection's entries. A code step (`Succ`, `codeVals`) goes from a value to
+a value its code holds: from a bound function to its target, receiver and
+bound arguments, and from a closure whose code is not $`C`$'s to the
+values its node expressions and captures hold; no code step leaves a
+closure of $`C`$. A path's other steps go through a location to its
+contents, and its last step reaches a location. Which code is $`C`$'s is
+the package's classifier of tags (`Package.ofC`, `F.ofC C` at a component). For a crossing type $`T`$ at the root position, each prefix of
 $`\pi`$ has a type $`T|_{\pi'}`$ (`TypeView`), an own field $`T`$ does not
 mention having type `unknown`:
 
@@ -1658,33 +1664,25 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   frames on the path of the term the step produces are pushed, a call's
   run among them. The step's active tag (`activeTag`) is the innermost
   frame's, or the top segment's when no frame is on the path.
-- The roots of outside code at a term (`vals`, read at $`C`$ through
-  `Family.ofC`) are the values at the positions of the frames whose tags do
-  not run $`C`$'s code: objects, spines and view spines, with a bound
-  function's saved values and a closure of outside code's node expressions
-  and captures. A closure whose code runs $`C`$'s contributes itself, so its
-  own slots and identity, and none of its code, which outside code reaches
-  only by calling it. Each root is a value of the term, so the roots are
-  valid where the term is (proved, `rootsValid_of_term`).
+- The roots of outside code at a term (`vals`, in
+  [ReadOnlyRegion.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyRegion.lean))
+  are the values at the positions of the frames whose tags do not run
+  $`C`$'s code: objects, spines and view spines, each with the values its
+  code holds, which are the values a code step reaches. A closure whose
+  code runs $`C`$'s contributes itself, so its own slots and identity, and
+  none of its code, which outside code reaches only by calling it. An
+  allocation of a typed array contributes its view spine, as the object it
+  allocates names it. The roots' references other than identities are
+  valid where the term's are (`RefsOkN`, `RootsValid`, proved,
+  `rootsValid_of_term`).
 - A step whose active frame runs no code of $`C`$ changes only locations
   one path step from these roots (proved, `step_reach`), which is
   `OutsideStep.reach` with these roots as the state's (`outsideStep_reach`);
   every value it leaves in a location it changes or allocates, and from
-  which a path step reaches a location, is one of these roots (proved,
-  `step_writes`), which gives `OutsideStep.writes` (`outsideStep_writes`).
-- `OutsideStep.noForge` is false of these roots (proved, `noForge_counter`):
-  code outside every component reads from a field a closure that captures
-  an object; the capture is a root afterwards and reaches, through its
-  slot, a location that no path from the roots before reached and that is
-  not fresh. A path (`Follows`) steps from a value to a location, through a
-  field, a spine or a cell, and has no step from a closure to the values
-  its code holds. With the captures of outside closures left out of the
-  roots, the same location becomes reachable at the closure's call, whose
-  run holds the captures in its environment. The missing property is a
-  path step from a closure of outside code, and from a bound function, to
-  the values its code holds, and none through a closure whose code runs
-  $`C`$'s; with it, `noForge` is conjectured to hold of the calculus's
-  steps. (M)'s clause on a closure's bindings needs the same step.
+  which a path step leaves, is one of these roots (proved, `step_writes`),
+  which gives `OutsideStep.writes` (`outsideStep_writes`).
+- `OutsideStep.noForge` is a hypothesis. (M)'s clause on a closure's
+  bindings is not stated.
 - The active frame before a step classifies it. The entry of a member's
   call, a call of a closure of $`C`$ from a frame of outside code, has an
   outside active frame; it changes and stores nothing, so `step_reach` and
@@ -1701,10 +1699,10 @@ unsupported in Lean, and nothing is built on it.
 **What Lean assumes.** The client obligation (`OutsideStep.row`); three
 properties of the language's steps, of which the calculus's steps meet two
 at the roots of outside code (`OutsideStep.reach`, `outsideStep_reach`;
-`OutsideStep.writes`, `outsideStep_writes`) and the third
-(`OutsideStep.noForge`) is false of the model's paths (`noForge_counter`);
-the validity of the frames' values (`RootsValid`, the model's `RootsOk`,
-which the roots of a valid term meet, `rootsValid_of_term`); for each member, the soundness of
+`OutsideStep.writes`, `outsideStep_writes`) and the third is
+`OutsideStep.noForge`; the validity of the frames' values, identities
+aside (`RootsValid`, which the roots of a valid term meet,
+`rootsValid_of_term`); for each member, the soundness of
 its certified effect on $`R_C`$ (`memberOfChecks`'s `certified`, what the
 pass's check of its body establishes) and its steps' checks; and, for the
 frame's premise, the flow of possible sites and the protection a region

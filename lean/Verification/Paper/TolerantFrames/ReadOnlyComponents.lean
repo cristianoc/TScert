@@ -43,9 +43,14 @@ variable (F : Family)
 when its innermost component is `C` or nested in `C`. -/
 def Runs (t : ComponentTag) (C : Nat) : Prop := ∃ c, t = some c ∧ F.nested c C
 
+open Classical in
+/-- The tags whose code is the code of the component `C`. -/
+noncomputable def ofC (C : Nat) : ComponentTag → Bool := fun t => decide (F.Runs t C)
+
 /-- **The component `C` read as a package**: the sites of `C`'s code, each
-with its mark for `C`. -/
-def «at» (C : Nat) : Package := ⟨{ s : F.Site // F.Runs (F.siteOf s) C }, fun s => F.mark s.1 C⟩
+with its mark for `C`, and the tags that run `C`'s code. -/
+noncomputable def «at» (C : Nat) : Package :=
+  ⟨{ s : F.Site // F.Runs (F.siteOf s) C }, fun s => F.mark s.1 C, F.ofC C⟩
 
 open Classical in
 /-- A location's site seen from `C`: a site of `C`'s code, or outside

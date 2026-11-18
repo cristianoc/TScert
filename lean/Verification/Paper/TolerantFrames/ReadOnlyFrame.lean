@@ -32,8 +32,7 @@ frames reach (`OutsideStep.reach`), leaves in storage it changes or
 allocates only references to such storage (`OutsideStep.writes`), and
 reaches afterwards only storage it reached or allocated
 (`OutsideStep.noForge`). `ReadOnlyOutside` proves the first two of the
-calculus's steps at the roots of outside code and gives a counter-model to
-the third. A member's certificate (`Member`) is a hypothesis: the pass's
+calculus's steps at the roots of outside code. A member's certificate (`Member`) is a hypothesis: the pass's
 checks are what establish it. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
@@ -212,12 +211,12 @@ def Row (Θ : Protocol P) (st st' : St P) : Prop :=
 /-- **(M), the clauses an outside step reads**: no local or internal
 location is reachable from a frame of code that is not the package's. -/
 def MarksOk (st : St P) : Prop :=
-  ∀ l, ReachesFrom st.s.h st.roots l → st.g.origin l ≠ some .local ∧ st.g.origin l ≠ some .internal
+  ∀ l, ReachesFrom P.ofC st.s.h st.roots l → st.g.origin l ≠ some .local ∧ st.g.origin l ≠ some .internal
 
 /-- **(P2) Confinement**: an exposed location reachable from a frame of code
 that is not the package's has crossed read-only. -/
 def Confined (st : St P) : Prop :=
-  ∀ l, ReachesFrom st.s.h st.roots l → st.g.origin l = some .exposed → st.g.E l
+  ∀ l, ReachesFrom P.ofC st.s.h st.roots l → st.g.origin l = some .exposed → st.g.E l
 
 /-- **(M), its storage clause**: storage that references a location of a
 local site through a field, a spine or an element cell is itself of a local
@@ -227,9 +226,10 @@ def LocalClosed (st : St P) : Prop :=
     st.g.origin w = some .local
 
 /-- **The frames' values are valid references** (`RootsOk` of the paper's
-model): every reference a value of a frame of code that is not the
-package's holds has the role its position demands. -/
-def RootsValid (st : St P) : Prop := ∀ r ∈ st.roots, RefsOk st.s.W r
+model, identities aside): every reference other than an identity that a
+value of a frame of code that is not the package's holds has the role its
+position demands. No path follows an identity. -/
+def RootsValid (st : St P) : Prop := ∀ r ∈ st.roots, RefsOkN st.s.W r
 
 /-- **A step of code that is not the package's**: it keeps the marks and
 the ghost history; what it allocates is outside storage; it changes only
@@ -242,12 +242,12 @@ structure OutsideStep (Θ : Protocol P) (st st' : St P) : Prop where
   calls : st'.g.A = st.g.A
   record : st'.g.B = st.g.B
   fresh : ∀ l, st.s.h.length ≤ l → st'.g.site l = none
-  reach : ∀ l, Changes st st' l → ReachesFrom st.s.h st.roots l
-  noForge : ∀ l, ReachesFrom st'.s.h st'.roots l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
+  reach : ∀ l, Changes st st' l → ReachesFrom P.ofC st.s.h st.roots l
+  noForge : ∀ l, ReachesFrom P.ofC st'.s.h st'.roots l → ReachesFrom P.ofC st.s.h st.roots l ∨ st.s.h.length ≤ l
   row : Row Θ st st'
   valid : RootsValid st'
   writes : ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
-    ∀ (a : Label) (l : Nat), next u a = some l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
+    ∀ (a : Label) (l : Nat), next u a = some l → ReachesFrom P.ofC st.s.h st.roots l ∨ st.s.h.length ≤ l
 
 theorem OutsideStep.origin {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (l : Nat) :
     st'.g.origin l = st.g.origin l ∨ st'.g.origin l = none := by
@@ -300,7 +300,7 @@ theorem outside_localClosed {st st' : St P} {Θ : Protocol P} (ho : OutsideStep 
     rw [hu] at hv₁
     cases hv₁
     have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
-    have hl' : l < st.s.h.length := next_lt (contents_valid hw hv₀) hn
+    have hl' : l < st.s.h.length := next_lt (RefsOk.refsOkN (contents_valid hw hv₀)) hn
     rw [ho.kept.origin hl'] at hloc
     rw [ho.kept.origin hw]
     exact hl w _ hv₀ a l hn hloc

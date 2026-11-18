@@ -20,38 +20,129 @@ exposed locations `E`, and the one membership test of the protected region
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
+/-! ## The values outside code holds -/
+
+section Roots
+variable (ofC : ComponentTag → Bool)
+
+mutual
+/-- **The values held at the positions of outside code** (the draft,
+"Frames and whose code runs"; `ofC` tells the tags whose code is the
+package's, `o` whether the position runs outside code): objects, spines and
+view spines, a frame's or a `goto`'s positions run by its own tag. A bound
+function holds the values it saved and a closure of outside code those of
+its code (node expressions and captures, `codeVals`); a closure whose code
+is the package's holds none outside code reaches without calling it. An
+allocation of a typed array holds its view spine, as the object it
+allocates names it. -/
+def vals (o : Bool) : Tm → List Val
+  | .var _ => []
+  | .invoke f r args => vals o f ++ vals o r ++ valsArgs o args
+  | .construct f args => vals o f ++ valsArgs o args
+  | .letE a b => vals o a ++ vals o b
+  | .objAt fs .absent i => if o then [.objAt fs .absent i] else []
+  | .objAt fs (.view s f n) i => if o then [.objAt fs (.view s f n) i] else []
+  | .objAt fs (.bound t r pre) i =>
+    if o then .objAt fs (.bound t r pre) i :: (vals true t ++ vals true r ++ valsArgs true pre) else []
+  | .objAt fs (.graph n E K s caps k r comp) i =>
+    if o then .objAt fs (.graph n E K s caps k r comp) i ::
+      (if ofC comp then [] else valsArgs true E ++ valsArgs true caps) else []
+  | .makeAt .absent _ xs => valsArgs o xs
+  | .makeAt (.view s f n) _ xs => (if o then [.objAt [] (.view s f n) 0] else []) ++ valsArgs o xs
+  | .makeAt (.bound t r pre) _ xs => (vals o t ++ vals o r ++ valsArgs o pre) ++ valsArgs o xs
+  | .makeAt (.graph _ E _ _ caps _ _ comp) _ xs =>
+    (if o && !ofC comp then valsArgs true E ++ valsArgs true caps else []) ++ valsArgs o xs
+  | .readAt _ a => vals o a
+  | .indexAt a key => vals o a ++ vals o key
+  | .writeAt _ a b => vals o a ++ vals o b
+  | .test _ a => vals o a
+  | .ite x a b => vals o x ++ vals o a ++ vals o b
+  | .arith _ a b => vals o a ++ vals o b
+  | .arr ls => if o then [.arr ls] else []
+  | .viewSpine f cs => if o then [.viewSpine f cs] else []
+  | .arrLit xs => valsArgs o xs
+  | .elemAt a i => vals o a ++ vals o i
+  | .setElem a i v => vals o a ++ vals o i ++ vals o v
+  | .lenOf a => vals o a
+  | .spread a => vals o a
+  | .throw a => vals o a
+  | .merge _ a b => vals o a ++ vals o b
+  | .makeKey k a => vals o k ++ vals o a
+  | .goto E _ _ L d comp => if ofC comp then [] else valsArgs true E ++ valsArgs true L ++ vals true d
+  | .frame E _ t L d _ _ comp =>
+    (if ofC comp then [] else valsArgs true E ++ valsArgs true L ++ vals true d) ++ vals (!ofC comp) t
+  | _ => []
+termination_by structural t => t
+
+def valsArgs (o : Bool) : List Tm → List Val
+  | [] => []
+  | x :: xs => vals o x ++ valsArgs o xs
+termination_by structural xs => xs
+end
+
+@[simp] theorem valsArgs_eq (o : Bool) (xs : List Tm) : valsArgs ofC o xs = xs.flatMap (vals ofC o) := by
+  induction xs <;> simp_all [valsArgs]
+
+/-- **The values a value's code holds**: a bound function's saved target,
+receiver and arguments; a closure of outside code's node expressions and
+captures. A closure whose code is the package's has none. -/
+def codeVals : Val → List Val
+  | .objAt _ (.bound t r pre) _ => vals ofC true t ++ vals ofC true r ++ valsArgs ofC true pre
+  | .objAt _ (.graph _ E _ _ caps _ _ comp) _ =>
+    if ofC comp then [] else valsArgs ofC true E ++ valsArgs ofC true caps
+  | _ => []
+
+/-- An object at a position of outside code holds itself and its code's
+values. -/
+theorem vals_objAt (fs : List (PropKey × Nat)) (cc : CallCode) (i : Nat) :
+    vals ofC true (.objAt fs cc i) = .objAt fs cc i :: codeVals ofC (.objAt fs cc i) := by
+  cases cc <;> simp [vals, codeVals]
+
+end Roots
+
 /-! ## Paths and read-only reach -/
 
 /-- **A step of a path** (the draft, "What the Lean states", Paths): a
 field key, the spine key `[]` among them, which reaches an array's spine;
-a typed array's view spine; or the element cell a spine lists at an index.
-A collection's entries are held in no location, so no step reaches them. -/
+a typed array's view spine; the element cell a spine lists at an index; or
+the `i`-th value a value's code holds (`codeVals`). A collection's entries
+are held in no location, so no step reaches them. -/
 inductive Label where
   | key (k : PropKey)
   | view
   | cell (i : Nat)
+  | code (i : Nat)
 
-/-- The location one step reaches from the contents `v`. -/
+/-- The location one step reaches from the contents `v`; a step into code
+reaches a value, no location. -/
 def next (v : Val) : Label → Option Nat
   | .key k => (fieldsOf v).lookup k
   | .view => HeapKnowledge.descriptorSpine v
   | .cell i => match spineEntries v with
     | some ls => ls[i]?.join
     | none => none
+  | .code _ => none
 
-/-- **Following a path** `h ⊢ v →π l`: from the value `v`, each step reads
-the next location, and each location before the last is read for the next
-step's contents. -/
-def Follows (h : Heap) : Val → List Label → Nat → Prop
+/-- **One step of a path between values**: through a location, its
+contents in the heap; or into the code, a value the code holds. -/
+def Succ (ofC : ComponentTag → Bool) (h : Heap) (v : Val) (a : Label) (v₀ : Val) : Prop :=
+  (∃ l₀, next v a = some l₀ ∧ h[l₀]? = some v₀) ∨ ∃ i, a = .code i ∧ (codeVals ofC v)[i]? = some v₀
+
+/-- **Following a path** `h ⊢ v →π l`: from the value `v`, each step
+before the last goes through a location to its contents, or into the
+code of a closure of outside code or of a bound function to a value it
+holds; the last step reaches the location `l`. -/
+def Follows (ofC : ComponentTag → Bool) (h : Heap) : Val → List Label → Nat → Prop
   | _, [], _ => False
   | v, [a], l => next v a = some l
-  | v, a :: b :: π, l => ∃ l₀ v₀, next v a = some l₀ ∧ h[l₀]? = some v₀ ∧ Follows h v₀ (b :: π) l
+  | v, a :: b :: π, l => ∃ v₀, Succ ofC h v a v₀ ∧ Follows ofC h v₀ (b :: π) l
 
 /-- A location is reachable from a value through some path. -/
-def Reaches (h : Heap) (v : Val) (l : Nat) : Prop := ∃ π, Follows h v π l
+def Reaches (ofC : ComponentTag → Bool) (h : Heap) (v : Val) (l : Nat) : Prop := ∃ π, Follows ofC h v π l
 
 /-- A location is reachable from one of the values `roots`. -/
-def ReachesFrom (h : Heap) (roots : List Val) (l : Nat) : Prop := ∃ v ∈ roots, Reaches h v l
+def ReachesFrom (ofC : ComponentTag → Bool) (h : Heap) (roots : List Val) (l : Nat) : Prop :=
+  ∃ v ∈ roots, Reaches ofC h v l
 
 /-- **The types of a crossing's positions** (the draft, Definitions,
 "Read-only types and crossings"): each position below the root has the type
@@ -93,8 +184,8 @@ end TypeView
 
 /-- **Read-only reach** `Reach^ro_T(v, h)`: the locations a path from `v`
 reaches that is read-only for the crossing type `T`. -/
-def ReachRO (tv : TypeView) (T : tv.Ty) (h : Heap) (v : Val) (l : Nat) : Prop :=
-  ∃ π, Follows h v π l ∧ tv.roPath T π
+def ReachRO (tv : TypeView) (ofC : ComponentTag → Bool) (T : tv.Ty) (h : Heap) (v : Val) (l : Nat) : Prop :=
+  ∃ π, Follows ofC h v π l ∧ tv.roPath T π
 
 /-! ## Paths of a well-formed heap -/
 
@@ -115,17 +206,81 @@ theorem lt_of_slotRole {s : IndexedHeap} {k : PropKey} {l : Nat} (h : SlotRole k
   | none => rw [hr] at h; exact h.elim
   | some r => exact lt_of_role hr
 
+/-- **A value's references other than identities are valid**: no path
+follows an identity. -/
+def RefsOkN {k : Nat} (W : WorldT k) (v : Val) : Prop := ∀ r ∈ refs v, (∀ l, r ≠ .ident l) → RefOk W r
+
+theorem RefsOk.refsOkN {k : Nat} {W : WorldT k} {v : Val} (h : RefsOk W v) : RefsOkN W v :=
+  fun r hr _ => h r hr
+
+/-- **The references of a value outside code holds**: the term's, but an
+identity, or the view spine of a typed array's allocation, which the term
+names in its descriptor. -/
+theorem vals_refs {ofC : ComponentTag → Bool} (t : Tm) : ∀ o, ∀ u ∈ vals ofC o t, ∀ r ∈ refs u,
+    r ∈ refs t ∨ (∃ l, r = .ident l) ∨ ∃ s f n p, r = .view s f n true ∧ Ref.view s f n p ∈ refs t := by
+  induction t using Tm.induct
+  case makeView s f n ns args ih =>
+    intro o u hu r hr
+    simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hu
+    rcases hu with hu | ⟨a, ha, hu⟩
+    · split at hu
+      · simp only [List.mem_singleton] at hu
+        subst hu
+        simp only [refs, objRefs, List.map_nil, List.mem_append, List.mem_cons,
+          List.not_mem_nil, or_false, List.lookup_nil, Option.isNone_none] at hr
+        rcases hr with rfl | rfl
+        · exact .inr (.inl ⟨0, rfl⟩)
+        · exact .inr (.inr ⟨s, f, n, !ns.contains arraySpineKey, rfl, by simp [refs]⟩)
+      · simp at hu
+    · rcases ih a ha o u hu r hr with h | h | ⟨s', f', n', p, h₁, h₂⟩
+      · exact .inl (by simp only [refs, refsArgs_eq, List.mem_cons, List.mem_flatMap]; exact .inr ⟨a, ha, h⟩)
+      · exact .inr (.inl h)
+      · exact .inr (.inr ⟨s', f', n', p, h₁, by
+          simp only [refs, refsArgs_eq, List.mem_cons, List.mem_flatMap]; exact .inr ⟨a, ha, h₂⟩⟩)
+  all_goals intro o u hu r hr
+  all_goals simp only [vals, valsArgs_eq] at hu
+  all_goals (repeat' split at hu)
+  all_goals (try simp only [List.mem_cons, List.mem_append, List.mem_flatMap, List.not_mem_nil,
+    false_or, or_false] at hu)
+  all_goals (try (subst hu; exact .inl hr))
+  all_goals (try (rcases hu with rfl | hu; exact .inl hr))
+  all_goals (simp only [refs, refsArgs_eq, objRefs, List.mem_append, List.mem_flatMap, List.mem_cons,
+    List.mem_map] at hr ⊢; grind)
+
+/-- **The values outside code holds have valid references** where the term
+does, identities aside. -/
+theorem vals_refsOkN {k : Nat} {W : WorldT k} {ofC : ComponentTag → Bool} {t : Tm} {o : Bool} {u : Val}
+    (ht : RefsOkN W t) (hu : u ∈ vals ofC o t) : RefsOkN W u := by
+  intro r hr hn
+  rcases vals_refs t o u hu r hr with h | ⟨l, rfl⟩ | ⟨s, f, n, p, rfl, hp⟩
+  · exact ht r h hn
+  · exact (hn l rfl).elim
+  · have := ht _ hp (by simp)
+    obtain ⟨rfl, hrole⟩ := this
+    exact ⟨rfl, hrole⟩
+
+/-- A value of a valid value's code has valid references, identities
+aside. -/
+theorem codeVals_refsOkN {k : Nat} {W : WorldT k} {ofC : ComponentTag → Bool} {v w : Val}
+    (hv : RefsOkN W v) (hw : w ∈ codeVals ofC v) : RefsOkN W w := by
+  cases v
+  case objAt fs cc i =>
+    have hm : w ∈ vals ofC true (.objAt fs cc i) := by rw [vals_objAt]; exact List.mem_cons_of_mem _ hw
+    exact vals_refsOkN hv hm
+  all_goals simp [codeVals] at hw
+
 /-- **One step of a path from a valid value reaches an allocated
 location.** -/
-theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOk s.W v)
+theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOkN s.W v)
     (hn : next v a = some l) : l < s.h.length := by
   cases a with
+  | code => cases hn
   | key k =>
     simp only [next] at hn
     cases v
     case objAt fs c i =>
       simp only [fieldsOf] at hn
-      exact lt_of_slotRole (hv _ (slot_mem_refs (c := c) (i := i) (lookup_mem_pair hn)))
+      exact lt_of_slotRole (hv _ (slot_mem_refs (c := c) (i := i) (lookup_mem_pair hn)) (by simp))
     all_goals simp [fieldsOf] at hn
   | view =>
     simp only [next] at hn
@@ -136,6 +291,7 @@ theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOk s
         simp only [HeapKnowledge.descriptorSpine, Option.some.injEq] at hn
         rw [← hn]
         have := hv _ (by simp [refs] : Ref.view s' f n (fs.lookup arraySpineKey).isNone ∈ refs (.objAt fs (.view s' f n) i))
+          (by simp)
         exact lt_of_role this.2
       all_goals simp [HeapKnowledge.descriptorSpine] at hn
     all_goals simp [HeapKnowledge.descriptorSpine] at hn
@@ -155,7 +311,7 @@ theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOk s
       have : Ref.elem l ∈ refs (.arr ls) := by
         simp only [refs, spineRefs, List.mem_filterMap]
         exact ⟨some l, hm, rfl⟩
-      exact lt_of_role (hv _ this)
+      exact lt_of_role (hv _ this (by simp))
     case viewSpine f cs =>
       simp only [spineEntries] at hn
       have hm : l ∈ cs := by
@@ -169,7 +325,7 @@ theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOk s
       have : Ref.elem l ∈ refs (.viewSpine f cs) := by
         simp only [refs, List.mem_map]
         exact ⟨l, hm, rfl⟩
-      exact lt_of_role (hv _ this)
+      exact lt_of_role (hv _ this (by simp))
     all_goals simp [spineEntries] at hn
 
 /-- The contents of an allocated location of a well-formed heap are valid. -/
@@ -187,12 +343,14 @@ theorem contents_valid {s : IndexedHeap} {l : Nat} {v : Val} (hl : l < s.h.lengt
 
 /-- **A path of a well-formed heap from a valid value ends at an allocated
 location.** -/
-theorem follows_lt {s : IndexedHeap} :
-    ∀ {v : Val} {π : List Label} {l : Nat}, RefsOk s.W v → Follows s.h v π l → l < s.h.length
+theorem follows_lt {s : IndexedHeap} {ofC : ComponentTag → Bool} :
+    ∀ {v : Val} {π : List Label} {l : Nat}, RefsOkN s.W v → Follows ofC s.h v π l → l < s.h.length
   | _, [], _, _, h => h.elim
   | _, [_], _, hv, h => next_lt hv h
-  | _, _ :: _ :: _, _, hv, ⟨_, _, hn, hl₀, hf⟩ =>
-    follows_lt (contents_valid (next_lt hv hn) hl₀) hf
+  | _, _ :: _ :: _, _, hv, ⟨_, .inl ⟨_, hn, hl₀⟩, hf⟩ =>
+    follows_lt (RefsOk.refsOkN (contents_valid (next_lt hv hn) hl₀)) hf
+  | _, _ :: _ :: _, _, hv, ⟨_, .inr ⟨_, _, hc⟩, hf⟩ =>
+    follows_lt (codeVals_refsOkN hv (List.mem_of_getElem? hc)) hf
 
 /-! ## Marks and the ghost state -/
 
@@ -209,6 +367,8 @@ inductive Mark where
 structure Package where
   Site : Type
   mark : Site → Mark
+  /-- The tags whose code is the package's. -/
+  ofC : ComponentTag → Bool
 
 /-- **The ghost state** (the draft, "What the Lean states"): the site that
 allocated each location, `none` for storage outside code allocated; each
@@ -258,7 +418,7 @@ inductive Dir where
 reaches read-only; a crossing out of it protects none. -/
 def Ghost.incoming {P : Package} (g : Ghost P) (tv : TypeView) (d : Dir) (T : tv.Ty) (h : Heap) (v : Val)
     (l : Nat) : Prop :=
-  d = .into ∧ ReachRO tv T h v l ∧ g.Lent l
+  d = .into ∧ ReachRO tv P.ofC T h v l ∧ g.Lent l
 
 /-- **The crossing update** (the draft, Crossings): the exposed locations
 the crossing reaches read-only join `E`, in either direction, and those of
@@ -266,7 +426,7 @@ the crossing reaches read-only join `E`, in either direction, and those of
 def Ghost.cross {P : Package} (g : Ghost P) (tv : TypeView) (d : Dir) (T : tv.Ty) (h : Heap) (v : Val) :
     Ghost P :=
   { g.add (g.incoming tv d T h v) with
-    E := fun l => g.E l ∨ (ReachRO tv T h v l ∧ g.origin l = some .exposed) }
+    E := fun l => g.E l ∨ (ReachRO tv P.ofC T h v l ∧ g.origin l = some .exposed) }
 
 /-! ## The history -/
 
