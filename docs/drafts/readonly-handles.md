@@ -1384,14 +1384,31 @@ The definitions and statements below are the draft's, in Paper I's
 notation, as Lean states them in
 [ReadOnlyRegion.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyRegion.lean)
 and [ReadOnlyFrame.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyFrame.lean)
-(namespace `TolerantFrames.ReadOnly`). The Lean states the rule for one
-component, the package $`P`$ the earlier draft named, and below it is read
-with $`C`$ for $`P`$. Statements marked *(to generalize)* need, for the
-laminar family: the ghost tag of each frame's innermost component in the
-state, from which "code that is not $`C`$'s" and "a frame of $`C`$" are
-read; one $`E_C`$, $`A_C`$, $`B_C`$ and $`\Psi_C`$ per component; marks per
-site and component; and the combination of two components' rules for a
-fact that relies on both, which Lean does not state. A state is
+(namespace `TolerantFrames.ReadOnly`). The components form a laminar
+family (`Family`, in
+[ReadOnlyComponents.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyComponents.lean)):
+"nested in" is reflexive and transitive, any two components are nested or
+disjoint, each site has an innermost component and a mark for each
+component. Each component $`C`$ is read as a package (`Family.at`): its
+sites are those of $`C`$'s code, nested components' included, with their
+marks for $`C`$, so every definition and lemma below holds at each $`C`$,
+with its own $`E_C`$, $`A_C`$, $`B_C`$, $`\Psi_C`$, members and runs. A
+frame runs $`C`$'s code when its tag (`ComponentTag`, the calculus's ghost
+tag) names $`C`$ or a component nested in it (`Family.Runs`); a step
+outside $`C`$ is outside every component nested in $`C`$ (proved,
+`Family.outside_mono`), and two components' code is nested or disjoint
+(`Family.runs_laminar`). A component's storage includes its nested
+components': a location a nested component's site allocated is classified
+by its mark for $`C`$, never as outside storage of $`C`$ (proved,
+`Family.nested_origin`); with each site's mark for an enclosing component at
+most its mark for a nested one (`MarksConsistent`, in the order
+$`\mathsf{local}\sqsubseteq\mathsf{internal}\sqsubseteq\mathsf{exposed}\sqsubseteq\mathsf{released}`$,
+checked by the pass), nested local storage is in $`R_C`$
+(`Family.nested_local_inR`) and nested exposed storage is not released
+for $`C`$ (`Family.nested_exposed`). Statements marked *(to connect)* read
+outside steps from the frames' tags, which needs the step property below.
+The combination of two components' rules for a fact that relies on both is
+not stated. A state is
 $`s=(\rho,h,W,k,\mathit{site},\mathit{key},E,A,B,\mathit{roots})`$: Paper
 I's environment, heap, world and budget; the site that allocated each
 location and each field location's key, fixed at allocation; $`E`$ a set of
@@ -1399,7 +1416,7 @@ locations, $`A`$ a stack of sets of locations, one per active call of $`C`$, and
 that is not $`C`$'s hold. Each statement is labelled **proved** with
 its Lean name, or **hypothesis** where Lean assumes it.
 
-**Marks** *(to generalize: per component)*. $`C`$'s sites each carry a mark; a location's mark is its
+**Marks**. $`C`$'s sites each carry a mark; a location's mark is its
 site's,
 $`\mu(l)\in\{\mathsf{local},\mathsf{internal},\mathsf{exposed},\mathsf{released}\}`$,
 and $`\mu(l)=\mathsf{out}`$ for a location outside code allocated. A
@@ -1425,7 +1442,7 @@ with $`\mathrm{RO}(U)`$ the draft's read-only types, closed under the types
 of children; so $`\mathrm{ro}_T(\pi)\iff\mathrm{RO}(T|_\pi)`$ (proved,
 `TypeView.roPath_iff`).
 
-**Crossings** *(to generalize: per component)*. A crossing passes a value $`v`$ at type $`T`$ between $`C`$ and code that is not its, with a direction
+**Crossings**. A crossing passes a value $`v`$ at type $`T`$ between $`C`$ and code that is not its, with a direction
 $`d\in\{\mathsf{in},\mathsf{out}\}`$; a store of $`C`$ into storage
 outside code reaches is a crossing of the stored value at the type of its
 position. It updates the ghosts (`Ghost.cross`):
@@ -1438,13 +1455,13 @@ N=\begin{cases}\{\,l\in\mathrm{Reach}^{\mathrm{ro}}_T(v,h)\mid\mu(l)\in\{\mathsf
 
 and adds $`N`$ to every set of $`A`$.
 
-**Holds** *(to generalize: per component)*. $`\mathrm{Held}(l,s)`$ holds when a frame of $`C`$, a
+**Holds**. $`\mathrm{Held}(l,s)`$ holds when a frame of $`C`$, a
 binding of $`C`$ or a location of storage of $`C`$ references $`l`$
 or a location from which $`l`$ is reachable by a path; a key of a
 `WeakMap` is no reference. Lean takes it as the predicate an exit or a drop
 reads.
 
-**The history** (`HStep`) *(to generalize: per component, read from the frames' tags)*. A call's entry pushes the protected set
+**The history** (`HStep`). A call's entry pushes the protected set
 $`\bigcup A\cup B`$; a crossing updates $`E`$ and $`A`$; a hold that makes
 locations protected adds them to every set; each exit, normal or
 exceptional, pops the top set, and when the stack becomes empty $`B'`$ is
@@ -1456,7 +1473,7 @@ carries one set and its depth, and a location protected in any call stays
 protected until the outermost active call returns (`exit_unprotects`
 shows the outermost exit ending it).
 
-**The membership test** (`Ghost.InR`) *(to generalize: per component, read from the frames' tags)*.
+**The membership test** (`Ghost.InR`).
 
 ```math
 l\in R_C(s)\iff\mu(l)\in\{\mathsf{local},\mathsf{exposed}\}\ \vee\ \bigl(\mu(l)\in\{\mathsf{released},\mathsf{out}\}\wedge(l\in{\textstyle\bigcup}A\ \vee\ l\in B)\bigr)
@@ -1484,7 +1501,7 @@ map for which every member has one. $`G_C`$ is a set of invariants $`I`$
 with: every write of a member to a location of $`\mathrm{supp}(I)`$ of a
 complete handle, and every exit of a member, keeps $`I`$.
 
-**Runs of code that is not $`C`$'s** (`RunAt`, `Run`) *(to generalize: per component, read from the frames' tags)*. Inside a call
+**Runs of code that is not $`C`$'s** (`RunAt`, `Run`) *(to connect: outside steps read from the frames' tags)*. Inside a call
 of $`C`$ at depth $`d`$, such a run is a sequence of outside steps
 and member calls, each member call's own runs of code that is not $`C`$'s one call deeper, within a budget of nesting. An outside step
 (`OutsideStep`) keeps the marks and the history, allocates outside storage
@@ -1528,7 +1545,7 @@ active, a uniform history, and
   local or exposed location then passes a location of $`E`$, from which on
   every position is read-only.
 
-**The lemmas** *(to generalize: each per component, the component a parameter and outside steps those whose frames' tags lie outside it)*. Each quantifies over states meeting the invariants and
+**The lemmas** *(to connect: outside steps read from the frames' tags)*. Each quantifies over states meeting the invariants and
 over outside steps meeting their hypotheses.
 
 - (L1) Outside step (proved, `outside_step`). For a step $`s\to s'`$ of
@@ -1611,15 +1628,28 @@ of an object or an element cell of a spine that the stepped term
 references. This is `OutsideStep.reach` with the term's references as the
 frame. Two properties of the model are missing for the three step
 properties as Lean states them: a running frame (`Tm.frame`, `Tm.goto`)
-does not record whose code it runs, so a step cannot be told to be $`C`$'s or outside code's, which the approved ghost tag of a frame's innermost component supplies *(to generalize: the tag in the model's frames)*; and the term's references include the
-captures of $`C`$'s closures it holds, which a step of outside code
-reaches only by calling them. With a frame's code recorded, an outside
-step's frame is the term's references outside $`C`$'s closures, and
-`OutsideStep.reach` is to follow from `step_changes` at a redex of outside
-code (conjectured);
-`OutsideStep.noForge` and `OutsideStep.writes` need, beyond it, that the
-term after a step references only what the term and the contents it reads
-referenced, or fresh storage.
+records whose code it runs (`comp`, copied from the called code at the
+call, read by no rule). What the model lacks is the step's active frame:
+the innermost frame on the evaluation path of a term, its evaluated term and
+its tag, as a function of the term with its lemma against `Step`. With it,
+an outside step's roots are the active frame's term's references outside
+$`C`$'s closures (a closure whose code runs $`C`$'s holds its captures,
+which outside code reaches only by calling it), and `OutsideStep.reach` is
+to follow from `step_changes` taken at the active frame (conjectured);
+the references of the term's other frames, $`C`$'s own among them, are no
+roots, since the step cannot read them. `OutsideStep.noForge` and
+`OutsideStep.writes` need, beyond it, that the active frame's term after a
+step references only what it and the contents it read referenced, or fresh
+storage, an induction over `Step` as `step_changes` is with the
+references of substitution and instantiation. (M)'s clause on a closure's
+bindings needs paths through captures; a capture is a value, not a
+location, so it is a step of a path that lands on a value, which `Follows`
+does not have.
+
+**Integrity is not in the model.** The paper model's objects carry no
+integrity state (frozen, sealed, non-extensible), and its field write
+(`writeField`) never throws for one. The protocol's `integrity` key is
+unsupported in Lean, and nothing is built on it.
 
 **What Lean assumes.** The trust row (`OutsideStep.row`); the two
 properties of the language's steps (`OutsideStep.reach`,
