@@ -35,7 +35,12 @@ Lean states", "Actual executions"), over the paper model's reduction
   member certified for the code it enters (`Cert.member`), whose steps are
   checked steps (`PkgStep`) and whose runs of outside code one call deeper
   are again such runs. Then (L2) holds of the execution
-  (`exec_bound`). -/
+  (`exec_bound`).
+- **The invariants at every depth** (`XStep.inv`, `Ex.inv`): every step of
+  an execution keeps the invariants of states (`Inv`), a return to code
+  outside every call of `C` included, so from a start meeting them
+  (`Inv.of_lent`) each state inside a call is `Ok` at its depth, the entry
+  conditions of every call. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -659,5 +664,41 @@ theorem exec_rely (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {Cn : ConditionOn (St (
   readOnly_rely hΘ hsup hΦ ((decompose certs off n).1 d a e hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
 
 end Decompose
+
+/-! ## The invariants at every depth -/
+
+/-- **Every step of an execution keeps the invariants of states**, at any
+depth, a return to code outside every call of `C` included: a step of
+outside code is an outside step (`outsideStep_of_step`, `outside_inv`); a
+step of `C`'s code, an exit to depth `0` among them, is a checked step at
+depth `0` (`pkgStep_of`, `pkg_step_inv`). -/
+theorem XStep.inv {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c Θ chk a b)
+    (hl : a.2.A.length = δ F C c a + off) (hi : Inv (lift F C c a.1 a.2)) : Inv (lift F C c b.1 b.2) := by
+  obtain ⟨hs, -, hg, hh⟩ := hx
+  obtain ⟨b, g'⟩ := b
+  simp only at hg ⊢
+  subst hg
+  by_cases hk : kind F C c a.1 b = .outside
+  · have hrow := hyp_row hk hh
+    have hn : Ghost.next F C c chk a.1 b a.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b).key := by
+      simp only [Ghost.next, hk]
+    rw [hn] at hrow ⊢
+    exact outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow) hi
+  · refine pkg_step_inv (pkgStep_of (d := 0) hs hk (hyp_props hk hh) (Nat.zero_le _) fun hx => ?_) hi
+    have := (kind_spec (F := F) (C := C) (c := c) a.1 b).2.2.1 hx
+    simp only [δ] at hl; omega
+
+/-- **The invariants along an execution** (the draft, "What acceptance
+reads of the rule", 5): from a state meeting them, whose history has one
+set per call of `C` active, every later state meets them with one set per
+call, and so at every state inside a call of `C` they are `Ok` at its
+depth: the entry conditions of each call, every later entry included. -/
+theorem Ex.inv {q : Conf × Ghost (F.at C) → Prop} {n : Nat} {a e : Conf × Ghost (F.at C)}
+    (hex : Ex (XStep F C c Θ chk) q n a e) (hl : a.2.A.length = δ F C c a) (hi : Inv (lift F C c a.1 a.2)) :
+    e.2.A.length = δ F C c e ∧ Inv (lift F C c e.1 e.2) ∧
+      (0 < δ F C c e → Ok (δ F C c e) (lift F C c e.1 e.2)) := by
+  have h := hex.carry (r := fun a => a.2.A.length = δ F C c a + 0 ∧ Inv (lift F C c a.1 a.2))
+    (fun _ _ _ hx ⟨hl, hi⟩ => ⟨XStep.len hx hl, XStep.inv hx hl hi⟩) ⟨hl, hi⟩
+  exact ⟨h.1, h.2, fun hd => h.2.ok hd (by simp only [lift]; omega)⟩
 
 end Verification.TolerantFrames.ReadOnly

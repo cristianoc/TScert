@@ -1984,9 +1984,17 @@ each region (`flow_of_sites`, from the flow's possible sites and keys of the
 region's locations, the kind being the region's bound's), and every
 released or outside location of a region read as protected has a live
 history witness, a crossing in that reached it read-only, the history
-grown since (`Witness`, `prot_of_witness`). Where no storage of a local,
-an internal or an exposed site exists, a uniform history with a call
-active and valid frames give the invariants of states (`Ok.of_lent`).
+grown since (`Witness`, `prot_of_witness`).
+
+**The invariants at every depth** (proved, `XStep.inv`, `Ex.inv`). The
+invariants of states without the depth (`Inv`: a uniform history, (M),
+(P2), valid frames) are kept by every step of an execution: a step of
+outside code is an outside step (`outside_inv`), and a step of
+$`C`$'s code, the exit of the last active call among them, is a checked
+step at depth $`0`$ (`pkg_step_inv`). From a start where no storage of a
+local, an internal or an exposed site exists (`Inv.of_lent`), with one set
+of the history per active call, every state inside a call of $`C`$ is
+`Ok` at its depth: the entry conditions hold at every entry.
 
 ### What acceptance reads of the rule
 
@@ -2010,8 +2018,9 @@ reads a frame at a call needs, each proved, before it is certified:
 4. each member's certificate (`Cert`) from the pass's check of its body,
    over the executions of that body's own graph;
 5. the invariants of states at depth 0, across a return to code outside
-   every call of $`C`$, so the entry conditions hold at every later entry,
-   not only where no protected storage exists (`Ok.of_lent`).
+   every call of $`C`$, so the entry conditions hold at every later entry
+   (proved of the paper's executions, `Ex.inv`; it reaches the pass with
+   item 2).
 
 The frames at calls (`ComponentChecks.Ctx.frames`) are checked and printed
 beside the verdicts; with these five proved, a plan reading them takes a

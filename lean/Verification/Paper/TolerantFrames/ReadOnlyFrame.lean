@@ -396,6 +396,24 @@ structure Ok (d : Nat) (st : St P) : Prop where
   localClosed : LocalClosed st
   bindings : BindingsClosed st
 
+/-- **The invariants of states at any depth**: a uniform history, (M),
+(P2), and valid references in the frames of code that is not the package's.
+Inside a call they are `Ok` with its depth (`Inv.ok`); outside every call
+they are what the next entry needs. -/
+structure Inv (st : St P) : Prop where
+  uniform : st.g.Uniform
+  marks : MarksOk st
+  confined : Confined st
+  valid : RootsValid st
+  localClosed : LocalClosed st
+  bindings : BindingsClosed st
+
+theorem Ok.inv {d : Nat} {st : St P} (hok : Ok d st) : Inv st :=
+  ⟨hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed, hok.bindings⟩
+
+theorem Inv.ok {d : Nat} {st : St P} (hi : Inv st) (hd : 0 < d) (hl : d ≤ st.g.A.length) : Ok d st :=
+  ⟨hd, hl, hi.uniform, hi.marks, hi.confined, hi.valid, hi.localClosed, hi.bindings⟩
+
 /-- **The bound a run gives `R_P`** (the draft, (L2)): the marks kept, the
 history growing, and every location of `R_P` at the first state changed
 within `Ψ_P` at its part. -/
@@ -425,6 +443,13 @@ theorem Ghost.uniform_congr {g g' : Ghost P} (hA : g'.A = g.A) (hB : g'.B = g.B)
   intro X hX l
   rw [hA] at hX
   exact (hu X hX l).trans (Ghost.prot_congr hA hB l).symm
+
+/-- **An outside step keeps the invariants at any depth** ((L1) and the
+clauses of (M)): its history fields are fixed. -/
+theorem outside_inv {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (hi : Inv st) : Inv st' :=
+  have h := outside_step ho hi.marks hi.confined
+  ⟨Ghost.uniform_congr ho.calls ho.record hi.uniform, h.2.1, h.2.2, ho.valid,
+    outside_localClosed ho hi.marks hi.valid hi.localClosed, outside_bindingsClosed ho hi.marks hi.valid hi.bindings⟩
 
 /-- An outside step bounds `R_P` by every protocol `Ψ` with `Θ ⊑ Ψ`
 (`Ψ_P ⊔ Θ`), and keeps the invariants. -/
