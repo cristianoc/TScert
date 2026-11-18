@@ -38,29 +38,32 @@ variable {P : Package}
 /-- A location holds the same contents in both heaps. -/
 def Same (h h' : Heap) (w : Nat) : Prop := ∃ v, h[w]? = some v ∧ h'[w]? = some v
 
-theorem follows_cons {h : Heap} {v v₀ : Val} {a : Label} {l₀ l : Nat} {π : List Label}
-    (hn : next v a = some l₀) (hl₀ : h[l₀]? = some v₀) (hf : Follows h v₀ π l) : Follows h v (a :: π) l := by
+theorem follows_cons {ofC : ComponentTag → Bool} {h : Heap} {v v₀ : Val} {a : Label} {π : List Label} {l : Nat}
+    (hs : Succ ofC h v a v₀) (hf : Follows ofC h v₀ π l) : Follows ofC h v (a :: π) l := by
   cases π with
   | nil => exact hf.elim
-  | cons b π => exact ⟨l₀, v₀, hn, hl₀, hf⟩
+  | cons b π => exact ⟨v₀, hs, hf⟩
 
 /-- **A path after a step** either is a path before it, or passes a location
 the step changed or allocated, the path's prefix reaching it and the rest
-running from its new contents. -/
-theorem follows_split {h h' : Heap} :
-    ∀ {v : Val} {π : List Label} {l : Nat}, Follows h' v π l →
-      Follows h v π l ∨ ∃ w u π₁ π₂, Follows h' v π₁ w ∧ h'[w]? = some u ∧ ¬ Same h h' w ∧ Follows h' u π₂ l
+running from its new contents. A step into a value's code reads no heap. -/
+theorem follows_split {ofC : ComponentTag → Bool} {h h' : Heap} :
+    ∀ {v : Val} {π : List Label} {l : Nat}, Follows ofC h' v π l →
+      Follows ofC h v π l ∨
+        ∃ w u π₁ π₂, Follows ofC h' v π₁ w ∧ h'[w]? = some u ∧ ¬ Same h h' w ∧ Follows ofC h' u π₂ l
   | _, [], _, hf => hf.elim
   | _, [_], _, hf => .inl hf
-  | _, a :: b :: π, _, ⟨l₀, v₀, hn, hl₀, hf⟩ => by
+  | _, a :: b :: π, _, ⟨v₀, hsucc, hf⟩ => by
     rcases follows_split hf with hf₀ | ⟨w, u, π₁, π₂, h₁, hu, hs, h₂⟩
-    · by_cases hs : Same h h' l₀
-      · obtain ⟨u, hu, hu'⟩ := hs
-        rw [hl₀] at hu'
-        cases hu'
-        exact .inl ⟨l₀, _, hn, hu, hf₀⟩
-      · exact .inr ⟨l₀, v₀, [a], b :: π, hn, hl₀, hs, hf⟩
-    · exact .inr ⟨w, u, a :: π₁, π₂, follows_cons hn hl₀ h₁, hu, hs, h₂⟩
+    · rcases hsucc with ⟨l₀, hn, hl₀⟩ | hc
+      · by_cases hs : Same h h' l₀
+        · obtain ⟨u, hu, hu'⟩ := hs
+          rw [hl₀] at hu'
+          cases hu'
+          exact .inl ⟨_, .inl ⟨l₀, hn, hu⟩, hf₀⟩
+        · exact .inr ⟨l₀, v₀, [a], b :: π, hn, hl₀, hs, hf⟩
+      · exact .inl ⟨v₀, .inr hc, hf₀⟩
+    · exact .inr ⟨w, u, a :: π₁, π₂, follows_cons hsucc h₁, hu, hs, h₂⟩
 
 /-! ## The history keeps the marks -/
 
@@ -84,7 +87,7 @@ theorem HStep.exposed_mono {tv : TypeView} {h : Heap} {g g' : Ghost P} (hs : HSt
 the heap `h`, and any later transitions, every exposed location the
 crossing reaches read-only at `h` is in `E`. -/
 theorem HSteps.cross_covers {tv : TypeView} {d : Nat} {h : Heap} {g g' : Ghost P} (c : Dir) (T : tv.Ty)
-    (v : Val) (hs : HSteps tv d (g.cross tv c T h v) g') {l : Nat} (hr : ReachRO tv T h v l)
+    (v : Val) (hs : HSteps tv d (g.cross tv c T h v) g') {l : Nat} (hr : ReachRO tv P.ofC T h v l)
     (he : g.origin l = some .exposed) : g'.E l := by
   have h₀ : (g.cross tv c T h v).E l := .inr ⟨hr, he⟩
   clear hr he
@@ -107,8 +110,8 @@ check *Confinement*): no location of a local or an internal site is
 reachable from the crossing value, and one of an exposed site only through
 a read-only path. -/
 def CrossOk (tv : TypeView) (g : Ghost P) (h : Heap) (c : Crossing tv) : Prop :=
-  ∀ l, Reaches h c.val l → g.origin l ≠ some .local ∧ g.origin l ≠ some .internal ∧
-    (g.origin l = some .exposed → ReachRO tv c.ty h c.val l)
+  ∀ l, Reaches P.ofC h c.val l → g.origin l ≠ some .local ∧ g.origin l ≠ some .internal ∧
+    (g.origin l = some .exposed → ReachRO tv P.ofC c.ty h c.val l)
 
 /-- **A step of the package's code inside a call at depth `d`**, with its
 checks. It allocates, fixing every old location's site and key (`mid`);
@@ -130,10 +133,10 @@ structure PkgStep (tv : TypeView) (d : Nat) (st st' : St P) : Type where
   midB : mid.B = st.g.B
   hist : HSteps tv d mid st'.g
   xs : List (Crossing tv)
-  covers : ∀ c ∈ xs, ∀ l, ReachRO tv c.ty st'.s.h c.val l → mid.origin l = some .exposed → st'.g.E l
+  covers : ∀ c ∈ xs, ∀ l, ReachRO tv P.ofC c.ty st'.s.h c.val l → mid.origin l = some .exposed → st'.g.E l
   crossOk : ∀ c ∈ xs, CrossOk tv mid st'.s.h c
   gives : ∀ r ∈ st'.roots, r ∈ st.roots ∨ ∃ c ∈ xs, c.val = r
-  stores : ∀ w u, ReachesFrom st'.s.h st'.roots w → st'.s.h[w]? = some u → ¬ Same st.s.h st'.s.h w →
+  stores : ∀ w u, ReachesFrom P.ofC st'.s.h st'.roots w → st'.s.h[w]? = some u → ¬ Same st.s.h st'.s.h w →
     ∃ c ∈ xs, c.val = u
   valid : RootsValid st'
   localStores : ∀ w u, ¬ Same st.s.h st'.s.h w → st'.s.h[w]? = some u → ∀ a l, next u a = some l →
@@ -156,7 +159,7 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
   have hg := hmid.trans hgr
   have horig : ∀ l, st'.g.origin l = hp.mid.origin l := fun l => by simp only [Ghost.origin, hm.1]
   -- A location reached afterwards from a value that crossed meets the marks.
-  have hcross : ∀ c ∈ hp.xs, ∀ l, Reaches st'.s.h c.val l →
+  have hcross : ∀ c ∈ hp.xs, ∀ l, Reaches P.ofC st'.s.h c.val l →
       st'.g.origin l ≠ some .local ∧ st'.g.origin l ≠ some .internal ∧
         (st'.g.origin l = some .exposed → st'.g.E l) := by
     intro c hc l hr
@@ -164,17 +167,17 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
     rw [horig l]
     exact ⟨h₁, h₂, fun he => hp.covers c hc l (h₃ he) he⟩
   -- A location reached afterwards along a path the frames had.
-  have hold : ∀ r ∈ st.roots, ∀ π l, Follows st.s.h r π l →
+  have hold : ∀ r ∈ st.roots, ∀ π l, Follows P.ofC st.s.h r π l →
       st'.g.origin l ≠ some .local ∧ st'.g.origin l ≠ some .internal ∧
         (st'.g.origin l = some .exposed → st'.g.E l) := by
     intro r hr π l hf
     have hl := follows_lt (hok.valid r hr) hf
     have ho : st'.g.origin l = st.g.origin l := hkept.origin hl
-    have hreach : ReachesFrom st.s.h st.roots l := ⟨r, hr, π, hf⟩
+    have hreach : ReachesFrom P.ofC st.s.h st.roots l := ⟨r, hr, π, hf⟩
     obtain ⟨h₁, h₂⟩ := hok.marks l hreach
     rw [ho]
     exact ⟨h₁, h₂, fun he => hg.exposed l (hok.confined l hreach he)⟩
-  have hall : ∀ l, ReachesFrom st'.s.h st'.roots l →
+  have hall : ∀ l, ReachesFrom P.ofC st'.s.h st'.roots l →
       st'.g.origin l ≠ some .local ∧ st'.g.origin l ≠ some .internal ∧
         (st'.g.origin l = some .exposed → st'.g.E l) := by
     rintro l ⟨r, hr, π, hf⟩
@@ -193,7 +196,7 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
       rw [hu'] at hv₁
       cases hv₁
       have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
-      have hl' : l < st.s.h.length := next_lt (contents_valid hw hv₀) hn
+      have hl' : l < st.s.h.length := next_lt (RefsOk.refsOkN (contents_valid hw hv₀)) hn
       have hmo : ∀ x, x < st.s.h.length → hp.mid.origin x = st.g.origin x := fun x hx => by
         simp only [Ghost.origin, (hp.sites x hx).1]
       rw [hmo l hl'] at hloc
@@ -207,7 +210,7 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
 updates `E` as `PkgStep.covers` states. -/
 theorem covers_of_cross {tv : TypeView} {d : Nat} {h : Heap} {g g' : Ghost P} (c : Crossing tv)
     (hs : HSteps tv d (g.cross tv c.dir c.ty h c.val) g') :
-    ∀ l, ReachRO tv c.ty h c.val l → g.origin l = some .exposed → g'.E l :=
+    ∀ l, ReachRO tv P.ofC c.ty h c.val l → g.origin l = some .exposed → g'.E l :=
   fun _ hr he => hs.cross_covers c.dir c.ty c.val hr he
 
 /-! ## Incoming values -/
@@ -217,7 +220,7 @@ theorem covers_of_cross {tv : TypeView} {d : Nat} {h : Heap} {g g' : Ghost P} (c
 internal site"): a location reachable from a value the frames of code that
 is not the package's hold is of an exposed or a released site, or outside
 storage. -/
-theorem incoming_site {st : St P} (hm : MarksOk st) {l : Nat} (hr : ReachesFrom st.s.h st.roots l) :
+theorem incoming_site {st : St P} (hm : MarksOk st) {l : Nat} (hr : ReachesFrom P.ofC st.s.h st.roots l) :
     st.g.origin l = some .exposed ∨ st.g.Lent l := by
   obtain ⟨h₁, h₂⟩ := hm l hr
   unfold Ghost.Lent
@@ -237,7 +240,7 @@ def Part.Incoming (p : Part P) : Prop :=
 part and to outside storage** at its kind and key (the draft, *Incoming
 values*) is charged to the written location's own part. -/
 theorem incoming_charged {st : St P} (hm : MarksOk st) {eff : Protocol P} {δ : Change}
-    (hc : ∀ p : Part P, p.Incoming → δ.le (eff p) = true) {l : Nat} (hr : ReachesFrom st.s.h st.roots l) :
+    (hc : ∀ p : Part P, p.Incoming → δ.le (eff p) = true) {l : Nat} (hr : ReachesFrom P.ofC st.s.h st.roots l) :
     δ.le (eff (st.part l)) = true := by
   refine hc _ ?_
   simp only [Part.Incoming, St.part]

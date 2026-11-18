@@ -13,17 +13,15 @@ reduction (`Step`).
   (`step_path`): that frame's term changes and the frames outside it stay,
   or the frame is popped and its parent's term changes; the frames on the
   path of what the step produces are pushed.
-- **The roots of code outside a set of components** (`vals`): the values
-  held at the positions of the frames whose tags run no code of the set,
-  the code a closure of outside code holds included; a closure of the set
-  contributes itself, so its own slots, and none of its code.
+- **The roots of code outside a set of components** are `vals`
+  (`ReadOnlyRegion`) at the term: the values held at the positions of the
+  frames whose tags run no code of the set, with the values their code
+  holds.
 - A step whose active frame runs no code of the set changes only locations
   one path step from these roots (`step_reach`), and every value it leaves
-  in storage it changes or allocates and that reaches a location is one of
-  them (`step_writes`): `OutsideStep.reach` and `OutsideStep.writes` at a
-  family's component (`outsideStep_reach`, `outsideStep_writes`).
-- `OutsideStep.noForge` is false of these roots: a closure read from the
-  heap holds captures no path reached (`noForge_counter`). -/
+  in storage it changes or allocates, from which a path step leaves, is one
+  of them (`step_writes`): `OutsideStep.reach` and `OutsideStep.writes` at a
+  family's component (`outsideStep_reach`, `outsideStep_writes`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -473,83 +471,35 @@ theorem activeTag_frame {c : ComponentTag} {E : List Tm} {K : List (ControlFlow.
   rw [List.cons_append, List.head?_cons, ← hw]
   rfl
 
-/-! ## The roots of code outside a set of components -/
+/-! ## The roots of code outside a set of components
+
+The roots of outside code at a term whose top segment runs code tagged `c`
+are `vals ofC (!ofC c) t` (`ReadOnlyRegion`): the values at the positions
+of frames whose tags `ofC` does not mark. -/
 
 section Roots
-variable (ofC : ComponentTag → Bool)
+variable {ofC : ComponentTag → Bool}
 
-mutual
-/-- **The roots of outside code** at a term whose position runs code tagged
-`c` (the draft, "Frames and whose code runs"; `ofC` tells the tags that run
-code of the set): the values held at positions run by code no tag of which
-`ofC` names, a frame's or a `goto`'s positions run by its own tag. Such a
-value is an object, a spine or a view spine, with, for a bound function,
-the values it saved and, for a closure of outside code, the values of its
-code (its node expressions and captures); a closure of the set contributes
-itself, so its own slots and identity, and none of its code, which outside
-code reaches only by calling it. -/
-def vals (c : ComponentTag) : Tm → List Val
-  | .var _ => []
-  | .invoke f r args => vals c f ++ vals c r ++ valsArgs c args
-  | .construct f args => vals c f ++ valsArgs c args
-  | .letE a b => vals c a ++ vals c b
-  | .objAt fs .absent i => if ofC c then [] else [.objAt fs .absent i]
-  | .objAt fs (.view s f n) i => if ofC c then [] else [.objAt fs (.view s f n) i]
-  | .objAt fs (.bound t r pre) i =>
-    if ofC c then [] else .objAt fs (.bound t r pre) i :: (vals c t ++ vals c r ++ valsArgs c pre)
-  | .objAt fs (.graph n E K s caps k r comp) i =>
-    if ofC c then [] else .objAt fs (.graph n E K s caps k r comp) i ::
-      (if ofC comp then [] else valsArgs comp E ++ valsArgs comp caps)
-  | .makeAt .absent _ xs => valsArgs c xs
-  | .makeAt (.view ..) _ xs => valsArgs c xs
-  | .makeAt (.bound t r pre) _ xs => (vals c t ++ vals c r ++ valsArgs c pre) ++ valsArgs c xs
-  | .makeAt (.graph _ E _ _ caps _ _ comp) _ xs =>
-    (if ofC c || ofC comp then [] else valsArgs comp E ++ valsArgs comp caps) ++ valsArgs c xs
-  | .readAt _ a => vals c a
-  | .indexAt a key => vals c a ++ vals c key
-  | .writeAt _ a b => vals c a ++ vals c b
-  | .test _ a => vals c a
-  | .ite x a b => vals c x ++ vals c a ++ vals c b
-  | .arith _ a b => vals c a ++ vals c b
-  | .arr ls => if ofC c then [] else [.arr ls]
-  | .viewSpine f cs => if ofC c then [] else [.viewSpine f cs]
-  | .arrLit xs => valsArgs c xs
-  | .elemAt a i => vals c a ++ vals c i
-  | .setElem a i v => vals c a ++ vals c i ++ vals c v
-  | .lenOf a => vals c a
-  | .spread a => vals c a
-  | .throw a => vals c a
-  | .merge _ a b => vals c a ++ vals c b
-  | .makeKey k a => vals c k ++ vals c a
-  | .goto E _ _ L d comp => if ofC comp then [] else valsArgs comp E ++ valsArgs comp L ++ vals comp d
-  | .frame E _ t L d _ _ comp =>
-    (if ofC comp then [] else valsArgs comp E ++ valsArgs comp L ++ vals comp d) ++ vals comp t
-  | _ => []
-termination_by structural t => t
+/-- **An inert value**: no path step leaves it, to a location or into its
+code. -/
+def Inert (ofC : ComponentTag → Bool) (u : Val) : Prop := (∀ a, next u a = none) ∧ codeVals ofC u = []
 
-def valsArgs (c : ComponentTag) : List Tm → List Val
-  | [] => []
-  | x :: xs => vals c x ++ valsArgs c xs
-termination_by structural xs => xs
-end
+theorem not_inert_of_next {u : Val} {a : Label} {l : Nat} (hn : next u a = some l) : ¬ Inert ofC u :=
+  fun h => by rw [h.1 a] at hn; cases hn
 
-@[simp] theorem valsArgs_eq (c : ComponentTag) (xs : List Tm) : valsArgs ofC c xs = xs.flatMap (vals ofC c) := by
-  induction xs <;> simp_all [valsArgs]
+theorem inert_nul : Inert ofC .nul := ⟨fun a => by cases a <;> rfl, rfl⟩
 
-variable {ofC}
-
-/-- A value one path step reaches from is among the roots of a position of
-outside code holding it. -/
-theorem mem_vals_of_next {c : ComponentTag} (hc : ofC c = false) {u : Val} {a : Label} {l : Nat}
-    (hn : next u a = some l) : u ∈ vals ofC c u := by
+/-- A value a path step leaves is among the roots of a position of outside
+code holding it. -/
+theorem mem_vals_self {u : Val} (hu : ¬ Inert ofC u) : u ∈ vals ofC true u := by
   cases u
-  case objAt fs cc i => cases cc <;> simp [vals, hc]
-  case arr ls => simp [vals, hc]
-  case viewSpine f cs => simp [vals, hc]
-  all_goals cases a <;> simp [next, fieldsOf, HeapKnowledge.descriptorSpine, spineEntries] at hn
+  case objAt fs cc i => rw [vals_objAt]; exact List.mem_cons_self
+  case arr ls => simp [vals]
+  case viewSpine f cs => simp [vals]
+  all_goals exact (hu ⟨fun a => by cases a <;> rfl, rfl⟩).elim
 
-theorem vals_makeAt {c : ComponentTag} {cc : CallCode} {ns : List PropKey} {xs : List Tm} {u : Val}
-    (hu : u ∈ valsArgs ofC c xs) : u ∈ vals ofC c (.makeAt cc ns xs) := by
+theorem vals_makeAt {o : Bool} {cc : CallCode} {ns : List PropKey} {xs : List Tm} {u : Val}
+    (hu : u ∈ valsArgs ofC o xs) : u ∈ vals ofC o (.makeAt cc ns xs) := by
   cases cc <;> simp_all [vals]
 
 end Roots
@@ -559,12 +509,12 @@ end Roots
 section Steps
 variable {ofC : ComponentTag → Bool}
 
-theorem mem_valsArgs {c : ComponentTag} {xs : List Tm} {i : Nat} {a : Tm} {u : Val} (ha : xs[i]? = some a)
-    (hu : u ∈ vals ofC c a) : u ∈ valsArgs ofC c xs := by
+theorem mem_valsArgs {o : Bool} {xs : List Tm} {i : Nat} {a : Tm} {u : Val} (ha : xs[i]? = some a)
+    (hu : u ∈ vals ofC o a) : u ∈ valsArgs ofC o xs := by
   rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨a, List.mem_of_getElem? ha, hu⟩
 
-theorem mem_valsArgs_set {c : ComponentTag} {xs : List Tm} {i : Nat} {a : Tm} {u : Val}
-    (hu : u ∈ valsArgs ofC c (xs.set i a)) : u ∈ valsArgs ofC c xs ∨ u ∈ vals ofC c a := by
+theorem mem_valsArgs_set {o : Bool} {xs : List Tm} {i : Nat} {a : Tm} {u : Val}
+    (hu : u ∈ valsArgs ofC o (xs.set i a)) : u ∈ valsArgs ofC o xs ∨ u ∈ vals ofC o a := by
   rw [valsArgs_eq] at hu ⊢
   obtain ⟨x, hx, hux⟩ := List.mem_flatMap.mp hu
   rcases List.mem_or_eq_of_mem_set hx with hx | rfl
@@ -578,7 +528,7 @@ the slot of an object or the element cell of a spine held at a position of
 outside code. -/
 theorem step_reach {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     ∀ c, ofC (activeTag c t) = false → ∀ {l : Nat} {v : Val}, h[l]? = some v → h'[l]? ≠ some v →
-      ∃ u ∈ vals ofC c t, ∃ a, next u a = some l := by
+      ∃ u ∈ vals ofC (!ofC c) t, ∃ a, next u a = some l := by
   induction hs
   all_goals intro c hc l v hv hn
   all_goals try first
@@ -613,8 +563,8 @@ theorem step_reach {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     have hc' : ofC c = false := by simpa [activeTag, path, hw] using hc
     by_cases he : l = l'
     · subst he
-      exact ⟨.objAt fs cc oid, by simp only [vals, List.mem_append]; exact .inl (mem_vals_of_next (a := .key f) hc'
-        (by simpa [next, fieldsOf] using hf)), .key f, by simpa [next, fieldsOf] using hf⟩
+      exact ⟨.objAt fs cc oid, by simp only [vals, List.mem_append]; simp only [hc', Bool.not_false]; exact .inl (mem_vals_self (ofC := ofC)
+        (not_inert_of_next (a := .key f) (by simpa [next, fieldsOf] using hf))), .key f, by simpa [next, fieldsOf] using hf⟩
     · exact (hn (by rw [List.getElem?_set_ne (Ne.symm he)]; exact hv)).elim
   case setPresent ls b l' _ w hw hl _ =>
     have hc' : ofC c = false := by simpa [activeTag, path, hw] using hc
@@ -627,7 +577,7 @@ theorem step_reach {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
       | some m =>
         cases hl
         have hn' : next (.arr ls) (.cell k) = some l := by simp [next, spineEntries, ho]
-        exact ⟨.arr ls, by simp only [vals, List.mem_append]; exact .inl (.inl (mem_vals_of_next hc' hn')), .cell k, hn'⟩
+        exact ⟨.arr ls, by simp [vals, hc'], .cell k, hn'⟩
     · exact (hn (by rw [List.getElem?_set_ne (Ne.symm he)]; exact hv)).elim
   all_goals (
     rename_i ih
@@ -654,8 +604,6 @@ theorem set_new {h : Heap} {l w : Nat} {x u : Val} (hs : ¬ ∃ v, h[w]? = some 
   · rw [List.getElem?_set_ne (Ne.symm he)] at hu
     exact (hs ⟨u, hu, by rw [List.getElem?_set_ne (Ne.symm he)]; exact hu⟩).elim
 
-theorem next_nul {a : Label} {l : Nat} : next .nul a ≠ some l := by
-  cases a <;> simp [next, fieldsOf, HeapKnowledge.descriptorSpine, spineEntries]
 
 /-- **What a step of outside code stores is among its roots** (the draft,
 `OutsideStep.writes`): every value a step whose active frame runs no code
@@ -664,9 +612,9 @@ path step reaches a location, is held at a position of outside code: the
 value written, or an initializer of the allocation. -/
 theorem step_writes {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     ∀ c, ofC (activeTag c t) = false → ∀ {w : Nat} {u : Val}, ¬ (∃ v, h[w]? = some v ∧ h'[w]? = some v) →
-      h'[w]? = some u → ∀ {a : Label} {l : Nat}, next u a = some l → u ∈ vals ofC c t := by
+      h'[w]? = some u → ¬ Inert ofC u → u ∈ vals ofC (!ofC c) t := by
   induction hs
-  all_goals intro c hc w u hsame hu a l hn
+  all_goals intro c hc w u hsame hu hn
   all_goals try exact (hsame ⟨u, hu, hu⟩).elim
   case callArg hf hr ha hpre hs ih =>
     simp only [activeTag, path, hf, hr, Bool.true_eq_false, ↓reduceIte] at hc
@@ -691,30 +639,33 @@ theorem step_writes {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     simp only [activeTag, path] at hc
     rw [pathArgs_vals _ hvs] at hc
     rw [List.append_assoc] at hsame hu
+    have hc' : ofC c = false := by simpa using hc
     rcases List.mem_append.mp (append_new hsame hu) with hm | hm
-    · exact vals_makeAt (by rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨u, hm, mem_vals_of_next hc hn⟩)
-    · simp only [List.mem_singleton] at hm; subst hm; exact (next_nul hn).elim
+    · exact vals_makeAt (by
+        rw [valsArgs_eq, hc', Bool.not_false]; exact List.mem_flatMap.mpr ⟨u, hm, mem_vals_self hn⟩)
+    · simp only [List.mem_singleton] at hm; subst hm; exact (hn inert_nul).elim
   case arrAlloc hvs _ =>
     simp only [activeTag, path] at hc
     rw [pathArgs_vals _ hvs] at hc
+    have hc' : ofC c = false := by simpa using hc
     have hm := append_new hsame hu
-    simp only [vals]; rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨u, hm, mem_vals_of_next hc hn⟩
+    simp only [vals]; rw [valsArgs_eq, hc', Bool.not_false]; exact List.mem_flatMap.mpr ⟨u, hm, mem_vals_self hn⟩
   case writeField hw _ _ =>
     have hc' : ofC c = false := by simpa [activeTag, path, hw] using hc
     have := set_new hsame hu; subst this
-    simp only [vals, List.mem_append]; exact .inr (mem_vals_of_next hc' hn)
+    simp only [vals, List.mem_append]; simp only [hc', Bool.not_false]; exact .inr (mem_vals_self hn)
   case setPresent hw _ _ =>
     have hc' : ofC c = false := by simpa [activeTag, path, hw] using hc
     have := set_new hsame hu; subst this
-    simp only [vals, List.mem_append]; exact .inr (mem_vals_of_next hc' hn)
+    simp only [vals, List.mem_append]; simp only [hc', Bool.not_false]; exact .inr (mem_vals_self hn)
   case setGrow hw _ _ =>
     have hc' : ofC c = false := by simpa [activeTag, path, hw] using hc
     have hm := append_new hsame hu
     simp only [List.mem_singleton] at hm; subst hm
-    simp only [vals, List.mem_append]; exact .inr (mem_vals_of_next hc' hn)
+    simp only [vals, List.mem_append]; simp only [hc', Bool.not_false]; exact .inr (mem_vals_self hn)
   all_goals try (
     have hm := append_new hsame hu
-    simp only [List.mem_singleton] at hm; subst hm; exact (next_nul hn).elim)
+    simp only [List.mem_singleton] at hm; subst hm; exact (hn inert_nul).elim)
   all_goals (
     rename_i ih
     have hna := not_val_of_step ‹Step _ _ _ _›
@@ -723,34 +674,18 @@ theorem step_writes {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
 
 end Steps
 
-/-- **The roots hold only references the term holds**: each root is a value
-of the term. -/
-theorem vals_refs {ofC : ComponentTag → Bool} (t : Tm) :
-    ∀ c, ∀ u ∈ vals ofC c t, ∀ r ∈ refs u, r ∈ refs t := by
-  induction t using Tm.induct
-  all_goals intro c u hu r hr
-  all_goals simp only [vals, valsArgs_eq] at hu
-  all_goals (repeat' split at hu)
-  all_goals (try simp only [List.mem_cons, List.mem_append, List.mem_flatMap, List.not_mem_nil,
-    false_or, or_false] at hu)
-  all_goals (try (subst hu; exact hr))
-  all_goals (try (rcases hu with rfl | hu; exact hr))
-  all_goals (simp only [refs, refsArgs_eq, objRefs, List.mem_append, List.mem_flatMap, List.mem_cons]; grind)
-
 /-! ## At a component of a family -/
-
-open Classical in
-/-- The tags whose code is the code of the component `C`. -/
-noncomputable def Family.ofC (F : Family) (C : Nat) : ComponentTag → Bool := fun t => decide (F.Runs t C)
 
 /-- **`OutsideStep.reach` of a step of the calculus** at the component `C`:
 a step whose active frame runs no code of `C` changes only locations one
 path step from the roots of outside code. -/
 theorem outsideStep_reach {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
-    (hroots : st.roots = vals (F.ofC C) c t) : ∀ l, Changes st st' l → ReachesFrom st.s.h st.roots l := by
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C) (hc : ¬ F.Runs c C)
+    (hroots : st.roots = vals (F.ofC C) true t) :
+    ∀ l, Changes st st' l → ReachesFrom (F.at C).ofC st.s.h st.roots l := by
   rintro l ⟨v, hv, hn⟩
   obtain ⟨u, hu, a, ha⟩ := step_reach (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hv hn
+  simp only [Family.ofC, hc, decide_false, Bool.not_false] at hu
   exact ⟨u, hroots ▸ hu, [a], ha⟩
 
 /-- **`OutsideStep.writes` of a step of the calculus** at the component
@@ -758,70 +693,21 @@ theorem outsideStep_reach {F : Family} {C : Nat} {st st' : St (F.at C)} {c : Com
 it changes or allocates references, in one path step, only what the roots
 of outside code reach in one. -/
 theorem outsideStep_writes {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
-    (hroots : st.roots = vals (F.ofC C) c t) :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C) (hc : ¬ F.Runs c C)
+    (hroots : st.roots = vals (F.ofC C) true t) :
     ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
-      ∀ (a : Label) (l : Nat), next u a = some l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l :=
-  fun _ u hsame hu a _ hn =>
-    .inl ⟨u, hroots ▸ step_writes (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hsame hu hn, [a], hn⟩
+      ∀ (a : Label) (l : Nat), next u a = some l →
+        ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
+  intro _ u hsame hu a _ hn
+  have hm := step_writes (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hsame hu (not_inert_of_next hn)
+  simp only [Family.ofC, hc, decide_false, Bool.not_false] at hm
+  exact .inl ⟨u, hroots ▸ hm, [a], hn⟩
 
 /-- **The roots of a valid term are valid** (`RootsValid`). -/
-theorem rootsValid_of_term {P : Package} {st : St P} {ofC : ComponentTag → Bool} {c : ComponentTag} {t : Tm}
-    (hroots : st.roots = vals ofC c t) (ht : RefsOk st.s.W t) : RootsValid st := by
-  intro u hu r hr
+theorem rootsValid_of_term {P : Package} {st : St P} {o : Bool} {t : Tm}
+    (hroots : st.roots = vals P.ofC o t) (ht : RefsOk st.s.W t) : RootsValid st := by
+  intro u hu
   rw [hroots] at hu
-  exact ht r (vals_refs t c u hu r hr)
-
-/-! ## `noForge` fails of these roots -/
-
-/-- The closure of the counter-model: it captures an object whose slot `k`
-is location `1`. -/
-def captureClosure : Val :=
-  .objAt [] (.graph 0 [] [] 0 [.objAt [("k", 1)] .absent 1] .call false none) 0
-
-theorem next_captureClosure (b : Label) : next captureClosure b = none := by
-  cases b <;> rfl
-
-theorem not_follows_captureClosure {h : Heap} : ∀ (π : List Label) (l : Nat), ¬ Follows h captureClosure π l
-  | [], _ => id
-  | [b], _ => by simp [Follows, next_captureClosure]
-  | _ :: _ :: _, _ => by simp [Follows, next_captureClosure]
-
-/-- **`OutsideStep.noForge` is false of the roots of outside code**: code
-outside every component reads a closure from a field; its capture, a root
-afterwards, reaches location `1`, which no path from the roots before
-reached and which is no fresh location. `Follows` steps from a value to a
-location only, through fields, spines and cells, never from a closure to
-the values its code holds; so a location reachable only through a capture
-is reachable from no root, until a read or a call of the closure makes the
-capture a frame's value. -/
-theorem noForge_counter :
-    let h : Heap := [captureClosure, .nul]
-    let t : Tm := .readAt "f" (.objAt [("f", 0)] .absent 0)
-    Step h t h captureClosure ∧ activeTag none t = none ∧
-      ReachesFrom h (vals (fun _ => false) none captureClosure) 1 ∧
-      ¬ ReachesFrom h (vals (fun _ => false) none t) 1 ∧ 1 < h.length := by
-  intro h t
-  refine ⟨Step.readField (l := 0) rfl rfl, rfl, ⟨.objAt [("k", 1)] .absent 1, by simp [vals, captureClosure],
-    [.key "k"], rfl⟩, ?_, by simp [h]⟩
-  rintro ⟨v, hv, π, hf⟩
-  simp only [t, vals, Bool.false_eq_true, ↓reduceIte, List.mem_singleton] at hv
-  subst hv
-  have hroot : ∀ a l, next (.objAt [("f", 0)] .absent 0) a = some l → l = 0 := by
-    intro a l hn
-    cases a with
-    | key k =>
-      simp only [next, fieldsOf, List.lookup] at hn
-      split at hn <;> simp_all
-    | view => cases hn
-    | cell => cases hn
-  match π, hf with
-  | [a], hf => exact absurd (hroot a 1 hf) (by decide)
-  | a :: b :: π, ⟨l₀, v₀, hn, hl₀, hf⟩ =>
-    have := hroot a l₀ hn
-    subst this
-    simp only [h, List.getElem?_cons_zero, Option.some.injEq] at hl₀
-    subst hl₀
-    exact not_follows_captureClosure _ _ hf
+  exact vals_refsOkN (RefsOk.refsOkN ht) hu
 
 end Verification.TolerantFrames.ReadOnly
