@@ -47,6 +47,8 @@ structure ModuleCode (ι U : Type) where
   /-- The separation its calls' frames assume: its module cells' apart
   (`moduleCellSeparation`), at the frame's depth. -/
   sep : HeapSeparation.Separation := {}
+  /-- The component whose code it is: the ghost tag of its frames. -/
+  comp : ComponentTag
 
 /-- What a slot holds at depth `i`, with each linked function's value given
 by `f`. -/
@@ -54,10 +56,10 @@ def Slot.valueAt {U : Type} (f : U → Tm) (i : Nat) : Slot U → Tm
   | .linked u => f u
   | .outside v => v i
 
-/-- The closure of a module function's code over the captured values `vs`.
-Its code is outside every component (`none`): the wire carries no component. -/
+/-- The closure of a module function's code over the captured values `vs`,
+its frames tagged with its component. -/
 def ModuleCode.closure {ι U : Type} (c : ModuleCode ι U) (vs : List Tm) : Tm :=
-  .objAt c.fields (.graph c.arity c.exprs c.conts c.start vs c.kind false none) c.oid
+  .objAt c.fields (.graph c.arity c.exprs c.conts c.start vs c.kind false c.comp) c.oid
 
 /-- The captured values of a function's closure at depth `i + 1`, its linked
 functions given by `f` (the depth-`i` environment). -/
@@ -452,7 +454,8 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
   have hadm : ∀ η, r.Admits η := fun η => by simp [SourceRequest.Admits, hu.unqualified]
   have hprog : r.program = GraphCode.program c.exprs c.conts := by
     rw [hu.exprs, hu.conts, program_nodes]
-  have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d none := by
+  -- The unit's run, at its own component, is the code's at any (`SameRun`).
+  have hgoto : ∀ L d, gotoOf r.program r.start L d r.comp = .goto c.exprs c.conts c.start L d r.comp := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
   apply rowSpec_of_clauses hcond hspine
   · intro η n W h ρ he hP hρ
@@ -482,6 +485,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2 hvals hd
     rw [hgoto, hu.goal, hfr] at this
+    replace this := (HeapObservations.SafePostExcW.goto_comp_iff r.comp none).mp this
     refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
     cases hot : r.onThrow
     · simp [hot] at ht
@@ -491,7 +495,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2
     rw [hgoto, hu.goal, hu.ensures] at this
-    exact this
+    exact (HeapObservations.SafePostW.goto_comp_iff r.comp none).mp this
 
 end
 

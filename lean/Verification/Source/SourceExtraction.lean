@@ -108,7 +108,8 @@ gives of the names it read. -/
 @[nospecialize] def extractNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (ModuleValue Tree) := []) (classes : List String := [])
     (freshConstructors : List (String × Span) := []) (moduleOwned : List String := [])
-    (values : List String → List ContractRead := fun _ => []) :
+    (values : List String → List ContractRead := fun _ => [])
+    (componentAt : Span → ComponentTag) :
     Except String (SourceRequest EquationStore.State Tree) := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List (ScopeBinding Tree) := f.params.map (fun p => held ⟨p.name,none⟩)
@@ -124,7 +125,7 @@ gives of the names it read. -/
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
   let ((inputs, R, entry, promise, entrySeparation, entryIndices), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (freshConstructors := freshConstructors)
-      (moduleOwned := moduleOwned) do
+      (moduleOwned := moduleOwned) (componentAt := componentAt) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
@@ -344,7 +345,8 @@ gives of the names it read. -/
     ensures := ensures
     async := f.async
     stated := f.stated
-    contractReads := built.memberReads ++ values built.nameReads }
+    contractReads := built.memberReads ++ values built.nameReads
+    comp := componentAt f.namePos }
 
 end
 

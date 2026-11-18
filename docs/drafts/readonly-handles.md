@@ -2000,14 +2000,20 @@ of the history per active call, every state inside a call of $`C`$ is
 
 No verdict reads the rule: `FunctionPlan`
 has the graph form alone, and `mode8Accepted_sound` states what it states
-without the rule. The pass's graphs run outside every component (`gotoOf`,
-the tag `none`), and its graph theorem (`run_sound_single_pass`) reads a
-call of outside code at the callee's stated effect. A plan whose check
-reads a frame at a call needs, each proved, before it is certified:
+without the rule. A unit's run and each closure its lowering creates carry
+the tag of the component whose code contains them
+(`ComponentWire.Components.componentAt`: the narrowest class of the module
+containing the place, else the module), and a unit's safety is stated of
+its run at that tag (`gotoOf`, `SourceRequest.comp`); a tag changes no step
+(`SameRun.step`), so the safety at one tag is the safety at every other
+(`SafePostExcV.goto_comp_iff`). The pass's graph theorem
+(`run_sound_single_pass`) reads a call of outside code at the callee's
+stated effect. A plan whose check reads a frame at a call needs, each
+proved, before it is certified:
 
 1. the graph's term carrying the component tag of the code it lowers, with a
-   theorem that a tag changes no step, so the safety of the tagged and the
-   untagged runs agree;
+   theorem that a tag changes no step (proved: `gotoOf` at
+   `SourceRequest.comp`, lambdas at `LambdaCode.comp`, `SameRun`);
 2. the graph theorem's states carrying the ghost history from the unit's
    entry (the marks of each allocation, $`E`$, $`A`$, $`B`$) with `Ok` at
    each state, so a call's transfer reads $`R_C`$ at the call;

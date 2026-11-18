@@ -162,6 +162,9 @@ structure Front where
   /-- The declaration document's values, each at its declaration and binding
   (`documentValueReads`): those a unit reads are reported with its verdict. -/
   values : List SourceExtraction.ContractRead
+  /-- The component whose code contains each place of the file
+  (`ComponentWire.Components.componentAt`). -/
+  componentAt : Span → ComponentTag
 
 /-- A unit's identity on the wire: a function's name and its name's start,
 or `init` for the module's initialization. -/
@@ -447,7 +450,7 @@ def fileFront (ast claims : Json) (fileKey : String)
   return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
     SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
-    #[], #[], imported, values⟩
+    #[], #[], imported, values, (← Fragment.decodeComponents ast).componentAt (← jStr (← jField ast "file"))⟩
 
 /-- The front `fileFront` gives with the qualified reads `qualified`, of a
 front it gave with none (`lenient`, mode 8): each imported value the reads
@@ -491,7 +494,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _, values⟩ := fr
+    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _, values, componentAt⟩ := fr
   let (f, tps, initClaims) := u
   if let (some _, some reason) := (initClaims, initOrder) then throw reason
   let d := { d with types := T }
@@ -669,7 +672,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
           (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
       | none => pure (d.types, c.normalized, ([], []))
     let request ← extractNormalizedFn types f claims module (SourceExtraction.sourceClasses init) freshConstructors
-      moduleOwned (readValues values)
+      moduleOwned (readValues values) componentAt
     -- The contracts the walk and the lowering read, each once: their
     -- members, and the declaration document's values among the names they
     -- read.

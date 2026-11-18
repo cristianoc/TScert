@@ -198,8 +198,8 @@ signature's frame, whose certificate the unit's code table records. -/
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression
   let conts := P.map fun n => (n.continuation, n.handler)
-  return (⟨s.arity, exprs, conts, start, s.capSlots, s.kind, s.rest, s.rows.filterMap (·.2.1), s.offered⟩ :
-    (LambdaCode Tree))
+  return (⟨s.arity, exprs, conts, start, s.capSlots, s.kind, s.rest, s.rows.filterMap (·.2.1), s.offered,
+    ← componentOf s.pos⟩ : (LambdaCode Tree))
 
 /-- **A closure whose body is a graph** (`Rule.funGraph`): the allocation of its
 code (`lambdaCode`) with the captured slots. -/
