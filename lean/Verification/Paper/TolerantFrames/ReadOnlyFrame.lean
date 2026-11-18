@@ -31,7 +31,7 @@ three properties of the language's steps: a step changes only storage its
 frames reach (`OutsideStep.reach`), leaves in storage it changes or
 allocates only references to such storage (`OutsideStep.writes`), and
 reaches afterwards only storage it reached or allocated
-(`OutsideStep.noForge`). `ReadOnlyOutside` proves the first two of the
+(`OutsideStep.noForge`). `ReadOnlyOutside` proves the three of the
 calculus's steps at the roots of outside code. A member's certificate (`Member`) is a hypothesis: the pass's
 checks are what establish it. -/
 namespace Verification.TolerantFrames.ReadOnly

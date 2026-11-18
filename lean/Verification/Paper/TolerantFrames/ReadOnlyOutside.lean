@@ -21,7 +21,12 @@ reduction (`Step`).
   one path step from these roots (`step_reach`), and every value it leaves
   in storage it changes or allocates, from which a path step leaves, is one
   of them (`step_writes`): `OutsideStep.reach` and `OutsideStep.writes` at a
-  family's component (`outsideStep_reach`, `outsideStep_writes`). -/
+  family's component (`outsideStep_reach`, `outsideStep_writes`).
+- After such a step the roots reach only what they reached before or what
+  the step allocated (`step_noForge`): `OutsideStep.noForge`
+  (`outsideStep_noForge`). Every root after the step is good (`step_cover`):
+  its paths, through locations and into code, reach only locations the
+  roots reached or fresh ones. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -513,6 +518,10 @@ theorem mem_valsArgs {o : Bool} {xs : List Tm} {i : Nat} {a : Tm} {u : Val} (ha 
     (hu : u ∈ vals ofC o a) : u ∈ valsArgs ofC o xs := by
   rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨a, List.mem_of_getElem? ha, hu⟩
 
+theorem mem_valsArgs_of {o : Bool} {xs : List Tm} {a : Tm} {u : Val} (ha : a ∈ xs) (hu : u ∈ vals ofC o a) :
+    u ∈ valsArgs ofC o xs := by
+  rw [valsArgs_eq]; exact List.mem_flatMap.mpr ⟨a, ha, hu⟩
+
 theorem mem_valsArgs_set {o : Bool} {xs : List Tm} {i : Nat} {a : Tm} {u : Val}
     (hu : u ∈ valsArgs ofC o (xs.set i a)) : u ∈ valsArgs ofC o xs ∨ u ∈ vals ofC o a := by
   rw [valsArgs_eq] at hu ⊢
@@ -709,5 +718,1068 @@ theorem rootsValid_of_term {P : Package} {st : St P} {o : Bool} {t : Tm}
   intro u hu
   rw [hroots] at hu
   exact vals_refsOkN (RefsOk.refsOkN ht) hu
+
+/-! ## What outside code reaches after a step -/
+
+section NoForge
+variable {ofC : ComponentTag → Bool}
+
+/-- **A location the roots `R` reach at `h`, or a fresh one.** -/
+def Good (ofC : ComponentTag → Bool) (h : Heap) (R : List Val) (l : Nat) : Prop :=
+  ReachesFrom ofC h R l ∨ h.length ≤ l
+
+/-- **Code steps**: the values a value's code holds, and theirs. -/
+inductive CodeReach (ofC : ComponentTag → Bool) : Val → Val → Prop
+  | refl (v : Val) : CodeReach ofC v v
+  | step {v x w : Val} : x ∈ codeVals ofC v → CodeReach ofC x w → CodeReach ofC v w
+
+/-- **A value whose path steps reach only good locations**: every location
+one location step reaches from it, or from a value its code holds, is
+reached by the roots or fresh. -/
+def GV (ofC : ComponentTag → Bool) (h : Heap) (R : List Val) (v : Val) : Prop :=
+  ∀ w, CodeReach ofC v w → ∀ a l, next w a = some l → Good ofC h R l
+
+variable {h : Heap} {R : List Val}
+
+theorem GV.of {v : Val} (hn : ∀ a l, next v a = some l → Good ofC h R l)
+    (hc : ∀ x ∈ codeVals ofC v, GV ofC h R x) : GV ofC h R v := by
+  intro w hw
+  cases hw with
+  | refl => exact hn
+  | step hx hxw => exact hc _ hx _ hxw
+
+theorem GV.code {v x : Val} (hv : GV ofC h R v) (hx : x ∈ codeVals ofC v) : GV ofC h R x :=
+  fun w hw => hv w (.step hx hw)
+
+theorem GV.next {v : Val} {a : Label} {l : Nat} (hv : GV ofC h R v) (hn : next v a = some l) :
+    Good ofC h R l :=
+  hv v (.refl v) a l hn
+
+theorem GV.inert {u : Val} (hu : Inert ofC u) : GV ofC h R u := by
+  intro w hw
+  cases hw with
+  | refl => intro a l hn; rw [hu.1 a] at hn; cases hn
+  | step hx _ => rw [hu.2] at hx; cases hx
+
+/-- Two objects with the same fields and descriptor take the same location
+steps. -/
+theorem GV.same_next {v v' : Val} (hv : GV ofC h R v) (hn : ∀ a, ReadOnly.next v' a = ReadOnly.next v a)
+    (hc : ∀ x ∈ codeVals ofC v', GV ofC h R x) : GV ofC h R v' :=
+  GV.of (fun a l h' => hv.next (by rw [← hn a]; exact h')) hc
+
+theorem follows_trans {h : Heap} : ∀ {r : Val} {π π' : List Label} {v : Val} {l' l₀ : Nat},
+    Follows ofC h r π l₀ → h[l₀]? = some v → Follows ofC h v π' l' → Follows ofC h r (π ++ π') l'
+  | _, [], _, _, _, _, hf, _, _ => hf.elim
+  | _, [_], _, _, _, _, hf, hl, hf' => follows_cons (.inl ⟨_, hf, hl⟩) hf'
+  | _, _ :: _ :: _, _, _, _, _, ⟨_, hs, hf⟩, hl, hf' => follows_cons hs (follows_trans hf hl hf')
+
+theorem codeReach_reaches {h : Heap} {v w : Val} (hw : CodeReach ofC v w) :
+    ∀ {a : Label} {l : Nat}, next w a = some l → Reaches ofC h v l := by
+  induction hw with
+  | refl => intro a l hn; exact ⟨[a], hn⟩
+  | step hx _ ih =>
+    intro a l hn
+    obtain ⟨π, hf⟩ := ih hn
+    obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+    exact ⟨.code i :: π, follows_cons (.inr ⟨i, rfl, hi⟩) hf⟩
+
+/-- **A root's paths reach only what the roots reach.** -/
+theorem GV.root {v : Val} (hv : v ∈ R) : GV ofC h R v :=
+  fun _ hw _ _ hn => .inl ⟨v, hv, codeReach_reaches hw hn⟩
+
+/-- **The contents of a good location**: its paths extend the roots'. -/
+theorem GV.heap {l : Nat} {v : Val} (hg : Good ofC h R l) (hl : h[l]? = some v) : GV ofC h R v := by
+  intro w hw a l' hn
+  rcases hg with ⟨r, hr, π, hf⟩ | hfresh
+  · obtain ⟨π', hf'⟩ := codeReach_reaches (h := h) hw hn
+    exact .inl ⟨r, hr, _, follows_trans hf hl hf'⟩
+  · rw [List.getElem?_eq_none hfresh] at hl; cases hl
+
+/-- **Paths after a step reach only good locations** where every value
+outside code holds after it is good and every location a good location's
+new contents reach is good. -/
+theorem follows_good {h' : Heap} (hheap : ∀ l u, Good ofC h R l → h'[l]? = some u → GV ofC h R u) :
+    ∀ {v : Val} {π : List Label} {l : Nat}, GV ofC h R v → Follows ofC h' v π l → Good ofC h R l
+  | _, [], _, _, hf => hf.elim
+  | _, [_], _, hv, hf => hv.next hf
+  | _, _ :: _ :: _, _, hv, ⟨_, .inl ⟨_, hn, hl⟩, hf⟩ => follows_good hheap (hheap _ _ (hv.next hn) hl) hf
+  | _, _ :: _ :: _, _, hv, ⟨_, .inr ⟨_, _, hc⟩, hf⟩ => follows_good hheap (hv.code (List.mem_of_getElem? hc)) hf
+
+/-! ### The values of a term after substitution -/
+
+theorem vals_mono : ∀ (t : Tm) {x : Val}, x ∈ vals ofC false t → x ∈ vals ofC true t := by
+  intro t
+  induction t using Tm.induct
+  all_goals intro x hx
+  all_goals simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap, Bool.false_eq_true,
+    ↓reduceIte, List.not_mem_nil, Bool.false_and] at hx ⊢
+  all_goals grind
+
+theorem objAt_next_eq {fs : List (PropKey × Nat)} {i : Nat} {cc cc' : CallCode}
+    (h : HeapKnowledge.descriptorSpine (.objAt fs cc i) = HeapKnowledge.descriptorSpine (.objAt fs cc' i)) :
+    ∀ a, ReadOnly.next (.objAt fs cc' i) a = ReadOnly.next (.objAt fs cc i) a := by
+  intro a; cases a <;> simp_all [ReadOnly.next, fieldsOf, spineEntries]
+
+/-- **Substitution keeps the values good**: the values of `subst j a b` are
+`a`'s, or `b`'s with the same location steps and good code. -/
+theorem subst_cover {a : Tm} (ha : ∀ x ∈ vals ofC true a, GV ofC h R x) :
+    ∀ (b : Tm) (j : Nat) (o : Bool), (∀ x ∈ vals ofC o b, GV ofC h R x) →
+      ∀ x ∈ vals ofC o (subst j a b), GV ofC h R x := by
+  intro b
+  induction b using Tm.induct
+  case var i =>
+    intro j o _ x hx
+    simp only [subst] at hx
+    split at hx
+    · cases o
+      · exact ha x (vals_mono a hx)
+      · exact ha x hx
+    · split at hx <;> simp [vals] at hx
+  case objBound fs oid t r pre iht ihr ihp =>
+    intro j o hb x hx
+    cases o
+    · simp [subst, vals] at hx
+    · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
+      have hpart : ∀ y ∈ codeVals ofC (.objAt fs (.bound t r pre) oid), GV ofC h R y :=
+        fun y hy => hb y (by rw [vals_objAt]; exact List.mem_cons_of_mem _ hy)
+      simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap] at hpart
+      have hcode : ∀ y ∈ codeVals ofC (.objAt fs (.bound (subst j a t) (subst j a r) (substArgs j a pre)) oid),
+          GV ofC h R y := by
+        intro y hy
+        simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap, substArgs_eq_map, List.mem_map] at hy
+        rcases hy with (hy | hy) | ⟨_, ⟨p, hp, rfl⟩, hy⟩
+        · exact iht j true (fun z hz => hpart z (.inl (.inl hz))) y hy
+        · exact ihr j true (fun z hz => hpart z (.inl (.inr hz))) y hy
+        · exact ihp p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+      simp only [subst] at hx
+      rw [vals_objAt] at hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hself.same_next (objAt_next_eq rfl) hcode
+      · exact hcode x hx
+  case objGraph fs oid n E K st caps k r comp ihE ihc =>
+    intro j o hb x hx
+    cases o
+    · simp [subst, vals] at hx
+    · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
+      have hpart : ∀ y ∈ codeVals ofC (.objAt fs (.graph n E K st caps k r comp) oid), GV ofC h R y :=
+        fun y hy => hb y (by rw [vals_objAt]; exact List.mem_cons_of_mem _ hy)
+      have hcode : ∀ y ∈ codeVals ofC (.objAt fs (.graph n E K st (substArgs j a caps) k r comp) oid),
+          GV ofC h R y := by
+        intro y hy
+        simp only [codeVals] at hy hpart
+        split at hy
+        · cases hy
+        · rename_i hcomp
+          simp only [hcomp, Bool.false_eq_true, ↓reduceIte, List.mem_append, valsArgs_eq, List.mem_flatMap,
+            substArgs_eq_map, List.mem_map] at hy hpart
+          rcases hy with ⟨e, he, hy⟩ | ⟨_, ⟨p, hp, rfl⟩, hy⟩
+          · exact hpart y (.inl ⟨e, he, hy⟩)
+          · exact ihc p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+      simp only [subst] at hx
+      rw [vals_objAt] at hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hself.same_next (objAt_next_eq rfl) hcode
+      · exact hcode x hx
+  all_goals intro j o hb x hx
+  all_goals simp only [subst, vals, valsArgs_eq, substArgs_eq_map, List.mem_append, List.mem_flatMap,
+    List.mem_map] at hx hb
+  all_goals (repeat' split at hx) <;> (repeat' split at hb) <;> grind
+
+/-- **Instantiation keeps the values good**: the values of
+`instantiate j ρ b` are the environment's, or `b`'s with the same location
+steps and good code. -/
+theorem instantiate_cover {ρ : Env} (ha : ∀ i, ∀ x ∈ vals ofC true (ρ i), GV ofC h R x) :
+    ∀ (b : Tm) (j : Nat) (o : Bool), (∀ x ∈ vals ofC o b, GV ofC h R x) →
+      ∀ x ∈ vals ofC o (instantiate j ρ b), GV ofC h R x := by
+  intro b
+  induction b using Tm.induct
+  case var i =>
+    intro j o _ x hx
+    simp only [instantiate] at hx
+    split at hx
+    · simp [vals] at hx
+    · cases o
+      · exact ha _ x (vals_mono _ hx)
+      · exact ha _ x hx
+  case objBound fs oid t r pre iht ihr ihp =>
+    intro j o hb x hx
+    cases o
+    · simp [instantiate, vals] at hx
+    · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
+      have hpart : ∀ y ∈ codeVals ofC (.objAt fs (.bound t r pre) oid), GV ofC h R y :=
+        fun y hy => hb y (by rw [vals_objAt]; exact List.mem_cons_of_mem _ hy)
+      simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap] at hpart
+      have hcode : ∀ y ∈ codeVals ofC (.objAt fs (.bound (instantiate j ρ t) (instantiate j ρ r) (instantiateArgs j ρ pre)) oid),
+          GV ofC h R y := by
+        intro y hy
+        simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap, instantiateArgs_eq_map, List.mem_map] at hy
+        rcases hy with (hy | hy) | ⟨_, ⟨p, hp, rfl⟩, hy⟩
+        · exact iht j true (fun z hz => hpart z (.inl (.inl hz))) y hy
+        · exact ihr j true (fun z hz => hpart z (.inl (.inr hz))) y hy
+        · exact ihp p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+      simp only [instantiate] at hx
+      rw [vals_objAt] at hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hself.same_next (objAt_next_eq rfl) hcode
+      · exact hcode x hx
+  case objGraph fs oid n E K st caps k r comp ihE ihc =>
+    intro j o hb x hx
+    cases o
+    · simp [instantiate, vals] at hx
+    · have hself := hb _ (by rw [vals_objAt]; exact List.mem_cons_self)
+      have hpart : ∀ y ∈ codeVals ofC (.objAt fs (.graph n E K st caps k r comp) oid), GV ofC h R y :=
+        fun y hy => hb y (by rw [vals_objAt]; exact List.mem_cons_of_mem _ hy)
+      have hcode : ∀ y ∈ codeVals ofC (.objAt fs (.graph n E K st (instantiateArgs j ρ caps) k r comp) oid),
+          GV ofC h R y := by
+        intro y hy
+        simp only [codeVals] at hy hpart
+        split at hy
+        · cases hy
+        · rename_i hcomp
+          simp only [hcomp, Bool.false_eq_true, ↓reduceIte, List.mem_append, valsArgs_eq, List.mem_flatMap,
+            instantiateArgs_eq_map, List.mem_map] at hy hpart
+          rcases hy with ⟨e, he, hy⟩ | ⟨_, ⟨p, hp, rfl⟩, hy⟩
+          · exact hpart y (.inl ⟨e, he, hy⟩)
+          · exact ihc p hp j true (fun z hz => hpart z (.inr ⟨p, hp, hz⟩)) y hy
+      simp only [instantiate] at hx
+      rw [vals_objAt] at hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hself.same_next (objAt_next_eq rfl) hcode
+      · exact hcode x hx
+  all_goals intro j o hb x hx
+  all_goals simp only [instantiate, vals, valsArgs_eq, instantiateArgs_eq_map, List.mem_append, List.mem_flatMap,
+    List.mem_map] at hx hb
+  all_goals (repeat' split at hx) <;> (repeat' split at hb) <;> grind
+
+/-! ### Values a step reads or builds -/
+
+theorem CodeReach.trans {v x w : Val} (h₁ : CodeReach ofC v x) (h₂ : CodeReach ofC x w) : CodeReach ofC v w := by
+  induction h₁ with
+  | refl => exact h₂
+  | step hx _ ih => exact .step hx (ih h₂)
+
+theorem GV.reach {v x : Val} (hv : GV ofC h R v) (hx : CodeReach ofC v x) : GV ofC h R x :=
+  fun w hw => hv w (hx.trans hw)
+
+/-- The values a value holds at a position of outside code are the values
+its code steps reach. -/
+theorem vals_codeReach {v x : Val} {o : Bool} (hv : isVal v = true) (hx : x ∈ vals ofC o v) : CodeReach ofC v x := by
+  cases v
+  case objAt fs cc i =>
+    cases o
+    · cases cc <;> simp [vals] at hx
+    · rw [vals_objAt] at hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact .refl _
+      · exact .step hx (.refl _)
+  case arr ls => cases o <;> simp [vals] at hx; subst hx; exact .refl _
+  case viewSpine f cs => cases o <;> simp [vals] at hx; subst hx; exact .refl _
+  all_goals simp [isVal, vals] at hv hx
+
+/-- **A good value holds only good values.** -/
+theorem GV.held {v x : Val} {o : Bool} (hv : GV ofC h R v) (hval : isVal v = true) (hx : x ∈ vals ofC o v) :
+    GV ofC h R x :=
+  hv.reach (vals_codeReach hval hx)
+
+/-- The contents of a good location, at a heap holding values, hold only
+good values. -/
+theorem GV.heapHeld {l : Nat} {v x : Val} {o : Bool} (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true)
+    (hg : Good ofC h R l) (hl : h[l]? = some v) (hx : x ∈ vals ofC o v) : GV ofC h R x :=
+  (GV.heap hg hl).held (hh _ _ hl) hx
+
+theorem GV.ofHeapVal {l : Nat} {x : Val} {o : Bool} (hg : Good ofC h R l) (hx : x ∈ vals ofC o (heapVal h l)) :
+    GV ofC h R x := by
+  unfold Verification.heapVal at hx
+  split at hx
+  · split at hx
+    · exact (GV.heap hg ‹_›).held ‹_› hx
+    · simp [vals] at hx
+  · simp [vals] at hx
+
+/-- A value with no reference holds only inert values. -/
+theorem noRefs_cover {v x : Val} {o : Bool} (hv : isVal v = true) (hr : refs v = []) (hx : x ∈ vals ofC o v) :
+    GV ofC h R x := by
+  cases v
+  case objAt fs cc i => cases cc <;> simp [refs, objRefs] at hr
+  case arr ls =>
+    cases o <;> simp [vals] at hx
+    subst hx
+    refine GV.inert ⟨fun a => ?_, rfl⟩
+    cases a
+    case cell i =>
+      simp only [ReadOnly.next, spineEntries]
+      cases hi : ls[i]? with
+      | none => rfl
+      | some o =>
+        cases o with
+        | none => rfl
+        | some m =>
+          have : Ref.elem m ∈ refs (.arr ls) := by
+            simp only [refs, spineRefs, List.mem_filterMap]; exact ⟨some m, List.mem_of_getElem? hi, rfl⟩
+          rw [hr] at this; cases this
+    all_goals rfl
+  case viewSpine f cs =>
+    cases o <;> simp [vals] at hx
+    subst hx
+    have hcs : cs = [] := by simpa [refs] using hr
+    subst hcs
+    exact GV.inert ⟨fun a => by cases a <;> simp [ReadOnly.next, spineEntries, HeapKnowledge.descriptorSpine, fieldsOf], rfl⟩
+  all_goals first | (simp [vals] at hx; done) | (simp [isVal] at hv)
+
+theorem raises_vals {t v : Tm} (hr : Raises t v) : ∀ {o : Bool} {x : Val}, x ∈ vals ofC o v → x ∈ vals ofC o t := by
+  induction hr
+  all_goals intro o x hx
+  case throwV => simpa [vals] using hx
+  case makeArg ha _ _ ih => exact vals_makeAt (mem_valsArgs ha (ih hx))
+  all_goals (simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap]; grind [List.mem_of_getElem?])
+
+/-- The elements a spread reads from a good spine are good. -/
+theorem readElems_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {ls : List (Option Nat)}
+    (hls : GV ofC h R (.arr ls)) :
+    ∀ {i : Nat} {vs : List Tm}, readElems h (ls.drop i) = some vs → ∀ v ∈ vs, ∀ {o : Bool} {x : Val},
+      x ∈ vals ofC o v → GV ofC h R x := by
+  intro i
+  induction hd : ls.drop i generalizing i with
+  | nil => intro vs he; simp [readElems] at he; subst he; simp
+  | cons e es ih =>
+    intro vs he v hv o x hx
+    have hes : ls.drop (i + 1) = es := by rw [← List.drop_drop, hd]; rfl
+    have hget : ls[i]? = some e := by
+      have := congrArg List.head? hd
+      simpa [List.head?_drop] using this
+    cases e with
+    | none =>
+      simp only [readElems, Option.map_eq_some_iff] at he
+      obtain ⟨ws, hws, rfl⟩ := he
+      rcases List.mem_cons.mp hv with rfl | hv
+      · simp [vals] at hx
+      · exact ih hes hws v hv hx
+    | some l =>
+      simp only [readElems, Option.bind_eq_some_iff, Option.map_eq_some_iff] at he
+      obtain ⟨w, hw, ws, hws, rfl⟩ := he
+      rcases List.mem_cons.mp hv with rfl | hv
+      · have hn : ReadOnly.next (.arr ls) (.cell i) = some l := by simp [ReadOnly.next, spineEntries, hget]
+        exact GV.heapHeld hh (hls.next hn) hw hx
+      · exact ih hes hws v hv hx
+
+theorem lookup_cons_eq {β : Type} {k : PropKey} {x : β} {xs : List (PropKey × β)} :
+    ((k, x) :: xs).lookup k = some x := by
+  simp [List.lookup]
+
+theorem lookup_cons_ne {β : Type} {k k' : PropKey} {x : β} {xs : List (PropKey × β)} (h : k ≠ k') :
+    ((k', x) :: xs).lookup k = xs.lookup k := by
+  simp only [List.lookup]
+  rw [show (k == k') = false from by simpa using h]
+
+theorem firstKeys_lookup {α : Type} : ∀ {ps : List (PropKey × α)} {p : PropKey × α},
+    p ∈ firstKeys ps → ps.lookup p.1 = some p.2
+  | [], _, hp => by simp [firstKeys] at hp
+  | (k, x) :: ps, p, hp => by
+    simp only [firstKeys, List.mem_cons, List.mem_filter, bne_iff_ne, ne_eq] at hp
+    rcases hp with rfl | ⟨hp, hne⟩
+    · exact lookup_cons_eq
+    · rw [lookup_cons_ne hne]; exact firstKeys_lookup hp
+
+theorem lookup_map_filter_none {β : Type} {P : PropKey → Bool} {f : Nat → β} {k : PropKey} (hP : ¬ P k = true) :
+    ∀ fs : List (PropKey × Nat), ((fs.filter fun q => P q.1).map fun q => (q.1, f q.2)).lookup k = none
+  | [] => rfl
+  | q :: qs => by
+    by_cases hq : P q.1 = true
+    · have hqk : k ≠ q.1 := fun he => hP (he ▸ hq)
+      simp only [List.filter_cons, hq, ↓reduceIte, List.map_cons]
+      rw [lookup_cons_ne hqk]
+      exact lookup_map_filter_none hP qs
+    · simp only [List.filter_cons, hq, Bool.false_eq_true, ↓reduceIte]
+      exact lookup_map_filter_none hP qs
+
+theorem lookup_map_filter {β : Type} {P : PropKey → Bool} {f : Nat → β} :
+    ∀ {fs : List (PropKey × Nat)} {k : PropKey} {x : β},
+      ((fs.filter fun q => P q.1).map fun q => (q.1, f q.2)).lookup k = some x → ∃ l, fs.lookup k = some l ∧ x = f l
+  | [], _, _, hx => by simp at hx
+  | (k', l') :: fs, k, x, hx => by
+    by_cases hP : P k' = true
+    · simp only [List.filter_cons, hP, ↓reduceIte, List.map_cons] at hx
+      by_cases hk : k = k'
+      · subst hk
+        rw [lookup_cons_eq] at hx
+        exact ⟨l', lookup_cons_eq, (Option.some.inj hx).symm⟩
+      · rw [lookup_cons_ne hk] at hx
+        rw [lookup_cons_ne hk]
+        exact lookup_map_filter hx
+    · simp only [List.filter_cons, hP, Bool.false_eq_true, ↓reduceIte] at hx
+      by_cases hk : k = k'
+      · subst hk
+        rw [lookup_map_filter_none hP fs] at hx; cases hx
+      · rw [lookup_cons_ne hk]
+        exact lookup_map_filter hx
+
+theorem lookup_append_some {β : Type} : ∀ {xs ys : List (PropKey × β)} {k : PropKey} {x : β},
+    (xs ++ ys).lookup k = some x → xs.lookup k = some x ∨ (k, x) ∈ ys
+  | [], ys, k, x, h => by
+    right
+    induction ys with
+    | nil => simp at h
+    | cons y ys ih =>
+      obtain ⟨k', x'⟩ := y
+      rw [List.nil_append] at h
+      by_cases hk : k = k'
+      · subst hk; rw [lookup_cons_eq] at h; cases h; exact List.mem_cons_self
+      · rw [lookup_cons_ne hk] at h
+        exact List.mem_cons_of_mem _ (ih h)
+  | (k', x') :: xs, ys, k, x, h => by
+    rw [List.cons_append] at h
+    by_cases hk : k = k'
+    · subst hk; rw [lookup_cons_eq] at h ⊢; exact .inl h
+    · rw [lookup_cons_ne hk] at h ⊢
+      exact lookup_append_some h
+
+theorem spineData_mem {hp : Heap} {fs : List (PropKey × Nat)} {e : PropKey × Tm} (he : e ∈ spineData hp fs) :
+    ∃ (l : Nat) (ls : List (Option Nat)) (m : Nat), fs.lookup arraySpineKey = some l ∧ hp[l]? = some (.arr ls) ∧
+      some m ∈ ls ∧ e.2 = heapVal hp m := by
+  unfold spineData at he
+  split at he
+  · rename_i l hl
+    split at he
+    · rename_i ls hls
+      simp only [List.mem_filterMap] at he
+      obtain ⟨⟨o, i⟩, hmem, ho⟩ := he
+      cases o with
+      | none => cases ho
+      | some m =>
+        simp only [Option.map_some, Option.some.injEq] at ho
+        subst ho
+        exact ⟨l, ls, m, hl, hls, List.fst_mem_of_mem_zipIdx hmem, rfl⟩
+    · simp at he
+  · simp at he
+
+/-- **A copy reads good values**: each value a merge copies is read from a
+field of one of its operands, or from an element of the spine a field
+holds, or is a string. -/
+theorem mergeParts_cover {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hm : mergeParts h d a b = some ps)
+    (hA : ∀ k l, ReadOnly.next a k = some l → Good ofC h R l)
+    (hB : ∀ k l, ReadOnly.next b k = some l → Good ofC h R l) :
+    ∀ e ∈ ps, ∀ {o : Bool} {x : Val}, x ∈ vals ofC o e.2 → GV ofC h R x := by
+  simp only [mergeParts, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at hm
+  obtain ⟨p, hp, q, hq, rfl⟩ := hm
+  have hfield : ∀ (v : Tm) (fs : List (PropKey × Nat)) (cc : CallCode) (i : Nat),
+      (∀ k l, ReadOnly.next v k = some l → Good ofC h R l) → v = .objAt fs cc i →
+      ∀ (k : PropKey) (l : Nat), fs.lookup k = some l → Good ofC h R l := by
+    intro v fs cc i hv hvv k l hl
+    exact hv (.key k) l (by subst hvv; simpa [ReadOnly.next, fieldsOf] using hl)
+  intro e he o x hx
+  rcases mem_mergeData he with he | he
+  · unfold ownAll at hp
+    split at hp
+    · split at hp
+      · cases hp
+      · simp only [Option.some.injEq] at hp
+        subst hp
+        obtain ⟨l, hl, hx'⟩ := lookup_map_filter (P := fun k => k != arraySpineKey) (f := heapVal h)
+          (firstKeys_lookup he)
+        rw [hx'] at hx
+        exact GV.ofHeapVal (hfield _ _ _ _ hA rfl _ _ hl) hx
+    · cases hp
+  · have he := (List.mem_filter.mp he).1
+    unfold ownData at hq
+    split at hq
+    · split at hq
+      · cases hq
+      · simp only [Option.some.injEq] at hq
+        subst hq
+        rename_i fs cc i
+        rcases lookup_append_some (firstKeys_lookup he) with he' | he'
+        · obtain ⟨l, hl, hx'⟩ := lookup_map_filter (P := copiedKey) (f := heapVal h) he'
+          rw [hx'] at hx
+          exact GV.ofHeapVal (hfield _ _ _ _ hB rfl _ _ hl) hx
+        · obtain ⟨l, ls, m, hl, hls, hm', hx'⟩ := spineData_mem he'
+          rw [hx'] at hx
+          have hg : Good ofC h R l := hfield _ _ _ _ hB rfl _ _ hl
+          obtain ⟨j, hj⟩ := List.getElem?_of_mem hm'
+          have hn : ReadOnly.next (.arr ls) (.cell j) = some m := by simp [ReadOnly.next, spineEntries, hj]
+          exact GV.ofHeapVal ((GV.heap hg hls).next hn) hx
+    · simp only [Option.some.injEq] at hq
+      subst hq
+      have := mem_firstKeys he
+      simp only [stringData, List.mem_map] at this
+      obtain ⟨y, -, rfl⟩ := this
+      simp [vals] at hx
+    all_goals simp_all
+
+theorem slots_lookup_ge : ∀ {base : Nat} {ns : List PropKey} {k : PropKey} {l : Nat},
+    (slots base ns).lookup k = some l → base ≤ l
+  | _, [], _, _, h => by simp [slots] at h
+  | base, n :: ns, k, l, h => by
+    simp only [slots] at h
+    by_cases hk : k = n
+    · subst hk; rw [lookup_cons_eq] at h; cases h; exact Nat.le_refl _
+    · rw [lookup_cons_ne hk] at h; have := slots_lookup_ge h; omega
+
+theorem graphEntry_vals {n : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {st : Nat} {caps : List Tm} {self : Tm} {rest : Bool} {comp : ComponentTag} {r : Tm} {args : List Tm} {x : Val}
+    (hx : x ∈ vals ofC true (CallArguments.graphEntry n E K st caps self rest comp r args)) :
+    (ofC comp = false ∧ ((∃ e ∈ E, x ∈ vals ofC true e) ∨ (∃ y ∈ caps, x ∈ vals ofC true y) ∨
+      x ∈ vals ofC true self)) ∨ x ∈ vals ofC true r ∨ ∃ y ∈ args, x ∈ vals ofC true y := by
+  have hp : ∀ y ∈ CallArguments.parameters n args, x ∈ vals ofC true y → ∃ y ∈ args, x ∈ vals ofC true y := by
+    intro y hy hxy
+    rcases Kinds.parameters_mem hy with hy | rfl
+    · exact ⟨y, hy, hxy⟩
+    · simp [vals] at hxy
+  cases rest with
+  | false =>
+    simp only [CallArguments.graphEntry, vals, valsArgs_eq, List.flatMap_cons, List.flatMap_append,
+      List.flatMap_nil] at hx
+    split at hx
+    · simp at hx
+    · rename_i hcomp
+      simp only [Bool.not_eq_true] at hcomp
+      simp only [List.mem_append, List.mem_flatMap, List.append_nil] at hx
+      grind
+  | true =>
+    simp only [CallArguments.graphEntry, vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hx
+    have hd : ∀ y ∈ args.drop n, y ∈ args := fun y hy => List.mem_of_mem_drop hy
+    split at hx
+    · simp only [List.not_mem_nil, or_false] at hx
+      grind
+    · rename_i hcomp
+      simp only [Bool.not_eq_true] at hcomp
+      simp only [List.mem_append, List.mem_flatMap, List.flatMap_cons, List.flatMap_append, List.flatMap_nil, vals,
+        List.append_nil] at hx
+      grind
+
+
+theorem mem_vals_true {o : Bool} {v x : Val} (hx : x ∈ vals ofC o v) : x ∈ vals ofC true v := by
+  cases o
+  · exact vals_mono v hx
+  · exact hx
+
+theorem GV.fresh {v : Val} (hn : ∀ a l, ReadOnly.next v a = some l → h.length ≤ l) (hc : codeVals ofC v = []) :
+    GV ofC h R v :=
+  GV.of (fun a l hl => .inr (hn a l hl)) (by rw [hc]; simp)
+
+
+theorem makeAt_code {fs : List (PropKey × Nat)} {i : Nat} {cc : CallCode} {ns : List PropKey} {xs : List Tm} {x : Val}
+    (hx : x ∈ codeVals ofC (.objAt fs cc i)) : x ∈ vals ofC true (.makeAt cc ns xs) := by
+  cases cc <;> simp [codeVals, vals] at hx ⊢ <;> grind
+
+theorem codeUnitAt_val (s : String) (b : UInt64) : isVal (codeUnitAt s b) = true := by
+  unfold codeUnitAt; split <;> rfl
+
+theorem thrown_cover {n : Nat} {o : Bool} {x : Val} (hx : x ∈ vals ofC o (.throw (thrownError n))) :
+    GV ofC h R x := by
+  cases o <;> simp [vals, thrownError] at hx
+  subst hx
+  exact GV.inert ⟨fun a => by cases a <;> rfl, rfl⟩
+
+/-- **A node's next run holds good values** where the frame's code, the
+environment it maps and its default are good. -/
+theorem goto_cover {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat}
+    {m : Option (List Nat)} {L₀ : List Tm} {d : Tm} {comp : ComponentTag} {o : Bool}
+    (hold : ∀ y, (∃ e ∈ E, y ∈ vals ofC true e) ∨ (∃ y' ∈ L₀, y ∈ vals ofC true y') ∨ y ∈ vals ofC true d →
+      GV ofC h R y) :
+    ∀ x ∈ vals ofC o (.goto E K l (envMap m L₀ d).1 (envMap m L₀ d).2 comp), GV ofC h R x := by
+  intro x hx
+  simp only [vals, valsArgs_eq] at hx
+  split at hx
+  · cases hx
+  · simp only [List.mem_append, List.mem_flatMap] at hx
+    rcases hx with (hx | ⟨y, hy, hx⟩) | hx
+    · exact hold x (.inl hx)
+    · rcases envMap_mem (.inl hy) with hy | rfl
+      · exact hold x (.inr (.inl ⟨y, hy, hx⟩))
+      · exact hold x (.inr (.inr hx))
+    · rcases envMap_mem (x := (envMap m L₀ d).2) (.inr rfl) with hy | hy
+      · exact hold x (.inr (.inl ⟨_, hy, hx⟩))
+      · rw [hy] at hx; exact hold x (.inr (.inr hx))
+
+
+theorem frame_hold {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm}
+    {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {xx : Option ControlFlow.Target} {comp : ComponentTag}
+    {o : Bool} (hc : ofC comp = false) (hR : ∀ x ∈ vals ofC o (.frame E K u L d k xx comp), GV ofC h R x) :
+    ∀ y, (∃ e ∈ E, y ∈ vals ofC true e) ∨ (∃ y' ∈ L, y ∈ vals ofC true y') ∨ y ∈ vals ofC true d ∨
+      y ∈ vals ofC true u → GV ofC h R y := by
+  intro y hy
+  refine hR y ?_
+  simp only [vals, hc, Bool.false_eq_true, ↓reduceIte, Bool.not_false, valsArgs_eq, List.mem_append,
+    List.mem_flatMap]
+  rcases hy with hy | hy | hy | hy
+  · exact .inl (.inl (.inl hy))
+  · exact .inl (.inl (.inr hy))
+  · exact .inl (.inr hy)
+  · exact .inr hy
+
+theorem activeTag_frame_tag {c : ComponentTag} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {xx : Option ControlFlow.Target} {comp : ComponentTag}
+    (hu : path comp u = [(comp, u)]) : activeTag c (.frame E K u L d k xx comp) = comp := by
+  simp [activeTag, path_frame hu]
+
+/-- **What outside code holds after a step is good**: every value at a
+position of outside code after a step whose active frame runs no code
+`ofC` names, from a term whose such values are good, at a heap holding
+values, is good. -/
+theorem step_cover (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {h' : Heap} {t t' : Tm}
+    (hs : Step h t h' t') :
+    ∀ c, ofC (activeTag c t) = false → (∀ x ∈ vals ofC (!ofC c) t, GV ofC h R x) →
+      ∀ x ∈ vals ofC (!ofC c) t', GV ofC h R x := by
+  induction hs
+  all_goals intro c hc hR x hx
+  case callArg hf hr ha hpre hs ih =>
+    simp only [activeTag, path, hf, hr, Bool.true_eq_false, ↓reduceIte] at hc
+    rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
+    simp only [vals, List.mem_append] at hx
+    rcases hx with (hx | hx) | hx
+    · exact hR x (by simp only [vals, List.mem_append]; exact .inl (.inl hx))
+    · exact hR x (by simp only [vals, List.mem_append]; exact .inl (.inr hx))
+    · rcases mem_valsArgs_set hx with hx | hx
+      · exact hR x (by simp only [vals, List.mem_append]; exact .inr hx)
+      · exact ih hh c hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hy))) x hx
+  case constructArg hf ha hpre hs ih =>
+    simp only [activeTag, path, hf, Bool.true_eq_false, ↓reduceIte] at hc
+    rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
+    simp only [vals, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact hR x (by simp only [vals, List.mem_append]; exact .inl hx)
+    · rcases mem_valsArgs_set hx with hx | hx
+      · exact hR x (by simp only [vals, List.mem_append]; exact .inr hx)
+      · exact ih hh c hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr (mem_valsArgs ha hy))) x hx
+  case makeArg cc ns inits i _ _ a a' ha hpre hs ih =>
+    simp only [activeTag, path] at hc
+    rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
+    have hsplit : ∀ {o : Bool} {ys : List Tm} {y : Val}, y ∈ vals ofC o (.makeAt cc ns ys) →
+        y ∈ vals ofC o (.makeAt cc ns []) ∨ y ∈ valsArgs ofC o ys := by
+      intro o ys y hy
+      cases cc <;> simp only [vals, valsArgs_eq, List.mem_append, List.flatMap_nil, List.append_nil] at hy ⊢ <;> grind
+    have hjoin : ∀ {o : Bool} {ys : List Tm} {y : Val}, y ∈ vals ofC o (.makeAt cc ns []) →
+        y ∈ vals ofC o (.makeAt cc ns ys) := by
+      intro o ys y hy
+      cases cc <;> simp only [vals, valsArgs_eq, List.mem_append, List.flatMap_nil, List.append_nil] at hy ⊢ <;> grind
+    rcases hsplit hx with hx | hx
+    · exact hR x (hjoin hx)
+    · rcases mem_valsArgs_set hx with hx | hx
+      · exact hR x (vals_makeAt hx)
+      · exact ih hh c hc (fun y hy => hR y (vals_makeAt (mem_valsArgs ha hy))) x hx
+  case arrArg ha hpre hs ih =>
+    simp only [activeTag, path] at hc
+    rw [pathArgs_at _ ha hpre (not_val_of_step hs), wrap_head] at hc
+    simp only [vals] at hx
+    rcases mem_valsArgs_set hx with hx | hx
+    · exact hR x (by simp only [vals]; exact hx)
+    · exact ih hh c hc (fun y hy => hR y (by simp only [vals]; exact mem_valsArgs ha hy)) x hx
+  case frameC ih =>
+    rw [activeTag_frame] at hc
+    simp only [vals, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact hR x (by simp only [vals, List.mem_append]; exact .inl hx)
+    · exact ih hh _ hc (fun y hy => hR y (by simp only [vals, List.mem_append]; exact .inr hy)) x hx
+  -- Results that hold no value, or the term's own.
+  case testV => split at hx <;> simp [vals] at hx
+  case iteT => exact hR x (List.mem_append_left _ (List.mem_append_right _ hx))
+  case iteF => exact hR x (List.mem_append_right _ hx)
+  case arithV hb => exact noRefs_cover (binop_values hb).2.2 (binop_refs hb) hx
+  case elemStr => exact noRefs_cover (codeUnitAt_val _ _) (codeUnitAt_refs _ _) hx
+  case setPresent => exact hR x (List.mem_append_left _ (List.mem_append_left _ hx))
+  case makeKeyV => exact hR x (List.mem_append_right _ (by simpa [vals] using hx))
+  case arrAllocThrow => exact thrown_cover hx
+  case lenStrThrow => exact thrown_cover hx
+  case arithThrow => exact thrown_cover hx
+  -- Copies and allocations.
+  case mergeV a b hp d ps ha hb hm =>
+    have hc' : ofC c = false := by simpa [activeTag, path, ha, hb] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hA : ∀ k l, ReadOnly.next a k = some l → Good ofC hp R l := fun k l hn =>
+      (hR a (List.mem_append_left _ (mem_vals_self (not_inert_of_next hn)))).next hn
+    have hB : ∀ k l, ReadOnly.next b k = some l → Good ofC hp R l := fun k l hn =>
+      (hR b (List.mem_append_right _ (mem_vals_self (not_inert_of_next hn)))).next hn
+    simp only [vals, valsArgs_eq, List.mem_flatMap, List.mem_map] at hx
+    obtain ⟨_, ⟨e, he, rfl⟩, hx⟩ := hx
+    exact mergeParts_cover hm hA hB e he hx
+  case makeFields cc ns vs hp hvs _ =>
+    simp only [activeTag, path] at hc
+    rw [pathArgs_vals _ hvs] at hc
+    have hc' : ofC c = false := by simpa using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hcode : ∀ y ∈ codeVals ofC (.objAt (slots hp.length ns) cc (hp.length + vs.length)), GV ofC hp R y :=
+      fun y hy => hR y (makeAt_code hy)
+    rw [vals_objAt] at hx
+    rcases List.mem_cons.mp hx with rfl | hx
+    · refine GV.of (fun a l hn => ?_) hcode
+      cases a with
+      | key k => exact .inr (slots_lookup_ge (by simpa [ReadOnly.next, fieldsOf] using hn))
+      | view =>
+        cases cc with
+        | view s f n =>
+          simp only [ReadOnly.next, HeapKnowledge.descriptorSpine, Option.some.injEq] at hn
+          subst hn
+          exact (hR (.objAt [] (.view s f n) 0) (by simp [vals])).next (a := .view) rfl
+        | _ => simp [ReadOnly.next, HeapKnowledge.descriptorSpine] at hn
+      | cell => simp [ReadOnly.next, spineEntries] at hn
+      | code => cases hn
+    · exact hcode x hx
+  case arrAlloc vs hp _ _ =>
+    simp only [vals] at hx
+    split at hx
+    · simp only [List.mem_singleton] at hx
+      subst hx
+      refine GV.fresh (fun a l hn => ?_) rfl
+      cases a with
+      | cell i =>
+        simp only [ReadOnly.next, spineEntries, elemSlots] at hn
+        cases hi : ((List.range vs.length).map fun j => some (hp.length + j))[i]? with
+        | none => rw [hi] at hn; cases hn
+        | some o =>
+          rw [hi] at hn
+          simp only [List.getElem?_map, Option.map_eq_some_iff] at hi
+          obtain ⟨j, -, rfl⟩ := hi
+          simp at hn; omega
+      | _ => simp [ReadOnly.next, fieldsOf, HeapKnowledge.descriptorSpine] at hn
+    · cases hx
+  case setGrow ls b k hp v _ _ _ =>
+    simp only [vals] at hx
+    split at hx
+    · rename_i ho
+      simp only [List.mem_singleton] at hx
+      subst hx
+      have harr : GV ofC hp R (.arr ls) := hR _ (List.mem_append_left _ (List.mem_append_left _ (by simp [vals, ho])))
+      refine GV.of (fun a l hn => ?_) (by simp [codeVals])
+      cases a with
+      | cell i =>
+        simp only [ReadOnly.next, spineEntries] at hn
+        have hm : some l ∈ placeAt ls k hp.length := by
+          cases hi : (placeAt ls k hp.length)[i]? with
+          | none => rw [hi] at hn; cases hn
+          | some o => rw [hi] at hn; cases o <;> simp at hn; subst hn; exact List.mem_of_getElem? hi
+        rcases Kinds.mem_placeAt hm with hm | rfl
+        · obtain ⟨j, hj⟩ := List.getElem?_of_mem hm
+          exact harr.next (a := .cell j) (by simp [ReadOnly.next, spineEntries, hj])
+        · exact .inr (Nat.le_refl _)
+      | _ => simp [ReadOnly.next, fieldsOf, HeapKnowledge.descriptorSpine] at hn
+    · cases hx
+  -- Frames.
+  case frameRet v _ E K L d xx comp hv =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    exact frame_hold hc' hR x (.inr (.inr (.inr (mem_vals_true hx))))
+  case frameRaise u v _ E K L d k comp hr =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (raises_path hr _)] at hc; exact hc
+    exact frame_hold hc' hR x (.inr (.inr (.inr (raises_vals hr (mem_vals_true (by simpa [vals] using hx))))))
+  case frameHandle u v _ E K L d k l comp hr =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (raises_path hr _)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · rcases List.mem_cons.mp hy' with rfl | hy'
+      · exact .inr (.inr (.inr (raises_vals hr hy)))
+      · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameBind v _ E K L d l xx comp hv =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · rcases List.mem_cons.mp hy' with rfl | hy'
+      · exact .inr (.inr (.inr hy))
+      · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameEffect v _ E K L d l xx comp hv =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameYes _ E K L d y n xx comp =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameNo _ E K L d y n xx comp =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameYesBind _ E K L d y n xx comp =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · rcases List.mem_cons.mp hy' with rfl | hy'
+      · simp [vals] at hy
+      · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameNoBind _ E K L d y n xx comp =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val rfl)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · rcases List.mem_cons.mp hy' with rfl | hy'
+      · simp [vals] at hy
+      · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  case frameTag v _ E K L d tg y n xx comp hv =>
+    have hc' : ofC comp = false := by rw [activeTag_frame_tag (path_val hv)] at hc; exact hc
+    refine goto_cover (fun y hy => frame_hold hc' hR y ?_) x hx
+    rcases hy with hy | ⟨y', hy', hy⟩ | hy
+    · exact .inl hy
+    · rcases List.mem_cons.mp hy' with rfl | hy'
+      · exact .inr (.inr (.inr hy))
+      · exact .inr (.inl ⟨y', hy', hy⟩)
+    · exact .inr (.inr (.inl hy))
+  all_goals try (simp [vals] at hx; done)
+  -- The heap read at a good location.
+  case readField oid f fs cc l _ v hf hv =>
+    have hc' : ofC c = false := by simpa [activeTag, path] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs cc oid)
+      (by show _ ∈ vals ofC true (Tm.objAt fs cc oid); rw [vals_objAt]; exact List.mem_cons_self)
+    exact GV.heapHeld hh (hobj.next (a := .key f) (by simpa [ReadOnly.next, fieldsOf] using hf)) hv hx
+  case readProto oid f fs cc l _ p _ hp hv =>
+    have hc' : ofC c = false := by simpa [activeTag, path] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs cc oid)
+      (by show _ ∈ vals ofC true (Tm.objAt fs cc oid); rw [vals_objAt]; exact List.mem_cons_self)
+    exact GV.heapHeld hh (hobj.next (a := .key _) (by simpa [ReadOnly.next, fieldsOf] using hp)) hv hx
+  case indexField oid key f fs cc l _ v hk hf hv =>
+    have hc' : ofC c = false := by simpa [activeTag, path, propertyKey_val hk] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs cc oid) (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self))
+    exact GV.heapHeld hh (hobj.next (a := .key f) (by simpa [ReadOnly.next, fieldsOf] using hf)) hv hx
+  case indexProto oid key f fs cc l _ p hk _ hp hv =>
+    have hc' : ofC c = false := by simpa [activeTag, path, propertyKey_val hk] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs cc oid) (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self))
+    rcases List.mem_append.mp hx with hx | hx
+    · exact GV.heapHeld hh (hobj.next (a := .key _) (by simpa [ReadOnly.next, fieldsOf] using hp)) hv hx
+    · exact hR x (List.mem_append_right _ hx)
+  case elemRead ls b l _ v hl hv =>
+    have hc' : ofC c = false := by simpa [activeTag, path] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have harr := hR (.arr ls) (List.mem_append_left _ (by simp [vals]))
+    simp only [elemLoc, Option.bind_eq_some_iff] at hl
+    obtain ⟨k, -, o, ho, hl⟩ := hl
+    cases o with
+    | none => cases hl
+    | some m =>
+      cases hl
+      exact GV.heapHeld hh (harr.next (a := .cell k) (by simp [ReadOnly.next, spineEntries, ho])) hv hx
+  -- Substitution and instantiation.
+  case letV ha =>
+    have hc' : ofC c = false := by simpa [activeTag, path, ha] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    exact subst_cover (fun y hy => hR y (List.mem_append_left _ hy)) _ 0 true
+      (fun y hy => hR y (List.mem_append_right _ hy)) x hx
+  case gotoEnter E l e K k xx hp L d comp he _ =>
+    have hc' : ofC comp = false := by simpa [activeTag, path] using hc
+    have hR' : ∀ y, (∃ e ∈ E, y ∈ vals ofC true e) ∨ (∃ y' ∈ L, y ∈ vals ofC true y') ∨ y ∈ vals ofC true d →
+        GV ofC hp R y := by
+      intro y hy
+      refine hR y ?_
+      simp only [vals, hc', Bool.false_eq_true, ↓reduceIte, valsArgs_eq, List.mem_append, List.mem_flatMap]
+      rcases hy with hy | hy | hy
+      · exact .inl (.inl hy)
+      · exact .inl (.inr hy)
+      · exact .inr hy
+    simp only [vals, hc', Bool.false_eq_true, ↓reduceIte, Bool.not_false, valsArgs_eq, List.mem_append,
+      List.mem_flatMap] at hx
+    rcases hx with ((hx | hx) | hx) | hx
+    · exact hR' x (.inl hx)
+    · exact hR' x (.inr (.inl hx))
+    · exact hR' x (.inr (.inr hx))
+    · refine instantiate_cover (fun i y hy => ?_) e 0 true (fun y hy => hR' y (.inl ⟨e, List.mem_of_getElem? he, hy⟩))
+        x hx
+      rcases getD_mem_or L i d with hi | hi
+      · exact hR' y (.inr (.inl ⟨_, hi, by simp only [envOf] at hy; exact hy⟩))
+      · exact hR' y (.inr (.inr (by simp only [envOf] at hy; rw [hi] at hy; exact hy)))
+  -- Calls.
+  case callBound r args _ fs tt r₀ pre oid hr hargs =>
+    simp only [activeTag, path, isVal_objAt, hr, Bool.true_eq_false, ↓reduceIte] at hc
+    rw [pathArgs_vals _ hargs] at hc
+    have hc' : ofC c = false := by simpa using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs (.bound tt r₀ pre) oid)
+      (List.mem_append_left _ (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self)))
+    simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
+    rcases hx with ((hx | hx) | hx | hx)
+    · exact hobj.code (by simp [codeVals, hx])
+    · exact hobj.code (by simp [codeVals, hx])
+    · exact hobj.code (by simp only [codeVals, valsArgs_eq, List.mem_append]; exact .inr hx)
+    · exact hR x (List.mem_append_right _ (by rw [valsArgs_eq]; exact hx))
+  case callGraph r args _ fs n E K st caps k rest comp oid hr hargs _ =>
+    simp only [activeTag, path, isVal_objAt, hr, Bool.true_eq_false, ↓reduceIte] at hc
+    rw [pathArgs_vals _ hargs] at hc
+    have hc' : ofC c = false := by simpa using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs (.graph n E K st caps k rest comp) oid)
+      (List.mem_append_left _ (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self)))
+    rcases graphEntry_vals hx with ⟨hcomp, (hx | hx | hx)⟩ | hx | ⟨y, hy, hx⟩
+    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
+        List.mem_append, List.mem_flatMap]; exact .inl hx)
+    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
+        List.mem_append, List.mem_flatMap]; exact .inr hx)
+    · exact hobj.held rfl hx
+    · exact hR x (List.mem_append_left _ (List.mem_append_right _ hx))
+    · exact hR x (List.mem_append_right _ (mem_valsArgs_of hy hx))
+  case constructGraph args _ fs n E K st caps rest comp oid hargs =>
+    simp only [activeTag, path, isVal_objAt, Bool.true_eq_false, ↓reduceIte] at hc
+    rw [pathArgs_vals _ hargs] at hc
+    have hc' : ofC c = false := by simpa using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hobj := hR (.objAt fs (.graph n E K st caps .construct rest comp) oid)
+      (List.mem_append_left _ (by rw [vals_objAt]; exact List.mem_cons_self))
+    rcases graphEntry_vals hx with ⟨hcomp, (hx | hx | hx)⟩ | hx | ⟨y, hy, hx⟩
+    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
+        List.mem_append, List.mem_flatMap]; exact .inl hx)
+    · exact hobj.code (by simp only [codeVals, hcomp, Bool.false_eq_true, ↓reduceIte, valsArgs_eq,
+        List.mem_append, List.mem_flatMap]; exact .inr hx)
+    · exact hobj.held rfl hx
+    · simp [vals] at hx
+    · exact hR x (List.mem_append_right _ (mem_valsArgs_of hy hx))
+  -- Spreads.
+  case callSpread f r hp args pre post ls vs hf hr hargs hpre he =>
+    subst hargs
+    have hc' : ofC c = false := by
+      simp only [activeTag, path, hf, hr, Bool.true_eq_false, ↓reduceIte] at hc
+      rw [pathArgs_append _ _ hpre] at hc
+      simpa [pathArgs, path, wrap, mapLast] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC true (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
+      fun hy => hR _ (List.mem_append_right _ hy)
+    have harr : GV ofC hp R (.arr ls) := hargs (by simp [vals])
+    simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
+    rcases hx with ((hx | hx) | (hx | hx) | hx)
+    · exact hR x (List.mem_append_left _ (List.mem_append_left _ hx))
+    · exact hR x (List.mem_append_left _ (List.mem_append_right _ hx))
+    · exact hargs (by rw [valsArgs_eq, List.flatMap_append]; exact List.mem_append_left _ hx)
+    · obtain ⟨v, hv, hx⟩ := List.mem_flatMap.mp hx
+      exact readElems_cover hh harr (i := 0) (by simpa using he) v hv hx
+    · exact hargs (by simp only [valsArgs_eq, List.flatMap_append, List.flatMap_cons, List.mem_append]; exact .inr (.inr hx))
+  case constructSpread f hp args pre post ls vs hf hargs hpre he =>
+    subst hargs
+    have hc' : ofC c = false := by
+      simp only [activeTag, path, hf, Bool.true_eq_false, ↓reduceIte] at hc
+      rw [pathArgs_append _ _ hpre] at hc
+      simpa [pathArgs, path, wrap, mapLast] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC true (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
+      fun hy => hR _ (List.mem_append_right _ hy)
+    have harr : GV ofC hp R (.arr ls) := hargs (by simp [vals])
+    simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
+    rcases hx with (hx | (hx | hx) | hx)
+    · exact hR x (List.mem_append_left _ hx)
+    · exact hargs (by rw [valsArgs_eq, List.flatMap_append]; exact List.mem_append_left _ hx)
+    · obtain ⟨v, hv, hx⟩ := List.mem_flatMap.mp hx
+      exact readElems_cover hh harr (i := 0) (by simpa using he) v hv hx
+    · exact hargs (by simp only [valsArgs_eq, List.flatMap_append, List.flatMap_cons, List.mem_append]; exact .inr (.inr hx))
+  case arrSpread inits pre post ls vs hp hargs hpre he =>
+    subst hargs
+    have hc' : ofC c = false := by
+      simp only [activeTag, path] at hc
+      rw [pathArgs_append _ _ hpre] at hc
+      simpa [pathArgs, path, wrap, mapLast] using hc
+    simp only [hc', Bool.not_false] at hR hx
+    have hargs : ∀ {y : Val}, y ∈ valsArgs ofC true (pre ++ .spread (.arr ls) :: post) → GV ofC hp R y :=
+      fun hy => hR _ hy
+    have harr : GV ofC hp R (.arr ls) := hargs (by simp [vals])
+    simp only [vals, valsArgs_eq, List.flatMap_append, List.mem_append] at hx
+    rcases hx with ((hx | hx) | hx)
+    · exact hargs (by rw [valsArgs_eq, List.flatMap_append]; exact List.mem_append_left _ hx)
+    · obtain ⟨v, hv, hx⟩ := List.mem_flatMap.mp hx
+      exact readElems_cover hh harr (i := 0) (by simpa using he) v hv hx
+    · exact hargs (by simp only [valsArgs_eq, List.flatMap_append, List.flatMap_cons, List.mem_append]; exact .inr (.inr hx))
+  all_goals try (
+    rename_i ih
+    have hna := not_val_of_step ‹Step _ _ _ _›
+    have hc₁ := hc
+    rw [activeTag_wrap (by simp [path, *] <;> rfl)] at hc₁
+    have ih' := ih hh c hc₁ (fun y hy => hR y (by simp [vals, hy]))
+    simp only [vals, List.mem_append] at hx hR
+    grind)
+
+/-- **`noForge` of a step of the calculus**: after a step whose active
+frame runs no code `ofC` names, at a heap holding values, every location
+the roots of outside code reach was reached by them before, or is fresh.
+A path after the step runs through good values only: the roots after it
+are good (`step_cover`), and so are the new contents of every good
+location, which the step stored among its roots (`step_writes`) or left
+as they were (`GV.heap`). -/
+theorem step_noForge (hh : ∀ (l : Nat) (v : Val), h[l]? = some v → isVal v = true) {h' : Heap} {t t' : Tm}
+    (hs : Step h t h' t') (c : ComponentTag) (hc : ofC (activeTag c t) = false) :
+    ∀ l, ReachesFrom ofC h' (vals ofC (!ofC c) t') l →
+      ReachesFrom ofC h (vals ofC (!ofC c) t) l ∨ h.length ≤ l := by
+  have hR : ∀ x ∈ vals ofC (!ofC c) t, GV ofC h (vals ofC (!ofC c) t) x := fun _ hx => GV.root hx
+  have hcover := step_cover (R := vals ofC (!ofC c) t) hh hs c hc hR
+  have hheap : ∀ l u, Good ofC h (vals ofC (!ofC c) t) l → h'[l]? = some u →
+      GV ofC h (vals ofC (!ofC c) t) u := by
+    intro l u hg hu
+    by_cases hsame : ∃ v, h[l]? = some v ∧ h'[l]? = some v
+    · obtain ⟨v, hv, hv'⟩ := hsame
+      rw [hu] at hv'; cases hv'
+      exact GV.heap hg hv
+    · by_cases hi : Inert ofC u
+      · exact GV.inert hi
+      · exact GV.root (step_writes hs c hc hsame hu hi)
+  rintro l ⟨v, hv, π, hf⟩
+  exact follows_good hheap (hcover v hv) hf
+
+end NoForge
+
+/-- A well-formed heap holds values. -/
+theorem heap_isVal {s : IndexedHeap} {l : Nat} {v : Val} (hv : s.h[l]? = some v) : isVal v = true := by
+  have hl : l < s.h.length := (List.getElem?_eq_some_iff.mp hv).1
+  have hlen : l < (entries s.W).length := by
+    have := s.ok.1.1
+    simp only [toList, List.length_map] at this
+    omega
+  obtain ⟨r, hr⟩ := roleAt_some hlen
+  obtain ⟨u, hu, hcat, -⟩ := s.ok.2 l r hr
+  rw [hv] at hu
+  cases hu
+  cases r with
+  | field | cell | elem => exact sourceVal_isVal hcat
+  | identity => subst hcat; rfl
+  | spine f =>
+    cases f with
+    | array => obtain ⟨ls, rfl⟩ := hcat; rfl
+    | view => obtain ⟨cs, rfl, -⟩ := hcat; rfl
+
+/-- **`OutsideStep.noForge` of a step of the calculus** at the component
+`C`: after a step whose active frame runs no code of `C`, the roots of
+outside code reach only what they reached before or what the step
+allocated. -/
+theorem outsideStep_noForge {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C) (hc : ¬ F.Runs c C)
+    (hroots : st.roots = vals (F.ofC C) true t) (hroots' : st'.roots = vals (F.ofC C) true t') :
+    ∀ l, ReachesFrom (F.at C).ofC st'.s.h st'.roots l →
+      ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
+  have hoc : (!F.ofC C c) = true := by simp [Family.ofC, hc]
+  have := step_noForge (ofC := F.ofC C) (fun _ _ hv => heap_isVal hv) hs c (by simp [Family.ofC, hact])
+  rw [hoc] at this
+  rw [hroots, hroots']
+  exact this
+
+/-! ## A capture is reached through its closure's code -/
+
+/-- The closure of the example: it captures an object whose slot `k` is
+location `1`. -/
+def captureClosure : Val :=
+  .objAt [] (.graph 0 [] [] 0 [.objAt [("k", 1)] .absent 1] .call false none) 0
+
+/-- **A read of a capturing closure forges nothing**: code outside every
+component reads a closure from a field; its capture, a root afterwards,
+reaches location `1`, which the roots reached before the read through the
+field, the closure's code and the capture's slot. -/
+theorem capture_reached :
+    let h : Heap := [captureClosure, .nul]
+    let t : Tm := .readAt "f" (.objAt [("f", 0)] .absent 0)
+    Step h t h captureClosure ∧ ReachesFrom (fun _ => false) h (vals (fun _ => false) true captureClosure) 1 ∧
+      ReachesFrom (fun _ => false) h (vals (fun _ => false) true t) 1 := by
+  intro h t
+  refine ⟨Step.readField (l := 0) rfl rfl, ⟨.objAt [("k", 1)] .absent 1, by simp [vals, captureClosure],
+    [.key "k"], rfl⟩, ⟨.objAt [("f", 0)] .absent 0, by simp [t, vals], [.key "f", .code 0, .key "k"], ?_⟩⟩
+  exact ⟨captureClosure, .inl ⟨0, rfl, rfl⟩, .objAt [("k", 1)] .absent 1,
+    .inr ⟨0, rfl, by simp [codeVals, captureClosure, vals]⟩, rfl⟩
 
 end Verification.TolerantFrames.ReadOnly

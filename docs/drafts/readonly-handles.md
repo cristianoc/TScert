@@ -1405,11 +1405,10 @@ most its mark for a nested one (`MarksConsistent`, in the order
 $`\mathsf{local}\sqsubseteq\mathsf{internal}\sqsubseteq\mathsf{exposed}\sqsubseteq\mathsf{released}`$,
 checked by the pass), nested local storage is in $`R_C`$
 (`Family.nested_local_inR`) and nested exposed storage is not released
-for $`C`$ (`Family.nested_exposed`). Statements marked *(to connect)* take
-outside steps as hypotheses; of an outside step's three step properties,
-the calculus's steps meet two at the roots of outside code (*The active
-frame and the roots of outside code*, below), and the third is a
-hypothesis.
+for $`C`$ (`Family.nested_exposed`). Statements about runs take outside steps as
+hypotheses; the calculus's steps meet an outside step's three step
+properties at the roots of outside code (*The active frame and the roots
+of outside code*, below).
 The combination of two components' rules for a fact that relies on both is
 not stated. A state is
 $`s=(\rho,h,W,k,\mathit{site},\mathit{key},E,A,B,\mathit{roots})`$: Paper
@@ -1510,7 +1509,7 @@ map for which every member has one. $`G_C`$ is a set of invariants $`I`$
 with: every write of a member to a location of $`\mathrm{supp}(I)`$ of a
 complete handle, and every exit of a member, keeps $`I`$.
 
-**Runs of code that is not $`C`$'s** (`RunAt`, `Run`) *(to connect: `OutsideStep.noForge`)*. Inside a call
+**Runs of code that is not $`C`$'s** (`RunAt`, `Run`). Inside a call
 of $`C`$ at depth $`d`$, such a run is a sequence of outside steps
 and member calls, each member call's own runs of code that is not $`C`$'s one call deeper, within a budget of nesting. An outside step
 (`OutsideStep`) keeps the marks and the history, allocates outside storage
@@ -1564,7 +1563,7 @@ active, a uniform history, and
   local or exposed location then passes a location of $`E`$, from which on
   every position is read-only.
 
-**The lemmas** *(to connect: `OutsideStep.noForge`)*. Each quantifies over states meeting the invariants and
+**The lemmas**. Each quantifies over states meeting the invariants and
 over outside steps meeting their hypotheses.
 
 - (L1) Outside step (proved, `outside_step`). For a step $`s\to s'`$ of
@@ -1681,8 +1680,23 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   every value it leaves in a location it changes or allocates, and from
   which a path step leaves, is one of these roots (proved, `step_writes`),
   which gives `OutsideStep.writes` (`outsideStep_writes`).
-- `OutsideStep.noForge` is a hypothesis. (M)'s clause on a closure's
-  bindings is not stated.
+- After such a step the roots reach only locations the roots reached
+  before or the step allocated (proved, `step_noForge`, at a heap holding
+  values), which is `OutsideStep.noForge` with the roots before and after
+  as the states' (`outsideStep_noForge`). A path after the step runs
+  through good values: one whose location steps, and those of the values
+  its code holds, reach locations the roots reached or fresh ones (`GV`).
+  The roots after the step are good (`step_cover`): each is a root before
+  the step; the contents of a location a root reaches (a read, a spread's
+  elements, a copy's values, `mergeParts_cover`, `readElems_cover`); a
+  value a root's code holds (a call's run, a bound function's call); a
+  substitution or an instantiation of good terms by good values
+  (`subst_cover`, `instantiate_cover`); or an allocation, whose slots and
+  cells are fresh. The new contents of a location a good path passes are
+  the step's roots (`step_writes`) or its old contents. A capture of a
+  closure read from a field is reached before the read through the
+  closure's code (`capture_reached`).
+- (M)'s clause on a closure's bindings is not stated.
 - The active frame before a step classifies it. The entry of a member's
   call, a call of a closure of $`C`$ from a frame of outside code, has an
   outside active frame; it changes and stores nothing, so `step_reach` and
@@ -1697,10 +1711,10 @@ integrity state (frozen, sealed, non-extensible), and its field write
 unsupported in Lean, and nothing is built on it.
 
 **What Lean assumes.** The client obligation (`OutsideStep.row`); three
-properties of the language's steps, of which the calculus's steps meet two
-at the roots of outside code (`OutsideStep.reach`, `outsideStep_reach`;
-`OutsideStep.writes`, `outsideStep_writes`) and the third is
-`OutsideStep.noForge`; the validity of the frames' values, identities
+properties of the language's steps, which the calculus's steps meet at the
+roots of outside code (`OutsideStep.reach`, `outsideStep_reach`;
+`OutsideStep.writes`, `outsideStep_writes`; `OutsideStep.noForge`,
+`outsideStep_noForge`), a state's roots being those of its term; the validity of the frames' values, identities
 aside (`RootsValid`, which the roots of a valid term meet,
 `rootsValid_of_term`); for each member, the soundness of
 its certified effect on $`R_C`$ (`memberOfChecks`'s `certified`, what the
