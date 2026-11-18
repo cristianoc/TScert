@@ -1749,14 +1749,21 @@ cover, located at the write.
 - *Storage no crossing reached.* (O) admits a store into released storage
   whose receiver is fresh at the store in a scope of quiet codes
   (`unreached`): no crossing into $`C`$ can have reached it since its
-  allocation, so no history protects it. A code runs outside code where it
-  calls a callee that may enter from outside, a native given a value from
-  outside at a position it may call (a standard library method at each
-  argument its declaration does not type by a type parameter or a
-  primitive, and at each spread one; any other native at every position),
-  or a code that does. A code is quiet where each of its calls runs no
-  outside code, or runs a code that does so only by calling its own
-  unassigned parameters, given there codes that run none.
+  allocation, so no history protects it. A call runs outside code itself
+  where its callee may enter from outside, or it is a native given a value
+  from outside; a call TypeScript resolves to a standard library method a
+  reviewed overlay entry states is that native method whatever its
+  receiver's value (standard objects not being tampered with), and runs
+  outside code only where it may call an argument from outside: one the
+  reviewed declaration types a function, or on which the entry states the
+  host runs code, or one spread; a parameter of another type, `any` among
+  them, is not called, no object being a proxy. A code runs outside code
+  only through its parameters where each of its calls either calls a
+  parameter, or runs no outside code itself and runs only codes that run
+  none or run outside code only through parameters at which it passes a
+  value from no outside code that is codes running none, or its own
+  parameter (a joint least fixed point, `paramBounded`). A code is quiet
+  where each of its calls is so bounded.
 - *Local storage.* (O) constrains a store into local storage only where
   the possible support of a guarantee candidate may read the part it
   writes: by (K) no outside code reaches local storage, a fact reading

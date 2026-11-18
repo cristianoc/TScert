@@ -658,12 +658,28 @@ control("read-only frame (O): local storage, confined closures and the module's 
   const map = familyCase("readonly-frame-own-map-get");
   assert.deepEqual(moduleRefusals(pass(fragmentOf(map.artifacts))), [], "the push after the map's get");
   const get = must(map.ast.components.calls.find((c) => c.at[0] === map.at("cache.get(h)")), "the map's get");
-  const native = must(get.native, "get is a native");
-  assert.deepEqual(native.calls, [false], "get calls no argument");
-  native.calls = [true];
+  assert.deepEqual(get.library, [false], "get calls no argument");
+  get.library = [true];
   certificateRefused(pass(forged(map.artifacts, "forged-map-get-calls", map.ast)), "get read as calling its key",
     new RegExp(`^\\(O\\) \\S+ ${map.at("out.push({ at: known ?? i })")}-\\d+: a store into storage that may be protected installs`));
   say("read-only frame (O): a local store an invariant reads refused, one it does not admitted; a confined closure's push admitted, held refused; a push after the own map's get admitted, the get read as calling refused");
+});
+
+control("read-only frame (O): library calls on values from outside", async (): Promise<void> => {
+  // `Map.prototype.get` on a map read from a caller's handle, and
+  // `Object.isFrozen` of a caller's record, call no argument: the push after them
+  // is admitted. `Array.prototype.map` calls its callback, here one from
+  // outside: the push after it is refused.
+  const lib = familyCase("readonly-frame-library-calls");
+  const refusals = moduleRefusals(pass(fragmentOf(lib.artifacts)));
+  assert.ok(!refusals.some((r) => r.includes(` ${lib.at("out.push({ at: k ?? 0 })")}-`)), JSON.stringify(refusals));
+  assert.ok(refusals.some((r) => new RegExp(`^\\(O\\) \\S+ ${lib.at("res.push({ at: ys.length })")}-\\d+: a store into storage that may be protected installs`).test(r)),
+    JSON.stringify(refusals));
+  const frozen = must(lib.ast.components.calls.find((c) => c.at[0] === lib.at("Object.isFrozen(o)")), "isFrozen");
+  assert.deepEqual(frozen.library, [false], "isFrozen calls no argument");
+  const mapped = must(lib.ast.components.calls.find((c) => c.at[0] === lib.at("xs.map((x) => f(x))")), "map");
+  assert.deepEqual(mapped.library?.[0], true, "map calls its callback");
+  say("read-only frame (O): a push after a handle's map's get and isFrozen admitted; after map of an outside callback refused");
 });
 
 control("forged fragment: a protocol omitting a member's write", async (): Promise<void> => {

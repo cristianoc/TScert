@@ -41,7 +41,9 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { listDirectory, orAbsent, present, readText, realPath } from "./files.mts";
 import { clientsTags, representationTags } from "./bound-annotations.mts";
 import type { CallEffect, Change, Frame, Region, Selector } from "./declaration-types.mts";
-import { overlay } from "./array-prototype.mts";
+import { interfaceOverlay, overlay } from "./array-prototype.mts";
+import { globalsOverlay } from "./library-globals.mts";
+import { viewDefinitions } from "./library-types.mts";
 import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, ProtocolEntryAst, SiteAst, SourceAst, StoreAst, ValueAst,
   SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
@@ -56,17 +58,77 @@ export type FamilyProgram = {
   primitive: (nodes: readonly Node[]) => boolean[];
   /** The method of an interface of the standard library each name of a
    * member access resolves to, with whether the interface is `Array` or
-   * `ReadonlyArray`, or null. */
-  libraryMembers: (nodes: readonly Node[]) => ({ name: string; array: boolean; calls: LibraryCalls } | null)[];
+   * `ReadonlyArray` and the interface's name, or null. */
+  libraryMembers: (nodes: readonly Node[]) => ({ name: string; array: boolean; owner: string } | null)[];
   /** Whether each node's type is an array or a tuple of primitives. */
   primitiveElements: (nodes: readonly Node[]) => boolean[];
 };
 
-/** **Which arguments a standard library method may call**, read off its
- * declaration: each parameter's (`params`), the last applying to every
- * further argument where it is a rest parameter (`rest`). A parameter the
- * declaration types by a type parameter or a primitive is not called. */
+/** **Which arguments a standard library method may call**, by its reviewed
+ * overlay entry: each parameter's (`params`), the last applying to every
+ * further argument where it is a rest parameter (`rest`). */
 export type LibraryCalls = { params: readonly boolean[]; rest: boolean };
+
+/** **The calls a reviewed overlay entry states** of the method `name` of the
+ * standard library's interface `owner`: a prototype member of the arrays'
+ * overlay, a collection's (`interfaceOverlay`), a typed array's reviewed
+ * member (`viewDefinitions`), or a member of a global's constructor
+ * interface (`globalsOverlay`). A parameter is called where the
+ * reviewed declaration types it a function (its type states `=>`) or the
+ * entry states that the host runs code on it (`admit`); a parameter of
+ * another type, `any` among them, is not, no object being a proxy (DESIGN.md,
+ * "Trust surface"). Null where no entry is reviewed. */
+export function overlayCalls(owner: string, name: string): LibraryCalls | null {
+  const fromSignature = (signature: string, admitted: string | null): LibraryCalls | null => {
+    const open = signature.indexOf("(");
+    if (open < 0) return null;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < signature.length; i++) {
+      const ch = signature[i];
+      if (ch === "(" || ch === "<" || ch === "[" || ch === "{") depth++;
+      else if (ch === ")" || ch === ">" || ch === "]" || ch === "}") {
+        if (ch === ">" && signature[i - 1] === "=") continue;
+        depth--;
+        if (depth === 0) { close = i; break; }
+      }
+    }
+    if (close < 0) return null;
+    const params: string[] = [];
+    let cur = "";
+    depth = 0;
+    for (const ch of signature.slice(open + 1, close)) {
+      if (ch === "," && depth === 0) { params.push(cur); cur = ""; continue; }
+      if (ch === "(" || ch === "<" || ch === "[" || ch === "{") depth++;
+      else if ((ch === ")" || ch === ">" || ch === "]" || ch === "}") && !cur.endsWith("=")) depth--;
+      cur += ch;
+    }
+    if (cur.trim() !== "") params.push(cur);
+    const called = params.map((p) => p.includes("=>") || (admitted !== null && p.trim().replace(/^\.\.\./, "").startsWith(`${admitted}`)));
+    return { params: called, rest: params.length > 0 && (params[params.length - 1] ?? "").trim().startsWith("...") };
+  };
+  if (owner === "Array" || owner === "ReadonlyArray") {
+    const e = overlay.find((x) => x.name === name);
+    return e === undefined ? null : fromSignature(e.signature, null);
+  }
+  const collection = interfaceOverlay.get(owner)?.find((x) => x.name === name);
+  if (collection !== undefined) return fromSignature(collection.signature, null);
+  // A typed array's reviewed members (`library-types.mts`): a parameter of
+  // function type is called.
+  const view = viewDefinitions.find((d) => d.declaration.name === owner);
+  if (view !== undefined) {
+    const e = view.expression;
+    const member = e !== null && e.k === "object" ? e.fields.find((x) => x.name === name) : undefined;
+    const t = member?.type;
+    return t !== undefined && t.k === "function"
+      ? { params: t.params.map((q) => q.k === "function"), rest: t.rest !== null } : null;
+  }
+  if (owner.endsWith("Constructor")) {
+    const g = globalsOverlay.find((x) => x.global === owner.slice(0, -"Constructor".length) && x.member === name);
+    if (g !== undefined) return fromSignature(g.signature, g.admit?.parameter ?? null);
+  }
+  return null;
+}
 
 /** What the analysis is given: the checked file's path in its project (where
  * its package is found) and its tree; the checked file alone as a program,
@@ -450,6 +512,14 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   // hold what its sources hold, a primitive source holding none.
   const primitiveNodes = new Set<Node>();
   const libraryCallsOf = new Map<Node, LibraryCalls>();
+  /** Of a call of a reviewed standard library method, whether it may call
+   * each argument (`overlayCalls`), a spread one always, which it iterates. */
+  const libraryCallsAt = (n: Node, args: readonly Node[]): boolean[] | null => {
+    const c = libraryCallsOf.get(n);
+    if (c === undefined) return null;
+    return args.map((a, i) => ts.isSpreadElement(a) ||
+      (c.params[i] ?? (c.rest && c.params.length > 0 ? c.params[c.params.length - 1] ?? true : true)));
+  };
   const arrayMemberCalls = new Map<Node, string>();
   /** The calls of a method of another interface of the standard library. */
   const libraryMemberCalls = new Map<Node, string>();
@@ -489,7 +559,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       const n = calls[i];
       if (m && n) {
         (m.array ? arrayMemberCalls : libraryMemberCalls).set(n, m.name);
-        libraryCallsOf.set(n, m.calls);
+        const calls = overlayCalls(m.owner, m.name);
+        if (calls !== null) libraryCallsOf.set(n, calls);
       }
     });
     fresh.forEach((n, i) => { if (primitive[i]) primitiveElementCalls.add(n); });
@@ -1314,7 +1385,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       receiver: ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee) ? exprRef(callee.expression, f) : null,
       args: args.map((a, i) => ({ value: argRef(a), spread: ts.isSpreadElement(a), at: span(f, a),
         type: shapeOf(calleeParameterTypes(n.expression)[i], f) })), result: refNode(n), targets: [],
-      instance: null, native: null } : null;
+      instance: null, native: null, library: libraryCallsAt(n, args) } : null;
     const target = (c: Code | null): void => {
       const i = c === null ? -1 : codes.indexOf(c);
       if (event && i >= 0 && !event.targets.includes(i)) event.targets.push(i);
@@ -1411,11 +1482,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       }
       if (event) event.native = { site: result, passed: passedRef, given: givenRef, all: synthetic(n, f, allFrom), member: libraryMember,
         name: arrayMemberCalls.get(n) ?? otherMember ?? null, array: arrayMemberCalls.has(n),
-        fresh, primitiveElements, calls: args.map((a, i) => {
-          const c = libraryCallsOf.get(n);
-          if (!libraryMember || c === undefined || ts.isSpreadElement(a)) return true;
-          return c.params[i] ?? (c.rest && c.params.length > 0 ? c.params[c.params.length - 1] ?? true : true);
-        }) };
+        fresh, primitiveElements };
     }
     if (event) events.calls.push(event);
   };
