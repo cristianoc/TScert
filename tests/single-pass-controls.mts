@@ -706,9 +706,13 @@ control("forged fragment: a frame's false protection bit, omitted part, and one 
   // frame omitting that part is refused at the call.
   const walker = familyCase("readonly-frame-walker");
   const call = walker.at("visit();");
+  // The handle's field `widths` is a region of its own, at its field path.
+  const walked = moduleFrames(pass(fragmentOf(walker.artifacts)));
+  assert.ok(walked.some((f) => new RegExp(`^at \\S+ ${call}-\\d+: the spines of the value at \\S+ \\d+-\\d+, at widths: in the region, within keep$`).test(f)), JSON.stringify(walked));
   for (const e of frameAt(walker.ast, call).entries) e.parts = e.parts.filter((t) => t !== null);
   const omitted = moduleFrames(pass(forged(walker.artifacts, "forged-frame-part", walker.ast)));
   assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: the frame omits the possible part the fields of storage of code outside the component`).test(f)), JSON.stringify(omitted));
+  assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: .*the frame omits the possible part [^;]* of the spines of the value at \\S+ \\d+-\\d+, at widths`).test(f)), JSON.stringify(omitted));
   // Two members: one's frame forged, refused at its call; the other's held.
   const two = familyCase("readonly-frame-two-walkers");
   const inWalk = two.at("visit();\n    sum");
@@ -718,7 +722,7 @@ control("forged fragment: a frame's false protection bit, omitted part, and one 
   assert.ok(mixed.some((f) => new RegExp(`^refused at \\S+ ${inFirst}-\\d+: `).test(f)), JSON.stringify(mixed));
   assert.ok(!mixed.some((f) => new RegExp(`^refused at \\S+ ${inWalk}-`).test(f)), JSON.stringify(mixed));
   assert.ok(mixed.some((f) => new RegExp(`^at \\S+ ${inWalk}-\\d+: the fields of the value .*: in the region, within keep$`).test(f)), JSON.stringify(mixed));
-  say("forged frames: an array passed in writable read as protected, refused at its visit; a read-only handle's outside part omitted, refused at its visit; one member's frame forged, refused at its call, the other member's held");
+  say("forged frames: an array passed in writable read as protected, refused at its visit; a read-only handle's outside part omitted, at the handle and at its field path, refused at its visit; one member's frame forged, refused at its call, the other member's held");
 });
 
 control("forged fragment: a protocol omitting a member's write", async (): Promise<void> => {

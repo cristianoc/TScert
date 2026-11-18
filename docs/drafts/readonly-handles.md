@@ -2028,6 +2028,10 @@ proved, before it is certified:
    (proved of the paper's executions, `Ex.inv`; it reaches the pass with
    item 2).
 
+A frame's region is read in the storage of a root: the value at a field
+path from a value (`h.widths`, the value itself at the empty path), read
+once for each field through its sites' contents, or a site's
+(`ComponentWire.FrameRoot`, `Ctx.rootTokens`).
 The frames at calls (`ComponentChecks.Ctx.frames`) are checked and printed
 beside the verdicts; with these five proved, a plan reading them takes a
 form of its own on both sides of `FunctionPlan.certify`.

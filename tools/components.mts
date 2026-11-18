@@ -1882,9 +1882,9 @@ export function proposeProtocols(F: ComponentsAst): ComponentsAst["protocols"] {
  * (Read-only frames, Proposition "Read-only reliance", its premise location
  * by location), as `ComponentChecks.Ctx.frames` checks it: at each call that
  * may run code outside a component it lies in, for each parameter of the
- * innermost code holding the call and each site that code allocates, the
- * regions of its storage (a record's fields at every key, an array's spine
- * and cells), with the parts their locations may have for each such
+ * innermost code holding the call, each field of its records (`h.widths`),
+ * and each site that code allocates, the regions of its storage (a record's
+ * fields at every key, an array's spine and cells), with the parts their locations may have for each such
  * component (`Ctx.frameParts`) and whether they are protected for every one
  * (`Ctx.frameProtected`). */
 export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
@@ -1907,16 +1907,40 @@ export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
     return best;
   };
   type Tokens = { sites: readonly number[]; incoming: readonly number[]; ro: readonly number[] };
+  const contentsOf = (t: number): Tokens => {
+    const x = F.values[F.sites[t]?.contents ?? -1];
+    return x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] };
+  };
+  // What storage of `T` holds (`ComponentChecks.Ctx.readTokens`).
+  const readOf = (T: Tokens): Tokens => ({
+    sites: T.sites.flatMap((t) => contentsOf(t).sites),
+    incoming: [...T.incoming, ...T.sites.flatMap((t) => contentsOf(t).incoming)],
+    ro: [...T.ro, ...T.sites.flatMap((t) => contentsOf(t).ro)],
+  });
   const tokensOf = (root: FrameEntryAst["root"]): Tokens => {
     if ("site" in root) return { sites: [root.site], incoming: [], ro: [] };
     const x = F.values[root.value];
-    return x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] };
+    const start: Tokens = x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] };
+    return root.fields.reduce((T) => readOf(T), start);
+  };
+  // The sites a value may be for `C`: its own, and every exposed and
+  // released site of `C` where it may enter from outside (`partsFor`).
+  const lentOf = (C: number): number[] =>
+    F.sites.flatMap((_, t) => { const m = markOf(t, C); return m === "exposed" || m === "released" ? [t] : []; });
+  // The fields of the records a value may be for the components `comps`.
+  const fieldsOf = (v: number, comps: number[]): string[] => {
+    const x = F.values[v];
+    if (!x) return [];
+    const sites = [...x.sites, ...comps.flatMap((C) => x.incoming.includes(C) || x.incomingReadOnly.includes(C) ? lentOf(C) : [])];
+    return [...new Set(sites.flatMap((t) => {
+      const s = F.sites[t];
+      return s && (s.kind === "object" || s.kind === "instance") ? s.keys : [];
+    }))];
   };
   const partsFor = (C: number, T: Tokens): (number | null)[] => {
     const own = T.sites.map((t) => markOf(t, C) !== null ? t : null);
     if (!(T.incoming.includes(C) || T.ro.includes(C))) return own;
-    const lent = F.sites.flatMap((_, t) => { const m = markOf(t, C); return m === "exposed" || m === "released" ? [t] : []; });
-    return [...own, ...lent, null];
+    return [...own, ...lentOf(C), null];
   };
   const protectedFor = (C: number, T: Tokens): boolean => !T.incoming.includes(C) &&
     T.sites.every((t) => { const m = markOf(t, C); return m === "local" || m === "internal" || m === "exposed"; });
@@ -1934,7 +1958,8 @@ export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
     const array: FrameEntryAst["kind"][] = ["spine", "cell"];
     const record: FrameEntryAst["kind"][] = ["field"];
     const roots: { root: FrameEntryAst["root"]; kinds: FrameEntryAst["kind"][] }[] = [
-      ...code.params.map((p) => ({ root: { value: p.value }, kinds: every })),
+      ...code.params.flatMap((p) => [{ root: { value: p.value, fields: [] }, kinds: every },
+        ...(p.type === "function" || p.type === "primitive" ? [] : fieldsOf(p.value, comps)).map((f) => ({ root: { value: p.value, fields: [f] }, kinds: every }))]),
       ...F.sites.flatMap((s, t) => s.module === code.module && innermost(s.module, s.pos) === k &&
         (s.kind === "object" || s.kind === "array" || s.kind === "instance")
         ? [{ root: { site: t }, kinds: s.kind === "array" ? array : record }] : []),

@@ -128,13 +128,15 @@ def contents (t : Nat) : Tokens := match cx.F.sites[t]? with
   | some s => cx.value s.contents
   | none => .empty
 
-/-- What a value's storage holds: its sites' contents, and of a value
-entering from outside, a value entering from outside, read-only where it is
-reached read-only. -/
-def read (v : Nat) : Tokens :=
-  let x := cx.value v
-  ⟨x.sites.flatMap (cx.contents · |>.sites), x.incoming ++ x.sites.flatMap (cx.contents · |>.incoming),
-    x.ro ++ x.sites.flatMap (cx.contents · |>.ro)⟩
+/-- **What storage of the tokens `T` holds**: its sites' contents, and of a
+value entering from outside, a value entering from outside, read-only where
+it is reached read-only. -/
+def readTokens (T : Tokens) : Tokens :=
+  ⟨T.sites.flatMap (cx.contents · |>.sites), T.incoming ++ T.sites.flatMap (cx.contents · |>.incoming),
+    T.ro ++ T.sites.flatMap (cx.contents · |>.ro)⟩
+
+/-- What a value's storage holds (`readTokens`). -/
+def read (v : Nat) : Tokens := cx.readTokens (cx.value v)
 
 def eval : Source → Tokens
   | .site s => .ofSites [s]
@@ -1116,9 +1118,11 @@ def suspensionDiags (cx : Ctx) (file : String) (fns : List (String × Span × Bo
 
 /-! ## The frame at a call of outside code -/
 
-/-- The storage a frame's root may be. -/
+/-- The storage a frame's root may be: the value's, read once for each field
+of the path (`readTokens`: a site's contents, which the flow states at
+every key alike). -/
 def Ctx.rootTokens (cx : Ctx) : FrameRoot → Tokens
-  | .value v => cx.value v
+  | .path v fields => fields.foldl (fun T _ => cx.readTokens T) (cx.value v)
   | .site t => .ofSites [t]
 
 /-- **The parts a region of the storage `T` may have for `C`**, by site:
@@ -1174,9 +1178,11 @@ def Ctx.boundAt (cx : Ctx) (C : Nat) (site : Option Nat) (kind : PartKind) (key 
     cx.clientChange
 
 def Ctx.rootName (cx : Ctx) : FrameRoot → String
-  | .value v => match cx.F.values[v]? with
-    | some x => s!"the value at {x.module} {x.pos.1}-{x.pos.2}"
-    | none => s!"value {v}"
+  | .path v fields =>
+    let at_ := String.join (fields.map (s!".{·}"))
+    match cx.F.values[v]? with
+    | some x => s!"the value at {x.module} {x.pos.1}-{x.pos.2}{if fields.isEmpty then "" else s!", at {at_.drop 1}"}"
+    | none => s!"value {v}{at_}"
   | .site t => s!"the site {cx.siteName t}"
 
 /-- **A frame's failures for `C`**: an entry omitting a part its region may
