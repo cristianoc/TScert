@@ -179,4 +179,74 @@ theorem admitted_of_check (w : WireSites P cx C) {st : St P} {L : Nat → Prop} 
     | internal | released => exact absurd (by simp [hm]) hn
   · exact .inr (.inr (.inr hp))
 
+/-! ## (O) at the guarantee's support
+
+The guarantee route reads an invariant whose support, read at each state,
+lies in `R_C` (`InvIn`). A member's store can redirect a path of the
+support: a store into a local record whose field the support reads, as a
+re-entrant member may make between a callback's entry and its return. So
+(O) checks every store into storage that may be protected, local storage
+the possible support of a guarantee candidate may read among it
+(`ComponentChecks.protectedInto`, `Ctx.supported`), and the support is kept
+in `R_C` at every step of `C`'s code (`invIn_of_installs`), so at every
+state at which outside code resumes. -/
+
+/-- **A store into a local site the support may read is checked by (O)**
+(proved): a receiver holding a local site of `C` at which the support of a
+guarantee candidate reads a part the store writes is storage that may be
+protected. -/
+theorem protectedInto_local {r : ComponentChecks.Tokens} {initial unreached : Bool} {supported : Nat → Bool}
+    {t : Nat} (ht : t ∈ r.sites) (hm : cx.mark t C = some .local) (hs : supported t = true) :
+    ComponentChecks.protectedInto cx C r initial unreached supported = true := by
+  unfold ComponentChecks.protectedInto
+  refine Bool.or_eq_true_iff.mpr (.inr (List.any_eq_true.mpr ⟨t, ht, ?_⟩))
+  rw [hm]; exact hs
+
+/-- **A store into an exposed site is checked by (O)** (proved). -/
+theorem protectedInto_exposed {r : ComponentChecks.Tokens} {initial unreached : Bool} {supported : Nat → Bool}
+    {t : Nat} (ht : t ∈ r.sites) (hm : cx.mark t C = some .exposed) :
+    ComponentChecks.protectedInto cx C r initial unreached supported = true := by
+  unfold ComponentChecks.protectedInto
+  refine Bool.or_eq_true_iff.mpr (.inr (List.any_eq_true.mpr ⟨t, ht, ?_⟩))
+  rw [hm]
+
+/-- **Each store the support may read passes (O)** (proved): where (O)
+passes at every store it classifies as into storage that may be protected
+(`hO`, what `ComponentChecks.ownershipDiags` reports no failure of), each
+store whose receiver holds a local site the support reads, or an exposed
+site, has its stored value's reachable storage of local and exposed sites
+alone. -/
+theorem installs_checked {ws : List ComponentChecks.Write} {un : ComponentChecks.Write → Bool}
+    (hO : ∀ wr ∈ ws, ComponentChecks.protectedInto cx C (cx.value wr.receiver) wr.initial (un wr)
+      (cx.supported C wr) = true →
+      ComponentChecks.installBad cx C ((wr.stored.map cx.value).getD .empty) = [])
+    (hsup : ∀ wr ∈ ws, ∃ t ∈ (cx.value wr.receiver).sites,
+      (cx.mark t C = some .local ∧ cx.supported C wr t = true) ∨ cx.mark t C = some .exposed) :
+    ∀ wr ∈ ws, ComponentChecks.installBad cx C ((wr.stored.map cx.value).getD .empty) = [] := by
+  intro wr hw
+  obtain ⟨t, ht, hloc | hexp⟩ := hsup wr hw
+  · exact hO wr hw (protectedInto_local ht hloc.1 hloc.2)
+  · exact hO wr hw (protectedInto_exposed ht hexp)
+
+/-- **A checked step keeps the guarantee's support in `R_C`** (proved, by
+`admitted_of_check` and `InvIn.of_step`): a step of `C`'s code keeping the
+marks and growing the history, after which the invariant holds, keeps its
+support in `R_C` where each location the support reads after the step was
+read before, is in `R_C` after it, or is reached through the value of one
+of the step's stores whose (O) check passes (`ins`, the stored values'
+tokens, `installs_checked`), the flow interpreting it: of a site of the
+value's reachable storage, or released or outside storage the history
+protects. -/
+theorem invIn_of_installs (w : WireSites P cx C) {I : St P → Prop} {supp : St P → Nat → Prop} {d : Nat}
+    {t t' : St P} (hi : InvIn I supp t) (hk : Kept t t') (hg : Grows d t.g t'.g) (hI : I t')
+    {ins : List ComponentChecks.Tokens} (hbad : ∀ s ∈ ins, ComponentChecks.installBad cx C s = [])
+    (hnew : ∀ l, supp t' l → l < t'.s.h.length ∧ (supp t l ∨ t'.g.InR l ∨ (l < t.s.h.length ∧ ∃ s ∈ ins,
+      (∃ σ, t.g.site l = some σ ∧ w.ι σ ∈ (cx.closure s).sites) ∨ (t.g.Lent l ∧ t.g.Prot l)))) :
+    InvIn I supp t' := by
+  refine InvIn.of_step hi hk hg hI fun l hl => ⟨(hnew l hl).1, ?_⟩
+  rcases (hnew l hl).2 with hs | hr | ⟨hlt, s, hs, hf⟩
+  · exact .inl hs
+  · exact .inr (.inl hr)
+  · exact .inr (.inr ⟨admitted_of_check w (hbad s hs) fun l' hl' => hl' ▸ hf, hlt⟩)
+
 end Verification.TolerantFrames.ReadOnly

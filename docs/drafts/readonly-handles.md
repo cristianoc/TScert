@@ -1786,7 +1786,14 @@ cover, located at the write.
   writes: by (K) no outside code reaches local storage, a fact reading
   through a local field to unprotected storage is bounded by the callback's
   effect there, and a re-entrant member could redirect a path of an
-  invariant's support.
+  invariant's support. Such a store, and a store into an exposed site, is
+  one (O) checks (proved, `protectedInto_local`, `protectedInto_exposed`,
+  `installs_checked`); a step of $`C`$'s code whose new support locations
+  are read through the values of its stores that pass (O) keeps the support
+  in $`R_C`$ (proved, `invIn_of_installs`, by `admitted_of_check` and
+  `InvIn.of_step`; the step's interpretation by its stores is a
+  hypothesis), so the support lies in $`R_C`$ at every state at which
+  outside code resumes.
 
 **The active frame and the roots of outside code** (in
 [ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)
