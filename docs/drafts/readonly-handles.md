@@ -2108,6 +2108,21 @@ checks' interpretation of each step of $`C`$'s code (item 3 above), and
 `start` the histories of the executions that reach a call from a start
 holding no storage of $`C`$ (`Inv.of_lent`, `Ex.inv`).
 
+**A limit of the claim as stated** (a counter-model). Its entries include
+a callback whose code is tagged with $`C`$ (`.graph … (some C)`), which
+meets its arrow whatever its tag (a tag changes no step, `SameRun`). Each
+of its steps runs $`C`$'s code by its tag, so `Keeps` constrains none of
+them: a visitor so tagged that empties the walker's array through its own
+writable alias keeps the obligation at every step and breaks the walker's
+assertion `i < w.length` after the call. Assumption "Clients" excludes it
+(outside code enters $`C`$ only through its interface); the claim reads
+that clause at none of its entries. Read there (every code tagged with
+$`C`$ in the entry's environment and heap, and in what outside code
+creates, is $`C`$'s own lowered code), it leaves the call discipline: the
+paper's executions are of well-formed terms on heaps free of runs
+(`XStep.of_wf`: `wf`, `HeapFree`; `twoCalls_step` enters two calls in one
+step), which `EntryHolds` does not give.
+
 ## Stages and cost
 
 1. **The rule in the note and in Lean**: the marks, $`E_C`$, the history
