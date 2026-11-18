@@ -1408,7 +1408,8 @@ checked by the pass), nested local storage is in $`R_C`$
 for $`C`$ (`Family.nested_exposed`). Statements about runs take outside steps as
 hypotheses; the calculus's steps meet an outside step's three step
 properties at the roots of outside code (*The active frame and the roots
-of outside code*, below).
+of outside code*, below), and an actual execution inside a call of
+$`C`$ is a run (*Actual executions*, below).
 The combination of two components' rules for a fact that relies on both is
 not stated. A state is
 $`s=(\rho,h,W,k,\mathit{site},\mathit{key},E,A,B,\mathit{roots})`$: Paper
@@ -1711,26 +1712,94 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   return from $`C`$'s code into outside code has an active frame of
   $`C`$ and ends the member's call.
 
+**Actual executions** (in
+[ReadOnlyExec.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyExec.lean)).
+
+- A configuration (`Conf`) is an indexed heap and a term valid at its
+  world; an actual step (`AStep`) is a step of `Step` between their heaps
+  whose world transition is admissible, as a safe execution's step is
+  (`SafePostW`). The state of a configuration with a ghost (`lift`) has
+  the term's roots, `vals` at the term with the top segment's code `c`
+  (`rootsOf`), so a state's roots are its term's by definition.
+- An actual step whose active frame runs no code of $`C`$ is an outside
+  step (proved, `outsideStep_of_step`), its ghost the one its allocation
+  extends (`Ghost.alloc`: every old location keeps its site and key, a new
+  one is outside storage). It keeps the marks by that construction and the
+  step's world transition, and keeps $`E`$, $`A`$ and $`B`$; `reach`,
+  `writes` and `noForge` are `outsideStep_reach`, `outsideStep_writes` and
+  `outsideStep_noForge`, and `valid` is `rootsValid_of_term`. The client
+  obligation `Row` is its one hypothesis.
+- The calls of $`C`$ active at a term (`depthC`) are the blocks of frames
+  running $`C`$'s code on its path, the top segment's among them. A
+  step's kind (`kind`) is read from its active frame and that number: a
+  step of outside code keeping it, an entry raising it, a step of $`C`$'s
+  code keeping it, an exit lowering it. The call discipline (`Disc`,
+  hypothesis): a step of outside code keeps the number or raises it by
+  one, a step of $`C`$'s code keeps it or lowers it by one.
+- The ghost after a step (`Ghost.next`) is built from its kind and from
+  what the checks give at a step of $`C`$'s code (`CheckData`: the sites
+  and keys of what it allocates, and its crossings in order). An entry
+  pushes the protected set, then its incoming values cross; a step inside
+  a call lets its values cross; an exit, normal or exceptional, lets its
+  outgoing values cross, then pops, $`B`$ becoming, when no call stays
+  active, the popped set's locations $`C`$ holds (`Held`: reachable from
+  a value at a position of $`C`$'s code, a closure of $`C`$'s bindings
+  among them, or from storage of a site of $`C`$). These are the only
+  transitions of the history; none is a hold. Its sets number the calls
+  active plus a constant along every execution (proved, `XStep.len`).
+  With the fields of a checked step that read the step's code
+  (`PkgProps`, hypothesis), a step of $`C`$'s code is a checked step
+  (proved, `pkgStep_of`), its history and `covers` by construction.
+- A member's certificate (`Cert`, hypothesis) is for the actual calls of
+  one code (`CallOf`: an execution whose first step enters the code, up to
+  the first state with as many calls of $`C`$ active as before it, its
+  exit); `Cert.member` is the member it gives.
+- The decomposition (proved, `decompose`). An execution inside a call of
+  $`C`$ at depth $`d`$, from and to a state with $`d`$ calls active, each
+  step meeting its hypothesis at its ghost (`XStep`) and each state a
+  step leaves having at least $`d`$ calls active and an active frame
+  outside $`C`$ when exactly $`d`$ are (`QRun`), is a run (`Run`) within
+  the budget of its length. A step of outside code keeping the calls is an
+  outside step; an entry, with the execution up to its exit, is a call of
+  the member certified for the code it enters, whose steps of $`C`$'s
+  code are checked steps and whose executions from a state of outside
+  code up to the next state of $`C`$'s code with $`d+1`$ calls active are
+  runs one call deeper. By strong induction on the length. So (L2), (L4)
+  and the consequence hold of such executions (proved, `exec_bound`,
+  `exec_keeps`, `exec_rely`).
+
 **Integrity is not in the model.** The paper model's objects carry no
 integrity state (frozen, sealed, non-extensible), and its field write
 (`writeField`) never throws for one. The protocol's `integrity` key is
 unsupported in Lean, and nothing is built on it.
 
-**What Lean assumes.** The client obligation (`OutsideStep.row`); three
-properties of the language's steps, which the calculus's steps meet at the
-roots of outside code (`OutsideStep.reach`, `outsideStep_reach`;
-`OutsideStep.writes`, `outsideStep_writes`; `OutsideStep.noForge`,
-`outsideStep_noForge`), a state's roots being those of its term, the top
-segment's values among them exactly when the top segment's code is not
-$`C`$'s; these three hold whatever the top segment's code, so a client's
-top level outside $`C`$ and a module of $`C`$ whose top level calls outside
-code are both covered; the validity of the frames' values, identities
-aside (`RootsValid`, which the roots of a valid term meet,
-`rootsValid_of_term`); for each member, the soundness of
-its certified effect on $`R_C`$ (`memberOfChecks`'s `certified`, what the
-pass's check of its body establishes) and its steps' checks; and, for the
-frame's premise, the flow of possible sites and the protection a region
-is read with.
+**Partial writes on failure are not in the model.** A step of `Step` that
+throws (`arrAllocThrow`, `lenStrThrow`, `arithThrow`) allocates its error
+object and writes nothing else; a failing operation that writes part of
+its effect first has no step. An operation with such writes needs an
+audited exceptional effect, a semantic extension or a located restriction
+before certification.
+
+**What Lean assumes.** Over an actual execution (`decompose`): the client
+obligation at each step of outside code (`Row`); each step's world
+transition, which a safe execution's steps give (`AStep.adm`); the call
+discipline (`Disc`), a property of the terms an execution reaches; at
+each step of $`C`$'s code, the sites, keys and crossings the checks give
+(`CheckData`) and the fields of a checked step that read its code
+(`PkgProps`: crossings meeting the marks, every value given to or stored
+where outside code reaches crossing, local storage closed), the interface
+of the checks (S), (K) and (O); for each code a call of $`C`$ enters, a
+certificate (`Cert`): its effect within $`\Psi_C`$, that effect's
+soundness over the code's actual calls, and each checked step keeping
+each invariant of $`G_C`$, the interface of the certified effects; and,
+for the frame's premise, the flow of possible sites and the protection a
+region is read with. A state's roots being its term's, the three
+properties of the language's steps (`OutsideStep.reach`, `.writes`,
+`.noForge`), which hold whatever code runs the top segment, so a client's
+top level outside $`C`$ and a module of $`C`$ whose top level calls
+outside code are both covered, the validity of the frames' values,
+identities aside (`RootsValid`), the marks kept by an outside step and its
+history fields are proved of actual steps (`outsideStep_of_step`).
 
 **The frame's premise, checked** (proved, `insideCheck_sound`). The check
 `insideCheck` reads, for each region of $`S`$, the parts its locations may
