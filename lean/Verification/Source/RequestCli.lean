@@ -425,8 +425,8 @@ def componentOutcome (a : Json) : Json :=
         let name ← jStr (← jField f "name")
         let pos : Span ← fromJson? (← jField f "namePos")
         return (name, pos, (← jStr (← jField f "completion")) == "async")
-      return Json.arr (ComponentChecks.familyOutcome F file fns |>.map fun (i, k, rs, ψ, g) =>
-        WorkerWire.componentOutcome i (ComponentChecks.kindName k.kind) k.location rs ψ g).toArray : Except String Json) with
+      return Json.arr (ComponentChecks.familyOutcome F file fns |>.map fun (i, k, rs, ψ, g, fr) =>
+        WorkerWire.componentOutcome i (ComponentChecks.kindName k.kind) k.location rs ψ g fr).toArray : Except String Json) with
   | .ok j => j
   | .error _ => .arr #[]
 

@@ -113,9 +113,12 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   `{"unit","members"}`; the module units the interfaces establish; and each
   component's outcome of the read-only frame's checks
   (`ComponentChecks.familyOutcome`),
-  `{"component","kind","location","protocol","guarantee","refusals"}`: its
+  `{"component","kind","location","protocol","guarantee","frames","refusals"}`: its
   checked protocol, one change at a part per line; each guarantee
-  candidate, kept or with the first write that changes its support; and its
+  candidate, kept or with the first write that changes its support; at each
+  call of outside code a proposed frame names, each region's place, in the
+  protected region with the change `Ψ ⊔ Θ` allows there, outside it, or
+  either, or the frame's refusal at the call; and its
   certificate, held where `refusals` is empty, which no verdict reads;
   `--verify-interface-stage 8` prints the same outcomes first, on the line
   `{"components"}`;

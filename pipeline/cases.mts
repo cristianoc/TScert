@@ -5043,5 +5043,6 @@ export const cases: Case[] = [
   positive("readonly-frame-confined-closure", "A row filled through a closure its frame gives an internal helper, held by no storage and given to no outside code: (O) admits the closure's push, though released rows may come back."),
   positive("readonly-frame-own-map-get", "A frame reads the module's own `WeakMap` at a key from outside, which `get` does not call, and pushes into an array it allocated: (O) admits the push, though released arrays may come back."),
   positive("readonly-frame-library-calls", "A push into a fresh array after `get` of a map a caller's handle holds and `Object.isFrozen` of the handle, which call no argument, is admitted; after `map` of a callback from outside, which it calls, refused."),
+  positive("readonly-frame-two-walkers", "Two members calling a visitor: the frame at each call places a handle passed in read-only in the module's region, a cursor the member allocates in it, and an array passed in writable in it or outside it."),
   positive("readonly-frame-released-store", "A module whose entries take only numbers stores a row it gives out writable into rows it gives out writable: no released array can come back, and the module's certificate holds."),
 ];

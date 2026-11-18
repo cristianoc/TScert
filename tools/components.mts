@@ -44,7 +44,7 @@ import type { CallEffect, Change, Frame, Region, Selector } from "./declaration-
 import { interfaceOverlay, overlay } from "./array-prototype.mts";
 import { globalsOverlay } from "./library-globals.mts";
 import { viewDefinitions } from "./library-types.mts";
-import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, ProtocolEntryAst, SiteAst, SourceAst, StoreAst, ValueAst,
+import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, FrameEntryAst, Mark, PlaceAst, PositionAst, ProtocolEntryAst, SiteAst, SourceAst, StoreAst, ValueAst,
   SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
@@ -199,7 +199,7 @@ export function shapeReadOnly(t: TypeShapeAst | null, types: ComponentsAst["type
 /** The empty description: no component. */
 export const noComponents: ComponentsAst = { components: [], codes: [], sites: [], values: [], crossings: [],
   stores: [], calls: [], throws: [], catches: [], holds: [], exports: [], thrown: null, suspensions: [], types: [],
-  escapes: [], clients: [], guarantees: [], protocols: [] };
+  escapes: [], clients: [], guarantees: [], protocols: [], frames: [] };
 
 /** A build configuration: where it writes its outputs, the directory of
  * the sources they mirror, and the files it compiles. */
@@ -1718,8 +1718,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     keys: [...(keys.get(t) ?? [])].sort(), anyKey: anyKey.has(t), contents: contentRefs[t] ?? 0,
     marks: enclosing(s.component).map((c) => ({ component: c, mark: markOf(t, c) })) }));
   const described: ComponentsAst = { components, codes: codesList, sites: siteList, values, crossings: crossingList, ...events,
-    thrown: thrownRef, suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees(), protocols: [] };
-  return { ...described, protocols: proposeProtocols(described) };
+    thrown: thrownRef, suspensions, types: typeRows, escapes, clients, guarantees: input.guarantees(), protocols: [], frames: [] };
+  return { ...described, protocols: proposeProtocols(described), frames: proposeFrames(described) };
 }
 
 /** **Each component's proposed protocol** `Ψ_C` (the draft, "The
@@ -1876,6 +1876,79 @@ export function proposeProtocols(F: ComponentsAst): ComponentsAst["protocols"] {
     }
   }
   return [...byComponent].sort(([a], [b]) => a - b).map(([component, entries]) => ({ component, entries: [...entries.values()] }));
+}
+
+/** **The proposed frame at each call of code outside a component**
+ * (Read-only frames, Proposition "Read-only reliance", its premise location
+ * by location), as `ComponentChecks.Ctx.frames` checks it: at each call that
+ * may run code outside a component it lies in, for each parameter of the
+ * innermost code holding the call and each site that code allocates, the
+ * regions of its storage (a record's fields at every key, an array's spine
+ * and cells), with the parts their locations may have for each such
+ * component (`Ctx.frameParts`) and whether they are protected for every one
+ * (`Ctx.frameProtected`). */
+export function proposeFrames(F: ComponentsAst): ComponentsAst["frames"] {
+  const chain = (c: number): number[] => {
+    const out: number[] = [];
+    for (let d: number | null | undefined = c; d !== null && d !== undefined && out.length <= F.components.length; d = F.components[d]?.parent)
+      out.push(d);
+    return out;
+  };
+  const markOf = (t: number, C: number): Mark | null => F.sites[t]?.marks.find((m) => m.component === C)?.mark ?? null;
+  const innermost = (module: string, at: Span): number | null => {
+    let best: number | null = null;
+    let width = Infinity;
+    F.codes.forEach((c, i) => {
+      if (c.module === module && c.pos[0] <= at[0] && at[1] <= c.pos[1] && c.pos[1] - c.pos[0] < width) {
+        best = i;
+        width = c.pos[1] - c.pos[0];
+      }
+    });
+    return best;
+  };
+  type Tokens = { sites: readonly number[]; incoming: readonly number[]; ro: readonly number[] };
+  const tokensOf = (root: FrameEntryAst["root"]): Tokens => {
+    if ("site" in root) return { sites: [root.site], incoming: [], ro: [] };
+    const x = F.values[root.value];
+    return x ? { sites: x.sites, incoming: x.incoming, ro: x.incomingReadOnly } : { sites: [], incoming: [], ro: [] };
+  };
+  const partsFor = (C: number, T: Tokens): (number | null)[] => {
+    const own = T.sites.map((t) => markOf(t, C) !== null ? t : null);
+    if (!(T.incoming.includes(C) || T.ro.includes(C))) return own;
+    const lent = F.sites.flatMap((_, t) => { const m = markOf(t, C); return m === "exposed" || m === "released" ? [t] : []; });
+    return [...own, ...lent, null];
+  };
+  const protectedFor = (C: number, T: Tokens): boolean => !T.incoming.includes(C) &&
+    T.sites.every((t) => { const m = markOf(t, C); return m === "local" || m === "internal" || m === "exposed"; });
+  const frames: ComponentsAst["frames"] = [];
+  F.calls.forEach((c, call) => {
+    if (c.native?.member ?? false) return;
+    const callee = F.values[c.callee];
+    if (!callee) return;
+    const comps = chain(c.component).filter((C) => callee.incoming.includes(C) || callee.incomingReadOnly.includes(C));
+    if (comps.length === 0) return;
+    const k = innermost(c.module, c.at);
+    const code = k === null ? undefined : F.codes[k];
+    if (!code) return;
+    const every: FrameEntryAst["kind"][] = ["field", "spine", "cell"];
+    const array: FrameEntryAst["kind"][] = ["spine", "cell"];
+    const record: FrameEntryAst["kind"][] = ["field"];
+    const roots: { root: FrameEntryAst["root"]; kinds: FrameEntryAst["kind"][] }[] = [
+      ...code.params.map((p) => ({ root: { value: p.value }, kinds: every })),
+      ...F.sites.flatMap((s, t) => s.module === code.module && innermost(s.module, s.pos) === k &&
+        (s.kind === "object" || s.kind === "array" || s.kind === "instance")
+        ? [{ root: { site: t }, kinds: s.kind === "array" ? array : record }] : []),
+    ];
+    const entries: FrameEntryAst[] = roots.flatMap(({ root, kinds }) => {
+      const T = tokensOf(root);
+      if (T.sites.length === 0 && T.incoming.length === 0 && T.ro.length === 0) return [];
+      const parts = [...new Set(comps.flatMap((C) => partsFor(C, T)))];
+      const prot = comps.every((C) => protectedFor(C, T));
+      return kinds.map((kind) => ({ root, kind, key: null, parts, protected: prot }));
+    });
+    if (entries.length > 0) frames.push({ call, entries });
+  });
+  return frames;
 }
 
 const valuesClass: Selector = { value: true, array: false, view: false };

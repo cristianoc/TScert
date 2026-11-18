@@ -33,7 +33,7 @@ def lineExtraction (line : String) : Except String (Option String) := do
 the units the selection checks in the order their checks run, each
 `{"unit","members"}`; the module units the interfaces establish; and each
 component's outcome of the read-only frame's checks, each
-`{"component","kind","location","protocol","guarantee","refusals"}` (`componentOutcome`). -/
+`{"component","kind","location","protocol","guarantee","frames","refusals"}` (`componentOutcome`). -/
 def preparedLine (selected : List (String × List String)) (established : List String) (components : Json) : String :=
   (Json.mkObj [("selected", Json.arr (selected.map fun (u, ms) =>
       Json.mkObj [("unit", toJson u), ("members", toJson ms)]).toArray),
@@ -41,11 +41,11 @@ def preparedLine (selected : List (String × List String)) (established : List S
 
 /-- A component's outcome of the read-only frame's checks
 (`ComponentChecks.familyOutcome`):
-`{"component","kind","location","protocol","guarantee","refusals"}`,
+`{"component","kind","location","protocol","guarantee","frames","refusals"}`,
 its certificate held where `refusals` is empty. -/
-def componentOutcome (component : Nat) (kind location : String) (refusals protocol guarantee : List String) : Json :=
+def componentOutcome (component : Nat) (kind location : String) (refusals protocol guarantee frames : List String) : Json :=
   Json.mkObj [("component", toJson component), ("kind", toJson kind), ("location", toJson location),
-    ("protocol", toJson protocol), ("guarantee", toJson guarantee),
+    ("protocol", toJson protocol), ("guarantee", toJson guarantee), ("frames", toJson frames),
     ("refusals", toJson refusals)]
 
 /-- Mode 8's line of the components' outcomes: `{"components"}`, as the

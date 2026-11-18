@@ -682,6 +682,45 @@ control("read-only frame (O): library calls on values from outside", async (): P
   say("read-only frame (O): a push after a handle's map's get and isFrozen admitted; after map of an outside callback refused");
 });
 
+/** A module's frames of a single-file case. */
+const moduleFrames = (p: Pass): readonly string[] => moduleOutcome(p).frames;
+/** The frame of a case's fragment at the call at offset `at`. */
+const frameAt = (ast: Ast, at: number): Ast["components"]["frames"][number] => {
+  const call = ast.components.calls.findIndex((c) => c.at[0] === at);
+  return must(ast.components.frames.find((f) => f.call === call), `a frame at ${at}`);
+};
+
+control("forged fragment: a frame's false protection bit, omitted part, and one bad member's frame", async (): Promise<void> => {
+  // A cursor the walker allocates lies in the region; the array passed in
+  // writable lies in it or outside it.
+  const cursor = familyCase("bounds-pattern-unreachable-field-refused");
+  const visit = cursor.at("visit(c.i); //");
+  const held = moduleFrames(pass(fragmentOf(cursor.artifacts)));
+  assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the fields of the site \\S+ \\d+-\\d+: in the region, within keep$`).test(f)), JSON.stringify(held));
+  assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the spines of the value .*: in the region within keep, or outside it within the call's effect$`).test(f)), JSON.stringify(held));
+  // The array passed in writable read as protected: refused at the call.
+  for (const e of frameAt(cursor.ast, visit).entries) e.protected = true;
+  const falseBit = moduleFrames(pass(forged(cursor.artifacts, "forged-frame-protected", cursor.ast)));
+  assert.ok(falseBit.some((f) => new RegExp(`^refused at \\S+ ${visit}-\\d+: .*the frame reads the spines of the value .* as protected`).test(f)), JSON.stringify(falseBit));
+  // A handle passed in read-only: its region may be outside storage; the
+  // frame omitting that part is refused at the call.
+  const walker = familyCase("readonly-frame-walker");
+  const call = walker.at("visit();");
+  for (const e of frameAt(walker.ast, call).entries) e.parts = e.parts.filter((t) => t !== null);
+  const omitted = moduleFrames(pass(forged(walker.artifacts, "forged-frame-part", walker.ast)));
+  assert.ok(omitted.some((f) => new RegExp(`^refused at \\S+ ${call}-\\d+: the frame omits the possible part the fields of storage of code outside the component`).test(f)), JSON.stringify(omitted));
+  // Two members: one's frame forged, refused at its call; the other's held.
+  const two = familyCase("readonly-frame-two-walkers");
+  const inWalk = two.at("visit();\n    sum");
+  const inFirst = two.at("visit();\n  return");
+  for (const e of frameAt(two.ast, inFirst).entries) e.protected = true;
+  const mixed = moduleFrames(pass(forged(two.artifacts, "forged-frame-member", two.ast)));
+  assert.ok(mixed.some((f) => new RegExp(`^refused at \\S+ ${inFirst}-\\d+: `).test(f)), JSON.stringify(mixed));
+  assert.ok(!mixed.some((f) => new RegExp(`^refused at \\S+ ${inWalk}-`).test(f)), JSON.stringify(mixed));
+  assert.ok(mixed.some((f) => new RegExp(`^at \\S+ ${inWalk}-\\d+: the fields of the value .*: in the region, within keep$`).test(f)), JSON.stringify(mixed));
+  say("forged frames: an array passed in writable read as protected, refused at its visit; a read-only handle's outside part omitted, refused at its visit; one member's frame forged, refused at its call, the other member's held");
+});
+
 control("forged fragment: a protocol omitting a member's write", async (): Promise<void> => {
   const { artifacts, ast, at } = familyCase("invalid-readonly-trim");
   const widths = siteIndex(ast, at("[];\n  for"));
