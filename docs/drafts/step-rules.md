@@ -1,6 +1,6 @@
 # String and typed-array steps stated once
 
-Paper I's rows for the string steps (Str-Length, Str-Read, Concat) and the
+*Tolerant frames*' rows for the string steps (Str-Length, Str-Read, Concat) and the
 typed array's steps (View-Length, View-Read, View-Write, View-Write-Any),
 generated from Lean as the arithmetic rows are, with the matching rules of
 the implementation's documentation.
@@ -97,7 +97,7 @@ displays; each extension is the general form of what it states.
    `Q_{≠i}`: every other index of the collection reads after the step what
    it read before. The frame is the rule's local postcondition; the effect
    (below) bounds what other typed arrays over the same bytes read.
-5. **Effects.** Each rule states its effect in the grammar of Paper I's
+5. **Effects.** Each rule states its effect in the grammar of *Tolerant frames*'
    effects: `∅`, or entries `r : δ` with `r` among `st`, `vw`, `val`,
    `π.spine`, `π.cells`, `π.f`, `π.fields` and `δ` among `keep`, `init`,
    `scalar`, `grow`, `any`.

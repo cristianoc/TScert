@@ -20,8 +20,9 @@ and checks it restates for another region; the
 [comparison](#against-private-representation) states what each costs.
 
 Base: TScert `single-pass` at `b60eca2f`; upstream pretext is
-chenglou/pretext at `0d102a5c`, its files under `src/`; "Paper I" is
-[Tolerant frames](tolerant-frames-note/note.tex). Claims are labelled
+chenglou/pretext at `0d102a5c`, its files under `src/`; the rules cited are those of
+[Tolerant frames](tolerant-frames-note/note.tex), and the rule this draft
+designs is stated in [Read-only frames](readonly-frames-note/note.tex). Claims are labelled
 **proved** (with the Lean name), **cited** (a document with its scope, or a
 source file and line at the stated commit), **observed** (a program run
 under Node 26.13.0), **measured** (with the setup stated) or
@@ -49,9 +50,9 @@ each component $`C`$:
    (cited:
    [inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 4. **The construct's rule**: Read-only frame, below, Private frame of
-   private representation at another region. With it, Paper I's Theorem
+   private representation at another region. With it, *Tolerant frames*' Theorem
    "Tolerant frame" and Proposition "Reliance" carry a fact across every run
-   of code that is not $`C`$'s (proved: Paper I, Lean `frame_box`,
+   of code that is not $`C`$'s (proved: *Tolerant frames*, Lean `frame_box`,
    `rely_chain`).
 
 It reads five existing pieces:
@@ -129,11 +130,11 @@ walker reading `[1, 1, 1]`.
 
 ## The rule
 
-Paper I's notation throughout: a heap $`h`$, an environment $`\rho`$, the
+*Tolerant frames*' notation throughout: a heap $`h`$, an environment $`\rho`$, the
 action $`h\xrightarrow{\Phi}_\rho h'`$ of an effect, changes
 $`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$
-(Paper I, §3, the changes' definition), regions read at the entry heap,
-regions at a field key as Paper I's $`x.f`$, $`\Phi\triangleleft_K S`$ for
+(*Tolerant frames*, §3, the changes' definition), regions read at the entry heap,
+regions at a field key as *Tolerant frames*' $`x.f`$, $`\Phi\triangleleft_K S`$ for
 respect and $`\Box_\Phi F`$ for the modality.
 
 ### Definitions
@@ -652,7 +653,7 @@ array before changing it (cited: `CHANGELOG.md:15`).
 
 The row is stated per component, in that component's API, and applies only
 to a component whose API states it. Its parameter $`\Theta`$, the *client
-obligation*, is an effect in Paper I's change lattice bounding what code
+obligation*, is an effect in *Tolerant frames*' change lattice bounding what code
 outside $`C`$ that TScert does not analyze may do to $`C`$'s protected
 storage. With it, the rule's bound on a callback on $`R_C`$ is
 $`\Psi_C\sqcup\Theta`$, and a fact survives a call of code that is not
@@ -1148,7 +1149,7 @@ The sites are the dossier's (cited: [dossier](callback-frames-dossier.md),
 - **P22, form (a)**: the six cursor sites, two by the local mark and four
   by the helpers' certified effects, as attributed above.
 - **P18**: at pretext's sites, the handle's invariant at entry and its
-  support kept by (L4). Paper II's own program, whose `Prepared` is a
+  support kept by (L4). *Tolerant frames in practice*' own program, whose `Prepared` is a
   structural type external code may build and write, is outside: it is no
   read-only type.
 - **P20**: a value of a sealed handle type read back from a `Map` gets its
@@ -1380,7 +1381,7 @@ invariant with no boundary or check.
 
 ## What the Lean states
 
-The definitions and statements below are the draft's, in Paper I's
+The definitions and statements below are the draft's, in *Tolerant frames*'
 notation, as Lean states them in
 [ReadOnlyRegion.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyRegion.lean)
 and [ReadOnlyFrame.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyFrame.lean)
@@ -1492,7 +1493,7 @@ It is the one test the region, the frame's premise, (P2), (L3) and the trust
 row read.
 
 **Parts and the protocol.** A part is $`(\sigma,\kappa,k)`$ (`Part`): a site
-$`\sigma`$ or $`\mathsf{out}`$, a kind $`\kappa`$ of Paper I's world and,
+$`\sigma`$ or $`\mathsf{out}`$, a kind $`\kappa`$ of *Tolerant frames*' world and,
 for a field location, a key $`k`$. $`\mathrm{Keys}(\sigma)`$ is the set of
 keys its allocation gives and every key a write of $`C`$ may add to
 a record whose possible sites include $`\sigma`$; for $`\sigma`$ released
@@ -1521,7 +1522,7 @@ by the membership test (`Row`): it changes each exposed location of $`E`$
 and each released or outside location recorded in $`A`$ or $`B`$ within
 $`\Theta_C`$ at its part. $`\Theta_C`$ is an effect of the same type as
 $`\Psi_C`$ (`Protocol`); the read-only row is $`\Theta_C=\mathsf{keep}`$.
-Both take their changes in Paper I's lattice with $`\mathsf{extend}`$
+Both take their changes in *Tolerant frames*' lattice with $`\mathsf{extend}`$
 (`Footprints.Change`):
 $`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{extend}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$,
 $`\mathsf{extend}`$ appending fresh cells to an array spine's end, as
@@ -1612,7 +1613,7 @@ over outside steps meeting their hypotheses.
   locations are then in $`R_C(t)`$ for every later state $`t`$ of the call.
 
 **The consequence** (proved, `readOnly_frame`, `readOnly_rely`). For a fact
-$`F`$ with a support $`S`$ (Paper I's Definition "Support", over the
+$`F`$ with a support $`S`$ (*Tolerant frames*' Definition "Support", over the
 states keeping the marks) every location of which is in $`R_C`$ with
 $`\Psi_C(\mathrm{part}(l))`$ within its change (`Inside`, $`\Psi_C\triangleleft S`$
 on $`R_C`$), $`F`$ holds after every action of $`\Phi\oplus_C\Psi_C`$, and

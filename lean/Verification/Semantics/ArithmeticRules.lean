@@ -192,14 +192,14 @@ inductive RuleAtom where
   | implies (hyp concl : RuleFact)
   deriving DecidableEq, Repr
 
-/-- A region of an effect, Paper I's grammar: the spines (`st`), the views
+/-- A region of an effect, the Tolerant frames note's grammar: the spines (`st`), the views
 (`vw`), the values (`val`), and a variable's spine, cells, field or fields. -/
 inductive Region where
   | st | vw | val
   | spine (x : RuleVar) | cells (x : RuleVar) | field (x : RuleVar) (f : String) | fields (x : RuleVar)
   deriving DecidableEq, Repr
 
-/-- A change of a region, Paper I's grammar. -/
+/-- A change of a region, the Tolerant frames note's grammar. -/
 inductive Change where
   | keep | init | scalar | extend | grow | any
   deriving DecidableEq, Repr
