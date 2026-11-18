@@ -1,0 +1,136 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-278"><code>8e8ce75146b74303ee216e36b6e53fc90b529dfc..pr-278</code></a><ul><li>1 commit</li><li>changes: 1 Wire, 1 Proposal, 1 Definition, 1 Refusal, 2 Example, 3 Control, 2 Docs</li><li>parts: <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">cases</span> <span class="chip">controls</span> <span class="chip">docs</span></li><li>wire: the fragment's components (ComponentsAst)</li></ul></li></ul></section>
+<h2 id="g-pr-278"><code>8e8ce75146b74303ee216e36b6e53fc90b529dfc..pr-278</code></h2><article class="card" id="c-de66efca4"><header><div><div class="sha">de66efca4 · Cristiano Calcagno · Nov 18, 11:32</div><h3>Describe the component family a checked file lies in, on the fragment's wire</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The read-only handles plan (PR 2) needs the whole component a fact relies on described before its checks (PRs 3 and 4) can read it: the laminar family of package, modules and class bodies, each one's interface, each code's innermost component, the allocation sites with their marks and keys, the possible sites of values, the typed and directed crossings, the codes that escape, the client obligation and the guarantee candidates. These are proposals: no check reads them, and acceptance is unchanged.</p></div>
+<h4 class="change"><span class="act added">added</span>Wire <span class="target">the fragment's components, ComponentsAst; ComponentWire.decode</span></h4><div class="prose"><p>components: each component's kind (package, module, class), location, span (a class's), parent (an earlier component) and interface (its entries by name, module and span, or why it is unknown); codes: each code's innermost component; sites: each allocation site's kind (object, array, closure, instance, native), keys, anyKey and its mark (local, internal, exposed, released) for each enclosing component; values: possible sites and the components a value may enter from; crossings: module, place, component, direction, position (parameter, receiver, result, argument, callResult, thrown, caught, field, binding), readOnly and value; escapes: code, component, via (result, argument, throw, store) and place; clients: each exported type's client obligation, stated or read-only, a frame over this at position 0; guarantees: each type invariant's facts of this at position 0. The decoder requires every field exactly, every index in range and each component nested as its kind is; an imported module's document is read with the empty family.</p></div>
+<h4 class="change"><span class="act added">added</span>Proposal <span class="target">the family, tools/components.mts</span></h4><div class="prose"><p>the package: the nearest package.json above the checked file in its project, where it states exports; its code the files of the builds (tsconfig*.json with outDir and rootDir) whose outputs its targets name, else every source of the project in its directory; its entries the entry modules' exports, re-exports followed. Its interface is unknown at a subpath pattern or a target no source gives. Each module of that code is a component nested in it, each class body one nested in its innermost class or module. The flow: an inclusion analysis over the family's code, insensitive to order and field names; members (entries and codes that escape) enter their parameters and receivers from outside; a call of code that may be outside a component passes its arguments out and its result in; a call of no code of the family is a native's, its result a site of its own; a read or call TypeScript types primitive holds no reference. Marks are the least the crossings (exposed at a read-only type, else released), the holds by module and captured bindings (internal) and the stores allow.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">Components.nested, Components.tagAt</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">nested inner outer when outer is on inner's chain of parents</span>;</span></div><div class="row"><span><span class="m-text">tagAt module pos the innermost component of the code there, the ghost</span></span></div><div class="row"><span><span class="m-kw">tag</span> <span class="m-text">its frames carry, none for code the family does not describe</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">@clients on a type of a package whose interface is unknown</span></h4><div class="prose"><p>the obligation bounds code outside a component, which only a known interface delimits; refused at the tag. Keys other than values, spines and paths from this (integrity among them) are refused too.</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">a file <span class="tk-k">of</span> a package <span class="tk-k">of</span> two exports built to dist/, verified; the</span><span class="ln">control below reads its family</span></pre>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">a gap: @clients {} on a <span class="tk-k">type</span> <span class="tk-k">of</span> a package whose exports are <span class="tk-s">&quot;./*&quot;</span></span></pre>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">component family: a package of two exports</span></h4><div class="control"><p>the package's entries are boxed, counter, doubled, later, make and prepare (make the re-export of prepare), internal's twice is its module's entry only; the handle's record is exposed with keys cache, size and widths, two of which its type does not show; the box's array is released; one closure escapes through a result, one through an argument</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">component family: a changed manifest</span></h4><div class="control"><p>the package copied with ./extra dropped from its exports: its entries are boxed, counter, later and prepare</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">forged fragment: a component family's fields</span></h4><div class="control"><p>the family without sites, with an extra field, and with a site's anyKey moved onto a code, each refused by the decoder</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">ANNOTATIONS.md @clients P; FRAGMENT-FORMAT.md components; SOURCE-FRAGMENT.md, two rows</span></h4><div class="prose"><p>@clients P, its keys and its refusals; the components field; the refusal of @clients on an unknown interface (principled) and of a key the model has no state for (a model limit)</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">ANNOTATIONS.md, @invariant C on a type</span></h4><div class="prose"><p>each such invariant is a candidate of its component's guarantee</p></div>
+<h4 class="change">Soundness</h4><p>no check reads the family; the decoder adds refusals only of documents of another shape, and the front adds one of @clients, an annotation no case stated before.</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">cases</span> <span class="chip">controls</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>ComponentWire.decode · ComponentWire.Components.wellFormed · ComponentWire.Components.nested · ComponentWire.Components.tagAt · Fragment.decodeComponents</dd><dt>Wire</dt><dd>the fragment's components (ComponentsAst)</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">lake build (default targets, both axiom checks); tsc</span> <span class="test neg">p tools/tsconfig.json; node tools/unchecked.mts; node tests/json-field-names.mts; node tests/docs.mts; node tests/rule-inventory.mts; node tests/axiom-check-imports.mts; node tests/observed-stages.mts</span> <span class="test neg">-reads; run-cases.mts (every case); single-pass-controls.mts &quot;component family&quot; &quot;a component family&quot;</span></dd></dl>
+<details><summary>22 files changed, 2005 insertions(+), 15 deletions(-)</summary><pre class="code"> docs/ANNOTATIONS.md                                |   23 +-
+ docs/FRAGMENT-FORMAT.md                            |    1 +
+ docs/SOURCE-FRAGMENT.md                            |    2 +
+ lean/Verification/Source/ComponentWire.lean        |  377 ++++++
+ lean/Verification/Source/Fragment.lean             |   14 +-
+ lean/Verification/Tests/AxiomCheck.lean            |    1 +
+ pipeline/cases.mts                                 |    8 +
+ pipeline/examples/component-package/package.json   |   11 +
+ pipeline/examples/component-package/src/extra.ts   |    8 +
+ .../examples/component-package/src/internal.ts     |    5 +
+ pipeline/examples/component-package/src/main.ts    |   24 +
+ .../examples/component-package/tsconfig.build.json |    6 +
+ pipeline/examples/component-package/tsconfig.json  |   11 +
+ pipeline/examples/component-unknown/package.json   |    7 +
+ .../component-unknown/src/handles-refused.ts       |    9 +
+ pipeline/examples/component-unknown/tsconfig.json  |    5 +
+ tests/json-field-names.mts                         |    2 +-
+ tests/single-pass-controls.mts                     |   79 ++
+ tools/bound-annotations.mts                        |    9 +-
+ tools/components.mts                               | 1225 ++++++++++++++++++++
+ tools/fragment-parse.mts                           |   88 +-
+ tools/fragment.mts                                 |  105 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
