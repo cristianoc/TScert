@@ -40,7 +40,8 @@ import type { Node, SourceFile, TypeNode } from "typescript/unstable/ast";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { listDirectory, orAbsent, present, readText, realPath } from "./files.mts";
 import { clientsTags, representationTags } from "./bound-annotations.mts";
-import type { Change, Frame, Region, Selector } from "./declaration-types.mts";
+import type { CallEffect, Change, Frame, Region, Selector } from "./declaration-types.mts";
+import { overlay } from "./array-prototype.mts";
 import type { CallAst, ComponentAst, ComponentsAst, CrossingAst, EntryAst, Mark, PlaceAst, PositionAst, SiteAst, SourceAst, StoreAst,
   SuspensionAst, TypeShapeAst } from "./fragment.mts";
 import type { Json } from "./calculus.mts";
@@ -53,6 +54,11 @@ export type FamilyProgram = {
   files: readonly string[];
   sourceOf: (absolute: string) => SourceFile | null;
   primitive: (nodes: readonly Node[]) => boolean[];
+  /** The member of the standard library's `Array` or `ReadonlyArray` each
+   * name of a member access resolves to, or null. */
+  arrayMembers: (nodes: readonly Node[]) => (string | null)[];
+  /** Whether each node's type is an array or a tuple of primitives. */
+  primitiveElements: (nodes: readonly Node[]) => boolean[];
 };
 
 /** What the analysis is given: the checked file's path in its project (where
@@ -71,6 +77,33 @@ export type FamilyInput = {
   guarantees: () => ComponentsAst["guarantees"];
   fail: (node: Node | null, message: string) => never;
 };
+
+/** **A member of the standard library's arrays with a fresh result**: its
+ * reviewed overlay entry (`tools/array-prototype.mts`) states a fresh result
+ * at its effect, or at every signature it states. */
+export function freshArrayMember(name: string): boolean {
+  const fresh = (e: CallEffect | undefined): boolean => e !== undefined && e.exits.normal.ensures.some((x) =>
+    typeof x === "object" && "operation" in x && "freshSpine" in x.operation.post && x.operation.post.freshSpine.x === 0);
+  return overlay.some((entry) => entry.name === name && (entry.from === "Array" || entry.from === "ReadonlyArray") &&
+    (fresh(entry.effect) || (entry.stated !== undefined && entry.stated.length > 0 &&
+      entry.stated.every((st) => fresh(st.effect ?? entry.effect)))));
+}
+
+/** **Whether no value of a type's shape holds storage**: a primitive, a union
+ * of such shapes, or a named type whose definition is one
+ * (`ComponentChecks.primitiveShape` states the same in Lean). */
+export function shapePrimitive(t: TypeShapeAst | null, types: ComponentsAst["types"], visiting: ReadonlySet<number> = new Set()): boolean {
+  if (t === null) return false;
+  if (t === "primitive") return true;
+  if (typeof t === "string") return false;
+  if ("union" in t) return t.union.every((e) => shapePrimitive(e, types, visiting));
+  if ("named" in t) {
+    if (visiting.has(t.named)) return false;
+    const row = types[t.named];
+    return row !== undefined && shapePrimitive(row.definition, types, new Set([...visiting, t.named]));
+  }
+  return false;
+}
 
 /** **Whether a type's shape is read-only throughout** (the draft, "Read-only
  * types and crossings"): a primitive, `unknown` or a sealed handle; a
@@ -270,8 +303,13 @@ function boundNames(name: Node): Node[] {
 }
 
 /** **The flow's tokens**: a site by its index, a component a value enters
- * from outside by `INCOMING` plus its index. */
+ * from outside by `INCOMING` plus its index, at a writable position, or by
+ * `INCOMING_RO` plus its index, reached read-only from a crossing in at a
+ * read-only type. */
 const INCOMING = 1 << 24;
+const INCOMING_RO = 2 << 24;
+/** The component of an incoming token. */
+const componentOfToken = (t: number): number => t >= INCOMING_RO ? t - INCOMING_RO : t - INCOMING;
 /** Whether an identifier is a reference to a binding: not a property's
  * name, a member's name or a declaration's own name. */
 const reference = (n: Node): boolean => {
@@ -400,12 +438,19 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   };
 
   // The reads and calls whose type is primitive hold no reference; so do
-  // the references to a parameter whose declared type is primitive.
+  // the references to a parameter whose type is primitive, declared or,
+  // unannotated, as TypeScript types its name. A binding's other references
+  // hold what its sources hold, a primitive source holding none.
   const primitiveNodes = new Set<Node>();
+  const arrayMemberCalls = new Map<Node, string>();
+  /** The calls of such a member TypeScript types an array of primitives. */
+  const primitiveElementCalls = new Set<Node>();
   for (const f of files) {
     const asked: Node[] = [];
     const visit = (n: Node): void => {
       if (ts.isCallExpression(n) || ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) asked.push(n);
+      // An unannotated parameter's name, its type the contextual one.
+      if (ts.isParameterDeclaration(n) && n.type === undefined && ts.isIdentifier(n.name)) asked.push(n.name);
       n.forEachChild(visit);
     };
     visit(f.source);
@@ -413,6 +458,28 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       const n = asked[i];
       if (p && n) primitiveNodes.add(n);
     });
+    // The calls of a member of the standard library's arrays.
+    const calls: Node[] = [];
+    const names: Node[] = [];
+    const callees = (n: Node): void => {
+      if (ts.isCallExpression(n)) {
+        const callee = unwrap(n.expression);
+        if (ts.isPropertyAccessExpression(callee)) {
+          calls.push(n);
+          names.push(callee.name);
+        }
+      }
+      n.forEachChild(callees);
+    };
+    callees(f.source);
+    const members = reading.arrayMembers(names);
+    const fresh = calls.filter((_, i) => { const m = members[i]; return m !== null && m !== undefined && freshArrayMember(m); });
+    const primitive = reading.primitiveElements(fresh);
+    members.forEach((m, i) => {
+      const n = calls[i];
+      if (m !== null && n) arrayMemberCalls.set(n, m);
+    });
+    fresh.forEach((n, i) => { if (primitive[i]) primitiveElementCalls.add(n); });
   }
 
   // Scopes: the declaration an identifier names, lexically.
@@ -811,8 +878,25 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const componentAt = (n: Node, f: File): number => innermost(n, f);
   /** The components a code is outside of, given a callee's tokens: those it
    * may enter from outside. */
-  const incomingOf = (tokens: Iterable<number>): number[] => [...tokens].filter((t) => t >= INCOMING).map((t) => t - INCOMING);
+  /** The components a value may enter from outside, at either position. */
+  const incomingOf = (tokens: Iterable<number>): number[] =>
+    [...new Set([...tokens].filter((t) => t >= INCOMING).map(componentOfToken))];
+  const writableIncoming = (tokens: Iterable<number>): number[] =>
+    [...tokens].filter((t) => t >= INCOMING && t < INCOMING_RO).map((t) => t - INCOMING);
+  const readOnlyIncoming = (tokens: Iterable<number>): number[] => [...tokens].filter((t) => t >= INCOMING_RO).map((t) => t - INCOMING_RO);
   const sitesOf = (tokens: Iterable<number>): number[] => [...tokens].filter((t) => t < INCOMING);
+  /** The tokens reachable from tokens: theirs, and their sites' contents',
+   * transitively. */
+  const reachable = (tokens: Iterable<number>): Set<number> => {
+    const out = new Set<number>();
+    const work = [...tokens];
+    for (let t = work.pop(); t !== undefined; t = work.pop()) {
+      if (out.has(t)) continue;
+      out.add(t);
+      if (t < INCOMING) work.push(...(contentsNow(t) ?? []));
+    }
+    return out;
+  };
   const reads = (tokens: Set<number>): Set<number> => {
     const out = new Set<number>();
     for (const t of tokens) {
@@ -886,7 +970,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     const k = t.kind;
     if (k === ts.SyntaxKind.NumberKeyword || k === ts.SyntaxKind.StringKeyword || k === ts.SyntaxKind.BooleanKeyword ||
         k === ts.SyntaxKind.BigIntKeyword || k === ts.SyntaxKind.SymbolKeyword || k === ts.SyntaxKind.UndefinedKeyword ||
-        k === ts.SyntaxKind.VoidKeyword || k === ts.SyntaxKind.NeverKeyword || ts.isLiteralTypeNode(t) || ts.isTemplateLiteralTypeNode(t))
+        k === ts.SyntaxKind.NeverKeyword || ts.isLiteralTypeNode(t) || ts.isTemplateLiteralTypeNode(t))
       return true;
     if (ts.isParenthesizedTypeNode(t)) return primitiveType(t.type);
     return ts.isUnionTypeNode(t) && t.types.every(primitiveType);
@@ -894,7 +978,10 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const primitiveParameter = (id: Node): boolean => {
     const decl = resolveName(id);
     const owner = decl?.parent;
-    return !!owner && ts.isParameterDeclaration(owner) && owner.name === decl && primitiveType(owner.type);
+    if (!owner || !ts.isParameterDeclaration(owner) || owner.name !== decl) return false;
+    if (owner.type === undefined) return primitiveNodes.has(owner.name);
+    const f = fileAt(owner);
+    return primitiveType(owner.type) || (f !== undefined && shapePrimitive(shapeOf(owner.type, f), typeRows));
   };
   /** **An expression's value in the record**: what the expression's form
    * makes it include, as `valueNow` computes it. */
@@ -1092,8 +1179,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
             initial(p, nameText(p.name), () => exprRef(p.initializer, f));
           } else if (ts.isShorthandPropertyAssignment(p)) {
             addKey(s, nameText(p.name));
-            addAll(contentOf(s), identifierValue(p.name, f));
-            initial(p, nameText(p.name), () => synthetic(p, f, identifierSources(p.name, f)));
+            addAll(contentOf(s), value(p.name, f));
+            initial(p, nameText(p.name), () => exprRef(p.name, f));
           } else if (ts.isSpreadAssignment(p)) {
             addKey(s, null);
             addAll(contentOf(s), reads(value(p.expression, f)));
@@ -1188,11 +1275,14 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       receiver: exprRef(receiverExpr, f), key, element: false, stored: ref, initial: false });
     for (const t of receiver) {
       if (t >= INCOMING) {
-        const c = t - INCOMING;
+        const c = componentOfToken(t);
         let s = incomingKeys.get(c);
         if (!s) incomingKeys.set(c, s = new Set());
         if (!s.has(key)) { s.add(key); changed = true; }
-        cross(f, at, c, "out", { field: { key } }, false, tokens, at, ref);
+        // A field of a value reached read-only from a crossing in at a
+        // read-only type is a read-only position.
+        const ro = t >= INCOMING_RO && !receiver.has(INCOMING + c);
+        cross(f, at, c, "out", { field: { key } }, ro, tokens, at, ref);
       } else {
         const s = sites[t];
         if (s?.kind !== "array" || key === null || !/^\d+$/.test(key)) addKey(t, s?.kind === "array" && key === null ? "[]" : key);
@@ -1216,8 +1306,13 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       const i = c === null ? -1 : codes.indexOf(c);
       if (event && i >= 0 && !event.targets.includes(i)) event.targets.push(i);
     };
+    // A call TypeScript resolves to a member of the standard library's
+    // arrays is that native's: a value at an array type is a built-in array,
+    // holding the standard prototype and owning no key it declares (the
+    // array invariant, DESIGN.md, "Trust surface").
+    const libraryMember = arrayMemberCalls.has(n);
     let codeTargets = 0;
-    for (const t of sitesOf(tokens)) {
+    for (const t of libraryMember ? [] : sitesOf(tokens)) {
       const s = sites[t];
       if (!s || !(functionLike(s.node) || classLike(s.node))) continue;
       codeTargets++;
@@ -1235,7 +1330,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         }
       } else target(callCode(s.node, args, f, n, receiver));
     }
-    const outside = incomingOf(tokens);
+    const outside = libraryMember ? [] : incomingOf(tokens);
     if (outside.length > 0) {
       const types = calleeParameterTypes(n.expression);
       for (const c of outside) {
@@ -1251,31 +1346,51 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       // or what they hold; its receiver may hold its arguments; a closure it
       // is given may be called with any of these.
       const result = site(n, f, "native");
+      // A member of the standard library's arrays whose reviewed contract
+      // states a fresh result (`freshArrayMember`): the result is the array
+      // it allocates, holding what the arguments pass and what is reachable
+      // from the elements of what it is given and from its callbacks' results.
+      const member = arrayMemberCalls.get(n);
+      const fresh = member !== undefined && freshArrayMember(member);
+      // Its elements, where TypeScript types it an array of primitives,
+      // hold no reference.
+      const primitiveElements = fresh && primitiveElementCalls.has(n);
       const passed = new Set<number>();
       for (const a of args) for (const t of ts.isSpreadElement(a) ? reads(value(a.expression, f)) : value(a, f)) passed.add(t);
       const given = new Set<number>([...(receiver ?? []), ...passed]);
       const all = new Set([result, ...given, ...reads(given)]);
+      const elements = new Set([...passed, ...reachable(reads(given))]);
       const passedRef = event ? synthetic(n, f, event.args.map((a): SourceAst => a.spread ? { read: a.value } : { value: a.value })) : -1;
       const givenRef = event ? synthetic(n, f, [...(event.receiver !== null ? [{ value: event.receiver }] : []), { value: passedRef }]) : -1;
       const allFrom: SourceAst[] = [{ site: result }, { value: givenRef }, { read: givenRef }];
-      for (const a of args) for (const t of sitesOf(value(a, f))) {
+      // Its callbacks: each may be given what any of them returns, as
+      // `reduce`'s accumulator is.
+      const callbacks = args.flatMap((a) => sitesOf(value(a, f)).flatMap((t) => {
         const s = sites[t];
-        if (s && functionLike(s.node)) {
-          const code = codeOf.get(s.node);
-          if (code) {
-            for (const p of code.params) bindParameter(p, all, code.file);
-            for (const t of setOf(code.result)) all.add(t);
-            if (event) allFrom.push({ value: refOf(code.result) });
-          }
-        }
+        const code = s && functionLike(s.node) ? codeOf.get(s.node) : undefined;
+        return code ? [code] : [];
+      }));
+      for (const code of callbacks) {
+        for (const t of setOf(code.result)) all.add(t);
+        for (const t of reachable(setOf(code.result))) elements.add(t);
+        if (event) allFrom.push({ value: refOf(code.result) });
       }
+      for (const code of callbacks) for (const p of code.params) bindParameter(p, all, code.file);
       for (const t of sitesOf(receiver ?? [])) {
         const s = sites[t];
         addAll(contentOf(t), passed);
         if (s && s.kind !== "array") addKey(t, null);
       }
-      addAll(setOf(n), all);
-      if (event) event.native = { site: result, passed: passedRef, given: givenRef, all: synthetic(n, f, allFrom) };
+      // Else its result may be any of these, and its own storage hold them.
+      if (fresh) {
+        addAll(setOf(n), [result]);
+        if (!primitiveElements) addAll(contentOf(result), elements);
+      } else {
+        addAll(setOf(n), all);
+        addAll(contentOf(result), all);
+      }
+      if (event) event.native = { site: result, passed: passedRef, given: givenRef, all: synthetic(n, f, allFrom), member: libraryMember,
+        fresh, primitiveElements };
     }
     if (event) events.calls.push(event);
   };
@@ -1340,9 +1455,12 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       const code = codeOf.get(m);
       if (!code) continue;
       code.params.forEach((p, i) => {
-        bindParameter(p, new Set([INCOMING + c]), code.file);
+        // A parameter of a read-only type is reached read-only throughout.
+        const ro = readOnly(typeOfParameter(p), code.file);
+        const token = (ro ? INCOMING_RO : INCOMING) + c;
+        bindParameter(p, new Set([token]), code.file);
         cross(code.file, p, c, "in", { parameter: { code: span(code.file, code.node), index: i } },
-          readOnly(typeOfParameter(p), code.file), new Set([INCOMING + c]), null, recording ? refNode(p) : null);
+          ro, new Set([token]), null, recording ? refNode(p) : null);
       });
       if (!ts.isArrowFunction(m)) addAll(setOf(code.receiver), [INCOMING + c]);
       cross(code.file, code.node, c, "out", { result: { code: span(code.file, code.node) } },
@@ -1455,7 +1573,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   // which are sets and computed values stated before it.
   const tokensOf: Set<number>[] = rows.map((r) => r.key !== null ? setOf(r.key) : new Set());
   const evaluate = (x: SourceAst): Iterable<number> =>
-    "site" in x ? [x.site] : "incoming" in x ? [INCOMING + x.incoming] : "value" in x ? tokensOf[x.value] ?? []
+    "site" in x ? [x.site] : "incoming" in x ? [INCOMING + x.incoming] : "incomingReadOnly" in x ? [INCOMING_RO + x.incomingReadOnly]
+      : "value" in x ? tokensOf[x.value] ?? []
       : reads(tokensOf[x.read] ?? new Set());
   rows.forEach((r, i) => {
     if (r.key === null) tokensOf[i] = new Set(r.from.flatMap((x) => [...evaluate(x)]));
@@ -1463,7 +1582,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   const values: ComponentsAst["values"] = rows.map((r, i) => {
     const tokens = tokensOf[i] ?? new Set<number>();
     return { module: r.module, pos: r.pos, sites: sitesOf(tokens).sort((a, b) => a - b),
-      incoming: incomingOf(tokens).sort((a, b) => a - b), from: r.from };
+      incoming: writableIncoming(tokens).sort((a, b) => a - b), incomingReadOnly: readOnlyIncoming(tokens).sort((a, b) => a - b),
+      from: r.from };
   });
   const crossingList: CrossingAst[] = [...crossings.values()].map((x) => ({ module: x.module, at: x.at, component: x.component,
     direction: x.direction, position: x.position, readOnly: x.readOnly, value: x.value }));

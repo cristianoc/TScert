@@ -131,15 +131,19 @@ inductive Source where
   | value (v : Nat)
   | read (v : Nat)
   | incoming (c : Nat)
+  | incomingReadOnly (c : Nat)
   deriving Repr, BEq
 
 /-- A value's possible sites, by index, the components it may enter from
-outside, and what the code's statements make it include. -/
+outside at a writable position (`incoming`) and reached read-only from a
+crossing in at a read-only type (`incomingReadOnly`), and what the code's
+statements make it include. -/
 structure Value where
   module : String
   pos : Span
   sites : List Nat
   incoming : List Nat
+  incomingReadOnly : List Nat
   sources : List Source
   deriving Repr
 
@@ -173,6 +177,9 @@ structure Native where
   passed : Nat
   given : Nat
   all : Nat
+  member : Bool
+  fresh : Bool
+  primitiveElements : Bool
   deriving Repr
 
 /-- A call: its callee's, receiver's, arguments' and result's values, the
@@ -453,17 +460,19 @@ def decodeSite (j : Json) : Except String Site := do
     ← (← jArr j "keys").mapM jStr, ← jBoolAt j "anyKey", ← jNat j "contents", marks⟩
 
 def decodeSource (j : Json) : Except String Source := do
-  match j.getObjVal? "site", j.getObjVal? "value", j.getObjVal? "read", j.getObjVal? "incoming" with
-  | .ok s, _, _, _ => fieldsExactly j ["site"]; return .site (← s.getNat?)
-  | _, .ok v, _, _ => fieldsExactly j ["value"]; return .value (← v.getNat?)
-  | _, _, .ok v, _ => fieldsExactly j ["read"]; return .read (← v.getNat?)
-  | _, _, _, .ok c => fieldsExactly j ["incoming"]; return .incoming (← c.getNat?)
-  | _, _, _, _ => throw "no source of a value"
+  match j.getObjVal? "site", j.getObjVal? "value", j.getObjVal? "read", j.getObjVal? "incoming",
+      j.getObjVal? "incomingReadOnly" with
+  | .ok s, _, _, _, _ => fieldsExactly j ["site"]; return .site (← s.getNat?)
+  | _, .ok v, _, _, _ => fieldsExactly j ["value"]; return .value (← v.getNat?)
+  | _, _, .ok v, _, _ => fieldsExactly j ["read"]; return .read (← v.getNat?)
+  | _, _, _, .ok c, _ => fieldsExactly j ["incoming"]; return .incoming (← c.getNat?)
+  | _, _, _, _, .ok c => fieldsExactly j ["incomingReadOnly"]; return .incomingReadOnly (← c.getNat?)
+  | _, _, _, _, _ => throw "no source of a value"
 
 def decodeValue (j : Json) : Except String Value := do
-  fieldsExactly j ["module", "pos", "sites", "incoming", "from"]
+  fieldsExactly j ["module", "pos", "sites", "incoming", "incomingReadOnly", "from"]
   return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "pos"), ← jNatList j "sites", ← jNatList j "incoming",
-    ← (← jArr j "from").mapM decodeSource⟩
+    ← jNatList j "incomingReadOnly", ← (← jArr j "from").mapM decodeSource⟩
 
 def jOptStr (j : Json) (k : String) : Except String (Option String) := do
   let v ← jField j k
@@ -482,8 +491,9 @@ def decodeCall (j : Json) : Except String Call := do
     return (⟨← jNat a "value", ← jBoolAt a "spread", ← jSpanAt (← jField a "at"), ← jOptShape a "type"⟩ : Arg)
   let n ← jField j "native"
   let native ← if n == .null then pure none else do
-    fieldsExactly n ["site", "passed", "given", "all"]
-    pure (some (⟨← jNat n "site", ← jNat n "passed", ← jNat n "given", ← jNat n "all"⟩ : Native))
+    fieldsExactly n ["site", "passed", "given", "all", "member", "fresh", "primitiveElements"]
+    pure (some (⟨← jNat n "site", ← jNat n "passed", ← jNat n "given", ← jNat n "all", ← jBoolAt n "member",
+      ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements"⟩ : Native))
   return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "callee",
     ← jOptNat j "receiver", args, ← jNat j "result", ← jNatList j "targets", ← jOptNat j "instance", native⟩
 
@@ -603,12 +613,12 @@ def Components.wellFormed (F : Components) : Except String Unit := do
     inRange "a site's contents" s.contents nv
   for v in F.values do
     for s in v.sites do inRange "a value's site" s ns
-    for c in v.incoming do inRange "a value's incoming component" c n
+    for c in v.incoming ++ v.incomingReadOnly do inRange "a value's incoming component" c n
     for x in v.sources do
       match x with
       | .site s => inRange "a source's site" s ns
       | .value w | .read w => inRange "a source's value" w nv
-      | .incoming c => inRange "a source's component" c n
+      | .incoming c | .incomingReadOnly c => inRange "a source's component" c n
   for x in F.crossings do
     inRange "a crossing's component" x.component n
     for v in x.value do inRange "a crossing's value" v nv

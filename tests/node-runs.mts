@@ -34,6 +34,15 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-leaked",
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-install",
   "(() => { const h = prepare(3); const xs = [1, 2, 3]; install(0, xs); return walk(h, () => { xs.length = 0; }); })()"))),
   "a visitor truncates its own array, installed in the handle");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-slice-lookalike",
+  "(() => { const h = prepare(3); const a = [1, 2, 3]; install(0, { slice() { return a; } }); return walk(h, () => { a.length = 0; }); })()"))),
+  "a copy of the caller's own making is the caller's array, which its visitor truncates");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-comes-back",
+  "(() => { let mine = []; return walk(rows(), () => { if (mine.length === 0) mine = fill(3); else mine.length = 0; }); })()"))),
+  "a row filled into the rows that came back, then truncated by the visitor that holds it");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-void-callback",
+  "(() => { const h = prepare(3); const a = [2, 2, 2]; let k = 0; return walk(h, () => { k++; if (k === 1) return a; a.length = 0; }); })()"))),
+  "a visitor typed `() => void` returns an array it then truncates, installed in the handle");
 
 assert.throws(() => runExample("invalid-native-length-map", 'changed(["a"])'), /TypeError/);
 assert.throws(() => runExample("invalid-native-length-push", 'past([])'), /TypeError/);

@@ -493,8 +493,9 @@ export interface SiteAst {
 
 /** What a value of the flow includes: a site's storage, another value, what
  * a value's storage holds (`read`), or a value entering a component from
- * outside (`incoming`). */
-export type SourceAst = { site: number } | { value: number } | { read: number } | { incoming: number };
+ * outside, at a writable position (`incoming`) or reached read-only from a
+ * crossing in at a read-only type (`incomingReadOnly`). */
+export type SourceAst = { site: number } | { value: number } | { read: number } | { incoming: number } | { incomingReadOnly: number };
 
 /** A value of the flow: a binding's, a parameter's, a call's, a code's
  * result or receiver, a site's contents, an expression's; its possible
@@ -505,6 +506,7 @@ export interface ValueAst {
   pos: Span;
   sites: number[];
   incoming: number[];
+  incomingReadOnly: number[];
   from: SourceAst[];
 }
 
@@ -564,8 +566,13 @@ export interface StoreAst {
  * the instance a `new` allocates; and, for a native (a call of no code of
  * the family and of no outside code), its result's site, the values its
  * arguments pass, which it may write into its receiver (`passed`), the
- * values it is given, its receiver's among them (`given`), and those it may
- * return (`all`). */
+ * values it is given, its receiver's among them (`given`), those it may
+ * return (`all`), whether TypeScript resolves it to a member of the standard
+ * library's arrays (`member`), which makes it that native's whatever its
+ * receiver's value, whether that member's reviewed contract states a fresh
+ * result (`fresh`), which is the
+ * array it allocates, and whether TypeScript types that array one of
+ * primitives (`primitiveElements`), whose elements hold no reference. */
 export interface CallAst {
   module: string;
   at: Span;
@@ -576,7 +583,8 @@ export interface CallAst {
   result: number;
   targets: number[];
   instance: number | null;
-  native: { site: number; passed: number; given: number; all: number } | null;
+  native: { site: number; passed: number; given: number; all: number; member: boolean; fresh: boolean;
+    primitiveElements: boolean } | null;
 }
 
 /** A place a value is thrown or caught, a binding a module or a closure

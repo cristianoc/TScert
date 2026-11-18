@@ -583,6 +583,30 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   strings and numbers (`text`, `font`, `letterSpacing`, `break`,
   `extraWidth`, `rich-inline.ts:57–64`), and the options of `prepare`,
   `prepareWithSegments` and `prepareRichInline` are strings and numbers.
+  The check (`ComponentChecks.ownershipDiags`) decides each part from the
+  front's flow, checked against the code's events. Storage that may be
+  protected is a local or exposed site's; a value entering $`C`$ from
+  outside; and a released site's, its records' initial values aside,
+  where released storage may come back into $`C`$. Released and outside
+  storage is protected only from a crossing into $`C`$, and a value
+  crossing in at a position whose declared type is not primitive may hold
+  any storage: each own field its type does not mention is a position of
+  type `unknown`. So released storage may come back unless every member's
+  parameter is of a primitive declared type, no member has a receiver of
+  its own, no call runs outside code (a visitor typed `() => void` may
+  return any value, which TypeScript admits) and no `catch` receives what
+  outside code throws; this rests on callers passing values of the
+  declared types, the existing row of
+  [exported preconditions](../DESIGN.md#trust-surface). A closure of
+  outside code holds what it captures, which reaches $`C`$ only through a
+  call of it, at that call's result. Admitted beside exposed and local
+  storage: a value reached read-only from a crossing into $`C`$ at a
+  read-only type, storage already protected, which the flow tells from a
+  value entering at a writable position. A copy a member of the standard
+  library's arrays makes (`slice()`, whose reviewed contract states a fresh
+  result) is the array it allocates, holding what is reachable from the
+  elements of its receiver, none where TypeScript types it an array of
+  primitives; a call of the same name of any other code is not one.
 - **Reads through a possibly null value.** A read `e![k]` or `e!.f` whose
   operand's type admits `null` or `undefined` is the read of `e`: the `!`
   is erased, as TypeScript erases it, and the operand, held in a slot,
