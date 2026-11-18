@@ -1,18 +1,20 @@
 // The paper-reader test (the parity skill, .claude/skills/parity/, whose
-// section of that name states the procedure): readers that have only the note "Tolerant frames" say whether each
+// section of that name states the procedure): readers that have only the two papers of rules, "Tolerant
+// frames" and "Read-only frames", say whether each
 // example verifies, and their verdicts are compared with each case's declared
 // outcome. This tool prepares the readers' directory and compares their
 // answers; the readers themselves are run by whoever orchestrates.
 //
 //   node dev/paper-readers.mts prepare --out <dir> [--cases <file> | --pattern <s> …]
-//                                      [--sample <n>] [--seed <k>] [--batch <size>] [--note <file>]
+//                                      [--sample <n>] [--seed <k>] [--batch <size>] [--note <file> …]
 //   node dev/paper-readers.mts compare --dir <dir> [--json]
 //
 // `prepare` selects cases of `pipeline/cases.mts` (by the names listed one
 // per line in `--cases`, by substrings of their names given with `--pattern`,
 // or all), shuffles them by the seed, keeps the first `--sample` and writes
 // into <dir>, which must lie outside the repository and be empty or absent:
-// `paper.tex` (the note, or `--note`), `TASK.md`, `examples/<id>.ts` (each
+// the papers (the two notes of rules, or each `--note`), each as `<name>.tex`
+// with `<name>` its directory's name less `-note`, `TASK.md`, `examples/<id>.ts` (each
 // case's source with its comments removed, but for a JSDoc comment carrying
 // an annotation tag) and `batch-<n>.txt` (the ids of each reader's batch).
 // The key, id → case, declared outcome and area text, goes to `<dir>.key.json`
@@ -31,7 +33,15 @@ import { basename, dirname, join, relative, resolve, isAbsolute } from "node:pat
 import { cases, type Case } from "../pipeline/cases.mts";
 
 const repository = resolve(dirname(import.meta.filename), "..");
-const defaultNote = join(repository, "docs/drafts/tolerant-frames-note/note.tex");
+const defaultNotes = [
+  join(repository, "docs/drafts/tolerant-frames-note/note.tex"),
+  join(repository, "docs/drafts/readonly-frames-note/note.tex"),
+];
+
+/** The name a reader sees for a note: its directory's name less `-note`. */
+function paperName(note: string): string {
+  return `${basename(dirname(resolve(note))).replace(/-note$/, "")}.tex`;
+}
 
 type Verdict = "verifies" | "refused" | "not covered";
 type Kind = Case["kind"];
@@ -60,12 +70,12 @@ interface Answer {
   confidence: Confidence;
 }
 
-const TASK = `# Task: judge examples from the paper alone
+const task = (papers: string[]): string => `# Task: judge examples from the papers alone
 
-You have one paper, \`paper.tex\` in this directory (LaTeX source of "Tolerant frames"), and TypeScript examples under \`examples/\`. For each example assigned to you, answer the question a reader of the paper would answer: **does this example verify?**
+You have ${papers.length === 1 ? "one paper" : `${papers.length} papers`}, ${papers.map((p) => `\`${p}\``).join(" and ")} in this directory (LaTeX sources; \`tolerant-frames.tex\` is "Tolerant frames", \`readonly-frames.tex\` is "Read-only frames", which builds on it), and TypeScript examples under \`examples/\`. For each example assigned to you, answer the question a reader of the papers would answer: **does this example verify?** Below, "the paper" means these papers together.
 
 Rules of the exercise:
-- Read \`paper.tex\` in full first. Use ONLY the paper and the example files assigned to you. Do not read any other file on this machine (in particular no \`answers-*.json\`), do not search the web, do not run any tool on the examples. You have no access to the verifier and must not look for it.
+- Read every paper in full first. Use ONLY the papers and the example files assigned to you. Do not read any other file on this machine (in particular no \`answers-*.json\`), do not search the web, do not run any tool on the examples. You have no access to the verifier and must not look for it.
 - Judge by what the paper states. Its section "What verifies" defines the verdict, the surface syntax, the obligations and what the verifier knows at each point; use it as the procedure, and the rest of the paper as it directs. Where the paper says a rule is stated but not applied by the verifier, do not apply it.
 - If answering needs a rule or notion the paper does not give (for example promises, classes, a library function it does not specify), answer "not covered" and name what is missing. Do not guess the verifier's behaviour.
 - Whenever you had to choose between two readings of the paper, or assume something it does not state, say so in the \`assumed\` field: this is as important as the verdict.
@@ -289,8 +299,11 @@ function prepare(args: string[]): void {
   const width = Math.max(2, String(chosen.length).length);
   const key: Record<string, KeyEntry> = {};
   mkdirSync(join(out, "examples"), { recursive: true });
-  writeFileSync(join(out, "paper.tex"), readFileSync(one(found, "note") ?? defaultNote, "utf8"));
-  writeFileSync(join(out, "TASK.md"), TASK);
+  const notes = found.get("note") ?? defaultNotes;
+  const papers = notes.map(paperName);
+  if (new Set(papers).size !== papers.length) throw new Error(`two notes give one paper name: ${papers.join(", ")}`);
+  notes.forEach((note, i) => writeFileSync(join(out, papers[i]!), readFileSync(note, "utf8"))); // asserted: papers has one name per note
+  writeFileSync(join(out, "TASK.md"), task(papers));
   const ids = chosen.map((c, i) => {
     const id = `ex${String(i + 1).padStart(width, "0")}`;
     const source = readFileSync(join(repository, "pipeline/examples", `${c.file}.ts`), "utf8");

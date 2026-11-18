@@ -31,7 +31,7 @@ binds you.
   duration (a build at most 10 minutes, a pattern of cases at most 5); a
   wait you start must end by itself.
 - No special cases, no flags, no second mechanism kept beside the first.
-  Statements are the note's: cite the note's definition or rule in each new
+  Statements are the notes': cite the note's definition or rule in each new
   definition's documentation comment.
 - Decide by principle and do not ask unless truly blocked. If an obligation
   is false or needs a different statement, stop and report it precisely;
