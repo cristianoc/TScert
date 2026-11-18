@@ -2274,20 +2274,31 @@ sets of sites:
   its frames allocate at, objects (`obj`) and arrays (`arr`, a rest
   parameter's spine and a grown cell among them). Outside code allocates
   outside storage (`Alloc.outside`).
+- **Lowered code** (`Lowered`): a node expression holds no located value
+  (an object, a spine with a cell, a view spine, a typed array's
+  allocation) and no run; what it captures or binds into a closure is a
+  variable or a primitive (`CodePart`); every closure of $`C`$'s code it
+  creates has a proposal. The lowering emits no object and no run; outside
+  code is lowered source, a premise of the entries.
 - **A value meets a set** (`VJ`): a closed value referencing allocated
-  locations only, whose first locations are of sites of the set and every
-  closure of $`C`$'s code within it (`Within`: captures, node expressions'
-  values, a bound function's parts) captures values meeting its code's
-  entry slots (`CapsOk`). Allocation keeps it (`VJ.alloc`).
+  locations only, whose first locations are of sites of the set; every
+  value within it (`Within`: captures, node expressions' values, a bound
+  function's parts) is a value, every closure of $`C`$'s code among them
+  captures values meeting its code's entry slots (`CapsOk`), every closure
+  of outside code has lowered code (`OutLowered`). Allocation keeps it
+  (`VJ.alloc`).
 - **A term fits a set** (`Fits V Γ a S t`): its value, once computed,
   meets $`S`$. Every callee, receiver, actual and thrown value meets
   $`O`$, and a frame that calls allocates arrays at a site of $`O`$ (a
   rest spine goes to a callee not known); a read's result meets the
   contents of a set closed under the reads' prototypes; a write's value
   is one the written storage may hold (`Stores`); an allocation's initial
-  values what its site may hold. A nested run of $`C`$'s code fits when
+  values what its site may hold. A capture, a bound part and a slot of a
+  run's environment is a value meeting its set or a variable a binder binds
+  to a smaller set (`VOr`). A nested run of $`C`$'s code fits when
   its environment meets its node's slots and its term the node's value
-  set; of outside code, when its environment and term meet $`O`$; either
+  set; of outside code, when its code is lowered and its environment and
+  term meet $`O`$; either
   returns a value of $`O`$. Fitting reads values only through `V`
   (`Fits.mono`), so allocation keeps it (`Fits.alloc`); a raised value
   meets $`O`$ (`raises_fits`).

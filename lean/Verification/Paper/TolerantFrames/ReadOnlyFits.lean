@@ -94,6 +94,61 @@ inductive Within (P : Package) : Val → Val → Prop where
       Within P (.objAt fs (.graph n E K s caps k rest comp) oid) w
   | bound {fs t r pre oid u w} : u ∈ t :: r :: pre → Within P u w → Within P (.objAt fs (.bound t r pre) oid) w
 
+/-! ## Lowered code -/
+
+/-- A primitive value: no location, no code. -/
+def primVal : Tm → Bool
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
+  | _ => false
+
+/-- **A part of a closure's code in lowered code**: a variable, or a value
+with no location. -/
+def CodePart (t : Tm) : Prop := (∃ i, t = .var i) ∨ primVal t = true
+
+mutual
+/-- **A term of lowered code**: it holds no located value (an object, a
+spine with a cell, a view spine, a typed array's allocation) and no run,
+and every closure of `C`'s code it creates
+has a proposal. The lowering emits no object and no run, so every node
+expression of a lowered graph is one; outside code is lowered source, a
+premise of the entries. -/
+def Lowered : Tm → Prop
+  | .objAt .. => False
+  | .arr ls => ∀ x ∈ ls, x = none
+  | .viewSpine .. => False
+  | .goto .. => False
+  | .frame .. => False
+  | .invoke f r args => Lowered f ∧ Lowered r ∧ LoweredArgs args
+  | .construct f args => Lowered f ∧ LoweredArgs args
+  | .letE a b => Lowered a ∧ Lowered b
+  | .makeAt .absent _ xs => LoweredArgs xs
+  | .makeAt (.view _ _ _) _ _ => False
+  | .makeAt (.bound t r pre) _ xs => CodePart t ∧ CodePart r ∧ (∀ x ∈ pre, CodePart x) ∧ LoweredArgs xs
+  | .makeAt (.graph _ E K _ caps _ _ comp) _ xs =>
+    (P.ofC comp = true → ∃ π, Fl.code (E, K) = some π) ∧ LoweredArgs E ∧ (∀ x ∈ caps, CodePart x) ∧ LoweredArgs xs
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => Lowered a
+  | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
+    Lowered a ∧ Lowered b
+  | .ite a b c | .setElem a b c => Lowered a ∧ Lowered b ∧ Lowered c
+  | .arrLit xs => LoweredArgs xs
+  | _ => True
+termination_by structural t => t
+
+def LoweredArgs : List Tm → Prop
+  | [] => True
+  | x :: xs => Lowered x ∧ LoweredArgs xs
+termination_by structural xs => xs
+end
+
+theorem loweredArgs_iff : ∀ {xs : List Tm}, LoweredArgs Fl xs ↔ ∀ x ∈ xs, Lowered Fl x
+  | [] => by simp [LoweredArgs]
+  | x :: xs => by simp [LoweredArgs, loweredArgs_iff]
+
+/-- **A closure of outside code has lowered code.** -/
+def OutLowered (v : Val) : Prop :=
+  ∀ fs ar E K s caps k rest comp oid, v = .objAt fs (.graph ar E K s caps k rest comp) oid →
+    P.ofC comp = false → ∀ e ∈ E, Lowered Fl e
+
 variable (g : Ghost P) (n : Nat)
 
 /-- **A closure of `C`'s code meets its code's proposal**: each capture
@@ -105,15 +160,17 @@ def CapsOk (v : Val) : Prop :=
       SitesOf g (π.env s (capSlot ar rest i)) u ∧ ∀ l, Leaves P.ofC u l → l < n
 
 /-- **A value meets a set of sites at a ghost and a heap length**: it is a
-closed value, references allocated locations only, meets the sites, and every closure of
-`C`'s code it holds meets its proposal. Closed under allocation
+closed value, references allocated locations only, meets the sites; every
+value it holds in its code is a value, every closure of `C`'s code among
+them meets its proposal and every closure of outside code has lowered
+code. Closed under allocation
 (`VJ.alloc`). -/
 structure VJ (S : Sites P) (v : Val) : Prop where
   val : isVal v = true
   closed : Verification.Closed v
   below : ∀ l, Leaves P.ofC v l → l < n
   sites : SitesOf g S v
-  caps : ∀ w, Within P v w → CapsOk Fl g n w
+  inner : ∀ w, Within P v w → isVal w = true ∧ CapsOk Fl g n w ∧ OutLowered Fl w
 
 /-- The variables' sites under one more binder; `none` for a variable no
 binder binds. -/
@@ -122,6 +179,15 @@ def consSites (S : Sites P) (Γ : Nat → Option (Sites P)) : Nat → Option (Si
   | i + 1 => Γ i
 
 variable {g n}
+
+/-- **A value meeting a set, or a variable a binder binds to a smaller
+set**: a position of a closure's code or a run's environment, filled with
+a value when the binder's value is substituted. -/
+def VOr (V : Sites P → Val → Prop) (Γ : Nat → Option (Sites P)) (S : Sites P) (u : Tm) : Prop :=
+  V S u ∨ ∃ j S', u = .var j ∧ Γ j = some S' ∧ Sub S' S
+
+theorem VOr.imp {V V' : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {S : Sites P} {u : Tm}
+    (hV : ∀ S v, V S v → V' S v) (h : VOr V Γ S u) : VOr V' Γ S u := h.imp_left (hV _ _)
 
 /-- **A term fits a set of sites** at a value judgment `V` (the module's
 header). -/
@@ -138,17 +204,17 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → A
       Fits V Γ a S (.makeAt .absent ns inits)
   | makeView {Γ a S sp fm len ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
       a.obj ∈ S → V S (.objAt [] (.view sp fm len) 0) → Fits V Γ a S (.makeAt (.view sp fm len) ns inits)
-  | makeBound {Γ a S t r pre ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
-      a.obj ∈ S → V S t → V S r → (∀ x ∈ pre, V S x) → isVal t = true → isVal r = true →
-      (∀ x ∈ pre, isVal x = true) → Fits V Γ a S (.makeAt (.bound t r pre) ns inits)
+  | makeBound {Γ a S t r pre ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) →
+      (∀ x ∈ inits, Fits V Γ a (Ss x) x) → a.obj ∈ S → (∀ x ∈ t :: r :: pre, VOr V Γ S x) →
+      Fits V Γ a S (.makeAt (.bound t r pre) ns inits)
   | makeGraphC {Γ a S ar E K s caps k rest comp ns inits} (π : CodeFlow P) :
-      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) → a.obj ∈ S → P.ofC comp = true →
-      Fl.code (E, K) = some π → (∀ i u, caps[i]? = some u → V (π.env s (capSlot ar rest i)) u) →
-      (∀ u ∈ caps, isVal u = true) → (∀ u ∈ valsArgs P.ofC true E, V S u) →
+      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
+      a.obj ∈ S → P.ofC comp = true → Fl.code (E, K) = some π →
+      (∀ i u, caps[i]? = some u → VOr V Γ (π.env s (capSlot ar rest i)) u) → (∀ e ∈ E, Lowered Fl e) →
       Fits V Γ a S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | makeGraphOut {Γ a S ar E K s caps k rest comp ns inits} :
-      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) → a.obj ∈ S → P.ofC comp = false →
-      (∀ u ∈ valsArgs P.ofC true E, V S u) → (∀ u ∈ caps, V S u) → (∀ u ∈ caps, isVal u = true) →
+      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
+      a.obj ∈ S → P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, VOr V Γ S u) →
       Fits V Γ a S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | readAt {Γ a S Sx Q f x} : Fits V Γ a Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
       (∀ s ∈ Q, Sub (Fl.H.contents s) S) → Fits V Γ a S (.readAt f x)
@@ -173,15 +239,14 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → A
   | makeKey {Γ a S Sk Sx k x} : Fits V Γ a Sk k → Stores Fl a.obj Sx → Fits V Γ a Sx x → a.obj ∈ S →
       Fits V Γ a S (.makeKey k x)
   | gotoC {Γ a S E K l L d comp} (π : CodeFlow P) : P.ofC comp = true → Fl.code (E, K) = some π →
-      (∀ i, V (π.env l i) (envOf L d i) ∨ ∃ j S', envOf L d i = .var j ∧ Γ j = some S' ∧ Sub S' (π.env l i)) →
-      Sub Fl.O S → Fits V Γ a S (.goto E K l L d comp)
-  | gotoOut {Γ a S E K l L d comp} : P.ofC comp = false →
-      (∀ i, V Fl.O (envOf L d i) ∨ ∃ j S', envOf L d i = .var j ∧ Γ j = some S' ∧ Sub S' Fl.O) →
-      Sub Fl.O S → Fits V Γ a S (.goto E K l L d comp)
+      (∀ i, VOr V Γ (π.env l i) (envOf L d i)) → Sub Fl.O S → Fits V Γ a S (.goto E K l L d comp)
+  | gotoOut {Γ a S E K l L d comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
+      (∀ i, VOr V Γ Fl.O (envOf L d i)) → Sub Fl.O S → Fits V Γ a S (.goto E K l L d comp)
   | frameC {Γ a S E K t L d k x comp} (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
       Fl.code (E, K) = some π → NodeOf (E, K) l k x → (∀ i, V (π.env l i) (envOf L d i)) →
       Fits V Γ π.alloc (π.val l) t → Sub Fl.O S → Fits V Γ a S (.frame E K t L d k x comp)
-  | frameOut {Γ a S E K t L d k x comp} : P.ofC comp = false → (∀ i, V Fl.O (envOf L d i)) →
+  | frameOut {Γ a S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
+      (∀ i, V Fl.O (envOf L d i)) →
       Fits V Γ Alloc.outside Fl.O t → Sub Fl.O S → Fits V Γ a S (.frame E K t L d k x comp)
 
 /-- **A value judgment monotone in its set of sites.** -/
@@ -203,12 +268,11 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   | spread _ hc ih => exact .spread ih hc
   | makeAbsent Ss hst _ hs ih => exact .makeAbsent Ss hst ih hs
   | makeView Ss hst _ hs hv ih => exact .makeView Ss hst ih hs (hV _ _ hv)
-  | makeBound Ss hst _ hs ht hr hp hvt hvr hvp ih =>
-    exact .makeBound Ss hst ih hs (hV _ _ ht) (hV _ _ hr) (fun x hx => hV _ _ (hp x hx)) hvt hvr hvp
-  | makeGraphC π Ss hst _ hs hc hcode hcaps hv hE ih =>
-    exact .makeGraphC π Ss hst ih hs hc hcode (fun i u hu => hV _ _ (hcaps i u hu)) hv (fun u hu => hV _ _ (hE u hu))
-  | makeGraphOut Ss hst _ hs hc hE hcaps hv ih =>
-    exact .makeGraphOut Ss hst ih hs hc (fun u hu => hV _ _ (hE u hu)) (fun u hu => hV _ _ (hcaps u hu)) hv
+  | makeBound Ss hst _ hs hp ih => exact .makeBound Ss hst ih hs (fun x hx => (hp x hx).imp hV)
+  | makeGraphC π Ss hst _ hs hc hcode hcaps hE ih =>
+    exact .makeGraphC π Ss hst ih hs hc hcode (fun i u hu => (hcaps i u hu).imp hV) hE
+  | makeGraphOut Ss hst _ hs hc hE hcaps ih =>
+    exact .makeGraphOut Ss hst ih hs hc hE (fun u hu => (hcaps u hu).imp hV)
   | readAt _ hq hcl hr ih => exact .readAt ih hq hcl hr
   | indexAt _ _ hq hcl hr ihx ihk => exact .indexAt ihx ihk hq hcl hr
   | writeAt _ _ hst ihx ihy => exact .writeAt ihx ihy hst
@@ -222,10 +286,10 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   | throw _ ih => exact .throw ih
   | merge _ _ hst hs ihx ihy => exact .merge ihx ihy hst hs
   | makeKey _ hst _ hs ihk ihx => exact .makeKey ihk hst ihx hs
-  | gotoC π hc hcode henv hS => exact .gotoC π hc hcode (fun i => (henv i).imp_left (hV _ _)) hS
-  | gotoOut hc henv hS => exact .gotoOut hc (fun i => (henv i).imp_left (hV _ _)) hS
+  | gotoC π hc hcode henv hS => exact .gotoC π hc hcode (fun i => (henv i).imp hV) hS
+  | gotoOut hc hE henv hS => exact .gotoOut hc hE (fun i => (henv i).imp hV) hS
   | frameC π l hc hcode hn henv _ hS ih => exact .frameC π l hc hcode hn (fun i => hV _ _ (henv i)) ih hS
-  | frameOut hc henv _ hS ih => exact .frameOut hc (fun i => hV _ _ (henv i)) ih hS
+  | frameOut hc hE henv _ hS ih => exact .frameOut hc hE (fun i => hV _ _ (henv i)) ih hS
 
 /-- **A value fits only by its value judgment** (proved): every other rule
 types a term that is not a value. -/
@@ -236,7 +300,7 @@ theorem Fits.value {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)
 /-! ## Allocation keeps what a value meets -/
 
 theorem VJ.sub {S S' : Sites P} {v : Val} (h : VJ Fl g n S v) (hS : Sub S S') : VJ Fl g n S' v :=
-  ⟨h.val, h.closed, h.below, h.sites.mono hS, h.caps⟩
+  ⟨h.val, h.closed, h.below, h.sites.mono hS, h.inner⟩
 
 theorem VJ.mono : Mono (VJ Fl g n) := fun _ _ _ hS h => h.sub hS
 
@@ -251,13 +315,25 @@ theorem CapsOk.alloc {w : Val} {n' : Nat} {sf : Nat → Option P.Site} {key : Na
 the site of every location the value references. -/
 theorem VJ.alloc {S : Sites P} {v : Val} {n' : Nat} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
     (h : VJ Fl g n S v) (hn : n ≤ n') : VJ Fl (g.alloc n sf key) n' S v :=
-  ⟨h.val, h.closed, fun l hl => Nat.lt_of_lt_of_le (h.below l hl) hn, h.sites.alloc h.below, fun w hw => (h.caps w hw).alloc hn⟩
+  ⟨h.val, h.closed, fun l hl => Nat.lt_of_lt_of_le (h.below l hl) hn, h.sites.alloc h.below,
+    fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.alloc hn, (h.inner w hw).2.2⟩⟩
 
 /-- **Allocation keeps a term fitting** (proved, `Fits.mono`). -/
 theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P} {t : Tm} {n' : Nat}
     {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : Fits Fl (VJ Fl g n) Γ a S t) (hn : n ≤ n') :
     Fits Fl (VJ Fl (g.alloc n sf key) n') Γ a S t :=
   h.mono fun _ _ hv => hv.alloc hn
+
+theorem VOr.alloc {Γ : Nat → Option (Sites P)} {S : Sites P} {u : Tm} {n' : Nat}
+    {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : VOr (VJ Fl g n) Γ S u) (hn : n ≤ n') :
+    VOr (VJ Fl (g.alloc n sf key) n') Γ S u :=
+  h.imp fun _ _ hv => hv.alloc hn
+
+/-- **At a closed term a position is a value** (proved). -/
+theorem VOr.top {V : Sites P → Val → Prop} {S : Sites P} {u : Tm} (h : VOr V (fun _ => none) S u) : V S u := by
+  rcases h with h | ⟨_, _, _, h, _⟩
+  · exact h
+  · cases h
 
 /-! ## The heap -/
 
@@ -473,11 +549,6 @@ theorem sites_set {St : Sites P → Prop} {Fi Fi' : Sites P → Tm → Prop} {Ss
 
 /-! ### Values that reference nothing -/
 
-/-- A primitive value: no location, no code. -/
-def primVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
-  | _ => false
-
 /-- **A value with no location and no code meets every set** (proved). -/
 theorem VJ.atom {S : Sites P} {v : Val} (hv : isVal v = true) (hc : Verification.Closed v)
     (hcode : codeVals P.ofC v = []) (hnext : ∀ a, next v a = none)
@@ -490,8 +561,8 @@ theorem VJ.atom {S : Sites P} {v : Val} (hv : isVal v = true) (hc : Verification
     | step hm _ => rw [hcode] at hm; cases hm
   refine ⟨hv, hc, fun l h => (hl l h).elim, fun l h => (hl l h).elim, fun w hwv => ?_⟩
   rw [hw w hwv]
-  intro fs ar E K s caps k rest comp oid he
-  exact absurd he (hcap fs ar E K s caps k rest comp oid)
+  exact ⟨hv, fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid),
+    fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid)⟩
 
 theorem VJ.prim {S : Sites P} {v : Val} (hp : primVal v = true) : VJ Fl g n S v := by
   refine VJ.atom ?_ ?_ ?_ ?_ ?_ ?_
@@ -532,7 +603,8 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
     (hview : ∀ l, HeapKnowledge.descriptorSpine (.objAt fs c oid) = some l → l < n ∧ g.site l ∈ S)
     (hcode : ∀ x ∈ codeVals P.ofC (.objAt fs c oid), ∀ l, Leaves P.ofC x l → l < n ∧ g.site l ∈ S)
     (hchild : ∀ u, Child (P := P) (.objAt fs c oid) u → ∃ S', VJ Fl g n S' u)
-    (hcaps : CapsOk Fl g n (.objAt fs c oid)) : VJ Fl g n S (.objAt fs c oid) := by
+    (hcaps : CapsOk Fl g n (.objAt fs c oid)) (hout : OutLowered Fl (.objAt fs c oid)) :
+    VJ Fl g n S (.objAt fs c oid) := by
   have hl : ∀ l, Leaves P.ofC (.objAt fs c oid) l → l < n ∧ g.site l ∈ S := by
     rintro l ⟨x, hx, a, hn⟩
     cases hx with
@@ -545,16 +617,16 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
     | step hm hr => exact hcode _ hm l ⟨x, hr, a, hn⟩
   refine ⟨rfl, hc, fun l h => (hl l h).1, fun l h => (hl l h).2, fun w hw => ?_⟩
   cases hw with
-  | refl => exact hcaps
+  | refl => exact ⟨rfl, hcaps, hout⟩
   | cap hu hw' =>
     obtain ⟨S', hv⟩ := hchild _ (.inl ⟨_, _, _, _, _, _, _, _, _, _, rfl, .inl hu⟩)
-    exact hv.caps w hw'
+    exact hv.inner w hw'
   | code hu hw' =>
     obtain ⟨S', hv⟩ := hchild _ (.inl ⟨_, _, _, _, _, _, _, _, _, _, rfl, .inr hu⟩)
-    exact hv.caps w hw'
+    exact hv.inner w hw'
   | bound hu hw' =>
     obtain ⟨S', hv⟩ := hchild _ (.inr ⟨_, _, _, _, _, rfl, hu⟩)
-    exact hv.caps w hw'
+    exact hv.inner w hw'
 
 /-- **A value's positions reach only what the value reaches** (proved). -/
 theorem leaves_of_vals {v x : Val} (hv : isVal v = true) (hx : x ∈ vals P.ofC true v) {l : Nat}
@@ -658,7 +730,8 @@ theorem VJ.arr {S : Sites P} {ls : List (Option Nat)}
     | step hm _ => simp [codeVals] at hm
   refine ⟨rfl, fun _ _ => rfl, fun l h => (hc l (hl l h)).1, fun l h => (hc l (hl l h)).2, fun w hw => ?_⟩
   cases hw with
-  | refl => intro _ _ _ _ _ _ _ _ _ _ he; cases he
+  | refl =>
+    refine ⟨rfl, ?_, ?_⟩ <;> (intro _ _ _ _ _ _ _ _ _ _ he; cases he)
 
 theorem mem_placeAt {ls : List (Option Nat)} {k l : Nat} {x : Option Nat} (hx : x ∈ placeAt ls k l) :
     x ∈ ls ∨ x = none ∨ x = some l := by
@@ -774,7 +847,7 @@ theorem VJ.graphC {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : Lis
     let ⟨i, hi⟩ := List.getElem?_of_mem hu; ⟨_, hcaps i u hi⟩
   refine VJ.obj (closed_graph fun x hx => (hcm x hx).choose_spec.closed) hfs
     (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (fun x hx => by simp [codeVals, hc] at hx)
-    ?_ ?_
+    ?_ ?_ ?_
   · rintro u (⟨_, _, _, _, _, _, _, _, _, _, he, hu⟩ | ⟨_, _, _, _, _, he, _⟩)
     · cases he
       rcases hu with hu | hu
@@ -784,6 +857,9 @@ theorem VJ.graphC {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : Lis
   · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he _
     cases he
     exact ⟨π, hcode, fun i u hu => ⟨(hcaps i u hu).sites, (hcaps i u hu).below⟩⟩
+  · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he hc'
+    cases he
+    rw [hc] at hc'; cases hc'
 
 /-- **A closure of outside code meets a set** (proved): its fields, its
 node expressions' values and its captures meet the set. -/
@@ -791,10 +867,11 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = false)
     (hfs : ∀ k l, (k, l) ∈ fs → l < n ∧ g.site l ∈ S)
-    (hcaps : ∀ u ∈ caps, VJ Fl g n S u) (hE : ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u) :
+    (hcaps : ∀ u ∈ caps, VJ Fl g n S u) (hE : ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u)
+    (hlow : ∀ e ∈ E, Lowered Fl e) :
     VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid) := by
   refine VJ.obj (closed_graph fun x hx => (hcaps x hx).closed) hfs
-    (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_
+    (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_ ?_
   · intro x hx l hl
     simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
     rcases hx with hx | hx
@@ -812,6 +889,31 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
   · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he hc'
     cases he
     rw [hc] at hc'; cases hc'
+  · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he _
+    cases he
+    exact hlow
+
+theorem vals_codePart {t : Tm} (o : Bool) (h : CodePart t) : vals P.ofC o t = [] := by
+  rcases h with ⟨i, rfl⟩ | h
+  · simp [vals]
+  · cases t <;> simp [primVal] at h <;> simp [vals]
+
+/-- **Lowered code holds only spines without cells as values** (proved). -/
+theorem lowered_vals : ∀ (e : Tm) (o : Bool) {u : Val}, Lowered Fl e → u ∈ vals P.ofC o e →
+    ∃ ls, u = .arr ls ∧ ∀ x ∈ ls, x = none := by
+  intro e
+  induction e using Tm.induct
+  all_goals intro o u hl hu
+  all_goals simp only [Lowered, loweredArgs_iff, vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hl hu
+  all_goals grind [vals_codePart]
+
+theorem lowered_vj {E : List Tm} {S : Sites P} (hE : ∀ e ∈ E, Lowered Fl e) :
+    ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u := by
+  intro u hu
+  simp only [valsArgs_eq, List.mem_flatMap] at hu
+  obtain ⟨e, he, hu⟩ := hu
+  obtain ⟨ls, rfl, hls⟩ := lowered_vals e true (hE e he) hu
+  exact VJ.arr fun l hl => absurd (hls _ hl) (by simp)
 
 /-! ### A raised value -/
 
@@ -851,9 +953,9 @@ theorem raises_fits {V : Sites P → Val → Prop} {t v : Tm} (hr : Raises t v) 
     | val hv' => simp [isVal] at hv'
     | makeAbsent _ _ hi _ => exact ih (hi _ (List.mem_of_getElem? hai))
     | makeView _ _ hi _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
-    | makeBound _ _ hi _ _ _ _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
-    | makeGraphC _ _ _ hi _ _ _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
-    | makeGraphOut _ _ hi _ _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
+    | makeBound _ _ hi _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
+    | makeGraphC _ _ _ hi _ _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
+    | makeGraphOut _ _ hi _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
   | readC _ ih => intro Γ a S h; cases h with
     | val hv' => simp [isVal] at hv'
     | readAt hx _ _ _ => exact ih hx
@@ -957,8 +1059,8 @@ theorem fits_gotoC {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)
 
 theorem fits_gotoOut {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P}
     {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
-    (hc : P.ofC comp = false) (henv : ∀ i, V Fl.O (envOf L d i)) (hS : Sub Fl.O S) :
-    Fits Fl V Γ a S (.goto E K l L d comp) :=
-  .gotoOut hc (fun i => .inl (henv i)) hS
+    (hc : P.ofC comp = false) (hE : ∀ e ∈ E, Lowered Fl e) (henv : ∀ i, V Fl.O (envOf L d i))
+    (hS : Sub Fl.O S) : Fits Fl V Γ a S (.goto E K l L d comp) :=
+  .gotoOut hc hE (fun i => .inl (henv i)) hS
 
 end Verification.TolerantFrames.ReadOnly
