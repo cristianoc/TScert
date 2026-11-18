@@ -40,6 +40,9 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-slice-lookalike",
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-comes-back",
   "(() => { let mine = []; return walk(rows(), () => { if (mine.length === 0) mine = fill(3); else mine.length = 0; }); })()"))),
   "a row filled into the rows that came back, then truncated by the visitor that holds it");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-trim",
+  "(() => { const h = prepare(3); return walk(h, () => trim(0)); })()"))),
+  "a visitor calls the member that pops the handle's widths under the walker");
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-void-callback",
   "(() => { const h = prepare(3); const a = [2, 2, 2]; let k = 0; return walk(h, () => { k++; if (k === 1) return a; a.length = 0; }); })()"))),
   "a visitor typed `() => void` returns an array it then truncates, installed in the handle");

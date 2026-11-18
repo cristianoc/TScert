@@ -5034,5 +5034,10 @@ export const cases: Case[] = [
   negative("invalid-readonly-void-callback", "A visitor typed `() => void` returns an array the walker installs in its handle, which the visitor truncates (NaN under Node); (O) refuses the install of the value it returns."),
   positive("readonly-frame-own-map", "A module keeps a handle's widths in its own `WeakMap`: the library's method of its own storage passes nothing out, and the module's certificate holds."),
   negative("invalid-readonly-map-escape", "A member keeps a handle's widths in a `Map` its caller passes, the caller's method, which gives the array out writable for the caller to truncate under the walker (NaN under Node); (O) refuses its install."),
+  // The protocol and the guarantee (tests/single-pass-controls.mts,
+  // "read-only frame protocol"): the units' verdicts are the pass's own.
+  gap("readonly-frame-guarantee", "Paper I's guarantee example: a member installs a copy of the caller's array of the flags' length; the protocol has `any` at the replaced field, and the invariant is the guarantee's candidate. The walker's return needs the invariant across its visitor, which only the read-only frame gives.", "unverified", "search", /a return of 'walk' does not establish the postcondition stated by its declaration/),
+  negative("invalid-readonly-trim", "Paper I's member that shortens: it pops the array a handle exposes, which a visitor makes it do under the walker (NaN under Node); the protocol has `any` at that spine.", /The available claim for w\[i\] is undefined \| number/),
+  positive("readonly-frame-restored", "A member that empties a handle's widths and restores them before it returns: the invariant over them is not kept."),
   positive("readonly-frame-released-store", "A module whose entries take only numbers stores a row it gives out writable into rows it gives out writable: no released array can come back, and the module's certificate holds."),
 ];

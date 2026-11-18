@@ -40,6 +40,14 @@ exports), which the front reads from the source.
   values, a value entering from outside) stores a value all of whose
   reachable storage is of the component's local or exposed sites.
 
+- **Ψ, the protocol** (`protocolDiags`): the front's proposed protocol of
+  each component covers the charges of every write of its code (the parts
+  it may change in the component's region, by what), a write into storage
+  fresh in its frame charging nothing.
+- **G, the guarantee** (`Ctx.guarantee`): each type invariant of the family
+  with the writes of the component's code that change its support beyond
+  the client obligation, construction aside; kept where there is none.
+
 Nothing in acceptance reads the outcome (`familyOutcome`): the verifier
 prints it beside the units' verdicts (`WorkerWire.componentOutcome`). -/
 namespace Verification.ComponentChecks
@@ -502,6 +510,94 @@ def marksDiags (cx : Ctx) : List Diag := Id.run do
           out := ⟨C, "K", h.module, h.place, s!"the binding {h.name} holds the local site {cx.siteName t}"⟩ :: out
   return out
 
+/-! ## Frames: fresh storage and outside code -/
+
+/-- **The innermost code containing a place** of a module. -/
+def Ctx.codeAt (cx : Ctx) (module : String) (place : Span) : Option Nat :=
+  cx.F.codes.zipIdx.foldl (fun (b : Option (Nat × Nat)) (c, i) =>
+    if c.module == module && c.pos.1 ≤ place.1 && place.2 ≤ c.pos.2 then
+      match b with
+      | some (_, w) => if c.pos.2 - c.pos.1 < w then some (i, c.pos.2 - c.pos.1) else b
+      | none => some (i, c.pos.2 - c.pos.1)
+    else b) none |>.map (·.1)
+
+/-- The values whose contents a frame receives from another code: each
+code's parameters, receiver and result, and each caught value. -/
+def Ctx.boundaryValues (cx : Ctx) : Std.HashSet Nat :=
+  let codes := cx.F.codes.flatMap fun c => c.receiver :: c.result :: c.params.map (·.1)
+  Std.HashSet.ofList (codes ++ cx.F.catches.map (·.value))
+
+/-- **A value fresh in a frame of the code `k`**: every location it may
+hold was allocated by that frame. It is no value a frame receives from
+another code (a parameter, a receiver, a result, a caught value), enters
+from no outside code, is computed in `k` itself, not in a code enclosing
+it whose binding `k` captures, and each of its possible sites is of `k`'s
+own code; it is the result of a call in `k` of a standard array method whose
+reviewed contract allocates its result, or every source of it is a site of
+`k`'s code or another such value. -/
+def Ctx.freshIn (cx : Ctx) (boundary : Std.HashSet Nat) (k : Nat) : Nat → Nat → Bool
+  | 0, _ => false
+  | n + 1, v => match cx.F.values[v]? with
+    | none => false
+    | some x =>
+      let siteIn (t : Nat) : Bool := match cx.F.sites[t]? with
+        | some s => cx.codeAt s.module s.pos == some k
+        | none => false
+      x.incoming.isEmpty && x.incomingReadOnly.isEmpty && !boundary.contains v && cx.codeAt x.module x.pos == some k &&
+      x.sites.all siteIn &&
+      match cx.F.calls.find? (·.result == v) with
+      | some c => cx.codeAt c.module c.place == some k && c.native.any fun nt => nt.member && nt.array && nt.fresh
+      | none => !x.sources.isEmpty && x.sources.all fun
+        | .site t => siteIn t
+        | .value u => cx.freshIn boundary k n u
+        | _ => false
+
+/-- Whether a value is fresh in the frame of the code at a place. -/
+def Ctx.freshAt (cx : Ctx) (boundary : Std.HashSet Nat) (module : String) (place : Span) (v : Nat) : Bool :=
+  match cx.codeAt module place with
+  | some k => cx.freshIn boundary k (cx.F.values.length + 1) v
+  | none => false
+
+/-- **The codes that may run code outside the family** (a fixed point over
+the calls): a code making a call whose callee may enter from outside, a
+call of a native given a value that may enter from outside where it may
+call it (a standard library method at a position of function type or of no
+declared type, any other native at every position), or a call that may run
+such a code, a closure a native is given among them. -/
+def Ctx.runsOutside (cx : Ctx) : Std.HashSet Nat := Id.run do
+  let F := cx.F
+  let located := F.calls.map fun c => (cx.codeAt c.module c.place, c)
+  let mut out : Std.HashSet Nat := {}
+  for _ in [0:F.codes.length + 1] do
+    for (k, c) in located do
+      for i in k do
+        if !out.contains i then
+          let given := (c.receiver.toList ++ c.args.map (·.value)).map cx.value
+          let callbacks := given.flatMap fun t => t.sites.filterMap cx.codeAtSite.get?
+          -- A method of the standard library calls only what it is given at
+          -- a position of function type, or of no declared type (its
+          -- reviewed contract states its callbacks and conversions); any
+          -- other native may call whatever it is given.
+          let calls := if c.member then c.args.filter (fun a => match a.type with
+              | some .function | none => true
+              | _ => false) |>.map (fun a => cx.value a.value)
+            else given
+          let runs := !(cx.outsideOf c).isEmpty ||
+            c.native.isSome && calls.any (fun t => !(cx.closure t).components.isEmpty) ||
+            (c.targets ++ callbacks).any out.contains
+          if runs then out := out.insert i
+  return out
+
+/-- **A store into storage its frame allocated before any outside code
+could run**: its receiver fresh in the frame of its code (`freshIn`), a
+code that runs no outside code (`runsOutside`). No crossing into a
+component can have reached the storage, so no history protects it. -/
+def Ctx.unreached (cx : Ctx) (boundary : Std.HashSet Nat) (outside : Std.HashSet Nat) (module : String) (place : Span)
+    (receiver : Nat) : Bool :=
+  cx.freshAt boundary module place receiver && match cx.codeAt module place with
+    | some k => !outside.contains k
+    | none => false
+
 /-! ## (O), the stores -/
 
 /-- **The sites an install into `C`'s protected storage may not reach**
@@ -555,12 +651,13 @@ def mayComeBack (cx : Ctx) (C : Nat) : Bool :=
 
 /-- **A store into storage of `C` that may be protected**: a local or an
 exposed site's, a released site's where released storage may come back into
-`C` (`mayComeBack`) but a field's initial value in the record it allocates,
-or a value entering `C` from outside. -/
-def protectedInto (cx : Ctx) (C : Nat) (r : Tokens) (initial : Bool) : Bool :=
+`C` (`mayComeBack`) but a field's initial value in the record it allocates
+and a store into storage its frame allocated before any outside code could
+run (`unreached`), or a value entering `C` from outside. -/
+def protectedInto (cx : Ctx) (C : Nat) (r : Tokens) (initial unreached : Bool) : Bool :=
   r.components.contains C && !initial || r.sites.any fun t => match cx.mark t C with
     | some .local | some .exposed => true
-    | some .released => !initial && mayComeBack cx C
+    | some .released => !initial && !unreached && mayComeBack cx C
     | _ => false
 
 /-- The stores of the family's code with their values' tokens: each store,
@@ -575,12 +672,13 @@ def stores (cx : Ctx) : List (Nat × String × Span × Nat × Tokens × Bool) :=
 /-- **The ownership failures** (O): a store into storage that may be
 protected, of a value whose reachable storage is not all of the
 component's local or exposed sites. -/
-def ownershipDiags (cx : Ctx) : List Diag := Id.run do
+def ownershipDiags (cx : Ctx) (boundary outside : Std.HashSet Nat) : List Diag := Id.run do
   let mut out : List Diag := []
   for (k, module, place, receiver, stored, initial) in stores cx do
     let r := cx.value receiver
+    let unreached := cx.unreached boundary outside module place receiver
     for C in cx.chain k do
-      if protectedInto cx C r initial then
+      if protectedInto cx C r initial unreached then
         for t in installBad cx C stored do
           match cx.mark t C with
           | some m => out := ⟨C, "O", module, place,
@@ -591,6 +689,217 @@ def ownershipDiags (cx : Ctx) : List Diag := Id.run do
           out := ⟨C, "O", module, place,
             "a store into storage that may be protected installs a value entering from outside other than read-only into the component"⟩ :: out
   return out
+
+/-! ## The protocol Ψ and the guarantee G -/
+
+/-- **A charge** (the draft, "The protocol"): a write may change the part
+of the site `site` (`none` storage of code outside the component) of kind
+`kind`, at the key `key` of a field part (`none` every key), by `change`. -/
+structure Charge where
+  site : Option Nat
+  kind : PartKind
+  key : Option String
+  change : Footprints.Change
+  deriving Repr
+
+def partKindName : PartKind → String
+  | .field => "fields"
+  | .spine => "spines"
+  | .cell => "cells"
+
+def changeName : Footprints.Change → String
+  | .keep => "keep"
+  | .init => "init"
+  | .scalar => "scalar"
+  | .extend => "extend"
+  | .grow => "grow"
+  | .any => "any"
+
+def Ctx.partName (cx : Ctx) (site : Option Nat) (kind : PartKind) (key : Option String) : String :=
+  let where_ := match site with
+    | some t => s!"the site {cx.siteName t}"
+    | none => "storage of code outside the component"
+  let k := match kind, key with
+    | .field, some k => s!" at {k}"
+    | .field, none => " at every key"
+    | _, _ => ""
+  s!"the {partKindName kind} of {where_}{k}"
+
+/-- **The storage a write to a value may change in `C`'s protected
+region**: its possible sites exposed or released for `C` (a local site's
+storage that a call of `C` from outside code writes is storage the call
+allocated, which its frames alone hold, by (K); an internal site's is never
+in the region), and, where it may enter `C` from outside, every exposed and
+released site of `C` and storage of code outside `C` (the draft, *Incoming
+values*). -/
+def Ctx.targets (cx : Ctx) (C : Nat) (r : Tokens) : List (Option Nat) :=
+  let lent (t : Nat) : Bool := match cx.mark t C with
+    | some .exposed | some .released => true
+    | _ => false
+  let own := (r.sites.filter lent).map some
+  if r.components.contains C then
+    own ++ ((List.range cx.F.sites.length).filter lent).map some ++ [none]
+  else own
+
+/-- **The parts a store changes at one target, and by what**: a field at
+its key (every key at a computed one), and of an array an element's cell
+and the spine, which an element's write may lengthen (`grow`, keeping each
+dense prefix) and a write of no value (`delete`, an update) or of `length`
+may change arbitrarily. Every field and cell write is `any`. A native's
+site, and storage of code outside `C`, may be a record or an array. -/
+def storeParts (kind : Option SiteKind) (key : Option String) (element : Bool) (valued : Bool) :
+    List (PartKind × Option String × Footprints.Change) :=
+  let numeric := match key with
+    | some k => !k.isEmpty && k.all Char.isDigit
+    | none => false
+  let arr : List (PartKind × Option String × Footprints.Change) :=
+    if element || numeric then [(.cell, none, .any), (.spine, none, if valued then .grow else .any)]
+    else match key with
+      | some "length" => [(.spine, none, .any)]
+      | some k => [(.field, some k, .any)]
+      | none => [(.cell, none, .any), (.spine, none, .any), (.field, none, .any)]
+  let rec_ : List (PartKind × Option String × Footprints.Change) :=
+    if element then [(.field, none, .any)] else [(.field, key, .any)]
+  match kind with
+  | some .array => arr
+  | some .native | none => arr ++ rec_
+  | some _ => rec_
+
+/-- **A native's change of its receiver**: its spine, its cells and its
+fields at every key, arbitrarily. The reviewed contracts of the standard
+library's methods state no exceptional effect (`onThrow`), so at a throw
+every location they reach may change. -/
+def nativeParts : List (PartKind × Option String × Footprints.Change) :=
+  [(.spine, none, .any), (.cell, none, .any), (.field, none, .any)]
+
+/-- A write of the family's code: its component, module and place, its
+receiver's value, the parts it changes at a target of a site kind, and
+whether it is an initial value of the record it allocates. -/
+structure Write where
+  component : Nat
+  module : String
+  place : Span
+  receiver : Nat
+  parts : Option SiteKind → List (PartKind × Option String × Footprints.Change)
+  initial : Bool
+
+/-- **The family's writes**: each store, and each native's call with a
+receiver. -/
+def Ctx.writes (cx : Ctx) : List Write :=
+  cx.F.stores.map (fun s => ⟨s.component, s.module, s.place, s.receiver,
+    fun k => storeParts k s.key s.element s.stored.isSome, s.initial⟩) ++
+  cx.F.calls.filterMap fun c => do
+    let _ ← c.native
+    let r ← c.receiver
+    return ⟨c.component, c.module, c.place, r, fun _ => nativeParts, false⟩
+
+/-- **A write's charges to `C`**: none for an initial value (the record is
+allocated by the write) or a receiver fresh in its frame (`freshIn`: storage
+allocated after the entry of every call of `C` the write is in); else each
+part it changes at each target. -/
+def Ctx.chargesOf (cx : Ctx) (C : Nat) (w : Write) : List Charge :=
+  if w.initial then []
+  else (cx.targets C (cx.value w.receiver)).flatMap fun t =>
+    (w.parts (t.bind fun i => (cx.F.sites[i]?).map (·.kind))).map fun (k, key, δ) => ⟨t, k, key, δ⟩
+
+def Ctx.charges (cx : Ctx) (boundary : Std.HashSet Nat) (C : Nat) (w : Write) : List Charge :=
+  if cx.freshAt boundary w.module w.place w.receiver then [] else cx.chargesOf C w
+
+/-- **A proposed protocol covers a charge**: an entry at its site and kind,
+at its key or every key, with a change at least its. -/
+def covers (entries : List ProtocolEntry) (ch : Charge) : Bool :=
+  entries.any fun e => e.site == ch.site && e.kind == ch.kind &&
+    (e.key.isNone || (ch.key.isSome && e.key == ch.key)) && ch.change.le e.change
+
+/-- The entries proposed for `C`'s protocol. -/
+def Ctx.proposed (cx : Ctx) (C : Nat) : List ProtocolEntry :=
+  cx.F.protocols.filter (·.component == C) |>.flatMap (·.entries)
+
+/-- **The protocol's failures** (Ψ): `C`'s proposed protocol bounds the
+members, each write of `C`'s code (the members' and the code they run,
+on either exit, the changes at a throw included) charged within it; an
+entry names a site of `C`'s code or storage of code outside it. Runs of
+code outside `C` inside a member are bounded by the protocol itself
+(`ReadOnlyCert.Cert.ofBody`), so the writes alone are the fixed point's
+least solution. -/
+def protocolDiags (cx : Ctx) (boundary : Std.HashSet Nat) : List Diag := Id.run do
+  let mut out : List Diag := []
+  for p in cx.F.protocols do
+    for e in p.entries do
+      for t in e.site do
+        if (cx.mark t p.component).isNone then
+          out := ⟨p.component, "Ψ", (cx.F.sites[t]?.map (·.module)).getD "", (cx.F.sites[t]?.map (·.pos)).getD (0, 0),
+            s!"the protocol names the site {cx.siteName t}, of no code of the component"⟩ :: out
+  for w in cx.writes do
+    for C in cx.chain w.component do
+      let entries := cx.proposed C
+      for ch in cx.charges boundary C w do
+        if !covers entries ch then
+          out := ⟨C, "Ψ", w.module, w.place,
+            s!"the protocol omits the change {changeName ch.change} of {cx.partName ch.site ch.kind ch.key}"⟩ :: out
+  return out
+
+/-- A component's protocol as text, one entry per line. -/
+def Ctx.protocolText (cx : Ctx) (C : Nat) : List String :=
+  (cx.proposed C).map fun e => s!"{changeName e.change} at {cx.partName e.site e.kind e.key}"
+
+/-- **The paths an index fact reads of position 0**, with what each reads at
+its end; `none` where the fact's form is not read path by path (its support
+is then all storage reachable from the value). -/
+partial def factPaths : HeapKnowledge.IndexFact → Option (List (HeapKnowledge.Term.Kind × List String))
+  | .linear F => some (F.vars.filter (·.slot == 0) |>.map fun t => (t.kind, t.path))
+  | .either a b => do return (← factPaths a) ++ (← factPaths b)
+  | .guarded 0 path _ body => do return (.value, path) :: (← factPaths body)
+  | .guarded _ _ _ body => factPaths body
+  | _ => none
+
+/-- **A guarantee candidate's support** at `C`: the parts its paths read
+from a record of a site of `C` that may have its first keys, or from
+storage of code outside `C`; of every site reachable from them, where a
+fact is not read path by path. -/
+def Ctx.supportOf (cx : Ctx) (C : Nat) (g : Guarantee) : Charge → Bool :=
+  let ofC (t : Nat) : Bool := (cx.mark t C).isSome
+  match g.facts.mapM factPaths |>.map List.flatten with
+  | some paths =>
+    let firsts := paths.filterMap (·.2.head?)
+    let roots := (List.range cx.F.sites.length).filter fun t => ofC t && match cx.F.sites[t]? with
+      | some s => s.kind != .array && (s.anyKey || firsts.all s.keys.contains)
+      | none => false
+    let parts := paths.flatMap fun (kind, path) => Id.run do
+      let mut level := roots
+      let mut acc : List (Option Nat × PartKind × Option String) := []
+      for f in path do
+        acc := acc ++ (level.map fun t => (some t, PartKind.field, some f)) ++ [(none, .field, some f)]
+        level := (cx.closure (.ofSites (level.flatMap (cx.contents · |>.sites)))).sites.filter ofC
+      if kind == .length || kind == .view then
+        acc := acc ++ (level.map fun t => (some t, PartKind.spine, none)) ++ [(none, .spine, none)]
+      return acc
+    fun ch => parts.any fun (s, k, key) => s == ch.site && k == ch.kind && (ch.key.isNone || key.isNone || key == ch.key)
+  | none =>
+    let reach := (cx.closure (.ofSites ((List.range cx.F.sites.length).filter ofC))).sites
+    fun ch => ch.site.all reach.contains
+
+/-- **The guarantee `G_C`** (the draft, (L4)): each candidate with the
+writes of `C`'s code that change its support beyond the client obligation
+(`keep`), none where it is kept. A write is construction, free, where its
+receiver is fresh in its frame and its code runs no outside code before
+the invariant's introduction (`unreached`), where the boundary obligations
+establish it (ARITHMETIC.md, "Type invariants"). -/
+def Ctx.guarantee (cx : Ctx) (boundary outside : Std.HashSet Nat) (C : Nat) : List (Guarantee × List (String × Span × String)) :=
+  cx.F.guarantees.filter (fun g => (cx.F.components.zipIdx.find? fun (k, i) =>
+      k.kind == .module && k.location == g.module && (cx.chain i).contains C).isSome) |>.map fun g =>
+    let supp := cx.supportOf C g
+    (g, cx.writes.filter (fun w => (cx.chain w.component).contains C &&
+        !cx.unreached boundary outside w.module w.place w.receiver) |>.flatMap fun w =>
+      (cx.chargesOf C w).filter (fun ch => supp ch && !ch.change.le .keep) |>.map fun ch =>
+        (w.module, w.place, s!"changes {cx.partName ch.site ch.kind ch.key} by {changeName ch.change}"))
+
+/-- A component's guarantee as text: each candidate kept, or the first
+write that changes its support. -/
+def Ctx.guaranteeText (cx : Ctx) (boundary outside : Std.HashSet Nat) (C : Nat) : List String :=
+  (cx.guarantee boundary outside C).map fun (g, ws) => match ws with
+    | [] => s!"kept: {g.name}"
+    | (m, p, msg) :: _ => s!"not kept: {g.name}: a write at {m} {p.1}-{p.2} {msg}"
 
 /-! ## (S), no suspension -/
 
@@ -628,17 +937,20 @@ def suspensionDiags (cx : Ctx) (file : String) (fns : List (String × Span × Bo
 
 /-! ## The outcome -/
 
-/-- **Each component's outcome**: its kind, its location and the failures
-refusing its certificate, each once. -/
+/-- **Each component's outcome**: its kind, its location, the failures
+refusing its certificate, each once, its protocol and its guarantee. -/
 def familyOutcome (F : Components) (file : String) (fns : List (String × Span × Bool)) :
-    List (Nat × Component × List String) :=
+    List (Nat × Component × List String × List String × List String) :=
   let cx := Ctx.of F
+  let boundary := cx.boundaryValues
+  let outside := cx.runsOutside
   let flow := flowDiags cx
-  let diags := suspensionDiags cx file fns ++ marksDiags cx ++ ownershipDiags cx
+  let diags := suspensionDiags cx file fns ++ marksDiags cx ++ ownershipDiags cx boundary outside ++ protocolDiags cx boundary
   F.components.zipIdx.map fun (k, C) =>
     let own := flow.filterMap fun (c, module, place, message) =>
       if c.all (cx.chain · |>.contains C) then some s!"(flow) {module} {place.1}-{place.2}: {message}" else none
-    (C, k, (own ++ (diags.filter (·.component == C)).map Diag.render).eraseDups)
+    (C, k, (own ++ (diags.filter (·.component == C)).map Diag.render).eraseDups, cx.protocolText C,
+      cx.guaranteeText boundary outside C)
 
 def kindName : ComponentWire.Kind → String
   | .package => "package"

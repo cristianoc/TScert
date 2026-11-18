@@ -1699,6 +1699,58 @@ outside code holds give `PkgStep.localBindings` (proved,
 `localBindings_of_check`), and an install check that passes gives
 `Admitted` (proved, `admitted_of_check`).
 
+**The protocol and the guarantee on the wire** (in
+[ComponentChecks.lean](../../lean/Verification/Source/ComponentChecks.lean),
+read at a member's call in
+[ReadOnlyCert.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyCert.lean)).
+The front proposes $`\Psi_C`$, a change at each part it lists; the verifier
+charges every write of $`C`$'s code and refuses one its proposal does not
+cover, located at the write.
+
+- *Charges.* A write charges the parts it may change at each storage of
+  $`R_C`$ its receiver may be: each exposed and released site among its
+  receiver's, and, where the receiver may enter from outside, every exposed
+  and released site and outside storage. A field or a cell changes by
+  $`\mathsf{any}`$; an element's write lengthens a spine
+  ($`\mathsf{grow}`$), a write of no value or of `length` changes it by
+  $`\mathsf{any}`$; a native changes its receiver's spine, cells and fields
+  by $`\mathsf{any}`$, the reviewed contracts stating no effect at a throw,
+  so the exceptional exit is joined with the normal one at every part.
+- *Fresh storage.* A write charges nothing where it is an initial value of
+  the record it allocates, or where its receiver is fresh in its frame:
+  every location it may hold allocated by that frame, which a call of
+  $`C`$ entered from outside creates after its entry. A local site's
+  storage is not charged: a member entered from outside code reaches no
+  local location existing at its entry, by (K).
+- *The fixed point.* Runs of outside code inside a member are bounded by
+  $`\Psi_C`$ itself, so the charges of every write of $`C`$'s code are its
+  least solution. A member's call whose own steps are within $`\Psi_C`$
+  below its entry's length, its runs one call deeper bounded by
+  $`\Psi_C`$, bounds $`R_C`$ at its entry by $`\Psi_C`$ (proved,
+  `MemberRun.within`), which gives the certificate the decomposition of
+  actual executions reads (proved, `Cert.ofBody`); the protocol's check
+  gives a step within $`\Psi_C`$ where the step's changes are its writes'
+  charges (proved, `stepWithin_of_check`; the step's interpretation by its
+  writes is a hypothesis).
+- *The guarantee.* Each type invariant of the family is a candidate. Its
+  support is the parts its paths read from a record that may have its first
+  keys and from outside storage, and every part reachable from them where a
+  fact is not read path by path. A candidate is kept when no write of
+  $`C`$'s code changes its support beyond $`\Theta_C=\mathsf{keep}`$; a
+  write is construction, free, where its receiver is fresh in its frame and
+  its code runs no outside code, the boundary obligations establishing the
+  invariant at the handle's introduction. A step whose charges at the
+  support's parts are within $`\Theta_C`$ keeps it (proved,
+  `keeps_of_charges`).
+- *Storage no crossing reached.* (O) admits a store into released storage
+  whose receiver is fresh in its frame in a code that runs no outside code
+  (`unreached`): no crossing into $`C`$ can have reached it since its
+  allocation, so no history protects it. A code runs outside code where it
+  calls a callee that may enter from outside, a native given a value from
+  outside at a position it may call (a standard library method at a
+  position of function type or of no declared type, any other native at
+  every position), or a code that does.
+
 **The active frame and the roots of outside code** (in
 [ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)
 and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyOutside.lean)).

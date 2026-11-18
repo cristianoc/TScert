@@ -914,7 +914,8 @@ export type WorkerUnit = { unit: string; members: readonly string[] };
  * (`WorkerWire.componentOutcome`): its index, kind and location in the
  * fragment's family, and the failures refusing its certificate, none where
  * it holds. */
-export type ComponentOutcome = { component: number; kind: string; location: string; refusals: readonly string[] };
+export type ComponentOutcome = { component: number; kind: string; location: string; protocol: readonly string[];
+  guarantee: readonly string[]; refusals: readonly string[] };
 /** The file worker's first line (`WorkerWire.preparedLine`): the units its
  * selection checks, in the order their checks run; the module units the
  * interfaces establish; each component's outcome. */
@@ -969,10 +970,12 @@ export function decodeWorkerPrepared(text: string): WorkerPrepared {
 export function decodeComponentOutcomes(value: unknown, what: string): ComponentOutcome[] {
   if (!Array.isArray(value)) throw Error(`${what}: no components' outcomes`);
   return value.map((c: unknown): ComponentOutcome => {
-    const { component, kind, location, refusals } = exactFields(c, ["component", "kind", "location", "refusals"], `${what}'s component`);
-    if (typeof component !== "number" || typeof kind !== "string" || typeof location !== "string" || !isStrings(refusals))
+    const { component, kind, location, protocol, guarantee, refusals } =
+      exactFields(c, ["component", "kind", "location", "protocol", "guarantee", "refusals"], `${what}'s component`);
+    if (typeof component !== "number" || typeof kind !== "string" || typeof location !== "string" || !isStrings(protocol) ||
+        !isStrings(guarantee) || !isStrings(refusals))
       throw Error(`${what}: a malformed component's outcome`);
-    return { component, kind, location, refusals };
+    return { component, kind, location, protocol, guarantee, refusals };
   });
 }
 
