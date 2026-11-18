@@ -531,27 +531,29 @@ def Ctx.boundaryValues (cx : Ctx) : Std.HashSet Nat :=
   let codes := cx.F.codes.flatMap fun c => c.receiver :: c.result :: c.params.map (·.1)
   Std.HashSet.ofList (codes ++ cx.F.catches.map (·.value))
 
-/-- A call's code, whether it runs outside code itself (a callee that may
-enter from outside, a native given a value from outside where it may call
-it), and the codes it may run. -/
+/-- A call's code, whether it runs outside code itself, and the codes it
+may run. A call of a standard library method its reviewed overlay entry
+states (`library`) runs outside code where it may call an argument (by the
+entry) that may enter from outside; any other call where its callee may
+enter from outside, or it is a native given a value that may. -/
 def Ctx.callSteps (cx : Ctx) : List (Option Nat × Call × Bool × List Nat) :=
   cx.F.calls.map fun c =>
     let given := (c.receiver.toList ++ c.args.map (·.value)).map cx.value
     let callbacks := given.flatMap fun t => t.sites.filterMap cx.codeAtSite.get?
-    let calls := if c.member then
-        (c.args.zipIdx.filter fun (a, j) => a.spread || ((c.native.bind (·.calls[j]?)).getD true)).map
-          fun (a, _) => cx.value a.value
-      else given
-    (cx.codeAt c.module c.place, c, !(cx.outsideOf c).isEmpty ||
-      c.native.isSome && calls.any (fun t => !(cx.closure t).components.isEmpty), c.targets ++ callbacks)
+    let reaches (t : Tokens) : Bool := !(cx.closure t).components.isEmpty
+    let runs := match c.library with
+      | some called =>
+        -- A reviewed standard library method: the native method, whatever
+        -- its receiver's value, standard objects not being tampered with;
+        -- it calls only the arguments its entry states it may.
+        c.args.zipIdx.any fun (a, j) => (a.spread || called[j]?.getD true) && reaches (cx.value a.value)
+      | none => !(cx.outsideOf c).isEmpty || c.native.isSome && given.any reaches
+    (cx.codeAt c.module c.place, c, runs, c.targets ++ callbacks)
 
 /-- **The codes that may run code outside the family** (a fixed point over
-the calls): a code making a call whose callee may enter from outside, a
-call of a native given a value that may enter from outside where it may
-call it (a standard library method at each argument its declaration does
-not type by a type parameter or a primitive, and at each spread argument,
-which it iterates; any other native at every position), or a call that may
-run such a code, a closure a native is given among them. -/
+the calls): a code making a call that runs outside code itself
+(`callSteps`), or a call that may run such a code, a closure a native is
+given among them. -/
 def Ctx.runsOutside (cx : Ctx) : Std.HashSet Nat := Id.run do
   let located := cx.callSteps
   let mut out : Std.HashSet Nat := {}
@@ -561,51 +563,98 @@ def Ctx.runsOutside (cx : Ctx) : Std.HashSet Nat := Id.run do
         if !out.contains i && (runs || next.any out.contains) then out := out.insert i
   return out
 
-/-- **The parameter of the code `i` a call calls**: its callee the value of
-that parameter, which no statement assigns (its sources none). -/
-def Ctx.paramCallee (cx : Ctx) (i : Nat) (c : Call) : Option Nat := do
+/-- **The parameter of the code `i` a value is**: a value whose only source,
+through values of one source each, is that parameter, which no statement
+assigns (its sources none). -/
+def Ctx.paramOf (cx : Ctx) (i : Nat) (v : Nat) : Option Nat := do
   let code ← cx.F.codes[i]?
-  let callee ← cx.F.values[c.callee]?
-  match callee.sources with
-  | [.value p] =>
-    let j ← code.params.findIdx? (·.1 == p)
-    if (cx.F.values[p]?).any (·.sources.isEmpty) then some j else none
-  | _ => none
+  let rec go : Nat → Nat → Option Nat
+    | 0, _ => none
+    | n + 1, v => match code.params.findIdx? (·.1 == v) with
+      | some j => if (cx.F.values[v]?).any (·.sources.isEmpty) then some j else none
+      | none => match (cx.F.values[v]?).map (·.sources) with
+        | some [Source.value u] => go n u
+        | _ => none
+  go (cx.F.values.length + 1) v
 
-/-- The parameters of the code `t` some call of its calls. -/
-def Ctx.calls (cx : Ctx) (t : Nat) : List Nat :=
-  (cx.F.calls.filterMap fun c => match cx.codeAt c.module c.place with
-    | some i => if i == t then cx.paramCallee t c else none
-    | none => none).eraseDups
-
-/-- **The codes that may run outside code other than by calling their own
-parameters** (a fixed point): `runsOutside` with each call of an unassigned
-parameter of the calling code left out, its argument being the caller's. -/
-def Ctx.runsOutsideBut (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat := Id.run do
-  let mut out : Std.HashSet Nat := {}
-  for (k, c, runs, next) in cx.callSteps do
-    for i in k do
-      if (cx.paramCallee i c).isNone && (runs || next.any outside.contains) then out := out.insert i
-  return out
-
-/-- **The quiet codes**: a code each of whose calls runs no outside code
-itself and may run only codes that run none, or that run outside code
-only by calling their parameters and are given at each parameter they call
-a value that enters from no outside code and is codes running none. A frame
-of a quiet code, and every frame its calls create, runs no outside code. -/
-def Ctx.quiet (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat := Id.run do
-  let but := cx.runsOutsideBut outside
+/-- **The codes that run outside code only through their parameters, and
+the parameters each may call** (a joint least fixed point). A code calls a
+parameter when a call's callee is that parameter, or when it passes the
+parameter at a position a code the call may run calls. A call of a
+parameter of its code is that code's caller's concern. Another call is
+bounded where it runs no outside code itself and each code it may run runs
+none, or runs outside code only through parameters at whose positions the
+call passes a value that enters from no outside code and is codes running
+none, or a parameter of the calling code. A code with a call not bounded
+runs outside code besides its parameters (`but`). -/
+def Ctx.paramBounded (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat × Std.HashMap Nat (List Nat) := Id.run do
   let steps := cx.callSteps
   let quietValue (v : Nat) : Bool :=
     let t := cx.value v
     t.components.isEmpty && t.sites.all fun s => match cx.codeAtSite.get? s with
       | some k => !outside.contains k
       | none => false
+  let mut but : Std.HashSet Nat := {}
+  let mut called : Std.HashMap Nat (List Nat) := {}
+  let params := cx.F.codes.foldl (fun n c => n + c.params.length) 0
+  let mut changed := true
+  -- Each round that changes adds a code to `but` or a parameter to
+  -- `called`, so the fixed point is reached within this many rounds.
+  for _ in [0:cx.F.codes.length + params + 1] do
+    if !changed then break
+    changed := false
+    for (k, c, runs, all) in steps do
+      -- A closure an ordinary call passes runs at the parameter it binds,
+      -- which `called` follows; a native, or a library method, runs it.
+      let next := if c.native.isSome || c.library.isSome then all else c.targets
+      for i in k do
+        match cx.paramOf i c.callee with
+        | some j =>
+          if !((called.getD i []).contains j) then
+            called := called.insert i (j :: called.getD i [])
+            changed := true
+        | none =>
+          let mut bad := runs
+          for u in next do
+            if outside.contains u then
+              if but.contains u then bad := true
+              else
+                for j in called.getD u [] do
+                  match c.args[j]? with
+                  | none => pure ()
+                  | some a =>
+                    if a.spread then bad := true
+                    else match cx.paramOf i a.value with
+                      | some p =>
+                        if !((called.getD i []).contains p) then
+                          called := called.insert i (p :: called.getD i [])
+                          changed := true
+                      | none => if !quietValue a.value then bad := true
+          if bad && !but.contains i then
+            but := but.insert i
+            changed := true
+  -- Not reached: every code runs outside code besides its parameters.
+  if changed then but := Std.HashSet.ofList (List.range cx.F.codes.length)
+  return (but, called)
+
+/-- **The quiet codes**: a code each of whose calls runs no outside code
+itself and may run only codes that run none, or that run outside code only
+through parameters (`paramBounded`) at whose positions it passes a value
+that enters from no outside code and is codes running none. A frame of a
+quiet code, and every frame its calls create, runs no outside code. -/
+def Ctx.quiet (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat := Id.run do
+  let (but, called) := cx.paramBounded outside
+  let quietValue (v : Nat) : Bool :=
+    let t := cx.value v
+    t.components.isEmpty && t.sites.all fun s => match cx.codeAtSite.get? s with
+      | some k => !outside.contains k
+      | none => false
   let callOk (c : Call) (runs : Bool) (next : List Nat) : Bool :=
-    !runs && next.all fun t => !outside.contains t || (!but.contains t &&
-      (cx.calls t).all fun j => (c.args[j]?).all fun a => !a.spread && quietValue a.value)
+    !runs && next.all fun u => !outside.contains u || (!but.contains u &&
+      (called.getD u []).all fun j => (c.args[j]?).all fun a => !a.spread && quietValue a.value)
   let mut bad : Std.HashSet Nat := {}
-  for (k, c, runs, next) in steps do
+  for (k, c, runs, all) in cx.callSteps do
+    let next := if c.native.isSome || c.library.isSome then all else c.targets
     for i in k do
       if !callOk c runs next then bad := bad.insert i
   return Std.HashSet.ofList ((List.range cx.F.codes.length).filter (!bad.contains ·))

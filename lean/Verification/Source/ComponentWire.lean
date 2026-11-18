@@ -182,10 +182,6 @@ structure Native where
   array : Bool
   fresh : Bool
   primitiveElements : Bool
-  /-- Of a standard library method, whether its declared parameter at each
-  argument may be called: not where the declaration types it by a type
-  parameter or a primitive. -/
-  calls : List Bool
   deriving Repr
 
 /-- A call: its callee's, receiver's, arguments' and result's values, the
@@ -201,6 +197,9 @@ structure Call where
   targets : List Nat
   inst : Option Nat
   native : Option Native
+  /-- Of a call of a standard library method a reviewed overlay entry
+  states, whether it may call each argument. -/
+  library : Option (List Bool)
   deriving Repr
 
 /-- A value thrown or caught, a binding a module or a closure holds (its
@@ -518,18 +517,19 @@ def decodeStore (j : Json) : Except String Store := do
     ← jOptStr j "key", ← jBoolAt j "element", ← jOptNat j "stored", ← jBoolAt j "initial"⟩
 
 def decodeCall (j : Json) : Except String Call := do
-  fieldsExactly j ["module", "at", "component", "callee", "receiver", "args", "result", "targets", "instance", "native"]
+  fieldsExactly j ["module", "at", "component", "callee", "receiver", "args", "result", "targets", "instance", "native", "library"]
   let args ← (← jArr j "args").mapM fun a => do
     fieldsExactly a ["value", "spread", "at", "type"]
     return (⟨← jNat a "value", ← jBoolAt a "spread", ← jSpanAt (← jField a "at"), ← jOptShape a "type"⟩ : Arg)
   let n ← jField j "native"
   let native ← if n == .null then pure none else do
-    fieldsExactly n ["site", "passed", "given", "all", "member", "name", "array", "fresh", "primitiveElements", "calls"]
+    fieldsExactly n ["site", "passed", "given", "all", "member", "name", "array", "fresh", "primitiveElements"]
     pure (some (⟨← jNat n "site", ← jNat n "passed", ← jNat n "given", ← jNat n "all", ← jBoolAt n "member",
-      ← jOptStr n "name", ← jBoolAt n "array", ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements",
-      ← (← jArr n "calls").mapM (·.getBool?)⟩ : Native))
+      ← jOptStr n "name", ← jBoolAt n "array", ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements"⟩ : Native))
+  let l ← jField j "library"
+  let library ← if l == .null then pure none else some <$> (← l.getArr?).toList.mapM (·.getBool?)
   return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "callee",
-    ← jOptNat j "receiver", args, ← jNat j "result", ← jNatList j "targets", ← jOptNat j "instance", native⟩
+    ← jOptNat j "receiver", args, ← jNat j "result", ← jNatList j "targets", ← jOptNat j "instance", native, library⟩
 
 /-- A thrown or caught value (`named` false, no name) or a held binding. -/
 def decodePlace (named : Bool) (j : Json) : Except String Place := do
