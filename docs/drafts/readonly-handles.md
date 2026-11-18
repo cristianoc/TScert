@@ -88,7 +88,8 @@ New machinery: one region, one protocol per package, one rule, one mark per
 allocation site, one confinement check and one trust row. No new judgment
 form, no new modality, and no world component but two ghost ones: the set
 $`E_P`$ of the exposed-site locations that crossed read-only, and the history
-$`A_P`$ of each active call's protected roots.
+$`A_P`$ of the released and outside locations each active call has seen
+protected.
 
 ## The example
 
@@ -184,11 +185,11 @@ reached it read-only:
   entry's result, a callback's argument, a value thrown) protects none,
   whatever position it leaves at.
 
-The decision is per location, not per root: an exposed handle that holds a
+The decision is per location: an exposed handle that holds a
 caller's array gives the array no lasting protection, and a released
 wrapper given out read-only still protects an exposed child it holds. In
 `{ readonly a: readonly number[]; b: number[] }` with one array under both
-fields, the array is a root, reached read-only through `a`, and the row
+fields, the array is reached read-only through `a`, and the row
 forbids changing it through `b` too, since the pass cannot see the alias in
 an incoming value. This one predicate, read at the current state, gives
 the region, the marks, confinement and the trust row.
@@ -196,10 +197,10 @@ Two examples:
 - a `LayoutLineRange` given to `onLine`, `{ width: number; start:
   LayoutCursor; end: LayoutCursor }` with writable fields: its type is not
   read-only, so the record and its cursors are reached writable, storage of
-  released sites, and it has no root;
+  released sites, and it protects nothing;
 - `{ readonly box: { xs: number[] } }`: the root position's type is not
   read-only, nor is `box`'s, `{ xs: number[] }`, so `box` and `xs` are
-  reached writable and the crossing has no root. A walker that holds `xs`
+  reached writable and the crossing protects nothing. A walker that holds `xs`
   keeps no fact of it across the caller's code.
 
 **Marks, one per allocation site.** Each allocation site of $`P`$ carries a
@@ -222,11 +223,15 @@ site. The front
 proposes each site's mark and the pass checks every crossing and every
 store against it; a forged mark fails a check (conjectured).
 
-**The exposed roots.** $`E_P`$ is a ghost component of the state: the
+**The exposed locations.** $`E_P`$ is a ghost component of the state: the
 locations of exposed sites that a crossing has reached read-only, from the
-crossing on. It only grows, and it decides protection of exposed-site
-storage alone; protection of released and outside storage is decided by
-holds and by $`A_P`$, at the current state. Storage protected at a run's
+crossing on. It only grows. It records which exposed locations outside code
+can reach, which (P2) and the row read, and decides nothing of the region,
+which holds every exposed location, crossed or not. A released or outside
+location is protected only through a live incoming read-only crossing: one
+that reached it read-only, while the package holds it, or holds a location
+it is reachable from, or the location is recorded in a set of $`A_P`$. A
+writable argument the package holds is not protected. Storage protected at a run's
 entry stays protected until that run ends. A key of a `WeakMap` is no hold:
 the two confined `WeakMap`s pretext keys by handle (`line-text.ts:11`,
 `rich-inline.ts:1156`) protect nothing, and no fact relies on them, since a
@@ -234,21 +239,25 @@ value read from a confined collection gets no invariant (*The invariant at
 use*).
 
 **The history.** $`A_P`$ is a ghost component of the state: the stack of
-the active calls of $`P`$, each with the set of roots protected at some
-state of that call. Its transitions: a call's entry pushes a set holding
-the roots protected at entry; a step that makes a root protected (a
-crossing, a hold) adds it to the set of every active call, so the sets of
+the active calls of $`P`$, each with the set of every released or outside
+location protected at some state of that call, each location itself, not
+one a path starts from. Its transitions: a call's entry pushes a set
+holding the locations protected at entry; a step that makes a location
+protected (an incoming read-only crossing, a hold of a location so reached
+or of one it is reachable from) adds that location, and every location
+then protected through it, to the set of every active call, so the sets of
 overlapping calls grow together; a call's normal and exceptional exits pop
-its own set, and nothing else removes a root from a set.
-A released or outside root is protected at a state exactly when it is held
-or is in a set of $`A_P`$. Two states with the same heap and the same holds
+its own set, and nothing else removes a location from a set. A released or
+outside location is protected at a state exactly when a live incoming
+read-only crossing protects it, held or recorded in a set of $`A_P`$. Two states with the same heap and the same holds
 differ in $`A_P`$ where an active call overlapped an earlier hold, and the
 protection, the region and the action read it.
 
-**The protected region.** $`R_P(\rho,h,A)`$ is the storage of local sites
-and the locations protected at the state by the predicate above: those of
-exposed sites in $`E_P`$, and those of released and outside storage an
-incoming crossing reached read-only that are held or recorded in $`A`$.
+**The protected region.** $`R_P(\rho,h,A)`$ is the storage of local and
+exposed sites, crossed or not, and the released and outside locations a
+live incoming read-only crossing protects at the state, held or recorded in
+$`A`$. This is the one membership test, used alike in *At a callback*,
+(P2), (L3), the region and the row.
 Reachability runs through fields, spines and element cells, stopping at
 collections, whose entries the model holds in no location (cited:
 [native footprints](../SOURCE-CONTRACTS.md#native-footprints), the row of
@@ -309,9 +318,9 @@ effect, and each call of a callback it makes is bounded by the rule.
 
 **At a callback.** Let a walker hold $`F`$ with a support $`S`$ and
 $`\Psi_P\triangleleft_K S`$. The frame applies where the pass shows $`S`$
-inside $`R_P`$: every possible origin of each object a path of $`S`$ reads
-is a local or exposed site, or a location the predicate protects at that
-state. A record $`P`$ received
+inside $`R_P`$ by the one membership test: every possible origin of each
+object a path of $`S`$ reads is a local or exposed site, or a released or
+outside location a live incoming read-only crossing protects. A record $`P`$ received
 at a writable type and passed on internally has no such origin, and its
 facts do not cross. Tolerant frame then gives
 $`K\wedge F\vdash\Box_{\Phi\oplus_P\Psi_P}F`$, and Reliance carries $`F`$
@@ -343,8 +352,9 @@ The rule rests on two invariants of states and four lemmas. Each is
 conjectured until its Lean exists.
 
 - **(P2) Confinement.** Every path from a frame of code that is not $`P`$'s
-  to a location of a local or exposed site enters $`R_P`$ at a location the
-  predicate protects, reached through read-only positions. Paths run through
+  to a location of a local or exposed site reaches it only through a
+  location of $`E_P`$, through read-only positions: a local location, and an
+  exposed one not yet in $`E_P`$, are reachable from no such frame. Paths run through
   fields, cells, spines and element cells; a closure's environment is not
   reachable from a holder of the closure. From the
   [confinement check](#the-checks-the-rule-requires) and the marks.
@@ -362,10 +372,11 @@ conjectured until its Lean exists.
   no other.
 - **(L2) Outside run.** A run of code that is not $`P`$'s from a state
   $`(h,A)`$, inside a call $`c`$ of $`P`$ active in $`A`$, changes each
-  location of $`R_P(h,A)`$ within $`\Psi_P`$. Every root protected at
-  $`(h,A)`$ is held or in a set of $`A`$ at or below $`c`$'s; the run's
-  transitions push and pop only above $`c`$'s set and only add to it, so
-  each such root stays in a set of every later state until $`c`$ returns,
+  location of $`R_P(h,A)`$ within $`\Psi_P`$. Every released or outside
+  location protected at $`(h,A)`$ is in $`c`$'s set or one below it; the
+  run's transitions push and pop only above $`c`$'s set and only add to the
+  sets, so each such location stays in a set of every later state until
+  $`c`$ returns,
   $`R_P(h,A)`$ stays inside the region of every later state of the run, and
   (L1) holds at each outside step. By
   induction on the budget $`k`$: the run changes $`R_P`$ only inside
@@ -382,8 +393,8 @@ conjectured until its Lean exists.
   the bottom to the current call only grow across it, and composition of a
   call's two exits with what follows carries the relation. For every pair of the
   action within a call of $`P`$, $`R_P(h,A)\subseteq R_P(h',A')`$: the part
-  by marks is fixed at allocation; every root protected at $`(h,A)`$ stays
-  in a set of $`A'`$; and $`\Psi_P`$ preserves
+  of local and exposed sites is fixed by marks at allocation; every released
+  or outside location protected at $`(h,A)`$ stays in a set of $`A'`$; and $`\Psi_P`$ preserves
   the references (*Reference-preserving protocol*), every reference held in
   $`R_P(h)`$ held in $`R_P(h')`$ and every listed cell listed, by induction
   on the length of the path. So for $`h\to h'\to h''`$ within the call, a
@@ -495,6 +506,27 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   fail*, and charged at its key to every possible site of the written
   object.
 
+- **Ownership of installed storage.** Private representation's
+  *Ownership at construction*, restated for $`R_P`$: a write of the
+  package that installs storage into a location of protected storage, or
+  into a location the support of an invariant in $`G_P`$ reads, stores
+  storage protected for the rest of the run: fresh storage the package
+  allocated, an unconfined copy made there, or storage already protected.
+  A caller's writable argument is none of these: an entry
+  `install(xs: number[])` storing the visitor's own `[7]` in a handle whose
+  invariant reads it is refused unless it copies. Pretext's entries meet it
+  (by reading them): `prepareRichInline` stores of its items only their
+  strings and numbers (`text`, `font`, `letterSpacing`, `break`,
+  `extraWidth`, `rich-inline.ts:57–64`), and the options of `prepare`,
+  `prepareWithSegments` and `prepareRichInline` are strings and numbers.
+- **Reads through a possibly null value.** A read `e![k]` or `e!.f` whose
+  operand's type admits `null` or `undefined` is the read of `e`: the `!`
+  is erased, as TypeScript erases it, and the operand, held in a slot,
+  reaches the existing lowering of a member of `null` or `undefined`,
+  `nullishSplit` and `nullishGuard`, which throws a `TypeError` where it is
+  nullish (cited: [members of primitives and nullish values](../PROGRAM-TYPING.md#members-of-primitives-and-nullish-values), "A member of `null` or `undefined`").
+  No new step: the read throws as JavaScript's does, and a throw is an
+  allowed outcome.
 - **No suspension.** The rule applies to a package whose code never
   suspends: no `await`, no `yield`, no async function and no generator in
   the analyzed sources of a package whose handles it protects. Its reason:
@@ -668,7 +700,7 @@ it gives is conjectured.
   row excludes it. Read by the path predicate, the 17 signatures and the
   types they name (by reading them): the three handle types are read at
   their representations, read-only throughout, so each handle's storage is
-  reached read-only from its root; the `PreparedTextWithSegments` members
+  reached read-only from the handle; the `PreparedTextWithSegments` members
   are `readonly` arrays and `ArrayLike<number>`, also read-only; every other
   value at a read-only position is a number or a string; the types that are
   not read-only (the items `prepareRichInline` takes, the `LayoutCursor` a
@@ -684,10 +716,10 @@ it gives is conjectured.
   materialized from"). A range the walk or the stream gave holds cursors
   pretext allocated (`:934–935`, `:1007`, `:1039–1040`), given out in the
   range at `LayoutCursor`, a writable type: storage of released sites. Given
-  out again in the fragments, at an unmentioned field, they make no root,
-  since a crossing out of the package makes roots only of exposed storage.
+  out again in the fragments, at an unmentioned field, they are not
+  protected, since a crossing out of the package protects only exposed storage.
   Passed back in a range at `RichInlineLineRange`, a writable type, they
-  are reached writable and make no root either, so *Confinement*, which
+  are reached writable and are not protected either, so *Confinement*, which
   binds protected storage, is not at stake, and every write the package
   makes to them is charged at its key to the released sites. Materializing
   one range repeatedly, in the walk's visitor and after it, is admitted and
@@ -699,7 +731,7 @@ it gives is conjectured.
   scratch copy of upstream `0d102a5c` and type-check under its
   `tsconfig.build.json` with its pinned TypeScript, 7.0.2 (observed: no
   error). Upstream's own suite, `bun test src/layout.test.ts`, passes 191 of
-  191 on the edited copy (observed, Bun 1.4.2). Together they add 102 lines
+  191 on the edited copy (observed, Bun 1.4.2). Together they add 103 lines
   and remove 24 in `README.md`, `layout.ts`, `line-break.ts`, `line-text.ts`,
   `prepare.ts` and `rich-inline.ts`, many of the added lines being the
   obligation in three doc comments and in the README. `oxlint`, which upstream's `check` also runs,
@@ -744,10 +776,10 @@ it gives is conjectured.
   are proved at the paragraph's two introductions: at `:218` from
   `measureAnalysis`'s overload with segments, at `:666` from the paragraph's
   lists, filled one entry per segment (conjectured until checked). A handle
-  from outside meets them by the row on handle parameters; the lazy write
-  also checks `segments.length === widths.length` before it builds a list
-  per segment, since that write installs storage the invariant then
-  constrains. Six annotation comments, three of them with the obligation, and the
+  from outside meets them by the row on handle parameters, which supplies
+  `segments.length === widths.length` at the entry; the lazy writer checks
+  only that each destination field is `null`. Seven annotation comments, three of them with the obligation and one the
+  `@requires` of `materializeRichInlineLineRange`, and the
   row in the README's new section "Callers' obligation", which names the
   entry modules `.` (`@chenglou/pretext`) and `./rich-inline`, each in the
   caller-facing words of *Trust*.
@@ -805,11 +837,21 @@ it gives is conjectured.
     `sourceEnds![…]`, which throws upstream's own `TypeError`, with its
     message, where the field is `null` (observed under Bun, upstream and
     edited alike: "null is not an object (evaluating 'sourceEnds[endSegmentIndex - 1]')");
-    a throw is an allowed outcome. TScert reads `e!` as no check today, so
-    it needs a step for it: a read through a value whose type admits `null`
-    or `undefined` lowered as the host's property read, with its throw edge
-    at `null` and `undefined`, an audited native step; the pass then
-    accepts the read with the throw as its exceptional exit.
+    a throw is an allowed outcome, read by *Reads through a possibly null
+    value*. The outer `!`, that the element read gives a number, needs its
+    index in range: `materializeRichInlineLineRange` states, as an
+    `@requires` on the entry under the row on exported preconditions,
+    `forall i < line.fragments.length of line.fragments:
+    0 <= line.fragments[i].start.segmentIndex &&
+    line.fragments[i].start.segmentIndex <= line.fragments[i].end.segmentIndex`,
+    the range as the package gave it. A caller that sets a writable
+    fragment's segment indices to `-2` and `-1` makes both versions return
+    `sourceEnd` `undefined` at type `number` (cited: the review's
+    reproduction), and breaks that precondition. The bound is stated, not
+    proved, since a caller can write those fields. The reads of a segment's
+    grapheme ends at a fragment's grapheme index need a bound no clause
+    states (a segment's grapheme count is computed), so those reads stay a
+    gap of the materializer, apart from P22.
 
   With one of the three fields made non-writable by outside code, which the
   row admits, two materializations of the same line under Bun give the same
@@ -891,7 +933,7 @@ it gives is conjectured.
   The public `LayoutCursor` a caller passes is validated on entry as
   upstream does. No change.
 
-In all, checked as above: the README's section and six annotation
+In all, checked as above: the README's section and seven annotation
 comments, three with the obligation; brand-free records, casts through `unknown` and four checked
 introductions in `layout.ts` and `rich-inline.ts`; three overloads and a
 typed literal in `prepare.ts` and two overloads in `layout.ts`; and the
@@ -977,7 +1019,7 @@ What this design gives up:
 What it gains:
 
 - **Pretext's source stays upstream's** but for the checked edits counted
-  above (102 lines added and 24 removed): no class, no static block, no staging field, no
+  above (103 lines added and 24 removed): no class, no static block, no staging field, no
   `#segments !== null` test, no move of five modules into one class body.
 - **No class shape**: no base-class, evaluated-once, construction, staging,
   lexical-dispatch or distinct-name restriction; no lifting of the
@@ -1032,7 +1074,7 @@ JavaScript, run with `node`, printing the reads), each refused:
   `{ readonly box: { xs: number[] } }`, holds `xs` and caches its length;
   the caller truncates `xs` during the visitor, which the row lets it do:
   `[1, undefined, undefined]`. Refused at the walker's read: by the path
-  predicate the crossing has no root, `xs` is outside $`R_P`$, and the
+  predicate the crossing protects nothing, `xs` is outside $`R_P`$, and the
   fact of its length does not cross the visitor.
 - `invalid-readonly-key-added-later`: `make()` allocates a record with `a`
   alone and then adds `n`; a visitor passes the handle to an entry
@@ -1041,6 +1083,12 @@ JavaScript, run with `node`, printing the reads), each refused:
   Refused by *Tolerant invariant*: the site's keys include `n`, added by
   `make`'s write, so `reset`'s write is charged to it and does not keep the
   invariant.
+- `invalid-readonly-install-caller-array`: an entry
+  `install(xs: number[])` stores the visitor's own `[7]` in a handle whose
+  invariant reads it; the visitor then pops its array, and the walker,
+  relying on the invariant, reads `[7, undefined]`. Refused by *Ownership
+  of installed storage*: the stored array is neither fresh, a copy, nor
+  protected.
 - `invalid-readonly-installed-then-shortened`: a member installs a fresh
   list of the right length in an old handle, then shortens it before a
   callback; a walker relying on the invariant reads
@@ -1119,18 +1167,19 @@ native's throw edge forged without its partial writes; a handle invariant
 forged to read a path outside its representation; a fact forged as
 supported in $`R_P`$ whose origin is a writable crossing; a `length`
 assignment forged atomic; a native write forged to charge one typed-array
-view where its buffer has two; a site's keys forged to its allocation's alone; protection of
+view where its buffer has two; a site's keys forged to its allocation's alone; a caller's writable
+argument forged as protected storage at an install; protection of
 released storage forged from a crossing out of the package; the lazy write
 forged uncharged to
 $`R_{\mathrm{in}}`$, or forged to fill the three fields where one is not
 `null`; a client's callback forged to keep storage it truncates, or checked
-only against storage passed in the same call; a crossing forged to have a
-root at a position whose type is not read-only; a weak key forged as a
+only against storage passed in the same call; a crossing forged to protect a
+location at a position whose type is not read-only; a weak key forged as a
 hold; a write to a freshly installed list forged unchecked; a nested
-call's root forged into its own set only; a package containing
+call's protected location forged into its own set only; a package containing
 an `await` forged as one that never suspends; a record still being built forged complete, or a complete
 handle's installed list forged free; a call's exit forged to keep its set of $`A_P`$, or a step forged
-to remove a root from one; an invariant forged into $`G_P`$ that a write
+to remove a location from one; an invariant forged into $`G_P`$ that a write
 does not keep; a value read from a `Map` forged to meet its type's
 invariant with no boundary or check.
 
