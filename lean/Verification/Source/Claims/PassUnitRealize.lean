@@ -1,4 +1,5 @@
 import Verification.Source.Claims.PassUnitLink
+import Verification.Semantics.ComponentTags
 
 /-! # The single pass's unit theorem: realizing a file's interfaces
 
@@ -115,29 +116,32 @@ variable {ι : Type}
 /-- **A module function's code at one of its signatures** (`RowSpec`): code
 of `arity`, collecting no rest, whose effect is one module code realizes
 (`Effect.belowRow`: below its arity, a postcondition over the result, the
-receiver and its parameters admitted), run outside every component (`none`,
-as a module closure's code is: `ModuleCode.closure`) and safe from every
-frame meeting the signature's, its precondition and the separation `sep`, at
-the signature's result and its specification on both exits (`Exits.exitPostW`). `GraphCodeSpec` at no rest spine, at `sep = {}` and with no
+receiver and its parameters admitted), safe, run at every component, from
+every frame meeting the signature's, its precondition and the separation
+`sep`, at the signature's result and its specification on both exits
+(`Exits.exitPostW`). A run's component is ghost
+(`HeapObservations.SafePostExcV.goto_comp_iff`), so safety at one component,
+as a module closure's code has (`none`: `ModuleCode.closure`), is safety at
+every one. `GraphCodeSpec` at no rest spine, at `sep = {}` and with no
 postcondition, is one (`rowSpec_of_graphCodeSpec`). -/
 def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
     (Cs : List (Ty ι)) (row : CallEffects.Arrow (Ty ι)) (sep : HeapSeparation.Separation) : Prop :=
   arity ≤ row.arguments.length ∧ row.effect.belowRow arity = true ∧
-  ∀ n W h L, EnvOk G (codeFrame arity row Cs none) (envOf L .nul) n W → WorldAdm W →
-    HeapOk n W h → RefsOk W (.goto E K start L .nul none) → CallArguments.Values L →
+  ∀ n W h L comp, EnvOk G (codeFrame arity row Cs none) (envOf L .nul) n W → WorldAdm W →
+    HeapOk n W h → RefsOk W (.goto E K start L .nul comp) → CallArguments.Values L →
     PreAt row.effect (none : Option (Ty ι)) L h → HeapSeparation.Holds sep (envOf L .nul) →
     ∀ r args, FrameValues arity (none : Option (Ty ι)) L r args →
       HeapObservations.SafePostExcV (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset (none : Option (Ty ι))) L))
         (row.effect.schema.exitPostW .normal r args W h) (row.effect.schema.exitPostW .exceptional r args W h)
-        n W h (.goto E K start L .nul none)
+        n W h (.goto E K start L .nul comp)
 
 /-- **Graph code at a signature is module code at it** (proved). -/
 theorem rowSpec_of_graphCodeSpec {G : NormalGraph ι} {arity E K start Cs row}
     (hs : GraphCodeSpec G arity E K start Cs row) : RowSpec G arity E K start Cs row {} :=
   ⟨hs.1, hs.2.1,
-    fun n W h L he hw hh hgo hv hpre _ r args hf => hs.2.2.2 n W h L none he hw hh hgo hv hpre r args hf⟩
+    fun n W h L comp he hw hh hgo hv hpre _ r args hf => hs.2.2.2 n W h L comp he hw hh hgo hv hpre r args hf⟩
 
 /-- A promise's results meet a plain result admitting them (proved). -/
 theorem promiseAdmits_result [DecidableEq ι] {G : NormalGraph ι} {R T : Ty ι} {π : CallEffects.TypePromise}
@@ -172,8 +176,8 @@ theorem rowSpec_plain_of_promise [DecidableEq ι] {G : NormalGraph ι} {arity E 
     (hp : p.effect.promise = some π) (hR : promiseAdmits G R π = true)
     (hs : RowSpec G arity E K start Cs p sep) : RowSpec G arity E K start Cs (promisePlain p R) sep := by
   refine ⟨hs.1, belowRow_promise_none hs.2.1, ?_⟩
-  intro n W h L he hw hh hgo hv hpre hsep r args hf
-  have hrun := hs.2.2 n W h L he hw hh hgo hv hpre hsep r args hf
+  intro n W h L comp he hw hh hgo hv hpre hsep r args hf
+  have hrun := hs.2.2 n W h L comp he hw hh hgo hv hpre hsep r args hf
   have hres : ∀ a, p.effect.result (meaning G p.result) a = π.result (meaning G p.result) a := by
     intro a; simp [CallEffects.Effect.result, hp]
   rw [hres] at hrun
@@ -182,21 +186,22 @@ theorem rowSpec_plain_of_promise [DecidableEq ι] {G : NormalGraph ι} {arity E 
   exact HeapObservations.SafePostExcV.mono_result (fun j W' u hu => promiseAdmits_result hR _ j W' u hu) hrun
 
 /-- **Invoking a module row's code from a frame at the call's own level**
-(proved): as `graph_invoke_at`, the frame's separation given. -/
-theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
+(proved): as `graph_invoke_at`, the frame's separation given, the run at
+any component `comp`. -/
+theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep} {comp : ComponentTag}
     (hs : RowSpec G arity E K start Cs row sep) {j : Nat} {U : WorldT j}
     (hvs : EnvOk G Cs (envOf vs .nul) j U) (hvalues : CallArguments.Values vs)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
     (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul))
-    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul none)) :
+    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp)) :
     HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
-      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul none) := by
+      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hb := CallEffects.Effect.belowRow_entry hs.2.1
-  have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
+  have hsafe := hs.2.2 j U heap _ comp (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
     · exact (meaning_value hr).1
@@ -224,14 +229,15 @@ def RowOffers (G : NormalGraph ι) (arity : Nat) (E : List Tm)
 /-! ## A closure meets its arrow -/
 
 /-- **A closure meets its arrow from captures meeting theirs below the
-budget** (proved): code of fixed arity offering the signatures of `F` as
-module rows (`RowOffers`) at the separation `sep`, whose captured values meet
+budget** (proved): code of fixed arity and of any component `comp`
+offering the signatures of `F` as module rows (`RowOffers`) at the
+separation `sep`, whose captured values meet
 their types at every budget below `n`, in every world, and every frame of
 whose calls meets `sep`, meets `F` at `n` in every world. Every call of the
 closure runs its code below the budget at which it is made. The induction of
 `offers_self` with the self entry replaced by captures given at every
 smaller budget. -/
-theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
+theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke} {comp : ComponentTag}
     {F : Ty ι} {L : List (CallEffects.Arrow (Ty ι))} {S : List (CallEffects.RestArrow (Ty ι))} (fs : List (PropKey × Nat)) {oid : Nat}
     {sep : HeapSeparation.Separation}
     (hr : Represents G F (.arrs L S)) (hk : KindOffers G kind L S)
@@ -239,13 +245,13 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     (hlen : Cs.length ≤ vs.length) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
     (hsep : ∀ r args more, HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ (vs ++ more)) .nul))
     {n : Nat} (hcaps : ∀ j < n, ∀ U : WorldT j, EnvOk G Cs (envOf vs .nul) j U) (W : WorldT n) :
-    meaning G F n W (.objAt fs (.graph arity E K start vs kind false none) oid) := by
+    meaning G F n W (.objAt fs (.graph arity E K start vs kind false comp) oid) := by
   obtain ⟨hkind, hrows⟩ := hk
   have hbL : ∀ p ∈ L, KindBinds G kind p.receiver :=
     fun p hp => kindOffers_binds (hrows p (List.mem_append_left _ hp))
   have hbS : ∀ s ∈ S, KindBinds G kind s.receiver :=
     fun s hs => kindOffers_binds (hrows _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hs, rfl⟩)))
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false none) oid) := by simpa [Scoped] using hsc
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false comp) oid) := by simpa [Scoped] using hsc
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
   · intro q hq
@@ -271,7 +277,7 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
         CallArguments.parameters arity args := by
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
         Nat.min_eq_left hle, CallArguments.parameters_take]
-    have hsafe := row_invoke_at hspec henv (Values.withSelf hvalues rfl) hu hh
+    have hsafe := row_invoke_at (comp := comp) hspec henv (Values.withSelf hvalues rfl) hu hh
       (args := args.take s.arguments.1.length) hrr
       (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, CallEffects.RestArrow.fixed] using ha.1)
       (fun F hF => (CallEffects.Effect.pre_take hbelow hle (F := F) hF r args heap).mpr
@@ -401,7 +407,11 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
   obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, hx⟩ := hcond
   refine ⟨harity, hrow, ?_⟩
-  intro n W heap L he hw hh hgo hvalues hpre hsep r args hframe
+  intro n W heap L comp he hw hh hgo hvalues hpre hsep r args hframe
+  -- The premises state the run outside every component (`none`), and a
+  -- run's component is ghost (`SafePostExcV.goto_comp_iff`).
+  replace hgo := (goto_refsOk_comp_iff comp none).mp hgo
+  apply (HeapObservations.SafePostExcV.goto_comp_iff none comp).mp
   have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.spine) (envOf L .nul) n W := by
     rw [hspine]; exact he
   have hpre' : PreAt c.row.effect c.spine L heap := by rw [hspine]; exact hpre
