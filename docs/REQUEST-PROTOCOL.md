@@ -108,9 +108,14 @@ of its input. The lines (`lean/Verification/Source/WorkerWire.lean`; the
 same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
 `VerdictLine`, `WorkerRequest`):
 
-- the preparation line `{"selected","established"}`: the units
-  the selection checks in the order their checks run, each
-  `{"unit","members"}`; and the module units the interfaces establish;
+- the preparation line `{"selected","established","components"}`: the
+  units the selection checks in the order their checks run, each
+  `{"unit","members"}`; the module units the interfaces establish; and each
+  component's outcome of the read-only frame's checks
+  (`ComponentChecks.familyOutcome`), `{"component","kind","location","refusals"}`,
+  its certificate held where `refusals` is empty, which no verdict reads;
+  `--verify-interface-stage 8` prints the same outcomes first, on the line
+  `{"components"}`;
 - a request line `{"units"}`: the identities of the units to check, each one
   the preparation line names, or `null` for every one in order;
 - a verdict line, `{"unit","members","accepted","depends","extraction"}` or

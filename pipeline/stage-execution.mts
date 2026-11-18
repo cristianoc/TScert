@@ -910,10 +910,16 @@ export type WorkerRequest = { units: readonly string[] | null };
 /** A unit the file worker's selection checks: its identity and its group's
  * members. */
 export type WorkerUnit = { unit: string; members: readonly string[] };
+/** A component's outcome of the read-only frame's checks
+ * (`WorkerWire.componentOutcome`): its index, kind and location in the
+ * fragment's family, and the failures refusing its certificate, none where
+ * it holds. */
+export type ComponentOutcome = { component: number; kind: string; location: string; refusals: readonly string[] };
 /** The file worker's first line (`WorkerWire.preparedLine`): the units its
  * selection checks, in the order their checks run; the module units the
- * interfaces establish. */
-export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[] };
+ * interfaces establish; each component's outcome. */
+export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[];
+  components: readonly ComponentOutcome[] };
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
  * with the first extraction refusal among its group's members, or null. */
 export type VerdictLine =
@@ -951,13 +957,23 @@ export function decodeVerdictLine(text: string): VerdictLine {
 export function decodeWorkerPrepared(text: string): WorkerPrepared {
   const what = "the file worker's preparation line";
   const parsed: unknown = JSON.parse(text);
-  const { selected, established } = exactFields(parsed, ["selected", "established"], what);
+  const { selected, established, components } = exactFields(parsed, ["selected", "established", "components"], what);
   if (!Array.isArray(selected) || !isStrings(established)) throw Error(`${what}: malformed`);
   return { selected: selected.map((u: unknown): WorkerUnit => {
     const { unit, members } = exactFields(u, ["unit", "members"], `${what}'s unit`);
     if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: a unit without its members`);
     return { unit, members };
-  }), established };
+  }), established, components: decodeComponentOutcomes(components, what) };
+}
+/** Components' outcomes (`ComponentOutcome`), read field by field. */
+export function decodeComponentOutcomes(value: unknown, what: string): ComponentOutcome[] {
+  if (!Array.isArray(value)) throw Error(`${what}: no components' outcomes`);
+  return value.map((c: unknown): ComponentOutcome => {
+    const { component, kind, location, refusals } = exactFields(c, ["component", "kind", "location", "refusals"], `${what}'s component`);
+    if (typeof component !== "number" || typeof kind !== "string" || typeof location !== "string" || !isStrings(refusals))
+      throw Error(`${what}: a malformed component's outcome`);
+    return { component, kind, location, refusals };
+  });
 }
 
 /** A process stage started under the runner, read while it runs

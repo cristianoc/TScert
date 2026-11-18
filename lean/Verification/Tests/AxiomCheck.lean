@@ -273,6 +273,7 @@ import Verification.Source.Claims.Sites
 import Verification.Source.Claims.TypeComparison
 import Verification.Source.Claims.Wire
 import Verification.Source.ComponentWire
+import Verification.Source.ComponentChecks
 import Verification.Source.EffectCodec
 import Verification.Source.EffectJson
 import Verification.Source.Equations.Annotations

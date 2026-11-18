@@ -70,28 +70,128 @@ inductive SiteKind where
   | native
   deriving DecidableEq, Repr
 
+/-- A code of the family: its innermost component, its closure's site, its
+parameters' values with their spans, its receiver's and result's values,
+and whether it is an arrow function, which has no receiver of its own. -/
 structure Code where
   module : String
   pos : Span
   component : Nat
+  site : Option Nat
+  params : List (Nat × Span)
+  receiver : Nat
+  result : Nat
+  arrow : Bool
   deriving Repr
 
+/-- An allocation site: its kind, its records' keys, its contents' value,
+and its mark for each component enclosing its code, innermost first. -/
 structure Site where
   module : String
   pos : Span
   kind : SiteKind
   keys : List String
   anyKey : Bool
+  contents : Nat
   marks : List (Nat × Mark)
   deriving Repr
 
-/-- A value's possible sites, by index, and the components it may enter
-from outside. -/
+/-- What a value of the flow includes: a site's storage, another value, what
+a value's storage holds, or a value entering a component from outside. -/
+inductive Source where
+  | site (s : Nat)
+  | value (v : Nat)
+  | read (v : Nat)
+  | incoming (c : Nat)
+  deriving Repr, BEq
+
+/-- A value's possible sites, by index, the components it may enter from
+outside, and what the code's statements make it include. -/
 structure Value where
   module : String
   pos : Span
   sites : List Nat
   incoming : List Nat
+  sources : List Source
+  deriving Repr
+
+/-- A store: the value written (`none` a primitive) into the receiver's
+fields at `key` (`none` a computed key; `element` an array's element or a
+native's write); `initial` a field's initial value in the record it
+allocates. -/
+structure Store where
+  module : String
+  place : Span
+  component : Nat
+  receiver : Nat
+  key : Option String
+  element : Bool
+  stored : Option Nat
+  initial : Bool
+  deriving Repr
+
+structure Arg where
+  value : Nat
+  spread : Bool
+  place : Span
+  deriving Repr
+
+/-- A native's result site, the values its arguments pass, which it may
+write into its receiver, the values it is given, its receiver's among them,
+and those it may return. -/
+structure Native where
+  site : Nat
+  passed : Nat
+  given : Nat
+  all : Nat
+  deriving Repr
+
+/-- A call: its callee's, receiver's, arguments' and result's values, the
+codes it may run, the instance a `new` allocates, a native's values. -/
+structure Call where
+  module : String
+  place : Span
+  component : Nat
+  callee : Nat
+  receiver : Option Nat
+  args : List Arg
+  result : Nat
+  targets : List Nat
+  inst : Option Nat
+  native : Option Native
+  deriving Repr
+
+/-- A value thrown or caught, a binding a module or a closure holds (its
+holder the component), at its place. -/
+structure Place where
+  module : String
+  place : Span
+  component : Nat
+  value : Nat
+  name : String
+  deriving Repr
+
+/-- A module binding a module exports, out of each of `components`. -/
+structure Export where
+  module : String
+  place : Span
+  name : String
+  components : List Nat
+  value : Nat
+  deriving Repr
+
+inductive SuspensionKind where
+  | await
+  | yield
+  | async
+  | generator
+  deriving DecidableEq, Repr
+
+structure Suspension where
+  module : String
+  place : Span
+  component : Nat
+  kind : SuspensionKind
   deriving Repr
 
 /-- The position a crossing passes its value at, the owner of its type. -/
@@ -105,7 +205,7 @@ inductive Position where
   | caught
   | field (key : Option String)
   | binding (name : String)
-  deriving Repr
+  deriving Repr, BEq
 
 inductive Direction where
   | into
@@ -160,12 +260,20 @@ structure Components where
   sites : List Site
   values : List Value
   crossings : List Crossing
+  stores : List Store
+  calls : List Call
+  throws : List Place
+  catches : List Place
+  holds : List Place
+  exports : List Export
+  thrown : Option Nat
+  suspensions : List Suspension
   escapes : List Escape
   clients : List Clients
   guarantees : List Guarantee
 
 /-- The empty family: no component. -/
-def Components.empty : Components := ⟨[], [], [], [], [], [], [], []⟩
+def Components.empty : Components := ⟨[], [], [], [], [], [], [], [], [], [], [], none, [], [], [], []⟩
 
 /-- **The family's nesting**: `inner` is nested in `outer` when `outer` is
 on `inner`'s chain of parents, itself included. A parent is an earlier
@@ -257,20 +365,76 @@ def decodeComponent (j : Json) : Except String Component := do
     ← decodeInterface (← jField j "interface")⟩
 
 def decodeCode (j : Json) : Except String Code := do
-  fieldsExactly j ["module", "pos", "component"]
-  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "pos"), ← jNat j "component"⟩
+  fieldsExactly j ["module", "pos", "component", "site", "params", "receiver", "result", "arrow"]
+  let params ← (← jArr j "params").mapM fun p => do
+    fieldsExactly p ["value", "at"]
+    return (← jNat p "value", ← jSpanAt (← jField p "at"))
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "pos"), ← jNat j "component", ← jOptNat j "site", params,
+    ← jNat j "receiver", ← jNat j "result", ← jBoolAt j "arrow"⟩
 
 def decodeSite (j : Json) : Except String Site := do
-  fieldsExactly j ["module", "pos", "kind", "keys", "anyKey", "marks"]
+  fieldsExactly j ["module", "pos", "kind", "keys", "anyKey", "contents", "marks"]
   let marks ← (← jArr j "marks").mapM fun m => do
     fieldsExactly m ["component", "mark"]
     return (← jNat m "component", ← markOf (← jStr (← jField m "mark")))
   return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "pos"), ← siteKindOf (← jStr (← jField j "kind")),
-    ← (← jArr j "keys").mapM jStr, ← jBoolAt j "anyKey", marks⟩
+    ← (← jArr j "keys").mapM jStr, ← jBoolAt j "anyKey", ← jNat j "contents", marks⟩
+
+def decodeSource (j : Json) : Except String Source := do
+  match j.getObjVal? "site", j.getObjVal? "value", j.getObjVal? "read", j.getObjVal? "incoming" with
+  | .ok s, _, _, _ => fieldsExactly j ["site"]; return .site (← s.getNat?)
+  | _, .ok v, _, _ => fieldsExactly j ["value"]; return .value (← v.getNat?)
+  | _, _, .ok v, _ => fieldsExactly j ["read"]; return .read (← v.getNat?)
+  | _, _, _, .ok c => fieldsExactly j ["incoming"]; return .incoming (← c.getNat?)
+  | _, _, _, _ => throw "no source of a value"
 
 def decodeValue (j : Json) : Except String Value := do
-  fieldsExactly j ["module", "pos", "sites", "incoming"]
-  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "pos"), ← jNatList j "sites", ← jNatList j "incoming"⟩
+  fieldsExactly j ["module", "pos", "sites", "incoming", "from"]
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "pos"), ← jNatList j "sites", ← jNatList j "incoming",
+    ← (← jArr j "from").mapM decodeSource⟩
+
+def jOptStr (j : Json) (k : String) : Except String (Option String) := do
+  let v ← jField j k
+  if v == .null then return none
+  return some (← jStr v)
+
+def decodeStore (j : Json) : Except String Store := do
+  fieldsExactly j ["module", "at", "component", "receiver", "key", "element", "stored", "initial"]
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "receiver",
+    ← jOptStr j "key", ← jBoolAt j "element", ← jOptNat j "stored", ← jBoolAt j "initial"⟩
+
+def decodeCall (j : Json) : Except String Call := do
+  fieldsExactly j ["module", "at", "component", "callee", "receiver", "args", "result", "targets", "instance", "native"]
+  let args ← (← jArr j "args").mapM fun a => do
+    fieldsExactly a ["value", "spread", "at"]
+    return (⟨← jNat a "value", ← jBoolAt a "spread", ← jSpanAt (← jField a "at")⟩ : Arg)
+  let n ← jField j "native"
+  let native ← if n == .null then pure none else do
+    fieldsExactly n ["site", "passed", "given", "all"]
+    pure (some (⟨← jNat n "site", ← jNat n "passed", ← jNat n "given", ← jNat n "all"⟩ : Native))
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "callee",
+    ← jOptNat j "receiver", args, ← jNat j "result", ← jNatList j "targets", ← jOptNat j "instance", native⟩
+
+/-- A thrown or caught value (`named` false, no name) or a held binding. -/
+def decodePlace (named : Bool) (j : Json) : Except String Place := do
+  fieldsExactly j (["module", "at", "component", "value"] ++ if named then ["name"] else [])
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "value",
+    ← if named then jStr (← jField j "name") else pure ""⟩
+
+def decodeExport (j : Json) : Except String Export := do
+  fieldsExactly j ["module", "at", "name", "components", "value"]
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jStr (← jField j "name"), ← jNatList j "components",
+    ← jNat j "value"⟩
+
+def decodeSuspension (j : Json) : Except String Suspension := do
+  fieldsExactly j ["module", "at", "component", "kind"]
+  let kind ← match ← jStr (← jField j "kind") with
+    | "await" => pure SuspensionKind.await
+    | "yield" => pure .yield
+    | "async" => pure .async
+    | "generator" => pure .generator
+    | k => throw s!"no suspension '{k}'"
+  return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", kind⟩
 
 def decodePosition (j : Json) : Except String Position := do
   match j with
@@ -349,29 +513,67 @@ def Components.wellFormed (F : Components) : Except String Unit := do
     if c.parent.any (· ≥ i) then throw s!"component {i}'s parent is not an earlier component"
   let inRange (what : String) (k bound : Nat) : Except String Unit :=
     if k < bound then pure () else throw s!"{what} {k} is out of range"
-  for c in F.codes do inRange "a code's component" c.component n
-  for s in F.sites do for (c, _) in s.marks do inRange "a site's mark's component" c n
+  let nv := F.values.length
+  let ns := F.sites.length
+  for c in F.codes do
+    inRange "a code's component" c.component n
+    for s in c.site do inRange "a code's site" s ns
+    for (v, _) in c.params do inRange "a code's parameter" v nv
+    inRange "a code's receiver" c.receiver nv
+    inRange "a code's result" c.result nv
+  for s in F.sites do
+    for (c, _) in s.marks do inRange "a site's mark's component" c n
+    inRange "a site's contents" s.contents nv
   for v in F.values do
-    for s in v.sites do inRange "a value's site" s F.sites.length
+    for s in v.sites do inRange "a value's site" s ns
     for c in v.incoming do inRange "a value's incoming component" c n
+    for x in v.sources do
+      match x with
+      | .site s => inRange "a source's site" s ns
+      | .value w | .read w => inRange "a source's value" w nv
+      | .incoming c => inRange "a source's component" c n
   for x in F.crossings do
     inRange "a crossing's component" x.component n
-    for v in x.value do inRange "a crossing's value" v F.values.length
+    for v in x.value do inRange "a crossing's value" v nv
+  for s in F.stores do
+    inRange "a store's component" s.component n
+    inRange "a store's receiver" s.receiver nv
+    for v in s.stored do inRange "a store's value" v nv
+  for c in F.calls do
+    inRange "a call's component" c.component n
+    for v in [c.callee, c.result] ++ c.receiver.toList ++ c.args.map (·.value) ++
+        (c.native.map fun x => [x.passed, x.given, x.all]).getD [] do inRange "a call's value" v nv
+    for t in c.targets do inRange "a call's target" t F.codes.length
+    for s in c.inst.toList ++ (c.native.map (·.site)).toList do inRange "a call's site" s ns
+  for p in F.throws ++ F.catches ++ F.holds do
+    inRange "a place's component" p.component n
+    inRange "a place's value" p.value nv
+  for e in F.exports do
+    for c in e.components do inRange "an export's component" c n
+    inRange "an export's value" e.value nv
+  for v in F.thrown do inRange "the thrown value" v nv
+  for x in F.suspensions do inRange "a suspension's component" x.component n
   for e in F.escapes do inRange "an escape's component" e.component n
 
 /-- **The fragment's family**, decoded and well formed. -/
 def decode (j : Json) : Except String Components := do
-  fieldsExactly j ["components", "codes", "sites", "values", "crossings", "escapes", "clients", "guarantees"]
+  fieldsExactly j ["components", "codes", "sites", "values", "crossings", "stores", "calls", "throws", "catches", "holds",
+    "exports", "thrown", "suspensions", "escapes", "clients", "guarantees"]
   let F : Components := ⟨← (← jArr j "components").mapM decodeComponent, ← (← jArr j "codes").mapM decodeCode,
     ← (← jArr j "sites").mapM decodeSite, ← (← jArr j "values").mapM decodeValue,
-    ← (← jArr j "crossings").mapM decodeCrossing, ← (← jArr j "escapes").mapM decodeEscape,
+    ← (← jArr j "crossings").mapM decodeCrossing, ← (← jArr j "stores").mapM decodeStore,
+    ← (← jArr j "calls").mapM decodeCall, ← (← jArr j "throws").mapM (decodePlace false),
+    ← (← jArr j "catches").mapM (decodePlace false), ← (← jArr j "holds").mapM (decodePlace true),
+    ← (← jArr j "exports").mapM decodeExport, ← jOptNat j "thrown", ← (← jArr j "suspensions").mapM decodeSuspension,
+    ← (← jArr j "escapes").mapM decodeEscape,
     ← (← jArr j "clients").mapM decodeClients, ← (← jArr j "guarantees").mapM decodeGuarantee⟩
   F.wellFormed
   return F
 
 /-- The empty family on the wire. -/
 def emptyJson : Json := Json.mkObj [("components", .arr #[]), ("codes", .arr #[]), ("sites", .arr #[]),
-  ("values", .arr #[]), ("crossings", .arr #[]), ("escapes", .arr #[]), ("clients", .arr #[]),
-  ("guarantees", .arr #[])]
+  ("values", .arr #[]), ("crossings", .arr #[]), ("stores", .arr #[]), ("calls", .arr #[]), ("throws", .arr #[]),
+  ("catches", .arr #[]), ("holds", .arr #[]), ("exports", .arr #[]), ("thrown", .null), ("suspensions", .arr #[]),
+  ("escapes", .arr #[]), ("clients", .arr #[]), ("guarantees", .arr #[])]
 
 end Verification.ComponentWire

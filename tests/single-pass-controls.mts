@@ -22,7 +22,8 @@ import { controlOperations, invokeProcess, invokeWorker, ran as ranStage, readIn
   from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { runExample } from "../pipeline/run-example.mts";
-import { decodeVerdictLine, decodeWorkerPrepared, verifierBuild, verifierCall } from "../pipeline/stage-execution.mts";
+import { decodeComponentOutcomes, decodeVerdictLine, decodeWorkerPrepared, verifierBuild, verifierCall, type ComponentOutcome }
+  from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
@@ -550,6 +551,102 @@ control("forged fragment: a component family's fields", async (): Promise<void> 
     refusedFile(pass(forged(artifacts, `forged-family-${name}`, { ...ast, components })), `a family's ${name} field`,
       /components: unexpected fields/);
   say("forged family: a missing, an extra and a misplaced field, each refused by the decoder");
+});
+
+// The read-only frame's checks (S), (K) and (O) (ComponentChecks.lean):
+// each module's outcome as the pass prints it, honest and forged. Each
+// unsafe module's offending code is a member other than its walker; each
+// runs under Node in tests/node-runs.mts.
+
+/** The components' outcomes a pass prints (`WorkerWire.componentsLine`). */
+function componentOutcomes(p: Pass): ComponentOutcome[] {
+  const line = must(p.stdout.split("\n").find((l) => l.startsWith('{"components"')), `the components' line: ${words(p).slice(0, 1500)}`);
+  const value: unknown = JSON.parse(line);
+  return decodeComponentOutcomes(isObject(value) ? value.components : undefined, "the components' line");
+}
+/** The refusals of a single-file case's module. */
+const moduleRefusals = (p: Pass): readonly string[] =>
+  must(componentOutcomes(p).find((c) => c.kind === "module"), "the module's outcome").refusals;
+/** Require a module's certificate refused by a failure matching `at`. */
+function certificateRefused(p: Pass, what: string, at: RegExp): void {
+  const refusals = moduleRefusals(p);
+  assert.ok(refusals.some((r) => at.test(r)), `${what}: refused otherwise: ${JSON.stringify(refusals)}`);
+}
+/** A case's fragment with its source, and the span of a text of it. */
+function familyCase(file: string): { artifacts: string; ast: Ast; at: (text: string) => number } {
+  const artifacts = run(file);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  return { artifacts, ast: fragmentAst(artifacts), at: (text: string): number => {
+    const i = source.indexOf(text);
+    assert.ok(i >= 0, `${file} holds ${text}`);
+    return i;
+  } };
+}
+/** The site a case's fragment states at the offset `at`. */
+const siteIndex = (ast: Ast, at: number): number => {
+  const i = ast.components.sites.findIndex((s) => s.pos[0] === at);
+  assert.ok(i >= 0, `a site at ${at}`);
+  return i;
+};
+
+control("read-only frame checks: each module's certificate, held and refused", async (): Promise<void> => {
+  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-walker")))), [], "the walker's module");
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-suspending"))), "a suspending member", /^\(S\) .* an async function in the component's code/);
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-suspending"))), "a suspending member", /^\(S\) .* an `await` in the component's code/);
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-leaked"))), "an array given out writable",
+    /^\(O\) .* installs the released site/);
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-install"))), "a caller's array installed", /^\(O\) .* installs a value entering from outside/);
+  say("read-only frame checks: the walker's module certified; a suspension, a released install and a caller's install refused, each at its code");
+});
+
+control("forged fragment: a suspension erased", async (): Promise<void> => {
+  const { artifacts, ast } = familyCase("invalid-readonly-suspending");
+  ast.components.suspensions = [];
+  certificateRefused(pass(forged(artifacts, "forged-suspension-erased", ast)), "the suspensions erased",
+    /^\(S\) .* the async function total states no suspension/);
+  say("forged suspension: the family's suspensions erased, the async member the lowering reads refused");
+});
+
+control("forged fragment: a false local mark", async (): Promise<void> => {
+  const { artifacts, ast, at } = familyCase("invalid-readonly-leaked");
+  const site = must(ast.components.sites[siteIndex(ast, at("[];\n  for"))], "the widths' site");
+  site.marks = site.marks.map((m) => ({ ...m, mark: "local" }));
+  const p = pass(forged(artifacts, "forged-local-mark", ast));
+  certificateRefused(p, "the widths marked local", /^\(K\) .* a value crossing out reaches the local site/);
+  certificateRefused(p, "the widths marked local", /^\(K\) .* the binding last holds the local site/);
+  say("forged mark: the array a member gives out marked local, refused at its crossing and at the binding holding it");
+});
+
+control("forged fragment: an omitted crossing", async (): Promise<void> => {
+  const { artifacts, ast, at } = familyCase("invalid-readonly-leaked");
+  const site = must(ast.components.sites[siteIndex(ast, at("[];\n  for"))], "the widths' site");
+  site.marks = site.marks.map((m) => ({ ...m, mark: "exposed" }));
+  const result = at("export function lastWidths");
+  const before = ast.components.crossings.length;
+  ast.components.crossings = ast.components.crossings.filter((x) => !(x.direction === "out" && x.at[0] === result));
+  assert.equal(ast.components.crossings.length, before - 1, "lastWidths' result crossed");
+  certificateRefused(pass(forged(artifacts, "forged-crossing-omitted", ast)), "lastWidths' crossing omitted",
+    new RegExp(`^\\(K\\) \\S+ ${result}-\\d+: a crossing of the component's code is not stated`));
+  say("forged crossing: the result lastWidths gives out omitted, its array marked exposed, refused at the crossing the events make");
+});
+
+control("forged fragment: a released and a caller-owned install", async (): Promise<void> => {
+  // The released array marked exposed, which (O) admits: its writable
+  // crossing out refuses it.
+  const leaked = familyCase("invalid-readonly-leaked");
+  const site = must(leaked.ast.components.sites[siteIndex(leaked.ast, leaked.at("[];\n  for"))], "the widths' site");
+  site.marks = site.marks.map((m) => ({ ...m, mark: "exposed" }));
+  const p = pass(forged(leaked.artifacts, "forged-released-install", leaked.ast));
+  assert.ok(!moduleRefusals(p).some((r) => r.startsWith("(O)")), JSON.stringify(moduleRefusals(p)));
+  certificateRefused(p, "the released install", /^\(K\) .* a value crossing out at a writable position reaches the exposed site/);
+  // The caller's array claimed to enter from nowhere, which (O) admits: the
+  // member's parameter refuses it.
+  const install = familyCase("invalid-readonly-install");
+  install.ast.components.values = install.ast.components.values.map((v) => ({ ...v, incoming: [] }));
+  const q = pass(forged(install.artifacts, "forged-caller-install", install.ast));
+  assert.ok(!moduleRefusals(q).some((r) => r.startsWith("(O)")), JSON.stringify(moduleRefusals(q)));
+  certificateRefused(q, "the caller's install", /^\(flow\) .* a member's parameter omits a value entering from outside/);
+  say("forged install: a released array marked exposed and a caller's array entering from nowhere, each refused where the forgery shows");
 });
 
 control("forged fragment: a false bound in a Boolean postcondition", async (): Promise<void> => {
