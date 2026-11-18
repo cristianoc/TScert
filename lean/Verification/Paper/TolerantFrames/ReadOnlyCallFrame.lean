@@ -1,4 +1,4 @@
-import Verification.Paper.TolerantFrames.ReadOnlyFits
+import Verification.Paper.TolerantFrames.ReadOnlyFitsReach
 import Verification.Paper.TolerantFrames.ReadOnlyBridge
 
 /-! # Read-only handles: the frame's check at a call, from the sites
@@ -29,7 +29,10 @@ are read from the sites:
 - **At a frame of `C`'s code** (`frame_sites`, `framed_of_frame`): a frame
   of `C`'s code fitting the flow runs a node of a code of the flow, its
   environment meeting the node's slots; with a heap meeting the flow, the
-  check at that node's slots gives `Framed` at the frame's environment.
+  check at that node's slots gives `Framed` at the frame's environment;
+  at a reached state whose term is a frame of `C`'s code, the call of the
+  unit's own frame, every reached state fitting the flow
+  (`ClientFrame.framed_at_frame`).
 - **Live protection witnesses** (`Witness.grow`, `entryStart_witness`): a
   location an entry's argument reaches read-only at its parameter's type
   has a witness at the entry history, and at every history the entry's
@@ -272,6 +275,30 @@ theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : Alloc
         Framed Φ Ψ S (envOf L d) st := by
   obtain ⟨π, l, hcode, hn, henv⟩ := frame_sites hf hc
   exact ⟨π, l, hcode, hn, fun hck hq hρ hkey hw => framed_of_sites hck hq hρ henv hH.sites hkey hw⟩
+
+/-- **The check at the unit's frame of a reached state** (proved): where
+the flow's facts hold, the checks give fresh locations the flow's sites and
+every entry fits, a reached state whose term is a frame of `C`'s code (the
+unit's own frame, outside every other call) fits the flow
+(`ClientFrame.fitsAt_reached`), so the check at its node gives `Framed` at
+its environment (`framed_of_frame`). -/
+theorem ClientFrame.framed_at_frame {τ : Type} {fr : ClientFrame τ} {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts)
+    (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (ht : b.1.t = .frame E K t L d k x comp) (hc : (fr.F.at fr.C).ofC comp = true) :
+    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
+        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
+        RootsOk b.1.s.W (envOf L d) →
+        (∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true → b.2.key w ∈ keys e.1) →
+        (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
+          b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
+        Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
+  obtain ⟨hfit, hH⟩ := ClientFrame.fitsAt_reached hF hS hE hb
+  rw [ht] at hfit
+  exact framed_of_frame (st := lift fr.F fr.C none b.1 b.2) hfit hc hH
 
 /-! ## Live protection witnesses -/
 
