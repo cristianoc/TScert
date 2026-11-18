@@ -300,6 +300,411 @@ theorem ClientFrame.framed_at_frame {τ : Type} {fr : ClientFrame τ} {Fl : Flow
   rw [ht] at hfit
   exact framed_of_frame (st := lift fr.F fr.C none b.1 b.2) hfit hc hH
 
+/-! ## The innermost frame under an evaluation context -/
+
+mutual
+/-- **The innermost frame around the next step's redex**: the last frame
+`activeFrame` descends through, following `Step`'s congruence rules, or
+none where no frame is on the path. -/
+def innermost : Tm → Option Tm
+  | .invoke f r args =>
+    if isVal f = false then innermost f
+    else if isVal r = false then innermost r
+    else innermostArgs args
+  | .construct f args => if isVal f = false then innermost f else innermostArgs args
+  | .letE a _ => if isVal a = false then innermost a else none
+  | .makeAt _ _ xs => innermostArgs xs
+  | .readAt _ a => if isVal a = false then innermost a else none
+  | .indexAt a key =>
+    if isVal a = false then innermost a else if isVal key = false then innermost key else none
+  | .writeAt _ a b =>
+    if isVal a = false then innermost a else if isVal b = false then innermost b else none
+  | .test _ a => if isVal a = false then innermost a else none
+  | .ite x _ _ => if isVal x = false then innermost x else none
+  | .arith _ a b =>
+    if isVal a = false then innermost a else if isVal b = false then innermost b else none
+  | .arrLit xs => innermostArgs xs
+  | .elemAt a i =>
+    if isVal a = false then innermost a else if isVal i = false then innermost i else none
+  | .setElem a i v =>
+    if isVal a = false then innermost a else if isVal i = false then innermost i
+    else if isVal v = false then innermost v else none
+  | .lenOf a => if isVal a = false then innermost a else none
+  | .spread a => if isVal a = false then innermost a else none
+  | .throw a => if isVal a = false then innermost a else none
+  | .merge _ a b =>
+    if isVal a = false then innermost a else if isVal b = false then innermost b else none
+  | .makeKey k a =>
+    if isVal k = false then innermost k else if isVal a = false then innermost a else none
+  | .frame E K t L d k x comp => (innermost t).or (some (.frame E K t L d k x comp))
+  | _ => none
+termination_by structural t => t
+
+/-- The innermost frame through a list evaluated left to right. -/
+def innermostArgs : List Tm → Option Tm
+  | [] => none
+  | a :: as => if isVal a = false then innermost a else innermostArgs as
+termination_by structural xs => xs
+end
+
+/-- The code and tag of a frame. -/
+def frameOf : Tm → Option (Code × ComponentTag)
+  | .frame E K _ _ _ _ _ comp => some ((E, K), comp)
+  | _ => none
+
+theorem innermostArgs_mem : ∀ {xs : List Tm} {f : Tm}, innermostArgs xs = some f → ∃ x ∈ xs, innermost x = some f
+  | [], _, h => by simp [innermostArgs] at h
+  | a :: as, f, h => by
+    simp only [innermostArgs] at h
+    split at h
+    · exact ⟨a, List.mem_cons_self .., h⟩
+    · obtain ⟨x, hx, hf⟩ := innermostArgs_mem h
+      exact ⟨x, List.mem_cons_of_mem _ hx, hf⟩
+
+/-- A value has no frame on its path. -/
+theorem innermost_val {v : Tm} (hv : isVal v = true) : innermost v = none := by
+  cases v <;> simp_all [isVal, innermost]
+
+/-- What `activeFrame` reads of the innermost frame. -/
+def InnSpec (cur : Option (Code × ComponentTag)) (o : Option Tm) (a : Option (Code × ComponentTag)) : Prop :=
+  a = (o.bind frameOf).or cur ∧ ∀ f, o = some f → (frameOf f).isSome
+
+mutual
+/-- **The active frame is the innermost frame's** (proved, by structural
+induction, the two definitions following the same congruences): the code
+and tag `activeFrame` gives are the innermost frame's, `cur` where no frame
+is on the path, and the innermost frame is a frame. -/
+theorem activeFrame_innermost : ∀ (t : Tm) (cur : Option (Code × ComponentTag)),
+    InnSpec cur (innermost t) (activeFrame cur t).1
+  | .invoke f r args, cur => by
+    have h₁ := activeFrame_innermost f cur
+    have h₂ := activeFrame_innermost r cur
+    have h₃ := activeArgs_innermost args cur (.invoke f r args)
+    simp only [activeFrame, innermost]; split <;> (try split) <;> assumption
+  | .construct f args, cur => by
+    have h₁ := activeFrame_innermost f cur
+    have h₃ := activeArgs_innermost args cur (.construct f args)
+    simp only [activeFrame, innermost]; split <;> assumption
+  | .letE a b, cur => by
+    have h₁ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .makeAt cc ns xs, cur => by
+    simpa only [activeFrame, innermost] using activeArgs_innermost xs cur (.makeAt cc ns xs)
+  | .readAt fd a, cur => by
+    have h₁ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .indexAt a key, cur => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeFrame_innermost key cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact ⟨by simp, by simp⟩
+  | .writeAt fd a b, cur => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeFrame_innermost b cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact ⟨by simp, by simp⟩
+  | .test k a, cur => by
+    have h₁ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .ite x a b, cur => by
+    have h₁ := activeFrame_innermost x cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .arith op a b, cur => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeFrame_innermost b cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact ⟨by simp, by simp⟩
+  | .arrLit xs, cur => by
+    simpa only [activeFrame, innermost] using activeArgs_innermost xs cur (.arrLit xs)
+  | .elemAt a i, cur => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeFrame_innermost i cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact ⟨by simp, by simp⟩
+  | .setElem a i v, cur => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeFrame_innermost i cur
+    have h₃ := activeFrame_innermost v cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · split
+        · exact h₃
+        · exact ⟨by simp, by simp⟩
+  | .lenOf a, cur => by
+    have h₁ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .spread a, cur => by
+    have h₁ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .throw a, cur => by
+    have h₁ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact ⟨by simp, by simp⟩
+  | .merge dd a b, cur => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeFrame_innermost b cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact ⟨by simp, by simp⟩
+  | .makeKey k a, cur => by
+    have h₁ := activeFrame_innermost k cur
+    have h₂ := activeFrame_innermost a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact ⟨by simp, by simp⟩
+  | .frame E K t L d k x comp, cur => by
+    obtain ⟨h₁, h₂⟩ := activeFrame_innermost t (some ((E, K), comp))
+    simp only [activeFrame, innermost]
+    refine ⟨?_, ?_⟩
+    · rw [h₁]
+      cases hi : innermost t with
+      | none => simp [frameOf]
+      | some f =>
+        obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp (h₂ f hi)
+        simp [hy]
+    · intro f hf
+      cases hi : innermost t with
+      | none => rw [hi] at hf; simp at hf; subst hf; simp [frameOf]
+      | some f' => rw [hi] at hf; simp at hf; subst hf; exact h₂ _ hi
+  | .var _, _ | .nul, _ | .undef, _ | .tru, _ | .fls, _ | .num _, _ | .str _, _ | .bigint _, _ | .sym _, _
+  | .objAt .., _ | .arr _, _ | .viewSpine .., _ | .goto .., _ => by
+    simp only [activeFrame, innermost]; exact ⟨by simp, by simp⟩
+termination_by structural t => t
+
+/-- The active frame through a list is the innermost frame's (proved). -/
+theorem activeArgs_innermost : ∀ (xs : List Tm) (cur : Option (Code × ComponentTag)) (t : Tm),
+    InnSpec cur (innermostArgs xs) (activeArgs cur t xs).1
+  | [], cur, t => by simp only [activeArgs, innermostArgs]; exact ⟨by simp, by simp⟩
+  | a :: as, cur, t => by
+    have h₁ := activeFrame_innermost a cur
+    have h₂ := activeArgs_innermost as cur t
+    simp only [activeArgs, innermostArgs]; split <;> assumption
+termination_by structural xs => xs
+end
+
+/-- **Every frame on the path fits** (proved, by induction on `Fits`): the
+innermost frame of a fitting term fits, at the sites of its position. -/
+theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
+    ∀ {Γ a o S t}, Fits Fl V Γ a o S t → ∀ {f : Tm}, innermost t = some f →
+      ∃ Γ' a' o' S', Fits Fl V Γ' a' o' S' f := by
+  intro Γ a o S t h
+  induction h with
+  | val hv _ _ => intro f hf; rw [innermost_val hv] at hf; cases hf
+  | var _ _ _ => intro f hf; simp [ReadOnly.innermost] at hf
+  | invoke _ _ _ _ _ _ ihf ihr iha =>
+    intro f hf
+    simp only [ReadOnly.innermost] at hf
+    split at hf
+    · exact ihf hf
+    · split at hf
+      · exact ihr hf
+      · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+        exact iha x hx hf
+  | invokeC σ π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
+    intro f hf
+    simp only [ReadOnly.innermost, hfn.val, Bool.true_eq_false, if_false] at hf
+    split at hf
+    · exact ihr hf
+    · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+      obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+      exact iha i x hi hf
+  | construct _ _ _ _ _ ihf iha =>
+    intro f hf
+    simp only [ReadOnly.innermost] at hf
+    split at hf
+    · exact ihf hf
+    · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+      exact iha x hx hf
+  | letE _ _ _ ihx _ =>
+    intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihx hf
+    · cases hf
+  | spread _ _ _ ih =>
+    intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ih hf
+    · cases hf
+  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+    intro f hf
+    simp only [ReadOnly.innermost] at hf
+    obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+    exact ih x hx hf
+  | readAt _ _ _ _ _ ih | test _ _ ih | lenOf _ _ ih | throw _ _ ih =>
+    intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ih hf
+    · cases hf
+  | ite _ _ _ _ ihc _ _ =>
+    intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihc hf
+    · cases hf
+  | indexAt _ _ _ _ _ _ ihx ihk | writeAt _ _ _ _ ihx ihk | arith _ _ _ ihx ihk | elemAt _ _ _ _ ihx ihk
+  | merge _ _ _ _ _ _ _ _ ihx ihk | makeKey _ _ _ _ _ ihx ihk =>
+    intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihx hf
+    · split at hf
+      · exact ihk hf
+      · cases hf
+  | setElem _ _ _ _ _ _ _ ihx ihi ihv =>
+    intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihx hf
+    · split at hf
+      · exact ihi hf
+      · split at hf
+        · exact ihv hf
+        · cases hf
+  | gotoC _ _ _ _ _ _ _ | gotoOut _ _ _ _ _ => intro f hf; simp [ReadOnly.innermost] at hf
+  | frameC π l hc hcode hn henv hfn hvfn ht hS ho ih =>
+    intro f hf
+    simp only [ReadOnly.innermost] at hf
+    cases hi : ReadOnly.innermost _ with
+    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, Alloc.outside, _, _, .frameC π l hc hcode hn henv hfn hvfn ht hS ho⟩
+    | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
+  | frameOut hc hE henv ht hS ho ih =>
+    intro f hf
+    simp only [ReadOnly.innermost] at hf
+    cases hi : ReadOnly.innermost _ with
+    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, Alloc.outside, _, _, .frameOut hc hE henv ht hS ho⟩
+    | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
+
+/-- **The check at the innermost frame of a reached state** (proved): at a
+reached state, the innermost frame on its term's path, where it is a frame
+of `C`'s code (a call of `C` nested in a call of outside code, a callback
+that re-entered `C`, or the unit's own frame), fits the flow
+(`fitsAt_reached`, `Fits.innermost`), so the check at its node gives
+`Framed` at its environment (`framed_of_frame`). Its code and tag are the
+active frame's (`activeFrame_innermost`). -/
+theorem ClientFrame.framed_at_innermost {τ : Type} {fr : ClientFrame τ} {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts)
+    (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
+    (activeFrame none b.1.t).1 = some ((E, K), comp) ∧
+    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
+        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
+        RootsOk b.1.s.W (envOf L d) →
+        (∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true → b.2.key w ∈ keys e.1) →
+        (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
+          b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
+        Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
+  obtain ⟨hfit, hH⟩ := ClientFrame.fitsAt_reached hF hS hE hb
+  refine ⟨by rw [(activeFrame_innermost b.1.t none).1, ht]; simp [frameOf], ?_⟩
+  obtain ⟨Γ', a', o', S', hf'⟩ := hfit.innermost ht
+  exact framed_of_frame (st := lift fr.F fr.C none b.1 b.2) hf' hc hH
+
+/-! ## The keys of a region's locations
+
+The checks read the protocol per site and kind: they give every location
+the key `none` (`ClientFrame.NoKeys`), so a part's key is `none` at every
+reached state and a region's keys are `[none]` (`noKeys`). A protocol is
+then read at `(σ, κ, none)` for every key of a site, a change bounding
+every field of the site's records. -/
+
+/-- **The keys after a step** (proved): the step's allocation's; entries,
+crossings and exits change no key. -/
+theorem stepAt_key {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {d : CheckData (F.at C) tv}
+    {h : Heap} {t : Tm} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
+    (Ghost.stepAt F C c d h t h' t' g).key = (g.alloc h.length (fun _ => none) d.key).key := by
+  unfold Ghost.stepAt
+  split <;> rename_i hk
+  · unfold outsideNextAt; split <;> rfl
+  · exact (Ghost.crosses_site _ _).2
+  · exact (Ghost.crosses_site _ _).2
+  · exact (Ghost.crosses_site _ _).2
+
+/-- The keys of every region: `none`. -/
+def noKeys : Region → List (Option PropKey) := fun _ => [none]
+
+namespace ClientFrame
+variable {τ : Type} (fr : ClientFrame τ)
+
+/-- **The checks give no key**: every location a step allocates has the key
+`none`, and so does every location of a history an entry starts from. -/
+def NoKeys : Prop :=
+  (∀ h t h' t', (fr.chk h t h' t').key = fun _ => none) ∧
+    ∀ k W h t g, fr.start k W h t g → g.key = fun _ => none
+
+variable {fr}
+
+/-- **Every reached state's keys are `none`** (proved, `stepAt_key`). -/
+theorem reached_key (hk : fr.NoKeys) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b) :
+    b.2.key = fun _ => none := by
+  obtain ⟨a, n, _, hst, hex⟩ := hb
+  refine hex.carry (r := fun x : Conf × Ghost (fr.F.at fr.C) => x.2.key = fun _ => none) ?_ (hk.2 _ _ _ _ _ hst)
+  intro x y _ hxy hx
+  obtain ⟨-, hg, -⟩ := hxy
+  rw [hg]
+  simp only [next, stepAt_key, Ghost.alloc, hk.1, hx]
+  funext l; split <;> rfl
+
+/-- **A region's locations have the region's keys** (proved): at a reached
+state, every location's key is `none`, the one key `noKeys` gives. -/
+theorem reached_hkey (hk : fr.NoKeys) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b) (S : Footprint)
+    (ρ : Env) : ∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem ρ b.1.s.h w = true → b.2.key w ∈ noKeys e.1 := by
+  intro _ _ w _ _
+  rw [reached_key hk hb]; simp [noKeys]
+
+/-- **Entries start with no key** (proved): the entry history keeps the
+keys of `bareStart`, which are `none`. -/
+theorem entryStart_key (F : Family) (C : Nat) (tv : TypeView) (h : Heap) (t : Tm) (args : List (tv.Ty × Val)) :
+    (entryStart F C tv h t args).key = fun _ => none :=
+  (Ghost.crosses_site _ _).2
+
+end ClientFrame
+
+/-- **The check at the innermost frame, keys read** (proved): at a reached
+state of a frame whose checks give no key, `framed_at_innermost` with the
+keys `noKeys`. -/
+theorem ClientFrame.framed_at_innermost_keys {τ : Type} {fr : ClientFrame τ} {Fl : Flow (fr.F.at fr.C)}
+    (hF : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) (hK : fr.NoKeys)
+    {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
+    (activeFrame none b.1.t).1 = some ((E, K), comp) ∧
+    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView}
+        {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) noKeys prot = true → q.Sound (envOf L d) b.1.s.h →
+        RootsOk b.1.s.W (envOf L d) →
+        (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
+          b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
+        Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
+  obtain ⟨ha, π, l, hcode, hn, hfr⟩ := ClientFrame.framed_at_innermost hF hS hE hb ht hc
+  exact ⟨ha, π, l, hcode, hn, fun hck hq hρ hw => hfr hck hq hρ (ClientFrame.reached_hkey hK hb _ _) hw⟩
+
 /-! ## Live protection witnesses -/
 
 /-- **A witness stays live as the history grows** (proved, `Grows.trans`). -/
@@ -398,5 +803,113 @@ theorem witness_along {F : Family} {C : Nat} {tv : TypeView} {Θ : Protocol (F.a
     Witness tv 1 (lift F C none e.1 e.2) l := by
   have hw := entryStart_witness (st := lift F C none x (entryStart F C tv x.s.h x.t args)) (d := 1) Nat.one_pos hdx ha hr rfl
   exact hw.grow (Ex.grows Nat.one_pos hq hex (entryStart_len _) (entryStart_inv x args) hdx hde)
+
+/-! ## A reached state inside the unit's call
+
+A unit's call starts at a `goto` of its code at the top of the term
+(`gotoOf`, a call from outside code). Along every execution from it, the
+top of the term is a `goto` or a frame of that code, then a value or a
+throw of one (`TopC`), the last two taking no step. So every state but the
+last of an execution from the entry has the unit's call active
+(`ex_depth`), and a reached state with it active is reached by the
+execution at depth `1` that `witness_along` reads (`witness_reached`). -/
+
+/-- The blocks of a list end in those of its suffix. -/
+theorem blocks_append_ge : ∀ (xs ys : List Bool), blocks ys ≤ blocks (xs ++ ys)
+  | [], _ => Nat.le_refl _
+  | _ :: xs, ys => by
+    simp only [List.cons_append, blocks]
+    exact Nat.le_trans (blocks_append_ge xs ys) (Nat.le_add_left _ _)
+
+/-- **A frame of `C`'s code at the top holds a call of `C`** (proved). -/
+theorem depthC_frame {F : Family} {C : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {t : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target}
+    {comp : ComponentTag} (hc : F.ofC C comp = true) : 1 ≤ depthC F C none (.frame E K t L d k x comp) := by
+  obtain ⟨init, s, hp⟩ := path_last t comp
+  have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
+  have hm : (path none (.frame E K t L d k x comp)).map (fun p => F.ofC C p.1) =
+      (init.map fun p => F.ofC C p.1) ++ [true, false] := by
+    simp only [path, List.map_append, hp]
+    have e : (wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map (fun p => F.ofC C p.1) =
+        ((wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map Prod.fst).map (F.ofC C) := by
+      simp [List.map_map, Function.comp_def]
+    rw [e, wrap_fst]
+    simp [hc, hn, Function.comp_def]
+  unfold depthC
+  rw [hm]
+  exact Nat.le_trans (by simp [blocks]) (blocks_append_ge _ [true, false])
+
+/-- **A `goto` of `C`'s code at the top holds a call of `C`** (proved). -/
+theorem depthC_goto {F : Family} {C : Nat} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag} (hc : F.ofC C comp = true) :
+    1 ≤ depthC F C none (.goto E K l L d comp) := by
+  have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
+  simp [depthC, path, blocks, hc, hn]
+
+/-- **The top of the term of a unit's call** at the tag `comp` of `C`'s
+code: a `goto` or a frame of it, a value, or a throw of a value. -/
+def TopC (F : Family) (C : Nat) (t : Tm) : Prop :=
+  (∃ E K l L d comp, t = .goto E K l L d comp ∧ F.ofC C comp = true) ∨
+  (∃ E K s L d k x comp, t = .frame E K s L d k x comp ∧ F.ofC C comp = true) ∨
+  isVal t = true ∨ (∃ v, t = .throw v ∧ isVal v = true)
+
+/-- **Every step keeps the top of a unit's call** (proved): entering a node
+makes a frame of the same code, a frame's steps keep it, leave a `goto` of
+the same code, a value or a throw of one. -/
+theorem TopC.step {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (ht : TopC F C t) :
+    TopC F C t' := by
+  rcases ht with ⟨E, K, l, L, d, comp, rfl, hc⟩ | ⟨E, K, s, L, d, k, x, comp, rfl, hc⟩ | hv | ⟨v, rfl, hv⟩
+  · cases hs with
+    | gotoEnter => exact .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, hc⟩)
+  · cases hs with
+    | frameC => exact .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, hc⟩)
+    | frameRet hv => exact .inr (.inr (.inl hv))
+    | frameRaise hr => exact .inr (.inr (.inr ⟨_, rfl, raises_val hr⟩))
+    | _ => exact .inl ⟨_, _, _, _, _, _, rfl, hc⟩
+  · exact absurd hv (by rw [notVal_of_step hs]; simp)
+  · cases hs with
+    | throwC hs' => exact absurd hv (by rw [notVal_of_step hs']; simp)
+
+/-- **A state of a unit's call that steps has the call active** (proved). -/
+theorem TopC.depth {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (ht : TopC F C t) :
+    1 ≤ depthC F C none t := by
+  rcases ht with ⟨E, K, l, L, d, comp, rfl, hc⟩ | ⟨E, K, s, L, d, k, x, comp, rfl, hc⟩ | hv | ⟨v, rfl, hv⟩
+  · exact depthC_goto hc
+  · exact depthC_frame hc
+  · exact absurd hv (by rw [notVal_of_step hs]; simp)
+  · cases hs with
+    | throwC hs' => exact absurd hv (by rw [notVal_of_step hs']; simp)
+
+namespace ClientFrame
+variable {τ : Type} {fr : ClientFrame τ}
+
+/-- **An execution of a unit's call keeps the call active** (proved): every
+state that steps has it active (`TopC.depth`), the top kept by each step
+(`TopC.step`). -/
+theorem ex_depth : ∀ {n : Nat} {a e : Conf × Ghost (fr.F.at fr.C)}, Ex fr.KStep (fun _ => True) n a e →
+    TopC fr.F fr.C a.1.t → Ex fr.KStep (fun y => 1 ≤ δ fr.F fr.C none y) n a e
+  | _, _, _, .refl a, _ => .refl a
+  | _, _, _, .next _ hab he, ht =>
+    .next (TopC.depth hab.1.step ht) hab (ex_depth he (TopC.step hab.1.step ht))
+
+/-- **An entry's argument is witnessed at a reached state of its call**
+(proved, `ex_depth`, `ex_xstep`, `witness_along`): from a call the claim is
+about, at the top a `goto` of `C`'s code, and the entry history of its
+arguments, at every state the execution reaches with the call still
+active, each location an argument reaches read-only at its parameter's
+type has a live witness at depth `1`. -/
+theorem witness_reached (hc : fr.ChkSound) {args : Heap → Tm → List (fr.view.view.Ty × Val)}
+    (hse : fr.StartsEntry args) {x : Conf} {g : Ghost (fr.F.at fr.C)} (hN : fr.Call x.s.h x.t)
+    (hg : fr.start x.s.n x.s.W x.s.h x.t g) (htop : TopC fr.F fr.C x.t) (hdx : 1 ≤ depthC fr.F fr.C none x.t)
+    {n : Nat} {e : Conf × Ghost (fr.F.at fr.C)} (hex : Ex fr.KStep (fun _ => True) n (x, g) e)
+    (hde : 1 ≤ δ fr.F fr.C none e) {T : fr.view.view.Ty} {v : Val} (ha : (T, v) ∈ args x.s.h x.t) {l : Nat}
+    (hr : ReachRO fr.view.view (fr.F.at fr.C).ofC T x.s.h v l) :
+    Witness fr.view.view 1 (lift fr.F fr.C none e.1 e.2) l := by
+  have hgs : g = entryStart fr.F fr.C fr.view.view x.s.h x.t (args x.s.h x.t) := (hse _ _ _ _ _).mp hg
+  have hx := ex_xstep hc ⟨(x, g), 0, hN, hg, .refl _⟩ (ex_depth hex htop)
+  subst hgs
+  exact witness_along (fun _ h => h) hx hdx hde ha hr
+
+end ClientFrame
 
 end Verification.TolerantFrames.ReadOnly

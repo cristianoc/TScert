@@ -2576,10 +2576,20 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
 - **At a frame of $`C`$'s code** (`frame_sites`, `framed_of_frame`): a frame
   of $`C`$'s code fitting the flow runs a node of a code of the flow whose
   slots its environment meets; with a heap meeting the flow, the check at
-  that node's slots gives `Framed` at the frame's environment. At a
-  reached state whose term is a frame of $`C`$'s code, the unit's own
-  frame, every reached state fitting the flow (`fitsAt_reached`), the
-  check at its node gives `Framed` there (`ClientFrame.framed_at_frame`).
+  that node's slots gives `Framed` at the frame's environment.
+- **The innermost frame** (`innermost`, `activeFrame_innermost`,
+  `Fits.innermost`): the innermost frame on a term's evaluation path is
+  the frame whose code and tag `activeFrame` reads, and the innermost frame
+  of a fitting term fits. So at every reached state whose innermost frame
+  is a frame of $`C`$'s code (the unit's own frame, a call of $`C`$ nested
+  in a call of outside code, a callback that re-entered $`C`$), the check at
+  its node gives `Framed` at its environment
+  (`ClientFrame.framed_at_innermost`).
+- **The keys of a region** (`ClientFrame.NoKeys`, `reached_key`,
+  `framed_at_innermost_keys`): the checks read the protocol per site and
+  kind, giving every location they allocate the key `none`, as the entry
+  history does (`entryStart_key`); every location of a reached state has
+  the key `none`, the one key `noKeys` gives each region.
 - **Live protection witnesses** (`entryStart_witness`, `Witness.grow`): a
   location an entry's argument reaches read-only at its parameter's type,
   inside a call of $`C`$, has a witness at the entry history, and at every
@@ -2591,10 +2601,14 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
   along an execution from an entry keeping its call active, every location
   an argument reaches read-only at its parameter's type has a live witness
   at depth `1`.
+- **A reached state inside the unit's call** (`TopC`, `ex_depth`,
+  `witness_reached`): from a call whose term is a `goto` of $`C`$'s code,
+  the top of the term stays a `goto` or a frame of that code until it is a
+  value or a throw of one, which take no step; so every state of the
+  execution that steps has the call active, and each reached state with the
+  call active has the witnesses of the entry's arguments.
 
-Proof scope: the lemmas above are proved. Not proved here: the innermost
-frame of $`C`$'s code at a call inside a nested call of $`C`$ (a frame under
-an evaluation context), and the keys of each region's locations.
+Proof scope: the lemmas above are proved, at the paper's executions.
 
 ### Located reductions
 
