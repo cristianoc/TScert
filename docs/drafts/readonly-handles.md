@@ -475,9 +475,10 @@ conjectured until its Lean exists.
   row on handle parameters, which is trust, for a handle an outside caller
   passes.
 
-`SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its statement; the
-premise and conclusion of `PassUnitSafe` are reviewed again, as a change of
-the accepted plan type requires.
+`SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its statement where
+the accepted plan type grows; its premise and conclusion are then reviewed
+again, as a change of the accepted plan type requires
+([what acceptance reads of the rule](#what-acceptance-reads-of-the-rule)).
 
 ## The checks the rule requires
 
@@ -1663,9 +1664,7 @@ $`\Phi\oplus_C\Psi`$, and after every run of code that is not $`C`$'s
 inside a call of $`C`$ whose run is an action of $`\Phi`$ (the bound
 route). An invariant of $`G_C`$ held with its support in $`R_C`$
 (`InvIn`), its support allowing $`\Theta_C`$ (`SupportAt`), holds after
-such a run (the guarantee route). `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its
-statement; `PassUnitSafe`'s entry condition gains the invariants and the
-ghost components, and its premise and conclusion are reviewed again.
+such a run (the guarantee route).
 
 **The checks of a step** (`PkgStep`, in
 [ReadOnlyChecks.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyChecks.lean)).
@@ -1988,6 +1987,35 @@ history witness, a crossing in that reached it read-only, the history
 grown since (`Witness`, `prot_of_witness`). Where no storage of a local,
 an internal or an exposed site exists, a uniform history with a call
 active and valid frames give the invariants of states (`Ok.of_lent`).
+
+### What acceptance reads of the rule
+
+No verdict reads the rule: `FunctionPlan`
+has the graph form alone, and `mode8Accepted_sound` states what it states
+without the rule. The pass's graphs run outside every component (`gotoOf`,
+the tag `none`), and its graph theorem (`run_sound_single_pass`) reads a
+call of outside code at the callee's stated effect. A plan whose check
+reads a frame at a call needs, each proved, before it is certified:
+
+1. the graph's term carrying the component tag of the code it lowers, with a
+   theorem that a tag changes no step, so the safety of the tagged and the
+   untagged runs agree;
+2. the graph theorem's states carrying the ghost history from the unit's
+   entry (the marks of each allocation, $`E`$, $`A`$, $`B`$) with `Ok` at
+   each state, so a call's transfer reads $`R_C`$ at the call;
+3. the step interpretation: each step the lowered graph of $`C`$'s code
+   makes meets `PkgProps` with the sites, keys and crossings the description
+   states of it (`CheckData`), and the flow's possible sites and keys cover
+   each location of a frame's region (the hypotheses of `flow_of_sites`);
+4. each member's certificate (`Cert`) from the pass's check of its body,
+   over the executions of that body's own graph;
+5. the invariants of states at depth 0, across a return to code outside
+   every call of $`C`$, so the entry conditions hold at every later entry,
+   not only where no protected storage exists (`Ok.of_lent`).
+
+The frames at calls (`ComponentChecks.Ctx.frames`) are checked and printed
+beside the verdicts; with these five proved, a plan reading them takes a
+form of its own on both sides of `FunctionPlan.certify`.
 
 ## Stages and cost
 
