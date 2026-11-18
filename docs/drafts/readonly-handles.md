@@ -1405,8 +1405,11 @@ most its mark for a nested one (`MarksConsistent`, in the order
 $`\mathsf{local}\sqsubseteq\mathsf{internal}\sqsubseteq\mathsf{exposed}\sqsubseteq\mathsf{released}`$,
 checked by the pass), nested local storage is in $`R_C`$
 (`Family.nested_local_inR`) and nested exposed storage is not released
-for $`C`$ (`Family.nested_exposed`). Statements marked *(to connect)* read
-outside steps from the frames' tags, which needs the step property below.
+for $`C`$ (`Family.nested_exposed`). Statements marked *(to connect)* take
+outside steps as hypotheses; of an outside step's three step properties,
+the calculus's steps meet two at the roots of outside code, and the third
+is false of the model's paths (*The active frame and the roots of outside
+code*, below).
 The combination of two components' rules for a fact that relies on both is
 not stated. A state is
 $`s=(\rho,h,W,k,\mathit{site},\mathit{key},E,A,B,\mathit{roots})`$: Paper
@@ -1501,7 +1504,7 @@ map for which every member has one. $`G_C`$ is a set of invariants $`I`$
 with: every write of a member to a location of $`\mathrm{supp}(I)`$ of a
 complete handle, and every exit of a member, keeps $`I`$.
 
-**Runs of code that is not $`C`$'s** (`RunAt`, `Run`) *(to connect: outside steps read from the frames' tags)*. Inside a call
+**Runs of code that is not $`C`$'s** (`RunAt`, `Run`) *(to connect: `OutsideStep.noForge`)*. Inside a call
 of $`C`$ at depth $`d`$, such a run is a sequence of outside steps
 and member calls, each member call's own runs of code that is not $`C`$'s one call deeper, within a budget of nesting. An outside step
 (`OutsideStep`) keeps the marks and the history, allocates outside storage
@@ -1555,7 +1558,7 @@ active, a uniform history, and
   local or exposed location then passes a location of $`E`$, from which on
   every position is read-only.
 
-**The lemmas** *(to connect: outside steps read from the frames' tags)*. Each quantifies over states meeting the invariants and
+**The lemmas** *(to connect: `OutsideStep.noForge`)*. Each quantifies over states meeting the invariants and
 over outside steps meeting their hypotheses.
 
 - (L1) Outside step (proved, `outside_step`). For a step $`s\to s'`$ of
@@ -1637,42 +1640,71 @@ call.
   `Member.bound`, and with every step keeping each invariant of complete
   handles (`TolerantStep`, *Tolerant invariant*) it meets `Member.keeps`.
 
-**What a step of the calculus changes** (proved, `step_changes`, in
-[ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)).
-Every old location a step of the paper model's reduction changes is a slot
-of an object or an element cell of a spine that the stepped term
-references. This is `OutsideStep.reach` with the term's references as the
-frame. Two properties of the model are missing for the three step
-properties as Lean states them: a running frame (`Tm.frame`, `Tm.goto`)
-records whose code it runs (`comp`, copied from the called code at the
-call, read by no rule). What the model lacks is the step's active frame:
-the innermost frame on the evaluation path of a term, its evaluated term and
-its tag, as a function of the term with its lemma against `Step`. With it,
-an outside step's roots are the active frame's term's references outside
-$`C`$'s closures (a closure whose code runs $`C`$'s holds its captures,
-which outside code reaches only by calling it), and `OutsideStep.reach` is
-to follow from `step_changes` taken at the active frame (conjectured);
-the references of the term's other frames, $`C`$'s own among them, are no
-roots, since the step cannot read them. `OutsideStep.noForge` and
-`OutsideStep.writes` need, beyond it, that the active frame's term after a
-step references only what it and the contents it read referenced, or fresh
-storage, an induction over `Step` as `step_changes` is with the
-references of substitution and instantiation. (M)'s clause on a closure's
-bindings needs paths through captures; a capture is a value, not a
-location, so it is a step of a path that lands on a value, which `Follows`
-does not have.
+**The active frame and the roots of outside code** (in
+[ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)
+and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyOutside.lean)).
+
+- Every old location a step of the paper model's reduction changes is a
+  slot of an object or an element cell of a spine that the stepped term
+  references (proved, `step_changes`).
+- The evaluation path of a term (`path`) lists the frames on it, innermost
+  first, each with its tag and its term with the nested frame on the path
+  cut out, then the top segment, tagged with the code that runs it; it
+  follows the congruence rules of `Step`, a `goto` being a frame not yet
+  entered. A step is a step inside the innermost frame on the path
+  (proved, `step_path`, `PathStep`): that frame's term changes and the
+  frames outside it stay, or the frame is popped, by a return or a throw
+  out of a node without a handler, and its parent's term changes; the
+  frames on the path of the term the step produces are pushed, a call's
+  run among them. The step's active tag (`activeTag`) is the innermost
+  frame's, or the top segment's when no frame is on the path.
+- The roots of outside code at a term (`vals`, read at $`C`$ through
+  `Family.ofC`) are the values at the positions of the frames whose tags do
+  not run $`C`$'s code: objects, spines and view spines, with a bound
+  function's saved values and a closure of outside code's node expressions
+  and captures. A closure whose code runs $`C`$'s contributes itself, so its
+  own slots and identity, and none of its code, which outside code reaches
+  only by calling it. Each root is a value of the term, so the roots are
+  valid where the term is (proved, `rootsValid_of_term`).
+- A step whose active frame runs no code of $`C`$ changes only locations
+  one path step from these roots (proved, `step_reach`), which is
+  `OutsideStep.reach` with these roots as the state's (`outsideStep_reach`);
+  every value it leaves in a location it changes or allocates, and from
+  which a path step reaches a location, is one of these roots (proved,
+  `step_writes`), which gives `OutsideStep.writes` (`outsideStep_writes`).
+- `OutsideStep.noForge` is false of these roots (proved, `noForge_counter`):
+  code outside every component reads from a field a closure that captures
+  an object; the capture is a root afterwards and reaches, through its
+  slot, a location that no path from the roots before reached and that is
+  not fresh. A path (`Follows`) steps from a value to a location, through a
+  field, a spine or a cell, and has no step from a closure to the values
+  its code holds. With the captures of outside closures left out of the
+  roots, the same location becomes reachable at the closure's call, whose
+  run holds the captures in its environment. The missing property is a
+  path step from a closure of outside code, and from a bound function, to
+  the values its code holds, and none through a closure whose code runs
+  $`C`$'s; with it, `noForge` is conjectured to hold of the calculus's
+  steps. (M)'s clause on a closure's bindings needs the same step.
+- The active frame before a step classifies it. The entry of a member's
+  call, a call of a closure of $`C`$ from a frame of outside code, has an
+  outside active frame; it changes and stores nothing, so `step_reach` and
+  `step_writes` hold of it, and `RunAt` counts it in the member's call,
+  whose entry pushes the history while an outside step keeps $`A`$. A
+  return from $`C`$'s code into outside code has an active frame of
+  $`C`$ and ends the member's call.
 
 **Integrity is not in the model.** The paper model's objects carry no
 integrity state (frozen, sealed, non-extensible), and its field write
 (`writeField`) never throws for one. The protocol's `integrity` key is
 unsupported in Lean, and nothing is built on it.
 
-**What Lean assumes.** The client obligation (`OutsideStep.row`); the two
-properties of the language's steps (`OutsideStep.reach`,
-`OutsideStep.noForge`) and a third of the same kind (`OutsideStep.writes`:
-what an outside step leaves in storage it changes or allocates references
-only storage its frames reached, or that it allocated); the validity of the frames' values
-(`RootsValid`, the model's `RootsOk`); for each member, the soundness of
+**What Lean assumes.** The client obligation (`OutsideStep.row`); three
+properties of the language's steps, of which the calculus's steps meet two
+at the roots of outside code (`OutsideStep.reach`, `outsideStep_reach`;
+`OutsideStep.writes`, `outsideStep_writes`) and the third
+(`OutsideStep.noForge`) is false of the model's paths (`noForge_counter`);
+the validity of the frames' values (`RootsValid`, the model's `RootsOk`,
+which the roots of a valid term meet, `rootsValid_of_term`); for each member, the soundness of
 its certified effect on $`R_C`$ (`memberOfChecks`'s `certified`, what the
 pass's check of its body establishes) and its steps' checks; and, for the
 frame's premise, the flow of possible sites and the protection a region
