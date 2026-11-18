@@ -13,6 +13,7 @@
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{example}[theorem]{Example}
+\newtheorem{assumption}[theorem]{Assumption}
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
@@ -44,6 +45,7 @@
 \newcommand{\LF}{\mathit{Loc}_{\kF}}\newcommand{\LC}{\mathit{Loc}_{\kC}}\newcommand{\LE}{\mathit{Loc}_{\kE}}\newcommand{\LS}{\mathit{Loc}_{\kS}}\newcommand{\LI}{\mathit{Loc}_{\kI}}
 \newcommand{\lean}[1]{\texttt{\small #1}}
 \newcommand{\status}[1]{\textsf{\small[#1]}}
+\newcommand{\cC}{\mathcal{C}}
 
 \title{Tolerant frames\\[2pt]\large A modal account of fact preservation without ownership}
 \author{TScert working note}
@@ -1499,6 +1501,265 @@ has an effect bounded by $\Phi$, then by \textsc{(Dense)} and the
 proposition $F$ holds each time \code{map} reads an element. That the
 array \code{map} returns is dense is a separate fact, of how \code{map}
 builds it, and belongs to its postcondition.
+
+\paragraph{Calls of code outside a component.} A callback of unknown
+effect has the effect $\top$, which respects no support, so
+Proposition~\ref{prop:rely} keeps no fact across it. A fact of a
+caller survives it when the caller belongs to a component whose storage
+the callback reaches only at read-only types: the callback then changes
+that storage only by calling the component's own functions, whose
+effects the component's checks bound. The definitions below state this
+for a component $\cC$; the rule \textsc{Read-only frame} gives the bound,
+and Theorem~\ref{thm:rofr} the facts it keeps. Each component has its own
+marks, history, region and protocol, written with the subscript $\cC$,
+which we leave out where one component is meant.
+
+\begin{definition}[Components and their interfaces]\label{def:comp}
+A \emph{component} $\cC$ is a set of functions of the program with an
+\emph{interface}: the functions of $\cC$, its \emph{entries}, that code
+outside $\cC$ calls by name. The components of a program form a
+laminar family: \emph{nested in} is reflexive and transitive, and any
+two components are nested or disjoint. A frame \emph{runs the code of}
+$\cC$ when its invocation's component (Section~4) is $\cC$ or a
+component nested in $\cC$; a step whose frame does not run the code of
+$\cC$ is a step \emph{outside} $\cC$, and is outside every component
+nested in $\cC$. A callback that an entry of $\cC$ calls runs outside
+$\cC$. The \emph{members} $M_\cC$ are the functions of $\cC$ that code
+outside $\cC$ can call: its entries, and each function of $\cC$ that
+reaches such code as a value
+\status{Lean: \lean{Family}; \lean{Family.at}, each component read with its own sites and marks; \lean{Family.Runs}; \lean{Family.outside\_mono}, a step outside $\cC$ is outside each component nested in it; \lean{Family.runs\_laminar}}.
+\end{definition}
+
+\begin{definition}[Read-only reach and crossings]\label{def:cross}
+A path $\pi$ from a value $v$ is a sequence of field keys, the spine key
+among them, view-spine steps and element indices; $h\vdash
+v\xrightarrow{\pi}l$ when following $\pi$ from $v$ in $h$ reaches the
+location $l$, never through the entries of a collection. For a type $T$
+of $v$, each prefix $\pi'$ of $\pi$ has the type $T|_{\pi'}$ that $T$
+gives that position, an own field that $T$ does not mention having the
+type \code{unknown}. A type $U$ is \emph{read-only}, $\mathrm{RO}(U)$,
+when no position it gives admits a write: every field is
+\code{readonly}, every array a \code{readonly} array, every typed array
+an \code{ArrayLike}, and the types of its positions are read-only;
+\code{unknown}, numbers and strings are read-only. Then
+\[
+\mathrm{ro}_T(\pi)\iff\exists\pi'\preceq\pi.\ \mathrm{RO}(T|_{\pi'}),
+\qquad
+\mathrm{Reach}^{\mathrm{ro}}_T(v,h)=\{\,l\mid\exists\pi.\ h\vdash v\xrightarrow{\pi}l\wedge\mathrm{ro}_T(\pi)\,\}.
+\]
+A \emph{crossing} passes a value $v$ at a type $T$ between $\cC$ and
+code outside $\cC$, through any alias, in a direction $d$: $\kw{in}$ for
+an entry's argument or receiver, a callback's result and a caught
+value; $\kw{out}$ for an entry's result, a callback's argument, a thrown
+value and a value that $\cC$ stores where code outside it reaches, at
+the type of that position
+\status{Lean: \lean{Follows}, \lean{TypeView}; \lean{TypeView.roPath\_iff}, $\mathrm{ro}_T(\pi)\iff\mathrm{RO}(T|_\pi)$}.
+\end{definition}
+
+\begin{definition}[Marks]\label{def:marks}
+Each allocation site of $\cC$'s code, those of nested components
+included, has a \emph{mark} for $\cC$, and a location's mark
+$\mu(l)$ is that of its site, fixed at allocation:
+\emph{local}, held only by frames of $\cC$ and reachable from no
+binding, no storage and no crossing value; \emph{internal}, held by
+bindings and storage of $\cC$ and reachable from no crossing value;
+\emph{exposed}, reachable from crossing values at read-only positions
+only; \emph{released}, otherwise. A location allocated outside every
+site of $\cC$ has $\mu(l)=\kw{out}$. A site's mark for $\cC$ is at most
+its mark for a component nested in $\cC$, in the order
+$\kw{local}\sqsubseteq\kw{internal}\sqsubseteq\kw{exposed}\sqsubseteq\kw{released}$.
+The pass checks every crossing and every store of $\cC$ against the
+marks
+\status{Lean: \lean{Kept}, a transition that keeps the marks, fixing each old location's site and key; \lean{kindAt\_kept}, \lean{Kept.part}. \lean{Family.nested\_origin}, \lean{Family.nested\_local\_inR}, \lean{Family.nested\_exposed}, with \lean{MarksConsistent} the order of a site's marks, checked by the pass}.
+\end{definition}
+
+\begin{definition}[History]\label{def:hist}
+For $\cC$ a state carries, beside $(\rho,h,W,k)$, three ghost
+components: a set $E$ of locations, a stack $A$ of sets of locations,
+one for each active call of $\cC$, and a set $B$ of locations. A location $l$
+is \emph{held} by $\cC$ at a state when a frame, a binding or a location
+of storage of $\cC$ references $l$ or a location from which $l$ is
+reachable by a path; a key of a \code{WeakMap} is no reference. A
+crossing of $v$ at $T$ in direction $d$ sets
+\[
+E'=E\cup\{\,l\in\mathrm{Reach}^{\mathrm{ro}}_T(v,h)\mid\mu(l)=\kw{exposed}\,\},
+\]
+\[
+N=\begin{cases}\{\,l\in\mathrm{Reach}^{\mathrm{ro}}_T(v,h)\mid\mu(l)\in\{\kw{released},\kw{out}\}\,\}&d=\kw{in}\\ \emptyset&d=\kw{out}\end{cases}
+\]
+and adds $N$ to every set of $A$. A call's entry pushes
+$\bigcup A\cup B$; a hold that makes locations protected adds them to
+every set; each exit, normal or exceptional, pops the top set, and when
+the stack becomes empty $B'$ is the set of locations of the popped set
+that $\cC$ holds; a step while no call of $\cC$ is active removes from
+$B$ each location $\cC$ no longer holds
+\status{Lean: \lean{Ghost.cross}, \lean{HStep}; \lean{HStep.uniform}, every set of $A$ is $\bigcup A\cup B$, so a location protected in a call stays protected until the outermost active call returns, and \lean{exit\_unprotects}, the outermost exit ending it. Being held is a hypothesis, the predicate an exit and a removal read}.
+\end{definition}
+
+\begin{definition}[Protected region]\label{def:region}
+The \emph{protected region} of $\cC$ at a state $s$ is
+\[
+l\in R_\cC(s)\iff\mu(l)\in\{\kw{local},\kw{exposed}\}\ \vee\ \bigl(\mu(l)\in\{\kw{released},\kw{out}\}\wedge(l\in{\textstyle\bigcup}A\vee l\in B)\bigr).
+\]
+This membership test is the one that the rule's premise, the invariants
+of states, the lemmas and the client obligation below read
+\status{Lean: \lean{Ghost.InR}, a definition}.
+\end{definition}
+
+\noindent
+For example, a record \code{\{ readonly xs: readonly number[] \}}
+that an entry receives reaches its array read-only, and the array is in
+$R_\cC$ while the call runs and while $\cC$ holds it. A record
+\code{\{ readonly box: \{ xs: number[] \} \}} reaches \code{box} and
+\code{xs} at writable types, and protects neither.
+
+\begin{definition}[Protocol]\label{def:protocol}
+A \emph{part} is $(\sigma,\kappa,k)$: a site $\sigma$ or $\kw{out}$, a
+kind $\kappa$ of the world and, for a field location, a key $k$ among
+the keys a record of $\sigma$ may have, which is every key for
+$\sigma$ released or $\kw{out}$. A \emph{protocol} maps each part to a
+change of Section~3, and the action of $\Phi\oplus_\cC\Psi$ bounds each
+location of $R_\cC$ by $\Psi$ at its part and every other location by
+$\Phi$, the region and the regions of $\Phi$ read at the entry state:
+\[
+\begin{array}{@{}l@{}}
+s\tr{\Phi\oplus_\cC\Psi}_\rho s'\iff s\tr{}_\rho s'\text{ keeping the marks}\ \wedge\ \forall l<\len h.\\[2pt]
+\qquad\begin{cases}\Psi(\mathrm{part}(l))_{\len h}(h(l),h'(l)) & l\in R_\cC(s)\\ h'(l)=h(l)\vee\exists(r:\delta)\in\Phi.\ l\in r(\rho,h)\wedge\delta_{\len h}(h(l),h'(l)) & \text{otherwise}\end{cases}
+\end{array}
+\]
+$\Psi\sqcup\Psi'$ is the join part by part. The \emph{protocol}
+$\Psi_\cC$ of $\cC$ is the least protocol for which each member $m\in
+M_\cC$, entered from code outside $\cC$ with each of its calls of such
+code bounded by the rule below, changes each location of $R_\cC$ of its
+entry heap within $\Psi_\cC$ at its part, on its normal and exceptional
+exits, after \textsc{Fresh-Eff} drops the locations it allocated. Its
+guarantee $G_\cC$ is a set of invariants that every member keeps, at
+each write to their support and at both exits
+\status{Lean: \lean{Part}, \lean{Protocol}, \lean{OAction}, \lean{Protocol.join}. A member's certificate is a hypothesis (\lean{Member}), and \lean{memberOfChecks} derives it from the checks of the member's steps and the soundness of its certified effect, which is assumed}.
+\end{definition}
+
+\begin{definition}[Client obligation]\label{def:theta}
+The \emph{client obligation} $\Theta_\cC$ of $\cC$ is a protocol stated
+in $\cC$'s API, preserving references: each part at $\keep$, at
+$\kw{scalar}$ on a cell or at a key, or at $\extend$ on a spine. A
+read-only type states $\Theta_\cC=\keep$ at every part. The \emph{bound}
+on a call of code outside $\cC$ is $\Psi_\cC\sqcup\Theta_\cC$.
+\end{definition}
+
+\begin{assumption}[Clients]\label{ass:clients}
+Let $\cC$'s API state $\Theta_\cC$. Code outside $\cC$ that is not
+analysed enters $\cC$ only through its interface, and each step it
+executes, a callback's included, changes each location of $E$ and
+each location of $\bigcup A\cup B$ within $\Theta_\cC$ at its part. Each
+such step changes only storage its frames reach, and afterwards its
+frames reach only storage they reached or it allocated
+\status{assumed, of the code outside each component whose API states $\Theta_\cC$. Lean: the hypotheses \lean{OutsideStep.row}, \lean{OutsideStep.reach}, \lean{OutsideStep.noForge}, \lean{OutsideStep.writes} and \lean{RootsValid}. \lean{step\_changes} proves that a step of the model's reduction changes only slots and cells that the stepped term references; conj.: \lean{OutsideStep.reach} follows from it taken at the step's active frame}.
+\end{assumption}
+
+\noindent
+Code outside $\cC$ that the analysis checks meets the obligation by its
+checks, and needs no assumption.
+
+\begin{mathpar}
+\inferrule*[left=Read-only frame]{c:\Phi\mid\Phi^{e} \\ c\text{ a call, inside a call of }\cC\text{, of code outside }\cC}{c:\ \Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)\ \mid\ \Phi^{e}\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)}
+\end{mathpar}
+
+\noindent
+The rule has three side conditions, which the pass checks: the code of
+$\cC$ contains no \code{await}, \code{yield}, async function or
+generator, so a call of code outside $\cC$ runs inside a call of $\cC$
+that stays active until it returns; $\Theta_\cC$ preserves references;
+and each store of $\cC$ into protected storage is admitted by (O) below.
+A callback of effect $\top$ has the effect $\Psi_\cC\sqcup\Theta_\cC$ on
+$R_\cC$. An audited native keeps its contract, and each call of a
+callback it makes is bounded by the rule
+\status{Lean: \lean{readOnly\_rule}, for a run of code outside $\cC$ given as a sequence of outside steps and member calls (\lean{RunAt}, \lean{Run}), at a protocol that the members' certificates meet, which \lean{Run.bound} gives for $\Psi_\cC\sqcup\Theta_\cC$; conj.: that a call whose callee's component is outside $\cC$, read from the frames' tags, is such a run, which needs the step's active frame in the model}.
+
+\begin{definition}[Invariants of states]\label{def:ok}
+A state is \emph{ok} for $\cC$ when a call of $\cC$ is active, every set
+of $A$ is $\bigcup A\cup B$, and
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[(M) Marks] every location's mark is its site's; a local location
+is reachable from no binding, no storage and no frame but $\cC$'s; an
+internal location is reachable from no value that has crossed;
+\item[(P2) Confinement] every exposed location reachable from a frame of
+code outside $\cC$ is in $E$, so every path from such a frame to a local
+or exposed location passes a location of $E$, from which every position
+is read-only.
+\end{description}
+\status{Lean: \lean{MarksOk}, no local or internal location reachable from a frame outside $\cC$, and \lean{LocalClosed}, storage that references local storage is local; \lean{Confined}. Kept by outside steps, \lean{outside\_localClosed}, and by checked steps of $\cC$, \lean{pkg\_step\_ok}. The clause of (M) on a closure's bindings needs paths through captures, which the model's paths do not follow}.
+\end{definition}
+
+\begin{proposition}[The read-only lemmas]\label{prop:rolemmas}
+For states that are ok and steps outside $\cC$ that meet
+Assumption~\ref{ass:clients}:
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[(L1) Outside step] a step $s\to s'$ outside $\cC$ changes each
+$l\in R_\cC(s)$ within $\Theta_\cC$ at its part, and $s'$ meets (M)
+and (P2);
+\item[(L2) Outside run] a run $s\to^{*}s'$ outside $\cC$, inside an
+active call of $\cC$, keeps each $l\in R_\cC(s)$ in the region of each
+of its states, changes it within $\Psi_\cC\sqcup\Theta_\cC$ at its part,
+and ends in an ok state;
+\item[(L3) Rigidity] the relation that an action of
+$\Phi\oplus_\cC\Psi$ with a growing history gives is transitive, and
+$R_\cC(s)\subseteq R_\cC(s')$ for related states within a call; with
+$\Phi$ rigid and $\Psi_\cC\sqcup\Theta_\cC\sqsubseteq\Phi$, the effect
+$\Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)$ is rigid;
+\item[(L4) Invariants] an invariant $I\in G_\cC$ whose support lies in
+$R_\cC$ and tolerates $\Theta_\cC$ holds after a run as in (L2) when it
+holds before;
+\item[(O) Ownership] a store of $\cC$ of a value $v$ into a location of
+$R_\cC(s)$, or of the support of an $I\in G_\cC$, is admitted when every
+location the support reads through $v$ is exposed or in $R_\cC(s)$; those
+locations are then in $R_\cC(t)$ at each later state $t$ of the call.
+\end{description}
+\status{Lean: (L1) \lean{outside\_step}; (L2) \lean{Run.bound}, by induction on the budget, member calls by their certificates; (L3) \lean{HSteps.grows}, \lean{InR.mono}, \lean{Leads.trans}, \lean{Leads.trans\_top}, \lean{Change.Holds.trans}; (L4) \lean{Run.keeps}, with \lean{SupportInR}; (O) \lean{ownership}, \lean{Admitted}. conj.: their connection to the calculus's steps, as for the rule}
+\end{proposition}
+
+\begin{theorem}[Read-only reliance]\label{thm:rofr}
+Let $S$ support $F$, with each location of each region of $S$ in
+$R_\cC$ and $\Psi_\cC\sqcup\Theta_\cC$ at its part within the change
+that $S$ gives it. Then $F$ holds after every action of
+$\Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)$, and after every run of code
+outside $\cC$ inside a call of $\cC$
+\status{Lean: \lean{readOnly\_frame}, \lean{readOnly\_rely}, with \lean{Inside} the premise; \lean{insideCheck\_sound}, the pass's check of the premise from the parts its regions' locations may have, under the flow of possible sites, which is assumed; conj.: the connection to the calculus's steps, as for the rule}.
+\end{theorem}
+
+\noindent
+A fact relies on one component's rule. The combination of two
+components' rules, for a fact whose support needs the regions of both, is
+not stated. The objects of the model carry no integrity state (frozen,
+sealed, non-extensible), and the protocol states no change of it.
+
+\begin{example}[A walker across its visitor]\label{ex:ro}
+Let $\cC$ be a module whose interface is its two exports, with
+\code{type H = \{ readonly widths: readonly number[] \}}:
+\begin{center}\small
+\begin{tabular}{@{}l@{}}
+\code{export function prepare(n: number): H \{}\\
+\code{~~return \{ widths: new Array<number>(n).fill(1) \};}\\
+\code{\}}\\
+\code{export function walk(h: H, visit: () => void): number[] \{}\\
+\code{~~const w = h.widths, n = w.length, out: number[] = [];}\\
+\code{~~for (let i = 0; i < n; i++) \{ visit(); out.push(w[i]!); \}}\\
+\code{~~return out;}\\
+\code{\}}
+\end{tabular}
+\end{center}
+The visitor may hold \code{h} and call \code{prepare} and \code{walk}.
+The read \code{w[i]!} needs $i<\len w$ after \code{visit()}, of effect
+$\top$. The type \code{H} is read-only, so $\Theta_\cC=\keep$. The array
+of \code{widths} is reached read-only from \code{prepare}'s result, so
+its site is exposed; an array that outside code allocated and passes in
+\code{h} is reached by an incoming read-only crossing and held by
+\code{walk} through \code{w}. Either way the spine of \code{w} is in
+$R_\cC$. Each member writes only what it allocated, so $\Psi_\cC=\keep$
+at every part. By \textsc{Read-only frame} the visit has the effect
+$\top\oplus_\cC\keep$; the support $\{w.\kw{spine}:\grow\}$ of $i<\len w$
+lies in $R_\cC$ with $\keep\sqsubseteq\grow$, and
+Theorem~\ref{thm:rofr} keeps $i<\len w$ across the visit.
+\end{example}
 
 \paragraph{Reads, writes and tests.} With $x$ a variable that holds an
 object or an array, an array in \textsc{Elem-Read} and
