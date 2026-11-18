@@ -327,6 +327,9 @@ gives of the names it read. -/
             (⟨q, r.path⟩ : Footprints.ArgumentSpineRegion)).map (c, ·)
     | throw "a stated spine region names the receiver, which the function does not declare"
   let (program, claims, source, start) := compactLowered built.program built.claims built.source entry.label
+  let hasRestParam := match f.params.getLast? with
+    | some p => p.rest && (Fragment.arrayElement p.ty (readonly := true)).isNone
+    | none => false
   return {
     toRequest := ⟨built.types, program, claims, R, start, inputs, built.codes, promise,
       entrySeparation, entryIndices⟩
@@ -346,7 +349,10 @@ gives of the names it read. -/
     async := f.async
     stated := f.stated
     contractReads := built.memberReads ++ values built.nameReads
-    comp := componentAt f.namePos }
+    comp := componentAt f.namePos
+    siblings := siblings.map (·.1)
+    receiver := receiverInput
+    restParam := hasRestParam }
 
 end
 
