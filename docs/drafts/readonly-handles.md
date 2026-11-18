@@ -550,7 +550,11 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   storage it passed at a read-only position in an earlier call included, as
   in `remember(xs)` and then `walkSaved(visit)` with `visit` truncating
   `xs`. A client cannot know when $`C`$ drops a reference, so for it
-  storage it passed at a read-only position stays protected from then on. $`C`$'s own write to storage it gave out
+  storage it passed at a read-only position stays protected from then on.
+  Each such write, and each such callback effect, is checked within the
+  component's client obligation $`\Theta`$ (*Other encapsulations*), as a
+  callback's body is checked against its stated `Modifies` effect; for a
+  read-only type, $`\Theta=\{\}`$ admits none. $`C`$'s own write to storage it gave out
   as a view is a *representation write*: through a cast of the handle to its
   representation, checked against the representation's type, its invariant
   (*Tolerant invariant*), the throw edge of *Writes outside code may make
@@ -621,9 +625,11 @@ array before changing it (cited: `CHANGELOG.md:15`).
 > only through $`C`$'s interface; code that enters it otherwise is outside
 > this row. That code, when TScert does not analyze it, a function it passes
 > in included, changes by its own steps, by any operation, a native's
-> included, no element, field or length, adds or removes no field, and
-> changes no prototype or property kind (a data property redefined as an
-> accessor) of storage reachable in the heap from a value that crosses
+> included, beyond the client obligation $`\Theta`$ that $`C`$'s exported
+> type states (`@clients`, read-only by default: no element, field or
+> length changed, no field added or removed, and no prototype or property
+> kind, a data property redefined as an accessor, changed) storage
+> reachable in the heap from a value that crosses
 > between it and $`C`$ in either direction, through any alias (an entry's
 > argument, receiver or result, a callback's argument or result, a value
 > thrown, caught or yielded, a function $`C`$ gives out and what it receives
@@ -641,40 +647,100 @@ array before changing it (cited: `CHANGELOG.md:15`).
 > of a function $`C`$ gave out, is that function's, bounded by its
 > certificate, and a step of a callback an entry calls is the callback's.
 > Freezing, sealing, preventing extension and making a data property
-> non-writable or non-configurable are admitted.
+> non-writable or non-configurable are admitted unless $`\Theta`$ keeps the
+> integrity attributes.
 
 The row is stated per component, in that component's API, and applies only
-to a component whose API states it. It is the instance $`\Theta=\mathsf{keep}`$
-of a row with a parameter $`\Theta`$, the client obligation: an effect in
-Paper I's change lattice bounding what code outside $`C`$ that TScert does
-not analyze may do to $`C`$'s protected storage. With $`\Theta`$, the
-rule's bound on a callback on $`R_C`$ is $`\Psi_C\sqcup\Theta`$ in place of
-$`\Psi_C`$, and (L3)'s rigidity needs $`\Theta`$ to preserve references, as
-*Reference-preserving protocol* requires of $`\Psi_C`$. For a component
-whose API does not state the row, the rule holds only where all code
-outside it is analyzed, which *Views in analyzed code* checks. For pretext,
-$`C`$ is its package, its interface the modules `package.json`'s `exports`
-names, `.` and `./rich-inline`; its API states the row with
-$`\Theta=\mathsf{keep}`$; the demo and any other analyzed code around it is
-outside $`C`$ and checked.
+to a component whose API states it. Its parameter $`\Theta`$, the *client
+obligation*, is an effect in Paper I's change lattice bounding what code
+outside $`C`$ that TScert does not analyze may do to $`C`$'s protected
+storage. With it, the rule's bound on a callback on $`R_C`$ is
+$`\Psi_C\sqcup\Theta`$, and a fact survives a call of code that is not
+$`C`$'s when $`\Psi_C\sqcup\Theta`$ respects its support; an invariant in
+$`G_C`$ is framed only where $`\Theta`$ respects its support too. For a
+component whose API does not state the row, the rule holds only where all
+code outside it is analyzed, which *Views in analyzed code* checks. For
+pretext, $`C`$ is its package, its interface the modules `package.json`'s
+`exports` names, `.` and `./rich-inline`; its API states the row with
+$`\Theta=\{\}`$, read-only; the demo and any other analyzed code around
+it is outside $`C`$ and checked.
 
 ### Other encapsulations
 
-Read-only is one encapsulation among several the parameter $`\Theta`$
-could state. Only $`\Theta=\mathsf{keep}`$ is supported; the others are
-recorded as possible in principle, each conjectured and not supported, with
-no mechanism for them:
-- **Read-only**, $`\Theta=\mathsf{keep}`$: outside code changes nothing it
-  reaches read-only. Pretext's instance, and the only one supported.
-- **Grow-only** (conjectured, not supported): $`\Theta`$ admits an
-  extension that keeps every listed cell, as `push` does, and so preserves
-  references; facts that tolerate growth survive.
-- **Freezing or not** (conjectured, not supported): a location's integrity
-  attributes (extensible, writable, configurable) are parts $`\Theta`$ keeps
-  or lets change, where the row now admits every change toward frozen.
-- **Not read at all**: no instance of $`\Theta`$, since a read changes no
+**The annotation.** $`\Theta`$ is written in TScert's existing effect
+language: the protocol `P` of `Modifies<P, T>` (cited:
+[`Modifies<P, T>`](../ANNOTATIONS.md#types-the-verifier-declares),
+[stated effects](../SOURCE-ELABORATION.md#stated-effects)), a type literal
+of class keys (`values`, `spines`) and path keys, each at a change. It is a
+JSDoc tag on a type the component exports, `@clients P`, its path keys read
+from `this`, the value at that type, and it bounds storage reached
+read-only from a value crossing at that type. A read-only type is shorthand
+for `@clients {}`, so pretext's instance is unchanged:
+
+```ts
+/** The obligation on its callers, in the caller-facing words of Trust.
+ *  @clients {}
+ *  @invariant this.segmentFlags.length === this.widths.length
+ *  @representation InternalPreparedText */
+export type PreparedText = { readonly [preparedTextBrand]: true }
+```
+
+with the same `@clients {}` on `PreparedTextWithSegments` and
+`PreparedRichInline`.
+
+**The restriction.** $`\Theta`$ must preserve references, the restriction
+*Reference-preserving protocol* puts on $`\Psi_C`$, since (L3)'s rigidity
+needs it of $`\Psi_C\sqcup\Theta`$: each entry is $`\mathsf{keep}`$,
+$`\mathsf{scalar}`$ on a cell or at a key, or an extension on a spine. Paper
+I's change lattice $`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$
+names no extension-only change: $`\mathsf{grow}`$ may replace a listed cell
+by a fresh one. The extension `push` gives exists only as its audited
+contract (Lean `ReceiverAppends`, the kept prefix). So the lattice gains
+one change, $`\mathsf{extend}`$, between $`\mathsf{keep}`$ and
+$`\mathsf{grow}`$ on spines: the old spine is a prefix of the new. It is
+added once, and serves $`\Psi_C`$ and $`\Theta`$ alike; in a protocol it is
+spelled `"extend"`. The integrity attributes (extensible, writable,
+configurable) are one more key, `integrity`, at `"keep"` or `"freeze"`
+(changes toward frozen only, which preserve references); read-only's
+shorthand admits `"freeze"`, as the row does.
+
+**The checks.**
+- Analyzed client code is checked against $`\Theta`$: each write it makes,
+  through any alias, to storage it reached through a crossing at the
+  component's type lies within $`\Theta`$, by the check a callback's body
+  gets against its stated `Modifies` effect (*Views in analyzed code*).
+- The bound on a callback is $`\Psi_C\sqcup\Theta`$ on $`R_C`$.
+- A fact survives when $`\Psi_C\sqcup\Theta`$ respects its support.
+
+**The instances.** Each is supported; each example and negative is
+observed under Node:
+- **Read-only**, `@clients {}`: pretext's instance.
+- **Grow-only**, `@clients { "this.items[*]": "extend" }`: a client may
+  append to a handle's `items`, as `push` does. A walker that caches
+  `items.length` keeps $`i<|\mathit{items}|`$ across a visitor that
+  appends: it reads `[1, 1, 1]`. Negative: a client that pops, outside
+  $`\Theta`$, makes it read `[1, undefined, undefined]`; refused at the
+  client's write where the client is analyzed, and a client breaking the
+  row where it is not.
+- **Freezing kept**, `@clients { integrity: "keep" }`: no client changes the
+  handle's integrity attributes, so a write of the package to it cannot
+  fail by a freeze and needs no throw edge for one. A package that writes a
+  cache inside a `try` and reads it after relies on the write: it reads
+  `5`. Negative: a client that freezes the handle, outside $`\Theta`$, makes
+  the write throw, the `catch` go on and the read give `undefined` at type
+  `number`; refused at the client's freeze where the client is analyzed.
+- **Not read at all** is no instance of $`\Theta`$: a read changes no
   location and so bounds no fact's support; it concerns information hiding
   and representation independence, which are outside frames.
+
+**An obligation of the implementation.** ANNOTATIONS.md will need an entry
+`@clients P`: "On a type a component exports: code outside the component
+that TScert does not analyze changes storage reached read-only from a value
+at this type at most as `P` says, `P` a `Modifies` protocol with path keys
+read from `this`, its changes preserving references; a read-only type is
+`@clients {}`." The entry, the `"extend"` change and the `integrity` key
+are added with their implementation, `tests/docs.mts` checking the
+annotation list.
 
 The row covers own fields the crossing's type does not mention: a value
 crossing at `{ readonly n: number }` whose own field `extra` holds an array
