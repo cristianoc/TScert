@@ -336,4 +336,17 @@ theorem InR.mono {P : Package} {d : Nat} {g g' : Ghost P} {l : Nat} (hg : Grows 
   · exact .inr (.inl (ho.trans h))
   · exact .inr (.inr ⟨by unfold Ghost.Lent; rw [ho]; exact hL, hg.prot l hp⟩)
 
+/-- **Protection ends at the outermost exit**: a location recorded only in
+the outermost call's set, which the package no longer holds, is not
+protected once that call exits, normally or exceptionally. The region grows
+only inside a call (`InR.mono`); across the outermost exit it may shrink. -/
+theorem exit_unprotects {P : Package} {tv : TypeView} {h : Heap} {g : Ghost P} {X held : Nat → Prop}
+    {l : Nat} (x : Exit) (hA : g.A = [X]) (hn : ¬ held l) :
+    HStep tv h g { g with A := [], B := exitRecord g [] X held } ∧
+      ¬ ({ g with A := [], B := exitRecord g [] X held } : Ghost P).Prot l := by
+  refine ⟨.exit g x held [] X (by simpa using hA), ?_⟩
+  rintro (⟨Y, hY, -⟩ | ⟨-, hl⟩)
+  · cases hY
+  · exact hn hl
+
 end Verification.TolerantFrames.ReadOnly
