@@ -43,6 +43,9 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-comes-back",
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-void-callback",
   "(() => { const h = prepare(3); const a = [2, 2, 2]; let k = 0; return walk(h, () => { k++; if (k === 1) return a; a.length = 0; }); })()"))),
   "a visitor typed `() => void` returns an array it then truncates, installed in the handle");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-map-escape",
+  "(() => { const m = new Map(); const h = prepare(3, m); return walk(h, () => { m.get(3).length = 0; }); })()"))),
+  "the caller's map gives back the widths, which its visitor truncates");
 
 assert.throws(() => runExample("invalid-native-length-map", 'changed(["a"])'), /TypeError/);
 assert.throws(() => runExample("invalid-native-length-push", 'past([])'), /TypeError/);

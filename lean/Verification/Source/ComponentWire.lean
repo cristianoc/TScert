@@ -178,6 +178,8 @@ structure Native where
   given : Nat
   all : Nat
   member : Bool
+  name : Option String
+  array : Bool
   fresh : Bool
   primitiveElements : Bool
   deriving Repr
@@ -491,9 +493,9 @@ def decodeCall (j : Json) : Except String Call := do
     return (⟨← jNat a "value", ← jBoolAt a "spread", ← jSpanAt (← jField a "at"), ← jOptShape a "type"⟩ : Arg)
   let n ← jField j "native"
   let native ← if n == .null then pure none else do
-    fieldsExactly n ["site", "passed", "given", "all", "member", "fresh", "primitiveElements"]
+    fieldsExactly n ["site", "passed", "given", "all", "member", "name", "array", "fresh", "primitiveElements"]
     pure (some (⟨← jNat n "site", ← jNat n "passed", ← jNat n "given", ← jNat n "all", ← jBoolAt n "member",
-      ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements"⟩ : Native))
+      ← jOptStr n "name", ← jBoolAt n "array", ← jBoolAt n "fresh", ← jBoolAt n "primitiveElements"⟩ : Native))
   return ⟨← jStr (← jField j "module"), ← jSpanAt (← jField j "at"), ← jNat j "component", ← jNat j "callee",
     ← jOptNat j "receiver", args, ← jNat j "result", ← jNatList j "targets", ← jOptNat j "instance", native⟩
 

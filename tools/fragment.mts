@@ -567,9 +567,10 @@ export interface StoreAst {
  * the family and of no outside code), its result's site, the values its
  * arguments pass, which it may write into its receiver (`passed`), the
  * values it is given, its receiver's among them (`given`), those it may
- * return (`all`), whether TypeScript resolves it to a member of the standard
- * library's arrays (`member`), which makes it that native's whatever its
- * receiver's value, whether that member's reviewed contract states a fresh
+ * return (`all`), whether it is a method of the standard library's (`member`,
+ * its `name`): of its arrays (`array`), whatever its receiver's value, or of
+ * another interface, its receiver the family's own storage with no key of
+ * that name, whether that member's reviewed contract states a fresh
  * result (`fresh`), which is the
  * array it allocates, and whether TypeScript types that array one of
  * primitives (`primitiveElements`), whose elements hold no reference. */
@@ -583,8 +584,8 @@ export interface CallAst {
   result: number;
   targets: number[];
   instance: number | null;
-  native: { site: number; passed: number; given: number; all: number; member: boolean; fresh: boolean;
-    primitiveElements: boolean } | null;
+  native: { site: number; passed: number; given: number; all: number; member: boolean; name: string | null;
+    array: boolean; fresh: boolean; primitiveElements: boolean } | null;
 }
 
 /** A place a value is thrown or caught, a binding a module or a closure
