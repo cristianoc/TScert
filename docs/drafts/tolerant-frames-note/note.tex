@@ -22,6 +22,7 @@
 \newcommand{\kw}[1]{\mathsf{#1}}
 \newcommand{\keep}{\kw{keep}}
 \newcommand{\init}{\kw{init}}
+\newcommand{\extend}{\kw{extend}}
 \newcommand{\grow}{\kw{grow}}
 \newcommand{\any}{\kw{any}}
 \newcommand{\val}{\kw{values}}
@@ -466,7 +467,7 @@ contract of $l$ admits the single value $u$, then $h(l)=h'(l)=u$
 \end{description}
 
 \paragraph{Changes.} A \emph{change} bounds how the contents of one
-location may differ between two heaps. One of the changes below, $\grow$, must say that the cells a spine
+location may differ between two heaps. Two of the changes below, $\extend$ and $\grow$, must say that the cells a spine
 newly lists are \emph{new} locations. So a change takes a parameter $b$,
 a heap length: a location is new when it is at or above $b$. Formally a
 change $\delta$ is a family of preorders $\delta_b$ on contents, one for
@@ -476,13 +477,14 @@ We write $\delta_b(u,u')$ when $\delta_b$ relates the old contents $u$
 to the new contents $u'$.
 
 The action of an effect sets $b=\len h$ for its entry heap $h$.
-Only condition (iv) of $\grow$ depends on $b$.
+Only condition (iv) of $\grow$ and the freshness of the appended cells in $\extend$ depend on $b$.
 Write $N$ for the maximal array length, $2^{32}-1$. For contents $u,u'$:
 \[
 \begin{array}{lcl}
 \keep_b(u,u') &\iff& u'=u\\[2pt]
 \init_b(u,u') &\iff& u'=u\ \vee\ (u\in\{\code{null},\code{undefined}\}\wedge u'\in\mathit{Val})\\[2pt]
 \kw{scalar}_b(u,u') &\iff& u'=u\ \vee\ (u\in\mathit{Val}\setminus\mathit{Obj}\wedge u'\in\mathit{Val})\\[2pt]
+\extend_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ (u,u'\text{ array spines}\wedge u'=u\cdot\tau\wedge\mathit{cells}(\tau)\subseteq\{l\mid l\ge b\}\wedge(\len u\le N\Rightarrow\len{u'}\le N))\\[2pt]
 \grow_b(u,u') &\iff& \kw{scalar}_b(u,u')\ \vee\ (u,u'\in\mathit{Spine}\wedge u\preceq_b u')\\[2pt]
 \any_b(u,u') &\iff& \kw{true}
 \end{array}
@@ -498,6 +500,7 @@ where, for two spines, $\sigma\preceq_b\sigma'$ (read: $\sigma'$ is a
 \end{array}
 \]
 
+An extension, as \code{push} gives, keeps the old spine as a prefix of the new: no listed cell is replaced and no length shrinks; it is a growth, and it changes no view spine.
 The change and the contract both bound the new contents.
 For example, $\kw{scalar}_b(1,\code{"a"})$ holds.
 A contract \code{number | string} admits this change;
@@ -505,7 +508,7 @@ a contract \code{number} forbids it.
 
 Each change allows all that the one before it allows:
 \[
-\keep\sqsubseteq\init\sqsubseteq\kw{scalar}\sqsubseteq\grow\sqsubseteq\any .
+\keep\sqsubseteq\init\sqsubseteq\kw{scalar}\sqsubseteq\extend\sqsubseteq\grow\sqsubseteq\any .
 \]
 \status{Lean: \lean{Change.Holds}; \lean{Change.Holds.refl}, \lean{.mono}, \lean{.trans}, \lean{.lower}}
 
@@ -672,7 +675,7 @@ region and a change:
 \begin{array}{rcl}
 \Phi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[3pt]
 r &::=& \st \mid \vw \mid \val \mid \pi.\kw{spine} \mid \pi.\kw{cells} \mid \pi.f \mid \pi.\kw{fields}\\[3pt]
-\delta &::=& \keep\mid\init\mid\kw{scalar}\mid\grow\mid\any
+\delta &::=& \keep\mid\init\mid\kw{scalar}\mid\extend\mid\grow\mid\any
 \end{array}
 \]
 An effect bounds change and states no value: $\{\st:\grow\}$ does not
@@ -884,7 +887,9 @@ $\rho,m,h\models F$, leaving the world and the budget of $s$ implicit as
 in Definition~\ref{def:adm}. The
 entry mark $m\le\len h$ is the length the heap had when the current
 function invocation started; the locations at or above $m$ are the ones
-the invocation has allocated. Atoms read
+the invocation has allocated. Each invocation also has a
+\emph{component}, the innermost component of its function's code: a
+ghost tag that no rule and no assertion reads. Atoms read
 $\rho$ and $h$ only, and the connectives $\wedge$, $\vee$, $\exists$
 have their usual meaning: a disjunction holds where one of its two
 assertions holds, whatever the other reads. We write $\fresh(x)$ for
@@ -1255,7 +1260,8 @@ Both are states of the one execution, with the worlds it reaches.
 The mark and $\old$ are separate: $\fresh(x)$ compares with the mark $m$
 of the enclosing invocation in the entry state and in the exit state
 alike, while $\old$ selects the entry state of the command. A sequence
-composes entry states and leaves $m$ as it is; a call has its own mark,
+composes entry states and leaves $m$ as it is; a call has its own mark
+and its own component, the callee's,
 and its freshness assertions are rebased (rule \textsc{Call}).
 An $\old$ refers to the command whose triple contains it. The forms of a postcondition are those of the
 grammar of Section~4; the postconditions $Q_{<}$ and $Q_{\ne i}$ below
