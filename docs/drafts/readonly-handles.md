@@ -2261,6 +2261,58 @@ sites each value of a frame of $`C`$'s code may reach, at each node, and
 the heap of sites, checked against every step of $`C`$'s code, the entry
 of a call of $`C`$ and its exits included.
 
+### The sites of a term
+
+`SitesSound` asks, at each step of $`C`$'s code, for the heap after it
+meeting a heap of sites and the roots of outside code meeting $`O`$
+(`ReadOnlyFits.lean`). Both are read from a typing of whole terms by
+sets of sites:
+
+- **A flow** (`Flow`): $`O`$, the heap of sites $`H`$, and for each code
+  of $`C`$ a proposal (`CodeFlow`): at each node, the sites of each slot
+  of the environment and of the node expression's value, and the sites
+  its frames allocate at, objects (`obj`) and arrays (`arr`, a rest
+  parameter's spine and a grown cell among them). Outside code allocates
+  outside storage (`Alloc.outside`).
+- **A value meets a set** (`VJ`): a closed value referencing allocated
+  locations only, whose first locations are of sites of the set and every
+  closure of $`C`$'s code within it (`Within`: captures, node expressions'
+  values, a bound function's parts) captures values meeting its code's
+  entry slots (`CapsOk`). Allocation keeps it (`VJ.alloc`).
+- **A term fits a set** (`Fits V Γ a S t`): its value, once computed,
+  meets $`S`$. Every callee, receiver, actual and thrown value meets
+  $`O`$, and a frame that calls allocates arrays at a site of $`O`$ (a
+  rest spine goes to a callee not known); a read's result meets the
+  contents of a set closed under the reads' prototypes; a write's value
+  is one the written storage may hold (`Stores`); an allocation's initial
+  values what its site may hold. A nested run of $`C`$'s code fits when
+  its environment meets its node's slots and its term the node's value
+  set; of outside code, when its environment and term meet $`O`$; either
+  returns a value of $`O`$. Fitting reads values only through `V`
+  (`Fits.mono`), so allocation keeps it (`Fits.alloc`); a raised value
+  meets $`O`$ (`raises_fits`).
+- **The proposal's conditions** (`CodeOk`, `Flow.Facts`): each node
+  expression, instantiated at an environment meeting its slots, fits the
+  node's value set; each continuation and handler maps such an
+  environment to one meeting its target; a returning node's value meets
+  $`O`$; every slot accepts $`O`$; $`O`$ holds outside storage, is closed
+  in $`H`$, and its storage may hold all of $`O`$.
+- **A heap meets the flow** (`HeapInv`): each location holds a value
+  meeting its site's contents, its code's values the bindings; so it meets
+  the heap of sites (`HeapInv.sites`). Writes and allocations that meet
+  the rules keep it (`HeapInv.set`, `HeapInv.append`, `HeapInv.fresh`).
+- **The site of a step's fresh locations** (`stepSite`): the innermost
+  frame's (`activeFrame`, following `Step`'s congruences as `path` does)
+  array site where the active term builds or grows an array, its object
+  site otherwise.
+
+Proof scope: the lemmas above are proved. That every step keeps a closed
+term fitting and the heap meeting the flow at `stepSite` is not proved;
+it needs the substitution of a `letE`, the entry of a closure (its
+captures, a rest spine), a run of outside code entering a node (its node
+expressions' values meeting $`O`$), and the closedness of the entry's
+values.
+
 ### Located reductions
 
 The checks of $`C`$ read each step at the node of the code performing it
