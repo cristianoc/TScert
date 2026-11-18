@@ -166,6 +166,7 @@ import Verification.Semantics.CallArguments
 import Verification.Semantics.CallEffects
 import Verification.Semantics.CanonicalLists
 import Verification.Semantics.ClosedFootprints
+import Verification.Semantics.ComponentTags
 import Verification.Semantics.ContractExits
 import Verification.Semantics.EffectSignatures
 import Verification.Semantics.ElementWrites
