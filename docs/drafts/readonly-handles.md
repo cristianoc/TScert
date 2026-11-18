@@ -2317,11 +2317,16 @@ sets of sites:
   array site where the active term builds or grows an array, its object
   site otherwise.
 
+A term fitting a set fits every larger set (`Fits.sub`); substituting a
+value meeting a variable's set keeps a term fitting (`fits_subst`, the
+variables past it moving down, `insertSites`); lowered code instantiated
+at an environment of $`O`$ fits $`O`$ at outside code's allocation sites
+(`fits_lowered`, `ReadOnlyFitsSubst.lean`).
+
 Proof scope: the lemmas above are proved. That every step keeps a closed
 term fitting and the heap meeting the flow at `stepSite` is not proved;
-it needs the substitution of a `letE`, the entry of a closure (its
-captures, a rest spine), a run of outside code entering a node (its node
-expressions' values meeting $`O`$), and the closedness of the entry's
+it needs, beyond these, the entry of a closure (its captures, a rest
+spine), a spread's and a merge's reads, and the closedness of the entry's
 values.
 
 ### Located reductions
