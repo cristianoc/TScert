@@ -14,9 +14,10 @@ by every step is not proved here):
   at each node, the sites of each slot of the environment and of the node
   expression's value, and the sites its frames allocate at, objects and
   arrays apart (`Alloc`).
-- **A term fits a set of sites** (`Fits Γ a S t`, `Γ` the sites of the
-  variables a `letE` binds, `a` the sites the running frame allocates at),
-  the rules by which its value, once computed, meets `S`. A call whose
+- **A term fits a set of sites** (`Fits Γ a o S t`, `Γ` the sites of the
+  variables a `letE` binds, `a` the sites the running frame allocates at,
+  `o` whether the position is outside code's, where every rule's set lies
+  within `O`), the rules by which its value, once computed, meets `S`. A call whose
   callee may be outside code has its callee, receiver and actuals meet
   `O`; a call of a closure of `C`'s code of a known signature (`FnSig`)
   has its receiver and actuals meet the slots of the callee's entry
@@ -252,75 +253,75 @@ theorem VOr.imp {V V' : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)
 
 /-- **A term fits a set of sites** at a value judgment `V` (the module's
 header). -/
-inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → Alloc P → Sites P → Tm → Prop where
-  | val {Γ a S v} : isVal v = true → V S v → Fits V Γ a S v
-  | var {Γ a S S' i} : Γ i = some S' → Sub S' S → Fits V Γ a S (.var i)
-  | invoke {Γ a S f r args} : Fits V Γ a Fl.O f → Fits V Γ a Fl.O r → (∀ x ∈ args, Fits V Γ a Fl.O x) →
-      Sub Fl.O S → a.arr ∈ Fl.O → Fits V Γ a S (.invoke f r args)
+inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → Alloc P → Bool → Sites P → Tm → Prop where
+  | val {Γ a o S v} : isVal v = true → V S v → (o = true → Sub S Fl.O) → Fits V Γ a o S v
+  | var {Γ a o S S' i} : Γ i = some S' → Sub S' S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.var i)
+  | invoke {Γ a o S f r args} : Fits V Γ a o Fl.O f → Fits V Γ a o Fl.O r → (∀ x ∈ args, Fits V Γ a o Fl.O x) →
+      Sub Fl.O S → a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Fits V Γ a o S (.invoke f r args)
   /-- A call whose callee is a closure of `C`'s code of a known signature:
   the receiver and the actuals meet the slots of its entry, a rest spine
   is allocated at the caller's array site. -/
-  | invokeC {Γ a S f r args} (σ : FnSig) (π : CodeFlow P) (Sa : Nat → Sites P) (Sr : Sites P) :
-      FnIs P σ f → Fl.code σ.code = some π → V (π.env σ.s (capSlot σ.ar σ.rest σ.ncaps)) f →
-      Fits V Γ a (π.env σ.s (recvSlot σ.rest)) r → (∀ i x, args[i]? = some x → Fits V Γ a (Sa i) x) →
+  | invokeC {Γ a o S f r args} (σ : FnSig) (π : CodeFlow P) (Sa : Nat → Sites P) (Sr : Sites P) :
+      o = false → FnIs P σ f → Fl.code σ.code = some π → V (π.env σ.s (capSlot σ.ar σ.rest σ.ncaps)) f →
+      Fits V Γ a o (π.env σ.s (recvSlot σ.rest)) r → (∀ i x, args[i]? = some x → Fits V Γ a o (Sa i) x) →
       (∀ x ∈ args, isVal x = true ∨ ∃ j, x = .var j) →
       (∀ i, i < σ.ar → Sub (Sa i) (π.env σ.s (paramSlot σ.rest i))) →
       (σ.rest = true → a.arr ∈ π.env σ.s 0 ∧ Stores Fl a.arr Sr ∧ ∀ i, σ.ar ≤ i → Sub (Sa i) Sr) →
-      Sub Fl.O S → Fits V Γ a S (.invoke f r args)
-  | construct {Γ a S f args} : Fits V Γ a Fl.O f → (∀ x ∈ args, Fits V Γ a Fl.O x) → Sub Fl.O S →
-      a.arr ∈ Fl.O → Fits V Γ a S (.construct f args)
-  | letE {Γ a S Sx x b} : Fits V Γ a Sx x → Fits V (consSites Sx Γ) a S b → Fits V Γ a S (.letE x b)
-  | spread {Γ a S Sx x} : Fits V Γ a Sx x → (∀ s ∈ Sx, Sub (Fl.H.contents s) S) → Fits V Γ a S (.spread x)
-  | makeAbsent {Γ a S ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) → a.obj ∈ S →
-      Fits V Γ a S (.makeAt .absent ns inits)
-  | makeView {Γ a S sp fm len ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
-      a.obj ∈ S → V S (.objAt [] (.view sp fm len) 0) → Fits V Γ a S (.makeAt (.view sp fm len) ns inits)
-  | makeBound {Γ a S t r pre ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) →
-      (∀ x ∈ inits, Fits V Γ a (Ss x) x) → a.obj ∈ S → (∀ x ∈ t :: r :: pre, VOr V Γ S x) →
-      Fits V Γ a S (.makeAt (.bound t r pre) ns inits)
-  | makeGraphC {Γ a S ar E K s caps k rest comp ns inits} (π : CodeFlow P) :
-      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
+      Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.invoke f r args)
+  | construct {Γ a o S f args} : Fits V Γ a o Fl.O f → (∀ x ∈ args, Fits V Γ a o Fl.O x) → Sub Fl.O S →
+      a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Fits V Γ a o S (.construct f args)
+  | letE {Γ a o S Sx x b} : Fits V Γ a o Sx x → Fits V (consSites Sx Γ) a o S b → (o = true → Sub S Fl.O) → Fits V Γ a o S (.letE x b)
+  | spread {Γ a o S Sx x} : Fits V Γ a o Sx x → (∀ s ∈ Sx, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.spread x)
+  | makeAbsent {Γ a o S ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) → a.obj ∈ S →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt .absent ns inits)
+  | makeView {Γ a o S sp fm len ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
+      a.obj ∈ S → V S (.objAt [] (.view sp fm len) 0) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.view sp fm len) ns inits)
+  | makeBound {Γ a o S t r pre ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) →
+      (∀ x ∈ inits, Fits V Γ a o (Ss x) x) → a.obj ∈ S → (∀ x ∈ t :: r :: pre, VOr V Γ S x) →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.bound t r pre) ns inits)
+  | makeGraphC {Γ a o S ar E K s caps k rest comp ns inits} (π : CodeFlow P) :
+      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
       a.obj ∈ S → P.ofC comp = true → Fl.code (E, K) = some π →
       (∀ i u, caps[i]? = some u → VOr V Γ (π.env s (capSlot ar rest i)) u) → CapFn π ar E K s caps rest →
-      (∀ e ∈ E, Lowered Fl e) → Fits V Γ a S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
-  | makeGraphOut {Γ a S ar E K s caps k rest comp ns inits} :
-      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) →
+      (∀ e ∈ E, Lowered Fl e) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
+  | makeGraphOut {Γ a o S ar E K s caps k rest comp ns inits} :
+      (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
       a.obj ∈ S → P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, VOr V Γ S u) →
-      Fits V Γ a S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
-  | readAt {Γ a S Sx Q f x} : Fits V Γ a Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
-      (∀ s ∈ Q, Sub (Fl.H.contents s) S) → Fits V Γ a S (.readAt f x)
-  | indexAt {Γ a S Sx Q Sk x key} : Fits V Γ a Sx x → Fits V Γ a Sk key → Sub Sx Q →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
+  | readAt {Γ a o S Sx Q f x} : Fits V Γ a o Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
+      (∀ s ∈ Q, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.readAt f x)
+  | indexAt {Γ a o S Sx Q Sk x key} : Fits V Γ a o Sx x → Fits V Γ a o Sk key → Sub Sx Q →
       (∀ s ∈ Q, Sub (Fl.H.contents s) Q) → (∀ s ∈ Q, Sub (Fl.H.contents s) S) →
-      Fits V Γ a S (.indexAt x key)
-  | writeAt {Γ a S Sx Sy f x y} : Fits V Γ a Sx x → Fits V Γ a Sy y → (∀ s ∈ Sx, Stores Fl s Sy) →
-      Fits V Γ a S (.writeAt f x y)
-  | test {Γ a S Sx k x} : Fits V Γ a Sx x → Fits V Γ a S (.test k x)
-  | ite {Γ a S Sc c x y} : Fits V Γ a Sc c → Fits V Γ a S x → Fits V Γ a S y → Fits V Γ a S (.ite c x y)
-  | arith {Γ a S Sx Sy op x y} : Fits V Γ a Sx x → Fits V Γ a Sy y → Fits V Γ a S (.arith op x y)
-  | arrLit {Γ a S inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.arr (Ss x)) → (∀ x ∈ inits, Fits V Γ a (Ss x) x) → a.arr ∈ S →
-      Fits V Γ a S (.arrLit inits)
-  | elemAt {Γ a S Sx Si x i} : Fits V Γ a Sx x → Fits V Γ a Si i → (∀ s ∈ Sx, Sub (Fl.H.contents s) S) →
-      Fits V Γ a S (.elemAt x i)
-  | setElem {Γ a S Sx Si Sv x i v} : Fits V Γ a Sx x → Fits V Γ a Si i → Fits V Γ a Sv v →
-      (∀ s ∈ a.arr :: Sx, Stores Fl s Sv) → Sub Sx S → a.arr ∈ S → Fits V Γ a S (.setElem x i v)
-  | lenOf {Γ a S Sx x} : Fits V Γ a Sx x → Fits V Γ a S (.lenOf x)
-  | throw {Γ a S x} : Fits V Γ a Fl.O x → Fits V Γ a S (.throw x)
-  | merge {Γ a S Sx Sy Q d x y} : Fits V Γ a Sx x → Fits V Γ a Sy y → Sub (Sx ++ Sy) Q →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.indexAt x key)
+  | writeAt {Γ a o S Sx Sy f x y} : Fits V Γ a o Sx x → Fits V Γ a o Sy y → (∀ s ∈ Sx, Stores Fl s Sy) →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.writeAt f x y)
+  | test {Γ a o S Sx k x} : Fits V Γ a o Sx x → (o = true → Sub S Fl.O) → Fits V Γ a o S (.test k x)
+  | ite {Γ a o S Sc c x y} : Fits V Γ a o Sc c → Fits V Γ a o S x → Fits V Γ a o S y → (o = true → Sub S Fl.O) → Fits V Γ a o S (.ite c x y)
+  | arith {Γ a o S Sx Sy op x y} : Fits V Γ a o Sx x → Fits V Γ a o Sy y → (o = true → Sub S Fl.O) → Fits V Γ a o S (.arith op x y)
+  | arrLit {Γ a o S inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.arr (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) → a.arr ∈ S →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.arrLit inits)
+  | elemAt {Γ a o S Sx Si x i} : Fits V Γ a o Sx x → Fits V Γ a o Si i → (∀ s ∈ Sx, Sub (Fl.H.contents s) S) →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.elemAt x i)
+  | setElem {Γ a o S Sx Si Sv x i v} : Fits V Γ a o Sx x → Fits V Γ a o Si i → Fits V Γ a o Sv v →
+      (∀ s ∈ a.arr :: Sx, Stores Fl s Sv) → Sub Sx S → a.arr ∈ S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.setElem x i v)
+  | lenOf {Γ a o S Sx x} : Fits V Γ a o Sx x → (o = true → Sub S Fl.O) → Fits V Γ a o S (.lenOf x)
+  | throw {Γ a o S x} : Fits V Γ a o Fl.O x → (o = true → Sub S Fl.O) → Fits V Γ a o S (.throw x)
+  | merge {Γ a o S Sx Sy Q d x y} : Fits V Γ a o Sx x → Fits V Γ a o Sy y → Sub (Sx ++ Sy) Q →
       (∀ s ∈ Q, Sub (Fl.H.contents s) Q) → (∀ s ∈ Q, Stores Fl a.obj (Fl.H.contents s)) → a.obj ∈ S →
-      Fits V Γ a S (.merge d x y)
-  | makeKey {Γ a S Sk Sx k x} : Fits V Γ a Sk k → Stores Fl a.obj Sx → Fits V Γ a Sx x → a.obj ∈ S →
-      Fits V Γ a S (.makeKey k x)
-  | gotoC {Γ a S E K l L d comp} (π : CodeFlow P) : P.ofC comp = true → Fl.code (E, K) = some π →
-      (∀ i, VOr V Γ (π.env l i) (envOf L d i)) → EnvFn π l L d → Sub Fl.O S → Fits V Γ a S (.goto E K l L d comp)
-  | gotoOut {Γ a S E K l L d comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
-      (∀ i, VOr V Γ Fl.O (envOf L d i)) → Sub Fl.O S → Fits V Γ a S (.goto E K l L d comp)
-  | frameC {Γ a S E K t L d k x comp} (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
+      (o = true → Sub Q Fl.O) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.merge d x y)
+  | makeKey {Γ a o S Sk Sx k x} : Fits V Γ a o Sk k → Stores Fl a.obj Sx → Fits V Γ a o Sx x → a.obj ∈ S →
+      (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeKey k x)
+  | gotoC {Γ a o S E K l L d comp} (π : CodeFlow P) : P.ofC comp = true → Fl.code (E, K) = some π →
+      (∀ i, VOr V Γ (π.env l i) (envOf L d i)) → EnvFn π l L d → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.goto E K l L d comp)
+  | gotoOut {Γ a o S E K l L d comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
+      (∀ i, VOr V Γ Fl.O (envOf L d i)) → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.goto E K l L d comp)
+  | frameC {Γ a o S E K t L d k x comp} (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
       Fl.code (E, K) = some π → NodeOf (E, K) l k x → (∀ i, V (π.env l i) (envOf L d i)) → EnvFn π l L d →
       (∀ σ, π.vfn l = some σ → FnIs P σ t) →
-      Fits V Γ π.alloc (π.val l) t → Sub Fl.O S → Fits V Γ a S (.frame E K t L d k x comp)
-  | frameOut {Γ a S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
+      Fits V Γ π.alloc false (π.val l) t → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
+  | frameOut {Γ a o S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
       (∀ i, V Fl.O (envOf L d i)) →
-      Fits V Γ Alloc.outside Fl.O t → Sub Fl.O S → Fits V Γ a S (.frame E K t L d k x comp)
+      Fits V Γ Alloc.outside true Fl.O t → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
 
 /-- **A value judgment monotone in its set of sites.** -/
 def Mono (V : Sites P → Val → Prop) : Prop := ∀ S S' v, Sub S S' → V S v → V S' v
@@ -330,47 +331,52 @@ variable {Fl}
 /-- **A term fits at a weaker value judgment** (proved): `Fits` reads values
 only through `V`. -/
 theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' S v) :
-    ∀ {Γ a S t}, Fits Fl V Γ a S t → Fits Fl V' Γ a S t := by
-  intro Γ a S t h
+    ∀ {Γ a o S t}, Fits Fl V Γ a o S t → Fits Fl V' Γ a o S t := by
+  intro Γ a o S t h
   induction h with
-  | val hv h₀ => exact .val hv (hV _ _ h₀)
-  | var h₁ h₂ => exact .var h₁ h₂
-  | invoke _ _ _ hS ha ihf ihr iha => exact .invoke ihf ihr iha hS ha
-  | invokeC σ π Sa Sr hfn hcode hself _ _ hat hpar hrest hS ihr iha =>
-    exact .invokeC σ π Sa Sr hfn hcode (hV _ _ hself) ihr iha hat hpar hrest hS
-  | construct _ _ hS ha ihf iha => exact .construct ihf iha hS ha
-  | letE _ _ ihx ihb => exact .letE ihx ihb
-  | spread _ hc ih => exact .spread ih hc
-  | makeAbsent Ss hst _ hs ih => exact .makeAbsent Ss hst ih hs
-  | makeView Ss hst _ hs hv ih => exact .makeView Ss hst ih hs (hV _ _ hv)
-  | makeBound Ss hst _ hs hp ih => exact .makeBound Ss hst ih hs (fun x hx => (hp x hx).imp hV)
-  | makeGraphC π Ss hst _ hs hc hcode hcaps hfn hE ih =>
-    exact .makeGraphC π Ss hst ih hs hc hcode (fun i u hu => (hcaps i u hu).imp hV) hfn hE
-  | makeGraphOut Ss hst _ hs hc hE hcaps ih =>
-    exact .makeGraphOut Ss hst ih hs hc hE (fun u hu => (hcaps u hu).imp hV)
-  | readAt _ hq hcl hr ih => exact .readAt ih hq hcl hr
-  | indexAt _ _ hq hcl hr ihx ihk => exact .indexAt ihx ihk hq hcl hr
-  | writeAt _ _ hst ihx ihy => exact .writeAt ihx ihy hst
-  | test _ ih => exact .test ih
-  | ite _ _ _ ihc ihx ihy => exact .ite ihc ihx ihy
-  | arith _ _ ihx ihy => exact .arith ihx ihy
-  | arrLit Ss hst _ hs ih => exact .arrLit Ss hst ih hs
-  | elemAt _ _ hc ihx ihi => exact .elemAt ihx ihi hc
-  | setElem _ _ _ hst hS ha ihx ihi ihv => exact .setElem ihx ihi ihv hst hS ha
-  | lenOf _ ih => exact .lenOf ih
-  | throw _ ih => exact .throw ih
-  | merge _ _ hq hcl hst hs ihx ihy => exact .merge ihx ihy hq hcl hst hs
-  | makeKey _ hst _ hs ihk ihx => exact .makeKey ihk hst ihx hs
-  | gotoC π hc hcode henv hfn hS => exact .gotoC π hc hcode (fun i => (henv i).imp hV) hfn hS
-  | gotoOut hc hE henv hS => exact .gotoOut hc hE (fun i => (henv i).imp hV) hS
-  | frameC π l hc hcode hn henv hfn hvfn _ hS ih =>
-    exact .frameC π l hc hcode hn (fun i => hV _ _ (henv i)) hfn hvfn ih hS
-  | frameOut hc hE henv _ hS ih => exact .frameOut hc hE (fun i => hV _ _ (henv i)) ih hS
+  | val hv h₀ ho => exact .val hv (hV _ _ h₀) ho
+  | var h₁ h₂ ho => exact .var h₁ h₂ ho
+  | invoke _ _ _ hS ha ho ihf ihr iha => exact .invoke ihf ihr iha hS ha ho
+  | invokeC σ π Sa Sr hof hfn hcode hself _ _ hat hpar hrest hS ho ihr iha =>
+    exact .invokeC σ π Sa Sr hof hfn hcode (hV _ _ hself) ihr iha hat hpar hrest hS ho
+  | construct _ _ hS ha ho ihf iha => exact .construct ihf iha hS ha ho
+  | letE _ _ ho ihx ihb => exact .letE ihx ihb ho
+  | spread _ hc ho ih => exact .spread ih hc ho
+  | makeAbsent Ss hst _ hs ho ih => exact .makeAbsent Ss hst ih hs ho
+  | makeView Ss hst _ hs hv ho ih => exact .makeView Ss hst ih hs (hV _ _ hv) ho
+  | makeBound Ss hst _ hs hp ho ih => exact .makeBound Ss hst ih hs (fun x hx => (hp x hx).imp hV) ho
+  | makeGraphC π Ss hst _ hs hc hcode hcaps hfn hE ho ih =>
+    exact .makeGraphC π Ss hst ih hs hc hcode (fun i u hu => (hcaps i u hu).imp hV) hfn hE ho
+  | makeGraphOut Ss hst _ hs hc hE hcaps ho ih =>
+    exact .makeGraphOut Ss hst ih hs hc hE (fun u hu => (hcaps u hu).imp hV) ho
+  | readAt _ hq hcl hr ho ih => exact .readAt ih hq hcl hr ho
+  | indexAt _ _ hq hcl hr ho ihx ihk => exact .indexAt ihx ihk hq hcl hr ho
+  | writeAt _ _ hst ho ihx ihy => exact .writeAt ihx ihy hst ho
+  | test _ ho ih => exact .test ih ho
+  | ite _ _ _ ho ihc ihx ihy => exact .ite ihc ihx ihy ho
+  | arith _ _ ho ihx ihy => exact .arith ihx ihy ho
+  | arrLit Ss hst _ hs ho ih => exact .arrLit Ss hst ih hs ho
+  | elemAt _ _ hc ho ihx ihi => exact .elemAt ihx ihi hc ho
+  | setElem _ _ _ hst hS ha ho ihx ihi ihv => exact .setElem ihx ihi ihv hst hS ha ho
+  | lenOf _ ho ih => exact .lenOf ih ho
+  | throw _ ho ih => exact .throw ih ho
+  | merge _ _ hq hcl hst hs hQ ho ihx ihy => exact .merge ihx ihy hq hcl hst hs hQ ho
+  | makeKey _ hst _ hs ho ihk ihx => exact .makeKey ihk hst ihx hs ho
+  | gotoC π hc hcode henv hfn hS ho => exact .gotoC π hc hcode (fun i => (henv i).imp hV) hfn hS ho
+  | gotoOut hc hE henv hS ho => exact .gotoOut hc hE (fun i => (henv i).imp hV) hS ho
+  | frameC π l hc hcode hn henv hfn hvfn _ hS ho ih =>
+    exact .frameC π l hc hcode hn (fun i => hV _ _ (henv i)) hfn hvfn ih hS ho
+  | frameOut hc hE henv _ hS ho ih => exact .frameOut hc hE (fun i => hV _ _ (henv i)) ih hS ho
+
+/-- **A term at a position of outside code fits a subset of `O`** (proved):
+every rule states it. -/
+theorem Fits.out {V : Sites P → Val → Prop} {Γ a o S t} (h : Fits Fl V Γ a o S t) : o = true → Sub S Fl.O := by
+  cases h <;> assumption
 
 /-- **A value fits only by its value judgment** (proved): every other rule
 types a term that is not a value. -/
-theorem Fits.value {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P} {v : Val}
-    (h : Fits Fl V Γ a S v) (hv : isVal v = true) : V S v := by
+theorem Fits.value {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S : Sites P}
+    {v : Val} (h : Fits Fl V Γ a o S v) (hv : isVal v = true) : V S v := by
   cases h <;> first | assumption | simp [isVal] at hv
 
 /-! ## Allocation keeps what a value meets -/
@@ -395,9 +401,9 @@ theorem VJ.alloc {S : Sites P} {v : Val} {n' : Nat} {sf : Nat → Option P.Site}
     fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.alloc hn, (h.inner w hw).2.2⟩⟩
 
 /-- **Allocation keeps a term fitting** (proved, `Fits.mono`). -/
-theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P} {t : Tm} {n' : Nat}
-    {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : Fits Fl (VJ Fl g n) Γ a S t) (hn : n ≤ n') :
-    Fits Fl (VJ Fl (g.alloc n sf key) n') Γ a S t :=
+theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S : Sites P} {t : Tm} {n' : Nat}
+    {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : Fits Fl (VJ Fl g n) Γ a o S t) (hn : n ≤ n') :
+    Fits Fl (VJ Fl (g.alloc n sf key) n') Γ a o S t :=
   h.mono fun _ _ hv => hv.alloc hn
 
 theorem VOr.alloc {Γ : Nat → Option (Sites P)} {S : Sites P} {u : Tm} {n' : Nat}
@@ -558,7 +564,7 @@ handler accepts it. -/
 def CodeOk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
     (∀ (g : Ghost P) n (L : List Tm) d, EnvIn (VJ Fl g n) (π.env l) L d → EnvFn π l L d →
-      Fits Fl (VJ Fl g n) (fun _ => none) π.alloc (π.val l) (instantiate 0 (envOf L d) e) ∧
+      Fits Fl (VJ Fl g n) (fun _ => none) π.alloc false (π.val l) (instantiate 0 (envOf L d) e) ∧
       ∀ σ, π.vfn l = some σ → FnIs P σ (instantiate 0 (envOf L d) e)) ∧
     ContOk Fl π l k ∧ HandlerOk Fl π l x ∧ ContFn π l k ∧ HandlerFn π l x
 
@@ -1022,106 +1028,106 @@ theorem lowered_vj {E : List Tm} {S : Sites P} (hE : ∀ e ∈ E, Lowered Fl e) 
 /-- **A raised value meets `O`** (proved, by induction on `Raises`): every
 thrown value fits `O`. -/
 theorem raises_fits {V : Sites P → Val → Prop} {t v : Tm} (hr : Raises t v) :
-    ∀ {Γ a S}, Fits Fl V Γ a S t → V Fl.O v := by
+    ∀ {Γ a o S}, Fits Fl V Γ a o S t → V Fl.O v := by
   induction hr with
-  | throwV hv _ => intro Γ a S h; cases h with
+  | throwV hv _ => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | throw hx => exact hx.value hv
-  | throwC _ ih => intro Γ a S h; cases h with
+  | throwC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | throw hx => exact ih hx
-  | callL hr' ih => intro Γ a S h; cases h with
+  | callL hr' ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | invoke hf _ _ _ _ => exact ih hf
-    | invokeC _ _ _ _ hfn => have := hfn.val; rw [raises_not_val hr'] at this; cases this
-  | callRecv _ _ ih => intro Γ a S h; cases h with
+    | invokeC _ _ _ _ _ hfn => have := hfn.val; rw [raises_not_val hr'] at this; cases this
+  | callRecv _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | invoke _ hr _ _ _ => exact ih hr
-    | invokeC _ _ _ _ _ _ _ hr => exact ih hr
-  | callArg _ _ hai _ hr' ih => intro Γ a S h; cases h with
+    | invokeC _ _ _ _ _ _ _ _ hr => exact ih hr
+  | callArg _ _ hai _ hr' ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | invoke _ _ hargs _ _ => exact ih (hargs _ (List.mem_of_getElem? hai))
-    | invokeC _ _ _ _ _ _ _ _ _ hat =>
+    | invokeC _ _ _ _ _ _ _ _ _ _ hat =>
       rcases hat _ (List.mem_of_getElem? hai) with hv | ⟨j, rfl⟩
       · rw [raises_not_val hr'] at hv; cases hv
       · cases hr'
-  | constructL _ ih => intro Γ a S h; cases h with
+  | constructL _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | construct hf _ _ _ => exact ih hf
-  | constructArg _ hai _ _ ih => intro Γ a S h; cases h with
+  | constructArg _ hai _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | construct _ hargs _ _ => exact ih (hargs _ (List.mem_of_getElem? hai))
-  | letC _ ih => intro Γ a S h; cases h with
+  | letC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | letE hx _ => exact ih hx
-  | spreadC _ ih => intro Γ a S h; cases h with
+  | spreadC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | spread hx _ => exact ih hx
-  | makeArg hai _ _ ih => intro Γ a S h; cases h with
+  | makeArg hai _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | makeAbsent _ _ hi _ => exact ih (hi _ (List.mem_of_getElem? hai))
     | makeView _ _ hi _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
     | makeBound _ _ hi _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
     | makeGraphC _ _ _ hi _ _ _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
     | makeGraphOut _ _ hi _ _ _ _ => exact ih (hi _ (List.mem_of_getElem? hai))
-  | readC _ ih => intro Γ a S h; cases h with
+  | readC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | readAt hx _ _ _ => exact ih hx
-  | indexC1 _ ih => intro Γ a S h; cases h with
+  | indexC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | indexAt hx _ _ _ _ => exact ih hx
-  | indexC2 _ _ ih => intro Γ a S h; cases h with
+  | indexC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | indexAt _ hk _ _ _ => exact ih hk
-  | writeC1 _ ih => intro Γ a S h; cases h with
+  | writeC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | writeAt hx _ _ => exact ih hx
-  | writeC2 _ _ ih => intro Γ a S h; cases h with
+  | writeC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | writeAt _ hy _ => exact ih hy
-  | testC _ ih => intro Γ a S h; cases h with
+  | testC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | test hx => exact ih hx
-  | iteC _ ih => intro Γ a S h; cases h with
+  | iteC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | ite hc _ _ => exact ih hc
-  | arithC1 _ ih => intro Γ a S h; cases h with
+  | arithC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | arith hx _ => exact ih hx
-  | arithC2 _ _ ih => intro Γ a S h; cases h with
+  | arithC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | arith _ hy => exact ih hy
-  | arrArg hai _ _ ih => intro Γ a S h; cases h with
+  | arrArg hai _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | arrLit _ _ hi _ => exact ih (hi _ (List.mem_of_getElem? hai))
-  | elemC1 _ ih => intro Γ a S h; cases h with
+  | elemC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | elemAt hx _ _ => exact ih hx
-  | elemC2 _ _ ih => intro Γ a S h; cases h with
+  | elemC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | elemAt _ hi _ => exact ih hi
-  | setC1 _ ih => intro Γ a S h; cases h with
+  | setC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | setElem hx _ _ _ _ _ => exact ih hx
-  | setC2 _ _ ih => intro Γ a S h; cases h with
+  | setC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | setElem _ hi _ _ _ _ => exact ih hi
-  | setC3 _ _ _ ih => intro Γ a S h; cases h with
+  | setC3 _ _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | setElem _ _ hv _ _ _ => exact ih hv
-  | lenC _ ih => intro Γ a S h; cases h with
+  | lenC _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | lenOf hx => exact ih hx
-  | mergeC1 _ ih => intro Γ a S h; cases h with
+  | mergeC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | merge hx _ _ _ _ _ => exact ih hx
-  | mergeC2 _ _ ih => intro Γ a S h; cases h with
+  | mergeC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | merge _ hy _ _ _ _ => exact ih hy
-  | makeKeyC1 _ ih => intro Γ a S h; cases h with
+  | makeKeyC1 _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | makeKey hk _ _ _ => exact ih hk
-  | makeKeyC2 _ _ ih => intro Γ a S h; cases h with
+  | makeKeyC2 _ _ ih => intro Γ a o S h; cases h with
     | val hv' => simp [isVal] at hv'
     | makeKey _ _ hx _ => exact ih hx
 
@@ -1167,16 +1173,17 @@ theorem envIn_cons {V : Sites P → Val → Prop} {S : Sites P} {L : List Tm} {d
   | succ i => simpa [envOf] using henv i
 
 /-- A goto to a node whose environment meets the node's slots fits (proved). -/
-theorem fits_gotoC {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P}
-    {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
-    {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) = some π) (henv : EnvIn V (π.env l) L d)
-    (hfn : EnvFn π l L d) (hS : Sub Fl.O S) : Fits Fl V Γ a S (.goto E K l L d comp) :=
-  .gotoC π hc hcode (fun i => .inl (henv i)) hfn hS
+theorem fits_gotoC {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool}
+    {S : Sites P} {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
+    {comp : ComponentTag} {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) = some π)
+    (henv : EnvIn V (π.env l) L d) (hfn : EnvFn π l L d) (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O) :
+    Fits Fl V Γ a o S (.goto E K l L d comp) :=
+  .gotoC π hc hcode (fun i => .inl (henv i)) hfn hS ho
 
-theorem fits_gotoOut {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P}
-    {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
-    (hc : P.ofC comp = false) (hE : ∀ e ∈ E, Lowered Fl e) (henv : ∀ i, V Fl.O (envOf L d i))
-    (hS : Sub Fl.O S) : Fits Fl V Γ a S (.goto E K l L d comp) :=
-  .gotoOut hc hE (fun i => .inl (henv i)) hS
+theorem fits_gotoOut {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool}
+    {S : Sites P} {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
+    {comp : ComponentTag} (hc : P.ofC comp = false) (hE : ∀ e ∈ E, Lowered Fl e) (henv : ∀ i, V Fl.O (envOf L d i))
+    (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O) : Fits Fl V Γ a o S (.goto E K l L d comp) :=
+  .gotoOut hc hE (fun i => .inl (henv i)) hS ho
 
 end Verification.TolerantFrames.ReadOnly

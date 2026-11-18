@@ -2303,13 +2303,15 @@ sets of sites:
   (`CapsOk`, `CapFn`), every closure
   of outside code has lowered code (`OutLowered`). Allocation keeps it
   (`VJ.alloc`).
-- **A term fits a set** (`Fits V Γ a S t`): its value, once computed,
-  meets $`S`$. A call of a callee that may be outside code (`invoke`,
+- **A term fits a set** (`Fits V Γ a o S t`): its value, once computed,
+  meets $`S`$; at a position of outside code (`o`, true outside every
+  frame and in a frame of outside code, false in a frame of $`C`$'s code)
+  every rule's set lies within $`O`$. A call of a callee that may be outside code (`invoke`,
   `construct`) has its callee, receiver and actuals meet $`O`$, and the
   calling frame allocates arrays at a site of $`O`$ (a rest spine goes to
   a callee not known). A call of a closure of $`C`$'s code of a known
-  signature (`invokeC`; the note's (K) restricts only what crosses out to
-  outside code) has its receiver and actuals, each a value or a
+  signature (`invokeC`, at a position of $`C`$'s code; the note's (K)
+  restricts only what crosses out to outside code) has its receiver and actuals, each a value or a
   variable, meet the slots of the callee's entry, the closure its own
   slot, and a rest spine allocated at a site of the spine's slot holding
   the rest's actuals. Every thrown value meets $`O`$; a read's result meets the
@@ -2363,10 +2365,25 @@ the entry's slots (`fits_graphEntryC`); either entry names a signature
 only at a capture or the closure's own slot (`envFn_entry`); a merge
 copies values of a closed set's contents (`merge_vals`).
 
-Proof scope: the lemmas above are proved. Not proved here: that the
-entry's term and heap fit (closed values, lowered outside code), the
-checker that decides `CodeOk` from the lowered graphs, and `SitesSound`
-from `fits_step` at the frame's checks.
+**At every reached state** (`ReadOnlyFitsReach.lean`): a value and a heap
+read the ghost's sites only below the heap's length (`VJ.congr`,
+`HeapInv.congr`); the innermost frame `stepSite` reads at a step that
+allocates is the path's (`activeFrame_tag`), so a step of outside code
+allocates outside storage (`stepSite_outside`); the history after a step
+gives its fresh locations outside storage at a step of outside code and
+the checks' sites otherwise (`stepAt_site`). Where the frame's checks give
+a step's fresh locations `stepSite` (`ClientFrame.FlowSites`) and every
+entry fits (`ClientFrame.EntryFits`), every reached state's term fits $`O`$
+at a position of outside code and its heap meets the flow
+(`fitsAt_reached`); every value at a position of outside code meets $`O`$
+(`fits_roots`), so `SitesSound` holds at the flow's heap of sites and
+$`O`$ (`sitesSound_of_fits`).
+
+Proof scope: the lemmas above are proved. Not proved here: that every
+entry fits (`EntryFits`: the entry's environment at its node's slots and
+signatures, every closure of $`C`$'s code the entry state holds meeting its
+code's proposal), and the checker that decides `CodeOk` and `Flow.Facts`
+from the lowered graphs.
 
 ### Located reductions
 
