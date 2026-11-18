@@ -19,6 +19,7 @@ import Verification.Paper.TolerantFrames.ParityEvidence
 import Verification.Paper.TolerantFrames.ReadOnlyChecks
 import Verification.Paper.TolerantFrames.ReadOnlyFrame
 import Verification.Paper.TolerantFrames.ReadOnlyRegion
+import Verification.Paper.TolerantFrames.ReadOnlySteps
 import Verification.Paper.TolerantFrames.Tests.ParityDerivationTests
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
