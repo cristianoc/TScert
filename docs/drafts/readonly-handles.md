@@ -1448,6 +1448,24 @@ call.
   `Member.bound`, and with every step keeping each invariant of complete
   handles (`TolerantStep`, *Tolerant invariant*) it meets `Member.keeps`.
 
+**What a step of the calculus changes** (proved, `step_changes`, in
+[ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)).
+Every old location a step of the paper model's reduction changes is a slot
+of an object or an element cell of a spine that the stepped term
+references. This is `OutsideStep.reach` with the term's references as the
+frame. Two properties of the model are missing for the three step
+properties as Lean states them: a running frame (`Tm.frame`, `Tm.goto`)
+does not record whose code it runs, so a step cannot be told to be the
+package's or outside code's; and the term's references include the
+captures of the package's closures it holds, which a step of outside code
+reaches only by calling them. With a frame's code recorded, an outside
+step's frame is the term's references outside the package's closures, and
+`OutsideStep.reach` is to follow from `step_changes` at a redex of outside
+code (conjectured);
+`OutsideStep.noForge` and `OutsideStep.writes` need, beyond it, that the
+term after a step references only what the term and the contents it reads
+referenced, or fresh storage.
+
 **What Lean assumes.** The trust row (`OutsideStep.row`); the two
 properties of the language's steps (`OutsideStep.reach`,
 `OutsideStep.noForge`) and a third of the same kind (`OutsideStep.writes`:
