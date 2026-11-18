@@ -2552,6 +2552,41 @@ the nine functions it reaches, has its cursor's site outside $`O`$ (its
 proposal 768 ms, its checks 77 ms over 3336 nodes); the largest,
 `countPreparedLines`, 1187 ms and 97 ms over 3627 nodes.
 
+### The frame at a call
+
+At a call of outside code the pass asks whether a fact survives the call;
+the frame answers with `frameCheck` over the parts each location of the
+fact's support may have, and `frameCheck_sound` gives `Framed`, the
+premise of the rule (`ReadOnlyCallFrame.lean`):
+
+- **The sites of a region** (`regionSites`): at slots of the sites `τ`, a
+  field of a slot's value is of the slot's sites; the value a path of
+  fields reads is of the sites one step through the contents of the heap
+  of sites gives per field (`pathSites`); a spine is of its value's sites,
+  its cells of their contents. A region of a value's field locations by
+  enumeration, of a class or of every location has no sites here, and the
+  check refuses it. In a heap meeting the heap of sites, every location
+  of a region given sites is of one of them (`regionSites_sound`).
+- **The check at a call** (`frameCheckAt`, `framed_of_sites`): every region
+  of the support given sites and `frameCheck` over their parts at the
+  regions' keys give `Framed`, where the query is sound, the roots valid,
+  the environment meets the slots' sites, the heap the heap of sites, each
+  location's key is among its region's, and each lent location of a region
+  read as protected has a live witness.
+- **At a frame of $`C`$'s code** (`frame_sites`, `framed_of_frame`): a frame
+  of $`C`$'s code fitting the flow runs a node of a code of the flow whose
+  slots its environment meets; with a heap meeting the flow, the check at
+  that node's slots gives `Framed` at the frame's environment.
+- **Live protection witnesses** (`entryStart_witness`, `Witness.grow`): a
+  location an entry's argument reaches read-only at its parameter's type,
+  inside a call of $`C`$, has a witness at the entry history, and at every
+  history the entry's grows into inside the call (`Grows`).
+
+Proof scope: the lemmas above are proved. Not proved here: the frame of
+the call the pass reads (the innermost frame of $`C`$'s code at the call
+state, from a reached state's fit), the keys of each region's locations,
+and the growth of the history from the entry to the call.
+
 ### Located reductions
 
 The checks of $`C`$ read each step at the node of the code performing it
