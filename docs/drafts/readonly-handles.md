@@ -2119,7 +2119,7 @@ back from the term that runs it (`GraphCode.safeGraph_of_sim`).
 
 What the frame's data must be before a plan produces the form: `chk` the
 checks' interpretation of each step of $`C`$'s code (item 3 above), and
-`start` the entry history (`lentStart`, below).
+`start` the entry history (`entryStart`, below).
 
 **The executions of the claim are the paper's**
 (`ReadOnlyBridge.lean`). A step the claim's safety follows with the
@@ -2149,18 +2149,22 @@ $`C`$ active):
   read at the segment's last state; every unit whose plan reads a frame at
   a call of outside code has the same premises there.
 
-**The entry history** (`lentStart`): the history after an entry step
-from a state where $`C`$ holds nothing protected. Every location is
-outside storage, none is exposed, each call of $`C`$ active at the term has
-one set of the history, empty, and $`B`$ is empty. It meets the invariants
-of states (`lentStart_inv`, by `Inv.of_lent`), so a frame whose starts are
-exactly it (`StartsLent`) meets `StartInv` (`startInv_of_lent`), and its
-starts are total (`lentStart_total`). Its protected set is empty, so the
-obligation `Keeps` reads at the entry is the weakest any history gives:
-outside code is bound only on what the execution's own crossings protect
-afterwards. An argument crossing in at a read-only type is not protected
-at the entry by this history; reliance on such an argument across a call
-reads its crossing at the entry, which this history does not record.
+**The entry history** (`entryStart`): the history after a call of an
+entry from a state where $`C`$ holds nothing protected (`bareStart`: every
+location outside storage, none exposed, one empty set per call of $`C`$
+active at the term, $`B`$ empty), then each argument crossing in at its
+parameter's type (Appendix A of the note: the call's set pushed first,
+then its arguments cross). The released and outside locations an argument
+reaches read-only join every set of the history (`entryStart_prot`): a
+handle passed in at a read-only type is protected from the entry. The
+history meets the invariants of states (`entryStart_inv`, by
+`Inv.of_lent`: crossings keep it uniform, `Ghost.crosses_uniform`, and
+every location stays outside storage, `entryStart_site`), so a frame whose
+starts are exactly it at the entry's arguments (`StartsEntry`) meets
+`StartInv` (`startInv_of_entry`), and its starts are total
+(`entryStart_total`). The arguments are the entry's parameters at their
+declared types; the obligation `Keeps` reads at the entry is `Row` over
+what they reach read-only.
 
 What remains for the claim is `ChkSound`, from the checks of $`C`$'s code
 over the lowered graphs ([the actual crossings of a step](#the-actual-crossings-of-a-step),
@@ -2250,7 +2254,7 @@ a stored closure of outside code or bound function binds may reach first
   reach, leaves there only what they reach or what it allocates, outside
   storage, and its roots reach afterwards nothing else
   (`outsideStep_reach`, `outsideStep_writes`, `outsideStep_noForge`). The
-  entry history meets both (`sitesAt_lentStart`).
+  entry history meets both (`sitesAt_entryStart`).
 
 What remains of `ChkSound` is `SitesSound` from the lowered graphs: the
 sites each value of a frame of $`C`$'s code may reach, at each node, and

@@ -61,25 +61,83 @@ theorem snoc {n : Nat} {a b e : α} (h : Ex R q n a b) (hb : q b) (hbe : R b e) 
 
 end Ex
 
-/-- **The history at an entry** (Appendix A, the start of an execution):
-the history after an entry step from a state where `C` holds nothing
-protected. Every location is outside storage, no location is exposed, and
-each call of `C` active at the term has one set of the history, empty; `B`
-is empty. -/
-noncomputable def lentStart (F : Family) (C : Nat) (t : Tm) : Ghost (F.at C) :=
+/-- **The history before an entry**: every location is outside storage, no
+location is exposed or protected, and each call of `C` active at the term
+has one set of the history, empty. -/
+noncomputable def bareStart (F : Family) (C : Nat) (t : Tm) : Ghost (F.at C) :=
   ⟨fun _ => none, fun _ => none, fun _ => False, List.replicate (depthC F C none t) (fun _ => False),
     fun _ => False⟩
 
-/-- **The entry history meets the invariants of states** (proved, by
-`Inv.of_lent`): it is uniform, every location of it is outside storage,
-and the roots are the term's. -/
-theorem lentStart_inv {F : Family} {C : Nat} (x : Conf) : Inv (lift F C none x (lentStart F C x.t)) := by
-  refine Inv.of_lent ?_ (fun l => .inr rfl) (rootsValid_of_term (P := F.at C) (st := lift F C none x _) rfl x.ok)
+/-- **The history at an entry** (Appendix A, the start of an execution):
+at a call of an entry from a state where `C` holds nothing protected, the
+call's set pushed, then each argument `v` crossing in at its parameter's
+type `T`. The released and outside locations it reaches read-only join every
+set of the history; the exposed ones `E`. -/
+noncomputable def entryStart (F : Family) (C : Nat) (tv : TypeView) (h : Heap) (t : Tm)
+    (args : List (tv.Ty × Val)) : Ghost (F.at C) :=
+  Ghost.crosses tv h (args.map fun a => ⟨.into, a.1, a.2⟩) (bareStart F C t)
+
+/-- Crossings keep the history uniform (proved, `HStep.uniform`). -/
+theorem Ghost.crosses_uniform {P : Package} {tv : TypeView} {h : Heap} :
+    ∀ (xs : List (Crossing tv)) (g : Ghost P), g.Uniform → (Ghost.crosses tv h xs g).Uniform
+  | [], _, hu => hu
+  | x :: xs, g, hu => Ghost.crosses_uniform xs _ ((HStep.cross (h := h) g x.dir x.ty x.val).uniform hu)
+
+theorem bareStart_uniform (F : Family) (C : Nat) (t : Tm) : (bareStart F C t).Uniform := by
   intro X hX l
-  simp only [lift, lentStart, List.mem_replicate] at hX
+  simp only [bareStart, List.mem_replicate] at hX
   obtain ⟨-, rfl⟩ := hX
-  simp only [lift, Ghost.Prot, lentStart, List.mem_replicate, false_iff, not_or, not_exists, not_and]
+  simp only [Ghost.Prot, bareStart, List.mem_replicate, false_iff, not_or, not_exists, not_and]
   exact ⟨fun Y hY => by rw [hY.2]; exact id, id⟩
+
+/-- The entry history keeps every location outside storage. -/
+theorem entryStart_site {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : Tm} {args : List (tv.Ty × Val)} :
+    (entryStart F C tv h t args).site = fun _ => none :=
+  (Ghost.crosses_site _ _).1
+
+/-- **The entry history meets the invariants of states** (proved, by
+`Inv.of_lent`): crossings keep it uniform, every location of it is outside
+storage, and the roots are the term's. -/
+theorem entryStart_inv {F : Family} {C : Nat} {tv : TypeView} (x : Conf) (args : List (tv.Ty × Val)) :
+    Inv (lift F C none x (entryStart F C tv x.s.h x.t args)) :=
+  Inv.of_lent (Ghost.crosses_uniform _ _ (bareStart_uniform F C x.t))
+    (fun l => .inr (by simp [lift, Ghost.origin, entryStart_site]))
+    (rootsValid_of_term (P := F.at C) (st := lift F C none x _) rfl x.ok)
+
+/-- **The entry history has one set per call of `C` active** (proved). -/
+theorem entryStart_len {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : Tm} (args : List (tv.Ty × Val)) :
+    (entryStart F C tv h t args).A.length = depthC F C none t := by
+  simp [entryStart, Ghost.crosses_len, bareStart]
+
+/-- **An argument crossing in is protected at the entry** (proved): a
+location an argument reaches read-only at its parameter's type is protected
+in the entry history, inside a call of `C`. -/
+theorem entryStart_prot {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : Tm} {args : List (tv.Ty × Val)}
+    (hd : 0 < depthC F C none t) {T : tv.Ty} {v : Val} (ha : (T, v) ∈ args) {l : Nat}
+    (hr : ReachRO tv (F.at C).ofC T h v l) : (entryStart F C tv h t args).Prot l := by
+  suffices ∀ (xs : List (Crossing tv)) (g : Ghost (F.at C)), 0 < g.A.length → g.site = (fun _ => none) →
+      ∀ x ∈ xs, x.dir = .into → ReachRO tv (F.at C).ofC x.ty h x.val l → (Ghost.crosses tv h xs g).Prot l by
+    exact this _ _ (by simpa [bareStart] using hd) rfl ⟨.into, T, v⟩
+      (List.mem_map.mpr ⟨(T, v), ha, rfl⟩) rfl hr
+  intro xs
+  induction xs with
+  | nil => intro _ _ _ x hx; cases hx
+  | cons y ys ih =>
+    intro g hl hs x hx hd' hr'
+    have hl' : 0 < (g.cross tv y.dir y.ty h y.val).A.length := by simpa [Ghost.cross, Ghost.add] using hl
+    rcases List.mem_cons.mp hx with rfl | hx
+    · have hp : (g.cross tv x.dir x.ty h x.val).Prot l := by
+        obtain ⟨X, hX⟩ := List.exists_mem_of_length_pos hl
+        refine .inl ⟨_, List.mem_map.mpr ⟨X, hX, rfl⟩, .inr ⟨hd', hr', .inr ?_⟩⟩
+        simp [Ghost.origin, hs]
+      clear ih hx hl'
+      suffices ∀ (zs : List (Crossing tv)) (g' : Ghost (F.at C)), g'.Prot l → (Ghost.crosses tv h zs g').Prot l from
+        this ys _ hp
+      intro zs
+      induction zs with
+      | nil => exact fun _ h => h
+      | cons z zs ihz => exact fun g' hp' => ihz _ (Ghost.prot_add hp')
+    · exact ih _ hl' (by rw [← hs]; rfl) x hx hd' hr'
 
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
@@ -113,22 +171,24 @@ def StartInv : Prop :=
 
 variable {fr}
 
-/-- **A frame starting from the entry history** (`lentStart`): its starts
-are exactly that history. -/
-def StartsLent : Prop := ∀ k W h t g, fr.start k W h t g ↔ g = lentStart fr.F fr.C t
+/-- **A frame starting from the entry history** (`entryStart`): its starts
+are exactly the history after the entry's arguments `args` cross in. -/
+def StartsEntry (args : Heap → Tm → List (fr.view.view.Ty × Val)) : Prop :=
+  ∀ k W h t g, fr.start k W h t g ↔ g = entryStart fr.F fr.C fr.view.view h t (args h t)
 
 /-- **The entry history gives what the starts give** (proved): the
-invariants of states by `lentStart_inv`, one set per call of `C` active by
-construction. -/
-theorem startInv_of_lent (hs : fr.StartsLent) : fr.StartInv := by
+invariants of states by `entryStart_inv`, one set per call of `C` active by
+`entryStart_len`. -/
+theorem startInv_of_entry {args : Heap → Tm → List (fr.view.view.Ty × Val)} (hs : fr.StartsEntry args) :
+    fr.StartInv := by
   intro x g _ hg
   rw [hs] at hg; subst hg
-  exact ⟨lentStart_inv x, by simp [lentStart]⟩
+  exact ⟨entryStart_inv x _, entryStart_len _⟩
 
 /-- **Every state has the entry history** (proved): the starts of a frame
 starting from it are total. -/
-theorem lentStart_total (F : Family) (C : Nat) :
-    ∀ (k : Nat) (_ : WorldT k) (_ : Heap) (t : Tm), ∃ g, g = lentStart F C t :=
+theorem entryStart_total (F : Family) (C : Nat) (tv : TypeView) (args : Heap → Tm → List (tv.Ty × Val)) :
+    ∀ (k : Nat) (_ : WorldT k) (h : Heap) (t : Tm), ∃ g, g = entryStart F C tv h t (args h t) :=
   fun _ _ _ _ => ⟨_, rfl⟩
 
 /-- **A reached state meets the entry's premises** (proved): every step
