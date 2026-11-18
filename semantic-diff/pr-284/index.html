@@ -1,0 +1,174 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">6 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-284"><code>f457228639c8de63c3991bf81d5b94946980e4a3..pr-284</code></a><ul><li>6 commits</li><li>changes: 11 Docs, 1 Tooling</li><li>parts: <span class="chip">docs</span> <span class="chip">docs,</span> <span class="chip">dev</span></li></ul></li></ul></section>
+<h2 id="g-pr-284"><code>f457228639c8de63c3991bf81d5b94946980e4a3..pr-284</code></h2><article class="card" id="c-657a3b317"><header><div><div class="sha">657a3b317 · Cristiano Calcagno · Nov 18, 13:06</div><h3>Rename the second paper to &quot;Tolerant frames in practice: pretext's patterns&quot;</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The owner names the three papers by title in place of &quot;Paper I/II&quot;: &quot;Tolerant frames&quot;, &quot;Read-only frames&quot; and &quot;Tolerant frames in practice: pretext's patterns&quot;, the last being the paper that applies the rules of the other two to pretext's patterns. Its directory and PDF take the new name so that links name what they point to.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-patterns-note, renamed from drafts/tolerant-frames-2-note</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>titled &quot;Tolerant frames II&quot;, at tolerant-frames-2-note with tolerant-frames-2.pdf</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>titled &quot;Tolerant frames in practice: pretext's patterns&quot;, at tolerant-frames-patterns-note with tolerant-frames-patterns.pdf; its colour pass, HTML build and head carry the title; the five links to it (the parity skill and four drafts) follow the path</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · pdflatex of the note's colour pass</dd></dl>
+<details><summary>11 files changed, 11 insertions(+), 11 deletions(-)</summary><pre class="code"> .claude/skills/parity/SKILL.md                     |   2 +-
+ docs/drafts/callback-frames-dossier.md             |   2 +-
+ docs/drafts/implementation-and-paper-rules.md      |   2 +-
+ docs/drafts/private-representation.md              |   2 +-
+ docs/drafts/readonly-handles.md                    |   2 +-
+ .../build.py                                       |   4 ++--
+ .../color.py                                       |   4 ++--
+ .../head.html                                      |   2 +-
+ .../note.tex                                       |   2 +-
+ .../prep.py                                        |   0
+ .../tolerant-frames-patterns.pdf}                  | Bin 262721 -&gt; 262700 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-3ecc9606b"><header><div><div class="sha">3ecc9606b · Cristiano Calcagno · Nov 18, 13:08</div><h3>Add the paper &quot;Read-only frames&quot;, with the read-only frame mechanism and its proof</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The owner gives the read-only frame mechanism its own paper. Its definitions, checks, proposition, examples and proof sat in a paragraph and an appendix of &quot;Tolerant frames&quot;, a third of that paper's numbered statements for one rule, and its related work on module invariants was a list of uncited entries there.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/readonly-frames-note: note.tex, build.py, color.py, prep.py, head.html, readonly-frames.pdf</span></h4><div class="versions"><figure><figcaption>After</figcaption><div class="prose"><p>the paper &quot;Read-only frames&quot;: the problem on a module's walker, the six concepts and Assumption Clients, the rule Read-only frame with its checks (S), (K) and (O), Proposition Read-only reliance and why the rule holds, three examples and the limits, as &quot;Tolerant frames&quot; states them, statements, status tags and Lean names unchanged; a related-work section on module invariants, encapsulation and unknown code, its claims labelled cited or conj.; the proof in Appendix A; a bibliography of the works on module invariants and of &quot;Tolerant frames&quot;, which it cites for the calculus, effects, supports, the frame rule and Reliance; build files adapted from those of &quot;Tolerant frames&quot;</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · pdflatex of the note's colour pass · build.py's HTML build</dd></dl>
+<details><summary>6 files changed, 813 insertions(+)</summary><pre class="code"> docs/drafts/readonly-frames-note/build.py          |  70 +++
+ docs/drafts/readonly-frames-note/color.py          | 128 ++++++
+ docs/drafts/readonly-frames-note/head.html         |  88 ++++
+ docs/drafts/readonly-frames-note/note.tex          | 470 +++++++++++++++++++++
+ docs/drafts/readonly-frames-note/prep.py           |  57 +++
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 0 -&gt; 258670 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-98ba48376"><header><div><div class="sha">98ba48376 · Cristiano Calcagno · Nov 18, 13:10</div><h3>Shorten &quot;Tolerant frames&quot; to the read-only frame as a user applies it, and cite &quot;Read-only frames&quot;</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The mechanism's definitions, checks, proof and related work now live in &quot;Read-only frames&quot;. &quot;Tolerant frames&quot; keeps what a user of the mechanism needs, from that user's point of view, and points to the new paper; &quot;Tolerant frames in practice&quot; cites the paper that states each rule it applies.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex and PDF</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the paragraph &quot;Calls of code outside a component&quot; with six concepts, Assumption Clients, the rule, Proposition Read-only reliance, three examples and the limits; Appendix A, the proof; sixteen uncited bibliography entries on module invariants</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the paragraph says what a component and its interface are, displays the rule Read-only frame, states each premise and the client assumption in a sentence, applies the rule to the walker, and points to &quot;Read-only frames&quot; for the definitions, checks and proof, with a status naming the Lean theorems; no appendix; the bibliography cites &quot;Read-only frames&quot; in place of the sixteen entries</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-patterns-note/note.tex and PDF</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>names &quot;Paper I&quot; for every rule, the read-only frame's included</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>names &quot;Tolerant frames&quot; or &quot;Read-only frames&quot;, the paper that states the rule: P22's application, the P15, P16 and P20 notes, the P22 row and the Clients assumption cite &quot;Read-only frames&quot;; the abstract says &quot;neither paper&quot; means neither of the two</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · pdflatex of both notes' colour passes</dd></dl>
+<details><summary>4 files changed, 57 insertions(+), 308 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/note.tex          | 322 +++------------------
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 525246 -&gt; 504086 bytes
+ docs/drafts/tolerant-frames-patterns-note/note.tex |  43 +--
+ .../tolerant-frames-patterns.pdf                   | Bin 262700 -&gt; 279461 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-b2ed988a8"><header><div><div class="sha">b2ed988a8 · Cristiano Calcagno · Nov 18, 13:11</div><h3>Name the three papers by title in the drafts, Lean comments and REFERENCES</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The papers are named by title in place of &quot;Paper I/II&quot;: &quot;Tolerant frames&quot;, &quot;Read-only frames&quot; and &quot;Tolerant frames in practice: pretext's patterns&quot;. The drafts and two Lean modules named them by number, and REFERENCES had no entry for the new paper and placed the work on module invariants in the bibliography of the old one.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/callback-frames-dossier.md, drafts/private-representation.md, drafts/readonly-handles.md, drafts/step-rules.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>&quot;Paper I&quot; and &quot;Paper II&quot;, defined in each draft's header</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>each mention names the paper by title; the headers say whose rules they cite, and the read-only handles draft names &quot;Read-only frames&quot; as the paper that states its rule</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">REFERENCES.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>one entry, &quot;The Tolerant frames note&quot;, with its follow-on note; the works on module invariants in its bibliography</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the entry links &quot;Tolerant frames in practice&quot; by title and path; a new entry, &quot;The Read-only frames note&quot;, with what the project takes from it and its Lean modules; the works on module invariants cited in the Read-only frames note</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">lean/Verification/Paper/TolerantFrames/ReadOnlyFrame.lean, lean/Verification/Semantics/ArithmeticRules.lean</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>&quot;Paper I&quot;</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the Tolerant frames note, and for the rule's consequence the Read-only frames note's Proposition &quot;Read-only reliance&quot;</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">node tests/docs.mts; node dev/generated-sections.mts</span> <span class="test neg">-check; node tests/rule-inventory.mts; lake build of the two Lean modules</span></dd></dl>
+<details><summary>7 files changed, 93 insertions(+), 72 deletions(-)</summary><pre class="code"> docs/REFERENCES.md                                 | 64 ++++++++++++++--------
+ docs/drafts/callback-frames-dossier.md             | 38 ++++++-------
+ docs/drafts/private-representation.md              | 20 +++----
+ docs/drafts/readonly-handles.md                    | 27 ++++-----
+ docs/drafts/step-rules.md                          |  4 +-
+ .../Paper/TolerantFrames/ReadOnlyFrame.lean        |  8 +--
+ lean/Verification/Semantics/ArithmeticRules.lean   |  4 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-a65a68cfe"><header><div><div class="sha">a65a68cfe · Cristiano Calcagno · Nov 18, 13:14</div><h3>State the rules' two notes in the parity skill, AGENTS.md and WORK.md, and give readers both</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The rules acceptance is to apply now live in two notes, &quot;Tolerant frames&quot; and &quot;Read-only frames&quot;; &quot;Tolerant frames in practice&quot; applies them. The parity skill, AGENTS.md and WORK.md named one note as the source of the rules, and the paper-reader test gave a reader only &quot;Tolerant frames&quot;, so a reader could not judge an example that needs the read-only frame.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">.claude/skills/parity/SKILL.md, .claude/skills/parity/brief.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the note &quot;Tolerant frames&quot; is the theory and source of truth; a reader has only it; the note changes only with the owner's approval; one build line; the checking round names &quot;Tolerant frames II&quot;</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the two notes of rules are the theory and source of truth, &quot;the note&quot; meaning either, and &quot;Tolerant frames in practice&quot; applies them; a reader has both notes of rules; each note changes only with the owner's approval; the build line names the three note directories; the checking round reads the three notes and takes the next pattern of &quot;Tolerant frames in practice&quot; as a change of the note it calls for</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">AGENTS.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>&quot;Continuing the work on the note&quot; and &quot;General statements&quot; name the Tolerant frames note as the source of definitions</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>both name the two notes, the second linked through its REFERENCES entry</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the row on suspensions cites the read-only handles draft's restriction; the parity row's reader compares one paper</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the row cites the check (S) of &quot;Read-only frames&quot;; the reader has the two notes of rules</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">dev/paper-readers.mts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">prepare writes &quot;Tolerant frames&quot; as paper.tex, or one --note</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">prepare writes both notes of rules, or each --note given, as</span><span class="ln">&lt;directory name less -note&gt;.tex (tolerant-frames.tex,</span><span class="ln">readonly-frames.tex), and TASK.md names them</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs,</span> <span class="chip">dev</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">node tests/docs.mts; tsc over tools/tsconfig.json; node tools/unchecked.mts; prettier</span> <span class="test neg">-check of the tool; a prepare run into a temporary directory</span></dd></dl>
+<details><summary>5 files changed, 68 insertions(+), 45 deletions(-)</summary><pre class="code"> .claude/skills/parity/SKILL.md | 69 ++++++++++++++++++++++++------------------
+ .claude/skills/parity/brief.md |  2 +-
+ AGENTS.md                      |  7 +++--
+ WORK.md                        |  4 +--
+ dev/paper-readers.mts          | 31 +++++++++++++------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-fac9bc747"><header><div><div class="sha">fac9bc747 · Cristiano Calcagno · Nov 18, 13:22</div><h3>Give &quot;Read-only frames&quot; an example for each concept and each check</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The owner asked for more examples in &quot;Read-only frames&quot;: each concept and each premise shown on a short program the reader can judge from the paper alone, accepted or refused by the one check that decides it. The programs follow the pipeline cases of the read-only frame and the P22 cursor walker, and each refused one was run under Node.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/readonly-frames-note/note.tex and PDF</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>three examples: the walker, two refusals in one example (a caller's array installed, a member that pops) and a guarantee; the client that casts as a sentence of the first</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>thirteen examples, each a numbered program with its verdict and the line that decides it. After the concepts, three accepted: a local cursor, its array bounded by the visitor's stated effect location by location; a released result that never comes back; storage passed in read-only. After the checks, six refused: a suspension (S), a writable value leaked (K), a caller's array installed (O), released storage coming back through an unknown parameter (O), a visitor typed to return nothing (O), a lookalike slice (O). With the proposition: the walker and the guarantee kept, a member that shortens refused by the protocol, a client that casts breaking Assumption Clients; each refused program's output under Node 26</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd>node tests/docs.mts · pdflatex of the note's colour pass · build.py's HTML build · the refused programs under Node 26</dd></dl>
+<details><summary>2 files changed, 206 insertions(+), 17 deletions(-)</summary><pre class="code"> docs/drafts/readonly-frames-note/note.tex          | 223 +++++++++++++++++++--
+ .../readonly-frames-note/readonly-frames.pdf       | Bin 258670 -&gt; 272779 bytes</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
