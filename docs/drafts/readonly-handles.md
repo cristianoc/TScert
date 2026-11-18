@@ -241,17 +241,24 @@ use*).
 **The history.** $`A_P`$ is a ghost component of the state: the stack of
 the active calls of $`P`$, each with the set of every released or outside
 location protected at some state of that call, each location itself, not
-one a path starts from. Its transitions: a call's entry pushes a set
-holding the locations protected at entry; a step that makes a location
+one a path starts from, together with the record $`B_P`$ of the released
+and outside locations an incoming read-only crossing reached that the
+package still holds while no call of it runs. Its transitions: a call's
+entry pushes a set holding the locations protected at entry, those of
+$`B_P`$ among them when the call is outermost; at an outermost call's exit
+$`B_P`$ becomes the locations of its set that the package still holds, and
+a location leaves $`B_P`$ when the package stops holding it; a step that makes a location
 protected (an incoming read-only crossing, a hold of a location so reached
 or of one it is reachable from) adds that location, and every location
 then protected through it, to the set of every active call, so the sets of
 overlapping calls grow together; a call's normal and exceptional exits pop
 its own set, and nothing else removes a location from a set. A released or
 outside location is protected at a state exactly when a live incoming
-read-only crossing protects it, held or recorded in a set of $`A_P`$. Two states with the same heap and the same holds
-differ in $`A_P`$ where an active call overlapped an earlier hold, and the
-protection, the region and the action read it.
+read-only crossing protects it, held or recorded in a set of $`A_P`$ or in
+$`B_P`$. Two states with the same heap and the same holds differ in
+$`A_P`$ where an active call overlapped an earlier hold, and in $`B_P`$
+where one array the package holds came in read-only and another came in
+writable; the protection, the region and the action read both.
 
 **The protected region.** $`R_P(\rho,h,A)`$ is the storage of local and
 exposed sites, crossed or not, and the released and outside locations a
@@ -509,10 +516,19 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
 - **Ownership of installed storage.** Private representation's
   *Ownership at construction*, restated for $`R_P`$: a write of the
   package that installs storage into a location of protected storage, or
-  into a location the support of an invariant in $`G_P`$ reads, stores
-  storage protected for the rest of the run: fresh storage the package
-  allocated, an unconfined copy made there, or storage already protected.
-  A caller's writable argument is none of these: an entry
+  into a location the support of an invariant in $`G_P`$ or of a framed
+  fact reads, stores storage protected for the rest of the run, and so
+  does every location that support reads through the installed storage,
+  not its outermost object alone. Admitted: storage of an exposed site, by
+  its mark, which *Confinement* then refuses to let cross at a writable
+  position, in either order, before the install or after it; an unconfined
+  copy made in the call, itself of an exposed site; storage already
+  protected. Fresh storage of a released site is not admitted: `install2`,
+  which allocates `[7]`, installs it and returns it at `number[]`, and a
+  member that gives a fresh `[7]` to a visitor at `number[]` and then
+  installs it, are refused. A typed array over a buffer the package did not
+  allocate is not fresh: its elements are the buffer's owner's. A caller's
+  writable argument is none of these: an entry
   `install(xs: number[])` storing the visitor's own `[7]` in a handle whose
   invariant reads it is refused unless it copies. Pretext's entries meet it
   (by reading them): `prepareRichInline` stores of its items only their
@@ -602,28 +618,30 @@ obligation in what a caller observes, at least as strong as the row:
 > through any alias, anything you reach in a value this package gives you
 > only through a part its type shows read-only or a field its type does not
 > show: a handle and everything in it, and the read-only members of a
-> `prepareWithSegments()` handle (copy one before changing it). A part you
-> also reach through a part its type shows writable, such as a range's
-> cursors, is yours. Change nothing, through any alias, that you passed the
-> package through a part of the parameter's type that is read-only or a
-> field that type does not show, nor anything you return to it from a
-> callback through such a part, while any call into the package is running,
-> the one you passed it to or one that was already running then; no entry of
-> this package keeps a value you pass it, so the obligation ends when all of
-> them have returned. This holds in your code and in every function you pass
-> in. No element, field or length of such storage changes, no field is added
-> or removed, and no prototype or property kind (a data property redefined
-> as an accessor) changes, by any operation. Freezing, sealing, preventing
-> extension and making a data property non-writable or non-configurable do
-> not break this obligation; for a handle, `Object.freeze()` of it or of its
-> objects and arrays is supported, and a deep freeze throws at the typed
-> array it holds.
+> `prepareWithSegments()` handle (copy one before changing it). The cursors
+> of a range, line or fragment this package gives you are yours to change,
+> since it gives them out writable; anything you are already obliged not to
+> change stays so, whatever alias you reach it through. Change nothing,
+> through any alias, that you passed the package through a part of the
+> parameter's type that is read-only or a field that type does not show, nor
+> anything you return to it from a callback through such a part, while any
+> call into the package is running, the one you passed it to or one that was
+> already running then; no entry of this package keeps a value you pass it,
+> so the obligation ends when all of them have returned. This holds in your
+> code and in every function you pass in. No element, field or length of
+> such storage changes, no field is added or removed, and no prototype or
+> property kind (a data property redefined as an accessor) changes, by any
+> operation. Freezing, sealing, preventing extension and making a data
+> property non-writable or non-configurable do not break this obligation;
+> for a handle, `Object.freeze()` of it or of its objects and arrays is
+> supported, and a deep freeze throws at the typed array it holds.
 
 It is at least as strong, by the per-location predicate in both
 directions: what the package gives out protects only exposed storage, which
 the text forbids changing for good, unmentioned fields and read-only parts
-inside writable results and callback arguments included, while a part also
-reached through a writable position is released and the caller's; what a
+inside writable results and callback arguments included, while the cursors a range, line or fragment carries are
+released, given out writable, and the caller's, and an obligation a
+caller already has survives any other alias of the same storage; what a
 caller passes is protected by the row while the package holds it or a call
 that ran while it did runs, which the text covers by "while any call into
 the package is running, the one you passed it to or one that was already
@@ -731,7 +749,7 @@ it gives is conjectured.
   scratch copy of upstream `0d102a5c` and type-check under its
   `tsconfig.build.json` with its pinned TypeScript, 7.0.2 (observed: no
   error). Upstream's own suite, `bun test src/layout.test.ts`, passes 191 of
-  191 on the edited copy (observed, Bun 1.4.2). Together they add 103 lines
+  191 on the edited copy (observed, Bun 1.4.2). Together they add 113 lines
   and remove 24 in `README.md`, `layout.ts`, `line-break.ts`, `line-text.ts`,
   `prepare.ts` and `rich-inline.ts`, many of the added lines being the
   obligation in three doc comments and in the README. `oxlint`, which upstream's `check` also runs,
@@ -766,8 +784,22 @@ it gives is conjectured.
     "an intersection with a part naming it");
   - `PreparedTextWithSegments`: both clauses and `kinds.length ===
     widths.length`;
-  - the paragraph record and `PreparedRichInline`: `data`'s two clauses,
-    and the lazy lists' clause below.
+  - the paragraph record and `PreparedRichInline`, as five tags, each a
+    clause the clause reader elaborates (observed: each run through the
+    pipeline at `b60eca2f` in a probe with the same types, `verified`, and
+    load-bearing, a probe without the `sourceEnds` tag being refused at the
+    read it supports): `data`'s two clauses; one per lazy list,
+    `this.sourceStarts === null || this.sourceStarts.length ===
+    this.data.widths.length` and alike, a leading guard; and
+    `forall i in this.itemSegments: safeInteger(this.itemSegments[i]) &&
+    0 <= this.itemSegments[i] && this.itemSegments[i] <= this.data.widths.length`.
+    The clause that `sourceStarts` `null` implies the other two `null` is
+    part of the invariant the design states and the lazy write keeps, and
+    the clause reader refuses it (observed: "the clause names null, which is
+    no parameter"); a null test is a leading guard, not an atom, so it needs
+    clause-language support for a cross-field null implication
+    ([WORK](../../WORK.md#status), "Cross-field null implications in
+    clauses"). Until then it is stated, not checked.
 
   Each walker's entry then gets them by `invariant-requires`, checked at each
   call by name, and each entry's cast by handle-meaning. The paragraph's
@@ -778,8 +810,7 @@ it gives is conjectured.
   lists, filled one entry per segment (conjectured until checked). A handle
   from outside meets them by the row on handle parameters, which supplies
   `segments.length === widths.length` at the entry; the lazy writer checks
-  only that each destination field is `null`. Seven annotation comments, three of them with the obligation and one the
-  `@requires` of `materializeRichInlineLineRange`, and the
+  only that each destination field is `null`. Six annotation comments, three of them with the obligation, and the
   row in the README's new section "Callers' obligation", which names the
   entry modules `.` (`@chenglou/pretext`) and `./rich-inline`, each in the
   caller-facing words of *Trust*.
@@ -839,19 +870,22 @@ it gives is conjectured.
     edited alike: "null is not an object (evaluating 'sourceEnds[endSegmentIndex - 1]')");
     a throw is an allowed outcome, read by *Reads through a possibly null
     value*. The outer `!`, that the element read gives a number, needs its
-    index in range: `materializeRichInlineLineRange` states, as an
-    `@requires` on the entry under the row on exported preconditions,
-    `forall i < line.fragments.length of line.fragments:
-    0 <= line.fragments[i].start.segmentIndex &&
-    line.fragments[i].start.segmentIndex <= line.fragments[i].end.segmentIndex`,
-    the range as the package gave it. A caller that sets a writable
-    fragment's segment indices to `-2` and `-1` makes both versions return
-    `sourceEnd` `undefined` at type `number` (cited: the review's
-    reproduction), and breaks that precondition. The bound is stated, not
-    proved, since a caller can write those fields. The reads of a segment's
-    grapheme ends at a fragment's grapheme index need a bound no clause
-    states (a segment's grapheme count is computed), so those reads stay a
-    gap of the materializer, apart from P22.
+    index in range, and that stays a stated gap of the materializer, which is
+    no P22 site. The index is `Math.min(first + fragment.end.segmentIndex,
+    itemEnd) - 1`, from a range the caller passes at a writable type. The
+    `itemSegments` clause bounds `itemEnd` and `first` by
+    `data.widths.length`, but the fragment's own indices need a
+    precondition, and the clause language states a comparison only of safe
+    integers: an `@requires` with `safeInteger` atoms elaborates (observed)
+    and excludes upstream's tested range ending at segment `Infinity`
+    (`layout.test.ts:356–366`), which the `Math.min` clamp admits. No clause
+    states "a safe integer, or `Infinity`", so no `@requires` is added; a
+    caller that sets a writable fragment's indices to `-2` and `-1`, or an
+    `itemSegments` entry past the widths on a clone, makes both versions
+    return `sourceEnd` `undefined` at type `number` (cited: the reviews'
+    reproductions), the second outside the invariant. The reads of a
+    segment's grapheme ends at a fragment's grapheme index need a bound no
+    clause states either (a segment's grapheme count is computed).
 
   With one of the three fields made non-writable by outside code, which the
   row admits, two materializations of the same line under Bun give the same
@@ -933,7 +967,7 @@ it gives is conjectured.
   The public `LayoutCursor` a caller passes is validated on entry as
   upstream does. No change.
 
-In all, checked as above: the README's section and seven annotation
+In all, checked as above: the README's section and six annotation
 comments, three with the obligation; brand-free records, casts through `unknown` and four checked
 introductions in `layout.ts` and `rich-inline.ts`; three overloads and a
 typed literal in `prepare.ts` and two overloads in `layout.ts`; and the
@@ -1019,7 +1053,7 @@ What this design gives up:
 What it gains:
 
 - **Pretext's source stays upstream's** but for the checked edits counted
-  above (103 lines added and 24 removed): no class, no static block, no staging field, no
+  above (113 lines added and 24 removed): no class, no static block, no staging field, no
   `#segments !== null` test, no move of five modules into one class body.
 - **No class shape**: no base-class, evaluated-once, construction, staging,
   lexical-dispatch or distinct-name restriction; no lifting of the
@@ -1089,6 +1123,14 @@ JavaScript, run with `node`, printing the reads), each refused:
   relying on the invariant, reads `[7, undefined]`. Refused by *Ownership
   of installed storage*: the stored array is neither fresh, a copy, nor
   protected.
+- `invalid-readonly-install2`: `install2(h)` allocates `[7]`, installs it
+  in a handle whose invariant reads it and returns it at `number[]`; the
+  visitor pops what it got: `[undefined, undefined]`. Refused by
+  *Ownership of installed storage*: the array is of a released site.
+- `invalid-readonly-give-then-install`: a member gives a fresh `[7]` to the
+  visitor at `number[]`, then installs it; the visitor kept it and pops it
+  later: `[7, undefined]`. Refused by *Ownership of installed storage*, in
+  the other order.
 - `invalid-readonly-installed-then-shortened`: a member installs a fresh
   list of the right length in an old handle, then shortens it before a
   callback; a walker relying on the invariant reads
@@ -1182,6 +1224,142 @@ handle's installed list forged free; a call's exit forged to keep its set of $`A
 to remove a location from one; an invariant forged into $`G_P`$ that a write
 does not keep; a value read from a `Map` forged to meet its type's
 invariant with no boundary or check.
+
+## What the Lean states
+
+The definitions and statements below are the draft's, in Paper I's
+notation, for a formalizer. A state is $`s=(\rho,h,W,k,E,A,B)`$: Paper I's
+environment, heap, world and budget, with three ghost components, $`E`$ a
+set of locations, $`A`$ a stack of sets of locations and $`B`$ a set of
+locations. Each statement is conjectured until its Lean exists.
+
+**Marks.** The world gives each location $`l`$ of storage the package
+allocated a mark $`\mu(l)\in\{\mathsf{local},\mathsf{internal},\mathsf{exposed},\mathsf{released}\}`$,
+fixed at allocation: $`W\sqsubseteq W'`$ keeps $`\mu`$. A location outside
+code allocated has no mark; write $`\mu(l)=\mathsf{out}`$.
+
+**Paths and read-only reach.** A path $`\pi`$ from a value $`v`$ is a
+sequence of field keys, element indices and spine steps; $`h\vdash
+v\xrightarrow{\pi}l`$ when following $`\pi`$ from $`v`$ in $`h`$ reaches
+$`l`$, through fields, element cells and spines, never through a
+collection's entries. For a crossing type $`T`$ at the root position, each
+prefix of $`\pi`$ has a type $`T|_{\pi'}`$, an own field $`T`$ does not
+mention having type `unknown`. The path is *read-only* when some prefix's
+type is read-only throughout:
+
+```math
+\mathrm{ro}_T(\pi)\iff\exists\,\pi'\preceq\pi.\ \mathrm{RO}(T|_{\pi'}),
+\qquad
+\mathrm{Reach}^{\mathrm{ro}}_T(v,h)=\{\,l\mid\exists\pi.\ h\vdash v\xrightarrow{\pi}l\wedge\mathrm{ro}_T(\pi)\,\}
+```
+
+with $`\mathrm{RO}(U)`$ the draft's read-only types, closed under subterms.
+
+**Crossings.** A crossing is a step that passes a value $`v`$ at type
+$`T`$ between the package and code that is not its, with a direction
+$`d\in\{\mathsf{in},\mathsf{out}\}`$. It updates the ghosts:
+
+```math
+E'=E\cup\{\,l\in\mathrm{Reach}^{\mathrm{ro}}_T(v,h)\mid\mu(l)=\mathsf{exposed}\,\},
+\qquad
+N=\begin{cases}\{\,l\in\mathrm{Reach}^{\mathrm{ro}}_T(v,h)\mid\mu(l)\in\{\mathsf{released},\mathsf{out}\}\,\}&d=\mathsf{in}\\ \emptyset&d=\mathsf{out}\end{cases}
+```
+
+and adds $`N`$ to every set of $`A`$.
+
+**Holds.** $`\mathrm{Held}(l,s)`$ holds when a frame of the package, a
+binding of the package or a location of package storage references $`l`$
+or a location from which $`l`$ is reachable by a path; a key of a
+`WeakMap` is no reference.
+
+**The history.** A call of the package pushes the set of the released and
+outside locations protected at its entry, with $`B`$ when the stack is
+empty; a crossing or a hold adds the locations it protects to every set;
+each exit, normal or exceptional, pops the top set; when the stack becomes
+empty, $`B'`$ is the popped set's locations $`l`$ with $`\mathrm{Held}(l,s')`$;
+a step outside every call removes from $`B`$ each location no longer held.
+
+**The membership test.**
+
+```math
+l\in R_P(s)\iff\mu(l)\in\{\mathsf{local},\mathsf{exposed}\}\ \vee\ \bigl(\mu(l)\in\{\mathsf{released},\mathsf{out}\}\wedge(l\in{\textstyle\bigcup}A\ \vee\ l\in B)\bigr)
+```
+
+A location $`l`$ an incoming crossing protects is in the top set of $`A`$
+from that crossing on, so the test reads $`A`$ and $`B`$ alone. It is the
+one test the region, the frame's premise, (P2), (L3) and the trust row read.
+
+**Parts and the protocol.** A part is $`(\sigma,\kappa,k)`$: a site
+$`\sigma`$ or $`\mathsf{out}`$, a kind $`\kappa`$ of Paper I's world and,
+for a field location, a key $`k`$. $`\mathrm{Keys}(\sigma)`$ is the set of
+keys its allocation gives and every key a write of the package may add to
+a record whose possible sites include $`\sigma`$; for $`\sigma`$ released
+or $`\mathsf{out}`$ it is every key. $`\Psi_P`$ maps each part to a change;
+it is the least such map for which each member $`m`$, entered from code
+that is not the package's with each parameter at the possible sites
+$`\{\sigma\mid\mu(\sigma)\in\{\mathsf{exposed},\mathsf{released}\}\}\cup\{\mathsf{out}\}`$,
+has a certificate whose normal and exceptional effects, after `fresh_eff`,
+bound every location of $`R_P`$ at its entry by $`\Psi_P`$ of its part,
+each step of code that is not the package's in $`m`$ bounded as the rule
+below bounds it. The action of $`\Phi\oplus_P\Psi_P`$ is the draft's, with
+$`R_P`$ read at the entry state. $`G_P`$ is a set of invariants $`I`$
+with: every write of a member to a location of $`\mathrm{supp}(I)`$ of a
+complete handle, and every exit of a member, keeps $`I`$.
+
+**Read-only frame.**
+
+```math
+\frac{c:\Phi\mid\Phi^{e}\qquad c\ \text{a call whose callee is neither a function of}\ P\ \text{nor an audited native}}
+     {c:\ \Phi\oplus_P\Psi_P\ \mid\ \Phi^{e}\oplus_P\Psi_P}
+```
+
+under the side conditions of the checks: the package's code contains no
+`await`, `yield`, async function or generator; $`\Psi_P`$ preserves the
+references; *Ownership of installed storage* holds of every install.
+
+**The invariants of states.**
+
+- (M): every location's mark is its site's; a local location is reachable
+  from no binding, no storage and no frame but the package's; an internal
+  location is reachable from no value that has crossed.
+- (P2): every path from a frame of code that is not the package's to a
+  location $`l`$ with $`\mu(l)\in\{\mathsf{local},\mathsf{exposed}\}`$ passes a
+  location of $`E`$ and, from there on, only read-only positions.
+
+**The lemmas.** Each quantifies over states meeting (M) and (P2), and over
+outside code meeting the trust row $`T_P`$, stated in the trust section.
+
+- (L1) Outside step. For a step $`s\to s'`$ of code that is not the
+  package's: $`h'(l)=h(l)`$ for every $`l\in R_P(s)`$, and $`s'`$ meets (M)
+  and (P2).
+- (L2) Outside run. For a run $`s\to^{*}s'`$ of code that is not the
+  package's inside an active call $`c`$ of the package: every
+  $`l\in R_P(s)`$ is in $`R_P(t)`$ for every state $`t`$ of the run, and
+  $`\Psi_P(\mathrm{part}(l))_{|h|}(h(l),h'(l))`$.
+- (L3) Rigidity. The relation $`s\leadsto s'`$, holding when the heaps are
+  related by the action of $`\Phi\oplus_P\Psi_P`$ at $`R_P(s)`$ and $`A'`$
+  extends $`A`$ from the bottom to the current call with each set
+  including its old one, is transitive, and $`R_P(s)\subseteq R_P(s')`$ for
+  $`s\leadsto s'`$ within a call; with $`\Phi`$ and $`\Psi_P`$ rigid and
+  $`\Psi_P\sqsubseteq\Phi`$, $`\Phi\oplus_P\Psi_P`$ is rigid on such
+  states.
+- (L4) Invariants. For $`I\in G_P`$ with $`\mathrm{supp}(I)\subseteq R_P(s)`$
+  and $`I`$ true at $`s`$, a run as in (L2) ends in a state where $`I`$
+  holds.
+- (O) Ownership. A write of the package that stores a value $`v`$ into a
+  location of $`R_P(s)`$, or of $`\mathrm{supp}(I)`$ for $`I\in G_P`$, is
+  admitted only when every location the support reads through $`v`$ is of
+  an exposed site, an unconfined copy made in the call, or in
+  $`R_P(s)`$; and then those locations are in $`R_P(t)`$ for every later
+  state $`t`$ of the run.
+
+**The consequence.** With (L1) to (L4) and (O), Paper I's Theorem
+"Tolerant frame" and Proposition "Reliance" give, for a fact $`F`$ whose
+support $`S\subseteq R_P`$ with $`\Psi_P\triangleleft_K S`$, that $`F`$
+holds after every call of code that is not the package's in a call of the
+package. `SourceClaimJson.PassUnit.mode8Accepted_sound` keeps its
+statement; `PassUnitSafe`'s entry condition gains (M), (P2) and the ghost
+components, and its premise and conclusion are reviewed again.
 
 ## Stages and cost
 
