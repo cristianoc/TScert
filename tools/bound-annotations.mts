@@ -118,6 +118,13 @@ export function representationTags(trivia: string): string[] {
   return tagsOf(trivia, "representation");
 }
 
+/** The text of each `@clients` tag of the last JSDoc comment in a type
+ * declaration's leading trivia: the client obligation of a type a component
+ * exports (docs/drafts/readonly-handles.md, "Other encapsulations"). */
+export function clientsTags(trivia: string): string[] {
+  return tagsOf(trivia, "clients");
+}
+
 /** Whether a parameter is a plain required name: no rest, default or `?`,
  * and no pattern. Its input slot holds the call's actual at its position. */
 export function plainParameter(p: ts.ParameterDeclaration): boolean {
@@ -172,7 +179,7 @@ export type ImportedInvariants = { receiver: boolean; params: readonly boolean[]
 /** The JSDoc tags a program's annotations are written in (ANNOTATIONS.md):
  * every reader of a tag names it from this list, through `tagsOf` and
  * `statesTag`. */
-export const annotationTags = ["requires", "ensures", "invariant", "representation", "stable"] as const;
+export const annotationTags = ["requires", "ensures", "invariant", "representation", "stable", "clients"] as const;
 export type AnnotationTag = (typeof annotationTags)[number];
 
 /** Whether the last JSDoc comment in a leading trivia states the tag `name`,

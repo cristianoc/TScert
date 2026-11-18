@@ -1,0 +1,11 @@
+{
+  "//": "A package of two exports, built from src/ to dist/ by tsconfig.build.json: the component family maps each target back to its source (tests/single-pass-controls.mts, the component-package controls).",
+  "name": "component-package",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/main.d.ts", "default": "./dist/main.js" },
+    "./extra": { "types": "./dist/extra.d.ts", "default": "./dist/extra.js" },
+    "./package.json": "./package.json"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  // The project the component-package cases are checked in.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "Preserve",
+    "moduleResolution": "bundler"
+  },
+  "include": ["./src/*.ts"]
+}

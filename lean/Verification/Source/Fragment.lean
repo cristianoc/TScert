@@ -1,6 +1,7 @@
 -- ResolutionWire.lean reads resolution slots on the wire; without it the fragment cannot represent a resolution-qualified binder.
 import Verification.Source.ResolutionWire
 import Verification.Source.EffectJson
+import Verification.Source.ComponentWire
 import Verification.Types.Claim
 
 /-! # The fragment language
@@ -1479,11 +1480,20 @@ def decodeModule (j : Json) : Except String ModuleAst := do
     return (← jStr (← jField a "name"), pos, ← jStr (← jField a "reason"))
   let document := Json.mkObj [("file", toJson location), ("sourceSha256", toJson sha),
     ("declarations", ← jField j "declarations"), ("init", ← jField j "init"),
-    ("functions", ← jField j "functions"), ("modules", Json.arr #[]), ("omittedMentions", Json.arr #[])]
+    ("functions", ← jField j "functions"), ("components", ComponentWire.emptyJson), ("modules", Json.arr #[]),
+    ("omittedMentions", Json.arr #[])]
   return ⟨location, sha, document, absent⟩
 
+/-- **The family of components a document's code lies in**
+(`ComponentWire.decode`): the read-only frame's proposals, which no check
+reads yet; an imported module's document carries the empty one. -/
+def decodeComponents (j : Json) : Except String ComponentWire.Components := do
+  (ComponentWire.decode (← jField j "components")).mapError (s!"components: {·}")
+
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
-  fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions", "modules", "omittedMentions"]
+  fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions", "components", "modules",
+    "omittedMentions"]
+  let _ ← decodeComponents j
   -- A document's modules are read apart from it (`planImports`).
   if !(← jArr j "modules").isEmpty then throw "a document's modules are read apart from it"
   let document ← jField j "declarations"

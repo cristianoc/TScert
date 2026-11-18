@@ -16,13 +16,13 @@
  * All six are this one trusted program. Its refusals are indexed in
  * docs/SOURCE-FRAGMENT.md, and the tree it writes is docs/FRAGMENT-FORMAT.md's.
  */
-import { type API, SymbolFlags, type Checker, type Project } from "typescript/unstable/sync";
+import { type API, SymbolFlags, type Checker, type Project, TypeFlags } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ArrowFunction, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
-import { noteInput, readText, writeText } from "./files.mts";
-import { dirname, resolve } from "node:path";
+import { noteInput, readText, realPath, writeText } from "./files.mts";
+import { dirname, relative, resolve, sep } from "node:path";
 // declaration-session.mts names the project a module is lowered in, rooted at the module.
 import { moduleProject, moduleProjectText } from "./declaration-session.mts";
 import type { DeclarationIdentity, ResolutionSlots, TypeDefinition, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -30,12 +30,13 @@ import type { StatedFrame } from "./type-graph.mts";
 import { withConditions } from "./type-graph.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
-import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
+import type { Ast, ComponentsAst, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
 import { clauseRoots, loopBindings, loopInvariantTags, type ImportedInvariants } from "./bound-annotations.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
-import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
+import { fieldOf, messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
+import { describeFamily, noComponents } from "./components.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isImport, isStatic, nameOf, isTypeAlias, namedAccess } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
@@ -132,7 +133,7 @@ export function openText(absolute: string, text: string): SourceFile {
   return file;
 }
 
-function openFile(absolute: string, text: string, rootedIn?: string): { file: SourceFile; checker: Checker } {
+function openFile(absolute: string, text: string, rootedIn?: string): { file: SourceFile; checker: Checker; project: Project } {
   contents.set(absolute, text);
   const project = projectFor(absolute, rootedIn);
   const syntax = project.program.getSyntacticDiagnostics(absolute);
@@ -141,7 +142,28 @@ function openFile(absolute: string, text: string, rootedIn?: string): { file: So
   const file = project.program.getSourceFile(absolute);
   if (!file)
     throw new Error(`gate: the compiler produced no tree for ${absolute}`);
-  return { file, checker: project.checker };
+  return { file, checker: project.checker, project };
+}
+
+/** The compiler the parse opened. */
+function compilerOf(): API {
+  if (!compiler) throw Error("tool failure: no compiler is open");
+  return compiler;
+}
+
+/** The guarantee candidates of a family (docs/drafts/readonly-handles.md,
+ * "(L4)"): each type invariant the lowering's declarations state
+ * (`Gate.invariants`), read as a result's type names it
+ * (`statements.typeInvariants`), its facts of `this` at position 0; one a
+ * clause of which is refused is no candidate. */
+function guaranteeCandidates(gate: Gate): ComponentsAst["guarantees"] {
+  return [...gate.invariants.values()].flatMap(({ declaration }) => {
+    const reference: TypeTerm = { k: "reference", reference: { name: declaration.name, span: declaration.span, arguments: [],
+      target: declaration }, args: [], span: declaration.span };
+    const read = statements.typeInvariants(gate, [], false, reference);
+    return typeof read === "string" || read.ensures.length === 0 ? []
+      : [{ module: declaration.module, name: declaration.name, pos: declaration.span, facts: read.ensures }];
+  });
 }
 
 /** Release the compiler. A long-lived caller may parse again afterwards. */
@@ -1502,7 +1524,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const absolute = resolve(file);
   const text = readText(absolute);
   // An imported module's lowering reads its project rooted at the module.
-  const { file: source, checker } = openFile(absolute, text, location !== null ? tsconfigPath : undefined);
+  const { file: source, checker, project } = openFile(absolute, text, location !== null ? tsconfigPath : undefined);
   const gate = new Gate(source);
   // An omitted function, one a census refused in an earlier round, is read
   // as an ambient declaration is, at its declared signature: its body is
@@ -2705,8 +2727,56 @@ function lowerFile(file: string, carriesContext: boolean,
   const root = tsconfigPath ? (tsconfigPath.endsWith(".json") ? dirname(resolve(tsconfigPath)) : resolve(tsconfigPath))
     : null;
   const importedFrom = importedModules(importNodes, checker, declarations.values, root);
+  // The family of components the checked file lies in, described in its
+  // own run; an imported module's code is its importer's to describe.
+  const primitiveOf = (asking: Checker) => (nodes: readonly Node[]): boolean[] => {
+    const types = nodes.length === 0 ? [] : asking.getTypeAtLocation(nodes);
+    const mask = TypeFlags.String | TypeFlags.Number | TypeFlags.BigInt | TypeFlags.Boolean | TypeFlags.ESSymbol |
+      TypeFlags.StringLiteral | TypeFlags.NumberLiteral | TypeFlags.BigIntLiteral | TypeFlags.BooleanLiteral |
+      TypeFlags.UniqueESSymbol | TypeFlags.EnumLiteral | TypeFlags.Undefined | TypeFlags.Null | TypeFlags.Void |
+      TypeFlags.Never | TypeFlags.TemplateLiteral | TypeFlags.StringMapping;
+    return nodes.map((_, i) => {
+      // `boolean` is the union of its two literals.
+      const all = types[i]?.flags ?? 0;
+      const flags = all & ~(all & TypeFlags.Boolean ? TypeFlags.Union : 0);
+      return (flags & mask) !== 0 && (flags & ~mask) === 0;
+    });
+  };
+  // The checked file's project: the one named, else the file's own; its
+  // module identities are its declaration document's, the checked file's
+  // its snapshot's path, any other its path from the project's directory.
+  const named = tsconfigPath === undefined ? null
+    : tsconfigPath.endsWith(".json") ? resolve(tsconfigPath) : resolve(tsconfigPath, "tsconfig.json");
+  const projectRoot = realPath(named === null ? dirname(project.configFileName) : dirname(named));
+  const original = resolve(resolutionFile);
+  const components = location !== null ? noComponents : describeFamily({ absolute: original, source,
+    alone: { files: [original], sourceOf: (path) => path === original ? source : null, primitive: primitiveOf(checker) },
+    project: () => {
+      const opened = named === null ? project
+        : compilerOf().updateSnapshot({ openProjects: [named] }).getProject(named) ?? project;
+      return { files: opened.program.getSourceFileNames(), sourceOf: (path) => opened.program.getSourceFile(path) ?? null,
+        primitive: primitiveOf(opened.checker) };
+    },
+    locationOf: (path) => {
+      if (path === original) return absolute;
+      const inside = relative(projectRoot, realPath(path)).split(sep).join("/");
+      return inside.startsWith("../") ? inside : `./${inside}`;
+    },
+    buildConfig: (path) => {
+      const parsed = compilerOf().parseConfigFile(path);
+      const options = fieldOf(parsed, "options");
+      const names = fieldOf(parsed, "fileNames");
+      const option = (key: string): string | null => {
+        const v = fieldOf(options, key);
+        return typeof v === "string" ? resolve(dirname(path), v) : null;
+      };
+      return { outDir: option("outDir"), rootDir: option("rootDir"),
+        fileNames: Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [] };
+    },
+    guarantees: () => guaranteeCandidates(gate),
+    fail: (node, message) => gate.fail(node, message) });
   const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init,
-    omittedMentions: [...omittedMentions].sort(), modules: [] };
+    omittedMentions: [...omittedMentions].sort(), components, modules: [] };
   const module: ModuleAst | null = location === null ? null : renamedModule({ location, sourceSha256,
     declarations, init, functions: parsed, absent }, absolute, location);
   // A mapped type over a named type read before the document was complete,

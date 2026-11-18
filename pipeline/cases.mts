@@ -5012,4 +5012,12 @@ export const cases: Case[] = [
   positive("callables/thunks", "Create, return, and replace zero-argument closures."),
   positive("callables/unions", "Guard callable alternatives and preserve their argument and result contracts."),
   positive("callables/variadic-arguments", "Collect any number of arguments into an array rest, and spread arrays among them."),
+  // The component family (docs/drafts/readonly-handles.md, "Components"): a
+  // package of two exports, described in the fragment of a file of it
+  // (tests/single-pass-controls.mts, "component family"), and a client
+  // obligation on a type of a package whose interface is not known.
+  { ...positive("component-package/src/main", "A file of a package of two exports built to dist/: its family's interface maps both targets back to their sources, re-exports followed; its handle's record has fields its type does not show, a boxed record a writable descendant, and two closures escape, through a result and an argument."),
+    project: "pipeline/examples/component-package" },
+  { ...gap("component-unknown/src/handles-refused", "`@clients` on a type of a package whose exports are a subpath pattern: the row it states bounds code outside a component whose interface is not known, and is refused where it is written.", "unsupported", "source", /`@clients` on Handle states the row of a component whose interface is unknown: the subpath pattern \.\/\* \(line 5, col 1\)/),
+    project: "pipeline/examples/component-unknown" },
 ];
