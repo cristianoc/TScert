@@ -17,6 +17,7 @@ def changeName : Footprints.Change → String
   | .keep => "keep"
   | .init => "init"
   | .scalar => "scalar"
+  | .extend => "extend"
   | .grow => "grow"
   | .any => "any"
 

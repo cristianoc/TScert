@@ -1930,13 +1930,13 @@ theorem top_holds (h h' : Heap) : top.Holds h h' :=
 
 /-- The change a closed footprint allows: below `any` no location holding an
 object changes, at most `init` none holding a number, `init` or `scalar` on a
-spine is `keep`, and `grow` on a spine leaves each spine no shorter and within
-`maxArrayLength` where it was. -/
+spine is `keep`, and `extend` or `grow` on a spine leaves each spine no
+shorter and within `maxArrayLength` where it was. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
   ⟨Φ.value == .any, !(Φ.value.le .init),
     match Φ.spines.onSpine with
     | .keep => .keep
-    | .grow => .grow
+    | .extend | .grow => .grow
     | _ => .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
@@ -1977,12 +1977,12 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
     exact hkeep ▸ hv'
   · revert hs; simp only [ofClosed]; split <;> simp
   · intro l ls hl
-    have hg : Φ.spines = .grow := by
+    have hg : Φ.spines.le .grow = true := by
       revert hs; simp only [ofClosed]
-      cases hΦ : Φ.spines <;> simp [Footprints.Change.onSpine]
+      cases hΦ : Φ.spines <;> simp [Footprints.Change.onSpine, Footprints.Change.le, Footprints.Change.rank]
     obtain ⟨v', hv', hc⟩ := hp.2 l _ hl
-    simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true, hg] at hc
-    rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc | ⟨_, _, _, he, -⟩
+    simp only [Footprints.Closed.at_ofSpines, Footprints.isArr, ite_true] at hc
+    rcases hc.mono hg with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc | ⟨_, _, _, he, -⟩
     · exact ⟨ls, hv', Nat.le_refl _, id⟩
     · cases h₁; exact ⟨ls', hv', hlen.1, hlen.2⟩
     · exact absurd hsc.2.1 (by simp [Footprints.isArr])

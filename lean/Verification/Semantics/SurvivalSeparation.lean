@@ -226,7 +226,7 @@ namespace Verification.Footprints
 
 /-- **A footprint's class entries as they act on their class**: on a
 selector of spine categories alone `init` and `scalar` are `keep`, on one of
-the value category alone `grow` is `scalar` (`Change.onSpine`,
+the value category alone `extend` and `grow` are `scalar` (`Change.onSpine`,
 `Change.onValue`); a selector of both kinds keeps its change. -/
 def Footprint.byClass (Φ : Footprint) : Footprint := Φ.map fun e => match e.1 with
   | .cls c => if !c.value then (e.1, e.2.onSpine)
@@ -257,6 +257,7 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
         · exact hh.scalar_isArr harr
         · exact hh
         · exact hh
+        · exact hh
       · simp only [Bool.not_eq_false] at hcv
         simp only [hcv, Bool.not_true, Bool.false_eq_true, if_false]
         split
@@ -265,7 +266,7 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
           have harr : isArr v = false := Selector.selects_valueOnly hst.1 hst.2 hsel
           refine ⟨hm, ?_⟩
           cases δ <;> simp only [Change.onValue]
-          all_goals first | exact hh | exact hh.grow_value harr
+          all_goals first | exact hh | exact hh.grow_value harr | exact hh.extend_value harr
         · exact ⟨hm, hh⟩
     | _ => exact ⟨hm, hh⟩
 
