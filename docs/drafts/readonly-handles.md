@@ -1911,8 +1911,11 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   outgoing values cross, then pops, $`B`$ becoming, when no call stays
   active, the popped set's locations $`C`$ holds (`Held`: reachable from
   a value at a position of $`C`$'s code, a closure of $`C`$'s bindings
-  among them, or from storage of a site of $`C`$). These are the only
-  transitions of the history; none is a hold. Its sets number the calls
+  among them, or from storage of a site of $`C`$); a step of outside code
+  while no call of $`C`$ is active removes from $`B`$ each location $`C`$
+  no longer holds after it (`outsideNext`, a `drop` of the history,
+  `outsideNext_drop`). These are the only transitions of the history;
+  none is a hold. Its sets number the calls
   active plus a constant along every execution (proved, `XStep.len`).
   With the fields of a checked step that read the step's code
   (`PkgProps`, hypothesis), a step of $`C`$'s code is a checked step
@@ -1989,7 +1992,8 @@ grown since (`Witness`, `prot_of_witness`).
 **The invariants at every depth** (proved, `XStep.inv`, `Ex.inv`). The
 invariants of states without the depth (`Inv`: a uniform history, (M),
 (P2), valid frames) are kept by every step of an execution: a step of
-outside code is an outside step (`outside_inv`), and a step of
+outside code is an outside step (`outside_inv`), followed outside every
+call by the trim of $`B`$, which no invariant reads (`Inv.trim`), and a step of
 $`C`$'s code, the exit of the last active call among them, is a checked
 step at depth $`0`$ (`pkg_step_inv`). From a start where no storage of a
 local, an internal or an exposed site exists (`Inv.of_lent`), with one set
