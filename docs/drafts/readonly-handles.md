@@ -1717,8 +1717,12 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
 
 - A configuration (`Conf`) is an indexed heap and a term valid at its
   world; an actual step (`AStep`) is a step of `Step` between their heaps
-  whose world transition is admissible, as a safe execution's step is
-  (`SafePostW`). The state of a configuration with a ghost (`lift`) has
+  whose world transition is admissible. A safe term's step is one: from
+  a term safe at budget $`n+1`$ (`Safe`), the step, deterministic
+  (`Step_det`), is the one `Safe` witnesses, which reaches a world at
+  budget $`n`$ extending the old one truncated, admissible, holding the
+  new heap, at which the new term is safe (proved, `safe_step_world`,
+  `astep_of_safe`). The state of a configuration with a ghost (`lift`) has
   the term's roots, `vals` at the term with the top segment's code `c`
   (`rootsOf`), so a state's roots are its term's by definition.
 - An actual step whose active frame runs no code of $`C`$ is an outside
@@ -1733,9 +1737,38 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   running $`C`$'s code on its path, the top segment's among them. A
   step's kind (`kind`) is read from its active frame and that number: a
   step of outside code keeping it, an entry raising it, a step of $`C`$'s
-  code keeping it, an exit lowering it. The call discipline (`Disc`,
-  hypothesis): a step of outside code keeps the number or raises it by
-  one, a step of $`C`$'s code keeps it or lowers it by one.
+  code keeping it, an exit lowering it. The call discipline (`Disc`): a
+  step of outside code keeps the number or raises it by one, a step of
+  $`C`$'s code keeps it or lowers it by one.
+- The discipline holds of well-formed configurations (in
+  [ReadOnlyRuns.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyRuns.lean)).
+  A term is free of runs (`free false`) when it holds no `goto` and no
+  `frame`, the code of its values included; its runs are pending
+  (`free true`) when it holds no `frame` and each `goto` it holds has its
+  code, environment and default free of runs, as a call of graph code with
+  a rest leaves one under the binding of the rest. A term is well formed
+  (`wf`) when along its path every other subterm of a position is pending,
+  a `goto` or `frame` on it has its parts free of runs, and a frame's
+  running term is well formed; a heap is free of runs (`HeapFree`) when
+  every value it holds is, and a configuration is well formed (`Conf.WF`)
+  when both hold. A term free of runs, a source program's, is well formed
+  (`wf_of_source`). Every step keeps a well-formed configuration and pushes
+  at most one frame on the path (proved, `step_wf`, `PathStep1`), so it
+  obeys the discipline at every component (proved, `disc_of_wf`,
+  `AStep.wf_disc`, `XStep.of_wf`). Without well-formedness the discipline
+  fails: a binding of `null` whose body is a frame of $`C`$ running a
+  frame of outside code running a run of $`C`$ not yet entered steps, from
+  no call of $`C`$ active, to two (`twoCalls_step`, and the computed
+  checks after it).
+- Re-entry, throw and return (computed checks, `callsAt`). A call of
+  $`C`$ from outside code raises the number, a callback from it keeps it,
+  a re-entry from the callback raises it again; a return or a throw out of
+  the re-entered call lowers it, a return or a throw out of the callback
+  keeps it, the member's exit lowers it. So in `decompose` a re-entry is a
+  member call inside a run one call deeper, and a throw is an exit as a
+  return is. A top level outside $`C`$ has no call active; a module of
+  $`C`$ has its top segment's block, one call active from its start, so
+  its execution's ghost starts with one set.
 - The ghost after a step (`Ghost.next`) is built from its kind and from
   what the checks give at a step of $`C`$'s code (`CheckData`: the sites
   and keys of what it allocates, and its crossings in order). An entry
@@ -1782,8 +1815,10 @@ before certification.
 
 **What Lean assumes.** Over an actual execution (`decompose`): the client
 obligation at each step of outside code (`Row`); each step's world
-transition, which a safe execution's steps give (`AStep.adm`); the call
-discipline (`Disc`), a property of the terms an execution reaches; at
+transition (`AStep.adm`), which the step clause of `Safe` gives at every
+configuration safe at a positive budget (`astep_of_safe`); a
+well-formed first configuration, which every step keeps and which gives
+the call discipline (`XStep.of_wf`); at
 each step of $`C`$'s code, the sites, keys and crossings the checks give
 (`CheckData`) and the fields of a checked step that read its code
 (`PkgProps`: crossings meeting the marks, every value given to or stored
