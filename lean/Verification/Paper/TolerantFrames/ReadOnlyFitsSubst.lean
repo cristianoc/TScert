@@ -54,7 +54,7 @@ theorem Fits.sub_aux {V : Sites P → Val → Prop} (hV : Mono V) :
   | setElem hx hi hv hst hSx ha _ _ _ => intro _ hS; exact .setElem hx hi hv hst (hSx.trans hS) (hS _ ha)
   | lenOf hx _ => intro _ _; exact .lenOf hx
   | throw hx _ => intro _ _; exact .throw hx
-  | merge hx hy hst hs _ _ => intro _ hS; exact .merge hx hy hst (hS _ hs)
+  | merge hx hy hq hcl hst hs _ _ => intro _ hS; exact .merge hx hy hq hcl hst (hS _ hs)
   | makeKey hk hst hx hs _ _ => intro _ hS; exact .makeKey hk hst hx (hS _ hs)
   | gotoC π hc hcode henv hO => intro _ hS; exact .gotoC π hc hcode henv (hO.trans hS)
   | gotoOut hc hE henv hO => intro _ hS; exact .gotoOut hc hE henv (hO.trans hS)
@@ -256,10 +256,10 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     intro j Γ hΓ; subst hΓ
     simp only [subst]
     exact .throw (ih rfl)
-  | merge _ _ hst hs ihx ihy =>
+  | merge _ _ hq hcl hst hs ihx ihy =>
     intro j Γ hΓ; subst hΓ
     simp only [subst]
-    exact .merge (ihx rfl) (ihy rfl) hst hs
+    exact .merge (ihx rfl) (ihy rfl) hq hcl hst hs
   | makeKey _ hst _ hs ihk ihx =>
     intro j Γ hΓ; subst hΓ
     simp only [subst]
@@ -445,9 +445,8 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
     intro d Γ hL hΓ
     simp only [Lowered] at hL
     simp only [instantiate]
-    refine .merge (ihx d Γ hL.1 hΓ) (ihy d Γ hL.2 hΓ) (fun s hs => ?_) hF.none
-    have hs' : s ∈ Fl.O := by simpa using hs
-    exact ⟨(hc s hs').trans hst.1, (hc s hs').trans hst.2⟩
+    refine .merge (Q := Fl.O) (ihx d Γ hL.1 hΓ) (ihy d Γ hL.2 hΓ) (fun s hs => by simpa using hs) hc
+      (fun s hs => ⟨(hc s hs).trans hst.1, (hc s hs).trans hst.2⟩) hF.none
   | makeKey k x ihk ihx =>
     intro d Γ hL hΓ
     simp only [Lowered] at hL
