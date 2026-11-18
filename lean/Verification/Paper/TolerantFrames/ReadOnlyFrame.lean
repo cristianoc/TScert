@@ -201,6 +201,13 @@ that is not the package's has crossed read-only. -/
 def Confined (st : St P) : Prop :=
   ∀ l, ReachesFrom st.s.h st.roots l → st.g.origin l = some .exposed → st.g.E l
 
+/-- **(M), its storage clause**: storage that references a location of a
+local site through a field, a spine or an element cell is itself of a local
+site; local storage is held by no other storage. -/
+def LocalClosed (st : St P) : Prop :=
+  ∀ w u, st.s.h[w]? = some u → ∀ a l, next u a = some l → st.g.origin l = some .local →
+    st.g.origin w = some .local
+
 /-- **The frames' values are valid references** (`RootsOk` of the paper's
 model): every reference a value of a frame of code that is not the
 package's holds has the role its position demands. -/
@@ -208,8 +215,9 @@ def RootsValid (st : St P) : Prop := ∀ r ∈ st.roots, RefsOk st.s.W r
 
 /-- **A step of code that is not the package's**: it keeps the marks and
 the ghost history; what it allocates is outside storage; it changes only
-storage its frames reach, and its frames reach afterwards only storage they
-reached or it allocated; and it meets the trust row. -/
+storage its frames reach, its frames reach afterwards only storage they
+reached or it allocated, and what it leaves in storage it changes or
+allocates references only such storage; and it meets the trust row. -/
 structure OutsideStep (st st' : St P) : Prop where
   kept : Kept st st'
   exposed : st'.g.E = st.g.E
@@ -220,6 +228,8 @@ structure OutsideStep (st st' : St P) : Prop where
   noForge : ∀ l, ReachesFrom st'.s.h st'.roots l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
   row : Row st st'
   valid : RootsValid st'
+  writes : ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
+    ∀ (a : Label) (l : Nat), next u a = some l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
 
 theorem OutsideStep.origin {st st' : St P} (ho : OutsideStep st st') (l : Nat) :
     st'.g.origin l = st.g.origin l ∨ st'.g.origin l = none := by
@@ -256,6 +266,30 @@ theorem outside_step {st st' : St P} (ho : OutsideStep st st') (hm : MarksOk st)
         rw [ho'] at this; simp [this] at he
     · rw [ho'] at he; cases he
 
+/-- **An outside step keeps (M)'s storage clause**: what it leaves in
+storage it changes or allocates references only what its frames reached,
+none of it local (M), or what it allocated, outside storage; every other
+location keeps its contents, its references' sites and its own. -/
+theorem outside_localClosed {st st' : St P} (ho : OutsideStep st st') (hm : MarksOk st)
+    (hv : RootsValid st) (hl : LocalClosed st) : LocalClosed st' := by
+  intro w u hu a l hn hloc
+  by_cases hs : ∃ v, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v
+  · obtain ⟨v, hv₀, hv₁⟩ := hs
+    rw [hu] at hv₁
+    cases hv₁
+    have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
+    have hl' : l < st.s.h.length := next_lt (contents_valid hw hv₀) hn
+    rw [ho.kept.origin hl'] at hloc
+    rw [ho.kept.origin hw]
+    exact hl w _ hv₀ a l hn hloc
+  · rcases ho.writes w u hs hu a l hn with hr | hf
+    · obtain ⟨r, hr', π, hf⟩ := hr
+      have hl' : l < st.s.h.length := follows_lt (hv r hr') hf
+      rw [ho.kept.origin hl'] at hloc
+      exact absurd hloc ((hm l ⟨r, hr', π, hf⟩).1)
+    · have : st'.g.origin l = none := by simp [Ghost.origin, ho.fresh l hf]
+      rw [this] at hloc; cases hloc
+
 /-! ## Runs of code that is not the package's -/
 
 /-- **The invariants of a state inside a call at depth `d`**: at least `d ≥
@@ -268,6 +302,7 @@ structure Ok (d : Nat) (st : St P) : Prop where
   marks : MarksOk st
   confined : Confined st
   valid : RootsValid st
+  localClosed : LocalClosed st
 
 /-- **The bound a run gives `R_P`** (the draft, (L2)): the marks kept, the
 history growing, and every location of `R_P` at the first state changed
@@ -308,7 +343,8 @@ theorem outside_bound {Ψ : Protocol P} {d : Nat} {st st' : St P} (ho : OutsideS
     ⟨hok.pos, hok.len, by rw [ho.calls]; exact hok.len, ho.record,
       fun l hp => (Ghost.prot_congr ho.calls ho.record l).mpr hp, fun l he => by rw [ho.exposed]; exact he⟩
   exact ⟨⟨ho.kept, hg, fun l v hr hv => ⟨v, unchanged_of (hun l hr) hv, Change.Holds.refl _ _ _⟩⟩,
-    ⟨hok.pos, hg.len', Ghost.uniform_congr ho.calls ho.record hok.uniform, hm, hc, ho.valid⟩⟩
+    ⟨hok.pos, hg.len', Ghost.uniform_congr ho.calls ho.record hok.uniform, hm, hc, ho.valid,
+      outside_localClosed ho hok.marks hok.valid hok.localClosed⟩⟩
 
 /-- **A member's certificate** (the draft, "The protocol" and (L4)): a
 member's call inside a call at depth `d`, each run of code that is not the

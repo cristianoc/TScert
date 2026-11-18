@@ -1360,7 +1360,12 @@ active, a uniform history, and
   and no frame but the package's; an internal location is reachable from
   no value that has crossed. Lean states the clauses an outside step reads:
   no local or internal location is reachable from a frame of code that is
-  not the package's.
+  not the package's (`MarksOk`), and storage that references local storage
+  through a field, a spine or a cell is local (`LocalClosed`), kept by
+  outside steps (proved, `outside_localClosed`) and by checked steps
+  (`pkg_step_ok`, the check `localStores`). The clause on a closure's
+  bindings needs paths through captures, which the model's paths do not
+  follow.
 - (P2) (`Confined`): every exposed location reachable from a frame of code
   that is not the package's is in $`E`$. Every path from such a frame to a
   local or exposed location then passes a location of $`E`$, from which on
@@ -1445,7 +1450,9 @@ call.
 
 **What Lean assumes.** The trust row (`OutsideStep.row`); the two
 properties of the language's steps (`OutsideStep.reach`,
-`OutsideStep.noForge`); the validity of the frames' values
+`OutsideStep.noForge`) and a third of the same kind (`OutsideStep.writes`:
+what an outside step leaves in storage it changes or allocates references
+only storage its frames reached, or that it allocated); the validity of the frames' values
 (`RootsValid`, the model's `RootsOk`); for each member, the soundness of
 its certified effect on $`R_P`$ (`memberOfChecks`'s `certified`, what the
 pass's check of its body establishes) and its steps' checks; and, for the
