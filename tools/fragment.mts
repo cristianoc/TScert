@@ -687,9 +687,12 @@ export interface ComponentsAst {
   frames: { call: number; entries: FrameEntryAst[] }[];
 }
 
-/** An entry of a proposed frame at a call: a region and its possible parts. */
+/** An entry of a proposed frame at a call: a region and its possible parts.
+ * Its root is the storage the value at a field path from a value may be
+ * (`h.widths`: `{ value: h, fields: ["widths"] }`, the value itself at
+ * `[]`), or a site's. */
 export interface FrameEntryAst {
-  root: { value: number } | { site: number };
+  root: { value: number; fields: string[] } | { site: number };
   kind: "field" | "spine" | "cell";
   key: string | null;
   parts: (number | null)[];

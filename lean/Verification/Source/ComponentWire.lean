@@ -322,10 +322,11 @@ structure ProposedProtocol where
   entries : List ProtocolEntry
   deriving Repr
 
-/-- The storage a frame's region is read in: the storage a value may be,
-or a site's. -/
+/-- The storage a frame's region is read in: the storage the value at the
+field path `fields` from a value may be (`h.widths`: the value `h`, the
+path `[widths]`; the value itself at the empty path), or a site's. -/
 inductive FrameRoot where
-  | value (v : Nat)
+  | path (v : Nat) (fields : List String)
   | site (t : Nat)
   deriving Repr
 
@@ -690,9 +691,11 @@ def decodeProtocol (j : Json) : Except String ProposedProtocol := do
 
 def decodeFrameRoot (j : Json) : Except String FrameRoot := do
   match j.getObjVal? "value", j.getObjVal? "site" with
-  | .ok v, .error _ => fieldsExactly j ["value"]; return .value (← v.getNat?)
+  | .ok v, .error _ =>
+    fieldsExactly j ["value", "fields"]
+    return .path (← v.getNat?) (← (← jArr j "fields").mapM jStr)
   | .error _, .ok t => fieldsExactly j ["site"]; return .site (← t.getNat?)
-  | _, _ => throw "a frame's root is a value or a site"
+  | _, _ => throw "a frame's root is a value's field path or a site"
 
 def decodeFrameEntry (j : Json) : Except String FrameEntry := do
   fieldsExactly j ["root", "kind", "key", "parts", "protected"]
@@ -770,7 +773,7 @@ def Components.wellFormed (F : Components) : Except String Unit := do
     inRange "a frame's call" f.call F.calls.length
     for e in f.entries do
       match e.root with
-      | .value v => inRange "a frame's value" v nv
+      | .path v _ => inRange "a frame's value" v nv
       | .site t => inRange "a frame's site" t ns
       for t in e.parts do for t in t do inRange "a frame's part" t ns
 
