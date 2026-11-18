@@ -2119,8 +2119,7 @@ back from the term that runs it (`GraphCode.safeGraph_of_sim`).
 
 What the frame's data must be before a plan produces the form: `chk` the
 checks' interpretation of each step of $`C`$'s code (item 3 above), and
-`start` the histories of the executions that reach a call from a start
-holding no storage of $`C`$ (`Inv.of_lent`, `Ex.inv`).
+`start` the entry history (`lentStart`, below).
 
 **The executions of the claim are the paper's**
 (`ReadOnlyBridge.lean`). A step the claim's safety follows with the
@@ -2150,10 +2149,21 @@ $`C`$ active):
   read at the segment's last state; every unit whose plan reads a frame at
   a call of outside code has the same premises there.
 
-What remains for the claim is to discharge the two hypotheses from the
-checks: `ChkSound` from the checks of $`C`$'s code over the lowered graphs,
-and `StartInv` from the frame's `start`, the histories reached from a start
-holding no storage of $`C`$ (`Inv.of_lent`).
+**The entry history** (`lentStart`): the history after an entry step
+from a state where $`C`$ holds nothing protected. Every location is
+outside storage, none is exposed, each call of $`C`$ active at the term has
+one set of the history, empty, and $`B`$ is empty. It meets the invariants
+of states (`lentStart_inv`, by `Inv.of_lent`), so a frame whose starts are
+exactly it (`StartsLent`) meets `StartInv` (`startInv_of_lent`), and its
+starts are total (`lentStart_total`). Its protected set is empty, so the
+obligation `Keeps` reads at the entry is the weakest any history gives:
+outside code is bound only on what the execution's own crossings protect
+afterwards. An argument crossing in at a read-only type is not protected
+at the entry by this history; reliance on such an argument across a call
+reads its crossing at the entry, which this history does not record.
+
+What remains for the claim is `ChkSound`, from the checks of $`C`$'s code
+over the lowered graphs.
 
 **The counter-model the premises exclude.** An entry may hold a callback
 whose code is tagged with $`C`$ (`.graph … (some C)`), which meets its
