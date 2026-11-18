@@ -187,9 +187,24 @@ an exposed location that has crossed read-only, and released or outside
 storage an incoming read-only crossing protects, recorded in the history. -/
 def RowProtects (g : Ghost P) (l : Nat) : Prop := (g.origin l = some .exposed ∧ g.E l) ∨ (g.Lent l ∧ g.Prot l)
 
-/-- **The trust row `T_P` at a step**: the step changes no storage the row
-protects. It is trust: a hypothesis on outside steps. -/
-def Row (st st' : St P) : Prop := ∀ l, RowProtects st.g l → ¬ Changes st st' l
+/-- **The join of two protocols**, part by part. -/
+def Protocol.join (Ψ Θ : Protocol P) : Protocol P := fun p => Change.max (Ψ p) (Θ p)
+
+theorem Change.le_max_left (a b : Change) : a.le (Change.max a b) = true := by
+  unfold Change.max Change.le
+  split <;> simp_all <;> omega
+
+theorem Change.le_max_right (a b : Change) : b.le (Change.max a b) = true := by
+  unfold Change.max Change.le
+  split <;> simp_all <;> omega
+
+/-- **The client obligation `Θ` at a step** (the draft, Trust, the row's
+client obligation; read-only is `Θ = keep`): the step changes the storage
+the row protects within `Θ` at its part. It is trust: a hypothesis on
+outside steps. `Θ` is an effect of the same kind as `Ψ_P`. -/
+def Row (Θ : Protocol P) (st st' : St P) : Prop :=
+  ∀ l v, RowProtects st.g l → st.s.h[l]? = some v →
+    ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v'
 
 /-- **(M), the clauses an outside step reads**: no local or internal
 location is reachable from a frame of code that is not the package's. -/
@@ -218,7 +233,7 @@ the ghost history; what it allocates is outside storage; it changes only
 storage its frames reach, its frames reach afterwards only storage they
 reached or it allocated, and what it leaves in storage it changes or
 allocates references only such storage; and it meets the trust row. -/
-structure OutsideStep (st st' : St P) : Prop where
+structure OutsideStep (Θ : Protocol P) (st st' : St P) : Prop where
   kept : Kept st st'
   exposed : st'.g.E = st.g.E
   calls : st'.g.A = st.g.A
@@ -226,30 +241,34 @@ structure OutsideStep (st st' : St P) : Prop where
   fresh : ∀ l, st.s.h.length ≤ l → st'.g.site l = none
   reach : ∀ l, Changes st st' l → ReachesFrom st.s.h st.roots l
   noForge : ∀ l, ReachesFrom st'.s.h st'.roots l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
-  row : Row st st'
+  row : Row Θ st st'
   valid : RootsValid st'
   writes : ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
     ∀ (a : Label) (l : Nat), next u a = some l → ReachesFrom st.s.h st.roots l ∨ st.s.h.length ≤ l
 
-theorem OutsideStep.origin {st st' : St P} (ho : OutsideStep st st') (l : Nat) :
+theorem OutsideStep.origin {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (l : Nat) :
     st'.g.origin l = st.g.origin l ∨ st'.g.origin l = none := by
   by_cases hl : l < st.s.h.length
   · exact .inl (ho.kept.origin hl)
   · exact .inr (by simp [Ghost.origin, ho.fresh l (Nat.le_of_not_lt hl)])
 
 /-- **(L1) Outside step**: from a state meeting (M) and (P2), a step of code
-that is not the package's changes no location of `R_P`, and keeps (M) and
-(P2). A local location is out of its frames' reach (M); an exposed one it
+that is not the package's changes every location of `R_P` within `Θ`, and
+keeps (M) and (P2). A local location is out of its frames' reach (M); an exposed one it
 reaches has crossed (P2) and the row protects it; released and outside
 storage of `R_P` the row protects. -/
-theorem outside_step {st st' : St P} (ho : OutsideStep st st') (hm : MarksOk st) (hc : Confined st) :
-    (∀ l, st.g.InR l → ¬ Changes st st' l) ∧ MarksOk st' ∧ Confined st' := by
-  refine ⟨fun l hr hch => ?_, fun l hr' => ?_, fun l hr' he => ?_⟩
-  · have hreach := ho.reach l hch
-    rcases hr with h | h | ⟨hL, hp⟩
-    · exact (hm l hreach).1 h
-    · exact ho.row l (.inl ⟨h, hc l hreach h⟩) hch
-    · exact ho.row l (.inr ⟨hL, hp⟩) hch
+theorem outside_step {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (hm : MarksOk st) (hc : Confined st) :
+    (∀ l v, st.g.InR l → st.s.h[l]? = some v →
+      ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v') ∧
+      MarksOk st' ∧ Confined st' := by
+  refine ⟨fun l v hr hv => ?_, fun l hr' => ?_, fun l hr' he => ?_⟩
+  · by_cases hch : Changes st st' l
+    · have hreach := ho.reach l hch
+      rcases hr with h | h | ⟨hL, hp⟩
+      · exact ((hm l hreach).1 h).elim
+      · exact ho.row l v (.inl ⟨h, hc l hreach h⟩) hv
+      · exact ho.row l v (.inr ⟨hL, hp⟩) hv
+    · exact ⟨v, unchanged_of hch hv, Change.Holds.refl _ _ _⟩
   · rcases ho.origin l with ho' | ho'
     · rw [ho']
       rcases ho.noForge l hr' with hr | hl
@@ -270,7 +289,7 @@ theorem outside_step {st st' : St P} (ho : OutsideStep st st') (hm : MarksOk st)
 storage it changes or allocates references only what its frames reached,
 none of it local (M), or what it allocated, outside storage; every other
 location keeps its contents, its references' sites and its own. -/
-theorem outside_localClosed {st st' : St P} (ho : OutsideStep st st') (hm : MarksOk st)
+theorem outside_localClosed {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (hm : MarksOk st)
     (hv : RootsValid st) (hl : LocalClosed st) : LocalClosed st' := by
   intro w u hu a l hn hloc
   by_cases hs : ∃ v, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v
@@ -334,15 +353,18 @@ theorem Ghost.uniform_congr {g g' : Ghost P} (hA : g'.A = g.A) (hB : g'.B = g.B)
   rw [hA] at hX
   exact (hu X hX l).trans (Ghost.prot_congr hA hB l).symm
 
-/-- An outside step bounds `R_P` by `Ψ_P` (it changes none of it) and keeps
-the invariants. -/
-theorem outside_bound {Ψ : Protocol P} {d : Nat} {st st' : St P} (ho : OutsideStep st st') (hok : Ok d st) :
+/-- An outside step bounds `R_P` by every protocol `Ψ` with `Θ ⊑ Ψ`
+(`Ψ_P ⊔ Θ`), and keeps the invariants. -/
+theorem outside_bound {Ψ : Protocol P} {d : Nat} {st st' : St P} {Θ : Protocol P}
+    (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (ho : OutsideStep Θ st st') (hok : Ok d st) :
     RBound Ψ d st st' ∧ Ok d st' := by
   obtain ⟨hun, hm, hc⟩ := outside_step ho hok.marks hok.confined
   have hg : Grows d st.g st'.g :=
     ⟨hok.pos, hok.len, by rw [ho.calls]; exact hok.len, ho.record,
       fun l hp => (Ghost.prot_congr ho.calls ho.record l).mpr hp, fun l he => by rw [ho.exposed]; exact he⟩
-  exact ⟨⟨ho.kept, hg, fun l v hr hv => ⟨v, unchanged_of (hun l hr) hv, Change.Holds.refl _ _ _⟩⟩,
+  exact ⟨⟨ho.kept, hg, fun l v hr hv =>
+      let ⟨v', hv', hθ⟩ := hun l v hr hv
+      ⟨v', hv', hθ.mono (hΘ _)⟩⟩,
     ⟨hok.pos, hg.len', Ghost.uniform_congr ho.calls ho.record hok.uniform, hm, hc, ho.valid,
       outside_localClosed ho hok.marks hok.valid hok.localClosed⟩⟩
 
@@ -365,25 +387,25 @@ structure Member (P : Package) (Ψ : Protocol P) (G : (St P → Prop) → Prop) 
 /-- **A run of code that is not the package's inside a call at depth `d`**:
 a sequence of outside steps and member calls, each member call's own runs
 of code that is not the package's related by `Inner` one call deeper. -/
-inductive RunAt (Ψ : Protocol P) (G : (St P → Prop) → Prop) (Inner : Nat → St P → St P → Prop) (d : Nat) :
+inductive RunAt (Θ Ψ : Protocol P) (G : (St P → Prop) → Prop) (Inner : Nat → St P → St P → Prop) (d : Nat) :
     St P → St P → Prop
-  | nil (st : St P) : RunAt Ψ G Inner d st st
-  | outside {st st' st'' : St P} : OutsideStep st st' → RunAt Ψ G Inner d st' st'' → RunAt Ψ G Inner d st st''
+  | nil (st : St P) : RunAt Θ Ψ G Inner d st st
+  | outside {st st' st'' : St P} : OutsideStep Θ st st' → RunAt Θ Ψ G Inner d st' st'' → RunAt Θ Ψ G Inner d st st''
   | member {st st' st'' : St P} (m : Member P Ψ G) : m.Call d (Inner (d + 1)) st st' →
-      RunAt Ψ G Inner d st' st'' → RunAt Ψ G Inner d st st''
+      RunAt Θ Ψ G Inner d st' st'' → RunAt Θ Ψ G Inner d st st''
 
 /-- **A run within a budget of nested member calls `k`**. -/
-def Run (Ψ : Protocol P) (G : (St P → Prop) → Prop) : Nat → Nat → St P → St P → Prop
-  | 0 => RunAt Ψ G fun _ _ _ => False
-  | k + 1 => RunAt Ψ G (Run Ψ G k)
+def Run (Θ Ψ : Protocol P) (G : (St P → Prop) → Prop) : Nat → Nat → St P → St P → Prop
+  | 0 => RunAt Θ Ψ G fun _ _ _ => False
+  | k + 1 => RunAt Θ Ψ G (Run Θ Ψ G k)
 
-theorem RunAt.bound {Ψ : Protocol P} {G : (St P → Prop) → Prop} {Inner : Nat → St P → St P → Prop}
+theorem RunAt.bound {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop} {Inner : Nat → St P → St P → Prop}
     (hI : ∀ d t t', Inner d t t' → Ok d t → RBound Ψ d t t' ∧ Ok d t') {d : Nat} {st st' : St P}
-    (hr : RunAt Ψ G Inner d st st') (hok : Ok d st) : RBound Ψ d st st' ∧ Ok d st' := by
+    (hr : RunAt Θ Ψ G Inner d st st') (hok : Ok d st) : RBound Ψ d st st' ∧ Ok d st' := by
   induction hr with
   | nil st => exact ⟨RBound.refl hok, hok⟩
   | outside ho _ ih =>
-    obtain ⟨b₁, ok₁⟩ := outside_bound ho hok
+    obtain ⟨b₁, ok₁⟩ := outside_bound hΘ ho hok
     obtain ⟨b₂, ok₂⟩ := ih ok₁
     exact ⟨b₁.trans b₂, ok₂⟩
   | member m hc _ ih =>
@@ -397,29 +419,30 @@ location of `R_P` within `Ψ_P` at its part, keeps each in the region of
 every later state, and keeps the invariants. By induction on the budget,
 the member calls by their certificates, whose own runs of code that is not
 the package's are bounded at a smaller budget. -/
-theorem Run.bound {Ψ : Protocol P} {G : (St P → Prop) → Prop} :
-    ∀ (k d : Nat) (st st' : St P), Run Ψ G k d st st' → Ok d st → RBound Ψ d st st' ∧ Ok d st'
-  | 0, _, _, _, hr, hok => RunAt.bound (fun _ _ _ h _ => h.elim) hr hok
-  | k + 1, _, _, _, hr, hok => RunAt.bound (fun d t t' h ho => Run.bound k d t t' h ho) hr hok
+theorem Run.bound {Θ Ψ : Protocol P} {G : (St P → Prop) → Prop} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) :
+    ∀ (k d : Nat) (st st' : St P), Run Θ Ψ G k d st st' → Ok d st → RBound Ψ d st st' ∧ Ok d st'
+  | 0, _, _, _, hr, hok => RunAt.bound hΘ (fun _ _ _ h _ => h.elim) hr hok
+  | k + 1, _, _, _, hr, hok => RunAt.bound hΘ (fun d t t' h ho => Run.bound hΘ k d t t' h ho) hr hok
 
 /-! ## Invariants -/
 
-/-- **An invariant whose support lies in `R_P`** (the draft, (L4),
-`supp(I) ⊆ R_P`): a transition keeping the marks that changes no location
-of `R_P` keeps it. -/
-def SupportInR (I : St P → Prop) : Prop :=
-  ∀ st st', I st → Kept st st' → (∀ l, st.g.InR l → ¬ Changes st st' l) → I st'
+/-- **An invariant whose support lies in `R_P`, tolerating `Θ`** (the
+draft, (L4), `supp(I) ⊆ R_P`): a transition keeping the marks that changes
+every location of `R_P` within `Θ` keeps it. -/
+def SupportInR (Θ : Protocol P) (I : St P → Prop) : Prop :=
+  ∀ st st', I st → Kept st st' → (∀ l v, st.g.InR l → st.s.h[l]? = some v →
+    ∃ v', st'.s.h[l]? = some v' ∧ (Θ (st.part l)).Holds st.s.h.length v v') → I st'
 
-theorem RunAt.keeps {Ψ : Protocol P} {G : (St P → Prop) → Prop} {I : St P → Prop} (hG : G I)
-    (hs : SupportInR I) {Inner : Nat → St P → St P → Prop}
+theorem RunAt.keeps {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
+    {I : St P → Prop} (hG : G I) (hs : SupportInR Θ I) {Inner : Nat → St P → St P → Prop}
     (hIb : ∀ d t t', Inner d t t' → Ok d t → RBound Ψ d t t' ∧ Ok d t')
     (hIk : ∀ d t t', Inner d t t' → Ok d t → I t → I t') {d : Nat} {st st' : St P}
-    (hr : RunAt Ψ G Inner d st st') (hok : Ok d st) (hi : I st) : I st' := by
+    (hr : RunAt Θ Ψ G Inner d st st') (hok : Ok d st) (hi : I st) : I st' := by
   induction hr with
   | nil st => exact hi
   | outside ho _ ih =>
     have hun := (outside_step ho hok.marks hok.confined).1
-    exact ih (outside_bound (Ψ := Ψ) ho hok).2 (hs _ _ hi ho.kept hun)
+    exact ih (outside_bound hΘ ho hok).2 (hs _ _ hi ho.kept hun)
   | member m hc _ ih =>
     have ok₁ := (m.bound _ _ (fun t t' h ho => hIb _ t t' h ho) _ _ hc hok).2
     exact ih ok₁ (m.keeps I hG _ _ (fun t t' h ho => hIb _ t t' h ho) (fun t t' h ho => hIk _ t t' h ho) _ _ hc hok hi)
@@ -429,13 +452,14 @@ support lies in `R_P` and that holds where the run starts holds where it
 ends. Each member's call keeps it by `G_P`, its runs of code that is not
 the package's by the induction, and every outside step changes no location
 of its support (L1). -/
-theorem Run.keeps {Ψ : Protocol P} {G : (St P → Prop) → Prop} {I : St P → Prop} (hG : G I)
-    (hs : SupportInR I) :
-    ∀ (k d : Nat) (st st' : St P), Run Ψ G k d st st' → Ok d st → I st → I st'
-  | 0, _, _, _, hr, hok, hi => RunAt.keeps hG hs (fun _ _ _ h _ => h.elim) (fun _ _ _ h _ _ => h.elim) hr hok hi
+theorem Run.keeps {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
+    {I : St P → Prop} (hG : G I) (hs : SupportInR Θ I) :
+    ∀ (k d : Nat) (st st' : St P), Run Θ Ψ G k d st st' → Ok d st → I st → I st'
+  | 0, _, _, _, hr, hok, hi =>
+    RunAt.keeps hΘ hG hs (fun _ _ _ h _ => h.elim) (fun _ _ _ h _ _ => h.elim) hr hok hi
   | k + 1, _, _, _, hr, hok, hi =>
-    RunAt.keeps hG hs (fun d t t' h ho => Run.bound k d t t' h ho) (fun d t t' h ho => Run.keeps hG hs k d t t' h ho)
-      hr hok hi
+    RunAt.keeps hΘ hG hs (fun d t t' h ho => Run.bound hΘ k d t t' h ho)
+      (fun d t t' h ho => Run.keeps hΘ hG hs k d t t' h ho) hr hok hi
 
 /-! ## Ownership -/
 
@@ -460,10 +484,10 @@ theorem ownership {d : Nat} {st t : St P} {L : Nat → Prop} (ha : Admitted st L
 the package's, inside a call at depth `d`, whose run bounds the heap by its
 own effect `Φ` (its normal effect at a normal exit, `Φᵉ` at an exceptional
 one), is an action of `Φ ⊕_P Ψ_P`, the history growing. -/
-theorem readOnly_rule {Ψ : Protocol P} {G : (St P → Prop) → Prop} {Φ : Footprint} {ρ : Env} {k d : Nat}
-    {st st' : St P} (hΦ : TolerantFrames.Action Φ ρ st.s st'.s) (hr : Run Ψ G k d st st') (hok : Ok d st) :
+theorem readOnly_rule {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop} {Φ : Footprint} {ρ : Env} {k d : Nat}
+    {st st' : St P} (hΦ : TolerantFrames.Action Φ ρ st.s st'.s) (hr : Run Θ Ψ G k d st st') (hok : Ok d st) :
     Leads d Φ Ψ ρ st st' := by
-  obtain ⟨⟨hk, hg, hb⟩, -⟩ := Run.bound k d st st' hr hok
+  obtain ⟨⟨hk, hg, hb⟩, -⟩ := Run.bound hΘ k d st st' hr hok
   refine ⟨⟨hk, fun l v hv => ?_⟩, hg⟩
   obtain ⟨v', hv', ha⟩ := hΦ.2.2 l v hv
   refine ⟨v', hv', fun hR => ?_, fun _ => ha⟩
@@ -508,11 +532,11 @@ theorem readOnly_frame {Φ : Footprint} {Ψ : Protocol P} {C : ConditionOn (St P
 Proposition "Reliance"): a fact whose support lies inside `R_P`, with
 `Ψ_P ◁ S`, holds after every run of code that is not the package's inside a
 call of the package, from a state meeting the invariants. -/
-theorem readOnly_rely {Ψ : Protocol P} {G : (St P → Prop) → Prop} {C : ConditionOn (St P)}
+theorem readOnly_rely {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop} {C : ConditionOn (St P)}
     {A : AssertionOn (St P)} {S : Footprint} (hs : (states P).Supports C A S) {ρ : Env} {m k d : Nat}
-    {st st' : St P} (hr : Run Ψ G k d st st') (hok : Ok d st) (hi : Inside Ψ S ρ st) (hc : C ρ m st st')
+    {st st' : St P} (hr : Run Θ Ψ G k d st st') (hok : Ok d st) (hi : Inside Ψ S ρ st) (hc : C ρ m st st')
     (hA : A ρ m st) : A ρ m st' := by
-  obtain ⟨⟨hk, -, hb⟩, -⟩ := Run.bound k d st st' hr hok
+  obtain ⟨⟨hk, -, hb⟩, -⟩ := Run.bound hΘ k d st st' hr hok
   exact hs ρ m st st' hk hc hA (supported_of_inside hi hb)
 
 end Verification.TolerantFrames.ReadOnly

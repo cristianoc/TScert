@@ -1507,9 +1507,11 @@ and member calls, each member call's own runs of code that is not $`C`$'s one ca
 (`OutsideStep`) keeps the marks and the history, allocates outside storage
 and meets three hypotheses: it changes only storage its frames reach and
 afterwards reaches only storage it reached or allocated (properties of the
-language's steps), and it meets the trust row $`T_C`$ read by the
-membership test (`Row`): it changes no exposed location of $`E`$ and no
-released or outside location recorded in $`A`$ or $`B`$.
+language's steps), and it meets the client obligation $`\Theta_C`$ read
+by the membership test (`Row`): it changes each exposed location of $`E`$
+and each released or outside location recorded in $`A`$ or $`B`$ within
+$`\Theta_C`$ at its part. $`\Theta_C`$ is an effect of the same type as
+$`\Psi_C`$ (`Protocol`); the read-only row is $`\Theta_C=\mathsf{keep}`$.
 
 **Read-only frame.**
 
@@ -1549,14 +1551,17 @@ active, a uniform history, and
 over outside steps meeting their hypotheses.
 
 - (L1) Outside step (proved, `outside_step`). For a step $`s\to s'`$ of
-  code that is not $`C`$'s: $`h'(l)=h(l)`$ for every
+  code that is not $`C`$'s:
+  $`\Theta_C(\mathrm{part}(l))_{|h|}(h(l),h'(l))`$ for every
   $`l\in R_C(s)`$, and $`s'`$ meets (M) and (P2).
 - (L2) Outside run (proved, `Run.bound`). For a run $`s\to^{*}s'`$ of code
   that is not $`C`$'s inside an active call $`c`$ of $`C`$:
   every $`l\in R_C(s)`$ is in $`R_C(t)`$ for every state $`t`$ of the run,
-  $`\Psi_C(\mathrm{part}(l))_{|h|}(h(l),h'(l))`$, and $`s'`$ meets the
-  invariants. By induction on the budget, member calls by their
-  certificates.
+  $`(\Psi_C\sqcup\Theta_C)(\mathrm{part}(l))_{|h|}(h(l),h'(l))`$ (the
+  run's bound is any protocol above $`\Theta_C`$ that the members'
+  certificates meet, `Protocol.join` giving $`\Psi_C\sqcup\Theta_C`$),
+  and $`s'`$ meets the invariants. By induction on the budget, member
+  calls by their certificates.
 - (L3) Rigidity (proved, `HSteps.grows`, `InR.mono`, `Leads.trans`). The
   relation $`s\leadsto s'`$, holding when the heaps are related by the
   action of $`\Phi\oplus_C\Psi_C`$ at $`R_C(s)`$ and the history grows
@@ -1568,10 +1573,13 @@ over outside steps meeting their hypotheses.
   rigid and $`\Psi_C\sqsubseteq\Phi`$ (a change within $`\Psi_C`$ at a
   location of $`R_C`$ is one $`\Phi`$ allows there),
   $`\Phi\oplus_C\Psi_C`$ is rigid on such states; $`\Psi_C`$ composes at
-  each part by itself (`Change.Holds.trans`). $`\top`$ meets both
-  premises for every $`\Psi_C`$ (`Leads.trans_top`).
+  each part by itself (`Change.Holds.trans`). The same holds of
+  $`\Psi_C\sqcup\Theta_C`$: what (L3) asks of $`\Psi_C`$ it asks of
+  $`\Theta_C`$, rigidity at each part, which every change has, and
+  $`\Psi_C\sqcup\Theta_C\sqsubseteq\Phi`$. $`\top`$ meets both premises
+  for every protocol (`Leads.trans_top`).
 - (L4) Invariants (proved, `Run.keeps`). For $`I\in G_C`$ with
-  $`\mathrm{supp}(I)\subseteq R_C`$ (`SupportInR`) and $`I`$ true at
+  $`\mathrm{supp}(I)\subseteq R_C`$ tolerating $`\Theta_C`$ (`SupportInR`) and $`I`$ true at
   $`s`$, a run as in (L2) ends in a state where $`I`$ holds.
 - (O) Ownership (proved, `ownership`). A write of $`C`$ that stores
   a value $`v`$ into a location of $`R_C(s)`$, or of
@@ -1651,7 +1659,7 @@ integrity state (frozen, sealed, non-extensible), and its field write
 (`writeField`) never throws for one. The protocol's `integrity` key is
 unsupported in Lean, and nothing is built on it.
 
-**What Lean assumes.** The trust row (`OutsideStep.row`); the two
+**What Lean assumes.** The client obligation (`OutsideStep.row`); the two
 properties of the language's steps (`OutsideStep.reach`,
 `OutsideStep.noForge`) and a third of the same kind (`OutsideStep.writes`:
 what an outside step leaves in storage it changes or allocates references
