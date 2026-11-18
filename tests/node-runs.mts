@@ -16,6 +16,8 @@ assert.ok(Number.isNaN(Number(runExample("invalid-disjunctive-test-facts", "sum(
 assert.equal(runExample("native-length-literal", 'order()'), "0,1,2");
 assert.ok(Number.isNaN(Number(runExample("invalid-invariant-field-dropped-by-call", "walk([1, 2], { i: 0 })"))),
   "a call moving the cursor's field below 0 reads xs[-1]");
+assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-cursor-given", "walk([1, 2, 3], (c) => { c.i = 5; })"))),
+  "a visitor given the walker's cursor moves it past the array through its own alias");
 assert.ok(Number.isNaN(Number(runExample("invalid-invariant-local-index-lacking", "sum([1, 2])"))),
   "a body moving the index below 0 reads xs[-1]");
 assert.ok(Number.isNaN(Number(runExample("invalid-handler-edge-lacking-invariant", "h([1], -1)"))),
