@@ -473,6 +473,85 @@ function honest(file: string, unit: string, p: Pass = pass(fragmentOf(run(file))
   accepted(p, unit, `${file} honest`);
 }
 
+// The component family (docs/drafts/readonly-handles.md): what the parser's
+// document states of a package of two exports, of the same package under a
+// changed manifest, and a family forged, refused by the verifier's decoder.
+
+/** The family a case's fragment states. */
+const familyOf = (artifacts: string): Ast["components"] => fragmentAst(artifacts).components;
+/** The names of a family's component of `kind` at the location ending `at`. */
+function entryNames(family: Ast["components"], kind: string, at: string): string[] {
+  const c = must(family.components.find((x) => x.kind === kind && x.location.endsWith(at)), `${kind} ${at}`);
+  return "known" in c.interface ? c.interface.known.entries.map((e) => e.name).sort() : [];
+}
+
+control("component family: a package of two exports", async (): Promise<void> => {
+  const artifacts = run("component-package/src/main");
+  const family = familyOf(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = (text: string): number => {
+    const i = source.indexOf(text);
+    assert.ok(i >= 0, `the fixture holds ${text}`);
+    return i;
+  };
+  // Its interface: both exports' targets mapped back to their sources, the
+  // re-export followed; a module no export names is entered only as itself.
+  assert.deepEqual(entryNames(family, "package", "package.json"),
+    ["boxed", "counter", "doubled", "later", "make", "prepare"]);
+  assert.deepEqual(entryNames(family, "module", "internal.ts"), ["twice"]);
+  for (const c of family.components.filter((x) => x.kind === "module")) assert.equal(c.parent, 0);
+  // The handle's record crosses at a read-only type, its fields the type
+  // does not show among its keys; the box crosses at a writable one.
+  const siteAt = (text: string): (typeof family.sites)[number] =>
+    must(family.sites.find((s) => s.pos[0] === at(text)), `the site ${text}`);
+  const handle = siteAt("{ size: n, widths: [n], cache: [] }");
+  assert.deepEqual(handle.keys, ["cache", "size", "widths"]);
+  assert.ok(handle.marks.every((m) => m.mark === "exposed"), JSON.stringify(handle.marks));
+  const inner = siteAt("[n] } }");
+  assert.ok(inner.marks.every((m) => m.mark === "released"), JSON.stringify(inner.marks));
+  // Two closures escape the package: through a result and an argument.
+  const vias = family.escapes.filter((e) => e.component === 0).map((e) => e.via).sort();
+  assert.deepEqual(vias, ["argument", "result"]);
+  // Each code's innermost component is its module's.
+  const main = must(family.components.findIndex((x) => x.kind === "module" && x.location.endsWith("main.ts")), "main.ts");
+  assert.ok(family.codes.filter((c) => c.module === family.components[main]?.location).every((c) => c.component === main));
+  say("component family: a package's interface through both exports and a re-export, a hidden field, a writable descendant and two escapes");
+});
+
+control("component family: a changed manifest", async (): Promise<void> => {
+  const work = runDirectory("component-manifest-");
+  const copy = join(work, "component-package");
+  cpSync(join(root, "pipeline/examples/component-package"), copy, { recursive: true });
+  const manifest: unknown = JSON.parse(readFileSync(join(copy, "package.json"), "utf8"));
+  assert.ok(isObject(manifest) && isObject(manifest.exports));
+  const { "./extra": _dropped, ...kept } = manifest.exports;
+  writeFileSync(join(copy, "package.json"), JSON.stringify({ ...manifest, exports: kept }));
+  const outcome = checkSource(join(copy, "src/main.ts"), tsconfigOf(copy), undefined, undefined, true);
+  assert.notEqual(outcome.status, "error", outcome.status === "verified" ? "" : outcome.detail);
+  assert.deepEqual(entryNames(familyOf(outcome.artifacts), "package", "package.json"), ["boxed", "counter", "later", "prepare"]);
+  say("component family: the manifest without `./extra`, its entries gone from the package's interface");
+});
+
+control("forged fragment: a component family's fields", async (): Promise<void> => {
+  const artifacts = run("component-package/src/main");
+  const ast = fragmentAst(artifacts);
+  const family: unknown = structuredClone(ast.components);
+  assert.ok(isObject(family) && Array.isArray(family.sites) && Array.isArray(family.codes));
+  const { sites: _missing, ...withoutSites } = family;
+  const site: unknown = family.sites[0], code: unknown = family.codes[0];
+  assert.ok(isObject(site) && isObject(code));
+  const { anyKey, ...withoutKey } = site;
+  const forgeries: [string, unknown][] = [
+    ["missing", withoutSites],
+    ["extra", { ...family, members: [] }],
+    ["misplaced", { ...family, sites: [withoutKey, ...family.sites.slice(1)], codes: [{ ...code, anyKey }, ...family.codes.slice(1)] }],
+  ];
+  for (const [name, components] of forgeries)
+    refusedFile(pass(forged(artifacts, `forged-family-${name}`, { ...ast, components })), `a family's ${name} field`,
+      /components: unexpected fields/);
+  say("forged family: a missing, an extra and a misplaced field, each refused by the decoder");
+});
+
 control("forged fragment: a false bound in a Boolean postcondition", async (): Promise<void> => {
   const artifacts = run("pretext-clause-postcondition");
   const ast = fragmentAst(artifacts);

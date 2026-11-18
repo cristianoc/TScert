@@ -155,6 +155,7 @@ fragment.
 | Construct | Reason | Owner | Cases |
 | --- | --- | --- | --- |
 | An empty module (no function, no initialization code) | Accepting it would check nothing | [modules and code units](SOURCE-CONTRACTS.md#modules-and-code-units) | — |
+| A client obligation (`@clients`) on a type of a package whose interface is not known: a subpath pattern, a target no source of the project gives | The obligation bounds code outside a component, which only a known interface delimits | [`@clients P`](ANNOTATIONS.md#clients-p) | `component-unknown/src/handles-refused` |
 | An enum member initializer reading a member not yet initialized, or the enum itself, a closure's read included; a call in one that can read the enum | JavaScript reads it before the emit writes it | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-computed-forward`, `invalid-enum-computed-call-order` |
 | An enum member named `__proto__` | The emit's assignment runs the prototype's setter and creates no property | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-proto-member` |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping may be written at the name | [enums](SOURCE-CONTRACTS.md#enums) | `invalid-enum-computed-nan-name` |
@@ -276,6 +277,7 @@ representation does not state it; the paths are in
 
 | Construct | Obstacle | Owner | Cases |
 | --- | --- | --- | --- |
+| A key of a client obligation (`@clients`) other than `values`, `spines` and a path from `this`: `integrity` among them | The model's objects carry no integrity state (frozen, sealed, non-extensible), so no obligation on it is stated | [`@clients P`](ANNOTATIONS.md#clients-p) | — |
 | `keyof T`, `T[K]` over a function's own type parameter | They are functions of an instance's key set, which a parameter row does not determine | [computed types](SOURCE-CONTRACTS.md#computed-types) | — |
 | A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not a record of literals and primitives, or of a class with a static method or private static | No term of the fragment states it exactly | [computed types](SOURCE-CONTRACTS.md#computed-types) | — |
 | A mapped type the reader reads as written (an annotation of the file, or a declaration it imports) with an `as` clause or with members; one over `keyof` an indexed type whose value is not `X[P]`, or optional over an index signature's keys | No term states the remapped or index-modified result. A member of such a type reached through `typeof` at a union of literals and primitive families is the type TypeScript computes ([computed types](SOURCE-CONTRACTS.md#computed-types), under the trust surface's computed-types row): the mapped type is not read | [computed types](SOURCE-CONTRACTS.md#computed-types) | `invalid-mapped-type-as-clause`; through `typeof`, `invalid-written-remapped-member-value-import`, refused at a written application inside the member |

@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { DeclarationDocument, ExitSchema, Exits, IndexFact, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationDocument, ExitSchema, Exits, Frame, IndexFact, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
 // span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
 import type { GuardUndefined } from "./host-families.mts";
@@ -430,6 +430,106 @@ export interface ModuleAst {
   functions: FunctionAst[];
   absent: { name: string; namePos: Span; reason: string }[];
 }
+
+/** A component's mark for one of its allocation sites
+ * (docs/drafts/readonly-handles.md, "Marks"): its storage held only by the
+ * component's frames (`local`), also by its bindings and storage
+ * (`internal`), reachable from a crossing value at read-only positions only
+ * (`exposed`), or reachable from one otherwise (`released`). */
+export type Mark = "local" | "internal" | "exposed" | "released";
+
+/** An entry of a component's interface: the code it names, by its module and
+ * its span there, under the name the interface gives it. */
+export interface EntryAst {
+  name: string;
+  module: string;
+  pos: Span;
+}
+
+/** A component of the family the checked file's code lies in
+ * (docs/drafts/readonly-handles.md, "Components"): a package, entered
+ * through its manifest's `exports` (`location` the manifest's); a module
+ * file, entered through its exports; or a class body, entered through its
+ * constructor and its members not named privately (`location` its module's,
+ * `pos` its span). `parent` is the component it is nested in, by its index
+ * in the family, an earlier one. Its interface lists every entry, or states
+ * why it is not known. */
+export interface ComponentAst {
+  kind: "package" | "module" | "class";
+  location: string;
+  pos: Span | null;
+  parent: number | null;
+  interface: { known: { entries: EntryAst[] } } | { unknown: { reason: string } };
+}
+
+/** A position a crossing passes its value at, the owner of its type: a
+ * code's parameter, receiver or result, a call's argument or result, a
+ * thrown or caught value, a field of storage outside code reaches, or a
+ * module binding a module exports. */
+export type PositionAst =
+  | { parameter: { code: Span; index: number } }
+  | { receiver: { code: Span } }
+  | { result: { code: Span } }
+  | { argument: { call: Span; index: number } }
+  | { callResult: { call: Span } }
+  | "thrown"
+  | "caught"
+  | { field: { key: string | null } }
+  | { binding: { name: string } };
+
+/** One allocation site: its kind, the field keys its records may have
+ * (`anyKey` where a computed key may add any), and its mark for each
+ * component enclosing its code. */
+export interface SiteAst {
+  module: string;
+  pos: Span;
+  kind: "object" | "array" | "closure" | "instance" | "native";
+  keys: string[];
+  anyKey: boolean;
+  marks: { component: number; mark: Mark }[];
+}
+
+/** One crossing of a value between a component and code that is not its:
+ * its direction, the position whose type it has, whether that type is
+ * read-only throughout, and its value, by index in `values`. */
+export interface CrossingAst {
+  module: string;
+  at: Span;
+  component: number;
+  direction: "in" | "out";
+  position: PositionAst;
+  readOnly: boolean;
+  value: number | null;
+}
+
+/** The description of the family of components the checked file's code
+ * lies in (docs/drafts/readonly-handles.md), its package's code where it has
+ * one, else its own: the proposals the read-only frame's checks read, each
+ * fact at the module and span of the code it is of.
+ * - `components`: the family, laminar by `parent`.
+ * - `codes`: each code (a function, a method, a constructor, a closure) with
+ *   its innermost component.
+ * - `sites`: each allocation site, native results included.
+ * - `values`: the possible sites of a binding's or an expression's value, by
+ *   index in `sites`, and the components it may enter from outside.
+ * - `crossings`: each crossing of a value.
+ * - `escapes`: each code of a component given to code that is not its
+ *   (`via` a result, an argument, a throw or a store) at the crossing `at`.
+ * - `clients`: the client obligation each exported type states (`@clients`,
+ *   `stated`, else read-only), a frame over `this` at position 0.
+ * - `guarantees`: the type invariants (`@invariant`) of the family's types,
+ *   candidates of its guarantee, as index facts of `this` at position 0. */
+export interface ComponentsAst {
+  components: ComponentAst[];
+  codes: { module: string; pos: Span; component: number }[];
+  sites: SiteAst[];
+  values: { module: string; pos: Span; sites: number[]; incoming: number[] }[];
+  crossings: CrossingAst[];
+  escapes: { module: string; code: Span; component: number; via: "result" | "argument" | "throw" | "store"; at: Span }[];
+  clients: { module: string; name: string; pos: Span; stated: boolean; frame: Frame }[];
+  guarantees: { module: string; name: string; pos: Span; facts: IndexFact[] }[];
+}
+
 export interface Ast {
   file: string;
   sourceSha256: string;
@@ -440,6 +540,9 @@ export interface Ast {
      expression statements, run once after the function declarations exist. */
   init: Stmt[];
   functions: FunctionAst[];
+  /** The family of components the file's code lies in, with the read-only
+   * frame's proposals about it. */
+  components: ComponentsAst;
   /** The program modules certified imports may read, each once. */
   modules: ModuleAst[];
   /** The names that code the lowering leaves out (a census's omitted
