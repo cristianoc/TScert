@@ -26,6 +26,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyExec
 import Verification.Paper.TolerantFrames.ReadOnlyFlow
 import Verification.Paper.TolerantFrames.ReadOnlyFits
 import Verification.Paper.TolerantFrames.ReadOnlyFitsCheck
+import Verification.Paper.TolerantFrames.ReadOnlyFitsDecide
 import Verification.Paper.TolerantFrames.ReadOnlyFitsEntry
 import Verification.Paper.TolerantFrames.ReadOnlyFitsReach
 import Verification.Paper.TolerantFrames.ReadOnlyFitsStep
