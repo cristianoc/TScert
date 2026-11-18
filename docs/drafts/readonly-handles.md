@@ -2581,11 +2581,18 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
   location an entry's argument reaches read-only at its parameter's type,
   inside a call of $`C`$, has a witness at the entry history, and at every
   history the entry's grows into inside the call (`Grows`).
+- **The history grows along the call** (`XStep.grows`, `Ex.grows`,
+  `witness_along`): a step keeping `d` calls of $`C`$ active grows the
+  history at depth `d`, a step of outside code inside a call only
+  allocating and a step of $`C`$'s code a checked step at depth `d`; so
+  along an execution from an entry keeping its call active, every location
+  an argument reaches read-only at its parameter's type has a live witness
+  at depth `1`.
 
 Proof scope: the lemmas above are proved. Not proved here: the frame of
 the call the pass reads (the innermost frame of $`C`$'s code at the call
-state, from a reached state's fit), the keys of each region's locations,
-and the growth of the history from the entry to the call.
+state, from a reached state's fit) and the keys of each region's
+locations.
 
 ### Located reductions
 
