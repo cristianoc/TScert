@@ -140,7 +140,7 @@ met** (proved): under a client frame whose obligation is met from every
 history it starts from, a request safe under the frame is safe at every
 call. -/
 theorem framed_callSafe {r : SourceRequest σ ι} (hr : FramedRequestSafe r fr) (hm : fr.Met) :
-    CallSafe fr.Entry r := by
+    CallSafe fr.Call r := by
   obtain ⟨hs, hf, he, hg, ha, hc⟩ := hr
   refine ⟨fun η hη n W h L d hE hR hN => ?_, fun hb η n W h L d hE hR hL hd hN => ?_,
     fun hn η n W h L d hE hR hN => ?_, fun Φ regions hreg η n W h L d hE hR hN => ?_,
@@ -177,7 +177,7 @@ their depth, and each of its calls of outside code is a run of outside code
 theorem framed_reaches {r : SourceRequest σ ι} (ha : FramedAssertionsClause r fr) {η : MixedAssignment ι}
     (hη : r.Admits η) {n : Nat} {W : WorldT n} {h : Heap} {L : List Tm} {d : Tm} (hn : 0 < n)
     (hE : EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h) (hR : RootsOk W (envOf L d)) (hN : fr.Entry h (gotoOf r.program r.start L d r.comp))
+      (envOf L d) n W h) (hR : RootsOk W (envOf L d)) (hN : fr.Call h (gotoOf r.program r.start L d r.comp))
     {g : Ghost (fr.F.at fr.C)} (hg : fr.start n W h (gotoOf r.program r.start L d r.comp) g)
     {j : Nat} {h' : Heap} {l : Nat} {ρ' : Env} (hj : j + 1 < n)
     (hr : ReachesIn r.program j h (.at r.start (envOf L d)) h' (.at l ρ')) :
@@ -208,7 +208,7 @@ theorem callSafe_of_member {f : FilePlans} {j : Nat} (hm : MemberSafe f j) :
     ∃ p c, f.plans[j]? = some (.ok p) ∧ p.certify = .ok c ∧
       match c with
       | .graph _ _ r => ∀ Ent, CallSafe Ent r
-      | .framed _ _ r fr => fr.Met → CallSafe fr.Entry r := by
+      | .framed _ _ r fr => fr.Met → CallSafe fr.Call r := by
   obtain ⟨p, c, hp, hc, hs⟩ := hm
   refine ⟨p, c, hp, hc, ?_⟩
   cases c with

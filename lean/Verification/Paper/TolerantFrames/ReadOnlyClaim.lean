@@ -25,8 +25,9 @@ calculus's steps, with the history it reads:
 - **The history along an execution** (`ClientFrame.next`): the history of
   the paper's executions (`Ghost.stepAt`, `Ghost.next` at the
   configurations' heaps and terms, `next_conf`).
-- **The entries the claim is about** (`ClientFrame.Entry`), four named
-  premises beside the obligation: code provenance (`Provenance`: every code
+- **The calls the claim is about** (`ClientFrame.Call`): the frame's
+  well-formed entries (`enters`, read at the call alone), and four named
+  premises (`ClientFrame.Entry`) beside the obligation: code provenance (`Provenance`: every code
   the term and the heap hold that carries a tag of `C` is one of `C`'s own
   codes, `codes`; Assumption "Clients", outside code enters `C` only
   through its interface), the call discipline (`Discipline`: the term
@@ -97,6 +98,11 @@ structure ClientFrame (τ : Type) where
   /-- Every state has a history an entry may start from: the claim reads no
   entry as one without a history. -/
   start_total : ∀ k (W : WorldT k) h t, ∃ g, start k W h t g
+  /-- **The calls the claim is about** (named premise, well-formed
+  entries): the states at which a call of the unit's code may start, such
+  as those whose slots of the module's functions hold the module's
+  closures. No step need keep it: it is read at the call alone. -/
+  enters : Heap → Tm → Prop
 
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
@@ -140,6 +146,10 @@ def ClosedAt (h : Heap) (t : Tm) : Prop := Scoped 0 t ∧ ∀ v ∈ h, Scoped 0 
 /-- **An entry the framed claim is about**: code provenance, the call
 discipline, outside code lowered source and closed values. -/
 def Entry (h : Heap) (t : Tm) : Prop := fr.Provenance h t ∧ Discipline h t ∧ fr.Source h t ∧ ClosedAt h t
+
+/-- **A call the claim is about**: the premises every step keeps
+(`Entry`) and the frame's well-formed entries (`enters`). -/
+def Call (h : Heap) (t : Tm) : Prop := fr.Entry h t ∧ fr.enters h t
 
 /-- **Every step keeps an entry's premises** (proved): code provenance and
 outside code lowered source by `step_prov`, the call discipline by

@@ -440,10 +440,10 @@ def FitsAt (Fl : Flow (fr.F.at fr.C)) (a : Conf × Ghost (fr.F.at fr.C)) : Prop 
   Fits Fl (VJ Fl a.2 a.1.s.h.length) (fun _ => none) Alloc.outside true Fl.O a.1.t ∧ HeapInv Fl a.2 a.1.s.h
 
 /-- **Every entry fits the flow** (the premise the fit of an entry
-discharges): at an entry meeting the frame's premises, every history the
-frame starts from. -/
+discharges): at a call the claim is about, every history the frame
+starts from. -/
 def EntryFits (Fl : Flow (fr.F.at fr.C)) : Prop :=
-  ∀ (x : Conf) g, fr.Entry x.s.h x.t → fr.start x.s.n x.s.W x.s.h x.t g → fr.FitsAt Fl (x, g)
+  ∀ (x : Conf) g, fr.Call x.s.h x.t → fr.start x.s.n x.s.W x.s.h x.t g → fr.FitsAt Fl (x, g)
 
 variable {fr} {Fl : Flow (fr.F.at fr.C)}
 

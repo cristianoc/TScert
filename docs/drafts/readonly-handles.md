@@ -2075,6 +2075,10 @@ a claim of its own beside the ordinary one (`PassUnit.FramedRequestSafe`,
   and a typed heap, at every state of the execution, as in
   `SafePostExcW`; after a step of outside code that breaks the obligation
   nothing is claimed. Progress is never conditional on the obligation.
+- **The calls the claim is about** (`ClientFrame.Call`): the frame's
+  well-formed entries (`enters`, read at the call alone: the states at
+  which a call of the unit's code starts, such as those whose slots of the
+  module's functions hold the module's closures), and the entry premises.
 - **The entry premises** (`ClientFrame.Entry`), beside the obligation:
   *code provenance* (`Provenance`: every code the term and the heap hold,
   of a closure or of a run, that carries a tag of $`C`$ is one of `codes`;
@@ -2097,8 +2101,8 @@ a claim of its own beside the ordinary one (`PassUnit.FramedRequestSafe`,
   every state of the execution (`Entry.steps`).
 - **The six clauses** (`FramedSafeClause` to
   `FramedCodeAssertionsClause`): `RequestSafe`'s, each read at every call of
-  the code (`gotoOf` at its arguments and receiver) meeting the entry
-  premises and from every history
+  the code (`gotoOf` at its arguments and receiver) the claim is about
+  (`Call`) and from every history
   the frame starts from, along those executions; an assertion is read at
   each state that runs the graph at its label (`AssertedAt`).
 
@@ -2379,11 +2383,25 @@ at a position of outside code and its heap meets the flow
 (`fits_roots`), so `SitesSound` holds at the flow's heap of sites and
 $`O`$ (`sitesSound_of_fits`).
 
-Proof scope: the lemmas above are proved. Not proved here: that every
-entry fits (`EntryFits`: the entry's environment at its node's slots and
-signatures, every closure of $`C`$'s code the entry state holds meeting its
-code's proposal), and the checker that decides `CodeOk` and `Flow.Facts`
-from the lowered graphs.
+**Every entry fits** (`ReadOnlyFitsEntry.lean`) where the frame starts
+from the entry history (`StartsEntry`) and every call the claim is about
+has the shape the flow reads (`EntryShape`): a run of $`C`$'s code at a
+node whose slots naming a signature hold closures of it (`EnvFn`), and
+every value of its environment and of its heap well formed (`EntryVal`:
+every value it holds in its code is a value, every closure of $`C`$'s
+code among them meeting its proposal's entry signatures, `FnsOk`). The
+values a value holds keep code provenance and valid references
+(`Within.prov`, `Within.refsOkN`); at the entry history every location is
+outside storage, so a well-formed value of the entry meets every set
+holding outside storage (`VJ.entry`) and the heap meets the flow
+(`HeapInv.entry`); the call's term fits $`O`$ (`ClientFrame.entryFits`).
+With the flow's facts, the frame then meets `ChkSound`
+(`chkSound_of_flow`).
+
+Proof scope: the lemmas above are proved. Not proved here: the shape of
+the calls (`EntryShape`) from the frame's well-formed entries, and the
+checker that decides `CodeOk` and `Flow.Facts` from the lowered
+graphs.
 
 ### Located reductions
 

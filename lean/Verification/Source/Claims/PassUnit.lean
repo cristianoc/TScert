@@ -129,8 +129,9 @@ executions in which code outside its component keeps the client obligation
 `Θ` of a client frame (`ReadOnly.ClientFrame`, the note's Assumption
 "Clients"). Each clause below is a clause of `RequestSafe` read at each call
 of the request's code (`gotoOf` at the call's arguments `L` and receiver
-`d`, from outside code) meeting the frame's entry premises (`Entry`: code
-provenance and the call discipline, which every step keeps) and from each
+`d`, from outside code) the claim is about (`Call`: the frame's
+well-formed entries, and its entry premises, `Entry`, code provenance and
+the call discipline among them, which every step keeps) and from each
 history the frame lets the call start from, along the executions whose every step keeps the obligation
 (`SafeUnder`): progress at every state as in `RequestSafe`, nothing claimed
 after a step of outside code that breaks it. -/
@@ -150,7 +151,7 @@ def FramedSafeClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop
   ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Entry h (gotoOf r.program r.start L d r.comp) →
+    fr.Call h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -163,7 +164,7 @@ def FramedFootprintClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) :
       EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
         (envOf L d) n W h → RootsOk W (envOf L d) →
       (∀ v ∈ L, isVal v = true) → isVal d = true →
-      fr.Entry h (gotoOf r.program r.start L d r.comp) →
+      fr.Call h (gotoOf r.program r.start L d r.comp) →
       ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
       SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
         (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -176,7 +177,7 @@ def FramedEnsuresClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : P
   r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Entry h (gotoOf r.program r.start L d r.comp) →
+    fr.Call h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -188,7 +189,7 @@ def FramedRegionalClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : 
   ∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Entry h (gotoOf r.program r.start L d r.comp) →
+    fr.Call h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -211,7 +212,7 @@ def FramedAssertionsClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) 
   ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Entry h (gotoOf r.program r.start L d r.comp) →
+    fr.Call h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (AssertedAt r.program r.assertions (envOf L d) h) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -225,7 +226,7 @@ def FramedCodeAssertionsClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty �
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) (codeRequest r q).inputs {}
       (codeRequest r q).entryIndices (envOf L d) n W h →
     RootsOk W (envOf L d) →
-    fr.Entry h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) →
+    fr.Call h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) →
     ∀ g, fr.start n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) g →
     SafeFramed fr (AssertedAt (codeRequest r q).program (codeHintsAt r ci).requirements (envOf L d) h)
       (fun _ _ _ => True) (fun _ _ _ => True) (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h
