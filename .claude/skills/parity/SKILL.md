@@ -1,9 +1,9 @@
 ---
 name: parity
-description: Continue the work that makes TScert's pass implement the rules of the note "Tolerant frames", on the line `single-pass` - the goal, the standing decisions, where the plan and its status live, and how the work is run with implementers and a designer. Use when the owner asks to resume or continue the parity work, the plan, or the work on the note, from a chat with no context.
+description: Continue the work that makes TScert's pass implement the rules of the notes "Tolerant frames" and "Read-only frames", on the line `single-pass` - the goal, the standing decisions, where the plan and its status live, and how the work is run with implementers and a designer. Use when the owner asks to resume or continue the parity work, the plan, or the work on the notes, from a chat with no context.
 ---
 
-# Making the pass implement the note's rules
+# Making the pass implement the notes' rules
 
 This skill is the whole context a new chat needs. It states the goal, the
 decisions that bind every design, where the plan and its status are, and how
@@ -12,16 +12,21 @@ the work is run. Read it in full, then the plan's row of
 
 ## The goal
 
-The note [Tolerant frames](../../../docs/drafts/tolerant-frames-note/note.tex)
-is the theory and the source of truth. The goal is the owner's, in his
-words:
+The rules live in two notes,
+[Tolerant frames](../../../docs/drafts/tolerant-frames-note/note.tex) and
+[Read-only frames](../../../docs/drafts/readonly-frames-note/note.tex),
+which builds on the first; together they are the theory and the source of
+truth, and "the note" below means either of them. A third note,
+[Tolerant frames in practice](../../../docs/drafts/tolerant-frames-patterns-note/note.tex),
+applies their rules to pretext's patterns and states none of its own. The
+goal is the owner's, in his words:
 
 - "Implementation being in sync with the paper means implementing the same
   rules. Not simply passing the same examples. The examples are just used
   as additional test that the implementation matches the paper."
   (2026-11-14)
-- An agent that has only the note answers "does this example verify?" the
-  same way the implementation does, for the part the note covers; promises,
+- An agent that has only the notes answers "does this example verify?" the
+  same way the implementation does, for the part the notes cover; promises,
   for instance, are not covered. (2026-11-15)
 - "If it is organised in a very different way then automatically it is not
   aligned." (2026-11-16)
@@ -39,10 +44,10 @@ does not run, and a count of agreeing examples, are neither of them
 evidence of it. A report on this work says, for each rule it mentions,
 what acceptance runs.
 
-**The test.** Each example is given to an agent that has only the note,
-which answers whether it verifies; the answer is compared with the
+**The test.** Each example is given to an agent that has only the two
+notes of rules, which answers whether it verifies; the answer is compared with the
 verifier's outcome on the example's pipeline case. A disagreement is closed
-on either side: the pass changes, or the note changes with the owner's
+on either side: the pass changes, or a note changes with the owner's
 approval. The test is run as
 [the paper-reader test](#the-paper-reader-test).
 
@@ -64,12 +69,11 @@ The order of the work:
    correspondence (C) are made clear, B first, as
    [the basis](../../../docs/drafts/implementation-and-paper-rules.md)
    states;
-2. the checking round: every example of the note is run through the
-   verifier and through the paper-only agent, and the two notes are read
-   again against the result;
-3. then the next pattern of the second note,
-   [Tolerant frames in practice](../../../docs/drafts/tolerant-frames-patterns-note/note.tex),
-   is taken as a change of the first note and realised in the code.
+2. the checking round: every example of the notes of rules is run through
+   the verifier and through the paper-only agent, and the three notes are
+   read again against the result;
+3. then the next pattern of Tolerant frames in practice is taken as a
+   change of the note of rules it calls for and realised in the code.
 
 The scope is the general rules and the arithmetic of bound facts that the
 text-layout library pretext needs. The note does not give a rule to every
@@ -84,7 +88,9 @@ answers; it launches no reader. The procedure:
 1. **Prepare** a directory outside the repository:
    `node dev/paper-readers.mts prepare --out <dir> [--cases <file> |
    --pattern <s> …] [--sample <n> --seed <k>] [--batch <size>]
-   [--note <file>]`. It writes the note as `paper.tex`, the readers'
+   [--note <file> …]`. It writes each note of rules (both by default, or
+   each `--note`) as `<name>.tex`, `tolerant-frames.tex` and
+   `readonly-frames.tex`, the readers'
    instructions as `TASK.md`, each selected case's source as
    `examples/<id>.ts` under a neutral id in a seeded order, with its comments
    removed but for a JSDoc comment carrying an annotation tag, and one
@@ -99,7 +105,7 @@ answers; it launches no reader. The procedure:
    refused; each example is agree, differ or not covered, with totals per
    pattern P1–P21 named in the cases' area texts.
 4. **Examine each disagreement before either side changes.** Its cause is
-   one of: the note is silent or ambiguous; the note is more general than its
+   one of: a note is silent or ambiguous; a note is more general than its
    status tags; the reader erred; the verifier is behind the note.
 5. **Judge a revision of the note on a held-out sample** that its reviser
    never saw. On 2026-11-15 a revision reached 108 of 115 on the examples it
@@ -109,8 +115,8 @@ answers; it launches no reader. The procedure:
    measure the note.
 
 Every report gives three counts, agree, not covered and differ, for the
-catalogue cases, for the note's own examples and for a held-out sample. The
-note changes only with the owner's approval.
+catalogue cases, for the notes' own examples and for a held-out sample.
+Each note changes only with the owner's approval.
 
 ## Where things are
 
@@ -124,7 +130,7 @@ note changes only with the owner's approval.
 - The plan and its status: the row "Implementation rules and paper rules" of
   [WORK.md](../../../WORK.md#status). Status is written there and nowhere
   else; a commit that moves an item updates the row.
-- The comparison of the note with the implementation, rule by rule:
+- The comparison of the notes with the implementation, rule by rule:
   [parity-rule-table.md](../../../docs/drafts/parity-rule-table.md).
 - The designs: [parity-interfaces.md](../../../docs/drafts/parity-interfaces.md)
   (shared definitions) and
@@ -133,16 +139,19 @@ note changes only with the owner's approval.
   [rules-at-acceptance.md](../../../docs/drafts/rules-at-acceptance.md)
   (composition used by acceptance, checked transfer, rule Loop with its
   frame, the checking round).
-- The note's page and PDF are built in its directory: `python3 build.py`
-  (page, through pandoc), `python3 color.py && latexmk -pdf note-color.tex`
-  (PDF). Build products other than the tracked PDF are removed after a build.
+- Each note's page and PDF are built in its directory
+  (`tolerant-frames-note`, `readonly-frames-note`,
+  `tolerant-frames-patterns-note`): `python3 build.py` (page, through
+  pandoc), `python3 color.py && latexmk -pdf note-color.tex` (PDF, copied
+  to the tracked PDF of that directory). Build products other than the
+  tracked PDF are removed after a build.
 
 ## Decisions that bind every design
 
 Each was made by the owner. A design that needs to depart from one stops and
 asks.
 
-- **The note changes only with the owner's approval.** Show the difference,
+- **Each note changes only with the owner's approval.** Show the difference,
   wait for his word, then commit. A status tag (`Lean:`, `conj.`,
   `assumed`) is the exception: it follows the state of the proofs on the
   line and is updated without asking. Where Lean proves less than the note, Lean
@@ -165,8 +174,8 @@ asks.
 - **Arithmetic in scope:** linear arithmetic over safe integers; what passing
   pretext code already uses beyond it (shift right by a constant, mask by a
   constant, string length with reads and concatenation). Products of two
-  variables, shift left and bitwise or stay outside, as entries of the second
-  note.
+  variables, shift left and bitwise or stay outside, as entries of Tolerant
+  frames in practice.
 - **Closure specifications over captured variables:** separate work, later.
 - **The exact update of a typed array stays inside its rule.** The contract
   language does not grow for it.
@@ -270,7 +279,7 @@ asks.
   merged after its docs check passes locally. The owner has given this
   standing instruction for the line; a push to `main` needs his word each
   time.
-- A change to the note is pushed only after the owner approved its text.
+- A change to a note is pushed only after the owner approved its text.
 
 ### Talking to the owner
 
@@ -279,14 +288,14 @@ asks.
   note's own terms (postcondition, effect, region, change, class region).
   No coined words, no internal labels, no Lean identifiers unless he asks.
 - A claim is as strong as its evidence: say what was run and what was only
-  read. Say the implementation is in line with the note only from the
+  read. Say the implementation is in line with the notes only from the
   comparison with a paper-only reader, giving its counts and its
   disagreements.
 - An ambiguous request is answered with its most plausible reading and the
   next step. Obvious next steps are taken, not asked.
 - A design question that the principles here do not settle is put to him as
   a choice of routes with a recommendation.
-- When he asks to see a change to the note, he gets the difference, and the
+- When he asks to see a change to a note, he gets the difference, and the
   page for comments; rendered pages are checked for unconverted LaTeX.
 
 ## Starting from nothing
