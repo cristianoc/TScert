@@ -68,7 +68,7 @@ t = head + r'\begin{document}' + body
 # ---- keywords of the logic, by role
 rep(r'\newcommand{\bx}[1]{\Box_{#1}}', r'\newcommand{\bx}[1]{{\color{boxc}\Box}_{#1}}')
 rep(r'\newcommand{\sep}{\mathrel{\#}}', r'\newcommand{\sep}{\mathrel{\textcolor{asrc}{\#}}}')
-for n in ['keep', 'init', 'grow', 'any']:
+for n in ['keep', 'init', 'extend', 'grow', 'any']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\chg{%s}}' % (n, n))
 for n in ['rigid', 'fresh', 'old', 'dense', 'apart']:
     rep(r'\newcommand{\%s}{\kw{%s}}' % (n, n), r'\newcommand{\%s}{\asr{%s}}' % (n, n))
