@@ -12,12 +12,13 @@ a member's certificate (`ReadOnlyFrame.Member`) built from them.
 - A path after a step either is a path before it, or passes a location the
   step changed or allocated, from whose new contents the rest of the path
   runs (`follows_split`).
-- **The step lemma** (`pkg_step_ok`): a step of the package's code that
+- **The step lemma** (`pkg_step_inv`): a step of the package's code that
   meets the checks (each value it gives to code that is not its, and each
   value it stores where such code reaches, crosses; each crossing meets the
-  marks; each crossing updates `E`), with history transitions that never
-  pop below depth `d`, keeps the invariants of states and the marks, and
-  grows the history.
+  marks; each crossing updates `E`) keeps the invariants of states
+  (`Inv`), at any depth; with history transitions that never pop below
+  depth `d` it keeps `Ok d` and the marks, and grows the history
+  (`pkg_step_ok`).
 - **Incoming values** (`incoming_site`, `incoming_charged`): a location
   reachable from a value code that is not the package's holds is of an
   exposed or released site or outside storage, so a write charged to every
@@ -34,8 +35,8 @@ a member's certificate (`ReadOnlyFrame.Member`) built from them.
   lie outside it, both where either is possible; its inputs, the possible
   parts covering every location (`flow_of_sites`) and a live history
   witness for every protected lent location (`prot_of_witness`).
-- **The entry conditions** where no protected storage exists yet
-  (`Ok.of_lent`). -/
+- **The invariants at the start of an execution**, where no protected
+  storage exists yet (`Inv.of_lent`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -90,6 +91,20 @@ theorem HStep.exposed_mono {tv : TypeView} {h : Heap} {g g' : Ghost P} (hs : HSt
   cases hs
   case cross => exact .inl he
   all_goals exact he
+
+theorem HSteps.exposed_mono {tv : TypeView} {d : Nat} {g g' : Ghost P} (hs : HSteps tv d g g') {l : Nat}
+    (he : g.E l) : g'.E l := by
+  induction hs with
+  | refl => exact he
+  | step _ hst _ _ ih => exact ih (hst.exposed_mono he)
+
+/-- Every transition keeps the history uniform, a pop below any depth
+included (`HStep.uniform`). -/
+theorem HSteps.uniform {tv : TypeView} {d : Nat} {g g' : Ghost P} (hs : HSteps tv d g g') (hu : g.Uniform) :
+    g'.Uniform := by
+  induction hs with
+  | refl => exact hu
+  | step _ hst _ _ ih => exact ih (hst.uniform hu)
 
 /-- **A crossing updates `E`** (the draft, Crossings): after a crossing at
 the heap `h`, and any later transitions, every exposed location the
@@ -152,21 +167,18 @@ structure PkgStep (tv : TypeView) (d : Nat) (st st' : St P) : Type where
   localBindings : ∀ w u, ¬ Same st.s.h st'.s.h w → st'.s.h[w]? = some u → ∀ x ∈ codeVals P.ofC u, ∀ l,
     Leaves P.ofC x l → mid.origin l ≠ some .local
 
-/-- **The step lemma**: a checked step of the package's code inside a call
-at depth `d` keeps the invariants of states and the marks, and grows the
-history. (M): a location the frames of code that is not the package's
-reach afterwards is reached along a path they had, or from a value that
-crossed, which meets the marks. (P2): an exposed location so reached was in
+/-- **The step lemma**: a checked step of the package's code, at any depth
+(an exit to depth `0` among them), keeps the invariants of states. (M): a
+location the frames of code that is not the package's reach afterwards is
+reached along a path they had, or from a value that crossed, which meets
+the marks. (P2): an exposed location so reached was in
 `E`, or a crossing put it there. -/
-theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d st st') (hok : Ok d st) :
-    Ok d st' ∧ Kept st st' ∧ Grows d st.g st'.g := by
+theorem pkg_step_inv {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d st st') (hok : Inv st) :
+    Inv st' := by
   have hm := hp.hist.marks
   have hkept : Kept st st' := ⟨hp.adm, fun l hl => by rw [hm.1, hm.2]; exact hp.sites l hl⟩
-  have hmid : Grows d st.g hp.mid :=
-    ⟨hok.pos, hok.len, by rw [hp.midA]; exact hok.len, hp.midB,
-      fun l h => (Ghost.prot_congr hp.midA hp.midB l).mpr h, fun l h => by rw [hp.midE]; exact h⟩
-  obtain ⟨hgr, hu⟩ := hp.hist.grows (Ghost.uniform_congr hp.midA hp.midB hok.uniform) hok.pos hmid.len'
-  have hg := hmid.trans hgr
+  have hu := hp.hist.uniform (Ghost.uniform_congr hp.midA hp.midB hok.uniform)
+  have hgE : ∀ l, st.g.E l → st'.g.E l := fun l h => hp.hist.exposed_mono (by rw [hp.midE]; exact h)
   have horig : ∀ l, st'.g.origin l = hp.mid.origin l := fun l => by simp only [Ghost.origin, hm.1]
   -- A location reached afterwards from a value that crossed meets the marks.
   have hcross : ∀ c ∈ hp.xs, ∀ l, Reaches P.ofC st'.s.h c.val l →
@@ -186,7 +198,7 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
     have hreach : ReachesFrom P.ofC st.s.h st.roots l := ⟨r, hr, π, hf⟩
     obtain ⟨h₁, h₂⟩ := hok.marks l hreach
     rw [ho]
-    exact ⟨h₁, h₂, fun he => hg.exposed l (hok.confined l hreach he)⟩
+    exact ⟨h₁, h₂, fun he => hgE l (hok.confined l hreach he)⟩
   have hall : ∀ l, ReachesFrom P.ofC st'.s.h st'.roots l →
       st'.g.origin l ≠ some .local ∧ st'.g.origin l ≠ some .internal ∧
         (st'.g.origin l = some .exposed → st'.g.E l) := by
@@ -227,8 +239,21 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
       rw [hmo] at hloc
       exact hok.bindings w _ hv₀ x hx l hl hloc
     · exact hp.localBindings w u hs hu' x hx l hl hloc
-  exact ⟨⟨hok.pos, hg.len', hu, fun l h => ⟨(hall l h).1, (hall l h).2.1⟩, fun l h he => (hall l h).2.2 he,
-    hp.valid, hlc, hbc⟩, hkept, hg⟩
+  exact ⟨hu, fun l h => ⟨(hall l h).1, (hall l h).2.1⟩, fun l h he => (hall l h).2.2 he, hp.valid, hlc, hbc⟩
+
+/-- **The step lemma inside a call**: a checked step of the package's code
+inside a call at depth `d` keeps the invariants of states and the marks,
+and grows the history. -/
+theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d st st') (hok : Ok d st) :
+    Ok d st' ∧ Kept st st' ∧ Grows d st.g st'.g := by
+  have hm := hp.hist.marks
+  have hkept : Kept st st' := ⟨hp.adm, fun l hl => by rw [hm.1, hm.2]; exact hp.sites l hl⟩
+  have hmid : Grows d st.g hp.mid :=
+    ⟨hok.pos, hok.len, by rw [hp.midA]; exact hok.len, hp.midB,
+      fun l h => (Ghost.prot_congr hp.midA hp.midB l).mpr h, fun l h => by rw [hp.midE]; exact h⟩
+  obtain ⟨hgr, -⟩ := hp.hist.grows (Ghost.uniform_congr hp.midA hp.midB hok.uniform) hok.pos hmid.len'
+  have hg := hmid.trans hgr
+  exact ⟨(pkg_step_inv hp hok.inv).ok hok.pos hg.len', hkept, hg⟩
 
 /-- A step whose history begins with its crossings, at the heap after it,
 updates `E` as `PkgStep.covers` states. -/
@@ -527,16 +552,14 @@ theorem flow_of_sites {S : Footprint} {ρ : Env} {st : St P} (hρ : RootsOk st.s
 
 /-! ## The ghost entry conditions -/
 
-/-- **The entry conditions where the package holds nothing protected yet**
-(at a caller from which no storage of a local, an internal or an exposed
-site is reachable, such as the first call of the package): a uniform
-history with a call active, every location of a released site or outside
-storage, and valid references in the frames give the invariants of states. -/
-theorem Ok.of_lent {d : Nat} {st : St P} (hd : 0 < d) (hl : d ≤ st.g.A.length) (hu : st.g.Uniform)
-    (hlent : ∀ l, st.g.Lent l) (hv : RootsValid st) : Ok d st := by
+/-- **The invariants where the package holds nothing protected yet** (at
+the start of an execution, before any call of the package): a uniform
+history, every location of a released site or outside storage, and valid
+references in the frames. -/
+theorem Inv.of_lent {st : St P} (hu : st.g.Uniform) (hlent : ∀ l, st.g.Lent l) (hv : RootsValid st) : Inv st := by
   have hno : ∀ l, st.g.origin l ≠ some .local ∧ st.g.origin l ≠ some .internal ∧ st.g.origin l ≠ some .exposed :=
     fun l => by rcases hlent l with h | h <;> rw [h] <;> simp
-  exact ⟨hd, hl, hu, fun l _ => ⟨(hno l).1, (hno l).2.1⟩, fun l _ he => ((hno l).2.2 he).elim, hv,
+  exact ⟨hu, fun l _ => ⟨(hno l).1, (hno l).2.1⟩, fun l _ he => ((hno l).2.2 he).elim, hv,
     fun _ _ _ _ l _ hloc => ((hno l).1 hloc).elim, fun _ _ _ _ _ l _ hloc => ((hno l).1 hloc).elim⟩
 
 end Verification.TolerantFrames.ReadOnly
