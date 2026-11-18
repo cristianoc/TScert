@@ -34,10 +34,10 @@ def Scoped (d : Nat) : Tm → Prop
   | .makeKey a b => Scoped d a ∧ Scoped d b
   -- Graph code's node expressions are scoped by its own environment, which
   -- invocation supplies whole; only the captures are scoped here.
-  | .objAt _ (.graph _ _ _ _ caps _ _) _ => ScopedArgs d caps
-  | .makeAt (.graph _ _ _ _ caps _ _) _ args => ScopedArgs d caps ∧ ScopedArgs d args
-  | .goto _ _ _ L x => ScopedArgs d L ∧ Scoped d x
-  | .frame _ _ t L x _ _ => Scoped d t ∧ ScopedArgs d L ∧ Scoped d x
+  | .objAt _ (.graph _ _ _ _ caps _ _ _) _ => ScopedArgs d caps
+  | .makeAt (.graph _ _ _ _ caps _ _ _) _ args => ScopedArgs d caps ∧ ScopedArgs d args
+  | .goto _ _ _ L x _ => ScopedArgs d L ∧ Scoped d x
+  | .frame _ _ t L x _ _ _ => Scoped d t ∧ ScopedArgs d L ∧ Scoped d x
   | _ => True
 
 def ScopedArgs (d : Nat) : List Tm → Prop
@@ -97,21 +97,21 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case read f b ih => rw [ih h hj]
   case index b key ihb ihkey => rw [ihb h.1 hj, ihkey h.2 hj]
   case test k b ih => rw [ih h hj]
-  case objGraph fs oid n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ _ ihc =>
     have hmap : caps.map (subst j a) = caps := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (h x hx) hj))
     rw [hmap]
-  case makeGraph n E K st caps _ _ ns args _ ihc iha =>
+  case makeGraph n E K st caps _ _ _ ns args _ ihc iha =>
     have hc : caps.map (subst j a) = caps := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihc x hx (h.1 x hx) hj))
     have hmap : args.map (subst j a) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => iha x hx (h.2 x hx) hj))
     rw [hc, hmap]
-  case goto E K l L x _ ihL ihx =>
+  case goto E K l L x _ _ ihL ihx =>
     have hL : L.map (subst j a) = L := by
       simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (h.1 y hy) hj))
     rw [hL, ihx h.2 hj]
-  case frame E K t L x k hd _ iht ihL ihx =>
+  case frame E K t L x k hd _ _ iht ihL ihx =>
     have hL : L.map (subst j a) = L := by
       simpa using (List.map_congr_left (g := id) (fun y hy => ihL y hy (h.2.1 y hy) hj))
     rw [iht h.1 hj, hL, ihx h.2.2 hj]
@@ -190,11 +190,11 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case read f b ih => rw [ih]
   case index b key ihb ihkey => rw [ihb, ihkey]
   case test k b ih => rw [ih]
-  case objGraph fs oid n E K st caps _ _ _ ihc =>
+  case objGraph fs oid n E K st caps _ _ _ _ ihc =>
     rw [List.map_map]
     congr 2
     exact List.map_congr_left (fun x hx => ihc x hx d)
-  case makeGraph n E K st caps _ _ ns args _ ihc iha =>
+  case makeGraph n E K st caps _ _ _ ns args _ ihc iha =>
     have hc : List.map (subst d a ∘ instantiate (d + 1) ρ) caps =
         List.map (instantiate d (push a ρ)) caps :=
       List.map_congr_left (fun x hx => ihc x hx d)
@@ -202,11 +202,11 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
         List.map (instantiate d (push a ρ)) args :=
       List.map_congr_left (fun x hx => iha x hx d)
     rw [List.map_map, List.map_map, hc, hmap]
-  case goto E K l L x _ ihL ihx =>
+  case goto E K l L x _ _ ihL ihx =>
     rw [List.map_map, ihx]
     congr 1
     exact List.map_congr_left (fun y hy => ihL y hy d)
-  case frame E K t L x k hd _ iht ihL ihx =>
+  case frame E K t L x k hd _ _ iht ihL ihx =>
     rw [List.map_map, ihx, iht]
     congr 1
     exact List.map_congr_left (fun y hy => ihL y hy d)

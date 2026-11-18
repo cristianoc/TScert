@@ -406,7 +406,7 @@ theorem restEntry_refs {k : Nat} {U : WorldT k} {E : List Tm}
     {r : Tm} {args : List Tm} (hE : ∀ e ∈ E, RefsOk U e) (hvs : ∀ a ∈ vs, RefsOk U a) (hr : RefsOk U r)
     (ha : ∀ a ∈ args, RefsOk U a) :
     RefsOk U (.letE (.arrLit (args.drop arity))
-      (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+      (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul comp)) := by
   intro x hx
   simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap] at hx
   rcases hx with ⟨a, hal, hxa⟩ | ((⟨e, he, hxe⟩ | ⟨a, hal, hxa⟩) | hx)
@@ -437,11 +437,11 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     {args : List Tm} (hvals : CallArguments.Values args)
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args)
     (href : RefsOk U (.letE (.arrLit (args.drop arity))
-        (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul))) :
+        (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul comp))) :
     HeapObservations.SafePostExcV (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args))
       (s.effect.schema.exitPostW .normal r args U heap) (s.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.letE (.arrLit (args.drop arity))
-        (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+        (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul comp)) := by
   -- The code's exits carry across the rest's allocation
   -- (`Exits.AllocStable`): its exits from the heap after the allocation are
   -- its exits from the call's entry.
@@ -483,7 +483,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
   apply HeapObservations.SafePostExcV.bind (.letE · _) .letC .letC (by ctx_refs) j U heap _ hu hh
     (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hspineV
   intro i hi V hy hv heap' a hh' hval harr' hprefix hvr
-  have hgoV : RefsOk V (.letE a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+  have hgoV : RefsOk V (.letE a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul comp)) := by
     intro x hx
     rw [refs_letE, List.mem_append] at hx
     rcases hx with hx | hx
@@ -494,13 +494,13 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
   | succ p =>
     apply HeapObservations.SafePostExcV.bind_value hval hv hh' hgoV
     have hsub : subst 0 a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs)
-        .nul) = .goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
+        .nul comp) = .goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul comp := by
       have hmap : (r :: CallArguments.parameters arity args ++ vs).map (subst 0 a) =
           r :: CallArguments.parameters arity args ++ vs := by
         rw [List.map_congr_left (g := id) (fun v hm => subst_above (hclosed v hm) (Nat.le_refl 0) a),
           List.map_id]
       show Tm.goto E K start (substArgs 0 a (.var 0 :: (r :: CallArguments.parameters arity args ++ vs)))
-        (subst 0 a .nul) = _
+        (subst 0 a .nul) comp = _
       rw [substArgs_eq_map, List.map_cons, hmap]
       rfl
     rw [hsub]
@@ -517,13 +517,13 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
       s.effect.promised args from hpromised]
     have hgo : RefsOk (trunc p (Nat.le_succ p) V)
-        (.goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul) := by
+        (.goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul comp) := by
       rw [← hsub]
       exact RefsOk_trunc _ (fun x hx => by
         rcases Kinds.subst_refs a _ 0 x hx with hx | hx
         · exact hgoV x (by rw [refs_letE]; exact List.mem_append_right _ hx)
         · exact hvr x hx)
-    have hcode := hs.2.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
+    have hcode := hs.2.2.2 p _ heap' _ _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
       (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') hgo (by
         intro v hm
         rcases List.mem_cons.mp hm with rfl | hm
@@ -554,8 +554,8 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     (hlen : S.length = As.length)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hcs : Cs.length ≤ vs.length)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind true) oid) := by
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind true) oid) := by simpa [Scoped] using hsc
+    CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind true comp) oid) := by
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind true comp) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩
   intro q hq
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha _
@@ -567,7 +567,7 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr
       ⟨List.getElem?_eq_getElem hi, List.getElem?_eq_getElem hiA⟩)
   obtain ⟨hk, harr, hspec⟩ := hs _ hz
-  have hsc' : ∀ v ∈ vs ++ [Tm.objAt fs (.graph arity E K start vs kind true) oid], Scoped 0 v := by
+  have hsc' : ∀ v ∈ vs ++ [Tm.objAt fs (.graph arity E K start vs kind true comp) oid], Scoped 0 v := by
     intro v hv
     rcases List.mem_append.mp hv with hv | hv
     · exact hsc v hv
@@ -643,8 +643,8 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W} {kind :
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hcs : Cs.length ≤ vs.length)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     CallEffects.callsT (excOf G) (L.map (Arrow.map (meaning G))) n W
-        (.objAt fs (.graph arity E K start vs kind rest) oid) ∧
-      CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind rest) oid) := by
+        (.objAt fs (.graph arity E K start vs kind rest comp) oid) ∧
+      CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind rest comp) oid) := by
   obtain ⟨hkind, hrows⟩ := hk
   have hbL : ∀ p ∈ L, KindBinds G kind p.receiver :=
     fun p hp => kindOffers_binds (hrows p (List.mem_append_left _ hp))
@@ -672,13 +672,13 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
     (ho : CodeOffers G arity E K start (Cs ++ [F]) false L S [])
     (hlen : Cs.length = vs.length) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ∀ n W, EnvOk G Cs (envOf vs .nul) n W →
-      meaning G F n W (.objAt fs (.graph arity E K start vs kind false) oid) := by
+      meaning G F n W (.objAt fs (.graph arity E K start vs kind false comp) oid) := by
   obtain ⟨hkind, hrows⟩ := hk
   have hbL : ∀ p ∈ L, KindBinds G kind p.receiver :=
     fun p hp => kindOffers_binds (hrows p (List.mem_append_left _ hp))
   have hbS : ∀ s ∈ S, KindBinds G kind s.receiver :=
     fun s hs => kindOffers_binds (hrows _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hs, rfl⟩)))
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false) oid) := by simpa [Scoped] using hsc
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false comp) oid) := by simpa [Scoped] using hsc
   intro n
   induction n using Nat.strongRecOn with
   | _ n ih =>
@@ -705,7 +705,7 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
     have hbelow : s.fixed.effect.entryBelow arity = true := Effect.belowRow_entry hspec.2.1
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
-    have hsafe := graph_invoke_at hspec (henv.withSelfAt hlen hself hF) (Values.withSelf hvalues rfl) hu hh
+    have hsafe := graph_invoke_at (comp := comp) hspec (henv.withSelfAt hlen hself hF) (Values.withSelf hvalues rfl) hu hh
       (args := args.take s.arguments.1.length) hrr
       (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using ha.1)
       (fun F hF => (CallEffects.Effect.pre_take hbelow hle hF r args heap).mpr
@@ -732,9 +732,9 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hcs : Cs.length ≤ vs.length)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ctorsT (excOf G) (L.map (MethodArrow.map (meaning G))) n W
-      (.objAt fs (.graph arity E K start vs .construct) oid) := by
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
-  refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
+      (.objAt fs (.graph arity E K start vs .construct (comp := comp)) oid) := by
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct (comp := comp)) oid) := by simpa [Scoped] using hsc
+  refine ⟨⟨fs, _, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
   intro q hq
   intro j hj V hx hv heap hh hvr args _ har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
@@ -783,9 +783,9 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hcs : Cs.length ≤ vs.length)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ctorRestsT (excOf G) (S.map (MethodRestArrow.mapWith (meaning G) (argMeaning G))) n W
-      (.objAt fs (.graph arity E K start vs .construct) oid) := by
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
-  refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
+      (.objAt fs (.graph arity E K start vs .construct (comp := comp)) oid) := by
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct (comp := comp)) oid) := by simpa [Scoped] using hsc
+  refine ⟨⟨fs, _, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
   intro q hq
   intro j hj V hx hv heap hh hvr args _ har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
@@ -807,7 +807,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       args.take (s.arguments.1.length + (arity - s.arguments.1.length)) := by
     rw [List.take_add]
   rw [hargs'] at hshort
-  have hsafe := graph_invoke (row := ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩) hspec
+  have hsafe := graph_invoke (comp := comp) (row := ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩) hspec
     (hvs.withSelf hcs hself) (Values.withSelf hvalues rfl) hj hx hv hh ((represents_back hu j V _) rfl)
     (args := args.take (s.arguments.1.length + (arity - s.arguments.1.length)))
     (by simpa [ctorRestParams, List.map_append, List.map_replicate] using hshort)

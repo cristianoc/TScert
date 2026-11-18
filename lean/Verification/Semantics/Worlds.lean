@@ -584,11 +584,11 @@ def refs : Tm → List Ref
   | .objAt fs .absent i => objRefs fs i
   | .objAt fs (.view s f n) i => objRefs fs i ++ [.view s f n (fs.lookup arraySpineKey).isNone]
   | .objAt fs (.bound t r pre) i => objRefs fs i ++ (refs t ++ refs r ++ refsArgs pre)
-  | .objAt fs (.graph _ E _ _ caps _ _) i => objRefs fs i ++ (refsArgs E ++ refsArgs caps)
+  | .objAt fs (.graph _ E _ _ caps _ _ _) i => objRefs fs i ++ (refsArgs E ++ refsArgs caps)
   | .makeAt .absent _ xs => refsArgs xs
   | .makeAt (.view s f n) ns xs => .view s f n (!ns.contains arraySpineKey) :: refsArgs xs
   | .makeAt (.bound t r pre) _ xs => (refs t ++ refs r ++ refsArgs pre) ++ refsArgs xs
-  | .makeAt (.graph _ E _ _ caps _ _) _ xs => (refsArgs E ++ refsArgs caps) ++ refsArgs xs
+  | .makeAt (.graph _ E _ _ caps _ _ _) _ xs => (refsArgs E ++ refsArgs caps) ++ refsArgs xs
   | .readAt _ a => refs a
   | .indexAt a key => refs a ++ refs key
   | .writeAt _ a b => refs a ++ refs b
@@ -605,8 +605,8 @@ def refs : Tm → List Ref
   | .throw a => refs a
   | .merge _ a b => refs a ++ refs b
   | .makeKey k a => refs k ++ refs a
-  | .goto E _ _ L d => refsArgs E ++ refsArgs L ++ refs d
-  | .frame E _ t L d _ _ => refsArgs E ++ refs t ++ refsArgs L ++ refs d
+  | .goto E _ _ L d _ => refsArgs E ++ refsArgs L ++ refs d
+  | .frame E _ t L d _ _ _ => refsArgs E ++ refs t ++ refsArgs L ++ refs d
 termination_by structural t => t
 
 def refsArgs : List Tm → List Ref

@@ -206,16 +206,16 @@ inductive Invoke : Frame → Tm → Prop where
   the captures in its environment, after collecting its rest (`graphEntry`),
   where its kind binds the receiver (`Invoke.binds`). -/
   | graph : isVal r = true → Values args → kind.binds r = true →
-      Invoke ⟨.objAt fs (.graph arity E K start caps kind rest) oid, r, args⟩
-        (graphEntry arity E K start caps (.objAt fs (.graph arity E K start caps kind rest) oid) rest r args)
+      Invoke ⟨.objAt fs (.graph arity E K start caps kind rest comp) oid, r, args⟩
+        (graphEntry arity E K start caps (.objAt fs (.graph arity E K start caps kind rest comp) oid) rest comp r args)
 
 /-- What `new` runs for construct code without a rest, for each ready
 argument list: the code's body or graph run, with `undefined` for the
 receiver. Other code has none: `new` on call code, and on code collecting a
 rest, is not a class value here. -/
 def construction (self : Tm) : CallCode → Option (List Tm → Tm)
-  | .graph arity E K start caps .construct false =>
-      some fun args => graphEntry arity E K start caps self false .undef args
+  | .graph arity E K start caps .construct false comp =>
+      some fun args => graphEntry arity E K start caps self false comp .undef args
   | _ => none
 
 /-- Construction reads the parameters it binds: omitted trailing positions

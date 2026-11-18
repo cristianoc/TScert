@@ -23,7 +23,7 @@ def sourceTerm : Tm → Bool
   | .arrLit args => sourceArgs args
   | .arr .. | .viewSpine .. | .makeAt (.view ..) _ _ => false
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
-  | .makeAt (.graph _ E _ _ caps _ _) _ args => sourceArgs E && sourceArgs caps && sourceArgs args
+  | .makeAt (.graph _ E _ _ caps _ _ _) _ args => sourceArgs E && sourceArgs caps && sourceArgs args
   | .goto .. | .frame .. => false
   | _ => true
 

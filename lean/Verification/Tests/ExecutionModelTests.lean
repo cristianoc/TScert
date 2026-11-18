@@ -16,7 +16,7 @@ code of one node, `return e`, run from the frame its signature describes: the
 receiver, the parameters, then every slot of the context the closure is
 created in, which it captures in order. -/
 def oneNode (arity : Nat) (body : Tm) (context : Nat) (kind : Invoke := .call) : CallCode :=
-  .graph arity [body] [(.ret, none)] 0 ((List.range context).map .var) kind
+  .graph arity [body] [(.ret, none)] 0 ((List.range context).map .var) kind (comp := none)
 
 end Verification.ExecutionModelTests
 
@@ -213,7 +213,7 @@ end PrototypeChain
 /-! ## Calls and construction -/
 
 -- `new` runs no call-only code: an arrow's `new` throws in JavaScript.
-#guard (CallArguments.construction .nul (.graph 1 [.var 1] [(.ret, none)] 0 [])).isNone
+#guard (CallArguments.construction .nul (.graph 1 [.var 1] [(.ret, none)] 0 [] (comp := none))).isNone
 
 namespace CallOrder
 -- The initializer writes true, allocates an intermediate object, and returns

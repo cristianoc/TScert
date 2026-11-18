@@ -1286,23 +1286,23 @@ theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clau
       refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
       · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
       · rfl
-    | graph arity E K start caps kind rest =>
+    | graph arity E K start caps kind rest comp =>
       cases kind with
       | call =>
-        have hi : Invocable (.objAt fs (.graph arity E K start caps .call rest) oid) :=
+        have hi : Invocable (.objAt fs (.graph arity E K start caps .call rest comp) oid) :=
           ⟨_, _, _, rfl, rfl, hs⟩
         refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
         · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
         · rfl
       | sloppy =>
-        have hi : Invocable (.objAt fs (.graph arity E K start caps .sloppy rest) oid) :=
+        have hi : Invocable (.objAt fs (.graph arity E K start caps .sloppy rest comp) oid) :=
           ⟨_, _, _, rfl, rfl, hs⟩
         refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
         · exact ⟨⟨hi, by simp⟩, ⟨hi, by simp⟩⟩
         · rfl
       | construct =>
-        have hc : Constructible (.objAt fs (.graph arity E K start caps .construct rest) oid) :=
-          ⟨_, _, _, _, _, _, _, _, rfl, hs⟩
+        have hc : Constructible (.objAt fs (.graph arity E K start caps .construct rest comp) oid) :=
+          ⟨_, _, _, _, _, _, _, _, _, rfl, hs⟩
         refine ⟨k, hk, ?_, ?_⟩ <;> (split at hkk <;> simp at hkk)
         · exact ⟨⟨⟨hc, by simp⟩, ⟨hc, by simp⟩⟩, CallableConjunctions.props_nil, CallableConjunctions.views_nil⟩
         · rfl
@@ -1702,7 +1702,7 @@ theorem sourceKinds_cover {G : NormalGraph ι} {n W v} (hv : clauseSem G .source
         MethodMembers.methodT_nil _ _ _, fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, ?_⟩⟩
       exact (builtinInvariant_carriesInvariant rfl rfl).mp hinv
     | bound t r pre => exact family .isFun (by simp [familyMember, sourceKinds]) rfl
-    | graph arity E K start caps kind rest =>
+    | graph arity E K start caps kind rest comp =>
       cases kind <;> exact family .isFun (by simp [familyMember, sourceKinds]) rfl
     | view s f m =>
       exact ⟨.view f, by cases f <;> simp [sourceKinds],

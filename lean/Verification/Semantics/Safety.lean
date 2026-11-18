@@ -392,7 +392,7 @@ function value is one of these or `Invocable`, which is what `typeof` calls a
 function; a construct signature additionally needs `new` to run it
 (`ConstructsTo`). -/
 def Constructible (v : Val) : Prop :=
-  ∃ fs n E K s caps rest oid, v = .objAt fs (.graph n E K s caps .construct rest) oid ∧ Scoped 0 v
+  ∃ fs n E K s caps rest comp oid, v = .objAt fs (.graph n E K s caps .construct rest comp) oid ∧ Scoped 0 v
 
 /-- What `new v(args)` runs, in one step: a class value's body, with
 `undefined` for its receiver and the actuals for its parameters. -/

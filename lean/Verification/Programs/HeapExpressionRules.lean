@@ -1794,12 +1794,12 @@ invalidating knowledge about existing cells: its captures are slots, already
 values. -/
 theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {Γ k arity E K start caps kind rest A ρ n W h}
-    (ht : HasTyUsing G images Γ (.makeFn (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
+    (ht : HasTyUsing G images Γ (.makeFn (.graph arity E K start caps kind rest comp) .nul) A) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul))) :
+    (href : RefsOk W (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest comp) .nul))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) ε (push v ρ) h')
-      n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
+      n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest comp) .nul)) := by
   have hs := ht.sound n W h ρ he hw hh href
   cases n with
   | zero => exact hs
@@ -1923,7 +1923,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true))).bind fun _ =>
     (treeChecked G images e codes sums tree).bind fun _ =>
       CheckResult.fromOption (match j.term with
-        | .makeFn (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
+        | .makeFn (.graph _ _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
         | _ => none)
   | .typedRead i e =>
     match readSlot j.term with
@@ -2020,7 +2020,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes sums = true then
       match j.term with
-      | .makeFn (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
+      | .makeFn (.graph _ _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
   | .typedRead i e =>
@@ -2538,9 +2538,9 @@ theorem slot_lt_of_any {Γ : List α} {i : Nat} {p : α → Bool} (h : (Γ[i]?).
 /-- **Creating a graph closure only extends the heap**: one step allocating
 its two frames, to a value. -/
 theorem created_keeps {Ξ T : Fam} {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} {arity E K start caps kind rest}
-    (hs : Safe Ξ T n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul))) :
+    (hs : Safe Ξ T n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest comp) .nul))) :
     SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
-      (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
+      (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest comp) .nul)) := by
   cases n with
   | zero => exact hs
   | succ n =>
@@ -2563,7 +2563,7 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
     (hwr : ∀ i v R q, e ≠ .written i v R q)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) :
     Purity.inspectTerm (instantiate 0 ρ j.term) = true ∨
-      ∃ arity E K start caps kind rest, j.term = .makeFn (.graph arity E K start caps kind rest) .nul := by
+      ∃ arity E K start caps kind rest comp, j.term = .makeFn (.graph arity E K start caps kind rest comp) .nul := by
   have read : ∀ fld i, j.term = .readAt fld (.var i) → Purity.inspectTerm (ρ i) = true →
       Purity.inspectTerm (instantiate 0 ρ j.term) = true := fun fld i ht hi => by
     rw [ht]; simpa [instantiate, Purity.inspectTerm] using hi
@@ -2588,7 +2588,7 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
     simp only at hc
     split at hc
     · split at hc
-      · rename_i heq; exact .inr ⟨_, _, _, _, _, _, _, heq⟩
+      · rename_i heq; exact .inr ⟨_, _, _, _, _, _, _, _, heq⟩
       · cases hc
     · cases hc
   | typedRead i e =>
@@ -2698,7 +2698,7 @@ theorem base_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   have hs := erase (checkStep_sound hc hcodes hsums he hk hw hh href)
-  rcases base_shape hc hord hwr he hk with hi | ⟨_, _, _, _, _, _, _, ht⟩
+  rcases base_shape hc hord hwr he hk with hi | ⟨_, _, _, _, _, _, _, _, ht⟩
   · exact inspection_keeps hs hi hw hh
   · unfold KeepsPost; rw [ht] at hs ⊢; exact created_keeps hs
 

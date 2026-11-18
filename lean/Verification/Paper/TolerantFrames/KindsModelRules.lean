@@ -356,7 +356,7 @@ def hostCell : Val := .objAt [(valueField, 8)] .absent 9
 /-- An object whose prototype is `hostObject`. -/
 def hostProtoed : Val := .objAt [(CallArguments.protoField, 10)] .absent 11
 /-- Graph code capturing `hostObject`, with its code field. -/
-def hostClosure : Val := .objAt [(codeField, 12)] (.graph 0 [] [] 0 [hostObject] .call false) 13
+def hostClosure : Val := .objAt [(codeField, 12)] (.graph 0 [] [] 0 [hostObject] .call false none) 13
 /-- A forwarding descriptor of the closure, its receiver `hostObject`, its
 prefix the array. -/
 def hostBound : Val := .objAt [] (.bound hostClosure hostObject [hostArray]) 14

@@ -524,13 +524,13 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (Cs : List (Ty ι)) (row : Arrow (Ty ι)) (store : Option (Ty ι) := none) : Prop :=
   arity ≤ row.arguments.length ∧ row.effect.belowRow arity = true ∧
   (store.isSome → row.effect.schema.AllocStable) ∧
-  ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
-    HeapOk n W h → RefsOk W (.goto E K start L .nul) → CallArguments.Values L → PreAt row.effect store L h →
+  ∀ n W h L comp, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
+    HeapOk n W h → RefsOk W (.goto E K start L .nul comp) → CallArguments.Values L → PreAt row.effect store L h →
     ∀ r args, FrameValues arity store L r args →
       HeapObservations.SafePostExcV (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
         (row.effect.schema.exitPostW .normal r args W h) (row.effect.schema.exitPostW .exceptional r args W h)
-        n W h (.goto E K start L .nul)
+        n W h (.goto E K start L .nul comp)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
 code, its captures' types, the signature, and, for code collecting a rest, the
@@ -677,7 +677,7 @@ def KindBinds (G : NormalGraph ι) (kind : Invoke) (R : Ty ι) : Prop :=
 
 /-- Code of any kind but construct code has `[[Call]]`. -/
 theorem callable_of_kind {kind : Invoke} (hk : kind ≠ .construct) {arity E K start caps rest} :
-    (CallCode.graph arity E K start caps kind rest).callable = true := by
+    (CallCode.graph arity E K start caps kind rest comp).callable = true := by
   cases kind <;> simp_all [CallCode.callable]
 
 /-- **Graph code's node expressions and captures** are among its object's
@@ -685,7 +685,7 @@ references. -/
 theorem graph_code_refs {k : Nat} {U : WorldT k} {fs : List (PropKey × Nat)} {arity : Nat} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start : Nat} {caps : List Tm}
     {kind : Invoke} {rest : Bool} {oid : Nat}
-    (hc : RefsOk U (.objAt fs (.graph arity E K start caps kind rest) oid)) :
+    (hc : RefsOk U (.objAt fs (.graph arity E K start caps kind rest comp) oid)) :
     (∀ e ∈ E, RefsOk U e) ∧ ∀ a ∈ caps, RefsOk U a :=
   ⟨fun e he x hx =>
     hc x (by simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr (.inl ⟨e, he, hx⟩)),
@@ -699,7 +699,7 @@ theorem goto_entry_refs {k : Nat} {U : WorldT k} {E : List Tm}
     {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start arity : Nat} {vs : List Tm}
     {r : Tm} {args : List Tm} (hE : ∀ e ∈ E, RefsOk U e) (hvs : ∀ a ∈ vs, RefsOk U a) (hr : RefsOk U r)
     (ha : ∀ a ∈ args, RefsOk U a) :
-    RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
+    RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp) := by
   intro x hx
   simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap] at hx
   rcases hx with (⟨e, he, hxe⟩ | ⟨a, hal, hxa⟩) | hx
@@ -722,11 +722,11 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
-    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
+    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp)) :
     HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
-      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
-  have hsafe := hs.2.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh hgo (by
+      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp) := by
+  have hsafe := hs.2.2.2 j U heap _ _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
     · exact (meaning_value hr).1
@@ -751,12 +751,12 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
-    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
+    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp)) :
     HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
-      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
+      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul comp) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
-  have hsafe := hs.2.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
+  have hsafe := hs.2.2.2 j U heap _ _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
     · exact (meaning_value hr).1
@@ -780,8 +780,8 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     (hlen : Cs.length ≤ vs.length)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     CallEffects.callsT (excOf G) (L.map (Arrow.map (meaning G))) n W
-      (.objAt fs (.graph arity E K start vs kind) oid) := by
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
+      (.objAt fs (.graph arity E K start vs kind (comp := comp)) oid) := by
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind (comp := comp)) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
   intro q hq
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
@@ -802,8 +802,8 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     (hs : ∀ s ∈ S, GraphCodeSpec G arity E K start Cs s.fixed)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hlen : Cs.length ≤ vs.length)
     (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind) oid) := by
-  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
+    CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind (comp := comp)) oid) := by
+  have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind (comp := comp)) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
   intro q hq
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
@@ -812,7 +812,7 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   have hle : arity ≤ s.arguments.1.length := hspec.1
   have hbelow : s.fixed.effect.belowRow arity = true := hspec.2.1
   have hentry := CallEffects.Effect.belowRow_entry hbelow
-  have hsafe := graph_invoke hspec (hvs.withSelf hlen hself) (Values.withSelf hvalues rfl) hj hx hu hh
+  have hsafe := graph_invoke (comp := comp) hspec (hvs.withSelf hlen hself) (Values.withSelf hvalues rfl) hj hx hu hh
     (args := args.take s.arguments.1.length) hr
     (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using ha.1)
     (fun F hF => (CallEffects.Effect.pre_take hentry hle hF r args heap).mpr
@@ -1449,7 +1449,7 @@ private theorem tagShape_sound {tag : Tag} {v : Val} {q : Bool} (h7 : valueShape
     | (rename_i code _; cases code <;> first
         | exact absurd rfl h7
         | (cases hq <;> rfl)
-        | (rename_i kind _; cases kind <;> (cases hq <;> rfl)))
+        | (rename_i kind _ _; cases kind <;> (cases hq <;> rfl)))
 
 theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     (hq : tagClause tag c = some q) (hv : semWithArgs Ξ S P c n W v) : tagHolds tag v = q := by
@@ -1553,7 +1553,7 @@ theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
         simp only [tagClause] at hq
         rw [← hs] at hq
         cases code with
-        | graph _ _ _ _ _ kind _ => cases kind <;> simp [valueShape, tagShape] at hq
+        | graph _ _ _ _ _ kind _ _ => cases kind <;> simp [valueShape, tagShape] at hq
         | view => simp [valueShape, shape, tagShape] at hs hq
         | _ => simp [valueShape, tagShape] at hq
       | _ => rfl

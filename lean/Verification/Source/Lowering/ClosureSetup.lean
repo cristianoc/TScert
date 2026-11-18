@@ -49,8 +49,10 @@ structure LambdaCode (ι : Type) where
   arrays : List (Ty ι)
   type : Ty ι
 
+/-- The graph code a lambda's creation allocates. It is outside every
+component (`none`): the wire carries no component. -/
 @[nospecialize] def LambdaCode.code (c : LambdaCode ι) (kind : Verification.Invoke) : CallCode :=
-  .graph c.arity c.exprs c.conts c.start (c.captures.map fun (_, i) => .var i) kind c.rest
+  .graph c.arity c.exprs c.conts c.start (c.captures.map fun (_, i) => .var i) kind c.rest none
 
 @[nospecialize] def LambdaCode.capturePlans (c : LambdaCode ι) (Γ : List (Ty ι)) : List (DirectProof.Plan ι) :=
   c.captures.map fun (C, i) => DirectProof.var Γ i C

@@ -140,7 +140,7 @@ theorem instance_body (G : NormalGraph ι) (η : MixedAssignment ι) (s : Scheme
     refine Eq.trans ?_ (bag_nil_absorb ?_).symm
     · rfl
     · intro n W v h
-      obtain ⟨fs, _, _, _, _, _, _, oid, rfl, -⟩ := h.1.1
+      obtain ⟨fs, _, _, _, _, _, _, _, oid, rfl, -⟩ := h.1.1
       exact ⟨_, _, _, rfl⟩
 
 /-- A type's value members at the graph's own assignment. -/

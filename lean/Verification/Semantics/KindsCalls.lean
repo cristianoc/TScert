@@ -241,9 +241,9 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
     {d : Tm} {k : ControlFlow.Continuation} {l : ControlFlow.Target}
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal v = true)
     (hf : f ≠ arraySpineKey)
-    (hr : RefsOk W (.frame E K (allocThrow f v) L d k (some l))) :
+    (hr : RefsOk W (.frame E K (allocThrow f v) L d k (some l) comp)) :
     ∃ (h' : Heap) (t' : Tm) (U : WorldT n),
-      HeapObservations.Steps 2 h (.frame E K (allocThrow f v) L d k (some l)) h' t' ∧
+      HeapObservations.Steps 2 h (.frame E K (allocThrow f v) L d k (some l) comp) h' t' ∧
       WExt (trunc n (by omega) W) U ∧ WorldAdm U ∧ HeapOk n U h' ∧ RefsOk U t' := by
   have hvr : RefsOk W v := fun r hm => hr r (by
     simp only [refs, refsArgs_eq, allocThrow, List.mem_append, List.flatMap_cons, List.flatMap_nil,
@@ -261,7 +261,7 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
   · exact absurd st₀ (raises_no_step hrv)
   obtain ⟨rfl, rfl⟩ := Step_det st st₀
   have ht₁ : RefsOk U (.throw o) := hs₁.refs
-  have hrefC : RefsOk U (.frame E K .undef L d k (some l)) := by
+  have hrefC : RefsOk U (.frame E K .undef L d k (some l) comp) := by
     refine RefsOk_mono hx (RefsOk_trunc _ fun r hm => hr r ?_)
     simp only [refs, refsArgs_eq, List.mem_append] at hm ⊢
     rcases hm with ((hm | hm) | hm) | hm
@@ -269,7 +269,7 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
     · simp at hm
     · exact .inl (.inr hm)
     · exact .inr hm
-  have hCt : RefsOk U (.frame E K (.throw o) L d k (some l)) := by
+  have hCt : RefsOk U (.frame E K (.throw o) L d k (some l) comp) := by
     intro r hm
     simp only [refs, refsArgs_eq, List.mem_append] at hm
     rcases hm with ((hm | hm) | hm) | hm
@@ -277,7 +277,7 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
     · exact ht₁ r (by simpa [refs] using hm)
     · exact hrefC r (by simp only [refs, refsArgs_eq, List.mem_append]; exact .inl (.inr hm))
     · exact hrefC r (by simp only [refs, refsArgs_eq, List.mem_append]; exact .inr hm)
-  have hcatch := Step.frameHandle (h := h ++ [v] ++ [.nul]) (E := E) (K := K) (L := L) (d := d) (k := k)
+  have hcatch := Step.frameHandle (comp := comp) (h := h ++ [v] ++ [.nul]) (E := E) (K := K) (L := L) (d := d) (k := k)
     (l := l) hro
   refine ⟨h ++ [v] ++ [.nul], _, trunc n (Nat.le_succ n) U, .next (.frameC st₀) (.next hcatch .refl), ?_,
     WorldAdm_trunc _ hu, HeapOk_trunc n U _ hh₁, ?_⟩

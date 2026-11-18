@@ -60,10 +60,10 @@ pure. Continuations only rearrange values; they do not change the heap. -/
 inductive PureRun : Tm → Prop where
   | term : pureTerm t = true → PureRun t
   | goto : (∀ e ∈ E, pureTerm e = true) →
-      (∀ v ∈ L, isVal v = true) → isVal d = true → PureRun (.goto E K l L d)
+      (∀ v ∈ L, isVal v = true) → isVal d = true → PureRun (.goto E K l L d comp)
   | frame : (∀ e ∈ E, pureTerm e = true) →
       (∀ v ∈ L, isVal v = true) → isVal d = true → pureTerm t = true →
-      PureRun (.frame E K t L d k x)
+      PureRun (.frame E K t L d k x comp)
 
 private theorem env_values {L : List Tm} {d : Tm}
     (hL : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) (i : Nat) :
@@ -88,7 +88,7 @@ private theorem mapped_goto {E : List Tm} {K : List (ControlFlow.Continuation ×
     {d : Tm} {l : Nat} {m : Option (List Nat)}
     (hE : ∀ e ∈ E, pureTerm e = true)
     (hL : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
-    PureRun (.goto E K l (envMap m L d).1 (envMap m L d).2) := by
+    PureRun (.goto E K l (envMap m L d).1 (envMap m L d).2 comp) := by
   obtain ⟨hL', hd'⟩ := mapped_values hL hd m
   exact .goto hE hL' hd'
 
@@ -144,10 +144,10 @@ inductive CollectingRun : Tm → Prop where
   | collect : (∀ e ∈ E, pureTerm e = true) →
       (∀ v ∈ L, isVal v = true) → (∀ v ∈ L, Scoped 0 v) →
       (∀ v ∈ vs, isVal v = true) →
-      CollectingRun (.letE (.arrLit vs) (.goto E K start (.var 0 :: L) .nul))
+      CollectingRun (.letE (.arrLit vs) (.goto E K start (.var 0 :: L) .nul comp))
   | collected : (∀ e ∈ E, pureTerm e = true) →
       (∀ v ∈ L, isVal v = true) → (∀ v ∈ L, Scoped 0 v) →
-      CollectingRun (.letE (.arr ls) (.goto E K start (.var 0 :: L) .nul))
+      CollectingRun (.letE (.arr ls) (.goto E K start (.var 0 :: L) .nul comp))
   /-- A pack of more elements than a spine holds throws its `RangeError`. -/
   | refused : CollectingRun (.letE (.throw (thrownError l)) b)
 
@@ -157,7 +157,7 @@ theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' 
   | pure hp =>
     obtain ⟨hpre, hp'⟩ := hp.step hs
     exact ⟨hpre, .pure hp'⟩
-  | @collect E L vs K start hE hL hsc hvs =>
+  | @collect E L vs K start _ hE hL hsc hvs =>
     by_cases hl : vs.length ≤ maxArrayLength
     · obtain ⟨rfl, rfl⟩ := Step_det hs (.letC (.arrAlloc hvs hl))
       exact ⟨⟨_, rfl⟩, .collected hE hL hsc⟩
@@ -169,7 +169,7 @@ theorem CollectingRun.step {h t h' t'} (hp : CollectingRun t) (hs : Step h t h' 
       cases s with
       | throwC s' => exact absurd s' (value_no_step rfl)
     | letV hv => simp [isVal] at hv
-  | @collected E L ls K start hE hL hsc =>
+  | @collected E L ls K start _ hE hL hsc =>
     obtain ⟨rfl, rfl⟩ := Step_det hs (.letV (by rfl))
     have hm : L.map (subst 0 (.arr ls)) = L := by
       rw [List.map_congr_left (g := id) (fun v hv => subst_above (hsc v hv) (Nat.le_refl 0) _),

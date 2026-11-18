@@ -28,9 +28,10 @@ export Verification.TolerantFrames.Target (ReachesIn EntryHolds GraphGuarantee C
 section
 variable {ι : Type} [Labels ι]
 
-/-- The term that runs a program graph from `start`, frame `L`, receiver `d`. -/
+/-- The term that runs a program graph from `start`, frame `L`, receiver `d`.
+The run is outside every component (`none`): the wire carries no component. -/
 def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) : Tm :=
-  .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d
+  .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d none
 
 end
 
