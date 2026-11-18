@@ -2323,11 +2323,19 @@ variables past it moving down, `insertSites`); lowered code instantiated
 at an environment of $`O`$ fits $`O`$ at outside code's allocation sites
 (`fits_lowered`, `ReadOnlyFitsSubst.lean`).
 
-Proof scope: the lemmas above are proved. That every step keeps a closed
-term fitting and the heap meeting the flow at `stepSite` is not proved;
-it needs, beyond these, the entry of a closure (its captures, a rest
-spine), a spread's and a merge's reads, and the closedness of the entry's
-values.
+**Every step keeps a term fitting** (`fits_step`,
+`ReadOnlyFitsStep.lean`, by induction on the step): from a closed term
+fitting a set at the allocation sites of its top frame, on a heap meeting
+the flow, the step leads to a term fitting the same set and a heap meeting
+the flow, the ghost giving its fresh locations `stepSite`. A call enters a
+run whose environment holds the receiver, the actuals and the closure, all
+of $`O`$, and the captures (`fits_graphEntry`); a merge copies values of a
+closed set's contents (`merge_vals`).
+
+Proof scope: the lemmas above are proved. Not proved here: that the
+entry's term and heap fit (closed values, lowered outside code), the
+checker that decides `CodeOk` from the lowered graphs, and `SitesSound`
+from `fits_step` at the frame's checks.
 
 ### Located reductions
 

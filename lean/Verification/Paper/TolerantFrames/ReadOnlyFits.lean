@@ -234,8 +234,9 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → A
       (∀ s ∈ a.arr :: Sx, Stores Fl s Sv) → Sub Sx S → a.arr ∈ S → Fits V Γ a S (.setElem x i v)
   | lenOf {Γ a S Sx x} : Fits V Γ a Sx x → Fits V Γ a S (.lenOf x)
   | throw {Γ a S x} : Fits V Γ a Fl.O x → Fits V Γ a S (.throw x)
-  | merge {Γ a S Sx Sy d x y} : Fits V Γ a Sx x → Fits V Γ a Sy y →
-      (∀ s ∈ Sx ++ Sy, Stores Fl a.obj (Fl.H.contents s)) → a.obj ∈ S → Fits V Γ a S (.merge d x y)
+  | merge {Γ a S Sx Sy Q d x y} : Fits V Γ a Sx x → Fits V Γ a Sy y → Sub (Sx ++ Sy) Q →
+      (∀ s ∈ Q, Sub (Fl.H.contents s) Q) → (∀ s ∈ Q, Stores Fl a.obj (Fl.H.contents s)) → a.obj ∈ S →
+      Fits V Γ a S (.merge d x y)
   | makeKey {Γ a S Sk Sx k x} : Fits V Γ a Sk k → Stores Fl a.obj Sx → Fits V Γ a Sx x → a.obj ∈ S →
       Fits V Γ a S (.makeKey k x)
   | gotoC {Γ a S E K l L d comp} (π : CodeFlow P) : P.ofC comp = true → Fl.code (E, K) = some π →
@@ -284,7 +285,7 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   | setElem _ _ _ hst hS ha ihx ihi ihv => exact .setElem ihx ihi ihv hst hS ha
   | lenOf _ ih => exact .lenOf ih
   | throw _ ih => exact .throw ih
-  | merge _ _ hst hs ihx ihy => exact .merge ihx ihy hst hs
+  | merge _ _ hq hcl hst hs ihx ihy => exact .merge ihx ihy hq hcl hst hs
   | makeKey _ hst _ hs ihk ihx => exact .makeKey ihk hst ihx hs
   | gotoC π hc hcode henv hS => exact .gotoC π hc hcode (fun i => (henv i).imp hV) hS
   | gotoOut hc hE henv hS => exact .gotoOut hc hE (fun i => (henv i).imp hV) hS
@@ -1006,10 +1007,10 @@ theorem raises_fits {V : Sites P → Val → Prop} {t v : Tm} (hr : Raises t v) 
     | lenOf hx => exact ih hx
   | mergeC1 _ ih => intro Γ a S h; cases h with
     | val hv' => simp [isVal] at hv'
-    | merge hx _ _ _ => exact ih hx
+    | merge hx _ _ _ _ _ => exact ih hx
   | mergeC2 _ _ ih => intro Γ a S h; cases h with
     | val hv' => simp [isVal] at hv'
-    | merge _ hy _ _ => exact ih hy
+    | merge _ hy _ _ _ _ => exact ih hy
   | makeKeyC1 _ ih => intro Γ a S h; cases h with
     | val hv' => simp [isVal] at hv'
     | makeKey hk _ _ _ => exact ih hk
