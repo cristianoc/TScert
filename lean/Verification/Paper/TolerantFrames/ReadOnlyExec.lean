@@ -390,26 +390,28 @@ noncomputable def pkgStep_of {chk : Conf → Conf → CheckData (F.at C) tv} {d 
 /-! ## A member certified for its calls -/
 
 /-- **A member's certificate** (the interface of the certified effects, the
-draft's Ψ and guarantees): for the calls `Call` of one member, its
-certified effect `eff`, within `Ψ_C` part by part; the soundness of that
-effect over each checked call (`certified`, what the pass's check of the
-member's body establishes); and each invariant of `G_C` kept by each
-checked step (`tolerant`, Tolerant invariant). -/
-structure Cert {P : Package} (tv : TypeView) (Ψ : Protocol P) (G : (St P → Prop) → Prop)
+draft's Ψ and guarantees), for the steps of a checked component-step
+relation `R`: for the calls `Call` of one member, its certified effect
+`eff`, within `Ψ_C` part by part; the soundness of that effect over each
+call whose steps are in `R` (`certified`, what the pass's check of the
+member's body establishes); and each invariant of `G_C` kept by each step
+in `R` (`tolerant`, Tolerant invariant). At `R = StepRel.checked tv` the
+steps are every checked step (`PkgStep`). -/
+structure Cert {P : Package} {tv : TypeView} (R : StepRel P tv) (Ψ : Protocol P) (G : (St P → Prop) → Prop)
     (Call : Nat → St P → St P → Prop) where
   eff : Protocol P
   within : ∀ p, (eff p).le (Ψ p) = true
   certified : ∀ (d : Nat) (Inner : St P → St P → Prop),
     (∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') →
-    ∀ st st', MemberRun tv Inner d st st' → Call d st st' → Ok d st → ∀ l v, st.g.InR l → st.s.h[l]? = some v →
+    ∀ st st', MemberRunOf R Inner d st st' → Call d st st' → Ok d st → ∀ l v, st.g.InR l → st.s.h[l]? = some v →
       ∃ v', st'.s.h[l]? = some v' ∧ (eff (st.part l)).Holds st.s.h.length v v'
-  tolerant : ∀ I, G I → ∀ (d : Nat) t t', PkgStep tv d t t' → Ok d t → I t → I t'
+  tolerant : ∀ I, G I → ∀ (d : Nat) t t', R.Rel d t t' → Ok d t → I t → I t'
 
-/-- **The member a certificate gives**: its call is a checked run that is
-one of the member's calls. -/
-def Cert.member {P : Package} {Ψ : Protocol P} {G : (St P → Prop) → Prop} {Call : Nat → St P → St P → Prop}
-    (k : Cert tv Ψ G Call) : Member P Ψ G where
-  Call d Inner st st' := MemberRun tv Inner d st st' ∧ Call d st st'
+/-- **The member a certificate gives**: its call is a run of steps in `R`
+that is one of the member's calls. -/
+def Cert.member {P : Package} {R : StepRel P tv} {Ψ : Protocol P} {G : (St P → Prop) → Prop}
+    {Call : Nat → St P → St P → Prop} (k : Cert R Ψ G Call) : Member P Ψ G where
+  Call d Inner st st' := MemberRunOf R Inner d st st' ∧ Call d st st'
   bound d Inner hI st st' hr hok := by
     obtain ⟨ok', hk, hg⟩ := MemberRun.ok hI hr.1 hok
     refine ⟨⟨hk, hg, fun l v hR hv => ?_⟩, ok'⟩
@@ -580,9 +582,19 @@ theorem hyp_props {x y : Conf} {g : Ghost (F.at C)} (hk : kind F C c x y ≠ .ou
     PkgProps tv (lift F C c x g) (lift F C c y (Ghost.next F C c chk x y g)) (midOf chk x y g) (chk x y).xs := by
   unfold StepHyp at hh; rw [if_neg hk] at hh; exact hh
 
+/-- **The checked steps of an execution**: at `R = StepRel.checked tv`, a
+step of `C`'s code is its checked step itself; `decompose`, `exec_bound`,
+`exec_keeps` and `exec_rely` at it are the results over every `PkgStep`. -/
+def XStep.checked {d : Nat} {a b : Conf × Ghost (F.at C)} (_ : XStep F C c Θ chk a b)
+    (p : PkgStep tv d (lift F C c a.1 a.2) (lift F C c b.1 b.2)) :
+    (StepRel.checked tv).Rel d (lift F C c a.1 a.2) (lift F C c b.1 b.2) := p
+
 section Decompose
-variable (certs : (m : Option Code) → Cert tv Ψ G (CallOf F C c Θ chk m))
-include certs
+variable {R : StepRel (F.at C) tv}
+  (certs : (m : Option Code) → Cert R Ψ G (CallOf F C c Θ chk m))
+  (mk : ∀ {d : Nat} {a b : Conf × Ghost (F.at C)}, XStep F C c Θ chk a b →
+    PkgStep tv d (lift F C c a.1 a.2) (lift F C c b.1 b.2) → R.Rel d (lift F C c a.1 a.2) (lift F C c b.1 b.2))
+include certs mk
 
 /-- **An actual execution is a run of outside code** (the draft, "Actual
 executions"). An execution inside a call of `C` at depth `d` (`QRun`), from
@@ -602,7 +614,7 @@ theorem decompose (off : Nat) : ∀ n : Nat,
       ∀ k, n ≤ k → Run Θ Ψ G k d (lift F C c a.1 a.2) (lift F C c e.1 e.2)) ∧
     (∀ (d : Nat) (a e : Conf × Ghost (F.at C)), Ex (XStep F C c Θ chk) (QCall F C c d) n a e →
       δ F C c a = d + 1 → δ F C c e = d → a.2.A.length = δ F C c a + off →
-      ∀ k, n ≤ k → MemberRun tv (Run Θ Ψ G k (d + 1)) d (lift F C c a.1 a.2) (lift F C c e.1 e.2)) := by
+      ∀ k, n ≤ k → MemberRunOf R (Run Θ Ψ G k (d + 1)) d (lift F C c a.1 a.2) (lift F C c e.1 e.2)) := by
   intro n
   induction n using Nat.strongRecOn with
   | _ n ih =>
@@ -652,7 +664,7 @@ theorem decompose (off : Nat) : ∀ n : Nat,
           simp only [QCall]; simp only [QRun] at hx; omega) hdb hdw' (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k' (by omega)
         have hcall : (certs (entered c b.1.t)).member.Call d (Run Θ Ψ G k' (d + 1))
             (lift F C c a.1 a.2) (lift F C c w.1 w.2) :=
-          ⟨.step hpk hM, a, b, w, n₁, ⟨hs, hdisc, hg, hh⟩, rfl, h₁.mono fun x hx => by
+          ⟨.step (mk ⟨hs, hdisc, hg, hh⟩ hpk) hM, a, b, w, n₁, ⟨hs, hdisc, hg, hh⟩, rfl, h₁.mono fun x hx => by
             simp only [QCall]; simp only [QRun] at hx; omega, hda, hdb, hdw', rfl, rfl⟩
         exact RunAt.member _ hcall ((ih n₂ (by omega)).1 d w e hd0 h₂ hdw' hde
           (hlen h₁ (XStep.len ⟨hs, hdisc, hg, hh⟩ hl)) (k' + 1) (by omega))
@@ -695,8 +707,8 @@ theorem decompose (off : Nat) : ∀ n : Nat,
         by_cases hbe : depthC F C c b.1.t = d
         · -- The exit of the call.
           obtain ⟨-, rfl⟩ := hrest.stop (by simp only [QCall, δ]; omega)
-          exact .step hpk (.nil _)
-        · exact .step hpk ((ih m (by omega)).2 d b e hrest (by simp only [δ] at hda ⊢; omega) hde
+          exact .step (mk ⟨hs, hdisc, hg, hh⟩ hpk) (.nil _)
+        · exact .step (mk ⟨hs, hdisc, hg, hh⟩ hpk) ((ih m (by omega)).2 d b e hrest (by simp only [δ] at hda ⊢; omega) hde
             (XStep.len ⟨hs, hdisc, hg, hh⟩ hl) k (by omega))
 
 /-- **(L2) of an actual execution**: an execution inside a call of `C`, as
@@ -706,7 +718,7 @@ theorem exec_bound (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (off : Nat) {d n : Nat
     (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) :
     RBound Ψ d (lift F C c a.1 a.2) (lift F C c e.1 e.2) ∧ Ok d (lift F C c e.1 e.2) :=
-  Run.bound hΘ n d _ _ ((decompose certs off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok
+  Run.bound hΘ n d _ _ ((decompose certs mk off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok
 
 /-- **(L4) of an actual execution**: an invariant of `G_C` that every
 outside step keeps survives such an execution. -/
@@ -715,7 +727,7 @@ theorem exec_keeps (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {I : St (F.at C) → P
     (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
     (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) (hi : I (lift F C c a.1 a.2)) :
     I (lift F C c e.1 e.2) :=
-  Run.keeps hΘ hG hout n d _ _ ((decompose certs off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hi
+  Run.keeps hΘ hG hout n d _ _ ((decompose certs mk off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hi
 
 /-- **The rule's consequence over an actual execution**: the call's run
 bounding the heap by its own effect `Φ`, a fact whose support meets the
@@ -729,9 +741,19 @@ theorem exec_rely (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {Cn : ConditionOn (St (
     (hΦ : TolerantFrames.Action Φ ρ a.1.s e.1.s)
     (hf : Framed Φ Ψ S ρ (lift F C c a.1 a.2)) (hc : Cn ρ mm (lift F C c a.1 a.2) (lift F C c e.1 e.2))
     (hA : A ρ mm (lift F C c a.1 a.2)) : A ρ mm (lift F C c e.1 e.2) :=
-  readOnly_rely hΘ hsup hΦ ((decompose certs off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
+  readOnly_rely hΘ hsup hΦ ((decompose certs mk off n).1 d a e hok.pos hex hda hde hl n (Nat.le_refl _)) hok hf hc hA
 
 end Decompose
+
+/-- **(L2) over every checked step** (the instance `StepRel.checked`): with a
+certificate for each code over every `PkgStep`, `exec_bound` at the checked
+steps themselves. -/
+theorem exec_bound_checked (certs : (m : Option Code) → Cert (StepRel.checked tv) Ψ G (CallOf F C c Θ chk m))
+    (hΘ : ∀ p, (Θ p).le (Ψ p) = true) (off : Nat) {d n : Nat} {a e : Conf × Ghost (F.at C)}
+    (hex : Ex (XStep F C c Θ chk) (QRun F C c d) n a e) (hda : δ F C c a = d) (hde : δ F C c e = d)
+    (hl : a.2.A.length = δ F C c a + off) (hok : Ok d (lift F C c a.1 a.2)) :
+    RBound Ψ d (lift F C c a.1 a.2) (lift F C c e.1 e.2) ∧ Ok d (lift F C c e.1 e.2) :=
+  exec_bound certs (fun hx p => XStep.checked hx p) hΘ off hex hda hde hl hok
 
 /-! ## The invariants at every depth -/
 

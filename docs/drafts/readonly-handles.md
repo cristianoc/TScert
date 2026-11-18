@@ -1692,8 +1692,10 @@ call.
   or outside storage, so a write charged to every such part is charged to
   its own.
 - A member from its checks (proved, `memberOfChecks`): its call is a
-  sequence of checked steps and runs of code that is not $`C`$'s one
-  call deeper (`MemberRun`); with its certified effect within $`\Psi_C`$
+  sequence of steps of a checked component-step relation `R` and runs of
+  code that is not $`C`$'s one call deeper (`MemberRunOf R`; `StepRel`: a
+  relation over steps each projecting to a checked step `PkgStep`, every
+  `PkgStep` at `StepRel.checked`, `MemberRun`); with its certified effect within $`\Psi_C`$
   part by part (the protocol a fixed point over the members) it meets
   `Member.bound`, and with every step keeping each invariant of complete
   handles (`TolerantStep`, *Tolerant invariant*) it meets `Member.keeps`.
@@ -1920,10 +1922,16 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   With the fields of a checked step that read the step's code
   (`PkgProps`, hypothesis), a step of $`C`$'s code is a checked step
   (proved, `pkgStep_of`), its history and `covers` by construction.
-- A member's certificate (`Cert`, hypothesis) is for the actual calls of
+- A member's certificate (`Cert R`, hypothesis) is for the actual calls of
   one code (`CallOf`: an execution whose first step enters the code, up to
   the first state with as many calls of $`C`$ active as before it, its
-  exit); `Cert.member` is the member it gives.
+  exit), over the steps of a checked component-step relation `R`: its
+  effect's soundness over the calls whose steps are in `R`, and each
+  invariant of $`G_C`$ kept by each step in `R` (`tolerant`);
+  `Cert.member` is the member it gives. The decomposition reads, at each
+  step of $`C`$'s code of an execution, its step in `R` from the execution
+  step and its checked step (`mk`); at `StepRel.checked` it is the checked
+  step itself (`XStep.checked`, `exec_bound_checked`).
 - The decomposition (proved, `decompose`). An execution inside a call of
   $`C`$ at depth $`d`$, from and to a state with $`d`$ calls active, each
   step meeting its hypothesis at its ghost (`XStep`) and each state a
@@ -1961,8 +1969,8 @@ each step of $`C`$'s code, the sites, keys and crossings the checks give
 (`PkgProps`: crossings meeting the marks, every value given to or stored
 where outside code reaches crossing, local storage closed), the interface
 of the checks (S), (K) and (O); for each code a call of $`C`$ enters, a
-certificate (`Cert`): its effect within $`\Psi_C`$, that effect's
-soundness over the code's actual calls, and each checked step keeping
+certificate (`Cert R`): its effect within $`\Psi_C`$, that effect's
+soundness over the code's actual calls, and each step in `R` keeping
 each invariant of $`G_C`$, the interface of the certified effects; and,
 for the frame's premise, the flow of possible sites and the protection a
 region is read with. A state's roots being its term's, the three
