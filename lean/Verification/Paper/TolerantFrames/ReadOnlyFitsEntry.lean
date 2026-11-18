@@ -169,6 +169,81 @@ theorem HeapInv.entry {g : Ghost P} {s : IndexedHeap} (hF : Fl.Facts) (hg : ∀ 
   refine ⟨VJ.entry hF hg (hst.1 none hF.none) (hv u hm) (hc u hm) (RefsOk.refsOkN (contents_valid hl hu)) (hp u hm),
     fun x _ l _ => by rw [hg]; exact hst.2 none hF.none⟩
 
+/-! ## The closures an entry may hold -/
+
+/-- **The shape of a closure `C`'s code makes**: its signature, and, for
+each capture, the signature of the closure of `C`'s code it holds where
+one is known (a closure of the module capturing the module's closures of
+the functions it calls), `none` otherwise (a closure lowered code creates,
+capturing its variables). -/
+abbrev Shape := FnSig × List (Option FnSig)
+
+variable (P) in
+/-- **A closure of one of the shapes `Sh`** (`OfShape`): a closure of `C`'s code of a
+shape's signature, with one capture per entry of the shape, each capture
+the shape names a signature for holding a closure of it. -/
+inductive OfShape (Sh : List Shape) : Val → Prop where
+  | mk {σ : FnSig} {cs : List (Option FnSig)} {fs : List (PropKey × Nat)} {caps : List Tm} {k : Invoke}
+      {comp : ComponentTag} {oid : Nat} : (σ, cs) ∈ Sh → caps.length = cs.length → cs.length = σ.ncaps →
+      P.ofC comp = true → (∀ (j : Nat) σ', cs[j]? = some (some σ') → ∃ u, caps[j]? = some u ∧ FnIs P σ' u) →
+      OfShape Sh (.objAt fs (.graph σ.ar σ.code.1 σ.code.2 σ.s caps k σ.rest comp) oid)
+
+variable (P) in
+/-- **A well-formed value of an entry** (named premise, well-formed
+entries): every value it holds in its code is a value, and every closure
+of `C`'s code among them is of one of the shapes `Sh` at which `C`'s code
+makes closures. -/
+def WfVal (Sh : List Shape) (v : Val) : Prop :=
+  ∀ w, Within P v w → isVal w = true ∧
+    ∀ fs ar E K s caps k rest comp oid, w = .objAt fs (.graph ar E K s caps k rest comp) oid →
+      P.ofC comp = true → OfShape P Sh w
+
+variable (Fl) in
+/-- **The proposal meets the shapes** (the checker's condition): the code
+of each shape has a proposal whose entry names a signature only at a
+capture the shape names it for, or at the closure's own slot. -/
+def ShapesOk (Sh : List Shape) : Prop :=
+  ∀ σ cs, (σ, cs) ∈ Sh → ∃ π, Fl.code σ.code = some π ∧ ∀ i σ', π.fn σ.s i = some σ' →
+    (∃ j, i = capSlot σ.ar σ.rest j ∧ cs[j]? = some (some σ')) ∨
+      (i = capSlot σ.ar σ.rest cs.length ∧ σ' = σ)
+
+/-- **A closure of a shape meets its proposal's entry signatures** (proved):
+a capture the shape names holds a closure of it, the closure's own slot
+the closure. -/
+theorem OfShape.fnsOk {Sh : List Shape} (hS : ShapesOk Fl Sh) {w : Val} (hw : OfShape P Sh w) : FnsOk Fl w := by
+  intro fs ar E K s caps k rest comp oid he _
+  cases hw with
+  | @mk σ cs fs' caps' k' comp' oid' hm hl hn _ hcap =>
+    simp only [Tm.objAt.injEq, CallCode.graph.injEq] at he
+    obtain ⟨-, ⟨rfl, hE, hK, rfl, rfl, -, rfl, -⟩, -⟩ := he
+    obtain ⟨π, hπ, hfn⟩ := hS σ cs hm
+    have hσ : σ.code = (E, K) := by rw [← hE, ← hK]
+    refine ⟨π, hσ ▸ hπ, fun i σ' hi => ?_⟩
+    rcases hfn i σ' hi with ⟨j, rfl, hj⟩ | ⟨hi', he'⟩
+    · exact ⟨j, rfl, .inl (hcap j σ' hj)⟩
+    · subst hi' he'
+      refine ⟨caps'.length, by rw [hl], .inr ⟨rfl, ?_⟩⟩
+      rw [hl, hn, ← hσ]
+
+/-- **A well-formed value is a value of an entry** (proved): every closure
+of `C`'s code it holds is of a shape the proposal meets. -/
+theorem WfVal.entryVal {Sh : List Shape} (hS : ShapesOk Fl Sh) {v : Val} (hv : WfVal P Sh v) : EntryVal Fl v :=
+  fun w hw => ⟨(hv w hw).1, fun fs ar E K s caps k rest comp oid he hc =>
+    OfShape.fnsOk hS ((hv w hw).2 fs ar E K s caps k rest comp oid he hc) fs ar E K s caps k rest comp oid he hc⟩
+
+/-- **The shape of an entry from well-formed values** (proved): a run of
+`C`'s code at a node whose proposal names a signature only at slots `sl`
+names it for, which hold closures of it, its environment's and its heap's
+values well formed at shapes the proposal meets. -/
+theorem entryShape_of {Sh : List Shape} (hS : ShapesOk Fl Sh) {h : Heap} {E : List Tm}
+    {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
+    {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) = some π) {sl : Nat → Option FnSig}
+    (hsl : ∀ i σ, π.fn l i = some σ → sl i = some σ) (hfn : ∀ i σ, sl i = some σ → FnIs P σ (envOf L d i))
+    (henv : ∀ i, WfVal P Sh (envOf L d i)) (hheap : ∀ v ∈ h, WfVal P Sh v) :
+    EntryShape Fl h (.goto E K l L d comp) :=
+  ⟨E, K, l, L, d, comp, π, rfl, hc, hcode, fun i σ hi => hfn i σ (hsl i σ hi),
+    fun i => (henv i).entryVal hS, fun v hv => (hheap v hv).entryVal hS⟩
+
 namespace ClientFrame
 variable {τ : Type} {fr : ClientFrame τ}
 
