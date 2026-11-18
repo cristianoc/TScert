@@ -483,6 +483,16 @@ at the entry of a function.
 function. It is a fact about a module array that every step of every
 function keeps. Neither paper has such a rule.
 
+\entry{Read-only frame, to revisit} Rule \textsc{Read-only frame}
+(\nI{Calls of code outside a component}) might keep
+$\len{\mathit{KINDS}}=4$ across calls of outside code when the array is
+protected storage of a component: of an exposed site, such as one a
+handle reaches at a read-only type, where $\keep$ bounds its spine. A
+module array that no crossing value reaches is internal storage, which
+the rule does not protect, and the rule keeps facts across calls inside
+a call of the component, not at the entry of every function
+\status{conj.}.
+
 \section{P16: a cache location initialised at its first use (4 sites)}
 
 {\footnotesize
@@ -507,6 +517,16 @@ facts that hold on every incoming edge are kept.
 $\mathit{bmp}\doteq\code{null}\vee\len{\mathit{bmp}}=65536$ at
 the entry of every function. It is a fact about the contents of a
 module cell that every write to the cell keeps. Neither paper has such a rule.
+
+\entry{Read-only frame, to revisit} The cell's one write, at its first
+use, could be checked to keep
+$\mathit{bmp}\doteq\code{null}\vee\len{\mathit{bmp}}=65536$ as an
+invariant of the members' guarantee $G_{\mathcal{C}}$, as pretext's lazy lists
+are, and the guarantee route would then keep it across calls of outside
+code. The cell is reached by no crossing value, so it is internal
+storage, outside the protected region, and the fact is needed at the
+entry of every function, which the rule does not give
+\status{conj.}.
 
 \section{P17: an index into the element another index selects (3 sites)}
 
@@ -574,6 +594,15 @@ changes the heap.
 Axiom \textsc{(Rigid)} of Paper~I states it: a fact that holds of a
 value named by a variable holds of the value at a rigid path.
 
+\entry{Read-only frame, to revisit} At pretext's sites the record is a
+handle of a read-only type: its invariant holds at the entry, and the
+guarantee route keeps it and its support across calls of outside code.
+The program above exports \code{Prepared} as a structural type with a
+writable array, which outside code may build and write: it is no
+read-only type, so its storage is not protected, and the rule does not
+reach this program
+\status{conj.}.
+
 \section{P19: a running sum of element lengths (2 sites)}
 
 {\footnotesize
@@ -636,6 +665,14 @@ known. The verifier has no contract for \code{Map}.
 gives the type invariant of a value read from a \code{Map} when every
 write to that \code{Map} stores a value that meets the invariant.
 Neither paper has such a rule.
+
+\entry{Read-only frame, to revisit} The protected region does not
+follow the entries of a collection, so the rule gives no invariant to a
+value read from the \code{Map}. A table read back regains its invariant
+at the next boundary it passes, where its caller proves it, or by a
+check at use, such as a test of \code{index.length} before the return
+of \code{tableOf}; the \code{Map} gives none
+\status{conj.}.
 
 \section{P22: a fact about a location a callback cannot reach (1 site, as second blocker)}
 
