@@ -676,75 +676,69 @@ bound the stated effect keeps, and reads through locals taken before
 the visit.
 
 \entry{The rule that covers it} Rule \textsc{Read-only frame}
-(\nI{Calls of code outside a component}) bounds a call of code outside
-a component $\mathcal{C}$ on $\mathcal{C}$'s protected region $R_{\mathcal{C}}$ by
-$\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}}$: the effects of $\mathcal{C}$'s own
-members, and the obligation $\mathcal{C}$'s API states for its clients.
-Theorem ``Read-only reliance'' of Paper~I then keeps a fact whose
-support lies in $R_{\mathcal{C}}$ and tolerates that bound. In the program
-above $\mathcal{C}$ is the module, its interface the export \code{walk}.
-The cursor \code{c} is held only by \code{walk}'s frame and passed to no
-call, so its site is local and its field is in $R_{\mathcal{C}}$; the one
-member, \code{walk}, writes only what it allocated, so
-$\Psi_{\mathcal{C}}=\keep$, and with the read-only obligation
-$\Theta_{\mathcal{C}}=\keep$. The visit then has the effect
-$\Phi\oplus_{\mathcal{C}}\keep$, with $\Phi$ the visitor's stated effect, and
-$0\le c.i<\len{\mathit{xs}}$ survives it where \code{xs}'s spine is
-outside $R_{\mathcal{C}}$, by \textsc{(Grow)}, as in P1.
+(\nI{Calls of code outside a component}) gives the visit the effect
+$\Phi\oplus_{\mathcal{C}}(\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}})$, where $\Phi$
+is the visitor's stated effect, $\mathcal{C}$ the module, and
+$\Psi_{\mathcal{C}}=\keep$, since \code{walk} writes only the cursor it
+allocates; the module states no client obligation, so
+$\Theta_{\mathcal{C}}=\keep$. Proposition ``Read-only reliance'' of Paper~I
+tests, by its bound route, location by location, the support
+$\{c.i:\keep,\ \mathit{xs}.\kw{spine}:\grow\}$ of the facts the visit
+must keep. Paper~I's table gives the obligation $c.i<\len{\mathit{xs}}$
+the field at $\init$, and the loop invariant's
+$\mathit{safeInteger}(c.i)$, a contents atom, the field at $\keep$; the
+derivation keeps both across the visit, so it needs $\keep$. The field $c.i$ is of a local site,
+reached by no crossing, so it is in $R_{\mathcal{C}}$ and bounded by
+$\keep$. The spine of \code{xs} crossed in at the writable type
+\code{number[]}: outside $R_{\mathcal{C}}$, $\Phi$ bounds it by
+$\st:\grow$, and $\grow\sqsubseteq\grow$; were it inside, $\keep$ would
+bound it. So $0\le c.i<\len{\mathit{xs}}$ holds after the visit
+\status{conj.: Paper~I states the rule's connection to the calculus as a conjecture}.
 
-\entry{The premises at pretext's sites} The premises of the rule and of
-the theorem are discharged as follows at two sites: the call of
+\entry{The premises at pretext's sites} At the call of
 \code{stepPreparedSimpleLineGeometry} after \code{onLine} in
-\code{walkPreparedLinesRaw}, and the steps after \code{onLine} in
-\code{walkPreparedComplexLines}
-\status{conj.: the derivation at each site. Observed: the edits listed
-below type-check under TypeScript 7.0.2 and pass pretext's own suite,
-191 of 191 tests under Bun 1.4.2, at upstream \code{0d102a5c}}.
+\code{walkPreparedLinesRaw}, and after \code{onLine} in
+\code{walkPreparedComplexLines}, the premises are met as follows
+\status{conj., the derivation at each site}.
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[The component] $\mathcal{C}$ is pretext's package. Its interface
-is the 17 functions that \code{layout.ts} and \code{rich-inline.ts},
-the modules of \code{package.json}'s exports \code{.} and
-\code{./rich-inline}, export; \code{walkPreparedLinesRaw} is called by
-name. Its five modules are components nested in $\mathcal{C}$. The
-\code{onLine} an entry receives runs outside $\mathcal{C}$.
-\item[No suspension] Pretext's \code{src} contains no \code{await},
-\code{yield}, async function or generator.
-\item[The client obligation] The three handle types
-\code{PreparedText}, \code{PreparedTextWithSegments} and
-\code{PreparedRichInline} are read at their representations, read-only
-throughout, and state \code{@clients \{\}}: $\Theta_{\mathcal{C}}=\keep$.
-The README's section ``Callers' obligation'' states the row, in the
-words of Paper~I's Assumption ``Clients''.
-\item[The marks] The storage of a handle is reached read-only from the
-entry that returns it, so its sites are exposed; a handle a client
-passes in is reached by an incoming read-only crossing and is protected
-while the walker holds it. The cursor of \code{walkPreparedLinesRaw}
-(\code{line-break.ts} line 293 at upstream \code{0d102a5c}) is held by frames and passed by name to
-the steppers alone: a local site. The values given to \code{onLine}
-and the other results, \code{LayoutLineRange} among them, have writable
-types and reach only released storage.
-\item[The protocol] $\Psi_{\mathcal{C}}$ is $\kw{scalar}$ at the keys
-\code{sourceStarts}, \code{sourceEnds} and \code{sourceUnits} of the
-paragraph handle's site, of released sites and of outside storage,
-written by \code{materializeRichInlineLineRange}, and $\keep$ at every
-other part. It preserves references.
-\item[The invariants] $G_{\mathcal{C}}$ holds the \code{@invariant} of
-\code{PreparedLineData}, \code{segmentFlags.length === widths.length},
-that of \code{PreparedSegments} and the paragraph's five clauses. The
-walker has them at its entry, from an analysed caller by
-\code{invariant-requires} and from a client by the row.
-\item[The support] The relation of lengths that
-\code{stepPreparedSimpleLineGeometry} reads has its support at the
-spines of the handle's arrays, of exposed sites or protected, where
-$\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}}$ is $\keep$; the cursor's facts have
-theirs at the local cursor, also at $\keep$. Both survive
-\code{onLine}.
+\item[The component] $\mathcal{C}$ is pretext's package. Its interface is
+the 17 functions of \code{layout.ts} and \code{rich-inline.ts}, the
+modules \code{package.json} exports as \code{.} and
+\code{./rich-inline}; the walkers are called by name, and the
+\code{onLine} an entry receives runs outside $\mathcal{C}$. The source
+contains no \code{await}, \code{yield}, async function or generator.
+\item[The client obligation] The three handle types \code{PreparedText},
+\code{PreparedTextWithSegments} and \code{PreparedRichInline} are opaque:
+a field they do not mention has type \code{unknown}, read-only, so
+everything a handle reaches is reached read-only, and
+$\Theta_{\mathcal{C}}=\keep$. The README states this obligation to callers
+(Appendix~\ref{app:pretext}).
+\item[The protocol] After a handle is given out, only
+\code{materializeRichInlineLineRange} writes it: it sets the paragraph
+handle's \code{sourceStarts}, \code{sourceEnds} and \code{sourceUnits}
+from \code{null} to a list. So $\Psi_{\mathcal{C}}$ is $\kw{scalar}$ at those
+three keys, of the paragraph's site, of released sites and of outside
+storage, and $\keep$ at every other part.
+\item[The support] The fact that \code{stepPreparedSimpleLineGeometry}
+reads, \code{segmentFlags.length === widths.length} of the handle's data
+record, has four locations: the fields \code{widths} and
+\code{segmentFlags} of the record, at $\grow$, which keeps the array each
+holds, and the two spines, at $\keep$. Each is of an exposed site, or is
+outside storage that the handle's crossing in reached read-only, so in
+$R_{\mathcal{C}}$, where $\Psi_{\mathcal{C}}\sqcup\Theta_{\mathcal{C}}$ is $\keep$:
+the bound route applies. The
+walker's cursor (\code{line-break.ts} line 293 at upstream
+\code{0d102a5c}) is of a local site, its fields in $R_{\mathcal{C}}$ at
+$\keep$.
+\item[Ownership] Each store into a handle stores storage of exposed
+sites: the lazy write the lists it allocates, and preparation, into
+records it allocates, its own arrays and the cached measurement lists
+that handles share. (O) admits each.
+\item[The fact at entry] The walker has the relation at its entry: from
+an analysed caller by the handle type's \code{@invariant}, required at
+the call, and from a client by the assumption on the preconditions of
+exported functions (Section ``Summary'').
 \end{description}
-The edits to pretext's source that these premises need add 113 lines
-and remove 24: records free of brands, casts through \code{unknown}
-checked at the four introductions of a handle, three overloads of
-\code{measureAnalysis}, the three guards of the lazy write, and the
-obligation in three annotation comments and the README.
 
 \section{Summary}
 
@@ -770,7 +764,7 @@ P17 & 3 & an index into a selected element & in neither paper\\
 P18 & 2 & a guard through two \code{@stable} fields & stated in Paper~I, not implemented\\
 P19 & 2 & a sum of element lengths & in neither paper\\
 P20 & 1 & the invariant of a \code{Map} value & in neither paper\\
-P22 & 1 & a callback's effect bounded by what it reaches & \textsc{Read-only frame}, stated in Paper~I, not implemented\\
+P22 & 1 & a local cursor field kept across the visitor; an array spine may grow & \textsc{Read-only frame}, stated in Paper~I, not implemented\\
 \bottomrule
 \end{tabular}}
 
@@ -799,8 +793,27 @@ assume it. The two facts are the lengths of the results of library
 functions (P14) and the contents of the tables that pretext's generator
 packs (P5). P1's effect, stated on a callback that the application
 passes to a public function, is such a fact too: the application's
-callback is assumed to stay within it. So is the client obligation that
-P22's derivation reads: a client of pretext that the verifier does not
-analyse changes no storage it reaches at a handle's read-only type.
+callback is assumed to stay within it. P22's derivation reads two more:
+a client of pretext that the verifier does not analyse changes no storage
+it reaches at a handle's read-only type (Paper~I, Assumption ``Clients''),
+and a handle it passes to an entry meets the handle type's
+\code{@invariant}, as the precondition of an exported function is assumed
+of the callers the verifier does not analyse.
+
+\appendix
+\section{Pretext's edits for P22}\label{app:pretext}
+
+The premises of P22 at pretext's sites need edits to its source, applied
+to a copy of upstream \code{0d102a5c}: representation records free of
+brands, with casts through \code{unknown} between a handle and its record,
+checked at the four places a handle is introduced; the
+\code{@invariant} of each record; three overloads of
+\code{measureAnalysis}, by its literal arguments; the three guards of the
+lazy write; the obligation in three annotation comments; and a README
+section, ``Callers' obligation'', stating the obligation to callers of
+the entry modules. In \code{src} the edits add 97 lines and remove 24; the
+README's section brings the lines added to 113. The edited copy
+type-checks under TypeScript 7.0.2 and passes pretext's own suite, 191 of
+191 tests under Bun 1.4.2 (observed).
 
 \end{document}
