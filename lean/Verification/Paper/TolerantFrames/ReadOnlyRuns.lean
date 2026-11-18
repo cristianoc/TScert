@@ -17,8 +17,10 @@ positions.
   path have their code, environment and default free of runs, and a
   frame's running term is again well formed. A heap is free of runs
   (`HeapFree`) when every value it holds is.
-- **Every step keeps both** (`step_wf`), and it pushes at most one frame
-  on the path (`PathStep1`, the strengthening of `step_path`'s
+- **Every step keeps both** (`step_runs_wf`), and changes the runs of the
+  path as `PathRuns` states (the run it changes keeps its code and tag, it
+  pushes at most one run, not yet entered), so it pushes at most one frame
+  on the path (`step_wf`, `PathStep1`, the strengthening of `step_path`'s
   `PathStep`).
 - **The discipline** (`disc_of_wf`): a step of a well-formed term on a
   heap free of runs obeys `Disc` at every component of a family.
@@ -380,84 +382,9 @@ def PathStep1 (P P' : List (ComponentTag × Tm)) : Prop :=
   (∃ new F F' rest, P = F :: rest ∧ P' = new ++ F' :: rest ∧ F'.1 = F.1 ∧ new.length ≤ 1) ∨
   (∃ new F G G' rest, P = F :: G :: rest ∧ P' = new ++ G' :: rest ∧ G'.1 = G.1 ∧ new.length ≤ 1)
 
-theorem PathStep1.wrap {P P' : List (ComponentTag × Tm)} (g : Tm → Tm) (h : PathStep1 P P') :
-    PathStep1 (ReadOnly.wrap g P) (ReadOnly.wrap g P') := by
-  rcases h with ⟨new, F, F', rest, rfl, rfl, ht, hn⟩ | ⟨new, F, G, G', rest, rfl, rfl, ht, hn⟩
-  · by_cases hr : rest = []
-    · subst hr
-      refine .inl ⟨new, (F.1, g F.2), (F'.1, g F'.2), [], rfl, ?_, ht, hn⟩
-      simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _)]; rfl
-    · refine .inl ⟨new, F, F', ReadOnly.wrap g rest, ?_, ?_, ht, hn⟩
-      · simp only [ReadOnly.wrap, mapLast_cons hr]
-      · simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _), mapLast_cons hr]
-  · by_cases hr : rest = []
-    · subst hr
-      refine .inr ⟨new, F, (G.1, g G.2), (G'.1, g G'.2), [], rfl, ?_, ht, hn⟩
-      simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _)]; rfl
-    · refine .inr ⟨new, F, G, G', ReadOnly.wrap g rest, ?_, ?_, ht, hn⟩
-      · simp only [ReadOnly.wrap, mapLast_cons (List.cons_ne_nil _ _), mapLast_cons hr]
-      · simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _), mapLast_cons hr]
-
-theorem PathStep1.append {P P' : List (ComponentTag × Tm)} (Q : List (ComponentTag × Tm)) (h : PathStep1 P P') :
-    PathStep1 (P ++ Q) (P' ++ Q) := by
-  rcases h with ⟨new, F, F', rest, rfl, rfl, ht, hn⟩ | ⟨new, F, G, G', rest, rfl, rfl, ht, hn⟩
-  · exact .inl ⟨new, F, F', rest ++ Q, rfl, by simp, ht, hn⟩
-  · exact .inr ⟨new, F, G, G', rest ++ Q, rfl, by simp, ht, hn⟩
-
 theorem init_short {P : List (ComponentTag × Tm)} {init : List (ComponentTag × Tm)} {x : ComponentTag × Tm}
     (hP : P = init ++ [x]) (hl : P.length ≤ 2) : init.length ≤ 1 := by
   subst hP; simp at hl; omega
-
-/-- **A step inside an evaluation context**, as `PathStep.ctx`, where the
-context's term with a value at the position enters at most one run. -/
-theorem PathStep1.ctx {c : ComponentTag} {a a' A A' : Tm} {g : Tm → Tm}
-    (hrel : PathStep1 (path c a) (path c a')) (hA : path c A = ReadOnly.wrap g (path c a))
-    (hA' : isVal a' = false → path c A' = ReadOnly.wrap g (path c a'))
-    (hlen : isVal a' = true → (path c A').length ≤ 2) : PathStep1 (path c A) (path c A') := by
-  cases hv : isVal a'
-  · rw [hA, hA' hv]; exact hrel.wrap g
-  · rw [path_val hv] at hrel
-    obtain ⟨init, s, hl⟩ := path_last A' c
-    have hi := init_short hl (hlen hv)
-    rw [hA, hl]
-    rcases hrel with ⟨new, F, F', rest, hP, hP', ht, -⟩ | ⟨new, F, G, G', rest, hP, hP', ht, -⟩
-    · obtain ⟨rfl, rfl, rfl⟩ : new = [] ∧ F' = (c, a') ∧ rest = [] := by
-        cases new with
-        | nil => simp at hP'; exact ⟨rfl, hP'.1.symm, hP'.2⟩
-        | cons _ _ => simp at hP'
-      rw [hP]
-      exact .inl ⟨init, (F.1, g F.2), (c, s), [], rfl, by simp, by simp [← ht], hi⟩
-    · obtain ⟨rfl, rfl, rfl⟩ : new = [] ∧ G' = (c, a') ∧ rest = [] := by
-        cases new with
-        | nil => simp at hP'; exact ⟨rfl, hP'.1.symm, hP'.2⟩
-        | cons _ _ => simp at hP'
-      rw [hP]
-      exact .inr ⟨init, F, (G.1, g G.2), (c, s), [], rfl, by simp, by simp [← ht], hi⟩
-
-/-- A step of a frame-free redex to a term entering at most one run. -/
-theorem PathStep1.base {c : ComponentTag} {t t' : Tm} (h : (path c t).length = 1) (h' : (path c t').length ≤ 2) :
-    PathStep1 (path c t) (path c t') := by
-  obtain ⟨init, s, hl⟩ := path_last t c
-  have : init = [] := by
-    have := congrArg List.length hl
-    rw [h] at this; simpa using this
-  subst this
-  obtain ⟨init', s', hl'⟩ := path_last t' c
-  rw [hl, hl']
-  exact .inl ⟨init', (c, s), (c, s'), [], rfl, rfl, rfl, init_short hl' (hl' ▸ h')⟩
-
-/-- A step at a frame that pops it to a term entering at most one run. -/
-theorem PathStep1.framePop {c : ComponentTag} {t t' : Tm} {F : ComponentTag × Tm} (h : path c t = [F, (c, hole)])
-    (h' : (path c t').length ≤ 2) : PathStep1 (path c t) (path c t') := by
-  obtain ⟨init, s, hl⟩ := path_last t' c
-  rw [h, hl]
-  exact .inr ⟨init, F, (c, hole), (c, s), [], rfl, rfl, rfl, init_short hl (hl ▸ h')⟩
-
-theorem PathStep1.frameGoto {c : ComponentTag} {t : Tm} {E : List Tm}
-    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
-    {F : ComponentTag × Tm} (h : path c t = [F, (c, hole)]) (ht : F.1 = comp) :
-    PathStep1 (path c t) (path c (.goto E K l L d comp)) :=
-  .inl ⟨[], F, (comp, .goto E K l L d comp), [(c, hole)], h, rfl, ht.symm, by simp⟩
 
 theorem pathArgs_len1 {c : ComponentTag} :
     ∀ {xs : List Tm} (k : List Tm → Tm), (∀ a ∈ xs, ∀ c, free false a = true → (path c a).length = 1) →
@@ -548,18 +475,220 @@ theorem graphEntry_free {n : Nat} {E : List Tm} {K : List (ControlFlow.Continuat
   split <;> simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true, List.mem_cons, List.mem_append,
     Bool.true_and] <;> grind
 
-/-! ## Every step keeps well-formedness -/
+section
+open ControlFlow
+/-! ## The runs of a path -/
 
-/-- **Every step keeps a well-formed term and a heap free of runs, and
-pushes at most one frame on the path.** By induction on the step: a step
-inside an evaluation context keeps the context's other subterms pending,
-and when the position becomes a value the context's next position, a
-pending term, enters at most one run (`pf_path`); a step at a redex
-produces a pending term, its values read from a heap free of runs or
-substituted into code free of runs; entering a run instantiates a node
-expression free of runs, which enters none (`nr_path`). -/
-theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
-    wf t = true → HeapFree h → wf t' = true ∧ HeapFree h' ∧ ∀ c, PathStep1 (path c t) (path c t') := by
+/-- **The run of a path entry**: the top segment, a run not yet entered, or
+a frame. -/
+inductive RunHead where
+  | top
+  | goto (code : Code) (comp : ComponentTag) (label : Nat)
+  | frame (code : Code) (comp : ComponentTag) (k : Continuation) (x : Option Target)
+
+/-- The run an entry's term is. -/
+def runHead : Tm → RunHead
+  | .goto E K l _ _ comp => .goto (E, K) comp l
+  | .frame E K _ _ _ k x comp => .frame (E, K) comp k x
+  | _ => .top
+
+/-- **A node of a code a frame runs**: the code has a node at the label,
+whose continuation and handler are the frame's. -/
+def NodeOf (m : Code) (l : Nat) (k : Continuation) (x : Option Target) : Prop :=
+  m.2[l]? = some (k, x) ∧ ∃ e, m.1[l]? = some e
+
+/-- **A step of an entry's run**: its tag kept; the top segment stays one; a
+frame stays a frame of the same code, continuation and handler, or becomes
+a run of its code at a node; a run not yet entered becomes a frame at its
+node. -/
+def HeadStep (p p' : ComponentTag × Tm) : Prop :=
+  p'.1 = p.1 ∧
+    match runHead p.2, runHead p'.2 with
+    | .top, .top => True
+    | .frame m c k x, .frame m' c' k' x' => m' = m ∧ c' = c ∧ k' = k ∧ x' = x
+    | .frame m c _ _, .goto m' c' _ => m' = m ∧ c' = c
+    | .goto m c l, .frame m' c' k x => m' = m ∧ c' = c ∧ NodeOf m l k x
+    | _, _ => False
+
+/-- An entry that is a run not yet entered. -/
+def IsGoto (p : ComponentTag × Tm) : Prop := ∃ m c l, runHead p.2 = .goto m c l
+
+/-- **A step's change of the path's runs**: the innermost entry changed, or
+popped and the one under it changed, at most one run not yet entered
+pushed. -/
+def PathRuns (P P' : List (ComponentTag × Tm)) : Prop :=
+  (∃ new F F' rest, P = F :: rest ∧ P' = new ++ F' :: rest ∧ HeadStep F F' ∧ new.length ≤ 1 ∧
+    ∀ p ∈ new, IsGoto p) ∨
+  (∃ new F G G' rest, P = F :: G :: rest ∧ P' = new ++ G' :: rest ∧ HeadStep G G' ∧ new.length ≤ 1 ∧
+    ∀ p ∈ new, IsGoto p)
+
+/-! ### The shape of a path's runs -/
+
+theorem HeadStep.top {a : ComponentTag} {s s' : Tm} (h : runHead s = .top) (h' : runHead s' = .top) :
+    HeadStep (a, s) (a, s') := by
+  simp [HeadStep, h, h']
+
+theorem HeadStep.wrapLast {g : Tm → Tm} (hg : ∀ a s s', HeadStep (a, g s) (a, g s'))
+    {F F' : ComponentTag × Tm} (hF : HeadStep F F') : HeadStep (F.1, g F.2) (F'.1, g F'.2) := by
+  rw [hF.1]; exact hg _ _ _
+
+theorem wrap_top {g : Tm → Tm} (hg : ∀ s, runHead (g s) = .top) {c : ComponentTag} {P : List (ComponentTag × Tm)}
+    (h : ∃ init s, P = init ++ [(c, s)]) : ∃ init s, wrap g P = init ++ [(c, s)] ∧ runHead s = .top := by
+  obtain ⟨init, s, rfl⟩ := h
+  exact ⟨init, g s, wrap_snoc, hg s⟩
+
+theorem pathArgs_top {c : ComponentTag} :
+    ∀ {xs : List Tm} (k : List Tm → Tm), (∀ ys, runHead (k ys) = .top) →
+      ∃ init s, pathArgs c k xs = init ++ [(c, s)] ∧ runHead s = .top
+  | [], k, hk => ⟨[], k [], rfl, hk []⟩
+  | a :: as, k, hk => by
+    simp only [pathArgs]
+    split
+    · exact wrap_top (fun _ => hk _) (path_last a c)
+    · exact pathArgs_top _ (fun _ => hk _)
+
+/-- **The top segment is no run**: the last entry of a path. -/
+theorem path_top (t : Tm) (c : ComponentTag) : ∃ init s, path c t = init ++ [(c, s)] ∧ runHead s = .top := by
+  cases t
+  all_goals simp only [path]
+  all_goals repeat' split
+  all_goals first
+    | exact ⟨[], _, rfl, rfl⟩
+    | exact ⟨[_], _, rfl, rfl⟩
+    | exact ⟨_, _, rfl, rfl⟩
+    | exact wrap_top (fun _ => rfl) (path_last _ _)
+    | exact pathArgs_top _ (fun _ => rfl)
+
+theorem mapLast_dropLast {α : Type} {g : α → α} : ∀ P : List α, (mapLast g P).dropLast = P.dropLast
+  | [] => rfl
+  | [_] => rfl
+  | x :: y :: xs => by
+    rw [mapLast_cons_cons, List.dropLast_cons_of_ne_nil (by cases xs <;> simp [mapLast]),
+      List.dropLast_cons_of_ne_nil (by simp), mapLast_dropLast (y :: xs)]
+
+theorem wrap_dropLast {g : Tm → Tm} (P : List (ComponentTag × Tm)) : (wrap g P).dropLast = P.dropLast :=
+  mapLast_dropLast P
+
+theorem pathArgs_goto {c : ComponentTag} :
+    ∀ {xs : List Tm} (k : List Tm → Tm),
+      (∀ a ∈ xs, ∀ c, free true a = true → ∀ p ∈ (path c a).dropLast, IsGoto p) →
+      (∀ a ∈ xs, free true a = true) → ∀ p ∈ (pathArgs c k xs).dropLast, IsGoto p
+  | [], k, _, _ => by simp [pathArgs]
+  | a :: as, k, ih, h => by
+    simp only [pathArgs]
+    split
+    · rw [wrap_dropLast]; exact ih a List.mem_cons_self c (h a List.mem_cons_self)
+    · exact pathArgs_goto _ (fun x hx => ih x (List.mem_cons_of_mem _ hx)) (fun x hx => h x (List.mem_cons_of_mem _ hx))
+
+/-- **A pending term's runs are runs not yet entered**: every entry of its
+path but the top segment. -/
+theorem pf_goto : ∀ (t : Tm), free true t = true → ∀ c, ∀ p ∈ (path c t).dropLast, IsGoto p := by
+  intro t
+  induction t using Tm.induct
+  all_goals intro h c
+  all_goals simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true] at h
+  all_goals simp only [path]
+  all_goals (repeat' split) <;> (try rw [wrap_dropLast]) <;>
+    first
+      | (simp; done)
+      | (simp [IsGoto, runHead]; done)
+      | (apply pathArgs_goto <;> grind)
+      | grind
+
+/-- **The shape of a pending term's path**: runs not yet entered, at most
+one, then the top segment. -/
+theorem pf_shape {t : Tm} (h : free true t = true) (c : ComponentTag) :
+    ∃ init s, path c t = init ++ [(c, s)] ∧ runHead s = .top ∧ init.length ≤ 1 ∧ ∀ p ∈ init, IsGoto p := by
+  obtain ⟨init, s, hl, hs⟩ := path_top t c
+  have hi := pf_goto t h c
+  rw [hl, List.dropLast_concat] at hi
+  exact ⟨init, s, hl, hs, init_short hl (hl ▸ pf_path t h c), hi⟩
+
+/-! ### A step's change of the runs -/
+
+theorem PathRuns.wrap {P P' : List (ComponentTag × Tm)} (g : Tm → Tm) (hg : ∀ a s s', HeadStep (a, g s) (a, g s'))
+    (h : PathRuns P P') : PathRuns (ReadOnly.wrap g P) (ReadOnly.wrap g P') := by
+  rcases h with ⟨new, F, F', rest, rfl, rfl, ht, hn, hgo⟩ | ⟨new, F, G, G', rest, rfl, rfl, ht, hn, hgo⟩
+  · by_cases hr : rest = []
+    · subst hr
+      refine .inl ⟨new, (F.1, g F.2), (F'.1, g F'.2), [], rfl, ?_, ht.wrapLast hg, hn, hgo⟩
+      simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _)]; rfl
+    · refine .inl ⟨new, F, F', ReadOnly.wrap g rest, ?_, ?_, ht, hn, hgo⟩
+      · simp only [ReadOnly.wrap, mapLast_cons hr]
+      · simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _), mapLast_cons hr]
+  · by_cases hr : rest = []
+    · subst hr
+      refine .inr ⟨new, F, (G.1, g G.2), (G'.1, g G'.2), [], rfl, ?_, ht.wrapLast hg, hn, hgo⟩
+      simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _)]; rfl
+    · refine .inr ⟨new, F, G, G', ReadOnly.wrap g rest, ?_, ?_, ht, hn, hgo⟩
+      · simp only [ReadOnly.wrap, mapLast_cons (List.cons_ne_nil _ _), mapLast_cons hr]
+      · simp only [ReadOnly.wrap, mapLast_append (List.cons_ne_nil _ _), mapLast_cons hr]
+
+theorem PathRuns.append {P P' : List (ComponentTag × Tm)} (Q : List (ComponentTag × Tm)) (h : PathRuns P P') :
+    PathRuns (P ++ Q) (P' ++ Q) := by
+  rcases h with ⟨new, F, F', rest, rfl, rfl, ht, hn, hg⟩ | ⟨new, F, G, G', rest, rfl, rfl, ht, hn, hg⟩
+  · exact .inl ⟨new, F, F', rest ++ Q, rfl, by simp, ht, hn, hg⟩
+  · exact .inr ⟨new, F, G, G', rest ++ Q, rfl, by simp, ht, hn, hg⟩
+
+/-- **A step inside an evaluation context that is no run**, the context's
+term with a value at the position pending. -/
+theorem PathRuns.ctx {c : ComponentTag} {a a' A A' : Tm} {g : Tm → Tm}
+    (hrel : PathRuns (path c a) (path c a')) (hA : path c A = ReadOnly.wrap g (path c a))
+    (hA' : isVal a' = false → path c A' = ReadOnly.wrap g (path c a'))
+    (hpf : isVal a' = true → free true A' = true) (hg : ∀ s, runHead (g s) = .top) :
+    PathRuns (path c A) (path c A') := by
+  cases hv : isVal a'
+  · rw [hA, hA' hv]; exact hrel.wrap g (fun _ s s' => HeadStep.top (hg s) (hg s'))
+  · rw [path_val hv] at hrel
+    obtain ⟨init, s, hl, hs, hi, hgo⟩ := pf_shape (hpf hv) c
+    rw [hA, hl]
+    rcases hrel with ⟨new, F, F', rest, hP, hP', ht, -⟩ | ⟨new, F, G, G', rest, hP, hP', ht, -⟩
+    · obtain ⟨rfl, rfl, rfl⟩ : new = [] ∧ F' = (c, a') ∧ rest = [] := by
+        cases new with
+        | nil => simp at hP'; exact ⟨rfl, hP'.1.symm, hP'.2⟩
+        | cons _ _ => simp at hP'
+      rw [hP]
+      have hc : c = F.1 := ht.1
+      refine .inl ⟨init, (F.1, g F.2), (c, s), [], rfl, by simp, ?_, hi, hgo⟩
+      rw [hc]; exact HeadStep.top (hg _) hs
+    · obtain ⟨rfl, rfl, rfl⟩ : new = [] ∧ G' = (c, a') ∧ rest = [] := by
+        cases new with
+        | nil => simp at hP'; exact ⟨rfl, hP'.1.symm, hP'.2⟩
+        | cons _ _ => simp at hP'
+      rw [hP]
+      have hc : c = G.1 := ht.1
+      refine .inr ⟨init, F, (G.1, g G.2), (c, s), [], rfl, by simp, ?_, hi, hgo⟩
+      rw [hc]; exact HeadStep.top (hg _) hs
+
+/-- A step of a redex outside runs to a pending term. -/
+theorem PathRuns.base {c : ComponentTag} {t t' : Tm} (h : (path c t).length = 1) (h' : free true t' = true) :
+    PathRuns (path c t) (path c t') := by
+  obtain ⟨init, s, hl, hs⟩ := path_top t c
+  have : init = [] := by
+    have := congrArg List.length hl
+    rw [h] at this; simpa using this
+  subst this
+  obtain ⟨init', s', hl', hs', hi, hgo⟩ := pf_shape h' c
+  rw [hl, hl']
+  exact .inl ⟨init', (c, s), (c, s'), [], rfl, rfl, HeadStep.top hs hs', hi, hgo⟩
+
+/-- A step at a frame that pops it to a pending term. -/
+theorem PathRuns.framePop {c : ComponentTag} {t t' : Tm} {F : ComponentTag × Tm} (h : path c t = [F, (c, hole)])
+    (h' : free true t' = true) : PathRuns (path c t) (path c t') := by
+  obtain ⟨init, s, hl, hs, hi, hgo⟩ := pf_shape h' c
+  rw [h, hl]
+  exact .inr ⟨init, F, (c, hole), (c, s), [], rfl, rfl, HeadStep.top rfl hs, hi, hgo⟩
+
+/-- A frame becoming a run of its code. -/
+theorem PathRuns.frameGoto {c : ComponentTag} {t u : Tm} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat} {L L' : List Tm} {d d' : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (h : path c t = [(comp, .frame E K u L d k x comp), (c, hole)]) :
+    PathRuns (path c t) (path c (.goto E K l L' d' comp)) :=
+  .inl ⟨[], _, (comp, .goto E K l L' d' comp), [(c, hole)], h, rfl, by simp [HeadStep, runHead], by simp, by simp⟩
+
+theorem step_runs_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
+    wf t = true → HeapFree h → wf t' = true ∧ HeapFree h' ∧ ∀ c, PathRuns (path c t) (path c t') := by
   induction hs
   case callArg hf hr ha hpre hs ih =>
     intro hw hh
@@ -568,8 +697,8 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgs_split hw.2 ha hpre hna
     obtain ⟨w', hh', hp⟩ := ih wa hh
     have ho := set_others (b := ‹Tm›) hoth
-    refine ⟨?_, hh', fun c => PathStep1.ctx (hp c) (by simp only [path, hf, hr]; exact pathArgs_at _ ha hpre hna)
-      (fun hv => by simp only [path, hf, hr]; exact pathArgs_set _ ha hpre hv) (fun hv => pf_path _ ?_ c)⟩
+    refine ⟨?_, hh', fun c => PathRuns.ctx (hp c) (by simp only [path, hf, hr]; exact pathArgs_at _ ha hpre hna)
+      (fun hv => by simp only [path, hf, hr]; exact pathArgs_set _ ha hpre hv) (fun hv => ?_) (by intro _; rfl)⟩
     · simp only [wf, hf, hr, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true]
       exact ⟨hw.1, wfArgs_mk (set_at ha) (set_pre hpre) w' ho⟩
     · simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true]
@@ -581,8 +710,8 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgs_split hw.2 ha hpre hna
     obtain ⟨w', hh', hp⟩ := ih wa hh
     have ho := set_others (b := ‹Tm›) hoth
-    refine ⟨?_, hh', fun c => PathStep1.ctx (hp c) (by simp only [path, hf]; exact pathArgs_at _ ha hpre hna)
-      (fun hv => by simp only [path, hf]; exact pathArgs_set _ ha hpre hv) (fun hv => pf_path _ ?_ c)⟩
+    refine ⟨?_, hh', fun c => PathRuns.ctx (hp c) (by simp only [path, hf]; exact pathArgs_at _ ha hpre hna)
+      (fun hv => by simp only [path, hf]; exact pathArgs_set _ ha hpre hv) (fun hv => ?_) (by intro _; rfl)⟩
     · simp only [wf, hf, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true]
       exact ⟨hw.1, wfArgs_mk (set_at ha) (set_pre hpre) w' ho⟩
     · simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true]
@@ -594,8 +723,8 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgs_split hw ha hpre hna
     obtain ⟨w', hh', hp⟩ := ih wa hh
     have ho := set_others (b := ‹Tm›) hoth
-    refine ⟨?_, hh', fun c => PathStep1.ctx (hp c) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
-      (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv) (fun hv => pf_path _ ?_ c)⟩
+    refine ⟨?_, hh', fun c => PathRuns.ctx (hp c) (by simp only [path]; exact pathArgs_at _ ha hpre hna)
+      (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv) (fun hv => ?_) (by intro _; rfl)⟩
     · simp only [wf]
       exact wfArgs_mk (set_at ha) (set_pre hpre) w' ho
     · simp only [free, frees_eq, List.all_eq_true]
@@ -612,16 +741,16 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨wa, hoth⟩ := wfArgs_split hw' ha hpre hna
     obtain ⟨w', hh', hp⟩ := ih wa hh
     have ho := set_others (b := a') hoth
-    exact ⟨hcode _ (wfArgs_mk (set_at ha) (set_pre hpre) w' ho), hh', fun c' => PathStep1.ctx (hp c')
+    exact ⟨hcode _ (wfArgs_mk (set_at ha) (set_pre hpre) w' ho), hh', fun c' => PathRuns.ctx (hp c')
       (by simp only [path]; exact pathArgs_at _ ha hpre hna)
       (fun hv => by simp only [path]; exact pathArgs_set _ ha hpre hv)
-      (fun hv => pf_path _ (hcode' _ (all_set ho (pf_of_wf_val hv w'))) c')⟩
+      (fun hv => hcode' _ (all_set ho (pf_of_wf_val hv w'))) (by intro _; rfl)⟩
   case letV ha =>
     intro hw hh
     simp only [wf, ha, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hw
     have hpf := subst_free (free_val' ha hw.1) _ 0 true hw.2
-    exact ⟨pf_wf _ hpf, hh, fun c => PathStep1.base (by simp [path, ha]) (pf_path _ hpf c)⟩
-  case gotoEnter E l e K k x _ L d comp he _ =>
+    exact ⟨pf_wf _ hpf, hh, fun c => PathRuns.base (by simp [path, ha]) hpf⟩
+  case gotoEnter E l e K k x _ L d comp he hK =>
     intro hw hh
     simp only [wf, runParts, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
     have henv : ∀ i, free false (envOf L d i) = true := fun i => by
@@ -637,18 +766,20 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
         have h1 := nr_path _ hnr comp
         rw [hl] at h1; simpa using h1
       subst this
-      refine .inl ⟨[], (comp, .goto E K l L d comp), (comp, .frame E K s L d k x comp), [(c, hole)], rfl, ?_, rfl,
-        by simp⟩
-      simp only [path, hl, wrap_snoc, List.append_assoc]; rfl
+      refine .inl ⟨[], (comp, .goto E K l L d comp), (comp, .frame E K s L d k x comp), [(c, hole)], rfl, ?_,
+        ⟨rfl, ?_⟩, by simp, by simp⟩
+      · simp only [path, hl, wrap_snoc, List.append_assoc]; rfl
+      · simp only [runHead, NodeOf]
+        simp [hK, he]
   case frameRet hv =>
     intro hw hh
     simp only [wf, Bool.and_eq_true] at hw
-    exact ⟨hw.2, hh, fun c => PathStep1.framePop (path_frame (path_val hv)) (by rw [path_val hv]; simp)⟩
+    exact ⟨hw.2, hh, fun c => PathRuns.framePop (path_frame (path_val hv)) (pf_of_wf_val hv hw.2)⟩
   case frameHandle hr =>
     intro hw hh
     simp only [wf, runParts, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
     have hv := raises_free hr hw.2
-    refine ⟨?_, hh, fun c => PathStep1.frameGoto (path_frame (raises_path hr _)) rfl⟩
+    refine ⟨?_, hh, fun c => PathRuns.frameGoto (path_frame (raises_path hr _))⟩
     simp only [wf, runParts, Bool.and_eq_true, frees_eq, List.all_eq_true]
     refine ⟨⟨hw.1.1.1, fun x hx => ?_⟩, ?_⟩ <;>
       first
@@ -667,7 +798,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     simp only [wf, runParts, Bool.and_eq_true] at hw
     have hv := raises_free hr hw.2
     have hval := sourceVal_isVal (raises_sourceVal hr)
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.framePop (path_frame (raises_path hr _)) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.framePop (path_frame (raises_path hr _)) ?pf⟩
     case pf => simp only [free]; exact free_mono _ hv
   case callBound =>
     rename_i hr hargs
@@ -675,7 +806,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     simp only [wf, isVal_objAt, hr, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true, free, frees_eq,
       List.all_eq_true] at hw
     have hpa := wfArgs_vals hw.2 hargs
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base ?len (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base ?len ?pf⟩
     case len => simp [path, hr, pathArgs_vals _ hargs]
     case pf =>
       simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true, List.mem_append]
@@ -687,7 +818,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     rw [heq] at hw
     obtain ⟨-, hp1, hp2⟩ := wfArgs_mid isVal_spread hw.2 hpre
     have hvs := readElems_free hh hre
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base ?len (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base ?len ?pf⟩
     case pf =>
       simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true, List.mem_append]
       grind [free_mono]
@@ -700,7 +831,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     rw [heq] at hw
     obtain ⟨-, hp1, hp2⟩ := wfArgs_mid isVal_spread hw.2 hpre
     have hvs := readElems_free hh hre
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base ?len (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base ?len ?pf⟩
     case pf =>
       simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true, List.mem_append]
       grind [free_mono]
@@ -713,7 +844,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     rw [heq] at hw
     obtain ⟨-, hp1, hp2⟩ := wfArgs_mid isVal_spread hw hpre
     have hvs := readElems_free hh hre
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base ?len (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base ?len ?pf⟩
     case pf =>
       simp only [free, frees_eq, List.all_eq_true, List.mem_append]
       grind [free_mono]
@@ -724,94 +855,94 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     have hargs : wfArgs vs = true := by
       cases c <;> simp only [wf, Bool.and_eq_true] at hw <;> first | exact hw | exact hw.2
     have hnr : ∀ v ∈ vs, free false v = true := fun v hv => free_val' (hvs v hv) (wfArgs_vals hargs hvs v hv)
-    refine ⟨pf_wf _ ?pf, (hh.append hnr).append (by simp [free]), fun c' => PathStep1.base ?len (pf_path _ ?pf c')⟩
+    refine ⟨pf_wf _ ?pf, (hh.append hnr).append (by simp [free]), fun c' => PathRuns.base ?len ?pf⟩
     case pf => cases c <;> simp_all [wf, free]
     case len => simp [path, pathArgs_vals _ hvs]
   case readField =>
     rename_i hl hv
     intro _ hh
-    exact ⟨pf_wf _ (free_mono _ (hh.get hv)), hh, fun c => PathStep1.base (by simp [path])
-      (pf_path _ (free_mono _ (hh.get hv)) c)⟩
+    exact ⟨pf_wf _ (free_mono _ (hh.get hv)), hh, fun c => PathRuns.base (by simp [path])
+      (free_mono _ (hh.get hv))⟩
   case readProto =>
     rename_i h1 h2 hp
     intro _ hh
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path]) ?pf⟩
     case pf => simp only [free]; exact free_mono _ (hh.get hp)
   case indexField =>
     rename_i hk hl hv
     intro _ hh
-    exact ⟨pf_wf _ (free_mono _ (hh.get hv)), hh, fun c => PathStep1.base (by simp [path, propertyKey_val hk])
-      (pf_path _ (free_mono _ (hh.get hv)) c)⟩
+    exact ⟨pf_wf _ (free_mono _ (hh.get hv)), hh, fun c => PathRuns.base (by simp [path, propertyKey_val hk])
+      (free_mono _ (hh.get hv))⟩
   case indexProto =>
     rename_i hk h1 h2 hp
     intro hw hh
     simp only [wf, isVal_objAt, propertyKey_val hk, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hw
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, propertyKey_val hk]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, propertyKey_val hk]) ?pf⟩
     case pf => simp only [free, Bool.and_eq_true]; exact ⟨free_mono _ (hh.get hp), hw.2⟩
   case indexMissing =>
     rename_i hk h1 h2
     intro _ hh
-    exact ⟨rfl, hh, fun c => PathStep1.base (by simp [path, propertyKey_val hk]) (by simp [path])⟩
+    exact ⟨rfl, hh, fun c => PathRuns.base (by simp [path, propertyKey_val hk]) (by first | rfl | simp [free, thrownError])⟩
   case writeField =>
     rename_i hv hl hlt
     intro hw hh
     simp only [wf, isVal_objAt, hv, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hw
-    exact ⟨rfl, hh.set (free_val' hv hw.2), fun c => PathStep1.base (by simp [path, hv]) (by simp [path])⟩
+    exact ⟨rfl, hh.set (free_val' hv hw.2), fun c => PathRuns.base (by simp [path, hv]) (by first | rfl | simp [free, thrownError])⟩
   case testV =>
     rename_i hv
     intro _ hh
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, hv]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, hv]) ?pf⟩
     case pf => split <;> rfl
   case arithV =>
     rename_i hb
     intro _ hh
     obtain ⟨ha, hb', hres⟩ := binop_result hb
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, ha, hb']) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, ha, hb']) ?pf⟩
     case pf => rcases hres with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
   case arrAlloc =>
     rename_i hvs hlen
     intro hw hh
     simp only [wf] at hw
     exact ⟨rfl, hh.append fun v hv => free_val' (hvs v hv) (wfArgs_vals hw hvs v hv),
-      fun c => PathStep1.base (by simp [path, pathArgs_vals _ hvs]) (by simp [path])⟩
+      fun c => PathRuns.base (by simp [path, pathArgs_vals _ hvs]) (by first | rfl | simp [free, thrownError])⟩
   case arrAllocThrow =>
     rename_i hvs hlen
     intro _ hh
-    exact ⟨rfl, hh.append (by simp [free]), fun c => PathStep1.base (by simp [path, pathArgs_vals _ hvs])
-      (by simp [path, thrownError])⟩
+    exact ⟨rfl, hh.append (by simp [free]), fun c => PathRuns.base (by simp [path, pathArgs_vals _ hvs])
+      (by first | rfl | simp [free, thrownError])⟩
   case elemRead =>
     rename_i hl hv
     intro _ hh
-    exact ⟨pf_wf _ (free_mono _ (hh.get hv)), hh, fun c => PathStep1.base (by simp [path])
-      (pf_path _ (free_mono _ (hh.get hv)) c)⟩
+    exact ⟨pf_wf _ (free_mono _ (hh.get hv)), hh, fun c => PathRuns.base (by simp [path])
+      (free_mono _ (hh.get hv))⟩
   case setPresent =>
     rename_i hv hl hlt
     intro hw hh
     simp only [wf, isVal_arr, isVal_num, hv, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hw
-    exact ⟨rfl, hh.set (free_val' hv hw.2), fun c => PathStep1.base (by simp [path, hv]) (by simp [path])⟩
+    exact ⟨rfl, hh.set (free_val' hv hw.2), fun c => PathRuns.base (by simp [path, hv]) (by first | rfl | simp [free, thrownError])⟩
   case setGrow =>
     rename_i hv hk hl
     intro hw hh
     simp only [wf, isVal_arr, isVal_num, hv, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hw
-    exact ⟨rfl, hh.append (by simpa using free_val' hv hw.2), fun c => PathStep1.base (by simp [path, hv])
-      (by simp [path])⟩
+    exact ⟨rfl, hh.append (by simpa using free_val' hv hw.2), fun c => PathRuns.base (by simp [path, hv])
+      (by first | rfl | simp [free, thrownError])⟩
   case lenStrThrow =>
     intro _ hh
-    exact ⟨rfl, hh.append (by simp [free]), fun c => PathStep1.base (by simp [path]) (by simp [path, thrownError])⟩
+    exact ⟨rfl, hh.append (by simp [free]), fun c => PathRuns.base (by simp [path]) (by first | rfl | simp [free, thrownError])⟩
   case elemStr =>
     intro _ hh
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path]) ?pf⟩
     case pf => simp only [codeUnitAt]; split <;> rfl
   case arithThrow =>
     rename_i hb
     intro _ hh
     obtain ⟨ha, hb'⟩ := binopThrows_values hb
-    exact ⟨rfl, hh.append (by simp [free]), fun c => PathStep1.base (by simp [path, ha, hb'])
-      (by simp [path, thrownError])⟩
+    exact ⟨rfl, hh.append (by simp [free]), fun c => PathRuns.base (by simp [path, ha, hb'])
+      (by first | rfl | simp [free, thrownError])⟩
   case mergeV =>
     rename_i ha hb hm
     intro _ hh
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, ha, hb]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, ha, hb]) ?pf⟩
     case pf =>
       simp only [free, frees_eq, List.all_eq_true]
       exact nr_frees_true (mergeParts_free hh hm)
@@ -819,7 +950,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     rename_i ha hk
     intro hw hh
     simp only [wf, propertyKey_val hk, ha, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true] at hw
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, propertyKey_val hk, ha]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, propertyKey_val hk, ha]) ?pf⟩
     case pf => simp [free, hw.2]
   case callGraph =>
     rename_i hr hargs hbind
@@ -828,7 +959,7 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
       List.all_eq_true] at hw
     have hpa := wfArgs_vals hw.2 hargs
     have hra := free_val' hr hw.1.2
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, hr, pathArgs_vals _ hargs]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, hr, pathArgs_vals _ hargs]) ?pf⟩
     case pf =>
       exact graphEntry_free hw.1.1.1 hw.1.1.2 (by simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true]; exact hw.1.1)
         hra (fun x hx => free_val' (hargs x hx) (hpa x hx))
@@ -838,14 +969,14 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     simp only [wf, isVal_objAt, Bool.true_eq_false, ↓reduceIte, Bool.and_eq_true, free, frees_eq,
       List.all_eq_true] at hw
     have hpa := wfArgs_vals hw.2 hargs
-    refine ⟨pf_wf _ ?pf, hh, fun c => PathStep1.base (by simp [path, pathArgs_vals _ hargs]) (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, hh, fun c => PathRuns.base (by simp [path, pathArgs_vals _ hargs]) ?pf⟩
     case pf =>
       exact graphEntry_free hw.1.1 hw.1.2 (by simp only [free, frees_eq, Bool.and_eq_true, List.all_eq_true]; exact hw.1)
         rfl (fun x hx => free_val' (hargs x hx) (hpa x hx))
   all_goals try (
     intro hw hh
     simp only [wf, runParts, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
-    refine ⟨?_, hh, fun c => PathStep1.frameGoto (path_frame (path_val (by first | assumption | rfl))) rfl⟩
+    refine ⟨?_, hh, fun c => PathRuns.frameGoto (path_frame (path_val (by first | assumption | rfl)))⟩
     simp only [wf, runParts, Bool.and_eq_true, frees_eq, List.all_eq_true]
     have hv : ∀ v, isVal v = true → wf v = true → free false v = true := fun v hv hw => nr_of_wf_val hv hw
     refine ⟨⟨hw.1.1.1, (envMap_free ?_ hw.1.2).1⟩, (envMap_free ?_ hw.1.2).2⟩ <;>
@@ -861,26 +992,46 @@ theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     obtain ⟨w', hh', hp⟩ := ih hw.2 hh
     refine ⟨by simp only [wf, Bool.and_eq_true]; exact ⟨hw.1, w'⟩, hh', fun c => ?_⟩
     simp only [path]
-    exact ((hp _).wrap _).append _
+    refine PathRuns.append _ (PathRuns.wrap _ ?_ (hp _))
+    intro _ _ _
+    simp [HeadStep, runHead]
   all_goals try (
     rename_i ih
     intro hw hh
     have hna := not_val_of_step ‹Step _ _ _ _›
     simp [wf, *] at hw
     obtain ⟨w', hh', hp⟩ := ih (by simp_all) hh
-    refine ⟨?_, hh', fun c => PathStep1.ctx (hp c) (by simp [path, *] <;> rfl) (fun hv => by simp [path, *] <;> rfl)
-      (fun hv => pf_path _ ?_ c)⟩
+    refine ⟨?_, hh', fun c => PathRuns.ctx (hp c) (by simp [path, *] <;> rfl) (fun hv => by simp [path, *] <;> rfl)
+      (fun hv => ?_) (by intro _; rfl)⟩
     · simp only [wf]; (repeat' split) <;> simp_all [pf_of_wf_val, pf_wf, wfArgs_of_pf]
     · simp_all [free, pf_of_wf_val]
     done)
   -- A redex to a pending term, the path entering at most one run.
   all_goals try (
     intro hw hh
-    refine ⟨pf_wf _ ?pf, ?heap, fun c => PathStep1.base ?len (pf_path _ ?pf c)⟩
+    refine ⟨pf_wf _ ?pf, ?heap, fun c => PathRuns.base ?len ?pf⟩
     case pf => simp_all [wf, free]
     case heap => first | exact hh | skip
     case len => simp [path, *]
     done)
+end
+
+/-! ## Every step keeps well-formedness -/
+
+/-- **A change of the runs is a change of the path pushing at most one
+frame** (proved). -/
+theorem PathRuns.step1 {P P' : List (ComponentTag × Tm)} (h : PathRuns P P') : PathStep1 P P' := by
+  rcases h with ⟨new, F, F', rest, hP, hP', hF, hn, -⟩ | ⟨new, F, G, G', rest, hP, hP', hG, hn, -⟩
+  · exact .inl ⟨new, F, F', rest, hP, hP', hF.1, hn⟩
+  · exact .inr ⟨new, F, G, G', rest, hP, hP', hG.1, hn⟩
+
+/-- **Every step keeps a well-formed term and a heap free of runs, and
+pushes at most one frame on the path** (proved, `step_runs_wf`). -/
+theorem step_wf {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
+    wf t = true → HeapFree h → wf t' = true ∧ HeapFree h' ∧ ∀ c, PathStep1 (path c t) (path c t') :=
+  fun hw hh =>
+    let h := step_runs_wf hs hw hh
+    ⟨h.1, h.2.1, fun c => (h.2.2 c).step1⟩
 
 
 /-! ## The call discipline -/

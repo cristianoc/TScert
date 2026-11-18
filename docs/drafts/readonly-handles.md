@@ -2166,6 +2166,38 @@ entry meets no code provenance (`Entry.foreign`), and no step of an
 execution from an entry creates it. A closure whose code is one of
 $`C`$'s runs that code, which the checks of $`C`$ cover.
 
+### Located reductions
+
+The checks of $`C`$ read each step at the node of the code performing it
+(`ReadOnlyLocated.lean`). A run not yet entered carries its node's label; a
+frame carries its code, environment, continuation and handler, and no
+label. A located configuration (`Located`) carries one label per entry of
+its evaluation path, a ghost threaded by the steps:
+
+- every step of a well-formed term on a heap free of runs changes the
+  innermost entry, or pops it and changes the one under it, and pushes at
+  most one entry, a run not yet entered (`PathRuns`, `step_runs`); the
+  entry it changes keeps its tag and code (`HeadStep`): a frame stays a
+  frame of the same code, continuation and handler, or becomes a run of
+  its code at a node (a continuation, a handler), and a run not yet
+  entered becomes a frame of its node's continuation and handler;
+- labels agree with the path (`LabelsOk`) when each run's is its own and
+  each frame's names a node of its code whose continuation and handler the
+  frame runs; a located step (`LStep`) is an actual step relabelled
+  (`Relabel`: the pushed entries' own labels, the changed entry's kept
+  unless it is a run at a node, the others unchanged);
+- its erasure is the step (`locatedStep_erase`), and every step from a
+  located configuration lifts to labels agreeing again (`step_lift`): the
+  call of a closure (a run pushed), a substitution (an entry changed in
+  place), a normal return and a throw out of a frame (an entry popped), the
+  unwinding to a handler (a frame becoming a run at the handler's node). A
+  call's entry is located (`labelsOk_goto`);
+- the occurrence of a step (`occ`) is the code, tag and label of the
+  innermost entry's run and the entry's term, its position in the node's
+  expression; the locations a step allocates are numbered within it
+  (`allocAt`). A code is identified by its content, so two identical
+  bodies have the same occurrences and the same checks.
+
 ## Stages and cost
 
 1. **The rule in the note and in Lean**: the marks, $`E_C`$, the history
