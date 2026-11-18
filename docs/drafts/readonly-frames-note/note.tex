@@ -1,0 +1,470 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=2.6cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amsthm}
+\usepackage{newtxtext,newtxmath}
+\usepackage{mathpartir,stmaryrd,microtype,booktabs,enumitem,xcolor}
+\usepackage{tikz}
+\usepackage{needspace}
+\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\bx}[1]{\Box_{#1}}
+\newcommand{\sem}[1]{\llbracket #1\rrbracket}
+\newcommand{\sep}{\mathrel{\#}}
+\newcommand{\kw}[1]{\mathsf{#1}}
+\newcommand{\keep}{\kw{keep}}
+\newcommand{\init}{\kw{init}}
+\newcommand{\extend}{\kw{extend}}
+\newcommand{\grow}{\kw{grow}}
+\newcommand{\any}{\kw{any}}
+\newcommand{\val}{\kw{values}}
+\newcommand{\st}{\kw{spines}}
+\newcommand{\vw}{\kw{views}}
+\newcommand{\LV}{\mathit{Loc}_{\mathsf{view}}}
+\newcommand{\rigid}{\kw{rigid}}
+\newcommand{\fresh}{\kw{fresh}}
+\newcommand{\old}{\kw{old}}
+\newcommand{\dense}{\kw{dense}}
+\newcommand{\apart}{\kw{apart}}
+\newcommand{\len}[1]{|#1|}
+\newcommand{\tr}[1]{\xrightarrow{#1}}
+\newcommand{\resp}{\mathrel{\triangleleft}}
+\newcommand{\hoare}[3]{\{#1\}\;#2\;\{#3\}}
+\newcommand{\hoarex}[4]{\{#1\}\;#2\;\{#3\mid #4\}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\kF}{\mathsf{field}}\newcommand{\kC}{\mathsf{cell}}\newcommand{\kE}{\mathsf{elem}}\newcommand{\kS}{\mathsf{spine}}\newcommand{\kI}{\mathsf{id}}
+\newcommand{\LF}{\mathit{Loc}_{\kF}}\newcommand{\LC}{\mathit{Loc}_{\kC}}\newcommand{\LE}{\mathit{Loc}_{\kE}}\newcommand{\LS}{\mathit{Loc}_{\kS}}\newcommand{\LI}{\mathit{Loc}_{\kI}}
+\newcommand{\lean}[1]{\texttt{\small #1}}
+\newcommand{\status}[1]{\textsf{\small[#1]}}
+\newcommand{\cC}{\mathcal{C}}
+
+\title{Read-only frames\\[2pt]\large Facts of a component across calls of code outside it}
+\author{TScert working note}
+\date{18 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+A function that calls a callback of unknown effect keeps, by the rules of
+\emph{Tolerant frames}~\cite{tf}, no fact about the heap across the call.
+This note states a rule that keeps facts about a component's own storage
+across such calls: a component is a set of functions entered only through
+its interface, and the callback, which reaches the component's storage
+only at read-only types, changes it only by calling the component's
+members, whose effects bound it. The rule, \textsc{Read-only frame},
+bounds a call of outside code by the members' protocol on the component's
+protected region, under an assumption on unanalysed clients, and a
+proposition carries a fact across the call by its support. The calculus,
+effects, supports, the frame rule and Reliance are those of
+\emph{Tolerant frames}; each statement here carries its status mark in
+that note's convention: \status{Lean} names the theorem that proves it,
+\status{conj.} marks a conjecture, and \status{assumed} a specification
+assumed of the host or of clients.
+\end{abstract}
+
+\section{The problem}\label{sec:problem}
+
+In the module
+\begin{center}\small
+\begin{tabular}{@{}l@{}}
+\code{type H = \{ readonly widths: readonly number[] \};}\\
+\code{export function prepare(n: number): H \{ return \{ widths: new Array<number>(n).fill(1) \}; \}}\\
+\code{export function walk(h: H, visit: () => void): number[] \{}\\
+\code{~~const w = h.widths, n = w.length, out: number[] = [];}\\
+\code{~~for (let i = 0; i < n; i++) \{ visit(); out.push(w[i]!); \}}\\
+\code{~~return out; \}}
+\end{tabular}
+\end{center}
+the read \code{w[i]!} needs $i<\len w$ after \code{visit()}, whose
+effect $\top$ allows shortening \code{w}. Yet the visitor holds \code{h}
+only at the read-only type \code{H}, and changes the module's storage
+only by calling \code{prepare} or \code{walk}. This note states that
+argument as a rule. It builds on \emph{Tolerant frames}~\cite{tf}: its
+heap of locations by kind, changes and their order
+$\keep\sqsubseteq\init\sqsubseteq\kw{scalar}\sqsubseteq\extend\sqsubseteq\grow\sqsubseteq\any$,
+effects and their action, supports and respect (its Sections~3 and~4),
+the rule \textsc{Frame} and Proposition Reliance (its Section~6).
+
+\section{Concepts}\label{sec:concepts}
+
+Six concepts state the argument, each shown on the module above.
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[Component] A set $\cC$ of functions entered only through its
+\emph{interface}, here the module's exports. Its \emph{members} are the
+functions outside code can call: the interface's, and each function of
+$\cC$, closure or not, that reaches outside code as a value. A call runs
+\emph{outside} $\cC$ when its callee is not in $\cC$, as the invocation's
+component (\emph{Tolerant frames}, Section~4) records.
+\item[Crossing] A value \emph{crosses} \emph{in} as an entry's argument,
+a callback's result or a caught value, and \emph{out} as an entry's
+result, a callback's argument, a thrown value or a value stored where
+outside code reaches it. A type is \emph{read-only} when its fields are \code{readonly}, its
+arrays \code{readonly} arrays and its typed arrays \code{ArrayLike}, and
+the types of its positions are read-only in turn; a field a type does not
+mention has type \code{unknown}, which is read-only. A location is
+\emph{reached read-only} from a crossing at type $T$ when some prefix of
+a chain of field and element reads from the value to it ends at a
+position of read-only type. Everything at that position and below it is
+then reached read-only: from \code{h} at \code{H}, the record's field location
+\code{h.widths} and the array's spine and cells. A site that one crossing
+reaches writably is released, whatever other crossings do; released or
+outside storage that some crossing in reaches read-only is protected,
+whatever other crossings do. A position whose type does not bound what
+arrives there accepts every value: a callback's result typed
+\code{void}, which a function returning any value meets, a caught value,
+and a position of type \code{any}; a value that crosses in there is read
+at no read-only type.
+\item[Marks] Each allocation site of $\cC$'s code, a native call's
+included, is \emph{local} when its storage is held only by $\cC$'s
+frames (locals and arguments) and by local storage, \emph{internal} when
+no crossing value reaches it, \emph{exposed} when crossing values reach
+it only read-only, and \emph{released} otherwise. Storage of outside code
+is \emph{outside}. A site's mark is proposed for it and confirmed by the
+check (K) below, against every crossing and store of $\cC$'s code. \code{prepare}'s array is exposed; \code{out} is
+released.
+\item[Protected region] $R_\cC$ holds local and exposed storage, and the
+released and outside storage that a crossing in reached read-only, from
+then until the outermost active call of $\cC$ returns, and afterwards
+while $\cC$ \emph{holds} it: while a frame, a module or closure variable,
+or storage of $\cC$ references it or storage it is reachable from.
+\item[Protocol] A protocol $\Psi$ gives a change for each \emph{part}
+$\mathrm{part}(l)$: the spines, the cells, or the fields at one key, of
+one site or of outside storage. The spine of \code{prepare}'s array has
+the part (the site \code{new Array}, spines), and the field
+\code{widths} of its record the part (the record's site, fields at
+\code{widths}); all outside storage of one kind and key is one part,
+such as every outside spine. $\Psi$ \emph{bounds the members} when
+each member, its own calls of outside code bounded by the rule at
+$\Psi$, changes each location of $R_\cC$ existing at its entry within
+$\Psi$ at its part, at both exits. The members' \emph{guarantee}
+$G_\cC$ is a set of invariants each keeps at every write to their
+support and at both exits; an invariant is written \code{/** @invariant
+\ldots{} */} on a type of the interface, over \code{this}, and holds of
+every value of that type. Here $\Psi_\cC=\keep$: both members write
+only storage they allocated.
+\item[Client obligation] $\Theta_\cC$, a protocol stated by $\cC$'s API,
+bounds what clients change of $R_\cC$. A read-only type at the
+interface, or no statement, means $\Theta_\cC=\keep$. The protocol
+$\Psi_\cC\sqcup\Theta_\cC$ gives each part the join, in the order of
+changes, of the two changes at that part.
+\end{description}
+
+\begin{assumption}[Clients]\label{ass:clients}
+Code outside $\cC$ that is not analysed enters $\cC$ only through its
+interface, passes at each position of the interface a value of the
+position's declared type, and each of its own steps changes each location
+of $R_\cC$ within $\Theta_\cC$ at its part
+\status{assumed, of each component's clients. Lean: the hypothesis \lean{OutsideStep.row}}.
+\end{assumption}
+
+\section{The rule}\label{sec:rule}
+
+\begin{mathpar}
+\inferrule*[left=Read-only frame]{c:\Phi\mid\Phi^{e} \\ c\text{ a call, inside a call of }\cC\text{, of code outside }\cC \\\\ \Psi_\cC\text{ bounds the members} \\ \text{(S)} \\ \text{(K)} \\ \text{(O)}}{c:\ \Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)\ \mid\ \Phi^{e}\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)}
+\end{mathpar}
+\noindent
+The effect $\Phi\oplus_\cC\Psi$ changes each location of $R_\cC$, read
+at the call's entry, within $\Psi$ at its part, and every other location
+as $\Phi$ allows. (S), (K) and (O) are proposed static checks of all of
+$\cC$'s code: (S)~no \code{await}, \code{yield}, async function or
+generator, so the outside call returns inside the call of $\cC$;
+(K)~by the flow of the sites each value may come from, a value that
+crosses, or is stored anywhere but in local storage, reaches no local
+site, a crossing value reaches no internal site, and it reaches an
+exposed site only at or below a read-only position;
+(O)~a store of $v$, an initial field value included, into $R_\cC$ or
+into the support of an invariant of $G_\cC$ is admitted when all
+storage reachable from $v$ is exposed or in $R_\cC$. By (O), a client is
+bound only on storage it passed in or received read-only; it is bound
+there even through its own writable alias. The checks are of all of
+$\cC$'s code: one store that (O) refuses removes the rule for every
+outside call inside $\cC$, the walkers' included.
+
+\begin{proposition}[Read-only reliance]\label{prop:rorely}
+Let $c$ start in a state $s$ inside a call of $\cC$, meeting (M) and
+(P2) of Appendix~\ref{app:ro}. Let $F$ hold at $s$ and $S$ support it,
+and let each location $l$ of each $(r:\delta)\in S$ meet
+$(\Psi_\cC\sqcup\Theta_\cC)(\mathrm{part}(l))\sqsubseteq\delta$ if
+$l\in R_\cC(s)$, and $\gamma\sqsubseteq\delta$ for each entry
+$(r':\gamma)$ of $\Phi$ with $l\in r'$ otherwise. Then $F$ holds when
+$c$ returns (the \emph{bound} route), and so does each invariant of
+$G_\cC$ that holds at $s$ and whose support, read at $s$, lies in
+$R_\cC$ and allows $\Theta_\cC$, that is,
+$\Theta_\cC(\mathrm{part}(l))\sqsubseteq\delta$ for each location $l$ of
+each $(r:\delta)$ of the support (the \emph{guarantee} route).
+\end{proposition}
+\begin{proof}
+The rule makes the call an action of $\Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)$,
+which changes each location of $S$ within its $\delta$. The invariants
+are (L4).
+\end{proof}
+
+\noindent
+The bound route serves a fact whose locations no member changes beyond
+what the fact allows; the guarantee route a fact a member may rewrite,
+since each member's write to the invariant's support is checked to keep
+it. Examples~\ref{ex:ro} and~\ref{ex:roneg} use the bound route,
+Example~\ref{ex:roguar} the guarantee route.
+
+\noindent
+Why the rule holds: a step outside $\cC$ reaches no local storage and
+the rest of $R_\cC$ only read-only, so by Assumption~\ref{ass:clients}
+it changes $R_\cC$ within $\Theta_\cC$; an outside run changes $R_\cC$
+otherwise only in members, within $\Psi_\cC$, by induction on the nesting
+of calls; and $R_\cC$ only grows inside a call of $\cC$, so the bounds
+compose, rigidly when $\Phi$ is rigid and $\Psi_\cC\sqcup\Theta_\cC\sqsubseteq\Phi$
+(Appendix~\ref{app:ro})
+\status{Lean: \lean{readOnly\_rule}, \lean{readOnly\_frame}, \lean{readOnly\_rely}, over runs of outside steps meeting \lean{OutsideStep} and member calls meeting \lean{Member} (from \lean{memberOfChecks}). For the calculus's steps at the roots of outside code, \lean{outsideStep\_reach}, \lean{outsideStep\_writes} and \lean{outsideStep\_noForge}, chains following what a closure's code holds (\lean{capture\_reached}), and \lean{rootsValid\_of\_term}. Assumed: the client obligation; that an outside step keeps the marks and the history; that a state's roots are its term's; the members' certified effects; and the proposed checks, which are not implemented, \lean{insideCheck\_sound} proving the premise's check sound given the flow of possible sites and evidence of the protection it reads. conj.: a run of outside code defined as the calculus's steps}.
+
+\section{Examples and limits}\label{sec:examples}
+
+\begin{example}[The module above]\label{ex:ro}
+\code{visit()} has the effect $\top\oplus_\cC\keep$. The support
+$\{w.\kw{spine}:\grow\}$ of $i<\len w$ is in $R_\cC$, exposed when
+\code{prepare} allocated it and protected by the crossing of \code{h}
+when a client did, and $\keep\sqsubseteq\grow$: $i<\len w$ survives,
+under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$. A client that
+casts \code{h.widths} to \code{number[]} and pops it in the visitor
+breaks the assumption, and the walker reads \code{undefined} (observed
+under Node 26).
+\end{example}
+
+\begin{example}[Two refusals]\label{ex:roneg}
+A member
+\code{install(h: H, xs: number[]) \{ (h as \{ widths: number[] \}).widths = xs; \}}
+stores into $R_\cC$ an array that crossed in writable: (O) refuses it.
+Admitted, it would let a client pop its own \code{xs} in a later visit
+and the walker read \code{undefined}. A member
+\code{trim(h: H) \{ (h.widths as number[]).pop(); \}} shortens exposed
+storage, so $\Psi_\cC$ is $\any$ at that spine and $\any\not\sqsubseteq\grow$
+fails the proposition's premise; a visitor calling it makes the walker
+read \code{undefined}. Both observed under Node 26.
+\end{example}
+
+\begin{example}[A guarantee]\label{ex:roguar}
+Give \code{H} a second array and an invariant, and a member that installs
+a copy:
+\begin{center}\small
+\begin{tabular}{@{}l@{}}
+\code{/** @invariant this.widths.length === this.flags.length */}\\
+\code{type H = \{ readonly widths: readonly number[]; readonly flags: readonly number[] \};}\\
+\code{export function install(h: H, xs: number[]): void \{}\\
+\code{~~if (xs.length === h.flags.length) (h as \{ widths: number[] \}).widths = xs.slice(); \}}
+\end{tabular}
+\end{center}
+A walker that reads \code{h.widths[i]!} after each visit, with
+$i<\len{h.\mathit{flags}}$, needs the invariant $I$ after the visit. The
+bound route fails: \code{install} replaces the array at the key
+\code{widths}, so $\Psi_\cC$ is $\any$ there. The guarantee route holds.
+The copy is allocated by $\cC$ and reached by outside code only through
+\code{H}, so its site is exposed, and (O) admits the store; by the
+contract of the array \code{slice} (\emph{Tolerant frames}, Section~6,
+``Library functions''), the copy has the length of \code{xs},
+which the test equates with $\len{h.\mathit{flags}}$, so \code{install}
+keeps $I$ and $I\in G_\cC$. Read at the visit's entry, $I$'s support (the
+two fields at $\grow$ and their two spines at $\keep$) lies in $R_\cC$,
+and $\keep$ allows $\Theta_\cC=\keep$. So $I$ holds after the visit, also
+when the visitor calls \code{install} and pops its own \code{xs}, which
+is outside the support: the walker reads the copy (observed under Node 26).
+\end{example}
+
+\noindent
+A fact relies on one component's rule; combining two components' rules
+is not stated. The model's objects carry no integrity state (frozen,
+sealed, non-extensible), and no protocol states its change.
+
+\section{Related work}\label{sec:related}
+
+Each work below is cited for what it establishes, in the version its
+bibliography entry names; a correspondence with this note is marked
+cited when it compares stated facts of both, and conj.\ when it goes
+beyond them.
+
+\paragraph{Hidden invariants of a module.} Banerjee and Naumann~\cite{bn}
+state in a module's interface a \emph{dynamic boundary}, a read effect
+over ordinary and ghost state that frames the module's hidden invariant,
+verify every client command to write none of its locations, and prove a
+second-order frame rule sound, a variant for reentrant callbacks
+included, for first-order sequential programs. $R_\cC$ is a dynamic
+boundary designated through ghost state, Assumption~\ref{ass:clients}
+the client's side of it, and \textsc{Read-only frame} the second-order
+frame rule (cited). Their clients are all verified and write nothing in
+the boundary; here unanalysed clients are assumed, callbacks change
+$R_\cC$ within $\Psi_\cC$ by calling members, and a callback passed as a
+value, outside their language, is the case at hand (cited). The
+hypothetical frame rule of O'Hearn, Yang and Reynolds~\cite{oyr} hides a
+module's resource invariant from clients that change it only through the
+module's procedures, with the higher-order counterpart of Birkedal,
+Torp-Smith and Yang~\cite{bty}; separation makes the hidden storage
+unreachable to the client, while here outside code holds references to
+exposed storage and reads it (cited). Pottier's anti-frame
+rule~\cite{antiframe} hides local state in direct style by linear
+capabilities that a type system tracks for all code (cited, from its
+abstract).
+
+\paragraph{Object and class invariants.} The Boogie
+methodology~\cite{boogieinv} records which invariants hold in auxiliary
+fields changed by \code{pack} and \code{unpack}; its callers establish
+invariant preconditions, as a handle's invariant here is a contract of
+function boundaries (cited). Leino and M\"uller treat invariants over
+dynamic ownership contexts~\cite{lmdynamic} and static class invariants
+broken only inside a non-reentrant \code{expose}~\cite{lmstatic};
+Drossopoulou et al.~\cite{dfms} frame visible-state techniques, and
+Summers and Drossopoulou~\cite{considerate} let a method declare the
+invariants it may find broken. Each admits an invariant broken between
+visible states; here a member's write to the support of an invariant of
+$G_\cC$ is checked to keep it, so a callback never finds one broken
+(cited). Leino and Nelson~\cite{leinonelson} define modular soundness and
+prove it for static dependencies (cited); Assumption~\ref{ass:clients}
+is the condition under which a component's checked facts stay valid as
+more code is linked around it (conj.).
+
+\paragraph{Ownership and read-only references.} Universes~\cite{universes}
+enforce owner-as-modifier: a reference not through an object's owner only
+reads; the survey of Clarke et al.~\cite{ownsurvey} places it among the
+relaxations of owners-as-dominators. Assumption~\ref{ass:clients} is an
+owner-as-modifier condition at a component's granularity (cited), assumed
+of unanalysed code rather than typed. Javari~\cite{javari} gives
+transitive reference immutability, which matches the transitivity of a
+read-only position here but bounds only the reference, where the
+assumption bounds the storage, through any alias (cited).
+
+\paragraph{Unknown code and scoped protection.} Swasey, Garg and
+Dreyer~\cite{ocpl} prove robust safety: a program that passes only low
+values to arbitrary code keeps its invariants, a read-only wrapper among
+their examples. Here outside code holds direct references to protected
+storage, and the guarantee holds only for outside code meeting
+Assumption~\ref{ass:clients} (cited). Drossopoulou et al.~\cite{external}
+call an object protected when no external object reachable from the
+current frame accesses it, and a scoped invariant holds until the call
+active in a state returns; the history of Appendix~\ref{app:ro}, under
+which storage protected in a call stays protected until the outermost
+call returns, is a scoped future in that sense (cited). Implicit dynamic
+frames~\cite{idf} infer a frame from access assertions, as $\Psi_\cC$ is
+the members' checked effects, but make a callee's frame explicit at each
+call, where an unknown callback here has the effect $\top$ (cited). A
+history invariant~\cite{history} bounds how a subject's data may evolve,
+as $\Theta_\cC$ bounds what clients change; it is checked of every
+update, where $\Theta_\cC$ is assumed of unanalysed code (cited).
+
+
+\appendix
+\section{The proof of Read-only frame}\label{app:ro}
+
+This appendix states the steps of the argument for \textsc{Read-only
+frame} (Section~\ref{sec:rule}), for one component $\cC$.
+
+\paragraph{History.} A state carries three ghost components: the set $E$
+of exposed locations that a crossing has reached read-only; a stack
+$A$ of sets of locations, one for each active call of $\cC$; and a set $B$
+of the released and outside locations protected while no call of $\cC$ is
+active. At a call of an entry, the call's set, $\bigcup A\cup B$, is pushed
+first, and then its arguments cross. A crossing of $v$ at $T$ adds to $E$
+the exposed locations reached read-only from $v$, and, when it is
+\emph{in}, adds the released and outside locations reached read-only
+from $v$ to every set of $A$. Each exit, normal or exceptional, pops the
+top set; when the stack becomes empty, $B$ becomes the popped set's
+locations that $\cC$ holds. A step while no call of $\cC$ is active
+removes from $B$ each location $\cC$ no longer holds. Every set of $A$
+is then $\bigcup A\cup B$, so the stack is one set and a depth, and
+\[
+l\in R_\cC(s)\iff\mu(l)\in\{\kw{local},\kw{exposed}\}\ \vee\ \bigl(\mu(l)\in\{\kw{released},\kw{out}\}\wedge l\in{\textstyle\bigcup}A\cup B\bigr)
+\]
+with $\mu(l)$ the mark of $l$'s site
+\status{Lean: \lean{Ghost.cross}, \lean{HStep}, \lean{HStep.uniform}, \lean{exit\_unprotects}, \lean{Ghost.InR}; holding is a hypothesis. The Lean's history has a further transition, \lean{HStep.hold}, adding any set to every set of $A$, which the rule does not use}.
+
+\paragraph{Invariants of states.} A state is \emph{ok} for $\cC$ when a
+call of $\cC$ is active and:
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[(M) Marks] every location's mark is its site's, fixed at
+allocation; a local or internal location is reachable from no frame of
+code outside $\cC$; storage that references local storage is local; and
+no value that a closure of outside code, or a bound function, held in
+storage binds (a capture, a saved receiver or argument) reaches local
+storage;
+\item[(P2) Confinement] every exposed location reachable from a frame of
+code outside $\cC$ is in $E$.
+\end{description}
+Reachability follows fields, spines, cells and what a closure's code
+holds. A closure of $\cC$ binds what it captures, local storage among it
+\status{Lean: \lean{MarksOk}, \lean{LocalClosed}, \lean{BindingsClosed}, \lean{Confined}; kept by outside steps (\lean{outside\_localClosed}, \lean{outside\_bindingsClosed}) and by checked steps of $\cC$ (\lean{pkg\_step\_ok}); \lean{binding\_no\_local}, no chain from such a binding reaches local storage}.
+
+\paragraph{Lemmas.} For ok states and outside steps that meet
+Assumption~\ref{ass:clients}:
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[(L1) Outside step] a step $s\to s'$ outside $\cC$ changes each
+$l\in R_\cC(s)$ within $\Theta_\cC$ at its part, and $s'$ meets (M) and
+(P2);
+\item[(L2) Outside run] a run $s\to^{*}s'$ outside $\cC$ inside an active
+call of $\cC$ keeps each $l\in R_\cC(s)$ in the region of each of its
+states, changes it within $\Psi_\cC\sqcup\Theta_\cC$ at its part, and
+ends in an ok state; by induction on the nesting of calls, a member's
+call by its bound;
+\item[(L3) Rigidity] for $\Phi$ rigid and $\Psi_\cC\sqcup\Theta_\cC\sqsubseteq\Phi$,
+the relation of two states by an action of
+$\Phi\oplus_\cC(\Psi_\cC\sqcup\Theta_\cC)$ with a growing history is
+transitive, and $R_\cC(s)\subseteq R_\cC(s')$ for related states within a
+call, since the region reads the marks, fixed at allocation, and the
+history, which only grows inside a call;
+\item[(L4) Invariants] an invariant $I\in G_\cC$ that holds at $s$, whose
+support lies in $R_\cC$ and allows $\Theta_\cC$, holds after a run as in
+(L2): each member's writes and exits keep it, and each outside step
+changes its support within $\Theta_\cC$. A walker then reads $I$'s
+consequences after the call as at its entry;
+\item[(O) Ownership] after a store that (O) admits, the locations
+reachable from the stored value are in $R_\cC$ at every later state of
+the call.
+\end{description}
+\noindent{\sloppy\status{Lean: (L1) \lean{outside\_step}; (L2) \lean{Run.bound}; (L3) \lean{HSteps.grows}, \lean{InR.mono}, \lean{Leads.trans}, \lean{Leads.trans\_top}, \lean{Change.Holds.trans}; (L4) \lean{Run.keeps} with \lean{SupportInR}; (O) \lean{ownership}, \lean{Admitted}. conj.: a run of outside code defined as the calculus's steps, as for the rule}.\par}
+
+\paragraph{Nested components.} The components of a program form a
+laminar family: any two are nested or disjoint. A step outside $\cC$ is
+outside each component nested in $\cC$. A site of a component nested in
+$\cC$ has a mark for each, its mark for $\cC$ at most its mark for the
+nested one in the order
+$\kw{local}\sqsubseteq\kw{internal}\sqsubseteq\kw{exposed}\sqsubseteq\kw{released}$,
+so the storage of a nested component is never outside storage of $\cC$
+\status{Lean: \lean{Family}, \lean{Family.outside\_mono}, \lean{Family.runs\_laminar}, \lean{Family.nested\_origin}, \lean{Family.nested\_local\_inR}, \lean{Family.nested\_exposed}, \lean{MarksConsistent}}.
+
+\paragraph{Client obligations other than keep.} An API may state a
+$\Theta_\cC$ other than $\keep$: $\extend$ on a spine lets clients append
+to a component's array, $\kw{scalar}$ at a key lets them set a field
+that holds no object. The lemmas hold for every $\Theta_\cC$; (L3) asks
+of it that $\Psi_\cC\sqcup\Theta_\cC\sqsubseteq\Phi$, and (L4) that the
+invariant's support allows it.
+
+
+
+\begin{thebibliography}{9}\small\itemsep1pt
+\bibitem{tf} TScert working note. \emph{Tolerant frames: a modal account of fact preservation without ownership}. 11 November 2026, revised 17 November.
+\bibitem{bn} A.~Banerjee, D.~Naumann. Local reasoning for global invariants, part II: dynamic boundaries. J.~ACM 60(3), 2013.
+\bibitem{boogieinv} M.~Barnett, R.~DeLine, M.~F\"ahndrich, K.~R.~M.~Leino, W.~Schulte. Verification of object-oriented programs with invariants. J.~Object Technology 3(6), 2004.
+\bibitem{bty} L.~Birkedal, N.~Torp-Smith, H.~Yang. Semantics of separation-logic typing and higher-order frame rules. LICS 2005.
+\bibitem{ownsurvey} D.~Clarke, J.~\"Ostlund, I.~Sergey, T.~Wrigstad. Ownership types: a survey. In \emph{Aliasing in Object-Oriented Programming}, LNCS 7850, 2013.
+\bibitem{universes} W.~Dietl, P.~M\"uller. Universes: lightweight ownership for JML. J.~Object Technology 4(8), 2005.
+\bibitem{dfms} S.~Drossopoulou, A.~Francalanza, P.~M\"uller, A.~J.~Summers. A unified framework for verification techniques for object invariants. ECOOP 2008.
+\bibitem{external} S.~Drossopoulou, J.~Mackay, S.~Eisenbach, J.~Noble. Reasoning about external calls. PACMPL 9(OOPSLA2), 2025.
+\bibitem{lmdynamic} K.~R.~M.~Leino, P.~M\"uller. Object invariants in dynamic contexts. ECOOP 2004.
+\bibitem{lmstatic} K.~R.~M.~Leino, P.~M\"uller. Modular verification of static class invariants. FM 2005.
+\bibitem{leinonelson} K.~R.~M.~Leino, G.~Nelson. Data abstraction and information hiding. ACM TOPLAS 24(5), 2002.
+\bibitem{history} K.~R.~M.~Leino, W.~Schulte. Using history invariants to verify observers. ESOP 2007.
+\bibitem{oyr} P.~O'Hearn, H.~Yang, J.~Reynolds. Separation and information hiding. ACM TOPLAS 31(3), 2009.
+\bibitem{antiframe} F.~Pottier. Hiding local state in direct style: a higher-order anti-frame rule. LICS 2008.
+\bibitem{idf} J.~Smans, B.~Jacobs, F.~Piessens. Implicit dynamic frames: combining dynamic frames and separation logic. ECOOP 2009.
+\bibitem{considerate} A.~J.~Summers, S.~Drossopoulou. Considerate reasoning and the composite design pattern. VMCAI 2010.
+\bibitem{ocpl} D.~Swasey, D.~Garg, D.~Dreyer. Robust and compositional verification of object capability patterns. PACMPL 1(OOPSLA), 2017.
+\bibitem{javari} M.~S.~Tschantz, M.~D.~Ernst. Javari: adding reference immutability to Java. OOPSLA 2005.
+\end{thebibliography}
+
+\end{document}
