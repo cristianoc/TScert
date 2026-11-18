@@ -1020,16 +1020,21 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // or a copy of some of its declarations (the census's copy of tools/
     // holds one; a checked project keeps one written at an earlier
     // version): a file each of whose statements is a statement of the
-    // repository's file, as written. Every statement there starts a line
-    // and every comment is a line comment, so a statement's text found
-    // between two line breaks is one of its statements.
+    // repository's file, as written, but for its type parameters' bounds
+    // (`withoutBounds`). A bound only restricts the arguments TypeScript
+    // admits: the verifier reads each argument of its declarations itself
+    // and refuses one outside its grammar (`statementOf`), so a copy whose
+    // bound admits fewer arguments (`Modifies` written before a change
+    // joined `P`'s vocabulary) declares the same. Every statement there
+    // starts a line and every comment is a line comment, so a statement's
+    // text found between two line breaks is one of its statements.
     let verifierText: string | null = null;
     const verifierFile = (file: SourceFile): boolean => {
       if (file.fileName === resolvableDeclaration) return true;
-      verifierText ??= `\n${readText(resolvableDeclaration)}\n`;
+      verifierText ??= `\n${withoutBounds(readText(resolvableDeclaration))}\n`;
       const canonical = verifierText;
       return file.statements.length > 0 &&
-        file.statements.every(statement => canonical.includes(`\n${statement.getText(file)}\n`));
+        file.statements.every(statement => canonical.includes(`\n${withoutBounds(statement.getText(file))}\n`));
     };
     // Statements (`Modifies<P, T>`, SOURCE-ELABORATION.md, "Stated effects"):
     // a reference to the verifier's `Modifies`, by the declaration TypeScript
@@ -6770,6 +6775,54 @@ function resolutionIdentityOf(idOf: (file: SourceFile) => string, brands: Set<st
 }
 
 /** Resolve a type name and check the imports and exports on its path. */
+/** A text of type alias declarations with each type parameter's bound
+ * erased: in the parameter list of each `type N<…>` starting a line, every
+ * `extends C` at the list's top level, up to the next `,`, the parameter's
+ * default `= D` or the list's closing `>` there. Brackets nest; string literals and an arrow's `=>` are
+ * no brackets. */
+export function withoutBounds(text: string): string {
+  let out = "";
+  let i = 0;
+  const header = /(?:^|\n)type [A-Za-z_$][\w$]*</g;
+  for (let m = header.exec(text); m !== null; m = header.exec(text)) {
+    const open = m.index + m[0].length;
+    out += text.slice(i, open);
+    let depth = 0;
+    let erasing = false;
+    let j = open;
+    for (; j < text.length; j++) {
+      const c = text.charAt(j);
+      if (c === "\"" || c === "'") {
+        const close = text.indexOf(c, j + 1);
+        const end = close < 0 ? text.length : close + 1;
+        if (!erasing) out += text.slice(j, end);
+        j = end - 1;
+        continue;
+      }
+      if (c === "=" && text.charAt(j + 1) === ">") {
+        if (!erasing) out += "=>";
+        j++;
+        continue;
+      }
+      if (depth === 0 && (c === "," || c === ">" || c === "=")) {
+        if (erasing && c === "=") out += " ";
+        erasing = false;
+      }
+      if (depth === 0 && c === ">") break;
+      if (!erasing && depth === 0 && /^\s+extends\s/.test(text.slice(j))) {
+        erasing = true;
+        continue;
+      }
+      if ("{[(<".includes(c)) depth++;
+      else if ("}])>".includes(c)) depth--;
+      if (!erasing) out += c;
+    }
+    i = j;
+    header.lastIndex = Math.max(j, header.lastIndex);
+  }
+  return out + text.slice(i);
+}
+
 function resolutionResolveDeclarations(checker: Checker, verifierFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, identifier: Identifier, what: string): Node[] {
   const target = targetOf(checker, identifier);
   if (!target) throw Error(`unresolved type reference ${what}`);

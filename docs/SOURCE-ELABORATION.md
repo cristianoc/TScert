@@ -3992,8 +3992,11 @@ A written signature's result annotation may state the signature's effect:
 [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which TypeScript reads
 as `T`. A reference is a statement where TypeScript binds its name to that
 declaration, never by its spelling: an alias of the repository's file, or of
-a file of exactly its bytes, which declares the same aliases (the census's
-copy of `tools/` holds one). $`P`$ is a type literal written in place,
+a file each of whose statements is one of that file's, as written but for
+its type parameters' bounds (the census's copy of `tools/` holds one, and a
+checked project may keep one written at an earlier version, whose `P` admits
+fewer changes): a bound restricts only what TypeScript admits, and the
+verifier reads $`P`$ itself. $`P`$ is a type literal written in place,
 one map from what may change to how much: `values: c` for the locations
 holding a value and `spines: c` for those holding an array spine, `c` one
 of `"keep"`, `"init"`, `"scalar"`, `"extend"`, `"grow"`, `"any"`, an
