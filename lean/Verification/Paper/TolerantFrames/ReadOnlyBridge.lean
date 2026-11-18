@@ -61,6 +61,26 @@ theorem snoc {n : Nat} {a b e : α} (h : Ex R q n a b) (hb : q b) (hbe : R b e) 
 
 end Ex
 
+/-- **The history at an entry** (Appendix A, the start of an execution):
+the history after an entry step from a state where `C` holds nothing
+protected. Every location is outside storage, no location is exposed, and
+each call of `C` active at the term has one set of the history, empty; `B`
+is empty. -/
+noncomputable def lentStart (F : Family) (C : Nat) (t : Tm) : Ghost (F.at C) :=
+  ⟨fun _ => none, fun _ => none, fun _ => False, List.replicate (depthC F C none t) (fun _ => False),
+    fun _ => False⟩
+
+/-- **The entry history meets the invariants of states** (proved, by
+`Inv.of_lent`): it is uniform, every location of it is outside storage,
+and the roots are the term's. -/
+theorem lentStart_inv {F : Family} {C : Nat} (x : Conf) : Inv (lift F C none x (lentStart F C x.t)) := by
+  refine Inv.of_lent ?_ (fun l => .inr rfl) (rootsValid_of_term (P := F.at C) (st := lift F C none x _) rfl x.ok)
+  intro X hX l
+  simp only [lift, lentStart, List.mem_replicate] at hX
+  obtain ⟨-, rfl⟩ := hX
+  simp only [lift, Ghost.Prot, lentStart, List.mem_replicate, false_iff, not_or, not_exists, not_and]
+  exact ⟨fun Y hY => by rw [hY.2]; exact id, id⟩
+
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
 
@@ -92,6 +112,24 @@ def StartInv : Prop :=
     Inv (lift fr.F fr.C none x g) ∧ g.A.length = depthC fr.F fr.C none x.t
 
 variable {fr}
+
+/-- **A frame starting from the entry history** (`lentStart`): its starts
+are exactly that history. -/
+def StartsLent : Prop := ∀ k W h t g, fr.start k W h t g ↔ g = lentStart fr.F fr.C t
+
+/-- **The entry history gives what the starts give** (proved): the
+invariants of states by `lentStart_inv`, one set per call of `C` active by
+construction. -/
+theorem startInv_of_lent (hs : fr.StartsLent) : fr.StartInv := by
+  intro x g _ hg
+  rw [hs] at hg; subst hg
+  exact ⟨lentStart_inv x, by simp [lentStart]⟩
+
+/-- **Every state has the entry history** (proved): the starts of a frame
+starting from it are total. -/
+theorem lentStart_total (F : Family) (C : Nat) :
+    ∀ (k : Nat) (_ : WorldT k) (_ : Heap) (t : Tm), ∃ g, g = lentStart F C t :=
+  fun _ _ _ _ => ⟨_, rfl⟩
 
 /-- **A reached state meets the entry's premises** (proved): every step
 keeps them (`Entry.step`). -/
