@@ -1,4 +1,4 @@
-import Verification.Paper.TolerantFrames.ReadOnlyExec
+import Verification.Paper.TolerantFrames.ReadOnlyProvenance
 import Verification.Semantics.SafeUnder
 
 /-! # Read-only handles: the client obligation a framed unit is accepted under
@@ -25,6 +25,14 @@ calculus's steps, with the history it reads:
 - **The history along an execution** (`ClientFrame.next`): the history of
   the paper's executions (`Ghost.stepAt`, `Ghost.next` at the
   configurations' heaps and terms, `next_conf`).
+- **The entries the claim is about** (`ClientFrame.Entry`), two named
+  premises beside the obligation: code provenance (`Provenance`: every code
+  the term and the heap hold that carries a tag of `C` is one of `C`'s own
+  codes, `codes`; Assumption "Clients", outside code enters `C` only
+  through its interface) and the call discipline (`Discipline`: the term
+  well formed, the heap free of runs, the configurations of `XStep.of_wf`).
+  Every step keeps both (`Entry.step`, by `step_prov` and `step_wf`), so
+  every state of an execution from an entry meets them (`Entry.steps`).
 
 The entry of a unit is a call from outside code: the top segment runs no
 component (`none`). -/
@@ -65,12 +73,20 @@ def RowAt {P : Package} (Θ : Protocol P) {k : Nat} (W : WorldT k) (g : Ghost P)
 theorem row_iff {P : Package} {Θ : Protocol P} {st st' : St P} :
     Row Θ st st' ↔ RowAt Θ st.s.W st.g st.s.h st'.s.h := Iff.rfl
 
+/-- **The call discipline at an entry** (named premise of the framed
+claim): the term is well formed and the heap free of runs (`Conf.WF`), so
+every step obeys `Disc` (`disc_of_wf`). -/
+def Discipline (h : Heap) (t : Tm) : Prop := wf t = true ∧ HeapFree h
+
 /-- **A client frame** (the draft, "The framed claim"): the component `C` of
 a family, the types crossings are read at, the client obligation `Θ`, what
 the checks give at each step, and the histories an entry starts from. -/
 structure ClientFrame (τ : Type) where
   fam : NumberedFamily
   C : Nat
+  /-- `C`'s own lowered code: the unit's program, the closures it creates,
+  the component's members. -/
+  codes : Code → Prop
   view : ViewOver τ
   Θ : Protocol (fam.family.at C)
   chk : Heap → Tm → Heap → Tm → CheckData (fam.family.at C) view.view
@@ -97,6 +113,47 @@ checks give of the step. -/
 noncomputable def next (g : Ghost (fr.F.at fr.C)) (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) :
     Ghost (fr.F.at fr.C) :=
   Ghost.stepAt fr.F fr.C none (fr.chk h t h' t') h t h' t' g
+
+open Classical in
+/-- **A code at a tag meets the frame**: a code carrying a tag of `C` is one
+of `C`'s own codes. -/
+noncomputable def ok : Code → ComponentTag → Bool := fun code c => decide (fr.F.Runs c fr.C → fr.codes code)
+
+/-- **Code provenance at an entry** (named premise, Assumption "Clients"):
+every code of the term and of the heap carrying a tag of `C` is `C`'s own. -/
+def Provenance (h : Heap) (t : Tm) : Prop := prov fr.ok t = true ∧ HeapProv fr.ok h
+
+/-- **An entry the framed claim is about**: code provenance and the call
+discipline. -/
+def Entry (h : Heap) (t : Tm) : Prop := fr.Provenance h t ∧ Discipline h t
+
+/-- **Every step keeps an entry's premises** (proved): code provenance by
+`step_prov`, the call discipline by `step_wf`. -/
+theorem Entry.step {h h' : Heap} {t t' : Tm} (he : fr.Entry h t) (hs : Step h t h' t') : fr.Entry h' t' :=
+  let hp := step_prov hs he.1.1 he.1.2
+  let hw := step_wf hs he.2.1 he.2.2
+  ⟨⟨hp.1, hp.2⟩, ⟨hw.1, hw.2.1⟩⟩
+
+/-- **Every state of an execution from an entry meets its premises** (proved). -/
+theorem Entry.steps {j : Nat} {h h' : Heap} {t t' : Tm} (he : fr.Entry h t)
+    (hs : HeapObservations.Steps j h t h' t') : fr.Entry h' t' := by
+  induction hs with
+  | refl => exact he
+  | next st _ ih => exact ih (Entry.step fr he st)
+
+/-- **A configuration at an entry's premises is well formed** (proved). -/
+theorem Entry.wf {x : Conf} (he : fr.Entry x.s.h x.t) : x.WF := he.2
+
+/-- **Provenance excludes a closure tagged with `C` whose code is not `C`'s**
+(proved): a term holding such a closure meets no provenance. -/
+theorem Entry.foreign {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {st : Nat} {caps : List Tm} {kd : Invoke}
+    {rest : Bool} {c : Nat} {i : Nat} (hc : fr.F.nested c fr.C) (hn : ¬ fr.codes (E, K)) :
+    prov fr.ok (.objAt fs (.graph ar E K st caps kd rest (some c)) i) = false := by
+  have : fr.ok (E, K) (some c) = false := by
+    simp only [ok, decide_eq_false_iff_not]
+    exact fun h => hn (h ⟨c, rfl, hc⟩)
+  simp [prov, this]
 
 /-- The checks at configurations. -/
 def chkConf : Conf → Conf → CheckData (fr.F.at fr.C) fr.view.view := fun x y => fr.chk x.s.h x.t y.s.h y.t

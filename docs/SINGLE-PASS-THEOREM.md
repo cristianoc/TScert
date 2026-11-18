@@ -135,7 +135,8 @@ The match is over every constructor of `CertifiedPlan`: a new constructor is
 a compile error there, and no plan variant is filtered out. A framed plan
 is safe for the executions in which code outside its client frame's
 component keeps the frame's client obligation: `RequestSafe`'s clauses read
-at each call along those executions (`FramedRequestSafe`,
+at each call meeting the frame's entry premises (code provenance and the
+call discipline) along those executions (`FramedRequestSafe`,
 [the framed claim](drafts/readonly-handles.md#the-framed-claim)). No plan
 certifies to one (`FunctionPlan.certify`).
 
