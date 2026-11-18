@@ -1538,7 +1538,11 @@ then reached read-only: from \code{h} at \code{H}, the record's field location
 \code{h.widths} and the array's spine and cells. A site that one crossing
 reaches writably is released, whatever other crossings do; released or
 outside storage that some crossing in reaches read-only is protected,
-whatever other crossings do.
+whatever other crossings do. A position whose type does not bound what
+arrives there accepts every value: a callback's result typed
+\code{void}, which a function returning any value meets, a caught value,
+and a position of type \code{any}; a value that crosses in there is read
+at no read-only type.
 \item[Marks] Each allocation site of $\cC$'s code, a native call's
 included, is \emph{local} when its storage is held only by $\cC$'s
 frames (locals and arguments) and by local storage, \emph{internal} when
