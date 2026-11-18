@@ -1654,6 +1654,22 @@ call.
   `Member.bound`, and with every step keeping each invariant of complete
   handles (`TolerantStep`, *Tolerant invariant*) it meets `Member.keeps`.
 
+**The checks on the wire** (in
+[ComponentChecks.lean](../../lean/Verification/Source/ComponentChecks.lean),
+read at a step in
+[ReadOnlyWire.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyWire.lean)).
+The verifier checks the front's description of the family (the flow, the
+marks, the crossings) against the code's events and runs (S), (K) and (O)
+over every body of every component, each failure located at its code. Read
+at a step of $`C`$'s code whose locations the description's flow
+interprets (hypothesis), a crossing check that passes gives `CrossOk`
+(proved, `crossOk_of_check`), the contents check and the checks of the
+crossings into outside storage give `PkgStep.localStores` (proved,
+`localStores_of_check`), the checks of the crossings at the bindings
+outside code holds give `PkgStep.localBindings` (proved,
+`localBindings_of_check`), and an install check that passes gives
+`Admitted` (proved, `admitted_of_check`).
+
 **The active frame and the roots of outside code** (in
 [ReadOnlySteps.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlySteps.lean)
 and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnlyOutside.lean)).
