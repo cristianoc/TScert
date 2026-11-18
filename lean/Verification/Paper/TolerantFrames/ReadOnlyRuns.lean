@@ -930,7 +930,7 @@ theorem disc_of_wf {F : Family} {C : Nat} {c : ComponentTag} {x y : Conf}
   have hd := blocks_step hb
   have hact : activeTag c x.t = F₀.1 := by simp [activeTag, hF]
   have ho : Outside F C c x ↔ tg F₀ = false := by
-    simp [Outside, hact, tg, Family.ofC]
+    simp [Outside, OutsideAt, hact, tg, Family.ofC]
   unfold Disc depthC
   refine ⟨fun h => hd.1 (ho.mp h), fun h => hd.2 ?_⟩
   cases htg : tg F₀

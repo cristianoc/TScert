@@ -345,7 +345,7 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
       -- The given lines inference computes and the region separations, as
       -- for the file's own units (`passGroupMode8`).
       let r := f.passGroupMode8 infer force (fun _ => []) fuel group (given := some (moduleGiven f.fr.ast given))
-      (r.1, r.2.1)
+      (r.1, f.establishVerdict group r.2.1)
     let (est, _, _, tables) ← SourceClaimJson.establishModules
       (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
     SourceClaimJson.encodeInterfaces modules est tables
@@ -617,8 +617,8 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let planned ← IO.lazyPure fun _ => p.plan i known memo
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
-  let (lines, verdict, extraction, contracts) ← match planned with
-    | .error reason => pure ([], .error reason, some reason, [])
+  let (lines, verdict, extraction, contracts, trusted) ← match planned with
+    | .error reason => pure ([], .error reason, some reason, [], false)
     | .ok f => do
       if (fr.group i).head? == some i then
         p.proposals.modify (·.insert i (f.groupProposals i))
@@ -628,7 +628,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
           compare debugNode repeats none observe counting p.located
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
           f.extractionRefusal (some [SourceClaimJson.memberName unit]),
-          f.contractReads (fr.group i))
+          f.contractReads (fr.group i), f.clientTrust (f.fr.group i))
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -636,7 +636,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let kinds ← SinglePass.kindNanos.get
   emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
   emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
-  return (WorkerWire.verdictLine unit members verdict extraction contracts, match verdict with | .ok _ => none | .error r => some r)
+  return (WorkerWire.verdictLine unit members verdict extraction contracts trusted, match verdict with | .ok _ => none | .error r => some r)
 
 /-- A line on standard output, flushed: a reader of the stream sees it as
 soon as it is written. -/
@@ -659,11 +659,13 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   | .ok p =>
     let mut refused : Option String := none
     let mut extraction : Option String := none
+    let mut trusted := false
     printFlushed (WorkerWire.componentsLine p.components)
-    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none)
+    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none [] false)
     for i in p.units do
       let (line, refusal) ← p.check i
       printFlushed line
+      trusted := trusted || WorkerWire.lineTrusted line
       if refused.isNone then refused := refusal
       if extraction.isNone then
         extraction := (WorkerWire.lineExtraction line).toOption.join
@@ -673,7 +675,8 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
       match refused with
       | some reason => refuse reason
       | none =>
-        IO.println s!"accept: stateful source {fileKey}"
+        IO.println (if trusted then s!"accept under client trust: stateful source {fileKey}"
+          else s!"accept: stateful source {fileKey}")
         return 0
 
 /-- The work table, where profiling, written as `work.jsonl` whole, by a

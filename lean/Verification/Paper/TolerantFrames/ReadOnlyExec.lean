@@ -71,8 +71,11 @@ term's. -/
 noncomputable def lift (F : Family) (C : Nat) (c : ComponentTag) (x : Conf) (g : Ghost (F.at C)) : St (F.at C) :=
   ⟨x.s, g, rootsOf F C c x.t⟩
 
+/-- **A term whose active frame runs no code of `C`.** -/
+def OutsideAt (F : Family) (C : Nat) (c : ComponentTag) (t : Tm) : Prop := ¬ F.Runs (activeTag c t) C
+
 /-- **A step whose active frame runs no code of `C`.** -/
-def Outside (F : Family) (C : Nat) (c : ComponentTag) (x : Conf) : Prop := ¬ F.Runs (activeTag c x.t) C
+def Outside (F : Family) (C : Nat) (c : ComponentTag) (x : Conf) : Prop := OutsideAt F C c x.t
 
 /-! ## The ghost a step's allocation extends -/
 
@@ -84,6 +87,9 @@ heap's length, keeps its site and key; a location at or above `n` takes
 the site and key given. -/
 def alloc (g : Ghost P) (n : Nat) (site : Nat → Option P.Site) (key : Nat → Option PropKey) : Ghost P :=
   { g with site := fun l => if l < n then g.site l else site l, key := fun l => if l < n then g.key l else key l }
+
+@[simp] theorem alloc_A {g : Ghost P} {n : Nat} {site : Nat → Option P.Site} {key : Nat → Option PropKey} :
+    (g.alloc n site key).A = g.A := rfl
 
 theorem alloc_old {g : Ghost P} {n : Nat} {site : Nat → Option P.Site} {key : Nat → Option PropKey} {l : Nat}
     (hl : l < n) : (g.alloc n site key).site l = g.site l ∧ (g.alloc n site key).key l = g.key l := by
@@ -148,13 +154,19 @@ inductive Kind where
   deriving DecidableEq
 
 open Classical in
-/-- The kind of a step, read from its active frame and the calls of `C`
-active before and after it. -/
-noncomputable def kind (F : Family) (C : Nat) (c : ComponentTag) (x y : Conf) : Kind :=
-  if Outside F C c x ∧ depthC F C c y.t = depthC F C c x.t then .outside
-  else if depthC F C c x.t < depthC F C c y.t then .enter
-  else if depthC F C c y.t < depthC F C c x.t then .exit
+/-- The kind of a step from the term `t` to `t'`, read from its active frame
+and the calls of `C` active before and after it. -/
+noncomputable def stepKind (F : Family) (C : Nat) (c : ComponentTag) (t t' : Tm) : Kind :=
+  if OutsideAt F C c t ∧ depthC F C c t' = depthC F C c t then .outside
+  else if depthC F C c t < depthC F C c t' then .enter
+  else if depthC F C c t' < depthC F C c t then .exit
   else .body
+
+/-- The kind of a step between configurations: its terms'. -/
+noncomputable def kind (F : Family) (C : Nat) (c : ComponentTag) (x y : Conf) : Kind := stepKind F C c x.t y.t
+
+theorem stepKind_conf {F : Family} {C : Nat} {c : ComponentTag} {x y : Conf} :
+    stepKind F C c x.t y.t = kind F C c x y := rfl
 
 /-! ## The history of an execution -/
 
@@ -225,9 +237,13 @@ theorem HSteps.trans {P : Package} {tv : TypeView} {d : Nat} {g₁ g₂ g₃ : G
 /-- **What `C` holds at a configuration** (the draft, Holds): a location
 reachable from a value at a position of `C`'s code, a closure of `C`'s
 bindings among them, or from storage a site of `C` allocated. -/
+def HeldAt (F : Family) (C : Nat) (c : ComponentTag) (h : Heap) (t : Tm) (g : Ghost (F.at C)) (l : Nat) : Prop :=
+  ReachesFrom (fun t => !F.ofC C t) h (vals (fun t => !F.ofC C t) (F.ofC C c) t) l ∨
+    ∃ w u, (g.site w).isSome ∧ h[w]? = some u ∧ Leaves (fun t => !F.ofC C t) u l
+
+/-- What `C` holds at a configuration: at its heap and term. -/
 def Held (F : Family) (C : Nat) (c : ComponentTag) (y : Conf) (g : Ghost (F.at C)) (l : Nat) : Prop :=
-  ReachesFrom (fun t => !F.ofC C t) y.s.h (vals (fun t => !F.ofC C t) (F.ofC C c) y.t) l ∨
-    ∃ w u, (g.site w).isSome ∧ y.s.h[w]? = some u ∧ Leaves (fun t => !F.ofC C t) u l
+  HeldAt F C c y.s.h y.t g l
 
 /-- **What the checks give at a step of `C`'s code** (the interface of the
 checks (S), (K) and (O)): the sites and keys of the locations it allocates
@@ -246,18 +262,27 @@ noncomputable def midOf (chk : Conf → Conf → CheckData (F.at C) tv) (x y : C
 /-- **The ghost after a step of outside code**: it allocates outside
 storage; while no call of `C` is active (`A` empty) it also removes from
 `B` each location `C` no longer holds (`Held`, `HStep.drop`). -/
+noncomputable def outsideNextAt (F : Family) (C : Nat) (c : ComponentTag) (key : Nat → Option PropKey)
+    (len : Nat) (h' : Heap) (t' : Tm) (g : Ghost (F.at C)) : Ghost (F.at C) :=
+  let g₁ := g.alloc len (fun _ => none) key
+  if g.A = [] then { g₁ with B := fun l => g₁.B l ∧ HeldAt F C c h' t' g₁ l } else g₁
+
+/-- The ghost after a step of outside code between configurations. -/
 noncomputable def outsideNext (F : Family) (C : Nat) (c : ComponentTag) (key : Nat → Option PropKey)
     (x y : Conf) (g : Ghost (F.at C)) : Ghost (F.at C) :=
-  let g₁ := g.alloc x.s.h.length (fun _ => none) key
-  if g.A = [] then { g₁ with B := fun l => g₁.B l ∧ Held F C c y g₁ l } else g₁
+  outsideNextAt F C c key x.s.h.length y.s.h y.t g
+
+theorem outsideNextAt_A {key : Nat → Option PropKey} {len : Nat} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
+    (outsideNextAt F C c key len h' t' g).A = g.A := by
+  unfold outsideNextAt; split <;> rfl
 
 theorem outsideNext_A {key : Nat → Option PropKey} {x y : Conf} {g : Ghost (F.at C)} :
     (outsideNext F C c key x y g).A = g.A := by
-  unfold outsideNext; split <;> rfl
+  unfold outsideNext outsideNextAt; split <;> rfl
 
 theorem outsideNext_of_ne {key : Nat → Option PropKey} {x y : Conf} {g : Ghost (F.at C)} (hA : g.A ≠ []) :
     outsideNext F C c key x y g = g.alloc x.s.h.length (fun _ => none) key := by
-  unfold outsideNext; simp [hA]
+  unfold outsideNext outsideNextAt; simp [hA]
 
 /-- **The trim is the history's `drop`**: outside every call of `C`, the
 ghost after an outside step is its allocation followed by `HStep.drop` at
@@ -265,7 +290,7 @@ what `C` holds after the step. -/
 theorem outsideNext_drop {tv : TypeView} {key : Nat → Option PropKey} {x y : Conf} {g : Ghost (F.at C)}
     (hA : g.A = []) :
     HStep tv y.s.h (g.alloc x.s.h.length (fun _ => none) key) (outsideNext F C c key x y g) := by
-  unfold outsideNext; simp only [hA, if_true]
+  unfold outsideNext outsideNextAt; simp only [hA, if_true]
   exact .drop _ _ hA
 
 /-- **The trim keeps the invariants**: outside every call of `C` the history
@@ -280,13 +305,20 @@ step allocates outside storage, and outside every call of `C` keeps in `B`
 only what `C` holds; an entry pushes the protected set, then its incoming
 values cross; a step inside a call lets its values cross; an exit lets its
 outgoing values cross, then pops. -/
+noncomputable def Ghost.stepAt (F : Family) (C : Nat) (c : ComponentTag) (d : CheckData (F.at C) tv)
+    (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) (g : Ghost (F.at C)) : Ghost (F.at C) :=
+  match stepKind F C c t t' with
+  | .outside => outsideNextAt F C c d.key h.length h' t' g
+  | .enter => Ghost.crosses tv h' d.xs (g.alloc h.length d.site d.key).enter
+  | .body => Ghost.crosses tv h' d.xs (g.alloc h.length d.site d.key)
+  | .exit => (Ghost.crosses tv h' d.xs (g.alloc h.length d.site d.key)).pop
+      (HeldAt F C c h' t' (g.alloc h.length d.site d.key))
+
+/-- The ghost after a step between configurations, at what the checks give
+of it. -/
 noncomputable def Ghost.next (F : Family) (C : Nat) (c : ComponentTag) (chk : Conf → Conf → CheckData (F.at C) tv)
     (x y : Conf) (g : Ghost (F.at C)) : Ghost (F.at C) :=
-  match kind F C c x y with
-  | .outside => outsideNext F C c (chk x y).key x y g
-  | .enter => Ghost.crosses tv y.s.h (chk x y).xs (midOf chk x y g).enter
-  | .body => Ghost.crosses tv y.s.h (chk x y).xs (midOf chk x y g)
-  | .exit => (Ghost.crosses tv y.s.h (chk x y).xs (midOf chk x y g)).pop (Held F C c y (midOf chk x y g))
+  Ghost.stepAt F C c (chk x y) x.s.h x.t y.s.h y.t g
 
 /-- **What the checks (S), (K) and (O) establish of a step of `C`'s code**
 (hypothesis, their interface): the fields of `PkgStep` that read the
@@ -325,7 +357,7 @@ noncomputable def pkgStep_of {chk : Conf → Conf → CheckData (F.at C) tv} {d 
   midB := rfl
   hist := by
     simp only [lift]
-    unfold Ghost.next
+    unfold Ghost.next Ghost.stepAt
     have hm : (midOf chk x y g).A.length = g.A.length := rfl
     split
     · exact (hk ‹_›).elim
@@ -341,7 +373,8 @@ noncomputable def pkgStep_of {chk : Conf → Conf → CheckData (F.at C) tv} {d 
   covers := by
     intro e he l hr hexp
     simp only [lift]
-    unfold Ghost.next
+    simp only [Ghost.next]
+    unfold Ghost.stepAt
     split
     · exact (hk ‹_›).elim
     · exact Ghost.crosses_covers _ _ e he l hr hexp
@@ -475,9 +508,9 @@ theorem kind_spec (x y : Conf) :
     (kind F C c x y = .enter → depthC F C c x.t < depthC F C c y.t) ∧
     (kind F C c x y = .exit → depthC F C c y.t < depthC F C c x.t) ∧
     (kind F C c x y = .body → depthC F C c y.t = depthC F C c x.t ∧ ¬ Outside F C c x) := by
-  unfold kind
-  by_cases h₁ : Outside F C c x ∧ depthC F C c y.t = depthC F C c x.t
-  · simp only [h₁]; simp
+  unfold kind stepKind
+  by_cases h₁ : OutsideAt F C c x.t ∧ depthC F C c y.t = depthC F C c x.t
+  · rw [if_pos h₁]; refine ⟨fun _ => h₁, ?_, ?_, ?_⟩ <;> simp
   · simp only [h₁, if_false]
     by_cases h₂ : depthC F C c x.t < depthC F C c y.t
     · simp [h₂]
@@ -488,7 +521,7 @@ theorem kind_spec (x y : Conf) :
 
 theorem kind_outside {x y : Conf} (ho : Outside F C c x) (he : depthC F C c y.t = depthC F C c x.t) :
     kind F C c x y = .outside := by
-  simp [kind, ho, he]
+  simp [kind, stepKind, show OutsideAt F C c x.t from ho, he]
 
 theorem kind_ne_outside {x y : Conf} (h : ¬ (Outside F C c x ∧ depthC F C c y.t = depthC F C c x.t)) :
     kind F C c x y ≠ .outside := by
@@ -503,17 +536,17 @@ theorem XStep.len {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
   have hm : (midOf chk a.1 b.1 a.2).A.length = a.2.A.length := rfl
   have hs := kind_spec (F := F) (C := C) (c := c) a.1 b.1
   simp only [δ] at hl ⊢
-  cases hk : kind F C c a.1 b.1 with
+  cases hk : stepKind F C c a.1.t b.1.t with
   | outside =>
     have := (hs.1 hk).2
-    simp only [Ghost.next, hk, outsideNext_A]; omega
+    simp only [Ghost.next, Ghost.stepAt, hk, outsideNextAt_A]; omega
   | enter =>
     have := hs.2.1 hk
     have : depthC F C c b.1.t ≤ depthC F C c a.1.t + 1 := by
       by_cases ho : Outside F C c a.1
       · exact (hd.1 ho).2
       · have := (hd.2 ho).1; omega
-    simp only [Ghost.next, hk, Ghost.enter, Ghost.crosses_len, List.length_append, hm, List.length_singleton]
+    simp only [Ghost.next, Ghost.stepAt, hk, Ghost.enter, Ghost.crosses_len, List.length_append, Ghost.alloc_A, List.length_singleton]
     omega
   | exit =>
     have := hs.2.2.1 hk
@@ -521,11 +554,11 @@ theorem XStep.len {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
       by_cases ho : Outside F C c a.1
       · have := (hd.1 ho).1; omega
       · exact (hd.2 ho).2
-    simp only [Ghost.next, hk, Ghost.pop, List.length_dropLast, Ghost.crosses_len, hm]
+    simp only [Ghost.next, Ghost.stepAt, hk, Ghost.pop, List.length_dropLast, Ghost.crosses_len, Ghost.alloc_A]
     omega
   | body =>
     have := (hs.2.2.2 hk).1
-    simp only [Ghost.next, hk, Ghost.crosses_len, hm]; omega
+    simp only [Ghost.next, Ghost.stepAt, hk, Ghost.crosses_len, Ghost.alloc_A]; omega
 
 theorem Run.nil' {k d : Nat} (st : St (F.at C)) : Run Θ Ψ G k d st st := by
   cases k <;> exact RunAt.nil st
@@ -535,8 +568,8 @@ theorem Run.outside' {k d : Nat} {st st' st'' : St (F.at C)} (ho : OutsideStep �
   cases k <;> exact RunAt.outside ho hr
 
 theorem kind_enter {x y : Conf} (h : depthC F C c x.t < depthC F C c y.t) : kind F C c x y = .enter := by
-  have : ¬ (Outside F C c x ∧ depthC F C c y.t = depthC F C c x.t) := fun h' => by omega
-  simp [kind, this, h]
+  have : ¬ (OutsideAt F C c x.t ∧ depthC F C c y.t = depthC F C c x.t) := fun h' => by omega
+  simp [kind, stepKind, this, h]
 
 theorem hyp_row {x y : Conf} {g : Ghost (F.at C)} (hk : kind F C c x y = .outside)
     (hh : StepHyp (c := c) Θ chk x y g) : Row Θ (lift F C c x g) (lift F C c y (Ghost.next F C c chk x y g)) := by
@@ -591,7 +624,7 @@ theorem decompose (off : Nat) : ∀ n : Nat,
         have hA : a.2.A ≠ [] := by
           intro h; rw [h] at hl; simp only [δ, List.length_nil] at hl hda; omega
         have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b.1).key := by
-          rw [hg]; simp only [Ghost.next, hk']; exact outsideNext_of_ne hA
+          rw [hg]; simp only [Ghost.next, Ghost.stepAt, stepKind_conf, hk']; exact outsideNext_of_ne hA
         have hrow := hyp_row hk' hh
         rw [← hg, hb] at hrow
         have hos := outsideStep_of_step hs ho hrow
@@ -716,16 +749,16 @@ theorem XStep.inv {off : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c �
   by_cases hk : kind F C c a.1 b = .outside
   · have hrow := hyp_row hk hh
     have hn : Ghost.next F C c chk a.1 b a.2 = outsideNext F C c (chk a.1 b).key a.1 b a.2 := by
-      simp only [Ghost.next, hk]
+      simp only [Ghost.next, Ghost.stepAt, stepKind_conf, hk]; rfl
     rw [hn] at hrow ⊢
     by_cases hA : a.2.A = []
     · -- Outside every call: the step with its allocation, then the trim of `B`.
       have hrow' : Row Θ (lift F C c a.1 a.2)
           (lift F C c b (a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b).key)) := by
-        unfold outsideNext at hrow; simp only [hA, if_true] at hrow
+        unfold outsideNext outsideNextAt at hrow; simp only [hA, if_true] at hrow
         exact hrow
       have h₁ := outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow') hi
-      unfold outsideNext; simp only [hA, if_true]
+      unfold outsideNext outsideNextAt; simp only [hA, if_true]
       exact Inv.trim (st := lift F C c b (a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b).key)) hA _ h₁
     · rw [outsideNext_of_ne hA] at hrow ⊢
       exact outside_inv (outsideStep_of_step hs ((kind_spec a.1 b).1 hk).1 hrow) hi

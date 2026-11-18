@@ -2037,8 +2037,68 @@ path from a value (`h.widths`, the value itself at the empty path), read
 once for each field through its sites' contents, or a site's
 (`ComponentWire.FrameRoot`, `Ctx.rootTokens`).
 The frames at calls (`ComponentChecks.Ctx.frames`) are checked and printed
-beside the verdicts; with these five proved, a plan reading them takes a
-form of its own on both sides of `FunctionPlan.certify`.
+beside the verdicts; with these five proved, a plan reading them is a
+constructor of `FunctionPlan` that certifies to the framed plan
+(`CertifiedPlan.framed`, [the framed claim](#the-framed-claim)) with a
+theorem giving `FramedRequestSafe` of it.
+
+### The framed claim
+
+A unit accepted through the rule is accepted for the executions in which
+code outside its component keeps the client obligation of [Trust](#trust),
+a claim of its own beside the ordinary one (`PassUnit.FramedRequestSafe`,
+[the single pass's theorem](../SINGLE-PASS-THEOREM.md#definitions)):
+
+- **The client frame** (`ReadOnly.ClientFrame`): the family of components,
+  its sites numbered; the component $`C`$; the types crossings are read
+  at; $`\Theta`$; what the checks give at each step (`chk`: the sites and
+  keys of what it allocates, its crossings in order); and the histories an
+  entry starts from (`start`), one at least at every state.
+- **The obligation at a step** (`ClientFrame.Keeps`): a step whose active
+  frame runs no code of $`C`$, with as many calls of $`C`$ active after it
+  as before, changes each location the row protects at the history within
+  $`\Theta`$ at its part (`RowAt`, `Row` at the step's heaps, world and
+  history). The history is the one `Ghost.next` builds
+  (`ClientFrame.next`, `ClientFrame.next_conf`), from a call's entry made
+  by outside code.
+- **Safety along the executions keeping it** (`SafeUnder`): a state is a
+  value, a throw, or takes a step of the calculus with an admissible world
+  and a typed heap, at every state of the execution, as in
+  `SafePostExcW`; after a step of outside code that breaks the obligation
+  nothing is claimed. Progress is never conditional on the obligation.
+- **The six clauses** (`FramedSafeClause` to
+  `FramedCodeAssertionsClause`): `RequestSafe`'s, each read at every call of
+  the code (`gotoOf` at its arguments and receiver) and from every history
+  the frame starts from, along those executions; an assertion is read at
+  each state that runs the graph at its label (`AssertedAt`).
+
+`CertifiedPlan.framed` carries a request and its frame; `MemberSafe`
+reads `FramedRequestSafe` of it and `RequestSafe` of a graph plan, so
+`PassUnitSafe` states each member's form. No plan certifies to a framed
+plan (`FunctionPlan.certify` has the graph branch alone; the pass refuses a
+framed plan at its name, `FilePlans.passMember`), so acceptance and
+`mode8Accepted_sound` state what they state for every unit. A group with a
+framed member is printed as accepted under client trust at
+`--verify-interface-stage 8`
+(`{"unit","members","acceptedUnderClientTrust","depends","extraction"}`,
+then `accept under client trust:`), and a module's interface does not
+establish it (`FilePlans.establishVerdict`).
+
+**Where the obligation is met** (proved, `framed_callSafe`): where an
+invariant holds at every history the frame starts from and every step from
+a state meeting it keeps the obligation (`ClientFrame.Met`: no step of
+outside code, `keepsOn_inside`; outside code certified to keep
+$`\Theta`$, `keepsOn_of`), the framed claim gives `RequestSafe`'s clauses
+at every call (`CallSafe`), which `RequestSafe` gives too
+(`requestSafe_callSafe`). `RequestSafe` reads its graph's safety and
+assertions at every environment, those past a call's frame included;
+`CallSafe` at a call's (`envOf L d`). The graph's safety at a call is read
+back from the term that runs it (`GraphCode.safeGraph_of_sim`).
+
+What the frame's data must be before a plan produces the form: `chk` the
+checks' interpretation of each step of $`C`$'s code (item 3 above), and
+`start` the histories of the executions that reach a call from a start
+holding no storage of $`C`$ (`Inv.of_lent`, `Ex.inv`).
 
 ## Stages and cost
 

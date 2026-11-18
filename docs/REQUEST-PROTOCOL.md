@@ -55,7 +55,11 @@ verifier --lower-control-flow       <ast.json>
   interfaces document checks the units under the entries that document
   states. It prints each module unit the interfaces establish, and
   then each selected unit's verdict, one line each,
-  `{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`,
+  `{"unit","members","accepted","depends"}`,
+  `{"unit","members","acceptedUnderClientTrust","depends"}` (a group with a
+  member accepted under its client frame's obligation,
+  [the framed claim](drafts/readonly-handles.md#the-framed-claim)) or
+  `{"unit","members","refusal"}`,
   whose acceptance `SourceClaimJson.PassUnit.mode8Accepted_sound` states.
   With every unit accepted it exits 0; otherwise the first refusal is the
   command's. `<depth>` limits a step's expression proof-search depth; it is
@@ -124,7 +128,8 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   `{"components"}`;
 - a request line `{"units"}`: the identities of the units to check, each one
   the preparation line names, or `null` for every one in order;
-- a verdict line, `{"unit","members","accepted","depends","extraction","contracts"}` or
+- a verdict line, `{"unit","members","accepted","depends","extraction","contracts"}`,
+  `{"unit","members","acceptedUnderClientTrust","depends","extraction","contracts"}` or
   `{"unit","members","refusal","extraction","contracts"}`, as `--verify-interface-stage 8`
   prints it; `extraction` the first extraction refusal among the unit's
   group, or `null`. The first non-null one in the order the checks run is

@@ -556,4 +556,34 @@ def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
   { f with plans := f.plans.map fun p => p.map fun
     | .graph name pos r => .graph name pos { r with candidates := (r.start, [fact]) :: r.candidates } }
 
+/-- **A group accepted under client trust**: a member whose plan certifies
+to a framed plan, accepted for the executions in which outside code keeps
+its frame's client obligation (`CertifiedPlan.clientTrust`). -/
+def FilePlans.clientTrust (f : FilePlans) (group : List Nat) : Bool :=
+  group.any fun j => match f.plans[j]? with
+    | some (.ok p) => match p.certify with
+      | .ok c => c.clientTrust
+      | .error _ => false
+    | _ => false
+
+/-- **A group's verdict as a module's interface establishes it**: the
+pass's, but a group accepted under client trust is not established, an
+interface's entry carrying no client obligation. -/
+def FilePlans.establishVerdict (f : FilePlans) (group : List Nat) :
+    Except String (List String) → Except String (List String)
+  | .ok deps => if f.clientTrust group then
+      .error "accepted only under client trust, which a module's interface does not carry" else .ok deps
+  | .error e => .error e
+
+/-- An established group is one the pass accepted (proved). -/
+theorem FilePlans.establishVerdict_ok {f : FilePlans} {group : List Nat} {v : Except String (List String)}
+    {deps : List String} (h : f.establishVerdict group v = .ok deps) : v = .ok deps := by
+  cases v with
+  | ok d =>
+    simp only [establishVerdict] at h
+    split at h
+    · cases h
+    · exact h
+  | error e => cases h
+
 end Verification.SourceClaimJson

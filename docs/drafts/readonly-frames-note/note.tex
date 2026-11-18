@@ -165,7 +165,7 @@ Code outside $\cC$ that is not analysed enters $\cC$ only through its
 interface, passes at each position of the interface a value of the
 position's declared type, and each of its own steps changes each location
 of $R_\cC$ within $\Theta_\cC$ at its part
-\status{assumed, of each component's clients. Lean: the hypothesis \lean{OutsideStep.row}}.
+\status{assumed, of each component's clients. Lean: the hypothesis \lean{OutsideStep.row}; over the calculus's steps, \lean{ClientFrame.Keeps}, and a unit accepted under it is safe for the executions keeping it, \lean{FramedRequestSafe}}.
 \end{assumption}
 
 \noindent
