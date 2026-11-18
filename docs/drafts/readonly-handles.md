@@ -1,7 +1,7 @@
 # Draft: read-only handles
 
 A design for pattern P22 of
-[Tolerant frames II](tolerant-frames-2-note/note.tex) in which pretext's
+[Tolerant frames in practice](tolerant-frames-patterns-note/note.tex) in which pretext's
 handles stay upstream's plain records behind their opaque types. It is
 stated for any component $`C`$, a set of code with a complete interface,
 in a family of components that are nested or disjoint; pretext's package

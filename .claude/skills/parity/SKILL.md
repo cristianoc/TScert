@@ -68,7 +68,7 @@ The order of the work:
    verifier and through the paper-only agent, and the two notes are read
    again against the result;
 3. then the next pattern of the second note,
-   [Tolerant frames II](../../../docs/drafts/tolerant-frames-2-note/note.tex),
+   [Tolerant frames in practice](../../../docs/drafts/tolerant-frames-patterns-note/note.tex),
    is taken as a change of the first note and realised in the code.
 
 The scope is the general rules and the arithmetic of bound facts that the

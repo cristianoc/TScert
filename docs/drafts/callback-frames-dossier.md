@@ -1,7 +1,7 @@
 # Dossier: facts about locations a call cannot reach
 
 The evidence for a design round on pattern P22 of
-[Tolerant frames II](tolerant-frames-2-note/note.tex), "a fact about a
+[Tolerant frames in practice](tolerant-frames-patterns-note/note.tex), "a fact about a
 location a callback cannot reach", and on the patterns of that paper that
 share its structure. It proposes no design. Each claim is labelled:
 
