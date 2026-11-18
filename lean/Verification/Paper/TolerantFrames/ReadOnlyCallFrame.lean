@@ -33,7 +33,9 @@ are read from the sites:
 - **Live protection witnesses** (`Witness.grow`, `entryStart_witness`): a
   location an entry's argument reaches read-only at its parameter's type
   has a witness at the entry history, and at every history the entry's
-  grows into inside the call. -/
+  grows into inside the call; every step of an execution that keeps at
+  least `d` calls active grows the history at depth `d` (`XStep.grows`,
+  `Ex.grows`), so a witness stays live along it. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -309,5 +311,65 @@ theorem entryStart_witness {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t 
       · rw [← hdir]
         exact ((Ghost.crosses_hsteps (d := d) ys _ hl').grows hu' hd hl').1
     · exact ih _ hl' (by rw [← hs]; rfl) hu' x hx hdir hrx
+
+section Growth
+variable {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {Θ : Protocol (F.at C)}
+  {chk : Conf → Conf → CheckData (F.at C) tv}
+
+/-- **A step keeping `d` calls active grows the history at depth `d`**
+(proved): a step of outside code inside a call only allocates
+(`outsideNext_of_ne`); a step of `C`'s code is a checked step at depth `d`
+(`pkgStep_of`), which grows it (`pkg_step_ok`). -/
+theorem XStep.grows {d : Nat} {a b : Conf × Ghost (F.at C)} (hx : XStep F C c Θ chk a b)
+    (hl : a.2.A.length = δ F C c a) (hi : Inv (lift F C c a.1 a.2)) (hd : 0 < d) (hda : d ≤ δ F C c a)
+    (hdb : d ≤ δ F C c b) : Grows d a.2 b.2 := by
+  obtain ⟨hs, hdisc, hg, hh⟩ := hx
+  have hlen : d ≤ a.2.A.length := by omega
+  by_cases hk : kind F C c a.1 b.1 = .outside
+  · have hA : a.2.A ≠ [] := by intro h; rw [h] at hlen; simp at hlen; omega
+    have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b.1).key := by
+      rw [hg]; simp only [Ghost.next, Ghost.stepAt, stepKind_conf, hk]; exact outsideNext_of_ne hA
+    rw [hb]
+    exact ⟨hd, hlen, by simpa using hlen, rfl, fun _ h => h, fun _ h => h⟩
+  · have hpk := pkgStep_of (d := d) hs hk (hyp_props hk hh) hlen (fun hx => by
+      have := ((kind_spec (F := F) (C := C) (c := c) a.1 b.1).2.2.1 hx)
+      simp only [δ] at hl hdb; omega)
+    rw [← hg] at hpk
+    exact (pkg_step_ok hpk (hi.ok hd hlen)).2.2
+
+/-- **An execution keeping `d` calls active grows the history at depth
+`d`** (proved, by `XStep.grows`, `XStep.len` and `XStep.inv`). -/
+theorem Ex.grows {d : Nat} {q : Conf × Ghost (F.at C) → Prop} (hd : 0 < d)
+    (hq : ∀ x, q x → d ≤ δ F C c x) :
+    ∀ {n : Nat} {a e : Conf × Ghost (F.at C)}, Ex (XStep F C c Θ chk) q n a e →
+      a.2.A.length = δ F C c a → Inv (lift F C c a.1 a.2) → d ≤ δ F C c a → d ≤ δ F C c e →
+      Grows d a.2 e.2
+  | _, a, _, .refl _, hl, _, hda, _ => Grows.refl hd (by omega)
+  | _, a, e, .next (b := b) _ hab he, hl, hi, hda, hde => by
+    have hdb : d ≤ δ F C c b := by
+      cases he with
+      | refl => exact hde
+      | next hb _ _ => exact hq _ hb
+    have h₁ := XStep.grows hab hl hi hd hda hdb
+    have hl' : b.2.A.length = δ F C c b + 0 := XStep.len (off := 0) hab (by simpa using hl)
+    have h₂ := Ex.grows hd hq he (by simpa using hl') (XStep.inv (off := 0) hab (by simpa using hl) hi) hdb hde
+    exact h₁.trans h₂
+
+end Growth
+
+/-- **An entry's argument is witnessed along the call** (proved): from an
+entry whose history is the entry's (`entryStart`), along an execution
+keeping the call active, every location an argument reaches read-only at
+its parameter's type has a live witness at the call's depth `1`
+(`entryStart_witness`, `Ex.grows`, `Witness.grow`). -/
+theorem witness_along {F : Family} {C : Nat} {tv : TypeView} {Θ : Protocol (F.at C)}
+    {chk : Conf → Conf → CheckData (F.at C) tv} {q : Conf × Ghost (F.at C) → Prop}
+    (hq : ∀ y, q y → 1 ≤ δ F C none y) {x : Conf} {args : List (tv.Ty × Val)} {n : Nat}
+    {e : Conf × Ghost (F.at C)} (hex : Ex (XStep F C none Θ chk) q n (x, entryStart F C tv x.s.h x.t args) e)
+    (hdx : 1 ≤ depthC F C none x.t) (hde : 1 ≤ δ F C none e) {T : tv.Ty} {v : Val} (ha : (T, v) ∈ args)
+    {l : Nat} (hr : ReachRO tv (F.at C).ofC T x.s.h v l) :
+    Witness tv 1 (lift F C none e.1 e.2) l := by
+  have hw := entryStart_witness (st := lift F C none x (entryStart F C tv x.s.h x.t args)) (d := 1) Nat.one_pos hdx ha hr rfl
+  exact hw.grow (Ex.grows Nat.one_pos hq hex (entryStart_len _) (entryStart_inv x args) hdx hde)
 
 end Verification.TolerantFrames.ReadOnly
