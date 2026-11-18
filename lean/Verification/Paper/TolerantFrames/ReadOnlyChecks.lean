@@ -421,4 +421,51 @@ def memberOfChecks (tv : TypeView) (Ψ : Protocol P) (G : (St P → Prop) → Pr
   keeps I hG d Inner hI hIk st st' hr hok hi :=
     MemberRun.keeps hI hIk (fun t t' hp ho => tolerant I hG d t t' hp ho) hr hok hi
 
+/-! ## The frame's premise, checked -/
+
+/-- A part of a local or an exposed site. -/
+def Part.held (p : Part P) : Bool :=
+  match p.site.map P.mark with
+  | some .local | some .exposed => true
+  | _ => false
+
+/-- A part of a released site or outside storage. -/
+def Part.lent (p : Part P) : Bool :=
+  match p.site.map P.mark with
+  | some .released | none => true
+  | _ => false
+
+/-- **The check of the frame's premise** (the draft, "At a callback"): for
+each region of the support and each part its locations may have (the flow
+of possible sites, `parts`), `Ψ_P`'s change at the part is within the
+region's, and the part is of a local or an exposed site, or is released or
+outside storage of a region a live incoming read-only crossing protects
+(`prot`). -/
+def insideCheck (Ψ : Protocol P) (S : Footprint) (parts : Region → List (Part P)) (prot : Region → Bool) : Bool :=
+  S.all fun e => (parts e.1).all fun p => (Ψ p).le e.2 && (p.held || (prot e.1 && p.lent))
+
+/-- **The check is sound for the frame's premise**, where the flow of
+possible sites covers each location's part and a region the check reads as
+protected has its released and outside locations recorded in the history. -/
+theorem insideCheck_sound {Ψ : Protocol P} {S : Footprint} {parts : Region → List (Part P)}
+    {prot : Region → Bool} {ρ : Env} {st : St P} (hc : insideCheck Ψ S parts prot = true)
+    (hflow : ∀ e ∈ S, ∀ l, e.1.mem ρ st.s.h l = true → st.part l ∈ parts e.1)
+    (hprot : ∀ e ∈ S, prot e.1 = true → ∀ l, e.1.mem ρ st.s.h l = true → st.g.Lent l → st.g.Prot l) :
+    Inside Ψ S ρ st := by
+  intro e he l hm
+  have hp := List.all_eq_true.mp (List.all_eq_true.mp hc e he) _ (hflow e he l hm)
+  simp only [Bool.and_eq_true, Bool.or_eq_true] at hp
+  obtain ⟨hle, hs⟩ := hp
+  refine ⟨?_, hle⟩
+  have ho : (st.part l).site.map P.mark = st.g.origin l := rfl
+  rcases hs with hh | ⟨hpr, hL⟩
+  · simp only [Part.held, ho] at hh
+    unfold Ghost.InR
+    split at hh <;> simp_all
+  · have hLent : st.g.Lent l := by
+      simp only [Part.lent, ho] at hL
+      unfold Ghost.Lent
+      split at hL <;> simp_all
+    exact .inr (.inr ⟨hLent, hprot e he hpr l hm hLent⟩)
+
 end Verification.TolerantFrames.ReadOnly

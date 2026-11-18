@@ -1448,9 +1448,18 @@ properties of the language's steps (`OutsideStep.reach`,
 `OutsideStep.noForge`); the validity of the frames' values
 (`RootsValid`, the model's `RootsOk`); for each member, the soundness of
 its certified effect on $`R_P`$ (`memberOfChecks`'s `certified`, what the
-pass's check of its body establishes) and its steps' checks; and the
-frame's premise `Inside`, which a check of $`S`$ against $`\Psi_P`$ at
-the possible sites of each object $`S`$ reads is to establish.
+pass's check of its body establishes) and its steps' checks; and, for the
+frame's premise, the flow of possible sites and the protection a region
+is read with.
+
+**The frame's premise, checked** (proved, `insideCheck_sound`). The check
+`insideCheck` reads, for each region of $`S`$, the parts its locations may
+have: each part's change in $`\Psi_P`$ is within the region's, and the part
+is of a local or an exposed site, or released or outside storage of a
+region a live incoming read-only crossing protects. Where the flow of
+possible sites covers each location's part, and each region read as
+protected has its released and outside locations recorded in the history,
+the check gives `Inside`.
 
 ## Stages and cost
 
