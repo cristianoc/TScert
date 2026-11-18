@@ -5020,4 +5020,12 @@ export const cases: Case[] = [
     project: "pipeline/examples/component-package" },
   { ...gap("component-unknown/src/handles-refused", "`@clients` on a type of a package whose exports are a subpath pattern: the row it states bounds code outside a component whose interface is not known, and is refused where it is written.", "unsupported", "source", /`@clients` on Handle states the row of a component whose interface is unknown: the subpath pattern \.\/\* \(line 5, col 1\)/),
     project: "pipeline/examples/component-unknown" },
+  // The read-only frame's checks (S), (K) and (O) over a module's code
+  // (tests/single-pass-controls.mts, "read-only frame checks"): the units'
+  // verdicts are the pass's own, which no check reads; each unsafe module's
+  // walker reads past its array under Node (tests/node-runs.mts).
+  positive("readonly-frame-walker", "A walker of a module's handle across a visitor: the module's certificate of the read-only frame's checks holds."),
+  negative("invalid-readonly-suspending", "A member that awaits between its reads of a caller's array, which the caller truncates after the call returns at the await (NaN under Node); (S) refuses the module's certificate.", /The available claim for w\[i\] is undefined \| number/),
+  negative("invalid-readonly-leaked", "A member gives out writable the array a handle exposes, which a visitor truncates under the walker (NaN under Node); (O) refuses its install into the handle.", /The available claim for w\[i\] is undefined \| number/),
+  negative("invalid-readonly-install", "A member installs a caller's array in a handle, which the caller truncates under the walker (NaN under Node); (O) refuses the store.", /The available claim for w\[i\] is undefined \| number/),
 ];

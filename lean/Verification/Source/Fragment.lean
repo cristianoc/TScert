@@ -1485,8 +1485,9 @@ def decodeModule (j : Json) : Except String ModuleAst := do
   return ⟨location, sha, document, absent⟩
 
 /-- **The family of components a document's code lies in**
-(`ComponentWire.decode`): the read-only frame's proposals, which no check
-reads yet; an imported module's document carries the empty one. -/
+(`ComponentWire.decode`): the read-only frame's proposals, which its checks
+read (`ComponentChecks`); an imported module's document carries the empty
+one. -/
 def decodeComponents (j : Json) : Except String ComponentWire.Components := do
   (ComponentWire.decode (← jField j "components")).mapError (s!"components: {·}")
 

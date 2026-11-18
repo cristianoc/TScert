@@ -478,15 +478,101 @@ export type PositionAst =
   | { binding: { name: string } };
 
 /** One allocation site: its kind, the field keys its records may have
- * (`anyKey` where a computed key may add any), and its mark for each
- * component enclosing its code. */
+ * (`anyKey` where a computed key may add any), the value its records' fields
+ * and its arrays' elements may hold (`contents`, by index in `values`), and
+ * its mark for each component enclosing its code, innermost first. */
 export interface SiteAst {
   module: string;
   pos: Span;
   kind: "object" | "array" | "closure" | "instance" | "native";
   keys: string[];
   anyKey: boolean;
+  contents: number;
   marks: { component: number; mark: Mark }[];
+}
+
+/** What a value of the flow includes: a site's storage, another value, what
+ * a value's storage holds (`read`), or a value entering a component from
+ * outside (`incoming`). */
+export type SourceAst = { site: number } | { value: number } | { read: number } | { incoming: number };
+
+/** A value of the flow: a binding's, a parameter's, a call's, a code's
+ * result or receiver, a site's contents, an expression's; its possible
+ * sites, the components it may enter from outside, and what it includes
+ * by the code's statements (`from`). */
+export interface ValueAst {
+  module: string;
+  pos: Span;
+  sites: number[];
+  incoming: number[];
+  from: SourceAst[];
+}
+
+/** A code of the family: its innermost component, its closure's site, its
+ * parameters' values with their spans, its receiver's and result's values,
+ * and whether it is an arrow function, which has no receiver of its own. */
+export interface CodeAst {
+  module: string;
+  pos: Span;
+  component: number;
+  site: number | null;
+  params: { value: number; at: Span }[];
+  receiver: number;
+  result: number;
+  arrow: boolean;
+}
+
+/** A store of the family's code: the value written into the fields at
+ * `key` (`null` a computed key; `element` an array's element or a native's
+ * write) of the receiver's storage; `initial` where it is a field's initial
+ * value in the record it allocates; `stored` null for a primitive. */
+export interface StoreAst {
+  module: string;
+  at: Span;
+  component: number;
+  receiver: number;
+  key: string | null;
+  element: boolean;
+  stored: number | null;
+  initial: boolean;
+}
+
+/** A call of the family's code: its callee's, receiver's, arguments' and
+ * result's values; the codes it may run (`targets`, by index in `codes`);
+ * the instance a `new` allocates; and, for a native (a call of no code of
+ * the family and of no outside code), its result's site, the values its
+ * arguments pass, which it may write into its receiver (`passed`), the
+ * values it is given, its receiver's among them (`given`), and those it may
+ * return (`all`). */
+export interface CallAst {
+  module: string;
+  at: Span;
+  component: number;
+  callee: number;
+  receiver: number | null;
+  args: { value: number; spread: boolean; at: Span }[];
+  result: number;
+  targets: number[];
+  instance: number | null;
+  native: { site: number; passed: number; given: number; all: number } | null;
+}
+
+/** A place a value is thrown or caught, a binding a module or a closure
+ * holds, or a module binding a module exports, with its value. */
+export interface PlaceAst {
+  module: string;
+  at: Span;
+  component: number;
+  value: number;
+}
+
+/** A suspension in the family's code: an `await`, a `yield`, an async
+ * function or a generator, at its innermost component. */
+export interface SuspensionAst {
+  module: string;
+  at: Span;
+  component: number;
+  kind: "await" | "yield" | "async" | "generator";
 }
 
 /** One crossing of a value between a component and code that is not its:
@@ -508,11 +594,19 @@ export interface CrossingAst {
  * fact at the module and span of the code it is of.
  * - `components`: the family, laminar by `parent`.
  * - `codes`: each code (a function, a method, a constructor, a closure) with
- *   its innermost component.
- * - `sites`: each allocation site, native results included.
- * - `values`: the possible sites of a binding's or an expression's value, by
- *   index in `sites`, and the components it may enter from outside.
- * - `crossings`: each crossing of a value.
+ *   its innermost component, its closure's site and its parameters',
+ *   receiver's and result's values.
+ * - `sites`: each allocation site, native results included, with its
+ *   contents' value.
+ * - `values`: the values of the flow, each with its possible sites, by index
+ *   in `sites`, the components it may enter from outside, and what the
+ *   code's statements make it include.
+ * - `crossings`: each crossing of a value, with the type of its position.
+ * - `stores`, `calls`, `throws`, `catches`, `holds` (the bindings a module
+ *   or a closure holds) and `exports` (the module bindings a module
+ *   exports): the events of the family's code, the flow's constraints and
+ *   the places crossings occur; `thrown` the value of every thrown value.
+ * - `suspensions`: each `await`, `yield`, async function and generator.
  * - `escapes`: each code of a component given to code that is not its
  *   (`via` a result, an argument, a throw or a store) at the crossing `at`.
  * - `clients`: the client obligation each exported type states (`@clients`,
@@ -521,10 +615,18 @@ export interface CrossingAst {
  *   candidates of its guarantee, as index facts of `this` at position 0. */
 export interface ComponentsAst {
   components: ComponentAst[];
-  codes: { module: string; pos: Span; component: number }[];
+  codes: CodeAst[];
   sites: SiteAst[];
-  values: { module: string; pos: Span; sites: number[]; incoming: number[] }[];
+  values: ValueAst[];
   crossings: CrossingAst[];
+  stores: StoreAst[];
+  calls: CallAst[];
+  throws: PlaceAst[];
+  catches: PlaceAst[];
+  holds: (PlaceAst & { name: string })[];
+  exports: { module: string; at: Span; name: string; components: number[]; value: number }[];
+  thrown: number | null;
+  suspensions: SuspensionAst[];
   escapes: { module: string; code: Span; component: number; via: "result" | "argument" | "throw" | "store"; at: Span }[];
   clients: { module: string; name: string; pos: Span; stated: boolean; frame: Frame }[];
   guarantees: { module: string; name: string; pos: Span; facts: IndexFact[] }[];

@@ -23,6 +23,18 @@ assert.ok(Number.isNaN(Number(runExample("invalid-handler-edge-lacking-invariant
 
 assert.throws(() => runExample("invalid-native-length-literal", 'past("a")'), /TypeError/);
 
+// The read-only frame's checks (S), (K) and (O): each refused module's
+// walker, or its awaiting member, reads past the array it relies on.
+assert.equal(runNode("invalid-readonly-suspending",
+  "const xs = [1, 2, 3]; const p = total({ widths: xs }); xs.length = 1; console.log(String(await p));").stdout, "NaN",
+  "after the await, the caller's own array is truncated under the member's reads");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-leaked",
+  "(() => { const h = prepare(3); return walk(h, () => { lastWidths().length = 0; }); })()"))),
+  "a visitor truncates the widths lastWidths gives out writable");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-install",
+  "(() => { const h = prepare(3); const xs = [1, 2, 3]; install(0, xs); return walk(h, () => { xs.length = 0; }); })()"))),
+  "a visitor truncates its own array, installed in the handle");
+
 assert.throws(() => runExample("invalid-native-length-map", 'changed(["a"])'), /TypeError/);
 assert.throws(() => runExample("invalid-native-length-push", 'past([])'), /TypeError/);
 

@@ -29,13 +29,27 @@ def lineExtraction (line : String) : Except String (Option String) := do
   if e.isNull then return none
   return some (← fromJson? e)
 
-/-- The file worker's preparation line: `{"selected","established"}`, the
-units the selection checks in the order their checks run, each
-`{"unit","members"}`; and the module units the interfaces establish. -/
-def preparedLine (selected : List (String × List String)) (established : List String) : String :=
+/-- The file worker's preparation line: `{"selected","established","components"}`,
+the units the selection checks in the order their checks run, each
+`{"unit","members"}`; the module units the interfaces establish; and each
+component's outcome of the read-only frame's checks, each
+`{"component","kind","location","refusals"}` (`componentOutcome`). -/
+def preparedLine (selected : List (String × List String)) (established : List String) (components : Json) : String :=
   (Json.mkObj [("selected", Json.arr (selected.map fun (u, ms) =>
       Json.mkObj [("unit", toJson u), ("members", toJson ms)]).toArray),
-    ("established", toJson established)]).compress
+    ("established", toJson established), ("components", components)]).compress
+
+/-- A component's outcome of the read-only frame's checks
+(`ComponentChecks.familyOutcome`): `{"component","kind","location","refusals"}`,
+its certificate held where `refusals` is empty. -/
+def componentOutcome (component : Nat) (kind location : String) (refusals : List String) : Json :=
+  Json.mkObj [("component", toJson component), ("kind", toJson kind), ("location", toJson location),
+    ("refusals", toJson refusals)]
+
+/-- Mode 8's line of the components' outcomes: `{"components"}`, as the
+preparation line states them. -/
+def componentsLine (components : Json) : String :=
+  (Json.mkObj [("components", components)]).compress
 
 /-- A request line the file worker reads: `{"units"}`, the units to check by
 their identities, or null for every selected unit in order. Any other shape

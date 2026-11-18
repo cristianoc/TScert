@@ -4,6 +4,7 @@ import Verification.Source.Claims.Json
 -- Claims/ModuleInterfaces.lean computes and reads the module interfaces of mode 8.
 import Verification.Source.Claims.ModuleInterfaces
 import Verification.Source.WorkerWire
+import Verification.Source.ComponentChecks
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -365,6 +366,9 @@ which a later unit reads instead of computing them again, and what their
 proposals established (`memo`). -/
 structure PreparedFile where
   ast : Json
+  /-- Each component's outcome of the read-only frame's checks
+  (`componentOutcome`). -/
+  components : Json
   fileKey : String
   budget : PositiveCertificates.SearchBudget
   est : SourceClaimJson.Established
@@ -407,6 +411,24 @@ def demandedInterfaces (fr : SourceClaimJson.Front) (wanted : List Nat) : Std.Ha
         pending := h :: pending
   if pending.isEmpty then return demand
   return fr.leaders.foldl (·.insert ·) demand
+
+/-- **The read-only frame's checks** of the family a fragment describes
+(`ComponentChecks.familyOutcome`), each component's outcome on the wire
+(`WorkerWire.componentOutcome`); the checked file's own functions, by name,
+the span of their names and whether they are async, read beside it. A family
+the decoder refuses refuses the file elsewhere (`Fragment.decodeAstWithParams`). -/
+def componentOutcome (a : Json) : Json :=
+  match (do
+      let F ← Fragment.decodeComponents a
+      let file ← jStr (← jField a "file")
+      let fns ← (← jArr a "functions").mapM fun f => do
+        let name ← jStr (← jField f "name")
+        let pos : Span ← fromJson? (← jField f "namePos")
+        return (name, pos, (← jStr (← jField f "completion")) == "async")
+      return Json.arr (ComponentChecks.familyOutcome F file fns |>.map fun (i, k, rs) =>
+        WorkerWire.componentOutcome i (ComponentChecks.kindName k.kind) k.location rs).toArray : Except String Json) with
+  | .ok j => j
+  | .error _ => .arr #[]
 
 /-- Mode 8's preparation of a file's fragment and the module interfaces its
 imports read: the fragment and interfaces decoded, the file's claims and
@@ -475,7 +497,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let plans ← IO.mkRef {}
   let memo ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a) =>
-    { ast := a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+    { ast := a, components := componentOutcome a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
       givenLines, fuel, located, quiet, t0, proposals, plans, memo }
 
@@ -636,6 +658,7 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   | .ok p =>
     let mut refused : Option String := none
     let mut extraction : Option String := none
+    printFlushed (WorkerWire.componentsLine p.components)
     for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none)
     for i in p.units do
       let (line, refusal) ← p.check i
@@ -676,7 +699,7 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
     let units := p.units
     let fr := p.fr
     writeWorkNow start
-    printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules)
+    printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules p.components)
     let stdin ← IO.getStdin
     repeat
       let text ← stdin.getLine

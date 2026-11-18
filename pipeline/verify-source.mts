@@ -386,7 +386,10 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const prepared = decodeWorkerPrepared(wireText(Buffer.from(preparation.stdout), "verifier --file-worker").trim());
   const lines: string[] = prepared.established.map((u) =>
     JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], extraction: null }));
-  const log: string[] = [];
+  // Each component's outcome of the read-only frame's checks, which no
+  // verdict reads.
+  const log: string[] = prepared.components.map((c) => `component ${c.component} (${c.kind} ${c.location}): ${
+    c.refusals.length === 0 ? "certificate held" : `refused: ${c.refusals.join("; ")}`}`);
   for (const part of checked.run.parts) {
     const unit = prepared.selected.find((u) => u.unit === part.part);
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);

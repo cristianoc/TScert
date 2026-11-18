@@ -601,8 +601,9 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   and truncates the list, and reads on, reads `[1, undefined, undefined]`
   (observed). In refusal-index terms: "An `await`, a `yield`, an async
   function or a generator in a component whose handles Read-only frame
-  protects", its owner this draft, refused at the source boundary; its
-  control `readonly-suspending-package-refused`. Pretext's `src` has none
+  protects", its owner this draft, refused by (S) at the component's
+  certificate ([SOURCE-FRAGMENT](../SOURCE-FRAGMENT.md)); its case
+  `invalid-readonly-suspending`. Pretext's `src` has none
   (observed: `git grep` at `0d102a5c` for `async`, `await`, `yield` and
   `function*` finds none outside the tests). Lifting it is open work
   ([WORK](../../WORK.md#status), "Read-only frame across a suspension").
@@ -1325,8 +1326,8 @@ admitted: at the second crossing the record is no longer protected, which
 *Confinement* checks at the crossing's state.
 
 **Restriction control**, refused (observed under Node):
-`readonly-suspending-package-refused`, the async entry of *No suspension*,
-`[1, undefined, undefined]`.
+`invalid-readonly-suspending`, the awaiting member of *No suspension*,
+`NaN` under Node.
 
 **Accepted programs that break a row** (observed), which no case can
 refuse, the breaking code being outside the analyzed sources: a caller
