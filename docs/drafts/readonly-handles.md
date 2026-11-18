@@ -2470,10 +2470,12 @@ proposal is [deciding the flow](#deciding-the-flow).
 A finite proposal (`FFlow`, `ReadOnlyFitsDecide.lean`) holds $`O`$, the
 heap of sites as a list of entries (a site's contents and bindings, none
 for a site no entry names), and for each code of $`C`$ its nodes (`FCode`,
-one node standing for every label past them), each node's slots as a list
-with one set for every slot past it, its value set and its signatures (none
-past the list). The flow it stands for (`FFlow.flow`) reads a code's first
-entry.
+one node standing for every label past them). A code holds a set every
+slot and every node's value holds besides its own (`base`), a table of
+signatures, and for each node its slots as an array with one set for every
+slot past it, its value set and its signatures, each an index into the
+table. The flow it stands for (`FFlow.flow`) reads a code's first entry; a
+slot's sites are its own with `base`.
 
 - **A term's least set** (`syn`), computed bottom-up from the node's slots:
   a variable bound inside the term its binder's set, a slot its sites; a
@@ -2487,12 +2489,16 @@ entry.
   (`OFits.sub`).
 - **Lowered code** (`lowB`, `lowB_sound`) and the closure's own slot alone
   named at its entry (`selfFnB`), decided.
-- **The edges** (`carriesB`, `carriesFnB`): the slots of both ends and the
-  mapping are constant past a width (`Stable`), so the slots below it
-  decide `Carries`; a target names signatures only within its list, so
-  those decide `CarriesFn` (`contChkB_sound`, `handlerChkB_sound`).
+- **The edges** (`carriesBaseB`, `carriesFnB`): the slots of both ends and
+  the mapping are constant past a width (`Stable`), the larger of the
+  ends' widths and the mapping's, so the slots below it decide `Carries`,
+  each target slot holding `base` besides its own (`carriesBaseB_sound`);
+  a target names signatures only within its row, and an index named there
+  is the index the source's slot holds (`carriesFnB_sound`;
+  `contChkB_sound`, `handlerChkB_sound`).
 - **The checks of a flow** (`FFlow.check`): each code's checks
-  (`codeChkB_sound`), every node's slots accepting $`O`$, $`O`$ holding
+  (`codeChkB_sound`, one pass over the nodes with their continuations and
+  handlers), `base` holding $`O`$, so every slot accepts it, $`O`$ holding
   outside storage, closed in the heap of sites, its storage able to hold
   all of $`O`$; they give `Flow.Facts` (`FFlow.check_sound`). The marks the
   checks at the crossings read (`Lendable`, `LocalHeld`, no binding
@@ -2500,29 +2506,51 @@ entry.
   meeting the shapes of $`C`$'s closures by `FFlow.shapesB`.
 
 **The proposal** (`solveFlow`, `ReadOnlyFlowSolve.lean`) is computed from
-the lowered graphs, the only place their nodes, slots and labels exist:
-each code of $`C`$ allocates at one object site and one array site; a
+the lowered graphs, the only place their nodes, slots and labels exist.
+Each code of $`C`$ allocates at one object site and one array site. A
 slot names a signature where every edge into its node carries one naming
-it, from the entry's named slots and the closure's own slot; the sets are
-the least sets of each node expression with its stores, what it gives to
-outside code and the slots of a callee's entry added, carried along each
-edge, $`O`$ closed, until nothing changes. A site of $`O`$ is released and
-every other site local. `TSCERT_FLOW_PROBE=1` prints, for each member
-checked, whether the proposal meets the checks (`FilePlans.flowProbe`);
-no verdict reads it.
+it, from the entry's named slots and the closure's own slot, a node's row
+as wide as its edges' mappings or its source's, by a worklist over the
+nodes (`fnsOf`). The sites have one variable per slot a node keeps apart
+(those its expression or an edge's mapping reads, and those a target
+needs through an edge, `neededWidths`), one for the slots past them and
+one for its value; an edge copies each variable of its source into the
+one of its target that reads it, and a node's value is its expression's
+least set with its stores, what it gives to outside code and the slots of
+a callee's entry added (`gen`). Every slot holds $`O`$ besides its own
+(`base`), so a value stored may be of $`O`$ and a write through a slot
+stores into $`O`$'s sites. A worklist runs the copies and the nodes, then
+closes $`O`$ and runs again the nodes reading $`O`$ or the heap of sites
+where either grew, until nothing changes (`solveLoop`). A site of $`O`$ is
+released and every other site local. `TSCERT_FLOW_PROBE=1` prints, for
+each member checked, whether the proposal meets the checks and the time of
+the proposal and of the checks (`FilePlans.flowProbe`); no verdict reads
+it. With `TSCERT_FLOW_PROBE=only` the members' checks are not run and no
+proposal of the groups below a member is read.
+
+**The module's closures in the probe.** A member reaches the module
+functions its body names at its request's last inputs
+(`SourceRequest.siblings`). The probe places at each such slot the
+module's closure of the function where its closure is a value: a function
+declaring no `this` and collecting no rest, on no cycle of the module's
+names, its code the request's nodes behind one prologue node that
+continues at the request's start with the frame past the receiver
+(`PassUnit.dropReceiver`), its captures the module's closures of the
+functions it names. The member's own program is entered at its inputs, no
+slot of it holding the member itself.
 
 Proof scope: each decision is proved sound for the property it decides;
 none is proved complete. Nothing is proved of the proposal: the checks
 read it as given.
 
-Measured 2026-11-18 by the probe: the walker of
+Measured 2026-11-19 by the probe (`TSCERT_FLOW_PROBE=only`, the verifier
+run on the run directory's fragment): the walker of
 `bounds-pattern-unreachable-field-refused.ts` meets the checks with the
 cursor's site outside $`O`$. In pretext's `src/line-break.ts` every member
-probed meets the checks; `walkPreparedLinesRaw` has its object site in
-$`O`$, its cursor passed to the module's functions at slots naming no
-signature, read at $`O`$: the module's closures at the sibling slots
-([calls between module functions](#the-sites-of-a-term)) are what keeps it
-inside.
+meets the checks; `walkPreparedLinesRaw`, with the module's closures of
+the nine functions it reaches, has its cursor's site outside $`O`$ (its
+proposal 768 ms, its checks 77 ms over 3336 nodes); the largest,
+`countPreparedLines`, 1187 ms and 97 ms over 3627 nodes.
 
 ### Located reductions
 

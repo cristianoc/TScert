@@ -76,6 +76,14 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   (`ComponentWire.Components.componentAt` at its name): the ghost tag of
   the frames of its graph's run. -/
   comp : ComponentTag
+  /-- The module values the body names, in the order of the request's last
+  inputs, which hold them (`extractNormalizedFn`'s siblings). -/
+  siblings : List String := []
+  /-- Whether the function declares `this`: its first input is the
+  receiver. -/
+  receiver : Bool := false
+  /-- Whether the function collects a rest parameter at entry. -/
+  restParam : Bool := false
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.candidates, c.cuts⟩
@@ -444,7 +452,8 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
            assertions := r.assertions, candidates := r.candidates, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
            nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, fresh := r.fresh, regional := r.regional,
            ensures := r.ensures,
-           async := r.async, stated := r.stated, comp := r.comp }
+           async := r.async, stated := r.stated, comp := r.comp, siblings := r.siblings, receiver := r.receiver,
+           restParam := r.restParam }
 
 end
 

@@ -324,6 +324,9 @@ did not mention grow it, and the request carries the result. -/
             (⟨q, r.path⟩ : Footprints.ArgumentSpineRegion)).map (c, ·)
     | throw "a stated spine region names the receiver, which the function does not declare"
   let (program, claims, source, start) := compactLowered built.program built.claims built.source entry.label
+  let hasRestParam := match f.params.getLast? with
+    | some p => p.rest && (Fragment.arrayElement p.ty (readonly := true)).isNone
+    | none => false
   return {
     toRequest := ⟨built.types, program, claims, R, start, inputs, built.codes, promise,
       entrySeparation, entryIndices⟩
@@ -342,7 +345,10 @@ did not mention grow it, and the request carries the result. -/
     ensures := ensures
     async := f.async
     stated := f.stated
-    comp := componentAt f.namePos }
+    comp := componentAt f.namePos
+    siblings := siblings.map (·.1)
+    receiver := receiverInput
+    restParam := hasRestParam }
 
 end
 

@@ -568,6 +568,8 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
     let memo ← p.memo.get
     let planned ← IO.lazyPure fun _ => p.plan g known memo
     if let .ok f := planned then p.memo.set f.proposed
+    if let .ok f := planned then
+      if (← IO.getEnv "TSCERT_FLOW_PROBE").isSome then f.keepModuleCodes (fr.group g)
     -- (kept for the group's own check where the selection checks it; its
     -- proposals alone otherwise)
     if p.units.contains g then p.plans.modify (·.insert g planned)
@@ -579,6 +581,33 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
     p.proposals.modify (·.insert g got)
   let memo ← p.proposals.get
   return below.flatMap fun h => (memo.get? h).getD []
+
+/-- The module functions' codes the probe of a group reads
+(`TSCERT_FLOW_PROBE`): its members' and those of every group planned so
+far, the groups below it among them. A diagnostic. -/
+def PreparedFile.probeModules (p : PreparedFile) (f : SourceClaimJson.FilePlans) (group : List Nat) :
+    IO (List SourceClaimJson.ProbeModule) := do
+  let fr := p.fr
+  f.keepModuleCodes group
+  let mut work := f.siblingsOf group
+  let mut tried : List String := []
+  for _ in List.range (fr.units.length + 1) do
+    match work with
+    | [] => break
+    | x :: rest =>
+      work := rest
+      let seen ← SourceClaimJson.probeModulesSeen.get
+      if tried.contains x then continue
+      tried := x :: tried
+      if let some m := seen.find? (·.name == x) then
+        work := work ++ m.siblings
+        continue
+      let some j := fr.units.findIdx? fun (u, _, init) => init.isNone && u.name == x | continue
+      let planned ← IO.lazyPure fun _ => p.plan j [] {}
+      if let .ok g := planned then
+        g.keepModuleCodes (fr.group j)
+        work := work ++ g.siblingsOf (fr.group j)
+  SourceClaimJson.probeModulesSeen.get
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
@@ -601,7 +630,8 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
-  let known ← p.known i
+  -- (`TSCERT_FLOW_PROBE=only`: no proposal of the groups below is read)
+  let known ← if (← IO.getEnv "TSCERT_FLOW_PROBE") == some "only" then pure [] else p.known i
   -- (a group's plans kept from a later unit's proposals read once, here:
   -- no unit checked after this one reads them, only their proposals)
   let planned ← match (← p.plans.get).get? i with
@@ -619,9 +649,13 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
   -- The flow the read-only frame's checks read, probed (`TSCERT_FLOW_PROBE`).
-  if (← IO.getEnv "TSCERT_FLOW_PROBE").isSome then
+  -- (`TSCERT_FLOW_PROBE=only`: the group's check is not run)
+  let probe ← IO.getEnv "TSCERT_FLOW_PROBE"
+  if probe.isSome then
     if let .ok f := planned then
-      for line in f.flowProbe (fr.group i) do IO.eprintln line
+      let mods ← p.probeModules f (fr.group i)
+      for line in ← f.flowProbe (fr.group i) mods do IO.eprintln line
+  let planned := if probe == some "only" then .error "flow probe only" else planned
   let (lines, verdict, extraction, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, false)
     | .ok f => do
