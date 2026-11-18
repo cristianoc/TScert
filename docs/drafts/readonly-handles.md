@@ -2122,6 +2122,39 @@ checks' interpretation of each step of $`C`$'s code (item 3 above), and
 `start` the histories of the executions that reach a call from a start
 holding no storage of $`C`$ (`Inv.of_lent`, `Ex.inv`).
 
+**The executions of the claim are the paper's**
+(`ReadOnlyBridge.lean`). A step the claim's safety follows with the
+obligation kept (`ClientFrame.KStep`: an actual step, the history after it
+`next`, `Keeps` at its world) leads to a state at which the run is again
+safe under it (`safeUnder_kstep`), and a graph path from an entry of the
+claim within the budget is either broken by a step that breaks the
+obligation or such an execution to a state that runs the graph at the
+path's label (`framed_reaches`, from `EntryHolds`, `RootsOk`, `ReachesIn`
+and the entry premises). The states so reached (`Reached`) meet the entry
+premises at every step. Given two hypotheses, the interface of the checks
+of $`C`$'s code (`ChkSound`: `PkgProps` at each step of $`C`$'s code from a
+reached state, at the frame's `chk`) and of the starts (`StartInv`: the
+invariants of states at an entry, one set of the history per call of
+$`C`$ active):
+
+- every such step is an `XStep` (`kstep_xstep`): `Disc` from the call
+  discipline, `Row` at a step of outside code from `Keeps`, `PkgProps` at a
+  step of $`C`$'s code from `ChkSound`;
+- every reached state meets the invariants with one set per call and is
+  `Ok` at its depth inside a call (`reached_ok`, by `Ex.inv`);
+- from a reached state of outside code at depth $`d > 0`$ to the first
+  later state of $`C`$'s code at depth $`d`$, the execution meets
+  `QRun d` (`call_segment`): these are the premises of `exec_bound`,
+  `exec_keeps` and `exec_rely` at the call (`call_premises`). The walker's
+  call of its callback is one such call, its assertion after the call
+  read at the segment's last state; every unit whose plan reads a frame at
+  a call of outside code has the same premises there.
+
+What remains for the claim is to discharge the two hypotheses from the
+checks: `ChkSound` from the checks of $`C`$'s code over the lowered graphs,
+and `StartInv` from the frame's `start`, the histories reached from a start
+holding no storage of $`C`$ (`Inv.of_lent`).
+
 **The counter-model the premises exclude.** An entry may hold a callback
 whose code is tagged with $`C`$ (`.graph … (some C)`), which meets its
 arrow whatever its tag (a tag changes no step, `SameRun`). Each of its

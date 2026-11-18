@@ -1,4 +1,5 @@
 import Verification.Source.Claims.PassUnit
+import Verification.Paper.TolerantFrames.ReadOnlyBridge
 
 /-! # The framed claim where the client obligation is met
 
@@ -154,6 +155,47 @@ theorem framed_callSafe {r : SourceRequest σ ι} (hr : FramedRequestSafe r fr) 
       asserted_of_reach (framed_erase hm (ha η hη n W h L d hE hR hN)).2 hl hj hre
   · exact fun l k hl j h' ρ' hj hre =>
       asserted_of_reach (framed_erase hm (hc ci q hq η n W h L d none hE hR hN)).2 hl hj hre
+end
+
+/-! ## The framed claim's executions are the paper's -/
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι] {fr : ClientFrame (Ty ι)}
+open Verification.TolerantFrames.ReadOnly
+
+/-- **A graph path of a framed entry is an execution of the paper**
+(proved): from an entry of the framed claim's assertions clause (its
+contracts, valid roots, the frame's entry premises and a history it starts
+from), a graph path within the budget to a state at a label is either broken
+by a step that breaks the client obligation, after which the claim states
+nothing, or an execution of steps keeping it (`KStep`) from the entry's
+configuration to a reached configuration (`Reached`) that runs the graph at
+that label: by `ClientFrame.kstep_xstep`, `ClientFrame.reached_ok` and
+`ClientFrame.call_segment`, its steps are `XStep`s, its states are `Ok` at
+their depth, and each of its calls of outside code is a run of outside code
+(`ClientFrame.call_premises`) where `ChkSound` and `StartInv` hold. -/
+theorem framed_reaches {r : SourceRequest σ ι} (ha : FramedAssertionsClause r fr) {η : MixedAssignment ι}
+    (hη : r.Admits η) {n : Nat} {W : WorldT n} {h : Heap} {L : List Tm} {d : Tm} (hn : 0 < n)
+    (hE : EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h) (hR : RootsOk W (envOf L d)) (hN : fr.Entry h (gotoOf r.program r.start L d r.comp))
+    {g : Ghost (fr.F.at fr.C)} (hg : fr.start n W h (gotoOf r.program r.start L d r.comp) g)
+    {j : Nat} {h' : Heap} {l : Nat} {ρ' : Env} (hj : j + 1 < n)
+    (hr : ReachesIn r.program j h (.at r.start (envOf L d)) h' (.at l ρ')) :
+    ∃ x : Conf, x.s.h = h ∧ x.t = gotoOf r.program r.start L d r.comp ∧ x.s.n = n ∧
+      ((∃ e, fr.Reached e ∧ Ex fr.KStep (fun _ => True) j (x, g) e ∧ e.1.s.h = h' ∧
+        GraphCode.Sim (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) e.1.t
+          (.at l ρ')) ∨
+       (∃ b m h₁ t₁, Ex fr.KStep (fun _ => True) m (x, g) b ∧ m < j ∧ Step b.1.s.h b.1.t h₁ t₁ ∧
+        ¬ fr.Keeps b.2 b.1.s.n b.1.s.W b.1.s.h b.1.t h₁ t₁)) := by
+  have hs := ha η hη n W h L d hE hR hN g hg
+  let x : Conf := ⟨⟨n, W, h, hn, hE.2.2.2.1, hE.2.2.2.2⟩, gotoOf r.program r.start L d r.comp,
+    ClientFrame.safeUnder_refs hs⟩
+  rw [← SourceExtraction.program_nodes r.program] at hr
+  obtain ⟨ts', hst, hsim⟩ := reaches_sim hr (sim_gotoOf r.program r.start L d r.comp)
+  refine ⟨x, rfl, rfl, rfl, ?_⟩
+  rcases ClientFrame.safeUnder_path (x := x) hs hst hj with ⟨e, hex, he, ht⟩ | hb
+  · exact .inl ⟨e, ClientFrame.reached_of_path hN hg hex, hex, he, ht ▸ hsim⟩
+  · exact .inr hb
 end
 
 /-! ## A framed member -/
