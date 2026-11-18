@@ -2163,7 +2163,8 @@ at the entry by this history; reliance on such an argument across a call
 reads its crossing at the entry, which this history does not record.
 
 What remains for the claim is `ChkSound`, from the checks of $`C`$'s code
-over the lowered graphs ([the actual crossings of a step](#the-actual-crossings-of-a-step)).
+over the lowered graphs ([the actual crossings of a step](#the-actual-crossings-of-a-step),
+[the sites a value may reach](#the-sites-a-value-may-reach)).
 
 **The counter-model the premises exclude.** An entry may hold a callback
 whose code is tagged with $`C`$ (`.graph … (some C)`), which meets its
@@ -2207,6 +2208,44 @@ becomes protected. The bound on local storage needs neither: a fact about
 a location of a local site, such as the walker's cursor, survives a call
 of outside code by the marks alone. Reliance on storage a crossing protects
 reads the crossing at its boundary type.
+
+### The sites a value may reach
+
+The checks of $`C`$'s code read, for each value of an execution, the sites
+of the locations it may reach, `none` the site of outside storage
+(`ReadOnlySites.lean`). A heap of sites (`SiteHeap`) gives, for each site,
+the sites its storage may reference (`contents`) and the sites the values
+a stored closure of outside code or bound function binds may reach first
+(`bindings`).
+
+- A value meets a set of sites (`SitesOf`) when every first location it
+  reaches (`Leaves`) is of a site of the set; a heap meets a heap of sites
+  (`HeapSites`) when each location's value meets the sites of the
+  location's site. A set is closed (`Closed`) when it holds the contents
+  of each of its sites.
+- In a heap meeting a heap of sites, a value meeting a closed set reaches
+  only locations of its sites (`reach_sites`); a crossing whose value
+  meets a closed set of released sites and outside storage (`Lendable`)
+  meets the marks (`crossOk_of_sites`).
+- A write of a value meeting the sites of its location's site, and an
+  allocation of values each meeting the sites of its fresh location's
+  site, keep the heap meeting the heap of sites (`HeapSites.set`,
+  `HeapSites.alloc`).
+- Where storage of a site that is not local references no local site
+  (`LocalHeld`) and no binding reaches one, a step's stores keep local
+  storage closed (`localStores_of_sites`, `localBindings_of_sites`).
+- At the actual crossings, where every root of outside code after a step
+  meets a closed lendable set `O`, the step meets the checks
+  (`escapeAt_of_sites`): a new root by itself, a value left where outside
+  code reaches because its location is of a site of `O`, whose contents
+  `O` holds. So a frame meets `ChkSound` where the flow of $`C`$'s code
+  establishes, at each step of its code from a reached state, the heap
+  after it meeting the heap of sites and the roots after it meeting `O`
+  (`SitesSound`, `chkSound_of_sites`).
+
+What remains of `ChkSound` is `SitesSound` from the lowered graphs: the
+sites each value of a frame of $`C`$'s code may reach, at each node, and
+the heap of sites, checked against every step of $`C`$'s code.
 
 ### Located reductions
 
