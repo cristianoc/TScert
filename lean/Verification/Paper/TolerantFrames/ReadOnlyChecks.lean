@@ -33,104 +33,6 @@ open Verification Footprints
 
 variable {P : Package}
 
-/-! ## Paths of a well-formed heap -/
-
-theorem slot_mem_refs {fs : List (PropKey × Nat)} {c : CallCode} {i : Nat} {k : PropKey} {l : Nat}
-    (h : (k, l) ∈ fs) : Ref.slot k l ∈ refs (.objAt fs c i) := by
-  have : Ref.slot k l ∈ objRefs fs i := List.mem_cons_of_mem _ (List.mem_map.mpr ⟨(k, l), h, rfl⟩)
-  cases c <;> simp only [refs] <;> first | exact this | exact List.mem_append_left _ this
-
-theorem lt_of_role {s : IndexedHeap} {l : Nat} {r : Role} (h : roleAt s.W l = some r) : l < s.h.length := by
-  have hl := roleAt_lt h
-  have := s.ok.1.1
-  simp only [toList, List.length_map] at this
-  omega
-
-theorem lt_of_slotRole {s : IndexedHeap} {k : PropKey} {l : Nat} (h : SlotRole k (roleAt s.W l)) :
-    l < s.h.length := by
-  cases hr : roleAt s.W l with
-  | none => rw [hr] at h; exact h.elim
-  | some r => exact lt_of_role hr
-
-/-- **One step of a path from a valid value reaches an allocated
-location.** -/
-theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOk s.W v)
-    (hn : next v a = some l) : l < s.h.length := by
-  cases a with
-  | key k =>
-    simp only [next] at hn
-    cases v
-    case objAt fs c i =>
-      simp only [fieldsOf] at hn
-      exact lt_of_slotRole (hv _ (slot_mem_refs (c := c) (i := i) (lookup_mem_pair hn)))
-    all_goals simp [fieldsOf] at hn
-  | view =>
-    simp only [next] at hn
-    cases v
-    case objAt fs c i =>
-      cases c
-      case view s' f n =>
-        simp only [HeapKnowledge.descriptorSpine, Option.some.injEq] at hn
-        rw [← hn]
-        have := hv _ (by simp [refs] : Ref.view s' f n (fs.lookup arraySpineKey).isNone ∈ refs (.objAt fs (.view s' f n) i))
-        exact lt_of_role this.2
-      all_goals simp [HeapKnowledge.descriptorSpine] at hn
-    all_goals simp [HeapKnowledge.descriptorSpine] at hn
-  | cell i =>
-    simp only [next] at hn
-    cases v
-    case arr ls =>
-      simp only [spineEntries] at hn
-      have hm : some l ∈ ls := by
-        cases hi : ls[i]? with
-        | none => rw [hi] at hn; cases hn
-        | some o =>
-          rw [hi] at hn
-          simp only [Option.join_some] at hn
-          subst hn
-          exact List.mem_of_getElem? hi
-      have : Ref.elem l ∈ refs (.arr ls) := by
-        simp only [refs, spineRefs, List.mem_filterMap]
-        exact ⟨some l, hm, rfl⟩
-      exact lt_of_role (hv _ this)
-    case viewSpine f cs =>
-      simp only [spineEntries] at hn
-      have hm : l ∈ cs := by
-        cases hi : (cs.map some)[i]? with
-        | none => rw [hi] at hn; cases hn
-        | some o =>
-          rw [hi] at hn
-          simp only [Option.join_some] at hn
-          subst hn
-          simpa using List.mem_of_getElem? hi
-      have : Ref.elem l ∈ refs (.viewSpine f cs) := by
-        simp only [refs, List.mem_map]
-        exact ⟨l, hm, rfl⟩
-      exact lt_of_role (hv _ this)
-    all_goals simp [spineEntries] at hn
-
-/-- The contents of an allocated location of a well-formed heap are valid. -/
-theorem contents_valid {s : IndexedHeap} {l : Nat} {v : Val} (hl : l < s.h.length) (hv : s.h[l]? = some v) :
-    RefsOk s.W v := by
-  have hlen : l < (entries s.W).length := by
-    have := s.ok.1.1
-    simp only [toList, List.length_map] at this
-    omega
-  obtain ⟨r, hr⟩ := roleAt_some hlen
-  obtain ⟨u, hu, -, hok⟩ := s.ok.2 l r hr
-  rw [hv] at hu
-  cases hu
-  exact hok
-
-/-- **A path of a well-formed heap from a valid value ends at an allocated
-location.** -/
-theorem follows_lt {s : IndexedHeap} :
-    ∀ {v : Val} {π : List Label} {l : Nat}, RefsOk s.W v → Follows s.h v π l → l < s.h.length
-  | _, [], _, _, h => h.elim
-  | _, [_], _, hv, h => next_lt hv h
-  | _, _ :: _ :: _, _, hv, ⟨_, _, hn, hl₀, hf⟩ =>
-    follows_lt (contents_valid (next_lt hv hn) hl₀) hf
-
 /-! ## Paths across a step -/
 
 /-- A location holds the same contents in both heaps. -/
@@ -216,7 +118,9 @@ meet the marks. Every value the step gives to code that is not the
 package's crosses (`gives`: an argument of such a call, a result, a value
 thrown), and so does every value it leaves in storage such code reaches,
 changed or allocated by the step (`stores`: the draft's "the content of
-storage both sides reach"). The frames' values stay valid. -/
+storage both sides reach"). Storage the step changes or allocates that
+references local storage is local (`localStores`, the local mark's "never
+stored into storage"). The frames' values stay valid. -/
 structure PkgStep (tv : TypeView) (d : Nat) (st st' : St P) : Type where
   adm : Admissible st.s st'.s
   mid : Ghost P
@@ -232,6 +136,8 @@ structure PkgStep (tv : TypeView) (d : Nat) (st st' : St P) : Type where
   stores : ∀ w u, ReachesFrom st'.s.h st'.roots w → st'.s.h[w]? = some u → ¬ Same st.s.h st'.s.h w →
     ∃ c ∈ xs, c.val = u
   valid : RootsValid st'
+  localStores : ∀ w u, ¬ Same st.s.h st'.s.h w → st'.s.h[w]? = some u → ∀ a l, next u a = some l →
+    mid.origin l = some .local → mid.origin w = some .local
 
 /-- **The step lemma**: a checked step of the package's code inside a call
 at depth `d` keeps the invariants of states and the marks, and grows the
@@ -278,8 +184,24 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
       · obtain ⟨c, hc, hcu⟩ := hp.stores w u ⟨r, hr, π₁, h₁⟩ hu hs
         exact hcross c hc l ⟨π₂, hcu ▸ h₂⟩
     · exact hcross c hc l ⟨π, hf⟩
+  have hlc : LocalClosed st' := by
+    intro w u hu' a l hn hloc
+    rw [horig l] at hloc
+    rw [horig w]
+    by_cases hs : Same st.s.h st'.s.h w
+    · obtain ⟨v, hv₀, hv₁⟩ := hs
+      rw [hu'] at hv₁
+      cases hv₁
+      have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
+      have hl' : l < st.s.h.length := next_lt (contents_valid hw hv₀) hn
+      have hmo : ∀ x, x < st.s.h.length → hp.mid.origin x = st.g.origin x := fun x hx => by
+        simp only [Ghost.origin, (hp.sites x hx).1]
+      rw [hmo l hl'] at hloc
+      rw [hmo w hw]
+      exact hok.localClosed w _ hv₀ a l hn hloc
+    · exact hp.localStores w u hs hu' a l hn hloc
   exact ⟨⟨hok.pos, hg.len', hu, fun l h => ⟨(hall l h).1, (hall l h).2.1⟩, fun l h he => (hall l h).2.2 he,
-    hp.valid⟩, hkept, hg⟩
+    hp.valid, hlc⟩, hkept, hg⟩
 
 /-- A step whose history begins with its crossings, at the heap after it,
 updates `E` as `PkgStep.covers` states. -/
@@ -347,10 +269,10 @@ theorem Grows.weaken {d : Nat} {g g' : Ghost P} (hg : Grows (d + 1) g g') (hd : 
   ⟨hd, by have := hg.len; omega, by have := hg.len'; omega, hg.record, hg.prot, hg.exposed⟩
 
 theorem Ok.deeper {d : Nat} {st : St P} (hok : Ok d st) (hl : d + 1 ≤ st.g.A.length) : Ok (d + 1) st :=
-  ⟨Nat.succ_pos _, hl, hok.uniform, hok.marks, hok.confined, hok.valid⟩
+  ⟨Nat.succ_pos _, hl, hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed⟩
 
 theorem Ok.shallower {d : Nat} {st : St P} (hok : Ok (d + 1) st) (hd : 0 < d) : Ok d st :=
-  ⟨hd, by have := hok.len; omega, hok.uniform, hok.marks, hok.confined, hok.valid⟩
+  ⟨hd, by have := hok.len; omega, hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed⟩
 
 /-- **A member's call keeps the invariants, the marks, and grows the
 history**, from the step lemma and its runs' bounds one call deeper. -/

@@ -96,6 +96,104 @@ reaches that is read-only for the crossing type `T`. -/
 def ReachRO (tv : TypeView) (T : tv.Ty) (h : Heap) (v : Val) (l : Nat) : Prop :=
   ∃ π, Follows h v π l ∧ tv.roPath T π
 
+/-! ## Paths of a well-formed heap -/
+
+theorem slot_mem_refs {fs : List (PropKey × Nat)} {c : CallCode} {i : Nat} {k : PropKey} {l : Nat}
+    (h : (k, l) ∈ fs) : Ref.slot k l ∈ refs (.objAt fs c i) := by
+  have : Ref.slot k l ∈ objRefs fs i := List.mem_cons_of_mem _ (List.mem_map.mpr ⟨(k, l), h, rfl⟩)
+  cases c <;> simp only [refs] <;> first | exact this | exact List.mem_append_left _ this
+
+theorem lt_of_role {s : IndexedHeap} {l : Nat} {r : Role} (h : roleAt s.W l = some r) : l < s.h.length := by
+  have hl := roleAt_lt h
+  have := s.ok.1.1
+  simp only [toList, List.length_map] at this
+  omega
+
+theorem lt_of_slotRole {s : IndexedHeap} {k : PropKey} {l : Nat} (h : SlotRole k (roleAt s.W l)) :
+    l < s.h.length := by
+  cases hr : roleAt s.W l with
+  | none => rw [hr] at h; exact h.elim
+  | some r => exact lt_of_role hr
+
+/-- **One step of a path from a valid value reaches an allocated
+location.** -/
+theorem next_lt {s : IndexedHeap} {v : Val} {a : Label} {l : Nat} (hv : RefsOk s.W v)
+    (hn : next v a = some l) : l < s.h.length := by
+  cases a with
+  | key k =>
+    simp only [next] at hn
+    cases v
+    case objAt fs c i =>
+      simp only [fieldsOf] at hn
+      exact lt_of_slotRole (hv _ (slot_mem_refs (c := c) (i := i) (lookup_mem_pair hn)))
+    all_goals simp [fieldsOf] at hn
+  | view =>
+    simp only [next] at hn
+    cases v
+    case objAt fs c i =>
+      cases c
+      case view s' f n =>
+        simp only [HeapKnowledge.descriptorSpine, Option.some.injEq] at hn
+        rw [← hn]
+        have := hv _ (by simp [refs] : Ref.view s' f n (fs.lookup arraySpineKey).isNone ∈ refs (.objAt fs (.view s' f n) i))
+        exact lt_of_role this.2
+      all_goals simp [HeapKnowledge.descriptorSpine] at hn
+    all_goals simp [HeapKnowledge.descriptorSpine] at hn
+  | cell i =>
+    simp only [next] at hn
+    cases v
+    case arr ls =>
+      simp only [spineEntries] at hn
+      have hm : some l ∈ ls := by
+        cases hi : ls[i]? with
+        | none => rw [hi] at hn; cases hn
+        | some o =>
+          rw [hi] at hn
+          simp only [Option.join_some] at hn
+          subst hn
+          exact List.mem_of_getElem? hi
+      have : Ref.elem l ∈ refs (.arr ls) := by
+        simp only [refs, spineRefs, List.mem_filterMap]
+        exact ⟨some l, hm, rfl⟩
+      exact lt_of_role (hv _ this)
+    case viewSpine f cs =>
+      simp only [spineEntries] at hn
+      have hm : l ∈ cs := by
+        cases hi : (cs.map some)[i]? with
+        | none => rw [hi] at hn; cases hn
+        | some o =>
+          rw [hi] at hn
+          simp only [Option.join_some] at hn
+          subst hn
+          simpa using List.mem_of_getElem? hi
+      have : Ref.elem l ∈ refs (.viewSpine f cs) := by
+        simp only [refs, List.mem_map]
+        exact ⟨l, hm, rfl⟩
+      exact lt_of_role (hv _ this)
+    all_goals simp [spineEntries] at hn
+
+/-- The contents of an allocated location of a well-formed heap are valid. -/
+theorem contents_valid {s : IndexedHeap} {l : Nat} {v : Val} (hl : l < s.h.length) (hv : s.h[l]? = some v) :
+    RefsOk s.W v := by
+  have hlen : l < (entries s.W).length := by
+    have := s.ok.1.1
+    simp only [toList, List.length_map] at this
+    omega
+  obtain ⟨r, hr⟩ := roleAt_some hlen
+  obtain ⟨u, hu, -, hok⟩ := s.ok.2 l r hr
+  rw [hv] at hu
+  cases hu
+  exact hok
+
+/-- **A path of a well-formed heap from a valid value ends at an allocated
+location.** -/
+theorem follows_lt {s : IndexedHeap} :
+    ∀ {v : Val} {π : List Label} {l : Nat}, RefsOk s.W v → Follows s.h v π l → l < s.h.length
+  | _, [], _, _, h => h.elim
+  | _, [_], _, hv, h => next_lt hv h
+  | _, _ :: _ :: _, _, hv, ⟨_, _, hn, hl₀, hf⟩ =>
+    follows_lt (contents_valid (next_lt hv hn) hl₀) hf
+
 /-! ## Marks and the ghost state -/
 
 /-- **The marks** (the draft, Definitions, "Marks, one per allocation
