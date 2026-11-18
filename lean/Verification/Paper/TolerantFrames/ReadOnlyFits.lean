@@ -156,15 +156,6 @@ inductive Within (P : Package) : Val → Val → Prop where
 
 /-! ## Lowered code -/
 
-/-- A primitive value: no location, no code. -/
-def primVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ => true
-  | _ => false
-
-/-- **A part of a closure's code in lowered code**: a variable, or a value
-with no location. -/
-def CodePart (t : Tm) : Prop := (∃ i, t = .var i) ∨ primVal t = true
-
 mutual
 /-- **A term of lowered code**: it holds no located value (an object, a
 spine with a cell, a view spine, a typed array's allocation) and no run,
@@ -204,6 +195,15 @@ end
 theorem loweredArgs_iff : ∀ {xs : List Tm}, LoweredArgs Fl xs ↔ ∀ x ∈ xs, Lowered Fl x
   | [] => by simp [LoweredArgs]
   | x :: xs => by simp [LoweredArgs, loweredArgs_iff]
+
+/-- **Lowered source of outside code is lowered code** (proved): it creates
+no closure of `C`'s code. -/
+theorem LoweredSrc.lowered : ∀ {e : Tm}, LoweredSrc P.ofC e → Lowered Fl e := by
+  intro e
+  induction e using Tm.induct
+  all_goals intro h
+  all_goals simp only [LoweredSrc, loweredSrcArgs_iff, Lowered, loweredArgs_iff] at h ⊢
+  all_goals grind
 
 /-- **A closure of outside code has lowered code.** -/
 def OutLowered (v : Val) : Prop :=
