@@ -237,6 +237,7 @@ import Verification.Semantics.Worlds
 import Verification.Source.BindingPlan
 import Verification.Source.Claims.Diagnostics
 import Verification.Source.Claims.Extraction
+import Verification.Source.Claims.FlowProbe
 import Verification.Source.Claims.FragmentFront
 import Verification.Source.Claims.HeadDiagnosis
 import Verification.Source.Claims.HeadInference

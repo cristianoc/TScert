@@ -5,6 +5,7 @@ import Verification.Source.Claims.Json
 import Verification.Source.Claims.ModuleInterfaces
 import Verification.Source.WorkerWire
 import Verification.Source.ComponentChecks
+import Verification.Source.Claims.FlowProbe
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -617,6 +618,10 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let planned ← IO.lazyPure fun _ => p.plan i known memo
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
+  -- The flow the read-only frame's checks read, probed (`TSCERT_FLOW_PROBE`).
+  if (← IO.getEnv "TSCERT_FLOW_PROBE").isSome then
+    if let .ok f := planned then
+      for line in f.flowProbe (fr.group i) do IO.eprintln line
   let (lines, verdict, extraction, contracts, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [], false)
     | .ok f => do
