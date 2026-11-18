@@ -14,9 +14,12 @@ step):
 - **Reads** give values meeting the contents of a site the read may reach
   (`HeapInv.read`, `spread_vj`, `merge_vals`); **writes and allocations**
   store what the storage may hold (`HeapInv.set_same`, `HeapInv.fresh`).
-- **A call** enters its run with an environment of the receiver, the
-  actuals and the closure, all of `O`, and the captures (`fits_graphEntry`);
-  a bound function forwards its parts (`VJ.boundPart`).
+- **A call** of a callee that may be outside code enters its run with an
+  environment of the receiver, the actuals and the closure, all of `O`,
+  and the captures (`fits_graphEntry`); a call of a closure of `C`'s code
+  of a known signature, with the receiver and the actuals at its entry's
+  slots (`fits_graphEntryC`); a bound function forwards its parts
+  (`VJ.boundPart`).
 - **A `let`** substitutes its value (`fits_subst`); **a run entering a
   node** instantiates it, by the proposal's conditions for `C`'s code
   (`CodeOk`) and as lowered code for outside code (`fits_lowered`); a
@@ -114,9 +117,10 @@ theorem VJ.capC {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} 
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = true)
     (hv : VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid)) :
-    ∃ π, Fl.code (E, K) = some π ∧ ∀ i u, caps[i]? = some u → VJ Fl g n (π.env s (capSlot ar rest i)) u := by
-  obtain ⟨π, hπ, hcaps⟩ := (hv.inner _ (.refl _)).2.1 fs ar E K s caps kd rest comp oid rfl hc
-  refine ⟨π, hπ, fun i u hu => ?_⟩
+    ∃ π, Fl.code (E, K) = some π ∧ (∀ i u, caps[i]? = some u → VJ Fl g n (π.env s (capSlot ar rest i)) u) ∧
+      CapFn π ar E K s caps rest := by
+  obtain ⟨π, hπ, hcaps, hfn⟩ := (hv.inner _ (.refl _)).2.1 fs ar E K s caps kd rest comp oid rfl hc
+  refine ⟨π, hπ, fun i u hu => ?_, hfn⟩
   obtain ⟨hval, hcl, hin⟩ := hv.capInner (List.mem_of_getElem? hu)
   exact ⟨hval, hcl, (hcaps i u hu).2, (hcaps i u hu).1, hin⟩
 
@@ -156,6 +160,124 @@ theorem parameters_mem' {P' : Tm → Prop} (hu : P' .undef) : ∀ {n : Nat} {arg
     rcases hx with rfl | hx
     · exact h _ (List.mem_cons_self ..)
     · exact parameters_mem' hu (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
+
+/-- **A run entered by a call meets its entry's signatures** (proved): only
+a capture or the closure itself names one (`CapFn`). -/
+theorem envFn_entry {π : CodeFlow P} {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
+    {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
+    {comp : ComponentTag} {oid : Nat} {pre : List Tm} (hc : P.ofC comp = true) (hfn : CapFn π ar E K s caps rest)
+    (hl : pre.length = (if rest then 1 else 0) + 1 + ar) :
+    EnvFn π s (pre ++ (caps ++ [.objAt fs (.graph ar E K s caps kd rest comp) oid])) .nul := by
+  intro i σ hi
+  obtain ⟨j, rfl, hcase⟩ := hfn i σ hi
+  have he : envOf (pre ++ (caps ++ [Tm.objAt fs (.graph ar E K s caps kd rest comp) oid])) .nul (capSlot ar rest j) =
+      (caps ++ [Tm.objAt fs (.graph ar E K s caps kd rest comp) oid]).getD j .nul := by
+    simp only [envOf, capSlot, ← hl, List.getD_eq_getElem?_getD]
+    rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+  rw [he, List.getD_eq_getElem?_getD]
+  rcases hcase with ⟨u, hu, hfu⟩ | ⟨rfl, rfl⟩
+  · rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1, hu]; exact hfu
+  · rw [List.getElem?_append_right (Nat.le_refl _)]
+    simp only [Nat.sub_self, List.getElem?_cons_zero, Option.getD_some]
+    exact ⟨fs, caps, kd, comp, oid, rfl, rfl, hc⟩
+
+/-- **The environment at a run's entry, slot by slot** (proved): the
+slots before the captures as given, then the captures, the closure and
+the default. -/
+theorem envIn_entry {Γ' : Nat → Option (Sites P)} {τ : Nat → Sites P} {ar : Nat} {rest : Bool}
+    {caps : List Tm} {self : Tm} {pre : List Tm} (hl : pre.length = (if rest then 1 else 0) + 1 + ar)
+    (hpre : ∀ i x, pre[i]? = some x → VOr (VJ Fl g n) Γ' (τ i) x)
+    (hcaps : ∀ i u, caps[i]? = some u → VJ Fl g n (τ (capSlot ar rest i)) u)
+    (hself : VJ Fl g n (τ (capSlot ar rest caps.length)) self) :
+    ∀ i, VOr (VJ Fl g n) Γ' (τ i) (envOf (pre ++ (caps ++ [self])) .nul i) := by
+  intro i
+  simp only [envOf, List.getD_eq_getElem?_getD]
+  by_cases h₁ : i < pre.length
+  · rw [List.getElem?_append_left h₁, List.getElem?_eq_getElem h₁]
+    exact hpre i _ (List.getElem?_eq_getElem h₁)
+  · obtain ⟨j, rfl⟩ : ∃ j, i = pre.length + j := ⟨i - pre.length, by omega⟩
+    rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+    have hslot : pre.length + j = capSlot ar rest j := by simp [capSlot, hl]
+    by_cases h₂ : j < caps.length
+    · rw [List.getElem?_append_left h₂, List.getElem?_eq_getElem h₂]
+      rw [hslot]; exact .inl (hcaps j _ (List.getElem?_eq_getElem h₂))
+    · rw [List.getElem?_append_right (by omega)]
+      by_cases h₃ : j = caps.length
+      · subst h₃; rw [hslot]
+        simp only [Nat.sub_self, List.getElem?_cons_zero, Option.getD_some]
+        exact .inl hself
+      · rw [List.getElem?_eq_none (by simp; omega)]
+        exact .inl (VJ.prim rfl)
+
+theorem parameters_get : ∀ {n : Nat} {args : List Tm} {i : Nat} {x : Tm},
+    (CallArguments.parameters n args)[i]? = some x → i < n ∧ (args[i]? = some x ∨ x = .undef)
+  | 0, _, _, _, h => by simp [CallArguments.parameters] at h
+  | n + 1, [], 0, x, h => by simp [CallArguments.parameters] at h; exact ⟨by omega, .inr h.symm⟩
+  | n + 1, [], i + 1, x, h => by
+    simp only [CallArguments.parameters, List.getElem?_cons_succ] at h
+    obtain ⟨hi, hx⟩ := parameters_get h
+    exact ⟨by omega, .inr (hx.elim (fun h => by simp at h) id)⟩
+  | n + 1, a :: args, 0, x, h => by simp [CallArguments.parameters] at h; exact ⟨by omega, .inl (by simp [h])⟩
+  | n + 1, a :: args, i + 1, x, h => by
+    simp only [CallArguments.parameters, List.getElem?_cons_succ] at h
+    obtain ⟨hi, hx⟩ := parameters_get h
+    exact ⟨by omega, by simpa using hx⟩
+
+/-- **A run of `C`'s code entered by a call of a known signature fits**
+(proved): the receiver and the actuals meet its entry's slots, the
+captures and the closure meet theirs (`CapsOk`), and a rest spine is
+allocated at the caller's array site, of the spine's slot. -/
+theorem fits_graphEntryC {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P} {S : Sites P}
+    {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat}
+    {caps : List Tm} {kd : Invoke} {rest : Bool} {comp : ComponentTag} {oid : Nat} {recv : Tm} {args : List Tm}
+    {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) = some π)
+    (hf : VJ Fl g n (π.env s (capSlot ar rest caps.length)) (.objAt fs (.graph ar E K s caps kd rest comp) oid))
+    (hr : VJ Fl g n (π.env s (recvSlot rest)) recv) (Sa : Nat → Sites P) (Sr : Sites P)
+    (hargs : ∀ i x, args[i]? = some x → VJ Fl g n (Sa i) x)
+    (hpar : ∀ i, i < ar → Sub (Sa i) (π.env s (paramSlot rest i)))
+    (hrest : rest = true → a.arr ∈ π.env s 0 ∧ Stores Fl a.arr Sr ∧ ∀ i, ar ≤ i → Sub (Sa i) Sr)
+    (hS : Sub Fl.O S) :
+    Fits Fl (VJ Fl g n) Γ a S
+      (CallArguments.graphEntry ar E K s caps (.objAt fs (.graph ar E K s caps kd rest comp) oid) rest comp recv args) := by
+  obtain ⟨π', hπ', hcaps, hfn⟩ := hf.capC hc
+  rw [hcode] at hπ'; cases hπ'
+  have hparam : ∀ (Γ' : Nat → Option (Sites P)) i x, (CallArguments.parameters ar args)[i]? = some x →
+      VOr (VJ Fl g n) Γ' (π.env s (paramSlot rest i)) x := by
+    intro Γ' i x hx
+    obtain ⟨hi, hx⟩ := parameters_get hx
+    rcases hx with hx | rfl
+    · exact .inl ((hargs i x hx).sub (hpar i hi))
+    · exact .inl (VJ.prim rfl)
+  cases rest with
+  | false =>
+    have hl : (recv :: CallArguments.parameters ar args).length = (if false then 1 else 0) + 1 + ar := by
+      simp [parameters_length]; omega
+    refine .gotoC π hc hcode (envIn_entry hl (fun i x hx => ?_) hcaps hf) (envFn_entry hc hfn hl) hS
+    cases i with
+    | zero => simp at hx; subst hx; exact .inl hr
+    | succ i =>
+      simp only [List.getElem?_cons_succ] at hx
+      have := hparam Γ i x hx
+      simpa [paramSlot, recvSlot, Nat.add_comm] using this
+  | true =>
+    obtain ⟨ha, hst, hge⟩ := hrest rfl
+    have hl : (.var 0 :: recv :: CallArguments.parameters ar args).length = (if true then 1 else 0) + 1 + ar := by
+      simp [parameters_length]; omega
+    refine .letE (Sx := π.env s 0) (.arrLit (fun _ => Sr) (fun _ _ => hst) (fun x hx => ?_) ha) ?_
+    · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+      rw [List.getElem?_drop] at hi
+      have := hargs _ x hi
+      exact .val this.val (this.sub (hge _ (Nat.le_add_right _ _)))
+    refine .gotoC π hc hcode (envIn_entry hl (fun i x hx => ?_) hcaps hf) (envFn_entry hc hfn hl) hS
+    cases i with
+    | zero => simp at hx; subst hx; exact .inr ⟨0, _, rfl, rfl, Sub.refl _⟩
+    | succ i =>
+      cases i with
+      | zero => simp at hx; subst hx; exact .inl hr
+      | succ i =>
+        simp only [List.getElem?_cons_succ] at hx
+        have := hparam (consSites (π.env s 0) Γ) i x hx
+        simpa [paramSlot, recvSlot, Nat.add_comm, Nat.add_left_comm] using this
 
 /-- **A run entered by a call fits** (proved): its environment holds the
 receiver, the actuals and the closure, all of `O`, and the captures, of
@@ -198,7 +320,7 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
       · exact .inr ⟨0, Fl.O, rfl, rfl, Sub.refl _⟩
       · exact .inl (hpre x hx)
   · -- `C`'s code
-    obtain ⟨π, hπ, hcaps⟩ := hf.capC hc
+    obtain ⟨π, hπ, hcaps, hfn⟩ := hf.capC hc
     have hC : ∀ (Γ' : Nat → Option (Sites P)) (pre : List Tm), pre.length = (if rest then 1 else 0) + 1 + ar →
         (∀ x ∈ pre, VOr (VJ Fl g n) Γ' Fl.O x) → ∀ i,
         VOr (VJ Fl g n) Γ' (π.env s i)
@@ -218,11 +340,13 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
       · rw [h]; exact .inl (VJ.prim rfl)
     cases rest with
     | false =>
-      exact .gotoC π hc hπ (hC _ _ (by simp [parameters_length]; omega) fun x hx => .inl (hpre x hx)) hS
+      exact .gotoC π hc hπ (hC _ _ (by simp [parameters_length]; omega) fun x hx => .inl (hpre x hx))
+        (envFn_entry hc hfn (by simp [parameters_length]; omega)) hS
     | true =>
       refine .letE (Sx := Fl.O) (.arrLit (fun _ => Fl.O) (fun _ _ => hF.writable _ ha)
         (fun x hx => .val (hargs x (List.mem_of_mem_drop hx)).val (hargs x (List.mem_of_mem_drop hx))) ha) ?_
-      refine .gotoC π hc hπ (hC _ _ (by simp [parameters_length]; omega) fun x hx => ?_) hS
+      refine .gotoC π hc hπ (hC _ _ (by simp [parameters_length]; omega) fun x hx => ?_)
+        (envFn_entry hc hfn (by simp [parameters_length]; omega)) hS
       rcases List.mem_cons.mp hx with rfl | hx
       · exact .inr ⟨0, Fl.O, rfl, rfl, Sub.refl _⟩
       · exact .inl (hpre x hx)
@@ -433,6 +557,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hf', hH'⟩ := ih key hf hH
       simp only [stepSite, activeFrame, hn, if_true] at hf' hH' ⊢
       exact ⟨.invoke hf' (hr.alloc hl) (fun x hx => (hargs x hx).alloc hl) hS ha, hH'⟩
+    | invokeC _ _ _ _ hfn => have := hfn.val; rw [notVal_of_step hst] at this; cases this
   | callRecv hfv hst ih =>
     intro cur S key hfit hH
     cases hfit with
@@ -443,6 +568,13 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hr', hH'⟩ := ih key hr hH
       simp only [stepSite, activeFrame, hn, hfv, if_true, Bool.true_eq_false, if_false] at hr' hH' ⊢
       exact ⟨.invoke (hf.alloc hl) hr' (fun x hx => (hargs x hx).alloc hl) hS ha, hH'⟩
+    | invokeC σ π Sa Sr hfn hcode hself hr hargs hat hpar hrest hS =>
+      have hn := notVal_of_step hst
+      have hl := Footprints.step_length_le hst
+      obtain ⟨hr', hH'⟩ := ih key hr hH
+      simp only [stepSite, activeFrame, hn, hfv, if_true, Bool.true_eq_false, if_false] at hr' hH' ⊢
+      exact ⟨.invokeC σ π Sa Sr hfn hcode (hself.alloc hl) hr' (fun i x hx => (hargs i x hx).alloc hl) hat hpar
+        hrest hS, hH'⟩
   | callArg hfv hrv hai hpre hst ih =>
     intro cur S key hfit hH
     cases hfit with
@@ -456,6 +588,10 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       rcases mem_set_cases hx with hx | rfl
       · exact (hargs x hx).alloc hl
       · exact ha'
+    | invokeC _ _ _ _ _ _ _ _ _ hat =>
+      rcases hat _ (List.mem_of_getElem? hai) with hv | ⟨j, rfl⟩
+      · rw [notVal_of_step hst] at hv; cases hv
+      · cases hst
   | constructL hst ih =>
     intro cur S key hfit hH
     have hn := notVal_of_step hst
@@ -720,11 +856,11 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.makeBound _ hst'' hi'' hs (fun x hx => (hp x hx).alloc hl), hH'⟩
-    | makeGraphC π Ss hst' hi hs hc hcode hcaps hE =>
+    | makeGraphC π Ss hst' hi hs hc hcode hcaps hfn hE =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
-      exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode (fun i u hu => (hcaps i u hu).alloc hl) hE, hH'⟩
+      exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode (fun i u hu => (hcaps i u hu).alloc hl) hfn hE, hH'⟩
     | makeGraphOut Ss hst' hi hs hc hE hcaps =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
@@ -746,12 +882,13 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     have hl := Footprints.step_length_le hst
     cases hfit with
     | val hv => simp [isVal] at hv
-    | frameC π l hc hcode hnode henv ht hS =>
+    | frameC π l hc hcode hnode henv hfn hvfn ht hS =>
       rw [← allocOf_C hc hcode] at ht
       obtain ⟨ht', hH'⟩ := ih key ht hH
       rw [allocOf_C hc hcode] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢
-      exact ⟨.frameC π l hc hcode hnode (fun i => (henv i).alloc hl) ht' hS, hH'⟩
+      refine ⟨.frameC π l hc hcode hnode (fun i => (henv i).alloc hl) hfn (fun σ hσ => ?_) ht' hS, hH'⟩
+      have := (hvfn σ hσ).val; rw [notVal_of_step hst] at this; cases this
     | frameOut hc hE henv ht hS =>
       rw [← allocOf_out (Fl := Fl) (m := (_, _)) hc] at ht
       obtain ⟨ht', hH'⟩ := ih key ht hH
@@ -937,10 +1074,11 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
-    | makeGraphC π Ss hst hi hs hc hcode hcaps hE =>
+    | makeGraphC π Ss hst hi hs hc hcode hcaps hfn hE =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.graphC hc hcode (fun k l hk => ?_) (fun i u hu => (hcaps i u hu).top.alloc (by simp)) (lowered_vj hE)), ?_⟩
+      refine ⟨.val rfl (VJ.graphC hc hcode (fun k l hk => ?_) (fun i u hu => (hcaps i u hu).top.alloc (by simp)) hfn
+        (lowered_vj hE)), ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
@@ -974,8 +1112,9 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨.val hv ((((ht.value hv).sub hk).sub hS).alloc (Nat.le_refl _)), hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨.val hv (((ht.value hv).sub hS).alloc (Nat.le_refl _)), hH.same⟩
@@ -983,85 +1122,98 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))) hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))
+        (hkf _ _ _ hfn hvfn) hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS, hH.same⟩
   | frameEffect hv =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))) hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))) (hkf _ _ hfn) hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS, hH.same⟩
   | frameYes  =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS, hH.same⟩
   | frameNo  =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS, hH.same⟩
   | frameYesBind  =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS, hH.same⟩
   | frameNoBind  =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS, hH.same⟩
   | frameTag hv =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       refine ⟨?_, hH.same⟩
       split
       · exact fits_gotoC hc hcode
-          (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).1 hS
+          (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).1
+          (hkf _ _ _ hfn hvfn).1 hS
       · exact fits_gotoC hc hcode
-          (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).2 hS
+          (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).2
+          (hkf _ _ _ hfn hvfn).2 hS
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS, hH.same⟩
   | frameHandle hr =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hx _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _))) hS, hH.same⟩
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
+      exact ⟨fits_gotoC hc hcode (hx _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))
+        (hxf _ _ _ hfn) hS, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))) hS, hH.same⟩
   | frameRaise hr =>
     intro cur S key hfit hH
     cases hfit with
     | val hv' => simp [isVal] at hv'
-    | frameC π l hc hcode hn henv ht hS =>
+    | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
+      obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       have hv := raises_fits hr ht
       exact ⟨.throw (.val hv.val (hv.alloc (Nat.le_refl _))), hH.same⟩
     | frameOut hc hE henv ht hS =>
@@ -1085,11 +1237,11 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     intro cur S key hfit hH
     cases hfit with
     | val hv => simp [isVal] at hv
-    | gotoC π hc hcode henv hS =>
+    | gotoC π hc hcode henv hfn hS =>
       have henv' : EnvIn (VJ Fl g _) (π.env _) _ _ := fun i => (henv i).top
-      obtain ⟨hent, -, -⟩ := hF.ok _ π hcode _ _ _ _ he hk
-      exact ⟨.frameC π _ hc hcode ⟨hk, _, he⟩ (fun i => (henv' i).alloc (Nat.le_refl _))
-        (hent _ _ _ _ fun i => (henv' i).alloc (Nat.le_refl _)) hS, hH.same⟩
+      obtain ⟨hent, -⟩ := hF.ok _ π hcode _ _ _ _ he hk
+      exact ⟨.frameC π _ hc hcode ⟨hk, _, he⟩ (fun i => (henv' i).alloc (Nat.le_refl _)) hfn
+        (hent g _ _ _ henv' hfn).2 (hent _ _ _ _ (fun i => (henv' i).alloc (Nat.le_refl _)) hfn).1 hS, hH.same⟩
     | gotoOut hc hE henv hS =>
       have henv' := fun i => (henv i).top
       refine ⟨.frameOut hc hE (fun i => (henv' i).alloc (Nat.le_refl _)) ?_ hS, hH.same⟩
@@ -1102,6 +1254,13 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | invoke hf hr' hargs' hS ha =>
       exact ⟨fits_graphEntry hF ((hf.value rfl).alloc (Nat.le_refl _)) ((hr'.value hr).alloc (Nat.le_refl _))
         (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS, hH.same⟩
+    | invokeC σ π Sa Sr hfn hcode hself hr' hargs' hat hpar hrest hS =>
+      obtain ⟨fs', caps', k', comp', oid', he, hlen, hc⟩ := hfn
+      cases he
+      refine ⟨fits_graphEntryC hc hcode (by rw [hlen]; exact hself.alloc (Nat.le_refl _))
+        ((hr'.value hr).alloc (Nat.le_refl _)) Sa Sr
+        (fun i x hx => ((hargs' i x hx).value (hargs x (List.mem_of_getElem? hx))).alloc (Nat.le_refl _))
+        hpar hrest hS, hH.same⟩
   | constructGraph hargs =>
     intro cur S key hfit hH
     cases hfit with
@@ -1123,6 +1282,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · have := hb.boundPart (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))
         exact .val this.val (this.alloc (Nat.le_refl _))
       · exact (hargs' x hx).alloc (Nat.le_refl _)
+    | invokeC _ _ _ _ hfn => obtain ⟨_, _, _, _, _, he, _⟩ := hfn; cases he
   | callSpread hfv hrv heq hpre hre =>
     intro cur S key hfit hH
     subst heq
@@ -1140,6 +1300,10 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
         · exact (hargs x (List.mem_append_left _ hx')).alloc (Nat.le_refl _)
         · exact .val (hvs x hx').val ((hvs x hx').alloc (Nat.le_refl _))
         · exact (hargs x (List.mem_append_right _ (List.mem_cons_of_mem _ hx'))).alloc (Nat.le_refl _)
+    | invokeC _ _ _ _ _ _ _ _ _ hat =>
+      rcases hat _ (List.mem_append_right _ (List.mem_cons_self ..)) with hv | ⟨j, hj⟩
+      · simp [isVal] at hv
+      · cases hj
   | constructSpread hfv heq hpre hre =>
     intro cur S key hfit hH
     subst heq

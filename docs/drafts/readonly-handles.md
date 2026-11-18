@@ -2272,25 +2272,37 @@ sets of sites:
   of $`C`$ a proposal (`CodeFlow`): at each node, the sites of each slot
   of the environment and of the node expression's value, and the sites
   its frames allocate at, objects (`obj`) and arrays (`arr`, a rest
-  parameter's spine and a grown cell among them). Outside code allocates
-  outside storage (`Alloc.outside`).
+  parameter's spine and a grown cell among them); and, where a slot or a
+  node's value holds a closure of $`C`$'s code of a known signature (its
+  code, arity, entry label, rest and number of captures, `FnSig`), that
+  signature (`fn`, `vfn`). Outside code allocates outside storage
+  (`Alloc.outside`).
 - **Lowered code** (`Lowered`): a node expression holds no located value
   (an object, a spine with a cell, a view spine, a typed array's
   allocation) and no run; what it captures or binds into a closure is a
   variable or a primitive (`CodePart`); every closure of $`C`$'s code it
-  creates has a proposal. The lowering emits no object and no run; outside
-  code is lowered source, a premise of the entries.
+  creates has a proposal whose entry names no signature but the
+  closure's own (`SelfFn`). The lowering emits no object and no run;
+  outside code is lowered source, a premise of the entries.
 - **A value meets a set** (`VJ`): a closed value referencing allocated
   locations only, whose first locations are of sites of the set; every
   value within it (`Within`: captures, node expressions' values, a bound
   function's parts) is a value, every closure of $`C`$'s code among them
-  captures values meeting its code's entry slots (`CapsOk`), every closure
+  captures values meeting its code's entry slots, and its entry names a
+  signature only at a capture holding a closure of it or at its own slot
+  (`CapsOk`, `CapFn`), every closure
   of outside code has lowered code (`OutLowered`). Allocation keeps it
   (`VJ.alloc`).
 - **A term fits a set** (`Fits V Γ a S t`): its value, once computed,
-  meets $`S`$. Every callee, receiver, actual and thrown value meets
-  $`O`$, and a frame that calls allocates arrays at a site of $`O`$ (a
-  rest spine goes to a callee not known); a read's result meets the
+  meets $`S`$. A call of a callee that may be outside code (`invoke`,
+  `construct`) has its callee, receiver and actuals meet $`O`$, and the
+  calling frame allocates arrays at a site of $`O`$ (a rest spine goes to
+  a callee not known). A call of a closure of $`C`$'s code of a known
+  signature (`invokeC`; the note's (K) restricts only what crosses out to
+  outside code) has its receiver and actuals, each a value or a
+  variable, meet the slots of the callee's entry, the closure its own
+  slot, and a rest spine allocated at a site of the spine's slot holding
+  the rest's actuals. Every thrown value meets $`O`$; a read's result meets the
   contents of a set closed under the reads' prototypes; a write's value
   is one the written storage may hold (`Stores`); an allocation's initial
   values what its site may hold. A capture, a bound part and a slot of a
@@ -2299,13 +2311,18 @@ sets of sites:
   its environment meets its node's slots and its term the node's value
   set; of outside code, when its code is lowered and its environment and
   term meet $`O`$; either
-  returns a value of $`O`$. Fitting reads values only through `V`
+  returns a value of $`O`$. A run's slots naming a signature hold
+  closures of it (`EnvFn`), and a frame whose node value names one runs a
+  closure of it. Fitting reads values only through `V`
   (`Fits.mono`), so allocation keeps it (`Fits.alloc`); a raised value
   meets $`O`$ (`raises_fits`).
 - **The proposal's conditions** (`CodeOk`, `Flow.Facts`): each node
-  expression, instantiated at an environment meeting its slots, fits the
-  node's value set; each continuation and handler maps such an
-  environment to one meeting its target; a returning node's value meets
+  expression, instantiated at an environment meeting its slots and their
+  signatures, fits the node's value set and is a closure of the node
+  value's signature where it names one; each continuation and handler
+  maps such an environment to one meeting its target, its slots and its
+  signatures (`ContFn`, `HandlerFn`, a thrown value naming none); a
+  returning node's value meets
   $`O`$; every slot accepts $`O`$; $`O`$ holds outside storage, is closed
   in $`H`$, and its storage may hold all of $`O`$.
 - **A heap meets the flow** (`HeapInv`): each location holds a value
@@ -2327,10 +2344,14 @@ at an environment of $`O`$ fits $`O`$ at outside code's allocation sites
 `ReadOnlyFitsStep.lean`, by induction on the step): from a closed term
 fitting a set at the allocation sites of its top frame, on a heap meeting
 the flow, the step leads to a term fitting the same set and a heap meeting
-the flow, the ghost giving its fresh locations `stepSite`. A call enters a
-run whose environment holds the receiver, the actuals and the closure, all
-of $`O`$, and the captures (`fits_graphEntry`); a merge copies values of a
-closed set's contents (`merge_vals`).
+the flow, the ghost giving its fresh locations `stepSite`. A call of a
+callee that may be outside code enters a run whose environment holds the
+receiver, the actuals and the closure, all of $`O`$, and the captures
+(`fits_graphEntry`); a call of a closure of $`C`$'s code of a known
+signature enters one whose slots hold the receiver and the actuals at
+the entry's slots (`fits_graphEntryC`); either entry names a signature
+only at a capture or the closure's own slot (`envFn_entry`); a merge
+copies values of a closed set's contents (`merge_vals`).
 
 Proof scope: the lemmas above are proved. Not proved here: that the
 entry's term and heap fit (closed values, lowered outside code), the
