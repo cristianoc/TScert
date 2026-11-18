@@ -168,6 +168,63 @@ of $R_\cC$ within $\Theta_\cC$ at its part
 \status{assumed, of each component's clients. Lean: the hypothesis \lean{OutsideStep.row}}.
 \end{assumption}
 
+\noindent
+Three examples show the marks and the protected region at work; each is
+accepted.
+
+\begin{example}[A local cursor]\label{ex:rocursor}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{type Visitor = (w: number) => Modifies<\{ values: "any"; spines: "grow" \}, void>;}\\
+2 & \code{export function walk(xs: number[], visit: Visitor): number \{}\\
+3 & \code{~~const c = \{ i: 0 \}; let s = 0;}\\
+4 & \code{~~while (c.i < xs.length) \{ visit(c.i); s += xs[c.i]!; c.i++; \}}\\
+5 & \code{~~return s; \}}\\
+\end{tabular}
+\end{center}
+\emph{Accepted.} The visitor's type states its effect,
+$\Phi=\{\val:\any,\ \st:\grow\}$. The cursor's site (line 3) is local: only
+\code{walk}'s frame holds \code{c}, and the visitor receives the number
+\code{c.i}. Across \code{visit(c.i)} on line 4 the obligation
+$c.i<\len{\mathit{xs}}$, with $0\le c.i$ from the loop, has the support
+$\{c.i:\keep,\ \mathit{xs}.\kw{spine}:\grow\}$, tested location by
+location: $c.i$ is in $R_\cC$, where $\Psi_\cC\sqcup\Theta_\cC=\keep$;
+the spine of \code{xs}, which crossed in at the writable type
+\code{number[]}, is outside $R_\cC$, where $\Phi$ allows $\grow$.
+\end{example}
+\begin{example}[A released result]\label{ex:roreleased}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{const held: number[][] = [];}\\
+2 & \code{export const rows = (): number[][] => held;}\\
+3 & \code{export const fill = (n: number): number[] => \{}\\
+4 & \code{~~const row: number[] = []; for (let i = 0; i < n; i++) row.push(1);}\\
+5 & \code{~~held.push(row); return row; \};}\\
+6 & \code{export const count = (n: number): number => held.length + n;}\\
+\end{tabular}
+\end{center}
+\emph{Accepted.} The sites of \code{held} (line 1) and \code{row}
+(line 4) are released: \code{rows} and \code{fill} give them out at
+writable types. The entries take only numbers, so no released array comes
+back in, none is protected, and the store of line 5 is into storage
+outside $R_\cC$, which (O) does not constrain.
+\end{example}
+\begin{example}[Storage passed in read-only]\label{ex:roin}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{const mine = [1, 1, 1];}\\
+2 & \code{walk(\{ widths: mine \}, () => \{\});}\\
+\end{tabular}
+\end{center}
+\emph{Accepted}, with \code{walk} of Section~\ref{sec:problem}. The
+client's array is outside storage. The crossing of the record at
+\code{H} on line 2 reaches it read-only, so it is in $R_\cC$ from that
+crossing until \code{walk} returns, and $i<\len w$ survives the visit as
+in Example~\ref{ex:ro}. By Assumption~\ref{ass:clients} the client is
+bound not to change \code{mine} during the call, even through its own
+writable alias: a visitor that pops \code{mine} breaks the assumption.
+\end{example}
+
 \section{The rule}\label{sec:rule}
 
 \begin{mathpar}
@@ -189,7 +246,123 @@ storage reachable from $v$ is exposed or in $R_\cC$. By (O), a client is
 bound only on storage it passed in or received read-only; it is bound
 there even through its own writable alias. The checks are of all of
 $\cC$'s code: one store that (O) refuses removes the rule for every
-outside call inside $\cC$, the walkers' included.
+outside call inside $\cC$, the walkers' included. Each example below
+fails one check; the module is that of Section~\ref{sec:problem} unless
+the example says otherwise.
+
+\begin{example}[A suspension]\label{ex:rosuspend}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{export async function total(h: H): Promise<number> \{}\\
+2 & \code{~~const w = h.widths, n = w.length;}\\
+3 & \code{~~await null;}\\
+4 & \code{~~let s = 0; for (let i = 0; i < n; i++) s += w[i] as number; return s; \}}\\
+\end{tabular}
+\end{center}
+\emph{Refused by (S)}, at the async function of line 1 and the
+\code{await} of line 3. The call returns at the \code{await} while its
+frame lives on, so no call of $\cC$ stays active to protect \code{w}: a
+caller that runs \code{total(\{ widths: xs \})} and then sets
+\code{xs.length = 1} makes it read \code{undefined} at index 1 (observed
+under Node 26: the elements read are \code{1, undefined, undefined}).
+\end{example}
+\begin{example}[A writable value leaked]\label{ex:roleaked}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{let last: number[] = [];}\\
+2 & \code{export function prepare(n: number): H \{}\\
+3 & \code{~~const widths: number[] = []; for (let i = 0; i < n; i++) widths.push(1);}\\
+4 & \code{~~last = widths; return \{ widths \}; \}}\\
+5 & \code{export function lastWidths(): number[] \{ return last; \}}\\
+\end{tabular}
+\end{center}
+\emph{Refused by (K)}, with \code{walk} of Section~\ref{sec:problem}.
+The array of line 3 crosses out read-only in the handle (line 4) and
+writable from \code{lastWidths} (line 5). Marked exposed, its crossing at
+\code{number[]} on line 5 reaches it at a writable position, which (K)
+refuses; marked released, it is outside $R_\cC$, and (O) refuses the
+record of line 4 that installs it in protected storage. A visitor that
+runs \code{lastWidths().length = 0} makes \code{walk} read
+\code{undefined} (observed under Node 26: the sum is \code{NaN}).
+\end{example}
+\begin{example}[A caller's array installed]\label{ex:roinstall}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{const handles: \{ widths: readonly number[] \}[] = [];}\\
+2 & \code{export function prepare(n: number): H \{}\\
+3 & \code{~~const widths: number[] = []; for (let i = 0; i < n; i++) widths.push(1);}\\
+4 & \code{~~const r = \{ widths \}; handles.push(r); return r; \}}\\
+5 & \code{export function install(i: number, xs: number[]): void \{}\\
+6 & \code{~~const r = handles[i]; if (r !== undefined) r.widths = xs; \}}\\
+\end{tabular}
+\end{center}
+\emph{Refused by (O)}, at the store of line 6. The record is exposed,
+so its field is in $R_\cC$, and \code{xs} crossed in at the writable
+type \code{number[]}: outside storage that no crossing reached
+read-only. Admitted, the store would bind the client on an array it
+handed over writable: after \code{install(0, xs)}, a visitor that sets
+\code{xs.length = 0} makes \code{walk} read \code{undefined} (observed
+under Node 26: the sum is \code{NaN}).
+\end{example}
+\begin{example}[Released storage coming back]\label{ex:roback}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{export const walk = (h: unknown, visit: () => void): number => \{}\\
+2 & \code{~~const rs = h as readonly (readonly number[])[]; visit();}\\
+3 & \code{~~const row = rs[rs.length - 1]; if (row === undefined) return 0;}\\
+4 & \code{~~const n = row.length; let s = 0;}\\
+5 & \code{~~for (let i = 0; i < n; i++) \{ visit(); s += row[i] as number; \}}\\
+6 & \code{~~return s; \};}\\
+\end{tabular}
+\end{center}
+\emph{Refused by (O)}, with \code{held}, \code{rows} and \code{fill} of
+Example~\ref{ex:roreleased} in the same module, at \code{fill}'s store
+\code{held.push(row)}. The parameter of line 1 is read at the read-only
+type of line 2, so \code{held}, passed back as
+\code{walk(rows(), visit)}, is released storage that a crossing in
+reaches read-only: it is in $R_\cC$ during the call. A visitor's call of
+\code{fill} then stores a row it holds writable into it, which (O)
+refuses. A visitor that calls \code{fill(3)} and then empties the row
+makes \code{walk} read \code{undefined} (observed under Node 26: the sum
+is \code{NaN}).
+\end{example}
+\begin{example}[A visitor typed to return nothing]\label{ex:rovoid}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{export const walk = (h: H, visit: () => void): number => \{}\\
+2 & \code{~~const got: unknown = visit(); const r = handles[0];}\\
+3 & \code{~~if (r !== undefined \&\& Array.isArray(got)) r.widths = got;}\\
+4 & \code{~~const n = h.widths.length; let s = 0;}\\
+5 & \code{~~for (let i = 0; i < n; i++) \{ visit(); s += h.widths[i] as number; \}}\\
+6 & \code{~~return s; \};}\\
+\end{tabular}
+\end{center}
+\emph{Refused by (O)}, with \code{handles} and \code{prepare} of
+Example~\ref{ex:roinstall}, at the store of line 3. A visitor typed
+\code{() => void} may return any value, so its result is read at no
+read-only type: an array it returns is outside storage that no crossing
+reached read-only, and storing it into the handle is refused. A visitor
+that returns its own array and empties it at the next visit makes
+\code{walk} read \code{undefined} (observed under Node 26: the sum is
+\code{NaN}).
+\end{example}
+\begin{example}[A lookalike slice]\label{ex:roslice}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{export type Sliced = \{ slice(): number[] \};}\\
+2 & \code{export function install(i: number, xs: Sliced): void \{}\\
+3 & \code{~~const r = handles[i]; if (r !== undefined) r.widths = xs.slice(); \}}\\
+\end{tabular}
+\end{center}
+\emph{Refused by (O)}, with \code{handles} and \code{prepare} of
+Example~\ref{ex:roinstall}, at the store of line 3. Here \code{xs.slice()}
+calls the caller's own method, code outside $\cC$, so its result is a
+value entering $\cC$ at the writable type \code{number[]}, not an array
+$\cC$ allocates. After \code{install(0, \{ slice() \{ return a; \} \})}, a
+visitor that empties \code{a} makes \code{walk} read \code{undefined}
+(observed under Node 26: the sum is \code{NaN}). Example~\ref{ex:roguar}
+stores the result of the array \code{slice}, which allocates.
+\end{example}
 
 \begin{proposition}[Read-only reliance]\label{prop:rorely}
 Let $c$ start in a state $s$ inside a call of $\cC$, meeting (M) and
@@ -214,8 +387,9 @@ are (L4).
 The bound route serves a fact whose locations no member changes beyond
 what the fact allows; the guarantee route a fact a member may rewrite,
 since each member's write to the invariant's support is checked to keep
-it. Examples~\ref{ex:ro} and~\ref{ex:roneg} use the bound route,
-Example~\ref{ex:roguar} the guarantee route.
+it. Examples~\ref{ex:rocursor}, \ref{ex:roin}, \ref{ex:ro}
+and~\ref{ex:rotrim} use the bound route, Example~\ref{ex:roguar} the
+guarantee route.
 
 \noindent
 Why the rule holds: a step outside $\cC$ reaches no local storage and
@@ -234,22 +408,37 @@ compose, rigidly when $\Phi$ is rigid and $\Psi_\cC\sqcup\Theta_\cC\sqsubseteq\P
 $\{w.\kw{spine}:\grow\}$ of $i<\len w$ is in $R_\cC$, exposed when
 \code{prepare} allocated it and protected by the crossing of \code{h}
 when a client did, and $\keep\sqsubseteq\grow$: $i<\len w$ survives,
-under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$. A client that
-casts \code{h.widths} to \code{number[]} and pops it in the visitor
-breaks the assumption, and the walker reads \code{undefined} (observed
-under Node 26).
+under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$.
 \end{example}
 
-\begin{example}[Two refusals]\label{ex:roneg}
-A member
-\code{install(h: H, xs: number[]) \{ (h as \{ widths: number[] \}).widths = xs; \}}
-stores into $R_\cC$ an array that crossed in writable: (O) refuses it.
-Admitted, it would let a client pop its own \code{xs} in a later visit
-and the walker read \code{undefined}. A member
-\code{trim(h: H) \{ (h.widths as number[]).pop(); \}} shortens exposed
-storage, so $\Psi_\cC$ is $\any$ at that spine and $\any\not\sqsubseteq\grow$
-fails the proposition's premise; a visitor calling it makes the walker
-read \code{undefined}. Both observed under Node 26.
+\begin{example}[A member that shortens]\label{ex:rotrim}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{export function trim(h: H): void \{ (h.widths as number[]).pop(); \}}\\
+\end{tabular}
+\end{center}
+\emph{Refused by the protocol.} \code{trim} is a member, and line 1
+shortens exposed storage, so a protocol that bounds the members has
+$\any$ at that spine; $\any\not\sqsubseteq\grow$ fails the premise of
+Proposition~\ref{prop:rorely} for $i<\len w$ in \code{walk}. A visitor
+that calls \code{trim(h)} twice makes \code{walk} read \code{undefined}
+(observed under Node 26: the elements read are
+\code{1, undefined, undefined}).
+\end{example}
+
+\begin{example}[A client that casts]\label{ex:rocast}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{const h = prepare(3);}\\
+2 & \code{walk(h, () => \{ (h.widths as number[]).pop(); \});}\\
+\end{tabular}
+\end{center}
+\emph{Accepted, under an assumption this client breaks.} The derivation
+of Example~\ref{ex:ro} holds, and the client's pop on line 2 changes
+exposed storage in $R_\cC$ beyond $\Theta_\cC=\keep$, which
+Assumption~\ref{ass:clients} excludes. The walker then reads
+\code{undefined} (observed under Node 26: the elements read are
+\code{1, 1, undefined}); the fault is the client's.
 \end{example}
 
 \begin{example}[A guarantee]\label{ex:roguar}
