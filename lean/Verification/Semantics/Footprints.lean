@@ -84,13 +84,15 @@ theorem InitStep.scalar {v v' : Val} (h : InitStep v v') : ScalarStep v v' := by
 
 /-- How an entry may change a location's contents: not at all, by an
 initialization of `null` or `undefined`, by a scalar's step (contents
-neither an object nor a spine replaced by contents that are no spine), as a
-spine that keeps every dense prefix (or by a scalar's step), or arbitrarily.
-They form the chain `keep ⊑ init ⊑ scalar ⊑ grow ⊑ any`. -/
+neither an object nor a spine replaced by contents that are no spine), as an
+array spine extended at its end (or by a scalar's step), as a spine that
+keeps every dense prefix (or by a scalar's step), or arbitrarily. They form
+the chain `keep ⊑ init ⊑ scalar ⊑ extend ⊑ grow ⊑ any`. -/
 inductive Change where
   | keep
   | init
   | scalar
+  | extend
   | grow
   | any
   deriving DecidableEq, Repr
@@ -100,8 +102,9 @@ def Change.rank : Change → Nat
   | .keep => 0
   | .init => 1
   | .scalar => 2
-  | .grow => 3
-  | .any => 4
+  | .extend => 3
+  | .grow => 4
+  | .any => 5
 
 def Change.le (a b : Change) : Bool := a.rank ≤ b.rank
 
@@ -129,14 +132,24 @@ def ViewStep (b : Nat) (v v' : Val) : Prop :=
   ∃ f cs cs', v = .viewSpine f cs ∧ v' = .viewSpine f cs' ∧ cs'.length = cs.length ∧
     ∀ c ∈ cs', c ∈ cs ∨ b ≤ c
 
+/-- An array spine's extension at its end (what `push` does): the old spine
+is a prefix of the new, every cell the extension lists fresh against the
+starting heap's length `b`, the length within `maxArrayLength` where it
+was. Every cell the old spine lists stays at its index. -/
+def ExtendStep (b : Nat) (v v' : Val) : Prop :=
+  ∃ ls more, v = .arr ls ∧ v' = .arr (ls ++ more) ∧ (∀ l, some l ∈ more → b ≤ l) ∧
+    LengthGrows ls (ls ++ more)
+
 /-- A change's relation on contents. `b` is the length of the heap the change
-starts from: a growing spine gains no element location below it that it did
+starts from: an extended spine keeps every entry it listed and lists only
+fresh cells after them (`ExtendStep`); a growing spine gains no element location below it that it did
 not already list, and gets no shorter; a growing view spine keeps its format
 and length (`ViewStep`). -/
 def Change.Holds : Change → Nat → Val → Val → Prop
   | .keep, _, v, v' => v' = v
   | .init, _, v, v' => v' = v ∨ InitStep v v'
   | .scalar, _, v, v' => v' = v ∨ ScalarStep v v'
+  | .extend, b, v, v' => v' = v ∨ ScalarStep v v' ∨ ExtendStep b v v'
   | .grow, b, v, v' => v' = v ∨ (∃ ls ls', v = .arr ls ∧ v' = .arr ls' ∧
       (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ (∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∧
       LengthGrows ls ls') ∨ ScalarStep v v' ∨ ViewStep b v v'
@@ -144,6 +157,35 @@ def Change.Holds : Change → Nat → Val → Val → Prop
 
 theorem Change.Holds.refl (δ : Change) (b : Nat) (v : Val) : δ.Holds b v v := by
   cases δ <;> simp [Change.Holds]
+
+/-- An extension is a grow step: it keeps every dense prefix, lists only
+fresh cells beyond the old ones, and gets no shorter. -/
+theorem ExtendStep.grow {b v v'} (h : ExtendStep b v v') : ∃ ls ls', v = .arr ls ∧ v' = .arr ls' ∧
+    (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ (∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∧
+    LengthGrows ls ls' := by
+  obtain ⟨ls, more, rfl, rfl, hm, hg⟩ := h
+  refine ⟨ls, ls ++ more, rfl, rfl, fun n hn => ⟨Nat.le_trans hn.1 hg.1, fun i hi => ?_⟩,
+    fun l hl => (List.mem_append.mp hl).imp id (hm l), hg⟩
+  rw [List.getElem?_append_left (Nat.lt_of_lt_of_le hi hn.1)]
+  exact hn.2 i hi
+
+theorem ExtendStep.lower {b b' v v'} (hb : b ≤ b') (h : ExtendStep b' v v') : ExtendStep b v v' := by
+  obtain ⟨ls, more, rfl, rfl, hm, hg⟩ := h
+  exact ⟨ls, more, rfl, rfl, fun l hl => Nat.le_trans hb (hm l hl), hg⟩
+
+/-- A scalar's step is within `scalar`, so within `extend`. -/
+theorem Change.scalar_le_extend {b v v'} (h : Change.scalar.Holds b v v') : Change.extend.Holds b v v' :=
+  h.imp id .inl
+
+/-- An extension is within `grow`. -/
+theorem Change.extend_le_grow {b v v'} (h : Change.extend.Holds b v v') : Change.grow.Holds b v v' := by
+  rcases h with h | h | h
+  · exact .inl h
+  · exact .inr (.inr (.inl h))
+  · exact .inr (.inl h.grow)
+
+theorem Change.init_le_extend {b v v'} (h : Change.init.Holds b v v') : Change.extend.Holds b v v' :=
+  Change.scalar_le_extend (h.imp id InitStep.scalar)
 
 /-- A scalar's step is within `scalar`, so within `grow`. -/
 theorem Change.scalar_le_grow {b v v'} (h : Change.scalar.Holds b v v') : Change.grow.Holds b v v' := by
@@ -165,7 +207,10 @@ theorem Change.Holds.mono {δ δ' : Change} {b v v'} (hle : δ.le δ' = true)
     | trivial
     | exact Change.init_le_grow h
     | exact Change.init_le_scalar h
+    | exact Change.init_le_extend h
     | exact Change.scalar_le_grow h
+    | exact Change.scalar_le_extend h
+    | exact Change.extend_le_grow h
     | exact .inl h
 
 /-- A larger starting heap only strengthens what `grow` requires of new
@@ -174,6 +219,7 @@ theorem Change.Holds.lower {δ : Change} {b b' v v'} (hb : b ≤ b')
     (h : δ.Holds b' v v') : δ.Holds b v v' := by
   cases δ with
   | keep | init | scalar | any => exact h
+  | extend => exact h.imp id (Or.imp id (ExtendStep.lower hb))
   | grow =>
     rcases h with h | ⟨ls, ls', rfl, rfl, hd, hl, hg⟩ | h | ⟨f, cs, cs', rfl, rfl, hn, hc⟩
     · exact .inl h
@@ -206,6 +252,22 @@ theorem Change.Holds.trans {δ : Change} {b b' v v' v''} (hb : b ≤ b')
     rcases h₁ with rfl | h₁
     · exact h₂
     · exact .inr (h₁.trans h₂)
+  | extend =>
+    rcases h₁ with rfl | h₁ | ⟨ls, more, rfl, rfl, hm₁, hg₁⟩
+    · exact h₂.lower hb
+    · rcases h₂ with rfl | h₂ | ⟨_, _, he, -⟩
+      · exact .inr (.inl h₁)
+      · exact .inr (.inl (h₁.trans (.inr h₂)))
+      · subst he; exact absurd h₁.2.2 (by simp [isArr])
+    · rcases h₂ with rfl | h₂ | ⟨ms, more', hms, rfl, hm₂, hg₂⟩
+      · exact .inr (.inr ⟨ls, more, rfl, rfl, hm₁, hg₁⟩)
+      · exact absurd h₂.2.1 (by simp [isArr])
+      · cases hms
+        refine .inr (.inr ⟨ls, more ++ more', rfl, by rw [List.append_assoc], fun l hl => ?_,
+          by rw [← List.append_assoc]; exact hg₁.trans hg₂⟩)
+        rcases List.mem_append.mp hl with hl | hl
+        · exact hm₁ l hl
+        · exact Nat.le_trans hb (hm₂ l hl)
   | grow =>
     rcases h₁ with rfl | ⟨ls, ls', rfl, rfl, hd₁, hl₁, hg₁⟩ | h₁ | ⟨f, cs, cs', rfl, rfl, hn₁, hc₁⟩
     · exact h₂.lower hb
@@ -482,6 +544,11 @@ theorem Change.Holds.same_category {δ : Change} {b v v'} (hδ : δ ≠ .any)
     rcases h with rfl | h
     · rfl
     · exact scalar_class h
+  | extend =>
+    rcases h with rfl | h | ⟨_, _, rfl, rfl, _⟩
+    · rfl
+    · exact scalar_class h
+    · rfl
   | grow =>
     rcases h with rfl | ⟨_, _, rfl, rfl, _, _⟩ | h | ⟨_, _, _, rfl, rfl, _⟩
     · rfl
@@ -500,6 +567,14 @@ theorem Change.Holds.grow_value {b v v'} (h : Change.grow.Holds b v v') (hv : is
   rcases h with h | ⟨_, _, rfl, _, _, _⟩ | h | ⟨_, _, _, rfl, _⟩
   · exact .inl h
   · simp [isArr] at hv
+  · exact .inr h
+  · simp [isArr] at hv
+
+/-- On contents that are no spine, `extend` is `scalar`. -/
+theorem Change.Holds.extend_value {b v v'} (h : Change.extend.Holds b v v') (hv : isArr v = false) :
+    Change.scalar.Holds b v v' := by
+  rcases h with h | h | ⟨_, _, rfl, _⟩
+  · exact .inl h
   · exact .inr h
   · simp [isArr] at hv
 
@@ -530,8 +605,36 @@ theorem Change.Holds.object_kept {δ : Change} {b v v'} (hδ : δ ≠ .any) (h :
   | keep => exact h
   | init => exact h.init_defined hn
   | scalar => exact hs h
+  | extend => exact hs (h.extend_value ha)
   | grow => exact hs (h.grow_value ha)
   | any => exact absurd rfl hδ
+
+/-- A change within `extend` on an array spine extends it at its end: every
+entry it lists stays at its index, every cell after them is fresh, and its
+length grows. -/
+theorem Change.Holds.spine_extended {δ : Change} {b ls v'} (hδ : δ.le .extend = true)
+    (h : δ.Holds b (.arr ls) v') :
+    ∃ more, v' = .arr (ls ++ more) ∧ (∀ l, some l ∈ more → b ≤ l) ∧ LengthGrows ls (ls ++ more) := by
+  rcases h.mono hδ with rfl | hs | ⟨ms, more, he, rfl, hm, hg⟩
+  · exact ⟨[], by simp, by simp, by simpa using LengthGrows.refl ls⟩
+  · exact absurd hs.2.1 (by simp [isArr])
+  · cases he; exact ⟨more, rfl, hm, hg⟩
+
+/-- A change within `extend` keeps every entry an array spine lists, at its
+index. -/
+theorem Change.Holds.extend_entry {δ : Change} {b ls v'} (hδ : δ.le .extend = true)
+    (h : δ.Holds b (.arr ls) v') {i : Nat} (hi : i < ls.length) :
+    ∃ ls', v' = .arr ls' ∧ ls'[i]? = ls[i]? := by
+  obtain ⟨more, rfl, -, -⟩ := h.spine_extended hδ
+  exact ⟨ls ++ more, rfl, List.getElem?_append_left hi⟩
+
+/-- A change within `extend` keeps a view spine. -/
+theorem Change.Holds.extend_view {δ : Change} {b f cs v'} (hδ : δ.le .extend = true)
+    (h : δ.Holds b (.viewSpine f cs) v') : v' = .viewSpine f cs := by
+  rcases h.mono hδ with h | hs | ⟨_, _, he, -⟩
+  · exact h
+  · exact absurd hs.2.1 (by simp [isArr])
+  · cases he
 
 /-- On a spine, `scalar` is `keep`. -/
 theorem Change.Holds.scalar_spine {b ls v'} (h : Change.scalar.Holds b (.arr ls) v') : v' = .arr ls :=
@@ -1001,6 +1104,15 @@ def arrayGrowB (b : Nat) : Val → Val → Bool
       (decide (ls.length ≤ ls'.length) && (!decide (ls.length ≤ maxArrayLength) || decide (ls'.length ≤ maxArrayLength))))
   | _, _ => false
 
+/-- An array spine's extension at its end, decided (`ExtendStep`). -/
+def extendStepB (b : Nat) : Val → Val → Bool
+  | .arr ls, .arr ls' => ls'.take ls.length == ls && decide (ls.length ≤ ls'.length) &&
+      ((ls'.drop ls.length).all fun o => match o with
+        | some l => decide (b ≤ l)
+        | none => true) &&
+      (!decide (ls.length ≤ maxArrayLength) || decide (ls'.length ≤ maxArrayLength))
+  | _, _ => false
+
 /-- A view spine's step, decided (`ViewStep`). -/
 def viewStepB (b : Nat) : Val → Val → Bool
   | .viewSpine f cs, .viewSpine f' cs' => f' == f && cs'.length == cs.length &&
@@ -1026,6 +1138,27 @@ theorem arrayGrowB_iff (b : Nat) (v v' : Val) : arrayGrowB b v v' = true ↔
     | none => rfl
     | some l => simpa using h l ho
 
+theorem extendStepB_iff (b : Nat) (v v' : Val) : extendStepB b v v' = true ↔ ExtendStep b v v' := by
+  unfold ExtendStep
+  cases v <;> cases v' <;> simp [extendStepB]
+  rename_i ls ls'
+  constructor
+  · rintro ⟨⟨⟨ht, hlen⟩, hall⟩, hmax⟩
+    have he : ls' = ls ++ ls'.drop ls.length := by
+      conv => lhs; rw [← List.take_append_drop ls.length ls']
+      rw [ht]
+    refine ⟨ls'.drop ls.length, he, fun l hl => by simpa using hall (some l) hl, ?_⟩
+    rw [← he]
+    exact ⟨hlen, fun h => hmax.resolve_left (by omega)⟩
+  · rintro ⟨more, rfl, hm, hg⟩
+    refine ⟨⟨⟨by simp, by simp⟩, fun o ho => ?_⟩, ?_⟩
+    · cases o with
+      | none => rfl
+      | some l => simpa using hm l (by simpa using ho)
+    · by_cases h : ls.length ≤ maxArrayLength
+      · exact .inr (hg.2 h)
+      · exact .inl (by omega)
+
 theorem viewStepB_iff (b : Nat) (v v' : Val) : viewStepB b v v' = true ↔ ViewStep b v v' := by
   unfold viewStepB ViewStep
   cases v <;> cases v' <;> simp
@@ -1040,6 +1173,7 @@ def Change.holdsB : Change → Nat → Val → Val → Bool
   | .keep, _, v, v' => v' == v
   | .init, _, v, v' => v' == v || (nullish v && !isArr v')
   | .scalar, _, v, v' => v' == v || (!isObj v && (!isArr v && !isArr v'))
+  | .extend, b, v, v' => v' == v || ((!isObj v && (!isArr v && !isArr v')) || extendStepB b v v')
   | .grow, b, v, v' => v' == v || (arrayGrowB b v v' ||
       ((!isObj v && (!isArr v && !isArr v')) || viewStepB b v v'))
   | .any, _, _, _ => true
@@ -1050,6 +1184,10 @@ theorem Change.holdsB_iff (δ : Change) (b : Nat) (v v' : Val) : δ.holdsB b v v
   | any => simp [Change.holdsB, Change.Holds]
   | init => simp [Change.holdsB, Change.Holds, InitStep]
   | scalar => simp [Change.holdsB, Change.Holds, ScalarStep]
+  | extend =>
+    simp only [Change.holdsB, Change.Holds, Bool.or_eq_true, beq_iff_eq]
+    refine or_congr Iff.rfl (or_congr ?_ (extendStepB_iff b v v'))
+    simp [ScalarStep]
   | grow =>
     simp only [Change.holdsB, Change.Holds, Bool.or_eq_true, beq_iff_eq]
     refine or_congr Iff.rfl (or_congr (arrayGrowB_iff b v v') (or_congr ?_ (viewStepB_iff b v v')))

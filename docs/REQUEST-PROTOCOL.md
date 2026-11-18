@@ -315,7 +315,7 @@ alternatives' tags, at every depth.
 type Nat = number;            // a safe integer at least 0
 type Integer = number | string; // a safe integer, else its canonical decimal
 type Bits64 = string;         // 16 lowercase hexadecimal digits
-type Change = "keep" | "init" | "scalar" | "grow" | "any";
+type Change = "keep" | "init" | "scalar" | "extend" | "grow" | "any";
 type Key = string | { symbol: Nat };
 type Selector = { value: boolean; array: boolean; view: boolean };
 type Region =

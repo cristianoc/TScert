@@ -7,9 +7,10 @@ A **closed footprint** mentions only the three class regions, the content
 categories that partition the locations (`Selector.partition`): one change
 for the old locations holding a value, one for those holding an ordinary
 array's spine and one for those holding a typed array's view spine. These
-are three components, each holding a change. On a value `grow` is `scalar`
-(`Change.onValue`), and on either kind of spine `init` and `scalar` are
-`keep` (`Change.onSpine`), so a component is read through its normalization
+are three components, each holding a change. On a value `extend` and `grow`
+are `scalar` (`Change.onValue`), on either kind of spine `init` and `scalar`
+are `keep` (`Change.onSpine`), and on a view spine so is `extend`
+(`Change.onView`), so a component is read through its normalization
 (`Closed.normal`, `Closed.post_normal`). Closed footprints are ordered
 exactly by their normalized components (`closed_order_exact`), their
 postcondition reads no slot, and the empty one and the one letting
@@ -58,9 +59,9 @@ theorem Change.max_self (a : Change) : a.max a = a := by cases a <;> rfl
 
 @[simp] theorem Closed.value_ofSpines (v s : Change) : (Closed.ofSpines v s).value = v := rfl
 
-/-- On contents of class `value`, `grow` is `scalar`. -/
+/-- On contents of class `value`, `extend` and `grow` are `scalar`. -/
 def Change.onValue : Change → Change
-  | .grow => .scalar
+  | .extend | .grow => .scalar
   | d => d
 
 /-- On a spine, an array's or a view spine, `init` and `scalar` are
@@ -69,23 +70,32 @@ def Change.onSpine : Change → Change
   | .init | .scalar => .keep
   | d => d
 
+/-- On a view spine, `init`, `scalar` and `extend` are `keep`: an extension
+is an array spine's. -/
+def Change.onView : Change → Change
+  | .init | .scalar | .extend => .keep
+  | d => d
+
 def Closed.le (a b : Closed) : Bool :=
-  a.value.onValue.le b.value.onValue && a.array.onSpine.le b.array.onSpine && a.view.onSpine.le b.view.onSpine
+  a.value.onValue.le b.value.onValue && a.array.onSpine.le b.array.onSpine && a.view.onView.le b.view.onView
 
 /-- The order of closed footprints stating one change for both spines is the
 order of their two components. -/
 theorem Closed.le_ofSpines (v s v' s' : Change) :
     (Closed.ofSpines v s).le (Closed.ofSpines v' s') = (v.onValue.le v'.onValue && s.onSpine.le s'.onSpine) := by
-  simp only [Closed.le, Closed.ofSpines, Bool.and_assoc, Bool.and_self]
+  simp only [Closed.le, Closed.ofSpines, Bool.and_assoc]
+  cases v.onValue.le v'.onValue <;> cases s <;> cases s' <;> rfl
 
 private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
     (hle : δ.onValue.le δ'.onValue = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
   have h' : δ.onValue.Holds b v v' := by
     cases δ with
+    | extend => exact h.extend_value hv
     | grow => exact h.grow_value hv
     | _ => exact h
   have h'' := h'.mono hle
   cases δ' with
+  | extend => exact Change.scalar_le_extend h''
   | grow => exact Change.scalar_le_grow h''
   | _ => exact h''
 
@@ -106,6 +116,28 @@ private theorem spine_change {δ δ' : Change} {b v v'} (hv : isArr v = true)
 def isViewSpine : Val → Bool
   | .viewSpine .. => true
   | _ => false
+
+/-- On a view spine, `extend` is `keep`. -/
+theorem Change.Holds.extend_isView {b v v'} (hv : isViewSpine v = true) (h : Change.extend.Holds b v v') :
+    v' = v := by
+  cases v <;> simp [isViewSpine] at hv
+  exact h.extend_view (by decide)
+
+private theorem view_change {δ δ' : Change} {b v v'} (hv : isViewSpine v = true)
+    (hle : δ.onView.le δ'.onView = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
+  have ha : isArr v = true := by cases v <;> simp_all [isViewSpine, isArr]
+  have h' : δ.onView.Holds b v v' := by
+    cases δ with
+    | init => exact h.init_isArr ha
+    | scalar => exact h.scalar_isArr ha
+    | extend => exact h.extend_isView hv
+    | _ => exact h
+  have h'' := h'.mono hle
+  cases δ' with
+  | init => exact .inl h''
+  | scalar => exact .inl h''
+  | extend => exact .inl h''
+  | _ => exact h''
 
 /-- The change a closed footprint allows on contents `v`, by their category
 (`Closed.at_category`): a value's, an array spine's or a view spine's. -/
@@ -179,7 +211,7 @@ private theorem Closed.at_mono {a b : Closed} (hle : a.le b = true) {n v v'}
   cases hc : contentsCategory v <;> simp only [Closed.at_category, hc] at h ⊢
   · exact value_change ((contentsCategory_value v).mp hc) hle.1.1 h
   · exact spine_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.1.2 h
-  · exact spine_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.2 h
+  · exact view_change (by cases v <;> simp_all [contentsCategory, isViewSpine]) hle.2 h
 
 theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
     Post b.fp ρ h h' := by
@@ -212,12 +244,14 @@ private def ρ₀ : Env := fun _ => .undef
 /-! ## Normalization -/
 
 /-- **The normal form of a closed footprint**: each component read on its
-category (`Change.onValue` on values, `Change.onSpine` on either spine). -/
-def Closed.normal (c : Closed) : Closed := ⟨c.value.onValue, c.array.onSpine, c.view.onSpine⟩
+category (`Change.onValue` on values, `Change.onSpine` on array spines,
+`Change.onView` on view spines). -/
+def Closed.normal (c : Closed) : Closed := ⟨c.value.onValue, c.array.onSpine, c.view.onView⟩
 
 private theorem onValue_holds {δ : Change} {b v v'} (hv : isArr v = false) :
     δ.onValue.Holds b v v' ↔ δ.Holds b v v' := by
   cases δ with
+  | extend => exact ⟨Change.scalar_le_extend, fun h => h.extend_value hv⟩
   | grow => exact ⟨Change.scalar_le_grow, fun h => h.grow_value hv⟩
   | _ => exact Iff.rfl
 
@@ -226,6 +260,15 @@ private theorem onSpine_holds {δ : Change} {b v v'} (hv : isArr v = true) :
   cases δ with
   | init => exact ⟨fun h => .inl h, fun h => h.init_isArr hv⟩
   | scalar => exact ⟨fun h => .inl h, fun h => h.scalar_isArr hv⟩
+  | _ => exact Iff.rfl
+
+private theorem onView_holds {δ : Change} {b v v'} (hv : isViewSpine v = true) :
+    δ.onView.Holds b v v' ↔ δ.Holds b v v' := by
+  have ha : isArr v = true := by cases v <;> simp_all [isViewSpine, isArr]
+  cases δ with
+  | init => exact ⟨fun h => .inl h, fun h => h.init_isArr ha⟩
+  | scalar => exact ⟨fun h => .inl h, fun h => h.scalar_isArr ha⟩
+  | extend => exact ⟨fun h => .inl h, fun h => h.extend_isView hv⟩
   | _ => exact Iff.rfl
 
 /-- **Normalization keeps the meaning** (proved). -/
@@ -238,7 +281,7 @@ theorem Closed.post_normal {c : Closed} {ρ : Env} {h h' : Heap} :
   cases hc : contentsCategory v <;> simp only
   · exact onValue_holds ((contentsCategory_value v).mp hc)
   · exact onSpine_holds (by cases v <;> simp_all [contentsCategory, isArr])
-  · exact onSpine_holds (by cases v <;> simp_all [contentsCategory, isArr])
+  · exact onView_holds (by cases v <;> simp_all [contentsCategory, isViewSpine])
 
 /-! ## Closed footprints as call effects -/
 
@@ -302,21 +345,24 @@ theorem closed_order_exact (a b : Closed) :
         | exact (v1 (by decide) (by decide)).elim
         | exact (v2 (by decide) (by decide)).elim
         | exact (v3 (by decide) (by decide)).elim
-  · -- an array's spine gaining a fresh element location, or losing a present one
+  · -- an array's spine gaining a fresh element location at its end, replacing
+    -- a listed one by a fresh one, or losing a present one
     have s1 := refute (.arr []) (.arr [some 1])
     have s2 := refute (.arr [some 0]) (.arr [])
-    simp only [Closed.at_arr] at s1 s2
-    cases ha : a.array <;> cases hb : b.array <;> rw [ha, hb] at s1 s2 <;>
+    have s3 := refute (.arr [some 0]) (.arr [some 1])
+    simp only [Closed.at_arr] at s1 s2 s3
+    cases ha : a.array <;> cases hb : b.array <;> rw [ha, hb] at s1 s2 s3 <;>
       simp only [Change.onSpine, Change.le, Change.rank] <;> first
         | decide
         | exact (s1 (by decide) (by decide)).elim
         | exact (s2 (by decide) (by decide)).elim
+        | exact (s3 (by decide) (by decide)).elim
   · -- a view spine listing a fresh cell, or replaced by an array's spine
     have w1 := refute (.viewSpine .uint8 [0]) (.viewSpine .uint8 [1])
     have w2 := refute (.viewSpine .uint8 [0]) (.arr [])
     simp only [Closed.at_viewSpine] at w1 w2
     cases ha : a.view <;> cases hb : b.view <;> rw [ha, hb] at w1 w2 <;>
-      simp only [Change.onSpine, Change.le, Change.rank] <;> first
+      simp only [Change.onView, Change.le, Change.rank] <;> first
         | decide
         | exact (w1 (by decide) (by decide)).elim
         | exact (w2 (by decide) (by decide)).elim
@@ -388,8 +434,12 @@ private theorem Change.max_onSpine_le (a b c : Change) :
     (a.max b).onSpine.le c.onSpine = (a.onSpine.le c.onSpine && b.onSpine.le c.onSpine) := by
   cases a <;> cases b <;> cases c <;> rfl
 
+private theorem Change.max_onView_le (a b c : Change) :
+    (a.max b).onView.le c.onView = (a.onView.le c.onView && b.onView.le c.onView) := by
+  cases a <;> cases b <;> cases c <;> rfl
+
 theorem Closed.join_le (a b c : Closed) : (a.join b).le c = (a.le c && b.le c) := by
-  simp only [Closed.join, Closed.le, Change.max_onValue_le, Change.max_onSpine_le]
+  simp only [Closed.join, Closed.le, Change.max_onValue_le, Change.max_onSpine_le, Change.max_onView_le]
   cases a.value.onValue.le c.value.onValue <;> cases b.value.onValue.le c.value.onValue <;>
     cases a.array.onSpine.le c.array.onSpine <;> cases b.array.onSpine.le c.array.onSpine <;> simp
 
@@ -462,15 +512,18 @@ private theorem Change.le_onValue {a b : Change} (h : a.le b = true) : a.onValue
 private theorem Change.le_onSpine {a b : Change} (h : a.le b = true) : a.onSpine.le b.onSpine = true := by
   cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onSpine]
 
+private theorem Change.le_onView {a b : Change} (h : a.le b = true) : a.onView.le b.onView = true := by
+  cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onView]
+
 theorem Closed.meet_le_left (a b : Closed) : (a.meet b).le a = true := by
   simp only [Closed.le, Closed.meet, Bool.and_eq_true]
   exact ⟨⟨Change.le_onValue (Change.min_le_left _ _), Change.le_onSpine (Change.min_le_left _ _)⟩,
-    Change.le_onSpine (Change.min_le_left _ _)⟩
+    Change.le_onView (Change.min_le_left _ _)⟩
 
 theorem Closed.meet_le_right (a b : Closed) : (a.meet b).le b = true := by
   simp only [Closed.le, Closed.meet, Bool.and_eq_true]
   exact ⟨⟨Change.le_onValue (Change.min_le_right _ _), Change.le_onSpine (Change.min_le_right _ _)⟩,
-    Change.le_onSpine (Change.min_le_right _ _)⟩
+    Change.le_onView (Change.min_le_right _ _)⟩
 
 theorem Closed.at_meet (a b : Closed) (v : Val) : (a.meet b).at v = (a.at v).min (b.at v) := by
   rw [Closed.at_category, Closed.at_category, Closed.at_category]; unfold Closed.meet

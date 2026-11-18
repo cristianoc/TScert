@@ -63,6 +63,8 @@ an object nor a spine and $`v'`$ no spine:
 \mathsf{keep}_b(v, v') &\iff v' = v\\
 \mathsf{init}_b(v, v') &\iff v' = v \lor \mathrm{init}(v, v')\\
 \mathsf{scalar}_b(v, v') &\iff v' = v \lor \mathrm{scalar}(v, v')\\
+\mathsf{extend}_b(v, v') &\iff v' = v \lor \mathrm{scalar}(v, v') \lor \bigl(v = \mathsf{arr}\,ls \land v' = \mathsf{arr}\,(ls \mathbin{+\!\!+} m) \land (\forall l.\ \mathsf{some}\,l \in m \to b \le l)\\
+&\qquad \land (|ls| \le 2^{32}-1 \to |ls \mathbin{+\!\!+} m| \le 2^{32}-1)\bigr)\\
 \mathsf{grow}_b(v, v') &\iff v' = v \lor \bigl(v = \mathsf{arr}\,ls \land v' = \mathsf{arr}\,ls' \land (\forall n.\ D_n\,ls \to D_n\,ls') \land (\forall l.\ \mathsf{some}\,l \in ls' \to \mathsf{some}\,l \in ls \lor b \le l)\\
 &\qquad \land |ls| \le |ls'| \land (|ls| \le 2^{32}-1 \to |ls'| \le 2^{32}-1)\bigr) \lor \mathrm{scalar}(v, v')\\
 \mathsf{any}_b(v, v') &\iff \top
@@ -72,14 +74,19 @@ an object nor a spine and $`v'`$ no spine:
 `init` lets a location holding `null` or `undefined` take a value, the change
 of a lazy initialization `x ??= e`; `scalar` lets a location holding neither an
 object nor a spine take a value, the change of a `Map`'s `set` to its `size`;
+`extend` appends fresh element locations to an array spine, the change of
+`push`, so every element location the spine listed stays at its index
+(`ExtendStep`), or takes a scalar's step;
 `grow` keeps every dense prefix, lists no old element location the spine
 did not list, and leaves the spine no shorter and at most $`2^{32}-1`$ long
 (`maxArrayLength`) where it was (`LengthGrows`), or takes a scalar's step. The changes form the chain
-$`\mathsf{keep} \sqsubseteq \mathsf{init} \sqsubseteq \mathsf{scalar} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}`$
-(proved: `Change.Holds.refl`, `.mono`, `.trans`). A change other than `any`
+$`\mathsf{keep} \sqsubseteq \mathsf{init} \sqsubseteq \mathsf{scalar} \sqsubseteq \mathsf{extend} \sqsubseteq \mathsf{grow} \sqsubseteq \mathsf{any}`$
+(proved: `Change.Holds.refl`, `.mono`, `.trans`, `Change.extend_le_grow`). A change other than `any`
 keeps an object, `keep` and `init` keep contents neither `null` nor
-`undefined`, and on a spine `init` and `scalar` are `keep` (proved:
-`Change.Holds.object_kept`, `.defined_kept`, `.init_spine`, `.scalar_spine`).
+`undefined`, on a spine `init` and `scalar` are `keep`, and a change within
+`extend` keeps every entry an array spine lists and keeps a view spine
+(proved: `Change.Holds.object_kept`, `.defined_kept`, `.init_spine`,
+`.scalar_spine`, `.spine_extended`, `.extend_entry`, `.extend_view`).
 
 A **class region** $`\mathsf{cls}(S)`$ selects the locations whose contents
 have a category in the selector $`S`$, a set of the three categories value
@@ -99,9 +106,11 @@ $`\Phi = \{\mathsf{values}{:}\,\delta_v,\ \mathsf{arrays}{:}\,\delta_a,\ \mathsf
 (`Footprints.Closed`, its entries `Closed.fp`) states one change for each
 category: three components, each holding a change. Each component is read on
 its category (`Closed.normal`, proved: `Closed.post_normal`): on a value
-`grow` is `scalar` (`Change.onValue`), so a value's change is `keep`, `init`,
-`scalar` or `any`; on either kind of spine `init` and `scalar` are `keep`
-(`Change.onSpine`), so a spine's change is `keep`, `grow` or `any`. Its
+`extend` and `grow` are `scalar` (`Change.onValue`), so a value's change is
+`keep`, `init`, `scalar` or `any`; on an array spine `init` and `scalar` are
+`keep` (`Change.onSpine`), so its change is `keep`, `extend`, `grow` or
+`any`; on a view spine `init`, `scalar` and `extend` are `keep`
+(`Change.onView`), so its change is `keep`, `grow` or `any`. Its
 meaning relates the heap `h` a run starts in to a later heap `h'`:
 
 ```math
@@ -371,7 +380,7 @@ collected by `PromiseCalls.effectKept`), the note's Frame, and
 the cell facts whose support it respects (`PromiseCalls.frameCells`,
 [`frame-cell`](PROGRAM-TYPING.md#a-fields-contents-across-a-write)). A closed bound's class
 entries are read as they act on their class: on a spine `init` and `scalar`
-are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
+are `keep`, on a value `extend` and `grow` are `scalar` (`Footprint.byClass`, proved:
 `Post.byClass`).
 The frame is the normal exit's frame of the signature's exit summary, whose
 exceptional frame is the same where the signature states `onThrow` and

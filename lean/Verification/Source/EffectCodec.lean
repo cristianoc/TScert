@@ -450,12 +450,13 @@ theorem litOf_litJ {v : Tm} (h : v.isLiteral = true) : litOf (litJ v) = .ok v :=
 /-! ## Constants -/
 
 def changeJ : Change → Json
-  | .keep => "keep" | .init => "init" | .scalar => "scalar" | .grow => "grow" | .any => "any"
+  | .keep => "keep" | .init => "init" | .scalar => "scalar" | .extend => "extend" | .grow => "grow"
+  | .any => "any"
 
 def changeOf (j : Json) : Except String Change := do
   match ← strOf j with
-  | "keep" => pure .keep | "init" => pure .init | "scalar" => pure .scalar | "grow" => pure .grow
-  | "any" => pure .any
+  | "keep" => pure .keep | "init" => pure .init | "scalar" => pure .scalar | "extend" => pure .extend
+  | "grow" => pure .grow | "any" => pure .any
   | c => throw s!"'{c}' is no change"
 
 @[simp] theorem changeOf_changeJ (c : Change) : changeOf (changeJ c) = .ok c := by cases c <;> rfl

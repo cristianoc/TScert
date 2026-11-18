@@ -17,7 +17,7 @@ export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "an
 export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |
   { readonly asserts: { readonly param: number }; readonly guards?: never };
 /** A location's permitted change (`Footprints.Change`). */
-export type Change = "keep" | "init" | "scalar" | "grow" | "any";
+export type Change = "keep" | "init" | "scalar" | "extend" | "grow" | "any";
 /** A property key: a string, or a symbol by its identity (`PropKey`). */
 export type Key = string | { readonly symbol: number };
 /** The content categories a class region selects (`Footprints.Selector`). */
