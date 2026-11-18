@@ -225,6 +225,45 @@ def LocalClosed (st : St P) : Prop :=
   ∀ w u, st.s.h[w]? = some u → ∀ a l, next u a = some l → st.g.origin l = some .local →
     st.g.origin w = some .local
 
+/-- **(M), its clause on a closure's bindings**: no value a closure of
+outside code or a bound function held in storage binds (a capture, a node
+expression's value, a saved target, receiver or argument) reaches a
+location of a local site in its paths' first location step. With
+`LocalClosed`, no path from such a binding reaches local storage
+(`binding_no_local`). -/
+def BindingsClosed (st : St P) : Prop :=
+  ∀ (w : Nat) (u : Val), st.s.h[w]? = some u → ∀ x ∈ codeVals P.ofC u, ∀ l, Leaves P.ofC x l →
+    st.g.origin l ≠ some .local
+
+/-- **No path from a binding of a closure of outside code reaches local
+storage**: every location such a path passes is not local, the first by
+`BindingsClosed`, each next one because non-local storage references no
+local storage (`LocalClosed`) and its own bindings none (`BindingsClosed`). -/
+theorem binding_no_local {st : St P} (hl : LocalClosed st) (hb : BindingsClosed st) {w : Nat} {u x : Val}
+    (hu : st.s.h[w]? = some u) (hx : x ∈ codeVals P.ofC u) {l : Nat} (hr : Reaches P.ofC st.s.h x l) :
+    st.g.origin l ≠ some .local := by
+  have key : ∀ (π : List Label) (v : Val) (l : Nat),
+      (∀ l', Leaves P.ofC v l' → st.g.origin l' ≠ some .local) → Follows P.ofC st.s.h v π l →
+        st.g.origin l ≠ some .local := by
+    intro π
+    induction π with
+    | nil => intro _ _ _ hf; exact hf.elim
+    | cons a π ih =>
+      intro v l hv hf
+      cases π with
+      | nil => exact hv l (Leaves.of_next hf)
+      | cons b π =>
+        obtain ⟨v₀, hs, hf⟩ := hf
+        refine ih v₀ l (fun l' hl' => ?_) hf
+        rcases hs with ⟨l₀, hn, hl₀⟩ | ⟨i, rfl, hc⟩
+        · have h₀ := hv l₀ (Leaves.of_next hn)
+          rcases hl'.cases with ⟨a', hn'⟩ | ⟨y, hy, hly⟩
+          · exact fun hloc => h₀ (hl l₀ v₀ hl₀ a' l' hn' hloc)
+          · exact hb l₀ v₀ hl₀ y hy l' hly
+        · exact hv l' (Leaves.code (List.mem_of_getElem? hc) hl')
+  obtain ⟨π, hf⟩ := hr
+  exact key π x l (fun l' hl' => hb w u hu x hx l' hl') hf
+
 /-- **The frames' values are valid references** (`RootsOk` of the paper's
 model, identities aside): every reference other than an identity that a
 value of a frame of code that is not the package's holds has the role its
@@ -247,7 +286,7 @@ structure OutsideStep (Θ : Protocol P) (st st' : St P) : Prop where
   row : Row Θ st st'
   valid : RootsValid st'
   writes : ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
-    ∀ (a : Label) (l : Nat), next u a = some l → ReachesFrom P.ofC st.s.h st.roots l ∨ st.s.h.length ≤ l
+    ∀ l, Leaves P.ofC u l → ReachesFrom P.ofC st.s.h st.roots l ∨ st.s.h.length ≤ l
 
 theorem OutsideStep.origin {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (l : Nat) :
     st'.g.origin l = st.g.origin l ∨ st'.g.origin l = none := by
@@ -304,7 +343,32 @@ theorem outside_localClosed {st st' : St P} {Θ : Protocol P} (ho : OutsideStep 
     rw [ho.kept.origin hl'] at hloc
     rw [ho.kept.origin hw]
     exact hl w _ hv₀ a l hn hloc
-  · rcases ho.writes w u hs hu a l hn with hr | hf
+  · rcases ho.writes w u hs hu l (Leaves.of_next hn) with hr | hf
+    · obtain ⟨r, hr', π, hf⟩ := hr
+      have hl' : l < st.s.h.length := follows_lt (hv r hr') hf
+      rw [ho.kept.origin hl'] at hloc
+      exact absurd hloc ((hm l ⟨r, hr', π, hf⟩).1)
+    · have : st'.g.origin l = none := by simp [Ghost.origin, ho.fresh l hf]
+      rw [this] at hloc; cases hloc
+
+/-- **An outside step keeps (M)'s clause on bindings**: what it leaves in
+storage it changes or allocates reaches, in its paths' first location
+steps, only what its frames reached, none of it local (M), or what it
+allocated; every other location keeps its contents and its references'
+sites. -/
+theorem outside_bindingsClosed {st st' : St P} {Θ : Protocol P} (ho : OutsideStep Θ st st') (hm : MarksOk st)
+    (hv : RootsValid st) (hb : BindingsClosed st) : BindingsClosed st' := by
+  intro w u hu x hx l hl hloc
+  by_cases hs : ∃ v, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v
+  · obtain ⟨v, hv₀, hv₁⟩ := hs
+    rw [hu] at hv₁
+    cases hv₁
+    have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
+    have hl' : l < st.s.h.length :=
+      Leaves.lt (s := st.s) (codeVals_refsOkN (RefsOk.refsOkN (contents_valid hw hv₀)) hx) hl
+    rw [ho.kept.origin hl'] at hloc
+    exact hb w _ hv₀ x hx l hl hloc
+  · rcases ho.writes w u hs hu l (Leaves.code hx hl) with hr | hf
     · obtain ⟨r, hr', π, hf⟩ := hr
       have hl' : l < st.s.h.length := follows_lt (hv r hr') hf
       rw [ho.kept.origin hl'] at hloc
@@ -325,6 +389,7 @@ structure Ok (d : Nat) (st : St P) : Prop where
   confined : Confined st
   valid : RootsValid st
   localClosed : LocalClosed st
+  bindings : BindingsClosed st
 
 /-- **The bound a run gives `R_P`** (the draft, (L2)): the marks kept, the
 history growing, and every location of `R_P` at the first state changed
@@ -369,7 +434,8 @@ theorem outside_bound {Ψ : Protocol P} {d : Nat} {st st' : St P} {Θ : Protocol
       let ⟨v', hv', hθ⟩ := hun l v hr hv
       ⟨v', hv', hθ.mono (hΘ _)⟩⟩,
     ⟨hok.pos, hg.len', Ghost.uniform_congr ho.calls ho.record hok.uniform, hm, hc, ho.valid,
-      outside_localClosed ho hok.marks hok.valid hok.localClosed⟩⟩
+      outside_localClosed ho hok.marks hok.valid hok.localClosed,
+      outside_bindingsClosed ho hok.marks hok.valid hok.bindings⟩⟩
 
 /-- **A member's certificate** (the draft, "The protocol" and (L4)): a
 member's call inside a call at depth `d`, each run of code that is not the

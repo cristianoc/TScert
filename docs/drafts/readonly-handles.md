@@ -1555,9 +1555,15 @@ active, a uniform history, and
   not $`C`$'s (`MarksOk`), and storage that references local storage
   through a field, a spine or a cell is local (`LocalClosed`), kept by
   outside steps (proved, `outside_localClosed`) and by checked steps
-  (`pkg_step_ok`, the check `localStores`). The clause on a closure's
-  bindings needs paths through captures, which the model's paths do not
-  follow.
+  (`pkg_step_ok`, the check `localStores`). On a closure's bindings: no
+  value that a closure of code that is not $`C`$'s, or a bound function,
+  held in storage binds (a capture, a node expression's value, a saved
+  target, receiver or argument) reaches local storage in its paths' first
+  location step (`BindingsClosed`, `Leaves`), kept by outside steps
+  (proved, `outside_bindingsClosed`) and by checked steps (`pkg_step_ok`,
+  the check `localBindings`); with `LocalClosed`, no path from such a
+  binding reaches local storage (proved, `binding_no_local`). A closure of
+  $`C`$ binds what it captures, local storage among it.
 - (P2) (`Confined`): every exposed location reachable from a frame of code
   that is not $`C`$'s is in $`E`$. Every path from such a frame to a
   local or exposed location then passes a location of $`E`$, from which on
@@ -1679,7 +1685,8 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   `OutsideStep.reach` with these roots as the state's (`outsideStep_reach`);
   every value it leaves in a location it changes or allocates, and from
   which a path step leaves, is one of these roots (proved, `step_writes`),
-  which gives `OutsideStep.writes` (`outsideStep_writes`).
+  which gives `OutsideStep.writes`: the first location of every path from
+  such a value is reached by the roots or fresh (`outsideStep_writes`).
 - After such a step the roots reach only locations the roots reached
   before or the step allocated (proved, `step_noForge`, at a heap holding
   values), which is `OutsideStep.noForge` with the roots before and after
@@ -1696,7 +1703,6 @@ and [ReadOnlyOutside.lean](../../lean/Verification/Paper/TolerantFrames/ReadOnly
   the step's roots (`step_writes`) or its old contents. A capture of a
   closure read from a field is reached before the read through the
   closure's code (`capture_reached`).
-- (M)'s clause on a closure's bindings is not stated.
 - The active frame before a step classifies it. The entry of a member's
   call, a call of a closure of $`C`$ from a frame of outside code, has an
   outside active frame; it changes and stores nothing, so `step_reach` and

@@ -689,12 +689,11 @@ end Steps
 a step whose active frame runs no code of `C` changes only locations one
 path step from the roots of outside code. -/
 theorem outsideStep_reach {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C) (hc : ¬ F.Runs c C)
-    (hroots : st.roots = vals (F.ofC C) true t) :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
+    (hroots : st.roots = vals (F.ofC C) (!F.ofC C c) t) :
     ∀ l, Changes st st' l → ReachesFrom (F.at C).ofC st.s.h st.roots l := by
   rintro l ⟨v, hv, hn⟩
   obtain ⟨u, hu, a, ha⟩ := step_reach (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hv hn
-  simp only [Family.ofC, hc, decide_false, Bool.not_false] at hu
   exact ⟨u, hroots ▸ hu, [a], ha⟩
 
 /-- **`OutsideStep.writes` of a step of the calculus** at the component
@@ -702,15 +701,19 @@ theorem outsideStep_reach {F : Family} {C : Nat} {st st' : St (F.at C)} {c : Com
 it changes or allocates references, in one path step, only what the roots
 of outside code reach in one. -/
 theorem outsideStep_writes {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C) (hc : ¬ F.Runs c C)
-    (hroots : st.roots = vals (F.ofC C) true t) :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
+    (hroots : st.roots = vals (F.ofC C) (!F.ofC C c) t) :
     ∀ (w : Nat) (u : Val), ¬ (∃ v : Val, st.s.h[w]? = some v ∧ st'.s.h[w]? = some v) → st'.s.h[w]? = some u →
-      ∀ (a : Label) (l : Nat), next u a = some l →
-        ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
-  intro _ u hsame hu a _ hn
-  have hm := step_writes (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hsame hu (not_inert_of_next hn)
-  simp only [Family.ofC, hc, decide_false, Bool.not_false] at hm
-  exact .inl ⟨u, hroots ▸ hm, [a], hn⟩
+      ∀ l, Leaves (F.at C).ofC u l → ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
+  intro _ u hsame hu l hl
+  have hni : ¬ Inert (F.ofC C) u := by
+    intro hi
+    obtain ⟨y, hy, a, hn⟩ := hl
+    cases hy with
+    | refl => rw [hi.1 a] at hn; cases hn
+    | step hx _ => change _ ∈ codeVals (F.ofC C) u at hx; rw [hi.2] at hx; cases hx
+  have hm := step_writes (ofC := F.ofC C) hs c (by simp [Family.ofC, hact]) hsame hu hni
+  exact .inl ⟨u, hroots ▸ hm, hl.reaches⟩
 
 /-- **The roots of a valid term are valid** (`RootsValid`). -/
 theorem rootsValid_of_term {P : Package} {st : St P} {o : Bool} {t : Tm}
@@ -727,11 +730,6 @@ variable {ofC : ComponentTag → Bool}
 /-- **A location the roots `R` reach at `h`, or a fresh one.** -/
 def Good (ofC : ComponentTag → Bool) (h : Heap) (R : List Val) (l : Nat) : Prop :=
   ReachesFrom ofC h R l ∨ h.length ≤ l
-
-/-- **Code steps**: the values a value's code holds, and theirs. -/
-inductive CodeReach (ofC : ComponentTag → Bool) : Val → Val → Prop
-  | refl (v : Val) : CodeReach ofC v v
-  | step {v x w : Val} : x ∈ codeVals ofC v → CodeReach ofC x w → CodeReach ofC v w
 
 /-- **A value whose path steps reach only good locations**: every location
 one location step reaches from it, or from a value its code holds, is
@@ -772,16 +770,6 @@ theorem follows_trans {h : Heap} : ∀ {r : Val} {π π' : List Label} {v : Val}
   | _, [], _, _, _, _, hf, _, _ => hf.elim
   | _, [_], _, _, _, _, hf, hl, hf' => follows_cons (.inl ⟨_, hf, hl⟩) hf'
   | _, _ :: _ :: _, _, _, _, _, ⟨_, hs, hf⟩, hl, hf' => follows_cons hs (follows_trans hf hl hf')
-
-theorem codeReach_reaches {h : Heap} {v w : Val} (hw : CodeReach ofC v w) :
-    ∀ {a : Label} {l : Nat}, next w a = some l → Reaches ofC h v l := by
-  induction hw with
-  | refl => intro a l hn; exact ⟨[a], hn⟩
-  | step hx _ ih =>
-    intro a l hn
-    obtain ⟨π, hf⟩ := ih hn
-    obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
-    exact ⟨.code i :: π, follows_cons (.inr ⟨i, rfl, hi⟩) hf⟩
 
 /-- **A root's paths reach only what the roots reach.** -/
 theorem GV.root {v : Val} (hv : v ∈ R) : GV ofC h R v :=
@@ -1750,13 +1738,11 @@ theorem heap_isVal {s : IndexedHeap} {l : Nat} {v : Val} (hv : s.h[l]? = some v)
 outside code reach only what they reached before or what the step
 allocated. -/
 theorem outsideStep_noForge {F : Family} {C : Nat} {st st' : St (F.at C)} {c : ComponentTag} {t t' : Tm}
-    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C) (hc : ¬ F.Runs c C)
-    (hroots : st.roots = vals (F.ofC C) true t) (hroots' : st'.roots = vals (F.ofC C) true t') :
+    (hs : Step st.s.h t st'.s.h t') (hact : ¬ F.Runs (activeTag c t) C)
+    (hroots : st.roots = vals (F.ofC C) (!F.ofC C c) t) (hroots' : st'.roots = vals (F.ofC C) (!F.ofC C c) t') :
     ∀ l, ReachesFrom (F.at C).ofC st'.s.h st'.roots l →
       ReachesFrom (F.at C).ofC st.s.h st.roots l ∨ st.s.h.length ≤ l := by
-  have hoc : (!F.ofC C c) = true := by simp [Family.ofC, hc]
   have := step_noForge (ofC := F.ofC C) (fun _ _ hv => heap_isVal hv) hs c (by simp [Family.ofC, hact])
-  rw [hoc] at this
   rw [hroots, hroots']
   exact this
 

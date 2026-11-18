@@ -141,6 +141,8 @@ structure PkgStep (tv : TypeView) (d : Nat) (st st' : St P) : Type where
   valid : RootsValid st'
   localStores : ∀ w u, ¬ Same st.s.h st'.s.h w → st'.s.h[w]? = some u → ∀ a l, next u a = some l →
     mid.origin l = some .local → mid.origin w = some .local
+  localBindings : ∀ w u, ¬ Same st.s.h st'.s.h w → st'.s.h[w]? = some u → ∀ x ∈ codeVals P.ofC u, ∀ l,
+    Leaves P.ofC x l → mid.origin l ≠ some .local
 
 /-- **The step lemma**: a checked step of the package's code inside a call
 at depth `d` keeps the invariants of states and the marks, and grows the
@@ -203,8 +205,22 @@ theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d
       rw [hmo w hw]
       exact hok.localClosed w _ hv₀ a l hn hloc
     · exact hp.localStores w u hs hu' a l hn hloc
+  have hbc : BindingsClosed st' := by
+    intro w u hu' x hx l hl hloc
+    rw [horig l] at hloc
+    by_cases hs : Same st.s.h st'.s.h w
+    · obtain ⟨v, hv₀, hv₁⟩ := hs
+      rw [hu'] at hv₁
+      cases hv₁
+      have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
+      have hl' : l < st.s.h.length :=
+        Leaves.lt (s := st.s) (codeVals_refsOkN (RefsOk.refsOkN (contents_valid hw hv₀)) hx) hl
+      have hmo : hp.mid.origin l = st.g.origin l := by simp only [Ghost.origin, (hp.sites l hl').1]
+      rw [hmo] at hloc
+      exact hok.bindings w _ hv₀ x hx l hl hloc
+    · exact hp.localBindings w u hs hu' x hx l hl hloc
   exact ⟨⟨hok.pos, hg.len', hu, fun l h => ⟨(hall l h).1, (hall l h).2.1⟩, fun l h he => (hall l h).2.2 he,
-    hp.valid, hlc⟩, hkept, hg⟩
+    hp.valid, hlc, hbc⟩, hkept, hg⟩
 
 /-- A step whose history begins with its crossings, at the heap after it,
 updates `E` as `PkgStep.covers` states. -/
@@ -272,10 +288,10 @@ theorem Grows.weaken {d : Nat} {g g' : Ghost P} (hg : Grows (d + 1) g g') (hd : 
   ⟨hd, by have := hg.len; omega, by have := hg.len'; omega, hg.record, hg.prot, hg.exposed⟩
 
 theorem Ok.deeper {d : Nat} {st : St P} (hok : Ok d st) (hl : d + 1 ≤ st.g.A.length) : Ok (d + 1) st :=
-  ⟨Nat.succ_pos _, hl, hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed⟩
+  ⟨Nat.succ_pos _, hl, hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed, hok.bindings⟩
 
 theorem Ok.shallower {d : Nat} {st : St P} (hok : Ok (d + 1) st) (hd : 0 < d) : Ok d st :=
-  ⟨hd, by have := hok.len; omega, hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed⟩
+  ⟨hd, by have := hok.len; omega, hok.uniform, hok.marks, hok.confined, hok.valid, hok.localClosed, hok.bindings⟩
 
 /-- **A member's call keeps the invariants, the marks, and grows the
 history**, from the step lemma and its runs' bounds one call deeper. -/

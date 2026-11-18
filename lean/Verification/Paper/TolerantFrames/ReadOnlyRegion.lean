@@ -352,6 +352,64 @@ theorem follows_lt {s : IndexedHeap} {ofC : ComponentTag → Bool} :
   | _, _ :: _ :: _, _, hv, ⟨_, .inr ⟨_, _, hc⟩, hf⟩ =>
     follows_lt (codeVals_refsOkN hv (List.mem_of_getElem? hc)) hf
 
+/-! ## Code steps and the first locations of paths -/
+
+/-- **Code steps**: the values a value's code holds, and theirs. -/
+inductive CodeReach (ofC : ComponentTag → Bool) : Val → Val → Prop
+  | refl (v : Val) : CodeReach ofC v v
+  | step {v x w : Val} : x ∈ codeVals ofC v → CodeReach ofC x w → CodeReach ofC v w
+
+/-- **The locations a path's first location step reaches from `u`**: one
+location step from `u`, or from a value code steps reach from `u`. -/
+def Leaves (ofC : ComponentTag → Bool) (u : Val) (l : Nat) : Prop :=
+  ∃ x, CodeReach ofC u x ∧ ∃ a, next x a = some l
+
+theorem Leaves.of_next {ofC : ComponentTag → Bool} {u : Val} {a : Label} {l : Nat} (hn : next u a = some l) :
+    Leaves ofC u l :=
+  ⟨u, .refl u, a, hn⟩
+
+theorem Leaves.code {ofC : ComponentTag → Bool} {u x : Val} {l : Nat} (hx : x ∈ codeVals ofC u)
+    (hl : Leaves ofC x l) : Leaves ofC u l :=
+  let ⟨y, hy, a, hn⟩ := hl
+  ⟨y, .step hx hy, a, hn⟩
+
+/-- A first location of a path is either a location step of the value
+itself or a first location of a value its code holds. -/
+theorem Leaves.cases {ofC : ComponentTag → Bool} {u : Val} {l : Nat} (hl : Leaves ofC u l) :
+    (∃ a, next u a = some l) ∨ ∃ x ∈ codeVals ofC u, Leaves ofC x l := by
+  obtain ⟨y, hy, a, hn⟩ := hl
+  cases hy with
+  | refl => exact .inl ⟨a, hn⟩
+  | step hx hxy => exact .inr ⟨_, hx, _, hxy, a, hn⟩
+
+theorem codeReach_reaches {ofC : ComponentTag → Bool} {h : Heap} {v w : Val} (hw : CodeReach ofC v w) :
+    ∀ {a : Label} {l : Nat}, next w a = some l → Reaches ofC h v l := by
+  induction hw with
+  | refl => intro a l hn; exact ⟨[a], hn⟩
+  | step hx _ ih =>
+    intro a l hn
+    obtain ⟨π, hf⟩ := ih hn
+    obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+    match π, hf with
+    | b :: π', hf => exact ⟨.code i :: b :: π', ⟨_, .inr ⟨i, rfl, hi⟩, hf⟩⟩
+
+theorem Leaves.reaches {ofC : ComponentTag → Bool} {h : Heap} {u : Val} {l : Nat} (hl : Leaves ofC u l) :
+    Reaches ofC h u l :=
+  let ⟨_, hy, _, hn⟩ := hl
+  codeReach_reaches hy hn
+
+theorem CodeReach.refsOkN {k : Nat} {W : WorldT k} {ofC : ComponentTag → Bool} {v w : Val}
+    (hw : CodeReach ofC v w) (hv : RefsOkN W v) : RefsOkN W w := by
+  induction hw with
+  | refl => exact hv
+  | step hx _ ih => exact ih (codeVals_refsOkN hv hx)
+
+/-- **A first location of a path from a valid value is allocated.** -/
+theorem Leaves.lt {s : IndexedHeap} {ofC : ComponentTag → Bool} {u : Val} {l : Nat} (hu : RefsOkN s.W u)
+    (hl : Leaves ofC u l) : l < s.h.length :=
+  let ⟨_, hy, _, hn⟩ := hl
+  next_lt (hy.refsOkN hu) hn
+
 /-! ## Marks and the ghost state -/
 
 /-- **The marks** (the draft, Definitions, "Marks, one per allocation
