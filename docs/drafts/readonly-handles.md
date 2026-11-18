@@ -606,7 +606,12 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   library's arrays makes (`slice()`, whose reviewed contract states a fresh
   result) is the array it allocates, holding what is reachable from the
   elements of its receiver, none where TypeScript types it an array of
-  primitives; a call of the same name of any other code is not one.
+  primitives; a call of the same name of any other code is not one. A
+  method of another interface of the standard library (a `WeakMap`'s
+  `set`) is that native's only where its receiver is the component's own
+  storage, no record of which has a key of its name; of a value entering
+  from outside (a caller's `Map`) it is a call of outside code, its
+  arguments crossing out.
 - **Reads through a possibly null value.** A read `e![k]` or `e!.f` whose
   operand's type admits `null` or `undefined` is the read of `e`: the `!`
   is erased, as TypeScript erases it, and the operand, held in a slot,

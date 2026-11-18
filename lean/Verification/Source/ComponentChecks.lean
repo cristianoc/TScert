@@ -233,10 +233,11 @@ def Ctx.readOnly (cx : Ctx) : Option ComponentWire.Shape → Bool
   | some t => readOnlyShape cx.F.types (ComponentWire.shapeLimit * (cx.F.types.length + 1)) [] t
   | none => false
 
-/-- **A call of a member of the standard library's arrays**, as TypeScript
-resolves it: that native's, whatever its receiver's value (the array
-invariant, `DESIGN.md`, "Trust surface"); no code of the family and no
-outside code runs. -/
+/-- **A call of a method of the standard library**, as TypeScript resolves
+it: that native's, of its arrays whatever its receiver's value (the array
+invariant, `DESIGN.md`, "Trust surface"), of another interface where its
+receiver is the family's own storage with no key of its name (checked in
+`flowDiags`); no code of the family and no outside code runs. -/
 def _root_.Verification.ComponentWire.Call.member (c : Call) : Bool := c.native.any (·.member)
 
 /-- The callee's components it may enter from, of a call that may run
@@ -332,7 +333,7 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
       let resultOk := match F.sites[n.site]? with
         | none => false
         | some site =>
-          if n.member && n.fresh then cx.has c.result (.ofSites [n.site]) && (n.primitiveElements || cx.has site.contents passed &&
+          if n.member && n.array && n.fresh then cx.has c.result (.ofSites [n.site]) && (n.primitiveElements || cx.has site.contents passed &&
             cx.has site.contents (cx.closure (cx.read n.given)) &&
             callbacks.all (fun k => cx.has site.contents (cx.closure (cx.value k.result))))
           else cx.has c.result (cx.value n.all) && cx.has site.contents (cx.value n.all)
@@ -340,9 +341,19 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
         cx.has n.all (cx.read n.given) && callbacks.all (fun k => cx.has n.all (cx.value k.result) &&
           k.params.all fun (p, _, _) => cx.has p (cx.value n.all)) && resultOk &&
         (c.receiver.all fun r => (cx.value r).sites.all fun t => match F.sites[t]? with
-          | some s => cx.has s.contents (cx.value n.passed) && keyHeld s none true
+          | some s => cx.has s.contents (cx.value n.passed) && (n.member || keyHeld s none true)
           | none => false)
       if !allOk then out := (some c.component, c.module, c.place, "a native's call omits what it may give or return") :: out
+      -- A method of another library interface is that native's only of the
+      -- family's own storage, no record of which may own its name.
+      if n.member && !n.array then
+        let r := (c.receiver.map cx.value).getD .empty
+        let owns := r.sites.any fun t => match F.sites[t]? with
+          | some s => s.anyKey || n.name.any s.keys.contains
+          | none => true
+        if c.receiver.isNone || !r.components.isEmpty || owns then
+          out := (some c.component, c.module, c.place,
+            "a call read as a library method's whose receiver may come from outside or own the method") :: out
   -- Throws and catches.
   for t in F.throws do
     if !(F.thrown.any fun v => cx.has v (cx.value t.value)) then

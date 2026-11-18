@@ -5032,5 +5032,7 @@ export const cases: Case[] = [
   negative("invalid-readonly-slice-lookalike", "A member installs in a handle what the caller's own `slice()` returns, the caller's array, which it truncates under the walker (NaN under Node); (O) refuses the store, the call being of outside code."),
   negative("invalid-readonly-comes-back", "A walker taking `unknown` lets the rows a module gives out come back read-only, and a row the visitor holds writable is installed in them and truncated (NaN under Node); (O) refuses the install."),
   negative("invalid-readonly-void-callback", "A visitor typed `() => void` returns an array the walker installs in its handle, which the visitor truncates (NaN under Node); (O) refuses the install of the value it returns."),
+  positive("readonly-frame-own-map", "A module keeps a handle's widths in its own `WeakMap`: the library's method of its own storage passes nothing out, and the module's certificate holds."),
+  negative("invalid-readonly-map-escape", "A member keeps a handle's widths in a `Map` its caller passes, the caller's method, which gives the array out writable for the caller to truncate under the walker (NaN under Node); (O) refuses its install."),
   positive("readonly-frame-released-store", "A module whose entries take only numbers stores a row it gives out writable into rows it gives out writable: no released array can come back, and the module's certificate holds."),
 ];

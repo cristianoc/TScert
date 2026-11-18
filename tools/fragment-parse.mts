@@ -2762,18 +2762,20 @@ function lowerFile(file: string, carriesContext: boolean,
       return infos.length > 0 && infos.every((info) => primitiveType(info.valueType));
     });
   };
-  // A callee's member of the standard library's `Array` or `ReadonlyArray`:
-  // its declaration in a file the compiler's library resolution gives the
-  // program (`isSourceFileDefaultLibrary`), read at the overlay's entry.
-  const arrayMembersOf = (asking: Checker, program: Project["program"]) => (nodes: readonly Node[]): (string | null)[] => {
+  // A callee's method of an interface of the standard library: its
+  // declaration in a file the compiler's library resolution gives the
+  // program (`isSourceFileDefaultLibrary`), its name, and whether the
+  // interface is `Array` or `ReadonlyArray`, read at the overlay's entry.
+  const libraryMembersOf = (asking: Checker, program: Project["program"]) =>
+      (nodes: readonly Node[]): ({ name: string; array: boolean } | null)[] => {
     const symbols = nodes.length === 0 ? [] : asking.getSymbolAtLocation(nodes);
     return nodes.map((_, i) => {
       const declaration = symbols[i]?.declarations[0]?.resolve();
       const owner = declaration?.parent;
-      if (!declaration || !owner || !ts.isInterfaceDeclaration(owner) ||
-          !(owner.name.text === "Array" || owner.name.text === "ReadonlyArray")) return null;
+      if (!declaration || !owner || !ts.isInterfaceDeclaration(owner)) return null;
       if (!program.isSourceFileDefaultLibrary(declaration.getSourceFile())) return null;
-      return ts.isMethodSignatureDeclaration(declaration) && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
+      return ts.isMethodSignatureDeclaration(declaration) && ts.isIdentifier(declaration.name)
+        ? { name: declaration.name.text, array: owner.name.text === "Array" || owner.name.text === "ReadonlyArray" } : null;
     });
   };
   // The checked file's project: the one named, else the file's own; its
@@ -2785,12 +2787,12 @@ function lowerFile(file: string, carriesContext: boolean,
   const original = resolve(resolutionFile);
   const components = location !== null ? noComponents : describeFamily({ absolute: original, source,
     alone: { files: [original], sourceOf: (path) => path === original ? source : null, primitive: primitiveOf(checker),
-      arrayMembers: arrayMembersOf(checker, project.program), primitiveElements: primitiveElementsOf(checker) },
+      libraryMembers: libraryMembersOf(checker, project.program), primitiveElements: primitiveElementsOf(checker) },
     project: () => {
       const opened = named === null ? project
         : compilerOf().updateSnapshot({ openProjects: [named] }).getProject(named) ?? project;
       return { files: opened.program.getSourceFileNames(), sourceOf: (path) => opened.program.getSourceFile(path) ?? null,
-        primitive: primitiveOf(opened.checker), arrayMembers: arrayMembersOf(opened.checker, opened.program),
+        primitive: primitiveOf(opened.checker), libraryMembers: libraryMembersOf(opened.checker, opened.program),
         primitiveElements: primitiveElementsOf(opened.checker) };
     },
     locationOf: (path) => {

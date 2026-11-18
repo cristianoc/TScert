@@ -603,6 +603,10 @@ control("read-only frame checks: each module's certificate, held and refused", a
   certificateRefused(pass(fragmentOf(run("invalid-readonly-slice-lookalike"))), "a lookalike slice", /^\(O\) .* installs a value entering from outside/);
   certificateRefused(pass(fragmentOf(run("invalid-readonly-comes-back"))), "rows that may come back", /^\(O\) .* installs the released site/);
   certificateRefused(pass(fragmentOf(run("invalid-readonly-void-callback"))), "a void visitor's result", /^\(O\) .* installs a value entering from outside/);
+  // A library method of the module's own storage passes nothing out; of a
+  // caller's map, its argument crosses out writable.
+  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-own-map")))), [], "the module's own WeakMap");
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-map-escape"))), "a caller's map", /^\(O\) .* installs the released site/);
   say("read-only frame checks: the walker's, a slice copy's and a number-entry module's certified; a suspension, released and caller's installs, a lookalike slice, rows that come back and a void visitor's result refused, each at its code");
 });
 

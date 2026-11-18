@@ -54,9 +54,10 @@ export type FamilyProgram = {
   files: readonly string[];
   sourceOf: (absolute: string) => SourceFile | null;
   primitive: (nodes: readonly Node[]) => boolean[];
-  /** The member of the standard library's `Array` or `ReadonlyArray` each
-   * name of a member access resolves to, or null. */
-  arrayMembers: (nodes: readonly Node[]) => (string | null)[];
+  /** The method of an interface of the standard library each name of a
+   * member access resolves to, with whether the interface is `Array` or
+   * `ReadonlyArray`, or null. */
+  libraryMembers: (nodes: readonly Node[]) => ({ name: string; array: boolean } | null)[];
   /** Whether each node's type is an array or a tuple of primitives. */
   primitiveElements: (nodes: readonly Node[]) => boolean[];
 };
@@ -443,6 +444,8 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
   // hold what its sources hold, a primitive source holding none.
   const primitiveNodes = new Set<Node>();
   const arrayMemberCalls = new Map<Node, string>();
+  /** The calls of a method of another interface of the standard library. */
+  const libraryMemberCalls = new Map<Node, string>();
   /** The calls of such a member TypeScript types an array of primitives. */
   const primitiveElementCalls = new Set<Node>();
   for (const f of files) {
@@ -472,12 +475,12 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       n.forEachChild(callees);
     };
     callees(f.source);
-    const members = reading.arrayMembers(names);
-    const fresh = calls.filter((_, i) => { const m = members[i]; return m !== null && m !== undefined && freshArrayMember(m); });
+    const members = reading.libraryMembers(names);
+    const fresh = calls.filter((_, i) => { const m = members[i]; return !!m && m.array && freshArrayMember(m.name); });
     const primitive = reading.primitiveElements(fresh);
     members.forEach((m, i) => {
       const n = calls[i];
-      if (m !== null && n) arrayMemberCalls.set(n, m);
+      if (m && n) (m.array ? arrayMemberCalls : libraryMemberCalls).set(n, m.name);
     });
     fresh.forEach((n, i) => { if (primitive[i]) primitiveElementCalls.add(n); });
   }
@@ -1309,8 +1312,13 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     // A call TypeScript resolves to a member of the standard library's
     // arrays is that native's: a value at an array type is a built-in array,
     // holding the standard prototype and owning no key it declares (the
-    // array invariant, DESIGN.md, "Trust surface").
-    const libraryMember = arrayMemberCalls.has(n);
+    // array invariant, DESIGN.md, "Trust surface"). So is one of another
+    // interface's methods whose receiver is the family's own storage, no
+    // record of which may have a key of that name: a collection's methods
+    // are its prototype's, not what it holds.
+    const otherMember = libraryMemberCalls.get(n);
+    const libraryMember = arrayMemberCalls.has(n) || (otherMember !== undefined && receiver !== null &&
+      incomingOf(receiver).length === 0 && sitesOf(receiver).every((t) => !anyKey.has(t) && !(keys.get(t)?.has(otherMember) ?? false)));
     let codeTargets = 0;
     for (const t of libraryMember ? [] : sitesOf(tokens)) {
       const s = sites[t];
@@ -1379,7 +1387,9 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
       for (const t of sitesOf(receiver ?? [])) {
         const s = sites[t];
         addAll(contentOf(t), passed);
-        if (s && s.kind !== "array") addKey(t, null);
+        // A library method writes its receiver's elements or internal
+        // slots, no key; any other native may add any.
+        if (s && s.kind !== "array" && !libraryMember) addKey(t, null);
       }
       // Else its result may be any of these, and its own storage hold them.
       if (fresh) {
@@ -1390,6 +1400,7 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
         addAll(contentOf(result), all);
       }
       if (event) event.native = { site: result, passed: passedRef, given: givenRef, all: synthetic(n, f, allFrom), member: libraryMember,
+        name: arrayMemberCalls.get(n) ?? otherMember ?? null, array: arrayMemberCalls.has(n),
         fresh, primitiveElements };
     }
     if (event) events.calls.push(event);
