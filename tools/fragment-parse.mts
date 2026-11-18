@@ -16,7 +16,7 @@
  * All six are this one trusted program. Its refusals are indexed in
  * docs/SOURCE-FRAGMENT.md, and the tree it writes is docs/FRAGMENT-FORMAT.md's.
  */
-import { type API, SymbolFlags, type Checker, type Project, TypeFlags } from "typescript/unstable/sync";
+import { type API, SymbolFlags, type Checker, type Project, type Type, TypeFlags } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ArrowFunction, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -2729,17 +2729,51 @@ function lowerFile(file: string, carriesContext: boolean,
   const importedFrom = importedModules(importNodes, checker, declarations.values, root);
   // The family of components the checked file lies in, described in its
   // own run; an imported module's code is its importer's to describe.
+  // `void` is not among them: TypeScript admits a function returning any
+  // value where one returning `void` is expected, so a value typed `void`
+  // may hold any reference.
+  const primitiveMask = TypeFlags.String | TypeFlags.Number | TypeFlags.BigInt | TypeFlags.Boolean | TypeFlags.ESSymbol |
+    TypeFlags.StringLiteral | TypeFlags.NumberLiteral | TypeFlags.BigIntLiteral | TypeFlags.BooleanLiteral |
+    TypeFlags.UniqueESSymbol | TypeFlags.EnumLiteral | TypeFlags.Undefined | TypeFlags.Null |
+    TypeFlags.Never | TypeFlags.TemplateLiteral | TypeFlags.StringMapping;
+  const primitiveFlags = (all: number): boolean => {
+    // `boolean` is the union of its two literals.
+    const flags = all & ~(all & TypeFlags.Boolean ? TypeFlags.Union : 0);
+    return (flags & primitiveMask) !== 0 && (flags & ~primitiveMask) === 0;
+  };
+  // A type of primitive flags, or a union of such types.
+  const primitiveType = (type: Type | undefined, depth: number = 0): boolean => {
+    if (!type) return false;
+    if (primitiveFlags(type.flags)) return true;
+    return depth < 4 && type.isUnionType() && type.getTypes().every((t) => primitiveType(t, depth + 1));
+  };
   const primitiveOf = (asking: Checker) => (nodes: readonly Node[]): boolean[] => {
     const types = nodes.length === 0 ? [] : asking.getTypeAtLocation(nodes);
-    const mask = TypeFlags.String | TypeFlags.Number | TypeFlags.BigInt | TypeFlags.Boolean | TypeFlags.ESSymbol |
-      TypeFlags.StringLiteral | TypeFlags.NumberLiteral | TypeFlags.BigIntLiteral | TypeFlags.BooleanLiteral |
-      TypeFlags.UniqueESSymbol | TypeFlags.EnumLiteral | TypeFlags.Undefined | TypeFlags.Null | TypeFlags.Void |
-      TypeFlags.Never | TypeFlags.TemplateLiteral | TypeFlags.StringMapping;
+    return nodes.map((_, i) => primitiveType(types[i]));
+  };
+  // Whether each node's type has a number index whose values are primitive:
+  // an array or a tuple of primitives.
+  const primitiveElementsOf = (asking: Checker) => (nodes: readonly Node[]): boolean[] => {
+    const types = nodes.length === 0 ? [] : asking.getTypeAtLocation(nodes);
     return nodes.map((_, i) => {
-      // `boolean` is the union of its two literals.
-      const all = types[i]?.flags ?? 0;
-      const flags = all & ~(all & TypeFlags.Boolean ? TypeFlags.Union : 0);
-      return (flags & mask) !== 0 && (flags & ~mask) === 0;
+      const type = types[i];
+      if (!type) return false;
+      const infos = asking.getIndexInfosOfType(type).filter((info) => (info.keyType.flags & TypeFlags.Number) !== 0);
+      return infos.length > 0 && infos.every((info) => primitiveType(info.valueType));
+    });
+  };
+  // A callee's member of the standard library's `Array` or `ReadonlyArray`:
+  // its declaration in a file the compiler's library resolution gives the
+  // program (`isSourceFileDefaultLibrary`), read at the overlay's entry.
+  const arrayMembersOf = (asking: Checker, program: Project["program"]) => (nodes: readonly Node[]): (string | null)[] => {
+    const symbols = nodes.length === 0 ? [] : asking.getSymbolAtLocation(nodes);
+    return nodes.map((_, i) => {
+      const declaration = symbols[i]?.declarations[0]?.resolve();
+      const owner = declaration?.parent;
+      if (!declaration || !owner || !ts.isInterfaceDeclaration(owner) ||
+          !(owner.name.text === "Array" || owner.name.text === "ReadonlyArray")) return null;
+      if (!program.isSourceFileDefaultLibrary(declaration.getSourceFile())) return null;
+      return ts.isMethodSignatureDeclaration(declaration) && ts.isIdentifier(declaration.name) ? declaration.name.text : null;
     });
   };
   // The checked file's project: the one named, else the file's own; its
@@ -2750,12 +2784,14 @@ function lowerFile(file: string, carriesContext: boolean,
   const projectRoot = realPath(named === null ? dirname(project.configFileName) : dirname(named));
   const original = resolve(resolutionFile);
   const components = location !== null ? noComponents : describeFamily({ absolute: original, source,
-    alone: { files: [original], sourceOf: (path) => path === original ? source : null, primitive: primitiveOf(checker) },
+    alone: { files: [original], sourceOf: (path) => path === original ? source : null, primitive: primitiveOf(checker),
+      arrayMembers: arrayMembersOf(checker, project.program), primitiveElements: primitiveElementsOf(checker) },
     project: () => {
       const opened = named === null ? project
         : compilerOf().updateSnapshot({ openProjects: [named] }).getProject(named) ?? project;
       return { files: opened.program.getSourceFileNames(), sourceOf: (path) => opened.program.getSourceFile(path) ?? null,
-        primitive: primitiveOf(opened.checker) };
+        primitive: primitiveOf(opened.checker), arrayMembers: arrayMembersOf(opened.checker, opened.program),
+        primitiveElements: primitiveElementsOf(opened.checker) };
     },
     locationOf: (path) => {
       if (path === original) return absolute;

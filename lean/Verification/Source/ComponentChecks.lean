@@ -50,11 +50,21 @@ from outside. -/
 structure Tokens where
   sites : List Nat
   incoming : List Nat
+  /-- The components it may enter from outside reached read-only from a
+  crossing in at a read-only type. -/
+  ro : List Nat
   deriving Inhabited
 
-def Tokens.empty : Tokens := ⟨[], []⟩
+def Tokens.empty : Tokens := ⟨[], [], []⟩
 
-def Tokens.union (a b : Tokens) : Tokens := ⟨a.sites ++ b.sites, a.incoming ++ b.incoming⟩
+def Tokens.union (a b : Tokens) : Tokens := ⟨a.sites ++ b.sites, a.incoming ++ b.incoming, a.ro ++ b.ro⟩
+
+def Tokens.ofSites (s : List Nat) : Tokens := ⟨s, [], []⟩
+
+def Tokens.writable (cs : List Nat) : Tokens := ⟨[], cs, []⟩
+
+/-- The components a value may enter from outside, at either position. -/
+def Tokens.components (t : Tokens) : List Nat := (t.incoming ++ t.ro).eraseDups
 
 /-- A failure of a check: the component whose certificate it refuses, the
 check, and the place of the code it is of. -/
@@ -73,12 +83,14 @@ structure Ctx where
   F : Components
   sitesOf : Array (Std.HashSet Nat)
   incomingOf : Array (Std.HashSet Nat)
+  readOnlyOf : Array (Std.HashSet Nat)
   /-- The code each closure site is, by site. -/
   codeAtSite : Std.HashMap Nat Nat
 
 def Ctx.of (F : Components) : Ctx :=
   { F, sitesOf := (F.values.map fun v => Std.HashSet.ofList v.sites).toArray,
     incomingOf := (F.values.map fun v => Std.HashSet.ofList v.incoming).toArray,
+    readOnlyOf := (F.values.map fun v => Std.HashSet.ofList v.incomingReadOnly).toArray,
     codeAtSite := F.codes.zipIdx.foldl (fun m (c, i) => match c.site with
       | some s => m.insert s i
       | none => m) {} }
@@ -87,7 +99,7 @@ namespace Ctx
 variable (cx : Ctx)
 
 def value (v : Nat) : Tokens := match cx.F.values[v]? with
-  | some x => ⟨x.sites, x.incoming⟩
+  | some x => ⟨x.sites, x.incoming, x.incomingReadOnly⟩
   | none => .empty
 
 def contents (t : Nat) : Tokens := match cx.F.sites[t]? with
@@ -95,22 +107,25 @@ def contents (t : Nat) : Tokens := match cx.F.sites[t]? with
   | none => .empty
 
 /-- What a value's storage holds: its sites' contents, and of a value
-entering from outside, a value entering from outside. -/
+entering from outside, a value entering from outside, read-only where it is
+reached read-only. -/
 def read (v : Nat) : Tokens :=
   let x := cx.value v
-  ⟨x.sites.flatMap (cx.contents · |>.sites), x.incoming ++ x.sites.flatMap (cx.contents · |>.incoming)⟩
+  ⟨x.sites.flatMap (cx.contents · |>.sites), x.incoming ++ x.sites.flatMap (cx.contents · |>.incoming),
+    x.ro ++ x.sites.flatMap (cx.contents · |>.ro)⟩
 
 def eval : Source → Tokens
-  | .site s => ⟨[s], []⟩
+  | .site s => .ofSites [s]
   | .value v => cx.value v
   | .read v => cx.read v
-  | .incoming c => ⟨[], [c]⟩
+  | .incoming c => .writable [c]
+  | .incomingReadOnly c => ⟨[], [], [c]⟩
 
 /-- Whether value `v` includes the tokens `t`. -/
 def has (v : Nat) (t : Tokens) : Bool :=
-  match cx.sitesOf[v]?, cx.incomingOf[v]? with
-  | some s, some i => t.sites.all s.contains && t.incoming.all i.contains
-  | _, _ => t.sites.isEmpty && t.incoming.isEmpty
+  match cx.sitesOf[v]?, cx.incomingOf[v]?, cx.readOnlyOf[v]? with
+  | some s, some i, some r => t.sites.all s.contains && t.incoming.all i.contains && t.ro.all r.contains
+  | _, _, _ => t.sites.isEmpty && t.incoming.isEmpty && t.ro.isEmpty
 
 /-- **The storage reachable from tokens**: their sites and every site the
 contents of a reachable site hold, with the components a value of them may
@@ -119,6 +134,7 @@ def closure (start : Tokens) : Tokens := Id.run do
   let mut seen : Std.HashSet Nat := {}
   let mut out : Array Nat := #[]
   let mut incoming : Std.HashSet Nat := Std.HashSet.ofList start.incoming
+  let mut ro : Std.HashSet Nat := Std.HashSet.ofList start.ro
   let mut work := start.sites
   for _ in [0:cx.F.sites.length + 1] do
     let mut next : List Nat := []
@@ -129,8 +145,9 @@ def closure (start : Tokens) : Tokens := Id.run do
         let c := cx.contents t
         next := c.sites ++ next
         for i in c.incoming do incoming := incoming.insert i
+        for i in c.ro do ro := ro.insert i
     work := next
-  return ⟨out.toList, incoming.toList⟩
+  return ⟨out.toList, incoming.toList, ro.toList⟩
 
 /-- A component's chain: itself and the components it is nested in,
 innermost first. -/
@@ -190,6 +207,42 @@ def members (C : Nat) : List Nat :=
 
 end Ctx
 
+/-- **A shape read-only throughout** (the draft, "Read-only types and
+crossings"; `shapeReadOnly` in `tools/components.mts` states the same): a
+primitive, `unknown` or a sealed handle; a read-only array or tuple of such
+shapes; a record whose every member is a `readonly` field of such a shape; a
+union or an intersection of such shapes; a named type whose definition is
+one, a recursive reference read as writable. `fuel` bounds the nesting and
+the named types expanded, exhausted read as writable. -/
+def readOnlyShape (types : List TypeRow) : Nat → List Nat → ComponentWire.Shape → Bool
+  | 0, _, _ => false
+  | n + 1, vis, s => match s with
+    | .primitive | .unknown | .sealed => true
+    | .function | .other | .array _ => false
+    | .readonlyArray e => readOnlyShape types n vis e
+    | .tuple ro es => ro && es.attach.all fun ⟨e, _⟩ => readOnlyShape types n vis e
+    | .record ms => ms.attach.all fun ⟨(r, f, t), _⟩ => r && f && readOnlyShape types n vis t
+    | .union ps | .inter ps => ps.attach.all fun ⟨e, _⟩ => readOnlyShape types n vis e
+    | .named i => !vis.contains i && match types[i]? with
+      | some r => readOnlyShape types n (i :: vis) r.definition
+      | none => false
+
+/-- Whether a position of the declared shape `t` is read-only throughout; a
+position with no declared type is writable. -/
+def Ctx.readOnly (cx : Ctx) : Option ComponentWire.Shape → Bool
+  | some t => readOnlyShape cx.F.types (ComponentWire.shapeLimit * (cx.F.types.length + 1)) [] t
+  | none => false
+
+/-- **A call of a member of the standard library's arrays**, as TypeScript
+resolves it: that native's, whatever its receiver's value (the array
+invariant, `DESIGN.md`, "Trust surface"); no code of the family and no
+outside code runs. -/
+def _root_.Verification.ComponentWire.Call.member (c : Call) : Bool := c.native.any (·.member)
+
+/-- The callee's components it may enter from, of a call that may run
+outside code. -/
+def Ctx.outsideOf (cx : Ctx) (c : Call) : List Nat := if c.member then [] else (cx.value c.callee).components
+
 /-! ## The flow -/
 
 /-- Whether a store's key is one the site's records have: an array's
@@ -230,7 +283,7 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
       out := (some s.component, s.module, s.place, "a store's receiver's sites omit what it stores, or the key it writes") :: out
     -- A key written to a value entering from outside is a key of every
     -- site exposed for that component.
-    for c in (cx.value s.receiver).incoming do
+    for c in (cx.value s.receiver).components do
       for (site, t) in F.sites.zipIdx do
         if cx.mark t c == some .exposed && !keyHeld { site with kind := .object } s.key false then
           out := (some s.component, s.module, s.place,
@@ -239,7 +292,7 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
   for c in F.calls do
     let callee := cx.value c.callee
     let direct := callee.sites.filterMap cx.codeAtSite.get?
-    if !direct.all c.targets.contains then
+    if !c.member && !direct.all c.targets.contains then
       out := (some c.component, c.module, c.place, "a call omits a code its callee may be") :: out
     for ti in c.targets do
       match F.codes[ti]? with
@@ -255,16 +308,16 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
           if !cx.has code.receiver (cx.value r) then
             out := (some c.component, c.module, c.place, "a code's receiver omits a call's") :: out
         match c.inst with
-        | some i => if !cx.has code.receiver ⟨[i], []⟩ then
+        | some i => if !cx.has code.receiver (.ofSites [i]) then
             out := (some c.component, c.module, c.place, "a constructor's receiver omits the instance") :: out
         | none => if !cx.has c.result (cx.value code.result) then
             out := (some c.component, c.module, c.place, "a call's result omits its code's result") :: out
     for i in c.inst do
-      if !cx.has c.result ⟨[i], []⟩ then out := (some c.component, c.module, c.place, "a `new` omits its instance") :: out
-    if !cx.has c.result ⟨[], callee.incoming⟩ then
+      if !cx.has c.result (.ofSites [i]) then out := (some c.component, c.module, c.place, "a `new` omits its instance") :: out
+    if !cx.has c.result (.writable (cx.outsideOf c)) then
       out := (some c.component, c.module, c.place, "a call of outside code omits its result entering from outside") :: out
     let closures := callee.sites.any fun t => (F.sites[t]?).any (·.kind == .closure)
-    let needsNative := c.targets.isEmpty && !closures && callee.incoming.isEmpty
+    let needsNative := c.member || c.targets.isEmpty && !closures && callee.components.isEmpty
     match c.native with
     | none => if needsNative then out := (some c.component, c.module, c.place, "a native's call states no native") :: out
     | some n =>
@@ -272,9 +325,20 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
       let given := ((c.receiver.map cx.value).getD .empty).union (cx.value n.passed)
       let callbacks := c.args.filter (!·.spread) |>.flatMap fun a =>
         (cx.value a.value).sites.filterMap fun t => cx.codeAtSite.get? t >>= (F.codes[·]?)
-      let allOk := cx.has n.passed passed && cx.has n.given given && cx.has n.all ⟨[n.site], []⟩ && cx.has n.all (cx.value n.given) &&
+      -- A fresh result is the array it allocates, holding what the arguments
+      -- pass and what is reachable from the elements of what it is given and
+      -- from its callbacks' results; any other result may be any of what it
+      -- may return, its own storage holding them.
+      let resultOk := match F.sites[n.site]? with
+        | none => false
+        | some site =>
+          if n.member && n.fresh then cx.has c.result (.ofSites [n.site]) && (n.primitiveElements || cx.has site.contents passed &&
+            cx.has site.contents (cx.closure (cx.read n.given)) &&
+            callbacks.all (fun k => cx.has site.contents (cx.closure (cx.value k.result))))
+          else cx.has c.result (cx.value n.all) && cx.has site.contents (cx.value n.all)
+      let allOk := cx.has n.passed passed && cx.has n.given given && cx.has n.all (.ofSites [n.site]) && cx.has n.all (cx.value n.given) &&
         cx.has n.all (cx.read n.given) && callbacks.all (fun k => cx.has n.all (cx.value k.result) &&
-          k.params.all fun (p, _, _) => cx.has p (cx.value n.all)) && cx.has c.result (cx.value n.all) &&
+          k.params.all fun (p, _, _) => cx.has p (cx.value n.all)) && resultOk &&
         (c.receiver.all fun r => (cx.value r).sites.all fun t => match F.sites[t]? with
           | some s => cx.has s.contents (cx.value n.passed) && keyHeld s none true
           | none => false)
@@ -284,7 +348,7 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
     if !(F.thrown.any fun v => cx.has v (cx.value t.value)) then
       out := (some t.component, t.module, t.place, "the thrown values omit a throw's") :: out
   for k in F.catches do
-    let ok := (F.thrown.all fun v => cx.has k.value (cx.value v)) && cx.has k.value ⟨[], cx.chain k.component⟩
+    let ok := (F.thrown.all fun v => cx.has k.value (cx.value v)) && cx.has k.value (.writable (cx.chain k.component))
     if !ok then out := (some k.component, k.module, k.place, "a caught value omits the thrown values or those entering from outside") :: out
   -- Members enter from outside.
   for C in List.range F.components.length do
@@ -292,40 +356,15 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
       match F.codes[m]? with
       | none => pure ()
       | some code =>
-        for (p, place, _) in code.params do
-          if !cx.has p ⟨[], [C]⟩ then
+        for (p, place, ty) in code.params do
+          -- A parameter of a read-only type is reached read-only throughout.
+          if !cx.has p (if cx.readOnly ty then ⟨[], [], [C]⟩ else .writable [C]) then
             out := (some C, code.module, place, "a member's parameter omits a value entering from outside") :: out
-        if !code.arrow && !cx.has code.receiver ⟨[], [C]⟩ then
+        if !code.arrow && !cx.has code.receiver (.writable [C]) then
           out := (some C, code.module, code.pos, "a member's receiver omits a value entering from outside") :: out
   return out
 
 /-! ## The crossings the events make -/
-
-/-- **A shape read-only throughout** (the draft, "Read-only types and
-crossings"; `shapeReadOnly` in `tools/components.mts` states the same): a
-primitive, `unknown` or a sealed handle; a read-only array or tuple of such
-shapes; a record whose every member is a `readonly` field of such a shape; a
-union or an intersection of such shapes; a named type whose definition is
-one, a recursive reference read as writable. `fuel` bounds the nesting and
-the named types expanded, exhausted read as writable. -/
-def readOnlyShape (types : List TypeRow) : Nat → List Nat → ComponentWire.Shape → Bool
-  | 0, _, _ => false
-  | n + 1, vis, s => match s with
-    | .primitive | .unknown | .sealed => true
-    | .function | .other | .array _ => false
-    | .readonlyArray e => readOnlyShape types n vis e
-    | .tuple ro es => ro && es.attach.all fun ⟨e, _⟩ => readOnlyShape types n vis e
-    | .record ms => ms.attach.all fun ⟨(r, f, t), _⟩ => r && f && readOnlyShape types n vis t
-    | .union ps | .inter ps => ps.attach.all fun ⟨e, _⟩ => readOnlyShape types n vis e
-    | .named i => !vis.contains i && match types[i]? with
-      | some r => readOnlyShape types n (i :: vis) r.definition
-      | none => false
-
-/-- Whether a position of the declared shape `t` is read-only throughout; a
-position with no declared type is writable. -/
-def Ctx.readOnly (cx : Ctx) : Option ComponentWire.Shape → Bool
-  | some t => readOnlyShape cx.F.types (ComponentWire.shapeLimit * (cx.F.types.length + 1)) [] t
-  | none => false
 
 /-- A crossing the events make: its component, direction, position and
 place, its value's tokens, and whether its position is read-only, derived
@@ -352,11 +391,11 @@ def crossings (cx : Ctx) : List Made := Id.run do
           out := ⟨C, .into, .parameter code.pos i, code.module, place, cx.value p, cx.readOnly ty⟩ :: out
         out := ⟨C, .out, .result code.pos, code.module, code.pos, cx.value code.result, cx.readOnly code.resultType⟩ :: out
   for c in F.calls do
-    for C in (cx.value c.callee).incoming.eraseDups do
+    for C in cx.outsideOf c do
       for (a, i) in c.args.zipIdx do
         out := ⟨C, .out, .argument c.place i, c.module, a.place, if a.spread then cx.read a.value else cx.value a.value,
           cx.readOnly a.type⟩ :: out
-      out := ⟨C, .into, .callResult c.place, c.module, c.place, ⟨[], [C]⟩, false⟩ :: out
+      out := ⟨C, .into, .callResult c.place, c.module, c.place, .writable [C], false⟩ :: out
   for t in F.throws do
     for C in cx.chain t.component do
       out := ⟨C, .out, .thrown, t.module, t.place, cx.value t.value, false⟩ :: out
@@ -364,8 +403,12 @@ def crossings (cx : Ctx) : List Made := Id.run do
     for C in cx.chain k.component do
       out := ⟨C, .into, .caught, k.module, k.place, cx.value k.value, false⟩ :: out
   for s in F.stores do
-    for C in (cx.value s.receiver).incoming.eraseDups do
-      out := ⟨C, .out, .field s.key, s.module, s.place, (s.stored.map cx.value).getD .empty, false⟩ :: out
+    let r := cx.value s.receiver
+    for C in r.components do
+      -- A field of a value reached read-only from a crossing in at a
+      -- read-only type is a read-only position.
+      out := ⟨C, .out, .field s.key, s.module, s.place, (s.stored.map cx.value).getD .empty,
+        r.ro.contains C && !r.incoming.contains C⟩ :: out
   for e in F.exports do
     for C in e.components do
       out := ⟨C, .out, .binding e.name, e.module, e.place, cx.value e.value, cx.readOnly e.type⟩ :: out
@@ -458,13 +501,55 @@ def installBad (cx : Ctx) (C : Nat) (stored : Tokens) : List Nat :=
     | some .local | some .exposed => false
     | _ => true
 
+/-- **The values entering from outside an install into `C`'s protected
+storage may reach** (O): values that crossed into `C` at a read-only type,
+which are protected (the paper's "storage already protected"), and values
+entering a component strictly nested in `C` from outside it, which are
+`C`'s own code's values, each stated by its own tokens, or values entering
+`C` too, through a member of both, each stated by `C`'s. -/
+def installIncoming (cx : Ctx) (C : Nat) (stored : Tokens) : Bool :=
+  let reach := cx.closure stored
+  let inner (D : Nat) : Bool := D != C && (cx.chain D).contains C
+  reach.incoming.all inner && reach.ro.all fun D => D == C || inner D
+
+/-- **A shape no value of which holds storage**: a primitive, a union of
+such shapes, or a named type whose definition is one. -/
+def primitiveShape (types : List TypeRow) : Nat → ComponentWire.Shape → Bool
+  | 0, _ => false
+  | n + 1, s => match s with
+    | .primitive => true
+    | .union ps => ps.attach.all fun ⟨e, _⟩ => primitiveShape types n e
+    | .named i => match types[i]? with
+      | some r => primitiveShape types n r.definition
+      | none => false
+    | _ => false
+
+/-- **Whether released storage may come back into `C`** (the draft,
+"Protection"): released and outside storage is protected only from a
+crossing into `C`, and a value crossing in at a position whose declared
+type is not primitive may hold any storage, each own field its type does not
+mention a position of type `unknown`, read-only (Paper I, "Crossing"). The
+crossings in are a member's parameters and receiver, a call's result of
+code outside `C` and a caught value; a parameter of a primitive declared
+type holds no storage, callers passing values of the declared types. -/
+def mayComeBack (cx : Ctx) (C : Nat) : Bool :=
+  let fuel := ComponentWire.shapeLimit * (cx.F.types.length + 1)
+  (cx.members C).any (fun m => match cx.F.codes[m]? with
+    | some code => !code.arrow || code.params.any fun (_, _, ty) => match ty with
+      | some t => !primitiveShape cx.F.types fuel t
+      | none => true
+    | none => false) ||
+  cx.F.calls.any (fun c => (cx.outsideOf c).contains C) ||
+  cx.F.catches.any (fun k => (cx.chain k.component).contains C)
+
 /-- **A store into storage of `C` that may be protected**: a local or an
-exposed site's, a released site's but a field's initial value in the record
-it allocates, or a value entering `C` from outside. -/
+exposed site's, a released site's where released storage may come back into
+`C` (`mayComeBack`) but a field's initial value in the record it allocates,
+or a value entering `C` from outside. -/
 def protectedInto (cx : Ctx) (C : Nat) (r : Tokens) (initial : Bool) : Bool :=
-  r.incoming.contains C && !initial || r.sites.any fun t => match cx.mark t C with
+  r.components.contains C && !initial || r.sites.any fun t => match cx.mark t C with
     | some .local | some .exposed => true
-    | some .released => !initial
+    | some .released => !initial && mayComeBack cx C
     | _ => false
 
 /-- The stores of the family's code with their values' tokens: each store,
@@ -485,15 +570,15 @@ def ownershipDiags (cx : Ctx) : List Diag := Id.run do
     let r := cx.value receiver
     for C in cx.chain k do
       if protectedInto cx C r initial then
-        let reach := cx.closure stored
         for t in installBad cx C stored do
           match cx.mark t C with
           | some m => out := ⟨C, "O", module, place,
               s!"a store into storage that may be protected installs the {markName m} site {cx.siteName t}"⟩ :: out
           | none => out := ⟨C, "O", module, place,
               s!"a store into storage that may be protected installs storage of code outside the component, {cx.siteName t}"⟩ :: out
-        if !reach.incoming.isEmpty then
-          out := ⟨C, "O", module, place, "a store into storage that may be protected installs a value entering from outside"⟩ :: out
+        if !(installIncoming cx C stored) then
+          out := ⟨C, "O", module, place,
+            "a store into storage that may be protected installs a value entering from outside other than read-only into the component"⟩ :: out
   return out
 
 /-! ## (S), no suspension -/

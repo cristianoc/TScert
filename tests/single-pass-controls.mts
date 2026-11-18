@@ -596,7 +596,14 @@ control("read-only frame checks: each module's certificate, held and refused", a
   certificateRefused(pass(fragmentOf(run("invalid-readonly-leaked"))), "an array given out writable",
     /^\(O\) .* installs the released site/);
   certificateRefused(pass(fragmentOf(run("invalid-readonly-install"))), "a caller's array installed", /^\(O\) .* installs a value entering from outside/);
-  say("read-only frame checks: the walker's module certified; a suspension, a released install and a caller's install refused, each at its code");
+  // The refinements of (O): a copy of numbers, a store into released rows
+  // that cannot come back; and what each must still refuse.
+  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-install-copy")))), [], "a copy by slice()");
+  assert.deepEqual(moduleRefusals(pass(fragmentOf(run("readonly-frame-released-store")))), [], "released rows of a module of number entries");
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-slice-lookalike"))), "a lookalike slice", /^\(O\) .* installs a value entering from outside/);
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-comes-back"))), "rows that may come back", /^\(O\) .* installs the released site/);
+  certificateRefused(pass(fragmentOf(run("invalid-readonly-void-callback"))), "a void visitor's result", /^\(O\) .* installs a value entering from outside/);
+  say("read-only frame checks: the walker's, a slice copy's and a number-entry module's certified; a suspension, released and caller's installs, a lookalike slice, rows that come back and a void visitor's result refused, each at its code");
 });
 
 control("forged fragment: a suspension erased", async (): Promise<void> => {
@@ -664,7 +671,15 @@ control("forged fragment: a released and a caller-owned install", async (): Prom
   const q = pass(forged(install.artifacts, "forged-caller-install", install.ast));
   assert.ok(!moduleRefusals(q).some((r) => r.startsWith("(O)")), JSON.stringify(moduleRefusals(q)));
   certificateRefused(q, "the caller's install", /^\(flow\) .* a member's parameter omits a value entering from outside/);
-  say("forged install: a released array marked exposed and a caller's array entering from nowhere, each refused where the forgery shows");
+  // The caller's writable array claimed read-only, which (O) admits as
+  // already protected: its parameter's declared type is writable.
+  const claimed = familyCase("invalid-readonly-install");
+  claimed.ast.components.values = claimed.ast.components.values.map((v) =>
+    ({ ...v, incoming: [], incomingReadOnly: [...new Set([...v.incomingReadOnly, ...v.incoming])].sort((a, b) => a - b) }));
+  const r = pass(forged(claimed.artifacts, "forged-read-only-caller", claimed.ast));
+  assert.ok(!moduleRefusals(r).some((x) => x.startsWith("(O)")), JSON.stringify(moduleRefusals(r)));
+  certificateRefused(r, "the caller's array claimed read-only", /^\(flow\) .* a member's parameter omits a value entering from outside/);
+  say("forged install: a released array marked exposed, a caller's array entering from nowhere and one claimed read-only, each refused where the forgery shows");
 });
 
 control("forged fragment: a false bound in a Boolean postcondition", async (): Promise<void> => {

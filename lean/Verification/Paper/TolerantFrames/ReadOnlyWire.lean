@@ -24,9 +24,9 @@ stored value's. With that interpretation:
 - a value a closure of outside code binds reaches no local storage where it
   is a value of a crossing whose check passes (`localBindings_of_check`),
   the field `localBindings`;
-- an install whose check passes (`installBad` empty, no value entering from
-  outside) is admitted (`admitted_of_check`), the premise of (O)
-  `ownership`.
+- an install whose check passes (`installBad` empty, values entering from
+  outside only read-only) is admitted (`admitted_of_check`), the premise of
+  (O) `ownership`.
 
 The interpretation of an actual step by the description is a hypothesis:
 the correspondence of the paper model's steps with the front's events is
@@ -158,22 +158,25 @@ theorem localBindings_of_check (w : WireSites P cx C) {mid : Ghost P} {h h' : He
   exact (crossBad_mark hb ht).1 (hwl.trans (by rw [hml']))
 
 /-- **(O) at an install**: an install whose check passes (`installBad`
-empty) is admitted (`Admitted`), where every location the support reads
-through the stored value is of a site of the description's storage
-reachable from it (`flow`; a stored value with no value entering from
-outside reaches no storage of outside code). -/
+empty, `installIncoming`: no value entering from outside but read-only into
+the component) is admitted (`Admitted`), where every location the support
+reads through the stored value is of a site of the description's storage
+reachable from it, or, reached through a value entering read-only, is
+released or outside storage the history protects (`flow`: the meaning of a
+value reached read-only from a crossing in at a read-only type). -/
 theorem admitted_of_check (w : WireSites P cx C) {st : St P} {L : Nat → Prop} {stored : ComponentChecks.Tokens}
     (hk : ComponentChecks.installBad cx C stored = [])
-    (flow : ∀ l, L l → ∃ s, st.g.site l = some s ∧ w.ι s ∈ (cx.closure stored).sites) :
+    (flow : ∀ l, L l → (∃ s, st.g.site l = some s ∧ w.ι s ∈ (cx.closure stored).sites) ∨ (st.g.Lent l ∧ st.g.Prot l)) :
     Admitted st L := by
   intro l hl
-  obtain ⟨s, hs, ht⟩ := flow l hl
-  have hn := List.filter_eq_nil_iff.mp hk (w.ι s) ht
-  obtain ⟨m, hm, hP⟩ := w.wire_of s
-  have ho : st.g.origin l = some (P.mark s) := by simp [Ghost.origin, hs]
-  cases m with
-  | «local» => exact .inr (.inl (by rw [ho, hP]; rfl))
-  | exposed => exact .inl (by rw [ho, hP]; rfl)
-  | internal | released => exact absurd (by simp [hm]) hn
+  rcases flow l hl with ⟨s, hs, ht⟩ | hp
+  · have hn := List.filter_eq_nil_iff.mp hk (w.ι s) ht
+    obtain ⟨m, hm, hP⟩ := w.wire_of s
+    have ho : st.g.origin l = some (P.mark s) := by simp [Ghost.origin, hs]
+    cases m with
+    | «local» => exact .inr (.inl (by rw [ho, hP]; rfl))
+    | exposed => exact .inl (by rw [ho, hP]; rfl)
+    | internal | released => exact absurd (by simp [hm]) hn
+  · exact .inr (.inr (.inr hp))
 
 end Verification.TolerantFrames.ReadOnly
