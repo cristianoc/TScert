@@ -240,9 +240,15 @@ generator, so the outside call returns inside the call of $\cC$;
 crosses, or is stored anywhere but in local storage, reaches no local
 site, a crossing value reaches no internal site, and it reaches an
 exposed site only at or below a read-only position;
-(O)~a store of $v$, an initial field value included, into $R_\cC$ or
-into the support of an invariant of $G_\cC$ is admitted when all
-storage reachable from $v$ is exposed or in $R_\cC$. By (O), a client is
+(O)~a store of $v$, an initial field value included, into exposed,
+released or outside storage of $R_\cC$, or into storage that the possible
+support of an invariant of $G_\cC$ may read, is admitted when all storage
+reachable from $v$ is exposed or in $R_\cC$; a store into local storage
+outside every invariant's possible support is not constrained, since by (K)
+no outside code reaches local storage, a fact that reads through a local
+field to unprotected storage is bounded by $\Phi$ there, and only an
+invariant's support needs the check, a re-entrant member being able to
+redirect a path of it. By (O), a client is
 bound only on storage it passed in or received read-only; it is bound
 there even through its own writable alias. The checks are of all of
 $\cC$'s code: one store that (O) refuses removes the rule for every
