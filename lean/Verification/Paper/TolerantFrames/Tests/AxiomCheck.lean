@@ -21,6 +21,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyCert
 import Verification.Paper.TolerantFrames.ReadOnlyChecks
 import Verification.Paper.TolerantFrames.ReadOnlyClaim
 import Verification.Paper.TolerantFrames.ReadOnlyComponents
+import Verification.Paper.TolerantFrames.ReadOnlyCrossings
 import Verification.Paper.TolerantFrames.ReadOnlyExec
 import Verification.Paper.TolerantFrames.ReadOnlyFlow
 import Verification.Paper.TolerantFrames.ReadOnlyFrame

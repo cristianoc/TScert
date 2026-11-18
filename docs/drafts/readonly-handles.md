@@ -2163,7 +2163,7 @@ at the entry by this history; reliance on such an argument across a call
 reads its crossing at the entry, which this history does not record.
 
 What remains for the claim is `ChkSound`, from the checks of $`C`$'s code
-over the lowered graphs.
+over the lowered graphs ([the actual crossings of a step](#the-actual-crossings-of-a-step)).
 
 **The counter-model the premises exclude.** An entry may hold a callback
 whose code is tagged with $`C`$ (`.graph … (some C)`), which meets its
@@ -2175,6 +2175,38 @@ alias keeps the obligation at every step and breaks the walker's assertion
 entry meets no code provenance (`Entry.foreign`), and no step of an
 execution from an entry creates it. A closure whose code is one of
 $`C`$'s runs that code, which the checks of $`C`$ cover.
+
+### The actual crossings of a step
+
+A step of $`C`$'s code gives values to code outside $`C`$ in two ways: a
+value becomes a root of outside code (an argument of a call of outside
+code, a result returned to it, a value thrown to it), or the step leaves a
+value in a location outside code reaches. The crossings out of a step are
+exactly these values, read at its configurations, each at one type $`T`$
+(`ReadOnlyCrossings.lean`, `actualXs`): the roots of outside code after the
+step that are not roots before it (`newRoots`), and the value of each
+location the step changes that is reachable from the roots after it
+(`leftVals`).
+
+- Two fields of `PkgProps` hold of every step at these crossings, by
+  construction: every new root crosses (`gives_actual`), and so does every
+  value left where outside code reaches (`stores_actual`).
+- The three others are the checks proper (`EscapeAt`): every actual
+  crossing meets the marks (`CrossOk`), and the step's stores keep local
+  storage closed (`localStores`, `localBindings`). With them `PkgProps`
+  holds (`pkgProps_actual`).
+- A frame whose checks cross at the actual crossings (`ActualCrossings`)
+  meets `ChkSound` where the checks establish `EscapeAt` at every step of
+  $`C`$'s code from a reached state (`EscapeSound`,
+  `chkSound_of_escape`).
+
+These crossings are out of $`C`$, at one type: a location of an exposed
+site is reached by one only where that type reads it read-only, and no
+crossing into $`C`$ is recorded, so no released or outside location
+becomes protected. The bound on local storage needs neither: a fact about
+a location of a local site, such as the walker's cursor, survives a call
+of outside code by the marks alone. Reliance on storage a crossing protects
+reads the crossing at its boundary type.
 
 ### Located reductions
 
