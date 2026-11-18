@@ -1187,7 +1187,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))
+      exact ⟨fits_gotoC hc hcode (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))
         (hkf _ _ _ hfn hvfn) hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
@@ -1199,7 +1199,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))) (hkf _ _ hfn) hS ho, hH.same⟩
+      exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))) (hkf _ _ hfn) hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
   | frameYes  =>
@@ -1210,7 +1210,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS ho, hH.same⟩
+      exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
   | frameNo  =>
@@ -1221,7 +1221,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS ho, hH.same⟩
+      exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
   | frameYesBind  =>
@@ -1232,7 +1232,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS ho, hH.same⟩
+      exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho, hH.same⟩
   | frameNoBind  =>
@@ -1243,7 +1243,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hk _ VJ.mono _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS ho, hH.same⟩
+      exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho, hH.same⟩
   | frameTag hv =>
@@ -1257,10 +1257,10 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       refine ⟨?_, hH.same⟩
       split
       · exact fits_gotoC hc hcode
-          (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).1
+          (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).1
           (hkf _ _ _ hfn hvfn).1 hS ho
       · exact fits_gotoC hc hcode
-          (hk _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).2
+          (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).2
           (hkf _ _ _ hfn hvfn).2 hS ho
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
@@ -1272,7 +1272,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameC π l hc hcode hn henv hfn hvfn ht hS =>
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
-      exact ⟨fits_gotoC hc hcode (hx _ VJ.mono _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))
+      exact ⟨fits_gotoC hc hcode (hx _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))
         (hxf _ _ _ hfn) hS ho, hH.same⟩
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
