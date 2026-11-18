@@ -246,9 +246,9 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
       | none => pure ()
       | some code =>
         for (a, i) in c.args.zipIdx do
-          let ok := if a.spread then code.params.all fun (p, _) => cx.has p (cx.read a.value)
+          let ok := if a.spread then code.params.all fun (p, _, _) => cx.has p (cx.read a.value)
             else match code.params[i]? with
-              | some (p, _) => cx.has p (cx.value a.value)
+              | some (p, _, _) => cx.has p (cx.value a.value)
               | none => true
           if !ok then out := (some c.component, c.module, a.place, "a parameter omits the argument a call passes it") :: out
         for r in c.receiver do
@@ -274,7 +274,7 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
         (cx.value a.value).sites.filterMap fun t => cx.codeAtSite.get? t >>= (F.codes[·]?)
       let allOk := cx.has n.passed passed && cx.has n.given given && cx.has n.all ⟨[n.site], []⟩ && cx.has n.all (cx.value n.given) &&
         cx.has n.all (cx.read n.given) && callbacks.all (fun k => cx.has n.all (cx.value k.result) &&
-          k.params.all fun (p, _) => cx.has p (cx.value n.all)) && cx.has c.result (cx.value n.all) &&
+          k.params.all fun (p, _, _) => cx.has p (cx.value n.all)) && cx.has c.result (cx.value n.all) &&
         (c.receiver.all fun r => (cx.value r).sites.all fun t => match F.sites[t]? with
           | some s => cx.has s.contents (cx.value n.passed) && keyHeld s none true
           | none => false)
@@ -292,7 +292,7 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
       match F.codes[m]? with
       | none => pure ()
       | some code =>
-        for (p, place) in code.params do
+        for (p, place, _) in code.params do
           if !cx.has p ⟨[], [C]⟩ then
             out := (some C, code.module, place, "a member's parameter omits a value entering from outside") :: out
         if !code.arrow && !cx.has code.receiver ⟨[], [C]⟩ then
@@ -301,11 +301,38 @@ def flowDiags (cx : Ctx) : List (Option Nat × String × Span × String) := Id.r
 
 /-! ## The crossings the events make -/
 
+/-- **A shape read-only throughout** (the draft, "Read-only types and
+crossings"; `shapeReadOnly` in `tools/components.mts` states the same): a
+primitive, `unknown` or a sealed handle; a read-only array or tuple of such
+shapes; a record whose every member is a `readonly` field of such a shape; a
+union or an intersection of such shapes; a named type whose definition is
+one, a recursive reference read as writable. `fuel` bounds the nesting and
+the named types expanded, exhausted read as writable. -/
+def readOnlyShape (types : List TypeRow) : Nat → List Nat → ComponentWire.Shape → Bool
+  | 0, _, _ => false
+  | n + 1, vis, s => match s with
+    | .primitive | .unknown | .sealed => true
+    | .function | .other | .array _ => false
+    | .readonlyArray e => readOnlyShape types n vis e
+    | .tuple ro es => ro && es.attach.all fun ⟨e, _⟩ => readOnlyShape types n vis e
+    | .record ms => ms.attach.all fun ⟨(r, f, t), _⟩ => r && f && readOnlyShape types n vis t
+    | .union ps | .inter ps => ps.attach.all fun ⟨e, _⟩ => readOnlyShape types n vis e
+    | .named i => !vis.contains i && match types[i]? with
+      | some r => readOnlyShape types n (i :: vis) r.definition
+      | none => false
+
+/-- Whether a position of the declared shape `t` is read-only throughout; a
+position with no declared type is writable. -/
+def Ctx.readOnly (cx : Ctx) : Option ComponentWire.Shape → Bool
+  | some t => readOnlyShape cx.F.types (ComponentWire.shapeLimit * (cx.F.types.length + 1)) [] t
+  | none => false
+
 /-- A crossing the events make: its component, direction, position and
-place, its value's tokens, and whether its position's type is the
-crossing's to state (a parameter's, a result's, an argument's, an exported
-binding's) or writable (a thrown value, a field of outside storage, a
-binding outside code holds). -/
+place, its value's tokens, and whether its position is read-only, derived
+from its declared type (a parameter's, a result's, an argument's of a
+callee of declared parameter types, an exported binding's), a thrown value,
+a caught one, a field of outside storage and a binding outside code holds
+being writable. -/
 structure Made where
   component : Nat
   direction : Direction
@@ -313,7 +340,7 @@ structure Made where
   module : String
   place : Span
   tokens : Tokens
-  typed : Bool
+  ro : Bool
 
 def crossings (cx : Ctx) : List Made := Id.run do
   let F := cx.F
@@ -321,14 +348,15 @@ def crossings (cx : Ctx) : List Made := Id.run do
   for C in List.range F.components.length do
     for m in cx.members C do
       for code in F.codes[m]?.toList do
-        for ((p, place), i) in code.params.zipIdx do
-          out := ⟨C, .into, .parameter code.pos i, code.module, place, cx.value p, true⟩ :: out
-        out := ⟨C, .out, .result code.pos, code.module, code.pos, cx.value code.result, true⟩ :: out
+        for ((p, place, ty), i) in code.params.zipIdx do
+          out := ⟨C, .into, .parameter code.pos i, code.module, place, cx.value p, cx.readOnly ty⟩ :: out
+        out := ⟨C, .out, .result code.pos, code.module, code.pos, cx.value code.result, cx.readOnly code.resultType⟩ :: out
   for c in F.calls do
     for C in (cx.value c.callee).incoming.eraseDups do
       for (a, i) in c.args.zipIdx do
-        out := ⟨C, .out, .argument c.place i, c.module, a.place, if a.spread then cx.read a.value else cx.value a.value, true⟩ :: out
-      out := ⟨C, .into, .callResult c.place, c.module, c.place, ⟨[], [C]⟩, true⟩ :: out
+        out := ⟨C, .out, .argument c.place i, c.module, a.place, if a.spread then cx.read a.value else cx.value a.value,
+          cx.readOnly a.type⟩ :: out
+      out := ⟨C, .into, .callResult c.place, c.module, c.place, ⟨[], [C]⟩, false⟩ :: out
   for t in F.throws do
     for C in cx.chain t.component do
       out := ⟨C, .out, .thrown, t.module, t.place, cx.value t.value, false⟩ :: out
@@ -340,7 +368,7 @@ def crossings (cx : Ctx) : List Made := Id.run do
       out := ⟨C, .out, .field s.key, s.module, s.place, (s.stored.map cx.value).getD .empty, false⟩ :: out
   for e in F.exports do
     for C in e.components do
-      out := ⟨C, .out, .binding e.name, e.module, e.place, cx.value e.value, true⟩ :: out
+      out := ⟨C, .out, .binding e.name, e.module, e.place, cx.value e.value, cx.readOnly e.type⟩ :: out
   for h in F.holds do
     for t in (cx.value h.value).sites do
       for C in (F.sites[t]?).toList.flatMap (·.marks.map (·.1)) do
@@ -399,8 +427,11 @@ def marksDiags (cx : Ctx) : List Diag := Id.run do
     | none =>
       out := ⟨x.component, "K", x.module, x.place, "a crossing of the component's code is not stated"⟩ :: out
     | some y =>
+      if y.readOnly != x.ro then
+        out := ⟨x.component, "K", x.module, x.place,
+          s!"the crossing states its position {if y.readOnly then "read-only" else "writable"}, its declared type is {if x.ro then "read-only" else "writable"}"⟩ :: out
       if x.direction == .out then
-        for t in crossBad cx x.component x.tokens (x.typed && y.readOnly) do
+        for t in crossBad cx x.component x.tokens x.ro do
           match cx.mark t x.component with
           | some .exposed =>
             out := ⟨x.component, "K", x.module, x.place,

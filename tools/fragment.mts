@@ -516,11 +516,33 @@ export interface CodeAst {
   pos: Span;
   component: number;
   site: number | null;
-  params: { value: number; at: Span }[];
+  params: { value: number; at: Span; type: TypeShapeAst | null }[];
   receiver: number;
   result: number;
+  resultType: TypeShapeAst | null;
   arrow: boolean;
 }
+
+/** **A declared type's shape**, what decides whether a position of that
+ * type is read-only throughout: a primitive or a literal type, `unknown`, a
+ * function type, a sealed handle (a type `@representation` states), a
+ * read-only or writable array of a shape, a tuple, a record's members (a
+ * field, a property or an index signature, with its `readonly` modifier),
+ * a union or an intersection, a named type of the family by its index in
+ * `types`, or any other type. */
+export type TypeShapeAst =
+  | "primitive"
+  | "unknown"
+  | "function"
+  | "sealed"
+  | "other"
+  | { readonlyArray: TypeShapeAst }
+  | { array: TypeShapeAst }
+  | { tuple: { readonly: boolean; elements: TypeShapeAst[] } }
+  | { record: { readonly: boolean; field: boolean; type: TypeShapeAst }[] }
+  | { union: TypeShapeAst[] }
+  | { intersection: TypeShapeAst[] }
+  | { named: number };
 
 /** A store of the family's code: the value written into the fields at
  * `key` (`null` a computed key; `element` an array's element or a native's
@@ -550,7 +572,7 @@ export interface CallAst {
   component: number;
   callee: number;
   receiver: number | null;
-  args: { value: number; spread: boolean; at: Span }[];
+  args: { value: number; spread: boolean; at: Span; type: TypeShapeAst | null }[];
   result: number;
   targets: number[];
   instance: number | null;
@@ -577,7 +599,9 @@ export interface SuspensionAst {
 
 /** One crossing of a value between a component and code that is not its:
  * its direction, the position whose type it has, whether that type is
- * read-only throughout, and its value, by index in `values`. */
+ * read-only throughout (derived by the verifier from the shape of its
+ * position's declared type, where it has one), and its value, by index in
+ * `values`. */
 export interface CrossingAst {
   module: string;
   at: Span;
@@ -607,6 +631,11 @@ export interface CrossingAst {
  *   exports): the events of the family's code, the flow's constraints and
  *   the places crossings occur; `thrown` the value of every thrown value.
  * - `suspensions`: each `await`, `yield`, async function and generator.
+ * - `types`: the family's named types a position's shape names, each with
+ *   its definition's shape; a code's parameters and result, an exported
+ *   binding and an argument of a callee of declared parameter types carry
+ *   their positions' shapes, from which the verifier derives whether a
+ *   crossing there is read-only.
  * - `escapes`: each code of a component given to code that is not its
  *   (`via` a result, an argument, a throw or a store) at the crossing `at`.
  * - `clients`: the client obligation each exported type states (`@clients`,
@@ -624,9 +653,10 @@ export interface ComponentsAst {
   throws: PlaceAst[];
   catches: PlaceAst[];
   holds: (PlaceAst & { name: string })[];
-  exports: { module: string; at: Span; name: string; components: number[]; value: number }[];
+  exports: { module: string; at: Span; name: string; components: number[]; value: number; type: TypeShapeAst | null }[];
   thrown: number | null;
   suspensions: SuspensionAst[];
+  types: { module: string; name: string; pos: Span; definition: TypeShapeAst }[];
   escapes: { module: string; code: Span; component: number; via: "result" | "argument" | "throw" | "store"; at: Span }[];
   clients: { module: string; name: string; pos: Span; stated: boolean; frame: Frame }[];
   guarantees: { module: string; name: string; pos: Span; facts: IndexFact[] }[];
