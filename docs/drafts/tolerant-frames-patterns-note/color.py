@@ -126,8 +126,8 @@ rep(r'\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyp
     r'\usepackage[colorlinks,linkcolor=accent,citecolor=accent,urlcolor=accent]{hyperref}')
 rep(r'''\newtheorem{remark}[theorem]{Remark}''', r'''\newtheorem{remark}[theorem]{Remark}
 \tfbox{theorem}{thmbg}\tfbox{proposition}{thmbg}\tfbox{definition}{defbg}\tfbox{example}{exbg}\tfbox{remark}{exbg}''')
-rep(r'\title{Tolerant frames II\\[2pt]\large What the bound proofs of a text-layout library need}',
-    r'\title{\sffamily\bfseries\color{accent}Tolerant frames II\\[2pt]\large\normalfont\color{black} What the bound proofs of a text-layout library need}')
+rep(r"\title{Tolerant frames in practice: pretext's patterns\\[2pt]\large What the bound proofs of a text-layout library need}",
+    r"\title{\sffamily\bfseries\color{accent}Tolerant frames in practice: pretext's patterns\\[2pt]\large\normalfont\color{black} What the bound proofs of a text-layout library need}")
 
 open('note-color.tex', 'w').write(t)
 print('ok')

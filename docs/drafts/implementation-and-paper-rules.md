@@ -188,7 +188,7 @@ only. Example 1 and its derivation
 ## Where C is met
 
 A new pretext case meets C. Supporting a pattern of
-[Tolerant frames II](tolerant-frames-2-note/note.tex) starts with its
+[Tolerant frames in practice](tolerant-frames-patterns-note/note.tex) starts with its
 derivation in the paper; whether A accepts the program is then a question
 of C, from B to A. Where A does not accept it, the way forward is decided
 with the owner: bring the aspects of A and B involved closer together, or

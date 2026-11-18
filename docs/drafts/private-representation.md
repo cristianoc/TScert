@@ -6,7 +6,7 @@ outside the class body cannot spell, read, write or enumerate. A fact a
 function of the class holds about that state survives a call of code of
 unknown effect, a user's callback included, bounded by what the class's own
 callable code may change. It answers pattern P22 of
-[Tolerant frames II](tolerant-frames-2-note/note.tex) at its handle sites
+[Tolerant frames in practice](tolerant-frames-patterns-note/note.tex) at its handle sites
 (form (b) of the [dossier](callback-frames-dossier.md)) and at its cursor
 sites (form (a)), and states what it gives P15, P16, P18 and P20.
 

@@ -13,7 +13,7 @@ items=re.findall(r'<h1 data-number="(\d+)"\s+id="([^"]+)"[^>]*>(.*?)</h1>',rest,
 toc='<ul>'+''.join('<li><a href="#%s">%s</a></li>'%(i,re.sub(r'\s+',' ',t)) for n,i,t in items)+'</ul>'
 rest=re.sub(r'(<table.*?</table>)',r'<div class="tablewrap">\1</div>',rest,flags=re.S)
 rest=re.sub(r'(<h4[^>]*>)\s*<span\s+class="header-section-number">[\d.]+</span>\s*',r'\1',rest)
-body=('<main>\n<header>\n<h1>Tolerant frames II</h1>\n<p class="sub">What the bound proofs of a text-layout library need</p>\n'
+body=('<main>\n<header>\n<h1>Tolerant frames in practice: pretext's patterns</h1>\n<p class="sub">What the bound proofs of a text-layout library need</p>\n'
  '<p class="meta">TScert working note · 13 November 2026, revised 17 November</p>\n</header>\n<section class="abstract">'+abh+'</section>\n'
  '<details class="toc"><summary>Contents</summary>'+toc+'</details>\n'+rest+'\n</main>\n')
 ABBR=('e.g','i.e','cf','conj','resp','vs','etc','Fig','Sec','Prop','Thm','Def','Ex')
@@ -59,7 +59,7 @@ body=re.sub(r'(<em>)?(<code>)(.*?)</code>',hlcode,body,flags=re.S)
 body=re.sub(r'<span class="sans-serif">(\s*\[conj)',r'<span class="sans-serif conj">\1',body)
 body=re.sub(r'<span class="sans-serif">(\s*\[observed)',r'<span class="sans-serif obs">\1',body)
 assert 'FIGUREHEAPMARKER' not in body
-open('tolerant-frames-2.html','w').write(head+body)
+open('tolerant-frames-patterns.html','w').write(head+body)
 from html.parser import HTMLParser
 class P(HTMLParser):
     st=[];bad=0
