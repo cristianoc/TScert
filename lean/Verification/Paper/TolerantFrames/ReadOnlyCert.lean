@@ -76,27 +76,28 @@ theorem RBoundBelow.all {Ψ : Protocol P} {d : Nat} {st st' : St P} (h : RBoundB
 
 /-! ## A member's own steps -/
 
-/-- **A member's call whose own steps meet `q`**: a `MemberRun` each of
-whose checked steps (not those of its runs one call deeper) meets `q`. -/
-inductive MemberRun.Own (tv : TypeView) (Inner : St P → St P → Prop) (d : Nat) (q : St P → St P → Prop) :
-    St P → St P → Prop
-  | nil (st : St P) : MemberRun.Own tv Inner d q st st
-  | step {st st' st'' : St P} : PkgStep tv d st st' → q st st' → MemberRun.Own tv Inner d q st' st'' →
-      MemberRun.Own tv Inner d q st st''
-  | inner {st st' st'' : St P} : d + 1 ≤ st.g.A.length → Inner st st' → MemberRun.Own tv Inner d q st' st'' →
-      MemberRun.Own tv Inner d q st st''
+/-- **A member's call whose own steps meet `q`**: a `MemberRunOf R` each of
+whose steps in `R` (not those of its runs one call deeper) meets `q`. -/
+inductive MemberRun.Own {tv : TypeView} (R : StepRel P tv) (Inner : St P → St P → Prop) (d : Nat)
+    (q : St P → St P → Prop) : St P → St P → Prop
+  | nil (st : St P) : MemberRun.Own R Inner d q st st
+  | step {st st' st'' : St P} : R.Rel d st st' → q st st' → MemberRun.Own R Inner d q st' st'' →
+      MemberRun.Own R Inner d q st st''
+  | inner {st st' st'' : St P} : d + 1 ≤ st.g.A.length → Inner st st' → MemberRun.Own R Inner d q st' st'' →
+      MemberRun.Own R Inner d q st st''
 
 /-- **The body's bound**: a member's call whose own steps are within `Ψ`
 below `b`, its runs one call deeper bounded on `R_P` by `Ψ`, bounds `R_P`
 below `b` by `Ψ` and keeps the invariants. -/
-theorem MemberRun.within {tv : TypeView} {Ψ : Protocol P} {Inner : St P → St P → Prop} {d b : Nat}
+theorem MemberRun.within {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {Inner : St P → St P → Prop}
+    {d b : Nat}
     (hI : ∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') {st st' : St P}
-    (hr : MemberRun.Own tv Inner d (StepWithin Ψ b) st st') (hok : Ok d st) :
+    (hr : MemberRun.Own R Inner d (StepWithin Ψ b) st st') (hok : Ok d st) :
     RBoundBelow Ψ d b st st' ∧ Ok d st' := by
   induction hr with
   | nil st => exact ⟨RBoundBelow.refl hok, hok⟩
   | step hp hq _ ih =>
-    obtain ⟨ok₁, k₁, g₁⟩ := pkg_step_ok hp hok
+    obtain ⟨ok₁, k₁, g₁⟩ := pkg_step_ok (R.pkg hp) hok
     obtain ⟨hb, ok₂⟩ := ih ok₁
     exact ⟨RBoundBelow.trans ⟨k₁, g₁, hq⟩ hb, ok₂⟩
   | inner hl hin _ ih =>
@@ -112,13 +113,14 @@ run `MemberRun`) is one whose own steps are within `Ψ` below the length of
 its entry's heap (`body`, the body's effect soundness specialized to the
 member's executions: the locations the call allocates are free), so with
 its runs one call deeper bounded by `Ψ` it bounds `R_P` at its entry by
-`Ψ` (`MemberRun.within`); each invariant of `G_P` is kept by each checked
-step (`tolerant`). -/
-def Cert.ofBody {tv : TypeView} {Ψ : Protocol P} {G : (St P → Prop) → Prop} {Call : Nat → St P → St P → Prop}
-    (body : ∀ (d : Nat) (Inner : St P → St P → Prop) (st st' : St P), MemberRun tv Inner d st st' → Call d st st' →
-      MemberRun.Own tv Inner d (StepWithin Ψ st.s.h.length) st st')
-    (tolerant : ∀ I, G I → ∀ (d : Nat) t t', PkgStep tv d t t' → Ok d t → I t → I t') :
-    Cert tv Ψ G Call where
+`Ψ` (`MemberRun.within`); each invariant of `G_P` is kept by each step in
+`R` (`tolerant`). -/
+def Cert.ofBody {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {G : (St P → Prop) → Prop}
+    {Call : Nat → St P → St P → Prop}
+    (body : ∀ (d : Nat) (Inner : St P → St P → Prop) (st st' : St P), MemberRunOf R Inner d st st' →
+      Call d st st' → MemberRun.Own R Inner d (StepWithin Ψ st.s.h.length) st st')
+    (tolerant : ∀ I, G I → ∀ (d : Nat) t t', R.Rel d t t' → Ok d t → I t → I t') :
+    Cert R Ψ G Call where
   eff := Ψ
   within p := by simp [Change.le]
   certified d Inner hI st st' hr hc hok l v hR hv :=

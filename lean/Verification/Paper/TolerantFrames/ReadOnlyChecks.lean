@@ -306,16 +306,34 @@ theorem incoming_charged {st : St P} (hm : MarksOk st) {eff : Protocol P} {δ : 
 
 /-! ## A member from its checks -/
 
-/-- **A member's call inside a call at depth `d`**: checked steps of the
-package's code (its entry, its body and its normal or exceptional exit
-among them), and runs of code that is not the package's it makes while its
-call is active, related by `Inner`. -/
-inductive MemberRun (tv : TypeView) (Inner : St P → St P → Prop) (d : Nat) : St P → St P → Prop
-  | nil (st : St P) : MemberRun tv Inner d st st
-  | step {st st' st'' : St P} : PkgStep tv d st st' → MemberRun tv Inner d st' st'' →
-      MemberRun tv Inner d st st''
-  | inner {st st' st'' : St P} : d + 1 ≤ st.g.A.length → Inner st st' → MemberRun tv Inner d st' st'' →
-      MemberRun tv Inner d st st''
+/-- **A checked component-step relation**: the steps of the package's code
+a certificate is about, each projecting to a checked step (`PkgStep`). A
+relation narrower than `PkgStep`, such as the steps of an actual execution
+of the checked code, lets a certificate state of those steps alone what a
+check of the code establishes. -/
+structure StepRel (P : Package) (tv : TypeView) where
+  Rel : Nat → St P → St P → Type
+  pkg : ∀ {d : Nat} {st st' : St P}, Rel d st st' → PkgStep tv d st st'
+
+/-- **Checked steps themselves**: the relation `PkgStep`. -/
+@[reducible] def StepRel.checked (tv : TypeView) : StepRel P tv := ⟨PkgStep tv, id⟩
+
+/-- **A member's call inside a call at depth `d`**, its steps in `R`: steps
+of the package's code (its entry, its body and its normal or exceptional
+exit among them), and runs of code that is not the package's it makes
+while its call is active, related by `Inner`. -/
+inductive MemberRunOf {tv : TypeView} (R : StepRel P tv) (Inner : St P → St P → Prop) (d : Nat) :
+    St P → St P → Prop
+  | nil (st : St P) : MemberRunOf R Inner d st st
+  | step {st st' st'' : St P} : R.Rel d st st' → MemberRunOf R Inner d st' st'' →
+      MemberRunOf R Inner d st st''
+  | inner {st st' st'' : St P} : d + 1 ≤ st.g.A.length → Inner st st' → MemberRunOf R Inner d st' st'' →
+      MemberRunOf R Inner d st st''
+
+/-- **A member's call whose steps are checked steps** (`MemberRunOf` at
+`PkgStep`). -/
+abbrev MemberRun (tv : TypeView) (Inner : St P → St P → Prop) (d : Nat) : St P → St P → Prop :=
+  MemberRunOf (StepRel.checked tv) Inner d
 
 theorem Grows.weaken {d : Nat} {g g' : Ghost P} (hg : Grows (d + 1) g g') (hd : 0 < d) : Grows d g g' :=
   ⟨hd, by have := hg.len; omega, by have := hg.len'; omega, hg.record, hg.prot, hg.exposed⟩
@@ -328,13 +346,13 @@ theorem Ok.shallower {d : Nat} {st : St P} (hok : Ok (d + 1) st) (hd : 0 < d) : 
 
 /-- **A member's call keeps the invariants, the marks, and grows the
 history**, from the step lemma and its runs' bounds one call deeper. -/
-theorem MemberRun.ok {tv : TypeView} {Ψ : Protocol P} {Inner : St P → St P → Prop} {d : Nat}
+theorem MemberRun.ok {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {Inner : St P → St P → Prop} {d : Nat}
     (hI : ∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') {st st' : St P}
-    (hr : MemberRun tv Inner d st st') (hok : Ok d st) : Ok d st' ∧ Kept st st' ∧ Grows d st.g st'.g := by
+    (hr : MemberRunOf R Inner d st st') (hok : Ok d st) : Ok d st' ∧ Kept st st' ∧ Grows d st.g st'.g := by
   induction hr with
   | nil st => exact ⟨hok, Kept.refl st, Grows.refl hok.pos hok.len⟩
   | step hp _ ih =>
-    obtain ⟨ok₁, k₁, g₁⟩ := pkg_step_ok hp hok
+    obtain ⟨ok₁, k₁, g₁⟩ := pkg_step_ok (R.pkg hp) hok
     obtain ⟨ok₂, k₂, g₂⟩ := ih ok₁
     exact ⟨ok₂, k₁.trans k₂, g₁.trans g₂⟩
   | inner hl hin _ ih =>
@@ -355,38 +373,38 @@ def TolerantStep (Inv : Nat → St P → Prop) (Complete : St P → Nat → Prop
 def AllComplete (Inv : Nat → St P → Prop) (Complete : St P → Nat → Prop) (st : St P) : Prop :=
   ∀ o, Complete st o → Inv o st
 
-theorem MemberRun.keeps {tv : TypeView} {Ψ : Protocol P} {Inner : St P → St P → Prop} {d : Nat}
-    {I : St P → Prop}
+theorem MemberRun.keeps {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {Inner : St P → St P → Prop}
+    {d : Nat} {I : St P → Prop}
     (hI : ∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t')
     (hIk : ∀ t t', Inner t t' → Ok (d + 1) t → I t → I t')
-    (hstep : ∀ t t', PkgStep tv d t t' → Ok d t → I t → I t') {st st' : St P}
-    (hr : MemberRun tv Inner d st st') (hok : Ok d st) (hi : I st) : I st' := by
+    (hstep : ∀ t t', R.Rel d t t' → Ok d t → I t → I t') {st st' : St P}
+    (hr : MemberRunOf R Inner d st st') (hok : Ok d st) (hi : I st) : I st' := by
   induction hr with
   | nil st => exact hi
-  | step hp _ ih => exact ih (pkg_step_ok hp hok).1 (hstep _ _ hp hok hi)
+  | step hp _ ih => exact ih (pkg_step_ok (R.pkg hp) hok).1 (hstep _ _ hp hok hi)
   | inner hl hin _ ih =>
     have ok₁ := (hI _ _ hin (hok.deeper hl)).2
     exact ih (ok₁.shallower hok.pos) (hIk _ _ hin (hok.deeper hl) hi)
 
-/-- **A member's certificate from its checks.** Its call is a checked run
-(`MemberRun`). Its certified effect `eff` gives each part a change, and its
+/-- **A member's certificate from its checks.** Its call is a run whose
+steps are in the checked component-step relation `R` (`MemberRunOf`). Its certified effect `eff` gives each part a change, and its
 certification states that, with its runs of code that is not the package's
 bounded on `R_P` by `Ψ_P` one call deeper, the call changes every location
 of `R_P` at its entry within `eff` at its part, after `fresh_eff` drops
 what it allocated (`certified`, what the pass's check of the member's
 body establishes). The protocol is a fixed point over the members: `eff`
 is within `Ψ_P` part by part (`within`). Each invariant of `G_P` is kept by
-each of its steps (`tolerant`, Tolerant invariant). Then the member meets
-`ReadOnlyFrame.Member`. -/
-def memberOfChecks (tv : TypeView) (Ψ : Protocol P) (G : (St P → Prop) → Prop) (eff : Protocol P)
-    (within : ∀ p, (eff p).le (Ψ p) = true)
+each of its steps in `R` (`tolerant`, Tolerant invariant). Then the member
+meets `ReadOnlyFrame.Member`. -/
+def memberOfChecks {tv : TypeView} (R : StepRel P tv) (Ψ : Protocol P) (G : (St P → Prop) → Prop)
+    (eff : Protocol P) (within : ∀ p, (eff p).le (Ψ p) = true)
     (certified : ∀ (d : Nat) (Inner : St P → St P → Prop),
       (∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') →
-      ∀ st st', MemberRun tv Inner d st st' → Ok d st → ∀ l v, st.g.InR l → st.s.h[l]? = some v →
+      ∀ st st', MemberRunOf R Inner d st st' → Ok d st → ∀ l v, st.g.InR l → st.s.h[l]? = some v →
         ∃ v', st'.s.h[l]? = some v' ∧ (eff (st.part l)).Holds st.s.h.length v v')
-    (tolerant : ∀ I, G I → ∀ (d : Nat) t t', PkgStep tv d t t' → Ok d t → I t → I t') :
+    (tolerant : ∀ I, G I → ∀ (d : Nat) t t', R.Rel d t t' → Ok d t → I t → I t') :
     Member P Ψ G where
-  Call d Inner := MemberRun tv Inner d
+  Call d Inner := MemberRunOf R Inner d
   bound d Inner hI st st' hr hok := by
     obtain ⟨ok', hk, hg⟩ := MemberRun.ok hI hr hok
     refine ⟨⟨hk, hg, fun l v hR hv => ?_⟩, ok'⟩
