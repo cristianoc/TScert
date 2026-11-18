@@ -105,10 +105,12 @@ every interpretation, so one derivation covers every instantiation.
 ### The Tolerant frames note
 
 *Tolerant frames: a modal account of fact preservation without ownership.*
-TScert working note, 11 November 2026, with its follow-on note on the bound
-proofs of a text-layout library. Source: `docs/drafts/tolerant-frames-note/`
-on the branch `tolerant-frames-draft`
-([pull request 151](https://github.com/cristianoc/TScert/pull/151)).
+TScert working note, 11 November 2026. Source:
+[`docs/drafts/tolerant-frames-note/`](drafts/tolerant-frames-note/note.tex),
+first on the branch `tolerant-frames-draft`
+([pull request 151](https://github.com/cristianoc/TScert/pull/151)). Its
+rules are applied to a text-layout library's bound proofs in
+[*Tolerant frames in practice: pretext's patterns*](drafts/tolerant-frames-patterns-note/note.tex).
 
 The project takes from it the definitions of its logic of fact preservation:
 locations by kind, changes, regions, effects and their action, the modality,
@@ -121,6 +123,23 @@ two-state postconditions. Its model rules are the theorems of
 `lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean` (the third). The rule that the Lean
 states each of its notions as the note defines it is in
 [AGENTS.md](../AGENTS.md#general-statements-no-lists-of-special-cases).
+
+### The Read-only frames note
+
+*Read-only frames: facts of a component across calls of code outside it.*
+TScert working note, 18 November 2026. Source:
+[`docs/drafts/readonly-frames-note/`](drafts/readonly-frames-note/note.tex).
+
+The project takes from it the definitions of the read-only frame: a
+component and its interface, crossings and read-only reach, the marks of
+allocation sites, the protected region, the protocol of a component's
+members and its client obligation, the rule Read-only frame with its
+checks, and the proposition that carries a fact across a call of code
+outside the component. It builds on [the Tolerant frames
+note](#the-tolerant-frames-note). Its model rules are the theorems of
+`lean/Verification/Paper/TolerantFrames/ReadOnlyFrame.lean` and the
+modules beside it, checked by
+`lean/Verification/Paper/TolerantFrames/Tests/AxiomCheck.lean`.
 
 ## Objects and self types
 
@@ -843,8 +862,9 @@ problem behind a footprint that depends on a callback's.
 The works below state invariants of a module, a class or an object
 structure that hold while other code runs, and the conditions on that
 other code. Each is in the bibliography of
-[the Tolerant frames note](drafts/tolerant-frames-note/note.tex), as related
-work for a fact of a component that survives a call of code outside it.
+[the Read-only frames note](#the-read-only-frames-note), and compared with
+it in its section "Related work", as related work for a fact of a
+component that survives a call of code outside it.
 
 ### Banerjee and Naumann 2013
 
@@ -862,7 +882,7 @@ region logic of
 [Banerjee, Naumann and Rosenberg 2013](#banerjee-naumann-and-rosenberg-2013):
 first-order assertions, object-based sequential programs, procedures
 without code pointers. Every client is verified against the boundary.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Barnett et al. 2004
 
@@ -880,7 +900,7 @@ object's invariant holds for every class frame its `inv` names, are
 program invariants of a sequential object-oriented language with
 subclasses and `rep` components. A method that relies on an invariant
 states it in its precondition, which its callers establish.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Dietl and Müller 2005
 
@@ -895,7 +915,7 @@ pure methods, whose parameters are all `readonly`. The paper expresses
 ownership in JML and checks it by the Universe type system in the JML
 compiler, with runtime checks for casts from `readonly`; it cites the
 property as enough for the modular verification of object invariants.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Leino and Müller 2004
 
@@ -911,7 +931,7 @@ program every invariant an object's `inv` field names holds, and the paper
 gives the proof of a simplified theorem for want of space; the paper
 lifts an earlier restriction of callbacks from a nested universe to pure
 methods by recording explicitly when an invariant holds.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Leino and Müller 2005
 
@@ -925,7 +945,7 @@ inside a non-reentrant `expose` block of its class and is checked at the
 block's end, and a method states in its precondition that the class is
 valid. Its Theorem 1 proves the methodology's two program invariants in
 each reachable state of a well-formed program.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Leino and Nelson 2002
 
@@ -941,7 +961,7 @@ hide its representation function. The paper proves modular soundness for
 static dependencies and states modularity requirements for dynamic
 dependencies without a soundness theorem for them (§1, read in its
 2001 TOPLAS proof copy).
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### O'Hearn, Yang and Reynolds 2009
 
@@ -957,7 +977,7 @@ variables of $`r`$ only through those procedures. The rule is unsound
 together with the conjunction rule, and sound when resource invariants are
 precise (§9); the paper's language has first-order procedures, and
 ownership of storage passes between a module and its clients.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Pottier 2008
 
@@ -970,7 +990,7 @@ direct style: the anti-frame rule, in a type system with linear
 capabilities for an ML-like language, with type soundness proved
 syntactically. This entry rests on the paper's abstract as published in
 the LICS 2008 archive; the paper's text was not read.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Smans, Jacobs and Piessens 2009
 
@@ -985,7 +1005,7 @@ precondition: the locations a method may read or write are bounded by the
 accessibility predicates of its precondition, and the paper verifies with
 its tool programs including subject-observer, iterator and linked list in a
 Java-like language whose code is all verified.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Drossopoulou et al. 2008
 
@@ -1001,7 +1021,7 @@ The paper states seven parameters characterising such a technique, gives
 sufficient conditions on them for soundness and instantiates them with
 ownership-, visibility- and Oval-based techniques; read in its Dagstuhl
 Seminar 08061 version.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Summers and Drossopoulou 2010
 
@@ -1015,7 +1035,7 @@ declare the invariants a method may find broken (`broken`), for code that
 breaks properties of other objects and then notifies them; the paper
 specifies the Composite pattern and verifies it automatically through an
 encoding in Boogie 2.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Leino and Schulte 2007
 
@@ -1030,7 +1050,7 @@ the subject's fields when it is maintained under that history invariant,
 and every update of the subject is checked to keep it. The paper proves a
 soundness theorem for its methodology, an extension of
 [Barnett et al. 2004](#barnett-et-al-2004) in which all code is verified.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Swasey, Garg and Dreyer 2017
 
@@ -1046,7 +1066,7 @@ from which no code can extract a direct reference to protected storage,
 to arbitrary untrusted code keeps its internal invariants; the patterns
 verified include a read-only wrapper, dynamic sealing, membranes and
 caretakers, mechanised in Coq.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Drossopoulou et al. 2025
 
@@ -1064,7 +1084,7 @@ the states reached before the call active in it returns. The paper gives
 a Hoare logic with quadruples for modules making external calls and
 proves it sound, for a sequential class-based language with module-private
 fields and no address forging.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Clarke et al. 2013
 
@@ -1078,7 +1098,7 @@ the original system of Clarke, Potter and Noble (OOPSLA 1998), by which
 every external access to an object's representation goes through its
 owner, and its relaxations, among them owners-as-modifiers, first
 introduced by Universes, which relaxes it for read-only references.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ### Tschantz and Ernst 2005
 
@@ -1092,7 +1112,7 @@ less the fields excluded from it, cannot be modified through that
 reference; other references may modify it. The paper proves type
 soundness for a core calculus, with runtime checks for immutability
 downcasts.
-**Cited in** the note's bibliography.
+**Cited in** the Read-only frames note.
 
 ## Compilation
 

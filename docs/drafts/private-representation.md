@@ -11,7 +11,7 @@ callable code may change. It answers pattern P22 of
 sites (form (a)), and states what it gives P15, P16, P18 and P20.
 
 Base: TScert `single-pass` at `72055046`; upstream pretext is
-chenglou/pretext at `0d102a5c`, its files under `src/`; "Paper I" is
+chenglou/pretext at `0d102a5c`, its files under `src/`; the rules cited are those of
 [Tolerant frames](tolerant-frames-note/note.tex). Claims are labelled
 **proved** (with the Lean name), **cited** (a document with its scope, or a
 source file and line at the stated commit), **observed** (a program run
@@ -37,9 +37,9 @@ class $`C`$ with private state:
    $`\Psi_C`$, as it certifies every function at its inferred effect
    (cited:
    [inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
-4. **The construct's rule**: Private frame, below. With it, Paper I's
+4. **The construct's rule**: Private frame, below. With it, *Tolerant frames*'
    Theorem "Tolerant frame" and Proposition "Reliance" carry a fact across
-   every run of code that is not the class's (proved: Paper I, Lean
+   every run of code that is not the class's (proved: *Tolerant frames*, Lean
    `frame_box`, `rely_chain`).
 
 It reads three existing pieces:
@@ -49,7 +49,7 @@ It reads three existing pieces:
   name `#x` is a key $`\sigma_{C.\#x}`$ identified by its declaring member;
   `o.#x` and `o.#x = e` are the named read and write at it; a copy takes no
   private slot.
-- **Rigid paths** (cited: Paper I, "Invariant assertions and rigid paths";
+- **Rigid paths** (cited: *Tolerant frames*, "Invariant assertions and rigid paths";
   [records](../POSITIVE-TYPES.md#records), `@stable`). A path through fields
   that keep the object they hold reads the same object in every heap. A
   private field that holds an object keeps it under every change the
@@ -107,10 +107,10 @@ that calls every one of them leaves the walker reading `[0, 0, 0]`.
 
 ## The rule
 
-Paper I's notation throughout: a heap $`h`$, an environment $`\rho`$, the
+*Tolerant frames*' notation throughout: a heap $`h`$, an environment $`\rho`$, the
 action $`h\xrightarrow{\Phi}_\rho h'`$ of an effect, changes
 $`\mathsf{keep}\sqsubseteq\mathsf{init}\sqsubseteq\mathsf{scalar}\sqsubseteq\mathsf{grow}\sqsubseteq\mathsf{any}`$
-(Paper I, §3, the changes' definition: $`\mathsf{scalar}`$ keeps a location
+(*Tolerant frames*, §3, the changes' definition: $`\mathsf{scalar}`$ keeps a location
 that holds an object; $`\mathsf{grow}`$ keeps a spine's length and density,
 and may replace a listed cell by a fresh one, `[1]` to `[10]` at a heap of 10
 locations), regions read at the entry heap, $`\Phi\triangleleft_K S`$ for respect and
@@ -142,7 +142,7 @@ around it, so they share it.
   `WeakMap`), whose entries the model holds in no location of the heap
   (cited: [native footprints](../SOURCE-CONTRACTS.md#native-footprints), the row of `Set` and `Map`: they write only the receiver's internal slots, which no location of the model holds).
   A collection is never owned storage (*Confined collections*, below). It has one
-  part per kind of Paper I's world: $`\mathsf{own}_C.\mathsf{spines}`$
+  part per kind of *Tolerant frames*' world: $`\mathsf{own}_C.\mathsf{spines}`$
   (array and view spines), $`\mathsf{own}_C.\mathsf{cells}`$ (element
   cells) and $`\mathsf{own}_C.\mathsf{fields}`$ (field and cell locations).
 - $`R_C=\mathsf{priv}_C\cup\mathsf{own}_C`$.
@@ -341,7 +341,7 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   lists stays listed. The entries that meet it: $`\mathsf{keep}`$; on a
   private field, a cell or a field, $`\mathsf{scalar}`$ (a location holding
   an object keeps it); on a spine, an extension, the old spine a prefix of
-  the new, as `push` gives by its audited postcondition. Paper I's
+  the new, as `push` gives by its audited postcondition. *Tolerant frames*'
   $`\mathsf{grow}`$ does not meet it, since a growth may replace a listed
   cell. A class whose protocol exceeds it is refused. Its reason: (L3),
   storage leaving $`\mathsf{own}_C`$ while other code may still reach it.
@@ -465,7 +465,7 @@ SOURCE-FRAGMENT.md, enforced at the source boundary, and has a control
   $`R_C`$ of a complete instance, and every entry of $`\Psi_C`$, is one
   $`\mathrm{supp}(I_C)`$ tolerates, or is one write checked to keep
   $`I_C`$ of its instance. An invariant that one write breaks and a later
-  write restores is refused, as Paper I's limit "Broken and restored
+  write restores is refused, as *Tolerant frames*' limit "Broken and restored
   invariants" states for assertions.
 
 ## Trust
@@ -793,7 +793,7 @@ The sites are the dossier's (cited: [dossier](callback-frames-dossier.md),
   steppers' writes are the walker's own steps, checked as written.
 - **P18**: at pretext's sites the prepared handle is a class with private
   state, so its invariant holds after `step(c)` by (L4), and its fields keep
-  the arrays they hold. Paper II's own program, with `Prepared` a structural
+  the arrays they hold. *Tolerant frames in practice*' own program, with `Prepared` a structural
   type external code may build, is outside.
 - **P20**: a value of a class with private state read back from a
   `Map<string, ClassTable>` meets $`I_C`$ at its first private read, by

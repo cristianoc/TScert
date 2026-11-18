@@ -50,7 +50,7 @@ structure St (P : Package) where
   roots : List Val
 
 /-- **A part** (the draft, "Parts and the protocol"): a site or `out`, a
-kind of Paper I's world and, for a field location, its key. -/
+kind of the Tolerant frames note's world and, for a field location, its key. -/
 structure Part (P : Package) where
   site : Option P.Site
   kind : Option Kind
@@ -586,7 +586,7 @@ theorem supported_of_inside {Ψ : Protocol P} {S : Footprint} {ρ : Env} {st st'
   obtain ⟨v', hv', hc⟩ := hb l v hr hv
   exact ⟨v', hv', hc.mono hle⟩
 
-/-- **The tolerant frame at `Φ ⊕_P Ψ_P`** (Paper I, Theorem "Tolerant
+/-- **The tolerant frame at `Φ ⊕_P Ψ_P`** (the Tolerant frames note, Theorem "Tolerant
 frame", `frame_step`, at this action): an assertion with a support inside
 `R_P` holds after every action of `Φ ⊕_P Ψ_P` meeting the support's
 condition, whatever `Φ`. -/
@@ -597,8 +597,8 @@ theorem readOnly_frame {Φ : Footprint} {Ψ : Protocol P} {C : ConditionOn (St P
     obtain ⟨v', hv', hb⟩ := ha.2 l v hv
     exact ⟨v', hv', hb.1 hr⟩)
 
-/-- **The rule's consequence** (the draft, "The consequence"; Paper I,
-Proposition "Reliance"): a fact whose support lies inside `R_P`, with
+/-- **The rule's consequence** (the Read-only frames note, Proposition
+"Read-only reliance"; the Tolerant frames note, Proposition "Reliance"): a fact whose support lies inside `R_P`, with
 `Ψ_P ◁ S`, holds after every run of code that is not the package's inside a
 call of the package, from a state meeting the invariants. -/
 theorem readOnly_rely {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop} {C : ConditionOn (St P)}

@@ -10,17 +10,17 @@ share its structure. It proposes no design. Each claim is labelled:
 - **conjectured**.
 
 Pretext is the fork's `tscert-bounds` branch at `6837e821`; "upstream" is
-chenglou/pretext at `0d102a5`, the fork's base; file names are under `src/`. TScert is `single-pass` at `ac7ec4f9`. "Paper I" is
-[Tolerant frames](tolerant-frames-note/note.tex), "Paper II" the note above.
+chenglou/pretext at `0d102a5`, the fork's base; file names are under `src/`. TScert is `single-pass` at `ac7ec4f9`. The rules cited are those of
+[Tolerant frames](tolerant-frames-note/note.tex).
 The check command is
 `TSCERT_STEP_LIMIT=300 node dev/check-functions.mts <pretext checkout> <file> <functions>`,
 written below as `check <file> <functions>`.
 
 ## 1. P22's two forms
 
-Paper II states P22 as a fact about a location "the caller allocated and
+*Tolerant frames in practice* states P22 as a fact about a location "the caller allocated and
 never handed to the callback, nor made reachable from what the callback
-holds", which "keeps its contents across the call" (cited: Paper II, §P22,
+holds", which "keeps its contents across the call" (cited: *Tolerant frames in practice*, §P22,
 "What an extension must provide"). Its program is the case
 [`bounds-pattern-unreachable-field-refused`](../../pipeline/examples/bounds-pattern-unreachable-field-refused.ts):
 a walker holds its index in a field `c.i` of a cursor it allocates and calls a
@@ -48,7 +48,7 @@ it, and passes only to its own helpers.
 - `onLine`'s type is `InternalLineVisitor`, stated
   `Modifies<{ values: "any"; spines: "grow" }, void>` (`line-break.ts:116–122`;
   observed). Its class entry `values: any` covers every field location of
-  the entry heap, the cursor's included (cited: Paper I, §3, "Regions":
+  the entry heap, the cursor's included (cited: *Tolerant frames*, §3, "Regions":
   $`\mathsf{values}`$ denotes every location of class value).
 
 ### (b) The handle
@@ -159,7 +159,7 @@ statement about it is the comment `// contract on callers:` (§3).
 
 ### Re-observation at `walkPreparedLinesRaw`
 
-Paper II states that at `aa8f7cc2` the call at line 316 is refused with the
+*Tolerant frames in practice* states that at `aa8f7cc2` the call at line 316 is refused with the
 stated effect and accepted with the empty one (cited: §P22). At `6837e821`
 every read the stepper makes is rewritten (`?? missing()` or a guarded
 throw), and with no edit **observed**: `check line-break.ts
@@ -198,7 +198,7 @@ for the differences themselves):
    field (form (a)): the last two rows differ in the effect alone.
 2. The visitor's `spines: grow` removes the upper bound
    `|prepared.widths| <= segmentCount` and keeps the lower bound (form (b));
-   the lower bound is Paper I's (Grow) at a rigid path, (Rigid).
+   the lower bound is *Tolerant frames*' (Grow) at a rigid path, (Rigid).
 3. The two field writes to `stats`, a parameter the walker does not
    allocate, remove the facts about the fresh cursor's field, with no
    callback involved: rows 2 and 4 differ in them alone.
@@ -273,7 +273,7 @@ an open question (§7).
 `runs.openBrackets` (conjectured from their source). The loop keeps the
 lower bounds `to <= flags.length` and the like by stating the separations
 `flags !== scriptRuns.openBrackets` in its invariant (lines 452–453).
-Verified (observed: `check prepare.ts measureAnalysis`, 9 s). Paper II's P4
+Verified (observed: `check prepare.ts measureAnalysis`, 9 s). *Tolerant frames in practice*' P4
 is the same pattern, whose separations at paths do not hold on the entry
 edge in its smaller program (cited: §P4).
 
@@ -361,7 +361,7 @@ through the exported functions it may call, among them `clearCache` and
 of all of these and grow any array, a handle's included, whether the
 handle's type is the record (fork) or branded (upstream).
 
-## 4. Other patterns of Paper II with shared structure
+## 4. Other patterns of *Tolerant frames in practice* with shared structure
 
 The parts: **(i)** a fact lost across a call or a write whose effect is
 stated by kind of location rather than by what the step can reach;
@@ -377,7 +377,7 @@ ownership, freshness or confinement; **(iv)** a contract on callers.
   postcondition carries the fact. Shares none.
 - **P3**: a quantified fact over `widths` across `fragment.width = s`, a
   field of a fresh object. Shares (i) and (iii): "A quantified fact is kept
-  across a write to a field of a fresh object"; Paper I's Theorem "Tolerant
+  across a write to a field of a fresh object"; *Tolerant frames*' Theorem "Tolerant
   frame" keeps it by the kinds (a field location is no element cell). §1
   row 3 is the same loss at a write to a parameter's field.
 - **P4**: separations at paths across `measure(i, lists)`, stated
@@ -434,14 +434,14 @@ ownership, freshness or confinement; **(iv)** a contract on callers.
   the projection is closed, so a helper writing only its argument's fields
   is read at `values: any` (§1, attribution 4, conjectured).
 - **Tolerant frames, the five kinds, support and respect**
-  (Paper I §§2, 5; [support and respect](../FOOTPRINTS.md#support-and-respect); cited).
+  (*Tolerant frames* §§2, 5; [support and respect](../FOOTPRINTS.md#support-and-respect); cited).
   Gives: kinds F, C, E, S, I; class regions and regions at a path
   ($`\pi.f`$, $`\pi.\mathsf{fields}`$, $`\pi.\mathsf{cells}`$,
   $`\pi.\mathsf{spine}`$); a fact survives where each effect entry is within
   its support's change or disjoint from it. Falls short: a class region
   $`\mathsf{values}`$ overlaps every field location, so the cursor's field is
   covered; disjointness evidence is by kind, separation facts and freshness.
-- **Fresh-Eff, Alloc and freshness marks** (Paper I, rules Alloc and
+- **Fresh-Eff, Alloc and freshness marks** (*Tolerant frames*, rules Alloc and
   Fresh-Eff, Example "Freshness bounds effects, not facts";
   [fresh array storage](../FOOTPRINTS.md#fresh-array-storage); separation
   queries "by freshness", [separation queries](../FOOTPRINTS.md#separation-queries); cited).
@@ -449,7 +449,7 @@ ownership, freshness or confinement; **(iv)** a contract on callers.
   of its effect to its callers; $`\mathrm{fresh}(r)`$ is disjoint from any
   region below the mark. Falls short: the callback's entries are class
   regions, and the caller's fresh cursor lies below the callback's mark;
-  Paper I says freshness "does not put any fact under a modality".
+  *Tolerant frames* says freshness "does not put any fact under a modality".
 - **Separation facts and allocation** ([separation facts](../PROGRAM-TYPING.md#separation-facts),
   [heap-freshness draft](heap-freshness.md); cited). Gives: "the field
   locations of two objects differ", stated at an allocation, read by writes.
@@ -495,7 +495,7 @@ ownership, freshness or confinement; **(iv)** a contract on callers.
   external code holding a program value at an opaque or read-only type
   writes none of its locations, nor that a callback leaves a handle's
   invariant or fields unchanged.
-- **Effect variables** (Paper I, Future work, "A callback that writes what
+- **Effect variables** (*Tolerant frames*, Future work, "A callback that writes what
   it captured", and Limits, "Effects are closed"; cited): "A specification
   that gives each call the effect of its own callback needs an effect
   variable".
@@ -512,7 +512,7 @@ From [CLAUDE.md](../../CLAUDE.md) (cited):
 
 - **General statements**: a definition is stated over every expression,
   write, call and effect; a list of supported cases is a defect; a Lean
-  notion and Paper I state the same definition.
+  notion and *Tolerant frames* state the same definition.
 - **Designs start from an existing mechanism**: a draft opens with "The
   existing mechanism this extends", citing its owner; [footprints](../FOOTPRINTS.md)
   for a fact a construct relies on across code.
@@ -536,7 +536,7 @@ problem the fork's rewrite created. Upstream's handles are branded or
 read-only (§1 (b), §3); the fork's writable handle types come from
 `2b11a4c`.
 
-From Paper I (cited): its subtitle and abstract, "fact preservation
+From *Tolerant frames* (cited): its subtitle and abstract, "fact preservation
 without ownership": "TypeScript programs are not written against an
 ownership discipline, and TScert imposes none". Assertions "describe the
 whole heap. They can be duplicated, and holding one confers no permission to
@@ -577,7 +577,7 @@ questions are those it raises, beside those of form (a).
    write?
 6. How is "external code honours an opaque or read-only type" stated: as a
    trust row beside lines 537–539, 570 and 573 of the
-   [trust surface](../DESIGN.md#trust-surface), as a statement in Paper I's
+   [trust surface](../DESIGN.md#trust-surface), as a statement in *Tolerant frames*'
    model (a class of locations, a region, a part of the world, or a contract
    on the locations a brand covers), or both, with the Lean and the note
    stating one definition? Where is it checked of the program's own code
@@ -590,14 +590,14 @@ questions are those it raises, beside those of form (a).
    another object's field (§1, attribution 3; P3) and the guard through
    `@stable` fields (P18) be instances of the mechanism of form (a), or of
    the existing support and respect with more disjointness evidence?
-9. How is the mechanism stated in Paper I's language (regions, effects,
+9. How is the mechanism stated in *Tolerant frames*' language (regions, effects,
    supports), so that the Lean definition and the note's are one?
 10. What does `Modifies` gain, if anything: a region form for callbacks,
     or none, the bound read from elsewhere?
 11. Does the mechanism cover natives' callbacks (`map`, `forEachChild`) and
     pretext's own lambdas, which capture both the handle and the user's
     callback (`walkLineRanges`, `walkRichInlineLineRanges`)?
-12. Does it subsume Paper I's effect variables
+12. Does it subsume *Tolerant frames*' effect variables
     ($`\forall\varepsilon.\ \Phi\cup\varepsilon`$), or does each need the other?
 13. Where does acceptance read it: which premise of `mode8Accepted_sound`,
     which certificate, and which controls (forged fragments, forced
