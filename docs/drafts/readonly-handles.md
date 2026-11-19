@@ -2061,6 +2061,58 @@ constructor of `FunctionPlan` that certifies to the framed plan
 (`CertifiedPlan.framed`, [the framed claim](#the-framed-claim)) with a
 theorem giving `FramedRequestSafe` of it.
 
+### The framed plan
+
+The design of the plan acceptance reads the rule through, before it is
+built; the theorems it reads are proved at the paper's executions
+([the framed claim](#the-framed-claim), [the frame at a call](#the-frame-at-a-call)).
+
+**The existing mechanism this extends.** A call of outside code keeps a
+fact where the fact's support passes the frame of the callee's stated
+effect $`\Phi`$ (Tolerant frames' rule Frame,
+[footprints](../FOOTPRINTS.md)); the pass reads $`\Phi`$ from the callee's
+arrow (`run_sound_single_pass`, the call's post at the callee's semantic
+type), at every execution. The framed plan keeps the same check at
+$`\Phi\oplus_C\Psi_C`$ in place of $`\Phi`$, through `frameCheckAt` at the
+call's node, and nothing else: every other node is checked as in a graph
+plan.
+
+**The plan** (`FunctionPlan.framed`): a graph plan with the frame of its
+component (`ClientFrame`: the family, `C`, $`\Theta`$, `chk` from the located
+steps and the checked flow, `start` the entry history, `enters` the
+module's closures at their slots) and, at each call of outside code, the
+facts the frame keeps there. `FunctionPlan.certify` gives
+`CertifiedPlan.framed` from it, exhaustively, and `MemberSafe` reads
+`FramedRequestSafe`.
+
+**The theorem** (`framed_requestSafe`, to be proved): the pass's check of a
+framed plan gives `FramedRequestSafe`. Its proof splits at the call's
+return:
+
+1. *The graph at assumed returns.* The graph theorem read along an
+   execution (`framed_reaches`: a graph path of the claim is a path of
+   reached states): at each reached state at a node, the node's facts hold;
+   a node other than a framed call's return delivers them to its successors
+   as `run_sound_single_pass` does; at a framed call's return the facts the
+   frame keeps are assumed. This needs the graph theorem stated per node
+   along executions (each node's delivery at a state reached), where it is
+   stated today for the whole graph at a semantic type.
+2. *The assumptions hold.* At a framed call's return, reached from the
+   call's state by steps keeping the obligation, the frame's facts hold:
+   `call_rely` with `Framed` from `framed_at_innermost_keys` at the call's
+   node, the witnesses from `witness_reached`, and the certificates
+   (`ClientFrame.Certs`) from the members' own checks, each member a graph
+   plan of `C` checked with the frame.
+
+**What remains before it is built**: `ChkSound` from the checks of $`C`$'s
+code over the located steps (`EscapeSound`); `EntryFits` at the concrete
+`enters`; the members' certificates from their bodies' checks; item 1's
+statement of the graph theorem per node along executions. Both print sites
+then print `accept under client trust` for a group with a framed member
+(they do, at `CertifiedPlan.clientTrust`), and `Mode8Accepted` and
+`mode8Accepted_sound` are read again: the premise the CLI's condition, the
+conclusion `PassUnitSafe` with each framed member's `FramedRequestSafe`.
+
 ### The framed claim
 
 A unit accepted through the rule is accepted for the executions in which
