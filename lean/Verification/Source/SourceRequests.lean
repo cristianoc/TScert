@@ -4,6 +4,7 @@ import Verification.Programs.ArgumentRegionCertificates
 -- SourceResolution.lean constructs the qualified body checker from the retained
 -- source signature and proves the descriptor evidence used by source instances.
 import Verification.Source.SourceResolution
+import Verification.Source.WorkerWire
 
 namespace Verification.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
@@ -18,6 +19,24 @@ structure CodeSource where
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
   candidates : List (Nat × List HeapKnowledge.IndexAtom) := []
   cuts : List Nat := []
+
+/-- A contract a unit's check read, recorded where the check reads it and
+reported with its verdict (DESIGN.md, "Trust surface"); no check reads the
+record. A member: the key `key` of the declaration `module`/`name` whose
+row states it, read where the walk or the lowering computes the member's
+type (`SourceExtraction.recordMember`). A value of the declaration
+document: its declaration and its binding, read where the walk types its
+name (`SourceExtraction.recordName`). -/
+inductive ContractRead where
+  | member (module name key : String)
+  | value (module name specifier imported localName : String)
+  deriving BEq, Hashable, Repr, Inhabited
+
+/-- A contract read on its unit's verdict line (`WorkerWire.memberRead`,
+`WorkerWire.valueRead`). -/
+def ContractRead.toJson : ContractRead → Json
+  | .member module name key => WorkerWire.memberRead module name key
+  | .value module name specifier imported localName => WorkerWire.valueRead module name specifier imported localName
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
@@ -72,6 +91,9 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   states it (`Fragment.Fn`): the claim must lie within it
   (`RequestJson.statedWithin`). -/
   stated : Option EffectJson.StatedEffect
+  /-- The contracts the unit's walk and lowering read, each once
+  (`ContractRead`): reported with its verdict, read by no check. -/
+  contractReads : List ContractRead := []
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.candidates, c.cuts⟩
@@ -440,7 +462,7 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
            assertions := r.assertions, candidates := r.candidates, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
            nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, fresh := r.fresh, regional := r.regional,
            ensures := r.ensures,
-           async := r.async, stated := r.stated }
+           async := r.async, stated := r.stated, contractReads := r.contractReads }
 
 end
 

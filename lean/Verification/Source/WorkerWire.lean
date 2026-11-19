@@ -9,18 +9,31 @@ field names. -/
 namespace Verification.WorkerWire
 open Lean
 
-/-- A unit's verdict line: `{"unit","members","accepted","depends","extraction"}`,
+/-- A unit's verdict line: `{"unit","members","accepted","depends","extraction","contracts"}`,
 its group accepted with the units its verdict rests on, or
-`{"unit","members","refusal","extraction"}`; `extraction` the first
-extraction refusal among its group's members, or null. -/
+`{"unit","members","refusal","extraction","contracts"}`; `extraction` the first
+extraction refusal among its group's members, or null; `contracts` the
+contracts its group's check read, each once, in their compressed text's
+order (`SourceExtraction.ContractRead.toJson`), reporting only. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
-    (extraction : Option String) : String :=
+    (extraction : Option String) (contracts : List Json := []) : String :=
   let ext := ("extraction", match extraction with | some r => toJson r | none => Json.null)
+  let read := ("contracts", Json.arr (contracts.eraseDups.toArray.qsort (·.compress < ·.compress)))
   (match verdict with
     | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
-        ("depends", toJson deps), ext]
+        ("depends", toJson deps), ext, read]
     | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
-        ("refusal", toJson reason), ext]).compress
+        ("refusal", toJson reason), ext, read]).compress
+
+/-- A contract a unit's check read, on its verdict line
+(`SourceExtraction.ContractRead`): a member, `{"member":{"module","name","key"}}`,
+or a value of the declaration document, `{"value":{"module","name","specifier","imported","local"}}`. -/
+def memberRead (module name key : String) : Json :=
+  Json.mkObj [("member", Json.mkObj [("module", toJson module), ("name", toJson name), ("key", toJson key)])]
+
+def valueRead (module name specifier imported localName : String) : Json :=
+  Json.mkObj [("value", Json.mkObj [("module", toJson module), ("name", toJson name),
+    ("specifier", toJson specifier), ("imported", toJson imported), ("local", toJson localName)])]
 
 /-- A verdict line's extraction refusal (`verdictLine`). -/
 def lineExtraction (line : String) : Except String (Option String) := do

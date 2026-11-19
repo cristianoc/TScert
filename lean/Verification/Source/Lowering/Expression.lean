@@ -657,6 +657,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let method ← if (ProgramTyping.memberOf G r.type fld).isSome then
         -- A generic method's member, bound to its host, is its scheme; the
         -- call's claimed instance is below it.
+        recordMember r.type fld
         match ProgramTyping.memberSchemes G r.type fld with
         | S :: _ => pure (DirectProof.cast K M
             (DirectProof.node K (memberHead G r.type fld (.var ri)) S (.bindMember [] [] []) []))

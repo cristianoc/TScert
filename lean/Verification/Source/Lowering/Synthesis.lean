@@ -197,6 +197,9 @@ structure Walk where
   closureConsts : List (String × Span × List (Ty Tree)) := []
   /-- Whether the walk is the module's initialization's. -/
   moduleInit : Bool := false
+  /-- The members and names the walk read (`contractReads`), set as the
+  walk ends: reported with the unit's verdict, read by no check. -/
+  contractReads : List ContractRead × List String := ([], [])
   /-- The signatures a use offers such a literal (`closure_offer`,
   closure_offers.ml:51), by the literal's span: found by a walk, read by the
   next (`walkUnit`). -/
@@ -505,6 +508,7 @@ def protoFor (vars : List (String × Ty Tree)) (tag : Tag) : Compiler (Ty Tree) 
   let some (_, name) := SourceTypes.primitivePrototypes.find? (·.1 == tag)
     | throw "a member of a primitive of no prototype"
   let some P := vars.lookup name | throw s!"{name} is not in scope"
+  recordName name
   return P
 
 /-- The labels a member read reads past its nullish guard: all but `null`
@@ -578,11 +582,14 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
       -- prototype; it is a located read refusal, not an unknown construct.
       let P ← tryCatch (protoFor vars tag) fun m => throw (readRefusal m)
       let some B := fieldRow G P fld | throw (readRefusal s!"a primitive's prototype names no field '{fld}'")
+      recordMember P fld
       out := out ++ B
   if !funs.isEmpty then
     let some P := vars.lookup SourceTypes.functionPrototypeName
       | throw s!"{SourceTypes.functionPrototypeName} is not in scope"
     let some B := fieldRow G P fld | throw (readRefusal "Function.prototype names no field 'toString'")
+    recordName SourceTypes.functionPrototypeName
+    recordMember P fld
     out := out ++ B
   -- An array's `length` a number, each array arm of a union apart from the
   -- others (the lowering's read of a union, each alternative as it reads).
@@ -593,6 +600,7 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
     | _ => false
   for l in dicts do
     if let [.dict fs [] vs ix os _ _ _ _] := PositiveRules.expand G [l] then
+      recordMember [l] fld
       match (Stored.views fs).lookup fld <|> vs.lookup fld with
       | some B => out := out ++ B
       | none =>
@@ -1354,9 +1362,13 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
   let O ← match O.filterMap (shapeOf G) |>.eraseDups with
     | [tag] => if O.all (fun l => shapeOf G l == some tag) then protoFor vars tag else pure O
     | _ => pure O
-  if let some m := ProgramTyping.memberOf G O fld then return some m
+  if let some m := ProgramTyping.memberOf G O fld then
+    recordMember O fld
+    return some m
   if let some P := protoOf G O then
-    if let some m := ProgramTyping.memberOf G P fld then return some m
+    if let some m := ProgramTyping.memberOf G P fld then
+      recordMember P fld
+      return some m
   -- A union of objects each stating the member at the same signatures,
   -- read at their receivers (a host family's node kinds, each its own
   -- receiver): the member with every clause's receivers and schemes.
@@ -1368,6 +1380,7 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
   | some (m :: ms) =>
     if ms.all fun m' => m'.calls == m.calls && m'.rests == m.rests &&
         m'.schemes.isEmpty == m.schemes.isEmpty then
+      recordMember O fld
       return some { m with
         schemes := (m.schemes ++ ms.flatMap (·.schemes)).eraseDups
         receivers := (m.receivers ++ ms.flatMap (·.receivers)).eraseDups }
@@ -1383,6 +1396,7 @@ def memberFor (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey) :
     match one m, ms.mapM one with
     | some a, some as =>
       if as.all fun b => b.arguments == a.arguments && b.effect == a.effect then
+        recordMember O fld
         return some { m with
           calls := [{ a with result := norm (a.result ++ as.flatMap (·.result)) }]
           receivers := (m.receivers ++ ms.flatMap (·.receivers)).eraseDups }
@@ -3454,6 +3468,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   let forceIndexes := (← get).force.contains "copy-indexes"
   match e with
   | .var _ n =>
+    StateT.lift (recordName n)
     let r := match env.vars.lookup n with
       | some A => .ok A
       | none => .error s!"'{n}' is bound outside what the walk sees"
@@ -5943,6 +5958,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       let out ← collectBreaks (some l) saved
       return join r out
   | .forOf p name namePos it iterable body =>
+    -- (the iteration intrinsic the loop reads)
+    StateT.lift (recordName it)
     let (I, e1) ← expr env iterable
     -- A generic iteration intrinsic's instance: its call at the iterable,
     -- the stepper it gives held at the loop's head (`%next@…%`) and its
@@ -6228,7 +6245,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
         let (result, _) ← settle { start with offers := w.offered, ctorOffers := w.ctorOffered, restOffers := w.restOffered } assumed
         pure result
     let w := { w with completion := done.bind fun d => if d.ghost then none else some d.vars }
-    return (w, ← table)
+    return ({ w with contractReads := ← contractReads }, ← table)
   let ((w, T'), _) ← runCompiler T [] action
   return (w, T')
 
@@ -6252,7 +6269,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
       Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
       Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
-      Std.HashMap (Span × Span) (SourceClaims.Candidate Tree)) := do
+      Std.HashMap (Span × Span) (SourceClaims.Candidate Tree) × (List ContractRead × List String)) := do
   -- A generic closure at the scheme its claim names.
   let schemes := fc.exprs.filterMap fun (sp, c) => c.toOption.map (sp, ·)
   let (w, T') ← walkUnit T f module generics force scope (schemes := schemes)
@@ -6293,6 +6310,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
       (id, { row with exprs := exprs, envs := envs,
                       entryCurrent := if keep then row.entryCurrent else currents,
                       exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
-    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {})
+    w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {},
+    w.contractReads)
 
 end Verification.SourceExtraction.Synthesis

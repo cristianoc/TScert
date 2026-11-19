@@ -1,5 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
@@ -27,7 +27,7 @@ import { libraryRegExpNames } from "../tools/regexp.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { verifyByUnits } from "./module-interfaces.mts";
 import type { CheckedUnits } from "./module-interfaces.mts";
-import { decodeVerdictLine, decodeWorkerPrepared } from "./stage-execution.mts";
+import { decodeContractRead, decodeVerdictLine, decodeWorkerPrepared, type ContractRead } from "./stage-execution.mts";
 import type { WorkerPart } from "./stages.mts";
 import { refusalEnd, verifier, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
@@ -76,6 +76,7 @@ export type Outcome =
       initialization: [number, number][];
       phase: "check";
       units?: UnitResult[];
+      contractReads?: UnitContracts[];
     }
   | {
       status: "unsupported" | "unverified" | "exhausted" | "error";
@@ -85,7 +86,11 @@ export type Outcome =
       /** A check of each unit's own (`checkUnits`): each unit's result, or
        * null where the file's front refused every unit. */
       units?: UnitResult[] | null;
+      contractReads?: UnitContracts[];
     };
+/** The contracts a unit's check read, as its verdict line records them
+ * (`VerdictLine`'s `contracts`): reported beside the verdict, read by none. */
+export type UnitContracts = { unit: string; reads: ContractRead[] };
 /** A check of each unit: the functions of the file read at their declared
  * signatures (`initOmission` for its initialization), and the units the
  * caller reads, by a member's function name (`initOmission` for the
@@ -390,7 +395,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   }
   const prepared = decodeWorkerPrepared(wireText(Buffer.from(preparation.stdout), "verifier --file-worker").trim());
   const lines: string[] = prepared.established.map((u) =>
-    JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], extraction: null }));
+    JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], extraction: null, contracts: [] }));
   // Each component's outcome of the read-only frame's checks, which no
   // verdict reads.
   const log: string[] = prepared.components.flatMap((c) => [`component ${c.component} (${c.kind} ${c.location}): ${
@@ -403,7 +408,8 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
     if (part.execution === "timed-out" || part.execution === "timeout-replayed") {
       // A unit over its limit: its own refusal.
-      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution), extraction: null }));
+      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution), extraction: null,
+        contracts: [] }));
       log.push(`unit ${unit.unit}: ${over(part.execution)}`);
       continue;
     }
@@ -421,7 +427,11 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   // The file's refusal beside its units': the first extraction refusal
   // among the selected groups, as their units' lines state it, in the order
   // their checks run.
-  const extraction = lines.map((l) => decodeVerdictLine(l).extraction).find((e) => e !== null) ?? null;
+  const decoded = lines.map(decodeVerdictLine);
+  const extraction = decoded.map((l) => l.extraction).find((e) => e !== null) ?? null;
+  // The contracts each of the file's units' checks read, as its line records them.
+  const contractReads: UnitContracts[] = decoded.filter((l, i) => !l.unit.startsWith("module:") &&
+    decoded.findIndex((m) => m.unit === l.unit) === i).map((l) => ({ unit: l.unit, reads: [...l.contracts] }));
   const refusal = extraction === null ? null : `reject: ${extraction}`;
   // Where the module interfaces were not established, a unit refused at
   // ordinary contracts is refused for that first.
@@ -502,11 +512,12 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     });
   const first = results.find((u) => u.status !== "verified");
   if (first === undefined && refusal === null)
-    return { status: "verified", artifacts, phase: "check", functions, initialization, units: results };
+    return { status: "verified", artifacts, phase: "check", functions, initialization, units: results, contractReads };
   if (first === undefined)
-    return { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal ?? ""), units: results };
+    return { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal ?? ""), units: results,
+      contractReads };
   return { status: first.status === "verified" ? "error" : first.status, artifacts, phase: "search", detail: first.detail,
-    units: results };
+    units: results, contractReads };
 }
 
 const phases: readonly Phase[] = ["source", "proposal", "search", "check"];
@@ -521,16 +532,26 @@ export function readOutcome(value: unknown): Outcome {
     throw Error("not an outcome");
   const { status, artifacts, phase } = value;
   const units = "units" in value ? value.units : undefined;
+  const reads = "contractReads" in value ? { contractReads: readUnitContracts(value.contractReads) } : {};
   if (status === "verified" && phase === "check" && "functions" in value && Array.isArray(value.functions) &&
       value.functions.every((f: unknown) => typeof f === "string") && "initialization" in value &&
       Array.isArray(value.initialization) && value.initialization.every(isSpan))
     return { status, artifacts, phase, functions: value.functions, initialization: value.initialization,
-      ...(units === undefined ? {} : { units: readUnitResults(units) }) };
+      ...(units === undefined ? {} : { units: readUnitResults(units) }), ...reads };
   if ((status === "unsupported" || status === "unverified" || status === "exhausted" || status === "error") &&
       "detail" in value && typeof value.detail === "string")
     return { status, artifacts, phase, detail: value.detail,
-      ...(units === undefined ? {} : { units: units === null ? null : readUnitResults(units) }) };
+      ...(units === undefined ? {} : { units: units === null ? null : readUnitResults(units) }), ...reads };
   throw Error("not an outcome");
+}
+/** Each unit's contract reads (`UnitContracts`), read field by field. */
+function readUnitContracts(value: unknown): UnitContracts[] {
+  if (!Array.isArray(value)) throw Error("not an outcome: its contract reads are no list");
+  return value.map((u: unknown): UnitContracts => {
+    const unit = field(u, "unit"), reads = field(u, "reads");
+    if (typeof unit !== "string" || !Array.isArray(reads)) throw Error("not an outcome: a unit's contract reads are malformed");
+    return { unit, reads: reads.map((r: unknown) => decodeContractRead(r, "an outcome's contract read")) };
+  });
 }
 const unitStatuses: readonly UnitResult["status"][] = ["verified", "unverified", "exhausted", "error"];
 /** A list of unit results, read field by field. */
@@ -747,37 +768,24 @@ export const contractNamespaces: ReadonlyMap<string, ContractOverlay | "instance
   ["instance", "instance"],
 ]);
 
-/** Where a declaration of the document comes from, as its identity's module
- * names it (`DeclarationIdentity`). */
+/** Where a declaration comes from, as its identity's module names it
+ * (`DeclarationIdentity`). */
 export type ContractOrigin = "checked file" | "project" | "standard library" | "package" | "reader" | "intrinsic" |
   "ambient";
-/** One declaration of the check's declaration document: a value the source
- * reads, a type it reaches or a symbol keying one, where it comes from, and
- * the overlay and trust row its reading rests on, or null where none states
- * one: a type of TypeScript's standard library or of a package, read as its
- * declaration states, or a type of the project's own sources. */
-export type ContractEntry = { kind: "value" | "type" | "symbol"; name: string; module: string; specifier: string | null;
-  origin: ContractOrigin; overlay: ContractOverlay | null; trust: TrustRow | null };
-/** The declarations a check's verdict relies on, from the document its parse
- * collected (`DeclarationDocument`, `tools/declaration-types.mts`), which
- * holds exactly the declarations the source reaches; the checked file's own
- * types are counted. */
-export type Contracts = { entries: ContractEntry[]; ownTypes: number };
+/** One contract a check read (`ContractRead`, recorded by the verifier where
+ * it reads it): a value of the declaration document by its binding, or a
+ * member by the declaration whose row states it; where it comes from, and the
+ * overlay and trust row its reading rests on, or null where none states one:
+ * a member of a type of TypeScript's standard library or of a package, read
+ * as its declaration states, or of a type of the project's own sources. */
+export type ContractEntry = { kind: "value" | "member"; module: string; name: string; key: string | null;
+  specifier: string | null; origin: ContractOrigin; overlay: ContractOverlay | null; trust: TrustRow | null };
+/** The contracts a check's verdict relies on, each unit's as its verdict
+ * line records them (`UnitContracts`), each once; the members of the checked
+ * file's own types are counted. */
+export type Contracts = { entries: ContractEntry[]; ownMembers: number };
 
 type Identity = { module: string; name: string };
-const textField = (value: unknown, key: string): string | null => {
-  const read = field(value, key);
-  return typeof read === "string" ? read : null;
-};
-const identityOf = (value: unknown): Identity | null => {
-  const module = textField(value, "module"), name = textField(value, "name");
-  return module === null || name === null ? null : { module, name };
-};
-const listField = (value: unknown, key: string): unknown[] => {
-  const read = field(value, key);
-  if (!Array.isArray(read)) throw Error(`the declaration document's ${key} is no list`);
-  return read;
-};
 /** The package a module inside `node_modules` belongs to, `@types/node`. */
 const packageOf = (module: string): string | null => {
   const parts = module.split("/"), at = parts.lastIndexOf("node_modules");
@@ -816,8 +824,8 @@ function typeOverlay(id: Identity): ContractOverlay | null {
 /** The origin a global's declaration has as `globalsOverlay`'s entries name
  * it: `library`, or the package declaring it. */
 const globalOrigin = (module: string): string => module.startsWith("typescript/lib/") ? "library" : packageOf(module) ?? module;
-/** The overlay a value is read through, by the specifier the document binds
- * it with and its declaration. */
+/** The overlay a value is read through, by the specifier its binding names
+ * and its declaration. */
 function valueOverlay(specifier: string, imported: string, local: string, id: Identity): ContractOverlay {
   if (specifier === intrinsicModule) return "intrinsics";
   if (specifier === "ambient") return "ambient";
@@ -832,53 +840,42 @@ function valueOverlay(specifier: string, imported: string, local: string, id: Id
   return "imported";
 }
 
-/** The contracts of the declaration document of a Fragment (`fragment.json`). */
-export function contractsOf(fragment: unknown): Contracts {
-  const document = field(fragment, "declarations");
-  const entries: ContractEntry[] = [];
-  const entry = (kind: ContractEntry["kind"], id: Identity, specifier: string | null,
-      overlay: ContractOverlay | null): ContractEntry => ({ kind, name: id.name, module: id.module, specifier,
-    origin: specifier === "ambient" ? "ambient" : originOf(id.module), overlay,
-    trust: overlay === null ? null : contractOverlays[overlay].trust });
-  // A value's definition, keyed by its declaration, holds the members the
-  // value is read at: it is read through the value's overlay.
+/** The contracts the verdict lines of a check recorded (`Outcome.contracts`),
+ * each placed by its overlay: a value by its binding (`valueOverlay`); a
+ * member of a value's declaration, the type the value is read at, by that
+ * value's, as its overlay states the value's members; any other member by
+ * its declaration (`typeOverlay`). */
+export function contractsOf(units: readonly UnitContracts[]): Contracts {
+  const reads = units.flatMap((u) => u.reads);
+  const key = (r: ContractRead): string => JSON.stringify(r);
+  const once = reads.filter((r, i) => reads.findIndex((q) => key(q) === key(r)) === i);
   const valueOverlays = new Map<string, ContractOverlay>();
-  for (const value of listField(document, "values")) {
-    const binding = field(value, "binding"), id = identityOf(field(value, "declaration"));
-    const specifier = textField(binding, "specifier"), imported = textField(binding, "imported"),
-      local = textField(binding, "local");
-    if (id === null || specifier === null || imported === null || local === null)
-      throw Error("a value of the declaration document is malformed");
-    const overlay = valueOverlay(specifier, imported, local, id);
-    valueOverlays.set(`${id.module}\n${id.name}`, overlay);
-    entries.push(entry("value", { module: id.module, name: local }, specifier, overlay));
+  const entries: ContractEntry[] = [];
+  for (const r of once) {
+    if (!("value" in r)) continue;
+    const { module, name, specifier, imported, local } = r.value;
+    const overlay = valueOverlay(specifier, imported, local, { module, name });
+    valueOverlays.set(`${module}\n${name}`, overlay);
+    entries.push({ kind: "value", module, name: local, key: null, specifier,
+      origin: specifier === "ambient" ? "ambient" : originOf(module), overlay, trust: contractOverlays[overlay].trust });
   }
-  let ownTypes = 0;
-  for (const definition of listField(document, "definitions")) {
-    const id = identityOf(field(definition, "declaration"));
-    if (id === null) throw Error("a definition of the declaration document is malformed");
-    if (originOf(id.module) === "checked file" && !valueOverlays.has(`${id.module}\n${id.name}`)) { ownTypes++; continue; }
-    entries.push(entry("type", id, null, valueOverlays.get(`${id.module}\n${id.name}`) ?? typeOverlay(id)));
+  let ownMembers = 0;
+  for (const r of once) {
+    if (!("member" in r)) continue;
+    const { module, name, key: member } = r.member;
+    const overlay = valueOverlays.get(`${module}\n${name}`) ?? typeOverlay({ module, name });
+    if (overlay === null && originOf(module) === "checked file") { ownMembers++; continue; }
+    entries.push({ kind: "member", module, name, key: member, specifier: null, origin: originOf(module), overlay,
+      trust: overlay === null ? null : contractOverlays[overlay].trust });
   }
-  for (const symbol of listField(document, "symbols")) {
-    const id = identityOf(symbol);
-    if (id === null) throw Error("a symbol of the declaration document is malformed");
-    entries.push(entry("symbol", id, null, typeOverlay(id)));
-  }
-  return { entries, ownTypes };
-}
-/** The contracts of a run's Fragment, or null where its parse wrote none. */
-export function runContracts(artifacts: string): Contracts | null {
-  const file = join(artifacts, "fragment.json");
-  if (!existsSync(file)) return null;
-  const parsed: ParsedJson = JSON.parse(wireText(readFileSync(file), file));
-  return contractsOf(parsed);
+  return { entries, ownMembers };
 }
 /** The contracts as text: by trust row, each with its overlay and the
- * declarations read through it, then the declarations no row states. */
+ * values and members read through it, then the members no row states. */
 export function contractsText(contracts: Contracts): string {
-  const name = (e: ContractEntry): string => e.kind === "value" && e.specifier !== null && e.specifier !== "global" &&
-    e.specifier !== intrinsicModule && e.specifier !== "ambient" ? `${e.name} (${e.specifier})` : e.name;
+  const shown = (e: ContractEntry): string => e.kind === "member" ? `${e.name}.${e.key ?? ""}` :
+    e.specifier !== null && e.specifier !== "global" && e.specifier !== intrinsicModule && e.specifier !== "ambient" &&
+    e.specifier !== "prototype" ? `${e.name} (${e.specifier})` : e.name;
   const lines = ["Contracts the verdict relies on, by trust row (docs/DESIGN.md#trust-surface):"];
   for (const overlay of Object.keys(contractOverlays).filter((o): o is ContractOverlay => o in contractOverlays)) {
     const read = contracts.entries.filter((e) => e.overlay === overlay);
@@ -886,8 +883,8 @@ export function contractsText(contracts: Contracts): string {
     const { stated, trust } = contractOverlays[overlay];
     const at = [stated.names.map((n) => `\`${n}\``).join(", "), stated.in ?? ""].filter((t) => t !== "").join(" in ");
     lines.push(`- ${trust.table}: "${trust.row} …"`, `  stated by ${at}`);
-    for (const kind of ["value", "type", "symbol"] as const) {
-      const names = read.filter((e) => e.kind === kind).map(name);
+    for (const kind of ["value", "member"] as const) {
+      const names = read.filter((e) => e.kind === kind).map(shown).sort();
       if (names.length > 0) lines.push(`  ${kind}s: ${names.join(", ")}`);
     }
   }
@@ -896,11 +893,11 @@ export function contractsText(contracts: Contracts): string {
     lines.push("No trust row: read as their declarations state");
     for (const origin of ["standard library", "package", "project", "reader", "checked file"] as const) {
       const read = unstated.filter((e) => e.origin === origin);
-      for (const module of new Set(read.map((e) => e.module)))
-        lines.push(`- ${origin}, ${module}: ${read.filter((e) => e.module === module).map((e) => e.name).join(", ")}`);
+      for (const module of [...new Set(read.map((e) => e.module))].sort())
+        lines.push(`- ${origin}, ${module}: ${read.filter((e) => e.module === module).map(shown).sort().join(", ")}`);
     }
   }
-  lines.push(`The checked file's own types: ${contracts.ownTypes}`);
+  lines.push(`Members of the checked file's own types read: ${contracts.ownMembers}`);
   return lines.join("\n") + "\n";
 }
 // A worker of `checkApart`'s pool: one check per message, answered with its outcome.
@@ -943,8 +940,10 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   const omitted = omitAt < 0 ? [] : (all.splice(omitAt, 2)[1] ?? "").split(",").filter((n) => n !== "");
   const units = { omitted, select: null };
   const typescriptErrors = all.includes("--typescript-errors");
-  // `--contracts` adds the declarations the verdict relies on (`contractsOf`)
-  // to the outcome, and writes them by trust row to standard error.
+  // `--contracts` adds the contracts the verdict relies on, as its units'
+  // verdict lines record them, each with its overlay and trust row
+  // (`contractsOf`), to the outcome, and writes them by trust row to
+  // standard error.
   const contracts = all.includes("--contracts");
   const args = all.filter((a) => a !== "--typescript-errors" && a !== "--contracts");
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
@@ -960,9 +959,9 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds, false,
         units);
       if (contracts) {
-        const relied = runContracts(result.artifacts);
+        const relied = result.contractReads === undefined ? null : contractsOf(result.contractReads);
         process.stdout.write(JSON.stringify({ ...result, contracts: relied }, null, 2) + "\n");
-        process.stderr.write(relied === null ? "Contracts: the parse wrote no declaration document\n" : contractsText(relied));
+        process.stderr.write(relied === null ? "Contracts: no unit's check recorded its reads\n" : contractsText(relied));
       } else process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {

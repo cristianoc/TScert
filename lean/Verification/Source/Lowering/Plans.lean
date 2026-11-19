@@ -478,11 +478,16 @@ bag, or an explicit union of cell contracts each naming the field. -/
     -- bound of the object does not admit at its prototype's field or view
     -- (`readProto`), as at the top level.
     match (Stored.views fs).lookup fld, vs.lookup fld, (os.find? (·.key == fld)).map (·.type) with
-    | some B, _, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+    | some B, _, _ =>
+      recordMember a.type fld
+      pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B, _ =>
+      recordMember a.type fld
       if fld == lengthKey && !lengthExcluded G B then lengthView G Γ a B
       else pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
-    | none, none, some E => pure (DirectProof.node Γ (.readAt fld a.term) (E ++ [Labels.undef]) (.readOptional E [Labels.undef]) [a])
+    | none, none, some E =>
+      recordMember a.type fld
+      pure (DirectProof.node Γ (.readAt fld a.term) (E ++ [Labels.undef]) (.readOptional E [Labels.undef]) [a])
     | none, none, none =>
       let inherited : Option (Ty Tree × Ty Tree) := do
         if !ks.any (fun K => !K.admits fld) then none
@@ -491,10 +496,12 @@ bag, or an explicit union of cell contracts each naming the field. -/
         let B ← (Stored.views gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
+      recordMember P fld
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
   | [.dict fs [] vs ix [] [] [] _ _] =>
     -- A named field or view, else an index whose class surely admits the
     -- key, which may miss.
+    recordMember a.type fld
     match (Stored.views fs).lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B =>
@@ -506,9 +513,11 @@ bag, or an explicit union of cell contracts each naming the field. -/
       pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [Labels.undef]) (.readDict K B [Labels.undef]) [a])
   | [.callable fs _ _ _ _] =>
     let some B := (Stored.views fs).lookup fld | throw s!"read of a field '{fld}' the contract does not name"
+    recordMember a.type fld
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
   -- A class value's static field, or its readonly view.
   | [.ctors _ _ fs _ vs] =>
+    recordMember a.type fld
     match (Stored.views fs).lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
     | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readBagView [a])
@@ -640,6 +649,7 @@ shape needs none. -/
     if tag == .isStr && fld == "length" then return (tag, .length)
     let some (p, .value) := resolve scope name
       | throw s!"a member of a primitive is read from {name}, which this unit does not see"
+    recordName name
     let some P := K[p]? | throw "internal prototype slot mismatch"
     -- The wrapper object `alloc` makes: its prototype slot is an ordinary
     -- own key, role `field`.
@@ -702,6 +712,7 @@ is read as an object (`readCell`). -/
     | (tag, arm) :: rest => do
       let term := dispatchTerm ((tag, arm) :: rest) fld o object
       if decide (Answers G [label] tag true) then
+        if let .proto _ P _ := arm then recordMember P fld
         return DirectProof.node L term A .ifTrue [DirectProof.cast L A (← armPlan L label arm)]
       else if decide (Answers G [label] tag false) then
         return DirectProof.node L term A .ifFalse [← chain L label rest]

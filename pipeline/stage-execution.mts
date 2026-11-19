@@ -921,11 +921,21 @@ export type ComponentOutcome = { component: number; kind: string; location: stri
  * interfaces establish; each component's outcome. */
 export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[];
   components: readonly ComponentOutcome[] };
+/** A contract a unit's check read (`WorkerWire.memberRead`,
+ * `WorkerWire.valueRead`), recorded where the check reads it: a member `key`
+ * of the declaration `module`/`name` whose row states it, or a value of the
+ * Fragment's declaration document, by its declaration and binding. */
+export type ContractRead =
+  | { member: { module: string; name: string; key: string } }
+  | { value: { module: string; name: string; specifier: string; imported: string; local: string } };
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
- * with the first extraction refusal among its group's members, or null. */
+ * with the first extraction refusal among its group's members, or null, and
+ * the contracts its group's check read. */
 export type VerdictLine =
-  { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; extraction: string | null } |
-  { unit: string; members: readonly string[]; refusal: string; extraction: string | null };
+  { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; extraction: string | null;
+    contracts: readonly ContractRead[] } |
+  { unit: string; members: readonly string[]; refusal: string; extraction: string | null;
+    contracts: readonly ContractRead[] };
 
 /** A parsed JSON value's own fields, exactly `fields`, or a refusal. */
 function exactFields(value: unknown, fields: readonly string[], what: string): { [key: string]: unknown } {
@@ -942,17 +952,37 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const what = "a unit's verdict line";
   const value: unknown = JSON.parse(text);
   const accepted = typeof value === "object" && value !== null && "accepted" in value;
-  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "extraction"]
-    : ["unit", "members", "refusal", "extraction"], what);
+  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "extraction", "contracts"]
+    : ["unit", "members", "refusal", "extraction", "contracts"], what);
   const { unit, members, depends, refusal, extraction } = v;
   if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
   if (!(extraction === null || typeof extraction === "string")) throw Error(`${what}: a malformed extraction refusal`);
+  const read = v["contracts"];
+  if (!Array.isArray(read)) throw Error(`${what}: no contracts`);
+  const contracts = read.map((c: unknown) => decodeContractRead(c, `${what}'s contract`));
   if (accepted) {
     if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, accepted: true, depends, extraction };
+    return { unit, members, accepted: true, depends, extraction, contracts };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
-  return { unit, members, refusal, extraction };
+  return { unit, members, refusal, extraction, contracts };
+}
+/** A contract read (`ContractRead`), read field by field. */
+export function decodeContractRead(value: unknown, what: string): ContractRead {
+  const text = (o: { [key: string]: unknown }, key: string): string => {
+    const t = o[key];
+    if (typeof t !== "string") throw Error(`${what}: no ${key}`);
+    return t;
+  };
+  const isMember = typeof value === "object" && value !== null && "member" in value;
+  const { member, value: read } = exactFields(value, [isMember ? "member" : "value"], what);
+  if (isMember) {
+    const m = exactFields(member, ["module", "name", "key"], what);
+    return { member: { module: text(m, "module"), name: text(m, "name"), key: text(m, "key") } };
+  }
+  const r = exactFields(read, ["module", "name", "specifier", "imported", "local"], what);
+  return { value: { module: text(r, "module"), name: text(r, "name"), specifier: text(r, "specifier"),
+    imported: text(r, "imported"), local: text(r, "local") } };
 }
 /** The file worker's preparation line, read field by field. */
 export function decodeWorkerPrepared(text: string): WorkerPrepared {
