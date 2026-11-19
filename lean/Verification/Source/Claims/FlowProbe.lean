@@ -19,6 +19,8 @@ by part. It decides nothing a verdict reads. -/
 namespace Verification.SourceClaimJson
 open Lean Verification.TolerantFrames.ReadOnly ControlFlow
 
+deriving instance Hashable for Tag, Target, Continuation
+
 /-- The package a unit's probe reads: sites numbered, the unit's component
 its code. -/
 abbrev probePackage (comp : ComponentTag) : TolerantFrames.ReadOnly.Package :=
@@ -40,7 +42,7 @@ theorem remark_marksFrom {comp : ComponentTag} (F : FFlow (probePackage comp)) :
 /-! ## The frame at a call, probed -/
 
 section frames
-variable {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site]
+variable {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site] [Hashable P.Site]
 
 /-- **The writes of a term at a node's slots**: for each write, the sites
 of the written location (its object's, or its spine's for an element
@@ -302,7 +304,10 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   -- continuation and handler of a code, numbered past the codes' sites
   let offs := (cs.map fun c => c.code.2.length).foldl (fun (acc : List Nat) n => acc ++ [acc.getLast?.getD 0 + n]) [0]
   let cs : List (SolveCode P) := cs.zipIdx.map fun (c, i) =>
-    { c with allocAt := fun kx => match c.code.2.findIdx? (· == kx) with
+    -- (each continuation and handler's first node, read once per code)
+    let first : Std.HashMap NodeKey Nat := c.code.2.zipIdx.foldl
+      (fun m (kx, l) => if m.contains kx then m else m.insert kx l) {}
+    { c with allocAt := fun kx => match first[kx]? with
       | some l => let k := 3 * cs.length + 2 * (offs.getD i 0 + l); ⟨some k, some (k + 1)⟩
       | none => c.alloc }
   let t0 ← IO.monoNanosNow
@@ -337,7 +342,8 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
     let entry := F.entryB m start
     let bindings := (remark F).bindingsB
     let marks := (remark F).marksB
-    let bad := F.codes.zipIdx.flatMap fun ((code, cs), ci) => cs.flatMap fun (κ, c) =>
+    -- (the refused nodes are read again only where the check fails)
+    let bad := if ok then [] else F.codes.zipIdx.flatMap fun ((code, cs), ci) => cs.flatMap fun (κ, c) =>
       (code.1.zip code.2).zipIdx.filterMap fun ((e, k, x), l) =>
         if nodeAtB F c l e k x then none else some s!"{ci}@{κ}:{l}"
     let contexts := (F.codes.map (·.2.length)).sum

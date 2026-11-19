@@ -1,5 +1,6 @@
 import Verification.Paper.TolerantFrames.ReadOnlyFitsCheck
 import Verification.Paper.TolerantFrames.ReadOnlyFitsEntry
+import Std.Data.HashSet.Lemmas
 
 /-! # Read-only handles: deciding the checks of a finite proposal
 
@@ -91,9 +92,23 @@ theorem OFits.sub : ∀ {d Γ a o S e}, OFits Fl τ φ d Γ a o S e → o = fals
 
 end sub
 
-variable [DecidableEq P.Site]
+variable [DecidableEq P.Site] [Hashable P.Site]
 
-instance (S S' : Sites P) : Decidable (Sub S S') := inferInstanceAs (Decidable (∀ s ∈ S, s ∈ S'))
+/-- **Inclusion of sets of sites**, decided: by the list where the larger
+set is small, by a hash set of it otherwise. -/
+def subB (S S' : Sites P) : Bool :=
+  if S'.length < 8 then S.all fun s => decide (s ∈ S')
+  else
+    let h := Std.HashSet.ofList S'
+    S.all h.contains
+
+theorem subB_iff {S S' : Sites P} : subB S S' = true ↔ Sub S S' := by
+  unfold subB Sub
+  split
+  · simp
+  · simp
+
+instance (S S' : Sites P) : Decidable (Sub S S') := decidable_of_iff (subB S S' = true) subB_iff
 
 /-! ## A finite proposal -/
 
@@ -190,12 +205,13 @@ def FFlow.flow (F : FFlow P) : Flow P where
   H := ⟨F.contents, F.bindings⟩
   code m c := (F.at m c).map FCode.flow
 
+omit [Hashable P.Site] in
 theorem FFlow.code_at {F : FFlow P} {m : Code} {c : Nat} {π : CodeFlow P} (h : F.flow.code m c = some π) :
     ∃ fc, F.at m c = some fc ∧ π = fc.flow := by
   simp only [FFlow.flow, Option.map_eq_some_iff] at h
   obtain ⟨fc, h, rfl⟩ := h; exact ⟨fc, h, rfl⟩
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem FFlow.at_mem {F : FFlow P} {m : Code} {c : Nat} {fc : FCode P} (h : F.at m c = some fc) :
     ∃ l, (m, l) ∈ F.codes ∧ (c, fc) ∈ l := by
   unfold FFlow.at FFlow.ctxs at h
@@ -203,7 +219,7 @@ theorem FFlow.at_mem {F : FFlow P} {m : Code} {c : Nat} {fc : FCode P} (h : F.at
   | none => rw [hl] at h; simp [look] at h
   | some l => rw [hl] at h; exact ⟨l, look_mem hl, look_mem h⟩
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem FFlow.at_ctxs {F : FFlow P} {m : Code} {c : Nat} {fc : FCode P} (h : F.at m c = some fc) :
     (c, fc) ∈ F.ctxs m := look_mem h
 
@@ -231,7 +247,7 @@ theorem codePart_of_partB {t : Tm} (h : partB t = true) : CodePart t := by
   · exact .inl ⟨_, rfl⟩
   · exact .inr h
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem FCode.fn_lt {c : FCode P} {l i : Nat} {σ : FnSig} (h : c.flow.fn l i = some σ) :
     i < (c.node l).fn.size := by
   simp only [FCode.flow, FCode.sigAt, FNode.fnAt, Array.getD_eq_getD_getElem?] at h
@@ -243,6 +259,7 @@ theorem FCode.fn_lt {c : FCode P} {l i : Nat} {σ : FnSig} (h : c.flow.fn l i = 
 def suppliedB (S : Sites P) : Bool :=
   decide (none ∈ S) && F.codes.all fun e => e.2.all fun c => !decide (c.2.tok ∈ F.O) || decide (c.2.tok ∈ S)
 
+omit [Hashable P.Site] in
 theorem suppliedB_sound {S : Sites P} (h : suppliedB F S = true) : Supplied F.flow S := by
   simp only [suppliedB, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, Bool.or_eq_true,
     Bool.not_eq_true', decide_eq_false_iff_not] at h
@@ -279,7 +296,7 @@ def selfFnB (c : FCode P) (ar : Nat) (E : List Tm) (K : List (Continuation × Op
   (List.range (c.node s).fn.size).all fun i =>
     (c.flow.fn s i).all fun σ => decide (i = capSlot ar rest n ∧ σ = ⟨(E, K), ar, s, rest, n⟩)
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem selfFnB_sound {c : FCode P} {ar : Nat} {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat}
     {rest : Bool} {n : Nat} (h : selfFnB c ar E K s rest n = true) : SelfFn c.flow ar E K s rest n := by
   intro i σ hi
@@ -359,20 +376,34 @@ theorem lowB_sound : ∀ {e : Tm}, lowB F e = true → Lowered F.flow e := by
 /-- The contents of the sites of a set. -/
 def contentsOf (S : Sites P) : Sites P := S.flatMap F.contents
 
+omit [Hashable P.Site] in
 theorem contents_sub {S : Sites P} {s : Option P.Site} (hs : s ∈ S) : Sub (F.contents s) (contentsOf F S) :=
   fun _ hx => List.mem_flatMap.mpr ⟨s, hs, hx⟩
 
-/-- A set grown by its contents, `n` times at most. -/
+/-- The sites of `T` not in `S`, each once. -/
+def freshSites (S T : Sites P) : Sites P := Id.run do
+  let mut seen := Std.HashSet.ofList S
+  let mut out : Sites P := []
+  for x in T do
+    if !seen.contains x then
+      seen := seen.insert x
+      out := x :: out
+  return out.reverse
+
+/-- A set grown by its contents, `n` times at most, each site once. -/
 def grow : Nat → Sites P → Sites P
   | 0, S => S
-  | n + 1, S => if decide (Sub (contentsOf F S) S) then S else grow n (S ++ contentsOf F S)
+  | n + 1, S =>
+    let N := freshSites S (contentsOf F S)
+    if N.isEmpty then S else grow n (S ++ N)
 
 theorem sub_grow : ∀ (n : Nat) (S : Sites P), Sub S (grow F n S)
   | 0, _ => Sub.refl _
   | n + 1, S => by
-    unfold grow; split
+    simp only [grow]; split
     · exact Sub.refl _
-    · exact Sub.trans (fun _ hx => List.mem_append_left _ hx : Sub S (S ++ contentsOf F S)) (sub_grow n _)
+    · exact Sub.trans (fun _ hx => List.mem_append_left _ hx : Sub S (S ++ freshSites S (contentsOf F S)))
+        (sub_grow n _)
 
 /-- **The closure of a set under the contents**: grown as many times as the
 heap of sites has entries' contents, then checked closed. -/
@@ -393,7 +424,7 @@ def partSites (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → Option (Sites P
   | .var j => if j < d then Γ j else some (τ (j - d))
   | u => if primVal u then some [] else none
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem partSites_sound {d : Nat} {Γ : Nat → Option (Sites P)} {u : Tm} {S' S : Sites P}
     (h : partSites τ d Γ u = some S') (hS : Sub S' S) : OVOr τ d Γ S u := by
   unfold partSites at h
@@ -413,7 +444,7 @@ def partsSites (d : Nat) (Γ : Nat → Option (Sites P)) : List Tm → Option (S
     | some S, some T => some (S ++ T)
     | _, _ => none
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem partsSites_sound {d : Nat} {Γ : Nat → Option (Sites P)} :
     ∀ {us : List Tm} {Sp : Sites P}, partsSites τ d Γ us = some Sp → ∀ u ∈ us, OVOr τ d Γ Sp u
   | [], _, _, _, hu => by simp at hu
@@ -431,6 +462,7 @@ theorem partsSites_sound {d : Nat} {Γ : Nat → Option (Sites P)} :
 outside code**, decided. -/
 def outB (Sf : Sites P) : Bool := !decide (none ∈ Sf) || a.out
 
+omit [Hashable P.Site] in
 theorem outB_sound {Sf : Sites P} (h : outB a Sf = true) : none ∈ Sf → a.out = true := by
   intro hn; simp only [outB, Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at h
   exact h.resolve_left (fun h' => h' hn)
@@ -616,7 +648,7 @@ theorem synAll_stores {d : Nat} {Γ : Nat → Option (Sites P)} {xs : List Tm} {
     obtain ⟨S, _, he, hf⟩ := synAll_mem ih h hx
     rw [he]; exact hf
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem getD_drop_sub {Ls : List (Sites P)} {n i : Nat} (hi : n ≤ i) : Sub (Ls.getD i []) (Ls.drop n).flatten := by
   intro s hs
   rw [List.getD_eq_getElem?_getD] at hs
@@ -921,13 +953,13 @@ def Stable {α : Type} (τ : Nat → α) (N : Nat) : Prop := ∀ i, N ≤ i → 
 theorem Stable.mono {α : Type} {τ : Nat → α} {N N' : Nat} (h : Stable τ N) (hN : N ≤ N') : Stable τ N' :=
   fun i hi => (h i (by omega)).trans (h N' hN).symm
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem FNode.envAt_stable (x : FNode P) : Stable x.envAt x.env.size := by
   intro i hi
   simp only [FNode.envAt, Array.getD_eq_getD_getElem?, Array.getElem?_eq_none hi,
     Array.getElem?_eq_none (Nat.le_refl x.env.size)]
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem pushSites_stable {τ : Nat → Sites P} {N : Nat} (Sv : Sites P) (h : Stable τ N) :
     Stable (pushSites Sv τ) (N + 1) := by
   intro i hi
@@ -940,7 +972,7 @@ def mlen : Option (List Nat) → Nat
   | none => 0
   | some slots => slots.length
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem mapIdx_stable {τ : Nat → Sites P} {m : Option (List Nat)} {N i : Nat} (hτ : Stable τ N)
     (hm : mlen m ≤ N) (hi : N ≤ i) : τ (mapIdx m i) = τ (mapIdx m N) := by
   cases m with
@@ -951,6 +983,7 @@ theorem mapIdx_stable {τ : Nat → Sites P} {m : Option (List Nat)} {N i : Nat}
       List.getElem?_eq_none hm]
 
 omit [DecidableEq P.Site] in
+omit [Hashable P.Site] in
 /-- A carriage holds of every smaller source. -/
 theorem Carries.of_sub {τ τ₁ τ' : Nat → Sites P} {m : Option (List Nat)} (h : Carries τ₁ τ' m)
     (hs : ∀ i, Sub (τ i) (τ₁ i)) : Carries τ τ' m :=
@@ -995,7 +1028,7 @@ def pushIx (v : Option Nat) (ι : Nat → Option Nat) : Nat → Option Nat
   | 0 => v
   | i + 1 => ι i
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem pushFn_sigAt (c : FCode P) (v : Option Nat) (ι : Nat → Option Nat) :
     pushFn (c.sigAt v) (fun i => c.sigAt (ι i)) = fun i => c.sigAt (pushIx v ι i) := by
   funext i; cases i <;> rfl
@@ -1080,7 +1113,7 @@ def vfnB (x : FNode P) (e : Tm) : Bool :=
   | some t, .var j => decide (x.fnAt j = some t)
   | some _, _ => false
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem vfnB_sound {l : Nat} {e : Tm} (h : vfnB (c.node l) e = true) :
     ∀ σ, c.flow.vfn l = some σ → ∃ j, e = .var j ∧ c.flow.fn l j = some σ := by
   intro σ hσ
@@ -1168,12 +1201,13 @@ theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := b
 /-- No local site in a set, decided. -/
 def noLocalB (S : Sites P) : Bool := S.all fun s => s.all fun s' => decide (P.mark s' ≠ .local)
 
-omit [DecidableEq P.Site] in
+omit [DecidableEq P.Site] [Hashable P.Site] in
 theorem noLocalB_sound {S : Sites P} (h : noLocalB S = true) : NoLocal S := by
   intro s hs s' he
   have := List.all_eq_true.mp h s hs
   subst he; simpa using this
 
+omit [Hashable P.Site] in
 theorem FFlow.lookup_cases (F : FFlow P) (s : Option P.Site) :
     (F.contents s = [] ∧ F.bindings s = []) ∨ ∃ e ∈ F.heap, e.1 = s ∧ F.contents s = e.2.1 ∧ F.bindings s = e.2.2 := by
   cases hl : look s F.heap with
@@ -1187,6 +1221,7 @@ def FFlow.marksB (F : FFlow P) : Bool :=
   F.O.all (fun s => s.all fun s' => decide (P.mark s' = .released)) &&
     F.heap.all fun e => (!(e.1.all fun s' => decide (P.mark s' ≠ .local)) || noLocalB e.2.1) && noLocalB e.2.2
 
+omit [Hashable P.Site] in
 theorem FFlow.marksB_sound {F : FFlow P} (h : F.marksB = true) :
     Lendable F.flow.O ∧ LocalHeld F.flow.H ∧ ∀ s, NoLocal (F.flow.H.bindings s) := by
   simp only [FFlow.marksB, Bool.and_eq_true, List.all_eq_true] at h
@@ -1212,6 +1247,7 @@ theorem FFlow.marksB_sound {F : FFlow P} (h : F.marksB = true) :
 local. -/
 def FFlow.MarksFrom (F : FFlow P) : Prop := ∀ s, P.mark s = if some s ∈ F.O then .released else .local
 
+omit [Hashable P.Site] in
 theorem FFlow.mark_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) {s : P.Site} (h : P.mark s ≠ .local) :
     some s ∈ F.O := by
   rw [hm s] at h
@@ -1219,6 +1255,7 @@ theorem FFlow.mark_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) {s : P.Site} (h
   · assumption
   · exact absurd rfl h
 
+omit [Hashable P.Site] in
 /-- **At the marks a flow gives, `O` is lent** (proved). -/
 theorem FFlow.lendable_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) : Lendable F.flow.O := by
   intro s hs s' he
@@ -1226,6 +1263,7 @@ theorem FFlow.lendable_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) : Lendable 
   rw [hm s']
   simp [show some s' ∈ F.O from hs]
 
+omit [Hashable P.Site] in
 /-- **At the marks a flow gives, local storage is held only by local
 storage** (proved): storage of a site that is not local is of `O`, whose
 contents `O` holds, and `O` has no local site. -/
@@ -1247,12 +1285,14 @@ values the code of a closure of outside code or of a bound function holds,
 which the closure of `O` does not give. -/
 def FFlow.bindingsB (F : FFlow P) : Bool := F.heap.all fun e => noLocalB e.2.2
 
+omit [Hashable P.Site] in
 theorem FFlow.bindingsB_sound {F : FFlow P} (h : F.bindingsB = true) : ∀ s, NoLocal (F.flow.H.bindings s) := by
   intro s
   rcases F.lookup_cases s with ⟨-, hb⟩ | ⟨e, he, rfl, -, hb⟩
   · show NoLocal (F.bindings s); rw [hb]; simp [NoLocal]
   · show NoLocal (F.bindings e.1); rw [hb]; exact noLocalB_sound (List.all_eq_true.mp h e he)
 
+omit [Hashable P.Site] in
 /-- **The marks a frame's checks read, at the marks a flow gives** (proved):
 `O` lent, local storage held only by local storage, and, by `bindingsB`,
 no binding reaching a local site. -/
