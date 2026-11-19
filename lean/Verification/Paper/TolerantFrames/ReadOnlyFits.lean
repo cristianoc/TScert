@@ -121,14 +121,22 @@ def recvSlot (rest : Bool) : Nat := if rest then 1 else 0
 /-- The slot of the parameter `i` of graph code. -/
 def paramSlot (rest : Bool) (i : Nat) : Nat := recvSlot rest + 1 + i
 
+/-- **A set holding what outside code may supply**: outside storage, and
+the token of every code whose token lies in `O`, standing for the closures
+of `C`'s code outside code may hold. -/
+def Supplied (S : Sites P) : Prop := none ∈ S ∧ ∀ m π, Fl.code m = some π → π.tok ∈ Fl.O → π.tok ∈ S
+
 /-- **A code open to outside code at an entry**: the slots a caller fills
 when it calls a closure entering there through a call of unknown callee,
 the rest's spine, the receiver, the parameters and the closure itself,
-hold `O`, and the values its runs return lie within `O`. A closure of a
-code whose token lies in `O` may be called so (`CapsOk`). -/
+hold `O`, the values its runs return lie within `O`, and each capture's
+slot holds what outside code may supply (`Supplied`): a closure outside
+code holds may have been made at an earlier entry, its captures then
+outside storage and closures outside code may hold. A closure of a code
+whose token lies in `O` may be called so (`CapsOk`). -/
 def OpenAt (π : CodeFlow P) (ar s : Nat) (rest : Bool) (ncaps : Nat) : Prop :=
   (∀ i, i < capSlot ar rest 0 → Sub Fl.O (π.env s i)) ∧ Sub Fl.O (π.env s (capSlot ar rest ncaps)) ∧
-    Sub π.ret Fl.O
+    Sub π.ret Fl.O ∧ ∀ i, i < ncaps → Supplied Fl (π.env s (capSlot ar rest i))
 
 /-- **The captures of a closure lowered code creates hold `O`**: what a
 closure of outside code captures is a variable bound to a value of `O`. -/

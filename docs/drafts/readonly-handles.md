@@ -2417,10 +2417,14 @@ sets of sites:
   the code's return set (`CodeFlow.ret`); $`O`$ holds outside storage, is
   closed in $`H`$, and its storage may hold all of $`O`$. A slot holds
   $`O`$ where outside code supplies its values: the entry slots `OpenAt`
-  names, of each code whose token lies in $`O`$, a handler's thrown value,
-  and every slot of a member's entry outside storage (`EntryShape`, with
-  the tokens of the closures its values hold); every other slot holds
-  what its edges carry into it.
+  names, of each code whose token lies in $`O`$, and a handler's thrown
+  value. A slot holds what outside code may supply (`Supplied`: outside
+  storage and the token of every code whose token lies in $`O`$) at every
+  slot of a member's entry (`EntryShape`) and at each capture's slot of a
+  code whose token lies in $`O`$ (`OpenAt`): a closure an earlier call gave
+  out may come back in any value outside code supplies, and a closure
+  outside code holds may have been made at an earlier entry. Every other
+  slot holds what its edges carry into it.
 - **A heap meets the flow** (`HeapInv`): each location holds a value
   meeting its site's contents, its code's values the bindings; so it meets
   the heap of sites (`HeapInv.sites`). Writes and allocations that meet
@@ -2466,31 +2470,32 @@ $`O`$ (`sitesSound_of_fits`).
 **Every entry fits** (`ReadOnlyFitsEntry.lean`) where the frame starts
 from the entry history (`StartsEntry`) and every call the claim is about
 has the shape the flow reads (`EntryShape`): a run of $`C`$'s code at a
-node whose slots naming a signature hold closures of it (`EnvFn`), and
-every value of its environment and of its heap well formed (`EntryVal`:
-every value it holds in its code is a value, every closure of $`C`$'s
-code among them meeting its proposal's entry signatures, `FnsOk`). The
-values a value holds keep code provenance and valid references
-(`Within.prov`, `Within.refsOkN`); at the entry history every location is
-outside storage, so a well-formed value of the entry meets every set
-holding outside storage (`VJ.entry`) and the heap meets the flow
-(`HeapInv.entry`); the call's term fits $`O`$ (`ClientFrame.entryFits`).
-With the flow's facts, the frame then meets `ChkSound`
-(`chkSound_of_flow`).
+node every slot of which holds what outside code may supply, whose slots
+naming a signature hold closures of it (`EnvFn`), and every value of its
+environment and of its heap well formed (`EntryVal`: every value it holds
+in its code is a value, and every closure of $`C`$'s code it holds, in a
+capture or in the code of outside closures and bound functions, is one
+$`C`$'s code gave out, `GivenOut`: of a code whose token lies in $`O`$,
+open at its entry, naming signatures at its entry only at captures
+holding closures of them or at its own slot). The values a value holds
+keep code provenance and valid references (`Within.prov`,
+`Within.refsOkN`); at the entry history every location is outside
+storage, so a well-formed value of the entry meets every set holding what
+outside code may supply (`VJ.entry`), its closures' tokens there
+(`EntryVal.fnsIn`), and the heap meets the flow (`HeapInv.entry`, outside
+storage's contents holding $`O`$); the call's term fits $`O`$
+(`ClientFrame.entryFits`). With the flow's facts, the frame then meets
+`ChkSound` (`chkSound_of_flow`).
 
-**The closures an entry may hold.** $`C`$'s code makes closures at a
-finite set of shapes (`Shape`: a signature, and for each capture the
-signature of the closure of $`C`$'s code it holds where one is known):
-lowered code's closures capture variables, so name none; the module's
-closure of a function captures the module's closures of the functions it
-calls. A well-formed value of an entry (`WfVal`, a premise of well-formed
-entries) holds values only, and every closure of $`C`$'s code it holds is
-of one of the shapes (`OfShape`). Where the proposal names a signature at
-a closure's entry only at a capture its shape names it for, or at its own
-slot (`ShapesOk`, the checker's condition), every such closure meets its
-proposal (`OfShape.fnsOk`), and a run of $`C`$'s code at a node whose
-named slots hold closures of their signatures, its environment's and its
-heap's values well formed, has the shape the fit reads (`entryShape_of`).
+**The closures an entry may hold.** A closure of $`C`$'s code an entry's
+value holds, a callback an earlier call returned or stored among them, is
+one $`C`$'s code made and gave out: made by a run of $`C`$'s code meeting
+the flow, whose rule (`Fits.makeGraphC`) gives its entry's signatures
+(`CapFn`) and, where its token lies in $`O`$, its open entry; given out, so
+its token lies in $`O`$ (`FnsIn`, every value outside code holds meeting
+$`O`$). The obligation is stated of the flow; a sequence of entries, each
+checked against the same flow, discharges it at each entry from the ones
+before (conjectured: no theorem composes entries).
 
 **Calls between module functions.** A module function reaches the module
 functions its body names at the request's slots past its parameters
@@ -2511,9 +2516,7 @@ location, which meets every set: the call's value meets the callee's
 return set (`Fits.invokeC`), which holds no site of the cursor.
 
 Proof scope: the lemmas above are proved. Not proved here: the shape of
-the calls (`EntryShape`) from the frame's well-formed entries, and the
-checker that decides `CodeOk` and `Flow.Facts` from the lowered
-graphs.
+the calls (`EntryShape`) from the entries before them.
 
 ### The checks of a code
 
@@ -2582,11 +2585,10 @@ code's first entry.
   (`codeChkB_sound`, one pass over the nodes with their continuations and
   handlers), $`O`$ holding outside storage, closed in the heap of sites,
   its storage able to hold all of $`O`$; they give `Flow.Facts`
-  (`FFlow.check_sound`). A member's entry holding outside storage at every
-  slot, its returns within $`O`$, is decided by `FFlow.entryB`, and the
-  proposal meeting the shapes of $`C`$'s closures, open at their entries
-  where their tokens lie in $`O`$, holding outside storage and the
-  captured closures' tokens at their captures' slots, by `FFlow.shapesB`.
+  (`FFlow.check_sound`). A member's entry holding what outside code may
+  supply at every slot (`suppliedB`), its returns within $`O`$, is decided
+  by `FFlow.entryB`; an open entry's captures' slots holding it, by
+  `openB`.
 - **The marks a flow gives** (`FFlow.MarksFrom`): a site of $`O`$ is
   released and every other site local. At these marks $`O`$ is lent
   (`Lendable`) and storage of a site that is not local, a site of $`O`$
@@ -2610,8 +2612,8 @@ a callee's entry added, a known call's value its callee's return set
 (`gen`), a closure's set its site and its code's token. The slots outside
 code fills hold $`O`$: the entry slots up to its own slot of each code
 whose token lies in $`O`$, and a handler's thrown value; every slot of the
-member's entry holds outside storage, and a slot naming a module
-function's signature its code's token. A worklist runs the copies and the
+member's entry holds outside storage and the tokens $`O`$ holds, and a
+slot naming a module function's signature its code's token. A worklist runs the copies and the
 nodes, then closes $`O`$, grows those slots by it, and runs again the
 nodes reading $`O`$, a return set or the heap of sites where either grew,
 until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
@@ -2682,8 +2684,8 @@ at the visitor call, every fact read at the marks the flow gives:
   holds, lies in $`O`$: `last` passes `h.starts` to `%ElementAt%`, a call
   read at $`O`$, so `h`'s fields are released and the visitor's
   `values: "any"` applies to them.
-- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 8 codes, 3168
-  nodes, proposal 590 ms, checks 313 ms): at `onLine`, `0 <=
+- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 17 codes, 3823
+  nodes, proposal 1676 ms, checks 1142 ms): at `onLine`, `0 <=
   cursor.segmentIndex`, `cursor.segmentIndex <= segmentCount`, `0 <=
   cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
   the two facts relating `segmentCount` to `prepared.widths.length` fail,
@@ -2691,10 +2693,11 @@ at the visitor call, every fact read at the marks the flow gives:
   (`stats`) under `noKeys` and by the visitor's effect, no region read as
   protected.
 - `walkPreparedComplexLines` reached from the raw walker, at its `onLine`:
-  the cursor's slot holds the local object sites of the raw walker and of
-  its exported module function, captured by no closure, its own token
-  outside $`O`$ (the file does not export it); the two cursor facts and
-  the two length facts pass.
+  the two length facts pass and the two cursor facts fail. The file
+  exports `stepPreparedLineGeometryFromStart`, which passes its caller's
+  cursor to `walkPreparedComplexLines` (with no `onLine`); the flow gives
+  each code one set per slot over all its calls, so the cursor's slot holds
+  $`O`$ beside the raw walker's local cursor sites.
   Probed as a member, entered from outside, its cursor is outside storage
   and both cursor facts fail.
 

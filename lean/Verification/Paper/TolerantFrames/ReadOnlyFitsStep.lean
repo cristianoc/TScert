@@ -373,7 +373,7 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
       obtain ⟨π', hπ', ht⟩ := hf.fns _ (.refl _) fs ar E K s caps kd rest comp oid rfl hc
       rw [hπ] at hπ'; cases hπ'
       exact hop ht
-    have hR : Sub π.ret S := hop.2.2.trans hS
+    have hR : Sub π.ret S := hop.2.2.1.trans hS
     have hC : ∀ (Γ' : Nat → Option (Sites P)) (pre : List Tm), pre.length = (if rest then 1 else 0) + 1 + ar →
         (∀ x ∈ pre, VOr (VJ Fl g n) Γ' Fl.O x) → ∀ i,
         VOr (VJ Fl g n) Γ' (π.env s i)

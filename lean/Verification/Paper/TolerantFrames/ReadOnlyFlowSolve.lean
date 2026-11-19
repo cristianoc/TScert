@@ -22,8 +22,9 @@ holds of it.
   its callee's return set; a closure's set its code's token). `O` is held
   where outside code supplies values: the entry slots of each closure's
   code whose token reaches `O` (`OpenAt`), a handler's thrown value;
-  outside storage at every slot of the unit's entry, and at each slot
-  naming a module function's signature its code's token. `O` is grown
+  what outside code may supply at every slot of the unit's entry (outside
+  storage and the tokens `O` holds, `Supplied`), and at each slot naming a
+  module function's signature its code's token. `O` is grown
   until closed and its storage holds all of it. A worklist runs the
   copies and the nodes until nothing changes or the fuel ends.
 
@@ -413,9 +414,10 @@ partial def readsO : Tm → Bool
 /-- **`O` closed**: grown by its contents, its storage holding all of it,
 and every variable outside code fills holding it: a handler's thrown value
 (`oVars`), the entry slots of each closure's code whose token lies in `O`
-(`entryVars`). -/
-def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat)) (st : SolveState P) :
-    SolveState P := Id.run do
+(`entryVars`); the unit's entry slots (`noneVars`) holding the tokens it
+holds. -/
+def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat)) (noneVars : List Nat)
+    (st : SolveState P) : SolveState P := Id.run do
   let mut st := st.toO (contentsOf st.heapFlow st.O)
   for s in st.O do
     st := st.store s st.O
@@ -425,6 +427,10 @@ def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat)) (st
     if t ∈ st.O then
       for v in vs do
         st := st.grow v st.O
+  -- the unit's entry slots: the tokens `O` holds
+  let toksO := st.O.filter fun t => st.toks.contains t
+  for v in noneVars do
+    st := st.grow v toksO
   return st
 
 /-- **The table of signatures**: each code's own at its index, then the
@@ -454,6 +460,8 @@ structure SolveStart (P : Package) where
   oVars : List Nat
   /-- The entry slots of each closure's code, with its token. -/
   entryVars : List (Option P.Site × List Nat)
+  /-- The slots of the unit's entry. -/
+  noneVars : List Nat
   st : SolveState P
 
 /-- The copies of a node's edges: each variable of the target read from
@@ -557,7 +565,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
       needs := needs, rets := rets, toks := csA.map (·.tok) }
   let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
   let st0 := tokVars.foldl (fun st (v, t) => st.grow v [t]) st0
-  return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars, entryVars, st0⟩
+  return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars, entryVars, noneVars, st0⟩
 
 /-- **A node's sets**: its expression's least set at its slots (`gen`), its
 value grown by it; a returned value given to `O`, its callers run again
@@ -641,7 +649,7 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
         runs := runs + 1
         st := siteNode s st ci l
       | [] =>
-        st := closeO s.oVars s.entryVars st
+        st := closeO s.oVars s.entryVars s.noneVars st
         grewO := grewO || st.grewO
         grewHeap := grewHeap || st.grewHeap
         let more := (if grewO then s.oReaders else []) ++ (if grewHeap then s.heapReaders else [])
