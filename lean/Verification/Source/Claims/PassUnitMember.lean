@@ -82,15 +82,17 @@ section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- **The framed claim's obligations** (the draft "Accepting a unit through
-the read-only frame", "The theorems"): the clauses of `FramedRequestSafe`
-at the frame a framed plan's proposals define that no lemma yet proves from
-the pass's check of a framed plan, the main graph's five, by the induction
-of `framed_requestSafe` over `RunSoundFramed` and `ret_reached`. A field
+the read-only frame", "The theorems"): what no lemma yet proves from the
+pass's check of a framed plan. The main graph's five clauses of
+`FramedRequestSafe` follow from them (`framedRun_of_returns`): framed nodes
+`F` with returns `Ret`, `RetE` such that the request's graph is safe at
+those returns (`FramedReturnsGuarantee`, by `RunSoundFramed` over the
+framed run the pass is to make) and the returns hold at the executions the
+frame's claim is about (`FramedReturnsReached`, by `ret_reached`). A field
 leaves this structure in the commit that proves it from the check. -/
 structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
-  run : FramedSafeClause r (spec.frame r) ∧ FramedFootprintClause r (spec.frame r) ∧
-    FramedEnsuresClause r (spec.frame r) ∧ FramedRegionalClause r (spec.frame r) ∧
-    FramedAssertionsClause r (spec.frame r)
+  run : ∃ (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop),
+    FramedReturnsGuarantee r F Ret RetE ∧ FramedReturnsReached r (spec.frame r) F Ret RetE
 end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass

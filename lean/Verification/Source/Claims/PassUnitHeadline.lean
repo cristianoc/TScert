@@ -177,8 +177,8 @@ theorem qualified_requestSafe {f : FilePlans} {r : Req f}
 
 /-- **The framed claim from the check** (proved, under `RunSound` and
 `RunKeepsSummaries`, its request over the file's store; the draft,
-`framed_requestSafe`): the main graph's clauses are the obligations
-`FramedAccepted` states; the codes' clause by `codesAccepted_guarantees`,
+`framed_requestSafe`): the main graph's clauses from the returns
+`FramedAccepted`'s obligations state (`framedRun_of_returns`); the codes' clause by `codesAccepted_guarantees`,
 the codes accepted in order by the ordinary pass from the empty table with
 the read summaries their runs leave checked, each code's guarantee read on
 the term that runs it along every set of executions
@@ -189,7 +189,8 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, hs⟩, ⟨hsafe, hf, he, hg, ha⟩⟩ := hacc
+  obtain ⟨⟨a₀, a₁, hcodes, hs⟩, ⟨F, Ret, RetE, hguar, hret⟩⟩ := hacc
+  obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returns hguar hret
   have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
     intro c hc; simp [GraphCode.admits] at hc
   have hcodeG := codesAccepted_guarantees hrun hkeep (summaries_of_checked htypes hs) hcodes

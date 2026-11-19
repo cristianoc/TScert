@@ -834,9 +834,12 @@ and the request:
 (`FramedPlanAt`) and `FramedAccepted f r spec`: its code requests accepted
 in order by the ordinary pass (`CodesAccepted`, ordinary checker, from the
 empty table), the read summaries their runs leave checked
-(`summariesChecked`), and the field `FramedObligations`, the main graph's
-five clauses of `FramedRequestSafe r (spec.frame r)` (by `RunSoundFramed`
-and `ret_reached`, to be proved). `framed_requestSafe` (under `RunSound`,
+(`summariesChecked`), and the field `FramedObligations`: framed nodes and
+returns at which the main graph is safe (`FramedReturnsGuarantee`, by
+`RunSoundFramed`) and the returns hold at the executions the claim is about
+(`FramedReturnsReached`, by `ret_reached`), both to be proved, from which
+`framedRun_of_returns` gives the main graph's five clauses of
+`FramedRequestSafe r (spec.frame r)`. `framed_requestSafe` (under `RunSound`,
 `RunKeepsSummaries` and the request over the file's store) and
 `member_safe`'s framed branch are proved from it; a field leaves the
 structure in the commit that proves it from the check. `passMember`
@@ -954,24 +957,38 @@ for units of the first kind.
 
 ### The graph at framed returns
 
-`RunSoundFramed ι` (to be proved) replaces `Target.RunSound`: each field of
-`GraphGuarantee` holds along the paths of `SafeGraphRet` whose every
-evaluation of a framed node $`l`$, from its entry $`(\rho,h)`$ to its return
-$`(v,h')`$, meets
+`RunSoundFramed ι` (to be proved) replaces `Target.RunSound`: an accepted
+framed run of the claim's main graph gives each of its five clauses as
+safety at framed returns of the term that runs the graph
+(`FramedReturnsGuarantee r F Ret RetE`), where every evaluation of a framed
+node $`l`$, from its entry $`(\rho,h)`$ to its return $`(v,h')`$, meets
 
 ```math
 \mathrm{Ret}_l(\rho,h,h')\iff\bigl(\forall S\in S_l.\ \mathrm{Supported}(S,\rho,h,h')\bigr)\wedge\bigl(\forall (I,\mathit{root})\in G_l.\ I_{\mathit{root}}(\rho,h)\Rightarrow I_{\mathit{root}}(\rho,h')\bigr)
 ```
 
-and $`\mathrm{Ret}^{e}_l`$ alike at a throw. `Target.RunSound` is the
-instance with no framed node (`runSound_of_framed`). `SafeGraphRet` is
-`SafeGraph` whose states carry the pending framed node's entry heap, its
-return transitions followed where $`\mathrm{Ret}`$ holds:
+and $`\mathrm{Ret}^{e}_l`$ alike at a throw. **Safety at framed returns**
+(`SafeRet`, `Semantics/SafeRet.lean`) is `SafePostExcW` with a state
+property `J` at every state, its run followed past a step leaving a framed
+node only where the return meets $`\mathrm{Ret}`$ (the node's term a
+value) or $`\mathrm{Ret}^{e}`$ (a throw), at the node's environment, the
+heap it was entered at and the heap it leaves at. The evaluation pending is
+threaded along: a step from `goto … l …` to a `frame` with $`F(l)`$ records
+$`l`$ and the heap (`framedPend`), a step within the frame keeps it, any
+other step clears it (`RetAt` reads it at the leaving step).
 
 ```lean
-def SafeGraphRet (Ξ : Fam) (P : Program) (T : Fam) (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop) :
-    (n : Nat) → WorldT n → Heap → State × Option (Nat × Heap) → Prop
+def SafeRet (J : Heap → Tm → Prop) (Ξ T : Fam) (Q : WPost) (R : WExc) (F : Nat → Bool)
+    (Ret RetE : Nat → Env → Heap → Heap → Prop) :
+    (n : Nat) → WorldT n → Option (Nat × Heap) → Heap → Tm → Prop
 ```
+
+`Target.RunSound` is the instance with no framed node: `SafeRet.of_safe`
+(ordinary safety with `J` along the run is `SafeRet` at every framed set)
+and `SafeRet.erase` (with no framed node, `SafeRet` is ordinary safety),
+both proved; at the claim, `framedReturns_of_requestSafe` (proved): a
+request safe for every execution meets `FramedReturnsGuarantee` with no
+framed node, whatever the returns.
 
 The node delivery reads $`\mathrm{Ret}`$ in place of `callerFrame_post`
 for the kept supports (`callKept_sound`, `callGrown_sound`, `frameKeeps`,
@@ -980,32 +997,39 @@ through its mapping.
 
 ### The returns, at reached executions
 
-`ret_reached` (to be proved): at every evaluation of a framed node of the
-claim's main graph from a reached call state to its resumption, along
-steps keeping $`\Theta_C`$, with the callee's post, $`\mathrm{Ret}_l`$ or
+`ret_reached` (to be proved): its conclusion is `FramedReturnsReached r
+(spec.frame r) F Ret RetE`, an invariant of the frame's history, the
+pending framed evaluation and the state, holding at every call the claim is
+about (entry contracts, valid roots, `Call`, a history the frame starts
+from, nothing pending), on which every step keeping $`\Theta_C`$ meets the
+returns (`RetAt`) and leaves a state meeting it: at every evaluation of a
+framed node of the claim's main graph from a reached call state to its
+resumption, with the callee's post, $`\mathrm{Ret}_l`$ or
 $`\mathrm{Ret}^{e}_l`$ holds, by `framed_transfer` with `ChkSound`,
 `StartInv`, `cert_of_charges`, `within_charges`, `framed_at_innermost_keys`
-and `framed_of_cover`.
+and `framed_of_cover`. With no framed node it holds of every frame
+(`framedReturnsReached_none`, proved).
 
 ### The framed claim, from the check
 
 ```lean
 theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FramedSpec _}
-    (hrun : RunSoundFramed (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (hrun : RunSound (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
     FramedRequestSafe r (spec.frame r)
 ```
 
-Plan: the sixth clause by `codesAccepted_guarantees` and
-`framedCode_of_guarantee` (proved); each other clause by
-induction on the budget, the invariant at a state being: reached from the
-clause's start, simulating a state of `SafeGraphRet` over the claim's graph,
-on a $`\mathrm{Ret}`$-path. A step breaking $`\Theta_C`$ ends the
-obligation; any other is a `KStep`, mapped to a transition by
-`sim_step_back` (proved); at a framed node's return `ret_reached` gives
-$`\mathrm{Ret}`$. Assertions by `assertedAt_of_graph` (proved, the converse
-direction of `asserted_of_reach`).
+Proved: the sixth clause by `codesAccepted_guarantees` and
+`framedCode_of_guarantee`; the five main-graph clauses by
+`framedRun_of_returns` from `FramedObligations`' framed nodes and returns,
+the guarantee and the reached returns: at each call and history the frame
+starts from, `SafeRet.under` (proved, by induction on the budget) reads the
+returns at each step keeping $`\Theta_C`$ from the invariant, and claims
+nothing past a step breaking it. `FramedObligations.run` is that guarantee
+and those returns; it leaves the structure when the pass makes the framed
+run (`RunCall.AcceptsFramed`), `RunSoundFramed` gives the guarantee and
+`ret_reached` the returns.
 
 ### The headline
 
@@ -1050,7 +1074,9 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `InR.mono`, `FrameCore.PublicCall.ex`, `FramedSpec.frame` (its
 `start_total`), `framed_requestSafe` from `FramedAccepted` (its codes'
 clause by `framedCode_of_guarantee`), `member_safe`'s framed branch,
-`OverStore` over framed plans, `framedRequestSafe_recandidated`, `assertedAt_of_graph` (by `sim_reaches`, a path of the
+`OverStore` over framed plans, `framedRequestSafe_recandidated`,
+`SafeRet.under`, `SafeRet.of_safe`, `SafeRet.erase`, `framedRun_of_returns`,
+`framedReturns_of_requestSafe`, `framedReturnsReached_none`, `assertedAt_of_graph` (by `sim_reaches`, a path of the
 term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
@@ -1074,7 +1100,8 @@ soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`, `crosses_inv`,
 `prologue_sim`, `isolate`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, `RunSoundFramed`, `runSound_of_framed`, `ret_reached`,
+`startInv_public`, `RunSoundFramed` (its conclusion `FramedReturnsGuarantee`),
+`ret_reached` (its conclusion `FramedReturnsReached`),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.

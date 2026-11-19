@@ -1,6 +1,7 @@
 import Verification.Source.Claims.FragmentFront
 import Verification.Programs.TolerantFramesGuaranteeTarget
 import Verification.Paper.TolerantFrames.ReadOnlyClaim
+import Verification.Semantics.SafeRet
 
 /-! # The single pass's unit theorem: definitions
 
@@ -229,6 +230,80 @@ frame's component keeps its client obligation. -/
 def FramedRequestSafe (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop :=
   FramedSafeClause r fr ∧ FramedFootprintClause r fr ∧ FramedEnsuresClause r fr ∧ FramedRegionalClause r fr ∧
     FramedAssertionsClause r fr ∧ FramedCodeAssertionsClause r fr
+
+/-! ### The main graph at framed returns
+
+The draft's route to the five main-graph clauses of `FramedRequestSafe`
+("The theorems"): the graph theorem at framed returns (`RunSoundFramed`)
+gives each clause as safety at framed returns (`SafeRet`) of the term that
+runs the request's graph, from every entry meeting its contracts, for the
+framed nodes `F` and the returns `Ret`, `RetE` the check reads at them; the
+returns at reached executions (`ret_reached`) give an invariant on which
+every step keeping the frame's obligation meets those returns. -/
+
+/-- **The main graph's clauses at framed returns** (`RunSoundFramed`'s
+conclusion for the request): safety, the footprint, the postcondition, the
+regional bound and the assertions, each as `SafeRet` of the term that runs
+the request's graph from its entry, no evaluation pending. -/
+def FramedReturnsGuarantee (r : SourceRequest σ ι) (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop) :
+    Prop :=
+  (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun _ _ _ _ => True) (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp)) ∧
+  (r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
+    ∀ η n W h (L : List Tm) (d : Tm),
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RootsOk W (envOf L d) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true →
+      HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
+        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+        (HeapObservations.WPost.lift fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
+        (HeapObservations.WExc.lift fun h' => r.onThrow = true → r.footprint.Holds h h') F Ret RetE n W none h
+        (gotoOf r.program r.start L d r.comp)) ∧
+  (r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (HeapObservations.WPost.lift fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d)))
+      (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp)) ∧
+  (∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    HeapObservations.SafeRet (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (HeapObservations.WPost.lift fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      (HeapObservations.WExc.lift fun h' => r.stated.any (·.onThrow) = true →
+        Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
+      F Ret RetE n W none h (gotoOf r.program r.start L d r.comp)) ∧
+  (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
+    EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+      (envOf L d) n W h → RootsOk W (envOf L d) →
+    HeapObservations.SafeRet (AssertedAt r.program r.assertions (envOf L d) h)
+      (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun _ _ _ _ => True) (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp))
+
+/-- **The returns at reached executions** (`ret_reached`'s conclusion for
+the request and frame): an invariant of the frame's history, the pending
+framed evaluation and the state, holding at every call of the request the
+frame's claim is about (its entry contracts, valid roots, the frame's
+entry premises and a history it starts from, no evaluation pending), on
+which every step keeping the frame's obligation meets the returns `Ret`,
+`RetE` at the framed nodes `F` and leaves a state meeting it. -/
+def FramedReturnsReached (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (F : Nat → Bool)
+    (Ret RetE : Nat → Env → Heap → Heap → Prop) : Prop :=
+  ∃ I : Verification.TolerantFrames.ReadOnly.Ghost (fr.F.at fr.C) → Option (Nat × Heap) → Heap → Tm → Prop,
+    (∀ η n W h (L : List Tm) (d : Tm),
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RootsOk W (envOf L d) →
+      fr.Call n W h (gotoOf r.program r.start L d r.comp) →
+      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g → I g none h (gotoOf r.program r.start L d r.comp)) ∧
+    (∀ g p h t h' t' (k : Nat) (W : WorldT k), I g p h t → Step h t h' t' → fr.Keeps g k W h t h' t' →
+      HeapObservations.RetAt Ret RetE p h' t t' ∧ I (fr.next g h t h' t') (HeapObservations.framedPend F p h t t') h' t')
 end
 
 /-! ## A unit's members -/

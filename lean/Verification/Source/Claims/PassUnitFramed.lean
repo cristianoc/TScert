@@ -232,6 +232,79 @@ theorem framed_callSafe {r : SourceRequest σ ι} (hr : FramedRequestSafe r fr) 
       asserted_of_reach (framed_erase hm (hc ci q hq η n W h L d none hE hR hN)).2 hl hj hre
 end
 
+/-! ## The main graph's clauses at framed returns -/
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι] {fr : ClientFrame (Ty ι)}
+
+/-- **The main graph's framed clauses from the returns** (proved; the
+draft, `framed_requestSafe`'s induction on the budget): where the request's
+graph is safe at framed returns (`FramedReturnsGuarantee`, the graph
+theorem at framed returns) and the returns hold at the executions the
+frame's claim is about (`FramedReturnsReached`), the five main-graph
+clauses of `FramedRequestSafe` hold: at each call, from each history the
+frame starts from, `SafeRet.under` reads the returns at every step keeping
+the obligation. -/
+theorem framedRun_of_returns {r : SourceRequest σ ι} {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    (hg : FramedReturnsGuarantee r F Ret RetE) (hr : FramedReturnsReached r fr F Ret RetE) :
+    FramedSafeClause r fr ∧ FramedFootprintClause r fr ∧ FramedEnsuresClause r fr ∧ FramedRegionalClause r fr ∧
+      FramedAssertionsClause r fr := by
+  obtain ⟨hs, hf, he, hgr, ha⟩ := hg
+  obtain ⟨I, hstart, hinv⟩ := hr
+  refine ⟨fun η hη n W h L d hE hR hN g hg' => ?_, fun hb η n W h L d hE hR hL hd hN g hg' => ?_,
+    fun hn η n W h L d hE hR hN g hg' => ?_, fun Φ regions hreg η n W h L d hE hR hN g hg' => ?_,
+    fun η hη n W h L d hE hR hN g hg' => ?_⟩
+  · exact SafeRet.under hinv (hstart η n W h L d hE hR hN g hg') (hs η hη n W h L d hE hR)
+  · exact SafeRet.under hinv (hstart η n W h L d hE hR hN g hg') (hf hb η n W h L d hE hR hL hd)
+  · exact SafeRet.under hinv (hstart η n W h L d hE hR hN g hg') (he hn η n W h L d hE hR)
+  · exact SafeRet.under hinv (hstart η n W h L d hE hR hN g hg') (hgr Φ regions hreg η n W h L d hE hR)
+  · exact SafeRet.under hinv (hstart η n W h L d hE hR hN g hg') (ha η hη n W h L d hE hR)
+
+/-- **With no framed node, the returns hold at every execution** (proved):
+no evaluation is ever pending, so every step meets the returns. -/
+theorem framedReturnsReached_none (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι))
+    (Ret RetE : Nat → Env → Heap → Heap → Prop) :
+    FramedReturnsReached r fr (fun _ => false) Ret RetE :=
+  ⟨fun _ p _ _ => p = none, fun _ _ _ _ _ _ _ _ _ _ _ => rfl, fun _ p h t _ t' _ _ hp _ _ => by
+    subst hp
+    exact ⟨by simp [HeapObservations.RetAt], HeapObservations.framedPend_none (fun _ => rfl) h t t'⟩⟩
+
+/-- **An ordinarily safe request is safe at framed returns with no framed
+node** (proved; the draft, `runSound_of_framed`, read at the claim): a
+request safe for every execution (`RequestSafe`), its graph's node
+expressions mentioning no location, meets the main graph's clauses at framed
+returns with no framed node, whatever the returns. -/
+theorem framedReturns_of_requestSafe {r : SourceRequest σ ι} (hr : RequestSafe r)
+    (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
+    (Ret RetE : Nat → Env → Heap → Heap → Prop) :
+    FramedReturnsGuarantee r (fun _ => false) Ret RetE := by
+  obtain ⟨hs, hf, he, hg, ha, -⟩ := hr
+  -- The graph's safety, read on the term that runs it.
+  have hterm : ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RootsOk W (envOf L d) →
+      Safe (excOf (reassign (RequestJson.graph r.toRequest) η))
+        (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d))) n W h
+        (gotoOf r.program r.start L d r.comp) := by
+    intro η hη n W h L d hE hR
+    have hsafe := hs η hη n W h (envOf L d) hE hR
+    rw [← SourceExtraction.program_nodes r.program] at hsafe
+    refine GraphCode.safe_of_sim n W h (sim_gotoOf r.program r.start L d r.comp) (fun e he' => ?_) hsafe
+    obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he'
+    exact program_source_refsOk hsrc W node hn
+  refine ⟨fun η hη n W h L d hE hR => ?_, fun hb η n W h L d hE hR hL hd => ?_,
+    fun hn η n W h L d hE hR => ?_, fun Φ regions hreg η n W h L d hE hR => ?_,
+    fun η hη n W h L d hE hR => ?_⟩
+  · exact SafeRet.of_safe (fun _ _ => trivial)
+      (SafePostExcW.of_post (fun _ _ _ => trivial) (of_safe (hterm η hη n W h L d hE hR)))
+  · exact SafeRet.of_safe (fun _ _ => trivial) (hf hb η n W h L d hE hR hL hd)
+  · exact SafeRet.of_safe (fun _ _ => trivial) (SafePostExcW.of_post (fun _ _ _ => trivial)
+      (he hn η n W h L d hE hR))
+  · exact SafeRet.of_safe (fun _ _ => trivial) (hg Φ regions hreg η n W h L d hE hR)
+  · exact SafeRet.of_safe (assertedAt_of_graph (ha η hη n W h (envOf L d) hE hR))
+      (SafePostExcW.of_post (fun _ _ _ => trivial) (of_safe (hterm η hη n W h L d hE hR)))
+end
+
 /-! ## The framed claim's executions are the paper's -/
 
 section
