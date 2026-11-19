@@ -698,13 +698,19 @@ the same labels with environments related by the realization's slot map,
 and keeping the step kinds, roots and crossings. For a receiverless module
 function the entered code is the request's tables extended by the
 prologue (`PassUnit.dropReceiver`; `Step.frameEffect` carries both tables
-into the body), and `prologue_sim` (to be proved) relates a state of the
-extended tables at a body label $`l<|\mathrm{r.program}|`$ to the request's
-state at $`l`$: the prologue's node is past the body, no body node's target
-reaches it, so each body step in the extended tables is the same step in
-the request's; the prologue's own steps, from `graphEntry`'s slots
-(receiver, arguments, the closure, default `.nul`) to the body's start,
-relate to the request's entry state.
+into the body), and `prologue_sim` (proved, `FramedRealize.lean`) relates
+a state of the extended tables at a body label $`l<|\mathrm{r.program}|`$
+to the request's state at $`l`$: the prologue's node is past the body, no
+body node's target reaches it (`bodyTargetsB`, decided), so the two codes
+agree on the body (`BodyAgree`, `realized_agree`) and each body step in the
+extended tables is the same step in the request's, on the same heap, to
+related terms (`TabRel`: a run at a body label, a frame at a body node with
+the same running term, or the same term; `tabRel_step`, `tabRel_steps`,
+`ReadOnlyRealize.lean`), and where one takes no step the other takes none
+(`tabRel_stuck`); the prologue's own two steps (`prologue_steps`: its node
+evaluates `undefined`, its continuation maps the slots past the receiver)
+reach the realized code's run at the request's start, related to the
+request's.
 
 **One site per body allocation.** Allocation sites are keyed by the body:
 `bodyOf m` is the request's tables for a realized code (the first
@@ -712,9 +718,13 @@ $`|\mathrm{r.program}|`$ entries of its tables, `Round5.lean`, `body_prefix`)
 and `m` for any other code; the canonical numbering of an allocation
 occurrence is that of `(bodyOf m, continuation and handler, kind)` (`canonSite`).
 So the same body allocation, P22's `const c = { i: 0 }` among them, has one
-site in both codes, and `chk_sim` (to be proved, from the numbering's
-definition and `prologue_sim`) states that `chk` gives related steps the
-same allocation sites, keys and crossings. The flow holds both codes
+site in both codes, and `chk_sim` states that `chk` gives related steps
+the same allocation sites, keys and crossings: in any context, related
+runs allocate at the same site (`chk_site_sim`, from `stepSite_tabRel` and
+`allocB_realized`), keys are `none` in both, and a step of related runs
+crosses out the same values (`chk_actual_sim`: related runs hold the same
+values, `vals_tabRel`, `vals_ctx`, `actualXs_congr`), proved; that an
+entering step's crossings in (`entryXs`) agree is to be proved. The flow holds both codes
 (`codesCoverB`), its proposals for the realized code at body labels equal
 to the request's (`realizedFlowB`, decided), so `Fits`, `Provenance` and
 the frame check read the same proposal in either code; re-entered calls of
@@ -896,6 +906,10 @@ token, `componentCodes`): each module
   code's entry, its slots naming signatures only at the sibling slots and
   the closure's own slot.
 - **the inputs**: `paramTypes`, computed from the requests.
+- **the body's targets** (`bodyTargetsB`, `bodyTargetsB_sound`,
+  `FramedRealize.lean`): every continuation and handler of the request's
+  program targets one of its labels, and its start is one, so the
+  realized code and the request's agree on the body (`realized_agree`).
 - **lowered codes and layouts** (`codesLoweredB`, `tokensSomeB`,
   `ReadOnlyLayouts.lean`): every code of the flow is lowered, every context
   has a `some` token, and every closure of $`C`$'s code the initialization's
@@ -1396,7 +1410,12 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `heapDeep_of_checks`, `deepIn_of_checks` (`ReadOnlyLayouts.lean`);
 `activeFrame_ctx`, `activeFrame_hole`, `Fits.frameIn_hole`, `hole_run`,
 `valRun_of_steps`, `EvalCtx.refs_hole`, `EvalCtx.wok_hole`, `wok_steps`,
-`within_run`, `within_depth`, `within_member` (`ReadOnlySegment.lean`).
+`within_run`, `within_depth`, `within_member` (`ReadOnlySegment.lean`);
+`tabRel_step`, `tabRel_steps`, `tabRel_stuck`, `activeFrame_snd`,
+`stepSite_tabRel`, `vals_tabRel`, `vals_ctx`, `actualXs_congr`
+(`ReadOnlyRealize.lean`), `bodyTargetsB_sound`, `realized_agree`,
+`prologue_steps`, `prologue_sim`, `chk_site_sim`, `chk_actual_sim`
+(`FramedRealize.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1405,11 +1424,11 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `chk_sim`, `publicCall_safe`, `entryHolds_realized`,
+**To be proved, milestone 1**: `chk_sim`'s entering crossings, `publicCall_safe`, `entryHolds_realized`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
-`prologue_sim`, `project`, `keeps_canonical`,
+`project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),
 each field of `FramedObligations` from the check,
