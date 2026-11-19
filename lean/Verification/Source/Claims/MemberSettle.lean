@@ -538,6 +538,15 @@ def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String
     let r := f.passGroup fuel group compare debugNode repeats given observe counting located
     (r.1, r.2, 0, 0)
 
+/-- The contracts the checks of a group's members read
+(`SourceRequest.contractReads`), on the wire: reported with the group's
+verdict. -/
+def FilePlans.contractReads (f : FilePlans) (group : List Nat) : List Json :=
+  f.plans.zipIdx.flatMap fun (p, j) =>
+    if !group.contains j then [] else match p with
+    | .ok (.graph _ _ r) => r.contractReads.map (·.toJson)
+    | .error _ => []
+
 /-- The plans with a false fact (`x - x ≤ -1` over slot 0) supplied at each
 graph's start, the adversarial proposal of `TSCERT_FORCE=start-facts`: the
 pass's entry check refuses it. -/

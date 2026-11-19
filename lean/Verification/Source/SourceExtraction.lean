@@ -102,10 +102,13 @@ position, and its type, or why it has none. -/
 abbrev ModuleValue (ι : Type) := String × Span × Except String (ModuleType ι)
 
 /-- The table is the one the claims were lowered into; annotations the claims
-did not mention grow it, and the request carries the result. -/
+did not mention grow it, and the request carries the result. The request's
+contract reads are the members the lowering read and the values `values`
+gives of the names it read. -/
 @[nospecialize] def extractNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (ModuleValue Tree) := []) (classes : List String := [])
-    (freshConstructors : List (String × Span) := []) (moduleOwned : List String := []) :
+    (freshConstructors : List (String × Span) := []) (moduleOwned : List String := [])
+    (values : List String → List ContractRead := fun _ => []) :
     Except String (SourceRequest EquationStore.State Tree) := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List (ScopeBinding Tree) := f.params.map (fun p => held ⟨p.name,none⟩)
@@ -340,7 +343,8 @@ did not mention grow it, and the request carries the result. -/
     regional := regional
     ensures := ensures
     async := f.async
-    stated := f.stated }
+    stated := f.stated
+    contractReads := built.memberReads ++ values built.nameReads }
 
 end
 

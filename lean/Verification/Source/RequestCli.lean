@@ -617,8 +617,8 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let planned ← IO.lazyPure fun _ => p.plan i known memo
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
-  let (lines, verdict, extraction) ← match planned with
-    | .error reason => pure ([], .error reason, some reason)
+  let (lines, verdict, extraction, contracts) ← match planned with
+    | .error reason => pure ([], .error reason, some reason, [])
     | .ok f => do
       if (fr.group i).head? == some i then
         p.proposals.modify (·.insert i (f.groupProposals i))
@@ -627,7 +627,8 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
           f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
           compare debugNode repeats none observe counting p.located
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
-          f.extractionRefusal (some [SourceClaimJson.memberName unit]))
+          f.extractionRefusal (some [SourceClaimJson.memberName unit]),
+          f.contractReads (fr.group i))
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -635,7 +636,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let kinds ← SinglePass.kindNanos.get
   emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
   emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
-  return (WorkerWire.verdictLine unit members verdict extraction, match verdict with | .ok _ => none | .error r => some r)
+  return (WorkerWire.verdictLine unit members verdict extraction contracts, match verdict with | .ok _ => none | .error r => some r)
 
 /-- A line on standard output, flushed: a reader of the stream sees it as
 soon as it is written. -/

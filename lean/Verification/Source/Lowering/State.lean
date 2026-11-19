@@ -269,6 +269,12 @@ private structure Built extends GraphFrame where
   /-- The module cells whose objects the module owns (`ownedModuleCells`):
   a key-adding write on one is the copy of its object written to the cell. -/
   moduleOwned : List String := []
+  /-- The members whose types the walk or the lowering computed, each by the
+  declaration whose row states it (`recordMember`), and the names the walk
+  typed (`recordName`): reported with the unit's verdict (`ContractRead`),
+  read by no check. A failure carries none of an attempt's. -/
+  memberReads : Std.HashSet ContractRead := {}
+  nameReads : Std.HashSet String := {}
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -600,6 +606,40 @@ def recordHints (labels : List Tree) : Compiler Unit :=
 def recordCode (request : CodeRequest Tree) (source : CodeSource) : Compiler Unit :=
   updateBuilt fun s => { s with codes := s.codes.push request, codeSources := s.codeSources.push source }
 
+/-- The declaration a label's head lowers, by its identity's module and name:
+a declaration of the document's, or the array prototype. -/
+def labelDeclaration (T : EquationStore.State) : Tree → Option (String × String)
+  | .app h _ => match (T.heads[h]?).map EquationLowering.Draft.kind with
+    | some (.declaration i) => T.doc[i]?.bind fun d =>
+        match d.identity.getObjValAs? String "module", d.identity.getObjValAs? String "name" with
+        | .ok module, .ok name => some (module, name)
+        | _, _ => none
+    | some EquationLowering.HeadKind.proto => some ("tscert/array-prototype", "ArrayProto")
+    | _ => none
+  | _ => none
+
+/-- A member `fld` read at the labels `L`, each of which states it in its
+own row (an own field, view, optional field or method, or a prototype's
+where `L` is the prototype read): recorded for each label lowering a
+declaration (`labelDeclaration`). A key the model keeps for itself (the
+spine, the prototype) is none of a contract's members. -/
+def recordMember (L : Ty Tree) (fld : PropKey) : Compiler Unit := do
+  if SourceTypes.reservedKey fld then return
+  let T := (← readBuilt (·.types))
+  let reads := L.filterMap fun l => (labelDeclaration T l).map fun (module, name) =>
+    ContractRead.member module name (toString fld)
+  if reads.isEmpty then return
+  updateBuilt fun s => { s with memberReads := reads.foldl (·.insert ·) s.memberReads }
+
+/-- A name the walk typed: a value of the declaration document where it
+names one (`ContractRead.value`, resolved by the unit's extraction). -/
+def recordName (n : String) : Compiler Unit :=
+  updateBuilt fun s => { s with nameReads := s.nameReads.insert n }
+
+/-- The members and names recorded so far. -/
+def contractReads : Compiler (List ContractRead × List String) :=
+  readBuilt fun s => (s.memberReads.toList, s.nameReads.toList)
+
 /-- Read-only outputs of one compiled graph. -/
 structure LoweredGraph where
   program : Program
@@ -619,6 +659,9 @@ structure LoweringResult extends LoweredGraph where
   codes : List (CodeRequest Tree)
   codeSources : List CodeSource
   nodePlans : List (DirectProof.Plan Tree)
+  /-- The members and names recorded (`contractReads`). -/
+  memberReads : List ContractRead
+  nameReads : List String
 
 /-- Whether the callee resolves to an audited native allocation binding.
 Shadowing locals and parameters have different declaration descriptors. -/
@@ -641,7 +684,9 @@ def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : 
     hints := s.hints
     codes := s.codes.toList
     codeSources := s.codeSources.toList
-    nodePlans := s.nodePlans.toList })
+    nodePlans := s.nodePlans.toList
+    memberReads := s.memberReads.toList
+    nameReads := s.nameReads.toList })
 
 end
 end Verification.SourceExtraction

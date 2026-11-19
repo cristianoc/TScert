@@ -235,7 +235,7 @@ extraction reads them. -/
 def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module scope => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
-  let (T, fc, completion, declarations, spanEntries, exprsAt) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+  let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
     SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
@@ -386,7 +386,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         envs := row.envs.filter (fun (p, _) => point.envs.any (·.1 == p))
         entryCurrent := row.entryCurrent.filter (fun (p, _) => point.envs.any (·.1 == p)) }) })
   let fc := { fc with points, arrowClaims }
-  if init then return (T, fc)
+  if init then return (T, fc, reads)
   let action : Compiler ((List (String × SourceClaims.Candidate Tree) × SourceClaims.Candidate Tree) ×
       EquationStore.State) := do
     let params ← f.params.mapM fun p => do
@@ -400,7 +400,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       pure (.error s!"not handled: the result's annotation: {e}")
     return ((params, ret), ← table)
   let ((((params, ret), T), _)) ← runCompiler T [] action
-  return (T, { fc with params, ret })
+  return (T, { fc with params, ret }, reads)
 
 /-- **A unit's calls' type arguments from its walk** (mode 8): each call of a
 generic module value at the type each binder takes there
@@ -458,7 +458,7 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
   | .error reason =>
     let failed := fun (v : ModuleValue Tree) => ((v.1, v.2.1, .error s!"not handled: the module initialization's walk: {reason}") : ModuleValue Tree)
     return { fr with moduleConstants := fr.moduleConstants.map failed }
-  | .ok (T, ic) =>
+  | .ok (T, ic, _) =>
     let typed : List (ModuleValue Tree) := fr.init.flatMap fun
       | .constants _ bs => (bs.filter fun b => !fr.classNames.contains b.name).map fun b =>
         (b.name, b.namePos, match ic.exprs.lookup b.init.span, b.annot with

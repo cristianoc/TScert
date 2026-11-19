@@ -159,6 +159,9 @@ structure Front where
   /-- The imported values at their declared types, by local name and span,
   which `Front.withQualified` reads again. -/
   imported : List (String × Span × List Tree)
+  /-- The declaration document's values, each at its declaration and binding
+  (`documentValueReads`): those a unit reads are reported with its verdict. -/
+  values : List SourceExtraction.ContractRead
 
 /-- A unit's identity on the wire: a function's name and its name's start,
 or `init` for the module's initialization. -/
@@ -293,6 +296,27 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
     let g ← units.head?
     some (name, g.namePos, (do overloadSlot (← units.mapM slotOf)).map .written)
 
+/-- The values of a Fragment's declaration document (`ast`), each at its
+declaration and binding (`ContractRead.value`). The decoder of the document
+(`EquationLowering.source`) requires each value's fields. -/
+def documentValueReads (ast : Json) : List SourceExtraction.ContractRead :=
+  let values := (((ast.getObjVal? "declarations").toOption.bind fun doc =>
+    (doc.getObjVal? "values").toOption.bind (·.getArr?.toOption)).getD #[]).toList
+  values.filterMap fun value => do
+    let binding ← (value.getObjVal? "binding").toOption
+    let declaration ← (value.getObjVal? "declaration").toOption
+    some (.value (← (declaration.getObjValAs? String "module").toOption)
+      (← (declaration.getObjValAs? String "name").toOption)
+      (← (binding.getObjValAs? String "specifier").toOption) (← (binding.getObjValAs? String "imported").toOption)
+      (← (binding.getObjValAs? String "local").toOption))
+
+/-- The values among `values` the names `names` bind: the document's values
+a unit read. -/
+def readValues (values : List SourceExtraction.ContractRead) (names : List String) : List SourceExtraction.ContractRead :=
+  values.filter fun
+    | .value _ _ _ _ localName => names.contains localName
+    | .member .. => false
+
 /-- The front of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
 other at its declared type. With `lenient` (mode 8), a qualified import
@@ -328,6 +352,7 @@ def fileFront (ast claims : Json) (fileKey : String)
     if !bodyModule module then none else
     some (← (binding.getObjValAs? String "local").toOption,
       ← (fromJson? (binding.getObjValD "span") : Except String Span).toOption)
+  let values := documentValueReads ast
   let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
@@ -422,7 +447,7 @@ def fileFront (ast claims : Json) (fileKey : String)
   return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
     SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
-    #[], #[], imported⟩
+    #[], #[], imported, values⟩
 
 /-- The front `fileFront` gives with the qualified reads `qualified`, of a
 front it gave with none (`lenient`, mode 8): each imported value the reads
@@ -441,10 +466,11 @@ def Front.withQualified (fr : Front)
 
 /-- What replaces a unit's claims before its extraction, where one does:
 its claims with the types a computation gives (`Synthesis.retypeUnit`), over
-a grown store. -/
+a grown store, and the members and names the computation read
+(`SourceExtraction.contractReads`). -/
 abbrev Retype := Front → EquationStore.State → Fragment.Fn → SourceClaims.Function Tree →
   List (SourceExtraction.ModuleValue Tree) → Option (SchemeRow Tree × List String) →
-  Except String (EquationStore.State × SourceClaims.Function Tree)
+  Except String (EquationStore.State × SourceClaims.Function Tree × (List SourceExtraction.ContractRead × List String))
 
 /-- What states a unit's calls' type arguments before its generic module
 values are instantiated, where a computation gives them: its claims with
@@ -465,7 +491,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _⟩ := fr
+    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _, values⟩ := fr
   let (f, tps, initClaims) := u
   if let (some _, some reason) := (initClaims, initOrder) then throw reason
   let d := { d with types := T }
@@ -638,13 +664,17 @@ def extractMember (fr : Front) (T : EquationStore.State)
         module := bindings
         c := claims
       | .error reason => throw reason
-    let (types, claims) ← match retype with
+    let (types, claims, (members, names)) ← match retype with
       | some r => r fr d.types f c.normalized module (sourceScheme.map fun row =>
           (row, tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution))
-      | none => pure (d.types, c.normalized)
+      | none => pure (d.types, c.normalized, ([], []))
     let request ← extractNormalizedFn types f claims module (SourceExtraction.sourceClasses init) freshConstructors
-      moduleOwned
-    return .graph f.name f.namePos { request with sourceScheme }
+      moduleOwned (readValues values)
+    -- The contracts the walk and the lowering read, each once: their
+    -- members, and the declaration document's values among the names they
+    -- read.
+    let contractReads := (members ++ readValues values names ++ request.contractReads).eraseDups
+    return .graph f.name f.namePos { request with sourceScheme, contractReads }
   -- A generic unit's graph extraction reports where it stops as a
   -- located refusal at the function, as the direct checker's do.
   let plan ← if tps.isEmpty then finish d module c f

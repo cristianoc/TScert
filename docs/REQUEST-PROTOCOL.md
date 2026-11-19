@@ -124,12 +124,19 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   `{"components"}`;
 - a request line `{"units"}`: the identities of the units to check, each one
   the preparation line names, or `null` for every one in order;
-- a verdict line, `{"unit","members","accepted","depends","extraction"}` or
-  `{"unit","members","refusal","extraction"}`, as `--verify-interface-stage 8`
+- a verdict line, `{"unit","members","accepted","depends","extraction","contracts"}` or
+  `{"unit","members","refusal","extraction","contracts"}`, as `--verify-interface-stage 8`
   prints it; `extraction` the first extraction refusal among the unit's
   group, or `null`. The first non-null one in the order the checks run is
   the file's refusal, which `--verify-interface-stage 8` reports as its
-  refusal.
+  refusal. `contracts` lists the contracts the group's check read, each
+  once (`SourceExtraction.ContractRead`), which no verdict reads: a member,
+  `{"member":{"module","name","key"}}`, the key of the declaration whose row
+  states it, recorded where the walk or the lowering computes the member's
+  type (`SourceExtraction.recordMember`); a value of the declaration
+  document, `{"value":{"module","name","specifier","imported","local"}}`, its
+  declaration and binding, for a name the walk types or the lowering reads a
+  prototype through (`SourceExtraction.recordName`).
 
 A line of another shape, or a unit the selection does not check, is an
 operational failure (exit 3). A unit's verdict line is a function of the
