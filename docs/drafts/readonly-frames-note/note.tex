@@ -192,7 +192,8 @@ $c.i<\len{\mathit{xs}}$, with $0\le c.i$ from the loop, has the support
 $\{c.i:\keep,\ \mathit{xs}.\kw{spine}:\grow\}$, tested location by
 location: $c.i$ is in $R_\cC$, where $\Psi_\cC\sqcup\Theta_\cC=\keep$;
 the spine of \code{xs}, which crossed in at the writable type
-\code{number[]}, is outside $R_\cC$, where $\Phi$ allows $\grow$.
+\code{number[]}, is outside $R_\cC$, where $\Phi$ allows $\grow$. The flow of sites gives
+the cursor's mark with the slots of Remark~\ref{rem:slots}.
 \end{example}
 \begin{example}[A released result]\label{ex:roreleased}\mbox{}
 \begin{center}\small
@@ -413,28 +414,32 @@ compose, rigidly when $\Phi$ is rigid and $\Psi_\cC\sqcup\Theta_\cC\sqsubseteq\P
 
 The check (K) and the premise of Proposition~\ref{prop:rorely} read, for
 each value at each node of $\cC$'s code, the allocation sites of the
-storage it may reach. A \emph{flow} states them. It is an escape analysis:
-its set $O$ holds the sites of the storage outside code may reach. It
-reads no type, mark or protocol, so it is stated for any component and any
-abstraction of allocations; read-only frames is one of its uses
-(Section~\ref{sec:flowro}). An untrusted procedure proposes a flow and a
-decision procedure checks it; only the check is trusted.
+storage it may reach. A \emph{flow}, an escape analysis, states them: its
+set $O$ holds the sites of the storage outside code may reach. It reads no
+type, mark or protocol, for any finite set of sites and any sites each
+code allocates at. An untrusted procedure proposes a flow and a decision
+procedure, the only trusted part, checks it.
 
-\paragraph{Sites.} Each allocation of $\cC$'s code, at its occurrence
-$p$ in a node expression, a native call's allocation, a closure's and a
-rest parameter's array included, has a site $\alpha(p)$ of a finite set
-$\Sigma$; all outside storage has the site $\circ$, and
-$\Sigma_\circ=\Sigma\cup\{\circ\}$. A location's site is fixed at its
-allocation. A \emph{heap of sites} $H:\Sigma_\circ\to\mathcal
-P(\Sigma_\circ)$ gives the sites that storage of each site may reference:
-through a field, a spine's cells, or a value bound by a closure stored
-there; $H(S)=\bigcup_{s\in S}H(s)$. A value $v$ \emph{meets} a set $S$,
+\paragraph{Sites.} Each code $m$ of $\cC$ (the graph of one function)
+allocates at an object site $\alpha_o(m)$ and an array site $\alpha_a(m)$
+of a finite set $\Sigma$: the cells an array literal or an element write
+of $m$ allocates have the site $\alpha_a(m)$, every other location $m$
+allocates (an object's fields and identity, a closure, a bound function)
+the site $\alpha_o(m)$. A site so tells one function's storage from
+another's and from outside storage, and arrays' cells from other
+locations. Outside storage has the site $\circ$, and
+$\Sigma_\circ=\Sigma\cup\{\circ\}$; a location's site is fixed at its
+allocation. A \emph{heap of sites} $H=(H_c,H_b)$ gives the sites $H_c(s)$
+that the values stored at a location of site $s$ may reach first, and the
+sites $H_b(s)$ that the values bound by a closure of outside code or a
+bound function stored there may; $H_c(S)=\bigcup_{s\in S}H_c(s)$. A value $v$ \emph{meets} a set $S$,
 $v\models S$, when every location $v$ reaches in one step, through a field,
-a cell or what its code holds, has its site in $S$. A heap \emph{meets}
-$H$ when the value of each location meets $H$ of the location's site. A
-set $S$ is \emph{closed} when $H(S)\subseteq S$; $\overline S$ is the least
-closed set containing $S$
-\status{Lean: \lean{SiteHeap}, its contents and its bindings apart; \lean{SitesOf}, \lean{Leaves}, \lean{HeapSites}, \lean{Closed}; the site at allocation, \lean{Ghost.alloc}. The Lean's $\alpha$ is constant on each code of $\cC$: one site for its objects and one for its arrays (\lean{Alloc}, \lean{CodeFlow.alloc}, \lean{stepSite})}.
+a cell or what its code holds, has its site in $S$. A heap \emph{meets} $H$
+when the value of each location meets $H_c$ of the location's site and
+each value its code binds meets $H_b$ of it. Storage of site $s$
+\emph{stores} $S$ when $S\subseteq H_c(s)$ and $S\subseteq H_b(s)$. A set
+$S$ is \emph{closed} when $H_c(S)\subseteq S$
+\status{Lean: \lean{SiteHeap}, \lean{SitesOf}, \lean{HeapSites}, \lean{Stores}, \lean{Closed}; the sites of a code, \lean{Alloc}, \lean{CodeFlow.alloc}; the site of a step's fresh locations, \lean{stepSite}; the site at allocation, \lean{Ghost.alloc}}.
 
 \begin{proposition}[Reach]\label{prop:reach}
 In a heap that meets $H$, a value that meets a closed set $S$ reaches only
@@ -443,195 +448,195 @@ locations whose sites are in $S$.
 \begin{proof}
 By induction on the chain of reads: the first location is in $S$ by
 $v\models S$, and the value stored at a location of site $s\in S$ meets
-$H(s)\subseteq S$
+$H_c(s)\subseteq S$
 \status{Lean: \lean{reach\_sites}}.
 \end{proof}
 
-\paragraph{Flows.} A flow $F=(O,H,\tau,\nu,\phi,\rho)$ gives the set
+\paragraph{Flows.} A flow $F=(O,H,\tau,\nu,\phi)$ gives the set
 $O\subseteq\Sigma_\circ$ of the sites outside code may reach, a heap of
-sites $H$, and for each node $l$ of each code $m$ of $\cC$ the sites
+sites $H$, and for each node $l$ of each code of $\cC$ the sites
 $\tau_l(x)$ of each slot $x$ of its environment, the sites $\nu_l$ of its
-expression's value, and, where a slot holds closures of one code of
-$\cC$, that code $\phi_l(x)$; $\rho_m$ is the set a return of $m$ meets. A
-code is \emph{open} when outside code may call a closure of it: it is a
-member's, or a closure of it may meet $O$
-\status{Lean: \lean{Flow}, \lean{CodeFlow} (\lean{env}, \lean{val}, \lean{fn}, \lean{vfn}), \lean{FnSig}. The Lean treats every code as open, with $\rho_m=O$}.
+expression's value, and, where a slot holds closures of $\cC$'s code of
+one signature (a code, its arity, its entry, whether it collects a rest
+parameter, its number of captures), that signature $\phi_l(x)$
+\status{Lean: \lean{Flow}, \lean{CodeFlow} (\lean{env}, \lean{val}, \lean{fn}, \lean{vfn}), \lean{FnSig}}.
+
+\paragraph{Signatures.} A slot that names a signature holds a closure of
+it at every state: at an entry, as the entry states; along an edge, from
+the slot or value that fills it; at a closure's entry, only at a capture
+holding such a closure or at the closure's own slot, the only one a
+closure a node expression creates names
+\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{SelfFn}; at the entry, \lean{EntryShape}}.
 
 \paragraph{Typing by sites.} $\Gamma\vdash e:S$ states that the value of
 $e$, once computed, meets $S$, where $\Gamma$ gives the sites of the slots
-and variables. At a position of outside code every set lies within $O$.
-The rules of the allocating, reading, writing, calling and throwing terms
-are
+and variables, and $m$ is the code of the innermost frame. At a position of
+outside code every set lies within $O$. The rules of the allocating,
+reading, writing, calling and throwing terms are
 \begin{mathpar}
-\inferrule*[left=New]{\Gamma\vdash e_i:S_i \\ S_i\subseteq H(\alpha(p)) \\ \alpha(p)\in S}{\Gamma\vdash\kw{new}^{p}\{\bar f:\bar e\}:S}
+\inferrule*[left=New]{\Gamma\vdash e_i:S_i \\ \alpha_o(m)\text{ stores }S_i \\ \alpha_o(m)\in S}{\Gamma\vdash\kw{new}\{\bar f:\bar e\}:S}
 \and
-\inferrule*[left=Read]{\Gamma\vdash e:S_e \\ H(\overline{S_e})\subseteq S}{\Gamma\vdash e[k]:S}
+\inferrule*[left=Read]{\Gamma\vdash e:S_e \\ S_e\subseteq Q \\ Q\text{ closed} \\ H_c(Q)\subseteq S}{\Gamma\vdash e[k]:S}
 \and
-\inferrule*[left=Write]{\Gamma\vdash e:S_e \\ \Gamma\vdash e':S' \\ S'\subseteq H(s)\ \text{for}\ s\in S_e}{\Gamma\vdash e[k]:=e':S}
+\inferrule*[left=Write]{\Gamma\vdash e:S_e \\ \Gamma\vdash e':S' \\ s\text{ stores }S'\ \text{for}\ s\in S_e}{\Gamma\vdash e[k]:=e':S}
 \and
-\inferrule*[left=Call-out]{\Gamma\vdash f:O \\ \Gamma\vdash e_r:O \\ \Gamma\vdash e_i:O \\ \alpha(p)\in O \\ O\subseteq S}{\Gamma\vdash f(e_r;\bar e)^{p}:S}
+\inferrule*[left=Call-out]{\Gamma\vdash f:O \\ \Gamma\vdash e_r:O \\ \Gamma\vdash e_i:O \\ \alpha_a(m)\in O \\ O\subseteq S}{\Gamma\vdash f(e_r;\bar e):S}
 \and
-\inferrule*[left=Call-in]{\Gamma(f)\text{ names }m \\ \Gamma\vdash e_r:\tau^m(\kw{this}) \\ \Gamma\vdash e_i:\tau^m(x_i) \\ \rho_m\subseteq S}{\Gamma\vdash f(e_r;\bar e)^{p}:S}
+\inferrule*[left=Call-in]{\Gamma(f)\text{ names }\sigma \\ \Gamma\vdash e_r:\tau^\sigma(\kw{this}) \\ \Gamma\vdash e_i:\tau^\sigma(x_i) \\ O\subseteq S}{\Gamma\vdash f(e_r;\bar e):S}
 \and
 \inferrule*[left=Throw]{\Gamma\vdash e:O}{\Gamma\vdash\kw{throw}\;e:S}
 \end{mathpar}
-with $\tau^m$ the slots of $m$'s entry node, a rest parameter's collecting
-the actuals past the parameters in an array of site $\alpha(p)$. A read
-meets the closure $\overline{S_e}$, since it may follow prototypes; the
-rest spine of \textsc{Call-out} is allocated for a callee that may be
-outside code. A variable meets the set of its binder; a test, an
-arithmetic operation and a length give a value with no location, which
-meets every set; a nested run of $\cC$'s code fits when its environment
-meets its node's slots, and of outside code when its environment meets
-$O$
-\status{Lean: \lean{Fits}, at a value judgment \lean{VJ}: \textsc{New} is \lean{Fits.makeAbsent}, \lean{Fits.makeView}, \lean{Fits.makeBound}, \lean{Fits.makeGraphC}, \lean{Fits.makeGraphOut}, \lean{Fits.arrLit}, \lean{Fits.makeKey}; \textsc{Read} is \lean{Fits.readAt}, \lean{Fits.indexAt}, \lean{Fits.elemAt}, \lean{Fits.spread}, \lean{Fits.merge}; \textsc{Write} is \lean{Fits.writeAt}, \lean{Fits.setElem}; \textsc{Call-out} is \lean{Fits.invoke}, \lean{Fits.construct}; \textsc{Call-in} is \lean{Fits.invokeC}, whose actuals are values or variables, at the code's array site, with $\rho_m=O$; \textsc{Throw} is \lean{Fits.throw}; runs \lean{Fits.frameC}, \lean{Fits.frameOut}, \lean{Fits.gotoC}, \lean{Fits.gotoOut}}.
+with $\tau^\sigma$ the slots of the entry node of $\sigma$'s code, each
+actual of \textsc{Call-in} a value or a variable, and a rest parameter
+collecting the actuals past the parameters in an array of site
+$\alpha_a(m)$, which its slot holds and which stores them. A read meets a
+closed set, since it may follow prototypes; \textsc{Call-out} puts
+$\alpha_a(m)$ in $O$ for the rest spine of a callee that may be outside
+code. Every call's result meets a set containing $O$. A variable meets the
+set of its binder; a test, an arithmetic operation and a length give a
+value with no location, which meets every set; a nested run of $\cC$'s
+code fits when its environment meets its node's slots, and of outside
+code when its environment meets $O$
+\status{Lean: \lean{Fits}, at a value judgment \lean{VJ}: \textsc{New} is \lean{Fits.makeAbsent}, \lean{Fits.makeView}, \lean{Fits.makeBound}, \lean{Fits.makeGraphC}, \lean{Fits.makeGraphOut}, \lean{Fits.arrLit}, \lean{Fits.makeKey}; \textsc{Read} is \lean{Fits.readAt}, \lean{Fits.indexAt}, \lean{Fits.elemAt}, \lean{Fits.spread}, \lean{Fits.merge}; \textsc{Write} is \lean{Fits.writeAt}, \lean{Fits.setElem}; \textsc{Call-out} is \lean{Fits.invoke}, \lean{Fits.construct}; \textsc{Call-in} is \lean{Fits.invokeC}; \textsc{Throw} is \lean{Fits.throw}; runs \lean{Fits.frameC}, \lean{Fits.frameOut}, \lean{Fits.gotoC}, \lean{Fits.gotoOut}}.
 
 \begin{definition}[A flow of $\cC$]\label{def:flow}
 $F$ is a flow of $\cC$ when
-(F1) each node's expression meets its value set, $\tau_l\vdash e_l:\nu_l$;
+(F1) each node's expression meets its value set, $\tau_l\vdash e_l:\nu_l$,
+from every environment meeting its slots and their signatures;
 (F2) each edge from $l$ to $l'$ carries its values: each slot of $l'$ holds
 the sites of the slot or the value it is filled from, and the slot a handler
 binds holds $O$;
-(F3) a returning node's value meets $\rho_m$, and $\rho_m\subseteq O$ for
-an open code;
-(F4) $\circ\in O$, $O$ is closed, and storage of a site of $O$ may hold
-every site of $O$;
-(F5) the entry slots of an open code hold $O$
-\status{Lean: \lean{CodeOk}, \lean{ContOk}, \lean{HandlerOk}, \lean{Flow.Facts}; with (F5) for every slot of every node (\lean{Flow.Facts.envO})}.
+(F3) a returning node's value lies within $O$, $\nu_l\subseteq O$;
+(F4) $\circ\in O$, $O$ is closed, and storage of a site of $O$ stores $O$;
+(F5) every slot of every node holds $O$, $O\subseteq\tau_l(x)$
+\status{Lean: \lean{CodeOk}, \lean{ContOk}, \lean{HandlerOk}, \lean{Flow.Facts}, (F5) its \lean{envO}}.
 \end{definition}
 
 \begin{theorem}[Flow]\label{thm:flow}
-Let $F$ be a flow of $\cC$, and let each call of $\cC$ be entered with
-well-formed values. At every state reached in that call, the heap meets $H$
-and every value held by outside code meets $O$; so, by
+Let $F$ be a flow of $\cC$, each step allocate at the sites of its
+innermost frame's code, and every entry fit $F$: a run of $\cC$'s code at a
+node whose named slots hold closures of their signatures, its values well
+formed, its locations outside storage. At every state reached in a call of $\cC$
+the heap meets $H$ and every value held by outside code meets $O$; so, by
 Proposition~\ref{prop:reach}, every location outside code reaches has its
 site in $O$.
 \end{theorem}
-\begin{proof}
-Every step keeps the term typed and the heap meeting $H$, the locations it
-allocates at the site of the allocating occurrence: by induction on the
-step, a read giving what $H$ allows at a site the reach may have, a write
-and an allocation storing what $H$ allows, a call entering its callee's
-slots, a return giving $O$. A step of outside code changes only what its
-roots reach, stores there only what they reach or what it allocates, and
-allocates outside storage, so (F4) keeps both. At an entry every location
-is outside storage, of site $\circ\in O$
-\status{Lean: \lean{fits\_step}, \lean{sites\_outside}, \lean{ClientFrame.fitsAt\_reached}, \lean{fits\_roots}, \lean{ClientFrame.sitesSound\_of\_fits}; the entry, \lean{ClientFrame.entryFits} from \lean{EntryShape}, well-formed entries assumed. Proved where every code is open and $\alpha$ is constant on each code; conj.\ for the statement as given}.
+\begin{proof}\sloppy
+Every step keeps the term typed and the heap meeting $H$, by induction on
+the step; a step of outside code stores only what its roots reach or what
+it allocates, outside storage, so (F4) keeps both. At an entry every
+location is of site $\circ\in O$, and every slot holds $O$ by (F5)
+\status{Lean: \lean{fits\_step}, \lean{sites\_outside}, \lean{fits\_roots}, \lean{ClientFrame.fitsAt\_reached}, \lean{ClientFrame.sitesSound\_of\_fits}, with premises \lean{Flow.Facts}, \lean{ClientFrame.FlowSites} and \lean{ClientFrame.EntryFits}; the entry, \lean{ClientFrame.entryFits} from \lean{EntryShape}}.
 \end{proof}
 
 \paragraph{Proposal and check.} A flow is proposed by iterating the rules
-to a post-fixed point over the nodes of $\cC$'s codes: the least set of
-each node's expression at its slots, its stores added to $H$, what it
-gives outside code added to $O$, and the actuals of a call in added to
-the callee's entry slots, until nothing changes. Nothing is proved of the
-proposal. The check decides Definition~\ref{def:flow} of a finite flow: it
-computes each node expression's least set from its slots and compares it
-with $\nu_l$; it compares each edge's slots up to a width past which both
-ends are constant; and it decides (F4) and (F5).
+over $\cC$'s codes until nothing changes; nothing is proved of the
+proposal. The check decides Definition~\ref{def:flow} of a finite flow,
+whose slots and values each hold their code's base set: it compares each
+node expression's least set at its slots with $\nu_l$, and each edge's
+slots up to a width past which both ends are constant, and it decides
+(F4), and (F5) as $O$ within each base set.
 
 \begin{theorem}[Check]\label{thm:check}
 A finite flow the check accepts is a flow of $\cC$.
 \end{theorem}
-\noindent{\sloppy\status{Lean: \lean{FFlow.check\_sound}, from \lean{syn\_sound} (the least set fits, and so does every larger one), \lean{codeChkB\_sound}, \lean{carriesBaseB\_sound} and \lean{codeOk\_of\_chk}; the proposal is \lean{solveFlow}, untrusted. The check is not complete: it may refuse a flow of $\cC$.}\par}
-
-\smallskip\noindent
-The flow and its check have a general form: where every step from a
-state the abstraction describes at a node is covered by a constraint into
-a node whose transfer describes the next state, a proposal that meets each
-constraint, checked by one comparison each, describes every state of an
-execution \status{Lean: \lean{checkPost\_sound}, \lean{realizes\_along}, for any abstract domain and constraints; Theorem~\ref{thm:flow} is proved directly, by subject reduction, not as their instance}.
-
-\paragraph{Other uses.} Two values that meet disjoint closed sets reach no
-common location (Proposition~\ref{prop:reach}). A rule of \emph{Tolerant
-frames} that needs two paths apart could read it from the slots of a node
-(conj.: it needs the slots' sets closed under $H$ and a support's regions
-read as for the frame below). The check (O) could read the sites of a
-stored value from the flow, admitting a store whose value meets a closed
-set outside $O$ (conj.: it needs (O)'s classification of the stores
-stated over sites).
+\noindent{\sloppy\status{Lean: \lean{FFlow.check\_sound}, from \lean{syn\_sound} (the least set fits, and so does every larger one), \lean{codeChkB\_sound}, \lean{carriesBaseB\_sound}, \lean{envOB\_sound} and \lean{codeOk\_of\_chk}; the proposal is \lean{solveFlow}, untrusted. The check is not complete: it may refuse a flow of $\cC$.}\par}
 
 \subsection{Read-only frames from the flow}\label{sec:flowro}
 
-\begin{definition}[The marks of a flow]
-A site of $O$ is released, and every other site of $\Sigma$ local.
+\begin{definition}[Marks that fit a flow]\label{def:marksfit}
+The marks of $\cC$'s sites, an input of the check, fit a flow $F$ when
+every site of $O$ is released, $H_c(s)$ holds no local site for $s$ not
+local, and $H_b(s)$ holds no local site for every $s$
+\status{Lean: \lean{Lendable}, \lean{LocalHeld}, \lean{NoLocal}, decided by \lean{FFlow.marksB}, \lean{FFlow.marksB\_sound}}.
 \end{definition}
 \noindent
-By Proposition~\ref{prop:kflow}, the storage of a site outside $O$ is held only by $\cC$'s frames and
-by local storage, and lies in $R_\cC$ at every state; the storage of a
-site of $O$ lies in $R_\cC$ while a crossing in has reached it read-only.
-The flow tells nothing of types, so its marks are local and released only:
-a site that outside code reaches only read-only, which (K) admits as
-exposed, is released here.
+The bindings condition reads $H_b$, since closing $O$ under $H_c$ says
+nothing of what a closure in local storage binds; a store's value meets
+both summaries, so a value of a local site stored anywhere fails it.
 
 \begin{proposition}[The check (K) from a flow]\label{prop:kflow}
-With the marks of a flow $F$ of $\cC$, where no closure of outside code
-or bound function stored in $\cC$'s storage binds a value of a local site,
-every step of $\cC$'s code from a reached state meets (K).
+With marks that fit a flow $F$ of $\cC$, under the premises of
+Theorem~\ref{thm:flow}, every step of $\cC$'s code from a reached state
+meets (K).
 \end{proposition}
 \begin{proof}
 A value that crosses out at a step is held by outside code after it, or
-left in storage that outside code reaches, of a site of $O$, whose
-contents $O$ holds (F4); by Theorem~\ref{thm:flow} it meets $O$, which
-holds released sites and $\circ$ only. Storage of a released site
-references sites of $O$ only, since $O$ is closed, so it references no
-local site
-\status{Lean: \lean{ClientFrame.chkSound\_of\_flow}, through \lean{escapeAt\_of\_sites}, \lean{crossOk\_of\_sites}, \lean{localStores\_of\_sites}, \lean{localBindings\_of\_sites}, at the actual crossings of a step (\lean{actualXs}, \lean{gives\_actual}, \lean{stores\_actual}). The Lean takes the marks as data and decides that they meet $O$ (\lean{FFlow.marksB\_sound}: \lean{Lendable}, \lean{LocalHeld})}.
+left in storage that outside code reaches, of a site of $O$, which stores
+$O$ (F4); by Theorem~\ref{thm:flow} it meets $O$, which holds released
+sites and $\circ$ only. Storage of a site that is not local references no
+local site, and no binding reaches one
+\status{Lean: \lean{ClientFrame.chkSound\_of\_flow}, through \lean{chkSound\_of\_sites}, \lean{escapeAt\_of\_sites}, \lean{crossOk\_of\_sites}, \lean{localStores\_of\_sites}, \lean{localBindings\_of\_sites}, at the actual crossings of a step (\lean{actualXs}, \lean{gives\_actual}, \lean{stores\_actual})}.
 \end{proof}
 
 \noindent
-At a call of outside code at node $l$, each region $r$ of a support has
-the sites $\Sigma_l(r)$: a field $x.f$ the sites $\tau_l(x)$, a path
-$x.\pi$ the sites that $H$ gives one field after another, a spine those of
-its array, its cells $H$ of them. Each location of $r$ has its site in
-$\Sigma_l(r)$, by Theorem~\ref{thm:flow}. The check of the premise of
+The check (O) reads no flow: it classifies each store's destination and
+stored value from the parsed input
+\status{Lean: \lean{protectedInto}, \lean{installBad}, \lean{installs\_checked}, \lean{invIn\_of\_installs}}.
+
+\begin{remark}[The slots hold $O$]\label{rem:slots}
+By (F5) every slot holds $O$: a slot holding a fresh cursor $c$ holds
+every site of $O$, released, and no crossing in reached the cursor, so the
+check below bounds $c.i$ by the visitor's effect. The flow so keeps no
+fact about storage that only $\cC$'s frames hold. This limit is lifted by
+$O$ only at the entry slots of the codes outside code may call, carried
+along the edges by (F2), and by marks read from $O$: a site of $O$
+released, every other site local.
+\end{remark}
+
+\noindent
+At a call of outside code at node $l$, a region $r$ of a support has the
+sites $\Sigma_l(r)$: a field $x.f$ the sites $\tau_l(x)$, a path $x.\pi$
+the sites that $H_c$ gives one field after another, a spine those of its
+array, its cells $H_c$ of them, and a region filtered by class those of
+the region it filters; a region of a class, of every location, or of a
+value's fields by enumeration has none, and the check refuses it. Each
+location of $r$ has its site in $\Sigma_l(r)$, by Theorem~\ref{thm:flow}.
+A part is a site, a kind and a key; every location has the key
+$\kw{none}$, so a part is every location of one site and kind, and the key
+set $\{\kw{none}\}$ of each region covers its locations' keys, as the
+check's soundness requires. The check of the premise of
 Proposition~\ref{prop:rorely} at $l$ is, for each $(r:\delta)$ of the
-support and each $s\in\Sigma_l(r)$,
+support and each part $p$ of $r$ at a site $s\in\Sigma_l(r)$, both
 \[
-\begin{cases}
-(\Psi_\cC\sqcup\Theta_\cC)(\mathrm{part})\sqsubseteq\delta & \text{if } s\notin O, \text{ or } r \text{ is read as protected},\\
-\gamma\sqsubseteq\delta\ \text{for each}\ (r':\gamma)\in\Phi\ \text{not apart from}\ r & \text{otherwise,}
-\end{cases}
+\begin{array}{r@{\ \Longrightarrow\ }l}
+s\text{ not internal} & (\Psi_\cC\sqcup\Theta_\cC)(p)\sqsubseteq\delta,\\
+s\text{ internal, or released or }\circ\text{ with }r\text{ unprotected} & \gamma\sqsubseteq\delta\ \text{for each}\ (r':\gamma)\in\Phi\ \text{not apart from}\ r.
+\end{array}
 \]
-at the part of $r$'s locations of site $s$; a region read as protected
-needs, for each of its locations of a site of $O$, a crossing in of the
-active call that reached it read-only.
+A released or outside part may lie inside $R_\cC$ or outside it, and meets
+both, unless $r$ is read as protected: each of its released or outside
+locations then has a crossing in of the active call that reached it
+read-only.
 
 \begin{proposition}[The frame from a flow]\label{prop:frameflow}
-At a call of outside code from a frame of $\cC$'s code at node $l$, the
-check above gives the premise of Proposition~\ref{prop:rorely}.
+Under the premises of Theorem~\ref{thm:flow}, at a call of outside code
+from the innermost frame of $\cC$'s code at node $l$ of a reached state,
+the check above gives the premise of Proposition~\ref{prop:rorely}.
 \end{proposition}
-\noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost\_keys}; the crossing in as a live history witness, \lean{Witness}, \lean{entryStart\_witness}, \lean{witness\_along}. The Lean reads every field of a site as one part (\lean{noKeys}), and gives no sites to a region of a class, of every location or of a value's fields by enumeration, which the check then refuses}.\par}
+\noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheck}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost\_keys}, the keys \lean{noKeys} by \lean{ClientFrame.NoKeys}; the crossing in as a live history witness, \lean{Witness}, \lean{entryStart\_witness}, \lean{witness\_along}}.\par}
 
 \paragraph{The examples by the flow.}
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
-\item Example~\ref{ex:rocursor}: only \code{walk}'s frame holds \code{c},
-and \code{visit(c.i)}, a call out, passes a number, which meets every set.
-The cursor's site is outside $O$, local, and $c.i$ lies in $R_\cC$. The
-array \code{xs} fills an entry slot, which holds $O$ by (F5); its spine,
-outside storage, is not read as protected, and $\Phi$ bounds it (measured
-2026-11-19 by the flow probe: the check accepts the proposal for
-\code{walk}, the cursor's site outside $O$).
-\item Example~\ref{ex:roreleased}: \code{rows} and \code{fill} return
-\code{held} and \code{row}, so by (F3) both sites are in $O$, released.
+\item Example~\ref{ex:rocursor}: \code{visit(c.i)} passes a number, which
+meets every set, so the cursor's site is outside $O$; its acceptance needs
+the slots of Remark~\ref{rem:slots}.
+\item Examples~\ref{ex:roreleased} and~\ref{ex:roleaked}: the arrays
+returned (\code{held}, \code{row}, \code{last}) have their sites in $O$
+by (F3), released, and the examples' arguments for released arrays apply.
 \item Section~\ref{sec:problem}'s module and Examples~\ref{ex:roin}
 and~\ref{ex:ro}: \code{prepare} returns its record and its array, so their
-sites are in $O$, released. The spine of \code{w} is read as protected,
-the crossing of \code{h} at \code{H} its witness, whoever allocated it.
-\item Example~\ref{ex:roleaked}: \code{lastWidths} returns the array, so
-its site is in $O$, and the example's argument for a released array, by
-(O), applies.
-\item Examples~\ref{ex:roinstall} to~\ref{ex:roslice} are refused by (O),
-which the flow does not decide; it gives the sites they read. The
-visitor's result in Example~\ref{ex:rovoid} and the result of the caller's
-\code{slice} in Example~\ref{ex:roslice} are results of calls out, of
-$O$.
-\item Example~\ref{ex:roguar}: the array \code{slice} allocates at a site
-of $\cC$, and the copy is stored into a field of \code{h}, of a site of
-$O$, so by \textsc{Write} and (F4) its site is in $O$, released. (O)
-admits the store at the mark exposed only, which the flow does not
-confirm.
-\item Examples~\ref{ex:rosuspend}, \ref{ex:rotrim} and~\ref{ex:rocast}
-turn on (S), the protocol and the client assumption, which read no flow.
+sites are in $O$, released, and the slot of \code{w} holds sites of $O$
+only. The spine of \code{w} is read as protected, the crossing of \code{h}
+at \code{H} its witness, whoever allocated it.
+\item Examples~\ref{ex:roinstall} to~\ref{ex:roslice}, refused by (O), and
+Examples~\ref{ex:rosuspend}, \ref{ex:rotrim} and~\ref{ex:rocast}, which
+turn on (S), the protocol and the client assumption, read no flow.
+\item Example~\ref{ex:roguar} is accepted by the guarantee route, with
+the marks of Section~\ref{sec:concepts} and (K) and (O) from the
+component's checks: the copy is stored into a field of \code{h}, of a
+site of $O$, so marks that fit the flow release it, where (O) admits the
+store at the mark exposed.
 \end{itemize}
 Two more examples show the two calls.
 
@@ -646,13 +651,11 @@ Two more examples show the two calls.
 6 & \code{~~return s; \}}\\
 \end{tabular}
 \end{center}
-\emph{Accepted}, as Example~\ref{ex:rocursor}. The slot of \code{walk} that
-holds \code{next} names its code, so \code{next(c)} on line 5 is a call
-in: \code{c} meets \code{next}'s entry slot, and no rule puts the
-cursor's site in $O$. \code{next} is not open, so its slots need not hold
-$O$. Pretext's \code{walkPreparedLinesRaw} has this shape (measured
-2026-11-19 by the flow probe: the check accepts its proposal, its cursor's
-site outside $O$).
+\emph{Accepted}, as Example~\ref{ex:rocursor}, with the slots of
+Remark~\ref{rem:slots}. The slot of \code{walk} that holds \code{next}
+names its signature, so \code{next(c)} on line 5 is a call in: \code{c}
+meets \code{next}'s entry slot, and no rule puts the cursor's site in $O$.
+Pretext's \code{walkPreparedLinesRaw} has this shape.
 \end{example}
 
 \begin{example}[A cursor given away]\label{ex:rogiven}\mbox{}
