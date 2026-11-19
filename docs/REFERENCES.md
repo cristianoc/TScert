@@ -1114,6 +1114,23 @@ soundness for a core calculus, with runtime checks for immutability
 downcasts.
 **Cited in** the Read-only frames note.
 
+## Program analysis
+
+### Andersen 1994
+
+Lars Ole Andersen. *Program Analysis and Specialization for the C
+Programming Language.* PhD thesis, DIKU, University of Copenhagen, May
+1994 (DIKU report 94/19).
+
+**Context** for the flow of sites of
+[the Read-only frames note](#the-read-only-frames-note): the thesis
+defines a flow-insensitive, inclusion-based points-to analysis for C, its
+abstract locations the program's allocation sites and its rules subset
+constraints between their sets. The note's flow has that form, over a
+small set of abstract locations of the component's code; the thesis's
+results are about C and are not used for the note's proofs.
+**Cited in** the Read-only frames note.
+
 ## Compilation
 
 ### Aho, Lam, Sethi and Ullman 2006
