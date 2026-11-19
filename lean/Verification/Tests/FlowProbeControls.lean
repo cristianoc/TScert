@@ -14,7 +14,15 @@ lies at that part. A protocol read back to the earlier form fails here.
   component's code that captures a local cursor and writes its field
   (`setter(c)` returning `() => { c.i = 1 }`, given to outside code that
   calls it) changes a location of a local site existing at the call; the
-  earlier reading kept every part of a local site. -/
+  earlier reading kept every part of a local site.
+- **Storage reached through another closure's capture**
+  (`nested-capture.mjs` of the framed acceptance draft's reviews): a
+  wrapper captures `bump`, `bump` captures `holder`, and the changed field
+  is at `holder.child`'s site; the closure of sites (`capClose`) reaches it
+  through the wrapper's capture of `bump`'s token, `bump`'s capture of
+  `holder` and `holder`'s contents, so the depth charges (`depthCharges`)
+  charge it. A closure read at the capture slots' own sites alone keeps
+  it. -/
 namespace Verification.SourceClaimJson.FlowProbeControls
 open Verification TolerantFrames.ReadOnly Footprints
 
@@ -29,7 +37,7 @@ private def F0 : FFlow Pk := { O := [none], heap := [], codes := [] }
 /-- The writes of `writeAt arraySpineKey (var 0) (arr [])`, slot `0` holding
 outside storage. -/
 private def spineWrites : List (Sites Pk × List (Option Kind)) :=
-  writesIn F0 (fun _ => [none]) (fun _ => none) FrameAt.outside entryCx 0 (fun _ => none)
+  writesT F0 [none, some 0] (fun _ => [none]) (fun _ => none) FrameAt.outside entryCx 0 (fun _ => none)
     (.writeAt arraySpineKey (.var 0) (.arr []))
 
 #guard probeProtocol spineWrites [] ⟨none, some .spine, none⟩ = .any
@@ -46,7 +54,7 @@ private def spineWrites : List (Sites Pk × List (Option Kind)) :=
 /-- The writes of the closure's body `c.i = 1`, its capture slot `1`
 holding the local site `0`. -/
 private def setterWrites : List (Sites Pk × List (Option Kind)) :=
-  writesIn F0 (fun i => if i = 1 then [some 0] else [none]) (fun _ => none) FrameAt.outside entryCx 0 (fun _ => none)
+  writesT F0 [none, some 0] (fun i => if i = 1 then [some 0] else [none]) (fun _ => none) FrameAt.outside entryCx 0 (fun _ => none)
     (.writeAt (.str "i") (.var 1) (.num 1))
 
 -- a capture may hold the site: its field is charged
@@ -58,5 +66,29 @@ private def setterWrites : List (Sites Pk × List (Option Kind)) :=
 -- captured: refused
 #guard frameCheckAt classQuery (probeProtocol setterWrites [some 0]) [] [(.field 0 (.str "i"), .keep)] F0.flow.H
   (fun _ => [some 0]) noKeys (fun _ => false) = false
+
+/-! ## Storage reached through another closure's capture -/
+
+/-- `holder` at the local site `1`, holding `child` at the local site `2`. -/
+private def F1 : FFlow Pk := { O := [none], heap := [(some 1, [some 2])], codes := [] }
+
+/-- The capture sites a token stands for: the wrapper's token `4` captures
+`bump`'s token `3`, which captures `holder`. -/
+private def caps1 : Option Nat → Sites Pk
+  | some 4 => [some 3]
+  | some 3 => [some 1]
+  | _ => []
+
+-- the reach of the wrapper's call holds `holder.child`'s site
+#guard (capClose F1 caps1 [some 4]).contains (some 2)
+-- without captures, only the call's own sets
+#guard !(capClose F1 (fun _ => []) [some 4]).contains (some 2)
+
+/-- `bump`'s write `holder.child.i++` at `child`'s site. -/
+private def bumpWrites : List (Sites Pk × List (Option Kind)) := [([some 2], [some .field])]
+
+-- charged within the call's reach, kept outside it
+#guard probeProtocol bumpWrites (capClose F1 caps1 [some 4]) ⟨some 2, some .field, none⟩ = .any
+#guard probeProtocol bumpWrites [some 4, some 3, some 1] ⟨some 2, some .field, none⟩ = .keep
 
 end Verification.SourceClaimJson.FlowProbeControls

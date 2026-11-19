@@ -48,40 +48,143 @@ theorem remark_marksFrom {ofC : ComponentTag → Bool} (F : FFlow (probePackage 
 section frames
 variable {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site] [Hashable P.Site]
 
-/-- **The writes of a term at a node's slots**: for each write, the sites
-of the written location (its object's, or its spine's for an element
-write) and the kinds it may have: a slot under a key, a field or a cell, or
-the array spine under the spine key (`slotBound`); an element cell. -/
-partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat) (d : Nat)
-    (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × List (Option Verification.Kind))
-  | .writeAt k x y => ((syn F τ φ a κ d Γ x).map fun S => [(S, roleKinds (Footprints.slotBound k))]).getD
-        [([none], roleKinds (Footprints.slotBound k))] ++
-      writesIn F τ φ a κ d Γ x ++ writesIn F τ φ a κ d Γ y
-  | .setElem x i v => ((syn F τ φ a κ d Γ x).map fun S => [(S, [some .elem])]).getD [([none], [some .elem])] ++
-      writesIn F τ φ a κ d Γ x ++ writesIn F τ φ a κ d Γ i ++ writesIn F τ φ a κ d Γ v
-  | .letE x b => writesIn F τ φ a κ d Γ x ++ match syn F τ φ a κ d Γ x with
-    | some Sx => writesIn F τ φ a κ (d + 1) (consSites Sx Γ) b
-    | none => []
-  | .invoke f r args => writesIn F τ φ a κ d Γ f ++ writesIn F τ φ a κ d Γ r ++ args.flatMap (writesIn F τ φ a κ d Γ)
-  | .construct f args => writesIn F τ φ a κ d Γ f ++ args.flatMap (writesIn F τ φ a κ d Γ)
-  | .makeAt _ _ inits | .arrLit inits => inits.flatMap (writesIn F τ φ a κ d Γ)
+/-- **Every site a flow names**, and outside storage: `O`, the heap of
+sites' rows, and each code's tokens, allocation sites, return sets and
+node sets. The charges of a write whose receiver has no computed set are
+at all of them. -/
+def flowSites (F : FFlow P) : Sites P :=
+  let fromCode (c : FCode P) : Sites P :=
+    c.tok :: c.alloc.obj :: c.alloc.arr :: c.ret ++ c.allocs.flatMap (fun (_, o, a) => [o, a]) ++
+      (c.dflt :: c.nodes.toList).flatMap fun x => x.val ++ x.dflt ++ x.env.toList.flatten
+  (Std.HashSet.ofList (none :: F.O ++ F.heap.flatMap (fun (s, S) => s :: S) ++
+    F.codes.flatMap fun (_, cs) => cs.flatMap fun (_, c) => fromCode c)).toList
+
+mutual
+/-- **The charged writes of a term at a node's slots** (`writesT`, the
+draft "Framed acceptance", "Charges"): for each write, the sites of the
+written location (its object's, or its spine's for an element write) and
+the kinds it may have: a slot under a key, a field or a cell, or the array
+spine under the spine key (`slotBound`); an element cell. A receiver with
+no computed set, and a `letE` body under a bound term with none, are read
+at `top`, every site of the flow. Structural over the term and its
+argument lists. -/
+def writesT (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
+    (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × List (Option Verification.Kind))
+  | .writeAt k x y => [((syn F τ φ a κ d Γ x).getD top, roleKinds (Footprints.slotBound k))] ++
+      writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ y
+  | .setElem x i v => [((syn F τ φ a κ d Γ x).getD top, [some .elem])] ++
+      writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ i ++ writesT F top τ φ a κ d Γ v
+  | .letE x b => writesT F top τ φ a κ d Γ x ++
+      writesT F top τ φ a κ (d + 1) (consSites ((syn F τ φ a κ d Γ x).getD top) Γ) b
+  | .invoke f r args => writesT F top τ φ a κ d Γ f ++ writesT F top τ φ a κ d Γ r ++ writesTs F top τ φ a κ d Γ args
+  | .construct f args => writesT F top τ φ a κ d Γ f ++ writesTs F top τ φ a κ d Γ args
+  | .makeAt _ _ inits | .arrLit inits => writesTs F top τ φ a κ d Γ inits
   | .indexAt x y | .arith _ x y | .elemAt x y | .merge _ x y | .makeKey x y =>
-    writesIn F τ φ a κ d Γ x ++ writesIn F τ φ a κ d Γ y
-  | .ite x y z => writesIn F τ φ a κ d Γ x ++ writesIn F τ φ a κ d Γ y ++ writesIn F τ φ a κ d Γ z
-  | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => writesIn F τ φ a κ d Γ x
+    writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ y
+  | .ite x y z => writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ y ++ writesT F top τ φ a κ d Γ z
+  | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => writesT F top τ φ a κ d Γ x
+  | _ => []
+/-- The charged writes of a list of terms. -/
+def writesTs (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
+    (d : Nat) (Γ : Nat → Option (Sites P)) : List Tm → List (Sites P × List (Option Verification.Kind))
+  | [] => []
+  | x :: xs => writesT F top τ φ a κ d Γ x ++ writesTs F top τ φ a κ d Γ xs
+end
+
+/-- **The charges of one code** `Ch({m})`: the charged writes of each node
+of the code at each of its contexts. -/
+def codeWrites (F : FFlow P) (top : Sites P) (m : Code) (cs : List (Nat × FCode P)) :
+    List (Sites P × List (Option Verification.Kind)) :=
+  cs.flatMap fun (_, c) => (m.1.zip m.2).zipIdx.flatMap fun ((e, kx), l) =>
+    writesT F top (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
+
+/-- The charges of every code of a flow, `Ch` of all codes of `C`. -/
+def flowWrites (F : FFlow P) : List (Sites P × List (Option Verification.Kind)) :=
+  let top := flowSites F
+  F.codes.flatMap fun (m, cs) => codeWrites F top m cs
+
+/-- **The sites a code's closures may capture**: the sites of each capture
+slot at the code's entry at each of its contexts, its layout its arity, its
+rest, its number of captures and its entry label. -/
+def codeCaptureSites (cs : List (Nat × FCode P)) (lay : Nat × Bool × Nat × Nat) : Sites P :=
+  let (ar, rest, n, s) := lay
+  cs.flatMap fun (_, c) => (List.range n).flatMap fun i => (c.node s).envAt (capSlot ar rest i)
+
+/-- **The sites a closure of the flow's codes may capture**: the union of
+each code's `codeCaptureSites`. -/
+def captureSites (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Sites P :=
+  (F.codes.zip lay).flatMap fun ((_, cs), l) => codeCaptureSites cs l
+
+/-- **The closure of sites** $`\overline{S}`$ (`capClose`, the draft's
+"Definitions"): the least superset of `S` closed under the heap of sites'
+contents and under captures (for each code token in it, the sites of that
+code's capture slots at every context, `caps`). Iterated to its fixpoint:
+each round adds sites of `flowSites F ∪ S ∪ caps`, so it stops within
+their number of rounds. -/
+def capClose (F : FFlow P) (caps : Option P.Site → Sites P) (S : Sites P) : Sites P :=
+  let step (S : Std.HashSet (Option P.Site)) : Std.HashSet (Option P.Site) :=
+    S.toList.foldl (fun acc s => (F.contents s ++ caps s).foldl (·.insert ·) acc) S
+  let rec go : Nat → Std.HashSet (Option P.Site) → Std.HashSet (Option P.Site)
+    | 0, S => S
+    | n + 1, S => let S' := step S; if S'.size == S.size then S else go n S'
+  (go ((flowSites F).length + S.length + 1) (Std.HashSet.ofList S)).toList
+
+/-- **The calls of a term** at a node's slots: for each `invoke` and
+`construct`, the callee's set, the receiver's and the arguments', each
+`top` where it has no computed set. -/
+partial def callSets (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P)
+    (κ : Nat) (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × Sites P × List (Sites P))
+  | .invoke f r args =>
+    let set (x : Tm) := (syn F τ φ a κ d Γ x).getD top
+    (set f, set r, args.map set) :: callSets F top τ φ a κ d Γ f ++ callSets F top τ φ a κ d Γ r ++
+      args.flatMap (callSets F top τ φ a κ d Γ)
+  | .construct f args =>
+    let set (x : Tm) := (syn F τ φ a κ d Γ x).getD top
+    (set f, [], args.map set) :: callSets F top τ φ a κ d Γ f ++ args.flatMap (callSets F top τ φ a κ d Γ)
+  | .letE x b => callSets F top τ φ a κ d Γ x ++
+      callSets F top τ φ a κ (d + 1) (consSites ((syn F τ φ a κ d Γ x).getD top) Γ) b
+  | .makeAt _ _ inits | .arrLit inits => inits.flatMap (callSets F top τ φ a κ d Γ)
+  | .indexAt x y | .writeAt _ x y | .arith _ x y | .elemAt x y | .merge _ x y | .makeKey x y =>
+    callSets F top τ φ a κ d Γ x ++ callSets F top τ φ a κ d Γ y
+  | .ite x y z | .setElem x y z =>
+    callSets F top τ φ a κ d Γ x ++ callSets F top τ φ a κ d Γ y ++ callSets F top τ φ a κ d Γ z
+  | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => callSets F top τ φ a κ d Γ x
   | _ => []
 
-/-- The writes of every node of every code of a flow. -/
-def flowWrites (F : FFlow P) : List (Sites P × List (Option Verification.Kind)) :=
-  F.codes.flatMap fun (m, cs) => cs.flatMap fun (_, c) => (m.1.zip m.2).zipIdx.flatMap fun ((e, kx), l) =>
-    writesIn F (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
+/-- The calls of every node of a code at each of its contexts. -/
+def codeCalls (F : FFlow P) (top : Sites P) (m : Code) (cs : List (Nat × FCode P)) :
+    List (Sites P × Sites P × List (Sites P)) :=
+  cs.flatMap fun (_, c) => (m.1.zip m.2).zipIdx.flatMap fun ((e, kx), l) =>
+    callSets F top (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
 
-/-- **The sites a closure of the flow's codes may capture**: the sites of
-each capture slot at each code's entry at each context, each code's layout
-its arity, its rest, its number of captures and its entry label. -/
-def captureSites (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Sites P :=
-  (F.codes.zip lay).flatMap fun ((_, cs), (ar, rest, n, s)) => cs.flatMap fun (_, c) =>
-    (List.range n).flatMap fun i => (c.node s).envAt (capSlot ar rest i)
+/-- **The segment's codes** $`\mathrm{seg}(c)`$ of a call whose callee's set
+is `Sf` (`segCodes`, the draft's "Definitions"): the least set of the
+flow's codes (by index) holding each code whose token `Sf` holds, closed
+under the same at every call of its members, and under the tokens of the
+arguments of each call of a native step model (`host`) its members make. -/
+def segCodes (F : FFlow P) (top : Sites P) (host : Nat → Bool) (Sf : Sites P) : List Nat :=
+  let toks : List (Nat × Sites P) := F.codes.zipIdx.map fun ((_, cs), i) => (i, cs.map (·.2.tok))
+  let holding (S : Sites P) : List Nat := toks.filterMap fun (i, ts) => if ts.any (S.contains ·) then some i else none
+  let calls : Array (List (Sites P × Sites P × List (Sites P))) :=
+    (F.codes.map fun (m, cs) => codeCalls F top m cs).toArray
+  let rec go : Nat → List Nat → List Nat → List Nat
+    | 0, seen, _ => seen
+    | _ + 1, seen, [] => seen
+    | n + 1, seen, i :: work =>
+      if seen.contains i then go n seen work else
+      let next := (calls.getD i []).flatMap fun (f, _, args) =>
+        holding f ++ (if (holding f).any host then args.flatMap holding else [])
+      go n (i :: seen) (next ++ work)
+  let n := F.codes.length
+  go (n * n + n + 1) [] (holding Sf)
+
+/-- **Whether a call reaches outside code** (`reachesOut`): its callee's set
+holds outside storage, or a call of a code of its segment has a callee
+whose set does. -/
+def reachesOut (F : FFlow P) (top : Sites P) (seg : List Nat) (Sf : Sites P) : Bool :=
+  Sf.contains none || seg.any fun i => match F.codes[i]? with
+    | some (m, cs) => (codeCalls F top m cs).any fun (f, _, _) => f.contains none
+    | none => false
 
 structure ProtocolIndex (P : TolerantFrames.ReadOnly.Package) [DecidableEq P.Site] [Hashable P.Site] where
   captures : Std.HashSet (Option P.Site)
@@ -92,19 +195,44 @@ def ProtocolIndex.ofWrites (W : List (Sites P × List (Option Verification.Kind)
   ⟨Std.HashSet.ofList held, W.foldl (fun m (sites, ks) =>
     sites.foldl (fun m s => m.insert s ((ks ++ m.getD s []).eraseDups)) m) {}⟩
 
-/-- **The probe's protocol**: a part changed by any change where a write of
-the flow's codes may reach it, at its site and kind (`flowWrites`); kept
-where none may. A part of a local site no capture may hold (`held`, the
-sites of `captureSites`) is kept: storage of a local site existing at a
-call of outside code is held only by the frames of `C`'s code suspended
-under the call, and a run the call starts reaches it only through a
-closure's capture (conjectured, the draft's "The protocol"). -/
+/-- **A protocol from charges**: a part changed by any change where a
+charged write `W` may reach it, at its site and kind; kept where none may,
+and kept at a local site outside `held`. -/
 def ProtocolIndex.query (idx : ProtocolIndex P) : Protocol P := fun p =>
   if p.site.any (fun s => P.mark s = .local) && !idx.captures.contains p.site then .keep
   else if (idx.writes.getD p.site []).contains p.kind then .any else .keep
 
 def probeProtocol (W : List (Sites P × List (Option Verification.Kind))) (held : Sites P) : Protocol P :=
   (ProtocolIndex.ofWrites W held).query
+
+/-- The capture sites of the codes whose closures a token stands for. -/
+def tokenCaps (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (t : Option P.Site) : Sites P :=
+  if t.isNone then [] else
+  (F.codes.zip lay).flatMap fun ((_, cs), l) => if cs.any (·.2.tok == t) then codeCaptureSites cs l else []
+
+/-- **The protocol** $`\Psi_C`$ (the draft's "Charges"): `Ch` of every code
+of `C` at every part but a local part whose site is outside the closure of
+the capture sites and `O`, which is kept. -/
+def componentProtocol (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Protocol P :=
+  probeProtocol (flowWrites F) (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O))
+
+/-- **The reach of a call** $`L(c)`$: the closure of its callee's,
+receiver's and arguments' sets and the capture sites of its segment's
+codes. -/
+def callReach (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (seg : List Nat) (Sf Sr : Sites P)
+    (args : List (Sites P)) : Sites P :=
+  capClose F (tokenCaps F lay) (Sf ++ Sr ++ args.flatten ++ seg.flatMap fun i =>
+    match (F.codes.zip lay)[i]? with
+    | some ((_, cs), l) => codeCaptureSites cs l
+    | none => [])
+
+/-- **The depth charges** $`W_c`$ of a call: `Ch(seg(c))` at every part but
+a local part whose site is outside $`L(c)`$, which is kept. -/
+def depthCharges (F : FFlow P) (seg : List Nat) (L : Sites P) : Protocol P :=
+  let top := flowSites F
+  probeProtocol (seg.flatMap fun i => match F.codes[i]? with
+    | some (m, cs) => codeWrites F top m cs
+    | none => []) L
 
 end frames
 
@@ -158,8 +286,18 @@ frame of that node runs at one of them, `NodeOf`) where the node may call
 outside code (`CodeFlow.out`, `ClientFrame.framed_at_call`), read at that
 node's slots; elsewhere it is not required. -/
 def probeFrames {ofC : ComponentTag → Bool} (O : List (Option Nat)) (F : FFlow (markedPackage ofC O))
-    (Ψ : Protocol (markedPackage ofC O)) (c : FCode (markedPackage ofC O)) (m : Code)
+    (ΨC : Protocol (markedPackage ofC O)) (lay : List (Nat × Bool × Nat × Nat)) (host : Nat → Bool)
+    (c : FCode (markedPackage ofC O)) (m : Code)
     (sm : RequestJson.SourceMap) (sp : FrameSpec) : List String :=
+  let top := flowSites F
+  -- the calls of a node: its callee's, receiver's and arguments' sets
+  let callsAt (l : Nat) : List (Sites (markedPackage ofC O) × Sites (markedPackage ofC O) × List (Sites (markedPackage ofC O))) :=
+    match m.1[l]?, m.2[l]? with
+    | some e, some kx => callSets F top (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l kx)
+        (c.node l).cx 0 (fun _ => none) e
+    | _, _ => []
+  -- a framed call: a call of the node reaches outside code
+  let framedAt (l : Nat) : Bool := (callsAt l).any fun (f, _, _) => reachesOut F top (segCodes F top host f) f
   let names (l : Nat) : List String := ((sm[l]?).bind id).map (·.context.map (·.name)) |>.getD []
   let calls := m.1.zipIdx.filterMap fun (e, l) => match e with
     | .invoke (.var j) _ _ => if ((c.node l).fnAt j).isNone then some (l, j) else none
@@ -169,15 +307,21 @@ def probeFrames {ofC : ComponentTag → Bool} (O : List (Option Nat)) (F : FFlow
     | none => "none"
   s!"frame probe, {sp.unit}: calls of a slot naming no signature (node, callee slot, source span) {calls.map fun (l, j) => (l, j, pos l)}" ::
   m.1.zipIdx.flatMap fun (e, l₀) => match e with
-    | .invoke (.var j) _ _ =>
+    | .invoke _ _ _ =>
       let pos := ((sm[l₀]?).bind id).map (·.pos.1)
-      if pos != some sp.at_ || ((c.node l₀).fnAt j).isSome then [] else
+      if pos != some sp.at_ then [] else
       -- the nodes a frame of this node's continuation and handler may run at
       let kx := m.2[l₀]?
       let sharing := (List.range m.2.length).filter fun l => m.2[l]? == kx
-      let required := sharing.filter fun l => (c.node l).out
+      let required := sharing.filter fun l => (c.node l).out || framedAt l
       let slotOf (x : String) : Option Nat := (names l₀).idxOf? x
-      s!"frame probe, {sp.unit}, at node {l₀} (callee slot {j}; nodes of its continuation and handler {sharing}, which may call outside code {required})" ::
+      -- the call's protocol Ψ_c = Ψ_C ⊔ Θ_C ⊔ W_c, at Θ_C = keep (no `@clients` row)
+      let (Sf, Sr, args) := (callsAt l₀).head?.getD ([], [], [])
+      let seg := segCodes F top host Sf
+      let L := callReach F lay seg Sf Sr args
+      let Wc := depthCharges F seg L
+      let Ψ : Protocol (markedPackage ofC O) := fun p => Footprints.Change.max (ΨC p) (Wc p)
+      s!"frame probe, {sp.unit}, at node {l₀} (nodes of its continuation and handler {sharing}, which may call outside code or make a framed call {required}; framed {framedAt l₀}; seg {seg}; L(c) {(L.map (markName (ofC := ofC) (O := O)))})" ::
       if required.isEmpty && !sp.inspect then
         sp.facts.map fun ff => s!"  {ff.name}: not required, no node of the call's continuation and handler may call outside code here"
       else (if required.isEmpty then [l₀] else required).flatMap fun l =>
@@ -367,12 +511,13 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
         if nodeAtB F' (remarkCode F c) l e k x then none else some s!"{ci}@{κ}:{l}"
     let contexts := (F.codes.map (·.2.length)).sum
     let ctxNodes := (F.codes.map fun (m, cs) => m.1.length * cs.length).sum
-    let held := (Std.HashSet.ofList (captureSites F' (cs.map fun c => (c.ar, c.rest, c.ncaps, c.start)))).toList
-    let idx := ProtocolIndex.ofWrites (flowWrites F') held
+    let lay := cs.map fun c => (c.ar, c.rest, c.ncaps, c.start)
+    let held := (Std.HashSet.ofList (captureSites F' lay)).toList
+    let host (i : Nat) : Bool := mods.length ≤ i && i < mods.length + hosts.length
     let frames := String.join <| specs.flatMap fun sp => match named.zipIdx.find? (·.1.1 == sp.unit) with
       | some ((_, mc, msm), ci) => match (F'.codes[ci]?).map (·.2) with
         | some cxs => cxs.flatMap fun (κ, c) =>
-          s!"\nframe probe, {sp.unit}: {tag} context {κ}{siteOf κ}" :: (probeFrames F.O F' idx.query c mc msm sp).map ("\n" ++ ·)
+          s!"\nframe probe, {sp.unit}: {tag} context {κ}{siteOf κ}" :: (probeFrames F.O F' (componentProtocol F' lay) lay host c mc msm sp).map ("\n" ++ ·)
         | none => []
       | none => []
     s!"{tag}: {contexts} contexts, {ctxNodes} nodes over the contexts; entry {entryOk.all (·.2)}; entries {entryOk}; at the marks O gives: marks {marks}; refused nodes {bad}; captured {repr held}{frames}"

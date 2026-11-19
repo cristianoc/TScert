@@ -2737,26 +2737,24 @@ of calls of outside code (a member or module function, the source offset
 of the call, the call's effect) and linear facts over source variables;
 at each such call node, at each context, the probe prints `frameCheckAt`
 of each fact's support, read at each node of the call's continuation and
-handler that may call outside code (`ClientFrame.framed_at_call`), or
-that it is not required where none may (`Footprints.linearSupport`) at the separation of classes
+handler that may call outside code or makes a framed call
+(`ClientFrame.framed_at_call`), or that it is not required where none may
+(`Footprints.linearSupport`) at the separation of classes
 (`classQuery`, `classQuery_sound`), the keys `noKeys`, no region read as
-protected and the probe's protocol (`probeProtocol`), with each part that
+protected and the call's protocol (below), with each part that
 fails and the check it fails. A request with `"inspect": true` also
 evaluates the predicate at the named call when no obligation arises,
 reporting a witness for each reason for failure.
 
-**The probe's protocol.** Each write of a node of a code of the flow is
-charged at the sites of its written location and the kinds that location
-may have (`writesIn`, `flowWrites`): a write at a key at the receiver's
-sites and the kinds of a slot under that key (`slotBound`: the array spine
-under the spine key, a field or a cell under every other), an element
-write at the spine's sites and the element kind, each at `any`. A part is
-changed by `any` where a charge names its site and kind, and kept where
-none does. A part of a local site no capture slot of a code of the flow
-may hold (`captureSites`) is kept: storage of a local site existing at a
-call of outside code is held only by the frames of $`C`$'s code suspended
-under the call, and a run the call starts reaches it only through a
-closure's capture (conjectured).
+**The probe's protocol.** At each call it names, the probe reads the
+call's protocol $`\Psi_c=\Psi_C\sqcup\Theta_C\sqcup W_c`$ of
+[framed acceptance](framed-acceptance.md#charges), at $`\Theta_C=\mathsf{keep}`$:
+$`\Psi_C`$ (`componentProtocol`) and $`W_c`$ (`depthCharges`, over
+$`\mathrm{seg}(c)`$, `segCodes`, and $`L(c)`$, `callReach`) from the
+charges `writesT` gives each node of the flow's codes, the closure of
+sites `capClose`. The check is required at each node of the call's
+continuation and handler that may call outside code or makes a framed
+call (`reachesOut`).
 
 **The component the probe reads** (`PreparedFile.probeComponent`). $`C`$
 is the outermost component of the probed file's family (the fragment's
