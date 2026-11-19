@@ -836,8 +836,10 @@ token, `componentCodes`): each module
   has a proposal with the same slots, value sets, signatures and outside
   calls at each body label, the same allocation sites at each body node's
   continuation and handler, and the same return set.
-- **the component** (`compB`): $`C`$ is `componentAt` of the request's
-  place, its tags those the lowering assigns.
+- **the component** (`compB`, `compB_sound`, `FramedBinding.lean`): the
+  request's tag, which the lowering assigns (`componentAt` at its name), is
+  $`C`$, so the claim's frames run $`C`$'s code; the family's nesting is
+  the fragment's components', read by the producer.
 - **the entry** (`entryB`, `entryFnB`, `entryFnB_sound`): at the realized
   code's entry, its slots naming signatures only at the sibling slots and
   the closure's own slot.
@@ -1304,7 +1306,8 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `num_not_root` (`ReadOnlyIncoming.lean`); `protocolAtLeastB_sound`
 (`ReadOnlyBinding.lean`), `clientsB_sound` (`FramedBinding.lean`);
 `canonSite_inj`, `allocCanonB_sound`, `allocCanon_same`
-(`ReadOnlyBinding.lean`), `allocB_realized` (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
+(`ReadOnlyBinding.lean`), `allocB_realized`, `compB_sound`
+(`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
 `probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
 `framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`
