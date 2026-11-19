@@ -251,22 +251,26 @@ theorem safeRet_of_sim {E : List Tm} {K : List (Continuation × Option Target)} 
 returns.** Where the nodes are checked and keep the run property at framed
 returns, a term simulating a state the invariant and the run property
 describe under a pending evaluation is safe at framed returns with `Q` at
-its normal exit and `R` at a throw. -/
+its normal exit and `R` at a throw, and with `J` at every state, where the
+invariant at a state gives `J` of the term simulating it. -/
 theorem keeps_postExcR {E : List Tm} {K : List (Continuation × Option Target)} {pre : Nat → Assertion}
     {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat} {X : Nat → Env → Heap → Prop}
     {Q : Heap → Tm → Prop} {R : Heap → Prop} {T : Fam} {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    {J : Heap → Tm → Prop}
     (hnodes : NodesCheckedR (GraphCode.program E K) pre F Ret RetE Ξres Tres Qres Rres m) (hdown : AdminClosed pre m)
-    (hkeep : NodesKeepR (GraphCode.program E K) pre F Ret RetE X Q R m) (hT : ∀ n W v, Tres n W v → T n W v) :
+    (hkeep : NodesKeepR (GraphCode.program E K) pre F Ret RetE X Q R m) (hT : ∀ n W v, Tres n W v → T n W v)
+    (hJ : ∀ (s : IndexedHeap) p ts st, GraphCode.Sim E K ts st →
+      GraphInvR pre Ξres Tres Qres Rres Ret RetE m s.n s.W p s.h st → J s.h ts) :
     ∀ n (W : WorldT n) p h ts st, GraphCode.Sim E K ts st → WorldAdm W → HeapOk n W h →
       (∀ e ∈ E, RefsOk W e) → StateRefs W st →
       GraphInvR pre Ξres Tres Qres Rres Ret RetE m n W p h st → StateKeepsR Ret RetE X Q R n p h st →
-      SafeRet (fun _ _ => True) Ξres T (WPost.lift Q) (WExc.lift R) F Ret RetE n W p h ts := by
+      SafeRet J Ξres T (WPost.lift Q) (WExc.lift R) F Ret RetE n W p h ts := by
   intro n
   induction n with
   | zero => intro W p h ts st sim _ _ hE hr _ _; exact GraphCode.sim_refs sim hE hr
   | succ n ih =>
     intro W p h ts st sim ha ho hE hr hinv hb
-    refine ⟨GraphCode.sim_refs sim hE hr, trivial, ?_⟩
+    refine ⟨GraphCode.sim_refs sim hE hr, hJ ⟨n + 1, W, h, Nat.zero_lt_succ n, ha, ho⟩ p ts st sim hinv, ?_⟩
     rcases graph_stepR hnodes hdown ha ho (GraphCode.program_refs hE) hr hinv with
         (⟨v, rfl, hv, hTv⟩ | ⟨v, rfl, hsc, hΞ⟩) | ⟨U, h', st', hx, hu, tr, hh, hrs, hi⟩
     · cases sim; exact .inl (.inl ⟨hv, hT _ _ _ hTv, hb⟩)
@@ -295,8 +299,19 @@ theorem keeps_postExc {E : List Tm} {K : List (Continuation × Option Target)} {
       SafePostExc Ξres T Q R n W h ts :=
   fun n W h ts st sim ha ho hE hr hinv hb =>
     SafeRet.erase (fun _ => rfl)
-      (keeps_postExcR (Ret := fun _ _ _ _ => True) (RetE := fun _ _ _ _ => True) hnodes.toR hdown hkeep.toR hT
-        n W none h ts st sim ha ho hE hr hinv.toR hb.toR)
+      (keeps_postExcR (Ret := fun _ _ _ _ => True) (RetE := fun _ _ _ _ => True) (J := fun _ _ => True) hnodes.toR
+        hdown hkeep.toR hT (fun _ _ _ _ _ _ => trivial) n W none h ts st sim ha ho hE hr hinv.toR hb.toR)
+
+/-- **Checked nodes keep the trivial run property at framed returns.** -/
+theorem NodesCheckedR.keepsTrue {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
+    {m : Nat} {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    (hn : NodesCheckedR P pre F Ret RetE Ξres Tres Qres Rres m) :
+    NodesKeepR P pre F Ret RetE (fun _ _ _ => True) (fun _ _ => True) (fun _ => True) m := by
+  intro l ρ s hp _
+  obtain ⟨node, hP, -⟩ := hn l ρ s hp
+  refine ⟨node, hP, fun _ _ _ _ _ _ _ => ⟨fun _ _ => ?_, fun _ _ _ => ?_⟩⟩
+  · cases node.continuation <;> simp [ContKeeps]
+  · cases node.handler <;> simp [HandlerKeeps]
 
 /-- **Every node entry a run reaches satisfies its assertion**: a graph run
 from a node entry whose assertion holds, with budget left, to the entry of

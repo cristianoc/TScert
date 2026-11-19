@@ -44,15 +44,17 @@ def edgePre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : Hea
 def EntriesFromEdges (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (m : Nat) : Prop :=
   ∀ t ρ (s : IndexedHeap), edgePre G w startNames ε t ρ m s → passPre G w startNames ε t ρ m s
 
-/-- The node obligations are monotone in the node assertions. -/
-theorem nodeObligations_mono {pre pre' : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
-    {cn ce : Footprints.Closed} {Qn : Post} {Qe : Heap → Prop} {ρ : Env} {m : Nat} {s₀ : IndexedHeap}
-    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} (hpre : ∀ l ρ s, pre l ρ m s → pre' l ρ m s)
-    (ho : NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x) :
-    NodeObligations pre' Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x where
+/-- The node obligations under return premises are monotone in the node
+assertions. -/
+theorem nodeObligationsR_mono {pre pre' : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
+    {cn ce : Footprints.Closed} {Qn : Post} {Qe : Heap → Prop} {Rn Re : Heap → Prop} {ρ : Env} {m : Nat}
+    {s₀ : IndexedHeap} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target}
+    (hpre : ∀ l ρ s, pre l ρ m s → pre' l ρ m s)
+    (ho : NodeObligationsR pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe Rn Re ρ m s₀ k x) :
+    NodeObligationsR pre' Ξres Tres Qres Rres Ξ T cn ce Qn Qe Rn Re ρ m s₀ k x where
   shape := ho.shape
-  normal := fun s v ha hv hT hQ => by
-    have := ho.normal s v ha hv hT hQ
+  normal := fun s v ha hv hT hQ hR => by
+    have := ho.normal s v ha hv hT hQ hR
     cases k with
     | ret => exact this
     | bind l => exact hpre _ _ _ this
@@ -63,11 +65,20 @@ theorem nodeObligations_mono {pre pre' : Nat → Assertion} {Ξres Tres Ξ T : F
       · exact .inr ⟨h1, hpre _ _ _ h2⟩
     | branchBind y n => exact this.imp (fun h => ⟨h.1, hpre _ _ _ h.2⟩) (fun h => ⟨h.1, hpre _ _ _ h.2⟩)
     | tagBind tg y n => exact this.imp (fun h => ⟨h.1, hpre _ _ _ h.2⟩) (fun h => ⟨h.1, hpre _ _ _ h.2⟩)
-  raise := fun s e ha he hΞ hQ => by
-    have := ho.raise s e ha he hΞ hQ
+  raise := fun s e ha he hΞ hQ hR => by
+    have := ho.raise s e ha he hΞ hQ hR
     cases x with
     | some l => exact hpre _ _ _ this
     | none => exact this
+
+/-- The node obligations are monotone in the node assertions
+(`nodeObligationsR_mono` with no return premise). -/
+theorem nodeObligations_mono {pre pre' : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
+    {cn ce : Footprints.Closed} {Qn : Post} {Qe : Heap → Prop} {ρ : Env} {m : Nat} {s₀ : IndexedHeap}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} (hpre : ∀ l ρ s, pre l ρ m s → pre' l ρ m s)
+    (ho : NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x) :
+    NodeObligations pre' Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x :=
+  (nodeObligationsR_mono hpre (ho.toR (fun _ => True) (fun _ => True))).toPlain (fun _ => trivial) (fun _ => trivial)
 
 omit [DecidableEq ι] [Hashable ι] in
 /-- **The pass's node assertions survive the administrative steps**: a

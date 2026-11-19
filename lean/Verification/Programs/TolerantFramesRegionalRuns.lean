@@ -283,18 +283,20 @@ theorem regionX_start {Φ : Footprints.Closed} {regions : List ArgumentSpineRegi
 
 omit [DecidableEq ι] in
 /-- **A property every admissible transition keeps joins the node
-obligations**: where each node meets its obligations from `pre` and `S`
-holds at its entry state, it meets them with targets `pre ∧ S`. -/
-theorem nodesChecked_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
-    {m : Nat} {S : IndexedHeap → Prop} (hS : ∀ s s', Admissible s s' → S s → S s')
-    (hn : NodesChecked P pre Ξres Tres Qres Rres m) :
-    NodesChecked P (fun l ρ m s => pre l ρ m s ∧ S s) Ξres Tres Qres Rres m := by
+obligations at framed returns**: where each node meets its obligations from
+`pre` and `S` holds at its entry state, it meets them with targets
+`pre ∧ S`. -/
+theorem nodesCheckedR_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
+    {m : Nat} {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop} {S : IndexedHeap → Prop}
+    (hS : ∀ s s', Admissible s s' → S s → S s')
+    (hn : NodesCheckedR P pre F Ret RetE Ξres Tres Qres Rres m) :
+    NodesCheckedR P (fun l ρ m s => pre l ρ m s ∧ S s) F Ret RetE Ξres Tres Qres Rres m := by
   intro l ρ s ⟨hp, hs⟩
   obtain ⟨node, hP, hck⟩ := hn l ρ s hp
   refine ⟨node, hP, fun hr hρ => ?_⟩
   obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr hρ
-  refine ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ⟨ho.shape, fun s' v ha hv hT hq => ?_, fun s' e ha hsc hΞ hq => ?_⟩⟩
-  · have ht := ho.normal s' v ha hv hT hq
+  refine ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ⟨ho.shape, fun s' v ha hv hT hq hR => ?_, fun s' e ha hsc hΞ hq hR => ?_⟩⟩
+  · have ht := ho.normal s' v ha hv hT hq hR
     have hs' := hS s s' ha.1 hs
     cases hk : node.continuation <;> rw [hk] at ht
     · exact ht
@@ -303,10 +305,19 @@ theorem nodesChecked_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres 
     · exact ht.imp (fun h => ⟨h.1, h.2, hs'⟩) (fun h => ⟨h.1, h.2, hs'⟩)
     · exact ht.imp (fun h => ⟨h.1, h.2, hs'⟩) (fun h => ⟨h.1, h.2, hs'⟩)
     · exact ht.imp (fun h => ⟨h.1, h.2, hs'⟩) (fun h => ⟨h.1, h.2, hs'⟩)
-  · have ht := ho.raise s' e ha hsc hΞ hq
+  · have ht := ho.raise s' e ha hsc hΞ hq hR
     cases hx : node.handler <;> rw [hx] at ht
     · exact ht
     · exact ⟨ht, hS s s' ha.1 hs⟩
+
+omit [DecidableEq ι] in
+/-- **A property every admissible transition keeps joins the node
+obligations** (`nodesCheckedR_stable` with no framed node). -/
+theorem nodesChecked_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
+    {m : Nat} {S : IndexedHeap → Prop} (hS : ∀ s s', Admissible s s' → S s → S s')
+    (hn : NodesChecked P pre Ξres Tres Qres Rres m) :
+    NodesChecked P (fun l ρ m s => pre l ρ m s ∧ S s) Ξres Tres Qres Rres m :=
+  (nodesCheckedR_stable (Ret := fun _ _ _ _ => True) (RetE := fun _ _ _ _ => True) hS hn.toR).toPlain
 
 end Regional
 

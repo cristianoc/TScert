@@ -56,16 +56,30 @@ theorem nodesKeep_anti {P : Program} {pre pre' : Nat → Assertion} {X : Nat →
   fun l ρ s hp hx => h l ρ s (hle l ρ s hp) hx
 
 omit [DecidableEq ι] [Hashable ι] in
-/-- **The checked nodes at the node assertion with the traversed fields**:
-every admissible transition keeps the fields fixed (`nodesChecked_stable`),
-so the nodes checked at `passPreA` are checked at `passPreU`. -/
+/-- **The checked nodes at the node assertion with the traversed fields, at
+framed returns**: every admissible transition keeps the fields fixed
+(`nodesCheckedR_stable`), so the nodes checked at `passPreA` are checked at
+`passPreU`. -/
+theorem nodesChecked_of_walkR {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
+    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Ξres Tres : Fam} {m : Nat}
+    {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    (hw : NodesCheckedR P (marked (passPreA G w startNames ε ctx stated)) F Ret RetE Ξres Tres (fun _ => True)
+      (fun _ => True) m)
+    (fields : List (Nat × String)) (h₀ : Heap) :
+    NodesCheckedR P (passPreU G w startNames ε ctx stated fields h₀) F Ret RetE Ξres Tres (fun _ => True)
+      (fun _ => True) m :=
+  nodesCheckedR_stable (S := fun s => ArgumentPathTracking.StableNow fields ε.env h₀ s.W)
+    (fun _ _ ha hs => hs.transfer ha.1 ha.2) hw
+
+omit [DecidableEq ι] [Hashable ι] in
+/-- **The checked nodes at the node assertion with the traversed fields**
+(`nodesChecked_of_walkR` with no framed node). -/
 theorem nodesChecked_of_walk {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Ξres Tres : Fam} {m : Nat}
     (hw : NodesChecked P (marked (passPreA G w startNames ε ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m)
     (fields : List (Nat × String)) (h₀ : Heap) :
     NodesChecked P (passPreU G w startNames ε ctx stated fields h₀) Ξres Tres (fun _ => True) (fun _ => True) m :=
-  nodesChecked_stable (S := fun s => ArgumentPathTracking.StableNow fields ε.env h₀ s.W)
-    (fun _ _ ha hs => hs.transfer ha.1 ha.2) hw
+  (nodesChecked_of_walkR (Ret := fun _ _ _ _ => True) (RetE := fun _ _ _ _ => True) hw.toR fields h₀).toPlain
 
 /-- **What the pass's walk at one assignment provides**: every node
 checked at the node assertion stating the written assertions, at every

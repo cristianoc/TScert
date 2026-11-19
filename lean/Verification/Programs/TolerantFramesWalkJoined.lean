@@ -68,9 +68,30 @@ theorem NodeMeaning.withJoined {G : NormalGraph ι} {w : Walk ι} {startNames : 
   handler t ht ρ s' e h1 h2 h3 h4 := ⟨hm.handler t ht ρ s' e h1 h2 h3 h4, hj.handler t ht ρ s' e h1 h2 h3 h4⟩
 
 /-- **The walk checks every node at the node assertion stating the
-written assertions**, from the walk's construction with the written facts
-(`TraversedA`), each node's step and exits delivering `edgePreAJ`, the
-heads entered and `LinearNearFuelEq` (`passPreA_of_edgeAJ`). -/
+written assertions, at framed returns**, from the walk's construction with
+the written facts (`TraversedA`), each node's step and exits delivering
+`edgePreAJ` (a framed node's where its exits meet its returns), the heads
+entered and `LinearNearFuelEq` (`passPreA_of_edgeAJ`). -/
+theorem nodesChecked_of_walkJR {P : ControlFlow.Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
+    {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {fresh : Nat → Nat} {Ξres Tres : Fam} {m : Nat} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    (hT : TraversedA G w startNames given ctx edgesIn fresh stated)
+    (hstep : StepEdgesSoundMarkedR (edgePreAJ G w startNames ε ctx stated given edgesIn) P G w startNames ε ctx F Ret
+      RetE Ξres Tres (fun _ => True) (fun _ => True) m)
+    (hheads : HeadsEntered G w startNames ε given m) (hnear : LinearNearFuelEq) :
+    NodesCheckedR P (marked (passPreA G w startNames ε ctx stated)) F Ret RetE Ξres Tres (fun _ => True)
+      (fun _ => True) m := by
+  intro l ρ s ⟨hp, hm⟩
+  obtain ⟨node, hn, hck⟩ := hstep l ρ s hp.1 hm
+  refine ⟨node, hn, fun hr hρ => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr hρ
+  exact ⟨Ξ, T, cn, ce, Qn, Qe, hsafe,
+    nodeObligationsR_marked hm (nodeObligationsR_mono (fun _ _ _ h => passPreA_of_edgeAJ hT hheads hnear h) ho)⟩
+
+/-- **The walk checks every node at the node assertion stating the
+written assertions** (`nodesChecked_of_walkJR` with no framed node). -/
 theorem nodesChecked_of_walkJ {P : ControlFlow.Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
@@ -79,13 +100,9 @@ theorem nodesChecked_of_walkJ {P : ControlFlow.Program} {G : NormalGraph ι} {w 
     (hstep : StepEdgesSoundMarked (edgePreAJ G w startNames ε ctx stated given edgesIn) P G w startNames ε ctx Ξres
       Tres (fun _ => True) (fun _ => True) m)
     (hheads : HeadsEntered G w startNames ε given m) (hnear : LinearNearFuelEq) :
-    NodesChecked P (marked (passPreA G w startNames ε ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m := by
-  intro l ρ s ⟨hp, hm⟩
-  obtain ⟨node, hn, hck⟩ := hstep l ρ s hp.1 hm
-  refine ⟨node, hn, fun hr hρ => ?_⟩
-  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr hρ
-  exact ⟨Ξ, T, cn, ce, Qn, Qe, hsafe,
-    nodeObligations_marked hm (nodeObligations_mono (fun _ _ _ h => passPreA_of_edgeAJ hT hheads hnear h) ho)⟩
+    NodesChecked P (marked (passPreA G w startNames ε ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m :=
+  (nodesChecked_of_walkJR (Ret := fun _ _ _ _ => True) (RetE := fun _ _ _ _ => True) hT hstep.toR hheads
+    hnear).toPlain
 
 end Joined
 

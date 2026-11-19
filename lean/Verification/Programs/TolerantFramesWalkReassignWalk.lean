@@ -116,6 +116,35 @@ by the initial heap. -/
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
       NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler)
 
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- Each visited node delivers its targets when the entry mark is bounded
+by the initial heap, a framed node's targets where its exits meet its
+returns from the heap it is entered at. -/
+@[nospecialize] def StepEdgesSoundMarkedR (pre : Nat → Assertion) (P : ControlFlow.Program) (G : NormalGraph ι)
+    (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (F : Nat → Bool)
+    (Ret RetE : Nat → Env → Heap → Heap → Prop) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m : Nat) : Prop :=
+  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → m ≤ s.h.length → ∃ node, P[l]? = some node ∧
+    (RefsOk s.W (instantiate 0 ρ node.expression) → RootsOk s.W ρ →
+    ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
+      SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
+        s.n s.W s.h (instantiate 0 ρ node.expression) ∧
+      NodeObligationsR pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe (RetP Ret (enterPend F l s.h) ρ)
+        (RetP RetE (enterPend F l s.h) ρ) ρ m s node.continuation node.handler)
+
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- Nodes delivering their targets deliver them at framed returns with no
+framed node. -/
+theorem StepEdgesSoundMarked.toR {pre : Nat → Assertion} {P : ControlFlow.Program} {G : NormalGraph ι}
+    {w : Walk ι} {startNames : List Nat} {ctx : Nat → List (Ty ι)} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
+    (h : StepEdgesSoundMarked pre P G w startNames ε ctx Ξres Tres Qres Rres m) :
+    StepEdgesSoundMarkedR pre P G w startNames ε ctx (fun _ => false) Ret RetE Ξres Tres Qres Rres m := by
+  intro l ρ s hp hm
+  obtain ⟨node, hP, hck⟩ := h l ρ s hp hm
+  refine ⟨node, hP, fun hr hρ => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hs, ho⟩ := hck hr hρ
+  exact ⟨Ξ, T, cn, ce, Qn, Qe, hs, ho.toR _ _⟩
+
 omit [Instantiates ι] in
 /-- **Every checked node of the pass delivers `pre`** (`StepEdgesSoundAt`):
 where every visited node is checked with its searches as oracles
