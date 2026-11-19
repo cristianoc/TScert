@@ -113,6 +113,12 @@ records (Astra and Fable found none of them reopened, Fable's table).
 - **$`\Theta_C`$ with path keys** (Astra 6, Fable F5): `@clients` admits path
   keys per exported type. Closed by a restriction, stated and enforced
   ([restrictions](#restrictions)).
+- **The realm's intrinsics** (milestone 1's first check): P22's `walk`
+  captures `[[Array.prototype]]` beside `%ElementAt%`, an object of the
+  realm, so an empty initial heap holds no value for that slot. Closed: an
+  initial configuration starts from the realm's heap, and the restriction
+  admits its intrinsic objects ([initialization](#initialization),
+  [restrictions](#restrictions)).
 - **The initialization** (Fable F3): the base realizes module closures as
   finite unfoldings (`ModuleClosures.lean`), so an initialization holding
   "the module closures" is undefined where module functions name each
@@ -213,7 +219,7 @@ $`C`$ active at it (`depthC`).
 **The charges of a set of codes** $`\mathrm{Ch}(M)`$: the protocol joining,
 for each node of each code of $`M`$ at each of its contexts, each write of
 the node's expression at the parts of its receiver's sites and the kinds
-its form writes (`writesIn` over the flow's nodes, `roleKinds (slotBound
+its form writes (`writesT` over the flow's nodes, `roleKinds (slotBound
 k)`), at $`\mathsf{any}`$, and each native step model's writes at its
 receivers' parts. The verifier computes it from the lowered node
 expressions the flow holds, which the binding checks make the request's
@@ -274,8 +280,7 @@ proved): every location $`l<|h|`$ a step of $`C`$'s code from a reached
 state changes is written by a writing redex whose receiver's location's
 part is among the charged parts of a write of the frame's node expression,
 at every context the frame may fit. $`\mathrm{Ch}`$ is computed by the
-total `writesT` (`Round5.lean`; the base's `writesIn` is a `partial def`,
-an opaque constant, `WritesInOpaque.lean`): its definition is structural
+total `writesT` (`SourceClaimJson.writesT`): its definition is structural
 over the term and its argument lists, and charges a receiver with no
 computed set, and a `letE` body under a bound term with none, at `top`,
 every site of the flow and `none`.
@@ -547,7 +552,7 @@ $`0`$, and whose outside slots hold a value per depth (`approxEnv`,
 `Slot.outside`, `PassUnitRealize.lean`; `ModuleClosures.lean`). An outside
 slot varying with the depth makes every unfolding different
 (`ApproxStable.lean`). Under the restriction that every outside slot holds
-an audited native, the same value at every depth, a module function with
+an audited realm value, the same value at every depth, a module function with
 no linked slot has one unfolding at every depth (`Round5.lean`,
 `approx_const_stable`); with an acyclic name graph, `approx_stable` (to be
 proved, by induction on the height from `approx_const_stable`'s argument)
@@ -560,19 +565,23 @@ the name graph, each module function's closure at its stable unfolding
 its outside captures the natives), and returns the array of the exported
 ones. Its allocations are at canonical sites.
 
-**An initial configuration** of a program over $`C`$: an empty heap, a
-world at which it is typed, and the closed term
+**An initial configuration** of a program over $`C`$: the realm's heap
+$`h_R`$, holding the intrinsic objects the outside slots of $`C`$'s module
+functions name (`Array.prototype`), a world at which it is typed, and the
+closed term
 `letE (gotoOf initC 0 [] .undef c_C) client`, whose `client` is lowered
 source of outside code (`LoweredSrc`, holding no closure,
 `loweredSrc_no_closure`) scoped at one binder (`Scoped 1 client`, its
 variable `0` the exports' array; the whole `letE` is `Scoped 0`).
 
-**P22's layout** (measured, `layout.py` on P22's `fragment.json`): one
-function, `walk`; no module initialization statement (`init: []`); no
-imported module; one declared value, the intrinsic `%ElementAt%` the read
-`xs[c.i]!` lowers to, an audited native with a step model. `walk` names no
-function of its module. So P22 meets the restriction and its `initC`
-allocates one closure.
+**P22's layout** (measured, `layout.py` on P22's `fragment.json`, and the
+module code the flow probe reads): one function, `walk`; no module
+initialization statement (`init: []`); no imported module; two outside
+slots, the intrinsic `%ElementAt%` the read `xs[c.i]!` lowers to, an
+audited native with a step model, and `[[Array.prototype]]`, the realm's
+array prototype every unit that uses arrays sees (`Extraction.lean`), an
+intrinsic object of $`h_R`$. `walk` names no function of its module. So
+P22 meets the restriction and its `initC` allocates one closure.
 
 ## The frame of a request
 
@@ -829,10 +838,11 @@ then checked by an ordinary plan), and has a control.
   each other, whose closures have no finite initialization at the base.
   Control: a framed walker in a module with two mutually naming functions,
   refused.
-- **Outside slots are audited natives.** Every outside slot of a module
-  function of a framed plan's component holds an audited native, the same
-  value at every depth (an intrinsic with a step model, as P22's
-  `%ElementAt%`). Excluded: an import of another module's value, a module
+- **Outside slots are audited realm values.** Every outside slot of a
+  module function of a framed plan's component holds an audited realm
+  value, the same at every depth: a native with a step model (P22's
+  `%ElementAt%`) or an intrinsic object of the realm's heap (P22's
+  `[[Array.prototype]]`). Excluded: an import of another module's value, a module
   constant or cell, a host value, whose unfolding varies with the depth
   (`ApproxStable.lean`) and which `initC` does not initialize. Control: a
   framed walker whose module imports a function of another module, or
@@ -989,7 +999,7 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
 `released_prot_inR`, `loweredSrc_no_closure`, `gotoOf_start_ne`;
 `cross_into_prot`, `truncate_after_cross`, `allocSomeB`'s value on
-`AstraR3.lean`'s flow; `writesT` (total), `approx_const_stable`,
+`AstraR3.lean`'s flow; `approx_const_stable`,
 `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
@@ -1062,10 +1072,31 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 statement and plan, each definition it reads is given (the canonical
 sites, `RealizedAt`, `writesT`, `ActualCrossingsIn`, `PublicCall` over the
 core), its four restrictions are stated with their refusals and controls,
-P22's layout meets them (measured), and its first check is concrete. Not
-settled before the first check runs: whether the computed flow of P22 keeps
-the cursor's site outside $`L(c)`$, and whether the linked witness builds
-as stated.
+and P22's layout meets them (measured).
+
+**The first check** (observed, [Runs](#runs)):
+
+- *The linked call* (`Tests/FramedLinkedCall.lean`): from the realm's heap
+  and `letE (gotoOf initC 0 [] .undef c_C) client`, 26 steps of the
+  calculus (`linked`, proved from `step?_sound`): the initialization
+  allocates `walk`'s closure and the exports' array; the client builds
+  `xs` and a visitor and invokes the closure, the entering step raising
+  the calls of $`C`$ active from 0 to 1, the entered slots the receiver,
+  the two parameters, the two outside captures and the closure; the
+  prologue reaches the realized code at `r.start` with the slots past the
+  receiver, its first 33 entries the request's tables; from there the
+  realized run is the request's run on the realized tables at the same
+  heap for 26 steps, past `const c = { i: 0 }`, whose site is the same in
+  both codes at the numbering keyed by `bodyOf` and two sites at a
+  numbering per code.
+- *The flow probe* at $`\Psi_c`$ (`componentProtocol`, `depthCharges`):
+  at P22's `visit(c.i)` the call is framed, $`\mathrm{seg}(c)`$ is
+  `walk` and `%ElementAt%`, $`L(c)`$ is outside storage, the two released
+  sites of $`O`$ and `%ElementAt%`'s token, and the cursor's local site lies
+  outside it: `c.i < xs.length` and `0 <= c.i` are kept. At
+  `nested-capture.mjs`'s `wrapper()` (its TypeScript form) the call is
+  framed through $`\mathrm{seg}(c)`$, `holder.child`'s site is in $`L(c)`$
+  and charged `any` by `bump`'s write: both facts are dropped.
 
 ## Tests
 
@@ -1115,6 +1146,10 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
 - P22's layout (`round5/layout.py` on its `fragment.json`, `layout.out`):
   one function, no initialization statement, no import, the declared value
   `%ElementAt%`;
+- the first check: `Tests/FramedLinkedCall.lean` (the linked call, built
+  with the library); the flow probe (`TSCERT_FLOW_PROBE=only`,
+  `TSCERT_FRAME_PROBE` at the call's offset) on the run directories of
+  P22 and of `nested-capture.mjs`'s TypeScript form (`m1-build/`);
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's

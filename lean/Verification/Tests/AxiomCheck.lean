@@ -331,6 +331,7 @@ import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests
 import Verification.Tests.FlowProbeControls
 import Verification.Tests.FootprintControls
+import Verification.Tests.FramedLinkedCall
 import Verification.Tests.LinkControls
 import Verification.Tests.SelectionControls
 import Verification.Tests.SeparationControls
