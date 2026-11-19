@@ -28,7 +28,32 @@ export interface Request {
 
 export interface Response {
   status: number;
+  contentType: string;
   body: string;
+}
+
+const TODOS: string = "/todos";
+const TODO_PREFIX: string = "/todos/";
+
+export function todoPath(id: number): string {
+  return `${TODO_PREFIX}${id}`;
+}
+
+export function togglePath(id: number): string {
+  return `${todoPath(id)}/toggle`;
+}
+
+// Leading and trailing whitespace (char code at most 32) removed.
+export function trim(text: string): string {
+  let start: number = 0;
+  let end: number = text.length;
+  while (start < end && text.charCodeAt(start) <= 32) {
+    start = start + 1;
+  }
+  while (end > start && text.charCodeAt(end - 1) <= 32) {
+    end = end - 1;
+  }
+  return text.slice(start, end);
 }
 
 // JSON.stringify's parameter is read at this library type (SOURCE-CONTRACTS):
@@ -108,8 +133,8 @@ export function renderPage(state: AppState): string {
     items =
       items +
       `<li>${mark} ${escapeHtml(todo.title)} (id ${todo.id}) ` +
-      `<button type="button" onclick="post('/todos/${todo.id}/toggle')">toggle</button> ` +
-      `<button type="button" onclick="del('/todos/${todo.id}')">delete</button></li>`;
+      `<button type="button" onclick="post('${togglePath(todo.id)}')">toggle</button> ` +
+      `<button type="button" onclick="del('${todoPath(todo.id)}')">delete</button></li>`;
   }
   if (items.length === 0) {
     items = "<li>No todos yet — add one above.</li>";
@@ -121,7 +146,7 @@ export function renderPage(state: AppState): string {
     `<ul>${items}</ul>` +
     `<script>` +
     `function add(){var t=document.getElementById("new").value;` +
-    `fetch("/todos",{method:"POST",body:t}).then(function(){location.reload();});}` +
+    `fetch("${TODOS}",{method:"POST",body:t}).then(function(){location.reload();});}` +
     `function post(u){fetch(u,{method:"POST"}).then(function(){location.reload();});}` +
     `function del(u){fetch(u,{method:"DELETE"}).then(function(){location.reload();});}` +
     `</script></body></html>`
@@ -137,47 +162,51 @@ export function todosJson(todos: Todo[]): JsonValue {
 }
 
 function jsonOk(state: AppState): Response {
-  return { status: 200, body: JSON.stringify(todosJson(state.todos)) };
+  return { status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(todosJson(state.todos)) };
 }
 
 function badRequest(message: string): Response {
-  return { status: 400, body: message };
+  return { status: 400, contentType: "text/plain; charset=utf-8", body: message };
 }
 
 function notFound(): Response {
-  return { status: 404, body: "not found" };
+  return { status: 404, contentType: "text/plain; charset=utf-8", body: "not found" };
 }
 
 // The router: one pure function from (state, request) to (next state, response).
 export function handleRequest(state: AppState, req: Request): [AppState, Response] {
   if (req.method === "GET" && req.path === "/") {
-    return [state, { status: 200, body: renderPage(state) }];
+    return [state, { status: 200, contentType: "text/html; charset=utf-8", body: renderPage(state) }];
   }
-  if (req.method === "GET" && req.path === "/todos") {
+  if (req.method === "GET" && req.path === TODOS) {
     return [state, jsonOk(state)];
   }
-  if (req.method === "POST" && req.path === "/todos") {
-    const next: AppState = addTodo(state, req.body);
-    return [next, { status: 201, body: JSON.stringify(todosJson(next.todos)) }];
+  if (req.method === "POST" && req.path === TODOS) {
+    const title: string = trim(req.body);
+    if (title.length === 0) {
+      return [state, badRequest("empty title")];
+    }
+    const next: AppState = addTodo(state, title);
+    return [next, { status: 201, contentType: "application/json; charset=utf-8", body: JSON.stringify(todosJson(next.todos)) }];
   }
-  if (req.method === "POST" && req.path.startsWith("/todos/") && req.path.endsWith("/toggle")) {
-    const id: number = parseId(req.path.slice("/todos/".length, req.path.length - "/toggle".length));
+  if (req.method === "POST" && req.path.startsWith(TODO_PREFIX) && req.path.endsWith("/toggle")) {
+    const id: number = parseId(req.path.slice(TODO_PREFIX.length, req.path.length - "/toggle".length));
     if (id < 0) {
       return [state, badRequest("bad id")];
     }
     const next: AppState = toggleTodo(state, id);
     return [next, jsonOk(next)];
   }
-  if (req.method === "DELETE" && req.path.startsWith("/todos/")) {
-    const id: number = parseId(req.path.slice("/todos/".length));
+  if (req.method === "DELETE" && req.path.startsWith(TODO_PREFIX)) {
+    const id: number = parseId(req.path.slice(TODO_PREFIX.length));
     if (id < 0) {
       return [state, badRequest("bad id")];
     }
     const next: AppState = deleteTodo(state, id);
     return [next, jsonOk(next)];
   }
-  if (req.method === "GET" && req.path.startsWith("/todos/")) {
-    const id: number = parseId(req.path.slice("/todos/".length));
+  if (req.method === "GET" && req.path.startsWith(TODO_PREFIX)) {
+    const id: number = parseId(req.path.slice(TODO_PREFIX.length));
     if (id < 0) {
       return [state, badRequest("bad id")];
     }
@@ -185,7 +214,7 @@ export function handleRequest(state: AppState, req: Request): [AppState, Respons
     if (matches.length === 0) {
       return [state, notFound()];
     }
-    return [state, { status: 200, body: JSON.stringify(todosJson(matches)) }];
+    return [state, { status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(todosJson(matches)) }];
   }
   return [state, notFound()];
 }
