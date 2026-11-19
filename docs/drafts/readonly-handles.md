@@ -1147,8 +1147,33 @@ it gives is conjectured.
     the helpers' effects on those fresh records, with no callback before the
     return.
 
-  The public `LayoutCursor` a caller passes is validated on entry as
-  upstream does. No change.
+  The public `LayoutCursor` has two numeric fields. A positive grapheme
+  index inside a segment requires fit advances for **that segment of
+  that handle**. In `normalizePreparedLineStart`, a segment index below
+  the segment count and a positive grapheme index suffice to return true.
+  The following client exercises this entry through the walker's package
+  wrapper. With text measured at eight pixels per character, the first
+  range ends at segment 0, grapheme 1.
+
+  ```ts
+  const first = prepare('abcdefghi', '16px Arial')
+  const second = prepare('a\nb', '16px Arial', { whiteSpace: 'pre-wrap' })
+  walkLineRanges(first, 8, line => {
+    layoutNextLineRange(second, 8, line.end)
+  })
+  ```
+
+  The client performs no writes. Under Node, the re-entrant call reaches
+  `walkPreparedComplexLines` with a null fit-advances array for segment 0
+  of `second`; reading its length raises a `TypeError`. The public entry
+  needs to establish cursor validity relative to the supplied handle
+  before the stepper consumes it. The read-only frame can preserve an
+  established fact across the callback. The same entry obligation applies
+  when the client calls the stream directly. For example, with `second`
+  and `{ segmentIndex: -1, graphemeIndex: 1 }`, Node reaches the complex
+  walker's read of `segmentFlags[lineStartSegmentIndex]` with index −1
+  and length 3. Its value is `undefined`, falsifying the numeric claim
+  at that read before any visitor call.
 
 In all, checked as above: the README's section and six annotation
 comments, three with the obligation; brand-free records, casts through `unknown` and four checked
@@ -2846,6 +2871,14 @@ no direct outside-call obligation there. The source component graph for
 the whole package lists the same four possible visitor closures at both
 calls, two in `layout.ts` and two in `rich-inline.ts`. A wrapper can in
 turn call the client's visitor at its own call site.
+
+For a walker to retain a fact across such a wrapper, the wrapper's
+certified effect must preserve the fact in the suspended walker's
+environment. This includes the wrapper's own steps and the call out to
+the client, with any calls back into the package. The obligation on
+normal return uses the normal effect; a handler that uses the fact
+needs preservation on the exceptional exit as well. Each re-entrant
+entry must establish the preconditions for the body it invokes.
 
 Evaluating the frame predicate independently of that guard gives the
 following results on the merged flow. Each count includes context zero,
