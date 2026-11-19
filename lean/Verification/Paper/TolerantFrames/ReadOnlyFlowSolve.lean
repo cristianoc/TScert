@@ -14,10 +14,10 @@ holds of it.
   the closure's own slot. A signature is an index into a table of `C`'s
   codes' signatures and their entries' seeds, compared as a number; a
   target's row has the width of the edge's mapping, or the source's.
-- **Sites** (`solveLoop`): one variable per slot a node keeps apart
-  (`neededWidths`), one for the slots past them and one for its value; an
-  edge copies each variable of its source into the one of its target that
-  reads it. A node's sets are its expression's least set (`gen`, `syn` at
+- **Sites** (`solveLoop`): each node has slots up to its needed width,
+  a default slot and a value. A slot determined by a single incoming
+  copy uses its source's variable (`copyClasses`). The worklist carries
+  bitset differences along the remaining inclusions. A node's sets are its expression's least set (`gen`, `syn` at
   the current proposal, its stores, what reaches outside code and the
   slots of a callee's entry added as requirements; a known call's value
   its callee's return set; a closure's set its code's token). `O` is held
@@ -88,9 +88,8 @@ signatures, compared as a number. -/
 abbrev FnIx := Option Nat
 
 /-- **The state of the proposal**: `O`, the heap of sites, the sets of the
-variables (each node's slots kept apart, the set past them, its value),
-where each node's variables start and how many slots it keeps apart, and
-what changed since it was last read. -/
+inclusion variables, the mapping from each node's slots and value to
+those variables, and the sites each variable gained since its last copy. -/
 structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
   O : Sites P
   /-- The sites of `O`, as a hash set. -/
@@ -99,7 +98,14 @@ structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
   heapM : Std.HashMap (Option P.Site) (Sites P × Std.HashSet (Option P.Site)) := {}
   /-- The number of sites the heap's contents list, over all sites. -/
   heapTotal : Nat := 0
-  vars : Array (Sites P)
+  /-- A bit per site encountered, assigned in order of discovery. -/
+  bits : Std.HashMap (Option P.Site) Nat := {}
+  sites : Array (Option P.Site) := #[]
+  /-- One list view per mask read by the expression solver or the checker. -/
+  sets : Std.HashMap Nat (Nat × Sites P) := {}
+  vars : Array (Nat × Sites P)
+  /-- Slot occurrence to inclusion variable. -/
+  classes : Array Nat
   offs : Array (Array Nat)
   needs : Array (Array Nat)
   changedVars : List Nat := []
@@ -108,10 +114,7 @@ structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
   /-- Each code's token. -/
   toks : Array (Option P.Site) := #[]
   /-- The sites each variable gained since it was last copied. -/
-  delta : Array (Sites P) := #[]
-  /-- The sites of each variable holding many, as a hash set: a variable's
-  growth reads its membership in constant time. -/
-  memb : Array (Option (Std.HashSet (Option P.Site))) := #[]
+  delta : Array Nat := #[]
   grewO : Bool := false
   grewHeap : Bool := false
 
@@ -147,33 +150,62 @@ def store (s : Option P.Site) (S : Sites P) : SolveState P :=
   else
     { st with heapM := st.heapM.insert s (c ++ added, hs), heapTotal := st.heapTotal + added.length, grewHeap := true }
 
-/-- A variable holding more sites than this keeps them in a hash set too. -/
-def membFrom : Nat := 8
+/-- The list view of a variable, shared across all occurrences of its mask. -/
+def varSites (v : Nat) : Sites P := (st.vars.getD (st.classes.getD v 0) (0, [])).2
 
-/-- Grow variable `v` by `S`: the sites of `S` it lacks, each once, read
-from its list where both are small, from its hash set otherwise. -/
-def grow (v : Nat) (S : Sites P) : SolveState P :=
-  let old := st.vars.getD v []
-  if S.isEmpty then st else
-  -- (the arrays taken out of the state before they are set, so that the
-  -- update is in place where the state is not shared)
-  let memb := st.memb
-  let st := { st with memb := #[] }
-  let (added, hs) : Sites P × Option (Std.HashSet (Option P.Site)) :=
-    if old.length + S.length < membFrom then ((freshOf old S).reverse, none)
+/-- Densely number arbitrary sites as they enter the variable constraints. -/
+def encode (S : Sites P) : Nat × SolveState P := Id.run do
+  let mut st := st
+  let mut mask := 0
+  for s in S do
+    if let some bit := st.bits[s]? then
+      mask := mask ||| bit
     else
-      let hs := ((memb.getD v none).getD (Std.HashSet.ofList old))
-      let (acc, hs) := S.foldl (fun (acc, hs) x => if hs.contains x then (acc, hs) else (x :: acc, hs.insert x))
-        ([], hs)
-      (acc.reverse, some hs)
-  let memb := if v < memb.size then memb.set! v hs else memb
-  if added.isEmpty then { st with memb := memb }
-  else
-    let vars := st.vars
-    let delta := st.delta
-    let st := { st with vars := #[], delta := #[] }
-    let delta := delta.modify v (fun d => d ++ added)
-    { st with vars := vars.set! v (old ++ added), delta := delta, memb := memb, changedVars := v :: st.changedVars }
+      let bit := 1 <<< st.sites.size
+      st := { st with bits := st.bits.insert s bit, sites := st.sites.push s }
+      mask := mask ||| bit
+  return (mask, st)
+
+/-- Reuse a variable's canonical list when a heap, outside, or return
+set has the same members. Sites found only in those sets keep their
+original list representation. -/
+def sharedSites (S : Sites P) : Sites P := Id.run do
+  let mut mask := 0
+  for s in S do
+    let some bit := st.bits[s]? | return S
+    mask := mask ||| bit
+  return ((st.sets[mask]?).map Prod.snd).getD S
+
+/-- Propagate a set difference by bitwise union. Materialize a list for
+each distinct variable value once, in site discovery order. -/
+def growMask (v mask : Nat) : SolveState P := Id.run do
+  let old := (st.vars.getD v (0, [])).1
+  let next := old ||| mask
+  if old == next then return st
+  let (value, sets) := match st.sets[next]? with
+    | some value => (value, st.sets)
+    | none => Id.run do
+      let mut remaining := next
+      let mut view := []
+      for _ in [0:st.sites.size] do
+        if remaining == 0 then break
+        let i := remaining.log2
+        view := st.sites[i]! :: view
+        remaining := remaining ^^^ (1 <<< i)
+      let value := (next, view)
+      return (value, st.sets.insert next value)
+  let vars := st.vars
+  let delta := st.delta
+  let st := { st with vars := #[], delta := #[] }
+  return { st with
+    sets := sets, vars := vars.set! v value
+    delta := delta.modify v (· ||| (next ^^^ old)), changedVars := v :: st.changedVars }
+
+/-- Add the sites required by an expression or an entry constraint. -/
+def grow (v : Nat) (S : Sites P) : SolveState P :=
+  if S.isEmpty then st else
+    let (mask, st) := st.encode S
+    st.growMask (st.classes.getD v 0) mask
 
 /-- The variable of slot `i` of node `l` of code `ci`: the slot's, or the
 one past the slots kept apart. -/
@@ -182,7 +214,7 @@ def slotVar (ci l i : Nat) : Option Nat :=
 
 /-- The return set of code `ci`: its returning nodes' values. -/
 def retOf (ci : Nat) : Sites P :=
-  (st.rets.getD ci []).foldl (fun acc v => union acc (st.vars.getD v [])) []
+  (st.rets.getD ci []).foldl (fun acc v => union acc (st.varSites v)) []
 
 /-- Grow the slot `i` of node `l` of code `ci` by `S`. -/
 def slot (ci l i : Nat) (S : Sites P) : SolveState P :=
@@ -527,7 +559,7 @@ def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × Li
   for ((rs, t), e) in (st.rets.toList.zip st.toks.toList).zip entries.toList do
     if e && t ∈ st.O then
       for v in rs do
-        st := st.toO (st.vars.getD v [])
+        st := st.toO (st.varSites v)
   -- the unit's entry slots: what outside code may supply
   for v in noneVars do
     st := st.grow v supplied
@@ -555,7 +587,7 @@ def sigTable (cs : Array (SolveCode P)) : Array (FnSig × Option Nat) :=
 
 /-- **The start of the rounds**: the codes as arrays, the table of
 signatures, each node's signatures, the variables' layout, the copies of
-the edges, each variable's node, and the nodes reading the heap of sites
+the edges, each variable's readers, and the nodes reading the heap of sites
 or `O`. -/
 structure SolveStart (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
   /-- The codes' copies: each code at its entry context, at its index among
@@ -572,8 +604,8 @@ structure SolveStart (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
   fns : Array (Array (Array FnIx))
   /-- The variables each variable is copied into. -/
   succ : Array (List Nat)
-  /-- The node whose expression reads each variable, if any. -/
-  readerOf : Array (Option (Nat × Nat))
+  /-- Nodes whose expression may read each inclusion variable. -/
+  readerOf : Array (List (Nat × Nat))
   heapReaders : List (Nat × Nat)
   oReaders : List (Nat × Nat)
   /-- The variables outside code fills: the value a handler binds. -/
@@ -673,6 +705,53 @@ where
     | .var j => if d ≤ j then (τ (j - d)).contains none else true
     | _ => true
 
+/-- The closures of the component's code a term creates, with their entry
+layouts. -/
+partial def closureLayouts (ofC : ComponentTag → Bool) : Tm → List (Code × Nat × Bool × Nat × Nat)
+  | .makeAt (.graph ar E K s caps _ rest comp) _ inits =>
+    (if ofC comp then [((E, K), ar, rest, caps.length, s)] else []) ++ E.flatMap (closureLayouts ofC) ++
+      inits.flatMap (closureLayouts ofC)
+  | .invoke f r args => closureLayouts ofC f ++ closureLayouts ofC r ++ args.flatMap (closureLayouts ofC)
+  | .construct f args => closureLayouts ofC f ++ args.flatMap (closureLayouts ofC)
+  | .makeAt _ _ inits | .arrLit inits => inits.flatMap (closureLayouts ofC)
+  | .letE a b | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
+    closureLayouts ofC a ++ closureLayouts ofC b
+  | .ite a b c | .setElem a b c => closureLayouts ofC a ++ closureLayouts ofC b ++ closureLayouts ofC c
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => closureLayouts ofC a
+  | _ => []
+
+/-- The variable for each slot occurrence. A slot with one incoming
+copy and no other source has its source's least solution. Follow these
+copies to their source; an unseeded cycle has the empty least solution.
+`pred[v] = n` denotes no source, and `pred[v] = v` an independent
+variable (an entry, a generated value, or a join). -/
+private def copyClasses (pred : Array Nat) : Array Nat × Nat := Id.run do
+  let n := pred.size
+  let mut ids := Array.replicate n (n + 1)
+  let mut count := 1  -- class zero has no source
+  for v in [0:n] do
+    if ids[v]! ≤ n then continue
+    let mut atVar := v
+    let mut path := []
+    let mut id := 0
+    for _ in [0:n + 1] do
+      if atVar == n then break
+      let seen := ids[atVar]!
+      if seen ≤ n then
+        id := seen
+        break
+      if seen == n + 2 then break
+      let p := pred[atVar]!
+      path := atVar :: path
+      if p == atVar then
+        id := count
+        count := count + 1
+        break
+      ids := ids.set! atVar (n + 2)
+      atVar := p
+    for w in path do ids := ids.set! w id
+  return (ids, count)
+
 def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let bases := cs.toArray
   let table := sigTable bases
@@ -716,7 +795,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let needs : Array (Array Nat) := csA.mapIdx fun ci c =>
     let (exprs, conts) := codes.getD ci (#[], #[])
     neededWidths exprs conts c.start (max c.seeds.length (capSlot c.ar c.rest c.ncaps + 1))
-  -- Each node's variables: its slots kept apart, the one past them, its value.
+  -- Number the slot occurrences, including each node's default slot and value.
   let mut offs : Array (Array Nat) := #[]
   let mut n := 0
   for row in needs do
@@ -725,8 +804,12 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
       o := o.push n
       n := n + w + 2
     offs := offs.push o
-  let mut succ : Array (List Nat) := Array.replicate n []
-  let mut readerOf : Array (Option (Nat × Nat)) := Array.replicate n none
+  let mut pred := Array.replicate n n
+  let mut joins : List (Nat × Nat) := []
+  -- A closure creation can fill captures at the entry its term names.
+  let captures := bases.toList.flatMap fun c => c.code.1.flatMap (closureLayouts P.ofC)
+  let captureEntries := bases.map fun c =>
+    (captures.filter fun d => d.1 == c.code).map fun (_, _, _, _, start) => start
   let mut oVars : List Nat := []
   let mut entryVars : List (Option P.Site × List Nat × List Nat) := []
   let mut tokVars : List (Nat × Nat × Nat × Option P.Site) := []
@@ -759,20 +842,52 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
       | none => pure ()
     let mut rs : List Nat := []
     for l in [0:conts.size] do
-      for v in [o.getD l 0 : o.getD l 0 + nd.getD l 0 + 1] do
-        readerOf := readerOf.set! v (some (ci, l))
+      let off := o.getD l 0
+      let val := off + nd.getD l 0 + 1
+      let first := if l == c.start || (captureEntries.getD (base.getD ci ci) []).contains l then off else val
+      for w in [first:val + 1] do
+        let prev := pred.getD w n
+        if prev != n && prev != w then joins := (prev, w) :: joins
+        pred := pred.set! w w
       let some (k, x) := conts[l]? | continue
       if (match k with | .ret => true | _ => false) then rs := (o.getD l 0 + nd.getD l 0 + 1) :: rs
       oVars := handlerVars o nd l x ++ oVars
       for (v, w) in edgeCopies o nd l k x do
-        succ := succ.modify v (w :: ·)
+        if v == w then continue
+        let prev := pred.getD w n
+        if prev == n then pred := pred.set! w v
+        else if prev != v then
+          if prev != w then
+            joins := (prev, w) :: joins
+            pred := pred.set! w w
+          joins := (v, w) :: joins
     rets := rets.push rs
+  for w in oVars do
+    let prev := pred.getD w n
+    if prev != n && prev != w then joins := (prev, w) :: joins
+    pred := pred.set! w w
+  let (classes, count) := copyClasses pred
+  let mut succ : Array (List Nat) := Array.replicate count []
+  for (v, w) in joins do
+    let src := classes.getD v 0
+    let dst := classes.getD w 0
+    if src != dst then succ := succ.modify src (dst :: ·)
+  succ := succ.map fun ws => (Std.HashSet.ofList ws).toList
+  let mut readerOf : Array (List (Nat × Nat)) := Array.replicate count []
+  for ((exprs, _), ci) in codes.toList.zipIdx do
+    let offsets := offs.getD ci #[]
+    for (e, l) in exprs.toList.zipIdx do
+      let off := offsets.getD l 0
+      for i in [0:maxVar e] do
+        let id := classes.getD (off + i) 0
+        if id != 0 then readerOf := readerOf.modify id fun ns =>
+          if ns.head? == some (ci, l) then ns else (ci, l) :: ns
   let readers (p : Tm → Bool) : List (Nat × Nat) :=
     (codes.toList.zipIdx.flatMap fun ((exprs, _), ci) =>
       (exprs.toList.zipIdx.filter fun (e, _) => p e).map fun (_, l) => (ci, l))
   let st0 : SolveState P :=
-    { O := [none], oSet := ({} : Std.HashSet _).insert none, vars := Array.replicate n [], delta := Array.replicate n [],
-      memb := Array.replicate n none, offs := offs,
+    { O := [none], oSet := ({} : Std.HashSet _).insert none, vars := Array.replicate count (0, []), delta := Array.replicate count 0, classes,
+      offs := offs,
       needs := needs, rets := rets, toks := csA.map (·.tok) }
   let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
   let units := (List.range bases.size).filter fun b => !((bases[b]?).map (·.closure)).getD true
@@ -792,20 +907,21 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let need := (st.needs.getD ci #[]).getD l 0
   -- (the node's slots read once, so that the state's array is not shared
   -- while the node's term grows it)
-  let slots : Array (Sites P) := (Array.range (need + 1)).map fun i => st.vars.getD (off + i) []
+  let slots : Array (Sites P) := (Array.range (maxVar e)).map fun i => st.varSites (off + i)
   let τ : Nat → Sites P := fun i => slots.getD (min i need) []
   let fn := (s.fns.getD ci #[]).getD l #[]
   let κ := (s.nodeCx.getD (s.base.getD ci ci) #[]).getD l entryCx
   let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
   let allCx (cj : Nat) : List Nat := (s.ctxOf.getD cj []).map (·.2)
   let (S, st') := (gen s.table τ (fun i => fn.getD i none) (c.allocAt (k, x)) inst allCx 0 (fun _ => none) e).run st
-  let before := (st'.vars.getD (off + need + 1) []).length
+  let val := st'.classes.getD (off + need + 1) 0
+  let before := (st'.vars.getD val (0, [])).1
   let mut st := st'.grow (off + need + 1) S
   if (match k with | .ret => true | _ => false) then
     -- (a returned value reaches outside code where the unit returns it, or
     -- a closure outside code may call; `closeO` gives the rest)
-    if c.cx == entryCx && (!c.closure || c.tok ∈ st.O) then st := st.toO (st.vars.getD (off + need + 1) [])
-    if (st.vars.getD (off + need + 1) []).length != before then st := { st with grewO := true }
+    if c.cx == entryCx && (!c.closure || c.tok ∈ st.O) then st := st.toO (st.varSites (off + need + 1))
+    if (st.vars.getD val (0, [])).1 != before then st := { st with grewO := true }
   return st
 
 /-- **The sites, by a worklist**: each changed variable copied into those
@@ -833,7 +949,7 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
       if !inQ.getD v true then
         inQ := inQ.set! v true
         vback := v :: vback
-      if let some (c, m) := s.readerOf.getD v none then
+      for (c, m) in s.readerOf.getD v [] do
         if !((nodeQ.getD c #[]).getD m true) then
           nodeQ := nodeQ.modify c (·.set! m true)
           nback := (c, m) :: nback
@@ -850,12 +966,12 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
       copies := copies + 1
       -- (only what the variable gained since it was last copied: its
       -- readers hold the rest)
-      let S := st.delta.getD v []
+      let S := st.delta.getD v 0
       let delta := st.delta
       st := { st with delta := #[] }
-      st := { st with delta := delta.set! v [] }
+      st := { st with delta := delta.set! v 0 }
       for w in s.succ.getD v [] do
-        st := st.grow w S
+        st := st.growMask w S
     | [] =>
       if nfront.isEmpty then
         nfront := nback.reverse
@@ -884,7 +1000,7 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
 /-- The finite flow of the result. -/
 def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
   let sigs := s.table.map (·.1)
-  let O := st.O
+  let O := st.sharedSites st.O
   -- each code's allocation sites per continuation and handler, read once
   -- per code: its entry copy's, which every context shares
   let allocsOf : Array (List (NodeKey × Option P.Site × Option P.Site)) := s.ctxOf.mapIdx fun b _ =>
@@ -895,7 +1011,7 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
       keys.2.reverse.map fun kx => (kx, (c₀.allocAt kx).obj, (c₀.allocAt kx).arr)
     | _, _ => []
   { O := O
-    heap := st.heap
+    heap := st.heap.map fun (site, contents) => (site, st.sharedSites contents)
     codes := s.ctxOf.toList.zipIdx.filterMap fun (cxs, b) => (s.cs[b]?).map fun c₀ =>
       (c₀.code, cxs.reverse.map fun (k, ci) =>
       let c := (s.cs[ci]?).getD c₀
@@ -908,59 +1024,17 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           let off := offs.getD l 0
           let need := needs.getD l 0
           let fn := fns.getD l #[]
-          let env := (List.range need).toArray.map (fun i => st.vars.getD (off + i) [])
-          let dflt := st.vars.getD (off + need) []
+          let env := (Array.range need).map (fun i => st.varSites (off + i))
+          let dflt := st.varSites (off + need)
           let κ := cxs.getD l entryCx
           let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
-          ⟨env, dflt, st.vars.getD (off + need + 1) [], fn, vfnIx fn e, κ,
+          ⟨env, dflt, st.varSites (off + need + 1), fn, vfnIx fn e, κ,
             callsOut s.table (fun i => fn.getD i none) (fun i => env.getD i dflt) inst 0 e⟩),
-        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.retOf ci, c.tok,
+        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.sharedSites (st.retOf ci), c.tok,
         allocsOf.getD b []⟩ : FCode P))) }
 
 /-- Two sets of the same sites. -/
 def sameSites (S T : Sites P) : Bool := decide (Sub S T) && decide (Sub T S)
-
-/-- A set's key among equal sets: its size and two sums of its sites'
-hashes, equal for equal sets in any order. -/
-def setKey (S : Sites P) : Nat × UInt64 × UInt64 := go S 0 0 0
-where
-  go : Sites P → Nat → UInt64 → UInt64 → Nat × UInt64 × UInt64
-    | [], n, a, b => (n, a, b)
-    | x :: S, n, a, b => let h := hash x; go S (n + 1) (a + h) (b ^^^ (h * 0x9E3779B97F4A7C15))
-
-/-- The sets met so far, by key, each with its hash set. -/
-abbrev SetTable (P : Package) [DecidableEq P.Site] [Hashable P.Site] :=
-  Std.HashMap (Nat × UInt64 × UInt64) (List (Sites P × Std.HashSet (Option P.Site)))
-
-/-- The first set met equal to `S`, else `S`, now met. The solver's sets
-hold each site once, so a set of the same size whose sites all lie in a
-met set is that set. -/
-def shareSet (tbl : SetTable P) (S : Sites P) : Sites P × SetTable P :=
-  let k := setKey S
-  let cands := tbl.getD k []
-  match cands.find? fun (_, h) => S.all h.contains with
-  | some (T, _) => (T, tbl)
-  | none => (S, tbl.insert k ((S, Std.HashSet.ofList S) :: cands))
-
-/-- **Equal sets as one object**: each set of a code's nodes and its
-return set replaced by the first equal set met, so that the check reads
-an inclusion of equal sets at once (`subB`). The sets are unchanged. -/
-def shareCode (tbl : SetTable P) (c : FCode P) : FCode P × SetTable P := Id.run do
-  let mut tbl := tbl
-  let mut nodes : Array (FNode P) := Array.emptyWithCapacity c.nodes.size
-  for x in c.nodes do
-    let mut env : Array (Sites P) := Array.emptyWithCapacity x.env.size
-    for S in x.env do
-      let (T, t) := shareSet tbl S
-      tbl := t
-      env := env.push T
-    let (dflt, t) := shareSet tbl x.dflt
-    tbl := t
-    let (val, t) := shareSet tbl x.val
-    tbl := t
-    nodes := nodes.push { x with env := env, dflt := dflt, val := val }
-  let (ret, t) := shareSet tbl c.ret
-  return ({ c with nodes := nodes, ret := ret }, t)
 
 /-- **The flow with the contexts of equal entry sets merged**: two contexts
 of a code whose entry nodes' slots hold the same sites are one class,
@@ -968,7 +1042,7 @@ standing for the first of them (the entry context where it is in it); a
 call site's context is the class of its call sites whose callees' classes
 are its own, standing for the first of them, or the entry context where
 every callee's class is its entry context's. The merged flow is the
-proposal for each class's first context, made once (`shareCode`), and
+proposal for each class's first context, made once, and
 each node names its call site's class. Nothing here is trusted: `FFlow.check` decides the merged
 flow as any other. -/
 def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
@@ -1007,9 +1081,7 @@ def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
   let remap (k : Nat) : Nat := if k == entryCx then entryCx else (look k keys).getD k
   let node (x : FNode P) : FNode P := { x with cx := remap x.cx }
   let code (c : FCode P) : FCode P := { c with nodes := c.nodes.map node, dflt := node c.dflt }
-  -- each class's proposal, its nodes naming the classes and its sets
-  -- shared, made once
-  let mut tbl : SetTable P := {}
+  -- Each representative's nodes name the new call contexts.
   let mut codes : List (Code × List (Nat × FCode P)) := []
   for ((m, cs), b) in F.codes.zipIdx do
     let kept := cs.filter fun (k, _) => k == entryCx || (newKey k != entryCx && newKey k == k)
@@ -1020,8 +1092,7 @@ def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
       match made[k₀]? with
       | some fc => out := (k, fc) :: out
       | none =>
-        let (fc, t) := shareCode tbl (code ((look k₀ cs).getD c))
-        tbl := t
+        let fc := code ((look k₀ cs).getD c)
         made := made.insert k₀ fc
         out := (k, fc) :: out
     codes := (m, out.reverse) :: codes

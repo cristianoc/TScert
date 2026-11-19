@@ -191,21 +191,6 @@ def probeFrames {ofC : ComponentTag → Bool} (O : List (Option Nat)) (F : FFlow
           s!"  {ff.name}: frameCheckAt {ok}; support {per}"
     | _ => []
 
-/-- The closures of the component's code a term creates, with their entry
-layouts. -/
-partial def probeClosures (ofC : ComponentTag → Bool) : Tm → List (Code × Nat × Bool × Nat × Nat)
-  | .makeAt (.graph ar E K s caps _ rest comp) _ inits =>
-    (if ofC comp then [((E, K), ar, rest, caps.length, s)] else []) ++ E.flatMap (probeClosures ofC) ++
-      inits.flatMap (probeClosures ofC)
-  | .invoke f r args => probeClosures ofC f ++ probeClosures ofC r ++ args.flatMap (probeClosures ofC)
-  | .construct f args => probeClosures ofC f ++ args.flatMap (probeClosures ofC)
-  | .makeAt _ _ inits | .arrLit inits => inits.flatMap (probeClosures ofC)
-  | .letE a b | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
-    probeClosures ofC a ++ probeClosures ofC b
-  | .ite a b c | .setElem a b c => probeClosures ofC a ++ probeClosures ofC b ++ probeClosures ofC c
-  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => probeClosures ofC a
-  | _ => []
-
 /-- **A module function's closure code** (`PassUnit.dropReceiver`): the
 request's node lists behind one prologue node, appended, evaluating
 `undefined` and continuing at the request's start with the frame past the
@@ -278,7 +263,7 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
   let P := probePackage ofC
   let mods := mods.filter fun g => P.ofC g.comp
   let closed := closable mods
-  let found := mods.flatMap fun g => g.code.1.flatMap (probeClosures P.ofC)
+  let found := mods.flatMap fun g => g.code.1.flatMap (closureLayouts P.ofC)
   let closures := found.foldl (fun acc c => if acc.any (·.1 == c.1) then acc else acc ++ [c]) []
   let alloc : Nat → Alloc P := fun i => ⟨some (3 * i), some (3 * i + 1)⟩
   let tok (i : Nat) : Option P.Site := some (3 * i + 2)

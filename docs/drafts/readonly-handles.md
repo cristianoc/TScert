@@ -2655,11 +2655,14 @@ allocations of one kind in one node expression share its site. A slot
 names a signature where every edge into its node carries one naming
 it, from the entry's named slots and the closure's own slot, a node's row
 as wide as its edges' mappings or its source's, by a worklist over the
-nodes (`fnsOf`). The sites have one variable per slot a node keeps apart
-(those its expression or an edge's mapping reads, and those a target
-needs through an edge, `neededWidths`), one for the slots past them and
-one for its value; an edge copies each variable of its source into the
-one of its target that reads it, and a node's value is its expression's
+nodes (`fnsOf`). Each node has a slot for each index its expression,
+an edge mapping or a successor needs (`neededWidths`), a default slot
+for the remaining indices, and a value. A slot whose only source is a
+copy uses the source's variable. A chain of such copies with no source
+holds the empty set, as does a cycle with no other input. The worklist
+propagates bitset differences between the remaining variables. Slots
+with the same bitset share one list of sites in the proposal. A node's
+value is its expression's
 least set with its stores, what it gives to outside code and the slots of
 a callee's entry added, a known call's value its callee's return set
 (`gen`), a closure's set its site and its code's token, a closure of
