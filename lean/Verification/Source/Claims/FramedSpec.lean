@@ -2,6 +2,7 @@ import Verification.Source.SourceRequests
 import Verification.Source.Equations.Store
 import Verification.Paper.TolerantFrames.ReadOnlyPublic
 import Verification.Paper.TolerantFrames.ReadOnlyFits
+import Verification.Paper.TolerantFrames.ReadOnlyFitsDecide
 
 /-! # A framed plan's proposals and the frame they define
 
@@ -9,7 +10,7 @@ The draft "Accepting a unit through the read-only frame"
 (`docs/drafts/framed-acceptance.md`, "The frame of a request"). A framed
 plan carries, beside its request, a `FramedSpec`: the family of
 components with its sites numbered, the component `C`, the client
-obligation `Θ`, the flow of sites, the read-only types, the type outgoing
+obligation `Θ`, the finite flow of sites, the read-only types, the type outgoing
 values cross at, the realm's heap, the initialization's code and the
 function's arity. From them and the request, `FramedSpec.frame` defines
 the client frame the plan is accepted under:
@@ -47,16 +48,22 @@ def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) (comp : ComponentT
 end PassUnit
 open PassUnit (gotoOf)
 
+/-- A numbered family's sites seen from a component are numbers, so
+equality of them is decided. -/
+instance (N : NumberedFamily) (C : Nat) : DecidableEq (N.family.at C).Site :=
+  show DecidableEq {s : Nat // N.family.Runs (N.family.siteOf s) C} from inferInstance
+
 /-- **A framed plan's proposals** (the draft, "The plan"): the family of
 components, its sites numbered; the component `C`; the client obligation
-`Θ`; the flow of sites; the types a crossing reads read-only; the type
+`Θ`; the finite flow of sites (`fflow`, which the binding checks decide;
+`flow` is the flow it stands for); the types a crossing reads read-only; the type
 outgoing values cross at; the realm's heap; the initialization's code; the
 number of the function's parameters. -/
 structure FramedSpec (ι : Type) where
   fam : NumberedFamily
   C : Nat
   Θ : Protocol (fam.family.at C)
-  flow : Flow (fam.family.at C)
+  fflow : FFlow (fam.family.at C)
   readOnly : List (Ty ι)
   outType : Ty ι
   realm : Heap
@@ -78,6 +85,9 @@ def realizedCode (r : SourceRequest σ ι) : Code :=
 
 namespace FramedSpec
 variable (spec : FramedSpec ι)
+
+/-- **The flow of a framed plan**: the flow its finite flow stands for. -/
+noncomputable def flow : Flow (spec.fam.family.at spec.C) := spec.fflow.flow
 
 /-- **The type view of a framed plan**: a type is read-only where the plan
 names it so, and a type's children are itself, so a read-only type is

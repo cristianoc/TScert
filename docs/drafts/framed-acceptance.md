@@ -840,7 +840,8 @@ crossings of a step classically, so the executable boundary carries the
 proposals and the claim the frame (`Plans.lean`).
 
 `FramedSpec ι` (`FramedSpec.lean`) holds the proposals: the family's
-numbering, $`C`$, $`\Theta_C`$, the flow, the types a crossing reads
+numbering, $`C`$, $`\Theta_C`$, the finite flow (`fflow`, an `FFlow`,
+which the binding checks decide; `flow` is the flow it stands for), the types a crossing reads
 read-only, the type outgoing values cross at, the realm's heap, the
 initialization's code and the function's arity; the check reads beside
 them $`\Psi_C`$ and, for each framed call node of the main graph, the
