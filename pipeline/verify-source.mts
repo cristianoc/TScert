@@ -1,5 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
@@ -18,7 +18,12 @@ import type { Json as ParsedJson } from "../tools/calculus.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { initOmission } from "../tools/fragment-parse.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
-import { resolvableDeclaration } from "../tools/intrinsics.mts";
+import { intrinsicModule, resolvableDeclaration } from "../tools/intrinsics.mts";
+import { interfaceOverlay, primitiveKinds } from "../tools/array-prototype.mts";
+import { hostPackage } from "../tools/compiler-api.mts";
+import { globalOrigins, globalsOverlay } from "../tools/library-globals.mts";
+import { moduleEntries } from "../tools/library-modules.mts";
+import { libraryRegExpNames } from "../tools/regexp.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { verifyByUnits } from "./module-interfaces.mts";
 import type { CheckedUnits } from "./module-interfaces.mts";
@@ -688,6 +693,216 @@ export function checkApart(source: string, project?: string, typescriptErrors: b
     dispatch();
   }).then(result => ownedRun(result, retainArtifacts));
 }
+/** A row of the [trust surface](../docs/DESIGN.md#trust-surface): its table
+ * and the opening words of its assumption. */
+export type TrustRow = { table: "Trusted tools" | "Assumed values" | "Assumed of the host"; row: string };
+/** The reviewed texts a check's declarations are read through, each with
+ * the trust row stating its trust: where the overlay or rule is stated, as
+ * the row's last cell names it (its code names, and the file or section
+ * holding them), and that row. */
+export type ContractOverlay = "intrinsics" | "arrayPrototype" | "primitivePrototypes" | "functionPrototype" |
+  "collectionPrototypes" | "libraryGlobals" | "nodeGlobals" | "globalBinding" | "libraryModules" | "libraryTypes" |
+  "dom" | "regexp" | "hostFamily" | "ambient" | "imported";
+export const contractOverlays: Readonly<Record<ContractOverlay, { stated: { names: readonly string[]; in: string | null }; trust: TrustRow }>> = {
+  intrinsics: { stated: { names: [], in: "tools/intrinsics.mts" },
+    trust: { table: "Assumed values", row: "The intrinsics meet their signatures" } },
+  arrayPrototype: { stated: { names: ["overlay"], in: "tools/array-prototype.mts" },
+    trust: { table: "Assumed values", row: "`Array.prototype` meets `ArrayProto`" } },
+  primitivePrototypes: { stated: { names: ["primitiveOverlay"], in: "tools/array-prototype.mts" },
+    trust: { table: "Assumed values", row: "`String.prototype`, `Number.prototype`, `BigInt.prototype` and `Boolean.prototype` meet" } },
+  functionPrototype: { stated: { names: ["functionOverlay"], in: "tools/array-prototype.mts" },
+    trust: { table: "Assumed values", row: "`Function.prototype.toString` meets `FunctionProto`" } },
+  collectionPrototypes: { stated: { names: ["interfaceOverlay"], in: "tools/array-prototype.mts" },
+    trust: { table: "Assumed values", row: "`Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives" } },
+  libraryGlobals: { stated: { names: ["globalsOverlay"], in: "tools/library-globals.mts" },
+    trust: { table: "Assumed values", row: "Each standard library global meets its reviewed overlay entry" } },
+  nodeGlobals: { stated: { names: ["globalsOverlay"], in: "tools/library-globals.mts" },
+    trust: { table: "Assumed values", row: "Node's `process` and `console` meet their reviewed entries" } },
+  globalBinding: { stated: { names: ["GLOBAL", "selectGlobal"], in: null },
+    trust: { table: "Assumed values", row: "A global variable's binding holds the value its reviewed entries describe" } },
+  libraryModules: { stated: { names: ["modulesOverlay"], in: "tools/library-modules.mts" },
+    trust: { table: "Assumed values", row: "Each Node module function the overlay of library modules lists meets its entry" } },
+  libraryTypes: { stated: { names: ["typesOverlay"], in: "tools/library-types.mts" },
+    trust: { table: "Assumed values", row: "The host's values of each type the overlay of library types states meet its statement" } },
+  dom: { stated: { names: ["typesOverlay"], in: "tools/library-types.mts" },
+    trust: { table: "Assumed values", row: "The DOM's host objects a text-measurement client uses meet" } },
+  regexp: { stated: { names: [], in: "tools/regexp.mts" },
+    trust: { table: "Assumed of the host", row: "A native regex (what a regex literal evaluates to) keeps" } },
+  hostFamily: { stated: { names: [], in: "HOST-FAMILIES.md#trust-rows" },
+    trust: { table: "Assumed values", row: "A host family's stable members" } },
+  ambient: { stated: { names: ["AMBIENT", "collectDeclarations"], in: null },
+    trust: { table: "Assumed values", row: "An ambient declaration of the checked file" } },
+  imported: { stated: { names: ["IMPORT", "OVERLOADS"], in: "SOURCE-CONTRACTS.md" },
+    trust: { table: "Assumed values", row: "An imported value meets its declaration" } },
+};
+/** The overlay owning each namespace of the declaration identities the
+ * reader states (`tscert/<namespace>/…`), which no source declares. */
+export const contractNamespaces: ReadonlyMap<string, ContractOverlay | "instance"> = new Map<string, ContractOverlay | "instance">([
+  ["intrinsics", "intrinsics"], ["array-prototype", "arrayPrototype"], ["array-conversion", "arrayPrototype"],
+  ...primitiveKinds.map((kind): [string, ContractOverlay] => [`${kind}-prototype`, "primitivePrototypes"]),
+  ["function-prototype", "functionPrototype"], ["collections", "collectionPrototypes"], ["json", "libraryGlobals"],
+  ["crypto", "libraryModules"], ["node", "libraryTypes"], ["intl", "libraryTypes"], ["dom", "dom"],
+  ["regexp", "regexp"], ["family", "hostFamily"],
+  // A computed declaration's instance, `tscert/instance/<n>/<module>`: its declaration's.
+  ["instance", "instance"],
+]);
+
+/** Where a declaration of the document comes from, as its identity's module
+ * names it (`DeclarationIdentity`). */
+export type ContractOrigin = "checked file" | "project" | "standard library" | "package" | "reader" | "intrinsic" |
+  "ambient";
+/** One declaration of the check's declaration document: a value the source
+ * reads, a type it reaches or a symbol keying one, where it comes from, and
+ * the overlay and trust row its reading rests on, or null where none states
+ * one: a type of TypeScript's standard library or of a package, read as its
+ * declaration states, or a type of the project's own sources. */
+export type ContractEntry = { kind: "value" | "type" | "symbol"; name: string; module: string; specifier: string | null;
+  origin: ContractOrigin; overlay: ContractOverlay | null; trust: TrustRow | null };
+/** The declarations a check's verdict relies on, from the document its parse
+ * collected (`DeclarationDocument`, `tools/declaration-types.mts`), which
+ * holds exactly the declarations the source reaches; the checked file's own
+ * types are counted. */
+export type Contracts = { entries: ContractEntry[]; ownTypes: number };
+
+type Identity = { module: string; name: string };
+const textField = (value: unknown, key: string): string | null => {
+  const read = field(value, key);
+  return typeof read === "string" ? read : null;
+};
+const identityOf = (value: unknown): Identity | null => {
+  const module = textField(value, "module"), name = textField(value, "name");
+  return module === null || name === null ? null : { module, name };
+};
+const listField = (value: unknown, key: string): unknown[] => {
+  const read = field(value, key);
+  if (!Array.isArray(read)) throw Error(`the declaration document's ${key} is no list`);
+  return read;
+};
+/** The package a module inside `node_modules` belongs to, `@types/node`. */
+const packageOf = (module: string): string | null => {
+  const parts = module.split("/"), at = parts.lastIndexOf("node_modules");
+  if (at < 0) return null;
+  const scope = parts[at + 1] ?? "";
+  return scope.startsWith("@") ? `${scope}/${parts[at + 2] ?? ""}` : scope;
+};
+/** A declaration's origin, by its identity's module: the client's absolute
+ * path, `typescript/lib/…`, `tscert/…` for what the reader states, a path
+ * into `node_modules` or one of the project's. */
+function originOf(module: string): ContractOrigin {
+  if (module.startsWith("/")) return "checked file";
+  if (module.startsWith("typescript/lib/")) return "standard library";
+  if (module.startsWith("tscert/")) return module === intrinsicModule ? "intrinsic" : "reader";
+  return packageOf(module) === null ? "project" : "package";
+}
+/** The overlay owning a declaration the reader states, by its namespace. */
+function namespaceOverlay(module: string): ContractOverlay | null {
+  const [, namespace, ...rest] = module.split("/");
+  const owner = contractNamespaces.get(namespace ?? "");
+  if (owner !== "instance") return owner ?? null;
+  return typeOverlay({ module: rest.slice(1).join("/"), name: "" });
+}
+/** The overlay a type is read through: its namespace's, for one the reader
+ * states; the host family's, for its package's; the standard library's
+ * interface overlays, for a library interface they list. */
+function typeOverlay(id: Identity): ContractOverlay | null {
+  if (id.module.startsWith("tscert/")) return namespaceOverlay(id.module);
+  if (packageOf(id.module) === hostPackage.name) return "hostFamily";
+  if (id.module.startsWith("typescript/lib/")) {
+    if (interfaceOverlay.has(id.name)) return "collectionPrototypes";
+    if (libraryRegExpNames.includes(id.name)) return "regexp";
+  }
+  return null;
+}
+/** The origin a global's declaration has as `globalsOverlay`'s entries name
+ * it: `library`, or the package declaring it. */
+const globalOrigin = (module: string): string => module.startsWith("typescript/lib/") ? "library" : packageOf(module) ?? module;
+/** The overlay a value is read through, by the specifier the document binds
+ * it with and its declaration. */
+function valueOverlay(specifier: string, imported: string, local: string, id: Identity): ContractOverlay {
+  if (specifier === intrinsicModule) return "intrinsics";
+  if (specifier === "ambient") return "ambient";
+  if (specifier === "global") {
+    const origin = globalOrigin(id.module);
+    if (!globalOrigins(globalsOverlay, local).has(origin)) return "globalBinding";
+    return origin === "library" ? "libraryGlobals" : "nodeGlobals";
+  }
+  if (id.module.startsWith("tscert/")) return namespaceOverlay(id.module) ?? "imported";
+  if (packageOf(id.module) === hostPackage.name) return "hostFamily";
+  if (moduleEntries(specifier, imported).length > 0) return "libraryModules";
+  return "imported";
+}
+
+/** The contracts of the declaration document of a Fragment (`fragment.json`). */
+export function contractsOf(fragment: unknown): Contracts {
+  const document = field(fragment, "declarations");
+  const entries: ContractEntry[] = [];
+  const entry = (kind: ContractEntry["kind"], id: Identity, specifier: string | null,
+      overlay: ContractOverlay | null): ContractEntry => ({ kind, name: id.name, module: id.module, specifier,
+    origin: specifier === "ambient" ? "ambient" : originOf(id.module), overlay,
+    trust: overlay === null ? null : contractOverlays[overlay].trust });
+  // A value's definition, keyed by its declaration, holds the members the
+  // value is read at: it is read through the value's overlay.
+  const valueOverlays = new Map<string, ContractOverlay>();
+  for (const value of listField(document, "values")) {
+    const binding = field(value, "binding"), id = identityOf(field(value, "declaration"));
+    const specifier = textField(binding, "specifier"), imported = textField(binding, "imported"),
+      local = textField(binding, "local");
+    if (id === null || specifier === null || imported === null || local === null)
+      throw Error("a value of the declaration document is malformed");
+    const overlay = valueOverlay(specifier, imported, local, id);
+    valueOverlays.set(`${id.module}\n${id.name}`, overlay);
+    entries.push(entry("value", { module: id.module, name: local }, specifier, overlay));
+  }
+  let ownTypes = 0;
+  for (const definition of listField(document, "definitions")) {
+    const id = identityOf(field(definition, "declaration"));
+    if (id === null) throw Error("a definition of the declaration document is malformed");
+    if (originOf(id.module) === "checked file" && !valueOverlays.has(`${id.module}\n${id.name}`)) { ownTypes++; continue; }
+    entries.push(entry("type", id, null, valueOverlays.get(`${id.module}\n${id.name}`) ?? typeOverlay(id)));
+  }
+  for (const symbol of listField(document, "symbols")) {
+    const id = identityOf(symbol);
+    if (id === null) throw Error("a symbol of the declaration document is malformed");
+    entries.push(entry("symbol", id, null, typeOverlay(id)));
+  }
+  return { entries, ownTypes };
+}
+/** The contracts of a run's Fragment, or null where its parse wrote none. */
+export function runContracts(artifacts: string): Contracts | null {
+  const file = join(artifacts, "fragment.json");
+  if (!existsSync(file)) return null;
+  const parsed: ParsedJson = JSON.parse(wireText(readFileSync(file), file));
+  return contractsOf(parsed);
+}
+/** The contracts as text: by trust row, each with its overlay and the
+ * declarations read through it, then the declarations no row states. */
+export function contractsText(contracts: Contracts): string {
+  const name = (e: ContractEntry): string => e.kind === "value" && e.specifier !== null && e.specifier !== "global" &&
+    e.specifier !== intrinsicModule && e.specifier !== "ambient" ? `${e.name} (${e.specifier})` : e.name;
+  const lines = ["Contracts the verdict relies on, by trust row (docs/DESIGN.md#trust-surface):"];
+  for (const overlay of Object.keys(contractOverlays).filter((o): o is ContractOverlay => o in contractOverlays)) {
+    const read = contracts.entries.filter((e) => e.overlay === overlay);
+    if (read.length === 0) continue;
+    const { stated, trust } = contractOverlays[overlay];
+    const at = [stated.names.map((n) => `\`${n}\``).join(", "), stated.in ?? ""].filter((t) => t !== "").join(" in ");
+    lines.push(`- ${trust.table}: "${trust.row} …"`, `  stated by ${at}`);
+    for (const kind of ["value", "type", "symbol"] as const) {
+      const names = read.filter((e) => e.kind === kind).map(name);
+      if (names.length > 0) lines.push(`  ${kind}s: ${names.join(", ")}`);
+    }
+  }
+  const unstated = contracts.entries.filter((e) => e.trust === null);
+  if (unstated.length > 0) {
+    lines.push("No trust row: read as their declarations state");
+    for (const origin of ["standard library", "package", "project", "reader", "checked file"] as const) {
+      const read = unstated.filter((e) => e.origin === origin);
+      for (const module of new Set(read.map((e) => e.module)))
+        lines.push(`- ${origin}, ${module}: ${read.filter((e) => e.module === module).map((e) => e.name).join(", ")}`);
+    }
+  }
+  lines.push(`The checked file's own types: ${contracts.ownTypes}`);
+  return lines.join("\n") + "\n";
+}
 // A worker of `checkApart`'s pool: one check per message, answered with its outcome.
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && process.argv[2] === "--serve") {
   // A worker keeps one declaration session between its checks (STAGE-STORE.md,
@@ -728,10 +943,13 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   const omitted = omitAt < 0 ? [] : (all.splice(omitAt, 2)[1] ?? "").split(",").filter((n) => n !== "");
   const units = { omitted, select: null };
   const typescriptErrors = all.includes("--typescript-errors");
-  const args = all.filter((a) => a !== "--typescript-errors");
+  // `--contracts` adds the declarations the verdict relies on (`contractsOf`)
+  // to the outcome, and writes them by trust row to standard error.
+  const contracts = all.includes("--contracts");
+  const args = all.filter((a) => a !== "--typescript-errors" && a !== "--contracts");
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
     process.stderr.write("usage: node verify-source.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--subtype-rounds n] [--omit f,g]\n");
+      " [--subtype-rounds n] [--omit f,g] [--contracts]\n");
     process.exitCode = 2;
   } else {
     // The printed outcome names the run's directory, kept for inspection.
@@ -741,7 +959,11 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
     try {
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds, false,
         units);
-      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      if (contracts) {
+        const relied = runContracts(result.artifacts);
+        process.stdout.write(JSON.stringify({ ...result, contracts: relied }, null, 2) + "\n");
+        process.stderr.write(relied === null ? "Contracts: the parse wrote no declaration document\n" : contractsText(relied));
+      } else process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {
       process.stderr.write(messageOf(error) + "\n");
