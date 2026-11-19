@@ -144,9 +144,9 @@ records (Astra and Fable found none of them reopened, Fable's table).
   `Round5.lean`, `body_prefix`).
 - **`approx_stable`** (Astra 2, Fable N2): false where an outside slot
   varies with the depth (`ApproxStable.lean`). Closed by a restriction,
-  every outside slot an audited native constant in the depth, which P22's
-  extracted layout meets (measured, `layout.out`), and the stability lemma
-  under it (`Round5.lean`, `approx_const_stable`;
+  every outside slot an audited realm value constant in the depth, which
+  P22's extracted layout meets (measured, `layout.out` and the probe's
+  module code), and the stability lemma under it (`PassUnit.approx_stable`;
   [initialization](#initialization), [restrictions](#restrictions)).
 - **Coverage from each actual invocation** (Astra 3, Fable N5): the
   theorem from an actual public invocation to the request's claim was
@@ -358,7 +358,7 @@ Plan:
   reached state that is `Ok d` (`reached_ok`, proved).
 - **The protocols.** Certificates and runs at $`\Psi_j`$ (`Run.bound`'s
   premise $`\Theta_C\sqsubseteq\Psi_j`$), lifted to $`\Psi_c`$ by
-  `RBound.mono` (to be proved).
+  `RBound.mono`, `RBoundBelow.mono` and `StepWithin.mono` (proved).
 - **The action**, as in `readOnly_rule` (proved); `supported_of_framed`
   (proved).
 - **The invocation** is a checked step at depth $`d`$ (`pkg_step_ok`,
@@ -552,11 +552,11 @@ $`0`$, and whose outside slots hold a value per depth (`approxEnv`,
 `Slot.outside`, `PassUnitRealize.lean`; `ModuleClosures.lean`). An outside
 slot varying with the depth makes every unfolding different
 (`ApproxStable.lean`). Under the restriction that every outside slot holds
-an audited realm value, the same value at every depth, a module function with
-no linked slot has one unfolding at every depth (`Round5.lean`,
-`approx_const_stable`); with an acyclic name graph, `approx_stable` (to be
-proved, by induction on the height from `approx_const_stable`'s argument)
-gives one unfolding past the height.
+an audited realm value, the same value at every depth, and with an acyclic
+name graph ranked by a height (`StableLayout`: each linked slot names a
+function of smaller height), a function's closure is the same at every
+depth from its height on (proved, `PassUnit.approx_stable`); a function
+with no linked slot has height `0`, one unfolding at every depth.
 
 **The initialization** of $`C`$: `initC`, a code of $`C`$ (tagged
 $`c_C`$) whose node expression allocates, in reverse topological order of
@@ -988,6 +988,8 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `frameCheck_sound`, `framed_of_sites`, `regionSites_sound`, `reach_sites`,
 `reached_key`, `witness_along`, `HStep.uniform`, `call_segment`,
 `decompose`, `Run.bound`, `MemberRun.within`, `RBoundBelow.trans`,
+`RBound.mono`, `RBoundBelow.mono`, `StepWithin.mono`, `approx_stable`,
+`step?_sound` and `linked` (`Tests/FramedLinkedCall.lean`, the first check),
 `InR.mono`, `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
@@ -999,18 +1001,17 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
 `released_prot_inR`, `loweredSrc_no_closure`, `gotoOf_start_ne`;
 `cross_into_prot`, `truncate_after_cross`, `allocSomeB`'s value on
-`AstraR3.lean`'s flow; `approx_const_stable`,
-`body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
+`AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `local_reach`, `stepWrites_sound`,
 `writesT_sound`, `residual_charged`, `chk_sim`, `realizedFlowB`'s
 soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
 `ActualCrossingsIn`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
-`framed_transfer`, `seg_run`, `RunSeq.within`, `RBound.mono`,
+`framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`, `crosses_inv`,
-`approx_stable`, `prologue_sim`, `isolate`, `project`, `keeps_canonical`,
+`prologue_sim`, `isolate`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `RunSoundFramed`, `runSound_of_framed`, `ret_reached`,
 `assertedAt_of_graph`, `framed_requestSafe`, `ro_of_readOnlyShape`,

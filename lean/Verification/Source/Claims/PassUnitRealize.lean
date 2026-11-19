@@ -110,6 +110,48 @@ theorem captured_get {ι U : Type} {c : ModuleCode ι U} {f : U → Tm} {i k : N
     (hs : c.slots[k]? = some s) : (c.captured f i)[k]? = some (s.valueAt f i) := by
   simp only [ModuleCode.captured, List.getElem?_map, hs, Option.map_some]
 
+/-! ## Stable unfoldings -/
+
+/-- **An acyclic module of constant outside values**, ranked by `ht`: each
+linked slot of a function names a function of smaller height, and each
+outside slot holds one value at every depth (an audited realm value). -/
+def StableLayout {ι U : Type} (code : U → ModuleCode ι U) (ht : U → Nat) : Prop :=
+  ∀ u s, s ∈ (code u).slots → (∃ u', s = .linked u' ∧ ht u' < ht u) ∨ ∃ c, s = .outside fun _ => c
+
+/-- **One unfolding past the height** (`approx_stable`, the framed
+acceptance draft's "Initialization"): in an acyclic module whose outside
+slots are constant in the depth, a function's closure is the same at every
+depth from its height on. With no linked slot (height `0`) it is the same
+at every depth. -/
+theorem approx_stable {ι U : Type} {code : U → ModuleCode ι U} {ht : U → Nat} (hs : StableLayout code ht) :
+    ∀ u n k, ht u ≤ n → ht u ≤ k → approx code n u = approx code k u := by
+  suffices h : ∀ m u, ht u ≤ m → ∀ n k, ht u ≤ n → ht u ≤ k → approx code n u = approx code k u from
+    fun u => h (ht u) u (Nat.le_refl _)
+  intro m
+  induction m with
+  | zero =>
+    intro u hu n k _ _
+    simp only [approx, approxEnv]
+    congr 1
+    unfold ModuleCode.captured
+    apply List.map_congr_left
+    intro s hm
+    rcases hs u s hm with ⟨u', rfl, hlt⟩ | ⟨c, rfl⟩
+    · omega
+    · rfl
+  | succ m ih =>
+    intro u hu n k hn hk
+    simp only [approx, approxEnv]
+    congr 1
+    unfold ModuleCode.captured
+    apply List.map_congr_left
+    intro s hm
+    rcases hs u s hm with ⟨u', rfl, hlt⟩ | ⟨c, rfl⟩
+    · obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      exact ih u' (by omega) n' k' (by omega) (by omega)
+    · rfl
+
 section
 variable {ι : Type}
 

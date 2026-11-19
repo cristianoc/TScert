@@ -434,6 +434,13 @@ theorem RBound.trans {Ψ : Protocol P} {d : Nat} {st₁ st₂ st₃ : St P} (h�
   rw [h₁.1.part hl] at hc₂
   exact ⟨v₃, hv₃, Change.Holds.trans h₁.1.1.length_le hc₁ hc₂⟩
 
+/-- **A bound at a smaller protocol is one at a larger** (`RBound.mono`). -/
+theorem RBound.mono {Ψ Ψ' : Protocol P} (hle : ∀ p, (Ψ p).le (Ψ' p) = true) {d : Nat} {st st' : St P}
+    (h : RBound Ψ d st st') : RBound Ψ' d st st' :=
+  ⟨h.1, h.2.1, fun l v hr hv =>
+    let ⟨v', hv', hc⟩ := h.2.2 l v hr hv
+    ⟨v', hv', Change.Holds.mono (hle _) hc⟩⟩
+
 theorem Ghost.prot_congr {g g' : Ghost P} (hA : g'.A = g.A) (hB : g'.B = g.B) (l : Nat) :
     g'.Prot l ↔ g.Prot l := by
   simp only [Ghost.Prot, hA, hB]

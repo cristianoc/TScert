@@ -45,6 +45,12 @@ def StepWithin (Ψ : Protocol P) (b : Nat) (st st' : St P) : Prop :=
   ∀ l v, l < b → st.g.InR l → st.s.h[l]? = some v →
     ∃ v', st'.s.h[l]? = some v' ∧ (Ψ (st.part l)).Holds st.s.h.length v v'
 
+/-- A step within a smaller protocol is one within a larger. -/
+theorem StepWithin.mono {Ψ Ψ' : Protocol P} (hle : ∀ p, (Ψ p).le (Ψ' p) = true) {b : Nat} {st st' : St P}
+    (h : StepWithin Ψ b st st') : StepWithin Ψ' b st st' := fun l v hb hr hv =>
+  let ⟨v', hv', hc⟩ := h l v hb hr hv
+  ⟨v', hv', Change.Holds.mono (hle _) hc⟩
+
 /-- **A bound on `R_P` below `b`**: the marks kept, the history growing,
 every location of `R_P` below `b` at the first state changed within `Ψ`. -/
 def RBoundBelow (Ψ : Protocol P) (d b : Nat) (st st' : St P) : Prop :=
@@ -62,6 +68,11 @@ theorem RBoundBelow.trans {Ψ : Protocol P} {d b : Nat} {st₁ st₂ st₃ : St 
   obtain ⟨v₃, hv₃, hc₂⟩ := h₂.2.2 l v₂ hb hr₂ hv₂
   rw [h₁.1.part hl] at hc₂
   exact ⟨v₃, hv₃, Change.Holds.trans h₁.1.1.length_le hc₁ hc₂⟩
+
+/-- A bound below `b` at a smaller protocol is one at a larger. -/
+theorem RBoundBelow.mono {Ψ Ψ' : Protocol P} (hle : ∀ p, (Ψ p).le (Ψ' p) = true) {d b : Nat} {st st' : St P}
+    (h : RBoundBelow Ψ d b st st') : RBoundBelow Ψ' d b st st' :=
+  ⟨h.1, h.2.1, h.2.2.mono hle⟩
 
 /-- A bound on all of `R_P` is one below every `b`. -/
 theorem RBound.below {Ψ : Protocol P} {d : Nat} {st st' : St P} (h : RBound Ψ d st st') (b : Nat) :
