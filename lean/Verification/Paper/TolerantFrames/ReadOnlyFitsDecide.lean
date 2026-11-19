@@ -18,8 +18,18 @@ decided from it (proof scope: the lemmas below):
 - **Lowered code** (`lowB`, `lowB_sound`).
 - **The edges** (`carriesB`, `carriesFnB`): finitely many slots decide them,
   every slot past the widths reading the defaults.
+- **Open entries** (`openB`): a closure is created only where its code's
+  entry holds `O` at the slots a caller of unknown callee fills and its
+  return set lies within `O`; a known call's set is its callee's return
+  set (`invokeSites`).
 - **The flow** (`FFlow.check`, `FFlow.check_sound`): every code's checks and
-  the facts of `O` give `Flow.Facts`. -/
+  the facts of `O` give `Flow.Facts`; a member's entry (`FFlow.entryB`)
+  and the entry closures' shapes (`FFlow.shapesB`) give `EntryShape`'s
+  conditions on the flow.
+- **The marks a flow gives** (`FFlow.MarksFrom`): a site of `O` released,
+  every other site local; at them `O` is lent and local storage is held
+  only by local storage (`FFlow.marks_of_marksFrom`), the bindings decided
+  apart (`FFlow.bindingsB`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
@@ -50,16 +60,16 @@ theorem OFits.sub : ∀ {d Γ a o S e}, OFits Fl τ φ d Γ a o S e → o = fals
   | bvar hi hΓ hs _ => intro ho _ hS; exact .bvar hi hΓ (hs.trans hS) (by simp [ho])
   | fvar hi hs _ => intro ho _ hS; exact .fvar hi (hs.trans hS) (by simp [ho])
   | invoke hf hr ha hO harr _ => intro ho _ hS; exact .invoke hf hr ha (hO.trans hS) harr (by simp [ho])
-  | invokeC σ π Sa Sr hof hj hφ hc hself hr ha hat hpar hrest hO _ =>
-    intro ho _ hS; exact .invokeC σ π Sa Sr hof hj hφ hc hself hr ha hat hpar hrest (hO.trans hS) (by simp [ho])
+  | invokeC σ π Sa Sr hof hj hφ hc hself hr ha hat hpar hrest hR _ =>
+    intro ho _ hS; exact .invokeC σ π Sa Sr hof hj hφ hc hself hr ha hat hpar hrest (hR.trans hS) (by simp [ho])
   | construct hf ha hO harr _ => intro ho _ hS; exact .construct hf ha (hO.trans hS) harr (by simp [ho])
   | letE hx _ _ _ ihb => intro ho _ hS; exact .letE hx (ihb ho hS) (by simp [ho])
   | spread hx hc _ => intro ho _ hS; exact .spread hx (fun s hs => (hc s hs).trans hS) (by simp [ho])
   | makeAbsent Ss hst hx ha _ => intro ho _ hS; exact .makeAbsent Ss hst hx (hS _ ha) (by simp [ho])
   | makeBound Ss hst hx ha hp _ =>
     intro ho _ hS; exact .makeBound Ss hst hx (hS _ ha) (fun x hx => (hp x hx).sub hS) (by simp [ho])
-  | makeGraphC π Ss hst hx ha hc hcode hcaps hself hE _ =>
-    intro ho _ hS; exact .makeGraphC π Ss hst hx (hS _ ha) hc hcode hcaps hself hE (by simp [ho])
+  | makeGraphC π Ss hst hx ha hc hcode hcaps hself hop hE _ =>
+    intro ho _ hS; exact .makeGraphC π Ss hst hx (hS _ ha) hc hcode hcaps hself hop hE (by simp [ho])
   | makeGraphOut Ss hst hx ha hc hE hcaps _ =>
     intro ho _ hS; exact .makeGraphOut Ss hst hx (hS _ ha) hc hE (fun u hu => (hcaps u hu).sub hS) (by simp [ho])
   | readAt hx hq hcl hr _ => intro ho _ hS; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) (by simp [ho])
@@ -103,14 +113,13 @@ def FNode.fnAt (x : FNode P) (i : Nat) : Option Nat := x.fn.getD i none
 
 /-- **A code's finite proposal**: its nodes, the node of every label past
 them, the sites its frames allocate at, the table of signatures its
-nodes' indices name, and the sites every slot holds besides its own
-(`base`). -/
+nodes' indices name, and its return set. -/
 structure FCode (P : Package) where
   nodes : Array (FNode P)
   dflt : FNode P
   alloc : Alloc P
   sigs : Array FnSig
-  base : Sites P
+  ret : Sites P
 
 def FCode.node (c : FCode P) (l : Nat) : FNode P := c.nodes.getD l c.dflt
 
@@ -119,11 +128,12 @@ def FCode.sigAt (c : FCode P) (t : Option Nat) : Option FnSig := t.bind (c.sigs[
 
 /-- The proposal a finite one stands for. -/
 def FCode.flow (c : FCode P) : CodeFlow P where
-  env l i := (c.node l).envAt i ++ c.base
-  val l := (c.node l).val ++ c.base
+  env l i := (c.node l).envAt i
+  val l := (c.node l).val
   alloc := c.alloc
   fn l i := c.sigAt ((c.node l).fnAt i)
   vfn l := c.sigAt (c.node l).vfn
+  ret := c.ret
 
 /-- The first entry of a list at a key. -/
 def look {α β : Type} [DecidableEq α] (a : α) (l : List (α × β)) : Option β :=
@@ -187,6 +197,25 @@ theorem FCode.fn_lt {c : FCode P} {l i : Nat} {σ : FnSig} (h : c.flow.fn l i = 
   · exact hi
   · rw [Array.getElem?_eq_none hi] at h; simp at h
 
+/-- **A code open at an entry**, decided. -/
+def openB (c : FCode P) (ar s : Nat) (rest : Bool) (n : Nat) : Bool :=
+  (List.range (capSlot ar rest 0)).all (fun i => decide (Sub F.O (c.flow.env s i))) &&
+    decide (Sub F.O (c.flow.env s (capSlot ar rest n))) && decide (Sub c.ret F.O)
+
+theorem openB_sound {c : FCode P} {ar s : Nat} {rest : Bool} {n : Nat} (h : openB F c ar s rest n = true) :
+    OpenAt F.flow c.flow ar s rest n := by
+  simp only [openB, Bool.and_eq_true, List.all_eq_true, List.mem_range, decide_eq_true_eq] at h
+  exact ⟨h.1.1, h.1.2, h.2⟩
+
+/-- **The captures' slots of an entry hold `O`**, decided. -/
+def capsOB (c : FCode P) (ar s : Nat) (rest : Bool) (n : Nat) : Bool :=
+  (List.range n).all fun i => decide (Sub F.O (c.flow.env s (capSlot ar rest i)))
+
+theorem capsOB_sound {c : FCode P} {ar s : Nat} {rest : Bool} {n : Nat} (h : capsOB F c ar s rest n = true) :
+    OpenCaps F.flow c.flow ar s rest n := by
+  simp only [capsOB, List.all_eq_true, List.mem_range, decide_eq_true_eq] at h
+  exact h
+
 /-- **Only the closure's own slot names a signature at its entry**, decided. -/
 def selfFnB (c : FCode P) (ar : Nat) (E : List Tm) (K : List (Continuation × Option Target)) (s : Nat)
     (rest : Bool) (n : Nat) : Bool :=
@@ -216,7 +245,8 @@ def lowB : Tm → Bool
   | .makeAt (.view _ _ _) _ _ => false
   | .makeAt (.bound t r pre) _ xs => partB t && partB r && pre.all partB && lowAll xs
   | .makeAt (.graph ar E K s caps _ rest comp) _ xs =>
-    (!P.ofC comp || (look (E, K) F.codes).any fun c => selfFnB c ar E K s rest caps.length) && lowAll E &&
+    (!P.ofC comp || (look (E, K) F.codes).any fun c => selfFnB c ar E K s rest caps.length &&
+      openB F c ar s rest caps.length && capsOB F c ar s rest caps.length) && lowAll E &&
       caps.all partB && lowAll xs
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => lowB a
   | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
@@ -232,7 +262,6 @@ def lowAll : List Tm → Bool
 termination_by structural xs => xs
 end
 
-omit [DecidableEq P.Site] in
 theorem lowAll_iff : ∀ {xs : List Tm}, lowAll F xs = true ↔ ∀ x ∈ xs, lowB F x = true
   | [] => by simp [lowAll]
   | x :: xs => by simp [lowAll, lowAll_iff]
@@ -257,8 +286,8 @@ theorem lowB_sound : ∀ {e : Tm}, lowB F e = true → Lowered F.flow e := by
     · cases hl : look (E, K) F.codes with
       | none => simp [hl] at hc
       | some c =>
-        simp only [hl, Option.any_some] at hc
-        exact ⟨c.flow, by simp [FFlow.flow, hl], selfFnB_sound hc⟩
+        simp only [hl, Option.any_some, Bool.and_eq_true] at hc
+        exact ⟨c.flow, by simp [FFlow.flow, hl], selfFnB_sound hc.1.1, openB_sound F hc.1.2, capsOB_sound F hc.2⟩
   all_goals try simp_all
   all_goals try exact h
 
@@ -344,20 +373,23 @@ def invCB (d j : Nat) (σ : FnSig) (c : FCode P) (Sr : Sites P) (Ls : List (Site
     (!σ.rest || (decide (a.arr ∈ c.flow.env σ.s 0) && storesB F a.arr (Ls.drop σ.ar).flatten))
 
 /-- **The set of a call**, from the sets of its callee, receiver and
-actuals: `O` where all of them lie within `O`, or where the callee is a
-slot naming a signature whose entry accepts them. -/
+actuals: the callee's return set where the callee is a slot naming a
+signature whose entry accepts them, or `O` where all of them lie within
+`O`. -/
 def invokeSites (d : Nat) (f : Tm) (Sf Sr : Sites P) (Ls : List (Sites P)) (args : List Tm) : Option (Sites P) :=
-  if decide (Sub Sf F.O) && decide (Sub Sr F.O) && Ls.all (fun S => decide (Sub S F.O)) && decide (a.arr ∈ F.O) then
-    some F.O
-  else match f with
-    | .var j => if d ≤ j then
-        match φ (j - d) with
-        | some σ => match look σ.code F.codes with
-          | some c => if invCB F τ a d j σ c Sr Ls args then some F.O else none
-          | none => none
-        | none => none
-      else none
-    | _ => none
+  let viaO : Option (Sites P) :=
+    if decide (Sub Sf F.O) && decide (Sub Sr F.O) && Ls.all (fun S => decide (Sub S F.O)) && decide (a.arr ∈ F.O) then
+      some F.O
+    else none
+  match f with
+  | .var j => if d ≤ j then
+      match φ (j - d) with
+      | some σ => match look σ.code F.codes with
+        | some c => if invCB F τ a d j σ c Sr Ls args then some c.ret else viaO
+        | none => viaO
+      | none => viaO
+    else viaO
+  | _ => viaO
 
 /-- The sets of a closure's allocation of graph code, decided. -/
 def graphSites (d : Nat) (Γ : Nat → Option (Sites P)) (ar : Nat) (E : List Tm)
@@ -368,7 +400,7 @@ def graphSites (d : Nat) (Γ : Nat → Option (Sites P)) (ar : Nat) (E : List Tm
     | some c =>
       if (List.range caps.length).all (fun i => (caps[i]?).all fun u =>
           (partSites τ d Γ u).any fun S' => decide (Sub S' (c.flow.env s (capSlot ar rest i)))) &&
-        selfFnB c ar E K s rest caps.length then some [a.obj] else none
+        selfFnB c ar E K s rest caps.length && openB F c ar s rest caps.length then some [a.obj] else none
     | none => none
   else (partsSites τ d Γ caps).map (a.obj :: ·)
 
@@ -523,47 +555,51 @@ theorem invokeSites_sound {d : Nat} {Γ : Nat → Option (Sites P)} {f r : Tm} {
     {Ls : List (Sites P)} (hf : OFits F.flow τ φ d Γ a false Sf f) (hr : OFits F.flow τ φ d Γ a false Sr r)
     (hL : ∀ (i : Nat) (x : Tm), args[i]? = some x → ∃ S', Ls[i]? = some S' ∧ OFits F.flow τ φ d Γ a false S' x)
     (h : invokeSites F τ φ a d f Sf Sr Ls args = some S) : OFits F.flow τ φ d Γ a false S (.invoke f r args) := by
+  have hO : ∀ {S : Sites P}, (if decide (Sub Sf F.O) && decide (Sub Sr F.O) && Ls.all (fun S => decide (Sub S F.O)) &&
+      decide (a.arr ∈ F.O) then some F.O else none) = some S → OFits F.flow τ φ d Γ a false S (.invoke f r args) := by
+    intro S h
+    split at h
+    · rename_i hc
+      cases h
+      simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hc
+      obtain ⟨⟨⟨hfO, hrO⟩, hLO⟩, harr⟩ := hc
+      refine .invoke (hf.sub rfl hfO) (hr.sub rfl hrO) (fun x hx => ?_) (Sub.refl _) harr (by simp)
+      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hx
+      obtain ⟨S', hS', hx'⟩ := hL i x hi
+      exact hx'.sub rfl (hLO S' (List.mem_of_getElem? hS'))
+    · cases h
   unfold invokeSites at h
-  split at h
-  · rename_i hc
-    cases h
-    simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hc
-    obtain ⟨⟨⟨hfO, hrO⟩, hLO⟩, harr⟩ := hc
-    refine .invoke (hf.sub rfl hfO) (hr.sub rfl hrO) (fun x hx => ?_) (Sub.refl _) harr (by simp)
-    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hx
-    obtain ⟨S', hS', hx'⟩ := hL i x hi
-    exact hx'.sub rfl (hLO S' (List.mem_of_getElem? hS'))
-  · cases f
-    case var j =>
-      simp only at h
+  cases f
+  case var j =>
+    simp only at h
+    split at h
+    · rename_i hj
       split at h
-      · rename_i hj
+      · rename_i σ hσ
         split at h
-        · rename_i σ hσ
+        · rename_i c hc
           split at h
-          · rename_i c hc
-            split at h
-            · rename_i hb
-              cases h
-              simp only [invCB, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.mem_range,
-                Bool.or_eq_true, Bool.not_eq_true'] at hb
-              obtain ⟨⟨⟨⟨hself, hrecv⟩, hat⟩, hpar⟩, hrest⟩ := hb
-              refine .invokeC σ c.flow (fun i => Ls.getD i []) (Ls.drop σ.ar).flatten rfl hj hσ
-                (by simp [FFlow.flow, hc]) hself (hr.sub rfl hrecv) (fun i x hx => ?_) (fun x hx => ?_)
-                (fun i hi => hpar i hi) (fun hR => ?_) (Sub.refl _) (by simp)
-              · obtain ⟨S', hS', hx'⟩ := hL i x hx
-                simpa [List.getD_eq_getElem?_getD, hS'] using hx'
-              · rcases codePart_of_partB (hat x hx) with ⟨k, rfl⟩ | hp
-                · exact .inr ⟨k, rfl⟩
-                · exact .inl hp
-              · rcases hrest with hR' | ⟨hA, hS⟩
-                · simp [hR] at hR'
-                · exact ⟨hA, storesB_sound F hS, fun i hi => getD_drop_sub hi⟩
-            · cases h
-          · cases h
-        · cases h
-      · cases h
-    all_goals simp at h
+          · rename_i hb
+            cases h
+            simp only [invCB, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.mem_range,
+              Bool.or_eq_true, Bool.not_eq_true'] at hb
+            obtain ⟨⟨⟨⟨hself, hrecv⟩, hat⟩, hpar⟩, hrest⟩ := hb
+            refine .invokeC σ c.flow (fun i => Ls.getD i []) (Ls.drop σ.ar).flatten rfl hj hσ
+              (by simp [FFlow.flow, hc]) hself (hr.sub rfl hrecv) (fun i x hx => ?_) (fun x hx => ?_)
+              (fun i hi => hpar i hi) (fun hR => ?_) (Sub.refl _) (by simp)
+            · obtain ⟨S', hS', hx'⟩ := hL i x hx
+              simpa [List.getD_eq_getElem?_getD, hS'] using hx'
+            · rcases codePart_of_partB (hat x hx) with ⟨k, rfl⟩ | hp
+              · exact .inr ⟨k, rfl⟩
+              · exact .inl hp
+            · rcases hrest with hR' | ⟨hA, hS⟩
+              · simp [hR] at hR'
+              · exact ⟨hA, storesB_sound F hS, fun i hi => getD_drop_sub hi⟩
+          · exact hO h
+        · exact hO h
+      · exact hO h
+    · exact hO h
+  all_goals exact hO h
 
 /-- **A term's least set fits it** (proved). -/
 theorem syn_sound : ∀ e, SynOk F τ φ a e := by
@@ -764,9 +800,9 @@ theorem syn_sound : ∀ e, SynOk F τ φ a e := by
             · rename_i hb
               cases h
               simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at hb
-              obtain ⟨hcaps, hself⟩ := hb
+              obtain ⟨⟨hcaps, hself⟩, hop⟩ := hb
               refine .makeGraphC c.flow _ hst hx (List.mem_cons_self ..) hC (by simp [FFlow.flow, hc])
-                (fun i u hu => ?_) (selfFnB_sound hself) hE' (by simp)
+                (fun i u hu => ?_) (selfFnB_sound hself) (openB_sound F hop) hE' (by simp)
               have hi : i < caps.length := (List.getElem?_eq_some_iff.mp hu).1
               have := hcaps i hi
               rw [hu] at this
@@ -828,27 +864,6 @@ theorem mapIdx_stable {τ : Nat → Sites P} {m : Option (List Nat)} {N i : Nat}
     simp only [mapIdx, List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega : slots.length ≤ i),
       List.getElem?_eq_none hm]
 
-/-- **An edge carries the slots, each target slot holding `base` besides
-its own**, decided at the slots below a width past which both sides and
-the mapping are constant. -/
-def carriesBaseB (ρ ρ' : Nat → Sites P) (base : Sites P) (m : Option (List Nat)) (N : Nat) : Bool :=
-  (List.range (N + 1)).all fun i => decide (Sub (ρ (mapIdx m i)) (ρ' i ++ base))
-
-theorem carriesBaseB_sound {ρ ρ' : Nat → Sites P} {base : Sites P} {m : Option (List Nat)} {N : Nat}
-    (hρ : Stable ρ N) (hρ' : Stable ρ' N) (hm : mlen m ≤ N) (h : carriesBaseB ρ ρ' base m N = true) :
-    Carries (fun i => ρ i ++ base) (fun i => ρ' i ++ base) m := by
-  simp only [carriesBaseB, List.all_eq_true, List.mem_range, decide_eq_true_eq] at h
-  have hρi : ∀ i, Sub (ρ (mapIdx m i)) (ρ' i ++ base) := by
-    intro i
-    rcases Nat.lt_or_ge i (N + 1) with hi | hi
-    · exact h i hi
-    · rw [hρ' i (by omega), mapIdx_stable hρ hm (by omega)]
-      exact h N (by omega)
-  intro i s hs
-  rcases List.mem_append.mp hs with hs | hs
-  · exact hρi i s hs
-  · exact List.mem_append_right _ hs
-
 omit [DecidableEq P.Site] in
 /-- A carriage holds of every smaller source. -/
 theorem Carries.of_sub {τ τ₁ τ' : Nat → Sites P} {m : Option (List Nat)} (h : Carries τ₁ τ' m)
@@ -902,43 +917,24 @@ theorem pushFn_sigAt (c : FCode P) (v : Option Nat) (ι : Nat → Option Nat) :
 section edges
 variable (F : FFlow P) (c : FCode P)
 
-/-- **An edge to a target**, decided: the slots `ρ` besides the code's
-`base`, constant past `Nρ`, and its signatures' indices `ι`. The target's
-node is read once. -/
+/-- **An edge to a target**, decided: the slots `ρ`, constant past `Nρ`,
+and its signatures' indices `ι`. The target's node is read once. -/
 def edgeB (ρ : Nat → Sites P) (Nρ : Nat) (ι : Nat → Option Nat) (y : Target) : Bool :=
   let x := c.node y.label
-  carriesBaseB ρ x.envAt c.base y.mapping (max Nρ (max x.env.size (mlen y.mapping))) &&
+  carriesB ρ x.envAt y.mapping (max Nρ (max x.env.size (mlen y.mapping))) &&
     carriesFnB ι x.fnAt y.mapping x.fn.size
 
 theorem edgeB_sound {ρ : Nat → Sites P} {Nρ : Nat} {ι : Nat → Option Nat} {y : Target} (hρ : Stable ρ Nρ)
     (h : edgeB c ρ Nρ ι y = true) :
-    Carries (fun i => ρ i ++ c.base) (c.flow.env y.label) y.mapping ∧
+    Carries ρ (c.flow.env y.label) y.mapping ∧
       CarriesFn (fun i => c.sigAt (ι i)) (c.flow.fn y.label) y.mapping := by
   simp only [edgeB, Bool.and_eq_true] at h
-  exact ⟨carriesBaseB_sound (hρ.mono (by omega)) (((c.node y.label).envAt_stable).mono (by omega)) (by omega) h.1,
+  exact ⟨carriesB_sound (hρ.mono (by omega)) (((c.node y.label).envAt_stable).mono (by omega)) (by omega) h.1,
     carriesFnB_sound (sigAt := c.sigAt) rfl (fun _ _ hi => FCode.fn_lt hi) h.2⟩
-
-omit [DecidableEq P.Site] in
-/-- A slot pushed on slots holding `base` lies within the pushed slots with
-`base`. -/
-theorem pushSites_base (Sv base : Sites P) (ρ : Nat → Sites P) (i : Nat) :
-    Sub (pushSites Sv (fun i => ρ i ++ base) i) (pushSites Sv ρ i ++ base) := by
-  cases i with
-  | zero => exact fun _ hs => List.mem_append_left _ hs
-  | succ i => exact Sub.refl _
-
-omit [DecidableEq P.Site] in
-/-- A value pushed with `base`, on slots holding `base`, lies within the
-pushed slots with `base`. -/
-theorem pushSites_base' (Sv base : Sites P) (ρ : Nat → Sites P) (i : Nat) :
-    Sub (pushSites (Sv ++ base) (fun i => ρ i ++ base) i) (pushSites Sv ρ i ++ base) := by
-  cases i with
-  | zero => exact Sub.refl _
-  | succ i => exact Sub.refl _
 
 /-- **The checks of a continuation** of a node `x`, decided. -/
 def contChkB (x : FNode P) : Continuation → Bool
-  | .ret => decide (Sub (x.val ++ c.base) F.O)
+  | .ret => decide (Sub x.val c.ret)
   | .bind y => edgeB c (pushSites x.val x.envAt) (x.env.size + 1) (pushIx x.vfn x.fnAt) y
   | .effect y => edgeB c x.envAt x.env.size x.fnAt y
   | .branch y n => edgeB c x.envAt x.env.size x.fnAt y && edgeB c x.envAt x.env.size x.fnAt n
@@ -954,11 +950,9 @@ def handlerChkB (x : FNode P) : Option Target → Bool
   | none => true
   | some y => edgeB c (pushSites F.O x.envAt) (x.env.size + 1) (pushIx none x.fnAt) y
 
-theorem contChkB_sound {l : Nat} {k : Continuation} (h : contChkB F c (c.node l) k = true) :
-    ContChk F.flow c.flow l k := by
+theorem contChkB_sound {l : Nat} {k : Continuation} (h : contChkB c (c.node l) k = true) :
+    ContChk c.flow l k := by
   have hs : Stable (c.node l).envAt (c.node l).env.size := (c.node l).envAt_stable
-  have hp := fun Sv => pushSites_base (P := P) Sv c.base (c.node l).envAt
-  have hp' := pushSites_base' (P := P) (c.node l).val c.base (c.node l).envAt
   have hv : pushFn (c.flow.vfn l) (c.flow.fn l) = fun i => c.sigAt (pushIx (c.node l).vfn (c.node l).fnAt i) :=
     pushFn_sigAt c _ _
   have hn : pushFn none (c.flow.fn l) = fun i => c.sigAt (pushIx none (c.node l).fnAt i) :=
@@ -967,8 +961,7 @@ theorem contChkB_sound {l : Nat} {k : Continuation} (h : contChkB F c (c.node l)
   | ret => simp only [contChkB, decide_eq_true_eq] at h; exact h
   | bind y =>
     simp only [ContChk, hv]
-    have e := edgeB_sound c (pushSites_stable _ hs) h
-    exact ⟨e.1.of_sub hp', e.2⟩
+    exact edgeB_sound c (pushSites_stable _ hs) h
   | effect y => exact edgeB_sound c hs h
   | branch y n =>
     simp only [contChkB, Bool.and_eq_true] at h
@@ -976,15 +969,11 @@ theorem contChkB_sound {l : Nat} {k : Continuation} (h : contChkB F c (c.node l)
   | branchBind y n =>
     simp only [contChkB, Bool.and_eq_true] at h
     simp only [ContChk, hn]
-    have e1 := edgeB_sound c (pushSites_stable _ hs) h.1
-    have e2 := edgeB_sound c (pushSites_stable _ hs) h.2
-    exact ⟨⟨e1.1.of_sub (hp _), e1.2⟩, ⟨e2.1.of_sub (hp _), e2.2⟩⟩
+    exact ⟨edgeB_sound c (pushSites_stable _ hs) h.1, edgeB_sound c (pushSites_stable _ hs) h.2⟩
   | tagBind _ y n =>
     simp only [contChkB, Bool.and_eq_true] at h
     simp only [ContChk, hv]
-    have e1 := edgeB_sound c (pushSites_stable _ hs) h.1
-    have e2 := edgeB_sound c (pushSites_stable _ hs) h.2
-    exact ⟨⟨e1.1.of_sub hp', e1.2⟩, ⟨e2.1.of_sub hp', e2.2⟩⟩
+    exact ⟨edgeB_sound c (pushSites_stable _ hs) h.1, edgeB_sound c (pushSites_stable _ hs) h.2⟩
 
 theorem handlerChkB_sound {l : Nat} {x : Option Target} (h : handlerChkB F c (c.node l) x = true) :
     HandlerChk F.flow c.flow l x := by
@@ -993,8 +982,7 @@ theorem handlerChkB_sound {l : Nat} {x : Option Target} (h : handlerChkB F c (c.
   | some y =>
     simp only [HandlerChk]
     rw [show pushFn none (c.flow.fn l) = fun i => c.sigAt (pushIx none (c.node l).fnAt i) from pushFn_sigAt c none _]
-    have e := edgeB_sound c (pushSites_stable _ (c.node l).envAt_stable) h
-    exact ⟨e.1.of_sub (pushSites_base F.O c.base (c.node l).envAt), e.2⟩
+    exact edgeB_sound c (pushSites_stable _ (c.node l).envAt_stable) h
 
 /-! ## The checks of a code and of a flow -/
 
@@ -1022,8 +1010,8 @@ theorem vfnB_sound {l : Nat} {e : Tm} (h : vfnB (c.node l) e = true) :
 handler `x`, decided. -/
 def nodeAtB (l : Nat) (e : Tm) (k : Continuation) (x : Option Target) : Bool :=
   let nd := c.node l
-  (syn F (fun i => nd.envAt i ++ c.base) (fun i => c.sigAt (nd.fnAt i)) c.alloc 0 (fun _ => none) e).any (fun S => decide (Sub S (nd.val ++ c.base))) &&
-    vfnB nd e && contChkB F c nd k && handlerChkB F c nd x
+  (syn F nd.envAt (fun i => c.sigAt (nd.fnAt i)) c.alloc 0 (fun _ => none) e).any (fun S => decide (Sub S nd.val)) &&
+    vfnB nd e && contChkB c nd k && handlerChkB F c nd x
 
 /-- **The checks of a node**, decided. -/
 def nodeB (m : Code) (l : Nat) : Bool :=
@@ -1044,7 +1032,7 @@ theorem codeChkB_sound {m : Code} (h : codeChkB F c m = true) : CodeChk F.flow m
   have := List.all_eq_true.mp h _ hm
   simp only [nodeAtB, Bool.and_eq_true] at this
   obtain ⟨⟨⟨hs, hv⟩, hc⟩, hh⟩ := this
-  refine ⟨?_, vfnB_sound c hv, contChkB_sound F c hc, handlerChkB_sound F c hh⟩
+  refine ⟨?_, vfnB_sound c hv, contChkB_sound c hc, handlerChkB_sound F c hh⟩
   change (syn F (c.flow.env l) (c.flow.fn l) c.flow.alloc 0 (fun _ => none) e).any _ = true at hs
   cases hS : syn F (c.flow.env l) (c.flow.fn l) c.flow.alloc 0 (fun _ => none) e with
   | none => simp [hS] at hs
@@ -1052,22 +1040,14 @@ theorem codeChkB_sound {m : Code} (h : codeChkB F c m = true) : CodeChk F.flow m
     simp only [hS, Option.any_some, decide_eq_true_eq] at hs
     exact (syn_sound e 0 _ S hS).sub rfl hs
 
-/-- Every slot of every node accepts `O`, decided: the sites every slot
-holds include it. -/
-def envOB : Bool := decide (Sub F.O c.base)
-
-theorem envOB_sound (h : envOB F c = true) (l i : Nat) : Sub F.O (c.flow.env l i) := by
-  simp only [envOB, decide_eq_true_eq] at h
-  exact fun s hs => List.mem_append_right _ (h s hs)
-
 end edges
 
-/-- **The checks of a finite flow**: each code's checks, every slot
-accepting `O`, `O` holding outside storage, closed in the heap of sites,
-its storage able to hold all of `O`. -/
+/-- **The checks of a finite flow**: each code's checks, `O` holding
+outside storage, closed in the heap of sites, its storage able to hold all
+of `O`. -/
 def FFlow.check (F : FFlow P) : Bool :=
   decide (none ∈ F.O) && F.O.all (fun s => decide (Sub (F.contents s) F.O)) && F.O.all (fun s => storesB F s F.O) &&
-    F.codes.all fun mc => codeChkB F mc.2 mc.1 && envOB F mc.2
+    F.codes.all fun mc => codeChkB F mc.2 mc.1
 
 /-- **The checks of a finite flow give its facts** (proved). -/
 theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := by
@@ -1078,12 +1058,9 @@ theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := b
     simp only [FFlow.flow, Option.map_eq_some_iff] at hm
     obtain ⟨c, hl, rfl⟩ := hm
     exact ⟨c, look_mem hl, rfl⟩
-  refine ⟨fun m π hm => ?_, hn, fun s hs => hcl s hs, fun s hs => storesB_sound F (hw s hs),
-    fun m π hm => ?_⟩
-  · obtain ⟨c, hmc, rfl⟩ := hcode m π hm
-    exact codeOk_of_chk (codeChkB_sound F c (hc _ hmc).1)
-  · obtain ⟨c, hmc, rfl⟩ := hcode m π hm
-    exact envOB_sound F c (hc _ hmc).2
+  refine ⟨fun m π hm => ?_, hn, fun s hs => hcl s hs, fun s hs => storesB_sound F (hw s hs)⟩
+  obtain ⟨c, hmc, rfl⟩ := hcode m π hm
+  exact codeOk_of_chk (codeChkB_sound F c (hc _ hmc))
 
 /-! ## The marks and the shapes -/
 
@@ -1130,12 +1107,66 @@ theorem FFlow.marksB_sound {F : FFlow P} (h : F.marksB = true) :
     · show NoLocal (F.bindings s); rw [hb]; simp [NoLocal]
     · show NoLocal (F.bindings e.1); rw [hb]; exact noLocalB_sound (hH e he).2
 
+/-- **The marks a flow gives**: a site of `O` released, every other site
+local. -/
+def FFlow.MarksFrom (F : FFlow P) : Prop := ∀ s, P.mark s = if some s ∈ F.O then .released else .local
+
+theorem FFlow.mark_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) {s : P.Site} (h : P.mark s ≠ .local) :
+    some s ∈ F.O := by
+  rw [hm s] at h
+  split at h
+  · assumption
+  · exact absurd rfl h
+
+/-- **At the marks a flow gives, `O` is lent** (proved). -/
+theorem FFlow.lendable_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) : Lendable F.flow.O := by
+  intro s hs s' he
+  subst he
+  rw [hm s']
+  simp [show some s' ∈ F.O from hs]
+
+/-- **At the marks a flow gives, local storage is held only by local
+storage** (proved): storage of a site that is not local is of `O`, whose
+contents `O` holds, and `O` has no local site. -/
+theorem FFlow.localHeld_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) (hF : F.flow.Facts) :
+    LocalHeld F.flow.H := by
+  have hO : ∀ s, (∀ s', s = some s' → P.mark s' ≠ .local) → s ∈ F.O := by
+    intro s hs
+    cases s with
+    | none => exact hF.none
+    | some s' => exact F.mark_of_marksFrom hm (hs s' rfl)
+  intro s hs t ht t' he
+  subst he
+  have ht' : some t' ∈ F.O := hF.closed s (hO s hs) _ ht
+  rw [hm t']
+  simp [ht']
+
+/-- **No binding reaches a local site**, decided: the condition on the
+values the code of a closure of outside code or of a bound function holds,
+which the closure of `O` does not give. -/
+def FFlow.bindingsB (F : FFlow P) : Bool := F.heap.all fun e => noLocalB e.2.2
+
+theorem FFlow.bindingsB_sound {F : FFlow P} (h : F.bindingsB = true) : ∀ s, NoLocal (F.flow.H.bindings s) := by
+  intro s
+  rcases F.lookup_cases s with ⟨-, hb⟩ | ⟨e, he, rfl, -, hb⟩
+  · show NoLocal (F.bindings s); rw [hb]; simp [NoLocal]
+  · show NoLocal (F.bindings e.1); rw [hb]; exact noLocalB_sound (List.all_eq_true.mp h e he)
+
+/-- **The marks a frame's checks read, at the marks a flow gives** (proved):
+`O` lent, local storage held only by local storage, and, by `bindingsB`,
+no binding reaching a local site. -/
+theorem FFlow.marks_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) (hF : F.flow.Facts) (hb : F.bindingsB = true) :
+    Lendable F.flow.O ∧ LocalHeld F.flow.H ∧ ∀ s, NoLocal (F.flow.H.bindings s) :=
+  ⟨F.lendable_of_marksFrom hm, F.localHeld_of_marksFrom hm hF, F.bindingsB_sound hb⟩
+
 /-- **The proposal meets the shapes**, decided. -/
 def FFlow.shapesB (F : FFlow P) (Sh : List Shape) : Bool :=
   Sh.all fun sc => (look sc.1.code F.codes).any fun c =>
-    (List.range (c.node sc.1.s).fn.size).all fun i => (c.flow.fn sc.1.s i).all fun σ' =>
+    ((List.range (c.node sc.1.s).fn.size).all fun i => (c.flow.fn sc.1.s i).all fun σ' =>
       decide (i = capSlot sc.1.ar sc.1.rest sc.2.length ∧ σ' = sc.1) ||
-        (List.range sc.2.length).any fun j => decide (i = capSlot sc.1.ar sc.1.rest j ∧ sc.2[j]? = some (some σ'))
+        (List.range sc.2.length).any fun j => decide (i = capSlot sc.1.ar sc.1.rest j ∧ sc.2[j]? = some (some σ'))) &&
+    openB F c sc.1.ar sc.1.s sc.1.rest sc.2.length &&
+    (List.range sc.2.length).all fun j => decide (none ∈ c.flow.env sc.1.s (capSlot sc.1.ar sc.1.rest j))
 
 theorem FFlow.shapesB_sound {F : FFlow P} {Sh : List Shape} (h : F.shapesB Sh = true) : ShapesOk F.flow Sh := by
   intro σ cs hm
@@ -1143,12 +1174,36 @@ theorem FFlow.shapesB_sound {F : FFlow P} {Sh : List Shape} (h : F.shapesB Sh = 
   cases hl : look σ.code F.codes with
   | none => simp [hl] at this
   | some c =>
-    simp only [hl, Option.any_some, List.all_eq_true, List.mem_range] at this
-    refine ⟨c.flow, by simp [FFlow.flow, hl], fun i σ' hi => ?_⟩
+    simp only [hl, Option.any_some, Bool.and_eq_true, List.all_eq_true, List.mem_range, decide_eq_true_eq] at this
+    obtain ⟨⟨this, hop⟩, hcs⟩ := this
+    refine ⟨c.flow, by simp [FFlow.flow, hl], fun i σ' hi => ?_, openB_sound F hop, hcs⟩
     have h2 := this i (FCode.fn_lt hi)
     simp only [hi, Option.all_some, Bool.or_eq_true, decide_eq_true_eq, List.any_eq_true, List.mem_range] at h2
     rcases h2 with h2 | ⟨j, -, h3⟩
     · exact .inr h2
     · exact .inl ⟨j, h3⟩
+
+/-- **An entry of a member**, decided: every slot of the node `l` of a code
+holds outside storage, and the code's returns lie within `O`. -/
+def FFlow.entryB (F : FFlow P) (m : Code) (l : Nat) : Bool :=
+  (look m F.codes).any fun c =>
+    decide (Sub c.ret F.O) && decide (none ∈ (c.node l).dflt) && (c.node l).env.all fun S => decide (none ∈ S)
+
+theorem FFlow.entryB_sound {F : FFlow P} {m : Code} {l : Nat} (h : F.entryB m l = true) :
+    ∃ π, F.flow.code m = some π ∧ (∀ i, none ∈ π.env l i) ∧ Sub π.ret F.flow.O := by
+  unfold FFlow.entryB at h
+  cases hl : look m F.codes with
+  | none => simp [hl] at h
+  | some c =>
+    simp only [hl, Option.any_some, Bool.and_eq_true, decide_eq_true_eq, Array.all_eq_true] at h
+    obtain ⟨⟨hr, hd⟩, he⟩ := h
+    refine ⟨c.flow, by simp [FFlow.flow, hl], fun i => ?_, hr⟩
+    show none ∈ (c.node l).env.getD i (c.node l).dflt
+    rw [Array.getD_eq_getD_getElem?]
+    cases hi : (c.node l).env[i]? with
+    | none => exact hd
+    | some S =>
+      obtain ⟨hlt, rfl⟩ := Array.getElem?_eq_some_iff.mp hi
+      simpa using he i hlt
 
 end Verification.TolerantFrames.ReadOnly

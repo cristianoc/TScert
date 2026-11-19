@@ -112,15 +112,16 @@ theorem VJ.capOut {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat
     exact .inr ⟨u, hu, hx⟩
   exact ⟨hval, hcl, fun l h => hv.below l (hl l h), fun l h => hv.sites l (hl l h), hin⟩
 
-/-- **A capture of a closure of `C`'s code meets its slot** (proved). -/
+/-- **A capture of a closure of `C`'s code meets its slot** (proved), and
+the closure's code is open at its entry. -/
 theorem VJ.capC {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = true)
     (hv : VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid)) :
     ∃ π, Fl.code (E, K) = some π ∧ (∀ i u, caps[i]? = some u → VJ Fl g n (π.env s (capSlot ar rest i)) u) ∧
-      CapFn π ar E K s caps rest := by
-  obtain ⟨π, hπ, hcaps, hfn⟩ := (hv.inner _ (.refl _)).2.1 fs ar E K s caps kd rest comp oid rfl hc
-  refine ⟨π, hπ, fun i u hu => ?_, hfn⟩
+      CapFn π ar E K s caps rest ∧ OpenAt Fl π ar s rest caps.length := by
+  obtain ⟨π, hπ, hcaps, hfn, hop⟩ := (hv.inner _ (.refl _)).2.1 fs ar E K s caps kd rest comp oid rfl hc
+  refine ⟨π, hπ, fun i u hu => ?_, hfn, hop⟩
   obtain ⟨hval, hcl, hin⟩ := hv.capInner (List.mem_of_getElem? hu)
   exact ⟨hval, hcl, (hcaps i u hu).2, (hcaps i u hu).1, hin⟩
 
@@ -141,6 +142,25 @@ theorem envOf_entry {pre caps : List Tm} {self : Tm} (i : Nat) :
       cases h : i - pre.length - caps.length with
       | zero => simp
       | succ m => simp
+
+/-- The entries of a run's environment at its entry, by slot (proved). -/
+theorem envOf_entry_at {pre caps : List Tm} {self : Tm} (i : Nat) :
+    let e := envOf (pre ++ (caps ++ [self])) .nul i
+    (i < pre.length ∧ pre[i]? = some e) ∨ (∃ j, i = pre.length + j ∧ caps[j]? = some e) ∨
+      (i = pre.length + caps.length ∧ e = self) ∨ e = .nul := by
+  simp only [envOf, List.getD_eq_getElem?_getD]
+  by_cases h₁ : i < pre.length
+  · left; rw [List.getElem?_append_left h₁]; simp [h₁]
+  · rw [List.getElem?_append_right (by omega)]
+    by_cases h₂ : i - pre.length < caps.length
+    · right; left
+      refine ⟨i - pre.length, by omega, ?_⟩
+      rw [List.getElem?_append_left h₂]; simp [List.getElem?_eq_getElem h₂]
+    · rw [List.getElem?_append_right (by omega)]
+      right; right
+      cases h : i - pre.length - caps.length with
+      | zero => left; simp; omega
+      | succ m => right; simp
 
 theorem parameters_length : ∀ (n : Nat) (args : List Tm), (CallArguments.parameters n args).length = n
   | 0, _ => rfl
@@ -236,10 +256,10 @@ theorem fits_graphEntryC {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P}
     (hargs : ∀ i x, args[i]? = some x → VJ Fl g n (Sa i) x)
     (hpar : ∀ i, i < ar → Sub (Sa i) (π.env s (paramSlot rest i)))
     (hrest : rest = true → a.arr ∈ π.env s 0 ∧ Stores Fl a.arr Sr ∧ ∀ i, ar ≤ i → Sub (Sa i) Sr)
-    (hS : Sub Fl.O S) (hof : o = false) :
+    (hS : Sub π.ret S) (hof : o = false) :
     Fits Fl (VJ Fl g n) Γ a o S
       (CallArguments.graphEntry ar E K s caps (.objAt fs (.graph ar E K s caps kd rest comp) oid) rest comp recv args) := by
-  obtain ⟨π', hπ', hcaps, hfn⟩ := hf.capC hc
+  obtain ⟨π', hπ', hcaps, hfn, -⟩ := hf.capC hc
   rw [hcode] at hπ'; cases hπ'
   have hparam : ∀ (Γ' : Nat → Option (Sites P)) i x, (CallArguments.parameters ar args)[i]? = some x →
       VOr (VJ Fl g n) Γ' (π.env s (paramSlot rest i)) x := by
@@ -323,34 +343,38 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
       · exact .inr ⟨0, Fl.O, rfl, rfl, Sub.refl _⟩
       · exact .inl (hpre x hx)
   · -- `C`'s code
-    obtain ⟨π, hπ, hcaps, hfn⟩ := hf.capC hc
+    obtain ⟨π, hπ, hcaps, hfn, hop⟩ := hf.capC hc
+    have hR : Sub π.ret S := hop.2.2.trans hS
     have hC : ∀ (Γ' : Nat → Option (Sites P)) (pre : List Tm), pre.length = (if rest then 1 else 0) + 1 + ar →
         (∀ x ∈ pre, VOr (VJ Fl g n) Γ' Fl.O x) → ∀ i,
         VOr (VJ Fl g n) Γ' (π.env s i)
           (envOf (pre ++ (caps ++ [.objAt fs (.graph ar E K s caps kd rest comp) oid])) .nul i) := by
       intro Γ' pre hl hp i
-      have hsub := hF.envO _ π hπ s i
-      rcases envOf_entry (pre := pre) (caps := caps) (self := .objAt fs (.graph ar E K s caps kd rest comp) oid) i with
-        h | ⟨j, hi, hj⟩ | h | h
-      · rcases hp _ h with h' | ⟨j, S', he, hg, hs⟩
+      rcases envOf_entry_at (pre := pre) (caps := caps) (self := .objAt fs (.graph ar E K s caps kd rest comp) oid) i with
+        ⟨hi, h⟩ | ⟨j, hi, hj⟩ | ⟨hi, h⟩ | h
+      · have hsub : Sub Fl.O (π.env s i) := hop.1 i (by simp only [capSlot]; omega)
+        rcases hp _ (List.mem_of_getElem? h) with h' | ⟨j, S', he, hg, hs⟩
         · exact .inl (h'.sub hsub)
         · exact .inr ⟨j, S', he, hg, hs.trans hsub⟩
       · have := hcaps j _ hj
         subst hi
         rw [hl] at this ⊢
         exact .inl (by simpa only [capSlot] using this)
-      · rw [h]; exact .inl (hf.sub hsub)
+      · rw [h]
+        have hsub : Sub Fl.O (π.env s i) := by
+          rw [hi, hl]; simpa only [capSlot, Nat.add_assoc] using hop.2.1
+        exact .inl (hf.sub hsub)
       · rw [h]; exact .inl (VJ.prim rfl)
     cases rest with
     | false =>
       exact .gotoC π hc hπ (hC _ _ (by simp [parameters_length]; omega) fun x hx => .inl (hpre x hx))
-        (envFn_entry hc hfn (by simp [parameters_length]; omega)) hS ho
+        (envFn_entry hc hfn (by simp [parameters_length]; omega)) hR ho
     | true =>
       refine .letE (Sx := Fl.O) (.arrLit (fun _ => Fl.O) (fun _ _ => hF.writable _ ha)
         (fun x hx => .val (hargs x (List.mem_of_mem_drop hx)).val (hargs x (List.mem_of_mem_drop hx))
           (fun _ => Sub.refl _)) ha (fun _ => Sub.refl _)) ?_ ho
       refine .gotoC π hc hπ (hC _ _ (by simp [parameters_length]; omega) fun x hx => ?_)
-        (envFn_entry hc hfn (by simp [parameters_length]; omega)) hS ho
+        (envFn_entry hc hfn (by simp [parameters_length]; omega)) hR ho
       rcases List.mem_cons.mp hx with rfl | hx
       · exact .inr ⟨0, Fl.O, rfl, rfl, Sub.refl _⟩
       · exact .inl (hpre x hx)
@@ -890,11 +914,11 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.makeBound _ hst'' hi'' hs (fun x hx => (hp x hx).alloc hl) ho, hH'⟩
-    | makeGraphC π Ss hst' hi hs hc hcode hcaps hfn hE =>
+    | makeGraphC π Ss hst' hi hs hc hcode hcaps hfn hop hE =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
-      exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode (fun i u hu => (hcaps i u hu).alloc hl) hfn hE ho, hH'⟩
+      exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode (fun i u hu => (hcaps i u hu).alloc hl) hfn hop hE ho, hH'⟩
     | makeGraphOut Ss hst' hi hs hc hE hcaps =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
@@ -1133,11 +1157,11 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
-    | makeGraphC π Ss hst hi hs hc hcode hcaps hfn hE =>
+    | makeGraphC π Ss hst hi hs hc hcode hcaps hfn hop hE =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
       refine ⟨.val rfl (VJ.graphC hc hcode (fun k l hk => ?_) (fun i u hu => (hcaps i u hu).top.alloc (by simp)) hfn
-        (lowered_vj hE)) ho, ?_⟩
+        hop (lowered_vj hE)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]

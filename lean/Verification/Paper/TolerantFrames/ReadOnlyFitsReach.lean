@@ -341,7 +341,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact vor_roots (hp _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))) ho r hr
     · exact vor_roots (hp x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))) ho r hr
     · exact ih x hx r hr
-  | makeGraphC _ _ _ _ _ hc _ _ _ _ _ ih =>
+  | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ ih =>
     intro r hr
     simp only [vals, hc, Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false, List.nil_append, valsArgs_eq,
       List.mem_flatMap] at hr

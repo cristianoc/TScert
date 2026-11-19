@@ -555,7 +555,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     · exact ih hf
     · cases hf
   | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
-  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf

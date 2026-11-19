@@ -18,10 +18,12 @@ holds of it.
   edge copies each variable of its source into the one of its target that
   reads it. A node's sets are its expression's least set (`gen`, `syn` at
   the current proposal, its stores, what reaches outside code and the
-  slots of a callee's entry added as requirements). Every slot holds `O`
-  besides its own sites (the proposal's `base`); `O` is grown until closed
-  and its storage holds all of it. A worklist runs the copies and the
-  nodes until nothing changes or the fuel ends.
+  slots of a callee's entry added as requirements; a known call's value
+  its callee's return set). `O` is held where outside code supplies
+  values: the entry slots of every closure's code (`OpenAt`), a handler's
+  thrown value; outside storage at every slot of the unit's entry. `O` is
+  grown until closed and its storage holds all of it. A worklist runs the
+  copies and the nodes until nothing changes or the fuel ends.
 
 Codes and nodes are arrays, read by index. -/
 namespace Verification.TolerantFrames.ReadOnly
@@ -66,6 +68,8 @@ structure SolveState (P : Package) where
   offs : Array (Array Nat)
   needs : Array (Array Nat)
   changedVars : List Nat := []
+  /-- Each code's returning nodes' value variables. -/
+  rets : Array (List Nat) := #[]
   /-- The sites each variable gained since it was last copied. -/
   delta : Array (Sites P) := #[]
   grewO : Bool := false
@@ -83,10 +87,8 @@ def toO (S : Sites P) : SolveState P :=
   let O' := union st.O S
   if O'.length = st.O.length then st else { st with O := O', grewO := true }
 
-/-- Add sites to the contents and bindings of a site's storage, with `O`
-(a slot holds `O` besides its own sites, so a value stored may be of `O`). -/
+/-- Add sites to the contents and bindings of a site's storage. -/
 def store (s : Option P.Site) (S : Sites P) : SolveState P :=
-  let S := union S st.O
   match look s st.heap with
   | none => if S.isEmpty then st else { st with heap := (s, S, S) :: st.heap, grewHeap := true }
   | some (c, b) =>
@@ -116,6 +118,10 @@ def grow (v : Nat) (S : Sites P) : SolveState P :=
 one past the slots kept apart. -/
 def slotVar (ci l i : Nat) : Option Nat :=
   ((st.offs[ci]?).bind (·[l]?)).map fun o => o + min i ((st.needs.getD ci #[]).getD l 0)
+
+/-- The return set of code `ci`: its returning nodes' values. -/
+def retOf (ci : Nat) : Sites P :=
+  (st.rets.getD ci []).foldl (fun acc v => union acc (st.vars.getD v [])) []
 
 /-- Grow the slot `i` of node `l` of code `ci` by `S`. -/
 def slot (ci l i : Nat) (S : Sites P) : SolveState P :=
@@ -153,7 +159,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
       if σ.rest then
         modify fun st => st.slot ci σ.s 0 [a.arr]
         modify fun st => st.store a.arr (Ls.drop σ.ar).flatten
-      return (← get).O
+      return (← get).retOf ci
     | none =>
       modify fun st => st.toO (Sf ++ Sr ++ Ls.flatten ++ [a.arr])
       return (← get).O
@@ -201,8 +207,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
   | .writeAt _ x y =>
     let Sx ← gen d Γ x
     let Sy ← gen d Γ y
-    -- (`x` may hold a value of `O` besides `Sx`)
-    for s in Sx ++ (← get).O do
+    for s in Sx do
       modify fun st => st.store s Sy
     return []
   | .test _ x | .lenOf x => let _ ← gen d Γ x; return []
@@ -223,7 +228,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
     let Sx ← gen d Γ x
     let _ ← gen d Γ i
     let Sv ← gen d Γ v
-    for s in a.arr :: Sx ++ (← get).O do
+    for s in a.arr :: Sx do
       modify fun st => st.store s Sv
     return a.arr :: Sx
   | .throw x =>
@@ -234,7 +239,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
     let Sx ← gen d Γ x
     let Sy ← gen d Γ y
     let F := (← get).heapFlow
-    let Q := grow F ((Sx ++ Sy ++ F.O).length + (F.heap.map fun e => e.2.1.length).sum + 1) (Sx ++ Sy ++ F.O)
+    let Q := grow F ((Sx ++ Sy).length + (F.heap.map fun e => e.2.1.length).sum + 1) (Sx ++ Sy)
     for s in Q do
       modify fun st => st.store a.obj (F.contents s)
     return [a.obj]
@@ -388,22 +393,25 @@ partial def readsHeap : Tm → Bool
   | .test _ a | .lenOf a | .throw a => readsHeap a
   | _ => false
 
-/-- Whether a term's set or its stores read `O`: a call's value, a write
-through a slot, which may hold a value of `O`. -/
+/-- Whether a term's set reads `O` or a callee's return set: a call's
+value. -/
 partial def readsO : Tm → Bool
-  | .invoke .. | .construct .. | .writeAt .. | .setElem .. | .merge .. => true
+  | .invoke .. | .construct .. => true
   | .makeAt _ _ inits | .arrLit inits => inits.any readsO
-  | .letE a b | .indexAt a b | .arith _ a b | .elemAt a b | .makeKey a b => readsO a || readsO b
-  | .ite a b c => readsO a || readsO b || readsO c
+  | .letE a b | .indexAt a b | .arith _ a b | .elemAt a b | .makeKey a b | .writeAt _ a b | .merge _ a b =>
+    readsO a || readsO b
+  | .ite a b c | .setElem a b c => readsO a || readsO b || readsO c
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => readsO a
   | _ => false
 
-/-- **`O` closed**: grown by its contents, its storage holding all of it.
-Every slot holds `O` besides its own sites (the proposal's `base`). -/
-def closeO (st : SolveState P) : SolveState P := Id.run do
+/-- **`O` closed**: grown by its contents, its storage holding all of it,
+and every variable outside code fills (`oVars`) holding it. -/
+def closeO (oVars : List Nat) (st : SolveState P) : SolveState P := Id.run do
   let mut st := st.toO (contentsOf st.heapFlow st.O)
   for s in st.O do
     st := st.store s st.O
+  for v in oVars do
+    st := st.grow v st.O
   return st
 
 /-- **The table of signatures**: each code's own at its index, then the
@@ -429,12 +437,14 @@ structure SolveStart (P : Package) where
   readerOf : Array (Option (Nat × Nat))
   heapReaders : List (Nat × Nat)
   oReaders : List (Nat × Nat)
+  /-- The variables outside code fills: the entry slots of each closure's
+  code, the value a handler binds. -/
+  oVars : List Nat
   st : SolveState P
 
 /-- The copies of a node's edges: each variable of the target read from
 one of the node's, from its value where the edge pushes it, nothing where
-it pushes a test's Boolean or a thrown value (of `O`, which every slot
-holds). -/
+it pushes a test's Boolean or a thrown value (of `O`, `handlerVars`). -/
 def edgeCopies (offs needs : Array Nat) (l : Nat) (k : Continuation) (x : Option Target) : List (Nat × Nat) :=
   let off := offs.getD l 0
   let need := needs.getD l 0
@@ -453,6 +463,19 @@ def edgeCopies (offs needs : Array Nat) (l : Nat) (k : Continuation) (x : Option
     let R := max tneed (max (need + 2) (mlen y.mapping))
     ((List.range tneed).filterMap fun j => (src j).map (·, toff + j)) ++
       ((List.range (R + 1 - tneed)).filterMap fun j => (src (tneed + j)).map (·, toff + tneed))
+
+/-- The variables of a handler's target that read the thrown value it
+binds. -/
+def handlerVars (offs needs : Array Nat) (l : Nat) (x : Option Target) : List Nat :=
+  match x with
+  | none => []
+  | some y =>
+    let toff := offs.getD y.label 0
+    let tneed := needs.getD y.label 0
+    let need := needs.getD l 0
+    let R := max tneed (max (need + 2) (mlen y.mapping))
+    ((List.range tneed).filter fun j => mapIdx y.mapping j = 0).map (toff + ·) ++
+      (if (List.range (R + 1 - tneed)).any fun j => mapIdx y.mapping (tneed + j) = 0 then [toff + tneed] else [])
 
 def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let csA := cs.toArray
@@ -479,25 +502,45 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     offs := offs.push o
   let mut succ : Array (List Nat) := Array.replicate n []
   let mut readerOf : Array (Option (Nat × Nat)) := Array.replicate n none
-  for ci in [0:csA.size] do
+  let mut oVars : List Nat := []
+  let mut noneVars : List Nat := []
+  let mut rets : Array (List Nat) := #[]
+  for (c, ci) in csA.toList.zipIdx do
     let (_, conts) := codes.getD ci (#[], #[])
     let o := offs.getD ci #[]
     let nd := needs.getD ci #[]
+    -- The entry's slots: every slot outside code fills at a closure's
+    -- entry holds `O`; every slot of the unit's entry outside storage.
+    let so := o.getD c.start 0
+    let sn := nd.getD c.start 0
+    if c.closure then
+      for i in List.range (capSlot c.ar c.rest c.ncaps + 1) do
+        oVars := (so + min i sn) :: oVars
+    else
+      for i in List.range (sn + 1) do
+        noneVars := (so + i) :: noneVars
+    let mut rs : List Nat := []
     for l in [0:conts.size] do
       for v in [o.getD l 0 : o.getD l 0 + nd.getD l 0 + 1] do
         readerOf := readerOf.set! v (some (ci, l))
       let some (k, x) := conts[l]? | continue
+      if (match k with | .ret => true | _ => false) then rs := (o.getD l 0 + nd.getD l 0 + 1) :: rs
+      oVars := handlerVars o nd l x ++ oVars
       for (v, w) in edgeCopies o nd l k x do
         succ := succ.modify v (w :: ·)
+    rets := rets.push rs
   let readers (p : Tm → Bool) : List (Nat × Nat) :=
     (codes.toList.zipIdx.flatMap fun ((exprs, _), ci) =>
       (exprs.toList.zipIdx.filter fun (e, _) => p e).map fun (_, l) => (ci, l))
-  return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO,
+  let st0 : SolveState P :=
     { O := [none], heap := [], vars := Array.replicate n [], delta := Array.replicate n [], offs := offs,
-      needs := needs }⟩
+      needs := needs, rets := rets }
+  let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
+  return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars, st0⟩
 
 /-- **A node's sets**: its expression's least set at its slots (`gen`), its
-value grown by it; a returned value given to `O`. -/
+value grown by it; a returned value given to `O`, its callers run again
+(through `grewO`). -/
 def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P := Id.run do
   let some c := s.cs[ci]? | return st
   let some (exprs, conts) := s.codes[ci]? | return st
@@ -511,8 +554,11 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let τ : Nat → Sites P := fun i => slots.getD (min i need) []
   let fn := (s.fns.getD ci #[]).getD l #[]
   let (S, st') := (gen s.table τ (fun i => fn.getD i none) c.alloc 0 (fun _ => none) e).run st
+  let before := (st'.vars.getD (off + need + 1) []).length
   let mut st := st'.grow (off + need + 1) S
-  if (match k with | .ret => true | _ => false) then st := st.toO (st.vars.getD (off + need + 1) [])
+  if (match k with | .ret => true | _ => false) then
+    st := st.toO (st.vars.getD (off + need + 1) [])
+    if (st.vars.getD (off + need + 1) []).length != before then st := { st with grewO := true }
   return st
 
 /-- **The sites, by a worklist**: each changed variable copied into those
@@ -574,7 +620,7 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
         runs := runs + 1
         st := siteNode s st ci l
       | [] =>
-        st := closeO st
+        st := closeO s.oVars st
         grewO := grewO || st.grewO
         grewHeap := grewHeap || st.grewHeap
         let more := (if grewO then s.oReaders else []) ++ (if grewHeap then s.heapReaders else [])
@@ -592,7 +638,6 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
 def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
   let sigs := s.table.map (·.1)
   let O := st.O
-  let strip (S : Sites P) : Sites P := S.filter (· ∉ O)
   { O := O
     heap := st.heap
     codes := s.cs.toList.zipIdx.map fun (c, ci) =>
@@ -604,9 +649,9 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           let off := offs.getD l 0
           let need := needs.getD l 0
           let fn := fns.getD l #[]
-          ⟨(List.range need).toArray.map (fun i => strip (st.vars.getD (off + i) [])),
-            strip (st.vars.getD (off + need) []), strip (st.vars.getD (off + need + 1) []), fn, vfnIx fn e⟩),
-        ⟨#[], [], [], #[], none⟩, c.alloc, sigs, O⟩) }
+          ⟨(List.range need).toArray.map (fun i => st.vars.getD (off + i) []),
+            st.vars.getD (off + need) [], st.vars.getD (off + need + 1) [], fn, vfnIx fn e⟩),
+        ⟨#[], [], [], #[], none⟩, c.alloc, sigs, st.retOf ci⟩) }
 
 /-- **The proposed flow** of `C`'s codes: the signatures, then the sites
 until nothing changes or the fuel ends. -/
