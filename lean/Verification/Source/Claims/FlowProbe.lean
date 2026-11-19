@@ -1,4 +1,5 @@
 import Verification.Source.Claims.Json
+import Verification.Source.Claims.FramedFlow
 import Verification.Source.EffectCodec
 import Verification.Semantics.Survival
 import Verification.Paper.TolerantFrames.ReadOnlyFlowSolve
@@ -19,31 +20,6 @@ file of facts, at each call of outside code it names, the frame's check
 by part. It decides nothing a verdict reads. -/
 namespace Verification.SourceClaimJson
 open Lean Verification.TolerantFrames.ReadOnly ControlFlow
-
-/-- The package a unit's probe reads: sites numbered, the code of the
-component `C` the tags `ofC` names. -/
-abbrev probePackage (ofC : ComponentTag → Bool) : TolerantFrames.ReadOnly.Package :=
-  ⟨Nat, fun _ => .released, ofC⟩
-
-/-- **The package at the marks a flow gives**: a site of `O` released, every
-other site local (`FFlow.MarksFrom`). -/
-abbrev markedPackage (ofC : ComponentTag → Bool) (O : List (Option Nat)) : TolerantFrames.ReadOnly.Package :=
-  ⟨Nat, let sites := Std.HashSet.ofList O; fun s => if sites.contains (some s) then .released else .local, ofC⟩
-
-/-- A code's finite proposal read at the marks a flow's `O` gives. -/
-def remarkCode {ofC : ComponentTag → Bool} (F : FFlow (probePackage ofC)) (c : FCode (probePackage ofC)) :
-    FCode (markedPackage ofC F.O) :=
-  let node (x : FNode (probePackage ofC)) : FNode (markedPackage ofC F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn, x.cx, x.out⟩
-  ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok, c.allocs⟩
-
-/-- A finite flow read at the marks its `O` gives. -/
-def remark {ofC : ComponentTag → Bool} (F : FFlow (probePackage ofC)) : FFlow (markedPackage ofC F.O) :=
-  ⟨F.O, F.heap, F.codes.map fun (m, cs) => (m, cs.map fun (k, c) => (k, remarkCode F c)), F.outsideRow⟩
-
-theorem remark_marksFrom {ofC : ComponentTag → Bool} (F : FFlow (probePackage ofC)) : (remark F).MarksFrom := by
-  intro s
-  by_cases h : some s ∈ F.O <;> simp [markedPackage, remark, h]
-
 
 def markName {ofC : ComponentTag → Bool} {O : List (Option Nat)} (s : Option Nat) : String :=
   match s with

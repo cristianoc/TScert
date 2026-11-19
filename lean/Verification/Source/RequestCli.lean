@@ -738,6 +738,89 @@ def PreparedFile.probeComponent (p : PreparedFile) (f : SourceClaimJson.FilePlan
         work := work ++ m.siblings
   return (out, ofC, entries)
 
+/-- **A refused group's framed plan** (the draft "Accepting a unit through
+the read-only frame", "The plan"): for a member of a group the pass
+refused whose module is its family's outermost component, imports no
+value and whose code calls, its component's module functions (those the
+member and the entries reach by name, each planned alone,
+`PreparedFile.plan`, at their closure codes), its entries and the
+`@clients` rows of its exported types; its framed plan
+(`FilePlans.framedPlan`, which states the restrictions and decodes the
+producer's document); and that plan's check by the pass
+(`passGroupMode8`), whose refusal follows the group's. A framed plan is
+never accepted (`passMember`), so the group's verdict is the pass's over
+its graph plans; its refusal's text gains the framed plan's line: a
+restriction's or the decoder's refusal, or the framed plan's check's. With
+`TSCERT_FRAMED`, the producer's lines (observation). -/
+def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans) (i : Nat) (reason : String) :
+    IO String := do
+  let fr := p.fr
+  let F := (Fragment.decodeComponents p.ast).toOption.getD ComponentWire.Components.empty
+  let own := ProbeFile.of p
+  let rec top : Nat → Nat → Nat
+    | 0, c => c
+    | n + 1, c => match (F.components[c]?).bind (·.parent) with
+      | some q => top n q
+      | none => c
+  let some C := own.index.map (top F.components.length) | return reason
+  let some comp := F.components[C]? | return reason
+  -- (a component of one module: its code is the file's)
+  if comp.kind != .module then return reason
+  -- (a module importing no value of another module, the realm's intrinsics
+  -- aside: its code is self-contained)
+  if fr.imported.any fun (x, _, _) => !(x.startsWith "%" || SourceClaimJson.intrinsicName x) then return reason
+  -- (a member's code calls: a node of its graph or of a closure it creates)
+  let invokes := fun (E : List Tm) => E.any fun e => (e matches .invoke ..)
+  let calls := fun (j : Nat) => match f.plans[j]? with
+    | some (.ok (.graph _ _ r)) => let E := r.program.map (·.expression)
+      invokes E || (E.flatMap (TolerantFrames.ReadOnly.closureLayouts fun _ => true)).any (invokes ·.1.1)
+    | _ => false
+  let members := (fr.group i).filter calls
+  if members.isEmpty then return reason
+  let ofC : ComponentTag → Bool := fun t => match t with
+    | some j => F.nested j C
+    | none => false
+  let entries : List String := match comp.interface with
+    | .known es => es.map (·.name)
+    | .unknown _ => []
+  let clients := (F.clients.filter fun c => c.module == comp.location && c.stated).map (·.frame)
+  -- the component's module functions the members and the entries reach by
+  -- the names their codes read, each planned alone
+  let memo ← p.memo.get
+  let mut mods : List SourceClaimJson.ProbeModule := []
+  let mut work : List String := (f.siblingsOf members) ++ (f.moduleCodes members).map (·.name) ++ entries
+  let mut tried : List String := []
+  for _ in List.range ((fr.units.length + 1) * (fr.units.length + 1) + entries.length + 1) do
+    match work with
+    | [] => break
+    | x :: rest =>
+      work := rest
+      if tried.contains x then continue
+      tried := x :: tried
+      let some j := fr.units.findIdx? fun (fn, _, init) => init.isNone && fn.name == x | continue
+      let planned ← IO.lazyPure fun _ => p.plan j [] memo
+      if let .ok g := planned then
+        if let some m := (g.moduleCodes (g.fr.group j)).find? (·.name == x) then
+          mods := mods ++ [m]
+          work := work ++ m.siblings
+  let observing := (← IO.getEnv "TSCERT_FRAMED").isSome
+  if observing then
+    IO.eprintln s!"framed plan: members {members.map fr.unitId}; module functions {mods.map fun m => (m.name, m.siblings)}; entries {entries}"
+  for j in members do
+    match f.framedPlan (ofC := ofC) p.fuel j C mods entries clients p.force with
+    | .error w =>
+      return s!"{reason}\nframed plan of {fr.unitId j}: refused: {w}"
+    | .ok none =>
+      if observing then IO.eprintln s!"framed plan of {fr.unitId j}: no framed call node"
+    | .ok (some (f', shown)) =>
+      if observing then for line in shown do IO.eprintln line
+      let (_, v, _, _) ← IO.lazyPure fun _ => f'.passGroupMode8 true p.force (f'.givenAt p.givenLines) p.fuel
+        (f'.fr.group i) (located := p.located)
+      return match v with
+        | .error w => s!"{reason}\n{w}"
+        | .ok _ => reason
+  return reason
+
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
 earlier unit's proposals planned it at, where kept, then released), then
@@ -806,6 +889,10 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
           f.extractionRefusal (some [SourceClaimJson.memberName unit]),
           f.contractReads (fr.group i), f.clientTrust (f.fr.group i))
+  -- A refused group's framed plan, checked (`framedVerdict`).
+  let verdict ← match verdict, planned with
+    | .error reason, .ok f => do pure (.error (← p.framedVerdict f i reason))
+    | v, _ => pure v
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"

@@ -3,17 +3,20 @@ import Verification.Source.Equations.Store
 import Verification.Paper.TolerantFrames.ReadOnlyPublic
 import Verification.Paper.TolerantFrames.ReadOnlyFits
 import Verification.Paper.TolerantFrames.ReadOnlyFitsDecide
+import Verification.Source.Claims.FramedFlow
 
 /-! # A framed plan's proposals and the frame they define
 
 The draft "Accepting a unit through the read-only frame"
 (`docs/drafts/framed-acceptance.md`, "The frame of a request"). A framed
-plan carries, beside its request, a `FramedSpec`: the family of
-components with its sites numbered, the component `C`, the client
-obligation `Θ`, the finite flow of sites, the read-only types, the type outgoing
-values cross at, the realm's heap, the initialization's code and the
-function's arity. From them and the request, `FramedSpec.frame` defines
-the client frame the plan is accepted under:
+plan carries, beside its request, a `FramedSpec`: the component `C`, the
+read-only types, the type outgoing values cross at, the realm's heap, the
+initialization's code, the function's arity and what the pass's check
+reads, its component's flow among them; the family of components with its
+sites numbered, the client obligation `Θ` and the finite flow of sites are
+defined from them (`FramedSpec.fam`, `FramedSpec.Θ`, `FramedSpec.fflow`).
+From them and the request, `FramedSpec.frame` defines the client frame the
+plan is accepted under:
 
 - **The realized code** (`realizedCode`): the request's node lists behind
   the receiver's prologue (`PassUnit.dropReceiver`), at which a call of the
@@ -53,23 +56,55 @@ equality of them is decided. -/
 instance (N : NumberedFamily) (C : Nat) : DecidableEq (N.family.at C).Site :=
   show DecidableEq {s : Nat // N.family.Runs (N.family.siteOf s) C} from inferInstance
 
-/-- **A framed plan's proposals** (the draft, "The plan"): the family of
-components, its sites numbered; the component `C`; the client obligation
-`Θ`; the finite flow of sites (`fflow`, which the binding checks decide;
-`flow` is the flow it stands for); the types a crossing reads read-only; the type
-outgoing values cross at; the realm's heap; the initialization's code; the
-number of the function's parameters. -/
+/-- **A framed plan's proposals** (the draft, "The plan"): the component
+`C`; the types a crossing reads read-only; the type outgoing values cross
+at; the realm's heap; the initialization's code; the number of the
+function's parameters; and what the pass's check reads (the draft, "What
+the pass checks"): the component's tags and the marks of its flow's sites,
+the flow the solver proposes for the component's codes at those marks
+(`checked`), each code's layout, the natives' codes, the `@clients` rows of
+the component's exported types, the component's module functions' codes
+and entries, and each framed call node of the main graph with the supports
+its frame keeps. The family, the client obligation and the finite flow the
+frame reads are defined from them (`FramedSpec.fam`, `FramedSpec.Θ`,
+`FramedSpec.fflow`). -/
 structure FramedSpec (ι : Type) where
-  fam : NumberedFamily
   C : Nat
-  Θ : Protocol (fam.family.at C)
-  fflow : FFlow (fam.family.at C)
   readOnly : List (Ty ι)
   outType : Ty ι
   realm : Heap
   initE : List Tm
   initK : List (Continuation × Option Target)
   arity : Nat
+  ofC : ComponentTag → Bool
+  marks : List (Option Nat)
+  checked : FFlow (markedPackage ofC marks)
+  lay : List (Nat × Bool × Nat × Nat)
+  host : Nat → Bool
+  clients : List Footprints.Footprint
+  codes : List Code
+  entries : List String
+  framed : List (Nat × List Footprints.Footprint)
+
+namespace FramedSpec
+variable {ι : Type} (spec : FramedSpec ι)
+
+/-- Each site's mark, as the flow's `O` gives it. -/
+abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
+
+/-- **The family of a framed plan**: the one component `C`, each site of its
+code marked as the flow marks it (`oneComponent`). -/
+def fam : NumberedFamily := oneComponent spec.C spec.mark
+
+/-- **The client obligation of a framed plan**: the `@clients` rows' change
+per kind (`clientsProtocol`). -/
+noncomputable def Θ : Protocol (spec.fam.family.at spec.C) := clientsProtocol spec.clients
+
+/-- **The finite flow of a framed plan** (which the binding checks decide):
+the checked flow, its sites renamed into the family's (`FFlow.mapSites`). -/
+noncomputable def fflow : FFlow (spec.fam.family.at spec.C) :=
+  spec.checked.mapSites (oneComponent.site spec.C spec.mark) (·.1)
+end FramedSpec
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]

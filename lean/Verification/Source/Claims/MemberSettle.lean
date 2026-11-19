@@ -182,12 +182,6 @@ def FilePlans.givenAt (f : FilePlans) (given : Std.HashMap String Json) (i : Nat
     headFactsFromJson r.sourceMap (r.start :: r.cuts) ((line.getObjVal? "headFacts").toOption.getD (Json.arr #[]))
   | _, _ => []
 
-/-- Plan `i`'s candidates at label `l` less `drop`. -/
-def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
-  { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map (FunctionPlan.mapRequest fun r =>
-      { r with candidates := r.candidates.map fun (l', as) =>
-        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) }) }
-
 /-- The candidates of plan `i` at the heads that read the facts of the head
 at label `l` (each a label whose source span lies inside `l`'s, or after it
 inside the loop holding `l`'s, the walk carrying a head's facts past its
@@ -543,7 +537,7 @@ verdict. -/
 def FilePlans.contractReads (f : FilePlans) (group : List Nat) : List Json :=
   f.plans.zipIdx.flatMap fun (p, j) =>
     if !group.contains j then [] else match p with
-    | .ok (.graph _ _ r) => r.contractReads.map (·.toJson)
+    | .ok p => p.parts.2.2.contractReads.map (·.toJson)
     | .error _ => []
 
 /-- The plans with a false fact (`x - x ≤ -1` over slot 0) supplied at each

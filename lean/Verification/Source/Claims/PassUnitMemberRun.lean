@@ -76,12 +76,14 @@ theorem asRefusal_accepted {ι : Type} {o : SinglePass.Outcome ι} (h : o.asRefu
     o = .accepted := by
   cases o <;> simp_all [SinglePass.Outcome.asRefusal]
 
-/-- **What an accepted member run establishes** (proved): `PassMemberSound`,
+/-- **What an accepted graph run establishes** (proved): `passMemberGraph`,
 the member's plan, conditions, code runs and main runs as `MemberAccepted`
 states them. -/
-theorem passMember_sound : PassMemberSound := by
-  intro f fuel compare debugNode repeats given observe counting j m h hacc
-  unfold FilePlans.passMember at h
+theorem passMemberGraph_sound (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
+    (given : Option (Std.HashMap String Json)) (observe : Option String) (counting : Bool) (j : Nat) m
+    (h : f.passMemberGraph fuel j compare debugNode repeats given observe counting = .ok m) (hacc : m.accepted = true) :
+    MemberAccepted f j := by
+  unfold FilePlans.passMemberGraph at h
   extract_lets G I answers reference line tracing at h
   obtain ⟨plan, hplan, h⟩ := except_bind_ok h
   obtain ⟨cp, hcert, h⟩ := except_bind_ok h
@@ -362,6 +364,17 @@ theorem passMember_sound : PassMemberSound := by
         simpa only [Bool.or_eq_true, not_or, Bool.not_eq_true, Bool.not_eq_false', and_assoc] using hc
     · rename_i hr
       exact hjp (fun Φ' regions' hr' => absurd hr' (hr Φ' regions')) m h hacc
+
+/-- **What an accepted member run establishes** (proved): a framed plan's
+run is its check's refusal (`framedRefusal`), never accepted; a graph
+plan's run is `passMemberGraph`'s. -/
+theorem passMember_sound : PassMemberSound := by
+  intro f fuel compare debugNode repeats given observe counting j m h hacc
+  unfold FilePlans.passMember at h
+  split at h
+  · cases h; simp [MemberRun.accepted, MemberRun.before] at hacc
+  · exact passMemberGraph_sound f fuel compare debugNode repeats given observe counting j m h hacc
+
 /-- **H3** (proved): `passGroup` accepting a group makes every member
 `MemberAccepted`, at every value of every argument. -/
 theorem passGroupChecks : PassGroupChecks := passGroupChecks_of_sound passMember_sound

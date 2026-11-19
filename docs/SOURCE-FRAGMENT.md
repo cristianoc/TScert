@@ -314,6 +314,20 @@ representation does not state it; the paths are in
 | `catch` or `finally` after a void async completion through a `Promise<void>` annotation | `void` denotes `unknown`, and its payload may hide a callable `then` | [async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await) | — |
 | A NaN or infinite enum member; a reverse key naming a member; an empty enum | A NaN or infinite value has no literal type; the reverse entry would replace the member; an empty object leaves no record | [enums](SOURCE-CONTRACTS.md#enums) | — |
 
+**Framed plans**
+
+A refused unit whose code may call outside code is checked again by a
+framed plan ([framed acceptance](drafts/framed-acceptance.md#restrictions)),
+which reads its component's code whole. Each row below refuses the framed
+plan, located at the unit; the unit's verdict is its ordinary plan's.
+
+| Construct | Obstacle | Owner | Cases |
+| --- | --- | --- | --- |
+| A framed unit that is not a module function of its module (a method, a class's code, the initialization) | Its entering step relates to no realized code of its request | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-method-refused` |
+| Module functions naming each other in a framed unit's component | Their closures have no finite initialization | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cycle-refused` |
+| A module function of a framed unit's component reading a module cell or constant, a native with no step model, or (the framed plan not formed) another module's value or a package's code | Its slot's contents vary with the depth of calls and the component's initialization does not set them | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cell-refused` |
+| A `@clients` row with a path key in a framed unit's component | Its part needs the declaration's sites | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-path-refused` |
+
 ### Opaque Node URLs
 
 The reviewed URL view admits construction from strings and storage as an

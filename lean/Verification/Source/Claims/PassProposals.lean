@@ -514,7 +514,8 @@ member `j`'s group in the plans `fp` the proposal planned, its name and
 position and its plan (the program, claims, result, start, inputs,
 statement entries' candidates and cuts, assertions, entry facts, the code
 requests' goals, its declared footprint, throw bound, freshness, spine
-regions, postcondition, stated effect, asyncness and qualification), and
+regions, postcondition, stated effect, asyncness and qualification, and a
+framed plan's document, `framedDocument`), and
 the reads `reads` gives the functions the group reaches (their signatures
 in the store): `settledInterface fp proposalDepth j` reads these alone. -/
 def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
@@ -531,7 +532,10 @@ def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
         hash r.result, hash r.start, hash r.inputs, hash (toJson r.candidates).compress, hash r.cuts,
         hash (reprStr r.assertions), hash (toJson r.entryIndices).compress, hash (reprStr (r.codes.map (·.entry.goal))),
         hash (reprStr (r.footprint, r.onThrow, r.fresh, r.regional, r.async, r.qualification.isSome)),
-        hash (reprStr r.ensures), hash (reprStr r.stated), hash (reprStr r.promise)].foldl mixHash 11
+        hash (reprStr r.ensures), hash (reprStr r.stated), hash (reprStr r.promise),
+        hash (match p with
+          | .graph .. => ""
+          | .framed _ _ _ spec => (framedDocument spec.C spec.entries spec.framed).compress)].foldl mixHash 11
     | some (.error e) => mixHash (hash (reprStr unit)) (hash e)
     | none => hash (reprStr unit)
   mixHash (hash (reprStr read)) (members.foldl mixHash (hash proposalDepth))

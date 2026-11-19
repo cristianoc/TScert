@@ -241,6 +241,7 @@ import Verification.Source.Claims.Diagnostics
 import Verification.Source.Claims.Extraction
 import Verification.Source.Claims.FlowProbe
 import Verification.Source.Claims.FramedCheck
+import Verification.Source.Claims.FramedFlow
 import Verification.Source.Claims.FragmentFront
 import Verification.Source.Claims.HeadDiagnosis
 import Verification.Source.Claims.HeadInference

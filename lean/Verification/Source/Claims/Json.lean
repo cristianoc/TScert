@@ -10,6 +10,7 @@ import Verification.Source.Claims.Sites
 import Verification.Source.Claims.Preparation
 -- Claims/Plans.lean owns the exhaustive certification boundary and frozen plans.
 import Verification.Source.Claims.Plans
+import Verification.Source.Claims.FramedBinding
 -- Claims/Extraction.lean coordinates source units and reconstructs graph requests.
 import Verification.Source.Claims.Extraction
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
@@ -519,9 +520,9 @@ expression obligations' checks; with the diagnostics asked for (`observe`,
 visit's record of its step's local effect in their counts (`SinglePass.Walk.visits`);
 with `framed`, the main graph's walks frame those nodes, keeping those
 supports at their returns (`SinglePass.framedAt`), which only a framed
-plan's check reads (`FilePlans.framedCheck`): the verdict's runs frame
-none. -/
-def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
+plan's check reads (`FilePlans.framedRefusal`, `FilePlans.framedCheck`):
+the verdict's graph plans' runs frame none. -/
+def FilePlans.passMemberGraph (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := []) :
@@ -829,6 +830,111 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       ("preds", Json.arr (ob.preds.map fun (pl, k) => Json.mkObj (place pl ++ [("knowledge", toJson k)])).toArray)] ++ p.fields)
     return checked (.notHandled "observed") (observationLine "observation: " record)
   return checked o (countsLine counting name counts)
+
+/-- **The effect a call node's callee states**, read at the caller's slots
+(`PromiseCalls.callerFrame`): the union over the callee type's signatures,
+fixed and variadic; none where the node calls no slot of a function type. -/
+def callEffectAt {ι : Type} [LabelStore.Labels ι] (G : NormalGraph ι) (c : CertificateProducer.PointClaim ι) (e : Tm) :
+    Option Footprints.Footprint :=
+  match e with
+  | .invoke (.var j) _ _ => (c.context[j]?).bind fun T => match PositiveRules.expand G T with
+    | [PositiveNormalization.Clause.arrs L S] | [PositiveNormalization.Clause.callable _ _ L S _] =>
+      let effs := L.map (·.effect) ++ S.map (·.effect)
+      if effs.isEmpty then none else some (effs.flatMap fun eff => PromiseCalls.callerFrame eff e)
+    | _ => none
+  | _ => none
+
+/-- Plan `i`'s candidates at label `l` less `drop`. -/
+def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
+  { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map (FunctionPlan.mapRequest fun r =>
+      { r with candidates := r.candidates.map fun (l', as) =>
+        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) }) }
+
+/-- Plan `i` replaced by `p`. -/
+def FilePlans.withPlan (f : FilePlans) (i : Nat)
+    (p : FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)) :
+    FilePlans :=
+  { f with plans := f.plans.set i (.ok p) }
+
+/-- A text's first line: a framed plan's refusal is one line, the
+diagnostic records of the run it read left to that run. -/
+def firstLine (t : String) : String := (t.splitOn "\n").headD t
+
+open Verification.TolerantFrames.ReadOnly in
+/-- **A framed plan's check by the pass** (the draft, "What the pass
+checks"): the binding checks over its flow (`FFlow.check`, `marksB`, the
+entry's start `entryB` and signatures `entryFnB`, at the sibling slots and
+the closure's own, at the realized code's prologue, `codesCoverB` over the component's codes and the request's code,
+`allocSomeB`, `realizedFlowB`); its framed call nodes, those of the realized
+code the flow frames (`framedCallNodes`); at each, every support it keeps
+passing the frame's check at the call's protocol and the callee's stated
+effect (`framedSupportsAt`); then its main graph walked with those nodes
+framed (`passMemberGraph` at the request's graph plan), settled as a
+member's run is (the candidates an edge lacks left out). Its text is the
+first that fails, and otherwise the obligation the framed claim still
+needs: `FramedObligations.reached`, the framed returns at the executions
+the claim is about (`ret_reached`), which no check establishes. A framed
+plan is never accepted here. -/
+def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
+    (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : String := Id.run do
+  let F := spec.checked
+  let m := realizedCode r
+  let entry := m.1.length - 1
+  let c0 := capSlot spec.arity false 0
+  -- (the sibling slots, then the closure's own slot)
+  let sib := (List.range (r.siblings.length + 1)).map (c0 + ·)
+  let checks : List (String × Bool) := [
+    ("its flow (FFlow.check)", F.check), ("its marks (marksB)", F.marksB),
+    ("its entry's start (entryB)", F.entryB m entry),
+    ("its codes covered (codesCoverB)", codesCoverB F (spec.codes ++ [requestCode r])),
+    ("its allocation sites (allocSomeB)", allocSomeB F),
+    ("its entry's signatures (entryFnB)", entryFnB F m entry sib),
+    ("its realized code's proposals (realizedFlowB)", realizedFlowB F r)]
+  if let some (w, _) := checks.find? (!·.2) then
+    -- (the entry's slots naming a signature, at each context)
+    let named := ((F.at m entryCx).map fun c =>
+      (List.range (c.node entry).fn.size).filter fun j => ((c.node entry).fnAt j).isSome).getD []
+    return s!"framed plan: the binding check of {w} fails (the entry's slots naming a signature {named}, its sibling slots {sib})"
+  let nodes := framedCallNodes F spec.host m
+  if nodes != spec.framed.map (·.1) then
+    return s!"framed plan: its framed call nodes {spec.framed.map (·.1)} are not the flow's {nodes}"
+  let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
+  for (l, Ss) in spec.framed do
+    let some Φ := (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
+      | return s!"framed plan: its framed call node {l} has no stated effect of its callee"
+    let kept := framedSupportsAt F spec.lay spec.host (clientsProtocol spec.clients) m l Φ Ss
+    if kept.length != Ss.length then
+      return s!"framed plan: at its framed call node {l}, {Ss.length - kept.length} of the supports it keeps fail the frame's check"
+  let mut g := f.withPlan i (.graph name pos r)
+  for _ in List.range 12 do
+    match g.passMemberGraph fuel i (framed := spec.framed) with
+    | .error e => return s!"framed plan: {firstLine e}"
+    | .ok run => match run.outcome with
+      | .accepted =>
+        return s!"framed plan of {name}: its binding checks pass, its framed call nodes {nodes} keep only supports the frame's check passes, and its main graph's framed walk is accepted; refused: the obligation FramedObligations.reached (the framed returns at the executions the claim is about, ret_reached) is not established"
+      | .refused w (some (t, xs)) _ =>
+        let held := match g.plans[i]? with
+          | some (.ok p) => (p.parts.2.2.candidates.filter fun (q : Nat × List HeapKnowledge.IndexAtom) => q.1 == t).flatMap
+              fun (q : Nat × List HeapKnowledge.IndexAtom) => q.2
+          | _ => []
+        let drop := held.filter xs.contains
+        if drop.isEmpty then return s!"framed plan: its framed walk is refused: {firstLine w}"
+        g := g.dropCandidates i t drop
+      | o => return s!"framed plan: its framed walk is refused: {firstLine (toString o)}"
+  return "framed plan: its framed walk is not settled in 12 runs"
+
+/-- **One member's single pass**: a graph plan's (`passMemberGraph`); a
+framed plan's check (`framedRefusal`), which refuses it. -/
+def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
+    (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
+    (framed : List (Nat × List Footprints.Footprint) := []) :
+    Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
+      (CertificateProducer.Answered (StoreView.graph f.F.store))) :=
+  match f.plans[i]? with
+  | some (.ok (.framed name pos r spec)) => .ok (.before name (.refused (f.framedRefusal fuel i name pos r spec)))
+  | _ => f.passMemberGraph fuel i compare debugNode repeats given observe counting grading framed
 
 /-- The node label a pass refusal's text names after `key` (`expression at
 node 8: …` names `8`). -/

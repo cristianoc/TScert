@@ -19,6 +19,20 @@ export type ForcedProposal = { file: string; unit: string; force: string; positi
 /** Forced proposals: unsafe programs remain refused; the positive declaration,
  * growth and copy cases are accepted unforced and refused at the false proposal. */
 export const forcedProposals: readonly ForcedProposal[] = [
+  // (a framed plan's document forged: its decoder refuses it, the walker
+  // refused at its ordinary plan; docs/drafts/framed-acceptance.md, "The plan")
+  { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-node",
+    at: /a framed plan's document is refused: the document's framed call nodes \[10, 13, 0\] are not the flow's \[10, 13\]/ },
+  { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-support",
+    at: /a framed plan's document is refused: at the document's framed call node 10, 1 of the supports it keeps fail the frame's check/ },
+  { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-component",
+    at: /a framed plan's document is refused: the document's component 1 is not the plan's 0/ },
+  { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-entries",
+    at: /a framed plan's document is refused: the document's entries \[%forged%\] are not the component's \[walk\]/ },
+  { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-field",
+    at: /a framed plan's document is refused: a framed plan's document: an unknown field forged/ },
+  { file: "bounds-pattern-unreachable-field-refused", unit: "walk@1190", force: "framed-doc-missing",
+    at: /a framed plan's document is refused: a framed plan's document: no field entries/ },
   { file: "stated-signatures-presence", unit: "signatures@605", force: "path-callees", positive: true },
   { file: "invalid-native-promise-invariant-result", unit: "widen@89", force: "instances", positive: true },
   { file: "early-let-literal", unit: "families@954", force: "early-contracts", positive: true },

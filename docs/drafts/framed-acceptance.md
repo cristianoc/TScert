@@ -812,7 +812,8 @@ pipeline come with the producer's framed plans.
 - **the component** (`compB`): $`C`$ is `componentAt` of the request's
   place, its tags those the lowering assigns.
 - **the entry** (`entryB`, `entryFnB`, `entryFnB_sound`): at the realized
-  code's entry, its slots naming signatures only at the sibling slots.
+  code's entry, its slots naming signatures only at the sibling slots and
+  the closure's own slot.
 - **the inputs**: `paramTypes`, computed from the requests.
 - **$`\Theta_C`$** (`clientsB`): the join over $`C`$'s exported types of
   each `@clients` row's change per kind, read from the declaration
@@ -839,14 +840,19 @@ framed plan's claim at the frame they define, `FramedRequestSafe r
 crossings of a step classically, so the executable boundary carries the
 proposals and the claim the frame (`Plans.lean`).
 
-`FramedSpec ι` (`FramedSpec.lean`) holds the proposals: the family's
-numbering, $`C`$, $`\Theta_C`$, the finite flow (`fflow`, an `FFlow`,
-which the binding checks decide; `flow` is the flow it stands for), the types a crossing reads
-read-only, the type outgoing values cross at, the realm's heap, the
-initialization's code and the function's arity; the check reads beside
-them $`\Psi_C`$ and, for each framed call node of the main graph, the
-supports and invariants kept at its continuation and handler. From them
-and the request:
+`FramedSpec ι` (`FramedSpec.lean`) holds the proposals: $`C`$, the types
+a crossing reads read-only, the type outgoing values cross at, the realm's
+heap, the initialization's code and the function's arity; and what the
+check reads: the component's tags, the marks of its flow's sites (`O`),
+the flow the solver proposes at those marks (`checked`), each code's
+layout, the natives' codes, the `@clients` rows, the component's module
+functions' codes and entries, and each framed call node of the main graph
+with the supports its frame keeps. The family is the numbered family of
+the one component $`C`$, each site marked by the flow (`oneComponent`);
+$`\Theta_C`$ is the rows' join per kind at their class entries
+(`clientsProtocol`); the finite flow (`fflow`, which the binding checks
+decide; `flow` is the flow it stands for) is `checked` with its sites
+renamed into the family's (`FFlow.mapSites`). From them and the request:
 
 - `realizedCode r`: the request's node lists behind the receiver's
   prologue (`dropReceiver`'s lists over $`|\mathrm{r.inputs}|`$ slots);
@@ -887,7 +893,8 @@ framed run by `RunSoundFramed` (`run_sound_framed`), and
 `RunKeepsSummaries` and the request over the file's store) and
 `member_safe`'s framed branch are proved from it; a field leaves the
 structure in the commit that proves it from the check. `passMember`
-refuses every framed plan until none is left. **The codes are checked by the ordinary pass**,
+checks a framed plan and refuses it (`framedRefusal`, [what the pass
+checks](#what-the-pass-checks)) until none is left. **The codes are checked by the ordinary pass**,
 so a code's closure meets its ordinary arrow, and **the sixth clause** of
 `FramedRequestSafe` is proved from each code's guarantee
 (`codesAccepted_guarantees`) by `framedCode_of_guarantee`: the graph's
@@ -911,14 +918,34 @@ claim read no candidate).
 
 ### What the pass checks
 
-The executable check (`FramedCheck.lean`, run beside the verdict under
-`TSCERT_FRAMED`): `framedCallNodes`, the call nodes of the member's code
-framed at some context of the flow; `callEffectAt`, the callee's stated
-effect at the caller's slots; `framedSupportsAt`, the entry supports
-(in the pass's slot numbering) passing `frameCheckAt` at $`\Psi_c`$ at
-every context and every node of the call's continuation and handler that
-may call outside code; `FilePlans.framedCheck`, the main graph walked by
-`passMember` with those nodes framed, settled.
+The executable check (`FramedFlow.lean`, `Json.lean`): `framedCallNodes`,
+the call nodes of the member's code framed at some context of the flow;
+`callEffectAt`, the callee's stated effect at the caller's slots;
+`framedSupportsAt`, the entry supports (in the pass's slot numbering)
+passing `frameCheckAt` at $`\Psi_c = \Psi_C \sqcup \Theta_C \sqcup W_c`$
+at every context and every node of the call's continuation and handler
+that may call outside code. `passMember`'s framed branch
+(`FilePlans.framedRefusal`) runs, over the plan's flow, `FFlow.check`,
+`marksB`, `entryB`, `codesCoverB` (the module functions' codes and
+`requestCode r`), `allocSomeB`, `entryFnB` and `realizedFlowB`; the framed
+call nodes recomputed and each kept support passing the check; then the
+main graph walked with those nodes framed (`passMemberGraph`), settled; it
+refuses at the first that fails, and otherwise at
+`FramedObligations.reached`, which no check establishes.
+
+The producer (`FilePlans.framedPlan`, `RequestCli.framedVerdict`) forms a
+framed plan for a member of a group the pass refused, where its module is
+its family's outermost component, imports no other module's value and its
+code calls: its component's module functions (those the member and the
+entries reach by name), the restrictions below, its framed call nodes,
+and each node's entry supports the check passes, observed in the walk.
+Its document is the producer's inputs alone: the component, the entries
+and each framed call node with its supports (`framedDocument`). The
+decoder (`FramedSpec.decode`) recomputes the flow from the component's
+codes and refuses a document whose fields, component, entries, nodes or
+supports disagree with it; `inputDigest` hashes the document. The framed
+plan's refusal follows the group's ordinary refusal; the verdict is the
+ordinary plan's.
 
 `MemberAccepted.framed`, beside `ordinary`'s premises over the request
 (its codes by the ordinary pass): `FFlow.check (remark F)`, `marksB`,
@@ -1401,6 +1428,10 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
   the call (`v = xs.length` and `xs.length <= v`), which the spines'
   growth breaks; at node 10 (effect `keep`) it keeps all 15; settled,
   the main graph's walk with both framed is accepted;
+- P22 through the pipeline (`verify-source.mts`, `m1-build/a5-p22-4.out`):
+  its framed plan formed and decoded, its binding checks passing, its
+  framed call nodes 10 and 13, its framed walk accepted after the head's
+  `c.i <= 0` is left out; refused at `FramedObligations.reached`;
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's
