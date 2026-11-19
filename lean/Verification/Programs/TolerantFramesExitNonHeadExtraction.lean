@@ -199,7 +199,7 @@ theorem Site.arrayAllocation (s : Site c r l hl) :
 /-- The site's merge flags agree with the checked walk's incoming count. -/
 theorem Site.mergingOfIncoming (s : Site c r l hl) (checked : WalkChecked c r) :
     ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → s.env.merging[t]! = true := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hm⟩ := s.facts
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hm, _⟩ := s.facts
   rw [hm]
   exact checked.mergingOfIncoming
 
@@ -208,7 +208,7 @@ allocation, head agreement, merge flags and equality with the kept yields. -/
 theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
     (checked : WalkChecked c r) : NonHead s η := by
   obtain ⟨hw, hedges, _, hclaims, _, _, hheads, hstated, _, _, hex,
-    hnode, hclaim, hentry, hst, _, _, himplies, hsizes, hext, _, _, _, _, _, _, _, contextAgreement, _⟩ := s.facts
+    hnode, hclaim, hentry, _, _, _, himplies, hsizes, hext, _, _, _, _, _, _, _, contextAgreement, _⟩ := s.facts
   have arrayAllocation := s.arrayAllocation
   have givenAgreement : r.given = passHeads c := checked.givenAgreement
   intro i t pushed observed promote hi hg
@@ -239,48 +239,48 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
   have typed : vacuousOf G s.en.here (r.node l hl).c.type
       (exitCtx (r.node l hl).c pushed) pushed observed = false →
       ExitTyped G I (exitCtx (r.node l hl).c pushed) (r.ctx t.label) t observed
-        (exitSearchFacts G (r.node l hl).c (r.node l hl).entry (r.node l hl).st pushed observed promote
+        (exitSearchFacts G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote
           (r.ctx t.label) t.mapping)
         (refinedContext G (r.node l hl).c (r.node l hl).node.continuation
           (yieldsAtSlots (r.node l hl).entry.names (b.yields.getD []))
-          (outAllOf G (r.node l hl).c (r.node l hl).st.stepOut) (i == 0))
-        (outAllOf G (r.node l hl).c (r.node l hl).st.stepOut) := by
-    simpa only [hclaim, hentry, hst, hnode, targetContext] using ht
+          (outAllOf G (r.node l hl).c s.sdK.st.stepOut) (i == 0))
+        (outAllOf G (r.node l hl).c s.sdK.st.stepOut) := by
+    simpa only [hclaim, hentry, Site.sdK, hnode, targetContext] using ht
   have asserted : vacuousOf G s.en.here (r.node l hl).c.type
       (exitCtx (r.node l hl).c pushed) pushed observed = false → ∀ req, r.stated t.label = some req →
       KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (r.ctx t.label))
         (assertionSource G (refinedContext G (r.node l hl).c (r.node l hl).node.continuation
           (yieldsAtSlots (r.node l hl).entry.names s.ysA)
-          (outAllOf G (r.node l hl).c (r.node l hl).st.stepOut) (i == 0)) req
-          (exitAssertFacts G (r.node l hl).c (r.node l hl).entry (r.node l hl).st pushed observed promote req t.mapping)
+          (outAllOf G (r.node l hl).c s.sdK.st.stepOut) (i == 0)) req
+          (exitAssertFacts G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote req t.mapping)
           t.mapping observed) req t.mapping = true := by
     intro hv req hr
-    simp only [hclaim, hentry, hst, hnode, targetContext]
+    simp only [hclaim, hentry, Site.sdK, hnode, targetContext]
     exact ha (by simpa only [hclaim] using hv) req (assertedTable req hr)
   have pushedIn : IncomingRecorded r.w t.label
-      (edgeTransfer (normalNames (r.node l hl).entry (r.node l hl).st pushed) t.mapping pushed false s.sd.outFresh
-        (r.node l hl).entry (r.node l hl).st.result
-        (exitStore G (r.node l hl).c (r.node l hl).entry (r.node l hl).st pushed observed promote)
+      (edgeTransfer (normalNames (r.node l hl).entry s.sdK.st pushed) t.mapping pushed false s.sd.outFresh
+        (r.node l hl).entry s.sdK.st.result
+        (exitStore G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote)
         (r.w.implies l ++ freshImplOf pushed false (b.yields.getD []) (r.node l hl).entry.names
-          (r.node l hl).st.result)) := by
+          s.sdK.st.result)) := by
     refine ⟨exitsWalk b, s.raw, passHeads c, hw, ?_, extension, ?_⟩
     · rw [← givenAgreement]; exact hg
-    · simpa only [exitsWalk, hclaim, hentry, hst, ← himplies] using hp
+    · simpa only [exitsWalk, hclaim, hentry, Site.sdK, keptDone_outFresh, ← himplies] using hp
   have merged : 2 ≤ (r.w.incoming t.label).length →
       MergeRecorded r.edgesIn t.label
         (refinedContext G (r.node l hl).c (r.node l hl).node.continuation
           (yieldsAtSlots (r.node l hl).entry.names s.ysA)
-          (outAllOf G (r.node l hl).c (r.node l hl).st.stepOut) (i == 0),
-          atSlotsOf (normalNames (r.node l hl).entry (r.node l hl).st pushed)
-            (edgeTransfer (normalNames (r.node l hl).entry (r.node l hl).st pushed) t.mapping pushed false s.sd.outFresh
-              (r.node l hl).entry (r.node l hl).st.result
-              (exitStore G (r.node l hl).c (r.node l hl).entry (r.node l hl).st pushed observed promote)
+          (outAllOf G (r.node l hl).c s.sdK.st.stepOut) (i == 0),
+          atSlotsOf (normalNames (r.node l hl).entry s.sdK.st pushed)
+            (edgeTransfer (normalNames (r.node l hl).entry s.sdK.st pushed) t.mapping pushed false s.sd.outFresh
+              (r.node l hl).entry s.sdK.st.result
+              (exitStore G (r.node l hl).c (r.node l hl).entry s.sdK.st pushed observed promote)
               (r.w.implies l ++ freshImplOf pushed false (b.yields.getD []) (r.node l hl).entry.names
-                (r.node l hl).st.result)).2, t.mapping) := by
+                s.sdK.st.result)).2, t.mapping) := by
     intro htwo
     have hmem := hm (s.mergingOfIncoming checked t.label hg htwo)
     refine ⟨exitsWalk b, s.raw, hedges, extension, ?_⟩
-    simpa only [exitsWalk, hclaim, hentry, hst, hnode, ← himplies, Site.ysA] using hmem
+    simpa only [exitsWalk, hclaim, hentry, Site.sdK, keptDone_outFresh, hnode, ← himplies, Site.ysA] using hmem
   exact ⟨b.yields.getD [], s.source_eq hsource,
     (NonHeadExitChecked.mk typed asserted pushedIn merged).reassign η⟩
 

@@ -163,6 +163,15 @@ theorem visitExits_regionalCheck {env : WalkEnv ι G I} {σ : WalkState ι G} {l
     simp only [hr, Except.map] at h
     exact exitsFold_regional _ _ _ h
 
+/-- The regional check reads no fact of the store after the step: the
+step the exits read (`keptDone`) gives the step's check. -/
+theorem regionalAt_keptDone {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G} {rg : Regional}
+    {a : Answered G} {incoming : Array (List RegionState)} :
+    regionalAt G I env l en (keptDone env l en sd) rg a incoming = regionalAt G I env l en sd rg a incoming := rfl
+
+theorem exitsYields_keptDone {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G} :
+    exitsYields G I env l en (keptDone env l en sd) = exitsYields G I env l en sd := rfl
+
 /-- The driver invariant supplies every visited label's successful step
 and regional check, together with its retained complete exit result. -/
 theorem RecInv.regionalWitness {c : Target.RunCall G I} {env : WalkEnv ι G I} {σ : WalkState ι G}
@@ -171,12 +180,13 @@ theorem RecInv.regionalWitness {c : Target.RunCall G I} {env : WalkEnv ι G I} {
     ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G) (ex : ExitsDone ι G)
       (done : RegionalDone ι),
       visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-      visitExits G I env before l en sd = .ok ex ∧
+      visitExits G I env before l en (keptDone env l en sd) = .ok ex ∧
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix ex.answers σ.answers := by
   obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp⟩ := hi.origins l hl
   obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
+  rw [regionalAt_keptDone, exitsYields_keptDone] at hd
   exact ⟨before, en, sd, ex, done, he, hs, hx, hd, by simpa [hdone] using hr, hp⟩
 
 /-- The exits' incoming table is the regional check's output table. -/
@@ -197,7 +207,7 @@ theorem RecInv.regionalInputWitness {c : Target.RunCall G I} {env : WalkEnv ι G
     ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G) (ex : ExitsDone ι G)
       (done : RegionalDone ι),
       visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-      visitExits G I env before l en sd = .ok ex ∧
+      visitExits G I env before l en (keptDone env l en sd) = .ok ex ∧
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix ex.answers σ.answers ∧
@@ -206,9 +216,11 @@ theorem RecInv.regionalInputWitness {c : Target.RunCall G I} {env : WalkEnv ι G
       ∀ (t : Nat) (e : RegionState), e ∈ done.regionIn[t]! → e ∈ σ.regionIn[t]! := by
   obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hb, hf, hm⟩ := hi.regionalOrigins l hl
   obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
+  have hin := visitExits_regionalInputs hreg hx hd
+  rw [regionalAt_keptDone, exitsYields_keptDone] at hd
   refine ⟨before, en, sd, ex, done, he, hs, hx, hd, ?_, hp, hb, hf, ?_⟩
   · simpa [hdone] using hr
-  · rw [← visitExits_regionalInputs hreg hx hd]
+  · rw [← hin]
     exact hm
 
 /-- Componentwise containment of the four regional tables. -/

@@ -34,7 +34,7 @@ theorem stepChecked_of_final {G : NormalGraph ι} {images : InstanceImageCheck G
 def VisitStepPrefix (ι : Type) [Labels ι] : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : WalkEnv ι G I)
     (σ : WalkState ι G) (l : Nat) (en : Entered ι) (sd : StepDone ι G) (ex : ExitsDone ι G),
-    visitStep G I env σ l en = .ok sd → visitExits G I env σ l en sd = .ok ex →
+    visitStep G I env σ l en = .ok sd → visitExits G I env σ l en (keptDone env l en sd) = .ok ex →
     SumsPrefix sd.steppedAnswers (keepSummaries σ.answers ex.answers)
 
 end Verification.TolerantFrames

@@ -110,8 +110,8 @@ theorem visitExits_mergeGrowth {env : SinglePass.WalkEnv ι G I} {σ : SinglePas
 theorem visitExits_extends {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G} {l : Nat}
     {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G} {ex : SinglePass.ExitsDone ι G}
     (h : SinglePass.visitExits G I env σ l en sd = .ok ex)
-    (hs : σ.walk.incoming.size = σ.walk.incomingImpl.size) :
-    WalkExtends σ.walk (visitResult σ l en sd ex).walk := by
+    (hs : σ.walk.incoming.size = σ.walk.incomingImpl.size) (sd' : SinglePass.StepDone ι G := sd) :
+    WalkExtends σ.walk (visitResult σ l en sd' ex).walk := by
   obtain ⟨a, h1, h2, -, h4, -, -, hf⟩ := visitExits_fold h
   refine ⟨fun t => ?_, visitExits_mergeGrowth h, ?_⟩
   · obtain ⟨ns, nis, g1, g2, g3, -⟩ := hf.pushes t

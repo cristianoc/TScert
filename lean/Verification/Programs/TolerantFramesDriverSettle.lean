@@ -177,7 +177,8 @@ theorem visitsSettle_of (hprefix : VisitStepPrefix ι) : VisitsSettle ι := by
     · exact visitExits_checked hP.exits hP.inv.inSizes ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitEntry_hereEmpty hP.inv.vacuity hP.entry
     · exact ⟨visitExits_records hP.exits hP.inv.inSizes, hP.facts.startNames, hP.facts.argName, hP.setup, hP.inv.startBelow.1, rfl,
-        hP.inv.allocation.1.trans hP.facts.claimed.symm, hP.inv.allocation.2.trans hP.facts.claimed.symm, hP.facts.merging⟩
+        hP.inv.allocation.1.trans hP.facts.claimed.symm, hP.inv.allocation.2.trans hP.facts.claimed.symm, hP.facts.merging,
+        hP.facts.framed⟩
     · rw [hw.trans hlabel, hst]
       rfl
   · intro hs w hw

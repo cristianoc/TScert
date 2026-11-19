@@ -236,6 +236,7 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
   merging : env.merging = passMerging c
   regional : env.regional = c.regional
   startKept : SinglePass.startSeparationKept (passStated c c.start) c.entrySeparation = true
+  framed : env.framed = c.framed
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -271,11 +272,12 @@ theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv
       env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied))
     (hmerging : env.merging = passMerging c)
     (hregional : env.regional = c.regional)
-    (hstartKept : SinglePass.startSeparationKept (passStated c c.start) c.entrySeparation = true) :
+    (hstartKept : SinglePass.startSeparationKept (passStated c c.start) c.entrySeparation = true)
+    (hframed : env.framed = c.framed) :
     EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
   refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven, hnodes,
-    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hmerging, hregional, hstartKept⟩
+    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hmerging, hregional, hstartKept, hframed⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
@@ -310,7 +312,7 @@ its exits' complete optional regional result and summary prefix. -/
     (ex : SinglePass.ExitsDone ι G),
     SinglePass.visitEntry G I env σ l = .ok en ∧
     SinglePass.visitStep G I env σ l en = .ok sd ∧
-    SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+    SinglePass.visitExits G I env σ l en (SinglePass.keptDone env l en sd) = .ok ex ∧
     w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))) ∧
     SumsPrefix ex.answers a
 
@@ -322,7 +324,7 @@ and every state its exits accumulated retained in the current incoming table. -/
     (sd : SinglePass.StepDone ι G) (ex : SinglePass.ExitsDone ι G),
     SinglePass.visitEntry G I env before l = .ok en ∧
     SinglePass.visitStep G I env before l en = .ok sd ∧
-    SinglePass.visitExits G I env before l en sd = .ok ex ∧
+    SinglePass.visitExits G I env before l en (SinglePass.keptDone env l en sd) = .ok ex ∧
     σ.walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit before.fresh en sd (ex.regional.map (·.state))) ∧
     SumsPrefix ex.answers σ.answers ∧
     before.regionIn.size = env.n ∧

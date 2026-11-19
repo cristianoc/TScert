@@ -96,8 +96,8 @@ variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visit
 theorem Site.handler_record (s : Site c r l hl) {t : Target}
     (ht : (r.node l hl).node.handler = some t) :
     ∃ i record, record ∈ s.ex.exits.toList ∧ record.index = i ∧ record.target = t ∧
-      ∃ a b, exitStep G I s.env l s.en s.sd (yieldsAtSlots s.en.entry.names s.ysA)
-        (Thunk.mk fun _ => outAllOf G s.env.claimed[l]! s.sd.st.stepOut) a (.handler t, i) = .ok b ∧
+      ∃ a b, exitStep G I s.env l s.en s.sdK (yieldsAtSlots s.en.entry.names s.ysA)
+        (Thunk.mk fun _ => outAllOf G s.env.claimed[l]! s.sdK.st.stepOut) a (.handler t, i) = .ok b ∧
         b.exits = a.exits.push record ∧ WalkExtends (exitsWalk b) s.raw := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hn, _, _, _, _, _, _, _, hext, _, _, hrecords, _⟩ := s.facts
   have member : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by
@@ -113,8 +113,9 @@ theorem Site.handler_record (s : Site c r l hl) {t : Target}
 /-- A handler's transferred pair and implications persist in the final walk. -/
 theorem handlerRecords_of_checked (s : Site c r l hl) (checked : WalkChecked c r) {t : Target}
     (ht : (r.node l hl).node.handler = some t) : HandlerRecords s t := by
-  obtain ⟨hw, hedge, _, _, _, _, _, _, _, _, hex, hn, hc, he, hs, _, _, hi,
+  obtain ⟨hw, hedge, _, _, _, _, _, _, _, _, hex, hn, hc, he, _, _, _, hi,
     hsizes, hext, _⟩ := s.facts
+  have hK : s.sdK = keptDone s.env l s.en s.sd := rfl
   have member : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by
     rw [hn] at ht
     simp only [Exit.ofNode, ht, Option.toList_some, List.map_cons, List.map_nil,
@@ -138,13 +139,13 @@ theorem handlerRecords_of_checked (s : Site c r l hl) (checked : WalkChecked c r
     obtain ⟨h1, h2, _⟩ := exitStep_handler_arrays hb (flag.trans hg)
     refine ⟨exitsWalk b, s.raw, passHeads c, hw, r.given_eq ▸ hg, hx.trans hext, ?_⟩
     change _ ∈ ((b.incoming[t.label]?).getD []).zip ((b.incomingImpl[t.label]?).getD [])
-    rw [hc, he, hs, ← hi, h1, h2]
-    simp [b1, b2, Array.getElem_modify_self]
+    rw [hc, he, hK, ← hi, h1, h2]
+    simp [b1, b2, Array.getElem_modify_self, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh]
   · intro hg hm
     obtain ⟨_, _, h3⟩ := exitStep_handler_arrays hb (flag.trans hg)
     refine ⟨exitsWalk b, s.raw, hedge, hx.trans hext, ?_⟩
     change _ ∈ (b.incomingEdges[t.label]?).getD []
-    rw [h3, s.mergingOfIncoming checked t.label hg hm, if_pos rfl, hc, he, hs, ← hi]
+    rw [h3, s.mergingOfIncoming checked t.label hg hm, if_pos rfl, hc, he, hK, ← hi]
     simp only [Array.getElem?_modify, ↓reduceIte, Array.getElem?_eq_getElem b3,
       Option.map_some, Option.getD_some]
     exact List.mem_cons_self

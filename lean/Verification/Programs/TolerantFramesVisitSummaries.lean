@@ -312,10 +312,11 @@ theorem visitExits_regional_prefix {env : WalkEnv ι G I} {σ : WalkState ι G} 
 theorem visitExits_answers_prefix (G : NormalGraph ι) (I : InstanceImageCheck G)
     (env : WalkEnv ι G I) (σ : WalkState ι G) (l : Nat) (en : Entered ι)
     (sd : StepDone ι G) (ex : ExitsDone ι G)
-    (hs : visitStep G I env σ l en = .ok sd) (he : visitExits G I env σ l en sd = .ok ex) :
+    (hs : visitStep G I env σ l en = .ok sd) (he : visitExits G I env σ l en (keptDone env l en sd) = .ok ex) :
     SumsPrefix ex.answers (keepSummaries σ.answers ex.answers) := by
-  have hp := (visitStep_input_prefix hs).trans
-    ((visitStep_prefix hs).trans (visitExits_prefix exitStepPrefix he))
+  have hx := visitExits_prefix exitStepPrefix he
+  rw [keptDone_answers] at hx
+  have hp := (visitStep_input_prefix hs).trans ((visitStep_prefix hs).trans hx)
   unfold SumsPrefix
   rw [keepSummaries_table hp]
   exact List.prefix_refl _
@@ -323,7 +324,9 @@ theorem visitExits_answers_prefix (G : NormalGraph ι) (I : InstanceImageCheck G
 /-- The successful visit retains its checked-step table under the local exit obligation. -/
 theorem visitStepPrefix_of_exitStep (hp : ExitStepPrefix ι) : VisitStepPrefix ι := by
   intro G I env σ l en sd ex hs he
-  have hse := (visitStep_prefix hs).trans (visitExits_prefix hp he)
+  have hx := visitExits_prefix hp he
+  rw [keptDone_answers] at hx
+  have hse := (visitStep_prefix hs).trans hx
   have hstart := (visitStep_input_prefix hs).trans hse
   unfold SumsPrefix
   rw [keepSummaries_table hstart]

@@ -105,6 +105,10 @@ theorem visitEntry_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) 
   simp only [WalkEnv.rebound]
   rfl
 
+omit [Instantiates ι] in
+theorem keptDone_rebound {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) b d l en sd :
+    keptDone (env.rebound b d) l en sd = keptDone env l en sd := rfl
+
 theorem visitExits_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) b d σ l en sd :
     visitExits G images (env.rebound b d) σ l en sd = visitExits G images env σ l en sd := by
   unfold visitExits
@@ -129,7 +133,7 @@ theorem visit_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env 
   cases he : visitEntry G images env σ l with
   | error _ => rfl
   | ok en =>
-    simp only [visitStep_rebound G images env b d σ l en hnone (h en he), visitExits_rebound]
+    simp only [visitStep_rebound G images env b d σ l en hnone (h en he), keptDone_rebound, visitExits_rebound]
 
 /-- **Every visit of the walk with no bound passes the footprint check at
 `b` and `d`**: by `drive`'s own recursion. -/
@@ -491,6 +495,10 @@ theorem visitEntry_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G)
   simp only [WalkEnv.ungraded, WalkState.unrecorded]
   rfl
 
+omit [Instantiates ι] in
+theorem keptDone_ungraded {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) l en
+    (sd : StepDone ι G) : keptDone env.ungraded l en sd.unrecorded = (keptDone env l en sd).unrecorded := rfl
+
 theorem visitExits_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) σ l en sd :
     visitExits G images env.ungraded σ.unrecorded l en sd.unrecorded = visitExits G images env σ l en sd := by
   unfold visitExits
@@ -567,8 +575,8 @@ theorem visit_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env
       rw [hsd] at hs
       rw [← hs]
       simp only [Except.map]
-      rw [visitExits_ungraded]
-      cases hx : visitExits G images env σ l en sd with
+      rw [keptDone_ungraded, visitExits_ungraded]
+      cases hx : visitExits G images env σ l en (keptDone env l en sd) with
       | error stop => rfl
       | ok ex => rfl
 

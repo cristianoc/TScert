@@ -301,14 +301,14 @@ theorem exitsPushOk_of (hw : ExitsWidth ι) : ExitsPushOk ι := by
         · omega
         · exact hlt x (bE.1 x hx)
       · exact hlt x (bE.1 x hx)
+  have hpushed : ∀ x ∈ sd.st.result :: en.entry.names, x < sd.fresh := fun x hx => by
+    rcases List.mem_cons.mp hx with rfl | hx
+    · omega
+    · exact hlt x (bE.1 x hx)
   unfold exitPushed
-  exact pushOk_of_exit (hw G I c env σ l rest en sd ex hP e he) wE wS
-    (factsBelow_mono bE.2.1 (by omega)) (factsBelow_mono bS hsd) (by omega) hnames
-    (fun x hx => by
-      rcases List.mem_cons.mp hx with rfl | hx
-      · omega
-      · exact hlt x (bE.1 x hx))
-    (fun x hx => hlt x (bE.2.2 x hx)) (by omega)
+  exact pushOk_of_exit (store := (SinglePass.keptDone env l en sd).st.store) (hw G I c env σ l rest en sd ex hP e he)
+    wE (keepStore_wf wS) (factsBelow_mono bE.2.1 (by omega)) (keepStore_below (factsBelow_mono bS hsd) hpushed)
+    (by omega) hnames hpushed (fun x hx => hlt x (bE.2.2 x hx)) (show sd.st.result < sd.fresh by omega)
 
 end Exits
 

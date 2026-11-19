@@ -54,6 +54,7 @@ structure SetupOk (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ
 
   regional : env.regional = c.regional
   startKept : SinglePass.startSeparationKept (passStated c c.start) c.entrySeparation = true
+  framed : env.framed = c.framed
 
 theorem setup_ok {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} {σ0 : SinglePass.WalkState ι G}
     (h : RunCall.setup c = .ok (env, σ0)) : SetupOk c env σ0 := by
@@ -69,7 +70,7 @@ theorem setup_ok {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} {σ0
     have hg := ‹SinglePass.setupGiven _ _ _ _ _ _ _ _ = _›
     have hcl : ¬(c.claims.toArray.size != c.P.toArray.size) = true := by assumption
     refine ⟨by simpa using hcl, by assumption, rfl, rfl, rfl, rfl, ?_, rfl, rfl, ⟨_, (congrArg Prod.fst hg).symm⟩,
-      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ⟨_, _, rfl⟩, ?_, rfl, ?_⟩
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ⟨_, _, rfl⟩, ?_, rfl, ?_, rfl⟩
     case refine_3 =>
       have hk := entryRefusal_startKept
         (‹SinglePass.entryRefusal G _ _ _ _ _ _ _ _ _ _ _ = none›)
@@ -194,7 +195,7 @@ theorem SetupOk.envFacts {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G
   have hnames : env.startNames = List.range c.inputs.length := by rw [hs.startNames, hw]
   refine envFacts_of_loopHeads hs.nodes hs.n hs.reached hhead (by rw [hs.n]; exact hlt)
     (by rw [hs.claims, hs.n]; exact hs.claimed) hs.claims (fun t ht => ?_) hs.codes hs.checker hs.bound hs.goal
-    hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_ hs.merging hs.regional hs.startKept
+    hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_ hs.merging hs.regional hs.startKept hs.framed
   · rw [hgiven, setupGiven_get, if_neg (fun h => by rw [ht] at h; exact Bool.false_ne_true h.2)]
   · refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)).getD c.start none).getD [], ?_, ?_⟩
     · have he := hs.entry

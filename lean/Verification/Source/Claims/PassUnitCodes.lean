@@ -241,7 +241,7 @@ theorem codesAccepted_keeps {G : NormalGraph ι} {I : InstanceImageCheck G} {r :
   | _, [], a, a', h => by
     simp only [CodesAccepted] at h; subst h; exact fun _ hs => hs
   | table, (q, ci) :: rest, a, a', h => by
-    obtain ⟨a₁, ⟨_, _, c, -, -, -, -, -, -, -, -, -, hans, -, -, -, -, counts, trace, hres⟩, hrest⟩ := h
+    obtain ⟨a₁, ⟨_, _, c, -, -, -, -, -, -, -, -, -, hans, -, -, -, -, ⟨counts, trace, hres⟩, -⟩, hrest⟩ := h
     intro s hs
     have h1 := hkeep G I c s (hans ▸ hs)
     rw [hres] at h1

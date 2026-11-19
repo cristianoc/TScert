@@ -52,19 +52,6 @@ changes (`Supported`). -/
 def framedRet (S : Nat → List Footprints.Footprint) : Nat → Env → Heap → Heap → Prop :=
   fun l ρ h h' => ∀ T ∈ S l, Footprints.Supported T ρ h h'
 
-/-- A fact's produced support (`IndexFact.support?`, no stable key) lies in
-one of the supports `Ss`. -/
-def supportedIn (Ss : List Footprints.Footprint) (F : HeapKnowledge.IndexFact) : Bool :=
-  match F.support? {} with
-  | some T => Ss.any fun S => T.all fun e => S.contains e
-  | none => false
-
-/-- **The facts a framed node's return keeps**: the index atoms of its
-entry's knowledge whose produced support lies in a support it keeps
-(`supportedIn`), renamed past the node's result. -/
-def framedKept (Ss : List Footprints.Footprint) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
-  HeapKnowledge.shiftIndices (k.indices.filter fun a => supportedIn Ss a.fact)
-
 /-- **A framed node's return keeps the facts its supports support** (the
 note's Definition "Support"): where each support of `Ss` holds of the
 transition from `h` to `h'` at `ρ`, each index atom of the entry's
@@ -91,6 +78,28 @@ keep (`framedKept`); nothing at another node. -/
 def framedK (F : Nat → Bool) (S : Nat → List Footprints.Footprint) (l : Nat) (stepK : HeapKnowledge.Knowledge) :
     Env → Heap → Prop :=
   fun ρ' h' => F l = true → HeapKnowledge.IndexHolds ε (framedKept (S l) stepK) ρ' h'
+
+/-- The framed nodes of the list `fr` (`SinglePass.framedAt`). -/
+def framedFOf (fr : List (Nat × List Footprints.Footprint)) : Nat → Bool := fun l => (SinglePass.framedAt fr l).isSome
+
+/-- The supports the framed nodes of the list `fr` keep. -/
+def framedSOf (fr : List (Nat × List Footprints.Footprint)) : Nat → List Footprints.Footprint :=
+  fun l => (SinglePass.framedAt fr l).getD []
+
+/-- **What a framed node's exits read holds the facts its store keeps**:
+where `framedK` holds at the node `l` of the list `fr`, the index atoms
+`SinglePass.keptStep` adds to the store after the step hold. -/
+theorem keptHolds_of_framedK {fr : List (Nat × List Footprints.Footprint)} {l : Nat}
+    {stepK : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap}
+    (hK : framedK (ε := ε) (framedFOf fr) (framedSOf fr) l stepK ρ h) :
+    HeapKnowledge.IndexHolds ε (((SinglePass.framedAt fr l).map (fun Ss => SinglePass.framedKept Ss stepK)).getD [])
+      ρ h := by
+  unfold framedK framedFOf framedSOf at hK
+  cases hf : SinglePass.framedAt fr l with
+  | none => intro a ha; simp at ha
+  | some Ss =>
+    simp only [hf, Option.isSome_some, Option.getD_some, forall_const] at hK
+    simpa only [Option.map_some, Option.getD_some] using hK
 
 end Framed
 
@@ -139,6 +148,19 @@ theorem NodeYielded.toR {G : NormalGraph ι} {w : Walk ι} {startNames : List Na
     NodeYieldedR G w startNames ε ctx stated given edgesIn Tres m l node c entry st ys K :=
   ⟨hY.judged, hY.ret, fun t p o q hmem ρ s hS he hk hm hr s' v hv hF he' ho =>
     hY.exits t p o q hmem ρ s hS he hk hm hr s' v hv hF.1 he' ho, hY.handler⟩
+
+omit [Hashable ι] in
+/-- A node meaning what it states with its exits reading `K` means it
+where `K` always holds. -/
+theorem NodeYieldedR.toPlain {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ctx : Nat → List (Ty ι)}
+    {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {Tres : Fam} {m l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
+    {ys : List (PromiseCalls.Yield ι)} {K : Env → Heap → Prop}
+    (hY : NodeYieldedR G w startNames ε ctx stated given edgesIn Tres m l node c entry st ys K)
+    (hK : ∀ ρ h, K ρ h) : NodeYielded G w startNames ε ctx stated given edgesIn Tres m l node c entry st ys :=
+  ⟨hY.judged, hY.ret, fun t p o q hmem ρ s hS he hk hm hr s' v hv hF he' ho =>
+    hY.exits t p o q hmem ρ s hS he hk hm hr s' v hv ⟨hF, hK _ _⟩ he' ho, hY.handler⟩
 
 omit [DecidableEq ι] [Hashable ι] in
 /-- Nodes delivering their targets at framed returns with no framed node
@@ -325,6 +347,37 @@ theorem nodeYielded_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
   exits := hx.exits
   handler := hx.handler
 
+/-- **A node's kept yields judged, its return's goal, its exits reading the
+facts a framed return keeps** (`NodeYieldedR` at `framedK` of the framed
+nodes `fr`): `nodeYielded_of_checks`, the exits delivering from the step
+with the kept facts in its store (`NodeExitsY` at `SinglePass.keptStep`),
+which holds where the state after the step and `framedK` do
+(`stateHolds_keep`, `keptHolds_of_framedK`). -/
+theorem nodeYieldedR_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)} {w : Walk ι} {startNames : List Nat} {ctx : Nat → List (Ty ι)}
+    {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {goal : Goal ι} {ensures : List HeapKnowledge.IndexFact} {m l : Nat} {node : Node} {c : PointClaim ι}
+    {entry : SinglePass.State} {st : Stepped ι} {ys : List (PromiseCalls.Yield ι)}
+    {fr : List (Nat × List Footprints.Footprint)}
+    (hc : NodeYieldChecks G images codes sums w startNames goal ensures l node c entry st ys)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) (hsub : SubtypeAnswersSound G images)
+    (hx : NodeExitsY G w startNames ε ctx stated given edgesIn m l node c entry
+      (SinglePass.keptStep (SinglePass.framedAt fr l) entry st) ys) :
+    NodeYieldedR G w startNames ε ctx stated given edgesIn (GoalHolds G goal (goal.argument ε.env)) m l node c entry
+      st ys (framedK (ε := ε) (framedFOf fr) (framedSOf fr) l st.stepK) where
+  judged := by
+    rcases hc.kept with rfl | ⟨xs, deriv, ys0, sums', hsub, hss, rfl⟩
+    · exact yieldsJudged_nil
+    · exact yieldsJudged_of_checked (fun ρ s hS => slotImplOf_entry hsub hS) hcodes (fun s hs => hsums s (hss s hs))
+  ret hk := by
+    obtain ⟨start, argName, debugNode, answers, h, harg⟩ := hc.ret hk
+    exact goalHolds_of_returnY hsub h harg
+  exits t p o q hmem ρ s hS he hk hm hr := fun s' v hv hF he' ho =>
+    hx.exits t p o q hmem ρ s hS he hk hm hr s' v hv
+      ⟨stateHolds_keep hF.1.1 (keptHolds_of_framedK hF.2), hF.1.2.1, hF.1.2.2.1, hF.1.2.2.2⟩ he' ho
+  handler := hx.handler
+
 end Checks
 
 section Run
@@ -333,16 +386,18 @@ variable {ι : Type} [Labels ι]
 variable (ι) in
 /-- **(Named hypothesis) Each checked node delivers with its kept yields**
 at every admitted reassigned graph, over a checked walk: some yields `ys`
-with `NodeYielded` (the judgment carrying them, the return's goal, each exit
+with `NodeYieldedR` (the judgment carrying them, the return's goal, each exit
 and the handler delivering `edgePreAJ`, the merges' joined implications
-included). -/
+included), a framed node's exits reading the facts its return keeps
+(`framedK` at the call's framed nodes). -/
 def NodesYield : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
       ∀ ε m l (hl : r.w.visited l),
-      ∃ ys, NodeYielded (reassign G η) r.w (List.range c.inputs.length) ε r.ctx r.stated r.given r.edgesIn
+      ∃ ys, NodeYieldedR (reassign G η) r.w (List.range c.inputs.length) ε r.ctx r.stated r.given r.edgesIn
         (GoalHolds (reassign G η) c.goal (c.goal.argument ε.env)) m l (r.node l hl).node (r.node l hl).c
         (r.node l hl).entry (r.node l hl).st ys
+        (framedK (ε := ε) (framedFOf c.framed) (framedSOf c.framed) l (r.node l hl).st.stepK)
 
 variable (ι) in
 /-- **The answered subtype requests are
@@ -356,26 +411,28 @@ theorem subtypeAnswersAll : SubtypeAnswersAll ι := subtypeAnswersSound
 variable (ι) in
 /-- **(Named hypothesis) Each checked node's exits and handler deliver
 with the yields the visit kept** (`NodeExitsY` at `(r.node l hl).ys`), at
-every admitted reassigned graph, over a checked walk. -/
+every admitted reassigned graph, over a checked walk, from the step the
+exits read (`SinglePass.keptStep` at the call's framed nodes). -/
 def ExitsYield : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
       ∀ ε m l (hl : r.w.visited l),
       NodeExitsY (reassign G η) r.w (List.range c.inputs.length) ε r.ctx r.stated r.given r.edgesIn m l
-        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st (r.node l hl).ys
+        (r.node l hl).node (r.node l hl).c (r.node l hl).entry
+        (SinglePass.keptStep (SinglePass.framedAt c.framed l) (r.node l hl).entry (r.node l hl).st) (r.node l hl).ys
 
 /-- **(`nodesYield_of`) Each checked node delivers with its kept yields**
 (`NodesYield`): at every admitted reassigned graph, the yields the visit
 kept (`(r.node l hl).ys`), checked at `G` (`NodePassChecked.yields`) and
 so there (`NodeYieldChecks.reassign`), judged and meeting the return's goal
-(`nodeYielded_of_checks`), the codes and the summary table sound there
+(`nodeYieldedR_of_checks`), the codes and the summary table sound there
 (`codesSound_reassign`, `summariesSound_reassign`), the exits and handler
 by `ExitsYield`. -/
 theorem nodesYield_of (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) : NodesYield ι := by
   intro G I c after admits hp r hchk η hη ε m l hl
   obtain ⟨dead, hd, hgiven, hmerging, hrecord⟩ := hchk
   obtain ⟨sums, hsums, hys⟩ := (hd l hl).1.yields
-  exact ⟨(r.node l hl).ys, nodeYielded_of_checks (hys.reassign η) (codesSound_reassign hp.2.2.1 η)
+  exact ⟨(r.node l hl).ys, nodeYieldedR_of_checks (hys.reassign η) (codesSound_reassign hp.2.2.1 η)
     (Parametricity.summariesSound_reassign G η I hsums) (hsub _ _)
     (hex G I c after admits hp r ⟨dead, hd, hgiven, hmerging, hrecord⟩ η hη ε m l hl)⟩
 
@@ -418,7 +475,7 @@ driver's checked walk (`RunTraversedC`), each node's kept yields
 their labels from the setup's check (`labelsChecked`). -/
 theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hnear : LinearNearFuelEq)
     (hreg : RegionsHeld ι) : Target.RunSound ι := by
-  intro G I c after admits hacc hscope hcodes hsums hfields
+  intro G I c after admits ⟨hacc, hnf⟩ hscope hcodes hsums hfields
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
   obtain ⟨r, hchk⟩ := hrun G I c after hacc hsums
   obtain ⟨dead, hd, hgiven, hmerging, hrecord⟩ := hchk
@@ -436,8 +493,9 @@ theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hn
       labelled := assertionsLabelled_of_checked labelsChecked G I c after admits hp r }⟩
   exact nodesChecked_of_walkJ (r.traversed.reassign η)
     (stepEdgesSound_of_yields
-      (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
-        hyield G I c after admits hp r ⟨dead, hd, hgiven, hmerging, hrecord⟩ η hη ε m l hl⟩)
+      (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl), by
+        obtain ⟨ys, hY⟩ := hyield G I c after admits hp r ⟨dead, hd, hgiven, hmerging, hrecord⟩ η hη ε m l hl
+        exact ⟨ys, hY.toPlain fun _ _ hF => by simp [framedFOf, SinglePass.framedAt, hnf] at hF⟩⟩)
       (codesSound_reassign hcodes η))
     (headsEntered_of_recorded r.heads) hnear
 
@@ -476,7 +534,7 @@ theorem run_sound_pass (hrec : RecordsSound ι) (hchk : RecordsChecked ι) (hyie
   run_sound_checked (run_traversedC hrec hchk) hyield hnear hreg
 
 /-- **The pass's framed mode at a call** (the draft's
-`RunCall.AcceptsFramed`, "The graph at framed returns"): the call
+`RunCall.AcceptsFramed`, "The graph at framed returns"): the call's walk
 accepted, and at every admitted reassigned graph, over every checked walk
 of it, each visited node delivering with its kept yields where its exits
 read, at a node `l` with `F l`, the facts of the step's input the supports
@@ -484,22 +542,20 @@ read, at a node `l` with `F l`, the facts of the step's input the supports
 def _root_.Verification.TolerantFrames.Target.RunCall.AcceptsFramed {G : NormalGraph ι} {I : InstanceImageCheck G}
     (c : Target.RunCall G I) (after : Answered G) (admits : MixedAssignment ι → Prop) (F : Nat → Bool)
     (S : Nat → List Footprints.Footprint) : Prop :=
-  c.Accepts after ∧ (RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
+  c.AcceptsWalk after ∧ (RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
     ∀ ε m l (hl : r.w.visited l),
       ∃ ys, NodeYieldedR (reassign G η) r.w (List.range c.inputs.length) ε r.ctx r.stated r.given r.edgesIn
         (GoalHolds (reassign G η) c.goal (c.goal.argument ε.env)) m l (r.node l hl).node (r.node l hl).c
         (r.node l hl).entry (r.node l hl).st ys (framedK (ε := ε) F S l (r.node l hl).st.stepK))
 
-/-- **An accepted call is accepted in the framed mode at every framed set**
-where its nodes deliver with their kept yields (`NodesYield`): an exit
-delivering from the state after the step delivers where more holds there
-(`NodeYielded.toR`). -/
-theorem acceptsFramed_of_accepts (hyield : NodesYield ι) {G : NormalGraph ι} {I : InstanceImageCheck G}
-    {c : Target.RunCall G I} {after : Answered G} {admits : MixedAssignment ι → Prop} (hacc : c.Accepts after)
-    (F : Nat → Bool) (S : Nat → List Footprints.Footprint) : c.AcceptsFramed after admits F S :=
-  ⟨hacc, fun hp r hchk η hη ε m l hl => by
-    obtain ⟨ys, hY⟩ := hyield G I c after admits hp r hchk η hη ε m l hl
-    exact ⟨ys, hY.toR _⟩⟩
+/-- **A call whose walk accepted is accepted in the framed mode at its
+framed nodes** (`framedFOf c.framed`, keeping `framedSOf c.framed`), where
+its nodes deliver with their kept yields (`NodesYield`): the walk's framed
+nodes' exits read the facts their returns keep. -/
+theorem acceptsFramed_of_walk (hyield : NodesYield ι) {G : NormalGraph ι} {I : InstanceImageCheck G}
+    {c : Target.RunCall G I} {after : Answered G} {admits : MixedAssignment ι → Prop} (hacc : c.AcceptsWalk after) :
+    c.AcceptsFramed after admits (framedFOf c.framed) (framedSOf c.framed) :=
+  ⟨hacc, fun hp r hchk η hη ε m l hl => hyield G I c after admits hp r hchk η hη ε m l hl⟩
 
 variable (ι) in
 /-- **The graph theorem at framed returns** (the draft's `RunSoundFramed`):

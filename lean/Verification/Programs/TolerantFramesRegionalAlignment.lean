@@ -20,7 +20,7 @@ tables. The visit's exit summaries must be a prefix of the final sound table. -/
     ∀ l, visB σ.walk l = true → ∃ (before : WalkState ι G) (en : Entered ι)
       (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
       visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-      visitExits G I env before l en sd = .ok ex ∧
+      visitExits G I env before l en (keptDone env l en sd) = .ok ex ∧
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix ex.answers σ.answers ∧
@@ -84,7 +84,7 @@ list. The witness supplies the recorded visit and its readback. -/
     ∀ l, visB σ.walk l = true → ∃ (before : WalkState ι G) (en : Entered ι)
       (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
       visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-      visitExits G I env before l en sd = .ok ex ∧
+      visitExits G I env before l en (keptDone env l en sd) = .ok ex ∧
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix ex.answers σ.answers ∧
@@ -220,7 +220,7 @@ theorem RecInv.regionalWitnessSound {c : Target.RunCall G I} {env : WalkEnv ι G
     ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G) (ex : ExitsDone ι G)
       (done : RegionalDone ι),
       visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-      visitExits G I env before l en sd = .ok ex ∧
+      visitExits G I env before l en (keptDone env l en sd) = .ok ex ∧
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SummariesSound G I (exitsYields G I env l en sd).2.summaries.toList := by

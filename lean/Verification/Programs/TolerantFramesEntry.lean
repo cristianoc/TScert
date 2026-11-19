@@ -187,6 +187,45 @@ theorem headStore_ok {g : HeapKnowledge.Knowledge} {f : Nat → Option Nat} {ρ 
     exact ⟨add_ok hs (atomHolds_rename (fun i x hx => hf i x hx) hb (atomsOf_holds hg a ha)), add_wf ws b⟩
   · exact ⟨hs, ws⟩
 
+/-- **The store with kept facts holds** where the store holds at the
+names' valuation `η` and the kept index atoms at the slots `ρ`, each slot
+holding its name's value (`SinglePass.keepStore`). -/
+theorem keepStore_ok {names : List Nat} {kept : List HeapKnowledge.IndexAtom} {s : Store} {ρ η : Env} {h : Heap}
+    (hs : StoreOk ε s η h) (hk : HeapKnowledge.IndexHolds ε kept ρ h) (hf : ∀ i x, names[i]? = some x → ρ i = η x) :
+    StoreOk ε (SinglePass.keepStore names kept s) η h := by
+  unfold SinglePass.keepStore
+  refine foldl_inv (fun s' => StoreOk ε s' η h) _ _ _ hs ?_
+  intro a ha s' hs'
+  split
+  · rename_i b hb
+    exact add_ok hs' (atomHolds_rename (η := ρ) (ρ := η) (fun x i hx => (hf x i hx).symm) hb
+      (fun a' ha' hc => hk a' (List.mem_singleton.mp ha' ▸ ha) hc))
+  · exact hs'
+
+omit [DecidableEq ι] in
+/-- **A state with kept facts holds** where the state holds and the kept
+index atoms hold at its slots (`keepStore_ok`). -/
+theorem stateHolds_keep {G : NormalGraph ι} {names : List Nat} {store : Store} {fresh : List Nat}
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {kept : List HeapKnowledge.IndexAtom} {ρ : Env}
+    {m : Nat} {s : IndexedHeap} (hS : StateHolds G ⟨names, store, fresh⟩ I start ε ρ m s)
+    (hk : HeapKnowledge.IndexHolds ε kept ρ s.h) :
+    StateHolds G ⟨names, SinglePass.keepStore names kept store, fresh⟩ I start ε ρ m s := by
+  obtain ⟨η, hsl, hn, hi, hf, hst⟩ := hS
+  exact ⟨η, hsl, keepStore_ok hn hk hsl, hi, hf, hst⟩
+
+/-- The store with kept facts is well-formed where the store is. -/
+theorem keepStore_wf {names : List Nat} {kept : List HeapKnowledge.IndexAtom} {s : Store} (ws : StoreWF s) :
+    StoreWF (SinglePass.keepStore names kept s) := by
+  unfold SinglePass.keepStore
+  induction kept generalizing s with
+  | nil => exact ws
+  | cons a l ih =>
+    refine ih ?_
+    dsimp only
+    split
+    · exact add_wf ws _
+    · exact ws
+
 /-- **(Entry) The start's state holds where the entry check accepted it.**
 From the request's input contracts (`EnvOk` at its inputs), its entry
 separation and index facts, the start's state, the head entry of the start's

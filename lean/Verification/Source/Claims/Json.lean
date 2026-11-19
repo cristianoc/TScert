@@ -602,6 +602,16 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   if let some c := codeRuns.find? fun c => !(c.outcome matches .accepted) then
     return { name, codes := codeRuns, outcome := c.outcome, line := c.line }
   let codes := GraphCode.admits table
+  -- A framed probe (`framed=L;what`): the main graph's node `L` framed,
+  -- keeping the produced support of each index fact on its entry; `what`
+  -- observed in that walk.
+  let (framedProbe, observe) : Option Nat × Option String := match observe with
+    | some w => if w.startsWith "framed=" then
+        match (w.drop 7).toString.splitOn ";" with
+        | l :: rest => (l.toNat?, let q := ";".intercalate rest; if q.isEmpty then none else some q)
+        | [] => (none, some w)
+      else (none, some w)
+    | none => (none, none)
   -- Observing (`observe`): the node of that label (`node:L`), or the
   -- innermost node whose source span holds that offset (`offset:K`).
   let observed : Option Nat := (observe.map observedWhat).bind fun w =>
@@ -636,6 +646,23 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   if let some (_, regions) := r.regional then
     if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
       return { name, codes := codeRuns, outcome := .refused "spine regions" }
+  let framed : List (Nat × List Footprints.Footprint) := match framedProbe with
+    | none => []
+    | some L => match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
+        r.candidates r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+        givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional).1 with
+      | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
+      | _ => []
+  let runAt := fun (fr : List (Nat × List Footprints.Footprint)) (ob : Option Nat) =>
+    (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
+        r.candidates r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+        givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
+  let shownAt := fun (fr : List (Nat × List Footprints.Footprint)) (ob : Nat) => match runAt fr (some ob) with
+    | .observed o => s!"entry of node {ob}: {(toJson o.before.indices).compress}"
+    | o => s!"node {ob} not observed: {o}"
+  let framed := match framedProbe with
+    | none => framed
+    | some L => dbgTrace s!"framed probe: node {L} keeps {framed.map fun (p : Nat × List Footprints.Footprint) => p.2.length} supports\n  ordinary walk: {runAt [] none}\n  framed walk: {runAt framed none}\n  ordinary {(observed.map (shownAt [])).getD ""}\n  framed {(observed.map (shownAt framed)).getD ""}" fun _ => framed
   let walk := fun (k : WalkKind) (bound : Option RunBound) (regional : Option SinglePass.Regional) =>
     -- (each run recorded: more than one per member run is a regional
     -- check beside the first, `mainRun`)
@@ -647,6 +674,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
+      framed
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional
   -- A footprint the walk refuses node by node, checked regionally with no
   -- regions where the result is not fresh; then the unit's own regions,
@@ -692,7 +720,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound'
         givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe mainRun.route.lastWalk observed)
-        false true regional').1.asRefusal with
+        false true regional' false framed).1.asRefusal with
       | .accepted => o
       | o' => o'
     | o, _ => o

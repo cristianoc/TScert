@@ -95,7 +95,7 @@ check `runWalk`'s setup makes before the walk (`a label with two written
 assertions`); proved (`labelsChecked`). -/
 def LabelsChecked : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G),
-    c.Accepts after → (c.assertions.map (·.1)).eraseDups.length = c.assertions.length
+    c.AcceptsWalk after → (c.assertions.map (·.1)).eraseDups.length = c.assertions.length
 
 /-- **Every assertion of an accepted call is the written assertion at its
 visited label** (`AssertionsLabelled`): the labels distinct
@@ -118,7 +118,7 @@ theorem setup_labels {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target
     (h : SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional = .ok p) :
+    c.observeEntry c.regional false c.framed = .ok p) :
     (c.assertions.map (·.1)).eraseDups.length = c.assertions.length := by
   refine Classical.byContradiction fun hne => ?_
   have hb : ((c.assertions.map (·.1)).eraseDups.length != c.assertions.length) = true := by simp [hne]
@@ -137,12 +137,12 @@ theorem setup_of_walk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Targe
     ∃ p, SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
       c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
       c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-      c.observeEntry c.regional = .ok p := by
+      c.observeEntry c.regional false c.framed = .ok p := by
   unfold RunCall.walk SinglePass.runWalk at h
   cases hs : SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
       c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
       c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-      c.observeEntry c.regional with
+      c.observeEntry c.regional false c.framed with
   | error e => rw [hs] at h; cases h
   | ok p => exact ⟨p, rfl⟩
 

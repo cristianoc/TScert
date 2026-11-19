@@ -130,7 +130,7 @@ structure VisitParts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   queue : σ.queue = l :: rest
   entry : SinglePass.visitEntry G I env { σ with queue := rest } l = .ok en
   step : SinglePass.visitStep G I env { σ with queue := rest } l en = .ok sd
-  exits : SinglePass.visitExits G I env { σ with queue := rest } l en sd = .ok ex
+  exits : SinglePass.visitExits G I env { σ with queue := rest } l en (SinglePass.keptDone env l en sd) = .ok ex
 
 variable (ι) in
 /-- **(Named hypothesis) Each state an exit pushes meets `PushOk`** at its
@@ -139,7 +139,7 @@ stores and names below its counter and the mapping's width). -/
 def ExitsPushOk : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) env σ l rest en sd ex,
     VisitParts c env σ l rest en sd ex → ∀ e ∈ SinglePass.Exit.ofNode env.nodes[l]!, ∀ imp,
-      PushOk c e.target.label (exitPushed env l en sd e imp) sd.fresh
+      PushOk c e.target.label (exitPushed env l en (SinglePass.keptDone env l en sd) e imp) sd.fresh
 
 /-- **(`stepFresh`) The step's fresh counter is not below the visit's**:
 the entry's is not (`entryStart_fresh`, the states that came in meeting
@@ -194,7 +194,7 @@ theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι)
   refine { exits := hexits, frame := ?_, pushes := ?_, edges := ?_, fresh := show σ.fresh ≤ sd.fresh from stepFresh hP,
            degs := ?_, queue := ?_, settles := hs G I c env σ l rest en sd ex hP, mergeFresh := ?_, inSizes := ?_,
            impBelow := fun _ => hi G I c env σ l rest en sd ex hP,
-           extendsWalk := visitExits_extends hx hI.inSizes,
+           extendsWalk := visitExits_extends hx hI.inSizes sd,
            vacuity := fun hc => visitExits_cachedVacuity hx hc,
            allocation := ⟨(visitExits_arraySizes hx).1, (visitExits_arraySizes hx).2.2⟩,
            incomingGrowth := fun t => by

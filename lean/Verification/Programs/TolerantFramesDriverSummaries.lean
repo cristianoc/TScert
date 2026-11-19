@@ -110,8 +110,8 @@ theorem setup_answers {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Targe
     SetupAnswers c.answers (SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions
       c.cuts c.candidates c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers
       c.reference c.debugNode c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation
-      c.observe c.tracing c.observeEntry c.regional) := by
-  generalize h : SinglePass.setup G I _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = r
+      c.observe c.tracing c.observeEntry c.regional false c.framed) := by
+  generalize h : SinglePass.setup G I _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = r
   unfold SinglePass.setup at h
   repeat' (first | (extract_lets at h) | split at h | (dsimp (config := { zetaDelta := true }) only at h))
   all_goals (try simp only [Id.run_bind, Id.run_pure] at h)
@@ -151,7 +151,7 @@ theorem walk_keeps {G : NormalGraph ι} {I : InstanceImageCheck G}
   have hv := visitsKeepSummaries ι
   have hs := setup_answers c
   unfold RunCall.walk SinglePass.runWalk
-  generalize SinglePass.setup G I _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = r at hs ⊢
+  generalize SinglePass.setup G I _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = r at hs ⊢
   cases r with
   | error stop =>
     simp only [SetupAnswers] at hs

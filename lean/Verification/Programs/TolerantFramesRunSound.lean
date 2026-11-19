@@ -132,7 +132,7 @@ structure RunWalkA (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.R
 /-- The premises `RunSound` gives a call. -/
 def RunPremises (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G)
     (admits : MixedAssignment ι → Prop) : Prop :=
-  c.Accepts after ∧ Target.CheckerScope G I c.passChecker admits ∧ CodesSound G c.codes ∧
+  c.AcceptsWalk after ∧ Target.CheckerScope G I c.passChecker admits ∧ CodesSound G c.codes ∧
     SummariesSound G I after.summaries.toList ∧
     (∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
       GraphCode.ArgumentPathTracking.checkEntryFields G c.inputs regions = true)
@@ -142,7 +142,7 @@ variable (ι) in
 call whose final summaries are sound records a walk (`RunWalkA`). -/
 def RunTraversedA : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G),
-    c.Accepts after → SummariesSound G I after.summaries.toList → Nonempty (RunWalkA G I c)
+    c.AcceptsWalk after → SummariesSound G I after.summaries.toList → Nonempty (RunWalkA G I c)
 
 variable (ι) in
 /-- **(Named hypothesis) Every assertion of the call is the written

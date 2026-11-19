@@ -2102,6 +2102,40 @@ structure Stepped (ι : Type) where
   stepDeriv : Option (ProgramCertificates.Evidence ι) := none
   stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
 
+/-- A fact's produced support (`IndexFact.support?`, no stable key) lies in
+one of the supports `Ss`. -/
+def supportedIn (Ss : List Footprints.Footprint) (F : HeapKnowledge.IndexFact) : Bool :=
+  match F.support? {} with
+  | some T => Ss.any fun S => T.all fun e => S.contains e
+  | none => false
+
+/-- **The facts a framed node's return keeps** (the draft "Framed
+acceptance", "The graph at framed returns"): the index atoms of its
+entry's knowledge whose produced support lies in a support it keeps
+(`supportedIn`), renamed past the node's result. -/
+def framedKept (Ss : List Footprints.Footprint) (k : Knowledge) : List IndexAtom :=
+  HeapKnowledge.shiftIndices (k.indices.filter fun a => supportedIn Ss a.fact)
+
+/-- The supports a framed node keeps, among the framed nodes `framed`
+with their supports; none at a node no entry names. -/
+def framedAt (framed : List (Nat × List Footprints.Footprint)) (l : Nat) : Option (List Footprints.Footprint) :=
+  (framed.find? (·.1 == l)).map (·.2)
+
+/-- The store `s` with the index atoms `kept`, at slots, added over the
+names `names` hold (slot `i` the name `names[i]`). -/
+def keepStore (names : List Nat) (kept : List IndexAtom) (s : Store) : Store :=
+  kept.foldl (fun s a => match (Atom.index a).rename (names[·]?) with
+    | some b => s.add b
+    | none => s) s
+
+/-- **The step a framed node's exits read**: the step `st` from the entry
+`entry`, its store holding, at a framed node keeping the supports `kept`,
+the facts of the step's input those supports keep (`framedKept`) over the
+names after the step; the step itself at another node. -/
+def keptStep (kept : Option (List Footprints.Footprint)) (entry : State) (st : Stepped ι) : Stepped ι :=
+  let keep := (kept.map (fun Ss => framedKept Ss st.stepK)).getD []
+  { st with store := keepStore (st.result :: entry.names) keep st.store }
+
 /-- `b`'s answers with `a`'s read-summary table as their table's prefix:
 `a`'s table, then `b`'s entries past `a`'s length (`b` itself where `a`'s
 table is a prefix of `b`'s). -/
@@ -2439,6 +2473,8 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   argName : Option Nat
   /-- Whether each visit records its step's local effect (`Walk.visits`). -/
   grading : Bool
+  /-- The framed nodes with the supports their returns keep (`framedAt`). -/
+  framed : List (Nat × List Footprints.Footprint)
 
 /-- Under a bound whose exceptional exit is `⊤`, the region from which
 no normal return is possible (`GraphCode.inferDead`), refined from every
@@ -2510,11 +2546,11 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
     (stated given : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
-    (argName : Option Nat) (grading : Bool) : WalkEnv ι G images :=
+    (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Footprints.Footprint)) : WalkEnv ι G images :=
   { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
     goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
     observeEntry, regional, isHead, reached, startEntered, stated, given, merging, deadArr, startNames, argName,
-    grading }
+    grading, framed }
 
 /-- The walk's setup over one graph: its checks (the claims' count, the
 loop heads' fuel, spine regions with an edge into the start, the entry's
@@ -2533,7 +2569,8 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) (grading : Bool := false) :
+    (regional : Option Regional := none) (grading : Bool := false)
+    (framed : List (Nat × List Footprints.Footprint) := []) :
     Except (WalkStop ι G) (WalkEnv ι G images × WalkState ι G) :=
   let nodes := P.toArray
   let claimed := claims.toArray
@@ -2605,7 +2642,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
     .ok (setupEnv G images pool fuel suggestions index codes aliases passChecker undefTy nodes claimed start goal
         ensures reference debugNode bound givenImplies givenArgs givenInputs observe tracing observeEntry regional
-        isHead reached startEntered stated given merging deadArr startNames argName grading,
+        isHead reached startEntered stated given merging deadArr startNames argName grading framed,
       setupState n answers counts trace indeg queue startWidth)
 
 /-- A node's output facts as an edge reads them: the step's output `out`
@@ -3745,16 +3782,45 @@ def pushRecord (visits : Array VisitRecord) : Option VisitRecord → Array Visit
   | some r => visits.push r
   | none => visits
 
+/-- **The step a node's exits read** (`keptStep` at the supports
+`env.framed` gives the node): at a framed node, the store after the step
+holds the facts its return keeps. -/
+def keptDone {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat) (en : Entered ι)
+    (sd : StepDone ι G) : StepDone ι G :=
+  { sd with st := keptStep (framedAt env.framed l) en.entry sd.st }
+
+omit [Instantiates ι] in
+/-- The step the exits read differs from the step in its store alone. -/
+theorem keptDone_answers {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : (keptDone env l en sd).answers = sd.answers := rfl
+
+omit [Instantiates ι] in
+theorem keptDone_outFresh {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : (keptDone env l en sd).outFresh = sd.outFresh := rfl
+
+omit [Instantiates ι] in
+theorem keptDone_thrown {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : (keptDone env l en sd).thrown = sd.thrown := rfl
+
+omit [Instantiates ι] in
+theorem keptDone_thrownTy {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : (keptDone env l en sd).thrownTy = sd.thrownTy := rfl
+
+omit [Instantiates ι] in
+theorem keptDone_yields {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : (keptDone env l en sd).yields = sd.yields := rfl
+
 /-- One node's visit, its entry, its step and its exits, from the walk's
 state `σ`: the state after it built here alone, the label's record written
-once (`visit` keeps its read-summary table). -/
+once (`visit` keeps its read-summary table); the exits read the step with
+the facts a framed node's return keeps (`keptDone`). -/
 def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
     (l : Nat) : Except (WalkStop ι G) (WalkState ι G) :=
   match visitEntry G images env σ l with
   | .error stop => .error stop
   | .ok en => match visitStep G images env σ l en with
     | .error stop => .error stop
-    | .ok sd => match visitExits G images env σ l en sd with
+    | .ok sd => match visitExits G images env σ l en (keptDone env l en sd) with
       | .error stop => .error stop
       | .ok ex =>
         .ok { walk := { labels := σ.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))), incoming := ex.incoming,
@@ -3794,6 +3860,11 @@ theorem visitExits_light (G : NormalGraph ι) (images : InstanceImageCheck G) (e
       visitExits G images env σ l en sd := by
   rfl
 
+omit [Instantiates ι] in
+theorem keptDone_light {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
+    (en : Entered ι) (sd : StepDone ι G) : keptDone env l en sd.light = (keptDone env l en sd).light :=
+  rfl
+
 /-- `visitBody`, the walk's state taken apart after the step, the step's
 record passed to the exits without the answers only the proofs read. -/
 def visitBodyFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
@@ -3810,7 +3881,7 @@ def visitBodyFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : Wa
       let stepSummaries := sd.stepAnswers.summaries.size
       let σx := { σ with walk := { σ.walk with labels := #[], visits := #[] } }
       let sdx := sd.light
-      match visitExits G images env σx l en sdx with
+      match visitExits G images env σx l en (keptDone env l en sdx) with
       | .error stop => .error stop
       | .ok ex =>
         .ok { walk := { labels := labels.set! l { LabelWalk.ofVisit fresh en sdx (ex.regional.map (·.state)) with
@@ -3829,7 +3900,7 @@ def visitBodyFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : Wa
   · split
     · rfl
     · rename_i sd _
-      simp only [visitExits_light]
+      simp only [keptDone_light, visitExits_light]
       split <;> rfl
 
 /-- `visit`, holding of the walk's state it started from its read-summary
@@ -3860,11 +3931,12 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) (grading : Bool := false) :
+    (regional : Option Regional := none) (grading : Bool := false)
+    (framed : List (Nat × List Footprints.Footprint) := []) :
     Except (WalkStop ι G) (WalkState ι G × Nat) := do
   let (env, σ0) ← setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
     suggestions known codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures
-    givenInputs entrySeparation observe tracing observeEntry regional grading
+    givenInputs entrySeparation observe tracing observeEntry regional grading framed
   -- Each node enters the queue once: a fuel of the nodes and one never runs out.
   let σ ← drive (visit G images env) (env.n + 1) σ0
   let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
@@ -3885,10 +3957,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) (grading : Bool := false) : Outcome ι × Counts × Answered G × Trace :=
+    (regional : Option Regional := none) (grading : Bool := false)
+    (framed : List (Nat × List Footprints.Footprint) := []) : Outcome ι × Counts × Answered G × Trace :=
   match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
       codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
-      entrySeparation observe tracing observeEntry regional grading with
+      entrySeparation observe tracing observeEntry regional grading framed with
   | .error stop => (stop.outcome.outcome, stop.counts, stop.answers, stop.trace)
   | .ok (σ, reachable) =>
     (σ.walk.outcome reachable, { σ.counts with reached := reachable, grades := σ.walk.visits }, σ.answers, σ.trace)

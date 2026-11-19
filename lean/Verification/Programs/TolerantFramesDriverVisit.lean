@@ -37,7 +37,7 @@ def visitResult (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Ente
 theorem visit_ok {env : SinglePass.WalkEnv ι G I} {σ σ'' : SinglePass.WalkState ι G} {l : Nat}
     (h : SinglePass.visit G I env σ l = .ok σ'') :
     ∃ en sd ex, SinglePass.visitEntry G I env σ l = .ok en ∧ SinglePass.visitStep G I env σ l en = .ok sd ∧
-      SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+      SinglePass.visitExits G I env σ l en (SinglePass.keptDone env l en sd) = .ok ex ∧
       σ'' = visitResult σ l en sd ex := by
   unfold SinglePass.visit at h
   split at h
@@ -115,7 +115,7 @@ theorem visitsRecord_of (hr : VisitsRest ι)
     (hp : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I)
       (σ : SinglePass.WalkState ι G) l en sd ex,
       SinglePass.visitStep G I env σ l en = .ok sd →
-      SinglePass.visitExits G I env σ l en sd = .ok ex →
+      SinglePass.visitExits G I env σ l en (SinglePass.keptDone env l en sd) = .ok ex →
       SumsPrefix ex.answers (SinglePass.keepSummaries σ.answers ex.answers)) : VisitsRecord ι := by
   intro G I c env σ0 σ σ'' l rest hs hE hI hq hv
   have hR := hr G I c env σ0 σ σ'' l rest hs hE hI hq hv

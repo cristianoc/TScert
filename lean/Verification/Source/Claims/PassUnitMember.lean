@@ -101,10 +101,10 @@ end
 checks"): its code requests accepted in order by the ordinary pass
 (`CodesAccepted`), the read summaries their runs leave checked; each
 stated region meeting its entry conditions; its main graph, over the codes'
-table, accepted by the pass's framed mode at its bound and stated regions
-(`RunCall.AcceptsFramed` at the framed nodes `F` keeping the supports `S`),
-its read summaries checked; and the framed claim's obligations not yet
-proved from the checks. `FilePlans.passMember` refuses every framed plan,
+table, its walk accepted at its bound and stated regions (`RunCall.AcceptsWalk`,
+its framed nodes `c.framed` keeping their supports), its read summaries
+checked; and the framed claim's obligations not yet proved from the checks,
+at the call's framed nodes. `FilePlans.passMember` refuses every framed plan,
 so no member `passGroup` accepts is accepted by this constructor until
 every obligation is proved from the checks the pass makes. -/
 structure FramedAccepted (f : FilePlans) (r : Req f)
@@ -113,10 +113,12 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
     CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ ∧
       summariesChecked r a₁.summaries.toList = true ∧
       ∃ (c : RunCall (StoreView.graph f.F.store) (StoreView.images f.F.store))
-        (after : Answered (StoreView.graph f.F.store)) (F : Nat → Bool) (S : Nat → List Footprints.Footprint),
+        (after : Answered (StoreView.graph f.F.store)),
         MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary a₁ ∧ c.bound = mainBound r ∧
-        regionOf c.regional = regionalSpec r ∧ c.AcceptsFramed after (fun _ => True) F S ∧
-        summariesChecked r after.summaries.toList = true ∧ FramedObligations r spec F S
+        regionOf c.regional = regionalSpec r ∧ c.AcceptsWalk after ∧
+        summariesChecked r after.summaries.toList = true ∧
+        FramedObligations r spec (Verification.TolerantFrames.framedFOf c.framed)
+          (Verification.TolerantFrames.framedSOf c.framed)
   regions : ∀ Φ regions, r.regional = some (Φ, regions) →
     GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true
 

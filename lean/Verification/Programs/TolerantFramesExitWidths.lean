@@ -57,6 +57,7 @@ theorem exitsWidth : ExitsWidth ι := by
       simpa only [List.zipIdx_map_fst] using he
     obtain ⟨ei, hei, rfl⟩ := List.mem_map.mp hm
     obtain ⟨tc, htc, hw⟩ := exitsFold_mappingWidth _ _ _ h ei hei
+    rw [show exitNames en (SinglePass.keptDone env l en sd) ei.1 = exitNames en sd ei.1 from rfl] at hw
     have hctx : passCtx c ei.1.target.label = tc.context := by
       unfold passCtx
       rw [hp.facts.claims, List.getElem?_toArray] at htc

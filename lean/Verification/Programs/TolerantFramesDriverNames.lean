@@ -269,7 +269,7 @@ theorem visitsImplications (G : NormalGraph ι) (I : InstanceImageCheck G) (c : 
   exact visitExits_impBelow hP.exits
     (fun y hy => ⟨Nat.lt_of_lt_of_le (hb.2.2.2.2 y hy).1 (by omega),
       Nat.lt_of_lt_of_le (hb.2.2.2.2 y hy).2 (by omega)⟩)
-    (fun x hx => Nat.lt_of_lt_of_le (hb.1 x hx) (by omega)) (by omega)
+    (fun x hx => Nat.lt_of_lt_of_le (hb.1 x hx) (by omega)) (show sd.st.result < sd.fresh by omega)
     (fun t xs hx y hy => ⟨Nat.lt_of_lt_of_le (hP.inv.impBelow t xs hx y hy).1 hfr,
       Nat.lt_of_lt_of_le (hP.inv.impBelow t xs hx y hy).2 hfr⟩)
 

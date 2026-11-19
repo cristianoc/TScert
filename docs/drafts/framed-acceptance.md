@@ -1078,13 +1078,28 @@ node's exits read beside the step's output (`NodeYieldedR` at `framedK`).
 (`GraphGuaranteeR`) from a walk at framed returns (`PassWalkSoundR`), by
 `safeRet_of_sim` and `keeps_postExcR`; `run_sound_checkedR` and
 `run_sound_framed` give `RunSoundFramed` over the pass's framed mode
-`RunCall.AcceptsFramed`: the call accepted, each visited node's exits
-delivering with `framedK`. **The framed mode reads the walk
-`SinglePass.run` records**, whose states hold no kept fact: every accepted
-call meets it at every framed set (`acceptsFramed_of_accepted`), and a kept
-fact reaches no later node. The walk recording `framedKept` at a framed
-node's exits, with its records' soundness (`ExitsYield` at `framedK`), is
-to be built.
+`RunCall.AcceptsFramed`: the call's walk accepted, each visited node's
+exits delivering with `framedK`.
+
+**The walk at framed nodes.** A call of the pass names its framed nodes
+with the supports their returns keep (`RunCall.framed`, the walk's
+`framed`; `framedAt`). At a framed node the exits read the step with the
+facts its return keeps added to the store after the step, over the names
+after it (`keptStep`, `keepStore`, `keptDone`); the label's record keeps
+the step itself. A call is accepted in the ordinary mode where its walk is
+accepted with no framed node (`RunCall.Accepts`: `AcceptsWalk` and
+`framed = []`), which is the premise of `RunSound`; the walk's records
+cover every accepted walk (`RunTraversedA`, `RecordsChecked` and
+`RunPremises` read `AcceptsWalk`). The exits' records are checked at the
+exits' step (`ExitsYield` at `keptStep`, the trace and the site's facts at
+`keptDone`), whose store holds where the state after the step and
+`framedK` hold (`stateHolds_keep`, `keptHolds_of_framedK`); so each node
+delivers with its exits reading `framedK` at the call's framed nodes
+(`NodesYield`, `nodeYieldedR_of_checks`), and a call whose walk is accepted
+is accepted in the framed mode at its own framed nodes
+(`acceptsFramed_of_walk`, `acceptsFramed_of_acceptedWalk`). With no framed
+node the exits' step is the step and `NodeYieldedR` gives `NodeYielded`
+(`NodeYieldedR.toPlain`), which `run_sound_checked` reads.
 
 ### The returns, at reached executions
 
@@ -1192,7 +1207,13 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 (`TolerantFramesComposeYields.lean`), `nodeObligationsR_of_partsY`
 (`TolerantFramesNodeYields.lean`), `run_guaranteeR`
 (`TolerantFramesGuaranteeWalk.lean`), `run_sound_framed`,
-`acceptsFramed_of_accepted` (`TolerantFramesSinglePassSound.lean`),
+`acceptsFramed_of_acceptedWalk` (`TolerantFramesSinglePassSound.lean`);
+the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
+`keepStore_wf` (`TolerantFramesEntry.lean`), `keepStore_below`
+(`TolerantFramesStoreOpsBelowNames.lean`), `keptHolds_of_framedK`,
+`NodeYieldedR.toPlain`, `nodeYieldedR_of_checks`, `nodesYield_of`,
+`acceptsFramed_of_walk` (`TolerantFramesComposeYields.lean`),
+`exitsYield_of_checks` at the exits' step (`TolerantFramesExitsYield.lean`);
 `framedReturns_of_guaranteeR`, `framedFootprint_of_bound`,
 `framedReturns_of_main` (`PassUnitSafe.lean`).
 
@@ -1210,9 +1231,7 @@ review's `CodeClause.lean`).
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `prologue_sim`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, the framed mode's walk (`SinglePass.run` recording
-`framedKept` at a framed node's exits, `ExitsYield` at `framedK`),
-`ret_reached` (its conclusion `FramedReturnsReached`),
+`startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
@@ -1346,6 +1365,13 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
   with the library); the flow probe (`TSCERT_FLOW_PROBE=only`,
   `TSCERT_FRAME_PROBE` at the call's offset) on the run directories of
   P22 and of `nested-capture.mjs`'s TypeScript form (`m1-build/`);
+- the walk at framed nodes on P22's run directory
+  (`TSCERT_OBSERVE=framed=13;node:10`, `m1-build/obs-f13.out`): node 13
+  (`visit(c.i)`) framed, keeping the produced support of each of its 15
+  entry index facts; the ordinary walk refuses node 10 (`xs[c.i]`), and the
+  framed walk's entry of node 10 holds `c.i + 1 <= xs.length` and
+  `0 <= c.i` and passes it, then refuses the edge from node 6 into the
+  loop head 2, which lacks one of the head's facts;
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's

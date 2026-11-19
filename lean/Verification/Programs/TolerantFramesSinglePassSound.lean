@@ -55,15 +55,14 @@ theorem run_sound_framed : RunSoundFramed ι :=
   run_sound_passR (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) linearNearFuelEq
     (regionsHeld_of (regionsRecorded_of_visitTables htables) (regionsTyped_of_visitTables htables hstep))
 
-/-- **An accepted call is accepted in the framed mode at every framed set**
-(`acceptsFramed_of_accepts` with the nodes' kept yields
+/-- **A call whose walk accepted is accepted in the framed mode at its
+framed nodes** (`acceptsFramed_of_walk` with the nodes' kept yields
 `run_sound_single_pass` reads). -/
-theorem acceptsFramed_of_accepted {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
-    {after : CertificateProducer.Answered G} {admits}
-    (hacc : c.Accepts after) (F : Nat → Bool) (S : Nat → List Footprints.Footprint) :
-    c.AcceptsFramed after admits F S :=
-  acceptsFramed_of_accepts (nodesYield_of subtypeAnswersAll (exitsYield_of_kept
-    (fun _ _ _ _ _ _ _ hc => hc.startWrittenImpliesStated))) hacc F S
+theorem acceptsFramed_of_acceptedWalk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : CertificateProducer.Answered G} {admits} (hacc : c.AcceptsWalk after) :
+    c.AcceptsFramed after admits (framedFOf c.framed) (framedSOf c.framed) :=
+  acceptsFramed_of_walk (nodesYield_of subtypeAnswersAll (exitsYield_of_kept
+    (fun _ _ _ _ _ _ _ hc => hc.startWrittenImpliesStated))) hacc
 
 end Run
 

@@ -67,18 +67,19 @@ The equations are about execution at `G`, not execution at reassigned graphs. -/
     (∀ t, env.stated[t]! = passStated c t) ∧
     SinglePass.visitEntry G I env σ l = .ok en ∧
     SinglePass.visitStep G I env σ l en = .ok sd ∧
-    SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+    SinglePass.visitExits G I env σ l en (SinglePass.keptDone env l en sd) = .ok ex ∧
     r.node = env.nodes[l]! ∧ r.c = env.claimed[l]! ∧ r.entry = en.entry ∧ r.st = sd.st ∧
     r.ans = sd.steppedAnswers ∧ r.ys = sd.yields.getD [] ∧ en.implies = w.implies l ∧
     σ.walk.incoming.size = σ.walk.incomingImpl.size ∧ WalkExtends (exitsWalk ex) raw ∧
-    ExitStepsChecked G I env l en sd raw ∧
+    ExitStepsChecked G I env l en (SinglePass.keptDone env l en sd) raw ∧
     (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
-    ExitRecordsChecked G I env l en sd ex ∧
+    ExitRecordsChecked G I env l en (SinglePass.keptDone env l en sd) ex ∧
     env.startNames = List.range c.inputs.length ∧
     env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?) ∧
     (∃ σ0, RunCall.setup c = .ok (env, σ0)) ∧
     (∀ x ∈ env.startNames, x < σ.fresh) ∧
     ctx = passCtx c ∧
-    σ.walk.incoming.size = env.claimed.size ∧ σ.walk.incomingEdges.size = env.claimed.size ∧ env.merging = passMerging c
+    σ.walk.incoming.size = env.claimed.size ∧ σ.walk.incomingEdges.size = env.claimed.size ∧ env.merging = passMerging c ∧
+    env.framed = c.framed
 
 end Verification.TolerantFrames

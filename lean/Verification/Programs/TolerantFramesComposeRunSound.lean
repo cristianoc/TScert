@@ -66,7 +66,7 @@ accepted call whose final summaries are sound records a walk
 (`RunWalkA`) whose visited nodes the driver checked (`WalkChecked`). -/
 def RunTraversedC : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G),
-    c.Accepts after → SummariesSound G I after.summaries.toList → ∃ r : RunWalkA G I c, WalkChecked c r
+    c.AcceptsWalk after → SummariesSound G I after.summaries.toList → ∃ r : RunWalkA G I c, WalkChecked c r
 
 variable (ι) in
 /-- **(Named hypothesis) The regional check keeps its facts** at every

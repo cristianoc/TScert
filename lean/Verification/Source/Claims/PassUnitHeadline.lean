@@ -69,7 +69,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
   have hsub : ∀ s ∈ a₁.summaries.toList, s ∈ after.summaries.toList := by
     intro s hs'
     obtain ⟨-, -, -, -, -, -, -, -, -, hans, -, -⟩ := hm
-    obtain ⟨counts, trace, hres⟩ := hacc
+    obtain ⟨⟨counts, trace, hres⟩, -⟩ := hacc
     have := hkeep _ _ c s (hans ▸ hs')
     rwa [hres] at this
   have htable : ProgramCertificates.CodesSound (StoreView.graph f.F.store)
@@ -181,8 +181,9 @@ theorem qualified_requestSafe {f : FilePlans} {r : Req f}
 `framed_requestSafe`): the codes accepted in order by the ordinary pass
 from the empty table, with the read summaries their runs leave checked,
 make a sound table (`codesAccepted_sound`); the main graph's framed run
-over it gives the main graph's clauses at framed returns
-(`framedReturns_of_main` under the graph theorem at framed returns,
+over it, accepted in the framed mode at its framed nodes
+(`acceptsFramed_of_acceptedWalk`), gives the main graph's clauses at framed
+returns (`framedReturns_of_main` under the graph theorem at framed returns,
 `run_sound_framed`), and with the returns `FramedAccepted`'s obligations
 state, the five main-graph clauses (`framedRun_of_returns`); the codes'
 clause by `codesAccepted_guarantees`, each code's guarantee read on the
@@ -194,7 +195,7 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, F, S, hm, hb, hreg, hframed, hs', ⟨RetE, hret⟩⟩, hregs⟩ := hacc
+  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, hm, hb, hreg, hwalk, hs', ⟨RetE, hret⟩⟩, hregs⟩ := hacc
   have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
     intro c hc; simp [GraphCode.admits] at hc
   have hentries : r.codes.zipIdx.map (·.1.entry) = r.codes.map (·.entry) := by
@@ -206,7 +207,7 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     have := codesAccepted_sound hrun hkeep (summaries_of_checked htypes hs) hcodes (fun _ h => h) hnone
     rwa [List.nil_append, hentries] at this
   have hguar := framedReturns_of_main Verification.TolerantFrames.run_sound_framed RetE hm hb hreg hregs htable
-    hframed (summaries_of_checked htypes hs')
+    (Verification.TolerantFrames.acceptsFramed_of_acceptedWalk hwalk) (summaries_of_checked htypes hs')
   obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returns hguar hret
   have hcodeG := codesAccepted_guarantees hrun hkeep (summaries_of_checked htypes hs) hcodes
     (fun _ h => h) hnone

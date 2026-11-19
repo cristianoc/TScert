@@ -482,4 +482,21 @@ theorem headEntry_below {g : HeapKnowledge.Knowledge} {isStart : Bool} {width fr
       · exact h
   exact key _ _ (empty_below N)
 
+/-- **The store with kept facts is below the counter** where the store and
+the names the facts are renamed to are (`SinglePass.keepStore`). -/
+theorem keepStore_below {names : List Nat} {kept : List HeapKnowledge.IndexAtom} {s : Store} {N : Nat}
+    (hs : FactsBelow s N) (hn : ∀ x ∈ names, x < N) : FactsBelow (SinglePass.keepStore names kept s) N := by
+  unfold SinglePass.keepStore
+  induction kept generalizing s with
+  | nil => exact hs
+  | cons a l ih =>
+    refine ih ?_
+    dsimp only
+    split
+    · rename_i b hb
+      refine add_below hs fun y hy => ?_
+      obtain ⟨x, -, e⟩ := atom_rename_names hb y hy
+      exact hn y (List.mem_of_getElem? e)
+    · exact hs
+
 end Verification.TolerantFrames

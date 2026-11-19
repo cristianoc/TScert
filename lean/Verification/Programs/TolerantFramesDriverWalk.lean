@@ -84,7 +84,7 @@ def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Ru
   SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional
+    c.observeEntry c.regional false c.framed
 
 /-- The walk of a call (`SinglePass.runWalk` over its arguments). -/
 def RunCall.walk {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
@@ -92,14 +92,14 @@ def RunCall.walk {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Run
   SinglePass.runWalk G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
     c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional
+    c.observeEntry c.regional false c.framed
 
 /-- **An accepted call's walk**: either it stopped with an accepted
 outcome, or it returned a record that visited at least the nodes the start
 reaches, its answers those the call leaves (`run` is the record's
 `Walk.outcome`). -/
 theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
-    {after : Answered G} (h : c.Accepts after) :
+    {after : Answered G} (h : c.AcceptsWalk after) :
     (∃ stop : SinglePass.WalkStop ι G, RunCall.walk c = .error stop ∧ stop.outcome.outcome = .accepted) ∨
       ∃ σ reach, RunCall.walk c = .ok (σ, reach) ∧ reach ≤ σ.walk.visited ∧ σ.answers = after := by
   obtain ⟨counts, trace, h⟩ := h
@@ -138,7 +138,7 @@ theorem walkStopsRefuse : WalkStopsRefuse ι :=
 /-- **An accepted call's walk returned** (`walk_of_accepts'` and
 `WalkStopsRefuse`). -/
 theorem walk_of_accepts (hstop : WalkStopsRefuse ι) {G : NormalGraph ι} {I : InstanceImageCheck G}
-    {c : Target.RunCall G I} {after : Answered G} (h : c.Accepts after) :
+    {c : Target.RunCall G I} {after : Answered G} (h : c.AcceptsWalk after) :
     ∃ σ reach, RunCall.walk c = .ok (σ, reach) ∧ reach ≤ σ.walk.visited ∧ σ.answers = after := by
   rcases walk_of_accepts' h with ⟨stop, hw, ha⟩ | h
   · exact (hstop G I c stop hw ha).elim
@@ -160,7 +160,7 @@ theorem setup_source {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target
 
 /-- **An accepted call's program mentions no location** (`setup_source`). -/
 theorem accepts_source {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
-    {after : Answered G} (h : c.Accepts after) :
+    {after : Answered G} (h : c.AcceptsWalk after) :
     c.P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true := by
   obtain ⟨σ, reach, hw, -, -⟩ := walk_of_accepts walkStopsRefuse h
   unfold RunCall.walk SinglePass.runWalk at hw

@@ -259,7 +259,7 @@ theorem Site.argumentInput (s : Site c r l hl) :
 The successful visit supplies the edge checks and the kept yield list. -/
 theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
     (headEntries : ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req) : Head s η := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, hv, hn, hc, he, hs, _, _, hi, _, _, _, _, _, hnames, _⟩ := s.facts
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, hv, hn, hc, he, _, _, _, hi, _, _, _, _, _, hnames, _⟩ := s.facts
   intro i t pushed observed promote hm hg
   have headFlag : s.env.isHead[t.label]! = true := by
     rw [s.headFlag, ← r.given_eq]; exact hg
@@ -275,16 +275,17 @@ theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
   have argumentInput : ∀ a, s.env.argName = some a → ∃ q : Nat, (List.range c.inputs.length)[q]? = some a :=
     s.argumentInput
   have checked : HeadExitChecked G I r.w (List.range c.inputs.length) r.ctx r.stated l
-      (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st
+      (r.node l hl).node (r.node l hl).c (r.node l hl).entry s.sdK.st
       (r.node l hl).ys (b.yields.getD []) s.en.here i t pushed observed promote req written cf
       ((s.env.givenImplies[t.label]?).getD []) s.env.argName ((s.env.givenArgs[t.label]?).getD [])
       ((s.env.givenInputs[t.label]?).getD []) width fresh := by
+    have hK : s.sdK = SinglePass.keptDone s.env l s.en s.sd := rfl
     refine ⟨?_, ?_, ?_, ?_, ?_, entered, coherent⟩
-    · simpa only [hn, hc, he, hs, ← targetContext] using typed
-    · simpa only [hc, he, hs, ← hi] using checks.implied
-    · simpa only [hc, he, hs, ← hnames] using checks.inputs
-    · simpa only [hc, he, hs] using checks.args
-    · simpa only [hc, he, hs, ← targetContext, exitWidth] using checks.query
+    · simpa only [hn, hc, he, hK, ← targetContext] using typed
+    · simpa only [hc, he, hK, ← hi] using checks.implied
+    · simpa only [hc, he, hK, ← hnames] using checks.inputs
+    · simpa only [hc, he, hK] using checks.args
+    · simpa only [hc, he, hK, ← targetContext, exitWidth] using checks.query
   exact ⟨b.yields.getD [], s.source_eq hy, req, written, cf,
     (s.env.givenImplies[t.label]?).getD [], s.env.argName, (s.env.givenArgs[t.label]?).getD [],
     (s.env.givenInputs[t.label]?).getD [], width, fresh, checked.reassign η, below, argumentInput⟩
@@ -293,13 +294,13 @@ theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
 @[nospecialize] def HandlerRecords (s : Site c r l hl) (t : Target) : Prop :=
   let n := r.node l hl
   (r.given t.label = false → IncomingRecorded r.w t.label
-    (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry n.st.result
-      (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry n.st s.sd.thrown) (r.w.implies l))) ∧
+    (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry s.sdK.st.result
+      (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry s.sdK.st s.sd.thrown) (r.w.implies l))) ∧
   (r.given t.label = false → 2 ≤ (r.w.incoming t.label).length →
     MergeRecorded r.edgesIn t.label (handlerCtx n.c (s.sd.thrownTy.getD []),
       atSlotsOf (s.sd.thrown :: n.entry.names)
-        (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry n.st.result
-          (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry n.st s.sd.thrown) (r.w.implies l)).2, t.mapping))
+        (edgeTransfer (s.sd.thrown :: n.entry.names) t.mapping true true s.sd.outFresh n.entry s.sdK.st.result
+          (handlerStore G n.c (s.sd.thrownTy.getD []) n.entry s.sdK.st s.sd.thrown) (r.w.implies l)).2, t.mapping))
 
 /-- Handler edge checks from the trace, under the structural head-entry
 and incoming-record leaves. Type admission, type checks, head queries,
@@ -309,9 +310,9 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
     (handlerRecords : ∀ t, (r.node l hl).node.handler = some t → HandlerRecords s t) :
     ∀ t, (r.node l hl).node.handler = some t →
       HandlerExitChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length)
-        r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry (r.node l hl).st
+        r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry s.sdK.st
         s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t := by
-  obtain ⟨_, _, _, _, _, _, _, hstated, _, hstep, _, hn, hc, he, hs, _, _, hi, _, _, hsteps, _, _, hnames, _⟩ := s.facts
+  obtain ⟨_, _, _, _, _, _, _, hstated, _, hstep, _, hn, hc, he, _, _, _, hi, _, _, hsteps, _, _, hnames, _⟩ := s.facts
   intro t ht
   have member : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by
     rw [hn] at ht
@@ -330,11 +331,12 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
   have admits : ControlFlow.admitsAll G (s.sd.thrownTy.getD []) = true :=
     visitStep_handler_admits hstep (by rw [← hn, ht]; rfl)
   have checked : HandlerExitChecked G I r.w (List.range c.inputs.length) r.ctx r.stated r.given r.edgesIn l
-      (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.en.here s.sd.outFresh
+      (r.node l hl).c (r.node l hl).entry s.sdK.st s.en.here s.sd.outFresh
       (s.sd.thrownTy.getD []) s.sd.thrown t := by
+    have hK : s.sdK = SinglePass.keptDone s.env l s.en s.sd := rfl
     refine ⟨admits, ?_, ?_, (handlerRecords t ht).1, (handlerRecords t ht).2, ?_⟩
-    · simpa only [hc, he, hs, ← targetContext] using typed
-    · simpa only [hc, he, hs, ← targetContext, headFlag, writtenContext] using asserted
+    · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext] using typed
+    · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, headFlag, writtenContext] using asserted
     · intro hg
       obtain ⟨req, checks⟩ := head (headFlag.trans hg)
       obtain ⟨written, cf, width, fresh, entered, coherent, below⟩ := headEntries _ ⟨.handler t, by
@@ -344,10 +346,10 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
       refine ⟨req, written, cf, (s.env.givenImplies[t.label]?).getD [], s.env.argName,
         (s.env.givenArgs[t.label]?).getD [], (s.env.givenInputs[t.label]?).getD [], width, fresh,
         ?_, ?_, ?_, ?_, entered, coherent, below, s.argumentInput⟩
-      · simpa only [he, ← hi] using checks.implied
-      · simpa only [he, ← hnames] using checks.inputs
-      · simpa only [he] using checks.args
-      · simpa only [hc, he, hs, ← targetContext, if_true] using checks.query
+      · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hi] using checks.implied
+      · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hnames] using checks.inputs
+      · simpa only [he, keptDone_thrown, keptDone_thrownTy] using checks.args
+      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, if_true] using checks.query
   exact checked.reassign η
 
 /-- The extracted handler checks and the step's fresh-name bound give

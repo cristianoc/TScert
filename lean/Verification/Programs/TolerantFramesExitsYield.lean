@@ -28,20 +28,21 @@ structure Site {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCa
     (∀ t, env.stated[t]! = passStated c t) ∧
     SinglePass.visitEntry G I env σ l = .ok en ∧
     SinglePass.visitStep G I env σ l en = .ok sd ∧
-    SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+    SinglePass.visitExits G I env σ l en (SinglePass.keptDone env l en sd) = .ok ex ∧
     (r.node l hl).node = env.nodes[l]! ∧ (r.node l hl).c = env.claimed[l]! ∧
     (r.node l hl).entry = en.entry ∧ (r.node l hl).st = sd.st ∧
     (r.node l hl).ans = sd.steppedAnswers ∧ (r.node l hl).ys = sd.yields.getD [] ∧ en.implies = r.w.implies l ∧
     σ.walk.incoming.size = σ.walk.incomingImpl.size ∧ WalkExtends (exitsWalk ex) raw ∧
-    ExitStepsChecked G I env l en sd raw ∧
+    ExitStepsChecked G I env l en (SinglePass.keptDone env l en sd) raw ∧
     (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
-    ExitRecordsChecked G I env l en sd ex ∧
+    ExitRecordsChecked G I env l en (SinglePass.keptDone env l en sd) ex ∧
     env.startNames = List.range c.inputs.length ∧
     env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?) ∧
     (∃ σ0, RunCall.setup c = .ok (env, σ0)) ∧
     (∀ x ∈ env.startNames, x < σ.fresh) ∧
     r.ctx = passCtx c ∧
-    σ.walk.incoming.size = env.claimed.size ∧ σ.walk.incomingEdges.size = env.claimed.size ∧ env.merging = passMerging c
+    σ.walk.incoming.size = env.claimed.size ∧ σ.walk.incomingEdges.size = env.claimed.size ∧ env.merging = passMerging c ∧
+    env.framed = c.framed
 
 /-- A trace supplies a common site, without extracting any exit checks. -/
 theorem site_of_trace {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
@@ -53,9 +54,12 @@ theorem site_of_trace {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Targe
 variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
     {r : RunWalkA G I c} {l : Nat} {hl : r.w.visited l}
 
+/-- The step the site's exits read (`SinglePass.keptDone`). -/
+@[nospecialize] def Site.sdK (s : Site c r l hl) : SinglePass.StepDone ι G := SinglePass.keptDone s.env l s.en s.sd
+
 /-- The name-indexed yields whose slot translation is passed to `exitStep`. -/
 @[nospecialize] def Site.ysA (s : Site c r l hl) : List (PromiseCalls.Yield ι) :=
-  (SinglePass.exitsYields G I s.env l s.en s.sd).1.getD []
+  (SinglePass.exitsYields G I s.env l s.en s.sdK).1.getD []
 
 /-- The empty-context answer and kept initial exit yields. -/
 @[nospecialize] def Here (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
@@ -69,7 +73,7 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
   let n := r.node l hl
   (∀ (i : Nat) t pushed observed promote,
     (Exit.ofNode n.node)[i]? = some (Exit.normal t pushed observed promote) →
-    ∀ slots, t.mapping = some slots → ∀ j ∈ slots, j < (normalNames n.entry n.st pushed).length) ∧
+    ∀ slots, t.mapping = some slots → ∀ j ∈ slots, j < (normalNames n.entry s.sdK.st pushed).length) ∧
   (∀ t, n.node.handler = some t → ∀ slots, t.mapping = some slots → ∀ j ∈ slots,
     j < (s.sd.thrown :: n.entry.names).length)
 
@@ -81,7 +85,7 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
     (Exit.ofNode n.node)[i]? = some (Exit.normal t pushed observed promote) →
     r.given t.label = false → ∃ ysE : List (PromiseCalls.Yield ι),
       ysE = n.ys ∧
-        NonHeadExitChecked H (I.reassign η) r.w r.ctx r.stated r.edgesIn l n.node n.c n.entry n.st n.ys
+        NonHeadExitChecked H (I.reassign η) r.w r.ctx r.stated r.edgesIn l n.node n.c n.entry s.sdK.st n.ys
           s.ysA ysE s.en.here s.sd.outFresh i t pushed observed promote
 
 /-- Each head exit reads the kept yields and its checked head contract. -/
@@ -95,7 +99,7 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
       ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
         (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
-        HeadExitChecked H (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated l n.node n.c n.entry n.st
+        HeadExitChecked H (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated l n.node n.c n.entry s.sdK.st
           n.ys ysE s.en.here i t pushed observed promote req written cf gimp argName argSlots inputSlots hwidth hfresh ∧
         (∀ y ∈ List.range c.inputs.length, y < hfresh) ∧
         (∀ a, argName = some a → ∃ q : Nat, (List.range c.inputs.length)[q]? = some a)
@@ -106,7 +110,7 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
   let H := reassign G η
   (∀ t, n.node.handler = some t →
     HandlerExitChecked H (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated r.given r.edgesIn l
-      n.c n.entry n.st s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t) ∧
+      n.c n.entry s.sdK.st s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t) ∧
   (n.node.handler.isSome = true → NamesBelow n.entry (r.w.implies l) (List.range c.inputs.length) s.sd.thrown)
 
 /-- The visit's freshness flag is the checked step flag. -/
@@ -119,7 +123,7 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
 @[nospecialize] def Extracted (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
   let n := r.node l hl
   NodeExitsChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated r.given r.edgesIn l
-    n.node n.c n.entry n.st n.ys s.en.here s.sd.outFresh s.ysA s.sd.thrown (s.sd.thrownTy.getD []) ∧
+    n.node n.c n.entry s.sdK.st n.ys s.en.here s.sd.outFresh s.ysA s.sd.thrown (s.sd.thrownTy.getD []) ∧
     Fresh s
 
 /-- The site's step equation fixes its checked freshness flag. -/
@@ -156,9 +160,9 @@ theorem exitChecks_here (s : Site c r l hl) (η : MixedAssignment ι) : Here s �
 
 /-- Every source slot read by a successful indexed exit is in bounds. -/
 theorem exitChecks_widths (s : Site c r l hl) (η : MixedAssignment ι) : Widths s η := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hnode, _, hentry, hst, _, _, _, _, _, hsteps, _⟩ := s.facts
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hnode, _, hentry, _, _, _, _, _, _, hsteps, _⟩ := s.facts
   have bound : ∀ e ∈ Exit.ofNode s.env.nodes[l]!, ∀ slots, e.target.mapping = some slots →
-      ∀ j ∈ slots, j < (exitNames s.en s.sd e).length := by
+      ∀ j ∈ slots, j < (exitNames s.en s.sdK e).length := by
     intro e he slots hs j hj
     obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp he
     have hei : (e, i) ∈ (Exit.ofNode s.env.nodes[l]!).zipIdx := List.mem_zipIdx_iff_getElem?.mpr hi
@@ -171,15 +175,15 @@ theorem exitChecks_widths (s : Site c r l hl) (η : MixedAssignment ι) : Widths
     rw [hnode] at hm
     have hb := bound _ (List.mem_of_getElem? hm) slots hs j hj
     cases pushed <;> simpa only [exitNames, Exit.isHandler, Exit.pushed, Bool.false_eq_true, if_false,
-      if_true, normalNames, hentry, hst] using hb
+      if_true, normalNames, hentry] using hb
   · intro t ht slots hs j hj
     rw [hnode] at ht
     have hm : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by
       simp only [Exit.ofNode, ht, Option.toList_some, List.map_cons, List.map_nil,
         List.mem_append, List.mem_singleton]
       exact Or.inr trivial
-    have hb := bound _ hm slots hs j hj
-    simpa only [exitNames, Exit.isHandler, if_true, hentry] using hb
+    have hb : j < (s.sd.thrown :: s.en.entry.names).length := bound _ hm slots hs j hj
+    simpa only [hentry] using hb
 
 /-- The checked step bounds every entry name below its handler name. -/
 theorem exitChecks_thrownBelow (s : Site c r l hl) :
@@ -193,7 +197,7 @@ handler's edge checks is the explicit remaining premise. -/
 theorem exitChecks_handler (s : Site c r l hl) (η : MixedAssignment ι)
     (handlerEdgeChecks : ∀ t, (r.node l hl).node.handler = some t →
       HandlerExitChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length)
-        r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry (r.node l hl).st
+        r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry s.sdK.st
         s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t) : Handler s η :=
   ⟨handlerEdgeChecks, fun _ => exitChecks_thrownBelow s⟩
 
@@ -225,6 +229,12 @@ theorem exitsYield_of_checks (checks : ExitChecks.Extraction ι) : ExitsYield ι
   obtain ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ := hchecked
   obtain ⟨s⟩ := ExitChecks.site_of_trace (hnodes l hl).2
   obtain ⟨hc, hf⟩ := checks G I c after admits hp r ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ η ha l hl s
+  have hK : s.sdK.st = SinglePass.keptStep (SinglePass.framedAt c.framed l) (r.node l hl).entry (r.node l hl).st := by
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hentry, hst, _⟩ := s.facts
+    have hfr := s.facts.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    show SinglePass.keptStep (SinglePass.framedAt s.env.framed l) s.en.entry s.sd.st = _
+    rw [hfr, hentry, hst]
+  rw [hK] at hc
   have hsums := (r.node l hl).hstep.summaries (r.node l hl).sums
   have hcodes := codesSound_reassign hp.2.2.1 η
   exact nodeExitsY_of_checks η hc hf (r.node l hl).hshape (r.node l hl).wf
