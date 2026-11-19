@@ -153,11 +153,13 @@ def EntryShape (h : Heap) (t : Tm) : Prop :=
 variable {Fl}
 
 /-- **A well-formed value holds the closures it holds at a set holding what
-outside code may supply** (proved): each is one `C`'s code gave out, whose
-token lies in `O`. -/
+outside code may supply** (proved): each closure of `C`'s code is one
+`C`'s code gave out, whose token lies in `O`; the set holds outside
+storage, the token of closures of outside code. -/
 theorem EntryVal.fnsIn {S : Sites P} {v w : Val} (hv : EntryVal Fl v) (hw : Within P v w) (hS : Supplied Fl S) :
     FnsIn Fl S w := by
-  intro x hx fs ar E K s caps k rest comp oid he hc
+  intro x hx fs ar E K s caps k rest comp oid he
+  refine ⟨fun hc => ?_, fun _ => hS.1⟩
   obtain ⟨⟨π, hπ, ht, -⟩, -⟩ := (hv w hw).2 x hx fs ar E K s caps k rest comp oid he hc
   exact ⟨π, hπ, hS.2 _ _ hπ ht⟩
 

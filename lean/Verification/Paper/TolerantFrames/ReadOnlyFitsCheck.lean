@@ -40,14 +40,14 @@ def OVOr (d : Nat) (Γ : Nat → Option (Sites P)) (S : Sites P) (u : Tm) : Prop
     ∃ j, u = .var j ∧ d ≤ j ∧ Sub (τ (j - d)) S
 
 /-- **An open term fits a set of sites** (the module's header). -/
-inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Sites P → Tm → Prop where
+inductive OFits : Nat → (Nat → Option (Sites P)) → FrameAt P → Bool → Sites P → Tm → Prop where
   | prim {d Γ a o S v} : primVal v = true → (o = true → Sub S Fl.O) → OFits d Γ a o S v
   | arr {d Γ a o S ls} : (∀ x ∈ ls, x = none) → (o = true → Sub S Fl.O) → OFits d Γ a o S (.arr ls)
   | bvar {d Γ a o S S' i} : i < d → Γ i = some S' → Sub S' S → (o = true → Sub S Fl.O) → OFits d Γ a o S (.var i)
   | fvar {d Γ a o S i} : d ≤ i → Sub (τ (i - d)) S → (o = true → Sub S Fl.O) → OFits d Γ a o S (.var i)
-  | invoke {d Γ a o S f r args} : OFits d Γ a o Fl.O f → OFits d Γ a o Fl.O r →
+  | invoke {d Γ a o S Sf f r args} : OFits d Γ a o Sf f → OFits d Γ a o Fl.O r →
       (∀ x ∈ args, OFits d Γ a o Fl.O x) → Sub Fl.O S → a.arr ∈ Fl.O → (o = true → Sub S Fl.O) →
-      OFits d Γ a o S (.invoke f r args)
+      Sub Sf Fl.O → (none ∈ Sf → a.out = true) → OFits d Γ a o S (.invoke f r args)
   | invokeC {d Γ a o S j r args} (σ : FnSig) (c : Nat) (π : CodeFlow P) (Sa : Nat → Sites P) (Sr : Sites P) :
       o = false → d ≤ j → φ (j - d) = some σ → Fl.code σ.code c = some π →
       Sub (τ (j - d)) (π.env σ.s (capSlot σ.ar σ.rest σ.ncaps)) →
@@ -56,8 +56,9 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
       (∀ i, i < σ.ar → Sub (Sa i) (π.env σ.s (paramSlot σ.rest i))) →
       (σ.rest = true → a.arr ∈ π.env σ.s 0 ∧ Stores Fl a.arr Sr ∧ ∀ i, σ.ar ≤ i → Sub (Sa i) Sr) →
       Sub π.ret S → (o = true → Sub S Fl.O) → OFits d Γ a o S (.invoke (.var j) r args)
-  | construct {d Γ a o S f args} : OFits d Γ a o Fl.O f → (∀ x ∈ args, OFits d Γ a o Fl.O x) → Sub Fl.O S →
-      a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → OFits d Γ a o S (.construct f args)
+  | construct {d Γ a o S Sf f args} : OFits d Γ a o Sf f → (∀ x ∈ args, OFits d Γ a o Fl.O x) → Sub Fl.O S →
+      a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Sub Sf Fl.O → (none ∈ Sf → a.out = true) →
+      OFits d Γ a o S (.construct f args)
   | letE {d Γ a o S Sx x b} : OFits d Γ a o Sx x → OFits (d + 1) (consSites Sx Γ) a o S b →
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.letE x b)
   | spread {d Γ a o S Sx x} : OFits d Γ a o Sx x → (∀ s ∈ Sx, Sub (Fl.H.contents s) S) →
@@ -79,7 +80,7 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
   | makeGraphOut {d Γ a o S ar E K s caps k rest comp ns inits} (Ss : Tm → Sites P) :
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
       P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, OVOr τ d Γ S u) →
-      (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
+      (o = true → Sub S Fl.O) → none ∈ S → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | readAt {d Γ a o S Sx Q f x} : OFits d Γ a o Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
       (∀ s ∈ Q, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → OFits d Γ a o S (.readAt f x)
   | indexAt {d Γ a o S Sx Q Sk x key} : OFits d Γ a o Sx x → OFits d Γ a o Sk key → Sub Sx Q →
@@ -139,9 +140,9 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
   | bvar hi hΓ hs ho => simp only [instantiate, if_pos hi]; exact .var hΓ hs ho
   | @fvar d _ _ _ _ i hi hs ho =>
     simp only [instantiate, if_neg (by omega : ¬ i < d)]; exact .val (hρ _).val ((hρ _).sub hs) ho
-  | invoke _ _ _ hO ha ho ihf ihr iha =>
+  | invoke _ _ _ hO ha ho hSf hout ihf ihr iha =>
     simp only [instantiate, instantiateArgs_eq_map]
-    exact .invoke ihf ihr (fun x hx => by obtain ⟨y, hy, rfl⟩ := mem_inst hx; exact iha y hy) hO ha ho
+    exact .invoke ihf ihr (fun x hx => by obtain ⟨y, hy, rfl⟩ := mem_inst hx; exact iha y hy) hO ha ho hSf hout
   | @invokeC d _ _ _ _ j _ args σ c π Sa Sr hof hj hφj hcode hself _ _ hat hpar hrest hO ho ihr iha =>
     simp only [instantiate, instantiateArgs_eq_map, if_neg (by omega : ¬ j < d)]
     refine .invokeC σ c π Sa Sr hof (hφ _ σ hφj) hcode ((hρ _).sub hself) ihr (fun i x hx => ?_) (fun x hx => ?_)
@@ -155,9 +156,9 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
         split
         · exact .inr ⟨k, rfl⟩
         · exact .inl (hρ _).val
-  | construct _ _ hO ha ho ihf iha =>
+  | construct _ _ hO ha ho hSf hout ihf iha =>
     simp only [instantiate, instantiateArgs_eq_map]
-    exact .construct ihf (fun x hx => by obtain ⟨y, hy, rfl⟩ := mem_inst hx; exact iha y hy) hO ha ho
+    exact .construct ihf (fun x hx => by obtain ⟨y, hy, rfl⟩ := mem_inst hx; exact iha y hy) hO ha ho hSf hout
   | letE _ _ ho ihx ihb => simp only [instantiate]; exact .letE ihx ihb ho
   | spread _ hc ho ih => simp only [instantiate]; exact .spread ih hc ho
   | @makeAbsent d _ _ _ _ _ _ Ss hst _ hs ho ih =>
@@ -183,10 +184,10 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
     obtain ⟨x, hx, rfl⟩ := hu
     exact ((hcaps c π' h').1 i x hx).inst hρ
-  | @makeGraphOut d _ _ _ _ _ _ _ _ _ _ _ _ _ _ Ss hst _ hs hc hE hcaps ho ih =>
+  | @makeGraphOut d _ _ _ _ _ _ _ _ _ _ _ _ _ _ Ss hst _ hs hc hE hcaps ho hn ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
-    refine .makeGraphOut Ss' h₁ h₂ hs hc hE (fun u hu => ?_) ho
+    refine .makeGraphOut Ss' h₁ h₂ hs hc hE (fun u hu => ?_) ho hn
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
     exact (hcaps y hy).inst hρ
   | readAt _ hq hcl hr ho ih => simp only [instantiate]; exact .readAt ih hq hcl hr ho
@@ -336,7 +337,7 @@ signature is a slot naming it; each continuation and handler carries the
 node into its targets. -/
 def CodeChk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
-    OFits Fl (π.env l) (π.fn l) 0 (fun _ => none) π.alloc false (π.val l) e ∧
+    OFits Fl (π.env l) (π.fn l) 0 (fun _ => none) (π.at l) false (π.val l) e ∧
     (∀ σ, π.vfn l = some σ → ∃ j, e = .var j ∧ π.fn l j = some σ) ∧
     ContChk π l k ∧ HandlerChk Fl π l x
 

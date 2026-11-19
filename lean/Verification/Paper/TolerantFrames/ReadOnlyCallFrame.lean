@@ -33,6 +33,12 @@ are read from the sites:
   at a reached state whose term is a frame of `C`'s code, the call of the
   unit's own frame, every reached state fitting the flow
   (`ClientFrame.framed_at_frame`).
+- **At a call of outside code** (`OutCall`, `Fits.outCall`,
+  `ClientFrame.framed_at_call`): where the innermost frame is a frame of
+  `C`'s code and its next step calls a closure of outside code, the frame
+  fits at a node of its continuation and handler that may call outside
+  code (`CodeFlow.out`), at a context of its code, so the check is
+  required at those nodes and contexts only.
 - **Live protection witnesses** (`Witness.grow`, `entryStart_witness`): a
   location an entry's argument reaches read-only at its parameter's type
   has a witness at the entry history, and at every history the entry's
@@ -274,7 +280,7 @@ theorem framed_of_sites {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {H :
 
 /-- **A frame of `C`'s code runs at a node whose slots its environment
 meets** (proved, the rule `Fits.frameC`). -/
-theorem frame_sites {Fl : Flow P} {g : Ghost P} {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool}
+theorem frame_sites {Fl : Flow P} {g : Ghost P} {n : Nat} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool}
     {S : Sites P} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm}
     {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (hf : Fits Fl (VJ Fl g n) Γ a o S (.frame E K t L d k x comp)) (hc : P.ofC comp = true) :
@@ -288,7 +294,7 @@ theorem frame_sites {Fl : Flow P} {g : Ghost P} {n : Nat} {Γ : Nat → Option (
 (proved): a frame of `C`'s code fitting the flow, at a heap meeting it, runs
 a node whose slots' sites give `Framed` at the frame's environment through
 the check at a call (`framed_of_sites`). -/
-theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool}
+theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool}
     {S₀ : Sites P} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm}
     {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     {st : St P} (hf : Fits Fl (VJ Fl st.g st.s.h.length) Γ a o S₀ (.frame E K t L d k x comp))
@@ -542,6 +548,155 @@ theorem activeArgs_innermost : ∀ (xs : List Tm) (cur : Option (Code × Compone
 termination_by structural xs => xs
 end
 
+/-- What `activeFrame` gives of the innermost frame's term: the innermost
+frame is a frame whose running term has no frame on its path, and the term
+the next step reduces is the one `activeFrame` gives in that frame. -/
+def RedexSpec (o : Option Tm) (p : Option (Code × ComponentTag) × Tm) : Prop :=
+  ∀ f, o = some f → ∃ E K t L d k x comp, f = .frame E K t L d k x comp ∧ innermost t = none ∧
+    p.2 = (activeFrame (some ((E, K), comp)) t).2
+
+theorem RedexSpec.none {p : Option (Code × ComponentTag) × Tm} :
+    RedexSpec none p := fun _ h => nomatch h
+
+mutual
+/-- **The active term is the innermost frame's** (proved, by structural
+induction, the two definitions following the same congruences): the
+innermost frame is a frame with no frame on its running term's path, and
+the term `activeFrame` gives is the one it gives in that frame. -/
+theorem activeFrame_redex : ∀ (t : Tm) (cur : Option (Code × ComponentTag)),
+    RedexSpec (innermost t) (activeFrame cur t)
+  | .invoke f r args, cur => by
+    have h₁ := activeFrame_redex f cur
+    have h₂ := activeFrame_redex r cur
+    have h₃ := activeArgs_redex args cur (.invoke f r args)
+    simp only [activeFrame, innermost]; split <;> (try split) <;> assumption
+  | .construct f args, cur => by
+    have h₁ := activeFrame_redex f cur
+    have h₃ := activeArgs_redex args cur (.construct f args)
+    simp only [activeFrame, innermost]; split <;> assumption
+  | .letE a b, cur => by
+    have h₁ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .makeAt cc ns xs, cur => by
+    simpa only [activeFrame, innermost] using activeArgs_redex xs cur (.makeAt cc ns xs)
+  | .readAt fd a, cur => by
+    have h₁ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .indexAt a key, cur => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeFrame_redex key cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact RedexSpec.none
+  | .writeAt fd a b, cur => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeFrame_redex b cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact RedexSpec.none
+  | .test k a, cur => by
+    have h₁ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .ite x a b, cur => by
+    have h₁ := activeFrame_redex x cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .arith op a b, cur => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeFrame_redex b cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact RedexSpec.none
+  | .arrLit xs, cur => by
+    simpa only [activeFrame, innermost] using activeArgs_redex xs cur (.arrLit xs)
+  | .elemAt a i, cur => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeFrame_redex i cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact RedexSpec.none
+  | .setElem a i v, cur => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeFrame_redex i cur
+    have h₃ := activeFrame_redex v cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · split
+        · exact h₃
+        · exact RedexSpec.none
+  | .lenOf a, cur => by
+    have h₁ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .spread a, cur => by
+    have h₁ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .throw a, cur => by
+    have h₁ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · exact RedexSpec.none
+  | .merge dd a b, cur => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeFrame_redex b cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact RedexSpec.none
+  | .makeKey k a, cur => by
+    have h₁ := activeFrame_redex k cur
+    have h₂ := activeFrame_redex a cur
+    simp only [activeFrame, innermost]; split
+    · exact h₁
+    · split
+      · exact h₂
+      · exact RedexSpec.none
+  | .frame E K t L d k x comp, cur => by
+    have h₁ := activeFrame_redex t (some ((E, K), comp))
+    simp only [activeFrame, innermost]
+    intro f hf
+    cases hi : innermost t with
+    | none =>
+      rw [hi] at hf; simp only [Option.none_or, Option.some.injEq] at hf; subst hf
+      exact ⟨E, K, t, L, d, k, x, comp, rfl, hi, rfl⟩
+    | some f' => rw [hi] at hf; simp only [Option.some_or, Option.some.injEq] at hf; subst hf; exact h₁ _ hi
+  | .var _, _ | .nul, _ | .undef, _ | .tru, _ | .fls, _ | .num _, _ | .str _, _ | .bigint _, _ | .sym _, _
+  | .objAt .., _ | .arr _, _ | .viewSpine .., _ | .goto .., _ => by
+    simp only [activeFrame, innermost]; exact RedexSpec.none
+termination_by structural t => t
+
+/-- The active term through a list is the innermost frame's (proved). -/
+theorem activeArgs_redex : ∀ (xs : List Tm) (cur : Option (Code × ComponentTag)) (t : Tm),
+    RedexSpec (innermostArgs xs) (activeArgs cur t xs)
+  | [], cur, t => by simp only [activeArgs, innermostArgs]; exact RedexSpec.none
+  | a :: as, cur, t => by
+    have h₁ := activeFrame_redex a cur
+    have h₂ := activeArgs_redex as cur t
+    simp only [activeArgs, innermostArgs]; split <;> assumption
+termination_by structural xs => xs
+end
+
 /-- **Every frame on the path fits** (proved, by induction on `Fits`): the
 innermost frame of a fitting term fits, at the sites of its position. -/
 theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
@@ -551,7 +706,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
   induction h with
   | val hv _ _ => intro f hf; rw [innermost_val hv] at hf; cases hf
   | var _ _ _ => intro f hf; simp [ReadOnly.innermost] at hf
-  | invoke _ _ _ _ _ _ ihf ihr iha =>
+  | invoke _ _ _ _ _ _ _ _ ihf ihr iha =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     split at hf
@@ -568,7 +723,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
       obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
       exact iha i x hi hf
-  | construct _ _ _ _ _ ihf iha =>
+  | construct _ _ _ _ _ _ _ ihf iha =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     split at hf
@@ -584,7 +739,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     · exact ih hf
     · cases hf
   | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
-  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
@@ -617,13 +772,13 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     intro f hf
     simp only [ReadOnly.innermost] at hf
     cases hi : ReadOnly.innermost _ with
-    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, Alloc.outside, _, _, .frameC c π l hc hcode hn henv hfn hvfn ht hS ho⟩
+    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, FrameAt.outside, _, _, .frameC c π l hc hcode hn henv hfn hvfn ht hS ho⟩
     | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
   | frameOut hc hE henv ht hS ho ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     cases hi : ReadOnly.innermost _ with
-    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, Alloc.outside, _, _, .frameOut hc hE henv ht hS ho⟩
+    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, FrameAt.outside, _, _, .frameOut hc hE henv ht hS ho⟩
     | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
 
 /-- **The check at the innermost frame of a reached state** (proved): at a
@@ -652,6 +807,178 @@ theorem ClientFrame.framed_at_innermost {τ : Type} {fr : ClientFrame τ} {Fl : 
   refine ⟨by rw [(activeFrame_innermost b.1.t none).1, ht]; simp [frameOf], ?_⟩
   obtain ⟨Γ', a', o', S', hf'⟩ := hfit.innermost ht
   exact framed_of_frame (st := lift fr.F fr.C none b.1 b.2) hf' hc hH
+
+/-! ## The frame at a call of outside code -/
+
+/-- **A call of outside code**: a call or a `new` of a closure of outside
+code. -/
+def OutCall (P : Package) : Tm → Prop
+  | .invoke f _ _ => OutClosure P f
+  | .construct f _ => OutClosure P f
+  | _ => False
+
+/-- A value is no call (proved). -/
+theorem outCall_val {cur : Option (Code × ComponentTag)} {v : Tm} (hv : isVal v = true) :
+    ¬ OutCall P (activeFrame cur v).2 := by
+  cases v <;> simp_all [isVal, activeFrame, OutCall]
+
+/-- **A list's active term**: every element a value, or the active term of
+its first element that is not one (proved). -/
+theorem activeArgs_split {cur : Option (Code × ComponentTag)} {t : Tm} : ∀ (xs : List Tm),
+    (activeArgs cur t xs = (cur, t) ∧ innermostArgs xs = none) ∨
+      ∃ x ∈ xs, activeArgs cur t xs = activeFrame cur x ∧ innermostArgs xs = innermost x
+  | [] => .inl ⟨by simp [activeArgs], by simp [innermostArgs]⟩
+  | a :: as => by
+    cases ha : isVal a with
+    | false => exact .inr ⟨a, List.mem_cons_self .., by simp [activeArgs, ha], by simp [innermostArgs, ha]⟩
+    | true =>
+      rcases activeArgs_split (cur := cur) (t := t) as with ⟨h₁, h₂⟩ | ⟨x, hx, h₁, h₂⟩
+      · exact .inl ⟨by simp [activeArgs, ha, h₁], by simp [innermostArgs, ha, h₂]⟩
+      · exact .inr ⟨x, List.mem_cons_of_mem _ hx, by simp [activeArgs, ha, h₁], by simp [innermostArgs, ha, h₂]⟩
+
+/-- The active term of a list of fitting terms calls outside code only
+where one of them does, or where every one is a value and the term `t`
+does (proved). -/
+theorem activeArgs_out {cur : Option (Code × ComponentTag)} {t : Tm} {xs : List Tm} {q : Prop}
+    (ih : ∀ x ∈ xs, innermost x = none → ∀ cur, OutCall P (activeFrame cur x).2 → q)
+    (htop : OutCall P t → q) (hi : innermostArgs xs = none) (hc : OutCall P (activeArgs cur t xs).2) : q := by
+  rcases activeArgs_split (cur := cur) (t := t) xs with ⟨h₁, _⟩ | ⟨x, hx, h₁, h₂⟩
+  · rw [h₁] at hc; exact htop hc
+  · rw [h₁] at hc; rw [h₂] at hi; exact ih x hx hi cur hc
+
+/-- **A frame calls outside code only where its node may** (proved, by
+induction on `Fits`): where no frame is on a fitting term's path and the
+term its next step reduces is a call of outside code, the frame may call
+outside code: that call's callee meets a set holding outside storage, the
+token of the closures of outside code (`FnsIn.notOut`), which a frame's
+call holds only where the frame may call outside code (`Fits.invoke`,
+`Fits.construct`); a call of a closure of a known signature calls `C`'s
+code (`Fits.invokeC`). -/
+theorem Fits.outCall {Fl : Flow P} {V : Sites P → Val → Prop} (hV : ∀ S v, V S v → FnsIn Fl S v) :
+    ∀ {Γ a o S t}, Fits Fl V Γ a o S t → ReadOnly.innermost t = none → ∀ cur, OutCall P (activeFrame cur t).2 →
+      a.out = true := by
+  intro Γ a o S t h
+  induction h with
+  | val hv _ _ => intro _ cur hc; exact absurd hc (outCall_val hv)
+  | var _ _ _ => intro _ cur hc; simp [activeFrame, OutCall] at hc
+  | @invoke _ a _ _ _ f r args hf _ _ _ _ _ _ hout ihf ihr iha =>
+    intro hi cur hc
+    simp only [ReadOnly.innermost] at hi
+    simp only [activeFrame] at hc
+    split at hc
+    · rename_i hv; rw [if_pos hv] at hi; exact ihf hi cur hc
+    · rename_i hfv
+      rw [if_neg hfv] at hi
+      split at hc
+      · rename_i hv; rw [if_pos hv] at hi; exact ihr hi cur hc
+      · rename_i hrv
+        rw [if_neg hrv] at hi
+        refine activeArgs_out iha (fun htop => hout ?_) hi hc
+        have hfv' : isVal f = true := by simpa using hfv
+        exact (hV _ _ (hf.value hfv')).notOut htop
+  | @invokeC _ _ _ _ f r args σ c π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
+    intro hi cur hc
+    have hfv : isVal f = true := hfn.val
+    simp only [ReadOnly.innermost, hfv, Bool.true_eq_false, if_false] at hi
+    simp only [activeFrame, hfv, Bool.true_eq_false, if_false] at hc
+    by_cases hrv : isVal r = false
+    · rw [if_pos hrv] at hi hc; exact ihr hi cur hc
+    · rw [if_neg hrv] at hi hc
+      refine activeArgs_out (fun x hx => iha (List.getElem?_of_mem hx).choose x
+        (List.getElem?_of_mem hx).choose_spec) (fun htop => ?_) hi hc
+      obtain ⟨fs, caps, k, comp, oid, rfl, -, hcomp⟩ := hfn
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, he, hc'⟩ := htop
+      cases he; rw [hcomp] at hc'; cases hc'
+  | @construct _ a _ _ _ f args hf _ _ _ _ _ hout ihf iha =>
+    intro hi cur hc
+    simp only [ReadOnly.innermost] at hi
+    simp only [activeFrame] at hc
+    split at hc
+    · rename_i hv; rw [if_pos hv] at hi; exact ihf hi cur hc
+    · rename_i hfv
+      rw [if_neg hfv] at hi
+      refine activeArgs_out iha (fun htop => hout ?_) hi hc
+      have hfv' : isVal f = true := by simpa using hfv
+      exact (hV _ _ (hf.value hfv')).notOut htop
+  | letE _ _ _ ihx _ | spread _ _ _ ihx | readAt _ _ _ _ _ ihx | test _ _ ihx | ite _ _ _ _ ihx _ _
+  | lenOf _ _ ihx | throw _ _ ihx =>
+    intro hi cur hc
+    simp only [ReadOnly.innermost] at hi
+    simp only [activeFrame] at hc
+    split at hc
+    · rename_i hv; rw [if_pos hv] at hi; exact ihx hi cur hc
+    · simp [OutCall] at hc
+  | indexAt _ _ _ _ _ _ ihx ihk | writeAt _ _ _ _ ihx ihk | arith _ _ _ ihx ihk | elemAt _ _ _ _ ihx ihk
+  | merge _ _ _ _ _ _ _ _ ihx ihk | makeKey _ _ _ _ _ ihx ihk =>
+    intro hi cur hc
+    simp only [ReadOnly.innermost] at hi
+    simp only [activeFrame] at hc
+    split at hc
+    · rename_i hv; rw [if_pos hv] at hi; exact ihx hi cur hc
+    · rename_i hxv
+      rw [if_neg hxv] at hi
+      split at hc
+      · rename_i hv; rw [if_pos hv] at hi; exact ihk hi cur hc
+      · simp [OutCall] at hc
+  | setElem _ _ _ _ _ _ _ ihx ihi ihv =>
+    intro hi cur hc
+    simp only [ReadOnly.innermost] at hi
+    simp only [activeFrame] at hc
+    split at hc
+    · rename_i hv; rw [if_pos hv] at hi; exact ihx hi cur hc
+    · rename_i hxv
+      rw [if_neg hxv] at hi
+      split at hc
+      · rename_i hv; rw [if_pos hv] at hi; exact ihi hi cur hc
+      · rename_i hiv
+        rw [if_neg hiv] at hi
+        split at hc
+        · rename_i hv; rw [if_pos hv] at hi; exact ihv hi cur hc
+        · simp [OutCall] at hc
+  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+    intro hi cur hc
+    simp only [ReadOnly.innermost] at hi
+    simp only [activeFrame] at hc
+    exact activeArgs_out ih (fun htop => by simp [OutCall] at htop) hi hc
+  | gotoC _ _ _ _ _ _ _ _ | gotoOut _ _ _ _ _ => intro _ cur hc; simp [activeFrame, OutCall] at hc
+  | frameC _ _ _ _ _ _ _ _ _ _ _ _ _ | frameOut _ _ _ _ _ _ _ =>
+    intro hi; simp [ReadOnly.innermost] at hi
+
+/-- **The check at a call of outside code** (proved): at a reached state
+whose innermost frame on its term's path is a frame of `C`'s code and
+whose next step calls outside code, the frame fits the flow at a context
+of its code and a node of its continuation and handler that may call
+outside code (`Fits.outCall`, `activeFrame_redex`), its environment
+meeting the node's slots; so the check at that node's slots gives
+`Framed` at its environment (`framed_of_sites`). The check is therefore
+required at each such node and context, and at no other. -/
+theorem ClientFrame.framed_at_call {τ : Type} {fr : ClientFrame τ} {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts)
+    (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true)
+    (hcall : OutCall (fr.F.at fr.C) (activeFrame none b.1.t).2) :
+    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧ π.out l = true ∧
+      ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
+        {prot : Region → Bool} {tv : TypeView} {dp : Nat},
+        frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
+        RootsOk b.1.s.W (envOf L d) →
+        (∀ e ∈ S, ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true → b.2.key w ∈ keys e.1) →
+        (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
+          b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
+        Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
+  obtain ⟨hfit, hH⟩ := ClientFrame.fitsAt_reached hF hS hE hb
+  obtain ⟨Γ', a', o', S', hf'⟩ := hfit.innermost ht
+  obtain ⟨E', K', t', L', d', k', x', comp', he, hi, hred⟩ := activeFrame_redex b.1.t none _ ht
+  cases he
+  cases hf' with
+  | val hv => simp [isVal] at hv
+  | frameC c π l _ hcode hn henv _ _ hrun =>
+    have hout : (π.at l).out = true := hrun.outCall (fun _ _ hv => hv.fns) hi _ (by rw [← hred]; exact hcall)
+    exact ⟨c, π, l, hcode, hn, hout, fun hck hq hρ hkey hw =>
+      framed_of_sites hck hq hρ (fun i => (henv i).sites) hH.sites hkey hw⟩
+  | frameOut hc' => rw [hc] at hc'; cases hc'
 
 /-! ## The keys of a region's locations
 

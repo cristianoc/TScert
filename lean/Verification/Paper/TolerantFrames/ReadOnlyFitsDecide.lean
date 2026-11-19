@@ -59,10 +59,10 @@ theorem OFits.sub : ∀ {d Γ a o S e}, OFits Fl τ φ d Γ a o S e → o = fals
   | arr hl _ => intro ho _ _; exact .arr hl (by simp [ho])
   | bvar hi hΓ hs _ => intro ho _ hS; exact .bvar hi hΓ (hs.trans hS) (by simp [ho])
   | fvar hi hs _ => intro ho _ hS; exact .fvar hi (hs.trans hS) (by simp [ho])
-  | invoke hf hr ha hO harr _ => intro ho _ hS; exact .invoke hf hr ha (hO.trans hS) harr (by simp [ho])
+  | invoke hf hr ha hO harr _ hSf hout => intro ho _ hS; exact .invoke hf hr ha (hO.trans hS) harr (by simp [ho]) hSf hout
   | invokeC σ c π Sa Sr hof hj hφ hc hself hr ha hat hpar hrest hR _ =>
     intro ho _ hS; exact .invokeC σ c π Sa Sr hof hj hφ hc hself hr ha hat hpar hrest (hR.trans hS) (by simp [ho])
-  | construct hf ha hO harr _ => intro ho _ hS; exact .construct hf ha (hO.trans hS) harr (by simp [ho])
+  | construct hf ha hO harr _ hSf hout => intro ho _ hS; exact .construct hf ha (hO.trans hS) harr (by simp [ho]) hSf hout
   | letE hx _ _ _ ihb => intro ho _ hS; exact .letE hx (ihb ho hS) (by simp [ho])
   | spread hx hc _ => intro ho _ hS; exact .spread hx (fun s hs => (hc s hs).trans hS) (by simp [ho])
   | makeAbsent Ss hst hx ha _ => intro ho _ hS; exact .makeAbsent Ss hst hx (hS _ ha) (by simp [ho])
@@ -70,8 +70,8 @@ theorem OFits.sub : ∀ {d Γ a o S e}, OFits Fl τ φ d Γ a o S e → o = fals
     intro ho _ hS; exact .makeBound Ss hst hx (hS _ ha) (fun x hx => (hp x hx).sub hS) (by simp [ho])
   | makeGraphC π Ss hst hx ha hc hcode hcaps htok hop hE _ =>
     intro ho _ hS; exact .makeGraphC π Ss hst hx (hS _ ha) hc hcode hcaps (hS _ htok) hop hE (by simp [ho])
-  | makeGraphOut Ss hst hx ha hc hE hcaps _ =>
-    intro ho _ hS; exact .makeGraphOut Ss hst hx (hS _ ha) hc hE (fun u hu => (hcaps u hu).sub hS) (by simp [ho])
+  | makeGraphOut Ss hst hx ha hc hE hcaps _ hn =>
+    intro ho _ hS; exact .makeGraphOut Ss hst hx (hS _ ha) hc hE (fun u hu => (hcaps u hu).sub hS) (by simp [ho]) (hS _ hn)
   | readAt hx hq hcl hr _ => intro ho _ hS; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) (by simp [ho])
   | indexAt hx hk hq hcl hr _ =>
     intro ho _ hS; exact .indexAt hx hk hq hcl (fun s hs => (hr s hs).trans hS) (by simp [ho])
@@ -108,6 +108,8 @@ structure FNode (P : Package) where
   fn : Array (Option Nat)
   vfn : Option Nat
   cx : Nat := entryCx
+  /-- Whether a run at the node may call outside code. -/
+  out : Bool := true
 
 def FNode.envAt (x : FNode P) (i : Nat) : Sites P := x.env.getD i x.dflt
 
@@ -139,6 +141,7 @@ def FCode.flow (c : FCode P) : CodeFlow P where
   vfn l := c.sigAt (c.node l).vfn
   ret := c.ret
   tok := c.tok
+  out l := (c.node l).out
 
 /-- The first entry of a list at a key. -/
 def look {α β : Type} [DecidableEq α] (a : α) (l : List (α × β)) : Option β :=
@@ -373,7 +376,7 @@ theorem closeQ_sound {S Q : Sites P} (h : closeQ F S = some Q) : Sub S Q ∧ ∀
   · cases h; exact ⟨sub_grow F _ _, of_decide_eq_true ‹_›⟩
   · cases h
 
-variable (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : Alloc P) (κ : Nat)
+variable (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
 
 /-- The sites of a part of a closure's code, open. -/
 def partSites (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → Option (Sites P)
@@ -414,6 +417,14 @@ theorem partsSites_sound {d : Nat} {Γ : Nat → Option (Sites P)} :
       · exact (partsSites_sound hT x hx).sub fun y hy => List.mem_append_right _ hy
     · cases h
 
+/-- **A callee's set holds outside storage only at a frame that may call
+outside code**, decided. -/
+def outB (Sf : Sites P) : Bool := !decide (none ∈ Sf) || a.out
+
+theorem outB_sound {Sf : Sites P} (h : outB a Sf = true) : none ∈ Sf → a.out = true := by
+  intro hn; simp only [outB, Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at h
+  exact h.resolve_left (fun h' => h' hn)
+
 /-- **A call of a closure of a known signature**, decided from the sets of
 its receiver and actuals. -/
 def invCB (d j : Nat) (σ : FnSig) (c : FCode P) (Sr : Sites P) (Ls : List (Sites P)) (args : List Tm) : Bool :=
@@ -425,10 +436,12 @@ def invCB (d j : Nat) (σ : FnSig) (c : FCode P) (Sr : Sites P) (Ls : List (Site
 /-- **The set of a call**, from the sets of its callee, receiver and
 actuals: the callee's return set at the node's context `κ` where the
 callee is a slot naming a signature whose entry there accepts them, or `O`
-where all of them lie within `O`. -/
+where all of them lie within `O`, the callee's set holding outside storage
+only where the frame may call outside code (`outB`). -/
 def invokeSites (d : Nat) (f : Tm) (Sf Sr : Sites P) (Ls : List (Sites P)) (args : List Tm) : Option (Sites P) :=
   let viaO : Option (Sites P) :=
-    if decide (Sub Sf F.O) && decide (Sub Sr F.O) && Ls.all (fun S => decide (Sub S F.O)) && decide (a.arr ∈ F.O) then
+    if decide (Sub Sf F.O) && outB a Sf && decide (Sub Sr F.O) && Ls.all (fun S => decide (Sub S F.O)) &&
+        decide (a.arr ∈ F.O) then
       some F.O
     else none
   match f with
@@ -454,7 +467,7 @@ def graphSites (d : Nat) (Γ : Nat → Option (Sites P)) (ar : Nat) (E : List Tm
         (!decide (c.tok ∈ F.O) || openB F c ar s rest caps.length) then
         some [a.obj, c.tok] else none
     | none => none
-  else (partsSites τ d Γ caps).map (a.obj :: ·)
+  else (partsSites τ d Γ caps).map (fun S => none :: a.obj :: S)
 
 mutual
 /-- **A term's least set** at the node's slots `τ`, signatures `φ` and
@@ -468,7 +481,8 @@ def syn (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → Option (Sites P)
     | _, _, _ => none
   | .construct f args => match syn d Γ f, synAll d Γ args with
     | some Sf, some Ls =>
-      if decide (Sub Sf F.O) && Ls.all (fun S => decide (Sub S F.O)) && decide (a.arr ∈ F.O) then some F.O else none
+      if decide (Sub Sf F.O) && outB a Sf && Ls.all (fun S => decide (Sub S F.O)) && decide (a.arr ∈ F.O) then some F.O
+      else none
     | _, _ => none
   | .letE x b => match syn d Γ x with
     | some Sx => syn (d + 1) (consSites Sx Γ) b
@@ -544,7 +558,7 @@ end decide
 /-! ## The least set fits -/
 
 section sound
-variable (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : Alloc P) (κ : Nat)
+variable (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
 
 /-- A term's least set, where computed, fits it. -/
 def SynOk (e : Tm) : Prop :=
@@ -607,15 +621,16 @@ theorem invokeSites_sound {d : Nat} {Γ : Nat → Option (Sites P)} {f r : Tm} {
     {Ls : List (Sites P)} (hf : OFits F.flow τ φ d Γ a false Sf f) (hr : OFits F.flow τ φ d Γ a false Sr r)
     (hL : ∀ (i : Nat) (x : Tm), args[i]? = some x → ∃ S', Ls[i]? = some S' ∧ OFits F.flow τ φ d Γ a false S' x)
     (h : invokeSites F τ φ a κ d f Sf Sr Ls args = some S) : OFits F.flow τ φ d Γ a false S (.invoke f r args) := by
-  have hO : ∀ {S : Sites P}, (if decide (Sub Sf F.O) && decide (Sub Sr F.O) && Ls.all (fun S => decide (Sub S F.O)) &&
-      decide (a.arr ∈ F.O) then some F.O else none) = some S → OFits F.flow τ φ d Γ a false S (.invoke f r args) := by
+  have hO : ∀ {S : Sites P}, (if decide (Sub Sf F.O) && outB a Sf && decide (Sub Sr F.O) &&
+      Ls.all (fun S => decide (Sub S F.O)) && decide (a.arr ∈ F.O) then some F.O else none) = some S →
+      OFits F.flow τ φ d Γ a false S (.invoke f r args) := by
     intro S h
     split at h
     · rename_i hc
       cases h
       simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hc
-      obtain ⟨⟨⟨hfO, hrO⟩, hLO⟩, harr⟩ := hc
-      refine .invoke (hf.sub rfl hfO) (hr.sub rfl hrO) (fun x hx => ?_) (Sub.refl _) harr (by simp)
+      obtain ⟨⟨⟨⟨hfO, hout⟩, hrO⟩, hLO⟩, harr⟩ := hc
+      refine .invoke hf (hr.sub rfl hrO) (fun x hx => ?_) (Sub.refl _) harr (by simp) hfO (outB_sound a hout)
       obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hx
       obtain ⟨S', hS', hx'⟩ := hL i x hi
       exact hx'.sub rfl (hLO S' (List.mem_of_getElem? hS'))
@@ -676,8 +691,8 @@ theorem syn_sound : ∀ e, SynOk F τ φ a κ e := by
       · rename_i hc
         cases h
         simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hc
-        obtain ⟨⟨hfO, hLO⟩, harr⟩ := hc
-        refine .construct ((ihf d Γ Sf hf).sub rfl hfO) (fun x hx => ?_) (Sub.refl _) harr (by simp)
+        obtain ⟨⟨⟨hfO, hout⟩, hLO⟩, harr⟩ := hc
+        refine .construct (ihf d Γ Sf hf) (fun x hx => ?_) (Sub.refl _) harr (by simp) hfO (outB_sound a hout)
         obtain ⟨S', hS', _, hx'⟩ := synAll_mem iha hL hx
         exact hx'.sub rfl (hLO S' hS')
       · cases h
@@ -879,8 +894,9 @@ theorem syn_sound : ∀ e, SynOk F τ φ a κ e := by
           | none => simp [hp] at h
           | some Sp =>
             simp only [hp, Option.map_some, Option.some.injEq] at h; subst h
-            exact .makeGraphOut _ hst hx (List.mem_cons_self ..) (by simpa using hC) hE'
-              (fun u hu => (partsSites_sound τ hp u hu).sub fun _ hy => List.mem_cons_of_mem _ hy) (by simp)
+            exact .makeGraphOut _ hst hx (List.mem_cons_of_mem _ (List.mem_cons_self ..)) (by simpa using hC) hE'
+              (fun u hu => (partsSites_sound τ hp u hu).sub fun _ hy =>
+                List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hy)) (by simp) (List.mem_cons_self ..)
       · cases h
     · cases h
   all_goals cases h
@@ -1070,7 +1086,8 @@ theorem vfnB_sound {l : Nat} {e : Tm} (h : vfnB (c.node l) e = true) :
 handler `x`, decided. -/
 def nodeAtB (l : Nat) (e : Tm) (k : Continuation) (x : Option Target) : Bool :=
   let nd := c.node l
-  (syn F nd.envAt (fun i => c.sigAt (nd.fnAt i)) c.alloc nd.cx 0 (fun _ => none) e).any (fun S => decide (Sub S nd.val)) &&
+  (syn F nd.envAt (fun i => c.sigAt (nd.fnAt i)) ⟨c.alloc, nd.out⟩ nd.cx 0 (fun _ => none) e).any
+    (fun S => decide (Sub S nd.val)) &&
     vfnB nd e && contChkB c nd k && handlerChkB F c nd x
 
 /-- **The checks of a node**, decided. -/
@@ -1093,8 +1110,8 @@ theorem codeChkB_sound {m : Code} (h : codeChkB F c m = true) : CodeChk F.flow m
   simp only [nodeAtB, Bool.and_eq_true] at this
   obtain ⟨⟨⟨hs, hv⟩, hc⟩, hh⟩ := this
   refine ⟨?_, vfnB_sound c hv, contChkB_sound c hc, handlerChkB_sound F c hh⟩
-  change (syn F (c.flow.env l) (c.flow.fn l) c.flow.alloc (c.node l).cx 0 (fun _ => none) e).any _ = true at hs
-  cases hS : syn F (c.flow.env l) (c.flow.fn l) c.flow.alloc (c.node l).cx 0 (fun _ => none) e with
+  change (syn F (c.flow.env l) (c.flow.fn l) (c.flow.at l) (c.node l).cx 0 (fun _ => none) e).any _ = true at hs
+  cases hS : syn F (c.flow.env l) (c.flow.fn l) (c.flow.at l) (c.node l).cx 0 (fun _ => none) e with
   | none => simp [hS] at hs
   | some S =>
     simp only [hS, Option.any_some, decide_eq_true_eq] at hs

@@ -22,8 +22,10 @@ by every step is not proved here):
   variables a `letE` binds, `a` the sites the running frame allocates at,
   `o` whether the position is outside code's, where every rule's set lies
   within `O`), the rules by which its value, once computed, meets `S`. A call whose
-  callee may be outside code has its callee, receiver and actuals meet
-  `O`, and its value meets `O`; a call of a closure of `C`'s code of a
+  callee may be outside code has its callee meet a set within `O`, holding
+  outside storage only where the frame may call outside code (`a.out`,
+  `CodeFlow.out` at a frame's node), its receiver and actuals meet `O`,
+  and its value meets `O`; a call of a closure of `C`'s code of a
   known signature (`FnSig`) has its receiver and actuals meet the slots of
   the callee's entry (the note's (K) restricts only what crosses out to
   outside code), and its value meets the callee's return set. A
@@ -34,8 +36,9 @@ by every step is not proved here):
   nested run of graph code fits when its environment meets the node's
   proposal (a code of `C`) or `O` (outside code), and its result meets the
   code's return set or `O`. A closure of `C`'s code meets a set holding
-  its code's token (`CodeFlow.tok`, `FnsIn`), as do the closures a value
-  holds in the code of outside code or of a bound function; a code whose
+  its code's token (`CodeFlow.tok`, `FnsIn`), a closure of outside code a
+  set holding outside storage, as do the closures a value holds in the
+  code of outside code or of a bound function; a code whose
   token lies in `O` is open at its entry (`OpenAt`): outside code may call
   its closures, so the slots a caller of unknown callee fills hold `O`
   and its returns lie within `O`.
@@ -71,6 +74,22 @@ structure Alloc (P : Package) where
 /-- The allocation sites of outside code: outside storage. -/
 def Alloc.outside : Alloc P := ⟨none, none⟩
 
+/-- **What a running frame may do**: allocate at its code's sites, and,
+where `out` holds, call outside code. A call whose callee's set holds
+outside storage, the token of the closures of outside code, may call
+outside code, so it is a call of a frame whose node may. -/
+structure FrameAt (P : Package) where
+  alloc : Alloc P
+  out : Bool
+
+abbrev FrameAt.obj (a : FrameAt P) : Option P.Site := a.alloc.obj
+
+abbrev FrameAt.arr (a : FrameAt P) : Option P.Site := a.alloc.arr
+
+/-- A frame of outside code: its allocation sites, and it may call outside
+code. -/
+def FrameAt.outside : FrameAt P := ⟨Alloc.outside, true⟩
+
 /-- **The signature of a closure of `C`'s code**: its code, its arity, its
 entry label, whether it collects a rest spine, and its number of
 captures. -/
@@ -86,7 +105,8 @@ slot of the environment (`env l i`) and of the node expression's value
 (`val l`); the sites its frames allocate at; where a slot (`fn l i`)
 or the node's value (`vfn l`) holds a closure of `C`'s code of a known
 signature, that signature; the sites of the values its runs return
-(`ret`); and the site that stands for its closures in a set (`tok`). -/
+(`ret`); the site that stands for its closures in a set (`tok`); and
+whether a run at a node may call outside code (`out l`). -/
 structure CodeFlow (P : Package) where
   env : Nat → Nat → Sites P
   val : Nat → Sites P
@@ -95,6 +115,11 @@ structure CodeFlow (P : Package) where
   vfn : Nat → Option FnSig
   ret : Sites P
   tok : Option P.Site
+  out : Nat → Bool
+
+/-- **A frame at a node of the code**: the code's allocation sites, and
+whether the node may call outside code. -/
+def CodeFlow.at (π : CodeFlow P) (l : Nat) : FrameAt P := ⟨π.alloc, π.out l⟩
 
 /-- **A flow**: the sites outside code may see, the heap of sites, and the
 proposal for each code of `C` at each of its contexts. -/
@@ -254,18 +279,32 @@ def OutLowered (v : Val) : Prop :=
   ∀ fs ar E K s caps k rest comp oid, v = .objAt fs (.graph ar E K s caps k rest comp) oid →
     P.ofC comp = false → ∀ e ∈ E, Lowered Fl e
 
-/-- **The closures a value holds meet a set**: each closure of `C`'s code
-the value is, or holds in the code of a closure of outside code or of a
-bound function (`CodeReach`), has its code's token in the set. -/
+/-- **The closures a value holds meet a set**: each closure the value is,
+or holds in the code of a closure of outside code or of a bound function
+(`CodeReach`), has its token in the set: a closure of `C`'s code its
+code's token, a closure of outside code outside storage. -/
 def FnsIn (S : Sites P) (v : Val) : Prop :=
   ∀ x, CodeReach P.ofC v x → ∀ fs ar E K s caps k rest comp oid, x = .objAt fs (.graph ar E K s caps k rest comp) oid →
-    P.ofC comp = true → ∃ π, Fl.code (E, K) entryCx = some π ∧ π.tok ∈ S
+    (P.ofC comp = true → ∃ π, Fl.code (E, K) entryCx = some π ∧ π.tok ∈ S) ∧ (P.ofC comp = false → none ∈ S)
 
 variable {Fl} in
 theorem FnsIn.mono {S S' : Sites P} {v : Val} (h : FnsIn Fl S v) (hS : Sub S S') : FnsIn Fl S' v := by
-  intro x hx fs ar E K s caps k rest comp oid he hc
-  obtain ⟨π, hπ, ht⟩ := h x hx fs ar E K s caps k rest comp oid he hc
+  intro x hx fs ar E K s caps k rest comp oid he
+  obtain ⟨hC, hO⟩ := h x hx fs ar E K s caps k rest comp oid he
+  refine ⟨fun hc => ?_, fun hc => hS _ (hO hc)⟩
+  obtain ⟨π, hπ, ht⟩ := hC hc
   exact ⟨π, hπ, hS _ ht⟩
+
+/-- **A closure of outside code**: a closure whose code is not `C`'s. -/
+def OutClosure (P : Package) (f : Tm) : Prop :=
+  ∃ fs ar E K s caps k rest comp oid, f = .objAt fs (.graph ar E K s caps k rest comp) oid ∧ P.ofC comp = false
+
+variable {Fl} in
+/-- **A value whose set lacks outside storage is no closure of outside
+code** (proved). -/
+theorem FnsIn.notOut {S : Sites P} {v : Val} (h : FnsIn Fl S v) (hO : OutClosure P v) : none ∈ S := by
+  obtain ⟨fs, ar, E, K, s, caps, k, rest, comp, oid, rfl, hc⟩ := hO
+  exact (h _ (.refl _) fs ar E K s caps k rest comp oid rfl).2 hc
 
 variable {Fl} in
 /-- A value its code holds holds what the value holds (proved). -/
@@ -273,14 +312,14 @@ theorem FnsIn.code {S : Sites P} {v x : Val} (h : FnsIn Fl S v) (hx : x ∈ code
   fun y hy => h y (.step hx hy)
 
 variable {Fl} in
-/-- **A value whose code holds nothing, and no closure of `C`'s code,
-holds none** (proved). -/
+/-- **A value whose code holds nothing, and no closure, holds none**
+(proved). -/
 theorem FnsIn.atom {S : Sites P} {v : Val} (hcode : codeVals P.ofC v = [])
-    (hcap : ∀ fs ar E K s caps k rest comp oid, P.ofC comp = true → v ≠ .objAt fs (.graph ar E K s caps k rest comp) oid) :
+    (hcap : ∀ fs ar E K s caps k rest comp oid, v ≠ .objAt fs (.graph ar E K s caps k rest comp) oid) :
     FnsIn Fl S v := by
-  intro x hx fs ar E K s caps k rest comp oid he hc
+  intro x hx fs ar E K s caps k rest comp oid he
   cases hx with
-  | refl => exact absurd he (hcap fs ar E K s caps k rest comp oid hc)
+  | refl => exact absurd he (hcap fs ar E K s caps k rest comp oid)
   | step hm _ => rw [hcode] at hm; cases hm
 
 variable (g : Ghost P) (n : Nat)
@@ -332,11 +371,15 @@ theorem VOr.imp {V V' : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)
 
 /-- **A term fits a set of sites** at a value judgment `V` (the module's
 header). -/
-inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → Alloc P → Bool → Sites P → Tm → Prop where
+inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → FrameAt P → Bool → Sites P → Tm → Prop where
   | val {Γ a o S v} : isVal v = true → V S v → (o = true → Sub S Fl.O) → Fits V Γ a o S v
   | var {Γ a o S S' i} : Γ i = some S' → Sub S' S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.var i)
-  | invoke {Γ a o S f r args} : Fits V Γ a o Fl.O f → Fits V Γ a o Fl.O r → (∀ x ∈ args, Fits V Γ a o Fl.O x) →
-      Sub Fl.O S → a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Fits V Γ a o S (.invoke f r args)
+  /-- A call whose callee may be outside code: the callee meets a set
+  within `O`, holding outside storage only at a frame that may call
+  outside code. -/
+  | invoke {Γ a o S Sf f r args} : Fits V Γ a o Sf f → Fits V Γ a o Fl.O r → (∀ x ∈ args, Fits V Γ a o Fl.O x) →
+      Sub Fl.O S → a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Sub Sf Fl.O → (none ∈ Sf → a.out = true) →
+      Fits V Γ a o S (.invoke f r args)
   /-- A call whose callee is a closure of `C`'s code of a known signature:
   the receiver and the actuals meet the slots of its entry, a rest spine
   is allocated at the caller's array site; its value meets the code's
@@ -348,8 +391,9 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → A
       (∀ i, i < σ.ar → Sub (Sa i) (π.env σ.s (paramSlot σ.rest i))) →
       (σ.rest = true → a.arr ∈ π.env σ.s 0 ∧ Stores Fl a.arr Sr ∧ ∀ i, σ.ar ≤ i → Sub (Sa i) Sr) →
       Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.invoke f r args)
-  | construct {Γ a o S f args} : Fits V Γ a o Fl.O f → (∀ x ∈ args, Fits V Γ a o Fl.O x) → Sub Fl.O S →
-      a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Fits V Γ a o S (.construct f args)
+  | construct {Γ a o S Sf f args} : Fits V Γ a o Sf f → (∀ x ∈ args, Fits V Γ a o Fl.O x) → Sub Fl.O S →
+      a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → Sub Sf Fl.O → (none ∈ Sf → a.out = true) →
+      Fits V Γ a o S (.construct f args)
   | letE {Γ a o S Sx x b} : Fits V Γ a o Sx x → Fits V (consSites Sx Γ) a o S b → (o = true → Sub S Fl.O) → Fits V Γ a o S (.letE x b)
   | spread {Γ a o S Sx x} : Fits V Γ a o Sx x → (∀ s ∈ Sx, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.spread x)
   | makeAbsent {Γ a o S ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) → a.obj ∈ S →
@@ -369,7 +413,7 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → A
   | makeGraphOut {Γ a o S ar E K s caps k rest comp ns inits} :
       (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
       a.obj ∈ S → P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, VOr V Γ S u) →
-      (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
+      (o = true → Sub S Fl.O) → none ∈ S → Fits V Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | readAt {Γ a o S Sx Q f x} : Fits V Γ a o Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
       (∀ s ∈ Q, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.readAt f x)
   | indexAt {Γ a o S Sx Q Sk x key} : Fits V Γ a o Sx x → Fits V Γ a o Sk key → Sub Sx Q →
@@ -400,10 +444,10 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → A
   | frameC {Γ a o S E K t L d k x comp} (c : Nat) (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
       Fl.code (E, K) c = some π → NodeOf (E, K) l k x → (∀ i, V (π.env l i) (envOf L d i)) → EnvFn π l L d →
       (∀ σ, π.vfn l = some σ → FnIs P σ t) →
-      Fits V Γ π.alloc false (π.val l) t → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
+      Fits V Γ (π.at l) false (π.val l) t → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
   | frameOut {Γ a o S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
       (∀ i, V Fl.O (envOf L d i)) →
-      Fits V Γ Alloc.outside true Fl.O t → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
+      Fits V Γ FrameAt.outside true Fl.O t → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
 
 /-- **A value judgment monotone in its set of sites.** -/
 def Mono (V : Sites P → Val → Prop) : Prop := ∀ S S' v, Sub S S' → V S v → V S' v
@@ -418,10 +462,10 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   induction h with
   | val hv h₀ ho => exact .val hv (hV _ _ h₀) ho
   | var h₁ h₂ ho => exact .var h₁ h₂ ho
-  | invoke _ _ _ hS ha ho ihf ihr iha => exact .invoke ihf ihr iha hS ha ho
+  | invoke _ _ _ hS ha ho hSf hout ihf ihr iha => exact .invoke ihf ihr iha hS ha ho hSf hout
   | invokeC σ c π Sa Sr hof hfn hcode hself _ _ hat hpar hrest hS ho ihr iha =>
     exact .invokeC σ c π Sa Sr hof hfn hcode (hV _ _ hself) ihr iha hat hpar hrest hS ho
-  | construct _ _ hS ha ho ihf iha => exact .construct ihf iha hS ha ho
+  | construct _ _ hS ha ho hSf hout ihf iha => exact .construct ihf iha hS ha ho hSf hout
   | letE _ _ ho ihx ihb => exact .letE ihx ihb ho
   | spread _ hc ho ih => exact .spread ih hc ho
   | makeAbsent Ss hst _ hs ho ih => exact .makeAbsent Ss hst ih hs ho
@@ -430,8 +474,8 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   | makeGraphC π Ss hst _ hs hc hcode hcaps htok hop hE ho ih =>
     exact .makeGraphC π Ss hst ih hs hc hcode
       (fun c π' h => ⟨fun i u hu => ((hcaps c π' h).1 i u hu).imp hV, (hcaps c π' h).2⟩) htok hop hE ho
-  | makeGraphOut Ss hst _ hs hc hE hcaps ho ih =>
-    exact .makeGraphOut Ss hst ih hs hc hE (fun u hu => (hcaps u hu).imp hV) ho
+  | makeGraphOut Ss hst _ hs hc hE hcaps ho hn ih =>
+    exact .makeGraphOut Ss hst ih hs hc hE (fun u hu => (hcaps u hu).imp hV) ho hn
   | readAt _ hq hcl hr ho ih => exact .readAt ih hq hcl hr ho
   | indexAt _ _ hq hcl hr ho ihx ihk => exact .indexAt ihx ihk hq hcl hr ho
   | writeAt _ _ hst ho ihx ihy => exact .writeAt ihx ihy hst ho
@@ -458,7 +502,7 @@ theorem Fits.out {V : Sites P → Val → Prop} {Γ a o S t} (h : Fits Fl V Γ a
 
 /-- **A value fits only by its value judgment** (proved): every other rule
 types a term that is not a value. -/
-theorem Fits.value {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S : Sites P}
+theorem Fits.value {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P}
     {v : Val} (h : Fits Fl V Γ a o S v) (hv : isVal v = true) : V S v := by
   cases h <;> first | assumption | simp [isVal] at hv
 
@@ -485,7 +529,7 @@ theorem VJ.alloc {S : Sites P} {v : Val} {n' : Nat} {sf : Nat → Option P.Site}
     fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.alloc hn, (h.inner w hw).2.2⟩⟩
 
 /-- **Allocation keeps a term fitting** (proved, `Fits.mono`). -/
-theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S : Sites P} {t : Tm} {n' : Nat}
+theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P} {t : Tm} {n' : Nat}
     {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : Fits Fl (VJ Fl g n) Γ a o S t) (hn : n ≤ n') :
     Fits Fl (VJ Fl (g.alloc n sf key) n') Γ a o S t :=
   h.mono fun _ _ hv => hv.alloc hn
@@ -649,7 +693,7 @@ handler accepts it. -/
 def CodeOk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
     (∀ (g : Ghost P) n (L : List Tm) d, EnvIn (VJ Fl g n) (π.env l) L d → EnvFn π l L d →
-      Fits Fl (VJ Fl g n) (fun _ => none) π.alloc false (π.val l) (instantiate 0 (envOf L d) e) ∧
+      Fits Fl (VJ Fl g n) (fun _ => none) (π.at l) false (π.val l) (instantiate 0 (envOf L d) e) ∧
       ∀ σ, π.vfn l = some σ → FnIs P σ (instantiate 0 (envOf L d) e)) ∧
     ContOk Fl π l k ∧ HandlerOk Fl π l x ∧ ContFn π l k ∧ HandlerFn π l x
 
@@ -763,7 +807,7 @@ theorem VJ.atom {S : Sites P} {v : Val} (hv : isVal v = true) (hc : Verification
     | refl => rw [hnext a] at hn; cases hn
     | step hm _ => rw [hcode] at hm; cases hm
   refine ⟨hv, hc, fun l h => (hl l h).elim, fun l h => (hl l h).elim,
-    FnsIn.atom hcode fun fs ar E K s caps k rest comp oid _ => hcap fs ar E K s caps k rest comp oid, fun w hwv => ?_⟩
+    FnsIn.atom hcode hcap, fun w hwv => ?_⟩
   rw [hw w hwv]
   exact ⟨hv, fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid),
     fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid)⟩
@@ -809,7 +853,7 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
     (hchild : ∀ u, Child (P := P) (.objAt fs c oid) u → ∃ S', VJ Fl g n S' u)
     (hcaps : CapsOk Fl g n (.objAt fs c oid)) (hout : OutLowered Fl (.objAt fs c oid))
     (hself : ∀ fs' ar E K s caps k rest comp oid', (.objAt fs c oid : Val) = .objAt fs' (.graph ar E K s caps k rest comp) oid' →
-      P.ofC comp = true → ∃ π, Fl.code (E, K) entryCx = some π ∧ π.tok ∈ S)
+      (P.ofC comp = true → ∃ π, Fl.code (E, K) entryCx = some π ∧ π.tok ∈ S) ∧ (P.ofC comp = false → none ∈ S))
     (hcodeF : ∀ x ∈ codeVals P.ofC (.objAt fs c oid), FnsIn Fl S x) :
     VJ Fl g n S (.objAt fs c oid) := by
   have hl : ∀ l, Leaves P.ofC (.objAt fs c oid) l → l < n ∧ g.site l ∈ S := by
@@ -823,10 +867,10 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
       | code i => cases hn
     | step hm hr => exact hcode _ hm l ⟨x, hr, a, hn⟩
   have hF : FnsIn Fl S (.objAt fs c oid) := by
-    intro x hx fs' ar E K s caps k rest comp oid' he hc'
+    intro x hx fs' ar E K s caps k rest comp oid' he
     cases hx with
-    | refl => exact hself fs' ar E K s caps k rest comp oid' he hc'
-    | step hm hr => exact hcodeF _ hm x hr fs' ar E K s caps k rest comp oid' he hc'
+    | refl => exact hself fs' ar E K s caps k rest comp oid' he
+    | step hm hr => exact hcodeF _ hm x hr fs' ar E K s caps k rest comp oid' he
   refine ⟨rfl, hc, fun l h => (hl l h).1, fun l h => (hl l h).2, hF, fun w hw => ?_⟩
   cases hw with
   | refl => exact ⟨rfl, hcaps, hout⟩
@@ -954,7 +998,7 @@ theorem VJ.arr {S : Sites P} {ls : List (Option Nat)}
       | _ => cases hn
     | step hm _ => simp [codeVals] at hm
   refine ⟨rfl, fun _ _ => rfl, fun l h => (hc l (hl l h)).1, fun l h => (hc l (hl l h)).2,
-    FnsIn.atom rfl (fun _ _ _ _ _ _ _ _ _ _ _ he => by cases he), fun w hw => ?_⟩
+    FnsIn.atom rfl (fun _ _ _ _ _ _ _ _ _ _ he => by cases he), fun w hw => ?_⟩
   cases hw with
   | refl =>
     refine ⟨rfl, ?_, ?_⟩ <;> (intro _ _ _ _ _ _ _ _ _ _ he; cases he)
@@ -1104,18 +1148,19 @@ theorem VJ.graphC {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : Lis
   · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he hc'
     cases he
     rw [hc] at hc'; cases hc'
-  · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he _
+  · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he
     cases he
-    exact ⟨π, hcode, htok⟩
+    exact ⟨fun _ => ⟨π, hcode, htok⟩, fun hc' => (by rw [hc] at hc'; cases hc')⟩
 
 /-- **A closure of outside code meets a set** (proved): its fields, its
-node expressions' values and its captures meet the set. -/
+node expressions' values and its captures meet the set, and the set holds
+outside storage. -/
 theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = false)
     (hfs : ∀ k l, (k, l) ∈ fs → l < n ∧ g.site l ∈ S)
     (hcaps : ∀ u ∈ caps, VJ Fl g n S u) (hE : ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u)
-    (hlow : ∀ e ∈ E, Lowered Fl e) :
+    (hlow : ∀ e ∈ E, Lowered Fl e) (hnone : none ∈ S) :
     VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid) := by
   refine VJ.obj (closed_graph fun x hx => (hcaps x hx).closed) hfs
     (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_ ?_ ?_ ?_
@@ -1139,9 +1184,9 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
   · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he _
     cases he
     exact hlow
-  · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he hc'
+  · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he
     cases he
-    rw [hc] at hc'; cases hc'
+    exact ⟨fun hc' => (by rw [hc] at hc'; cases hc'), fun _ => hnone⟩
   · intro x hx
     simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
     rcases hx with hx | hx
@@ -1322,14 +1367,14 @@ theorem envIn_cons {V : Sites P → Val → Prop} {S : Sites P} {L : List Tm} {d
   | succ i => simpa [envOf] using henv i
 
 /-- A goto to a node whose environment meets the node's slots fits (proved). -/
-theorem fits_gotoC {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool}
+theorem fits_gotoC {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool}
     {S : Sites P} {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
     {comp : ComponentTag} {c : Nat} {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) c = some π)
     (henv : EnvIn V (π.env l) L d) (hfn : EnvFn π l L d) (hS : Sub π.ret S) (ho : o = true → Sub S Fl.O) :
     Fits Fl V Γ a o S (.goto E K l L d comp) :=
   .gotoC c π hc hcode (fun i => .inl (henv i)) hfn hS ho
 
-theorem fits_gotoOut {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool}
+theorem fits_gotoOut {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool}
     {S : Sites P} {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
     {comp : ComponentTag} (hc : P.ofC comp = false) (hE : ∀ e ∈ E, Lowered Fl e) (henv : ∀ i, V Fl.O (envOf L d i))
     (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O) : Fits Fl V Γ a o S (.goto E K l L d comp) :=

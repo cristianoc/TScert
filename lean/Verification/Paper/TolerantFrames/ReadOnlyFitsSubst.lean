@@ -31,10 +31,10 @@ theorem Fits.sub_aux {V : Sites P → Val → Prop} (hV : Mono V) :
   induction h with
   | val hv h₀ _ => intro _ hS ho; exact .val hv (hV _ _ _ hS h₀) ho
   | var h₁ h₂ _ => intro _ hS ho; exact .var h₁ (h₂.trans hS) ho
-  | invoke hf hr hargs hO ha _ _ _ _ => intro _ hS ho; exact .invoke hf hr hargs (hO.trans hS) ha ho
+  | invoke hf hr hargs hO ha _ hSf hout _ _ _ => intro _ hS ho; exact .invoke hf hr hargs (hO.trans hS) ha ho hSf hout
   | invokeC σ c π Sa Sr hof hfn hcode hself hr hargs hat hpar hrest hO _ _ _ =>
     intro _ hS ho; exact .invokeC σ c π Sa Sr hof hfn hcode hself hr hargs hat hpar hrest (hO.trans hS) ho
-  | construct hf hargs hO ha _ _ _ => intro _ hS ho; exact .construct hf hargs (hO.trans hS) ha ho
+  | construct hf hargs hO ha _ hSf hout _ _ => intro _ hS ho; exact .construct hf hargs (hO.trans hS) ha ho hSf hout
   | letE hx _ _ _ ihb => intro _ hS ho; exact .letE hx (ihb hS ho) ho
   | spread hx hc _ _ => intro _ hS ho; exact .spread hx (fun s hs => (hc s hs).trans hS) ho
   | makeAbsent Ss hst hi hs _ _ => intro _ hS ho; exact .makeAbsent Ss hst hi (hS _ hs) ho
@@ -43,8 +43,8 @@ theorem Fits.sub_aux {V : Sites P → Val → Prop} (hV : Mono V) :
     intro _ hS ho; exact .makeBound Ss hst hi (hS _ hs) (fun x hx => (hp x hx).sub hV hS) ho
   | makeGraphC π Ss hst hi hs hc hcode hcaps htok hop hE _ _ =>
     intro _ hS ho; exact .makeGraphC π Ss hst hi (hS _ hs) hc hcode hcaps (hS _ htok) hop hE ho
-  | makeGraphOut Ss hst hi hs hc hE hcaps _ _ =>
-    intro _ hS ho; exact .makeGraphOut Ss hst hi (hS _ hs) hc hE (fun u hu => (hcaps u hu).sub hV hS) ho
+  | makeGraphOut Ss hst hi hs hc hE hcaps _ hn _ =>
+    intro _ hS ho; exact .makeGraphOut Ss hst hi (hS _ hs) hc hE (fun u hu => (hcaps u hu).sub hV hS) ho (hS _ hn)
   | readAt hx hq hcl hr _ _ => intro _ hS ho; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) ho
   | indexAt hx hk hq hcl hr _ _ _ =>
     intro _ hS ho; exact .indexAt hx hk hq hcl (fun s hs => (hr s hs).trans hS) ho
@@ -188,11 +188,11 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     rcases subst_var_ins (v := v) h₁ with ⟨rfl, he⟩ | ⟨i', hi', he⟩
     · rw [he]; exact .val hv.val (hv.sub h₂) ho
     · rw [he]; exact .var hi' h₂ ho
-  | invoke _ _ _ hO ha ho ihf ihr iha =>
+  | invoke _ _ _ hO ha ho hSf hout ihf ihr iha =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
     exact .invoke (ihf rfl) (ihr rfl) (fun x hx => by
-      obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy rfl) hO ha ho
+      obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy rfl) hO ha ho hSf hout
   | invokeC σ c π Sa Sr hof hfn hcode hself _ hargs hat hpar hrest hO ho ihr iha =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
@@ -204,11 +204,11 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
       obtain ⟨i, hi⟩ := List.getElem?_of_mem hy
       exact atom_subst hv.val (hargs i y hi) (hat y hy)
-  | construct _ _ hO ha ho ihf iha =>
+  | construct _ _ hO ha ho hSf hout ihf iha =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
     exact .construct (ihf rfl) (fun x hx => by
-      obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy rfl) hO ha ho
+      obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy rfl) hO ha ho hSf hout
   | letE _ _ ho ihx ihb =>
     intro j Γ hΓ; subst hΓ
     simp only [subst]
@@ -252,11 +252,11 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
       · refine .inl ⟨u, ?_, hfu⟩
         rw [List.getElem?_map, hu, Option.map_some, (((hcaps c π' h').1 k u hu).fn_closed hfu) j v]
       · exact .inr ⟨by rw [hk', List.length_map], by rw [hσ, List.length_map]⟩
-  | makeGraphOut Ss hst _ hs hc hE hcaps ho ih =>
+  | makeGraphOut Ss hst _ hs hc hE hcaps ho hn ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) Γ _ _) (subst j v) hst fun x hx => ih x hx rfl
-    refine .makeGraphOut Ss' h₁ h₂ hs hc hE (fun u hu => ?_) ho
+    refine .makeGraphOut Ss' h₁ h₂ hs hc hE (fun u hu => ?_) ho hn
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
     exact (hcaps y hy).subst hv
   | readAt _ hq hcl hr ho ih =>
@@ -362,7 +362,7 @@ theorem codePart_instantiate {ρ : Env} (hρ : ∀ i, VJ Fl g n Fl.O (ρ i)) {x 
 (proved), at the allocation sites of outside code. -/
 theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ i)) {o : Bool} :
     ∀ (e : Tm) (d : Nat) (Γ : Nat → Option (Sites P)), Lowered Fl e → (∀ i, i < d → Γ i = some Fl.O) →
-      Fits Fl (VJ Fl g n) Γ Alloc.outside o Fl.O (instantiate d ρ e) := by
+      Fits Fl (VJ Fl g n) Γ FrameAt.outside o Fl.O (instantiate d ρ e) := by
   have hoO : o = true → Sub Fl.O Fl.O := fun _ => Sub.refl _
   have hst : Stores Fl none Fl.O := hF.writable none hF.none
   have hc : ∀ s ∈ Fl.O, Sub (Fl.H.contents s) Fl.O := hF.closed
@@ -380,12 +380,14 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
     simp only [instantiate, instantiateArgs_eq_map]
     exact .invoke (ihf d Γ hL.1 hΓ) (ihr d Γ hL.2.1 hΓ) (fun x hx => by
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy d Γ (hL.2.2 y hy) hΓ) (Sub.refl _) hF.none hoO
+      (Sub.refl _) (fun _ => rfl)
   | construct f args ihf iha =>
     intro d Γ hL hΓ
     simp only [Lowered, loweredArgs_iff] at hL
     simp only [instantiate, instantiateArgs_eq_map]
     exact .construct (ihf d Γ hL.1 hΓ) (fun x hx => by
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy d Γ (hL.2 y hy) hΓ) (Sub.refl _) hF.none hoO
+      (Sub.refl _) (fun _ => rfl)
   | letE x b ihx ihb =>
     intro d Γ hL hΓ
     simp only [Lowered] at hL
@@ -512,7 +514,7 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
     simp only [Lowered, loweredArgs_iff] at hL
     obtain ⟨hπ, hE, hcaps, hargs⟩ := hL
     simp only [instantiate, instantiateArgs_eq_map]
-    have hi : ∀ x ∈ args.map (instantiate d ρ), Fits Fl (VJ Fl g n) Γ Alloc.outside o ((fun _ => Fl.O) x) x := by
+    have hi : ∀ x ∈ args.map (instantiate d ρ), Fits Fl (VJ Fl g n) Γ FrameAt.outside o ((fun _ => Fl.O) x) x := by
       intro x hx
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy d Γ (hargs y hy) hΓ
     cases hcomp : P.ofC comp with
@@ -528,7 +530,7 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
       exact codePart_instantiate hρ (hcaps x (List.mem_of_getElem? hx)) hΓ
         (hoc i (List.getElem?_eq_some_iff.mp hx).1)
     | false =>
-      refine .makeGraphOut (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hE (fun u hu => ?_) hoO
+      refine .makeGraphOut (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hE (fun u hu => ?_) hoO hF.none
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
       exact codePart_instantiate hρ (hcaps y hy) hΓ (Sub.refl _)
   | goto => intro d Γ hL _; simp only [Lowered] at hL

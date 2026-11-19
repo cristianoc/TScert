@@ -282,7 +282,7 @@ theorem parameters_get : ∀ {n : Nat} {args : List Tm} {i : Nat} {x : Tm},
 (proved): the receiver and the actuals meet its entry's slots, the
 captures and the closure meet theirs (`CapsOk`), and a rest spine is
 allocated at the caller's array site, of the spine's slot. -/
-theorem fits_graphEntryC {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S : Sites P}
+theorem fits_graphEntryC {n : Nat} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P}
     {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat}
     {caps : List Tm} {kd : Invoke} {rest : Bool} {comp : ComponentTag} {oid : Nat} {recv : Tm} {args : List Tm}
     {c : Nat} {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) c = some π)
@@ -339,7 +339,7 @@ theorem fits_graphEntryC {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P}
 receiver, the actuals and the closure, all of `O`, and the captures, of
 the closure's code's entry slots (`C`'s code) or of `O` (outside code);
 a rest spine is allocated at the caller's array site, of `O`. -/
-theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S : Sites P}
+theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P}
     {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat}
     {caps : List Tm} {kd : Invoke} {rest : Bool} {comp : ComponentTag} {oid : Nat} {recv : Tm} {args : List Tm}
     (hf : VJ Fl g n Fl.O (.objAt fs (.graph ar E K s caps kd rest comp) oid)) (hr : VJ Fl g n Fl.O recv)
@@ -380,7 +380,7 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
     obtain ⟨π, hπ, hop⟩ := hf.entryC hc
     obtain ⟨hcaps, hfn⟩ := hf.capC hc hπ
     have hop : OpenAt Fl π ar s rest caps.length := by
-      obtain ⟨π', hπ', ht⟩ := hf.fns _ (.refl _) fs ar E K s caps kd rest comp oid rfl hc
+      obtain ⟨π', hπ', ht⟩ := (hf.fns _ (.refl _) fs ar E K s caps kd rest comp oid rfl).1 hc
       rw [hπ] at hπ'; cases hπ'
       exact hop ht
     have hR : Sub π.ret S := hop.2.2.1.trans hS
@@ -587,7 +587,7 @@ open Classical in
 /-- **A merge's allocation fits** (proved): each copied value is a
 primitive or meets the contents of a site whose contents the object's
 storage may hold. -/
-theorem fits_mergeAlloc {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P} {o : Bool} {S Q : Sites P}
+theorem fits_mergeAlloc {n : Nat} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S Q : Sites P}
     {ns : List PropKey} {inits : List Tm} (hst : ∀ s ∈ Q, Stores Fl a.obj (Fl.H.contents s)) (hs : a.obj ∈ S)
     (hcl : ∀ s ∈ Q, Sub (Fl.H.contents s) Q) (hQ : o = true → Sub Q Fl.O) (ho : o = true → Sub S Fl.O)
     (hv : ∀ v ∈ inits, primVal v = true ∨ ∃ s ∈ Q, VJ Fl g n (Fl.H.contents s) v) :
@@ -611,34 +611,34 @@ theorem fits_mergeAlloc {n : Nat} {Γ : Nat → Option (Sites P)} {a : Alloc P} 
 the innermost frame (`stepSite`). A step reduces no term under a binder,
 so the terms are closed (`fun _ => none`). -/
 theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
-    ∀ {cur : Option (Code × ComponentTag)} {o : Bool} {S : Sites P} (key : Nat → Option PropKey),
-      Fits Fl (VJ Fl g h.length) (fun _ => none) (allocOf Fl cur) o S t → HeapInv Fl g h →
-      Fits Fl (VJ Fl (g.alloc h.length (fun _ => stepSite Fl cur t) key) h'.length) (fun _ => none) (allocOf Fl cur) o S t' ∧
+    ∀ {cur : Option (Code × ComponentTag)} {ou o : Bool} {S : Sites P} (key : Nat → Option PropKey),
+      Fits Fl (VJ Fl g h.length) (fun _ => none) ⟨allocOf Fl cur, ou⟩ o S t → HeapInv Fl g h →
+      Fits Fl (VJ Fl (g.alloc h.length (fun _ => stepSite Fl cur t) key) h'.length) (fun _ => none) ⟨allocOf Fl cur, ou⟩ o S t' ∧
         HeapInv Fl (g.alloc h.length (fun _ => stepSite Fl cur t) key) h' := by
   induction hs with
   | callL hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
-    | invoke hf hr hargs hS ha =>
+    | invoke hf hr hargs hS ha _ hSf hout =>
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨hf', hH'⟩ := ih key hf hH
       simp only [stepSite, activeFrame, hn, if_true] at hf' hH' ⊢
-      exact ⟨.invoke hf' (hr.alloc hl) (fun x hx => (hargs x hx).alloc hl) hS ha ho, hH'⟩
+      exact ⟨.invoke hf' (hr.alloc hl) (fun x hx => (hargs x hx).alloc hl) hS ha ho hSf hout, hH'⟩
     | invokeC _ _ _ _ _ _ hfn => have := hfn.val; rw [notVal_of_step hst] at this; cases this
   | callRecv hfv hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
-    | invoke hf hr hargs hS ha =>
+    | invoke hf hr hargs hS ha _ hSf hout =>
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨hr', hH'⟩ := ih key hr hH
       simp only [stepSite, activeFrame, hn, hfv, if_true, Bool.true_eq_false, if_false] at hr' hH' ⊢
-      exact ⟨.invoke (hf.alloc hl) hr' (fun x hx => (hargs x hx).alloc hl) hS ha ho, hH'⟩
+      exact ⟨.invoke (hf.alloc hl) hr' (fun x hx => (hargs x hx).alloc hl) hS ha ho hSf hout, hH'⟩
     | invokeC σ c π Sa Sr hof hfn hcode hself hr hargs hat hpar hrest hS =>
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
@@ -647,16 +647,16 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact ⟨.invokeC σ c π Sa Sr hof hfn hcode (hself.alloc hl) hr' (fun i x hx => (hargs i x hx).alloc hl) hat hpar
         hrest hS ho, hH'⟩
   | callArg hfv hrv hai hpre hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
-    | invoke hf hr hargs hS ha =>
+    | invoke hf hr hargs hS ha _ hSf hout =>
       have hn := notVal_of_step hst
       have hl := Footprints.step_length_le hst
       obtain ⟨ha', hH'⟩ := ih key (hargs _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, hfv, hrv, Bool.true_eq_false, if_false, activeArgs_at hai hpre hn] at ha' hH' ⊢
-      refine ⟨.invoke (hf.alloc hl) (hr.alloc hl) (fun x hx => ?_) hS ha ho, hH'⟩
+      refine ⟨.invoke (hf.alloc hl) (hr.alloc hl) (fun x hx => ?_) hS ha ho hSf hout, hH'⟩
       rcases mem_set_cases hx with hx | rfl
       · exact (hargs x hx).alloc hl
       · exact ha'
@@ -665,32 +665,32 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · rw [notVal_of_step hst] at hv; cases hv
       · cases hst
   | constructL hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
     cases hfit with
     | val hv => simp [isVal] at hv
-    | construct hf hargs hS ha =>
+    | construct hf hargs hS ha _ hSf hout =>
       obtain ⟨hx', hH'⟩ := ih key hf hH
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
-      exact ⟨.construct hx' (fun x hx => (hargs x hx).alloc hl) hS ha ho, hH'⟩
+      exact ⟨.construct hx' (fun x hx => (hargs x hx).alloc hl) hS ha ho hSf hout, hH'⟩
   | constructArg hfv hai hpre hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
     cases hfit with
     | val hv => simp [isVal] at hv
-    | construct hf hargs hS ha =>
+    | construct hf hargs hS ha _ hSf hout =>
       obtain ⟨hx', hH'⟩ := ih key (hargs _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, hfv, Bool.true_eq_false, if_false, activeArgs_at hai hpre hn] at hx' hH' ⊢
-      refine ⟨.construct (hf.alloc hl) (fun x hx => ?_) hS ha ho, hH'⟩
+      refine ⟨.construct (hf.alloc hl) (fun x hx => ?_) hS ha ho hSf hout, hH'⟩
       rcases mem_set_cases hx with hx | rfl
       · exact (hargs x hx).alloc hl
       · exact hx'
   | letC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -701,7 +701,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.letE hx' (hb.alloc hl) ho, hH'⟩
   | spreadC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -712,7 +712,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.spread hx' hc ho, hH'⟩
   | readC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -723,7 +723,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.readAt hx' hq hcl hr ho, hH'⟩
   | indexC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -734,7 +734,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.indexAt hx' (hk.alloc hl) hq hcl hr ho, hH'⟩
   | indexC2 hav hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -745,7 +745,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.indexAt (hx.alloc hl) hx' hq hcl hr ho, hH'⟩
   | writeC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -756,7 +756,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.writeAt hx' (hy.alloc hl) hst' ho, hH'⟩
   | writeC2 hav hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -767,7 +767,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.writeAt (hx.alloc hl) hx' hst' ho, hH'⟩
   | testC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -778,7 +778,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.test hx' ho, hH'⟩
   | iteC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -789,7 +789,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.ite hx' (hx.alloc hl) (hy.alloc hl) ho, hH'⟩
   | arithC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -800,7 +800,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.arith hx' (hy.alloc hl) ho, hH'⟩
   | arithC2 hav hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -811,7 +811,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.arith (hx.alloc hl) hx' ho, hH'⟩
   | elemC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -822,7 +822,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.elemAt hx' (hi.alloc hl) hc ho, hH'⟩
   | elemC2 hav hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -833,7 +833,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.elemAt (hx.alloc hl) hx' hc ho, hH'⟩
   | setC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -844,7 +844,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.setElem hx' (hi.alloc hl) (hv.alloc hl) hst' hS ha ho, hH'⟩
   | setC2 hav hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -855,7 +855,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.setElem (hx.alloc hl) hx' (hv.alloc hl) hst' hS ha ho, hH'⟩
   | setC3 hav hiv hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -866,7 +866,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, hiv, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.setElem (hx.alloc hl) (hi.alloc hl) hx' hst' hS ha ho, hH'⟩
   | lenC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -877,7 +877,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.lenOf hx' ho, hH'⟩
   | throwC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -888,7 +888,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.throw hx' ho, hH'⟩
   | mergeC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -899,7 +899,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.merge hx' (hy.alloc hl) hq hcl hst' hs hQ ho, hH'⟩
   | mergeC2 hav hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -910,7 +910,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hav, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.merge (hx.alloc hl) hx' hq hcl hst' hs hQ ho, hH'⟩
   | makeKeyC1 hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -921,7 +921,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true] at hx' hH' ⊢
       exact ⟨.makeKey hx' hst' (hx.alloc hl) hs ho, hH'⟩
   | makeKeyC2 hkv hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -932,7 +932,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, hn, if_true, hkv, Bool.true_eq_false, if_false] at hx' hH' ⊢
       exact ⟨.makeKey (hk.alloc hl) hst' hx' hs ho, hH'⟩
   | makeArg hai hpre hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -959,13 +959,13 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode
         (fun c π' h' => ⟨fun i u hu => ((hcaps c π' h').1 i u hu).alloc hl, (hcaps c π' h').2⟩) htok hop hE ho, hH'⟩
-    | makeGraphOut Ss hst' hi hs hc hE hcaps =>
+    | makeGraphOut Ss hst' hi hs hc hE hcaps _ hnone =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
-      exact ⟨.makeGraphOut _ hst'' hi'' hs hc hE (fun u hu => (hcaps u hu).alloc hl) ho, hH'⟩
+      exact ⟨.makeGraphOut _ hst'' hi'' hs hc hE (fun u hu => (hcaps u hu).alloc hl) ho hnone, hH'⟩
   | arrArg hai hpre hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hn := notVal_of_step hst
     have hl := Footprints.step_length_le hst
@@ -977,71 +977,72 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.arrLit _ hst'' hi'' hs ho, hH'⟩
   | frameC hst ih =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     have hl := Footprints.step_length_le hst
     cases hfit with
     | val hv => simp [isVal] at hv
     | frameC c π l hc hcode hnode henv hfn hvfn ht hS =>
-      rw [← allocOf_C hF.agree hc hcode] at ht
+      rw [show π.at l = ⟨π.alloc, π.out l⟩ from rfl, ← allocOf_C hF.agree hc hcode] at ht
       obtain ⟨ht', hH'⟩ := ih key ht hH
       rw [allocOf_C hF.agree hc hcode] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢
       refine ⟨.frameC c π l hc hcode hnode (fun i => (henv i).alloc hl) hfn (fun σ hσ => ?_) ht' hS ho, hH'⟩
       have := (hvfn σ hσ).val; rw [notVal_of_step hst] at this; cases this
     | frameOut hc hE henv ht hS =>
-      rw [← allocOf_out (Fl := Fl) (m := (_, _)) hc] at ht
+      rw [show (FrameAt.outside : FrameAt P) = ⟨Alloc.outside, true⟩ from rfl,
+        ← allocOf_out (Fl := Fl) (m := (_, _)) hc] at ht
       obtain ⟨ht', hH'⟩ := ih key ht hH
       rw [allocOf_out hc] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢
       exact ⟨.frameOut hc hE (fun i => (henv i).alloc hl) ht' hS ho, hH'⟩
   | testV hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     exact ⟨.val (by split <;> rfl) (VJ.prim (by split <;> rfl)) ho, hH.same⟩
   | iteT =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
     | ite _ hx _ => exact ⟨hx.alloc (Nat.le_refl _), hH.same⟩
   | iteF =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
     | ite _ _ hy => exact ⟨hy.alloc (Nat.le_refl _), hH.same⟩
   | arithV hb =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     obtain ⟨-, -, hr⟩ := binop_result hb
     rcases hr with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> exact ⟨.val rfl (VJ.prim rfl) ho, hH.same⟩
   | readMissing _ _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     exact ⟨.val rfl (VJ.prim rfl) ho, hH.same⟩
   | indexMissing _ _ _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     exact ⟨.val rfl (VJ.prim rfl) ho, hH.same⟩
   | elemAbsent _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     exact ⟨.val rfl (VJ.prim rfl) ho, hH.same⟩
   | lenV  =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     exact ⟨.val rfl (VJ.prim rfl) ho, hH.same⟩
   | lenStr _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     exact ⟨.val rfl (VJ.prim rfl) ho, hH.same⟩
   | elemStr =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     refine ⟨.val ?_ (VJ.prim ?_) ho, hH.same⟩ <;> (unfold codeUnitAt; split <;> rfl)
   | arrAllocThrow _ _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     refine ⟨.throw (.val rfl (VJ.thrown _) (fun _ => Sub.refl _)) ho, hH.append fun i u hu => ?_⟩
     have : u = .nul := by
@@ -1051,7 +1052,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     subst this
     exact ⟨VJ.prim rfl, fun x hx => by simp [codeVals] at hx⟩
   | lenStrThrow _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     refine ⟨.throw (.val rfl (VJ.thrown _) (fun _ => Sub.refl _)) ho, hH.append fun i u hu => ?_⟩
     have : u = .nul := by
@@ -1061,7 +1062,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     subst this
     exact ⟨VJ.prim rfl, fun x hx => by simp [codeVals] at hx⟩
   | arithThrow _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     refine ⟨.throw (.val rfl (VJ.thrown _) (fun _ => Sub.refl _)) ho, hH.append fun i u hu => ?_⟩
     have : u = .nul := by
@@ -1071,7 +1072,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     subst this
     exact ⟨VJ.prim rfl, fun x hx => by simp [codeVals] at hx⟩
   | readField hl hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1079,7 +1080,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hs, hv'⟩ := hH.read (hx.value rfl) (a := .key _) (by simpa [next, Footprints.fieldsOf] using hl) hv
       exact ⟨.val hv'.val ((hv'.sub (hr _ (hq _ hs))).alloc (Nat.le_refl _)) ho, hH.same⟩
   | readProto hl hp hpv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1089,7 +1090,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact ⟨.readAt (.val hv'.val (hv'.alloc (Nat.le_refl _)) (fun h => (hr _ (hq _ hs)).trans (ho h))) hq' hcl hr ho,
         hH.same⟩
   | indexField hk hl hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1097,7 +1098,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hs, hv'⟩ := hH.read (hx.value rfl) (a := .key _) (by simpa [next, Footprints.fieldsOf] using hl) hv
       exact ⟨.val hv'.val ((hv'.sub (hr _ (hq _ hs))).alloc (Nat.le_refl _)) ho, hH.same⟩
   | indexProto hk hl hp hpv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1107,7 +1108,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact ⟨.indexAt (.val hv'.val (hv'.alloc (Nat.le_refl _)) (fun h => (hr _ (hq _ hs)).trans (ho h)))
         (hkey.alloc (Nat.le_refl _)) hq' hcl hr ho, hH.same⟩
   | elemRead he hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1116,7 +1117,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hs, hv'⟩ := hH.read (hx.value rfl) hk hv
       exact ⟨.val hv'.val ((hv'.sub (hc _ hs)).alloc (Nat.le_refl _)) ho, hH.same⟩
   | writeField hv hl hlt =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1126,7 +1127,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact ⟨.val rfl (VJ.prim rfl) ho,
         hH.set_same (hy'.sub (hst _ hs).1) fun x hx => (hy'.sites.code hx).mono (hst _ hs).2⟩
   | setPresent hv he hlt =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1138,7 +1139,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact ⟨.val rfl (((hx.value rfl).sub hS).alloc (by simp)) ho,
         hH.set_same (hy'.sub hst'.1) fun x hx => (hy'.sites.code hx).mono hst'.2⟩
   | setGrow hv hk he =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1165,7 +1166,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
             fun l hl => hy'.below l (Leaves.code hx hl)⟩
         · simp at hu
   | makeFields hvs hlen =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -1208,17 +1209,18 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
-    | makeGraphOut Ss hst hi hs hc hE hcaps =>
+    | makeGraphOut Ss hst hi hs hc hE hcaps _ hnone =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.graphOut hc (fun k l hk => ?_) (fun u hu => (hcaps u hu).top.alloc (by simp)) (lowered_vj hE) hE) ho, ?_⟩
+      refine ⟨.val rfl (VJ.graphOut hc (fun k l hk => ?_) (fun u hu => (hcaps u hu).top.alloc (by simp)) (lowered_vj hE) hE
+        hnone) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
   | arrAlloc hvs _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -1234,7 +1236,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · have := hH.fresh (key := key) hst hvj [] (by simp)
         rwa [List.append_nil] at this
   | frameRet hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1245,7 +1247,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨.val hv (((ht.value hv).sub hS).alloc (Nat.le_refl _)) ho, hH.same⟩
   | frameBind hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1257,7 +1259,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
   | frameEffect hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1268,7 +1270,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
   | frameYes  =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1279,7 +1281,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
   | frameNo  =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1290,7 +1292,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
   | frameYesBind  =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1301,7 +1303,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho, hH.same⟩
   | frameNoBind  =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1312,7 +1314,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho, hH.same⟩
   | frameTag hv =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1330,7 +1332,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
   | frameHandle hr =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1342,7 +1344,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | frameOut hc hE henv ht hS =>
       exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
   | frameRaise hr =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv' => simp [isVal] at hv'
@@ -1355,7 +1357,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hv := raises_fits hr ht
       exact ⟨.throw (.val hv.val (hv.alloc (Nat.le_refl _)) (fun _ => Sub.refl _)) ho, hH.same⟩
   | letV hav =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -1363,7 +1365,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       rw [← insertSites_zero] at hb
       exact ⟨(fits_subst (hx.value hav) hb).alloc (Nat.le_refl _), hH.same⟩
   | makeKeyV hav hk =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -1371,7 +1373,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact ⟨.makeAbsent (fun _ => _) (fun _ hy => by simp at hy; subst hy; exact hst)
         (fun _ hy => by simp at hy; subst hy; exact hx.alloc (Nat.le_refl _)) hs ho, hH.same⟩
   | gotoEnter he hk =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -1386,12 +1388,12 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       exact fits_lowered hF _ (fun i => (henv' i).alloc (Nat.le_refl _)) _ 0 _ (hE _ (List.mem_of_getElem? he))
         (fun i hi => absurd hi (Nat.not_lt_zero _))
   | callGraph hr hargs _ =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
-    | invoke hf hr' hargs' hS ha =>
-      exact ⟨fits_graphEntry hF ((hf.value rfl).alloc (Nat.le_refl _)) ((hr'.value hr).alloc (Nat.le_refl _))
+    | invoke hf hr' hargs' hS ha _ hSf hout =>
+      exact ⟨fits_graphEntry hF (((hf.value rfl).sub hSf).alloc (Nat.le_refl _)) ((hr'.value hr).alloc (Nat.le_refl _))
         (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS ho, hH.same⟩
     | invokeC σ c π Sa Sr hof hfn hcode hself hr' hargs' hat hpar hrest hS =>
       obtain ⟨fs', caps', k', comp', oid', he, hlen, hc⟩ := hfn
@@ -1401,42 +1403,42 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
         (fun i x hx => ((hargs' i x hx).value (hargs x (List.mem_of_getElem? hx))).alloc (Nat.le_refl _))
         hpar hrest hS hof, hH.same⟩
   | constructGraph hargs =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
-    | construct hf hargs' hS ha =>
-      exact ⟨fits_graphEntry hF ((hf.value rfl).alloc (Nat.le_refl _)) (VJ.prim rfl)
+    | construct hf hargs' hS ha _ hSf hout =>
+      exact ⟨fits_graphEntry hF (((hf.value rfl).sub hSf).alloc (Nat.le_refl _)) (VJ.prim rfl)
         (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS ho, hH.same⟩
   | callBound hr hargs =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv
-    | invoke hf hr' hargs' hS ha =>
+    | invoke hf hr' hargs' hS ha _ hSf hout =>
       have hb := hf.value rfl
       have h1 := hb.boundPart (List.mem_cons_self ..)
       have h2 := hb.boundPart (List.mem_cons_of_mem _ (List.mem_cons_self ..))
-      refine ⟨.invoke (.val h1.val (h1.alloc (Nat.le_refl _)) (fun _ => Sub.refl _))
-        (.val h2.val (h2.alloc (Nat.le_refl _)) (fun _ => Sub.refl _)) (fun x hx => ?_) hS ha ho, hH.same⟩
+      refine ⟨.invoke (.val h1.val (h1.alloc (Nat.le_refl _)) (fun _ => hSf))
+        (.val h2.val ((h2.sub hSf).alloc (Nat.le_refl _)) (fun _ => Sub.refl _)) (fun x hx => ?_) hS ha ho hSf hout, hH.same⟩
       rcases List.mem_append.mp hx with hx | hx
-      · have := hb.boundPart (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))
+      · have := (hb.boundPart (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))).sub hSf
         exact .val this.val (this.alloc (Nat.le_refl _)) (fun _ => Sub.refl _)
       · exact (hargs' x hx).alloc (Nat.le_refl _)
     | invokeC _ _ _ _ _ _ hfn => obtain ⟨_, _, _, _, _, he, _⟩ := hfn; cases he
   | callSpread hfv hrv heq hpre hre =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     subst heq
     cases hfit with
     | val hv => simp [isVal] at hv
-    | invoke hf hr hargs hS ha =>
+    | invoke hf hr hargs hS ha _ hSf hout =>
       have hsp := hargs _ (List.mem_append_right _ (List.mem_cons_self ..))
       cases hsp with
       | val hv => simp [isVal] at hv
       | spread hx hc =>
         have hvs := spread_vj hH (hx.value rfl) hc hre
-        refine ⟨.invoke (hf.alloc (Nat.le_refl _)) (hr.alloc (Nat.le_refl _)) (fun x hx' => ?_) hS ha ho, hH.same⟩
+        refine ⟨.invoke (hf.alloc (Nat.le_refl _)) (hr.alloc (Nat.le_refl _)) (fun x hx' => ?_) hS ha ho hSf hout, hH.same⟩
         simp only [List.mem_append] at hx'
         rcases hx' with (hx' | hx') | hx'
         · exact (hargs x (List.mem_append_left _ hx')).alloc (Nat.le_refl _)
@@ -1447,25 +1449,25 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · simp [isVal] at hv
       · cases hj
   | constructSpread hfv heq hpre hre =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     subst heq
     cases hfit with
     | val hv => simp [isVal] at hv
-    | construct hf hargs hS ha =>
+    | construct hf hargs hS ha _ hSf hout =>
       have hsp := hargs _ (List.mem_append_right _ (List.mem_cons_self ..))
       cases hsp with
       | val hv => simp [isVal] at hv
       | spread hx hc =>
         have hvs := spread_vj hH (hx.value rfl) hc hre
-        refine ⟨.construct (hf.alloc (Nat.le_refl _)) (fun x hx' => ?_) hS ha ho, hH.same⟩
+        refine ⟨.construct (hf.alloc (Nat.le_refl _)) (fun x hx' => ?_) hS ha ho hSf hout, hH.same⟩
         simp only [List.mem_append] at hx'
         rcases hx' with (hx' | hx') | hx'
         · exact (hargs x (List.mem_append_left _ hx')).alloc (Nat.le_refl _)
         · exact .val (hvs x hx').val ((hvs x hx').alloc (Nat.le_refl _)) (fun _ => Sub.refl _)
         · exact (hargs x (List.mem_append_right _ (List.mem_cons_of_mem _ hx'))).alloc (Nat.le_refl _)
   | arrSpread heq hpre hre =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     subst heq
     rename_i pre post ls vs h₀
@@ -1509,7 +1511,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
             · exact .val (hvs y hy).val ((hvs y hy).alloc (Nat.le_refl _)) hspo
             · exact absurd (List.mem_append_right _ hy) hy'
   | mergeV hav hbv hmp =>
-    intro cur o S key hfit hH
+    intro cur ou o S key hfit hH
     have ho := hfit.out
     cases hfit with
     | val hv => simp [isVal] at hv

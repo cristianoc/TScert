@@ -297,7 +297,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
   induction h with
   | val hv h₀ ho => exact vor_roots (Γ := fun _ => none) (.inl h₀) ho
   | var _ _ _ => intro r hr; simp [vals] at hr
-  | invoke _ _ _ _ _ _ ihf ihr iha =>
+  | invoke _ _ _ _ _ _ _ _ ihf ihr iha =>
     intro r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with (hr | hr) | ⟨x, hx, hr⟩
@@ -313,7 +313,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact ihr r hr
     · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
       exact iha i x hi r hr
-  | construct _ _ _ _ _ ihf iha =>
+  | construct _ _ _ _ _ _ _ ihf iha =>
     intro r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
@@ -349,7 +349,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
       List.mem_flatMap] at hr
     obtain ⟨x, hx, hr⟩ := hr
     exact ih x hx r hr
-  | makeGraphOut _ _ _ _ hc hE hcaps ho ih =>
+  | makeGraphOut _ _ _ _ hc hE hcaps ho _ ih =>
     intro r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
@@ -439,7 +439,7 @@ def FlowSites (Fl : Flow (fr.F.at fr.C)) : Prop :=
 /-- **A state fits the flow**: its term fits `O` at a position of outside
 code, outside every frame, and its heap meets the flow. -/
 def FitsAt (Fl : Flow (fr.F.at fr.C)) (a : Conf × Ghost (fr.F.at fr.C)) : Prop :=
-  Fits Fl (VJ Fl a.2 a.1.s.h.length) (fun _ => none) Alloc.outside true Fl.O a.1.t ∧ HeapInv Fl a.2 a.1.s.h
+  Fits Fl (VJ Fl a.2 a.1.s.h.length) (fun _ => none) FrameAt.outside true Fl.O a.1.t ∧ HeapInv Fl a.2 a.1.s.h
 
 /-- **Every entry fits the flow** (the premise the fit of an entry
 discharges): at a call the claim is about, every history the frame

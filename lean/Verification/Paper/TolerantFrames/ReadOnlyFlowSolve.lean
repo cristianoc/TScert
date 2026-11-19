@@ -578,6 +578,34 @@ partial def knownCallees (table : Array (FnSig × Option Nat)) (φ : Nat → FnI
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => knownCallees table φ d a
   | _ => []
 
+/-- **Whether a term may call outside code** at slots of the sets `τ`: a
+call that is no known call (`gen`'s known calls), or a `new`, whose
+callee's set may hold outside storage, the token of the closures of
+outside code; a callee that is no slot may. -/
+partial def callsOut (table : Array (FnSig × Option Nat)) (φ : Nat → FnIx) (τ : Nat → Sites P)
+    (inst : Nat → Option Nat) (d : Nat) : Tm → Bool
+  | .invoke f r args =>
+    let known : Bool := match f with
+      | .var j => d ≤ j && args.all partB &&
+          ((φ (j - d)).bind fun t => (table[t]?).bind fun (_, ci) => ci.bind inst).isSome
+      | _ => false
+    (!known && calleeOut f) || callsOut table φ τ inst d f || callsOut table φ τ inst d r ||
+      args.any (callsOut table φ τ inst d)
+  | .construct f args => calleeOut f || callsOut table φ τ inst d f || args.any (callsOut table φ τ inst d)
+  | .letE x b => callsOut table φ τ inst d x || callsOut table φ τ inst (d + 1) b
+  | .makeAt _ _ inits | .arrLit inits => inits.any (callsOut table φ τ inst d)
+  | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
+    callsOut table φ τ inst d a || callsOut table φ τ inst d b
+  | .ite a b c | .setElem a b c =>
+    callsOut table φ τ inst d a || callsOut table φ τ inst d b || callsOut table φ τ inst d c
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => callsOut table φ τ inst d a
+  | _ => false
+where
+  /-- A callee whose set may hold outside storage. -/
+  calleeOut (f : Tm) : Bool := match f with
+    | .var j => if d ≤ j then (τ (j - d)).contains none else true
+    | _ => true
+
 def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let bases := cs.toArray
   let table := sigTable bases
@@ -803,9 +831,13 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           let off := offs.getD l 0
           let need := needs.getD l 0
           let fn := fns.getD l #[]
-          ⟨(List.range need).toArray.map (fun i => st.vars.getD (off + i) []),
-            st.vars.getD (off + need) [], st.vars.getD (off + need + 1) [], fn, vfnIx fn e, cxs.getD l entryCx⟩),
-        ⟨#[], [], [], #[], none, entryCx⟩, c.alloc, sigs, st.retOf ci, c.tok⟩ : FCode P))) }
+          let env := (List.range need).toArray.map (fun i => st.vars.getD (off + i) [])
+          let dflt := st.vars.getD (off + need) []
+          let κ := cxs.getD l entryCx
+          let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
+          ⟨env, dflt, st.vars.getD (off + need + 1) [], fn, vfnIx fn e, κ,
+            callsOut s.table (fun i => fn.getD i none) (fun i => env.getD i dflt) inst 0 e⟩),
+        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.retOf ci, c.tok⟩ : FCode P))) }
 
 /-- Two sets of the same sites. -/
 def sameSites (S T : Sites P) : Bool := decide (Sub S T) && decide (Sub T S)

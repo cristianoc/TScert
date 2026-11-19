@@ -31,7 +31,7 @@ abbrev markedPackage (comp : ComponentTag) (O : List (Option Nat)) : TolerantFra
 
 /-- A finite flow read at the marks its `O` gives. -/
 def remark {comp : ComponentTag} (F : FFlow (probePackage comp)) : FFlow (markedPackage comp F.O) :=
-  let node (x : FNode (probePackage comp)) : FNode (markedPackage comp F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn, x.cx⟩
+  let node (x : FNode (probePackage comp)) : FNode (markedPackage comp F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn, x.cx, x.out⟩
   ⟨F.O, F.heap, F.codes.map fun (m, cs) => (m, cs.map fun (k, c) =>
     (k, ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok⟩))⟩
 
@@ -46,7 +46,7 @@ variable {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site]
 of the written location (its object's, or its spine's for an element
 write) and the kinds it may have: a slot under a key, a field or a cell, or
 the array spine under the spine key (`slotBound`); an element cell. -/
-partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : Alloc P) (κ : Nat) (d : Nat)
+partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat) (d : Nat)
     (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × List (Option Verification.Kind))
   | .writeAt k x y => ((syn F τ φ a κ d Γ x).map fun S => [(S, roleKinds (Footprints.slotBound k))]).getD
         [([none], roleKinds (Footprints.slotBound k))] ++
@@ -68,7 +68,7 @@ partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option F
 /-- The writes of every node of every code of a flow. -/
 def flowWrites (F : FFlow P) : List (Sites P × List (Option Verification.Kind)) :=
   F.codes.flatMap fun (m, cs) => cs.flatMap fun (_, c) => m.1.zipIdx.flatMap fun (e, l) =>
-    writesIn F (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) c.alloc (c.node l).cx 0 (fun _ => none) e
+    writesIn F (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l) (c.node l).cx 0 (fun _ => none) e
 
 /-- **The sites a closure of the flow's codes may capture**: the sites of
 each capture slot at each code's entry at each context, each code's layout
@@ -135,7 +135,11 @@ def frameSpecs (j : Json) : Except String (List FrameSpec) := do
 flow, of graph `m` and source map `sm` (`frameCheckAt`, at the class
 query, the probe's protocol and the keys `noKeys`, no region read as
 protected): per call node, per fact, its result, and each part its
-support's regions may have that fails, with the check it fails. -/
+support's regions may have that fails, with the check it fails. The check
+is required at each node of the call node's continuation and handler (a
+frame of that node runs at one of them, `NodeOf`) where the node may call
+outside code (`CodeFlow.out`, `ClientFrame.framed_at_call`), read at that
+node's slots; elsewhere it is not required. -/
 def probeFrames {comp : ComponentTag} (O : List (Option Nat)) (F : FFlow (markedPackage comp O))
     (Ψ : Protocol (markedPackage comp O)) (c : FCode (markedPackage comp O)) (m : Code)
     (sm : RequestJson.SourceMap) (sp : FrameSpec) : List String :=
@@ -147,14 +151,22 @@ def probeFrames {comp : ComponentTag} (O : List (Option Nat)) (F : FFlow (marked
     | some en => s!"{en.pos}"
     | none => "none"
   s!"frame probe, {sp.unit}: calls of a slot naming no signature (node, callee slot, source span) {calls.map fun (l, j) => (l, j, pos l)}" ::
-  m.1.zipIdx.flatMap fun (e, l) => match e with
+  m.1.zipIdx.flatMap fun (e, l₀) => match e with
     | .invoke (.var j) _ _ =>
-      let pos := ((sm[l]?).bind id).map (·.pos.1)
-      if pos != some sp.at_ || ((c.node l).fnAt j).isSome then [] else
+      let pos := ((sm[l₀]?).bind id).map (·.pos.1)
+      if pos != some sp.at_ || ((c.node l₀).fnAt j).isSome then [] else
+      -- the nodes a frame of this node's continuation and handler may run at
+      let kx := m.2[l₀]?
+      let sharing := (List.range m.2.length).filter fun l => m.2[l]? == kx
+      let required := sharing.filter fun l => (c.node l).out
+      let slotOf (x : String) : Option Nat := (names l₀).idxOf? x
+      s!"frame probe, {sp.unit}, at node {l₀} (callee slot {j}; nodes of its continuation and handler {sharing}, which may call outside code {required})" ::
+      if required.isEmpty then
+        sp.facts.map fun ff => s!"  {ff.name}: not required, no node of the call's continuation and handler may call outside code here"
+      else required.flatMap fun l =>
       let τ := (c.node l).envAt
-      let slotOf (x : String) : Option Nat := (names l).idxOf? x
-      let slotSites := (List.range (names l).length).map fun i => ((names l)[i]?.getD "", τ i)
-      s!"frame probe, {sp.unit}, at node {l} (callee slot {j}): slots {repr slotSites}" ::
+      let slotSites := (List.range (names l₀).length).map fun i => ((names l₀)[i]?.getD "", τ i)
+      s!"frame probe, {sp.unit}, read at node {l}: slots {repr slotSites}" ::
       sp.facts.map fun ff =>
         match ff.terms.mapM (fun (x, p, k, a) => (slotOf x).map fun i => (HeapKnowledge.Term.now k i p, a)) with
         | none => s!"  {ff.name}: a variable is not a slot here"

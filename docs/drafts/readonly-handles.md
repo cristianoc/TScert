@@ -2099,8 +2099,8 @@ return:
    stated today for the whole graph at a semantic type.
 2. *The assumptions hold.* At a framed call's return, reached from the
    call's state by steps keeping the obligation, the frame's facts hold:
-   `call_rely` with `Framed` from `framed_at_innermost_keys` at the call's
-   node, the witnesses from `witness_reached`, and the certificates
+   `call_rely` with `Framed` from `framed_at_call` at the call's node, the
+   witnesses from `witness_reached`, and the certificates
    (`ClientFrame.Certs`) from the members' own checks, each member a graph
    plan of `C` checked with the frame.
 
@@ -2355,8 +2355,11 @@ sets of sites:
   parameter's spine and a grown cell among them); and, where a slot or a
   node's value holds a closure of $`C`$'s code of a known signature (its
   code, arity, entry label, rest and number of captures, `FnSig`), that
-  signature (`fn`, `vfn`). Outside code allocates outside storage
-  (`Alloc.outside`). A context is a number: `entryCx` stands for the
+  signature (`fn`, `vfn`); and whether a run at a node may call outside
+  code (`out`). A running frame is read at its node (`CodeFlow.at`,
+  `FrameAt`): its code's allocation sites and whether the node may call
+  outside code. Outside code allocates outside storage and may call
+  outside code (`FrameAt.outside`). A context is a number: `entryCx` stands for the
   code's entries from outside code, and each other context for the known
   calls that name it. Every context of a code has the entry context beside
   it, with the same allocation sites and token (`Flow.Agree`): a frame's
@@ -2385,9 +2388,11 @@ sets of sites:
   meets $`S`$; at a position of outside code (`o`, true outside every
   frame and in a frame of outside code, false in a frame of $`C`$'s code)
   every rule's set lies within $`O`$. A call of a callee that may be outside code (`invoke`,
-  `construct`) has its callee, receiver and actuals meet $`O`$, the
-  calling frame allocates arrays at a site of $`O`$ (a rest spine goes to
-  a callee not known), and its value meets $`O`$. A call of a closure of
+  `construct`) has its callee meet a set within $`O`$, holding outside
+  storage only at a frame that may call outside code, its receiver and
+  actuals meet $`O`$, the calling frame allocates arrays at a site of
+  $`O`$ (a rest spine goes to a callee not known), and its value meets
+  $`O`$. A call of a closure of
   $`C`$'s code of a known
   signature (`invokeC`, at a position of $`C`$'s code; the note's (K)
   restricts only what crosses out to outside code) has its receiver and actuals, each a value or a
@@ -2398,9 +2403,13 @@ sets of sites:
   `frameC`) fits at one context of its code, and its steps keep that
   context. Each code
   has a token, a site standing for its closures (`CodeFlow.tok`): a
-  closure of $`C`$'s code meets a set holding its code's token, and so
-  does every value holding it in the code of outside code or of a bound
-  function (`FnsIn`), the token of its entry context. A code whose token
+  closure of $`C`$'s code meets a set holding its code's token, the token
+  of its entry context, a closure of outside code a set holding outside
+  storage, and so does every value holding one in the code of outside code
+  or of a bound function (`FnsIn`). So a value of a set without outside
+  storage is no closure of outside code (`FnsIn.notOut`), nor a bound
+  function forwarding to one; a closure of outside code that $`C`$'s code
+  creates meets a set holding outside storage (`makeGraphOut`). A code whose token
   lies in $`O`$ is open at its entry context (`OpenAt`): the rest's spine, the receiver, the parameters and the
   closure's own slot there hold $`O`$, and the code's return set lies
   within $`O`$. Every thrown value meets $`O`$; a read's result meets the
@@ -2631,7 +2640,10 @@ one for its value; an edge copies each variable of its source into the
 one of its target that reads it, and a node's value is its expression's
 least set with its stores, what it gives to outside code and the slots of
 a callee's entry added, a known call's value its callee's return set
-(`gen`), a closure's set its site and its code's token. The slots outside
+(`gen`), a closure's set its site and its code's token, a closure of
+outside code's set outside storage. A node may call outside code
+(`callsOut`) where a call that is no known call, or a `new`, has a callee
+whose set may hold outside storage. The slots outside
 code fills hold $`O`$: at each code whose token lies in $`O`$, the slots a
 caller of unknown callee fills at its entry context (the rest's spine, the
 receiver, the parameters and its own slot), and a handler's thrown value.
@@ -2677,8 +2689,10 @@ the checks (`FilePlans.flowProbe`); no verdict reads it. With
 of the groups below a member is read. `TSCERT_FRAME_PROBE` names a file
 of calls of outside code (a member or module function, the source offset
 of the call, the call's effect) and linear facts over source variables;
-at each such call node the probe prints `frameCheckAt` of each fact's
-support (`Footprints.linearSupport`) at the separation of classes
+at each such call node, at each context, the probe prints `frameCheckAt`
+of each fact's support, read at each node of the call's continuation and
+handler that may call outside code (`ClientFrame.framed_at_call`), or
+that it is not required where none may (`Footprints.linearSupport`) at the separation of classes
 (`classQuery`, `classQuery_sound`), the keys `noKeys`, no region read as
 protected and the probe's protocol (`probeProtocol`), with each part that
 fails and the check it fails.
@@ -2761,14 +2775,16 @@ at the visitor call, every fact read at the marks the flow gives:
   the field `widths` of outside storage changed by the walkers' writes
   (`stats`) under `noKeys` and by the visitor's effect, no region read as
   protected.
-- `walkPreparedComplexLines` reached from the raw walker, at its `onLine`,
-  at the raw walker's call site's context: its cursor's slot holds the
-  raw walker's local cursor site alone and all four facts pass. At the
-  context of `stepPreparedLineGeometryFromStart`'s call, exported, the
-  cursor's slot holds $`O`$ and the two cursor facts fail; that call passes
-  `undefined` as `onLine`, whose slot there holds no site. At the context
-  of `countSteppedLines`' call and at its entry context, entered by no
-  caller of unknown callee, all four pass.
+- `walkPreparedComplexLines` reached from the raw walker, at its `onLine`
+  (node 73, the one node of its continuation and handler): at the raw
+  walker's call site's contexts its cursor's slot holds the raw walker's
+  local cursor site alone, the node may call outside code, and all four
+  facts pass. At the context of `stepPreparedLineGeometryFromStart`'s
+  call, exported, the cursor's slot holds $`O`$, and the call passes
+  `undefined` as `onLine`, whose slot there holds neither a site nor
+  outside storage: the node calls no outside code there and the check is
+  not required. So at the context of `countSteppedLines`' call and at the
+  entry context.
 
 Every member of `src/line-break.ts` meets the checks, its entry and the
 bindings check.
@@ -2806,6 +2822,17 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
   in a call of outside code, a callback that re-entered $`C`$), the check at
   its node gives `Framed` at its environment
   (`ClientFrame.framed_at_innermost`).
+- **The frame at a call of outside code** (`OutCall`, `Fits.outCall`,
+  `activeFrame_redex`, `ClientFrame.framed_at_call`): at a reached state
+  whose innermost frame is a frame of $`C`$'s code and whose next step
+  calls a closure of outside code, the frame fits at a context of its code
+  and a node of its continuation and handler that may call outside code
+  (`CodeFlow.out`): the callee meets a set holding outside storage
+  (`FnsIn.notOut`), which a call holds only at such a frame. So the check
+  is required at each context and each node of the call's continuation and
+  handler that may call outside code, at that node's slots, and at no
+  other; a frame of a node whose callee's set lacks outside storage (an
+  `undefined` visitor) performs no call of outside code there.
 - **The keys of a region** (`ClientFrame.NoKeys`, `reached_key`,
   `framed_at_innermost_keys`): the checks read the protocol per site and
   kind, giving every location they allocate the key `none`, as the entry
