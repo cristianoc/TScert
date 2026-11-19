@@ -750,8 +750,15 @@ the same allocation sites, keys and crossings: in any context, related
 runs allocate at the same site (`chk_site_sim`, from `stepSite_tabRel` and
 `allocB_realized`), keys are `none` in both, and a step of related runs
 crosses out the same values (`chk_actual_sim`: related runs hold the same
-values, `vals_tabRel`, `vals_ctx`, `actualXs_congr`), proved; that an
-entering step's crossings in (`entryXs`) agree is to be proved. The flow holds both codes
+values, `vals_tabRel`, `vals_ctx`, `actualXs_congr`), and an entering
+step's crossings in agree (`chk_entry_sim`): `entryXs` reads the active
+frame's tag and redex and the calls of $`C`$ active, which depend only on
+the tags of the paths in the context (`path_ctx`, `depthC_ctx`), the same
+for related runs (`tabRel_tags`); the code entered differs only where the
+realized code's frame continues at its own node, a step keeping the calls
+active (`frame_goto_tags`), so an entering step on neither side. Together
+`chk_sim` (proved, `FramedRealize.lean`): in any context, related steps have
+the same checks' data. The flow holds both codes
 (`codesCoverB`), its proposals for the realized code at body labels equal
 to the request's (`realizedFlowB`, decided), so `Fits`, `Provenance` and
 the frame check read the same proposal in either code; re-entered calls of
@@ -1441,8 +1448,10 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `tabRel_step`, `tabRel_steps`, `tabRel_stuck`, `activeFrame_snd`,
 `stepSite_tabRel`, `vals_tabRel`, `vals_ctx`, `actualXs_congr`
 (`ReadOnlyRealize.lean`), `bodyTargetsB_sound`, `realized_agree`,
-`prologue_steps`, `prologue_sim`, `chk_site_sim`, `chk_actual_sim`
-(`FramedRealize.lean`); `RunSeq.within` (`ReadOnlyCert.lean`); `RunSeq.mono`,
+`prologue_steps`, `prologue_sim`, `chk_site_sim`, `chk_actual_sim`,
+`chk_entry_sim`, `chk_sim` (`FramedRealize.lean`), `path_ctx`,
+`depthC_ctx`, `tabRel_tags`, `entered_frame`, `frame_goto_tags`
+(`ReadOnlyRealize.lean`); `RunSeq.within` (`ReadOnlyCert.lean`); `RunSeq.mono`,
 `RunSeq.keeps`, `traceMember`, `decompose_trace`, `exec_bound_trace`,
 `callRun_trace` (`ReadOnlyTraceCert.lean`); `seg_run`, `seg_bound`,
 `transfer_at`, `Leads.of_bound`, `frameC_shape`, `FrameCore.inside_run`,
@@ -1457,7 +1466,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `chk_sim`'s entering crossings, `publicCall_safe`, `entryHolds_realized`,
+**To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
 `segWithin_of_run`'s premise at the call (the call's values' sets within $`L(c)`$, from the call node's fit), `cert_of_charges`,
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,

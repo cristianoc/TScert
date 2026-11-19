@@ -22,7 +22,10 @@ node past the body. Where the request's nodes target only its own labels
   the site and crossings-out parts of `chk_sim`): in any context, related
   runs allocate at the same site, the flow holding both codes and their
   sites one per body allocation (`allocB`), and a step of related runs
-  crosses out the same values. -/
+  crosses out the same values.
+- **The same crossings in** (`chk_entry_sim`): a step of related runs to
+  related runs has the same entering crossings; with the two above, the
+  checks' data of related steps agree (`chk_sim`). -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
@@ -141,6 +144,86 @@ theorem chk_actual_sim {F : TolerantFrames.ReadOnly.Family} {C : Nat} {tv : Type
     actualXs F C T h (K t₁) h' (K t₁') = actualXs F C T h (K t₂) h' (K t₂') :=
   actualXs_congr T h h' (vals_ctx hK (vals_tabRel (realized_vals _ r) hr))
     (vals_ctx hK (vals_tabRel (realized_vals _ r) hr'))
+
+/-- **Related steps cross the same values in** (proved; the entering
+crossings of the draft's `chk_sim`): in any context, a step of related runs
+to related runs has the same entering crossings. The active frame's tag and
+redex and the calls of `C` active are read from the tags of the paths,
+which related runs share (`tabRel_tags`, `depthC_ctx`, `activeFrame_ctx`);
+the code entered differs only where the realized code's frame continues at
+its own node, a step that keeps the calls of `C` active
+(`frame_goto_tags`), so neither is an entering step; and a step of the same
+term is the same step (`Step_det`). -/
+theorem chk_entry_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {K : Tm → Tm} (hK : EvalCtx K)
+    {h h' : Heap} {t₁ t₂ t₁' t₂' : Tm}
+    (hr : TabRel (realizedCode r) (requestCode r) r.program.length t₁ t₂) (hs₁ : Step h t₁ h' t₁')
+    (hs₂ : Step h t₂ h' t₂') (hr' : TabRel (realizedCode r) (requestCode r) r.program.length t₁' t₂') :
+    spec.entryXs r (K t₁) (K t₁') = spec.entryXs r (K t₂) (K t₂') := by
+  obtain ⟨c', hc'⟩ := activeFrame_ctx hK none
+  cases hr with
+  | same => obtain ⟨-, rfl⟩ := Step_det hs₁ hs₂; rfl
+  | @goto l L d c hl =>
+    have e : ∀ m : Code, (activeFrame none (K (.goto m.1 m.2 l L d c))).2 = .goto m.1 m.2 l L d c := by
+      intro m; rw [hc' _ rfl]; simp [activeFrame]
+    unfold FramedSpec.entryXs
+    rw [e, e]
+    simp only [ite_self]
+  | @frame l u L d k x c hl hk =>
+    -- The active frame's tag and redex.
+    have hA := (activeFrame_innermost u (some (((realizedCode r), c), (k, x)))).1
+    have hB := (activeFrame_innermost u (some (((requestCode r), c), (k, x)))).1
+    have htag : frameTag (activeFrame none (K (.frame (realizedCode r).1 (realizedCode r).2 u L d k x c))).1 =
+        frameTag (activeFrame none (K (.frame (requestCode r).1 (requestCode r).2 u L d k x c))).1 := by
+      rw [hc' _ rfl, hc' _ rfl]
+      simp only [activeFrame]
+      rw [hA, hB]
+      cases (innermost u).bind frameOf <;> rfl
+    have hred : (activeFrame none (K (.frame (realizedCode r).1 (realizedCode r).2 u L d k x c))).2 =
+        (activeFrame none (K (.frame (requestCode r).1 (requestCode r).2 u L d k x c))).2 := by
+      rw [hc' _ rfl, hc' _ rfl]
+      simp only [activeFrame]
+      exact activeFrame_snd u _ _
+    have hd : depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u L d k x c)) =
+        depthC spec.F spec.C none (K (.frame (requestCode r).1 (requestCode r).2 u L d k x c)) :=
+      depthC_ctx hK none rfl rfl (tabRel_tags (.frame hl hk))
+    cases hr' with
+    | same =>
+      unfold FramedSpec.entryXs
+      rw [htag, hred, hd]
+    | @goto l' L' d' c'' hl' =>
+      have hd' : depthC spec.F spec.C none (K (.goto (realizedCode r).1 (realizedCode r).2 l' L' d' c'')) =
+          depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u L d k x c)) :=
+        depthC_ctx hK none rfl rfl fun c => (frame_goto_tags hs₁ c).symm
+      have hd'' : depthC spec.F spec.C none (K (.goto (requestCode r).1 (requestCode r).2 l' L' d' c'')) =
+          depthC spec.F spec.C none (K (.goto (realizedCode r).1 (realizedCode r).2 l' L' d' c'')) :=
+        depthC_ctx hK none rfl rfl fun c => (tabRel_tags (A := realizedCode r) (B := requestCode r) (.goto hl') c).symm
+      unfold FramedSpec.entryXs
+      rw [if_neg (fun h => by have := h.2.2; omega), if_neg (fun h => by have := h.2.2; omega)]
+    | @frame l' u' L' d' k' x' c'' hl' hk' =>
+      have hd' : depthC spec.F spec.C none (K (.frame (realizedCode r).1 (realizedCode r).2 u' L' d' k' x' c'')) =
+          depthC spec.F spec.C none (K (.frame (requestCode r).1 (requestCode r).2 u' L' d' k' x' c'')) :=
+        depthC_ctx hK none rfl rfl (tabRel_tags (.frame hl' hk'))
+      have he : entered none (K (.frame (realizedCode r).1 (realizedCode r).2 u' L' d' k' x' c'')) =
+          entered none (K (.frame (requestCode r).1 (requestCode r).2 u' L' d' k' x' c'')) := entered_frame hK none
+      unfold FramedSpec.entryXs
+      rw [htag, hred, hd, hd', he]
+
+/-- **Related steps have the same checks' data** (proved; the draft's
+`chk_sim`, by `chk_site_sim`, `chk_actual_sim` and `chk_entry_sim`): in any
+context, a step of related runs to related runs allocates at the same site
+with no key, and has the same crossings, entering and outgoing. -/
+theorem chk_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {num : (spec.F.at spec.C).Site → Nat}
+    (hnum : ∀ a b, num a = num b → a = b) {base : Nat} {bodies : List Code}
+    (hb : allocB num spec.fflow r base bodies = true)
+    (h₁ : (spec.fflow.at (realizedCode r) entryCx).isSome = true)
+    (h₂ : (spec.fflow.at (requestCode r) entryCx).isSome = true) {K : Tm → Tm} (hK : EvalCtx K)
+    {h h' : Heap} {t₁ t₂ t₁' t₂' : Tm}
+    (hr : TabRel (realizedCode r) (requestCode r) r.program.length t₁ t₂) (hs₁ : Step h t₁ h' t₁')
+    (hs₂ : Step h t₂ h' t₂') (hr' : TabRel (realizedCode r) (requestCode r) r.program.length t₁' t₂') :
+    spec.chk r h (K t₁) h' (K t₁') = spec.chk r h (K t₂) h' (K t₂') := by
+  have hs : stepSite spec.flow none (K t₁) = stepSite spec.flow none (K t₂) := chk_site_sim hnum hb h₁ h₂ hK hr
+  simp only [FramedSpec.chk, hs, chk_entry_sim spec r hK hr hs₁ hs₂ hr',
+    chk_actual_sim (F := spec.F) (C := spec.C) (tv := spec.view.view) spec.outType h h' hK hr hr']
 
 end
 end Verification.SourceClaimJson

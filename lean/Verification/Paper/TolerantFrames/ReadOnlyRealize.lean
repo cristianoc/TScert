@@ -26,7 +26,14 @@ below `n`, run the same steps from a run at a label below `n`:
 - **The crossings out of a step** (`vals_tabRel`, `vals_ctx`,
   `actualXs_congr`, the crossings-out part of `chk_sim`): in any context,
   related runs hold the same values where the two codes' node expressions
-  do, so a step of related runs crosses out the same values. -/
+  do, so a step of related runs crosses out the same values.
+- **The path through a context** (`path_ctx`): around a term that is not
+  a value, a context's path is the term's, its last element rebuilt, then
+  the context's frames; so the calls of `C` in a context depend on the
+  tags of the hole's path (`depthC_ctx`), which related runs share
+  (`tabRel_tags`), and related frames enter the same code
+  (`entered_frame`). A frame continues at a run of its own code with the
+  tags it had (`frame_goto_tags`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification HeapObservations ControlFlow
 
@@ -297,5 +304,152 @@ theorem actualXs_congr {F : Family} {C : Nat} {tv : TypeView} (T : tv.Ty) (h h' 
   rw [e, e']
 
 end Crossings
+
+/-! ## The path through a context -/
+
+/-- Two rebuildings of a list's last element compose (proved). -/
+theorem mapLast_comp {α : Type} (f g : α → α) : ∀ P : List α, mapLast f (mapLast g P) = mapLast (f ∘ g) P
+  | [] => rfl
+  | [_] => rfl
+  | x :: y :: xs => by
+    have hne : mapLast g (y :: xs) ≠ [] := by cases xs <;> simp [mapLast]
+    rw [mapLast_cons_cons, mapLast_cons hne, mapLast_comp f g (y :: xs), mapLast_cons_cons]
+
+/-- Rebuilding the last element by the identity keeps a list (proved). -/
+theorem mapLast_self {α : Type} : ∀ P : List α, mapLast (fun p => p) P = P
+  | [] => rfl
+  | [_] => rfl
+  | x :: y :: xs => by rw [mapLast_cons_cons, mapLast_self (y :: xs)]
+
+/-- A wrap around a wrapped path with a suffix (proved). -/
+theorem wrap_wrap_append (h g : Tm → Tm) (S : List (ComponentTag × Tm)) :
+    ∃ g' S', ∀ P : List (ComponentTag × Tm), wrap h (wrap g P ++ S) = wrap g' P ++ S' := by
+  by_cases hS : S = []
+  · subst hS
+    refine ⟨fun s => h (g s), [], fun P => ?_⟩
+    simp only [List.append_nil, wrap, mapLast_comp]
+    rfl
+  · exact ⟨g, wrap h S, fun P => by simp only [wrap]; exact mapLast_append hS⟩
+
+/-- The path of a context's hole in its context: its wrapped path, then the
+context's (shape). -/
+def PathCtx (K : Tm → Tm) (c : ComponentTag) : Prop :=
+  ∃ c' g S, ∀ t, isVal t = false → path c (K t) = wrap g (path c' t) ++ S
+
+/-- A context rebuilding its hole's path keeps the shape (proved). -/
+theorem PathCtx.wrap' {K K₀ : Tm → Tm} {c c₀ : ComponentTag} (ih : PathCtx K c)
+    (h : ∃ h : Tm → Tm, ∀ t, isVal t = false → path c₀ (K₀ t) = wrap h (path c (K t))) : PathCtx K₀ c₀ := by
+  obtain ⟨c', g, S, hP⟩ := ih
+  obtain ⟨hh, hK⟩ := h
+  obtain ⟨g', S', hw⟩ := wrap_wrap_append hh g S
+  exact ⟨c', g', S', fun t ht => by rw [hK t ht, hP t ht, hw]⟩
+
+/-- **The path through a context** (proved, by induction on the context):
+around a term that is not a value, the whole term's path is the term's
+path, its last element rebuilt, then the context's frames. -/
+theorem path_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c, PathCtx K c := by
+  induction hK with
+  | hole =>
+    refine fun c => ⟨c, id, [], fun t _ => ?_⟩
+    have e : (fun p : ComponentTag × Tm => (p.1, id p.2)) = fun p => p := funext fun _ => rfl
+    simp only [wrap, List.append_nil, e, mapLast_self]
+  | frameC E Kc L d k x comp hK ih =>
+    intro c
+    obtain ⟨c', g, S, hP⟩ := ih comp
+    obtain ⟨g', S', hw⟩ := wrap_wrap_append (fun s => .frame E Kc s L d k x comp) g S
+    exact ⟨c', g', S' ++ [(c, hole)], fun t ht => by
+      simp only [path]; rw [hP t ht, hw, List.append_assoc]⟩
+  | @callArg K₀ f r args i hf hr hi hpre hK ih =>
+    intro c
+    refine (ih c).wrap' ⟨fun s => .invoke f r (args.set i s), fun t ht => ?_⟩
+    simp only [path, hf, hr, Bool.true_eq_false, if_false]
+    rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
+  | @constructArg K₀ f args i hf hi hpre hK ih =>
+    intro c
+    refine (ih c).wrap' ⟨fun s => .construct f (args.set i s), fun t ht => ?_⟩
+    simp only [path, hf, Bool.true_eq_false, if_false]
+    rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
+  | @makeArg K₀ cc ns inits i hi hpre hK ih =>
+    intro c
+    refine (ih c).wrap' ⟨fun s => .makeAt cc ns (inits.set i s), fun t ht => ?_⟩
+    simp only [path]
+    rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
+  | @arrArg K₀ inits i hi hpre hK ih =>
+    intro c
+    refine (ih c).wrap' ⟨fun s => .arrLit (inits.set i s), fun t ht => ?_⟩
+    simp only [path]
+    rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
+  | _ =>
+    rename_i hK ih
+    intro c
+    refine (ih c).wrap' ⟨?_, fun t ht => ?_⟩
+    rotate_left
+    · simp only [path, hK.not_val ht, *, if_true, if_false, Bool.true_eq_false]
+      rfl
+
+/-- **Related runs have the same tags on their paths** (proved). -/
+theorem tabRel_tags {A B : Code} {n : Nat} {t₁ t₂ : Tm} (hr : TabRel A B n t₁ t₂) (c : ComponentTag) :
+    (path c t₁).map Prod.fst = (path c t₂).map Prod.fst := by
+  cases hr with
+  | same => rfl
+  | goto => simp [path]
+  | frame => simp [path, wrap_fst]
+
+/-- **The calls of `C` in a context depend on the tags of its hole's path**
+(proved, `path_ctx`). -/
+theorem depthC_ctx {F : Family} {C : Nat} {K : Tm → Tm} (hK : EvalCtx K) (c : ComponentTag) {t₁ t₂ : Tm}
+    (h₁ : isVal t₁ = false) (h₂ : isVal t₂ = false)
+    (ht : ∀ c, (path c t₁).map Prod.fst = (path c t₂).map Prod.fst) :
+    depthC F C c (K t₁) = depthC F C c (K t₂) := by
+  obtain ⟨c', g, S, hP⟩ := path_ctx hK c
+  have e : ∀ t, isVal t = false → (path c (K t)).map (fun p => F.ofC C p.1) =
+      ((path c' t).map Prod.fst ++ S.map Prod.fst).map (F.ofC C) := by
+    intro t ht'
+    rw [hP t ht', List.map_append, List.map_append,
+      show (fun p : ComponentTag × Tm => F.ofC C p.1) = F.ofC C ∘ Prod.fst from rfl, ← List.map_map,
+      ← List.map_map, wrap_fst]
+  unfold depthC
+  rw [e t₁ h₁, e t₂ h₂, ht c']
+
+/-- **Related frames enter the same code** (proved, `path_ctx`): in a
+context, a frame's path heads at its running term's innermost run, which
+the code of the frame does not change, or at the frame itself, no run. -/
+theorem entered_frame {K : Tm → Tm} (hK : EvalCtx K) (c : ComponentTag) {E₁ E₂ : List Tm}
+    {K₁ K₂ : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag} :
+    entered c (K (.frame E₁ K₁ u L d k x comp)) = entered c (K (.frame E₂ K₂ u L d k x comp)) := by
+  obtain ⟨c', g, S, hP⟩ := path_ctx hK c
+  unfold entered
+  rw [hP _ rfl, hP _ rfl]
+  simp only [path]
+  obtain ⟨init, s, hp⟩ := path_last u comp
+  rw [hp]
+  have hne : [(c', hole)] ≠ [] := by simp
+  simp only [wrap, mapLast_append hne]
+  cases init with
+  | nil => simp [mapLast]
+  | cons p ps =>
+    have hn : ps ++ [(comp, s)] ≠ [] := by simp
+    simp only [List.cons_append, mapLast_cons hn, List.head?_cons]
+
+/-- **A frame and the run it continues at have the same tags** (proved, by
+cases on the step): a frame steps to a run of graph code only once its term
+is a value or throws, and continues at a node of its own code and tag. -/
+theorem frame_goto_tags {h h' : Heap} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {u : Tm} {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target}
+    {comp : ComponentTag} {E' : List Tm} {K' : List (ControlFlow.Continuation × Option ControlFlow.Target)} {l : Nat}
+    {L' : List Tm} {d' : Tm} {comp' : ComponentTag}
+    (hs : Step h (.frame E K u L d k x comp) h' (.goto E' K' l L' d' comp')) (c : ComponentTag) :
+    (path c (.frame E K u L d k x comp)).map Prod.fst = (path c (.goto E' K' l L' d' comp')).map Prod.fst := by
+  cases hs with
+  | frameRet hv => simp [isVal] at hv
+  | frameBind hv => rw [path_frame (path_val hv)]; simp [path]
+  | frameEffect hv => rw [path_frame (path_val hv)]; simp [path]
+  | frameYes => rw [path_frame (path_val (v := .tru) rfl)]; simp [path]
+  | frameNo => rw [path_frame (path_val (v := .fls) rfl)]; simp [path]
+  | frameYesBind => rw [path_frame (path_val (v := .tru) rfl)]; simp [path]
+  | frameNoBind => rw [path_frame (path_val (v := .fls) rfl)]; simp [path]
+  | frameTag hv => rw [path_frame (path_val hv)]; simp [path]
+  | frameHandle hr => rw [path_frame (raises_path hr _)]; simp [path]
 
 end Verification.TolerantFrames.ReadOnly
