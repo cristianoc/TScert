@@ -105,9 +105,27 @@ export function renderPage(state: AppState): string {
   let items: string = "";
   for (const todo of state.todos) {
     const mark: string = todo.done ? "[x]" : "[ ]";
-    items = items + `<li>${mark} ${escapeHtml(todo.title)} (id ${todo.id})</li>`;
+    items =
+      items +
+      `<li>${mark} ${escapeHtml(todo.title)} (id ${todo.id}) ` +
+      `<button type="button" onclick="post('/todos/${todo.id}/toggle')">toggle</button> ` +
+      `<button type="button" onclick="del('/todos/${todo.id}')">delete</button></li>`;
   }
-  return `<!doctype html><html><head><title>todos</title></head><body><h1>Todos</h1><ul>${items}</ul></body></html>`;
+  if (items.length === 0) {
+    items = "<li>No todos yet — add one above.</li>";
+  }
+  return (
+    `<!doctype html><html><head><title>todos</title></head><body><h1>Todos</h1>` +
+    `<p><input id="new" type="text" placeholder="what needs doing?"> ` +
+    `<button type="button" onclick="add()">add</button></p>` +
+    `<ul>${items}</ul>` +
+    `<script>` +
+    `function add(){var t=document.getElementById("new").value;` +
+    `fetch("/todos",{method:"POST",body:t}).then(function(){location.reload();});}` +
+    `function post(u){fetch(u,{method:"POST"}).then(function(){location.reload();});}` +
+    `function del(u){fetch(u,{method:"DELETE"}).then(function(){location.reload();});}` +
+    `</script></body></html>`
+  );
 }
 
 export function todoJson(todo: Todo): JsonValue {
