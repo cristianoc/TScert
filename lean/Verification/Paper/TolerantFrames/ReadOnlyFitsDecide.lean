@@ -20,12 +20,12 @@ decided from it (proof scope: the lemmas below):
   every slot past the widths reading the defaults.
 - **Closures** (`graphSites`, `openB`): a closure's set holds its code's
   token; where the token lies in `O`, the code's entry holds `O` at the
-  slots a caller of unknown callee fills and its return set lies within
-  `O`; a known call's set is its callee's return set (`invokeSites`).
+  slots a caller of unknown callee fills, what outside code may supply at
+  each capture's slot (`suppliedB`), and its return set lies within `O`; a
+  known call's set is its callee's return set (`invokeSites`).
 - **The flow** (`FFlow.check`, `FFlow.check_sound`): every code's checks and
   the facts of `O` give `Flow.Facts`; a member's entry (`FFlow.entryB`)
-  and the entry closures' shapes (`FFlow.shapesB`) give `EntryShape`'s
-  conditions on the flow.
+  gives `EntryShape`'s conditions on the flow.
 - **The marks a flow gives** (`FFlow.MarksFrom`): a site of `O` released,
   every other site local; at them `O` is lent and local storage is held
   only by local storage (`FFlow.marks_of_marksFrom`), the bindings decided
@@ -200,15 +200,33 @@ theorem FCode.fn_lt {c : FCode P} {l i : Nat} {σ : FnSig} (h : c.flow.fn l i = 
   · exact hi
   · rw [Array.getElem?_eq_none hi] at h; simp at h
 
+/-- **A set holding what outside code may supply**, decided. -/
+def suppliedB (S : Sites P) : Bool :=
+  decide (none ∈ S) && F.codes.all fun e => !decide (e.2.tok ∈ F.O) || decide (e.2.tok ∈ S)
+
+theorem suppliedB_sound {S : Sites P} (h : suppliedB F S = true) : Supplied F.flow S := by
+  simp only [suppliedB, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, Bool.or_eq_true,
+    Bool.not_eq_true', decide_eq_false_iff_not] at h
+  refine ⟨h.1, fun m π hm ht => ?_⟩
+  simp only [FFlow.flow] at hm
+  cases hl : look m F.codes with
+  | none => rw [hl] at hm; cases hm
+  | some c =>
+    rw [hl] at hm; cases hm
+    rcases h.2 (m, c) (look_mem hl) with hn | hs
+    · exact absurd ht hn
+    · exact hs
+
 /-- **A code open at an entry**, decided. -/
 def openB (c : FCode P) (ar s : Nat) (rest : Bool) (n : Nat) : Bool :=
   (List.range (capSlot ar rest 0)).all (fun i => decide (Sub F.O (c.flow.env s i))) &&
-    decide (Sub F.O (c.flow.env s (capSlot ar rest n))) && decide (Sub c.ret F.O)
+    decide (Sub F.O (c.flow.env s (capSlot ar rest n))) && decide (Sub c.ret F.O) &&
+    (List.range n).all fun i => suppliedB F (c.flow.env s (capSlot ar rest i))
 
 theorem openB_sound {c : FCode P} {ar s : Nat} {rest : Bool} {n : Nat} (h : openB F c ar s rest n = true) :
     OpenAt F.flow c.flow ar s rest n := by
   simp only [openB, Bool.and_eq_true, List.all_eq_true, List.mem_range, decide_eq_true_eq] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2, fun i hi => suppliedB_sound F (h.2 i hi)⟩
 
 /-- **The captures' slots of an entry hold `O`**, decided. -/
 def capsOB (c : FCode P) (ar s : Nat) (rest : Bool) (n : Nat) : Bool :=
@@ -1072,7 +1090,7 @@ theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := b
   obtain ⟨c, hmc, rfl⟩ := hcode m π hm
   exact codeOk_of_chk (codeChkB_sound F c (hc _ hmc))
 
-/-! ## The marks and the shapes -/
+/-! ## The marks and the entry -/
 
 /-- No local site in a set, decided. -/
 def noLocalB (S : Sites P) : Bool := S.all fun s => s.all fun s' => decide (P.mark s' ≠ .local)
@@ -1169,54 +1187,15 @@ theorem FFlow.marks_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) (hF : F.flow.F
     Lendable F.flow.O ∧ LocalHeld F.flow.H ∧ ∀ s, NoLocal (F.flow.H.bindings s) :=
   ⟨F.lendable_of_marksFrom hm, F.localHeld_of_marksFrom hm hF, F.bindingsB_sound hb⟩
 
-/-- **The proposal meets the shapes**, decided. -/
-def FFlow.shapesB (F : FFlow P) (Sh : List Shape) : Bool :=
-  Sh.all fun sc => (look sc.1.code F.codes).any fun c =>
-    ((List.range (c.node sc.1.s).fn.size).all fun i => (c.flow.fn sc.1.s i).all fun σ' =>
-      decide (i = capSlot sc.1.ar sc.1.rest sc.2.length ∧ σ' = sc.1) ||
-        (List.range sc.2.length).any fun j => decide (i = capSlot sc.1.ar sc.1.rest j ∧ sc.2[j]? = some (some σ'))) &&
-    (!decide (c.tok ∈ F.O) || openB F c sc.1.ar sc.1.s sc.1.rest sc.2.length) &&
-    ((List.range sc.2.length).all fun j => decide (none ∈ c.flow.env sc.1.s (capSlot sc.1.ar sc.1.rest j))) &&
-    (List.range sc.2.length).all fun j => (sc.2[j]?.join).all fun σ' =>
-      (look σ'.code F.codes).any fun c' => decide (c'.tok ∈ c.flow.env sc.1.s (capSlot sc.1.ar sc.1.rest j))
-
-theorem FFlow.shapesB_sound {F : FFlow P} {Sh : List Shape} (h : F.shapesB Sh = true) : ShapesOk F.flow Sh := by
-  intro σ cs hm
-  have := List.all_eq_true.mp h (σ, cs) hm
-  cases hl : look σ.code F.codes with
-  | none => simp [hl] at this
-  | some c =>
-    simp only [hl, Option.any_some, Bool.and_eq_true, List.all_eq_true, List.mem_range, decide_eq_true_eq] at this
-    obtain ⟨⟨⟨this, hop⟩, hcs⟩, htk⟩ := this
-    refine ⟨c.flow, by simp [FFlow.flow, hl], fun i σ' hi => ?_, fun ht => ?_, hcs, fun j σ' hj => ?_⟩
-    rotate_left
-    · simp only [Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hop
-      rcases hop with hn | hop
-      · exact absurd ht hn
-      · exact openB_sound F hop
-    · have := htk j (List.getElem?_eq_some_iff.mp hj |>.1 |> fun h => by
-        rcases List.getElem?_eq_some_iff.mp hj with ⟨h, _⟩; exact h)
-      rw [hj] at this
-      simp only [Option.join, Option.bind_some, id, Option.all_some] at this
-      cases hl' : look σ'.code F.codes with
-      | none => simp [hl'] at this
-      | some c' =>
-        simp only [hl', Option.any_some, decide_eq_true_eq] at this
-        exact ⟨c'.flow, by simp [FFlow.flow, hl'], this⟩
-    have h2 := this i (FCode.fn_lt hi)
-    simp only [hi, Option.all_some, Bool.or_eq_true, decide_eq_true_eq, List.any_eq_true, List.mem_range] at h2
-    rcases h2 with h2 | ⟨j, -, h3⟩
-    · exact .inr h2
-    · exact .inl ⟨j, h3⟩
-
 /-- **An entry of a member**, decided: every slot of the node `l` of a code
-holds outside storage, and the code's returns lie within `O`. -/
+holds what outside code may supply, and the code's returns lie within
+`O`. -/
 def FFlow.entryB (F : FFlow P) (m : Code) (l : Nat) : Bool :=
   (look m F.codes).any fun c =>
-    decide (Sub c.ret F.O) && decide (none ∈ (c.node l).dflt) && (c.node l).env.all fun S => decide (none ∈ S)
+    decide (Sub c.ret F.O) && suppliedB F (c.node l).dflt && (c.node l).env.all fun S => suppliedB F S
 
 theorem FFlow.entryB_sound {F : FFlow P} {m : Code} {l : Nat} (h : F.entryB m l = true) :
-    ∃ π, F.flow.code m = some π ∧ (∀ i, none ∈ π.env l i) ∧ Sub π.ret F.flow.O := by
+    ∃ π, F.flow.code m = some π ∧ (∀ i, Supplied F.flow (π.env l i)) ∧ Sub π.ret F.flow.O := by
   unfold FFlow.entryB at h
   cases hl : look m F.codes with
   | none => simp [hl] at h
@@ -1224,12 +1203,12 @@ theorem FFlow.entryB_sound {F : FFlow P} {m : Code} {l : Nat} (h : F.entryB m l 
     simp only [hl, Option.any_some, Bool.and_eq_true, decide_eq_true_eq, Array.all_eq_true] at h
     obtain ⟨⟨hr, hd⟩, he⟩ := h
     refine ⟨c.flow, by simp [FFlow.flow, hl], fun i => ?_, hr⟩
-    show none ∈ (c.node l).env.getD i (c.node l).dflt
+    show Supplied F.flow ((c.node l).env.getD i (c.node l).dflt)
     rw [Array.getD_eq_getD_getElem?]
     cases hi : (c.node l).env[i]? with
-    | none => exact hd
+    | none => exact suppliedB_sound F hd
     | some S =>
       obtain ⟨hlt, rfl⟩ := Array.getElem?_eq_some_iff.mp hi
-      simpa using he i hlt
+      exact suppliedB_sound F (he i hlt)
 
 end Verification.TolerantFrames.ReadOnly
