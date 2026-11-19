@@ -171,7 +171,7 @@ records (Astra and Fable found none of them reopened, Fable's table).
   (renamed `FramedSpec`); `entry_slot_holds_O_tokens` is the second
   review's check (`CodeClause.lean`), to be moved into the build;
   `PublicCall` stated with `KStep` and the depth; the typed program is a
-  row of its own ([trust](#proved-to-be-proved-trust)).
+  part of $`\Theta_C`$'s row ([trust](#proved-to-be-proved-trust)).
 
 ## Definitions
 
@@ -859,13 +859,16 @@ then checked by an ordinary plan), and has a control.
 ### The callback's type
 
 By the owner's decision of 2026-11-19, a callback into a framed component
-meeting its arrow type is part of the client obligation. The row of
-$`\Theta_C`$ ([Trust](readonly-handles.md#trust)) reads, with it:
+meeting its arrow type, and a client program's executions typed at their
+worlds, are parts of the client obligation. The row of $`\Theta_C`$
+([Trust](readonly-handles.md#trust)) reads:
 
 > Code outside $`C`$ keeps $`\Theta_C`$ at each of its steps on the storage
-> the row protects, and a function value it passes to $`C`$ at a function
-> type meets that type: called by $`C`$, its run, its calls of $`C`$
-> included, is safe and within its stated effect.
+> the row protects; a function value it passes to $`C`$ at a function type
+> meets that type: called by $`C`$, its run, its calls of $`C`$ included, is
+> safe and within its stated effect; and every configuration of the
+> program, the client's own code included, has an admissible world typing
+> its heap (`AStep`, the configurations of `PublicCall`).
 
 The continuation after a failed return premise is outside the claim
 (`RunSoundFramed` claims progress on paths whose framed returns meet their
@@ -1027,21 +1030,18 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 **Trust**, rows of the [trust surface](../DESIGN.md#trust-surface):
 
 - the client obligation $`\Theta_C`$, stated in the component's API
-  (owner-approved), with its two parts (owner's decision of 2026-11-19):
-  code outside $`C`$ keeps $`\Theta_C`$ at each of its steps, and a function
+  (owner-approved), with its three parts (owner's decision of 2026-11-19):
+  code outside $`C`$ keeps $`\Theta_C`$ at each of its steps; a function
   value it passes to $`C`$ at a function type meets that type, its calls of
-  $`C`$ included;
+  $`C`$ included; and the program's executions are typed at their worlds
+  (`AStep`: every configuration of the program, the client's own code
+  included, has an admissible world typing its heap);
 - the caller row, restated: a value of a framed component meets its
   declared type along the executions keeping that component's
   $`\Theta_C`$ at the program's history;
 - *Clients* (Assumption "Clients"): outside code enters $`C`$ only through
   its interface (`Provenance`), is lowered source of the calculus
   (`Source`), closed (`ClosedAt`), well formed (`Discipline`);
-- **a client program's executions are typed at their worlds** (`AStep`,
-  the configurations of `PublicCall`): every configuration of the program,
-  the client's own code included, has an admissible world typing its heap.
-  This is stronger than the row that callers pass values of declared types,
-  and is a row of its own for the owner;
 - the request's entry contracts at a public call (the existing rows on
   exported preconditions and handle parameters);
 - a native's step model performs its model's steps, where the flow reads
@@ -1128,9 +1128,7 @@ and P22's layout meets them (measured).
 1. **Milestone 2's disjoint supports** are a design to review.
 2. **`residual_charged`** reads `Residual` as an invariant of a node's
    evaluation; natives' step models are writing redexes it must cover.
-3. **The typed-program row** is stronger than the row on callers' values;
-   it is for the owner.
-4. **`RunSoundFramed`'s size** is a reading of `run_sound_pass`'s structure,
+3. **`RunSoundFramed`'s size** is a reading of `run_sound_pass`'s structure,
    not yet a build.
 
 ## Runs
