@@ -16,7 +16,7 @@ restrictions of the language it needs stated and enforced
 and pretext's walkers are its tests ([Tests](#tests)); the first buildable
 milestone is the bound route for P22 ([milestones](#milestones)).
 
-Base: branch `p22-accept` at `6afc73541`. Notation is that of
+Base: branch `p22-accept` at `c05b844db`. Notation is that of
 [Read-only frames](readonly-frames-note/note.tex) and of
 [read-only handles](readonly-handles.md#the-rule): a component $`C`$, its
 region $`R_C`$, its protocol $`\Psi_C`$, the client obligation
@@ -127,6 +127,46 @@ records (Astra and Fable found none of them reopened, Fable's table).
   (renamed `storeKeepsInv`); the outgoing crossings' type; the world of the
   start; `Inv` after an incoming crossing. Closed where each is named.
 
+**The fourth round.**
+
+- **Sites under the realization** (Astra 1, Fable N1): with a numbering per
+  code, the same body allocation gets two sites in the request's tables and
+  in the realized ones (Astra's check: `some 6` and `some 8`; Fable's
+  `RealizedCode.lean`: `(some 0, none)`), on P22's own `const c = { i: 0 }`.
+  Closed: one canonical site per body allocation, keyed by the body, and
+  `chk` invariant under the realization ([realization](#realization);
+  `Round5.lean`, `body_prefix`).
+- **`approx_stable`** (Astra 2, Fable N2): false where an outside slot
+  varies with the depth (`ApproxStable.lean`). Closed by a restriction,
+  every outside slot an audited native constant in the depth, which P22's
+  extracted layout meets (measured, `layout.out`), and the stability lemma
+  under it (`Round5.lean`, `approx_const_stable`;
+  [initialization](#initialization), [restrictions](#restrictions)).
+- **Coverage from each actual invocation** (Astra 3, Fable N5): the
+  theorem from an actual public invocation to the request's claim was
+  missing; the client's scope is one binder under the whole `letE`; a rest
+  parameter's spine is built before the depth increases. Closed by
+  `publicCall_safe` ([the calls the claim is about](#the-calls-the-claim-is-about)).
+- **Write coverage of a residual redex** (Astra 4): a writing redex reached
+  after its receiver is evaluated needs an invariant linking it to its
+  source write. Closed by `residual_charged` ([charges](#charges)).
+- **Crossings beyond the entry** (Astra 5): stated as the subset milestone
+  1 implements ([the history](#the-history-of-a-program)).
+- **The entry crossing falsifies `ActualCrossings`** (Fable N3,
+  `IncomingCrossings.lean`). Closed: the lemmas restated over the
+  crossings with the incoming ones, and `crossOk_incoming`
+  ([the history](#the-history-of-a-program)).
+- **`paramTypes` of a shared code** (Fable N4, `EnteredTables.lean`). Closed
+  by the meet over the functions sharing a code
+  ([the history](#the-history-of-a-program)).
+- **`writesIn` is partial** (Fable N6, `WritesInOpaque.lean`). Closed by a
+  total definition (`Round5.lean`, `writesT`).
+- **Smaller points** (Fable N6): `FrameSpec` named the probe's structure
+  (renamed `FramedSpec`); `entry_slot_holds_O_tokens` is the second
+  review's check (`CodeClause.lean`), to be moved into the build;
+  `PublicCall` stated with `KStep` and the depth; the typed program is a
+  row of its own ([trust](#proved-to-be-proved-trust)).
+
 ## Definitions
 
 A state is a configuration of the paper's executions with its history,
@@ -231,16 +271,33 @@ Its two instances, each reading the same closure:
 
 **A step's changes are its charged writes** (`stepWrites_sound`, to be
 proved): every location $`l<|h|`$ a step of $`C`$'s code from a reached
-state changes is written by a write of the instantiated node expression
-of the code and node the frame fits at (`Fits.innermost`, proved), and
-$`l`$'s part is among that write's charged parts. Plan: `step_changes`
-(proved) locates the changed slot or cell; by cases on the writing steps of
-`Step`, the redex is a subterm of the node expression after substitution,
-so its write is one `writesIn` lists (`writesIn_sound`, by induction on the
-expression); the receiver meets its set (`Fits`), so $`l`$'s site is one
-of its sites (`reach_sites`); the world's kind at $`l`$ is among
-`roleKinds (slotBound k)` (`slotKind_sound`). The invocation changes no
-old location.
+state changes is written by a writing redex whose receiver's location's
+part is among the charged parts of a write of the frame's node expression,
+at every context the frame may fit. $`\mathrm{Ch}`$ is computed by the
+total `writesT` (`Round5.lean`; the base's `writesIn` is a `partial def`,
+an opaque constant, `WritesInOpaque.lean`): its definition is structural
+over the term and its argument lists, and charges a receiver with no
+computed set, and a `letE` body under a bound term with none, at `top`,
+every site of the flow and `none`.
+
+- **The residual invariant** (`residual_charged`, to be proved): from the
+  node's entry, the frame's running term is a *residual* of the node
+  expression `e` (`Residual e t`: `t` is `e` with some subterms replaced by
+  values they evaluated to, each meeting the set `syn` gives that subterm,
+  and a nested run in place of a call); each writing redex of a residual
+  `writeAt k v y` or `setElem v i w` has its receiver `v` meeting the set of
+  the source write's receiver, the set `writesT` charges. Plan: by
+  induction on the node's evaluation steps, each step a congruence step
+  inside a residual (`step_path`, proved) whose redex's value meets its
+  subterm's set (`fits_step`, `Fits.sub`, proved), so `Residual` is kept;
+  `holder.child.i++` evaluates `holder.child` first, a read whose value
+  meets the read's set, then writes at that value. At each context the
+  frame may fit (`framed_at_innermost_keys`' existential), the node's
+  charges at that context are joined in $`W_c`$ and $`\Psi_C`$.
+- Then `step_changes` (proved) locates the changed location among the
+  redex's references, `reach_sites` (proved) puts its site among the
+  receiver's sites, and `slotKind_sound` its kind among
+  `roleKinds (slotBound k)`. The invocation changes no old location.
 
 So **within a call** (`within_charges`, to be proved, from `local_reach`,
 `stepWrites_sound`, `stepWithin_of_check`): every step of $`C`$'s code
@@ -442,50 +499,80 @@ needed by milestone 1.
 
 ## The history of a program
 
-`chk` gives, at each step of $`C`$'s code, the sites of what it allocates,
-the key `none`, and its crossings: the actual crossings out (`actualXs` at
-the type $`\top_{w}`$, a writable type, so an outgoing crossing reaches
-nothing read-only and adds nothing to $`E`$; with the marks a flow gives
-no site is exposed), and, **at an entering step**, the entered code's
-receiver and arguments crossing in at its declared parameter types
-(`paramTypes`, read from the request of each module function and member of
-$`C`$; a code with no declared types records none). `Ghost.stepAt` at an
-`enter` pushes the set, then lets them cross (as at the base), so the
-program's history protects what each active entry's arguments reach
-read-only, from the invocation. Observed (`Round4.lean`):
-`cross_into_prot`, an incoming crossing at a history with a call active
-protects every lent location its value reaches read-only; at the base
-(`NoProt.lean`) with `.outOf` crossings only nothing is protected.
+`chk` gives, at each step of $`C`$'s code, the sites of what it allocates
+(the canonical sites, [the binding checks](#the-binding-checks)), the key
+`none`, and its crossings: the actual crossings out (`actualXs` at the
+type $`\top_{w}`$, a writable type, so an outgoing crossing reaches nothing
+read-only and adds nothing to $`E`$), and, **at an entering step**, the
+values of the entered run's environment (its receiver, its parameters, a
+rest parameter's spine) crossing in at the entered code's parameter types.
+They are read from the entered run, so a rest spine built by the
+invocation's `letE` before the depth increases (Astra's `Step.callGraph`
+check) crosses at the entering step as the rest parameter's value.
 
-**`Inv` after an incoming crossing** (`crosses_inv`, to be proved): a
-crossing changes no site, key or root, adds to every set of $`A`$ alike
-(`HStep.uniform`, proved) and to $`E`$ only exposed locations, so it keeps
-`Inv`.
+- **The types of a shared code** (`sharedParamTypes`): the entered code is
+  its tables (`entered`), which two functions of $`C`$ may share with
+  different declared types (`EnteredTables.lean`). A parameter's crossing
+  type is the meet of the declared types of every function of $`C`$ whose
+  realized code is the entered code: read-only at a position only where
+  every one declares it read-only.
+- **The subset milestone 1 implements.** The note counts a callback's
+  result and a caught value as incoming crossings too. Milestone 1 records
+  the entering step's alone: with fewer recorded crossings fewer locations
+  are protected, so the obligation is weaker and the claim about more
+  executions; milestone 1 reads no protection (`prot` false). Milestone 2
+  records the others at their declared types.
+- **The checks at the new crossings.** The base's `chkSound_of_sites`,
+  `chkSound_of_escape` and `chkSound_of_flow` read `ActualCrossings T`,
+  every crossing `.outOf` (`IncomingCrossings.lean`:
+  `not_actualCrossings_of_into`). They are restated over
+  `ActualCrossingsIn`: the crossings `actualXs ++ incomingAt`, with
+  `PkgProps.crossOk` at an entering step from `crossOk_incoming` (to be
+  proved: an incoming value is one outside code held, so by `MarksOk` at
+  the state before the step it reaches no local or internal location, and
+  at the marks a flow gives no site is exposed); `gives` and `stores` keep
+  their proofs, which read the outgoing part.
+- **`Inv` after an incoming crossing** (`crosses_inv`, to be proved): a
+  crossing changes no site, key or root, adds to every set of $`A`$ alike,
+  and to $`E`$ only exposed locations.
+
+Observed (`Round4.lean`): `cross_into_prot`; at the base (`NoProt.lean`)
+with `.outOf` crossings alone nothing is protected.
 
 ## Initialization
 
-The base realizes a module function as a closure term whose slots linked
-to other functions hold their closures one unfolding less, `null` at depth
-$`0`$ (`approxEnv`, `PassUnitRealize.lean`; `ModuleClosures.lean`). Where
-the module's functions' name graph is acyclic, the unfolding at a depth
-past the graph's height is the same at every greater depth
-(`approx_stable`, to be proved by induction on the height), and is a
-closure whose linked slots hold the other functions' closures, closed.
+The base realizes a module function as a closure term whose linked slots
+hold the other functions' closures one unfolding less, `null` at depth
+$`0`$, and whose outside slots hold a value per depth (`approxEnv`,
+`Slot.outside`, `PassUnitRealize.lean`; `ModuleClosures.lean`). An outside
+slot varying with the depth makes every unfolding different
+(`ApproxStable.lean`). Under the restriction that every outside slot holds
+an audited native, the same value at every depth, a module function with
+no linked slot has one unfolding at every depth (`Round5.lean`,
+`approx_const_stable`); with an acyclic name graph, `approx_stable` (to be
+proved, by induction on the height from `approx_const_stable`'s argument)
+gives one unfolding past the height.
 
-**The initialization** of $`C`$ (defined for an acyclic name graph):
-`initC`, a code of $`C`$ (tagged $`c_C`$, one of the frame's `codes`)
-whose node expression allocates, in reverse topological order of the name
-graph, each module function's closure at its stable unfolding
-(`makeAt (.graph …)` with its linked captures the closures already
-allocated), and returns the array of the exported ones. Its steps are
-$`C`$'s, its allocations at canonical sites. A cyclic name graph has no
-such initialization: a restriction ([restrictions](#restrictions)).
+**The initialization** of $`C`$: `initC`, a code of $`C`$ (tagged
+$`c_C`$) whose node expression allocates, in reverse topological order of
+the name graph, each module function's closure at its stable unfolding
+(`makeAt (.graph …)`, its linked captures the closures already allocated,
+its outside captures the natives), and returns the array of the exported
+ones. Its allocations are at canonical sites.
 
 **An initial configuration** of a program over $`C`$: an empty heap, a
-world at which it is typed, and the term
-`letE (gotoOf initC 0 [] .undef c_C) client`, with `client` closed lowered
-source of outside code (`LoweredSrc`, which holds no closure,
-`loweredSrc_no_closure`) whose variable `0` names the exports' array.
+world at which it is typed, and the closed term
+`letE (gotoOf initC 0 [] .undef c_C) client`, whose `client` is lowered
+source of outside code (`LoweredSrc`, holding no closure,
+`loweredSrc_no_closure`) scoped at one binder (`Scoped 1 client`, its
+variable `0` the exports' array; the whole `letE` is `Scoped 0`).
+
+**P22's layout** (measured, `layout.py` on P22's `fragment.json`): one
+function, `walk`; no module initialization statement (`init: []`); no
+imported module; one declared value, the intrinsic `%ElementAt%` the read
+`xs[c.i]!` lowers to, an audited native with a step model. `walk` names no
+function of its module. So P22 meets the restriction and its `initC`
+allocates one closure.
 
 ## The frame of a request
 
@@ -510,24 +597,41 @@ core before the frame.
 
 A unit's **realization** relates the code an entering step enters to the
 request: `RealizeSim r` (new), a simulation between configurations running
-the entered code and configurations running `gotoOf r.program …`, which
-relates states with the same heap, world and history, frames at the same
-labels with environments related by the realization's slot map, and keeps
-the step kinds, roots and crossings. For a receiverless module function
-the entered code is the request's tables extended by the prologue
-(`PassUnit.dropReceiver`: the expression and continuation lists with the
-prologue node appended, `Step.frameEffect` carrying both into the body),
-and the simulation relates a state of the extended tables at a body label
-$`l<|\mathrm{r.program}|`$ to the request's state at $`l`$ with the same
-slots (`prologue_sim`, to be proved: the prologue's node is at the
-appended label, no body node's target reaches it, so each step of the
-body in the extended tables is the same step in the request's, by cases on
-`Step` at a frame and a `goto`; the prologue's own steps, from
-`graphEntry`'s slots — receiver, arguments, the closure, default `.nul` —
-to the body's start, relate to the request's entry state). Frame identity
-(a frame's code is the extended code, which the flow covers by
-`codesCoverB`), the flow's lookup at body labels, the history and the
-assertions at body labels are kept by it. Other kinds of unit (a method, a
+the entered code and configurations running `gotoOf r.program …`, relating
+states with the same heap and world and histories equal but for the depth
+of $`A`$ (the same sites, keys, $`E`$, $`B`$ and protected set), frames at
+the same labels with environments related by the realization's slot map,
+and keeping the step kinds, roots and crossings. For a receiverless module
+function the entered code is the request's tables extended by the
+prologue (`PassUnit.dropReceiver`; `Step.frameEffect` carries both tables
+into the body), and `prologue_sim` (to be proved) relates a state of the
+extended tables at a body label $`l<|\mathrm{r.program}|`$ to the request's
+state at $`l`$: the prologue's node is past the body, no body node's target
+reaches it, so each body step in the extended tables is the same step in
+the request's; the prologue's own steps, from `graphEntry`'s slots
+(receiver, arguments, the closure, default `.nul`) to the body's start,
+relate to the request's entry state.
+
+**One site per body allocation.** Allocation sites are keyed by the body:
+`bodyOf m` is the request's tables for a realized code (the first
+$`|\mathrm{r.program}|`$ entries of its tables, `Round5.lean`, `body_prefix`)
+and `m` for any other code; the canonical numbering of an allocation
+occurrence is that of `(bodyOf m, node, continuation and handler, kind)`.
+So the same body allocation, P22's `const c = { i: 0 }` among them, has one
+site in both codes, and `chk_sim` (to be proved, from the numbering's
+definition and `prologue_sim`) states that `chk` gives related steps the
+same allocation sites, keys and crossings. The flow holds both codes
+(`codesCoverB`), its proposals for the realized code at body labels equal
+to the request's (`realizedFlowB`, decided), so `Fits`, `Provenance` and
+the frame check read the same proposal in either code; re-entered calls of
+the function run the realized code inside the isolated execution at the
+same sites.
+
+**`RealizedAt r a₁ a₂ L d`** (new): `a₁` runs the realized code from its
+`graphEntry` state, the execution from `a₁` to `a₂` consists of the
+prologue's steps, and `a₂`'s innermost run is the realized code at
+`r.start` with slots `L` and default `d`, related by `prologue_sim` to
+`gotoOf r.program r.start L d r.comp`. Other kinds of unit (a method, a
 function a binding holds) have no realization here: a restriction.
 
 ### The calls the claim is about
@@ -549,7 +653,7 @@ the execution is `K[t]` with `K` the client's context, every step a step
 of `t` in `K`, until `t` is a value or a throw.
 
 ```lean
-def FrameSpec.frame (spec : FrameSpec ι) (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
+def FramedSpec.frame (spec : FramedSpec ι) (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
   toFrameCore := spec.core r
   enters k W h t := ∃ x₀ n x a₁ a₂ L d, PublicCall (spec.core r) r x₀ n x a₁ ∧
     RealizedAt r a₁ a₂ L d ∧ a₂.1.s.n = k ∧ a₂.1.s.W ≍ W ∧ h = a₂.1.s.h ∧
@@ -613,6 +717,33 @@ program's history protects within $`\Theta_C`$, the history protecting what
 each active entry's arguments reach read-only at their declared types, and
 what $`C`$ holds of them after an outermost return (`B`).
 
+**Coverage, from each actual invocation** (`publicCall_safe`, to be
+proved): for every program from an initial configuration and every state
+`x` of its execution, along steps keeping $`\Theta_C`$, at which outside
+code invokes the closure of $`r`$'s function with values `L₀`, `d₀`
+meeting the request's entry contracts at `x`'s world, the program's
+execution from `x` until the call returns or throws is safe (each state a
+value, a throw, or a step at an admissible world with a typed heap, the
+call's context `K` waiting), along each continuation keeping
+$`\Theta_C`$, and the call's footprint, postcondition and regional clauses
+hold between `x`'s heap and the return's. Plan: the invocation's steps up
+to the entering step (a rest spine's `letE` among them) are steps of
+outside code in `K`, safe by the closure's realization; the entering step
+`x → a₁` makes `PublicCall` hold by its definition; the prologue's steps
+are safe and reach `a₂` (`prologue_sim`); `RealizedAt r a₁ a₂ L d` and the
+execution give `enters` at `a₂`'s world and `start` at the program's
+history truncated; `FramedRequestSafe r (spec.frame r)` gives the isolated
+clauses; `isolate` and `RealizeSim` carry each to the program's execution
+in `K`. The entry contracts at `a₂` are the invocation's at `L₀`, `d₀`
+through `graphEntry`'s slot map (`entryHolds_realized`, to be proved, as
+the module realization's `approx_envOk` does for an ordinary row). This is
+the direction the headline promises: every actual public call is covered.
+
+**`PublicCall` with `KStep` and the depth**: its execution is of
+`core.KStep` (actual steps, the history `next`, `Keeps`), and its entering
+step is a `KStep` raising $`\delta`$ by one; `PkgProps` at that step is
+`chkSound_program`'s conclusion, never a premise of the definition.
+
 ### The binding checks
 
 Decided by the verifier from the request, the fragment's components and
@@ -624,11 +755,12 @@ the lowered code, each with a forged-fragment control:
   extension included), its closures' codes, the codes of its requests'
   codes, and `initC`. The frame's `codes` are these.
 - **allocation sites** (`allocB`): each allocation occurrence of a code of
-  $`C`$ (code, node, continuation and handler, kind) has the site the
-  lowering's numbering gives it, a `some` site, and the flow's allocation
-  tables equal that numbering; `allocSomeB` is its first half
-  (`Round4.lean`: false on `AstraR3.lean`'s flow, which `FFlow.check`,
-  `marksB` and `entryB` pass).
+  $`C`$ has the canonical site of `(bodyOf m, node, continuation and
+  handler, kind)`, a `some` site, and the flow's allocation tables equal
+  that numbering; `allocSomeB` is its first half (`Round4.lean`: false on
+  `AstraR3.lean`'s flow, which `FFlow.check`, `marksB` and `entryB` pass);
+  `realizedFlowB` makes a realized code's proposals at body labels the
+  request's.
 - **the component** (`compB`): $`C`$ is `componentAt` of the request's
   place, its tags those the lowering assigns.
 - **the entry** (`entryB`, `entryFnB`): at the realized code's entry, its
@@ -646,14 +778,14 @@ the lowered code, each with a forged-fragment control:
 ```lean
 inductive FunctionPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
   | graph (name : String) (namePos : Span) (request : SourceRequest σ ι)
-  | framed (name : String) (namePos : Span) (request : SourceRequest σ ι) (spec : FrameSpec ι)
+  | framed (name : String) (namePos : Span) (request : SourceRequest σ ι) (spec : FramedSpec ι)
 
 def FunctionPlan.certify : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
   | .graph name pos request => pure (.graph name pos request)
   | .framed name pos request spec => pure (.framed name pos request (spec.frame request))
 ```
 
-`FrameSpec ι` holds the proposals: the family's numbering, the finite flow
+`FramedSpec ι` holds the proposals: the family's numbering, the finite flow
 (its marks the ones it gives), $`\Psi_C`$, $`\Theta_C`$, and for each framed
 call node of the main graph the supports and invariants kept at its
 continuation and handler. **The codes are checked by the ordinary pass**
@@ -697,6 +829,15 @@ then checked by an ordinary plan), and has a control.
   each other, whose closures have no finite initialization at the base.
   Control: a framed walker in a module with two mutually naming functions,
   refused.
+- **Outside slots are audited natives.** Every outside slot of a module
+  function of a framed plan's component holds an audited native, the same
+  value at every depth (an intrinsic with a step model, as P22's
+  `%ElementAt%`). Excluded: an import of another module's value, a module
+  constant or cell, a host value, whose unfolding varies with the depth
+  (`ApproxStable.lean`) and which `initC` does not initialize. Control: a
+  framed walker whose module imports a function of another module, or
+  reads a module `let` cell, refused. Pretext's walkers import; they wait
+  for the initialization of imports.
 - **`@clients` by kind.** A component's `@clients` rows state class keys
   only (or none, read-only). Excluded: a path key such as
   `"this.items[*]": "extend"`, whose part needs the declaration's sites.
@@ -783,7 +924,7 @@ and `framed_of_cover`.
 ### The framed claim, from the check
 
 ```lean
-theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FrameSpec _}
+theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FramedSpec _}
     (hrun : RunSoundFramed (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
@@ -848,10 +989,14 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
 `released_prot_inR`, `loweredSrc_no_closure`, `gotoOf_start_ne`;
 `cross_into_prot`, `truncate_after_cross`, `allocSomeB`'s value on
-`AstraR3.lean`'s flow.
+`AstraR3.lean`'s flow; `writesT` (total), `approx_const_stable`,
+`body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
+review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `local_reach`, `stepWrites_sound`,
-`writesIn_sound`, `slotKind_sound`, `within_charges`, `segFrames`,
+`writesT_sound`, `residual_charged`, `chk_sim`, `realizedFlowB`'s
+soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
+`ActualCrossingsIn`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
 `framed_transfer`, `seg_run`, `RunSeq.within`, `RBound.mono`,
 `frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`, `crosses_inv`,
@@ -881,9 +1026,11 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 - *Clients* (Assumption "Clients"): outside code enters $`C`$ only through
   its interface (`Provenance`), is lowered source of the calculus
   (`Source`), closed (`ClosedAt`), well formed (`Discipline`);
-- a program's executions are typed at their worlds (`AStep`, the
-  configurations of `PublicCall`): the client's typing, the existing row
-  that callers pass values of declared types read over a program;
+- **a client program's executions are typed at their worlds** (`AStep`,
+  the configurations of `PublicCall`): every configuration of the program,
+  the client's own code included, has an admissible world typing its heap.
+  This is stronger than the row that callers pass values of declared types,
+  and is a row of its own for the owner;
 - the request's entry contracts at a public call (the existing rows on
   exported preconditions and handle parameters);
 - a native's step model performs its model's steps, where the flow reads
@@ -891,30 +1038,34 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 
 ## Milestones
 
-1. **The bound route for P22** ($`G_C=\emptyset`$, `prot` false). **Its
-   first check**, before the theorems: one actual linked call of P22's
-   `walk`, from an initial configuration of a client program
-   (`initC` allocating `walk`'s closure, `walk` naming no sibling) through
-   the entering step, with the arguments' recorded crossing, and the
-   prologue, to the request's entry related by `prologue_sim`, with its
-   world and the truncated history; and, on the flow probe with
-   `probeProtocol` replaced by $`\Psi_C`$ and $`W_c`$ as defined here, the
-   cursor fact `c.i < xs.length` kept at `visit(c.i)` under
-   $`\Psi_c`$, and the fact of `nested-capture.mjs`'s walker dropped at
-   `wrapper()`. Then the lemmas listed for milestone 1, the restrictions
+1. **The bound route for P22** ($`G_C=\emptyset`$, `prot` false, the
+   entering step's crossings alone). **Its first check**, before the
+   theorems: one actual linked call of P22's `walk`, from an initial
+   configuration (`initC` allocating `walk`'s closure, its outside slot the
+   native `%ElementAt%`) through the entering step and the prologue to the
+   request's entry related by `prologue_sim`, continued past the body's
+   allocation `const c = { i: 0 }`, with the cursor's site the same in the
+   realized and the request's code (`chk_sim` at that step); and, on the
+   flow probe with `probeProtocol` replaced by $`\Psi_C`$ and $`W_c`$ as
+   defined here (`writesT`), the cursor fact `c.i < xs.length` kept at
+   `visit(c.i)` under $`\Psi_c`$, and `nested-capture.mjs`'s fact dropped
+   at `wrapper()`. Then the lemmas listed for milestone 1, the restrictions
    with their controls, the plan, the headline, and the refusal of units
    whose linking reads a framed member.
-2. **Protection and the guarantee route**, with disjoint supports.
+2. **Protection and the guarantee route**, with disjoint supports and the
+   remaining incoming crossings (callback results, caught values).
 3. **The obligation-relative arrow**: framed callers and importers.
-4. **Keys**: parts at field keys (pretext's `prepared.widths`), and
-   `@clients` path keys.
+4. **Keys**: parts at field keys (pretext's `prepared.widths`), `@clients`
+   path keys, and the initialization of imports.
 
-**Milestone 1 is specified to build**: every lemma it lists has its
-statement and plan above, every definition it reads is given, its
-restrictions are stated with their refusals and controls, and its first
-check is concrete. What it does not settle is whether the computed flow of
-P22 keeps the cursor's site outside $`L(c)`$, which the first check
-measures.
+**Milestone 1 is specified to build**: each lemma it lists has its
+statement and plan, each definition it reads is given (the canonical
+sites, `RealizedAt`, `writesT`, `ActualCrossingsIn`, `PublicCall` over the
+core), its four restrictions are stated with their refusals and controls,
+P22's layout meets them (measured), and its first check is concrete. Not
+settled before the first check runs: whether the computed flow of P22 keeps
+the cursor's site outside $`L(c)`$, and whether the linked witness builds
+as stated.
 
 ## Tests
 
@@ -928,7 +1079,7 @@ measures.
   shortening the array through a wrapper (negative); `capture.mjs`
   (negative); `returned-closure.mjs` (refused at its closure's read);
   `dependent.mjs`'s `total` and a recursive walker (refused at the read of
-  the framed member); the three restrictions' controls.
+  the framed member); the four restrictions' controls.
 - **Controls** (forged fragments): a flow omitting the walker's code
   (`codesCoverB`); an allocation site `none` (`allocB`, `AstraR3.lean`'s
   flow); a signature at a non-sibling entry slot (`entryFnB`); a wire
@@ -942,27 +1093,28 @@ measures.
 
 ## Open points for review
 
-1. **Milestone 2's disjoint supports** are a design to review: whether
-   pretext's handles share support (a `slice` copy does not).
-2. **`stepWrites_sound`** rests on node expressions' writes and natives'
-   step models being the only writing redexes.
-3. **`keeps_canonical`** reads the canonical numbering of allocation
-   occurrences; a code identified by content (two identical bodies)
-   shares its occurrences and sites.
-4. **`RunSoundFramed`'s size** is a reading of `run_sound_pass`'s
-   structure, not yet a build.
+1. **Milestone 2's disjoint supports** are a design to review.
+2. **`residual_charged`** reads `Residual` as an invariant of a node's
+   evaluation; natives' step models are writing redexes it must cover.
+3. **The typed-program row** is stronger than the row on callers' values;
+   it is for the owner.
+4. **`RunSoundFramed`'s size** is a reading of `run_sound_pass`'s structure,
+   not yet a build.
 
 ## Runs
 
 Node 26.13.0, each printing the value shown; the files are in the reviews'
 scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
-`round3/review/fable/`, `round4/`, `verify3/`), outside the repository:
+`round3/review/fable/`, `round4/`, `round4/review/fable/`, `round5/`, `verify3/`, `verify4/`), outside the repository:
 
 - `throw.mjs`: `{ s: NaN, i: 2 }`; `wrapper.mjs`: `NaN`, `NaN`;
   `redirect.mjs`: `NaN`; `capture.mjs`: `NaN`; `prefix.mjs`: `undefined`;
   `install.mjs`: `true false`; `forged-flow.mjs`, `dependent.mjs`,
   `apply.mjs`: `NaN`; `returned-closure.mjs`: `NaN` at a later heap;
   `o-callee.mjs`: `walk` at the walker's depth;
+- P22's layout (`round5/layout.py` on its `fragment.json`, `layout.out`):
+  one function, no initialization statement, no import, the declared value
+  `%ElementAt%`;
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's
@@ -971,8 +1123,10 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
 
 Lean files checked with `lake env lean` at the base, standard axioms only:
 `Vacuous.lean`, `EmptyFlow.lean`, `NoSites.lean`, `CodeClause.lean`,
-`StartLen.lean`, `NoProt.lean`, `ModuleClosures.lean`, `AstraR3.lean`
-(the reviews'), and `Truncate.lean`, `Round3.lean`, `Round4.lean`:
+`StartLen.lean`, `NoProt.lean`, `ModuleClosures.lean`, `AstraR3.lean`,
+`ApproxStable.lean`, `EnteredTables.lean`, `IncomingCrossings.lean`,
+`RealizedCode.lean`, `WritesInOpaque.lean`, `AstraR4.lean` (the reviews'),
+and `Truncate.lean`, `Round3.lean`, `Round4.lean`, `Round5.lean`:
 
 ```lean
 theorem cross_into_prot {P : Package} (g : Ghost P) (tv : TypeView) (T : tv.Ty) (h : Heap) (v : Val) (l : Nat)
