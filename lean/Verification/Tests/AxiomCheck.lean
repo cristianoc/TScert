@@ -271,6 +271,7 @@ import Verification.Source.Claims.PassUnitSignatures
 import Verification.Source.Claims.PassUnitVerdict
 import Verification.Source.Claims.PassUnitWrapper
 import Verification.Source.Claims.FramedSpec
+import Verification.Source.Claims.FramedHistory
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.RegionInference

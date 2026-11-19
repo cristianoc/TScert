@@ -527,19 +527,30 @@ check) crosses at the entering step as the rest parameter's value.
   are protected, so the obligation is weaker and the claim about more
   executions; milestone 1 reads no protection (`prot` false). Milestone 2
   records the others at their declared types.
-- **The checks at the new crossings.** The base's `chkSound_of_sites`,
-  `chkSound_of_escape` and `chkSound_of_flow` read `ActualCrossings T`,
-  every crossing `.outOf` (`IncomingCrossings.lean`:
-  `not_actualCrossings_of_into`). They are restated over
-  `ActualCrossingsIn`: the crossings `actualXs ++ incomingAt`, with
-  `PkgProps.crossOk` at an entering step from `crossOk_incoming` (to be
-  proved: an incoming value is one outside code held, so by `MarksOk` at
-  the state before the step it reaches no local or internal location, and
-  at the marks a flow gives no site is exposed); `gives` and `stores` keep
-  their proofs, which read the outgoing part.
-- **`Inv` after an incoming crossing** (`crosses_inv`, to be proved): a
-  crossing changes no site, key or root, adds to every set of $`A`$ alike,
-  and to $`E`$ only exposed locations.
+- **The checks at the new crossings** (`ReadOnlyIncoming.lean`, proved).
+  The base's `chkSound_of_sites`, `chkSound_of_escape` and
+  `chkSound_of_flow` read `ActualCrossings T`, every crossing `.outOf`
+  (`IncomingCrossings.lean`: `not_actualCrossings_of_into`). Their
+  restatements `chkSound_of_escapeIn`, `chkSound_of_sitesIn` and
+  `chkSound_of_flowIn` read `ActualCrossingsIn T inc`: the crossings
+  `inc ++ actualXs`, which the framed frame meets with `inc` its entering
+  step's crossings (`FramedSpec.actualCrossingsIn`, each `.into`,
+  `FramedSpec.entryXs_into`). `gives` and `stores` keep their proofs, which
+  read the outgoing part (`pkgProps_actualIn`). `PkgProps.crossOk` at an
+  incoming crossing is `crossOk_incoming`: its value is a root of outside
+  code at the state before the step, which meets $`O`$ there
+  (`sitesAt_reached`, from `fitsAt_reached` and `fits_roots`); the step's
+  allocation keeps the site of every location the value reaches; so by
+  `crossOk_of_sites` it reaches no local, internal or exposed location. The
+  premise `IncomingRoots` (each incoming value a root of outside code
+  before its step) is, for the framed frame, `entryXs_roots` (to be proved:
+  the slots past the receiver of the run an entering step starts are the
+  invocation's arguments, values at outside code's position).
+- **`Inv` after an incoming crossing** is `pkg_step_inv` (proved) at the
+  history's crossings, which reads every crossing alike: a crossing changes
+  no site or key (`crosses_site`), steps the history by `HStep.cross`
+  (`crosses_hsteps`) and adds to $`E`$ only exposed locations
+  (`crosses_covers`).
 
 Observed (`Round4.lean`): `cross_into_prot`; at the base (`NoProt.lean`)
 with `.outOf` crossings alone nothing is protected.
@@ -721,7 +732,7 @@ total.
   proved), `chkSound_program` ((S), (K) and (O) at every step of $`C`$'s
   code, the initialization's and earlier calls' included),
   `inv_program` (`Inv` at the empty heap, kept by every step,
-  `crosses_inv` at an entry). Then `entryFits_public` (the isolated start
+  `pkg_step_inv` at an entry). Then `entryFits_public` (the isolated start
   fits, its slots those `graphEntry` and the prologue fill, related by
   `prologue_sim`), `startInv_public` and `ChkSound` for the frame.
 - **An inhabitant.** Milestone 1's first check builds one public call of
@@ -1090,7 +1101,12 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
 `sim_step_back`, `asserted_of_reach`, `framed_callSafe`,
 `call_local_sound`, `callKept_sound`, `callGrown_sound`,
-`callEntry_holds`, `codesAccepted_guarantees`, `run_sound_single_pass`.
+`callEntry_holds`, `codesAccepted_guarantees`, `run_sound_single_pass`,
+`crosses_hsteps`, `crosses_covers`; `crossOk_incoming`, `sitesAt_reached`,
+`pkgProps_actualIn`, `chkSound_of_escapeIn`, `chkSound_of_sitesIn`,
+`chkSound_of_flowIn` (`ReadOnlyIncoming.lean`),
+`FramedSpec.actualCrossingsIn`, `FramedSpec.entryXs_into`
+(`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1101,11 +1117,10 @@ review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `local_reach`, `stepWrites_sound`,
 `writesT_sound`, `residual_charged`, `chk_sim`, `realizedFlowB`'s
-soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
-`ActualCrossingsIn`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
+soundness, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
-`Cert`, `Member.Call` and `decompose`, `cert_of_charges`, `crosses_inv`,
+`Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `prologue_sim`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `RunSoundFramed` (its conclusion `FramedReturnsGuarantee`),
