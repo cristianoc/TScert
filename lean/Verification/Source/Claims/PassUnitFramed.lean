@@ -29,10 +29,10 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 /-- **A request is safe at every call meeting `Ent`**: `RequestSafe`'s
 clauses at the entries whose environment is a call's frame, `envOf L d`,
 and whose term and heap meet `Ent`. -/
-def CallSafe (Ent : Heap → Tm → Prop) (r : SourceRequest σ ι) : Prop :=
+def CallSafe (Ent : (k : Nat) → WorldT k → Heap → Tm → Prop) (r : SourceRequest σ ι) : Prop :=
   (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) → Ent h (gotoOf r.program r.start L d r.comp) →
+      (envOf L d) n W h → RootsOk W (envOf L d) → Ent n W h (gotoOf r.program r.start L d r.comp) →
     SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d))) n W h
       (.at r.start (envOf L d))) ∧
@@ -40,21 +40,21 @@ def CallSafe (Ent : Heap → Tm → Prop) (r : SourceRequest σ ι) : Prop :=
     ∀ η n W h (L : List Tm) (d : Tm),
       EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
         (envOf L d) n W h → RootsOk W (envOf L d) →
-      (∀ v ∈ L, isVal v = true) → isVal d = true → Ent h (gotoOf r.program r.start L d r.comp) →
+      (∀ v ∈ L, isVal v = true) → isVal d = true → Ent n W h (gotoOf r.program r.start L d r.comp) →
       HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
         (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
         (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
         (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d r.comp)) ∧
   (r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) → Ent h (gotoOf r.program r.start L d r.comp) →
+      (envOf L d) n W h → RootsOk W (envOf L d) → Ent n W h (gotoOf r.program r.start L d r.comp) →
     HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
       (gotoOf r.program r.start L d r.comp)) ∧
   (∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) → Ent h (gotoOf r.program r.start L d r.comp) →
+      (envOf L d) n W h → RootsOk W (envOf L d) → Ent n W h (gotoOf r.program r.start L d r.comp) →
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' _ => Footprints.ArgumentSpineRegionsWithin Φ regions (envOf L d) h h')
@@ -63,21 +63,21 @@ def CallSafe (Ent : Heap → Tm → Prop) (r : SourceRequest σ ι) : Prop :=
       n W h (gotoOf r.program r.start L d r.comp)) ∧
   (∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h → RootsOk W (envOf L d) → Ent h (gotoOf r.program r.start L d r.comp) →
+      (envOf L d) n W h → RootsOk W (envOf L d) → Ent n W h (gotoOf r.program r.start L d r.comp) →
     ∀ l k, (l, k) ∈ r.assertions → ∀ j h' ρ', j < n →
       ReachesIn r.program j h (.at r.start (envOf L d)) h' (.at l ρ') →
       HeapKnowledge.Holds k ⟨envOf L d, h⟩ ρ' h') ∧
   (∀ ci q, r.codes[ci]? = some q → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) (codeRequest r q).inputs {}
       (codeRequest r q).entryIndices (envOf L d) n W h →
-    RootsOk W (envOf L d) → Ent h (gotoOf (codeRequest r q).program (codeRequest r q).start L d none) →
+    RootsOk W (envOf L d) → Ent n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d none) →
     ∀ l k, (l, k) ∈ (codeHintsAt r ci).requirements → ∀ j h' ρ', j < n →
       ReachesIn (codeRequest r q).program j h (.at (codeRequest r q).start (envOf L d)) h' (.at l ρ') →
       HeapKnowledge.Holds k ⟨envOf L d, h⟩ ρ' h')
 
 /-- **`RequestSafe` is safe at every call** (proved): each clause at the
 environments of calls, whatever they meet. -/
-theorem requestSafe_callSafe {r : SourceRequest σ ι} (hr : RequestSafe r) (Ent : Heap → Tm → Prop) :
+theorem requestSafe_callSafe {r : SourceRequest σ ι} (hr : RequestSafe r) (Ent : (k : Nat) → WorldT k → Heap → Tm → Prop) :
     CallSafe Ent r := by
   obtain ⟨hs, hf, he, hg, ha, hc⟩ := hr
   exact ⟨fun η hη n W h L d hE hR _ => hs η hη n W h (envOf L d) hE hR,
@@ -177,7 +177,7 @@ their depth, and each of its calls of outside code is a run of outside code
 theorem framed_reaches {r : SourceRequest σ ι} (ha : FramedAssertionsClause r fr) {η : MixedAssignment ι}
     (hη : r.Admits η) {n : Nat} {W : WorldT n} {h : Heap} {L : List Tm} {d : Tm} (hn : 0 < n)
     (hE : EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h) (hR : RootsOk W (envOf L d)) (hN : fr.Call h (gotoOf r.program r.start L d r.comp))
+      (envOf L d) n W h) (hR : RootsOk W (envOf L d)) (hN : fr.Call n W h (gotoOf r.program r.start L d r.comp))
     {g : Ghost (fr.F.at fr.C)} (hg : fr.start n W h (gotoOf r.program r.start L d r.comp) g)
     {j : Nat} {h' : Heap} {l : Nat} {ρ' : Env} (hj : j + 1 < n)
     (hr : ReachesIn r.program j h (.at r.start (envOf L d)) h' (.at l ρ')) :

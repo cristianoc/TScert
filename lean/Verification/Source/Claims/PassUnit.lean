@@ -151,7 +151,7 @@ def FramedSafeClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : Prop
   ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call h (gotoOf r.program r.start L d r.comp) →
+    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -164,7 +164,7 @@ def FramedFootprintClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) :
       EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
         (envOf L d) n W h → RootsOk W (envOf L d) →
       (∀ v ∈ L, isVal v = true) → isVal d = true →
-      fr.Call h (gotoOf r.program r.start L d r.comp) →
+      fr.Call n W h (gotoOf r.program r.start L d r.comp) →
       ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
       SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
         (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -177,7 +177,7 @@ def FramedEnsuresClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : P
   r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call h (gotoOf r.program r.start L d r.comp) →
+    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -189,7 +189,7 @@ def FramedRegionalClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) : 
   ∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call h (gotoOf r.program r.start L d r.comp) →
+    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (fun _ _ => True) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -212,7 +212,7 @@ def FramedAssertionsClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) 
   ∀ η, r.Admits η → ∀ n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
       (envOf L d) n W h → RootsOk W (envOf L d) →
-    fr.Call h (gotoOf r.program r.start L d r.comp) →
+    fr.Call n W h (gotoOf r.program r.start L d r.comp) →
     ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
     SafeFramed fr (AssertedAt r.program r.assertions (envOf L d) h) (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -226,7 +226,7 @@ def FramedCodeAssertionsClause (r : SourceRequest σ ι) (fr : ClientFrame (Ty �
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) (codeRequest r q).inputs {}
       (codeRequest r q).entryIndices (envOf L d) n W h →
     RootsOk W (envOf L d) →
-    fr.Call h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) →
+    fr.Call n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) →
     ∀ g, fr.start n W h (gotoOf (codeRequest r q).program (codeRequest r q).start L d comp) g →
     SafeFramed fr (AssertedAt (codeRequest r q).program (codeHintsAt r ci).requirements (envOf L d) h)
       (fun _ _ _ => True) (fun _ _ _ => True) (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h

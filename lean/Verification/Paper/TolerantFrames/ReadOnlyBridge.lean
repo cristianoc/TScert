@@ -139,19 +139,21 @@ theorem entryStart_prot {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : T
       | cons z zs ihz => exact fun g' hp' => ihz _ (Ghost.prot_add hp')
     · exact ih _ hl' (by rw [← hs]; rfl) x hx hd' hr'
 
+/-- **A step keeping the obligation**, over a frame's core: an actual
+step, the history after it the core's, the obligation kept at the step's
+world. -/
+def FrameCore.KStep {τ : Type} (core : FrameCore τ) (a b : Conf × Ghost (core.F.at core.C)) : Prop :=
+  AStep a.1 b.1 ∧ b.2 = core.next a.2 a.1.s.h a.1.t b.1.s.h b.1.t ∧
+    core.Keeps a.2 a.1.s.n a.1.s.W a.1.s.h a.1.t b.1.s.h b.1.t
+
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
 
-/-- **A step keeping the obligation**: an actual step, the history after it
-the frame's, the obligation kept at the step's world. -/
-def KStep (a b : Conf × Ghost (fr.F.at fr.C)) : Prop :=
-  AStep a.1 b.1 ∧ b.2 = fr.next a.2 a.1.s.h a.1.t b.1.s.h b.1.t ∧
-    fr.Keeps a.2 a.1.s.n a.1.s.W a.1.s.h a.1.t b.1.s.h b.1.t
 
 /-- **A state reached** from a call the claim is about and a history the
 frame starts from, by steps keeping the obligation. -/
 def Reached (b : Conf × Ghost (fr.F.at fr.C)) : Prop :=
-  ∃ a n, fr.Call a.1.s.h a.1.t ∧ fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 ∧ Ex fr.KStep (fun _ => True) n a b
+  ∃ a n, fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t ∧ fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 ∧ Ex fr.KStep (fun _ => True) n a b
 
 /-- **What the checks give** (hypothesis, the interface of the checks (S),
 (K) and (O) of `C`'s code): at each step of `C`'s code from a reached
@@ -294,7 +296,7 @@ theorem safeUnder_path {J : Heap → Tm → Prop} {Ξ T : Fam} {Q : HeapObservat
 from a call the claim is about and a history the frame starts from, a
 state at the end of a path every step of which keeps the obligation is a
 reached state. -/
-theorem reached_of_path {x : Conf} {g : Ghost (fr.F.at fr.C)} (he : fr.Call x.s.h x.t)
+theorem reached_of_path {x : Conf} {g : Ghost (fr.F.at fr.C)} (he : fr.Call x.s.n x.s.W x.s.h x.t)
     (hs : fr.start x.s.n x.s.W x.s.h x.t g) {j : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
     (hex : Ex fr.KStep (fun _ => True) j (x, g) e) : fr.Reached e :=
   ⟨(x, g), j, he, hs, hex⟩

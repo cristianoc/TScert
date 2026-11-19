@@ -1022,7 +1022,7 @@ theorem reached_key (hk : fr.NoKeys) {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr
   intro x y _ hxy hx
   obtain ⟨-, hg, -⟩ := hxy
   rw [hg]
-  simp only [next, stepAt_key, Ghost.alloc, hk.1, hx]
+  simp only [FrameCore.next, stepAt_key, Ghost.alloc, hk.1, hx]
   funext l; split <;> rfl
 
 /-- **A region's locations have the region's keys** (proved): at a reached
@@ -1255,7 +1255,7 @@ arguments, at every state the execution reaches with the call still
 active, each location an argument reaches read-only at its parameter's
 type has a live witness at depth `1`. -/
 theorem witness_reached (hc : fr.ChkSound) {args : Heap → Tm → List (fr.view.view.Ty × Val)}
-    (hse : fr.StartsEntry args) {x : Conf} {g : Ghost (fr.F.at fr.C)} (hN : fr.Call x.s.h x.t)
+    (hse : fr.StartsEntry args) {x : Conf} {g : Ghost (fr.F.at fr.C)} (hN : fr.Call x.s.n x.s.W x.s.h x.t)
     (hg : fr.start x.s.n x.s.W x.s.h x.t g) (htop : TopC fr.F fr.C x.t) (hdx : 1 ≤ depthC fr.F fr.C none x.t)
     {n : Nat} {e : Conf × Ghost (fr.F.at fr.C)} (hex : Ex fr.KStep (fun _ => True) n (x, g) e)
     (hde : 1 ≤ δ fr.F fr.C none e) {T : fr.view.view.Ty} {v : Val} (ha : (T, v) ∈ args x.s.h x.t) {l : Nat}

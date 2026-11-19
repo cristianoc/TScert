@@ -449,7 +449,7 @@ def FitsAt (Fl : Flow (fr.F.at fr.C)) (a : Conf × Ghost (fr.F.at fr.C)) : Prop 
 discharges): at a call the claim is about, every history the frame
 starts from. -/
 def EntryFits (Fl : Flow (fr.F.at fr.C)) : Prop :=
-  ∀ (x : Conf) g, fr.Call x.s.h x.t → fr.start x.s.n x.s.W x.s.h x.t g → fr.FitsAt Fl (x, g)
+  ∀ (x : Conf) g, fr.Call x.s.n x.s.W x.s.h x.t → fr.start x.s.n x.s.W x.s.h x.t g → fr.FitsAt Fl (x, g)
 
 variable {fr} {Fl : Flow (fr.F.at fr.C)}
 
@@ -463,7 +463,7 @@ theorem next_site (hS : fr.FlowSites Fl) {a b : Conf × Ghost (fr.F.at fr.C)} (h
   obtain ⟨hst, hg, -⟩ := hk
   intro l hl
   rw [hg]
-  simp only [next, stepAt_site, Ghost.alloc]
+  simp only [FrameCore.next, stepAt_site, Ghost.alloc]
   split
   · rfl
   · rename_i hlt

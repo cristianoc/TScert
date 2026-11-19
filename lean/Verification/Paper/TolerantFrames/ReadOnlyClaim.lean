@@ -26,7 +26,7 @@ calculus's steps, with the history it reads:
   the paper's executions (`Ghost.stepAt`, `Ghost.next` at the
   configurations' heaps and terms, `next_conf`).
 - **The calls the claim is about** (`ClientFrame.Call`): the frame's
-  well-formed entries (`enters`, read at the call alone), and four named
+  well-formed entries (`enters`, read at the call and its world), and four named
   premises (`ClientFrame.Entry`) beside the obligation: code provenance (`Provenance`: every code
   the term and the heap hold that carries a tag of `C` is one of `C`'s own
   codes, `codes`; Assumption "Clients", outside code enters `C` only
@@ -82,46 +82,59 @@ claim): the term is well formed and the heap free of runs (`Conf.WF`), so
 every step obeys `Disc` (`disc_of_wf`). -/
 def Discipline (h : Heap) (t : Tm) : Prop := wf t = true ∧ HeapFree h
 
-/-- **A client frame** (the draft, "The framed claim"): the component `C` of
-a family, the types crossings are read at, the client obligation `Θ`, what
-the checks give at each step, and the histories an entry starts from. -/
-structure ClientFrame (τ : Type) where
+/-- **A frame's core** (the draft "Accepting a unit through the read-only
+frame", "The frame's core"): what the obligation, the history and the steps
+read: the family of components, the component `C`, the types crossings are
+read at, the client obligation `Θ` and what the checks give at each step. -/
+structure FrameCore (τ : Type) where
   fam : NumberedFamily
   C : Nat
-  /-- `C`'s own lowered code: the unit's program, the closures it creates,
-  the component's members. -/
-  codes : Code → Prop
   view : ViewOver τ
   Θ : Protocol (fam.family.at C)
   chk : Heap → Tm → Heap → Tm → CheckData (fam.family.at C) view.view
+
+namespace FrameCore
+variable {τ : Type} (core : FrameCore τ)
+
+/-- The family of the core. -/
+abbrev F : Family := core.fam.family
+
+/-- **The obligation at a step** (Assumption "Clients"): a step of code
+outside `C`, keeping the calls of `C` active, changes the storage the row
+protects within `Θ`. -/
+def Keeps (g : Ghost (core.F.at core.C)) (k : Nat) (W : WorldT k) (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) :
+    Prop :=
+  stepKind core.F core.C none t t' = .outside → RowAt core.Θ W g h h'
+
+/-- **The history after a step**: the paper's (`Ghost.stepAt`), at what the
+checks give of the step. -/
+noncomputable def next (g : Ghost (core.F.at core.C)) (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) :
+    Ghost (core.F.at core.C) :=
+  Ghost.stepAt core.F core.C none (core.chk h t h' t') h t h' t' g
+end FrameCore
+
+/-- **A client frame** (the draft, "The framed claim"): a core, `C`'s own
+codes, the histories an entry starts from, and the calls the claim is
+about. -/
+structure ClientFrame (τ : Type) extends FrameCore τ where
+  /-- `C`'s own lowered code: the unit's program, the closures it creates,
+  the component's members. -/
+  codes : Code → Prop
   start : (k : Nat) → WorldT k → Heap → Tm → Ghost (fam.family.at C) → Prop
   /-- Every state has a history an entry may start from: the claim reads no
   entry as one without a history. -/
   start_total : ∀ k (W : WorldT k) h t, ∃ g, start k W h t g
   /-- **The calls the claim is about** (named premise, well-formed
-  entries): the states at which a call of the unit's code may start, such
-  as those whose slots of the module's functions hold the module's
-  closures. No step need keep it: it is read at the call alone. -/
-  enters : Heap → Tm → Prop
+  entries): the states at which a call of the unit's code may start, at
+  the world of the call, such as those an entering step of a program
+  reaches. No step need keep it: it is read at the call alone. -/
+  enters : (k : Nat) → WorldT k → Heap → Tm → Prop
 
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
 
 /-- The family of the frame. -/
 abbrev F : Family := fr.fam.family
-
-/-- **The obligation at a step** (Assumption "Clients"): a step of code
-outside `C`, keeping the calls of `C` active, changes the storage the row
-protects within `Θ`. -/
-def Keeps (g : Ghost (fr.F.at fr.C)) (k : Nat) (W : WorldT k) (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) :
-    Prop :=
-  stepKind fr.F fr.C none t t' = .outside → RowAt fr.Θ W g h h'
-
-/-- **The history after a step**: the paper's (`Ghost.stepAt`), at what the
-checks give of the step. -/
-noncomputable def next (g : Ghost (fr.F.at fr.C)) (h : Heap) (t : Tm) (h' : Heap) (t' : Tm) :
-    Ghost (fr.F.at fr.C) :=
-  Ghost.stepAt fr.F fr.C none (fr.chk h t h' t') h t h' t' g
 
 open Classical in
 /-- **A code at a tag meets the frame**: a code carrying a tag of `C` is one
@@ -149,7 +162,7 @@ def Entry (h : Heap) (t : Tm) : Prop := fr.Provenance h t ∧ Discipline h t ∧
 
 /-- **A call the claim is about**: the premises every step keeps
 (`Entry`) and the frame's well-formed entries (`enters`). -/
-def Call (h : Heap) (t : Tm) : Prop := fr.Entry h t ∧ fr.enters h t
+def Call (k : Nat) (W : WorldT k) (h : Heap) (t : Tm) : Prop := fr.Entry h t ∧ fr.enters k W h t
 
 /-- **Every step keeps an entry's premises** (proved): code provenance and
 outside code lowered source by `step_prov`, the call discipline by

@@ -224,11 +224,11 @@ entry history and every call the claim is about has the shape the flow
 reads (`EntryShape`), the call's term fits `O` at a position of outside
 code and its heap meets the flow. -/
 theorem entryFits {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) {args : Heap → Tm → List (fr.view.view.Ty × Val)}
-    (hst : fr.StartsEntry args) (hsh : ∀ h t, fr.Call h t → EntryShape Fl h t) : fr.EntryFits Fl := by
+    (hst : fr.StartsEntry args) (hsh : ∀ k (W : WorldT k) h t, fr.Call k W h t → EntryShape Fl h t) : fr.EntryFits Fl := by
   intro x g hc hg
   rw [hst] at hg
   have hsite : ∀ l, g.site l = none := by subst hg; simp [entryStart_site]
-  obtain ⟨E, K, l, L, d, comp, π, ht, hcomp, hcode, hsup, hret, hfn, henv, hheap⟩ := hsh _ _ hc
+  obtain ⟨E, K, l, L, d, comp, π, ht, hcomp, hcode, hsup, hret, hfn, henv, hheap⟩ := hsh _ _ _ _ hc
   obtain ⟨hpv, -, hsrc, hcl⟩ := hc.1
   refine ⟨?_, HeapInv.entry hF hsite hheap hcl.2 hsrc.2⟩
   have hok := x.ok
@@ -264,7 +264,7 @@ and the flow's facts the checks at the actual crossings
 (`chkSound_of_sites`). -/
 theorem chkSound_of_flow {T : τ} {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) (hS : fr.FlowSites Fl)
     {args : Heap → Tm → List (fr.view.view.Ty × Val)} (hst : fr.StartsEntry args)
-    (hsh : ∀ h t, fr.Call h t → EntryShape Fl h t) (hx : fr.ActualCrossings T) (hlend : Lendable Fl.O)
+    (hsh : ∀ k (W : WorldT k) h t, fr.Call k W h t → EntryShape Fl h t) (hx : fr.ActualCrossings T) (hlend : Lendable Fl.O)
     (hL : LocalHeld Fl.H) : fr.ChkSound :=
   chkSound_of_sites hx (fun s hs s' h' => hF.closed s hs s' h') hlend hL
     (sitesSound_of_fits hF hS (entryFits hF hst hsh))
