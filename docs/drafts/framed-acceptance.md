@@ -658,7 +658,7 @@ relate to the request's entry state.
 `bodyOf m` is the request's tables for a realized code (the first
 $`|\mathrm{r.program}|`$ entries of its tables, `Round5.lean`, `body_prefix`)
 and `m` for any other code; the canonical numbering of an allocation
-occurrence is that of `(bodyOf m, node, continuation and handler, kind)`.
+occurrence is that of `(bodyOf m, continuation and handler, kind)` (`canonSite`).
 So the same body allocation, P22's `const c = { i: 0 }` among them, has one
 site in both codes, and `chk_sim` (to be proved, from the numbering's
 definition and `prologue_sim`) states that `chk` gives related steps the
@@ -813,14 +813,24 @@ token, `componentCodes`): each module
   frame's `codes` are these. A frame of a code with no proposal allocates
   at outside storage (`allocOf`).
 - **allocation sites** (`allocB`): each allocation occurrence of a code of
-  $`C`$ has the canonical site of `(bodyOf m, node, continuation and
-  handler, kind)`, a `some` site, and the flow's allocation tables equal
+  $`C`$ has the canonical site of `(bodyOf m, continuation and handler,
+  kind)`, a `some` site, and the flow's allocation tables equal
   that numbering. Its first half is `allocSomeB` (`allocSomeB_sound`: every
   proposal allocates at `some` sites at every node key, so a step of a
   covered code of $`C`$ allocates at a `some` site, `stepSite_some`;
   `Round4.lean`: false on `AstraR3.lean`'s flow, which `FFlow.check`,
-  `marksB` and `entryB` pass); the numbering's equality is to be built
-  with the canonical numbering. `realizedFlowB` (`realizedFlowB_sound`,
+  `marksB` and `entryB` pass); its second half is `allocCanonB`
+  (`allocCanonB_sound`, `ReadOnlyBinding.lean`): the canonical site of an
+  occurrence is, from a base, two numbers per element of the bodies'
+  occurrences (`allocOccs`, each body with each of its node keys, in
+  order), the object's then the array's (`canonSite`, injective on the
+  occurrences, `canonSite_inj`), and the flow's sites number so at every
+  node key of a code that its body has. `allocB` (`FramedBinding.lean`)
+  is both, at the body `bodyOf r` (the request's code for the realized
+  code, every other code itself); `allocB_realized` gives the realized
+  code and its request's the same allocation sites at every node key of
+  the request's program.
+  `realizedFlowB` (`realizedFlowB_sound`,
   by `agreeB_sound`) makes a realized code's proposals at body labels the
   request's: at every context of the realized code, the request's code
   has a proposal with the same slots, value sets, signatures and outside
@@ -1292,7 +1302,9 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `step_writes_active`, `Fits.active`, `write_site`
 (`ReadOnlyStepWrites.lean`); `crossOk_noLeaves`, `vals_located`,
 `num_not_root` (`ReadOnlyIncoming.lean`); `protocolAtLeastB_sound`
-(`ReadOnlyBinding.lean`), `clientsB_sound` (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
+(`ReadOnlyBinding.lean`), `clientsB_sound` (`FramedBinding.lean`);
+`canonSite_inj`, `allocCanonB_sound`, `allocCanon_same`
+(`ReadOnlyBinding.lean`), `allocB_realized` (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
 `probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
 `framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`

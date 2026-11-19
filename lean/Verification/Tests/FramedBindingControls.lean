@@ -17,6 +17,10 @@ and refuses a forged one:
 - **A realized code whose proposal differs from its request's at a body
   label** (`agreeB`, which `realizedFlowB` reads): its value set, or its
   allocation site at a body node's continuation and handler.
+- **Two sites for one body allocation** (`allocCanonB`, the fourth
+  review's finding on P22's `const c = { i: 0 }`): a realized code
+  allocating at a site other than its body's canonical one, which a
+  numbering per code gives.
 - **A wire $`\Theta_C`$ other than the source's** (`clientsB`): one changing
   a kind no row states, one keeping a kind a row extends, and a row stating
   a path key (the restriction "@clients by kind").
@@ -78,6 +82,22 @@ private def flowOf (codes : List (Code × List (Nat × FCode Pk))) : FFlow Pk :=
 -- the request's code without a proposal at a context of the realized code
 #guard !agreeB (flowOf [(m₁, [(entryCx, code [some 1]), (1, code [some 1])]), (m₀, [(entryCx, code [some 1])])])
   m₁ m₀ m₀.2 1
+
+/-! ## One site per body allocation -/
+
+/-- The realized code `m₁`'s body is `m₀`. -/
+private def body (m : Code) : Code := if m = m₁ then m₀ else m
+
+-- `m₀`'s one node key `(ret, none)` is the first occurrence: sites 10 and 11
+#guard canonSite 10 [m₀] m₀ (.ret, none) false == 10 && canonSite 10 [m₀] m₀ (.ret, none) true == 11
+-- both codes at the canonical sites of the body's occurrence
+#guard allocCanonB (P := Pk) id 10 [m₀] body
+  (flowOf [(m₁, [(entryCx, code [] (obj := some 10) (allocs := [((.ret, none), some 10, some 11)]))]),
+    (m₀, [(entryCx, code [] (obj := some 10) (allocs := [((.ret, none), some 10, some 11)]))])])
+-- the realized code at a site of its own, as a numbering per code gives it
+#guard !allocCanonB (P := Pk) id 10 [m₀] body
+  (flowOf [(m₁, [(entryCx, code [] (obj := some 12) (allocs := [((.ret, none), some 12, some 13)]))]),
+    (m₀, [(entryCx, code [] (obj := some 10) (allocs := [((.ret, none), some 10, some 11)]))])])
 
 /-! ## The client obligation -/
 
