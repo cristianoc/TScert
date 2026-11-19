@@ -43,9 +43,10 @@ theorem SitesOf.congr_below {g g' : Ghost P} {S : Sites P} {v : Val} {n : Nat}
 theorem CapsOk.congr {g g' : Ghost P} {n : Nat} {w : Val} (he : ∀ l, l < n → g'.site l = g.site l)
     (h : CapsOk Fl g n w) : CapsOk Fl g' n w := by
   intro fs ar E K s caps k rest comp oid hw hc
-  obtain ⟨π, hπ, hcaps, hfn⟩ := h fs ar E K s caps k rest comp oid hw hc
-  exact ⟨π, hπ, fun i u hu => ⟨⟨(hcaps i u hu).1.1.congr_below he (hcaps i u hu).2, (hcaps i u hu).1.2⟩,
-    (hcaps i u hu).2⟩, hfn⟩
+  obtain ⟨h₀, hbelow, hall⟩ := h fs ar E K s caps k rest comp oid hw hc
+  refine ⟨h₀, hbelow, fun c π hπ => ?_⟩
+  obtain ⟨hcaps, hfn⟩ := hall c π hπ
+  exact ⟨fun i u hu => ⟨(hcaps i u hu).1.congr_below he (hbelow i u hu), (hcaps i u hu).2⟩, hfn⟩
 
 /-- **A value reads the ghost's sites below its bound** (proved). -/
 theorem VJ.congr {g g' : Ghost P} {n : Nat} {S : Sites P} {v : Val} (he : ∀ l, l < n → g'.site l = g.site l)
@@ -303,7 +304,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact ihf r hr
     · exact ihr r hr
     · exact iha x hx r hr
-  | invokeC σ π Sa Sr hof hfn _ _ _ hargs _ _ _ _ _ ihr iha =>
+  | invokeC σ c π Sa Sr hof hfn _ _ _ hargs _ _ _ _ _ ihr iha =>
     intro r hr
     subst hof
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
@@ -342,7 +343,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact vor_roots (hp _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))) ho r hr
     · exact vor_roots (hp x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))) ho r hr
     · exact ih x hx r hr
-  | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ _ ih =>
+  | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ ih =>
     intro r hr
     simp only [vals, hc, Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false, List.nil_append, valsArgs_eq,
       List.mem_flatMap] at hr
@@ -396,7 +397,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihx r) (ihy r)
   | makeKey _ _ _ _ _ ihk ihx =>
     intro r hr; simp only [vals, List.mem_append] at hr; exact hr.elim (ihk r) (ihx r)
-  | gotoC _ hc _ _ _ _ _ => intro r hr; simp [vals, hc] at hr
+  | gotoC _ _ hc _ _ _ _ _ => intro r hr; simp [vals, hc] at hr
   | gotoOut hc hE henv _ _ =>
     intro r hr
     simp only [vals, hc, Bool.false_eq_true, if_false, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
@@ -407,7 +408,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
       simp only [envOf, List.getD_eq_getElem?_getD, hi, Option.getD_some] at this
       exact vor_roots this (fun _ => Sub.refl _) r hr
     · exact vor_roots (vor_default henv) (fun _ => Sub.refl _) r hr
-  | frameC _ _ hc _ _ _ _ _ _ _ _ ih =>
+  | frameC _ _ _ hc _ _ _ _ _ _ _ _ ih =>
     intro r hr
     simp only [vals, hc, if_true, List.nil_append, Bool.not_true] at hr
     exact ih r hr

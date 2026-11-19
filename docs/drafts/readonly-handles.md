@@ -2348,14 +2348,20 @@ meeting a heap of sites and the roots of outside code meeting $`O`$
 sets of sites:
 
 - **A flow** (`Flow`): $`O`$, the heap of sites $`H`$, and for each code
-  of $`C`$ a proposal (`CodeFlow`): at each node, the sites of each slot
+  of $`C`$ and each of its contexts a proposal (`CodeFlow`, `Flow.code m
+  c`): at each node, the sites of each slot
   of the environment and of the node expression's value, and the sites
   its frames allocate at, objects (`obj`) and arrays (`arr`, a rest
   parameter's spine and a grown cell among them); and, where a slot or a
   node's value holds a closure of $`C`$'s code of a known signature (its
   code, arity, entry label, rest and number of captures, `FnSig`), that
   signature (`fn`, `vfn`). Outside code allocates outside storage
-  (`Alloc.outside`).
+  (`Alloc.outside`). A context is a number: `entryCx` stands for the
+  code's entries from outside code, and each other context for the known
+  calls that name it. Every context of a code has the entry context beside
+  it, with the same allocation sites and token (`Flow.Agree`): a frame's
+  term names its code and not its context, so its fresh locations take the
+  code's sites (`allocOf`).
 - **Lowered code** (`Lowered`): a node expression holds no located value
   (an object, a spine with a cell, a view spine, a typed array's
   allocation) and no run; what it captures or binds into a closure is a
@@ -2369,9 +2375,10 @@ sets of sites:
   locations only, whose first locations are of sites of the set; every
   value within it (`Within`: captures, node expressions' values, a bound
   function's parts) is a value, every closure of $`C`$'s code among them
-  captures values meeting its code's entry slots, and its entry names a
-  signature only at a capture holding a closure of it or at its own slot
-  (`CapsOk`, `CapFn`), every closure
+  captures values meeting its code's entry slots at every context of the
+  code, and its entry names a signature only at a capture holding a
+  closure of it or at its own slot (`CapsOk`, `CapFn`), its code has an
+  entry context, open there where its token lies in $`O`$, every closure
   of outside code has lowered code (`OutLowered`). Allocation keeps it
   (`VJ.alloc`).
 - **A term fits a set** (`Fits V Γ a o S t`): its value, once computed,
@@ -2386,12 +2393,15 @@ sets of sites:
   restricts only what crosses out to outside code) has its receiver and actuals, each a value or a
   variable, meet the slots of the callee's entry, the closure its own
   slot, and a rest spine allocated at a site of the spine's slot holding
-  the rest's actuals; its value meets the callee's return set. Each code
+  the rest's actuals, all at one context of the callee; its value meets
+  the callee's return set there. A run of $`C`$'s code (`gotoC`,
+  `frameC`) fits at one context of its code, and its steps keep that
+  context. Each code
   has a token, a site standing for its closures (`CodeFlow.tok`): a
   closure of $`C`$'s code meets a set holding its code's token, and so
   does every value holding it in the code of outside code or of a bound
-  function (`FnsIn`). A code whose token lies in $`O`$ is open at its
-  entry (`OpenAt`): the rest's spine, the receiver, the parameters and the
+  function (`FnsIn`), the token of its entry context. A code whose token
+  lies in $`O`$ is open at its entry context (`OpenAt`): the rest's spine, the receiver, the parameters and the
   closure's own slot there hold $`O`$, and the code's return set lies
   within $`O`$. Every thrown value meets $`O`$; a read's result meets the
   contents of a set closed under the reads' prototypes; a write's value
@@ -2420,11 +2430,15 @@ sets of sites:
   names, of each code whose token lies in $`O`$, and a handler's thrown
   value. A slot holds what outside code may supply (`Supplied`: outside
   storage and the token of every code whose token lies in $`O`$) at every
-  slot of a member's entry (`EntryShape`) and at each capture's slot of a
-  code whose token lies in $`O`$ (`OpenAt`): a closure an earlier call gave
-  out may come back in any value outside code supplies, and a closure
-  outside code holds may have been made at an earlier entry. Every other
-  slot holds what its edges carry into it.
+  slot of a member's entry (`EntryShape`, at the entry context) and at
+  each capture's slot of a code whose token lies in $`O`$, at its entry
+  context (`OpenAt`) and, for a closure given out, at every context
+  (`GivenOut`): a closure an earlier call gave out may come back in any
+  value outside code supplies, and a closure outside code holds may have
+  been made at an earlier entry. Every other slot holds what its edges
+  carry into it. A closure's allocation (`makeGraphC`) meets the capture
+  slots of every context of its code; a known call's context is one
+  context of the callee, whichever the proposal names.
 - **A heap meets the flow** (`HeapInv`): each location holds a value
   meeting its site's contents, its code's values the bindings; so it meets
   the heap of sites (`HeapInv.sites`). Writes and allocations that meet
@@ -2445,11 +2459,12 @@ at an environment of $`O`$ fits $`O`$ at outside code's allocation sites
 fitting a set at the allocation sites of its top frame, on a heap meeting
 the flow, the step leads to a term fitting the same set and a heap meeting
 the flow, the ghost giving its fresh locations `stepSite`. A call of a
-callee that may be outside code enters a run whose environment holds the
-receiver, the actuals and the closure, all of $`O`$, and the captures
-(`fits_graphEntry`); a call of a closure of $`C`$'s code of a known
-signature enters one whose slots hold the receiver and the actuals at
-the entry's slots (`fits_graphEntryC`); either entry names a signature
+callee that may be outside code enters a run at its code's entry context
+whose environment holds the receiver, the actuals and the closure, all of
+$`O`$, and the captures (`fits_graphEntry`); a call of a closure of
+$`C`$'s code of a known signature enters one at the context the call
+names, whose slots hold the receiver and the actuals at the entry's slots
+(`fits_graphEntryC`); either entry names a signature
 only at a capture or the closure's own slot (`envFn_entry`); a merge
 copies values of a closed set's contents (`merge_vals`).
 
@@ -2476,8 +2491,9 @@ environment and of its heap well formed (`EntryVal`: every value it holds
 in its code is a value, and every closure of $`C`$'s code it holds, in a
 capture or in the code of outside closures and bound functions, is one
 $`C`$'s code gave out, `GivenOut`: of a code whose token lies in $`O`$,
-open at its entry, naming signatures at its entry only at captures
-holding closures of them or at its own slot). The values a value holds
+open at its entry context, at every context holding what outside code may
+supply at its captures' slots and naming signatures at its entry only at
+captures holding closures of them or at its own slot). The values a value holds
 keep code provenance and valid references (`Within.prov`,
 `Within.refsOkN`); at the entry history every location is outside
 storage, so a well-formed value of the entry meets every set holding what
@@ -2531,7 +2547,8 @@ The checks state this on the code itself (`ReadOnlyFitsCheck.lean`):
   (`Γ`) and whose variable `d + i` is the node's slot `i`, of the sites
   `τ i`, holding a closure of the signature `φ i` where it names one. A
   call whose callee is a slot naming a signature is a call of a closure
-  of $`C`$'s code of a known signature (`invokeC`); a capture or a bound
+  of $`C`$'s code of a known signature (`invokeC`), at one context of the
+  callee; a capture or a bound
   part is a primitive or a variable (`OVOr`). At an environment meeting
   the slots and signatures, the instantiated term fits (`ofits_sound`).
 - **The checks of an edge** (`ContChk`, `HandlerChk`): each slot of a
@@ -2552,12 +2569,14 @@ proposal is [deciding the flow](#deciding-the-flow).
 
 A finite proposal (`FFlow`, `ReadOnlyFitsDecide.lean`) holds $`O`$, the
 heap of sites as a list of entries (a site's contents and bindings, none
-for a site no entry names), and for each code of $`C`$ its nodes (`FCode`,
-one node standing for every label past them). A code holds its return
-set, a table of signatures, and for each node its slots as an array with
-one set for every slot past it, its value set and its signatures, each an
-index into the table. The flow it stands for (`FFlow.flow`) reads a
-code's first entry.
+for a site no entry names), and for each code of $`C`$ its contexts, each
+with its nodes (`FCode`, one node standing for every label past them). A
+code's proposal at a context holds its return set, a table of signatures,
+and for each node its slots as an array with one set for every slot past
+it, its value set, its signatures, each an index into the table, and the
+context its known calls enter (`FNode.cx`). The flow it stands for
+(`FFlow.flow`, `FFlow.at`) reads a code's first entry and that entry's
+first proposal at the context.
 
 - **A term's least set** (`syn`), computed bottom-up from the node's slots:
   a variable bound inside the term its binder's set, a slot its sites; a
@@ -2567,9 +2586,11 @@ code's first entry.
   against its site's storage (`storesB`), a closure of $`C`$'s code its
   site and its code's token, open at its entry where the token lies in
   $`O`$ (`openB`); a call of a slot naming
-  a signature whose entry's slots hold the receiver's and actuals' sets
-  the callee's return set, and a call whose callee, receiver and actuals
-  lie within `O` the set `O`. Where it is
+  a signature whose entry's slots, at the context the node names, hold the
+  receiver's and actuals' sets the callee's return set there, and a call
+  whose callee, receiver and actuals lie within `O` the set `O`; a
+  closure's captures are checked against every context of its code
+  (`graphSites`). Where it is
   computed, the term fits it (`syn_sound`), and every larger set
   (`OFits.sub`).
 - **Lowered code** (`lowB`, `lowB_sound`) and the closure's own slot alone
@@ -2581,9 +2602,10 @@ code's first entry.
   a target names signatures only within its row, and an index named there
   is the index the source's slot holds (`carriesFnB_sound`;
   `contChkB_sound`, `handlerChkB_sound`).
-- **The checks of a flow** (`FFlow.check`): each code's checks
-  (`codeChkB_sound`, one pass over the nodes with their continuations and
-  handlers), $`O`$ holding outside storage, closed in the heap of sites,
+- **The checks of a flow** (`FFlow.check`): each code's checks at each
+  context (`codeChkB_sound`, one pass over the nodes with their
+  continuations and handlers), each context beside an entry context of
+  the same allocation sites and token (`Flow.Agree`), $`O`$ holding outside storage, closed in the heap of sites,
   its storage able to hold all of $`O`$; they give `Flow.Facts`
   (`FFlow.check_sound`). A member's entry holding what outside code may
   supply at every slot (`suppliedB`), its returns within $`O`$, is decided
@@ -2610,10 +2632,29 @@ one of its target that reads it, and a node's value is its expression's
 least set with its stores, what it gives to outside code and the slots of
 a callee's entry added, a known call's value its callee's return set
 (`gen`), a closure's set its site and its code's token. The slots outside
-code fills hold $`O`$: the entry slots up to its own slot of each code
-whose token lies in $`O`$, and a handler's thrown value; every slot of the
-member's entry holds outside storage and the tokens $`O`$ holds, and a
-slot naming a module function's signature its code's token. A returned
+code fills hold $`O`$: at each code whose token lies in $`O`$, the slots a
+caller of unknown callee fills at its entry context (the rest's spine, the
+receiver, the parameters and its own slot) and its captures' slots, the
+captures' slots at every context, and a handler's thrown value. What
+outside code may supply (outside storage and the tokens $`O`$ holds) is
+held at every slot of the member's entry; a slot naming a module
+function's signature holds its code's token.
+
+**Contexts** (`solveStart`, `knownCallees`). Each node holding a known call
+(a callee slot naming a signature of a code of $`C`$) is a call site with
+its own context, and each callee is proposed for once per call site
+naming it, beside its entry context. A copy at a call site's context is
+entered only by that call: its slots hold what the call passes, its
+returns reach only its caller, and it is open to no caller of unknown
+callee. A closure's captures are grown at every copy of its code. The
+proposed flow merges the contexts of equal entry sets (`mergeFlow`): two
+contexts of a code whose entry nodes' slots hold the same sites are one
+class, standing for its first context (the entry context where it is in
+the class), and a call site's context is the class of the call sites
+whose callees' classes are its own, the entry context where each callee's
+class is its entry context's. In plain terms, ctx(l) is the class of the
+call site l under equal entry sets of its callees. The merging is a
+policy of the solver: the checks decide the merged flow as any other. A returned
 value reaches $`O`$ where the member returns it or where its code's token
 lies in $`O`$; any other code's return set reaches only its callers. A
 worklist runs the copies and the nodes, then closes $`O`$, grows those
@@ -2703,21 +2744,23 @@ at the visitor call, every fact read at the marks the flow gives:
   the visitor's `values: "any"` applies to them. One site per allocation
   occurrence would keep `h` local.
 - pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 18 codes, 3824
-  nodes, proposal 1582 ms, checks 1074 ms): at `onLine`, `0 <=
+  nodes; one context per known call site: 117 contexts, 16516 nodes over
+  them, proposal 9169 ms, checks 4332 ms; merged: 47 contexts, 16210
+  nodes, checks 4137 ms): at `onLine`, `0 <=
   cursor.segmentIndex`, `cursor.segmentIndex <= segmentCount`, `0 <=
   cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
   the two facts relating `segmentCount` to `prepared.widths.length` fail,
   the field `widths` of outside storage changed by the walkers' writes
   (`stats`) under `noKeys` and by the visitor's effect, no region read as
   protected.
-- `walkPreparedComplexLines` reached from the raw walker, at its `onLine`:
-  the two length facts pass and the two cursor facts fail. The file
-  exports `stepPreparedLineGeometryFromStart`, which passes its caller's
-  cursor to `walkPreparedComplexLines` (with no `onLine`); the flow gives
-  each code one set per slot over all its calls, so the cursor's slot holds
-  $`O`$ beside the raw walker's local cursor sites.
-  Probed as a member, entered from outside, its cursor is outside storage
-  and both cursor facts fail.
+- `walkPreparedComplexLines` reached from the raw walker, at its `onLine`,
+  at the raw walker's call site's context: its cursor's slot holds the
+  raw walker's local cursor site alone and all four facts pass. At the
+  context of `stepPreparedLineGeometryFromStart`'s call, exported, the
+  cursor's slot holds $`O`$ and the two cursor facts fail; that call passes
+  `undefined` as `onLine`, whose slot there holds no site. At the context
+  of `countSteppedLines`' call and at its entry context, entered by no
+  caller of unknown callee, all four pass.
 
 Every member of `src/line-break.ts` meets the checks, its entry and the
 bindings check.
