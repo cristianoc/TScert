@@ -911,6 +911,15 @@ claim read no candidate).
 
 ### What the pass checks
 
+The executable check (`FramedCheck.lean`, run beside the verdict under
+`TSCERT_FRAMED`): `framedCallNodes`, the call nodes of the member's code
+framed at some context of the flow; `callEffectAt`, the callee's stated
+effect at the caller's slots; `framedSupportsAt`, the entry supports
+(in the pass's slot numbering) passing `frameCheckAt` at $`\Psi_c`$ at
+every context and every node of the call's continuation and handler that
+may call outside code; `FilePlans.framedCheck`, the main graph walked by
+`passMember` with those nodes framed, settled.
+
 `MemberAccepted.framed`, beside `ordinary`'s premises over the request
 (its codes by the ordinary pass): `FFlow.check (remark F)`, `marksB`,
 `initB` and the binding checks; (S), (K), (O) over every body of the
@@ -1382,6 +1391,16 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
   spine at `grow`) and `c.i <= 2^32 - 2` (from the test and the length
   bound); node 10's entry holds the first two and decides `xs[c.i]`, and
   `c.i++` from the third meets the head's `c.i <= 2^53 - 1`;
+- the framed check on P22's run directory (`TSCERT_FRAMED`,
+  `m1-build/framed-a4-2.out`), the supports decided from the flow: the
+  framed call nodes are 13 (`visit(c.i)`) and 10 (`xs[c.i]`, the call of
+  `%ElementAt%`, whose callee's set holds outside storage); at node 13,
+  at $`\Psi_c`$ and the visitor's stated effect read at the caller's
+  slots (values `any`, spines and views `grow`), the frame keeps 15 of the
+  17 entry supports and drops the two facts over the length read before
+  the call (`v = xs.length` and `xs.length <= v`), which the spines'
+  growth breaks; at node 10 (effect `keep`) it keeps all 15; settled,
+  the main graph's walk with both framed is accepted;
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's

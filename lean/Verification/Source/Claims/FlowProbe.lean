@@ -223,19 +223,21 @@ def closable (mods : List ProbeModule) : List ProbeModule :=
         else reach n (x :: seen) (((mods.find? (·.name == x)).map (·.siblings)).getD [] ++ work)
     !(reach (mods.length * mods.length + mods.length + 1) [] g.siblings).contains g.name
 
-/-- **The probe of a member at a component**, timed: the solver's, the
-merge's and the check's milliseconds. The component `C` is a set of modules
-(the tags `ofC` names) entered through its entries `E` (`entry`, by the
-module functions' names); every module function of `C`'s modules a probe
-reaches is a code of the flow, and the closures of `C`'s code they create.
-An entry's closure is held by outside code (its token in `O`): outside
-code may call it, at any time, with what it holds (`OpenAt`), and each
-execution starts at a call of one (`EntryShape`, decided by `FFlow.entryB`
-at the entry's first node). A module function no entry names is entered
-only by `C`'s code that names it. The member is the module function
-`member`, read at its closure's code. -/
-def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List ProbeModule)
-    (specs : List FrameSpec := []) (entryNames : List String := []) : IO String := do
+/-- **A component's codes, as the flow's solver reads them**: the module
+functions of `C`'s modules (`ofC`), the natives with a step model they name
+(`hostModel?`) and the closures their codes create; each code's
+signatures, sites and entry. Code `i`'s object and array sites are `3i`
+and `3i + 1`, its closures' token `3i + 2`; each continuation and handler's
+first node allocates at its own pair past them. -/
+structure ComponentCodes (ofC : ComponentTag → Bool) where
+  mods : List ProbeModule
+  hosts : List (String × Code × Nat)
+  closures : List (Code × Nat × Bool × Nat × Nat)
+  modCodes : List (SolveCode (probePackage ofC))
+  cs : List (SolveCode (probePackage ofC))
+
+def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entryNames : List String) :
+    ComponentCodes ofC :=
   let P := probePackage ofC
   let mods := mods.filter fun g => P.ofC g.comp
   let closed := closable mods
@@ -272,6 +274,24 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
     { c with allocAt := fun kx => match first[kx]? with
       | some l => let k := 3 * cs.length + 2 * (offs.getD i 0 + l); ⟨some k, some (k + 1)⟩
       | none => c.alloc }
+  ⟨mods, hosts, closures, modCodes, cs⟩
+
+/-- **The probe of a member at a component**, timed: the solver's, the
+merge's and the check's milliseconds. The component `C` is a set of modules
+(the tags `ofC` names) entered through its entries `E` (`entry`, by the
+module functions' names); every module function of `C`'s modules a probe
+reaches is a code of the flow, and the closures of `C`'s code they create.
+An entry's closure is held by outside code (its token in `O`): outside
+code may call it, at any time, with what it holds (`OpenAt`), and each
+execution starts at a call of one (`EntryShape`, decided by `FFlow.entryB`
+at the entry's first node). A module function no entry names is entered
+only by `C`'s code that names it. The member is the module function
+`member`, read at its closure's code. -/
+def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List ProbeModule)
+    (specs : List FrameSpec := []) (entryNames : List String := []) : IO String := do
+  let P := probePackage ofC
+  let cc := componentCodes ofC mods entryNames
+  let (mods, hosts, closures, modCodes, cs) := (cc.mods, cc.hosts, cc.closures, cc.modCodes, cc.cs)
   let entries := (mods.zip modCodes).filter fun (g, _) => entryNames.contains g.name
   let t0 ← IO.monoNanosNow
   let s : SolveStart P ← IO.lazyPure fun _ => solveStart cs

@@ -6,6 +6,7 @@ import Verification.Source.Claims.ModuleInterfaces
 import Verification.Source.WorkerWire
 import Verification.Source.ComponentChecks
 import Verification.Source.Claims.FlowProbe
+import Verification.Source.Claims.FramedCheck
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -785,6 +786,13 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
       IO.eprintln s!"probe component: entries {entries}; {mods.length} module functions {mods.map (·.name)}, {(mods.map (·.code.1.length)).sum} nodes, planned in {((← IO.monoNanosNow) - c0) / 1000000} ms"
       for line in ← f.flowProbe (fr.group i) mods ofC entries do IO.eprintln line
+  -- A member's framed check (`TSCERT_FRAMED`), reported beside the verdict.
+  if (← IO.getEnv "TSCERT_FRAMED").isSome then
+    if let .ok f := planned then
+      let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
+      for j in fr.group i do
+        if let some (.ok (.graph name _ _)) := f.plans[j]? then
+          for line in f.framedCheck p.fuel j (SourceClaimJson.componentFlow ofC mods entries name) do IO.eprintln line
   let planned := if probe == some "only" then .error "flow probe only" else planned
   let (lines, verdict, extraction, contracts, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [], false)

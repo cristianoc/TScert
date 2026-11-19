@@ -516,10 +516,15 @@ request's own conditions, each code request's run against the codes
 admitted before it, the main graph's runs and the read summaries' and
 expression obligations' checks; with the diagnostics asked for (`observe`,
 `counting`) as its line; with `grading`, the main graph's runs report each
-visit's record of its step's local effect in their counts (`SinglePass.Walk.visits`). -/
+visit's record of its step's local effect in their counts (`SinglePass.Walk.visits`);
+with `framed`, the main graph's walks frame those nodes, keeping those
+supports at their returns (`SinglePass.framedAt`), which only a framed
+plan's check reads (`FilePlans.framedCheck`): the verdict's runs frame
+none. -/
 def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) (counting : Bool := false) (grading : Bool := false) :
+    (observe : Option String := none) (counting : Bool := false) (grading : Bool := false)
+    (framed : List (Nat × List Footprints.Footprint) := []) :
     Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
       (CertificateProducer.Answered (StoreView.graph f.F.store))) := do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
@@ -719,7 +724,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
-      (probeTrace (framedProbeOf observe) fun L =>
+      (framed ++ probeTrace (framedProbeOf observe) fun L =>
         let framedAt := fun (cands : List (Nat × List HeapKnowledge.IndexAtom)) =>
           match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
             cands r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
@@ -776,7 +781,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound'
         givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe mainRun.route.lastWalk observed)
-        false true regional').1.asRefusal with
+        false true regional' false framed).1.asRefusal with
       | .accepted => o
       | o' => o'
     | o, _ => o
