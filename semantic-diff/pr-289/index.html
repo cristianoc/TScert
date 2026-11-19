@@ -93,18 +93,18 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-289"><code>2d23f7875c3dce5a5ef1c547cc4853afd116df7b..pr-289</code></a><ul><li>1 commit</li><li>changes: 1 Example, 1 Tooling</li><li>parts: </li></ul></li></ul></section>
-<h2 id="g-pr-289"><code>2d23f7875c3dce5a5ef1c547cc4853afd116df7b..pr-289</code></h2><article class="card" id="c-881d7e38c"><header><div><div class="sha">881d7e38c · Vibe Nuage Agent · Nov 19, 10:32</div><h3>Add a TScert-verified todo web app with its Mistral deployment files</h3></div></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-289"><code>2d23f7875c3dce5a5ef1c547cc4853afd116df7b..pr-289</code></a><ul><li>1 commit</li><li>changes: 1 Example, 1 Tooling</li><li>parts: <span class="chip">tools</span></li></ul></li></ul></section>
+<h2 id="g-pr-289"><code>2d23f7875c3dce5a5ef1c547cc4853afd116df7b..pr-289</code></h2><article class="card" id="c-4f18adf0e"><header><div><div class="sha">4f18adf0e · Vibe Nuage Agent · Nov 19, 10:32</div><h3>Add a TScert-verified todo web app with its Mistral deployment files</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>To run the verifier on a small complete program and to give it a public home: webapp/app.ts is written only in the verified fragment, and <code>make check FILE=webapp/app.ts</code> accepts every function with a proof.</p></div>
 <h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln"><span class="tk-t">A</span> todo app core: annotated interfaces <span class="tk-t">Todo</span>, <span class="tk-t">AppState</span>, <span class="tk-t">Request</span>, <span class="tk-t">Response</span></span><span class="ln">and <span class="tk-t">JsonValue</span>, and exported functions initState, addTodo, toggleTodo,</span><span class="ln">deleteTodo, parseId, escapeHtml, renderPage, todoJson, todosJson and the</span><span class="ln">router handleRequest. <span class="tk-t">No</span> <span class="tk-s">`any`</span> and no assertion decides a <span class="tk-k">type</span>; every</span><span class="ln">state update returns a fresh value, and <span class="tk-t">JSON</span>.stringify is fed only a</span><span class="ln"><span class="tk-t">JsonValue</span>.</span></pre>
 <h4 class="change"><span class="act added">added</span>Tooling <span class="target">webapp/server.mts, webapp/package.json, webapp/Dockerfile, mistral.json</span></h4><pre class="code"><span class="ln">server.mts is the thin node:http adapter around the checked</span><span class="ln">handleRequest (it listens on $PORT); the Dockerfile runs it on node:26</span><span class="ln">with no build step, and mistral.json declares the webapp/ directory a</span><span class="ln">Mistral App module serving / on port 8080.</span></pre>
 <h4 class="change">Validation</h4><div class="prose"><p><code>make check FILE=webapp/app.ts</code> reports status verified for all 13 units; the server ran under Node 26.13.0 and its routes (GET /, GET /todos, GET /todos/{id}, POST /todos, POST /todos/{id}/toggle, DELETE /todos/{id}, and the 400/404 paths) were exercised over HTTP, including HTML escaping of a title.</p></div>
-<h4 class="change">Outcome</h4><p>no-behaviour-change</p>
-<h4 class="change">Parts</h4><p>tools</p>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span></dd></dl>
 <details><summary>5 files changed, 254 insertions(+)</summary><pre class="code"> mistral.json        |  27 ++++++++
  webapp/Dockerfile   |   9 +++
  webapp/app.ts       | 173 ++++++++++++++++++++++++++++++++++++++++++++++++++++
  webapp/package.json |   6 ++
  webapp/server.mts   |  39 ++++++++++++</pre></details>
+<div class="sha">with cristianoc</div>
 </article>
 </main></body></html>
