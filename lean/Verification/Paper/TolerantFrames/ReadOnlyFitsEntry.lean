@@ -180,7 +180,7 @@ theorem VJ.entry {g : Ghost P} {S : Sites P} {v : Val} {s : IndexedHeap}
     intro w hw
     have hrw := hw.refsOkN hr
     have hpw := hw.prov hp
-    refine ⟨(hv w hw).1, ?_, ?_⟩
+    refine ⟨(hv w hw).1, ?_, ?_, fun x hx l hl => ⟨Leaves.lt hrw (Leaves.code hx hl), by simp [Ghost.origin, hg]⟩⟩
     · intro fs ar E K st caps k rest comp oid hw' hc'
       obtain ⟨⟨π, hπ, -, hop⟩, hall⟩ := (hv w hw).2 w (.refl w) fs ar E K st caps k rest comp oid hw' hc'
       refine ⟨⟨π, hπ, fun _ => hop⟩, fun i u hu => ?_, fun c π' h' => ?_⟩
@@ -202,8 +202,8 @@ theorem VJ.entry {g : Ghost P} {S : Sites P} {v : Val} {s : IndexedHeap}
       exact LoweredSrc.lowered Fl (hpw.1.1 hc' e he)
 
 /-- **The heap of an entry meets the flow** (proved): at a ghost whose
-every location is outside storage, whose contents and bindings the flow's
-storage of outside storage holds. -/
+every location is outside storage, whose contents the flow's storage of
+outside storage holds. -/
 theorem HeapInv.entry {g : Ghost P} {s : IndexedHeap} (hF : Fl.Facts) (hg : ∀ l, g.site l = none)
     (hv : ∀ v ∈ s.h, EntryVal Fl v) (hc : ∀ v ∈ s.h, Scoped 0 v) (hp : HeapProv (srcOk P.ofC) s.h) :
     HeapInv Fl g s.h := by
@@ -212,10 +212,9 @@ theorem HeapInv.entry {g : Ghost P} {s : IndexedHeap} (hF : Fl.Facts) (hg : ∀ 
   have hl : w < s.h.length := (List.getElem?_eq_some_iff.mp hu).1
   have hst := hF.writable none hF.none
   -- outside storage's contents hold `O`, so what outside code may supply
-  have hS : Supplied Fl (Fl.H.contents none) := ⟨hst.1 none hF.none, fun _ _ _ ht => hst.1 _ ht⟩
+  have hS : Supplied Fl (Fl.H.contents none) := ⟨hst none hF.none, fun _ _ _ ht => hst _ ht⟩
   rw [hg]
-  refine ⟨VJ.entry hg hS (hv u hm) (hc u hm) (RefsOk.refsOkN (contents_valid hl hu)) (hp u hm),
-    fun x _ l _ => by rw [hg]; exact hst.2 none hF.none⟩
+  exact VJ.entry hg hS (hv u hm) (hc u hm) (RefsOk.refsOkN (contents_valid hl hu)) (hp u hm)
 
 namespace ClientFrame
 variable {τ : Type} {fr : ClientFrame τ}
@@ -266,8 +265,8 @@ and the flow's facts the checks at the actual crossings
 theorem chkSound_of_flow {T : τ} {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) (hS : fr.FlowSites Fl)
     {args : Heap → Tm → List (fr.view.view.Ty × Val)} (hst : fr.StartsEntry args)
     (hsh : ∀ h t, fr.Call h t → EntryShape Fl h t) (hx : fr.ActualCrossings T) (hlend : Lendable Fl.O)
-    (hL : LocalHeld Fl.H) (hB : ∀ s, NoLocal (Fl.H.bindings s)) : fr.ChkSound :=
-  chkSound_of_sites hx (fun s hs s' h' => hF.closed s hs s' h') hlend hL hB
+    (hL : LocalHeld Fl.H) : fr.ChkSound :=
+  chkSound_of_sites hx (fun s hs s' h' => hF.closed s hs s' h') hlend hL
     (sitesSound_of_fits hF hS (entryFits hF hst hsh))
 
 end ClientFrame

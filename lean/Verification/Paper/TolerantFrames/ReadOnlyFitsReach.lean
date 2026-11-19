@@ -52,16 +52,19 @@ theorem CapsOk.congr {g g' : Ghost P} {n : Nat} {w : Val} (he : ∀ l, l < n →
 theorem VJ.congr {g g' : Ghost P} {n : Nat} {S : Sites P} {v : Val} (he : ∀ l, l < n → g'.site l = g.site l)
     (h : VJ Fl g n S v) : VJ Fl g' n S v :=
   ⟨h.val, h.closed, h.below, h.sites.congr_below he h.below, h.fns,
-    fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.congr he, (h.inner w hw).2.2⟩⟩
+    fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.congr he, (h.inner w hw).2.2.1,
+      fun x hx l hl => by
+        obtain ⟨hlt, ho⟩ := (h.inner w hw).2.2.2 x hx l hl
+        refine ⟨hlt, ?_⟩
+        unfold Ghost.origin; rw [he l hlt]; exact ho⟩⟩
 
 /-- **A heap reads the ghost's sites below its length** (proved). -/
 theorem HeapInv.congr {g g' : Ghost P} {h : Heap} (he : ∀ l, l < h.length → g'.site l = g.site l)
     (hH : HeapInv Fl g h) : HeapInv Fl g' h := by
   intro w u hw
   have hl : w < h.length := (List.getElem?_eq_some_iff.mp hw).1
-  obtain ⟨hv, hb⟩ := hH w u hw
   rw [he w hl]
-  exact ⟨hv.congr he, fun x hx => (hb x hx).congr_below he fun l hl' => hv.below l (Leaves.code hx hl')⟩
+  exact (hH w u hw).congr he
 
 /-! ## The frame a fresh location's site is read at -/
 
@@ -335,13 +338,14 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     rcases hr with hr | ⟨x, hx, hr⟩
     · exact vor_roots (Γ := fun _ => none) (.inl hv) ho r (by simpa only [vals] using hr)
     · exact ih x hx r hr
-  | makeBound _ _ _ _ hp ho ih =>
+  | makeBound _ _ _ _ _ hb _ hp ho ih =>
     intro r hr
+    have ho' := fun h' => Sub.trans hb (ho h')
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with ((hr | hr) | ⟨x, hx, hr⟩) | ⟨x, hx, hr⟩
-    · exact vor_roots (hp _ (List.mem_cons_self ..)) ho r hr
-    · exact vor_roots (hp _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))) ho r hr
-    · exact vor_roots (hp x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))) ho r hr
+    · exact vor_roots (hp _ (List.mem_cons_self ..)) ho' r hr
+    · exact vor_roots (hp _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))) ho' r hr
+    · exact vor_roots (hp x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))) ho' r hr
     · exact ih x hx r hr
   | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ ih =>
     intro r hr
@@ -349,7 +353,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
       List.mem_flatMap] at hr
     obtain ⟨x, hx, hr⟩ := hr
     exact ih x hx r hr
-  | makeGraphOut _ _ _ _ hc hE hcaps ho _ ih =>
+  | makeGraphOut _ _ _ _ hc hE _ hb _ hcaps ho _ ih =>
     intro r hr
     simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with hr | ⟨x, hx, hr⟩
@@ -361,7 +365,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
         · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
         · obtain ⟨x, hx, hr⟩ := List.mem_flatMap.mp hr
           rw [← hot.1] at hr
-          exact vor_roots (hcaps x hx) ho r hr
+          exact vor_roots (hcaps x hx) (fun h' => Sub.trans hb (ho h')) r hr
       · simp at hr
     · exact ih x hx r hr
   | readAt _ _ _ _ _ ih => intro r hr; simp only [vals] at hr; exact ih r hr

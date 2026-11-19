@@ -111,7 +111,8 @@ theorem VJ.capInner {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : N
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hv : VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid))
     {u : Tm} (hu : u ∈ caps) :
-    isVal u = true ∧ Verification.Closed u ∧ ∀ w, Within P u w → isVal w = true ∧ CapsOk Fl g n w ∧ OutLowered Fl w := by
+    isVal u = true ∧ Verification.Closed u ∧
+      ∀ w, Within P u w → isVal w = true ∧ CapsOk Fl g n w ∧ OutLowered Fl w ∧ CodeNL g n w := by
   refine ⟨(hv.inner u (.cap hu (.refl u))).1, fun k a => ?_, fun w hw => hv.inner w (.cap hu hw)⟩
   have := hv.closed k a
   simp only [subst, substArgs_eq_map, Tm.objAt.injEq, CallCode.graph.injEq] at this
@@ -356,7 +357,7 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
     simp [parameters_length]; omega
   cases hc : P.ofC comp
   · -- outside code
-    have hlow := (hf.inner _ (.refl _)).2.2 fs ar E K s caps kd rest comp oid rfl hc
+    have hlow := (hf.inner _ (.refl _)).2.2.1 fs ar E K s caps kd rest comp oid rfl hc
     have hO : ∀ (Γ' : Nat → Option (Sites P)) (pre : List Tm), (∀ x ∈ pre, VOr (VJ Fl g n) Γ' Fl.O x) → ∀ i,
         VOr (VJ Fl g n) Γ' Fl.O (envOf (pre ++ (caps ++ [.objAt fs (.graph ar E K s caps kd rest comp) oid])) .nul i) := by
       intro Γ' pre hp i
@@ -448,7 +449,7 @@ theorem spread_vj {h : Heap} {Sx S : Sites P} {ls : List (Option Nat)} {vs : Lis
   rcases readElems_mem hr v hv with rfl | ⟨l, hl, hl'⟩
   · exact VJ.prim rfl
   · have hs := hx.sites l (cells_leaves rfl hl)
-    exact (hH l v hl').1.sub (hc _ hs)
+    exact (hH l v hl').sub (hc _ hs)
 
 /-! ### A merge's reads -/
 
@@ -506,7 +507,7 @@ theorem heapVal_vj {h : Heap} {Su Q : Sites P} {u : Val} {l : Nat} (hH : HeapInv
   split
   · rename_i v hv
     split
-    · exact .inr ⟨_, hq _ (hu.sites l hl), (hH l v hv).1⟩
+    · exact .inr ⟨_, hq _ (hu.sites l hl), hH l v hv⟩
     · exact .inl rfl
   · exact .inl rfl
 
@@ -565,7 +566,7 @@ theorem merge_vals {h : Heap} {d : List PropKey} {x y : Tm} {ps : List (PropKey 
               obtain ⟨⟨o, i⟩, hoi, m, hm, he⟩ := hB
               subst hm
               have hs₁ := hqy _ (hy.sites l₁ (Leaves.of_next (a := .key _) (by simpa [next, Footprints.fieldsOf] using hl₁)))
-              have harr := (hH l₁ _ hls).1
+              have harr := hH l₁ _ hls
               have hcell : some m ∈ ls := by
                 have := List.mem_zipIdx hoi
                 rw [this.2.2]; exact List.getElem_mem _
@@ -596,7 +597,7 @@ theorem fits_mergeAlloc {n : Nat} {Γ : Nat → Option (Sites P)} {a : FrameAt P
     (fun v _ => ?_) (fun v hv' => ?_) hs ho
   · split
     · rename_i he; exact hst _ he.choose_spec.1
-    · exact ⟨(fun _ h => nomatch h), (fun _ h => nomatch h)⟩
+    · exact fun _ h => nomatch h
   · split
     · rename_i he
       exact .val he.choose_spec.2.val he.choose_spec.2
@@ -948,22 +949,22 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.makeView _ hst'' hi'' hs (hv.alloc hl) ho, hH'⟩
-    | makeBound Ss hst' hi hs hp =>
+    | makeBound Ss hst' hi hs Sb hb hnl hp =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
-      exact ⟨.makeBound _ hst'' hi'' hs (fun x hx => (hp x hx).alloc hl) ho, hH'⟩
+      exact ⟨.makeBound _ hst'' hi'' hs Sb hb hnl (fun x hx => (hp x hx).alloc hl) ho, hH'⟩
     | makeGraphC π Ss hst' hi hs hc hcode hcaps htok hop hE =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode
         (fun c π' h' => ⟨fun i u hu => ((hcaps c π' h').1 i u hu).alloc hl, (hcaps c π' h').2⟩) htok hop hE ho, hH'⟩
-    | makeGraphOut Ss hst' hi hs hc hE hcaps _ hnone =>
+    | makeGraphOut Ss hst' hi hs hc hE Sc hb hnl hcaps _ hnone =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
-      exact ⟨.makeGraphOut _ hst'' hi'' hs hc hE (fun u hu => (hcaps u hu).alloc hl) ho hnone, hH'⟩
+      exact ⟨.makeGraphOut _ hst'' hi'' hs hc hE Sc hb hnl (fun u hu => (hcaps u hu).alloc hl) ho hnone, hH'⟩
   | arrArg hai hpre hst ih =>
     intro cur ou o S key hfit hH
     have ho := hfit.out
@@ -1050,7 +1051,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       | zero => simpa using hu.symm
       | succ i => simp at hu
     subst this
-    exact ⟨VJ.prim rfl, fun x hx => by simp [codeVals] at hx⟩
+    exact VJ.prim rfl
   | lenStrThrow _ =>
     intro cur ou o S key hfit hH
     have ho := hfit.out
@@ -1060,7 +1061,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       | zero => simpa using hu.symm
       | succ i => simp at hu
     subst this
-    exact ⟨VJ.prim rfl, fun x hx => by simp [codeVals] at hx⟩
+    exact VJ.prim rfl
   | arithThrow _ =>
     intro cur ou o S key hfit hH
     have ho := hfit.out
@@ -1070,7 +1071,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       | zero => simpa using hu.symm
       | succ i => simp at hu
     subst this
-    exact ⟨VJ.prim rfl, fun x hx => by simp [codeVals] at hx⟩
+    exact VJ.prim rfl
   | readField hl hv =>
     intro cur ou o S key hfit hH
     have ho := hfit.out
@@ -1125,7 +1126,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hs := (hx.value rfl).sites _ (Leaves.of_next (a := .key _) (by simpa [next, Footprints.fieldsOf] using hl))
       have hy' := hy.value hv
       exact ⟨.val rfl (VJ.prim rfl) ho,
-        hH.set_same (hy'.sub (hst _ hs).1) fun x hx => (hy'.sites.code hx).mono (hst _ hs).2⟩
+        hH.set_same (hy'.sub (hst _ hs))⟩
   | setPresent hv he hlt =>
     intro cur ou o S key hfit hH
     have ho := hfit.out
@@ -1137,7 +1138,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hy' := hy.value hv
       have hst' := hst _ (List.mem_cons_of_mem _ hs)
       exact ⟨.val rfl (((hx.value rfl).sub hS).alloc (by simp)) ho,
-        hH.set_same (hy'.sub hst'.1) fun x hx => (hy'.sites.code hx).mono hst'.2⟩
+        hH.set_same (hy'.sub hst')⟩
   | setGrow hv hk he =>
     intro cur ou o S key hfit hH
     have ho := hfit.out
@@ -1162,8 +1163,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · rcases i with _ | i
         · simp only [List.getElem?_cons_zero, Option.some.injEq] at hu
           subst hu
-          exact ⟨(hy'.sub hst'.1).alloc (by simp), fun x hx => ((hy'.sites.code hx).mono hst'.2).alloc
-            fun l hl => hy'.below l (Leaves.code hx hl)⟩
+          exact (hy'.sub hst').alloc (by simp)
         · simp at hu
   | makeFields hvs hlen =>
     intro cur ou o S key hfit hH
@@ -1173,7 +1173,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | makeAbsent Ss hst hi hs =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx)) ho, ?_⟩
+      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
@@ -1182,17 +1182,18 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | makeView Ss hst hi hs hvw =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by cases hl; exact ⟨Nat.lt_of_lt_of_le (hvw.below _ (Leaves.of_next (a := .view) rfl)) (by simp), by rw [(Ghost.alloc_old (hvw.below _ (Leaves.of_next (a := .view) rfl))).1]; exact hvw.sites _ (Leaves.of_next (a := .view) rfl)⟩) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx)) ho, ?_⟩
+      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by cases hl; exact ⟨Nat.lt_of_lt_of_le (hvw.below _ (Leaves.of_next (a := .view) rfl)) (by simp), by rw [(Ghost.alloc_old (hvw.below _ (Leaves.of_next (a := .view) rfl))).1]; exact hvw.sites _ (Leaves.of_next (a := .view) rfl)⟩) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
-    | makeBound Ss hst hi hs hp =>
+    | makeBound Ss hst hi hs Sb hb hnl hp =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      have hall := fun y hy => (hp y hy).top
-      refine ⟨.val rfl (VJ.obj (closed_bound (hall _ (List.mem_cons_self ..)).closed (hall _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))).closed fun x hx => (hall x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))).closed) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (bound_code fun y hy => (hall y hy).alloc (by simp)) (bound_child fun y hy => (hall y hy).alloc (by simp)) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (bound_fns fun y hy => hall y hy)) ho, ?_⟩
+      have hallb := fun y hy => (hp y hy).top
+      have hall := fun y hy => (hallb y hy).sub hb
+      refine ⟨.val rfl (VJ.obj (closed_bound (hall _ (List.mem_cons_self ..)).closed (hall _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))).closed fun x hx => (hall x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))).closed) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (bound_code fun y hy => (hall y hy).alloc (by simp)) (bound_child fun y hy => (hall y hy).alloc (by simp)) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (bound_nl (fun y hy => (hallb y hy).alloc (by simp)) hnl) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (bound_fns fun y hy => hall y hy)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
@@ -1209,11 +1210,12 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
-    | makeGraphOut Ss hst hi hs hc hE hcaps _ hnone =>
+    | makeGraphOut Ss hst hi hs hc hE Sc hb hnl hcaps _ hnone =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.graphOut hc (fun k l hk => ?_) (fun u hu => (hcaps u hu).top.alloc (by simp)) (lowered_vj hE) hE
-        hnone) ho, ?_⟩
+      refine ⟨.val rfl (VJ.graphOut hc (fun k l hk => ?_) (fun u hu => ((hcaps u hu).top.alloc (by simp)).sub hb)
+        (lowered_vj hE) hE hnone (fun u hu l hl => hnl.origin (((hcaps u hu).top.sites.alloc (hcaps u hu).top.below) l hl))
+        (fun u hu l hl => by have := ((lowered_vj (g := g) (n := 0) (S := []) hE u hu).sites l hl); cases this)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
@@ -1491,8 +1493,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
               · exact List.mem_append_left _ hy
               · exact List.mem_append_right _ (List.mem_cons_of_mem _ hy))
             have h2 := hst _ hmem
-            exact ⟨fun s hs' => (List.mem_append.mp hs').elim (h1.1 s) (h2.1 s),
-              fun s hs' => (List.mem_append.mp hs').elim (h1.2 s) (h2.2 s)⟩
+            exact fun s hs' => (List.mem_append.mp hs').elim (h1 s) (h2 s)
           · exact hst _ hmem
         · split
           · rename_i hy'

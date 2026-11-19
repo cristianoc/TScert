@@ -39,12 +39,12 @@ theorem Fits.sub_aux {V : Sites P → Val → Prop} (hV : Mono V) :
   | spread hx hc _ _ => intro _ hS ho; exact .spread hx (fun s hs => (hc s hs).trans hS) ho
   | makeAbsent Ss hst hi hs _ _ => intro _ hS ho; exact .makeAbsent Ss hst hi (hS _ hs) ho
   | makeView Ss hst hi hs hv _ _ => intro _ hS ho; exact .makeView Ss hst hi (hS _ hs) (hV _ _ _ hS hv) ho
-  | makeBound Ss hst hi hs hp _ _ =>
-    intro _ hS ho; exact .makeBound Ss hst hi (hS _ hs) (fun x hx => (hp x hx).sub hV hS) ho
+  | makeBound Ss hst hi hs Sb hb hnl hp _ _ =>
+    intro _ hS ho; exact .makeBound Ss hst hi (hS _ hs) Sb (fun x hx => hS _ (hb x hx)) hnl hp ho
   | makeGraphC π Ss hst hi hs hc hcode hcaps htok hop hE _ _ =>
     intro _ hS ho; exact .makeGraphC π Ss hst hi (hS _ hs) hc hcode hcaps (hS _ htok) hop hE ho
-  | makeGraphOut Ss hst hi hs hc hE hcaps _ hn _ =>
-    intro _ hS ho; exact .makeGraphOut Ss hst hi (hS _ hs) hc hE (fun u hu => (hcaps u hu).sub hV hS) ho (hS _ hn)
+  | makeGraphOut Ss hst hi hs hc hE Sc hb hnl hcaps _ hn _ =>
+    intro _ hS ho; exact .makeGraphOut Ss hst hi (hS _ hs) hc hE Sc (fun x hx => hS _ (hb x hx)) hnl hcaps ho (hS _ hn)
   | readAt hx hq hcl hr _ _ => intro _ hS ho; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) ho
   | indexAt hx hk hq hcl hr _ _ _ =>
     intro _ hS ho; exact .indexAt hx hk hq hcl (fun s hs => (hr s hs).trans hS) ho
@@ -227,11 +227,11 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     simp only [subst, substArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) Γ _ _) (subst j v) hst fun x hx => ih x hx rfl
     exact .makeView Ss' h₁ h₂ hs hv' ho
-  | makeBound Ss hst _ hs hp ho ih =>
+  | makeBound Ss hst _ hs Sb hb hnl hp ho ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) Γ _ _) (subst j v) hst fun x hx => ih x hx rfl
-    refine .makeBound Ss' h₁ h₂ hs (fun x hx => ?_) ho
+    refine .makeBound Ss' h₁ h₂ hs Sb hb hnl (fun x hx => ?_) ho
     simp only [List.mem_cons, List.mem_map] at hx
     rcases hx with rfl | rfl | ⟨y, hy, rfl⟩
     · exact (hp _ (by simp)).subst hv
@@ -252,11 +252,11 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
       · refine .inl ⟨u, ?_, hfu⟩
         rw [List.getElem?_map, hu, Option.map_some, (((hcaps c π' h').1 k u hu).fn_closed hfu) j v]
       · exact .inr ⟨by rw [hk', List.length_map], by rw [hσ, List.length_map]⟩
-  | makeGraphOut Ss hst _ hs hc hE hcaps ho hn ih =>
+  | makeGraphOut Ss hst _ hs hc hE Sc hb hnl hcaps ho hn ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) Γ _ _) (subst j v) hst fun x hx => ih x hx rfl
-    refine .makeGraphOut Ss' h₁ h₂ hs hc hE (fun u hu => ?_) ho hn
+    refine .makeGraphOut Ss' h₁ h₂ hs hc hE Sc hb hnl (fun u hu => ?_) ho hn
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
     exact (hcaps y hy).subst hv
   | readAt _ hq hcl hr ho ih =>
@@ -411,7 +411,8 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
     simp only [Lowered, loweredArgs_iff] at hL
     obtain ⟨ht, hr, hpre, hargs⟩ := hL
     simp only [instantiate, instantiateArgs_eq_map]
-    refine .makeBound (fun _ => Fl.O) (fun _ _ => hst) (fun x hx => ?_) hF.none (fun x hx => ?_) hoO
+    refine .makeBound (fun _ => Fl.O) (fun _ _ => hst) (fun x hx => ?_) hF.none Fl.O (Sub.refl _) hF.noLocal
+      (fun x hx => ?_) hoO
     · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy d Γ (hargs y hy) hΓ
     · simp only [List.mem_cons, List.mem_map] at hx
       rcases hx with rfl | rfl | ⟨y, hy, rfl⟩
@@ -502,7 +503,7 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
     simp only [Lowered] at hL
     simp only [instantiate]
     refine .merge (Q := Fl.O) (ihx d Γ hL.1 hΓ) (ihy d Γ hL.2 hΓ) (fun s hs => by simpa using hs) hc
-      (fun s hs => ⟨(hc s hs).trans hst.1, (hc s hs).trans hst.2⟩) hF.none hoO hoO
+      (fun s hs => (hc s hs).trans hst) hF.none hoO hoO
   | makeKey k x ihk ihx =>
     intro d Γ hL hΓ
     simp only [Lowered] at hL
@@ -530,7 +531,8 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
       exact codePart_instantiate hρ (hcaps x (List.mem_of_getElem? hx)) hΓ
         (hoc i (List.getElem?_eq_some_iff.mp hx).1)
     | false =>
-      refine .makeGraphOut (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hE (fun u hu => ?_) hoO hF.none
+      refine .makeGraphOut (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hE Fl.O (Sub.refl _) hF.noLocal
+        (fun u hu => ?_) hoO hF.none
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
       exact codePart_instantiate hρ (hcaps y hy) hΓ (Sub.refl _)
   | goto => intro d Γ hL _; simp only [Lowered] at hL

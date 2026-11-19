@@ -67,7 +67,8 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → FrameAt P → Bool → 
       (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S → (o = true → Sub S Fl.O) →
       OFits d Γ a o S (.makeAt .absent ns inits)
   | makeBound {d Γ a o S t r pre ns inits} (Ss : Tm → Sites P) : (∀ x ∈ inits, Stores Fl a.obj (Ss x)) →
-      (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S → (∀ x ∈ t :: r :: pre, OVOr τ d Γ S x) →
+      (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S → (Sb : Sites P) → Sub Sb S → NoLocal Sb →
+      (∀ x ∈ t :: r :: pre, OVOr τ d Γ Sb x) →
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.bound t r pre) ns inits)
   | makeGraphC {d Γ a o S ar E K s caps k rest comp ns inits} (π : CodeFlow P) (Ss : Tm → Sites P) :
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
@@ -79,7 +80,8 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → FrameAt P → Bool → 
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | makeGraphOut {d Γ a o S ar E K s caps k rest comp ns inits} (Ss : Tm → Sites P) :
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
-      P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, OVOr τ d Γ S u) →
+      P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (Sc : Sites P) → Sub Sc S → NoLocal Sc →
+      (∀ u ∈ caps, OVOr τ d Γ Sc u) →
       (o = true → Sub S Fl.O) → none ∈ S → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | readAt {d Γ a o S Sx Q f x} : OFits d Γ a o Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
       (∀ s ∈ Q, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → OFits d Γ a o S (.readAt f x)
@@ -165,10 +167,10 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
     exact .makeAbsent Ss' h₁ h₂ hs ho
-  | @makeBound d _ _ _ _ _ _ _ _ _ Ss hst _ hs hp ho ih =>
+  | @makeBound d _ _ _ _ _ _ _ _ _ Ss hst _ hs Sb hb hnl hp ho ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
-    refine .makeBound Ss' h₁ h₂ hs (fun x hx => ?_) ho
+    refine .makeBound Ss' h₁ h₂ hs Sb hb hnl (fun x hx => ?_) ho
     simp only [List.mem_cons, List.mem_map] at hx
     rcases hx with rfl | rfl | ⟨y, hy, rfl⟩
     · exact (hp _ (by simp)).inst hρ
@@ -184,10 +186,10 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
     obtain ⟨x, hx, rfl⟩ := hu
     exact ((hcaps c π' h').1 i x hx).inst hρ
-  | @makeGraphOut d _ _ _ _ _ _ _ _ _ _ _ _ _ _ Ss hst _ hs hc hE hcaps ho hn ih =>
+  | @makeGraphOut d _ _ _ _ _ _ _ _ _ _ _ _ _ _ Ss hst _ hs hc hE Sc hb hnl hcaps ho hn ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
-    refine .makeGraphOut Ss' h₁ h₂ hs hc hE (fun u hu => ?_) ho hn
+    refine .makeGraphOut Ss' h₁ h₂ hs hc hE Sc hb hnl (fun u hu => ?_) ho hn
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
     exact (hcaps y hy).inst hρ
   | readAt _ hq hcl hr ho ih => simp only [instantiate]; exact .readAt ih hq hcl hr ho

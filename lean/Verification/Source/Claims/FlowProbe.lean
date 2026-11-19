@@ -8,11 +8,11 @@ import Verification.Paper.TolerantFrames.ReadOnlyCallFrame
 
 A diagnostic (`TSCERT_FLOW_PROBE`): for each member of a group, the flow the
 read-only frame's checks read (`ReadOnly.SolveStart.propose`, the flow
-`ReadOnly.solveFlow` proposes) of its program and the
-closures of its component's code it creates, and whether its checks hold
-(`ReadOnly.FFlow.check`, the nodes they refuse), the member's entry
-(`FFlow.entryB`), and at the marks the flow gives (`FFlow.MarksFrom`) the
-bindings check (`FFlow.bindingsB`). With `TSCERT_FRAME_PROBE` naming a
+`ReadOnly.solveFlow` proposes) of its component's codes and the closures
+they create, and, at the marks the flow gives (`FFlow.MarksFrom`), whether
+its checks hold (`ReadOnly.FFlow.check`, the nodes they refuse), each
+entry's start (`FFlow.entryB`) and the marks' conditions (`FFlow.marksB`).
+With `TSCERT_FRAME_PROBE` naming a
 file of facts, at each call of outside code it names, the frame's check
 (`frameCheckAt`) of each fact's support (`Footprints.linearSupport`), part
 by part. It decides nothing a verdict reads. -/
@@ -29,11 +29,15 @@ other site local (`FFlow.MarksFrom`). -/
 abbrev markedPackage (ofC : ComponentTag → Bool) (O : List (Option Nat)) : TolerantFrames.ReadOnly.Package :=
   ⟨Nat, fun s => if some s ∈ O then .released else .local, ofC⟩
 
+/-- A code's finite proposal read at the marks a flow's `O` gives. -/
+def remarkCode {ofC : ComponentTag → Bool} (F : FFlow (probePackage ofC)) (c : FCode (probePackage ofC)) :
+    FCode (markedPackage ofC F.O) :=
+  let node (x : FNode (probePackage ofC)) : FNode (markedPackage ofC F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn, x.cx, x.out⟩
+  ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok, c.allocs⟩
+
 /-- A finite flow read at the marks its `O` gives. -/
 def remark {ofC : ComponentTag → Bool} (F : FFlow (probePackage ofC)) : FFlow (markedPackage ofC F.O) :=
-  let node (x : FNode (probePackage ofC)) : FNode (markedPackage ofC F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn, x.cx, x.out⟩
-  ⟨F.O, F.heap, F.codes.map fun (m, cs) => (m, cs.map fun (k, c) =>
-    (k, ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok, c.allocs⟩))⟩
+  ⟨F.O, F.heap, F.codes.map fun (m, cs) => (m, cs.map fun (k, c) => (k, remarkCode F c))⟩
 
 theorem remark_marksFrom {ofC : ComponentTag → Bool} (F : FFlow (probePackage ofC)) : (remark F).MarksFrom := fun _ => rfl
 
@@ -322,7 +326,10 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
   let F ← IO.lazyPure fun _ => s.propose st
   let _ ← IO.lazyPure fun _ => F.O.length + F.heap.length + (F.codes.map fun c => (c.2.map (·.2.nodes.size)).sum).sum
   let t2 ← IO.monoNanosNow
-  let ok ← IO.lazyPure fun _ => F.check
+  -- (the checks at the marks the flow gives: a bound function's and a
+  -- closure of outside code's parts reach no local site, which the marks
+  -- decide)
+  let ok ← IO.lazyPure fun _ => (remark F).check
   let t3 ← IO.monoNanosNow
   let nodes := (cs.map fun c => c.code.1.length).sum
   let names := mods.map (·.name) ++ hosts.map (·.1) ++ closures.map fun _ => "closure"
@@ -341,12 +348,11 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
   let report (tag : String) (F : FFlow P) : String :=
     -- each entry's start: its first node, the closure's prologue
     let entryOk := entries.map fun (g, c) => (g.name, F.entryB g.code c.start)
-    let bindings := (remark F).bindingsB
     let marks := (remark F).marksB
     -- (the refused nodes are read again only where the check fails)
     let bad := if ok then [] else F.codes.zipIdx.flatMap fun ((code, cs), ci) => cs.flatMap fun (κ, c) =>
       (code.1.zip code.2).zipIdx.filterMap fun ((e, k, x), l) =>
-        if nodeAtB F c l e k x then none else some s!"{ci}@{κ}:{l}"
+        if nodeAtB (remark F) (remarkCode F c) l e k x then none else some s!"{ci}@{κ}:{l}"
     let contexts := (F.codes.map (·.2.length)).sum
     let ctxNodes := (F.codes.map fun (m, cs) => m.1.length * cs.length).sum
     let F' := remark F
@@ -358,7 +364,7 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
           s!"\nframe probe, {sp.unit}: {tag} context {κ}{siteOf κ}" :: (probeFrames F.O F' Ψ c mc msm sp).map ("\n" ++ ·)
         | none => []
       | none => []
-    s!"{tag}: {contexts} contexts, {ctxNodes} nodes over the contexts; entry {entryOk.all (·.2)}; entries {entryOk}; at the marks O gives: marks {marks}, bindings {bindings}; refused nodes {bad}; captured {repr held}{frames}"
+    s!"{tag}: {contexts} contexts, {ctxNodes} nodes over the contexts; entry {entryOk.all (·.2)}; entries {entryOk}; at the marks O gives: marks {marks}; refused nodes {bad}; captured {repr held}{frames}"
   let present := if mods.any (·.name == member) then "" else s!" (the member {member} has no closure code here)"
   return s!"flow probe: {cs.length} codes {names}, {nodes} nodes{present}; siblings {mods.map fun g => (g.name, g.siblings)}; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); merge {(t2 - t1) / 1000000} ms; check {ok} {(t3 - t2) / 1000000} ms; O {repr F.O} (code i's closures 3i+2; a node's object site 3n+2k, array site 3n+2k+1, n codes, k the first node of its continuation and handler over all codes)\n{report "proposed" F}"
 

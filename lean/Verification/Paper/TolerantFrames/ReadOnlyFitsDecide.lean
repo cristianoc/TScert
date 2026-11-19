@@ -29,8 +29,7 @@ decided from it (proof scope: the lemmas below):
   gives `EntryShape`'s conditions on the flow.
 - **The marks a flow gives** (`FFlow.MarksFrom`): a site of `O` released,
   every other site local; at them `O` is lent and local storage is held
-  only by local storage (`FFlow.marks_of_marksFrom`), the bindings decided
-  apart (`FFlow.bindingsB`). -/
+  only by local storage (`FFlow.marks_of_marksFrom`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
@@ -67,12 +66,12 @@ theorem OFits.sub : ∀ {d Γ a o S e}, OFits Fl τ φ d Γ a o S e → o = fals
   | letE hx _ _ _ ihb => intro ho _ hS; exact .letE hx (ihb ho hS) (by simp [ho])
   | spread hx hc _ => intro ho _ hS; exact .spread hx (fun s hs => (hc s hs).trans hS) (by simp [ho])
   | makeAbsent Ss hst hx ha _ => intro ho _ hS; exact .makeAbsent Ss hst hx (hS _ ha) (by simp [ho])
-  | makeBound Ss hst hx ha hp _ =>
-    intro ho _ hS; exact .makeBound Ss hst hx (hS _ ha) (fun x hx => (hp x hx).sub hS) (by simp [ho])
+  | makeBound Ss hst hx ha Sb hb hnl hp _ =>
+    intro ho _ hS; exact .makeBound Ss hst hx (hS _ ha) Sb (hb.trans hS) hnl hp (by simp [ho])
   | makeGraphC π Ss hst hx ha hc hcode hcaps htok hop hE _ =>
     intro ho _ hS; exact .makeGraphC π Ss hst hx (hS _ ha) hc hcode hcaps (hS _ htok) hop hE (by simp [ho])
-  | makeGraphOut Ss hst hx ha hc hE hcaps _ hn =>
-    intro ho _ hS; exact .makeGraphOut Ss hst hx (hS _ ha) hc hE (fun u hu => (hcaps u hu).sub hS) (by simp [ho]) (hS _ hn)
+  | makeGraphOut Ss hst hx ha hc hE Sc hb hnl hcaps _ hn =>
+    intro ho _ hS; exact .makeGraphOut Ss hst hx (hS _ ha) hc hE Sc (hb.trans hS) hnl hcaps (by simp [ho]) (hS _ hn)
   | readAt hx hq hcl hr _ => intro ho _ hS; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) (by simp [ho])
   | indexAt hx hk hq hcl hr _ =>
     intro ho _ hS; exact .indexAt hx hk hq hcl (fun s hs => (hr s hs).trans hS) (by simp [ho])
@@ -222,12 +221,21 @@ theorem look_mem {α β : Type} [DecidableEq α] {a : α} {l : List (α × β)} 
   simp only [decide_eq_true_eq] at he
   subst he; exact hm
 
-/-- **A finite flow**: `O`, the heap of sites (each site's contents and
-bindings, none past the entries), and each code's finite proposal at each
-of its contexts. -/
+/-- **No local site in a set**, decided. -/
+def noLocalB (S : Sites P) : Bool := S.all fun s => s.all fun s' => decide (P.mark s' ≠ .local)
+
+omit [DecidableEq P.Site] [Hashable P.Site] in
+theorem noLocalB_sound {S : Sites P} (h : noLocalB S = true) : NoLocal S := by
+  intro s hs s' he
+  have := List.all_eq_true.mp h s hs
+  subst he; simpa using this
+
+/-- **A finite flow**: `O`, the heap of sites (each site's contents, none
+past the entries), and each code's finite proposal at each of its
+contexts. -/
 structure FFlow (P : Package) where
   O : Sites P
-  heap : List (Option P.Site × Sites P × Sites P)
+  heap : List (Option P.Site × Sites P)
   codes : List (Code × List (Nat × FCode P))
 
 /-- The contexts of a code. -/
@@ -236,14 +244,12 @@ def FFlow.ctxs (F : FFlow P) (m : Code) : List (Nat × FCode P) := (look m F.cod
 /-- A code's finite proposal at a context. -/
 def FFlow.at (F : FFlow P) (m : Code) (c : Nat) : Option (FCode P) := look c (F.ctxs m)
 
-def FFlow.contents (F : FFlow P) (s : Option P.Site) : Sites P := ((look s F.heap).map Prod.fst).getD []
-
-def FFlow.bindings (F : FFlow P) (s : Option P.Site) : Sites P := ((look s F.heap).map Prod.snd).getD []
+def FFlow.contents (F : FFlow P) (s : Option P.Site) : Sites P := (look s F.heap).getD []
 
 /-- The flow a finite one stands for. -/
 def FFlow.flow (F : FFlow P) : Flow P where
   O := F.O
-  H := ⟨F.contents, F.bindings⟩
+  H := ⟨F.contents⟩
   code m c := (F.at m c).map FCode.flow
 
 omit [Hashable P.Site] in
@@ -271,11 +277,10 @@ section decide
 variable (F : FFlow P)
 
 /-- **What storage of a site may hold**, decided. -/
-def storesB (s : Option P.Site) (S : Sites P) : Bool :=
-  decide (Sub S (F.contents s)) && decide (Sub S (F.bindings s))
+def storesB (s : Option P.Site) (S : Sites P) : Bool := decide (Sub S (F.contents s))
 
 theorem storesB_sound {s : Option P.Site} {S : Sites P} (h : storesB F s S = true) : Stores F.flow s S := by
-  simp only [storesB, Bool.and_eq_true, decide_eq_true_eq] at h; exact h
+  simp only [storesB, decide_eq_true_eq] at h; exact h
 
 /-- A part of a closure's code in lowered code, decided. -/
 def partB : Tm → Bool
@@ -449,7 +454,7 @@ theorem sub_grow : ∀ (n : Nat) (S : Sites P), Sub S (grow F n S)
 /-- **The closure of a set under the contents**: grown as many times as the
 heap of sites has entries' contents, then checked closed. -/
 def closeQ (S : Sites P) : Option (Sites P) :=
-  let Q := grow F (S.length + (F.heap.map fun e => e.2.1.length).sum + 1) S
+  let Q := grow F (S.length + (F.heap.map fun e => e.2.length).sum + 1) S
   if decide (∀ s ∈ Q, Sub (F.contents s) Q) then some Q else none
 
 theorem closeQ_sound {S Q : Sites P} (h : closeQ F S = some Q) : Sub S Q ∧ ∀ s ∈ Q, Sub (F.contents s) Q := by
@@ -550,7 +555,7 @@ def graphSites (d : Nat) (Γ : Nat → Option (Sites P)) (ar : Nat) (E : List Tm
         (!decide (c.tok ∈ F.O) || openB F c ar s rest caps.length) then
         some [a.obj, c.tok] else none
     | none => none
-  else (partsSites τ d Γ caps).map (fun S => none :: a.obj :: S)
+  else (partsSites τ d Γ caps).bind (fun S => if noLocalB S then some (none :: a.obj :: S) else none)
 
 mutual
 /-- **A term's least set** at the node's slots `τ`, signatures `φ` and
@@ -577,7 +582,7 @@ def syn (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → Option (Sites P)
     | some Ls => if Ls.all (storesB F a.obj) then some [a.obj] else none
     | none => none
   | .makeAt (.bound t r pre) _ inits => match synAll d Γ inits, partsSites τ d Γ (t :: r :: pre) with
-    | some Ls, some Sp => if Ls.all (storesB F a.obj) then some (a.obj :: Sp) else none
+    | some Ls, some Sp => if Ls.all (storesB F a.obj) && noLocalB Sp then some (a.obj :: Sp) else none
     | _, _ => none
   | .makeAt (.graph ar E K s caps _ rest comp) _ inits => match synAll d Γ inits with
     | some Ls => if Ls.all (storesB F a.obj) && E.all (lowB F) then graphSites F τ a d Γ ar E K s caps rest comp
@@ -799,9 +804,10 @@ theorem syn_sound : ∀ e, SynOk F τ φ a κ e := by
       split at h
       · rename_i hs
         cases h
-        obtain ⟨hst, hx⟩ := synAll_stores iha hL hs
-        exact .makeBound _ hst hx (List.mem_cons_self ..)
-          (fun u hu => (partsSites_sound τ hp u hu).sub fun _ hy => List.mem_cons_of_mem _ hy) (by simp)
+        simp only [Bool.and_eq_true] at hs
+        obtain ⟨hst, hx⟩ := synAll_stores iha hL hs.1
+        exact .makeBound _ hst hx (List.mem_cons_self ..) Sp (fun _ hy => List.mem_cons_of_mem _ hy)
+          (noLocalB_sound hs.2) (fun u hu => partsSites_sound τ hp u hu) (by simp)
       · cases h
     · cases h
   case alloc ns args iha =>
@@ -976,10 +982,14 @@ theorem syn_sound : ∀ e, SynOk F τ φ a κ e := by
           cases hp : partsSites τ d Γ caps with
           | none => simp [hp] at h
           | some Sp =>
-            simp only [hp, Option.map_some, Option.some.injEq] at h; subst h
-            exact .makeGraphOut _ hst hx (List.mem_cons_of_mem _ (List.mem_cons_self ..)) (by simpa using hC) hE'
-              (fun u hu => (partsSites_sound τ hp u hu).sub fun _ hy =>
-                List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hy)) (by simp) (List.mem_cons_self ..)
+            simp only [hp, Option.bind_some] at h
+            split at h
+            · rename_i hnl
+              simp only [Option.some.injEq] at h; subst h
+              exact .makeGraphOut _ hst hx (List.mem_cons_of_mem _ (List.mem_cons_self ..)) (by simpa using hC) hE'
+                Sp (fun _ hy => List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hy)) (noLocalB_sound hnl)
+                (fun u hu => partsSites_sound τ hp u hu) (by simp) (List.mem_cons_self ..)
+            · cases h
       · cases h
     · cases h
   all_goals cases h
@@ -1204,10 +1214,11 @@ theorem codeChkB_sound {m : Code} (h : codeChkB F c m = true) : CodeChk F.flow m
 end edges
 
 /-- **The checks of a finite flow**: each code's checks, `O` holding
-outside storage, closed in the heap of sites, its storage able to hold all
-of `O`. -/
+outside storage and no local site, closed in the heap of sites, its
+storage able to hold all of `O`. -/
 def FFlow.check (F : FFlow P) : Bool :=
   decide (none ∈ F.O) && F.O.all (fun s => decide (Sub (F.contents s) F.O)) && F.O.all (fun s => storesB F s F.O) &&
+    noLocalB F.O &&
     F.codes.all fun mc => mc.2.all fun cc =>
       codeChkB F cc.2 mc.1 && (F.at mc.1 entryCx).any fun c₀ =>
         decide (c₀.alloc.obj = cc.2.alloc.obj ∧ c₀.alloc.arr = cc.2.alloc.arr ∧ c₀.allocs = cc.2.allocs ∧
@@ -1216,8 +1227,9 @@ def FFlow.check (F : FFlow P) : Bool :=
 /-- **The checks of a finite flow give its facts** (proved). -/
 theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := by
   simp only [FFlow.check, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
-  obtain ⟨⟨⟨hn, hcl⟩, hw⟩, hc⟩ := h
-  refine ⟨fun m c π hm => ?_, fun m c π hm => ?_, hn, fun s hs => hcl s hs, fun s hs => storesB_sound F (hw s hs)⟩
+  obtain ⟨⟨⟨⟨hn, hcl⟩, hw⟩, hnl⟩, hc⟩ := h
+  refine ⟨fun m c π hm => ?_, fun m c π hm => ?_, hn, fun s hs => hcl s hs, fun s hs => storesB_sound F (hw s hs),
+    noLocalB_sound hnl⟩
   · obtain ⟨fc, hfc, rfl⟩ := FFlow.code_at hm
     obtain ⟨l, hl, hcl'⟩ := FFlow.at_mem hfc
     exact codeOk_of_chk (codeChkB_sound F fc (hc _ hl _ hcl').1)
@@ -1239,40 +1251,31 @@ theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := b
 
 /-! ## The marks and the entry -/
 
-/-- No local site in a set, decided. -/
-def noLocalB (S : Sites P) : Bool := S.all fun s => s.all fun s' => decide (P.mark s' ≠ .local)
-
-omit [DecidableEq P.Site] [Hashable P.Site] in
-theorem noLocalB_sound {S : Sites P} (h : noLocalB S = true) : NoLocal S := by
-  intro s hs s' he
-  have := List.all_eq_true.mp h s hs
-  subst he; simpa using this
-
 omit [Hashable P.Site] in
 theorem FFlow.lookup_cases (F : FFlow P) (s : Option P.Site) :
-    (F.contents s = [] ∧ F.bindings s = []) ∨ ∃ e ∈ F.heap, e.1 = s ∧ F.contents s = e.2.1 ∧ F.bindings s = e.2.2 := by
+    F.contents s = [] ∨ ∃ e ∈ F.heap, e.1 = s ∧ F.contents s = e.2 := by
   cases hl : look s F.heap with
-  | none => exact .inl ⟨by simp [FFlow.contents, hl], by simp [FFlow.bindings, hl]⟩
-  | some e => exact .inr ⟨(s, e), look_mem hl, rfl, by simp [FFlow.contents, hl], by simp [FFlow.bindings, hl]⟩
+  | none => exact .inl (by simp [FFlow.contents, hl])
+  | some e => exact .inr ⟨(s, e), look_mem hl, rfl, by simp [FFlow.contents, hl]⟩
 
 /-- **The marks a frame's checks read of a flow**, decided: `O`'s sites
 released (`Lendable`), storage of a site that is not local referencing no
-local site (`LocalHeld`), no binding reaching a local site. -/
+local site (`LocalHeld`). -/
 def FFlow.marksB (F : FFlow P) : Bool :=
   F.O.all (fun s => s.all fun s' => decide (P.mark s' = .released)) &&
-    F.heap.all fun e => (!(e.1.all fun s' => decide (P.mark s' ≠ .local)) || noLocalB e.2.1) && noLocalB e.2.2
+    F.heap.all fun e => !(e.1.all fun s' => decide (P.mark s' ≠ .local)) || noLocalB e.2
 
 omit [Hashable P.Site] in
 theorem FFlow.marksB_sound {F : FFlow P} (h : F.marksB = true) :
-    Lendable F.flow.O ∧ LocalHeld F.flow.H ∧ ∀ s, NoLocal (F.flow.H.bindings s) := by
+    Lendable F.flow.O ∧ LocalHeld F.flow.H := by
   simp only [FFlow.marksB, Bool.and_eq_true, List.all_eq_true] at h
   obtain ⟨hO, hH⟩ := h
-  refine ⟨fun s hs s' he => ?_, fun s hs => ?_, fun s => ?_⟩
+  refine ⟨fun s hs s' he => ?_, fun s hs => ?_⟩
   · have := hO s hs; subst he; simpa using this
-  · rcases F.lookup_cases s with ⟨hc, -⟩ | ⟨e, he, rfl, hc, -⟩
+  · rcases F.lookup_cases s with hc | ⟨e, he, rfl, hc⟩
     · show NoLocal (F.contents s); rw [hc]; simp [NoLocal]
     · show NoLocal (F.contents e.1); rw [hc]
-      have := (hH e he).1
+      have := hH e he
       simp only [Bool.or_eq_true, Bool.not_eq_true'] at this
       rcases this with hn | hn
       · exfalso
@@ -1280,9 +1283,6 @@ theorem FFlow.marksB_sound {F : FFlow P} (h : F.marksB = true) :
         | none => simp [h1] at hn
         | some s' => simp only [h1, Option.all_some, decide_eq_false_iff_not] at hn; exact hn (hs s' h1)
       · exact noLocalB_sound hn
-  · rcases F.lookup_cases s with ⟨-, hb⟩ | ⟨e, he, rfl, -, hb⟩
-    · show NoLocal (F.bindings s); rw [hb]; simp [NoLocal]
-    · show NoLocal (F.bindings e.1); rw [hb]; exact noLocalB_sound (hH e he).2
 
 /-- **The marks a flow gives**: a site of `O` released, every other site
 local. -/
@@ -1321,25 +1321,12 @@ theorem FFlow.localHeld_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) (hF : F.fl
   rw [hm t']
   simp [ht']
 
-/-- **No binding reaches a local site**, decided: the condition on the
-values the code of a closure of outside code or of a bound function holds,
-which the closure of `O` does not give. -/
-def FFlow.bindingsB (F : FFlow P) : Bool := F.heap.all fun e => noLocalB e.2.2
-
-omit [Hashable P.Site] in
-theorem FFlow.bindingsB_sound {F : FFlow P} (h : F.bindingsB = true) : ∀ s, NoLocal (F.flow.H.bindings s) := by
-  intro s
-  rcases F.lookup_cases s with ⟨-, hb⟩ | ⟨e, he, rfl, -, hb⟩
-  · show NoLocal (F.bindings s); rw [hb]; simp [NoLocal]
-  · show NoLocal (F.bindings e.1); rw [hb]; exact noLocalB_sound (List.all_eq_true.mp h e he)
-
 omit [Hashable P.Site] in
 /-- **The marks a frame's checks read, at the marks a flow gives** (proved):
-`O` lent, local storage held only by local storage, and, by `bindingsB`,
-no binding reaching a local site. -/
-theorem FFlow.marks_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) (hF : F.flow.Facts) (hb : F.bindingsB = true) :
-    Lendable F.flow.O ∧ LocalHeld F.flow.H ∧ ∀ s, NoLocal (F.flow.H.bindings s) :=
-  ⟨F.lendable_of_marksFrom hm, F.localHeld_of_marksFrom hm hF, F.bindingsB_sound hb⟩
+`O` lent and local storage held only by local storage. -/
+theorem FFlow.marks_of_marksFrom {F : FFlow P} (hm : F.MarksFrom) (hF : F.flow.Facts) :
+    Lendable F.flow.O ∧ LocalHeld F.flow.H :=
+  ⟨F.lendable_of_marksFrom hm, F.localHeld_of_marksFrom hm hF⟩
 
 /-- **An entry of a member**, decided: every slot of the node `l` of a code
 holds what outside code may supply, and the code's returns lie within

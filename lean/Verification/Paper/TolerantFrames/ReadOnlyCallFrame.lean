@@ -738,8 +738,8 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     intro f hf; simp only [ReadOnly.innermost] at hf; split at hf
     · exact ih hf
     · cases hf
-  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
-  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ _ _ _ ih
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
@@ -935,8 +935,8 @@ theorem Fits.outCall {Fl : Flow P} {V : Sites P → Val → Prop} (hV : ∀ S v,
         split at hc
         · rename_i hv; rw [if_pos hv] at hi; exact ihv hi cur hc
         · simp [OutCall] at hc
-  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
-  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ _ _ _ ih
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
     intro hi cur hc
     simp only [ReadOnly.innermost] at hi
     simp only [activeFrame] at hc

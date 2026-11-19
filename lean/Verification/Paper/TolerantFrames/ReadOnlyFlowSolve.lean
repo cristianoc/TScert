@@ -118,10 +118,9 @@ structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
 namespace SolveState
 variable (st : SolveState P)
 
-/-- The heap of sites as a list of entries, each site's contents and
-bindings (the solver grows both alike). -/
-def heap : List (Option P.Site × Sites P × Sites P) :=
-  st.heapM.toList.map fun (s, (c, _)) => (s, c, c)
+/-- The heap of sites as a list of entries, each site's contents. -/
+def heap : List (Option P.Site × Sites P) :=
+  st.heapM.toList.map fun (s, (c, _)) => (s, c)
 
 /-- The contents of a site's storage. -/
 def contents (s : Option P.Site) : Sites P := ((st.heapM[s]?).map (·.1)).getD []
@@ -139,7 +138,7 @@ def toO (S : Sites P) : SolveState P :=
   let (added, hs) := addNew st.oSet S
   if added.isEmpty then st else { st with O := st.O ++ added, oSet := hs, grewO := true }
 
-/-- Add sites to the contents and bindings of a site's storage. -/
+/-- Add sites to the contents of a site's storage. -/
 def store (s : Option P.Site) (S : Sites P) : SolveState P :=
   if S.isEmpty then st else
   let (c, hs) := (st.heapM[s]?).getD ([], {})

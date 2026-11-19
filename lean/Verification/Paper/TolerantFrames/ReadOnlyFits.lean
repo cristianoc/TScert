@@ -145,9 +145,8 @@ def entryCx : Nat := 0
 
 variable (Fl : Flow P)
 
-/-- **What storage of a site may hold**: values meeting `S`, and the values
-a closure there binds meeting them too. -/
-def Stores (s : Option P.Site) (S : Sites P) : Prop := Sub S (Fl.H.contents s) ∧ Sub S (Fl.H.bindings s)
+/-- **What storage of a site may hold**: values meeting `S`. -/
+def Stores (s : Option P.Site) (S : Sites P) : Prop := Sub S (Fl.H.contents s)
 
 /-- **An environment meets the sites of a node's slots**, at a value
 judgment `V`. -/
@@ -348,12 +347,19 @@ def CapsOk (v : Val) : Prop :=
         SitesOf g (π.env s (capSlot ar rest i)) u ∧ FnsIn Fl (π.env s (capSlot ar rest i)) u) ∧
         CapFn π ar E K s caps rest
 
+/-- **The values a value holds in its code reach only allocated, non-local
+locations**: each first location a bound function's part, or a node
+expression's value or capture of a closure of outside code, reaches. -/
+def CodeNL (w : Val) : Prop :=
+  ∀ x ∈ codeVals P.ofC w, ∀ l, Leaves P.ofC x l → l < n ∧ g.origin l ≠ some .local
+
 /-- **A value meets a set of sites at a ghost and a heap length**: it is a
 closed value, references allocated locations only, meets the sites, the
 closures it holds have their tokens there; every
 value it holds in its code is a value, every closure of `C`'s code among
-them meets its proposal and every closure of outside code has lowered
-code. Closed under allocation
+them meets its proposal, every closure of outside code has lowered
+code, and the values each holds in its code reach no local location.
+Closed under allocation
 (`VJ.alloc`). -/
 structure VJ (S : Sites P) (v : Val) : Prop where
   val : isVal v = true
@@ -361,7 +367,7 @@ structure VJ (S : Sites P) (v : Val) : Prop where
   below : ∀ l, Leaves P.ofC v l → l < n
   sites : SitesOf g S v
   fns : FnsIn Fl S v
-  inner : ∀ w, Within P v w → isVal w = true ∧ CapsOk Fl g n w ∧ OutLowered Fl w
+  inner : ∀ w, Within P v w → isVal w = true ∧ CapsOk Fl g n w ∧ OutLowered Fl w ∧ CodeNL g n w
 
 /-- The variables' sites under one more binder; `none` for a variable no
 binder binds. -/
@@ -411,8 +417,11 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → F
       (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt .absent ns inits)
   | makeView {Γ a o S sp fm len ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
       a.obj ∈ S → V S (.objAt [] (.view sp fm len) 0) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.view sp fm len) ns inits)
+  /-- A bound function: its parts meet a set within its own holding no
+  local site. -/
   | makeBound {Γ a o S t r pre ns inits} : (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) →
-      (∀ x ∈ inits, Fits V Γ a o (Ss x) x) → a.obj ∈ S → (∀ x ∈ t :: r :: pre, VOr V Γ S x) →
+      (∀ x ∈ inits, Fits V Γ a o (Ss x) x) → a.obj ∈ S → (Sb : Sites P) → Sub Sb S → NoLocal Sb →
+      (∀ x ∈ t :: r :: pre, VOr V Γ Sb x) →
       (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.bound t r pre) ns inits)
   | makeGraphC {Γ a o S ar E K s caps k rest comp ns inits} (π : CodeFlow P) :
       (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
@@ -421,9 +430,12 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → F
         (∀ i u, caps[i]? = some u → VOr V Γ (π'.env s (capSlot ar rest i)) u) ∧ CapFn π' ar E K s caps rest) →
       π.tok ∈ S → (π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length) →
       (∀ e ∈ E, Lowered Fl e) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
+  /-- A closure of outside code: its captures meet a set within its own
+  holding no local site. -/
   | makeGraphOut {Γ a o S ar E K s caps k rest comp ns inits} :
       (Ss : Tm → Sites P) → (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, Fits V Γ a o (Ss x) x) →
-      a.obj ∈ S → P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, VOr V Γ S u) →
+      a.obj ∈ S → P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (Sc : Sites P) → Sub Sc S → NoLocal Sc →
+      (∀ u ∈ caps, VOr V Γ Sc u) →
       (o = true → Sub S Fl.O) → none ∈ S → Fits V Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | readAt {Γ a o S Sx Q f x} : Fits V Γ a o Sx x → Sub Sx Q → (∀ s ∈ Q, Sub (Fl.H.contents s) Q) →
       (∀ s ∈ Q, Sub (Fl.H.contents s) S) → (o = true → Sub S Fl.O) → Fits V Γ a o S (.readAt f x)
@@ -481,12 +493,12 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   | spread _ hc ho ih => exact .spread ih hc ho
   | makeAbsent Ss hst _ hs ho ih => exact .makeAbsent Ss hst ih hs ho
   | makeView Ss hst _ hs hv ho ih => exact .makeView Ss hst ih hs (hV _ _ hv) ho
-  | makeBound Ss hst _ hs hp ho ih => exact .makeBound Ss hst ih hs (fun x hx => (hp x hx).imp hV) ho
+  | makeBound Ss hst _ hs Sb hb hnl hp ho ih => exact .makeBound Ss hst ih hs Sb hb hnl (fun x hx => (hp x hx).imp hV) ho
   | makeGraphC π Ss hst _ hs hc hcode hcaps htok hop hE ho ih =>
     exact .makeGraphC π Ss hst ih hs hc hcode
       (fun c π' h => ⟨fun i u hu => ((hcaps c π' h).1 i u hu).imp hV, (hcaps c π' h).2⟩) htok hop hE ho
-  | makeGraphOut Ss hst _ hs hc hE hcaps ho hn ih =>
-    exact .makeGraphOut Ss hst ih hs hc hE (fun u hu => (hcaps u hu).imp hV) ho hn
+  | makeGraphOut Ss hst _ hs hc hE Sc hb hnl hcaps ho hn ih =>
+    exact .makeGraphOut Ss hst ih hs hc hE Sc hb hnl (fun u hu => (hcaps u hu).imp hV) ho hn
   | readAt _ hq hcl hr ho ih => exact .readAt ih hq hcl hr ho
   | indexAt _ _ hq hcl hr ho ihx ihk => exact .indexAt ihx ihk hq hcl hr ho
   | writeAt _ _ hst ho ihx ihy => exact .writeAt ihx ihy hst ho
@@ -537,7 +549,11 @@ the site of every location the value references. -/
 theorem VJ.alloc {S : Sites P} {v : Val} {n' : Nat} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
     (h : VJ Fl g n S v) (hn : n ≤ n') : VJ Fl (g.alloc n sf key) n' S v :=
   ⟨h.val, h.closed, fun l hl => Nat.lt_of_lt_of_le (h.below l hl) hn, h.sites.alloc h.below, h.fns,
-    fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.alloc hn, (h.inner w hw).2.2⟩⟩
+    fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.alloc hn, (h.inner w hw).2.2.1,
+      fun x hx l hl => by
+        obtain ⟨hlt, ho⟩ := (h.inner w hw).2.2.2 x hx l hl
+        refine ⟨Nat.lt_of_lt_of_le hlt hn, ?_⟩
+        unfold Ghost.origin; rw [(Ghost.alloc_old hlt).1]; exact ho⟩⟩
 
 /-- **Allocation keeps a term fitting** (proved, `Fits.mono`). -/
 theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P} {t : Tm} {n' : Nat}
@@ -560,15 +576,14 @@ theorem VOr.top {V : Sites P → Val → Prop} {S : Sites P} {u : Tm} (h : VOr V
 
 variable (Fl g) in
 /-- **A heap meets the flow**: each location holds a value, meeting the
-contents of its site at the heap's length, its code's values meeting the
-bindings of its site. -/
+contents of its site at the heap's length. -/
 def HeapInv (h : Heap) : Prop :=
-  ∀ w u, h[w]? = some u → VJ Fl g h.length (Fl.H.contents (g.site w)) u ∧
-    ∀ x ∈ codeVals P.ofC u, SitesOf g (Fl.H.bindings (g.site w)) x
+  ∀ w u, h[w]? = some u → VJ Fl g h.length (Fl.H.contents (g.site w)) u
 
-/-- A heap meeting the flow meets the heap of sites (proved). -/
+/-- A heap meeting the flow meets the heap of sites (proved): the values a
+location's value holds in its code reach no local location (`VJ.inner`). -/
 theorem HeapInv.sites {h : Heap} (hH : HeapInv Fl g h) : HeapSites g Fl.H h :=
-  fun w u hw => ⟨(hH w u hw).1.sites, (hH w u hw).2⟩
+  fun w u hw => ⟨(hH w u hw).sites, fun x hx l hl => (((hH w u hw).inner u (.refl u)).2.2.2 x hx l hl).2⟩
 
 /-! ## The frame a step runs in -/
 
@@ -733,6 +748,8 @@ structure Flow.Facts : Prop where
   none : none ∈ Fl.O
   closed : ∀ s ∈ Fl.O, Sub (Fl.H.contents s) Fl.O
   writable : ∀ s ∈ Fl.O, Stores Fl s Fl.O
+  /-- `O` holds no local site. -/
+  noLocal : NoLocal Fl.O
 
 /-- A heap meeting the flow keeps meeting it at a step that allocates
 nothing (proved). -/
@@ -741,8 +758,7 @@ theorem HeapInv.same {h : Heap} {sf : Nat → Option P.Site} {key : Nat → Opti
   intro w u hw
   have hl : w < h.length := (List.getElem?_eq_some_iff.mp hw).1
   rw [(Ghost.alloc_old hl).1]
-  obtain ⟨hv, hb⟩ := hH w u hw
-  exact ⟨hv.alloc (Nat.le_refl _), fun x hx => (hb x hx).alloc fun l hl => hv.below l (Leaves.code hx hl)⟩
+  exact (hH w u hw).alloc (Nat.le_refl _)
 
 /-- A term that steps is not a value. -/
 theorem notVal_of_step {h h' : Heap} {a a' : Tm} (hs : Step h a h' a') : isVal a = false := by
@@ -823,7 +839,8 @@ theorem VJ.atom {S : Sites P} {v : Val} (hv : isVal v = true) (hc : Verification
     FnsIn.atom hcode hcap, fun w hwv => ?_⟩
   rw [hw w hwv]
   exact ⟨hv, fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid),
-    fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid)⟩
+    fun fs ar E K s caps k rest comp oid he => absurd he (hcap fs ar E K s caps k rest comp oid),
+    fun x hx => by rw [hcode] at hx; cases hx⟩
 
 theorem VJ.prim {S : Sites P} {v : Val} (hp : primVal v = true) : VJ Fl g n S v := by
   refine VJ.atom ?_ ?_ ?_ ?_ ?_ ?_
@@ -865,6 +882,7 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
     (hcode : ∀ x ∈ codeVals P.ofC (.objAt fs c oid), ∀ l, Leaves P.ofC x l → l < n ∧ g.site l ∈ S)
     (hchild : ∀ u, Child (P := P) (.objAt fs c oid) u → ∃ S', VJ Fl g n S' u)
     (hcaps : CapsOk Fl g n (.objAt fs c oid)) (hout : OutLowered Fl (.objAt fs c oid))
+    (hnl : CodeNL g n (.objAt fs c oid))
     (hself : ∀ fs' ar E K s caps k rest comp oid', (.objAt fs c oid : Val) = .objAt fs' (.graph ar E K s caps k rest comp) oid' →
       (P.ofC comp = true → ∃ π, Fl.code (E, K) entryCx = some π ∧ π.tok ∈ S) ∧ (P.ofC comp = false → none ∈ S))
     (hcodeF : ∀ x ∈ codeVals P.ofC (.objAt fs c oid), FnsIn Fl S x) :
@@ -886,7 +904,7 @@ theorem VJ.obj {S : Sites P} {fs : List (PropKey × Nat)} {c : CallCode} {oid : 
     | step hm hr => exact hcodeF _ hm x hr fs' ar E K s caps k rest comp oid' he
   refine ⟨rfl, hc, fun l h => (hl l h).1, fun l h => (hl l h).2, hF, fun w hw => ?_⟩
   cases hw with
-  | refl => exact ⟨rfl, hcaps, hout⟩
+  | refl => exact ⟨rfl, hcaps, hout, hnl⟩
   | cap hu hw' =>
     obtain ⟨S', hv⟩ := hchild _ (.inl ⟨_, _, _, _, _, _, _, _, _, _, rfl, .inl hu⟩)
     exact hv.inner w hw'
@@ -941,20 +959,17 @@ theorem closed_graph {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
 /-! ### The heap at a step -/
 
 /-- **An allocation keeps the heap meeting the flow** (proved): each fresh
-value meets the contents of its fresh location's site and its code's
-values the bindings. -/
+value meets the contents of its fresh location's site. -/
 theorem HeapInv.append {h : Heap} {xs : List Val} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
     (hH : HeapInv Fl g h)
     (hnew : ∀ i u, xs[i]? = some u → VJ Fl (g.alloc h.length sf key) (h ++ xs).length
-      (Fl.H.contents (sf (h.length + i))) u ∧
-      ∀ x ∈ codeVals P.ofC u, SitesOf (g.alloc h.length sf key) (Fl.H.bindings (sf (h.length + i))) x) :
+      (Fl.H.contents (sf (h.length + i))) u) :
     HeapInv Fl (g.alloc h.length sf key) (h ++ xs) := by
   intro w u hw
   by_cases hlt : w < h.length
   · rw [List.getElem?_append_left hlt] at hw
     rw [(Ghost.alloc_old hlt).1]
-    obtain ⟨hv, hb⟩ := hH w u hw
-    exact ⟨hv.alloc (by simp), fun x hx => (hb x hx).alloc fun l hl => hv.below l (Leaves.code hx hl)⟩
+    exact (hH w u hw).alloc (by simp)
   · rw [List.getElem?_append_right (by omega)] at hw
     have hs : (g.alloc h.length sf key).site w = sf (h.length + (w - h.length)) := by
       simp [Ghost.alloc, hlt, show h.length + (w - h.length) = w by omega]
@@ -962,17 +977,15 @@ theorem HeapInv.append {h : Heap} {xs : List Val} {sf : Nat → Option P.Site} {
     exact hnew _ u hw
 
 /-- **A write keeps the heap meeting the flow** (proved): the written value
-meets the contents of the location's site, its code's values the
-bindings. -/
+meets the contents of the location's site. -/
 theorem HeapInv.set {h : Heap} {w : Nat} {u : Val} (hH : HeapInv Fl g h)
-    (hu : VJ Fl g h.length (Fl.H.contents (g.site w)) u)
-    (hb : ∀ x ∈ codeVals P.ofC u, SitesOf g (Fl.H.bindings (g.site w)) x) : HeapInv Fl g (h.set w u) := by
+    (hu : VJ Fl g h.length (Fl.H.contents (g.site w)) u) : HeapInv Fl g (h.set w u) := by
   intro x v hx
   rw [List.getElem?_set] at hx
   simp only [List.length_set]
   split at hx
   · rename_i he; subst he; split at hx
-    · cases hx; exact ⟨hu, hb⟩
+    · cases hx; exact hu
     · cases hx
   · exact hH x v hx
 
@@ -982,7 +995,7 @@ contents meet that site's contents. -/
 theorem HeapInv.read {h : Heap} {Sx : Sites P} {u v : Val} {a : Label} {l : Nat} (hH : HeapInv Fl g h)
     (hu : VJ Fl g h.length Sx u) (hn : next u a = some l) (hv : h[l]? = some v) :
     g.site l ∈ Sx ∧ VJ Fl g h.length (Fl.H.contents (g.site l)) v :=
-  ⟨hu.sites l (Leaves.of_next hn), (hH l v hv).1⟩
+  ⟨hu.sites l (Leaves.of_next hn), hH l v hv⟩
 
 /-- The location an index names in a spine is one step from it (proved). -/
 theorem next_of_elemLoc {ls : List (Option Nat)} {b : UInt64} {l : Nat} (he : elemLoc ls b = some l) :
@@ -1014,7 +1027,7 @@ theorem VJ.arr {S : Sites P} {ls : List (Option Nat)}
     FnsIn.atom rfl (fun _ _ _ _ _ _ _ _ _ _ he => by cases he), fun w hw => ?_⟩
   cases hw with
   | refl =>
-    refine ⟨rfl, ?_, ?_⟩ <;> (intro _ _ _ _ _ _ _ _ _ _ he; cases he)
+    refine ⟨rfl, ?_, ?_, fun x hx => by simp [codeVals] at hx⟩ <;> (intro _ _ _ _ _ _ _ _ _ _ he; cases he)
 
 theorem mem_placeAt {ls : List (Option Nat)} {k l : Nat} {x : Option Nat} (hx : x ∈ placeAt ls k l) :
     x ∈ ls ∨ x = none ∨ x = some l := by
@@ -1034,10 +1047,9 @@ theorem cells_leaves {u : Val} {ls : List (Option Nat)} (hu : u = .arr ls) {l : 
 
 /-- **A write keeps the heap meeting the flow at the step's ghost** (proved). -/
 theorem HeapInv.set_same {h : Heap} {w : Nat} {u : Val} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
-    (hH : HeapInv Fl g h) (hu : VJ Fl g h.length (Fl.H.contents (g.site w)) u)
-    (hb : ∀ x ∈ codeVals P.ofC u, SitesOf g (Fl.H.bindings (g.site w)) x) :
+    (hH : HeapInv Fl g h) (hu : VJ Fl g h.length (Fl.H.contents (g.site w)) u) :
     HeapInv Fl (g.alloc h.length sf key) (h.set w u) := by
-  have := (hH.set hu hb).same (sf := sf) (key := key)
+  have := (hH.set hu).same (sf := sf) (key := key)
   rwa [List.length_set] at this
 
 theorem stepSite_setElem {cur : Option FrameKey} {ls : List (Option Nat)} {b : UInt64} {v : Tm}
@@ -1078,12 +1090,8 @@ theorem HeapInv.fresh {h : Heap} {vs : List Val} {o : Option P.Site} {key : Nat 
     HeapInv Fl (g.alloc h.length (fun _ => o) key) (h ++ (vs ++ tail)) := by
   refine hH.append fun i u hu => ?_
   rcases List.mem_append.mp (List.mem_of_getElem? hu) with hm | hm
-  · have hv' := hv u hm
-    exact ⟨(hv'.sub (hst u hm).1).alloc (by simp), fun x hx => ((hv'.sites.code hx).mono (hst u hm).2).alloc
-      fun l hl => hv'.below l (Leaves.code hx hl)⟩
-  · have hp := htail u hm
-    refine ⟨VJ.prim hp, fun x hx => ?_⟩
-    cases u <;> simp [primVal] at hp <;> simp [codeVals] at hx
+  · exact ((hv u hm).sub (hst u hm)).alloc (by simp)
+  · exact VJ.prim (htail u hm)
 
 theorem bound_all {V : Sites P → Val → Prop} {S : Sites P} {t r : Tm} {pre : List Tm} (ht : V S t) (hr : V S r)
     (hp : ∀ x ∈ pre, V S x) : ∀ y ∈ t :: r :: pre, V S y := by
@@ -1109,6 +1117,14 @@ theorem bound_code {fs : List (PropKey × Nat)} {t r : Tm} {pre : List Tm} {oid 
   have hyv := hall y hy
   have hle := leaves_of_vals hyv.val hxy hl
   exact ⟨hyv.below l hle, hyv.sites l hle⟩
+
+/-- The values a bound function's code holds reach no local location where
+its parts meet a set with no local site (proved). -/
+theorem bound_nl {fs : List (PropKey × Nat)} {t r : Tm} {pre : List Tm} {oid : Nat} {S : Sites P}
+    (hall : ∀ y ∈ t :: r :: pre, VJ Fl g n S y) (hS : NoLocal S) :
+    CodeNL g n (.objAt fs (.bound t r pre) oid) := fun x hx l hl =>
+  let h := bound_code hall x hx l hl
+  ⟨h.1, hS.origin h.2⟩
 
 /-- The values a bound function's code holds hold what its parts hold
 (proved). -/
@@ -1147,7 +1163,7 @@ theorem VJ.graphC {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : Lis
     let ⟨i, hi⟩ := List.getElem?_of_mem hu; ⟨_, (hcaps _ π hcode).1 i u hi⟩
   refine VJ.obj (closed_graph fun x hx => (hcm x hx).choose_spec.closed) hfs
     (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (fun x hx => by simp [codeVals, hc] at hx)
-    ?_ ?_ ?_ ?_ (fun x hx => by simp [codeVals, hc] at hx)
+    ?_ ?_ ?_ (fun x hx => by simp [codeVals, hc] at hx) ?_ (fun x hx => by simp [codeVals, hc] at hx)
   · rintro u (⟨_, _, _, _, _, _, _, _, _, _, he, hu⟩ | ⟨_, _, _, _, _, he, _⟩)
     · cases he
       rcases hu with hu | hu
@@ -1173,10 +1189,12 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = false)
     (hfs : ∀ k l, (k, l) ∈ fs → l < n ∧ g.site l ∈ S)
     (hcaps : ∀ u ∈ caps, VJ Fl g n S u) (hE : ∀ u ∈ valsArgs P.ofC true E, VJ Fl g n S u)
-    (hlow : ∀ e ∈ E, Lowered Fl e) (hnone : none ∈ S) :
+    (hlow : ∀ e ∈ E, Lowered Fl e) (hnone : none ∈ S)
+    (hnlc : ∀ u ∈ caps, ∀ l, Leaves P.ofC u l → g.origin l ≠ some .local)
+    (hnlE : ∀ u ∈ valsArgs P.ofC true E, ∀ l, ¬ Leaves P.ofC u l) :
     VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid) := by
   refine VJ.obj (closed_graph fun x hx => (hcaps x hx).closed) hfs
-    (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_ ?_ ?_ ?_
+    (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · intro x hx l hl
     simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
     rcases hx with hx | hx
@@ -1197,6 +1215,14 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
   · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he _
     cases he
     exact hlow
+  · intro x hx l hl
+    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact absurd hl (hnlE x hx l)
+    · simp only [valsArgs_eq, List.mem_flatMap] at hx
+      obtain ⟨y, hy, hxy⟩ := hx
+      have hle := leaves_of_vals (hcaps y hy).val hxy hl
+      exact ⟨(hcaps y hy).below l hle, hnlc y hy l hle⟩
   · intro fs' ar' E' K' s' caps' k' rest' comp' oid' he
     cases he
     exact ⟨fun hc' => (by rw [hc] at hc'; cases hc'), fun _ => hnone⟩

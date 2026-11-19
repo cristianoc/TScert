@@ -2297,14 +2297,15 @@ reads the crossing at its boundary type.
 The checks of $`C`$'s code read, for each value of an execution, the sites
 of the locations it may reach, `none` the site of outside storage
 (`ReadOnlySites.lean`). A heap of sites (`SiteHeap`) gives, for each site,
-the sites its storage may reference (`contents`) and the sites the values
-a stored closure of outside code or bound function binds may reach first
-(`bindings`).
+the sites its storage may reference (`contents`).
 
 - A value meets a set of sites (`SitesOf`) when every first location it
   reaches (`Leaves`) is of a site of the set; a heap meets a heap of sites
   (`HeapSites`) when each location's value meets the sites of the
-  location's site. A set is closed (`Closed`) when it holds the contents
+  location's site and the values its code holds (a bound function's
+  parts, a closure of outside code's node expressions' values and
+  captures, `codeVals`) reach no local location first (`CodeNoLocal`).
+  A set is closed (`Closed`) when it holds the contents
   of each of its sites.
 - In a heap meeting a heap of sites, a value meeting a closed set reaches
   only locations of its sites (`reach_sites`); a crossing whose value
@@ -2315,8 +2316,9 @@ a stored closure of outside code or bound function binds may reach first
   site, keep the heap meeting the heap of sites (`HeapSites.set`,
   `HeapSites.alloc`).
 - Where storage of a site that is not local references no local site
-  (`LocalHeld`) and no binding reaches one, a step's stores keep local
-  storage closed (`localStores_of_sites`, `localBindings_of_sites`).
+  (`LocalHeld`), a step's stores keep local storage closed, and no value
+  the code of a stored value holds reaches a local location first
+  (`localStores_of_sites`, `localBindings_of_sites`).
 - At the actual crossings, where every root of outside code after a step
   meets a closed lendable set `O`, the step meets the checks
   (`escapeAt_of_sites`): a new root by itself, a value left where outside
@@ -2385,8 +2387,18 @@ sets of sites:
   code, and its entry names a signature only at a capture holding a
   closure of it or at its own slot (`CapsOk`, `CapFn`), its code has an
   entry context, open there where its token lies in $`O`$, every closure
-  of outside code has lowered code (`OutLowered`). Allocation keeps it
-  (`VJ.alloc`).
+  of outside code has lowered code (`OutLowered`), and the values each
+  holds in its code reach only allocated locations that are not local
+  (`CodeNL`). Allocation keeps it (`VJ.alloc`): every location the last
+  clause reads is below the heap's length, so its site is kept. The bound
+  on the length is needed: a closure of $`C`$'s code holds its node
+  expressions' values in no leaf of its own, and a leaf past the length,
+  outside storage, becomes local when an allocation gives it a local site
+  (`Within`, `codeVals` and `Leaves` of such a closure, checked in Lean).
+  A bound function or closure of outside code binding a local value is
+  refused wherever it is held, a local variable included: a stated limit,
+  chosen by the behaviour it excludes (a binding outside code may run,
+  holding local storage); (M) asks it of stored values only.
 - **A term fits a set** (`Fits V Γ a o S t`): its value, once computed,
   meets $`S`$; at a position of outside code (`o`, true outside every
   frame and in a frame of outside code, false in a frame of $`C`$'s code)
@@ -2417,8 +2429,11 @@ sets of sites:
   closure's own slot there hold $`O`$, and the code's return set lies
   within $`O`$. Every thrown value meets $`O`$; a read's result meets the
   contents of a set closed under the reads' prototypes; a write's value
-  is one the written storage may hold (`Stores`); an allocation's initial
-  values what its site may hold. A capture, a bound part and a slot of a
+  is one the written storage may hold (`Stores`, within the contents of
+  its site); an allocation's initial values what its site may hold; a
+  bound function's parts (`makeBound`) and a closure of outside code's
+  captures (`makeGraphOut`) meet a set within the value's own holding no
+  local site. A capture, a bound part and a slot of a
   run's environment is a value meeting its set or a variable a binder binds
   to a smaller set (`VOr`). A nested run of $`C`$'s code fits when
   its environment meets its node's slots and its term the node's value
@@ -2452,8 +2467,9 @@ sets of sites:
   slots of every context of its code; a known call's context is one
   context of the callee, whichever the proposal names.
 - **A heap meets the flow** (`HeapInv`): each location holds a value
-  meeting its site's contents, its code's values the bindings; so it meets
-  the heap of sites (`HeapInv.sites`). Writes and allocations that meet
+  meeting its site's contents; so it meets the heap of sites
+  (`HeapInv.sites`), the values its code holds reaching no local location
+  by the value judgment's last clause (below). Writes and allocations that meet
   the rules keep it (`HeapInv.set`, `HeapInv.append`, `HeapInv.fresh`).
 - **The site of a step's fresh locations** (`stepSite`): the innermost
   frame's (`activeFrame`, following `Step`'s congruences as `path` does)
@@ -2580,7 +2596,7 @@ proposal is [deciding the flow](#deciding-the-flow).
 ### Deciding the flow
 
 A finite proposal (`FFlow`, `ReadOnlyFitsDecide.lean`) holds $`O`$, the
-heap of sites as a list of entries (a site's contents and bindings, none
+heap of sites as a list of entries (a site's contents, none
 for a site no entry names), and for each code of $`C`$ its contexts, each
 with its nodes (`FCode`, one node standing for every label past them). A
 code's proposal at a context holds its return set, a table of signatures,
@@ -2617,7 +2633,7 @@ first proposal at the context.
 - **The checks of a flow** (`FFlow.check`): each code's checks at each
   context (`codeChkB_sound`, one pass over the nodes with their
   continuations and handlers), each context beside an entry context of
-  the same allocation sites and token (`Flow.Agree`), $`O`$ holding outside storage, closed in the heap of sites,
+  the same allocation sites and token (`Flow.Agree`), $`O`$ holding outside storage and no local site, closed in the heap of sites,
   its storage able to hold all of $`O`$; they give `Flow.Facts`
   (`FFlow.check_sound`). A member's entry holding what outside code may
   supply at every slot (`suppliedB`), its returns within $`O`$, is decided
@@ -2627,8 +2643,9 @@ first proposal at the context.
   released and every other site local. At these marks $`O`$ is lent
   (`Lendable`) and storage of a site that is not local, a site of $`O`$
   or outside storage, references no local site (`LocalHeld`), both from
-  the facts of $`O`$ (`FFlow.marks_of_marksFrom`); no binding reaching a
-  local site is a separate condition, decided by `FFlow.bindingsB`.
+  the facts of $`O`$ (`FFlow.marks_of_marksFrom`). The checks read the
+  marks where a bound function or a closure of outside code is made, so
+  they run at the marks the flow gives.
 
 **The proposal** (`solveFlow`, `ReadOnlyFlowSolve.lean`) is computed from
 the lowered graphs, the only place their nodes, slots and labels exist.
@@ -2688,8 +2705,8 @@ slots by it, gives it the returns of each code whose token it holds, and
 runs again the nodes reading $`O`$, a return set or the heap of sites
 where either grew, until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
 each member checked, whether the proposal meets the checks, the member's
-entry (`FFlow.entryB`), and, at the marks the flow gives, `FFlow.marksB`
-and `FFlow.bindingsB`, with the time of the rounds, of the merging and of
+entry (`FFlow.entryB`), and, at the marks the flow gives, `FFlow.marksB`,
+with the time of the rounds, of the merging and of
 the checks (`FilePlans.flowProbe`); no verdict reads it. With
 `TSCERT_FLOW_PROBE=only` the members' checks are not run and no proposal
 of the groups below a member is read. `TSCERT_FRAME_PROBE` names a file
@@ -2775,11 +2792,8 @@ at the visitor call, every fact read at the marks the flow gives:
 - `bounds-pattern-unreachable-handle-refused.ts`: `h` and its two array
   objects are allocated at three nodes, each of its own site; `h`'s site
   is local, captured by no closure, and both length facts pass the
-  frame's check. The bindings check at the marks the flow gives fails:
-  `h`'s storage holds the local array objects, and a write's value is
-  charged to the bindings of its storage as well as to its contents
-  (`Stores`), so the bindings of a local site holding a local object hold
-  a local site.
+  frame's check; the checks and the marks hold at the marks the flow
+  gives.
 - pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 18 codes, 3824
   nodes; one context per known call site: 117 contexts, 16516 nodes over
   them, proposal 9288 ms, checks 4308 ms; merged: 46 contexts, 16183
@@ -2802,7 +2816,8 @@ at the visitor call, every fact read at the marks the flow gives:
   entry context.
 
 Every member of `src/line-break.ts` meets the checks, its entry and the
-bindings check (at the module as the component, its exports the entries).
+marks (at the module as the component, its exports the entries; measured
+with the bindings component the heap of sites had then).
 
 Measured 2026-11-19 by the probe over pretext's package (`TSCERT_PROBE_PACKAGE`
 naming the runs of `layout.ts`, `rich-inline.ts`, `prepare.ts`,

@@ -28,8 +28,9 @@ site may reference, outside storage included.
   heap meeting the heap of sites.
 - **Local storage** (`localStores_of_sites`, `localBindings_of_sites`):
   where storage of a site that is not local references no local site
-  (`LocalHeld`) and no binding reaches one, the stores of a step keep
-  local storage closed.
+  (`LocalHeld`), the stores of a step keep local storage closed; the
+  values held in the code of stored values reach no local location, a
+  clause of the heap meeting the heap of sites (`CodeNoLocal`).
 - **The checks at the actual crossings** (`escapeAt_of_sites`): where every
   root of outside code after a step meets a closed set `O` of released
   sites and outside storage, every actual crossing meets the marks: a new
@@ -38,8 +39,8 @@ site may reference, outside storage included.
   (`ClientFrame.SitesSound`, `chkSound_of_sites`), `ChkSound` holds where
   the flow of `C`'s code gives these two at each step of its code.
 - **Outside code** (`sites_outside`, `ClientFrame.sitesAt_outside`): where
-  `O` holds outside storage and every site of `O` may hold every value of
-  `O` (`OutsideWritable`), a step of outside code keeps the heap meeting
+  `O` holds outside storage and no local site, and every site of `O` may
+  hold every value of `O` (`OutsideWritable`), a step of outside code keeps the heap meeting
   the heap of sites and the roots meeting `O` (`SitesAt`): it changes only
   what its roots reach, leaves there only what they reach or what it
   allocates, outside storage, and its roots reach afterwards nothing else.
@@ -53,20 +54,38 @@ variable {P : Package}
 sites the storage of that site may reference. -/
 structure SiteHeap (P : Package) where
   contents : Option P.Site → List (Option P.Site)
-  /-- The sites the values the code of a closure of outside code or of a
-  bound function held in that storage binds may reach first. -/
-  bindings : Option P.Site → List (Option P.Site)
 
 /-- **A value meets a set of sites**: every first location it reaches is
 of a site of the set. -/
 def SitesOf (g : Ghost P) (S : List (Option P.Site)) (v : Val) : Prop :=
   ∀ l, Leaves P.ofC v l → g.site l ∈ S
 
+/-- **No local site** in a set. -/
+def NoLocal (S : List (Option P.Site)) : Prop := ∀ s ∈ S, ∀ s', s = some s' → P.mark s' ≠ .local
+
+/-- **A location of a site of a set with no local site is not local**
+(proved). -/
+theorem NoLocal.origin {g : Ghost P} {S : List (Option P.Site)} {l : Nat} (hS : NoLocal S) (h : g.site l ∈ S) :
+    g.origin l ≠ some .local := by
+  unfold Ghost.origin
+  cases hsl : g.site l with
+  | none => simp
+  | some s' =>
+    rw [hsl] at h
+    simp only [Option.map_some, ne_eq, Option.some.injEq]
+    exact hS _ h s' rfl
+
+/-- **The values a value holds in its code reach no local location**: each
+first location a bound function's part, or a node expression's value or
+capture of a closure of outside code, reaches is not local. -/
+def CodeNoLocal (g : Ghost P) (u : Val) : Prop :=
+  ∀ x ∈ codeVals P.ofC u, ∀ l, Leaves P.ofC x l → g.origin l ≠ some .local
+
 /-- **A heap meets a heap of sites**: the value of each location meets the
-sites of the location's site. -/
+sites of the location's site, and the values its code holds reach no local
+location. -/
 def HeapSites (g : Ghost P) (H : SiteHeap P) (h : Heap) : Prop :=
-  ∀ w u, h[w]? = some u → SitesOf g (H.contents (g.site w)) u ∧
-    ∀ x ∈ codeVals P.ofC u, SitesOf g (H.bindings (g.site w)) x
+  ∀ w u, h[w]? = some u → SitesOf g (H.contents (g.site w)) u ∧ CodeNoLocal g u
 
 /-- **A set of sites closed in a heap of sites**. -/
 def Closed (H : SiteHeap P) (S : List (Option P.Site)) : Prop :=
@@ -126,8 +145,7 @@ theorem crossOk_of_sites {tv : TypeView} {g : Ghost P} {H : SiteHeap P} {h : Hea
 /-- **A write keeps the heap meeting the heap of sites** (proved): the
 written value meets the sites of the written location's site. -/
 theorem HeapSites.set {g : Ghost P} {H : SiteHeap P} {h : Heap} {w : Nat} {u : Val} (hH : HeapSites g H h)
-    (hu : SitesOf g (H.contents (g.site w)) u)
-    (hb : ∀ x ∈ codeVals P.ofC u, SitesOf g (H.bindings (g.site w)) x) : HeapSites g H (h.set w u) := by
+    (hu : SitesOf g (H.contents (g.site w)) u) (hb : CodeNoLocal g u) : HeapSites g H (h.set w u) := by
   intro x v hx
   rw [List.getElem?_set] at hx
   split at hx
@@ -145,6 +163,30 @@ theorem SitesOf.alloc {g : Ghost P} {S : List (Option P.Site)} {v : Val} {n : Na
   rw [(Ghost.alloc_old (hn l hl)).1]
   exact hv l hl
 
+/-- **The code's values keep reaching no local location at an allocation**
+(proved): the allocation keeps the site of every old location. -/
+theorem CodeNoLocal.alloc {g : Ghost P} {v : Val} {n : Nat} {site : Nat → Option P.Site}
+    {key : Nat → Option PropKey} (hv : CodeNoLocal g v) (hn : ∀ l, Leaves P.ofC v l → l < n) :
+    CodeNoLocal (g.alloc n site key) v := by
+  intro x hx l hl
+  unfold Ghost.origin
+  rw [(Ghost.alloc_old (hn l (Leaves.code hx hl))).1]
+  exact hv x hx l hl
+
+/-- **A value of a set with no local site holds no local value in its code**
+(proved). -/
+theorem CodeNoLocal.of_sites {g : Ghost P} {S : List (Option P.Site)} {v : Val} (hv : SitesOf g S v)
+    (hS : NoLocal S) : CodeNoLocal g v := by
+  intro x hx l hl
+  have hs := hv l (Leaves.code hx hl)
+  unfold Ghost.origin
+  cases hsl : g.site l with
+  | none => simp
+  | some s' =>
+    rw [hsl] at hs
+    simp only [Option.map_some, ne_eq, Option.some.injEq]
+    exact hS _ hs s' rfl
+
 /-- **An allocation keeps the heap meeting the heap of sites** (proved):
 the old values reference old locations, and each new value meets the sites
 of its fresh location's site. -/
@@ -153,14 +195,13 @@ theorem HeapSites.alloc {g : Ghost P} {H : SiteHeap P} {h : Heap} {xs : List Val
     (hold : ∀ (w : Nat) (u : Val), h[w]? = some u → ∀ l, Leaves P.ofC u l → l < h.length)
     (hnew : ∀ (i : Nat) (u : Val), xs[i]? = some u →
       SitesOf (g.alloc h.length site key) (H.contents (site (h.length + i))) u ∧
-      ∀ x ∈ codeVals P.ofC u, SitesOf (g.alloc h.length site key) (H.bindings (site (h.length + i))) x) :
+      CodeNoLocal (g.alloc h.length site key) u) :
     HeapSites (g.alloc h.length site key) H (h ++ xs) := by
   intro w u hw
   by_cases hlt : w < h.length
   · rw [List.getElem?_append_left hlt] at hw
     rw [(Ghost.alloc_old hlt).1]
-    exact ⟨(hH w u hw).1.alloc (hold w u hw), fun x hx => ((hH w u hw).2 x hx).alloc
-      (fun l hl => hold w u hw l (Leaves.code hx hl))⟩
+    exact ⟨(hH w u hw).1.alloc (hold w u hw), (hH w u hw).2.alloc (hold w u hw)⟩
   · rw [List.getElem?_append_right (by omega)] at hw
     have hs : (g.alloc h.length site key).site w = site (h.length + (w - h.length)) := by
       simp [Ghost.alloc, hlt, show h.length + (w - h.length) = w by omega]
@@ -169,8 +210,6 @@ theorem HeapSites.alloc {g : Ghost P} {H : SiteHeap P} {h : Heap} {xs : List Val
 
 /-! ## Local storage -/
 
-/-- **No local site** in a set. -/
-def NoLocal (S : List (Option P.Site)) : Prop := ∀ s ∈ S, ∀ s', s = some s' → P.mark s' ≠ .local
 
 /-- **Local storage is held only by local storage** in a heap of sites:
 storage of a site that is not local references no local site. -/
@@ -195,17 +234,12 @@ theorem localStores_of_sites {g : Ghost P} {H : SiteHeap P} {h h' : Heap} (hH : 
   exact hL _ hnl _ hs sl rfl hml
 
 /-- **Closed bindings** (proved, `PkgProps.localBindings`): in a heap
-meeting a heap of sites whose bindings reach no local site, no value the
-code of a stored closure binds reaches a local location first. -/
-theorem localBindings_of_sites {g : Ghost P} {H : SiteHeap P} {h h' : Heap} (hH : HeapSites g H h')
-    (hB : ∀ s, NoLocal (H.bindings s)) :
+meeting a heap of sites, no value the code of a stored value holds reaches
+a local location first. -/
+theorem localBindings_of_sites {g : Ghost P} {H : SiteHeap P} {h h' : Heap} (hH : HeapSites g H h') :
     ∀ w u, ¬ Same h h' w → h'[w]? = some u → ∀ x ∈ codeVals P.ofC u, ∀ l, Leaves P.ofC x l →
-      g.origin l ≠ some .local := by
-  intro w u _ hu x hx l hl hloc
-  have hs := (hH w u hu).2 x hx l hl
-  obtain ⟨sl, hsl, hml⟩ := Option.map_eq_some_iff.mp hloc
-  rw [hsl] at hs
-  exact hB _ _ hs sl rfl hml
+      g.origin l ≠ some .local :=
+  fun w u _ hu => (hH w u hu).2
 
 /-! ## The checks at the actual crossings -/
 
@@ -213,15 +247,14 @@ variable {F : Family} {C : Nat} {tv : TypeView}
 
 /-- **The checks at a step of `C`'s code from the sites** (proved): where
 the heap after the step meets a heap of sites in which local storage is
-held only by local storage and bindings reach no local site, and every
+held only by local storage, and every
 root of outside code after the step meets a closed set of released sites
 and outside storage, every actual crossing meets the marks and the step's
 stores keep local storage closed. A value left where outside code reaches
 is in storage of a site of that set, whose contents the set holds. -/
 theorem escapeAt_of_sites (T : tv.Ty) {x y : Conf} {g g' mid : Ghost (F.at C)} {H : SiteHeap (F.at C)}
     {O : List (Option (F.at C).Site)} (hH : HeapSites mid H y.s.h) (hO : Closed H O) (hlend : Lendable O)
-    (hL : LocalHeld H) (hB : ∀ s, NoLocal (H.bindings s))
-    (hroots : ∀ r ∈ rootsOf F C none y.t, SitesOf mid O r) :
+    (hL : LocalHeld H) (hroots : ∀ r ∈ rootsOf F C none y.t, SitesOf mid O r) :
     EscapeAt (lift F C none x g) (lift F C none y g') mid (actualXs F C T x.s.h x.t y.s.h y.t) where
   crossOk := by
     intro c hc
@@ -239,14 +272,14 @@ theorem escapeAt_of_sites (T : tv.Ty) {x y : Conf} {g g' mid : Ghost (F.at C)} {
         exact ((hH w v hw).1).mono (hO _ hsw)
       · cases hw
   localStores := localStores_of_sites hH hL
-  localBindings := localBindings_of_sites hH hB
+  localBindings := localBindings_of_sites hH
 
 /-! ## A step of outside code -/
 
 /-- **Outside storage may hold every value outside code holds**: the
-contents and the bindings of each site of `O` hold `O`. -/
+contents of each site of `O` hold `O`. -/
 def OutsideWritable (H : SiteHeap P) (O : List (Option P.Site)) : Prop :=
-  ∀ s ∈ O, ∀ s' ∈ O, s' ∈ H.contents s ∧ s' ∈ H.bindings s
+  ∀ s ∈ O, ∀ s' ∈ O, s' ∈ H.contents s
 
 /-- The heap's values reference allocated locations (proved). -/
 theorem heap_leaves_lt {s : IndexedHeap} {ofC : ComponentTag → Bool} {w : Nat} {u : Val} (hu : s.h[w]? = some u) :
@@ -264,7 +297,7 @@ they reach or what it allocates (`outsideStep_reach`,
 reached or what it allocated (`outsideStep_noForge`). -/
 theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option PropKey} {H : SiteHeap (F.at C)}
     {O : List (Option (F.at C).Site)} (hs : AStep x y) (hact : Outside F C none x) (hO : Closed H O)
-    (hnone : none ∈ O) (hW : OutsideWritable H O) (hH : HeapSites g H x.s.h)
+    (hnone : none ∈ O) (hnl : NoLocal O) (hW : OutsideWritable H O) (hH : HeapSites g H x.s.h)
     (hR : ∀ r ∈ rootsOf F C none x.t, SitesOf g O r) :
     HeapSites (g.alloc x.s.h.length (fun _ => none) key) H y.s.h ∧
       ∀ r ∈ rootsOf F C none y.t, SitesOf (g.alloc x.s.h.length (fun _ => none) key) O r := by
@@ -293,8 +326,7 @@ theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option Pr
       have hw : w < x.s.h.length := (List.getElem?_eq_some_iff.mp hv).1
       have he : g'.site w = g.site w := (Ghost.alloc_old hw).1
       rw [he]
-      exact ⟨(hH w v hv).1.alloc (heap_leaves_lt hv), fun x' hx => ((hH w v hv).2 x' hx).alloc
-        (fun l hl => heap_leaves_lt hv l (Leaves.code hx hl))⟩
+      exact ⟨(hH w v hv).1.alloc (heap_leaves_lt hv), (hH w v hv).2.alloc (heap_leaves_lt hv)⟩
     · -- A changed or allocated location: reached by the old roots, or fresh.
       have hsw : g'.site w ∈ O := by
         apply hsite
@@ -302,8 +334,8 @@ theorem sites_outside {x y : Conf} {g : Ghost (F.at C)} {key : Nat → Option Pr
         · obtain ⟨v, hv⟩ : ∃ v, x.s.h[w]? = some v := ⟨_, List.getElem?_eq_getElem hlt⟩
           refine .inl (hreach w ⟨v, hv, fun h' => hsame ⟨v, hv, h'⟩⟩)
         · exact .inr (by omega)
-      refine ⟨fun l hl => (hW _ hsw _ (hsite l (hwr w u hsame hu l hl))).1, fun x' hx l hl =>
-        (hW _ hsw _ (hsite l (hwr w u hsame hu l (Leaves.code hx hl)))).2⟩
+      refine ⟨fun l hl => hW _ hsw _ (hsite l (hwr w u hsame hu l hl)),
+        CodeNoLocal.of_sites (S := O) (fun l hl => hsite l (hwr w u hsame hu l hl)) hnl⟩
   · exact hsite l (hnf l ⟨r, hr, hl.reaches⟩)
 
 /-- **The sites read only the ghost's sites** (proved). -/
@@ -315,7 +347,8 @@ theorem HeapSites.congr {g g' : Ghost P} {H : SiteHeap P} {h : Heap} (he : g'.si
     (hH : HeapSites g H h) : HeapSites g' H h := by
   intro w u hu
   rw [he]
-  exact ⟨(hH w u hu).1.congr he, fun x hx => ((hH w u hu).2 x hx).congr he⟩
+  refine ⟨(hH w u hu).1.congr he, fun x hx l hl => ?_⟩
+  unfold Ghost.origin; rw [he]; exact (hH w u hu).2 x hx l hl
 
 /-- The sites after a step of outside code are its allocation's (proved). -/
 theorem outsideNextAt_site {key : Nat → Option PropKey} {len : Nat} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
@@ -346,7 +379,8 @@ variable {fr}
 /-- **A step of outside code keeps the sites at a state** (proved,
 `sites_outside`): the history after it has its allocation's sites. -/
 theorem sitesAt_outside {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
-    (hO : Closed H O) (hnone : none ∈ O) (hW : OutsideWritable H O) {a b : Conf × Ghost (fr.F.at fr.C)}
+    (hO : Closed H O) (hnone : none ∈ O) (hnl : NoLocal O) (hW : OutsideWritable H O)
+    {a b : Conf × Ghost (fr.F.at fr.C)}
     (hk : fr.KStep a b) (ho : kind fr.F fr.C none a.1 b.1 = .outside) (ha : fr.SitesAt H O a) :
     fr.SitesAt H O b := by
   obtain ⟨hs, hg, -⟩ := hk
@@ -355,7 +389,7 @@ theorem sitesAt_outside {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at
     rw [hg, fr.next_conf]
     simp only [Ghost.next, Ghost.stepAt, stepKind_conf, ho]
     exact outsideNextAt_site
-  obtain ⟨hH, hR⟩ := sites_outside (key := (fr.chkConf a.1 b.1).key) hs hact hO hnone hW ha.1 ha.2
+  obtain ⟨hH, hR⟩ := sites_outside (key := (fr.chkConf a.1 b.1).key) hs hact hO hnone hnl hW ha.1 ha.2
   exact ⟨hH.congr hsite, fun r hr => (hR r hr).congr hsite⟩
 
 /-- **The sites at an entry** (proved): every location of the entry history
@@ -365,23 +399,22 @@ theorem sitesAt_entryStart {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F
     fr.SitesAt H O (x, entryStart fr.F fr.C fr.view.view x.s.h x.t args) := by
   have hc := hW none hnone none hnone
   have hb : fr.SitesAt H O (x, bareStart fr.F fr.C x.t) :=
-    ⟨fun w u _ => ⟨fun l _ => hc.1, fun _ _ l _ => hc.2⟩, fun r _ l _ => hnone⟩
+    ⟨fun w u _ => ⟨fun l _ => hc, fun _ _ l _ => by simp [Ghost.origin, bareStart]⟩, fun r _ l _ => hnone⟩
   exact ⟨hb.1.congr entryStart_site, fun r hr => (hb.2 r hr).congr entryStart_site⟩
 
 /-- **`ChkSound` from the flow** (proved): at the actual crossings, where
 `O` is closed in `H` and holds released sites and outside storage only,
-local storage is held only by local storage and no binding reaches a local
-site, the flow gives the checks (`escapeAt_of_sites`), and the checks
+and local storage is held only by local storage, the flow gives the checks (`escapeAt_of_sites`), and the checks
 `ChkSound` (`chkSound_of_escape`). -/
 theorem chkSound_of_sites {T : τ} {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
     (hx : fr.ActualCrossings T) (hO : Closed H O) (hlend : Lendable O) (hL : LocalHeld H)
-    (hB : ∀ s, NoLocal (H.bindings s)) (hs : fr.SitesSound H O) : fr.ChkSound := by
+    (hs : fr.SitesSound H O) : fr.ChkSound := by
   refine chkSound_of_escape hx fun a b ha hk ho => ?_
   obtain ⟨hH, hr⟩ := hs a b ha hk ho
   have hxs : (fr.chkConf a.1 b.1).xs = actualXs (tv := fr.view.view) fr.F fr.C T a.1.s.h a.1.t b.1.s.h b.1.t :=
     hx _ _ _ _
   rw [hxs]
-  exact escapeAt_of_sites (tv := fr.view.view) T hH hO hlend hL hB hr
+  exact escapeAt_of_sites (tv := fr.view.view) T hH hO hlend hL hr
 
 end ClientFrame
 
