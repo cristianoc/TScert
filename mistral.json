@@ -2,6 +2,11 @@
   "schemaVersion": 2,
   "kind": "app",
   "name": "tscert-todo-webapp",
+  "deployment": {
+    "organizationId": "eee844bd-674e-4c5f-a7a9-3821558c457c",
+    "workspaceId": "d2fe44e5-f5da-4c5a-ab99-93af9204e9f5",
+    "appId": "01a1f391-27dc-72c7-b33b-527e0d6133b0"
+  },
   "modules": [
     {
       "type": "app",
