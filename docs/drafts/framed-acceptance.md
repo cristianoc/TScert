@@ -657,9 +657,16 @@ The entering step records the arguments' incoming crossing.
 **The claim's entry** is the state of the realization after the
 prologue: `a₂`, related by `RealizeSim r` to `(⟨n₂, W₂, h₂⟩, gotoOf
 r.program r.start L d r.comp)`, the history $`g_2`$ the program's at `a₂`.
-**Isolation** (`isolate`, to be proved): from `a₂` to the call's return
-the execution is `K[t]` with `K` the client's context, every step a step
-of `t` in `K`, until `t` is a value or a throw.
+**Isolation** (`isolate`, proved, `ReadOnlyIsolate.lean`): from `a₂` to
+the call's return the execution is `K[t]` with `K` the client's context,
+every step a step of `t` in `K`, until `t` takes no step (a value or a
+throw). A term whose innermost run is a run not yet entered is that run in
+an evaluation context (`innermostGoto_ctx`; `EvalCtx`,
+`Semantics/EvalContexts.lean`: a congruence position of a step rule, its
+earlier positions values, nested, a frame's running term among them); a
+step of the hole is a step of the context (`EvalCtx.step`), and by
+determinism an execution from `K[t]` is an execution of `t` in `K` or
+reaches a `K[t₁]` whose `t₁` takes no step (`EvalCtx.steps_inv`).
 
 ```lean
 def FramedSpec.frame (spec : FramedSpec ι) (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
@@ -1076,7 +1083,8 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 clause by `framedCode_of_guarantee`), `member_safe`'s framed branch,
 `OverStore` over framed plans, `framedRequestSafe_recandidated`,
 `SafeRet.under`, `SafeRet.of_safe`, `SafeRet.erase`, `framedRun_of_returns`,
-`framedReturns_of_requestSafe`, `framedReturnsReached_none`, `assertedAt_of_graph` (by `sim_reaches`, a path of the
+`framedReturns_of_requestSafe`, `framedReturnsReached_none`, `isolate`
+(`innermostGoto_ctx`, `EvalCtx.step`, `EvalCtx.steps_inv`), `assertedAt_of_graph` (by `sim_reaches`, a path of the
 term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
@@ -1098,7 +1106,7 @@ soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`, `crosses_inv`,
-`prologue_sim`, `isolate`, `project`, `keeps_canonical`,
+`prologue_sim`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `RunSoundFramed` (its conclusion `FramedReturnsGuarantee`),
 `ret_reached` (its conclusion `FramedReturnsReached`),
