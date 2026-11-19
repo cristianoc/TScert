@@ -1370,8 +1370,18 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
   (`visit(c.i)`) framed, keeping the produced support of each of its 15
   entry index facts; the ordinary walk refuses node 10 (`xs[c.i]`), and the
   framed walk's entry of node 10 holds `c.i + 1 <= xs.length` and
-  `0 <= c.i` and passes it, then refuses the edge from node 6 into the
-  loop head 2, which lacks one of the head's facts;
+  `0 <= c.i` and passes it, then refuses the edge from node 6 (the write
+  of `c.i++`) into the loop head 2, which lacks the head's candidate
+  `c.i <= 0`, a fact of the loop's first entry that the back edge does not
+  establish (`c.i` is 1 there). Settled as the member's run settles
+  (`inferredNext`: the candidate left out, the framed node's supports
+  taken again), the framed walk is accepted (`m1-build/obs-a4-2.out`):
+  node 13 keeps the supports of its 17 entry facts, among them
+  `0 <= c.i` (the written invariant, the cursor's field at `keep`),
+  `c.i < xs.length` (the loop's test, the field at `keep` and `xs`'s
+  spine at `grow`) and `c.i <= 2^32 - 2` (from the test and the length
+  bound); node 10's entry holds the first two and decides `xs[c.i]`, and
+  `c.i++` from the third meets the head's `c.i <= 2^53 - 1`;
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's

@@ -321,12 +321,27 @@ def FootprintRoute.lastWalk : FootprintRoute → WalkKind
   | .fallback => .fallback
   | .fallbackThenRegions => .regions
 
+/-- What a framed probe (`framed=L;what`) observes: `what`, or the framed
+node `L` itself (`node:L`); an observation other than a framed probe,
+itself. -/
+def framedWhat (w : String) : String :=
+  if w.startsWith "framed=" then
+    match (w.drop 7).toString.splitOn ";" with
+    | l :: rest => let q := ";".intercalate rest; if q.isEmpty then s!"node:{l}" else q
+    | [] => w
+  else w
+
 /-- An observation (`TSCERT_OBSERVE=[walk@]what`): what it observes
 (`refusal`, `node:L`, `offset:K`), its walk prefix removed. -/
 def observedWhat (w : String) : String :=
   match w.splitOn "@" with
   | [_, what] => what
-  | _ => w
+  | _ => framedWhat w
+
+/-- The node a framed probe (`framed=L[;what]`) frames, or none. -/
+def framedProbeOf (observe : Option String) : Option Nat :=
+  observe.bind fun w => if w.startsWith "framed=" then
+    (((w.drop 7).toString.splitOn ";").head?.bind String.toNat?) else none
 
 /-- The walk an observation names (`footprint@`, `fallback@`, `regions@`),
 or none: every walk observes. -/
@@ -437,6 +452,63 @@ where
 /-- A bound and a regional check, as text, for `runDigests`. -/
 def boundText (bound : Option RunBound) (regional : Option SinglePass.Regional) : String :=
   s!"{reprStr bound}|{reprStr (regional.map fun rg => (rg.Φ, rg.exc, rg.names, rg.regions.length))}"
+
+/-- The facts a refused edge lacks, shown (the framed probe's). -/
+def outcomeLacks {ι : Type} : SinglePass.Outcome ι → String
+  | .refused _ (some (t, xs)) _ => s!" (at {t}: {(toJson xs).compress})"
+  | _ => ""
+
+/-- **The framed probe's settling**: the walk `runAt` from the candidates
+`cands₀`, a refusal at a head lacking candidates there leaving them out and
+the framed node's supports taken again (`framedAt`, with `framed`), as the
+member's run settles (`inferredNext`); each run's outcome and what it left
+out, and at `observed` the settled walk's entry and step facts. -/
+def framedProbeSettle {ι : Type}
+    (runAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
+    (framedAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint))
+    (cands₀ : List (Nat × List HeapKnowledge.IndexAtom)) (observed : Option Nat) (framed : Bool) : String := Id.run do
+  let mut cands := cands₀
+  let mut lines : List String := []
+  for _ in List.range 12 do
+    let fr := if framed then framedAt cands else []
+    let o := runAt cands fr none
+    lines := lines ++ [s!"    run (framed {fr.map fun (p : Nat × List Footprints.Footprint) => p.2.length}): {o}{outcomeLacks o}"]
+    match o with
+    | .refused _ (some (t, xs)) _ =>
+      let held := (cands.filter (·.1 == t)).flatMap (·.2)
+      let drop := held.filter xs.contains
+      if drop.isEmpty then break
+      lines := lines ++ [s!"    dropped at {t}: {(toJson drop).compress}"]
+      cands := cands.map fun (l', as) => if l' == t then (l', as.filter (!drop.contains ·)) else (l', as)
+    | _ => break
+  let fr := if framed then framedAt cands else []
+  let seen := match observed with
+    | some ob => match runAt cands fr (some ob) with
+      | .observed o => s!"\n    entry of node {ob}: {(toJson o.before.indices).compress}\n    after node {ob}: {(toJson o.after.indices).compress}"
+      | o => s!"\n    node {ob} not observed: {o}"
+    | none => ""
+  return "\n".intercalate lines ++ seen
+
+/-- **The framed probe's report** (`TSCERT_OBSERVE=framed=L[;what]`): the
+walk `runAt` once with node `L` framed keeping the produced support of each
+index fact on its entry (`framedAt`) and once with none, the facts a
+refused edge lacks, and each walk settled (`framedProbeSettle`). -/
+def framedProbeReport {ι : Type}
+    (runAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint) → Option Nat → SinglePass.Outcome ι)
+    (framedAt : List (Nat × List HeapKnowledge.IndexAtom) → List (Nat × List Footprints.Footprint))
+    (cands : List (Nat × List HeapKnowledge.IndexAtom)) (L : Nat) (observed : Option Nat) : String :=
+  let fr := framedAt cands
+  s!"framed probe: node {L} keeps {fr.map fun (p : Nat × List Footprints.Footprint) => p.2.length} supports\n  ordinary walk: {runAt cands [] none}{outcomeLacks (runAt cands [] none)}\n  framed walk: {runAt cands fr none}{outcomeLacks (runAt cands fr none)}\n  settled ordinary:\n{framedProbeSettle runAt framedAt cands observed false}\n  settled framed:\n{framedProbeSettle runAt framedAt cands observed true}"
+
+/-- **A framed probe's trace**: no framed node, the main walk unchanged;
+at a framed probe of node `L`, its report printed. -/
+def probeTrace (probe : Option Nat) (report : Nat → String) : List (Nat × List Footprints.Footprint) :=
+  match probe with
+  | none => []
+  | some L => dbgTrace (report L) fun _ => []
+
+theorem probeTrace_nil (probe : Option Nat) (report : Nat → String) : probeTrace probe report = [] := by
+  cases probe <;> rfl
 
 /-- **One member's single pass** (`SinglePass.run`), no certificate built:
 its plan through the exhaustive conversion (`FunctionPlan.certify`), the
@@ -602,16 +674,6 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   if let some c := codeRuns.find? fun c => !(c.outcome matches .accepted) then
     return { name, codes := codeRuns, outcome := c.outcome, line := c.line }
   let codes := GraphCode.admits table
-  -- A framed probe (`framed=L;what`): the main graph's node `L` framed,
-  -- keeping the produced support of each index fact on its entry; `what`
-  -- observed in that walk.
-  let (framedProbe, observe) : Option Nat × Option String := match observe with
-    | some w => if w.startsWith "framed=" then
-        match (w.drop 7).toString.splitOn ";" with
-        | l :: rest => (l.toNat?, let q := ";".intercalate rest; if q.isEmpty then none else some q)
-        | [] => (none, some w)
-      else (none, some w)
-    | none => (none, none)
   -- Observing (`observe`): the node of that label (`node:L`), or the
   -- innermost node whose source span holds that offset (`offset:K`).
   let observed : Option Nat := (observe.map observedWhat).bind fun w =>
@@ -646,23 +708,6 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   if let some (_, regions) := r.regional then
     if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
       return { name, codes := codeRuns, outcome := .refused "spine regions" }
-  let framed : List (Nat × List Footprints.Footprint) := match framedProbe with
-    | none => []
-    | some L => match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
-        r.candidates r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
-        givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional).1 with
-      | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
-      | _ => []
-  let runAt := fun (fr : List (Nat × List Footprints.Footprint)) (ob : Option Nat) =>
-    (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
-        r.candidates r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
-        givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
-  let shownAt := fun (fr : List (Nat × List Footprints.Footprint)) (ob : Nat) => match runAt fr (some ob) with
-    | .observed o => s!"entry of node {ob}: {(toJson o.before.indices).compress}"
-    | o => s!"node {ob} not observed: {o}"
-  let framed := match framedProbe with
-    | none => framed
-    | some L => dbgTrace s!"framed probe: node {L} keeps {framed.map fun (p : Nat × List Footprints.Footprint) => p.2.length} supports\n  ordinary walk: {runAt [] none}\n  framed walk: {runAt framed none}\n  ordinary {(observed.map (shownAt [])).getD ""}\n  framed {(observed.map (shownAt framed)).getD ""}" fun _ => framed
   let walk := fun (k : WalkKind) (bound : Option RunBound) (regional : Option SinglePass.Regional) =>
     -- (each run recorded: more than one per member run is a regional
     -- check beside the first, `mainRun`)
@@ -674,7 +719,18 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
-      framed
+      (probeTrace (framedProbeOf observe) fun L =>
+        let framedAt := fun (cands : List (Nat × List HeapKnowledge.IndexAtom)) =>
+          match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
+            cands r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation (some L) false false regional).1 with
+          | .observed o => [(L, o.before.indices.filterMap fun a => a.fact.support? {})]
+          | _ => []
+        let runAt := fun (cands : List (Nat × List HeapKnowledge.IndexAtom)) (fr : List (Nat × List Footprints.Footprint))
+            (ob : Option Nat) => (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
+            cands r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation ob false false regional false fr).1
+        framedProbeReport runAt framedAt r.candidates L observed)
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional
   -- A footprint the walk refuses node by node, checked regionally with no
   -- regions where the result is not fresh; then the unit's own regions,
@@ -720,7 +776,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound'
         givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe mainRun.route.lastWalk observed)
-        false true regional' false framed).1.asRefusal with
+        false true regional').1.asRefusal with
       | .accepted => o
       | o' => o'
     | o, _ => o
