@@ -39,6 +39,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyFitsStep
 import Verification.Paper.TolerantFrames.ReadOnlyFitsSubst
 import Verification.Paper.TolerantFrames.ReadOnlyFrame
 import Verification.Paper.TolerantFrames.ReadOnlyLocated
+import Verification.Paper.TolerantFrames.ReadOnlyLocalReach
 import Verification.Paper.TolerantFrames.ReadOnlyOutside
 import Verification.Paper.TolerantFrames.ReadOnlyProvenance
 import Verification.Paper.TolerantFrames.ReadOnlyPublic

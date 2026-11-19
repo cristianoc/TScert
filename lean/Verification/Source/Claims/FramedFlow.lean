@@ -180,7 +180,6 @@ handler, at every context: the proved check records a frame's node by its
 continuation and handler alone (`Fits.frameC`, `NodeOf`). -/
 def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (host : Nat → Bool) (ΨC Θ : Protocol P)
     (m : Code) (l : Nat) (Φ : Footprint) (Ss : List Footprint) : List Footprint :=
-  let top := flowSites F
   let kx := m.2[l]?
   let sharing := (List.range m.2.length).filter fun l' => m.2[l']? == kx
   -- (the call sets of every node sharing the continuation and handler, at
@@ -190,9 +189,8 @@ def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (hos
   let Sr := sets.flatMap (·.2.1)
   let width := (sets.map (·.2.2.length)).foldl max 0
   let args := (List.range width).map fun i => sets.flatMap fun s => s.2.2.getD i []
-  let seg := segCodes F top host Sf
-  let L := callReach F lay seg Sf Sr args
-  let Wc := depthCharges F seg L
+  let L := callReach F lay Sf Sr args
+  let Wc := depthCharges F L
   let Ψ : Protocol P := fun p => ((ΨC p).max (Θ p)).max (Wc p)
   -- (at each context, the nodes the check reads)
   let required := (F.ctxs m).map fun (_, c) =>

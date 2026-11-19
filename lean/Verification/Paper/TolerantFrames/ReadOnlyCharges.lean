@@ -19,9 +19,10 @@ charges the frame's protocols read, computed from a finite flow
   codes** $`\mathrm{seg}(c)`$ (`segCodes`), computed and checked closed
   (`segClosedB`, `segClosedB_sound`); **a framed call** (`reachesOut`).
 - **The protocols**: $`\Psi_C`$ (`componentProtocol`), the reach of a call
-  $`L(c)`$ (`callReach`) and the depth charges $`W_c`$ (`depthCharges`), each
-  a protocol from charges (`probeProtocol`): a part changed by any change
-  at a charged kind, kept at a local site outside the held set. -/
+  $`L(c)`$ (`callReach`) and the depth charges $`W_c`$ (`depthCharges`, at
+  every code of the flow), each a protocol from charges (`probeProtocol`): a
+  part changed by any change at a charged kind, kept at a local site outside
+  the held set. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
@@ -192,19 +193,16 @@ def componentProtocol (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : P
   probeProtocol (flowKinds F) (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O))
 
 /-- **The reach of a call** $`L(c)`$: the closure of its callee's,
-receiver's and arguments' sets and the capture sites of its segment's
-codes. -/
-def callReach (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (seg : List Nat) (Sf Sr : Sites P)
-    (args : List (Sites P)) : Sites P :=
-  capClose F (tokenCaps F lay) (Sf ++ Sr ++ args.flatten ++ seg.flatMap fun i =>
-    match (F.codes.zip lay)[i]? with
-    | some ((_, cs), l) => codeCaptureSites cs l
-    | none => [])
+receiver's and arguments' sets. -/
+def callReach (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Sf Sr : Sites P) (args : List (Sites P)) :
+    Sites P :=
+  capClose F (tokenCaps F lay) (Sf ++ Sr ++ args.flatten)
 
-/-- **The depth charges** $`W_c`$ of a call: `Ch(seg(c))` at every part but
-a local part whose site is outside $`L(c)`$, which is kept. -/
-def depthCharges (F : FFlow P) (seg : List Nat) (L : Sites P) : Protocol P :=
-  probeProtocol (codesKinds F seg) L
+/-- **The depth charges** $`W_c`$ of a call: `Ch` of every code of the flow
+at every part but a local part whose site is outside $`L(c)`$, which is
+kept. -/
+def depthCharges (F : FFlow P) (L : Sites P) : Protocol P :=
+  probeProtocol (flowKinds F) L
 
 
 /-! ## The closures, checked -/

@@ -233,53 +233,69 @@ local lemma below. The verifier computes the charges from the lowered node
 expressions the flow holds, which the binding checks make the request's
 lowered codes; nothing is discharged as fresh.
 
-**The local lemma, at the base of any call** (`local_reach`, to be
-proved). Let a call start at a state $`s_0`$ (an entry from outside code,
-or a call node $`c`$ of a frame $`f`$), let $`M`$ be the codes its run may
-execute, and let
+**The local lemma, at the base of any call** (`local_reach`, proved,
+`ReadOnlyLocalReach.lean`). Let a run start at a heap $`h_0`$ and a term
+$`u_0`$ (a call entered from outside code, or a call node $`c`$ of a frame
+$`f`$, its term in its evaluation context), and let $`L`$ be a set of sites
+such that every location one step reaches from a value $`u_0`$ holds, or
+from a value the code of such a value holds (the captures and node
+expressions of every closure, the parts of every bound function), is of a
+site of $`L`$, and every location of $`h_0`$ of a site of $`L`$ holds such
+a value (`DeepIn`, `HeapDeep`). Then a step of the run changes a location
+$`l<|h_0|`$ only where its site is in $`L`$. Proof: reading every tag's
+code as outside code (`allC`), the base's no-forgery (`step_noForge`)
+holds of every step, so what the run's term reaches it reached at $`h_0`$
+or allocated (`valRun_noForge`); the changed location is one step from a
+value of the step's term (`step_reach`); so, being old, it is reached from
+$`u_0`$'s values at $`h_0`$, and the reach stays among $`L`$'s sites
+(`reach_deep`). A step of the run is then within the protocol from its
+code's charges and $`L`$ (`stepWithin_reach`, with `stepWithin_charged`).
 
-```math
-L(s_0)=\overline{\mathrm{sites}(\text{callee})\cup\mathrm{sites}(\text{receiver})\cup\mathrm{sites}(\text{arguments})\cup\textstyle\bigcup_{m\in M}\mathrm{captureSites}(m)}
-```
+The flow gives both premises (`deepIn_of_vj`, `heapDeep_of_heapInv`,
+proved) for a set $`L`$ that holds the sets of $`u_0`$'s values, is closed
+under the heap of sites' contents, and is closed under captures
+(`CapClosed`: for each code whose token it holds, the sites of each
+capture slot at the code's entry at the layout of its closures), where the
+closures of $`C`$'s code in $`h_0`$ and among $`u_0`$'s values have their
+codes' layouts (`LayDeep`, to be proved at reached states:
+`layouts_reached`) and the flow's codes are lowered (`CodesLowered`, to be
+proved of the request's flow from the binding checks). A capture's sites
+are its slot's at its closure's code's entry (`VJ.capC`), a node
+expression of a closure holds no location (`lowered_vals_all`), and the
+code of a bound function or of a closure of outside code holds values
+meeting its own set (`VJ.boundPart`, `VJ.capOut`). The closure of sites
+$`\overline{S}`$ is closed under both, its closure under captures read
+through each code's layout `lay` (`tokenCaps`); that its check
+(`capClosedB_sound`) gives `CapClosed` at the layouts `lay` states is to be
+proved (`capClosed_of_lay`).
 
-Then a step of the run changes a location $`l<|h_0|`$ of a local site
-$`\sigma`$ only where $`\sigma\in L(s_0)`$. Plan: by induction along the
-run, every value its frames hold is (i) one the call passed (the callee,
-its captures, the receiver, the arguments), (ii) a value outside code
-supplied, meeting $`O`$, which holds no local site (`Flow.Facts.noLocal`),
-(iii) read from storage, (iv) a capture of a closure of a code of $`M`$,
-(v) allocated in the run, at least $`|h_0|`$, or (vi) computed from such;
-a value of (iii) read from a location reached so far is of a site in the
-contents of that location's site; by `reach_sites` (proved) every location
-reached is of a site of $`L(s_0)`$ or fresh. The callee's sites hold its
-code's token, so its captures are in $`L(s_0)`$ through the closure. A
-bound function's parts and a closure of outside code's captures reach no
-local site (`CodeNoLocal`, proved).
-
-Its two instances, each reading the same closure:
+Its two instances, each reading a closure:
 
 - **The protocol** $`\Psi_C`$, at a member's call entered from outside
-  code ($`M`$ every code of $`C`$; the receiver and arguments meet $`O`$):
+  code (the receiver and arguments meet $`O`$):
   $`\mathrm{Ch}(\text{all codes of }C)`$ at every part but a local part
   whose site is outside $`\overline{\bigcup_m\mathrm{captureSites}(m)\cup O}`$,
   which is $`\mathsf{keep}`$. The wire's proposal is checked to be at least
   this.
-- **The depth charges** of a call node $`c`$ ($`M=\mathrm{seg}(c)`$):
-  $`W_c`$ is $`\mathrm{Ch}(\mathrm{seg}(c))`$ at every part but a local part
-  whose site is outside $`L(c)`$, which is $`\mathsf{keep}`$.
+- **The depth charges** of a call node $`c`$: $`L(c)`$ is
+  $`\overline{\mathrm{sites}(\text{callee})\cup\mathrm{sites}(\text{receiver})\cup\mathrm{sites}(\text{arguments})}`$
+  (`callReach`), and $`W_c`$ is $`\mathrm{Ch}(\text{all codes of }C)`$ at
+  every part but a local part whose site is outside $`L(c)`$, which is
+  $`\mathsf{keep}`$ (`depthCharges`). Every frame of $`C`$'s code runs a
+  code of the flow (`Fits.frameC`), so its charges are among them.
   `nested-capture.mjs` (`undefined`): the wrapper captures `bump`, `bump`
   captures `holder`, the changed field is at `holder.child`'s site; it is in
   $`L(c)`$ through the wrapper's capture of `bump`'s token, `bump`'s
   capture of `holder` and `holder`'s contents, so charged.
   `boxed-capture.mjs` (`NaN`): `k`, handed out and back, captures a box
-  holding the cursor; `k`'s code is in $`\mathrm{seg}(c)`$, its capture's
-  site and the box's contents are in $`L(c)`$, so the cursor is charged.
+  holding the cursor; outside storage is in $`L(c)`$, so its contents
+  $`O`$, `k`'s token among them, its capture's site and the box's contents
+  are, so the cursor is charged.
   At P22's `visit(c.i)` the argument is a number, the receiver
-  `undefined`, and $`\mathrm{seg}(c)`$'s codes capture module closures
-  only, whose captures are module closures; the cursor's site is in no
+  `undefined`, and the callee's set holds outside storage and `walk`'s
+  token, whose captures are module closures; the cursor's site is in no
   capture slot and in no site's contents (it is stored nowhere), so it is
-  outside $`L(c)`$ and $`W_c`$ keeps it. That this holds of the computed
-  flow is milestone 1's first check.
+  outside $`L(c)`$ and $`W_c`$ keeps it (observed, the flow probe).
 - **The call's protocol** $`\Psi_c=\Psi_j\sqcup W_c`$ with
   $`\Psi_j=\Psi_C\sqcup\Theta_C`$.
 
@@ -317,15 +333,17 @@ a kind among the charges of the innermost frame's code.
 A step from a term meeting the residual invariant whose innermost frame's
 code's charges are among $`K`$, each changed old local location's site
 held, is `StepWithin` the protocol from $`K`$ and the held set
-(`stepWithin_charged`, proved). So **within a call** (`within_charges`, to
-be proved, from `local_reach`, which gives the held sites, and
-`stepWithin_charged`): every step of $`C`$'s code
-inside a member's call from $`a`$ is `StepWithin Ψ_C |h_a|`, and every step
-of $`C`$'s code at the caller's depth in a segment from $`s_0`$ is
-`StepWithin W_c |h₀|`, its frame running a code of $`\mathrm{seg}(c)`$
-(`segFrames`, to be proved: a frame at the caller's depth above $`f`$ is
-pushed by a call step of such a frame or of $`f`$'s call, whose callee
-meets the callee's set at its node, `FnsIn`).
+(`stepWithin_charged`, proved). So **within a call** (`within_charges`):
+every step of $`C`$'s code inside a member's call from $`a`$ is
+`StepWithin Ψ_C |h_a|`, and every step of $`C`$'s code at the caller's
+depth in a segment from $`s_0`$ is `StepWithin W_c |h₀|`. Its core is
+proved at a run of the calculus (`stepWithin_reach`: `local_reach` gives
+the held sites), with the frame's code's charges among every code's
+(`Fits.frameIn`, `frameKinds_flow`: the innermost frame of a fitting term
+runs a code the flow proposes for); its instance at the frame's segments
+reads each segment as a run of the call's term in its evaluation context
+(`isolate`), to be proved with `framed_transfer`'s segment
+(`CallState`, `Inside`).
 
 ## The transfer at a call
 
@@ -1337,7 +1355,10 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `acceptsFramed_of_walk` (`TolerantFramesComposeYields.lean`),
 `exitsYield_of_checks` at the exits' step (`TolerantFramesExitsYield.lean`);
 `framedReturns_of_guaranteeR`, `framedFootprint_of_bound`,
-`framedReturns_of_main` (`PassUnitSafe.lean`).
+`framedReturns_of_main` (`PassUnitSafe.lean`); `local_reach`,
+`valRun_noForge`, `reach_deep`, `stepWithin_reach`, `lowered_vals_all`,
+`deepIn_of_vj`, `heapDeep_of_heapInv`, `Fits.frameIn`, `frameKinds_flow`
+(`ReadOnlyLocalReach.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1346,7 +1367,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `local_reach`, `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `within_charges`, `segFrames`,
+**To be proved, milestone 1**: `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `within_charges` (its instance at the segments), `layouts_reached`, `CodesLowered` of the request's flow, `capClosed_of_lay`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,

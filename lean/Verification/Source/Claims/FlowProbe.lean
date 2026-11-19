@@ -103,8 +103,8 @@ def probeFrames {ofC : ComponentTag → Bool} (O : List (Option Nat)) (F : FFlow
       -- the call's protocol Ψ_c = Ψ_C ⊔ Θ_C ⊔ W_c, at Θ_C = keep (no `@clients` row)
       let (Sf, Sr, args) := (callsAt l₀).head?.getD ([], [], [])
       let seg := segCodes F top host Sf
-      let L := callReach F lay seg Sf Sr args
-      let Wc := depthCharges F seg L
+      let L := callReach F lay Sf Sr args
+      let Wc := depthCharges F L
       let Ψ : Protocol (markedPackage ofC O) := fun p => Footprints.Change.max (ΨC p) (Wc p)
       s!"frame probe, {sp.unit}, at node {l₀} (nodes of its continuation and handler {sharing}, which may call outside code or make a framed call {required}; framed {framedAt l₀}; seg {seg}; L(c) {(L.map (markName (ofC := ofC) (O := O)))})" ::
       if required.isEmpty && !sp.inspect then
