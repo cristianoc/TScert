@@ -22,20 +22,21 @@ structure CodeSource where
 
 /-- A contract a unit's check read, recorded where the check reads it and
 reported with its verdict (DESIGN.md, "Trust surface"); no check reads the
-record. A member: the key `key` of the declaration `module`/`name` whose
-row states it, read where the walk or the lowering computes the member's
+record. A member: the key `key` of the declaration whose row states it, by
+the identity `declaration` the declaration document gives it (its module,
+name and span), read where the walk or the lowering computes the member's
 type (`SourceExtraction.recordMember`). A value of the declaration
 document: its declaration and its binding, read where the walk types its
 name (`SourceExtraction.recordName`). -/
 inductive ContractRead where
-  | member (module name key : String)
+  | member (declaration : Json) (key : PropKey)
   | value (module name specifier imported localName : String)
-  deriving BEq, Hashable, Repr, Inhabited
+  deriving BEq, Hashable, Inhabited
 
 /-- A contract read on its unit's verdict line (`WorkerWire.memberRead`,
 `WorkerWire.valueRead`). -/
 def ContractRead.toJson : ContractRead → Json
-  | .member module name key => WorkerWire.memberRead module name key
+  | .member declaration key => WorkerWire.memberRead declaration (EffectCodec.keyJ key)
   | .value module name specifier imported localName => WorkerWire.valueRead module name specifier imported localName
 
 section

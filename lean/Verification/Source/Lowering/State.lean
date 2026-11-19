@@ -606,15 +606,13 @@ def recordHints (labels : List Tree) : Compiler Unit :=
 def recordCode (request : CodeRequest Tree) (source : CodeSource) : Compiler Unit :=
   updateBuilt fun s => { s with codes := s.codes.push request, codeSources := s.codeSources.push source }
 
-/-- The declaration a label's head lowers, by its identity's module and name:
-a declaration of the document's, or the array prototype. -/
-def labelDeclaration (T : EquationStore.State) : Tree → Option (String × String)
+/-- The declaration a label's head lowers, by the identity the declaration
+document gives it: a declaration of the document's, or the array
+prototype's. -/
+def labelDeclaration (T : EquationStore.State) : Tree → Option Json
   | .app h _ => match (T.heads[h]?).map EquationLowering.Draft.kind with
-    | some (.declaration i) => T.doc[i]?.bind fun d =>
-        match d.identity.getObjValAs? String "module", d.identity.getObjValAs? String "name" with
-        | .ok module, .ok name => some (module, name)
-        | _, _ => none
-    | some EquationLowering.HeadKind.proto => some ("tscert/array-prototype", "ArrayProto")
+    | some (.declaration i) => T.doc[i]?.map (·.identity)
+    | some EquationLowering.HeadKind.proto => some EquationLowering.arrayProtoIdentity
     | _ => none
   | _ => none
 
@@ -626,8 +624,7 @@ spine, the prototype) is none of a contract's members. -/
 def recordMember (L : Ty Tree) (fld : PropKey) : Compiler Unit := do
   if SourceTypes.reservedKey fld then return
   let T := (← readBuilt (·.types))
-  let reads := L.filterMap fun l => (labelDeclaration T l).map fun (module, name) =>
-    ContractRead.member module name (toString fld)
+  let reads := L.filterMap fun l => (labelDeclaration T l).map fun d => ContractRead.member d fld
   if reads.isEmpty then return
   updateBuilt fun s => { s with memberReads := reads.foldl (·.insert ·) s.memberReads }
 

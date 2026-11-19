@@ -26,10 +26,13 @@ def verdictLine (unit : String) (members : List String) (verdict : Except String
         ("refusal", toJson reason), ext, read]).compress
 
 /-- A contract a unit's check read, on its verdict line
-(`SourceExtraction.ContractRead`): a member, `{"member":{"module","name","key"}}`,
-or a value of the declaration document, `{"value":{"module","name","specifier","imported","local"}}`. -/
-def memberRead (module name key : String) : Json :=
-  Json.mkObj [("member", Json.mkObj [("module", toJson module), ("name", toJson name), ("key", toJson key)])]
+(`SourceExtraction.ContractRead`): a member, `{"member":{"declaration","key"}}`,
+the declaration's identity `{"module","name","span"}` as the declaration
+document gives it and the key as the document writes one (a string, or
+`{"symbol"}`), or a value of the declaration document,
+`{"value":{"module","name","specifier","imported","local"}}`. -/
+def memberRead (declaration key : Json) : Json :=
+  Json.mkObj [("member", Json.mkObj [("declaration", declaration), ("key", key)])]
 
 def valueRead (module name specifier imported localName : String) : Json :=
   Json.mkObj [("value", Json.mkObj [("module", toJson module), ("name", toJson name),

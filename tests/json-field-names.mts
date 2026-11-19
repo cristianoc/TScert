@@ -160,7 +160,10 @@ const equationReaders = [
   const writes = new Set([...read(wire).matchAll(/\("(\w+)",/g)].flatMap(captured));
   const both = new Set([...writes, ...lean([wire])]);
   expectSubset("Lean's worker lines", both, ts, {});
-  expectSubset("Worker line fields Lean omits", ts, both, {});
+  expectSubset("Worker line fields Lean omits", ts, both, {
+    span: "a contract read's declaration is the declaration document's identity, copied whole (`WorkerWire.memberRead`)",
+    symbol: "a contract read's key is written by `EffectCodec.keyJ`, the effect wire's key",
+  });
 }
 
 // The type graph's storage positions: a field's or a writable index's
