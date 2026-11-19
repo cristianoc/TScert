@@ -3,7 +3,7 @@ import Verification.Source.Claims.FlowProbe
 
 /-! Controls for the binding checks of a framed plan's flow
 (`TolerantFrames.ReadOnly.codesCoverB`, `allocSomeB`, `entryFnB`,
-`agreeB`, the draft "Accepting a unit through the read-only frame", "The
+`agreeB`, `compB`, the draft "Accepting a unit through the read-only frame", "The
 binding checks"). Each check passes a flow bound to the code it is given
 and refuses a forged one:
 
@@ -25,7 +25,10 @@ and refuses a forged one:
   a kind no row states, one keeping a kind a row extends, and a row stating
   a path key (the restriction "@clients by kind").
 - **A wire $`\Psi_C`$ below its definition** (`protocolAtLeastB`): one
-  keeping a part the component's charges change. -/
+  keeping a part the component's charges change.
+- **A forged request tag** (`compB`): a request tagged with another
+  component, or with outside code's tag, whose frames would not run `C`'s
+  code. -/
 namespace Verification.SourceClaimJson.FramedBindingControls
 open Verification TolerantFrames.ReadOnly ControlFlow
 
@@ -127,5 +130,19 @@ private def spineTheta : Protocol Pk := fun p => if p.kind = some .spine then .e
 #guard protocolAtLeastB (P := Pk) [none, some 0] (probeProtocol [some .field] []) (fun _ => .any)
 -- a wire protocol keeping the field parts the charges change
 #guard !protocolAtLeastB (P := Pk) [none, some 0] (probeProtocol [some .field] []) (fun _ => .keep)
+
+/-! ## The component -/
+
+/-- A request of one node returning `undefined`, its frames tagged with the
+component `0`. -/
+private def req₀ : SourceExtraction.SourceRequest EquationStore.State EquationGraphs.Tree :=
+  { types := { doc := #[] }, program := [], claims := [], result := [], start := 0, inputs := [], obligations := [],
+    async := false, stated := none, comp := some 0 }
+
+-- a request tagged with its component
+#guard compB 0 req₀
+-- a forged request tag: another component's, or outside code's
+#guard !compB 0 { req₀ with comp := some 1 }
+#guard !compB 0 { req₀ with comp := none }
 
 end Verification.SourceClaimJson.FramedBindingControls
