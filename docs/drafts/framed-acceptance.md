@@ -410,10 +410,11 @@ theorem framed_transfer (hc : fr.ChkSound) (hi : fr.StartInv)
 `CallState`, `Inside`, `Resumes` (over `path`) and `SegWithin` are new.
 Plan:
 
-- **The segment as a run.** `MemberRun.Own` (proved, own steps at depth
-  $`d`$, inner runs at $`d+1`$) is generalized, to be proved, to
-  `RunSeq R Inner d dᵢ q`, inner runs `Ok dᵢ`; `RunSeq.within` generalizes
-  `MemberRun.within`. A member's call is $`d_i=d+1`$, a segment
+- **The segment as a run.** `RunSeq R Inner d dᵢ q` (proved,
+  `ReadOnlyCert.lean`): own steps at depth $`d`$, inner runs from states
+  with at least $`d_i`$ sets, bounded by `RunSeq.within` for
+  $`d_i\in\{d,d+1\}`$. A member's call is $`d_i=d+1`$ (`MemberRun.Own`
+  is that instance, `MemberRun.within` by `RunSeq.within`), a segment
   $`d_i=d`$. `seg_run`: the segment is a `RunSeq … d d`, its inner runs the
   maximal `QRun d` pieces (`call_segment`, `decompose`, proved), each from a
   reached state that is `Ok d` (`reached_ok`, proved).
@@ -1415,7 +1416,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `stepSite_tabRel`, `vals_tabRel`, `vals_ctx`, `actualXs_congr`
 (`ReadOnlyRealize.lean`), `bodyTargetsB_sound`, `realized_agree`,
 `prologue_steps`, `prologue_sim`, `chk_site_sim`, `chk_actual_sim`
-(`FramedRealize.lean`).
+(`FramedRealize.lean`); `RunSeq.within` (`ReadOnlyCert.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1425,7 +1426,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `chk_sim`'s entering crossings, `publicCall_safe`, `entryHolds_realized`,
-`framed_transfer`, `seg_run`, `RunSeq.within`,
+`framed_transfer`, `seg_run`,
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `project`, `keeps_canonical`,

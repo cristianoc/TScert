@@ -10,9 +10,12 @@ protocol" and "The guarantee"), the certificate a member's call needs
   below `b` before the step changes within `Ψ` at its part. With `b` the
   length of the heap at a call's entry, the locations the call allocates are
   free (Tolerant frames' `fresh_eff`).
-- **A member's own steps** (`MemberRun.Own`): a member's call whose every
-  checked step meets a property, its runs of code that is not the package's
-  one call deeper related by `Inner`.
+- **A run's own steps** (`RunSeq`): checked steps at a depth, each meeting
+  a property, and inner runs related by `Inner`; a member's own steps
+  (`MemberRun.Own`) are a run whose inner runs, of code that is not the
+  package's, are one call deeper, a call's segment one whose inner runs are
+  at the caller's depth. **Its bound** (`RunSeq.within`): own steps within
+  `Ψ` below `b`, inner runs bounded by `Ψ`, bound `R_P` below `b`.
 - **The body's bound** (`MemberRun.within`): a member's call whose own steps
   are within `Ψ` below its entry's length, its runs one call deeper bounded
   on `R_P` by `Ψ`, bounds `R_P` at its entry by `Ψ`: the steps by
@@ -87,23 +90,34 @@ theorem RBoundBelow.all {Ψ : Protocol P} {d : Nat} {st st' : St P} (h : RBoundB
 
 /-! ## A member's own steps -/
 
-/-- **A member's call whose own steps meet `q`**: a `MemberRunOf R` each of
-whose steps in `R` (not those of its runs one call deeper) meets `q`. -/
-inductive MemberRun.Own {tv : TypeView} (R : StepRel P tv) (Inner : St P → St P → Prop) (d : Nat)
+/-- **A run whose own steps meet `q`** (the draft's `RunSeq`): steps in `R`
+at depth `d`, each meeting `q`, and runs related by `Inner` from states
+with at least `dᵢ` sets of the history. A member's call is `dᵢ = d + 1`, its
+runs of code that is not the package's one call deeper; a call's segment is
+`dᵢ = d`, its runs of outside code at the caller's depth. -/
+inductive RunSeq {tv : TypeView} (R : StepRel P tv) (Inner : St P → St P → Prop) (d dᵢ : Nat)
     (q : St P → St P → Prop) : St P → St P → Prop
-  | nil (st : St P) : MemberRun.Own R Inner d q st st
-  | step {st st' st'' : St P} : R.Rel d st st' → q st st' → MemberRun.Own R Inner d q st' st'' →
-      MemberRun.Own R Inner d q st st''
-  | inner {st st' st'' : St P} : d + 1 ≤ st.g.A.length → Inner st st' → MemberRun.Own R Inner d q st' st'' →
-      MemberRun.Own R Inner d q st st''
+  | nil (st : St P) : RunSeq R Inner d dᵢ q st st
+  | step {st st' st'' : St P} : R.Rel d st st' → q st st' → RunSeq R Inner d dᵢ q st' st'' →
+      RunSeq R Inner d dᵢ q st st''
+  | inner {st st' st'' : St P} : dᵢ ≤ st.g.A.length → Inner st st' → RunSeq R Inner d dᵢ q st' st'' →
+      RunSeq R Inner d dᵢ q st st''
 
-/-- **The body's bound**: a member's call whose own steps are within `Ψ`
-below `b`, its runs one call deeper bounded on `R_P` by `Ψ`, bounds `R_P`
-below `b` by `Ψ` and keeps the invariants. -/
-theorem MemberRun.within {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {Inner : St P → St P → Prop}
-    {d b : Nat}
-    (hI : ∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') {st st' : St P}
-    (hr : MemberRun.Own R Inner d (StepWithin Ψ b) st st') (hok : Ok d st) :
+/-- **A member's call whose own steps meet `q`**: a `MemberRunOf R` each of
+whose steps in `R` (not those of its runs one call deeper) meets `q`, a run
+whose inner runs are one call deeper. -/
+abbrev MemberRun.Own {tv : TypeView} (R : StepRel P tv) (Inner : St P → St P → Prop) (d : Nat)
+    (q : St P → St P → Prop) : St P → St P → Prop :=
+  RunSeq R Inner d (d + 1) q
+
+/-- **The run's bound** (proved, by induction on the run; the draft's
+`RunSeq.within`): a run whose own steps are within `Ψ` below `b`, its inner
+runs, at `d` or one call deeper, bounded on `R_P` by `Ψ` at their depth,
+bounds `R_P` below `b` by `Ψ` and keeps the invariants. -/
+theorem RunSeq.within {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {Inner : St P → St P → Prop}
+    {d dᵢ b : Nat} (hdi : dᵢ = d ∨ dᵢ = d + 1)
+    (hI : ∀ t t', Inner t t' → Ok dᵢ t → RBound Ψ dᵢ t t' ∧ Ok dᵢ t') {st st' : St P}
+    (hr : RunSeq R Inner d dᵢ (StepWithin Ψ b) st st') (hok : Ok d st) :
     RBoundBelow Ψ d b st st' ∧ Ok d st' := by
   induction hr with
   | nil st => exact ⟨RBoundBelow.refl hok, hok⟩
@@ -112,9 +126,24 @@ theorem MemberRun.within {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {I
     obtain ⟨hb, ok₂⟩ := ih ok₁
     exact ⟨RBoundBelow.trans ⟨k₁, g₁, hq⟩ hb, ok₂⟩
   | inner hl hin _ ih =>
-    obtain ⟨⟨k₁, g₁, hc₁⟩, ok₁⟩ := hI _ _ hin (hok.deeper hl)
-    obtain ⟨hb, ok₂⟩ := ih (ok₁.shallower hok.pos)
-    exact ⟨RBoundBelow.trans (RBound.below ⟨k₁, g₁.weaken hok.pos, hc₁⟩ _) hb, ok₂⟩
+    rcases hdi with rfl | rfl
+    · obtain ⟨⟨k₁, g₁, hc₁⟩, ok₁⟩ := hI _ _ hin hok
+      obtain ⟨hb, ok₂⟩ := ih ok₁
+      exact ⟨RBoundBelow.trans (RBound.below ⟨k₁, g₁, hc₁⟩ _) hb, ok₂⟩
+    · obtain ⟨⟨k₁, g₁, hc₁⟩, ok₁⟩ := hI _ _ hin (hok.deeper hl)
+      obtain ⟨hb, ok₂⟩ := ih (ok₁.shallower hok.pos)
+      exact ⟨RBoundBelow.trans (RBound.below ⟨k₁, g₁.weaken hok.pos, hc₁⟩ _) hb, ok₂⟩
+
+/-- **The body's bound**: a member's call whose own steps are within `Ψ`
+below `b`, its runs one call deeper bounded on `R_P` by `Ψ`, bounds `R_P`
+below `b` by `Ψ` and keeps the invariants (proved, `RunSeq.within` one
+call deeper). -/
+theorem MemberRun.within {tv : TypeView} {R : StepRel P tv} {Ψ : Protocol P} {Inner : St P → St P → Prop}
+    {d b : Nat}
+    (hI : ∀ t t', Inner t t' → Ok (d + 1) t → RBound Ψ (d + 1) t t' ∧ Ok (d + 1) t') {st st' : St P}
+    (hr : MemberRun.Own R Inner d (StepWithin Ψ b) st st') (hok : Ok d st) :
+    RBoundBelow Ψ d b st st' ∧ Ok d st' :=
+  RunSeq.within (.inr rfl) hI hr hok
 
 /-! ## The certificate -/
 
