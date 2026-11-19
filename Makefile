@@ -47,8 +47,8 @@ test-pretext: build ## the pretext tier: the bounds pattern cases, the bounds ca
 	@test -n "$(PRETEXT)" || { echo "make test-pretext needs PRETEXT=<pretext checkout>"; exit 2; }
 	node tests/pretext-tier.mts --pretext $(PRETEXT) $(if $(FILES),--files $(FILES)) $(if $(UPDATE),--update)
 
-check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
-	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT))
+check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir] [CONTRACTS=1, the external contracts its verdict relies on]
+	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT)) $(if $(CONTRACTS),--contracts)
 
 clean-store: ## remove stage entries, timeouts and the source snapshots no running process holds; FORGET_HOST=h counts host h's owners stopped (TSCERT_STAGE_STORE, default ~/.cache/tscert/stages)
 	node pipeline/stages.mts clean $(if $(FORGET_HOST),--forget-host=$(FORGET_HOST))

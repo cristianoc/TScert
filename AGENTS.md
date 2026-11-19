@@ -24,7 +24,7 @@ make test-checks # build, then the fast checks and the controls, replayed from t
 make test-infra  # build, then the tests of the test infrastructure (store, runner, replay, observed stages, sessions)
 make test-cases  # build, then the pipeline cases
 make cases P=x   # the pipeline cases whose file names contain x
-make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
+make check FILE=f.ts [PROJECT=dir] [CONTRACTS=1]  # one source file through the pipeline; CONTRACTS=1 adds the external contracts it relies on
 make lowering FILE=f.ts [FN=name]   # the execution graphs a source's functions lower to
 make semantic-diff REV=rev          # render the commit records of a commit or range
 make build       # build-lean and build-runner: the Lean verifier and the stage runner
@@ -79,7 +79,7 @@ that covers what changed, and the wider tier once before committing:
 
 | Changed | While iterating | Before committing |
 | --- | --- | --- |
-| One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
+| One source file | `node pipeline/verify-source.mts <file.ts> [--project dir] [--contracts]` | — |
 | Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases (cases whose file names contain the pattern) | `make test` (the pipeline cases, and the controls: forged fragments and forced proposals no case can make) |
 | Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript and Lean use the same JSON field names), then `run-cases.mts` | `make test` |
 | Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | before merging to `single-pass`, `make test-pretext PRETEXT=<checkout>`; the wide suite and the census run in CI on `single-pass`, and CI's `pretext` job runs the tier at its pinned pretext commit on each pull request |

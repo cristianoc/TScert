@@ -214,7 +214,13 @@ make check FILE=pipeline/examples/array-last-element.ts
 ```
 
 `make check` prints the outcome and the directory holding the run's documents:
-the source, the parser's output and the pass's log.
+the source, the parser's output and the pass's log. With `CONTRACTS=1`
+(`verify-source.mts --contracts`) the outcome also lists the external
+contracts the verdict relies on: every declaration the parse collected for
+the source, each with the overlay it is read through and the row of the
+[trust surface](docs/DESIGN.md#trust-surface) stating its trust, or none for
+a declaration read as written; the same list, by trust row, goes to standard
+error.
 
 ## Develop
 

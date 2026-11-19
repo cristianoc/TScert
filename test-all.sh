@@ -240,6 +240,8 @@ run_test 30 "Claim text of malformed input" node tests/claim-text.mts
 run_test 30 "Axiom checks cover the library" node tests/axiom-check-imports.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test 30 "Rule inventory" node tests/rule-inventory.mts
+# tests/contract-rows.mts checks that each overlay verify-source.mts --contracts names opens one trust row and that row names it.
+run_test 30 "Contract overlays name their trust rows" node tests/contract-rows.mts
 # tests/single-pass-controls.mts runs the controls no case can make, their operations replayed from the stage store: forced proposals, forged fragments,
 # forged declarations, mutations of the pass, the file worker and the family boundary.
 run_test 360 "Controls" node tests/single-pass-controls.mts
