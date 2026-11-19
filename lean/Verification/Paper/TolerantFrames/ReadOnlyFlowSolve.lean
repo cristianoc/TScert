@@ -22,10 +22,11 @@ holds of it.
   its callee's return set; a closure's set its code's token). `O` is held
   where outside code supplies values: the slots a caller of unknown
   callee fills at the entry of each closure's code whose token reaches `O`
-  (`OpenAt`) and its captures' slots, a handler's thrown value; what
-  outside code may supply (outside storage and the tokens `O` holds,
-  `Supplied`) at every slot of the unit's entry; at each slot naming a
-  module function's signature its code's token. `O` is grown
+  (`OpenAt`), a handler's thrown value; what outside code may supply
+  (outside storage and the tokens `O` holds, `Supplied`) at every slot of
+  the unit's entry and at the captures' slots of each code whose token
+  reaches `O`; at each slot naming a module function's signature its
+  code's token. Each set is what a rule requires of it. `O` is grown
   until closed and its storage holds all of it. A worklist runs the
   copies and the nodes until nothing changes or the fuel ends.
 - **Contexts** (`solveStart`, `mergeFlow`): each node holding a known call (a callee slot
@@ -447,7 +448,7 @@ def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × Li
       for v in vs do
         st := st.grow v st.O
       for w in ws do
-        st := st.grow w st.O
+        st := st.grow w supplied
   -- the returns of each code whose token lies in `O`, at its entry context
   for ((rs, t), e) in (st.rets.toList.zip st.toks.toList).zip entries.toList do
     if e && t ∈ st.O then

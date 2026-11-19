@@ -2634,11 +2634,15 @@ a callee's entry added, a known call's value its callee's return set
 (`gen`), a closure's set its site and its code's token. The slots outside
 code fills hold $`O`$: at each code whose token lies in $`O`$, the slots a
 caller of unknown callee fills at its entry context (the rest's spine, the
-receiver, the parameters and its own slot) and its captures' slots, the
-captures' slots at every context, and a handler's thrown value. What
-outside code may supply (outside storage and the tokens $`O`$ holds) is
-held at every slot of the member's entry; a slot naming a module
-function's signature holds its code's token.
+receiver, the parameters and its own slot), and a handler's thrown value.
+What outside code may supply (outside storage and the tokens $`O`$ holds)
+is held at every slot of the member's entry and at the captures' slots of
+each code whose token lies in $`O`$, at every context; a slot naming a
+module function's signature holds its code's token. Each set the proposal
+gives is one a rule requires: a slot outside code fills (`OpenAt`,
+`HandlerOk`), what outside code may supply (`EntryShape`, `OpenAt`,
+`GivenOut`), what a value's rule reaches (`Fits`), and $`O`$'s closure
+(`Flow.Facts`); slots past a node's width share one set (`FNode.dflt`).
 
 **Contexts** (`solveStart`, `knownCallees`). Each node holding a known call
 (a callee slot naming a signature of a code of $`C`$) is a call site with
@@ -2745,8 +2749,8 @@ at the visitor call, every fact read at the marks the flow gives:
   occurrence would keep `h` local.
 - pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 18 codes, 3824
   nodes; one context per known call site: 117 contexts, 16516 nodes over
-  them, proposal 9169 ms, checks 4332 ms; merged: 47 contexts, 16210
-  nodes, checks 4137 ms): at `onLine`, `0 <=
+  them, proposal 9288 ms, checks 4308 ms; merged: 46 contexts, 16183
+  nodes, checks 4111 ms): at `onLine`, `0 <=
   cursor.segmentIndex`, `cursor.segmentIndex <= segmentCount`, `0 <=
   cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
   the two facts relating `segmentCount` to `prepared.widths.length` fail,
