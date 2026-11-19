@@ -257,17 +257,33 @@ under the heap of sites' contents, and is closed under captures
 (`CapClosed`: for each code whose token it holds, the sites of each
 capture slot at the code's entry at the layout of its closures), where the
 closures of $`C`$'s code in $`h_0`$ and among $`u_0`$'s values have their
-codes' layouts (`LayDeep`, to be proved at reached states:
-`layouts_reached`) and the flow's codes are lowered (`CodesLowered`, to be
-proved of the request's flow from the binding checks). A capture's sites
+codes' layouts (`LayDeep`) and the flow's codes are lowered
+(`CodesLowered`, decided by `codesLoweredB`, sound by
+`codesLoweredB_sound`, `ReadOnlyLayouts.lean`). A capture's sites
 are its slot's at its closure's code's entry (`VJ.capC`), a node
 expression of a closure holds no location (`lowered_vals_all`), and the
 code of a bound function or of a closure of outside code holds values
 meeting its own set (`VJ.boundPart`, `VJ.capOut`). The closure of sites
 $`\overline{S}`$ is closed under both, its closure under captures read
-through each code's layout `lay` (`tokenCaps`); that its check
-(`capClosedB_sound`) gives `CapClosed` at the layouts `lay` states is to be
-proved (`capClosed_of_lay`).
+through each code's layout `lay` (`tokenCaps`), the layout of a code's
+first entry (`layAt`, as the flow reads a code's proposals); its check
+gives `CapClosed` at those layouts where every code's tokens are sites
+(`capClosed_of_lay`, with `tokensSomeB`, proved).
+
+The layouts are a run invariant (`layouts_reached`, proved,
+`ReadOnlyLayouts.lean`): every closure a term or a heap holds or creates,
+in the code of its values and runs included, has at its code, tag and
+layout what `layQ` decides, a closure of $`C`$'s code its code's layout
+(`layP`, `HeapLay`); every step keeps it (`step_layP`: a step builds its
+result from the term's subterms, the code of the closures it calls and the
+heap's values, and allocating a closure keeps its layout), so it holds at
+every reached state from calls meeting it (`ClientFrame.lay_reached`) and
+at every public call from initial configurations meeting it
+(`FrameCore.lay_program`); an initial configuration does where the
+initialization's node expressions do and the client is lowered source,
+which creates closures of outside code only (`lay_initial`). A value
+meeting it has `LayDeep` (`layDeep_of_layP`), and the premises of the local
+lemma follow from the checks (`heapDeep_of_checks`, `deepIn_of_checks`).
 
 Its two instances, each reading a closure:
 
@@ -869,6 +885,11 @@ token, `componentCodes`): each module
   code's entry, its slots naming signatures only at the sibling slots and
   the closure's own slot.
 - **the inputs**: `paramTypes`, computed from the requests.
+- **lowered codes and layouts** (`codesLoweredB`, `tokensSomeB`,
+  `ReadOnlyLayouts.lean`): every code of the flow is lowered, every context
+  has a `some` token, and every closure of $`C`$'s code the initialization's
+  and the flow's node expressions create has its code's layout `lay`
+  (`layP (layQ F lay)`).
 - **$`\Theta_C`$** (`clientsB`, `clientsB_sound`, `FramedBinding.lean`):
   the rows of $`C`$'s exported types state class keys only
   (`clientsByKindB`), and the plan's $`\Theta_C`$ is, at every part of
@@ -1358,7 +1379,10 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deepIn_of_vj`, `heapDeep_of_heapInv`, `Fits.frameIn`, `frameKinds_flow`,
 `wok_program`, `wok_initial`, `active_vals`, `redex_arg_root`
 (`ReadOnlyLocalReach.lean`), `FramedSpec.entryXs_roots`
-(`FramedHistory.lean`).
+(`FramedHistory.lean`); `step_layP`, `layDeep_of_layP`, `layouts_reached`
+(`ClientFrame.lay_reached`, `FrameCore.lay_program`, `lay_initial`),
+`capClosed_of_lay`, `codesLoweredB_sound`, `tokensSomeB_sound`,
+`heapDeep_of_checks`, `deepIn_of_checks` (`ReadOnlyLayouts.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1367,7 +1391,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `chk_sim`, `publicCall_safe`, `entryHolds_realized`, `within_charges` (its instance at the segments), `layouts_reached`, `CodesLowered` of the request's flow, `capClosed_of_lay`,
+**To be proved, milestone 1**: `chk_sim`, `publicCall_safe`, `entryHolds_realized`, `within_charges` (its instance at the segments),
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
