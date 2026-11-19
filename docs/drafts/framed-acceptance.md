@@ -1038,10 +1038,10 @@ main graph over the codes' table accepted by the pass's framed mode at its
 bound and stated regions (`RunCall.AcceptsFramed` at the framed nodes `F`
 keeping the supports `S`), its read summaries checked, and the field
 `FramedObligations r spec F S`: the returns `framedRet S` hold at the
-executions the claim is about (`FramedReturnsReached`, by `ret_reached`, to
-be proved). `framedReturns_of_main` gives `FramedReturnsGuarantee` from the
+executions the claim is about (`FramedReturnsReachedW`, by `ret_reachedW`,
+from the check). `framedReturns_of_main` gives `FramedReturnsGuarantee` from the
 framed run by `RunSoundFramed` (`run_sound_framed`), and
-`framedRun_of_returns` the main graph's five clauses of
+`framedRun_of_returnsW` the main graph's five clauses of
 `FramedRequestSafe r (spec.frame r)`. `framed_requestSafe` (under `RunSound`,
 `RunKeepsSummaries` and the request over the file's store) and
 `member_safe`'s framed branch are proved from it; a field leaves the
@@ -1189,7 +1189,7 @@ worlds, are parts of the client obligation. The row of $`\Theta_C`$
 
 The continuation after a failed return premise is outside the claim
 (`RunSoundFramed` claims progress on paths whose framed returns meet their
-premise; `ret_reached` establishes it before the continuation).
+premise; `ret_reachedW` establishes it before the continuation).
 
 ### Verdicts that read a framed member's arrow
 
@@ -1320,18 +1320,57 @@ node the exits' step is the step and `NodeYieldedR` gives `NodeYielded`
 
 ### The returns, at reached executions
 
-`ret_reached` (to be proved): its conclusion is `FramedReturnsReached r
-(spec.frame r) F Ret RetE`, an invariant of the frame's history, the
-pending framed evaluation and the state, holding at every call the claim is
-about (entry contracts, valid roots, `Call`, a history the frame starts
-from, nothing pending), on which every step keeping $`\Theta_C`$ meets the
-returns (`RetAt`) and leaves a state meeting it: at every evaluation of a
-framed node of the claim's main graph from a reached call state to its
-resumption, with the callee's post, $`\mathrm{Ret}_l`$ or
-$`\mathrm{Ret}^{e}_l`$ holds, by `framed_transfer` with `ChkSound`,
-`StartInv`, `cert_of_charges`, `within_charges`, `framed_at_innermost_keys`
-and `framed_of_cover`. With no framed node it holds of every frame
-(`framedReturnsReached_none`, proved).
+The frame's executions are of actual steps (`KStep`), and the client
+obligation is read at each configuration's world, whose kinds the
+protocol reads (`St.part`). A step clause reading the obligation at a world
+unrelated to the configuration admits steps that break it at the
+configuration's world (`rowAt_reads_world`, proved, a counter-model: one
+transition keeps a protocol at a world where the location is a field and
+breaks it at one where it has no kind), so the returns are stated at the
+worlds of the safety derivation: `FramedReturnsReachedW r fr F Ret RetE`,
+an invariant of the history, the pending framed evaluation, the world and
+the state, holding at every call the claim is about, on which every step
+keeping $`\Theta_C`$ at the state's world, to a world and heap the step's
+safety admits, meets the returns (`RetAt`) and leaves a state meeting it
+where its term is valid there. `framedRun_of_returnsW` (proved, by
+`SafeRet.underW`) gives the main graph's five clauses from it and the
+guarantee, as `framedRun_of_returns` does from `FramedReturnsReached`.
+
+Lean (proved, `FramedReturns.lean`):
+
+- `ret_reachedW`: `FramedReturnsReachedW r fr F (framedRet S) (fun _ _ _ _ => True)`
+  from the request's node expressions being source terms, the calls at
+  positive budgets of admissible worlds typing their heaps with slots of
+  values, and `FramedNodeTransfer` at the request's code and tag: along
+  every execution of the frame from a reached state entering a framed node
+  $`l`$ to a state whose node's term is a value, every support of $`S_l`$
+  is supported from the entry's heap to that state's. The invariant
+  (`RetInv`) is the frame's reached configuration at the world, the
+  request's code at the top of the term with slots of values (`TopRuns`),
+  and the pending evaluation the execution from its node's entry
+  (`PendFrom`); the step leaving a frame keeps the heap
+  (`frame_val_heap`), so $`\mathrm{Ret}_l`$ is read at the resumption.
+- `nodeTransfer_of_transfer`: `FramedNodeTransfer` by `framed_transfer`
+  at each framed node, its operands read from the slots (`atomCallB`,
+  decided; P22's nodes 10 and 13 are such calls), so the node's entry is
+  a call state (`atomCall_inst`) and its evaluation to a value the call's
+  segment to its resumption; its premises: `ChkSound`, `StartInv`, the
+  request's tag of $`C`$, trace certificates at $`\Psi_j`$ with
+  $`\Theta_C\sqsubseteq\Psi_j\sqsubseteq\Psi_c(l)`$, `SegWithin`
+  $`\Psi_c(l)`$ at the node's entry, `Framed` $`\Phi_l`$
+  $`\Psi_c(l)`$ of each support at the node's entry (the pass's check,
+  by `framed_at_innermost_keys` and `framed_of_cover`), and the callee's
+  effect $`\Phi_l`$ bounding the heap along the call (the callback's
+  arrow, part of $`\Theta_C`$).
+- `own_of_run`: that `SegWithin` premise by `segWithin_of_run` at each
+  node's set $`T_l`$, from `hroots` at the node's entry.
+
+With no framed node the returns hold of every frame
+(`framedReturnsReached_none`, proved). For `hroots`: the fit of a frame
+records its node through its continuation and handler alone (`NodeOf`), so
+the operands' sets the fit gives are those of some node sharing $`l`$'s
+continuation and handler; $`T_l`$ is to hold the slots' sets at each such
+node and context, as `framedSupportsAt` checks `Framed` at each.
 
 ### The framed claim, from the check
 
@@ -1351,7 +1390,7 @@ starts from, `SafeRet.under` (proved, by induction on the budget) reads the
 returns at each step keeping $`\Theta_C`$ from the invariant, and claims
 nothing past a step breaking it. The guarantee is `framedReturns_of_main`'s,
 from the framed main run `FramedAccepted` holds; the returns are
-`FramedObligations.reached`, which leaves the structure when `ret_reached`
+`FramedObligations.reached`, which leaves the structure when `ret_reachedW`
 gives it.
 
 ### The headline
@@ -1468,7 +1507,11 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `transfer_at`, `Leads.of_bound`, `frameC_shape`, `FrameCore.inside_run`,
 `CallState.depth`, `Inside.depth`, `Resumes.depth`, `framed_transfer`,
 `innermost_tag`, `blocks_one_all`, `activeFrame_runsC`, `inside_prefix`,
-`ex_sites`, `segWithin_of_run` (`ReadOnlyTransfer.lean`).
+`ex_sites`, `segWithin_of_run` (`ReadOnlyTransfer.lean`); `SafeRet.underW`,
+`framedRun_of_returnsW`, `rowAt_reads_world`, `TopRuns.step`,
+`frame_val_heap`, `frame_to_frame`, `retInv_step`, `ret_reachedW`,
+`atomCall_inst`, `nodeTransfer_of_transfer`, `own_of_run`
+(`FramedReturns.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1481,8 +1524,9 @@ review's `CodeClause.lean`).
 `segWithin_of_run`'s premise at the call (the call's values' sets within $`L(c)`$, from the call node's fit), `cert_of_charges`,
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),
-each field of `FramedObligations` from the check,
+`startInv_public`, `ret_reachedW`'s premises for `spec.frame r` (`hty` and `hvals` from
+`EntryAt`, `atomCallB` at the framed nodes, `nodeTransfer_of_transfer`'s
+premises from the check), each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 

@@ -1,0 +1,551 @@
+import Verification.Source.Claims.PassUnitFramed
+import Verification.Source.Claims.PassUnitSafe
+import Verification.Paper.TolerantFrames.ReadOnlyTransfer
+
+/-! # The returns at reached executions, at their worlds
+
+The draft "Accepting a unit through the read-only frame"
+(`docs/drafts/framed-acceptance.md`, "The returns, at reached
+executions"). The frame's executions are executions of actual steps
+(`FrameCore.KStep`): each configuration has an admissible world typing
+its heap, and the client obligation is read at that world, as the kinds
+the protocol reads are the world's (`St.part`, `kindAt`). The returns at
+reached executions are an invariant of the frame's history, the pending
+framed evaluation, the world and the state, holding at every call the
+claim is about, on which every step keeping the obligation at the state's
+world, to a world and heap the step's safety gives, meets the returns
+(`FramedReturnsReachedW`).
+
+- `SafeRet.underW` (proved): `SafeRet.under` with the invariant read at
+  the worlds of the safety derivation;
+- `framedRun_of_returnsW` (proved): the main graph's five framed clauses
+  from the graph theorem at framed returns and `FramedReturnsReachedW`;
+- `ret_reachedW` (proved): `FramedReturnsReachedW` at the returns
+  `framedRet S`, from the transfer at each framed node of the request's
+  main graph (`FramedNodeTransfer`): along every execution of the frame
+  from a reached state entering a framed node `l` to a state whose node's
+  term is a value, every support of `S l` is supported from the entry's
+  heap to that state's. The invariant is the frame's reached
+  configuration at the world, the term the request's graph code at the
+  top (`TopRuns`), and the pending evaluation the execution from the
+  entry of its node (`PendFrom`). -/
+namespace Verification.SourceClaimJson.PassUnit
+open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Verification.TolerantFrames.ReadOnly
+open HeapObservations
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+/-- **The returns at reached executions, at their worlds**: an invariant
+of the frame's history, the pending framed evaluation, the world and the
+state, holding at every call of the request the frame's claim is about,
+on which every step keeping the frame's obligation at the state's world,
+to a world `U` the step's safety admits and a heap it types, meets the
+returns `Ret`, `RetE` at the framed nodes `F`, and leaves a state meeting
+it at `U` where the term after the step is valid at `U`. -/
+def FramedReturnsReachedW (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (F : Nat → Bool)
+    (Ret RetE : Nat → Env → Heap → Heap → Prop) : Prop :=
+  ∃ I : Ghost (fr.F.at fr.C) → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop,
+    (∀ η n W h (L : List Tm) (d : Tm),
+      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
+        (envOf L d) n W h → RootsOk W (envOf L d) →
+      fr.Call n W h (gotoOf r.program r.start L d r.comp) →
+      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
+        I g none n W h (gotoOf r.program r.start L d r.comp)) ∧
+    (∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
+      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → fr.Keeps g (k + 1) W h t h' t' →
+      RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (fr.next g h t h' t') (framedPend F p h t t') k U h' t'))
+
+end
+
+/-! ## Safety at framed returns along the executions keeping an obligation -/
+
+section
+variable {J : Heap → Tm → Prop} {Ξ T : Fam} {Q : WPost} {R : WExc} {F : Nat → Bool}
+  {Ret RetE : Nat → Env → Heap → Heap → Prop}
+
+/-- The running term of a state safe at framed returns has valid
+references (proved). -/
+theorem SafeRet.refs : ∀ {n : Nat} {W : WorldT n} {p : Option (Nat × Heap)} {h : Heap} {t : Tm},
+    SafeRet J Ξ T Q R F Ret RetE n W p h t → RefsOk W t
+  | 0, _, _, _, _, hs => hs
+  | _ + 1, _, _, _, _, hs => hs.1
+
+/-- **Safety at framed returns along the executions keeping an obligation,
+at the derivation's worlds** (proved; `SafeRet.under` with the invariant
+read at the world of each state): where an invariant `I` of the
+obligation's ghost, the pending framed evaluation, the world and the state
+holds, and every step keeping the obligation from a state meeting it, to a
+world and heap the derivation admits, meets the framed returns and leaves a
+state meeting it where its term is valid there, `SafeRet` gives
+`SafeUnder`. -/
+theorem SafeRet.underW {γ : Type} {K : γ → (k : Nat) → WorldT k → Heap → Tm → Heap → Tm → Prop}
+    {next : γ → Heap → Tm → Heap → Tm → γ}
+    {I : γ → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop}
+    (hinv : ∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
+      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → K g (k + 1) W h t h' t' →
+      RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (next g h t h' t') (framedPend F p h t t') k U h' t')) :
+    ∀ {n : Nat} {W : WorldT n} {g : γ} {p : Option (Nat × Heap)} {h : Heap} {t : Tm}, I g p n W h t →
+      SafeRet J Ξ T Q R F Ret RetE n W p h t → SafeUnder K next J Ξ T Q R n W g h t := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ _ _ hs; exact hs
+  | succ n ih =>
+    intro W g p h t hi hs
+    obtain ⟨hrf, hJ, hs⟩ := hs
+    refine ⟨hrf, hJ, ?_⟩
+    rcases hs with hv | ⟨U, h', t', hx, hu, st, hh, hs⟩
+    · exact .inl hv
+    · refine .inr ⟨U, h', t', hx, hu, st, hh, fun hK => ?_⟩
+      obtain ⟨hret, hi'⟩ := hinv g p n W h t U h' t' hi st hx hu hh hK
+      have hs' := hs hret
+      exact ih (hi' (SafeRet.refs hs')) hs'
+
+end
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι] {fr : ClientFrame (Ty ι)}
+
+/-- **The main graph's framed clauses from the returns at their worlds**
+(proved; `framedRun_of_returns` with `FramedReturnsReachedW`): where the
+request's graph is safe at framed returns and the returns hold at the
+executions the frame's claim is about, read at their worlds, the five
+main-graph clauses of `FramedRequestSafe` hold, by `SafeRet.underW`. -/
+theorem framedRun_of_returnsW {r : SourceRequest σ ι} {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
+    (hg : FramedReturnsGuarantee r F Ret RetE) (hr : FramedReturnsReachedW r fr F Ret RetE) :
+    FramedSafeClause r fr ∧ FramedFootprintClause r fr ∧ FramedEnsuresClause r fr ∧ FramedRegionalClause r fr ∧
+      FramedAssertionsClause r fr := by
+  obtain ⟨hs, hf, he, hgr, ha⟩ := hg
+  obtain ⟨I, hstart, hinv⟩ := hr
+  refine ⟨fun η hη n W h L d hE hR hN g hg' => ?_, fun hb η n W h L d hE hR hL hd hN g hg' => ?_,
+    fun hn η n W h L d hE hR hN g hg' => ?_, fun Φ regions hreg η n W h L d hE hR hN g hg' => ?_,
+    fun η hη n W h L d hE hR hN g hg' => ?_⟩
+  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (hs η hη n W h L d hE hR)
+  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (hf hb η n W h L d hE hR hL hd)
+  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (he hn η n W h L d hE hR)
+  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (hgr Φ regions hreg η n W h L d hE hR)
+  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (ha η hη n W h L d hE hR)
+
+end
+
+end Verification.SourceClaimJson.PassUnit
+
+namespace Verification.TolerantFrames.ReadOnly
+open Verification ControlFlow HeapObservations
+
+/-! ## The request's graph code at the top of the term -/
+
+/-- **Slots of values**: every slot and the default a value. -/
+def SlotVals (L : List Tm) (d : Tm) : Prop := (∀ v ∈ L, isVal v = true) ∧ isVal d = true
+
+/-- A slot map keeps slots of values (proved, `envMap_mem`). -/
+theorem SlotVals.map {L : List Tm} {d : Tm} (hv : SlotVals L d) (m : Option (List Nat)) :
+    SlotVals (envMap m L d).1 (envMap m L d).2 := by
+  refine ⟨fun x hx => ?_, ?_⟩
+  · rcases envMap_mem (.inl hx) with h | rfl
+    · exact hv.1 x h
+    · exact hv.2
+  · rcases envMap_mem (m := m) (L := L) (d := d) (.inr rfl) with h | h
+    · exact hv.1 _ h
+    · rw [h]; exact hv.2
+
+/-- A value bound in front keeps slots of values (proved). -/
+theorem SlotVals.cons {L : List Tm} {d v : Tm} (hL : SlotVals L d) (hv : isVal v = true) : SlotVals (v :: L) d :=
+  ⟨fun x hx => by
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact hv
+    · exact hL.1 x hx, hL.2⟩
+
+section
+variable {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag}
+
+/-- **The term runs the graph code `Pe`, `Pk` at its top**, tagged `c₀`:
+a `goto` or a `frame` over those node lists with slots of values, or a
+term that takes no step (the run has left the code: a value, a throw of a
+value). -/
+def TopRuns (Pe : List Tm) (Pk : List (Continuation × Option Target)) (c₀ : ComponentTag) (t : Tm) : Prop :=
+  (∃ l L d, t = .goto Pe Pk l L d c₀ ∧ SlotVals L d) ∨
+    (∃ u L d k x, t = .frame Pe Pk u L d k x c₀ ∧ SlotVals L d) ∨ ∀ h h' t', ¬ Step h t h' t'
+
+/-- **Every step keeps the graph code at the top** (proved, by the step
+rules of `goto` and `frame`, each slot map keeping slots of values,
+`SlotVals.map`; a value and a throw of a value take no step). -/
+theorem TopRuns.step {h h' : Heap} {t t' : Tm} (ht : TopRuns Pe Pk c₀ t) (hs : Step h t h' t') :
+    TopRuns Pe Pk c₀ t' := by
+  rcases ht with ⟨l, L, d, rfl, hL⟩ | ⟨u, L, d, k, x, rfl, hL⟩ | hn
+  · cases hs with
+    | gotoEnter => exact .inr (.inl ⟨_, _, _, _, _, rfl, hL⟩)
+  · cases hs with
+    | frameC => exact .inr (.inl ⟨_, _, _, _, _, rfl, hL⟩)
+    | frameRet hv => exact .inr (.inr fun _ _ _ s => value_no_step hv s)
+    | frameBind hv => exact .inl ⟨_, _, _, rfl, (hL.cons hv).map _⟩
+    | frameEffect => exact .inl ⟨_, _, _, rfl, hL.map _⟩
+    | frameYes => exact .inl ⟨_, _, _, rfl, hL.map _⟩
+    | frameNo => exact .inl ⟨_, _, _, rfl, hL.map _⟩
+    | frameYesBind => exact .inl ⟨_, _, _, rfl, (hL.cons rfl).map _⟩
+    | frameNoBind => exact .inl ⟨_, _, _, rfl, (hL.cons rfl).map _⟩
+    | frameTag hv => exact .inl ⟨_, _, _, rfl, (hL.cons hv).map _⟩
+    | frameHandle hr => exact .inl ⟨_, _, _, rfl, (hL.cons (raises_val hr)).map _⟩
+    | frameRaise hr => exact .inr (.inr fun _ _ _ s => by
+        cases s with | throwC s => exact value_no_step (raises_val hr) s)
+  · exact absurd hs (hn _ _ _)
+
+end
+
+/-- **A step of a frame whose term is a value keeps the heap** (proved):
+every rule leaving a frame keeps it, and a value takes no step. -/
+theorem frame_val_heap {h h' : Heap} {E : List Tm} {K : List (Continuation × Option Target)} {u : Tm}
+    {L : List Tm} {d : Tm} {k : Continuation} {x : Option Target} {comp : ComponentTag} {t' : Tm}
+    (hu : isVal u = true) (hs : Step h (.frame E K u L d k x comp) h' t') : h' = h := by
+  cases hs with
+  | frameC s => exact absurd s (value_no_step hu)
+  | _ => rfl
+
+/-- **A frame that steps to a frame steps its term** (proved): every other
+rule leaving a frame reaches a `goto`, a value or a throw. -/
+theorem frame_to_frame {h h' : Heap} {E : List Tm} {K : List (Continuation × Option Target)} {u : Tm}
+    {L : List Tm} {d : Tm} {k : Continuation} {x : Option Target} {comp : ComponentTag} {t' : Tm}
+    (hs : Step h (.frame E K u L d k x comp) h' t') (hf : isFrame t' = true) :
+    ∃ u', Step h u h' u' ∧ t' = .frame E K u' L d k x comp := by
+  cases hs with
+  | frameC s => exact ⟨_, s, rfl⟩
+  | frameRet hv =>
+    have : ∀ w, isFrame w = true → isVal w = false := fun w => by cases w <;> simp [isFrame, isVal]
+    rw [this _ hf] at hv; cases hv
+  | frameRaise => simp [isFrame] at hf
+  | _ => simp [isFrame] at hf
+
+/-! ## The returns at reached executions -/
+
+namespace ClientFrame
+variable {τ : Type} (fr : ClientFrame τ)
+
+/-- **A state of the run of a frame of the code `Pe`, `Pk`** with slots
+`L`, default `d`, continuation `k`, handler `x` and tag `comp`: the frame
+at the top, its running term not returned. -/
+def FrameRuns (Pe : List Tm) (Pk : List (Continuation × Option Target)) (L : List Tm) (d : Tm) (k : Continuation)
+    (x : Option Target) (comp : ComponentTag) (s : Conf × Ghost (fr.F.at fr.C)) : Prop :=
+  ∃ u, s.1.t = .frame Pe Pk u L d k x comp ∧ ¬ Returned u
+
+/-- **The evaluation of node `l` of the code `Pe`, `Pk` from a reached
+state** to the state `a`: a reached state `b₀` at the heap `h₀` entering
+the node (its frame, tagged `c₀`, running the node's expression
+instantiated at slots of values), then steps keeping the obligation along which the frame's term has
+not returned, ending at the same frame at `a`. -/
+def PendFrom (Pe : List Tm) (Pk : List (Continuation × Option Target)) (c₀ : ComponentTag) (l : Nat)
+    (h₀ : Heap) (a : Conf × Ghost (fr.F.at fr.C)) : Prop :=
+  ∃ (b₀ : Conf × Ghost (fr.F.at fr.C)) (m : Nat) (e : Tm) (L : List Tm) (d : Tm) (k : Continuation)
+    (x : Option Target),
+    fr.Reached b₀ ∧ b₀.1.s.h = h₀ ∧ Pe[l]? = some e ∧ Pk[l]? = some (k, x) ∧ SlotVals L d ∧
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ ∧
+      Ex fr.KStep (fr.FrameRuns Pe Pk L d k x c₀) m b₀ a ∧ ∃ u, a.1.t = .frame Pe Pk u L d k x c₀
+
+/-- **The transfer at the framed nodes of a graph code** (the premise
+`ret_reachedW` reads; to be proved from `framed_transfer`): along every
+execution of the frame keeping the obligation from a reached state
+entering a framed node `l` of the code `Pe`, `Pk` (its frame tagged
+`c₀`, its slots values), its frame's term not
+returned, to a state at which the node's term is a value, every support
+of `S l` is supported at the frame's environment from the entry's heap to
+that state's. -/
+def FramedNodeTransfer (Pe : List Tm) (Pk : List (Continuation × Option Target)) (c₀ : ComponentTag)
+    (F : Nat → Bool) (S : Nat → List Footprints.Footprint) : Prop :=
+  ∀ (l : Nat) (b₀ a : Conf × Ghost (fr.F.at fr.C)) (m : Nat) (e : Tm) (L : List Tm) (d : Tm) (k : Continuation)
+    (x : Option Target) (v : Tm),
+    F l = true → fr.Reached b₀ → Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+    b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+    Ex fr.KStep (fr.FrameRuns Pe Pk L d k x c₀) m b₀ a → a.1.t = .frame Pe Pk v L d k x c₀ →
+    isVal v = true → ∀ T ∈ S l, Footprints.Supported T (envOf L d) b₀.1.s.h a.1.s.h
+
+/-- **The invariant of the returns at reached executions**: at a positive
+budget, a configuration at the world, heap and term, reached by the frame
+with the history `g`, whose term runs the code `Pe`, `Pk` at its top, and
+whose pending framed evaluation, where one is recorded, is the evaluation
+of its node from a reached state (`PendFrom`). -/
+def RetInv (Pe : List Tm) (Pk : List (Continuation × Option Target)) (c₀ : ComponentTag) (F : Nat → Bool)
+    (g : Ghost (fr.F.at fr.C)) (p : Option (Nat × Heap)) (k : Nat) (W : WorldT k) (h : Heap) (t : Tm) : Prop :=
+  k = 0 ∨ ∃ y : Conf, y.s.n = k ∧ HEq y.s.W W ∧ y.s.h = h ∧ y.t = t ∧ fr.Reached (y, g) ∧ TopRuns Pe Pk c₀ t ∧
+    ∀ l h₀, p = some (l, h₀) → F l = true ∧ fr.PendFrom Pe Pk c₀ l h₀ (y, g)
+
+variable {fr}
+
+/-- A world reached from a world equal to one it is reached from
+(proved). -/
+theorem reach_heq {n m : Nat} {W' : WorldT n} {W : WorldT (m + 1)} {U : WorldT m} (hn : n = m + 1) (hW : HEq W' W)
+    (hx : WExt (trunc m (Nat.le_succ m) W) U) : WorldReach W' U := by
+  subst hn; cases hW; exact ⟨_, hx⟩
+
+/-- The obligation at a step, read at an equal world (proved). -/
+theorem keeps_heq {g : Ghost (fr.F.at fr.C)} {n m : Nat} {W' : WorldT n} {W : WorldT m} {h h' : Heap} {t t' : Tm}
+    (hn : n = m) (hW : HEq W' W) (hK : fr.Keeps g m W h t h' t') : fr.Keeps g n W' h t h' t' := by
+  subst hn; cases hW; exact hK
+
+/-- **The invariant at a step** (proved): from a state meeting `RetInv`, a
+step keeping the obligation at its world meets the returns `framedRet S`
+(`FramedNodeTransfer` at a step leaving a framed node whose term is a
+value, the leaving step keeping the heap, `frame_val_heap`; nothing at a
+throw) and, at a world the step's safety admits and a heap it types, with
+its term valid there, leaves a state meeting it: the step is a step of
+the frame (`KStep`, its world reached by `WExt`), the graph code stays at
+the top (`TopRuns.step`), an entering step of a framed node starts its
+evaluation, and a step of the frame's term extends it
+(`frame_to_frame`). -/
+theorem retInv_step {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag}
+    {F : Nat → Bool} {S : Nat → List Footprints.Footprint} (htr : fr.FramedNodeTransfer Pe Pk c₀ F S)
+    {g : Ghost (fr.F.at fr.C)} {p : Option (Nat × Heap)} {k : Nat} {W : WorldT (k + 1)} {h : Heap} {t : Tm}
+    {U : WorldT k} {h' : Heap} {t' : Tm} (hi : fr.RetInv Pe Pk c₀ F g p (k + 1) W h t) (hs : Step h t h' t')
+    (hx : WExt (trunc k (Nat.le_succ k) W) U) (hu : WorldAdm U) (hh : HeapOk k U h')
+    (hK : fr.Keeps g (k + 1) W h t h' t') :
+    RetAt (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁) (fun _ _ _ _ => True) p h' t t' ∧
+      (RefsOk U t' → fr.RetInv Pe Pk c₀ F (fr.next g h t h' t') (framedPend F p h t t') k U h' t') := by
+  rcases hi with h0 | ⟨y, hn, hW, hyh, hyt, hre, htop, hpend⟩
+  · cases h0
+  subst hyh hyt
+  refine ⟨?_, fun hrefs => ?_⟩
+  · -- The returns at the step.
+    cases p with
+    | none => simp [RetAt]
+    | some p =>
+      obtain ⟨l, h₀⟩ := p
+      obtain ⟨hFl, b₀, m, e, L, d, kk, xx, hb₀, hbh, he, hk, hL, hbt, hex, u, hyu⟩ := hpend l h₀ rfl
+      rw [hyu]
+      simp only [RetAt]
+      by_cases hv : isVal u = true
+      · by_cases hf : isFrame t' = true
+        · exact .inl hf
+        · refine .inr (.inl ⟨hv, fun T hT => ?_⟩)
+          rw [hyu] at hs
+          have hh' := frame_val_heap hv hs
+          rw [hh', ← hbh]
+          exact htr l b₀ (y, g) m e L d kk xx u hFl hb₀ he hk hL hbt hex hyu hv T hT
+      · exact .inr (.inr ⟨by simpa using hv, trivial⟩)
+  · -- The invariant after the step.
+    cases k with
+    | zero => exact .inl rfl
+    | succ k =>
+    let z : Conf := ⟨⟨k + 1, U, h', Nat.succ_pos k, hu, hh⟩, t', hrefs⟩
+    have hks : fr.KStep (y, g) (z, fr.next g y.s.h y.t h' t') :=
+      ⟨⟨hs, reach_heq hn hW hx⟩, rfl, keeps_heq hn hW hK⟩
+    refine .inr ⟨z, rfl, HEq.rfl, rfl, rfl, Reached.step hre hks, htop.step hs, fun l h₀ hp => ?_⟩
+    rcases htop with ⟨l', L, d, hyt, hL⟩ | ⟨u, L, d, kk, xx, hyt, hL⟩ | hns
+    · -- An entering step: the evaluation of node `l'` starts.
+      rw [hyt] at hp hs
+      simp only [framedPend] at hp
+      split at hp
+      · rename_i hc
+        cases hp
+        refine ⟨by simp at hc; exact hc.2, ?_⟩
+        cases hs with
+        | gotoEnter he hk =>
+          refine ⟨_, 0, _, L, d, _, _, Reached.step hre hks, rfl, he, hk, hL, rfl,
+            .refl _, _, rfl⟩
+      · cases hp
+    · -- A step of a frame: inside the frame, the evaluation goes on.
+      rw [hyt] at hp hs
+      simp only [framedPend] at hp
+      split at hp
+      · rename_i hf
+        obtain ⟨hFl, b₀, m, e, L₀, d₀, k₀, x₀, hb₀, hbh, he, hk, hL₀, hbt, hex, u₀, hyu⟩ := hpend l h₀ hp
+        rw [hyt] at hyu
+        cases hyu
+        obtain ⟨u', hs', ht'⟩ := frame_to_frame hs hf
+        have hnr : ¬ Returned u := by
+          rintro (hv | ⟨w, hw⟩)
+          · exact value_no_step hv hs'
+          · exact raises_no_step hw hs'
+        refine ⟨hFl, b₀, m + 1, e, L, d, kk, xx, hb₀, hbh, he, hk, hL₀, hbt,
+          hex.snoc ⟨u, by rw [hyt], hnr⟩ hks, u', ht'⟩
+      · cases hp
+    · exact absurd hs (hns _ _ _)
+
+/-! ## The obligation reads the world -/
+
+/-- **The client obligation at a step reads the world** (proved, a
+counter-model): the same transition of the same heap, at the same
+history, keeps a protocol at one world and breaks it at another, since a
+location's part reads its kind at the world (`kindAt`): a location the
+history protects (an exposed one), of kind `field` at the first world and
+of no kind at the second, changes from `0` to `1`, within `any` at a field
+and outside `keep` elsewhere. So a step clause quantifying the obligation
+at a world unrelated to the execution's configuration admits steps that
+break it at the configuration's world, along which the transfer's bound
+on `R_C` (`Run.bound`, read at `St.part`) is not established;
+`FramedReturnsReachedW` reads the obligation at the world of the state. -/
+theorem rowAt_reads_world :
+    ∃ (P : Package) (Θ : Protocol P) (g : Ghost P) (h h' : Heap) (W₁ W₂ : WorldT 1),
+      RowAt Θ W₁ g h h' ∧ ¬ RowAt Θ W₂ g h h' := by
+  let P : Package := ⟨Unit, fun _ => .exposed, fun _ => false⟩
+  let Θ : Protocol P := fun p => if p.kind = some .field then .any else .keep
+  let g : Ghost P := ⟨fun _ => some (), fun _ => none, fun _ => True, [], fun _ => False⟩
+  let W₁ : WorldT 1 := ofEntries [(.field, fun _ _ _ _ => True)]
+  let W₂ : WorldT 1 := ofEntries []
+  refine ⟨P, Θ, g, [.num 0], [.num 1], W₁, W₂, fun l v _ hv => ⟨.num 1, ?_, ?_⟩, fun hrow => ?_⟩
+  · cases l with
+    | zero => rfl
+    | succ l => simp at hv
+  · cases l with
+    | zero => simp [Θ, W₁, kindAt, roleAt, roles, Role.kind, Footprints.Change.Holds]
+    | succ l => simp at hv
+  · have hp : RowProtects g 0 := .inl ⟨rfl, trivial⟩
+    obtain ⟨v', hv', hc⟩ := hrow 0 (.num 0) hp rfl
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hv'
+    subst hv'
+    simp [Θ, W₂, kindAt, roleAt, roles, Footprints.Change.Holds] at hc
+
+/-! ## The transfer at a framed node -/
+
+/-- **An operand read from the slots**: a slot or a primitive constant,
+which the node's entry instantiates to a value. -/
+def atomB : Tm → Bool
+  | .var _ | .nul | .undef | .tru | .fls | .num _ | .str _ => true
+  | _ => false
+
+/-- **A call of operands read from the slots** (decided at each framed
+node): an invocation whose callee, receiver and arguments are slots or
+constants. -/
+def atomCallB : Tm → Bool
+  | .invoke f r args => atomB f && atomB r && args.all atomB
+  | _ => false
+
+/-- An operand read from slots of values is a value at the node's entry
+(proved). -/
+theorem atomB_inst {e : Tm} (he : atomB e = true) {L : List Tm} {d : Tm} (hv : SlotVals L d) :
+    isVal (instantiate 0 (envOf L d) e) = true := by
+  cases e <;> simp [atomB] at he <;> simp [instantiate, isVal]
+  rename_i i
+  simp only [envOf]
+  rcases getD_mem_or L i d with h | h
+  · rw [List.getD_eq_getElem?_getD] at h ⊢; exact hv.1 _ h
+  · rw [h]; exact hv.2
+
+/-- **The entry of a node calling operands read from slots of values is a
+call of values** (proved). -/
+theorem atomCall_inst {e : Tm} (he : atomCallB e = true) {L : List Tm} {d : Tm} (hv : SlotVals L d) :
+    ∃ f r args, instantiate 0 (envOf L d) e = .invoke f r args ∧ isVal f = true ∧ isVal r = true ∧
+      ∀ a ∈ args, isVal a = true := by
+  cases e with
+  | invoke f r args =>
+    simp only [atomCallB, Bool.and_eq_true, List.all_eq_true] at he
+    obtain ⟨⟨hf, hr⟩, ha⟩ := he
+    refine ⟨_, _, _, rfl, atomB_inst hf hv, atomB_inst hr hv, fun a hm => ?_⟩
+    simp only [instantiateArgs_eq_map, List.mem_map] at hm
+    obtain ⟨a', ha', rfl⟩ := hm
+    exact atomB_inst (ha a' ha') hv
+  | _ => simp [atomCallB] at he
+
+/-- **The transfer at the framed nodes, from the framed transfer** (proved;
+the draft, "The transfer at a call", at the claim's top frame): where each
+framed node of the code calls operands read from its slots
+(`atomCallB`), a reached state entering it is a call state of the top
+frame (`CallState`, `atomCall_inst`), and its evaluation to a value is the
+call's segment to its resumption (`Inside`, `Resumes`), so
+`framed_transfer` gives each support of `S l` supported: with trace
+certificates at `Ψj` (`Θ ⊑ Ψj ⊑ Ψc l`), the segment's own steps within
+`Ψc l` (`SegWithin`, by `segWithin_of_run`), the callee's effect `Φ l`
+bounding the heap along the call's segment (the callback's arrow, part of
+`Θ_C`), and the rule's premise at the call state (`Framed`, by
+`framed_at_innermost_keys` and `framed_of_cover` from the pass's check of
+the node's kept supports). -/
+theorem nodeTransfer_of_transfer {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag}
+    {F : Nat → Bool} {S : Nat → List Footprints.Footprint} (hc : fr.ChkSound) (hi : fr.StartInv)
+    (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
+    {Ψj : Protocol (fr.F.at fr.C)} {G : (St (fr.F.at fr.C) → Prop) → Prop} (certs : fr.TraceCerts Ψj G)
+    (hΘ : ∀ p, (fr.Θ p).le (Ψj p) = true) {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    (hW : ∀ l p, (Ψj p).le (Ψc l p) = true) {Φ : Nat → Footprints.Footprint}
+    (hown : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      fr.SegWithin (Ψc l) Pe Pk L d k x c₀ b₀)
+    (hfr : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ T ∈ S l, Framed (Φ l) (Ψc l) T (envOf L d) (lift fr.F fr.C none b₀.1 b₀.2))
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      Ex fr.KStep (fun s => Inside fr.F fr.C Pe Pk L d k x c₀ s.1.t) m b₀ a →
+      a.1.t = .frame Pe Pk v L d k x c₀ → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+    fr.FramedNodeTransfer Pe Pk c₀ F S := by
+  intro l b₀ a m e L d k x v hFl hb he hk hL hbt hex hat hv T hT
+  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+  have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
+    ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
+  have hex' : Ex fr.KStep (fun s => Inside fr.F fr.C Pe Pk L d k x c₀ s.1.t) m b₀ a :=
+    hex.mono fun s ⟨u, hu, hnr⟩ => ⟨u, ⟨hu, hcomp⟩, hnr⟩
+  have hres : Resumes fr.F fr.C Pe Pk L d k x c₀ a.1.t := ⟨v, ⟨hat, hcomp⟩, .inl hv⟩
+  exact framed_transfer hc hi certs hΘ (hW l) hb hcall hex' hres (hown l b₀ e L d k x hFl hb he hk hL hbt)
+    (hΦ l b₀ a m e L d k x v hFl hb he hk hL hbt hex' hat hv) (hfr l b₀ e L d k x hFl hb he hk hL hbt T hT)
+
+/-- **The own steps at each framed node, from the call's run** (proved, by
+`segWithin_of_run` at each node's set `T l`): where every reached state
+fits the flow, meets the residual invariant and layout provenance from the
+frame's starts, the flow's tokens are sites and its codes lowered, each
+framed node's set passes the closure check, its probe protocol is within
+`Ψc l`, and the sets of the call's values at a reached state entering the
+node are within `T l`, each meeting layout provenance (`hroots`), every
+reached state entering a framed node meets `SegWithin (Ψc l)`, the premise
+`nodeTransfer_of_transfer` reads. -/
+theorem own_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
+    (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true) (htok : tokensSomeB Fl = true)
+    (hlow : codesLoweredB Fl = true) (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
+    (hroots : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ v ∈ vals allC true (instantiate 0 (envOf L d) e), ∃ S', VJ Fl.flow b₀.2 b₀.1.s.h.length S' v ∧
+        Sub S' (T l) ∧ layP (layQ Fl lay) v = true) :
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      fr.SegWithin (Ψc l) Pe Pk L d k x c₀ b₀ := by
+  intro l b₀ e L d k x hFl hb he hk hL hbt
+  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+  have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
+    ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
+  refine segWithin_of_run hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall fun f' r' args' ht v hv => ?_
+  rw [hbt, hinst] at ht
+  cases ht
+  rw [← hinst] at hv
+  exact hroots l b₀ e L d k x hFl hb he hk hL hbt v hv
+
+end ClientFrame
+end Verification.TolerantFrames.ReadOnly
+
+namespace Verification.SourceClaimJson.PassUnit
+open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
+open Verification.TolerantFrames.ReadOnly
+open HeapObservations
+
+/-- **The returns at reached executions** (proved; the draft's
+`ret_reached`, at the worlds of the frame's executions): where the request's
+node expressions are source terms, the calls the frame's claim is about
+are at positive budgets of admissible worlds typing their heaps with slots
+of values, and the
+transfer holds at the framed nodes of the request's main graph
+(`FramedNodeTransfer`), the returns `framedRet S` hold at the executions
+the frame's claim is about, nothing claimed at a throw. The invariant is
+`RetInv` (`retInv_step`); at a call it is the frame's reached call itself,
+nothing pending. -/
+theorem ret_reachedW {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι} {fr : ClientFrame (Ty ι)}
+    {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
+    (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
+    (hty : ∀ n (W : WorldT n) h t, fr.Call n W h t → 0 < n ∧ WorldAdm W ∧ HeapOk n W h)
+    (hvals : ∀ n (W : WorldT n) h (L : List Tm) (d : Tm), fr.Call n W h (gotoOf r.program r.start L d r.comp) →
+      SlotVals L d)
+    (htr : fr.FramedNodeTransfer (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+      r.comp F S) :
+    FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
+      (fun _ _ _ _ => True) := by
+  refine ⟨ClientFrame.RetInv fr (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+      r.comp F,
+    fun η n W h L d _ hR hN g hg => ?_, fun g p k W h t U h' t' hi hs hx hu hh hK => ClientFrame.retInv_step htr hi hs hx hu hh hK⟩
+  obtain ⟨hpos, hadm, hok⟩ := hty n W h _ hN
+  let y : Conf := ⟨⟨n, W, h, hpos, hadm, hok⟩, gotoOf r.program r.start L d r.comp, gotoOf_refsOk hsrc hR⟩
+  exact .inr ⟨y, rfl, HEq.rfl, rfl, rfl, ⟨(y, g), 0, hN, hg, .refl _⟩, .inl ⟨_, _, _, rfl, hvals n W h L d hN⟩,
+    fun _ _ hp => by cases hp⟩
+
+end Verification.SourceClaimJson.PassUnit
