@@ -195,11 +195,14 @@ $`C`$ active at it (`depthC`).
   least set of codes of the flow holding each code whose token the
   callee's set at $`c`$ holds, and closed under the same at every call
   node of its members and under the tokens of the closure arguments of
-  every native step model its members call (`segCodes`, decided). At a
+  every native step model its members call (`segCodes`, computed, and
+  `segClosedB`, its closure decided, sound by `segClosedB_sound`,
+  `ReadOnlyCharges.lean`). At a
   call of a parameter holding what outside code may supply it holds every
   code whose token lies in $`O`$ (`entry_slot_holds_O_tokens`).
 - **The closure of sites** $`\overline{S}`$ of a set $`S`$ of sites and
-  tokens (`capClose`, decided): the least superset of $`S`$ closed under
+  tokens (`capClose`, computed, and `capClosedB`, its closure decided,
+  sound by `capClosedB_sound`): the least superset of $`S`$ closed under
   the heap of sites' contents (each site's `contents`) and under captures
   (for each code token in it, the sites and tokens of that code's capture
   slots at every context, `captureSites`).
@@ -280,7 +283,7 @@ proved): every location $`l<|h|`$ a step of $`C`$'s code from a reached
 state changes is written by a writing redex whose receiver's location's
 part is among the charged parts of a write of the frame's node expression,
 at every context the frame may fit. $`\mathrm{Ch}`$ is computed by the
-total `writesT` (`SourceClaimJson.writesT`): its definition is structural
+total `writesT` (`ReadOnlyCharges.lean`): its definition is structural
 over the term and its argument lists, and charges a receiver with no
 computed set, and a `letE` body under a bound term with none, at `top`,
 every site of the flow and `none`.

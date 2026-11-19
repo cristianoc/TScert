@@ -22,7 +22,8 @@ lies at that part. A protocol read back to the earlier form fails here.
   through the wrapper's capture of `bump`'s token, `bump`'s capture of
   `holder` and `holder`'s contents, so the depth charges (`depthCharges`)
   charge it. A closure read at the capture slots' own sites alone keeps
-  it. -/
+  it. A closure check (`capClosedB`) passes the computed closure and
+  refuses a set missing a site the closure reaches. -/
 namespace Verification.SourceClaimJson.FlowProbeControls
 open Verification TolerantFrames.ReadOnly Footprints
 
@@ -83,6 +84,11 @@ private def caps1 : Option Nat → Sites Pk
 #guard (capClose F1 caps1 [some 4]).contains (some 2)
 -- without captures, only the call's own sets
 #guard !(capClose F1 (fun _ => []) [some 4]).contains (some 2)
+-- the computed closure passes the closure check; a set missing `holder`'s
+-- contents fails it
+#guard capClosedB F1 caps1 [some 4] (capClose F1 caps1 [some 4])
+#guard !capClosedB F1 caps1 [some 4] [some 4, some 3, some 1]
+#guard !capClosedB F1 caps1 [some 4] [some 3, some 1, some 2]
 
 /-- `bump`'s write `holder.child.i++` at `child`'s site. -/
 private def bumpWrites : List (Sites Pk × List (Option Kind)) := [([some 2], [some .field])]
