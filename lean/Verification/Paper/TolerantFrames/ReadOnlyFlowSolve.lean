@@ -414,8 +414,8 @@ partial def readsO : Tm → Bool
 /-- **`O` closed**: grown by its contents, its storage holding all of it,
 and every variable outside code fills holding it: a handler's thrown value
 (`oVars`), the entry slots of each closure's code whose token lies in `O`
-(`entryVars`); the unit's entry slots (`noneVars`) holding the tokens it
-holds. -/
+(`entryVars`); the returns of each code whose token lies in `O`; the
+unit's entry slots (`noneVars`) holding the tokens it holds. -/
 def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat)) (noneVars : List Nat)
     (st : SolveState P) : SolveState P := Id.run do
   let mut st := st.toO (contentsOf st.heapFlow st.O)
@@ -427,6 +427,11 @@ def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat)) (no
     if t ∈ st.O then
       for v in vs do
         st := st.grow v st.O
+  -- the returns of each code whose token lies in `O`
+  for (rs, t) in st.rets.toList.zip st.toks.toList do
+    if t ∈ st.O then
+      for v in rs do
+        st := st.toO (st.vars.getD v [])
   -- the unit's entry slots: the tokens `O` holds
   let toksO := st.O.filter fun t => st.toks.contains t
   for v in noneVars do
@@ -568,8 +573,9 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars, entryVars, noneVars, st0⟩
 
 /-- **A node's sets**: its expression's least set at its slots (`gen`), its
-value grown by it; a returned value given to `O`, its callers run again
-(through `grewO`). -/
+value grown by it; a returned value given to `O` where the unit returns it
+or the code's token lies in `O` (a closure outside code may call), and its
+callers, which read the code's return set, run again (through `grewO`). -/
 def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P := Id.run do
   let some c := s.cs[ci]? | return st
   let some (exprs, conts) := s.codes[ci]? | return st
@@ -586,7 +592,9 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let before := (st'.vars.getD (off + need + 1) []).length
   let mut st := st'.grow (off + need + 1) S
   if (match k with | .ret => true | _ => false) then
-    st := st.toO (st.vars.getD (off + need + 1) [])
+    -- (a returned value reaches outside code where the unit returns it, or
+    -- a closure outside code may call; `closeO` gives the rest)
+    if !c.closure || c.tok ∈ st.O then st := st.toO (st.vars.getD (off + need + 1) [])
     if (st.vars.getD (off + need + 1) []).length != before then st := { st with grewO := true }
   return st
 
