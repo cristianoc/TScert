@@ -2596,8 +2596,8 @@ proposal is [deciding the flow](#deciding-the-flow).
 ### Deciding the flow
 
 A finite proposal (`FFlow`, `ReadOnlyFitsDecide.lean`) holds $`O`$, the
-heap of sites as a list of entries (a site's contents, none
-for a site no entry names), and for each code of $`C`$ its contexts, each
+heap of sites as explicit rows and a predicate selecting sites whose
+contents are $`O`$ (every other unlisted row is empty), and for each code of $`C`$ its contexts, each
 with its nodes (`FCode`, one node standing for every label past them). A
 code's proposal at a context holds its return set, a table of signatures,
 and for each node its slots as an array with one set for every slot past
@@ -2609,8 +2609,8 @@ first proposal at the context.
 - **A term's least set** (`syn`), computed bottom-up from the node's slots:
   a variable bound inside the term its binder's set, a slot its sites; a
   read the contents of the closure of the sites it may read under the
-  contents (`closeQ`: grown as often as the heap of sites lists contents,
-  then checked closed); an allocation its site, each initial value checked
+  contents (`closeQ` grows the set until closed, bounded by the number
+  of rows, and checks inclusion of their union); an allocation its site, each initial value checked
   against its site's storage (`storesB`), a closure of $`C`$'s code its
   site and its code's token, open at its entry where the token lies in
   $`O`$ (`openB`); a call of a slot naming
@@ -2661,7 +2661,13 @@ for the remaining indices, and a value. A slot whose only source is a
 copy uses the source's variable. A chain of such copies with no source
 holds the empty set, as does a cycle with no other input. The worklist
 propagates bitset differences between the remaining variables. Slots
-with the same bitset share one list of sites in the proposal. A node's
+with the same bitset share one list of sites in the proposal. The heap,
+outside set, expression values and returns use the same bits. Closure
+and outside writability together imply that each site in $`O`$ has exactly
+$`O`$ as its contents. A read includes that common row once, a write to
+it grows $`O`$, and each site's identity remains available to frame checks.
+The finite heap's row union has exactly the members of the selected rows
+(`mem_contentsOf`). A node's
 value is its expression's
 least set with its stores, what it gives to outside code and the slots of
 a callee's entry added, a known call's value its callee's return set
@@ -2721,7 +2727,9 @@ handler that may call outside code (`ClientFrame.framed_at_call`), or
 that it is not required where none may (`Footprints.linearSupport`) at the separation of classes
 (`classQuery`, `classQuery_sound`), the keys `noKeys`, no region read as
 protected and the probe's protocol (`probeProtocol`), with each part that
-fails and the check it fails.
+fails and the check it fails. A request with `"inspect": true` also
+evaluates the predicate at the named call when no obligation arises,
+reporting a witness for each reason for failure.
 
 **The probe's protocol.** Each write of a node of a code of the flow is
 charged at the sites of its written location and the kinds that location
@@ -2822,16 +2830,39 @@ Every member of `src/line-break.ts` meets the checks, its entry and the
 marks (at the module as the component, its exports the entries; measured
 with the bindings component the heap of sites had then).
 
-Measured 2026-11-19 by the probe over pretext's package (`TSCERT_PROBE_PACKAGE`
-naming the runs of `layout.ts`, `rich-inline.ts`, `prepare.ts`,
-`line-text.ts`, `measurement.ts`, `line-breaks.ts`, `graphemes.ts`,
-`han-kerning.ts` and `gecko-line-breaks.ts`; `analysis.ts` is refused at
-the source gate and its functions are no code of the flow), for
-`walkPreparedLinesRaw`: 17 entries, 147 module functions reached, 15253
-nodes, planned in 50.8 s; 762 copies, 48496 nodes over the copies,
-3138258 variables. The rounds do not finish within the 300 s limit: 400000
-rounds take 6.0 s, $`O`$ then holding 669 sites; 1500000 rounds do not end
-within 190 s. No frame check is measured at the package.
+At pretext's package boundary the measured flow has 147 codes, 48,496
+nodes over 762 copies and 193,004 inclusion variables for 3,138,258
+slot and value occurrences. The merged proposal passes the flow and mark
+checks. It covers 16 of the 17 public entries. Extraction refuses
+`prepareWithSegments` at the assignment to `prepared.kinds`, five
+reachable helper bodies also lack graphs, and the source gate refuses
+`analysis.ts`.
+
+At the visitor call inside each walker, the direct callee can be a package
+closure. The package flow finds no outside callee in any of the eight
+contexts of `walkPreparedLinesRaw` or the four of
+`walkPreparedComplexLines`. Thus the six raw and four complex facts have
+no direct outside-call obligation there. The source component graph for
+the whole package lists the same four possible visitor closures at both
+calls, two in `layout.ts` and two in `rich-inline.ts`. A wrapper can in
+turn call the client's visitor at its own call site.
+
+Evaluating the frame predicate independently of that guard gives the
+following results on the merged flow. Each count includes context zero,
+where the length regions have empty site sets.
+
+| Function | Facts | Contexts passing each fact |
+| --- | --- | --- |
+| Raw | Both segment-index bounds and the grapheme-index lower bound | 8/8 |
+| Raw | Both directions of the prepared widths equality and the segment-flags length lower bound | 1/8 |
+| Complex | Both segment-index bounds | 3/4 |
+| Complex | The widths and segment-flags length lower bounds | 1/4 |
+
+In the call-site contexts each length can refer to an outside-reachable
+spine charged an arbitrary change. The raw widths field also admits an
+arbitrary field change. The complex cursor arriving through
+`stepPreparedLineGeometryFromStart` includes a released site whose
+fields admit an arbitrary change.
 
 ### The frame at a call
 

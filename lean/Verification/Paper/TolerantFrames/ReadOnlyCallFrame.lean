@@ -52,7 +52,7 @@ variable {P : Package}
 
 /-- The sites the values held in storage of a set's sites may reach first:
 one step through the contents of the heap of sites. -/
-def stepSites (H : SiteHeap P) (S : List (Option P.Site)) : List (Option P.Site) := S.flatMap H.contents
+def stepSites (H : SiteHeap P) (S : List (Option P.Site)) : List (Option P.Site) := H.readRows S
 
 /-- The sites of the value a path of fields reads from a value of the
 sites `S`. -/
@@ -73,7 +73,7 @@ def regionSites (H : SiteHeap P) (τ : Nat → List (Option P.Site)) : Region �
 
 theorem stepSites_of {H : SiteHeap P} {S : List (Option P.Site)} {s s' : Option P.Site} (hs : s ∈ S)
     (h' : s' ∈ H.contents s) : s' ∈ stepSites H S :=
-  List.mem_flatMap.mpr ⟨s, hs, h'⟩
+  (H.mem_readRows _ _).mpr ⟨s, hs, h'⟩
 
 /-- **A read through a location meets the contents of its site** (proved):
 the value a location of a site of `S` holds, in a heap meeting the heap of

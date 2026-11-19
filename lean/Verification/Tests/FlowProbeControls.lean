@@ -22,7 +22,7 @@ open Verification TolerantFrames.ReadOnly Footprints
 is local. -/
 private abbrev Pk : TolerantFrames.ReadOnly.Package := markedPackage (· == some 0) [none]
 
-private def F0 : FFlow Pk := ⟨[none], [], []⟩
+private def F0 : FFlow Pk := { O := [none], heap := [], codes := [] }
 
 /-! ## A spine replaced through the spine key -/
 

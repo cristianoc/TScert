@@ -77,12 +77,6 @@ structure SolveCode (P : Package) where
 
 def SolveCode.sig (c : SolveCode P) : FnSig := ⟨c.code, c.ar, c.start, c.rest, c.ncaps⟩
 
-/-- The sites of `T` not in `S`, each once, last first. -/
-def freshOf (S T : Sites P) : Sites P := T.foldl (fun acc x => if x ∈ S || x ∈ acc then acc else x :: acc) []
-
-/-- The union of two sets, each site once. -/
-def union (S T : Sites P) : Sites P := S ++ (freshOf S T).reverse
-
 /-- A slot's signature in the rounds: an index into the table of
 signatures, compared as a number. -/
 abbrev FnIx := Option Nat
@@ -91,19 +85,13 @@ abbrev FnIx := Option Nat
 inclusion variables, the mapping from each node's slots and value to
 those variables, and the sites each variable gained since its last copy. -/
 structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
-  O : Sites P
-  /-- The sites of `O`, as a hash set. -/
-  oSet : Std.HashSet (Option P.Site) := {}
-  /-- The heap of sites: each site's contents, as a list and a hash set. -/
-  heapM : Std.HashMap (Option P.Site) (Sites P × Std.HashSet (Option P.Site)) := {}
-  /-- The number of sites the heap's contents list, over all sites. -/
-  heapTotal : Nat := 0
-  /-- A bit per site encountered, assigned in order of discovery. -/
+  outside : Nat
+  /-- Each bit numbers one site. Bits are assigned on first use. -/
   bits : Std.HashMap (Option P.Site) Nat := {}
   sites : Array (Option P.Site) := #[]
-  /-- One list view per mask read by the expression solver or the checker. -/
-  sets : Std.HashMap Nat (Nat × Sites P) := {}
-  vars : Array (Nat × Sites P)
+  /-- Explicit stores. Outside sites additionally contain the outside set. -/
+  stores : Std.HashMap Nat Nat := {}
+  vars : Array Nat
   /-- Slot occurrence to inclusion variable. -/
   classes : Array Nat
   offs : Array (Array Nat)
@@ -121,91 +109,79 @@ structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
 namespace SolveState
 variable (st : SolveState P)
 
-/-- The heap of sites as a list of entries, each site's contents. -/
-def heap : List (Option P.Site × Sites P) :=
-  st.heapM.toList.map fun (s, (c, _)) => (s, c)
+/-- Give a site a bit on first use. -/
+def siteBit (s : Option P.Site) : StateM (SolveState P) Nat := do
+  let st ← get
+  if let some b := st.bits[s]? then return b
+  let b := 1 <<< st.sites.size
+  set { st with bits := st.bits.insert s b, sites := st.sites.push s }
+  return b
 
-/-- The contents of a site's storage. -/
-def contents (s : Option P.Site) : Sites P := ((st.heapM[s]?).map (·.1)).getD []
+/-- Fold over the set bits, from the highest down. -/
+@[specialize] def foldBits {α : Type} (mask : Nat) (init : α) (f : α → Nat → α) : α := Id.run do
+  let mut left := mask
+  let mut acc := init
+  while left != 0 do
+    let b := 1 <<< left.log2
+    acc := f acc b
+    left := left ^^^ b
+  return acc
 
-/-- The heap of sites as a finite flow with no codes. -/
-def heapFlow : FFlow P := ⟨st.O, st.heap, []⟩
+def view (mask : Nat) : Sites P :=
+  foldBits mask [] fun acc b => st.sites[b.log2]! :: acc
 
-/-- The sites of `S` a hash set lacks, each once, and the set grown. -/
-def addNew (hs : Std.HashSet (Option P.Site)) (S : Sites P) : Sites P × Std.HashSet (Option P.Site) :=
-  let (acc, hs) := S.foldl (fun (acc, hs) x => if hs.contains x then (acc, hs) else (x :: acc, hs.insert x)) ([], hs)
-  (acc.reverse, hs)
+def toOutside (mask : Nat) : SolveState P :=
+  let next := st.outside ||| mask
+  if next == st.outside then st else { st with outside := next, grewO := true, grewHeap := true }
 
-/-- Add sites to `O`. -/
-def toO (S : Sites P) : SolveState P :=
-  let (added, hs) := addNew st.oSet S
-  if added.isEmpty then st else { st with O := st.O ++ added, oSet := hs, grewO := true }
+def toO (sites : Sites P) : SolveState P :=
+  sites.foldl (fun acc s =>
+    let (bit, next) := (siteBit s).run acc
+    next.toOutside bit) st
 
-/-- Add sites to the contents of a site's storage. -/
-def store (s : Option P.Site) (S : Sites P) : SolveState P :=
-  if S.isEmpty then st else
-  let (c, hs) := (st.heapM[s]?).getD ([], {})
-  let (added, hs) := addNew hs S
-  if added.isEmpty then st
-  else
-    { st with heapM := st.heapM.insert s (c ++ added, hs), heapTotal := st.heapTotal + added.length, grewHeap := true }
+/-- A write to any outside site adds its value to the common outside set.
+Only local receivers need individual heap entries. -/
+def storeMask (targets value : Nat) : SolveState P :=
+  if value == 0 then st else
+  let external := targets &&& st.outside
+  let localTargets := targets ^^^ external
+  let st := if external == 0 then st else st.toOutside value
+  foldBits localTargets st fun acc bit =>
+    let old := acc.stores.getD bit 0
+    let next := old ||| value
+    if old == next then acc else { acc with stores := acc.stores.insert bit next, grewHeap := true }
 
-/-- The list view of a variable, shared across all occurrences of its mask. -/
-def varSites (v : Nat) : Sites P := (st.vars.getD (st.classes.getD v 0) (0, [])).2
+/-- All sites in the outside set have exactly that set as their contents
+at the fixed point. Their earlier explicit stores are absorbed by closeO. -/
+def readMask (mask : Nat) : Nat :=
+  let external := mask &&& st.outside
+  foldBits (mask ^^^ external) (if external == 0 then 0 else st.outside)
+    fun acc b => acc ||| st.stores.getD b 0
 
-/-- Densely number arbitrary sites as they enter the variable constraints. -/
-def encode (S : Sites P) : Nat × SolveState P := Id.run do
-  let mut st := st
-  let mut mask := 0
-  for s in S do
-    if let some bit := st.bits[s]? then
-      mask := mask ||| bit
-    else
-      let bit := 1 <<< st.sites.size
-      st := { st with bits := st.bits.insert s bit, sites := st.sites.push s }
-      mask := mask ||| bit
-  return (mask, st)
+/-- The contents reachable by at least one heap edge. -/
+def reachableContents (mask : Nat) : Nat := Id.run do
+  let mut frontier := st.readMask mask
+  let mut seen := frontier
+  while frontier != 0 do
+    let next := st.readMask frontier
+    frontier := (next ||| seen) ^^^ seen
+    seen := seen ||| next
+  return seen
 
-/-- Reuse a variable's canonical list when a heap, outside, or return
-set has the same members. Sites found only in those sets keep their
-original list representation. -/
-def sharedSites (S : Sites P) : Sites P := Id.run do
-  let mut mask := 0
-  for s in S do
-    let some bit := st.bits[s]? | return S
-    mask := mask ||| bit
-  return ((st.sets[mask]?).map Prod.snd).getD S
+def varMask (v : Nat) : Nat := st.vars.getD (st.classes.getD v 0) 0
 
-/-- Propagate a set difference by bitwise union. Materialize a list for
-each distinct variable value once, in site discovery order. -/
 def growMask (v mask : Nat) : SolveState P := Id.run do
-  let old := (st.vars.getD v (0, [])).1
+  let old := st.vars.getD v 0
   let next := old ||| mask
   if old == next then return st
-  let (value, sets) := match st.sets[next]? with
-    | some value => (value, st.sets)
-    | none => Id.run do
-      let mut remaining := next
-      let mut view := []
-      for _ in [0:st.sites.size] do
-        if remaining == 0 then break
-        let i := remaining.log2
-        view := st.sites[i]! :: view
-        remaining := remaining ^^^ (1 <<< i)
-      let value := (next, view)
-      return (value, st.sets.insert next value)
   let vars := st.vars
   let delta := st.delta
   let st := { st with vars := #[], delta := #[] }
   return { st with
-    sets := sets, vars := vars.set! v value
-    delta := delta.modify v (· ||| (next ^^^ old)), changedVars := v :: st.changedVars }
+    vars := vars.set! v next, delta := delta.modify v (· ||| (next ^^^ old)),
+    changedVars := v :: st.changedVars }
 
-/-- Add the sites required by an expression or an entry constraint. -/
-def grow (v : Nat) (S : Sites P) : SolveState P :=
-  if S.isEmpty then st else
-    let (mask, st) := st.encode S
-    st.growMask (st.classes.getD v 0) mask
+def grow (v mask : Nat) : SolveState P := st.growMask (st.classes.getD v 0) mask
 
 /-- The variable of slot `i` of node `l` of code `ci`: the slot's, or the
 one past the slots kept apart. -/
@@ -213,48 +189,19 @@ def slotVar (ci l i : Nat) : Option Nat :=
   ((st.offs[ci]?).bind (·[l]?)).map fun o => o + min i ((st.needs.getD ci #[]).getD l 0)
 
 /-- The return set of code `ci`: its returning nodes' values. -/
-def retOf (ci : Nat) : Sites P :=
-  (st.rets.getD ci []).foldl (fun acc v => union acc (st.varSites v)) []
+def retOf (ci : Nat) : Nat :=
+  (st.rets.getD ci []).foldl (fun acc v => acc ||| st.varMask v) 0
 
 /-- Grow the slot `i` of node `l` of code `ci` by `S`. -/
-def slot (ci l i : Nat) (S : Sites P) : SolveState P :=
+def slot (ci l i : Nat) (S : Nat) : SolveState P :=
   match st.slotVar ci l i with
   | some v => st.grow v S
   | none => st
 
 end SolveState
 
-/-- **The sites of a set and every site their storage may reference**, in
-the heap of sites `F`: the least set holding `S` closed under contents,
-each site once, by a worklist (the closure `closeQ` checks). -/
-def closeSites (st : SolveState P) (S : Sites P) : Sites P := Id.run do
-  let mut seen : Std.HashSet (Option P.Site) := {}
-  let mut out : Sites P := []
-  let mut work := S
-  for _ in [0:S.length + st.heapTotal + 1] do
-    match work with
-    | [] => break
-    | s :: rest =>
-      work := rest
-      if !seen.contains s then
-        seen := seen.insert s
-        out := s :: out
-        work := st.contents s ++ work
-  return out.reverse
-
-/-- The contents of the sites of a set, each site once. -/
-def contentsSet (st : SolveState P) (S : Sites P) : Sites P := Id.run do
-  let mut seen : Std.HashSet (Option P.Site) := {}
-  let mut out : Sites P := []
-  for s in S do
-    for x in st.contents s do
-      if !seen.contains x then
-        seen := seen.insert x
-        out := x :: out
-  return out.reverse
-
 section gen
-variable (table : Array (FnSig × Option Nat)) (τ : Nat → Sites P) (φ : Nat → FnIx) (a : Alloc P)
+variable (table : Array (FnSig × Option Nat)) (τ : Nat → Nat) (φ : Nat → FnIx) (a : Alloc P)
   (inst : Nat → Option Nat) (allCx : Nat → List Nat)
 
 /-- **A term's sets, proposed** (`syn` at the current proposal): its stores
@@ -262,9 +209,9 @@ added to the heap of sites, what reaches outside code added to `O`, the
 slots of a callee's entry grown. `table` gives each signature and the
 index of its code among `C`'s; `inst` the copy of a callee code the node's
 context enters, `allCx` every copy of a code. -/
-partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (SolveState P) (Sites P) := do
+partial def gen (d : Nat) (Γ : Nat → Nat) (e : Tm) : StateM (SolveState P) Nat := do
   match e with
-  | .var i => return if i < d then (Γ i).getD [] else τ (i - d)
+  | .var i => return if i < d then Γ i else τ (i - d)
   | .invoke f r args =>
     let Sf ← gen d Γ f
     let Sr ← gen d Γ r
@@ -279,101 +226,111 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
       modify fun st => st.slot ci σ.s (capSlot σ.ar σ.rest σ.ncaps) (τ (j' f d))
       modify fun st => st.slot ci σ.s (recvSlot σ.rest) Sr
       for i in List.range σ.ar do
-        modify fun st => st.slot ci σ.s (paramSlot σ.rest i) (Ls.getD i [])
+        modify fun st => st.slot ci σ.s (paramSlot σ.rest i) (Ls.getD i 0)
       if σ.rest then
-        modify fun st => st.slot ci σ.s 0 [a.arr]
-        modify fun st => st.store a.arr (Ls.drop σ.ar).flatten
+        let arr ← SolveState.siteBit a.arr
+        modify fun st => st.slot ci σ.s 0 arr
+        modify fun st => st.storeMask arr ((Ls.drop σ.ar).foldl (· ||| ·) 0)
       return (← get).retOf ci
     | none =>
-      modify fun st => st.toO (Sf ++ Sr ++ Ls.flatten ++ [a.arr])
-      return (← get).O
+      let arr ← SolveState.siteBit a.arr
+      modify fun st => st.toOutside (Ls.foldl (· ||| ·) (Sf ||| Sr ||| arr))
+      return (← get).outside
   | .construct f args =>
+    let arr ← SolveState.siteBit a.arr
     let Sf ← gen d Γ f
     let Ls ← args.mapM (gen d Γ)
-    modify fun st => st.toO (Sf ++ Ls.flatten ++ [a.arr])
-    return (← get).O
+    modify fun st => st.toOutside (Ls.foldl (· ||| ·) (Sf ||| arr))
+    return (← get).outside
   | .letE x b =>
     let Sx ← gen d Γ x
-    gen (d + 1) (consSites Sx Γ) b
-  | .spread x => let Sx ← gen d Γ x; return contentsSet (← get) Sx
+    gen (d + 1) (fun i => match i with | 0 => Sx | i + 1 => Γ i) b
+  | .spread x => let Sx ← gen d Γ x; return (← get).readMask Sx
   | .makeAt .absent _ inits =>
+    let obj ← SolveState.siteBit a.obj
     for x in inits do
       let S ← gen d Γ x
-      modify fun st => st.store a.obj S
-    return [a.obj]
+      modify fun st => st.storeMask obj S
+    return obj
   | .makeAt (.bound t r pre) _ inits =>
+    let obj ← SolveState.siteBit a.obj
     for x in inits do
       let S ← gen d Γ x
-      modify fun st => st.store a.obj S
-    return a.obj :: ((partsSites τ d Γ (t :: r :: pre)).getD [])
+      modify fun st => st.storeMask obj S
+    return obj ||| ((t :: r :: pre).foldl (fun acc u => acc ||| part u) 0)
   | .makeAt (.graph ar E K s caps _ rest comp) _ inits =>
+    let obj ← SolveState.siteBit a.obj
     for x in inits do
       let S ← gen d Γ x
-      modify fun st => st.store a.obj S
+      modify fun st => st.storeMask obj S
     if P.ofC comp then
       match (table.find? fun e => e.2.isSome && e.1.code == (E, K)).bind (·.2) with
       | some ci =>
         for cj in allCx ci do
           for i in List.range caps.length do
             match caps[i]? with
-            | some u => modify fun st => st.slot cj s (capSlot ar rest i) ((partSites τ d Γ u).getD [])
+            | some u => modify fun st => st.slot cj s (capSlot ar rest i) (part u)
             | none => pure ()
-        return [a.obj, (← get).toks.getD ci none]
-      | none => return [a.obj]
-    else return a.obj :: ((partsSites τ d Γ caps).getD [])
+        return obj ||| (← SolveState.siteBit ((← get).toks.getD ci none))
+      | none => return obj
+    else return obj ||| (caps.foldl (fun acc u => acc ||| part u) 0)
   | .readAt _ x | .indexAt x _ =>
     let Sx ← gen d Γ x
     match e with
     | .indexAt _ k => let _ ← gen d Γ k
     | _ => pure ()
     let st ← get
-    return contentsSet st (closeSites st Sx)
+    return st.reachableContents Sx
   | .writeAt _ x y =>
     let Sx ← gen d Γ x
     let Sy ← gen d Γ y
-    for s in Sx do
-      modify fun st => st.store s Sy
-    return []
-  | .test _ x | .lenOf x => let _ ← gen d Γ x; return []
+    modify fun st => st.storeMask Sx Sy
+    return 0
+  | .test _ x | .lenOf x => let _ ← gen d Γ x; return 0
   | .ite c x y =>
     let _ ← gen d Γ c
-    return union (← gen d Γ x) (← gen d Γ y)
-  | .arith _ x y => let _ ← gen d Γ x; let _ ← gen d Γ y; return []
+    return (← gen d Γ x) ||| (← gen d Γ y)
+  | .arith _ x y => let _ ← gen d Γ x; let _ ← gen d Γ y; return 0
   | .arrLit inits =>
+    let arr ← SolveState.siteBit a.arr
     for x in inits do
       let S ← gen d Γ x
-      modify fun st => st.store a.arr S
-    return [a.arr]
+      modify fun st => st.storeMask arr S
+    return arr
   | .elemAt x i =>
     let Sx ← gen d Γ x
     let _ ← gen d Γ i
-    return contentsSet (← get) Sx
+    return (← get).readMask Sx
   | .setElem x i v =>
+    let arr ← SolveState.siteBit a.arr
     let Sx ← gen d Γ x
     let _ ← gen d Γ i
     let Sv ← gen d Γ v
-    for s in a.arr :: Sx do
-      modify fun st => st.store s Sv
-    return a.arr :: Sx
+    modify fun st => st.storeMask (arr ||| Sx) Sv
+    return arr ||| Sx
   | .throw x =>
     let Sx ← gen d Γ x
-    modify fun st => st.toO Sx
-    return []
+    modify fun st => st.toOutside Sx
+    return 0
   | .merge _ x y =>
+    let obj ← SolveState.siteBit a.obj
     let Sx ← gen d Γ x
     let Sy ← gen d Γ y
     let st₀ ← get
-    let Q := closeSites st₀ (Sx ++ Sy)
-    for s in Q do
-      modify fun st => st.store a.obj (st₀.contents s)
-    return [a.obj]
+    let values := st₀.reachableContents (Sx ||| Sy)
+    modify fun st => st.storeMask obj values
+    return obj
   | .makeKey k x =>
+    let obj ← SolveState.siteBit a.obj
     let _ ← gen d Γ k
     let Sx ← gen d Γ x
-    modify fun st => st.store a.obj Sx
-    return [a.obj]
-  | _ => return []
+    modify fun st => st.storeMask obj Sx
+    return obj
+  | _ => return 0
 where
+  part : Tm → Nat
+    | .var i => if i < d then Γ i else τ (i - d)
+    | _ => 0
   /-- The slot a callee variable reads. -/
   j' (f : Tm) (d : Nat) : Nat := match f with
     | .var j => j - d
@@ -543,23 +500,22 @@ captures' closures, outside code those of each code whose token lies in
 def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × List Nat)) (noneVars : List Nat)
     (entries : Array Bool) (units : List Nat) (nb : Nat) (tokVars : List (Nat × Nat × Nat × Option P.Site))
     (st : SolveState P) : SolveState P := Id.run do
-  let mut st := st.toO (contentsSet st st.O)
-  for s in st.O do
-    st := st.store s st.O
+  let stored := SolveState.foldBits st.outside st.outside fun acc b => acc ||| st.stores.getD b 0
+  let mut st := st.toOutside stored
   for v in oVars do
-    st := st.grow v st.O
-  let supplied := none :: st.O.filter fun t => st.toks.contains t
+    st := st.grow v st.outside
+  let supplied := st.toks.foldl (fun mask t => mask ||| (st.bits.getD t 0 &&& st.outside)) (st.bits.getD none 0)
   for (t, vs, ws) in entryVars do
-    if t ∈ st.O then
+    if st.bits.getD t 0 &&& st.outside != 0 then
       for v in vs do
-        st := st.grow v st.O
+        st := st.grow v st.outside
       for w in ws do
         st := st.grow w supplied
   -- the returns of each code whose token lies in `O`, at its entry context
   for ((rs, t), e) in (st.rets.toList.zip st.toks.toList).zip entries.toList do
-    if e && t ∈ st.O then
+    if e && st.bits.getD t 0 &&& st.outside != 0 then
       for v in rs do
-        st := st.toO (st.varSites v)
+        st := st.toOutside (st.varMask v)
   -- the unit's entry slots: what outside code may supply
   for v in noneVars do
     st := st.grow v supplied
@@ -567,14 +523,16 @@ def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × Li
   -- each code whose token lies in `O`, and those a held closure captures
   let mut held : List Nat := units ++ (List.range nb).filter fun b =>
     match st.toks.getD b none with
-    | some t => some t ∈ st.O
+    | some t => st.bits.getD (some t) 0 &&& st.outside != 0
     | none => false
   for _ in [0:tokVars.length + 1] do
     let new := ((tokVars.filter fun (h, _, cj, _) => h ∈ held && cj ∉ held).map (·.2.2.1)).eraseDups
     if new.isEmpty then break
     held := held ++ new
   for (h, v, _, t) in tokVars do
-    if h ∈ held then st := st.grow v [t]
+    if h ∈ held then
+      let (b, next) := (SolveState.siteBit t).run st
+      st := next.grow v b
   return st
 
 /-- **The table of signatures**: each code's own at its index, then the
@@ -886,10 +844,11 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     (codes.toList.zipIdx.flatMap fun ((exprs, _), ci) =>
       (exprs.toList.zipIdx.filter fun (e, _) => p e).map fun (_, l) => (ci, l))
   let st0 : SolveState P :=
-    { O := [none], oSet := ({} : Std.HashSet _).insert none, vars := Array.replicate count (0, []), delta := Array.replicate count 0, classes,
-      offs := offs,
-      needs := needs, rets := rets, toks := csA.map (·.tok) }
-  let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
+    { outside := 1, sites := #[none], bits := ({} : Std.HashMap _ _).insert none 1,
+      vars := Array.replicate count 0, delta := Array.replicate count 0, classes,
+      offs, needs, rets, toks := csA.map (·.tok) }
+  let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v 1) st0
+  let st0 := st0.toO ((cs.filter (·.entry)).map (·.tok))
   let units := (List.range bases.size).filter fun b => !((bases[b]?).map (·.closure)).getD true
   return ⟨csA, base, ctxOf, nodeCx, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars,
     entryVars, noneVars, units, bases.size, tokVars, st0⟩
@@ -907,21 +866,22 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let need := (st.needs.getD ci #[]).getD l 0
   -- (the node's slots read once, so that the state's array is not shared
   -- while the node's term grows it)
-  let slots : Array (Sites P) := (Array.range (maxVar e)).map fun i => st.varSites (off + i)
-  let τ : Nat → Sites P := fun i => slots.getD (min i need) []
+  let slots : Array Nat := (Array.range (maxVar e)).map fun i => st.varMask (off + i)
+  let τ := fun i => slots.getD (min i need) 0
   let fn := (s.fns.getD ci #[]).getD l #[]
   let κ := (s.nodeCx.getD (s.base.getD ci ci) #[]).getD l entryCx
   let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
   let allCx (cj : Nat) : List Nat := (s.ctxOf.getD cj []).map (·.2)
-  let (S, st') := (gen s.table τ (fun i => fn.getD i none) (c.allocAt (k, x)) inst allCx 0 (fun _ => none) e).run st
+  let a := c.allocAt (k, x)
+  let (S, st') := (gen s.table τ (fun i => fn.getD i none) a inst allCx 0 (fun _ => 0) e).run st
   let val := st'.classes.getD (off + need + 1) 0
-  let before := (st'.vars.getD val (0, [])).1
+  let before := st'.vars.getD val 0
   let mut st := st'.grow (off + need + 1) S
   if (match k with | .ret => true | _ => false) then
     -- (a returned value reaches outside code where the unit returns it, or
     -- a closure outside code may call; `closeO` gives the rest)
-    if c.cx == entryCx && (!c.closure || c.tok ∈ st.O) then st := st.toO (st.varSites (off + need + 1))
-    if (st.vars.getD val (0, [])).1 != before then st := { st with grewO := true }
+    if c.cx == entryCx && (!c.closure || st.bits.getD c.tok 0 &&& st.outside != 0) then st := st.toOutside (st.varMask (off + need + 1))
+    if st.vars.getD val 0 != before then st := { st with grewO := true }
   return st
 
 /-- **The sites, by a worklist**: each changed variable copied into those
@@ -984,13 +944,14 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
         st := siteNode s st ci l
       | [] =>
         st := closeO s.oVars s.entryVars s.noneVars (s.cs.map (·.cx == entryCx)) s.units s.nb s.tokVars st
+        let needsClosure := st.grewO
         grewO := grewO || st.grewO
         grewHeap := grewHeap || st.grewHeap
         let more := (if grewO then s.oReaders else []) ++ (if grewHeap then s.heapReaders else [])
         grewO := false
         grewHeap := false
         st := { st with grewO := false, grewHeap := false }
-        if more.isEmpty && st.changedVars.isEmpty then break
+        if !needsClosure && more.isEmpty && st.changedVars.isEmpty then break
         for (c, m) in more do
           if !((nodeQ.getD c #[]).getD m true) then
             nodeQ := nodeQ.modify c (·.set! m true)
@@ -1000,7 +961,11 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
 /-- The finite flow of the result. -/
 def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
   let sigs := s.table.map (·.1)
-  let O := st.sharedSites st.O
+  let masks := st.vars.foldl (fun (m : Std.HashSet Nat) v => m.insert v) {}
+  let views := masks.fold (fun (m : Std.HashMap Nat (Sites P)) v => m.insert v (st.view v)) {}
+  let view (v : Nat) := match views[v]? with | some l => l | none => st.view v
+  let O := view st.outside
+  let shared := Std.HashSet.ofList O
   -- each code's allocation sites per continuation and handler, read once
   -- per code: its entry copy's, which every context shares
   let allocsOf : Array (List (NodeKey × Option P.Site × Option P.Site)) := s.ctxOf.mapIdx fun b _ =>
@@ -1011,7 +976,10 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
       keys.2.reverse.map fun kx => (kx, (c₀.allocAt kx).obj, (c₀.allocAt kx).arr)
     | _, _ => []
   { O := O
-    heap := st.heap.map fun (site, contents) => (site, st.sharedSites contents)
+    outsideRow := shared.contains
+    heap := st.sites.toList.zipIdx.filterMap fun (site, i) =>
+      let contents := st.readMask (1 <<< i)
+      if contents == 0 || shared.contains site then none else some (site, view contents)
     codes := s.ctxOf.toList.zipIdx.filterMap fun (cxs, b) => (s.cs[b]?).map fun c₀ =>
       (c₀.code, cxs.reverse.map fun (k, ci) =>
       let c := (s.cs[ci]?).getD c₀
@@ -1024,13 +992,13 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           let off := offs.getD l 0
           let need := needs.getD l 0
           let fn := fns.getD l #[]
-          let env := (Array.range need).map (fun i => st.varSites (off + i))
-          let dflt := st.varSites (off + need)
+          let env := (Array.range need).map (fun i => view (st.varMask (off + i)))
+          let dflt := view (st.varMask (off + need))
           let κ := cxs.getD l entryCx
           let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
-          ⟨env, dflt, st.varSites (off + need + 1), fn, vfnIx fn e, κ,
+          ⟨env, dflt, view (st.varMask (off + need + 1)), fn, vfnIx fn e, κ,
             callsOut s.table (fun i => fn.getD i none) (fun i => env.getD i dflt) inst 0 e⟩),
-        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.sharedSites (st.retOf ci), c.tok,
+        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, view (st.retOf ci), c.tok,
         allocsOf.getD b []⟩ : FCode P))) }
 
 /-- Two sets of the same sites. -/

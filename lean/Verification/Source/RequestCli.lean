@@ -693,6 +693,7 @@ def PreparedFile.probeComponent (p : PreparedFile) (f : SourceClaimJson.FilePlan
   f.keepModuleCodes group
   let mut work : List String := (f.siblingsOf group).map (resolve own) ++
     (f.moduleCodes group).map (qualify own.index ·.name) ++ entries
+  let mut memos : Std.HashMap (Option Nat) SourceClaimJson.ProposalMemo := {}
   let mut tried : List String := []
   let mut out : List SourceClaimJson.ProbeModule := []
   for _ in List.range ((table.length + 1) * (table.length + 1) + entries.length + 1) do
@@ -704,23 +705,31 @@ def PreparedFile.probeComponent (p : PreparedFile) (f : SourceClaimJson.FilePlan
       tried := x :: tried
       let some (_, pf, n) := table.find? (·.1 == x) | continue
       let seen ← if pf.index == own.index then SourceClaimJson.probeModulesSeen.get else probePackageSeen.get
-      let found ← match seen.find? (·.name == (if pf.index == own.index then n else x)) with
-        | some m => pure (some m)
+      let (found, memo?) ← match seen.find? (·.name == (if pf.index == own.index then n else x)) with
+        | some m => pure (some m, none)
         | none => do
-          let some j := pf.file.fr.units.findIdx? fun (u, _, init) => init.isNone && u.name == n | pure none
+          let some j := pf.file.fr.units.findIdx? fun (u, _, init) => init.isNone && u.name == n | pure (none, none)
           let t0 ← IO.monoNanosNow
-          let planned ← IO.lazyPure fun _ => pf.file.plan j [] {}
+          let memo := memos.getD pf.index {}
+          let planned ← IO.lazyPure fun _ => pf.file.plan j [] memo
           if (← IO.getEnv "TSCERT_PROBE_VERBOSE").isSome then
             IO.eprintln s!"probe component: planned {x} in {((← IO.monoNanosNow) - t0) / 1000000} ms"
           match planned with
           | .ok g =>
             let ms := g.moduleCodes (pf.file.fr.group j)
+            if !(ms.any (·.name == n)) then
+              let reason := match g.plans[j]? with
+                | some (.error e) => e
+                | some (.ok (.graph _ _ r)) => s!"receiver {r.receiver}, rest {r.restParam}"
+                | none => "no plan"
+              IO.eprintln s!"probe component: no closure code for {x}: {(reason.splitOn "\n").head?.getD reason}"
             if pf.index == own.index then g.keepModuleCodes (pf.file.fr.group j)
             else probePackageSeen.modify (· ++ (ms.map (rename pf)).filter fun m => !seen.any (·.name == m.name))
-            pure ((ms.find? (·.name == n)).map fun m => if pf.index == own.index then m else rename pf m)
+            pure ((ms.find? (·.name == n)).map (fun m => if pf.index == own.index then m else rename pf m), some g.proposed)
           | .error e =>
             IO.eprintln s!"probe component: {x} not planned: {e.take 200}"
-            pure none
+            pure (none, none)
+      if let some memo := memo? then memos := memos.insert pf.index memo
       if let some m := found then
         let m := if pf.index == own.index then rename pf m else m
         if !out.any (·.name == m.name) then out := out ++ [m]
@@ -774,7 +783,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let c0 ← IO.monoNanosNow
       let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
       IO.eprintln s!"probe component: entries {entries}; {mods.length} module functions {mods.map (·.name)}, {(mods.map (·.code.1.length)).sum} nodes, planned in {((← IO.monoNanosNow) - c0) / 1000000} ms"
-      for line in ← f.flowProbe (fr.group i) mods ofC entries.contains do IO.eprintln line
+      for line in ← f.flowProbe (fr.group i) mods ofC entries do IO.eprintln line
   let planned := if probe == some "only" then .error "flow probe only" else planned
   let (lines, verdict, extraction, contracts, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [], false)

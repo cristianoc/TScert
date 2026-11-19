@@ -124,7 +124,7 @@ theorem pastShared_sub : ∀ {S S' : Sites P}, Sub (pastShared S S') S
 /-- Inclusion of a set in a set, decided by the list where the larger set
 is small, by a hash set of it otherwise. -/
 def subIn (S S' : Sites P) : Bool :=
-  if S'.length < 8 then S.all fun s => decide (s ∈ S')
+  if (S.drop 3).isEmpty || (S'.drop 8).isEmpty then S.all fun s => decide (s ∈ S')
   else
     let h := Std.HashSet.ofList S'
     S.all h.contains
@@ -237,6 +237,8 @@ structure FFlow (P : Package) where
   O : Sites P
   heap : List (Option P.Site × Sites P)
   codes : List (Code × List (Nat × FCode P))
+  /-- These sites share the row whose contents are O. -/
+  outsideRow : Option P.Site → Bool := fun _ => false
 
 /-- The contexts of a code. -/
 def FFlow.ctxs (F : FFlow P) (m : Code) : List (Nat × FCode P) := (look m F.codes).getD []
@@ -244,12 +246,45 @@ def FFlow.ctxs (F : FFlow P) (m : Code) : List (Nat × FCode P) := (look m F.cod
 /-- A code's finite proposal at a context. -/
 def FFlow.at (F : FFlow P) (m : Code) (c : Nat) : Option (FCode P) := look c (F.ctxs m)
 
-def FFlow.contents (F : FFlow P) (s : Option P.Site) : Sites P := (look s F.heap).getD []
+def FFlow.contents (F : FFlow P) (s : Option P.Site) : Sites P :=
+  if F.outsideRow s then F.O else (look s F.heap).getD []
+
+/-- The union of the rows read by a set. The common row occurs once. -/
+def contentsOf (F : FFlow P) (S : Sites P) : Sites P :=
+  let localRows := (S.filter fun s => !(F.outsideRow s)).flatMap F.contents
+  if S.any F.outsideRow then localRows ++ F.O else localRows
+
+omit [Hashable P.Site] in
+theorem mem_contentsOf (F : FFlow P) {S : Sites P} {t : Option P.Site} :
+    t ∈ contentsOf F S ↔ ∃ s ∈ S, t ∈ F.contents s := by
+  simp only [contentsOf]
+  split
+  · rename_i ha
+    obtain ⟨w, hw, he⟩ := List.any_eq_true.mp ha
+    simp only [List.mem_append, List.mem_flatMap, List.mem_filter, Bool.not_eq_true']
+    constructor
+    · rintro (⟨s, ⟨hs, _⟩, ht⟩ | ht)
+      · exact ⟨s, hs, ht⟩
+      · exact ⟨w, hw, by simpa [FFlow.contents, he] using ht⟩
+    · rintro ⟨s, hs, ht⟩
+      cases hb : F.outsideRow s with
+      | false => exact .inl ⟨s, ⟨hs, hb⟩, ht⟩
+      | true => exact .inr (by simpa [FFlow.contents, hb] using ht)
+  · rename_i ha
+    simp only [List.mem_flatMap, List.mem_filter, Bool.not_eq_true']
+    constructor
+    · rintro ⟨s, ⟨hs, _⟩, ht⟩; exact ⟨s, hs, ht⟩
+    · rintro ⟨s, hs, ht⟩
+      exact ⟨s, ⟨hs, Bool.eq_false_iff.mpr (fun hb => ha (List.any_eq_true.mpr ⟨s, hs, hb⟩))⟩, ht⟩
+
+omit [Hashable P.Site] in
+theorem contents_sub (F : FFlow P) {S : Sites P} {s : Option P.Site} (hs : s ∈ S) : Sub (F.contents s) (contentsOf F S) :=
+  fun _ hx => (mem_contentsOf F).mpr ⟨s, hs, hx⟩
 
 /-- The flow a finite one stands for. -/
 def FFlow.flow (F : FFlow P) : Flow P where
   O := F.O
-  H := ⟨F.contents⟩
+  H := ⟨F.contents, contentsOf F, fun _ _ => mem_contentsOf F⟩
   code m c := (F.at m c).map FCode.flow
 
 omit [Hashable P.Site] in
@@ -303,12 +338,14 @@ theorem FCode.fn_lt {c : FCode P} {l i : Nat} {σ : FnSig} (h : c.flow.fn l i = 
 
 /-- **A set holding what outside code may supply**, decided. -/
 def suppliedB (S : Sites P) : Bool :=
-  decide (none ∈ S) && F.codes.all fun e => e.2.all fun c => !decide (c.2.tok ∈ F.O) || decide (c.2.tok ∈ S)
+  let outside := Std.HashSet.ofList F.O
+  let supplied := Std.HashSet.ofList S
+  supplied.contains none && F.codes.all fun e => e.2.all fun c =>
+    !outside.contains c.2.tok || supplied.contains c.2.tok
 
-omit [Hashable P.Site] in
 theorem suppliedB_sound {S : Sites P} (h : suppliedB F S = true) : Supplied F.flow S := by
-  simp only [suppliedB, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, Bool.or_eq_true,
-    Bool.not_eq_true', decide_eq_false_iff_not] at h
+  have h : none ∈ S ∧ ∀ e ∈ F.codes, ∀ c ∈ e.2, c.2.tok ∉ F.O ∨ c.2.tok ∈ S := by
+    simpa [suppliedB] using h
   refine ⟨h.1, fun m π hm ht => ?_⟩
   obtain ⟨fc, hfc, rfl⟩ := FFlow.code_at hm
   obtain ⟨l, hl, hc⟩ := FFlow.at_mem hfc
@@ -419,13 +456,6 @@ theorem lowB_sound : ∀ {e : Tm}, lowB F e = true → Lowered F.flow e := by
 
 /-! ## A term's least set -/
 
-/-- The contents of the sites of a set. -/
-def contentsOf (S : Sites P) : Sites P := S.flatMap F.contents
-
-omit [Hashable P.Site] in
-theorem contents_sub {S : Sites P} {s : Option P.Site} (hs : s ∈ S) : Sub (F.contents s) (contentsOf F S) :=
-  fun _ hx => List.mem_flatMap.mpr ⟨s, hs, hx⟩
-
 /-- The sites of `T` not in `S`, each once. -/
 def freshSites (S T : Sites P) : Sites P := Id.run do
   let mut seen := Std.HashSet.ofList S
@@ -440,27 +470,30 @@ def freshSites (S T : Sites P) : Sites P := Id.run do
 def grow : Nat → Sites P → Sites P
   | 0, S => S
   | n + 1, S =>
-    let N := freshSites S (contentsOf F S)
-    if N.isEmpty then S else grow n (S ++ N)
+    let T := contentsOf F S
+    if subB T S then S else if subB S T then grow n T else grow n (S ++ freshSites S T)
 
 theorem sub_grow : ∀ (n : Nat) (S : Sites P), Sub S (grow F n S)
   | 0, _ => Sub.refl _
   | n + 1, S => by
     simp only [grow]; split
     · exact Sub.refl _
-    · exact Sub.trans (fun _ hx => List.mem_append_left _ hx : Sub S (S ++ freshSites S (contentsOf F S)))
-        (sub_grow n _)
+    · split
+      · exact (subB_iff.mp ‹_›).trans (sub_grow _ _)
+      · exact Sub.trans (fun _ hx => List.mem_append_left _ hx) (sub_grow _ _)
 
-/-- **The closure of a set under the contents**: grown as many times as the
-heap of sites has entries' contents, then checked closed. -/
+/-- Each proper growth reads a new heap row. Test closure by one union
+of the selected rows, which includes every selected site's contents. -/
 def closeQ (S : Sites P) : Option (Sites P) :=
-  let Q := grow F (S.length + (F.heap.map fun e => e.2.length).sum + 1) S
-  if decide (∀ s ∈ Q, Sub (F.contents s) Q) then some Q else none
+  let Q := grow F (F.heap.length + 2) S
+  if subB (contentsOf F Q) Q then some Q else none
 
 theorem closeQ_sound {S Q : Sites P} (h : closeQ F S = some Q) : Sub S Q ∧ ∀ s ∈ Q, Sub (F.contents s) Q := by
   simp only [closeQ] at h
   split at h
-  · cases h; exact ⟨sub_grow F _ _, of_decide_eq_true ‹_›⟩
+  · rename_i hc
+    cases h
+    exact ⟨sub_grow F _ _, fun _ hs => (contents_sub F hs).trans (subB_iff.mp hc)⟩
   · cases h
 
 variable (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
@@ -1213,20 +1246,28 @@ theorem codeChkB_sound {m : Code} (h : codeChkB F c m = true) : CodeChk F.flow m
 
 end edges
 
+/-- Independent code checks over the same immutable proposal. -/
+private def allCodes {α : Type} (codes : List α) (check : α → Bool) : Bool :=
+  (codes.map fun c => Task.spawn fun _ => check c).all Task.get
+
+private theorem allCodes_iff {α : Type} {codes : List α} {check : α → Bool} :
+    allCodes codes check = true ↔ ∀ c ∈ codes, check c = true := by
+  simp [allCodes, Task.spawn]
+
 /-- **The checks of a finite flow**: each code's checks, `O` holding
 outside storage and no local site, closed in the heap of sites, its
 storage able to hold all of `O`. -/
 def FFlow.check (F : FFlow P) : Bool :=
   decide (none ∈ F.O) && F.O.all (fun s => decide (Sub (F.contents s) F.O)) && F.O.all (fun s => storesB F s F.O) &&
     noLocalB F.O &&
-    F.codes.all fun mc => mc.2.all fun cc =>
+    allCodes F.codes fun mc => mc.2.all fun cc =>
       codeChkB F cc.2 mc.1 && (F.at mc.1 entryCx).any fun c₀ =>
         decide (c₀.alloc.obj = cc.2.alloc.obj ∧ c₀.alloc.arr = cc.2.alloc.arr ∧ c₀.allocs = cc.2.allocs ∧
           c₀.tok = cc.2.tok)
 
 /-- **The checks of a finite flow give its facts** (proved). -/
 theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := by
-  simp only [FFlow.check, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  simp only [FFlow.check, allCodes_iff, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
   obtain ⟨⟨⟨⟨hn, hcl⟩, hw⟩, hnl⟩, hc⟩ := h
   refine ⟨fun m c π hm => ?_, fun m c π hm => ?_, hn, fun s hs => hcl s hs, fun s hs => storesB_sound F (hw s hs),
     noLocalB_sound hnl⟩
@@ -1253,10 +1294,13 @@ theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := b
 
 omit [Hashable P.Site] in
 theorem FFlow.lookup_cases (F : FFlow P) (s : Option P.Site) :
-    F.contents s = [] ∨ ∃ e ∈ F.heap, e.1 = s ∧ F.contents s = e.2 := by
-  cases hl : look s F.heap with
-  | none => exact .inl (by simp [FFlow.contents, hl])
-  | some e => exact .inr ⟨(s, e), look_mem hl, rfl, by simp [FFlow.contents, hl]⟩
+    F.contents s = F.O ∨ F.contents s = [] ∨ ∃ e ∈ F.heap, e.1 = s ∧ F.contents s = e.2 := by
+  cases hb : F.outsideRow s with
+  | true => exact .inl (by simp [FFlow.contents, hb])
+  | false =>
+    cases hl : look s F.heap with
+    | none => exact .inr (.inl (by simp [FFlow.contents, hb, hl]))
+    | some e => exact .inr (.inr ⟨(s, e), look_mem hl, rfl, by simp [FFlow.contents, hb, hl]⟩)
 
 /-- **The marks a frame's checks read of a flow**, decided: `O`'s sites
 released (`Lendable`), storage of a site that is not local referencing no
@@ -1272,7 +1316,13 @@ theorem FFlow.marksB_sound {F : FFlow P} (h : F.marksB = true) :
   obtain ⟨hO, hH⟩ := h
   refine ⟨fun s hs s' he => ?_, fun s hs => ?_⟩
   · have := hO s hs; subst he; simpa using this
-  · rcases F.lookup_cases s with hc | ⟨e, he, rfl, hc⟩
+  · rcases F.lookup_cases s with hc | hc | ⟨e, he, rfl, hc⟩
+    · show NoLocal (F.contents s); rw [hc]
+      intro t ht t' he
+      have hm := hO t ht
+      subst he
+      simp only [Option.all_some, decide_eq_true_eq] at hm
+      simp [hm]
     · show NoLocal (F.contents s); rw [hc]; simp [NoLocal]
     · show NoLocal (F.contents e.1); rw [hc]
       have := hH e he

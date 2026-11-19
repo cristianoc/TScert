@@ -54,6 +54,10 @@ variable {P : Package}
 sites the storage of that site may reference. -/
 structure SiteHeap (P : Package) where
   contents : Option P.Site → List (Option P.Site)
+  /-- An evaluation of the union of selected rows, with the same members. -/
+  readRows : List (Option P.Site) → List (Option P.Site) := fun S => S.flatMap contents
+  mem_readRows : ∀ S t, t ∈ readRows S ↔ ∃ s ∈ S, t ∈ contents s := by
+    intros; exact List.mem_flatMap
 
 /-- **A value meets a set of sites**: every first location it reaches is
 of a site of the set. -/
