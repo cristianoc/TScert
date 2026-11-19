@@ -1,9 +1,7 @@
 // A precondition on a function with an optional parameter: `at` reads
 // `xs[i]` below the length its `@requires` states, and its last parameter is
-// optional. Safe: every call meets the precondition.
-// Gap: a precondition is admitted only on a function whose parameters are
-// all plain required names, so the file is refused at the source gate and the
-// bound cannot be stated where it holds.
+// optional. The clause names the required parameters as the call passes
+// them, and the optional one admits `undefined`.
 // Pretext: line-break.ts walkPreparedLinesRaw (an optional visitor and a
 // defaulted stats) and walkPreparedComplexLines, whose cursor and handle
 // relations are their callers' to establish.

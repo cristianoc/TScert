@@ -44,7 +44,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
-import { closureRequiresTags, ensuresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
+import { closureRequiresTags, clauseParameterName, ensuresTags, invariantTags, parameterKept, plainParameter, representationTags, requiresTags, type ImportedInvariants } from "./bound-annotations.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -2034,8 +2034,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const declaration = { module: idOf(source), name: node.name.text, span };
         const clauses = writtenClauses(node);
         const synchronous = !node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword);
-        const plainNames = synchronous &&
-          node.parameters.every(p => !p.dotDotDotToken && !p.initializer && !p.questionToken && ts.isIdentifier(p.name));
+        const plainNames = synchronous && node.parameters.every(clauseParameterName);
         // The type invariants its types name, of the program's sources
         // alone, which the client reads off its signature as its own module
         // reads them (`typeInvariants`).

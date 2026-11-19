@@ -2915,7 +2915,7 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
     at: Node | undefined): Modifies<{ values: "any"; spines: "grow" }, TypeTerm> {
   const what = `${value.declaration.module}#${value.declaration.name}`;
   if (parameters === null && clauses.length > 0)
-    return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on an async function or one whose parameters are not plain required names: ${what}`);
+    return gate.fail(at ?? null, `an imported precondition (\`@requires\`) on an async function, one with a rest parameter or one whose parameters are not named: ${what}`);
   const forms = value.type.k === "function" ? [value.type]
     : value.type.k === "intersection" ? value.type.parts.flatMap(p => p.k === "function" ? [p] : []) : [];
   const plain = forms.find(f => f.effect.promise === null);

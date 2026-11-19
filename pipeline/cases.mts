@@ -2900,8 +2900,8 @@ export const cases: Case[] = [
     /no derivation|available claim/), project: "pipeline/imports-project" },
   gap("bounds-captured-precondition-gap", "Pretext's local Han kerning helpers need clauses relating parameters to captured storage.",
     "unsupported", "source", /the clause names xs, which is no parameter/),
-  gap("bounds-default-precondition-gap", "Pretext's defaulted start cursor needs its clause checked after parameter initialization and at supplied calls.",
-    "unsupported", "source", /parameters are not plain required names/),
+  gap("bounds-default-precondition-gap", "Pretext's defaulted start cursor: a clause names the argument as the call passes it, so one reading the cursor's field with no guard against `undefined` is refused; the call passing no cursor needs the clause to hold of the default the body binds.",
+    "unsupported", "source", /the path cursor\.index reads a field no record type of cursor declares as a required data field/),
   // The bounds patterns of pretext's bound rewrites (P1-P21): each pattern's safe program, refused, a gap with
   // its cause; its supported neighbours; its unsafe neighbour where one is kept (run under Node in
   // tests/node-runs.mts). Each source header names the pretext functions it stands for. `make test-pretext` runs them.
@@ -2919,8 +2919,7 @@ export const cases: Case[] = [
     /The callee requires 0 <= c\.i && c\.i \+ 1 <= xs\.length, which the facts here do not establish/),
   gap("bounds-pattern-unreachable-handle-refused", "A handle's invariant across a callback never given the handle: the visitor's stated effect covers the handle's fields and lets its arrays grow, so the invariant is lost for the call after the visit; without the visit the walker verifies (pretext line-break.ts walkPreparedLinesRaw)",
     "unverified", "search", /The callee requires h\.starts\.length <= h\.widths\.length && h\.widths\.length <= h\.starts\.length/),
-  gap("bounds-pattern-optional-requires-refused", "A precondition on a function with an optional parameter: refused at the source gate, so a bound its callers establish cannot be stated (pretext line-break.ts walkPreparedLinesRaw, walkPreparedComplexLines)",
-    "unsupported", "source", /a precondition \(`@requires`\) on a function whose parameters are not plain required names/),
+  positive("bounds-pattern-optional-requires", "A precondition on a function with an optional parameter: the clause states a bound its callers establish (pretext line-break.ts walkPreparedLinesRaw, walkPreparedComplexLines)"),
   positive("bounds-pattern-known-growth-refused", "P2, growth by a known count across a callee: the callee's two-state postcondition `lists.widths.length === old(lists.widths.length) + n`, read with the caller's state at the call as its entry, bounds the list's length after the call (pretext rich-inline.ts prepareRichInline, prepare.ts measureAnalysis; 31 sites)"),
   positive("bounds-pattern-known-growth", "P2's neighbour: the pushes in the caller's own body"),
   negative("invalid-bounds-pattern-known-growth", "P2's unsafe neighbour: a callee growing the list by more than the loop's step (run under Node: NaN)",
@@ -3045,6 +3044,9 @@ export const cases: Case[] = [
   negative("invalid-field-path-read-replaced", "a field replaced between its test and the call reading below its length: `undefined` at `number` (run under Node)",
     /no derivation of its node-typing claim/),
   gap("field-path-precondition-unestablished", "a path precondition no caller's fact establishes: pretext's `layoutNextRichInlineLineRange` passes an exported parameter's cursor to `getSegmentIndex`, of whose `itemIndex` nothing states a safe integer; it needs a cursor invariant or a validated entry", "unverified", "search",
+    /no derivation of its node-typing claim/),
+  positive("precondition-optional-parameter", "a precondition naming an optional and a defaulted parameter: the clause reads the argument as the call passes it, guarded by `c === undefined`, and each call passing it establishes it (ARITHMETIC.md, \"Preconditions\")"),
+  negative("invalid-precondition-optional-parameter", "a call passing an optional parameter's cursor at the array's length, outside its precondition: `undefined` at `number` (run under Node)",
     /no derivation of its node-typing claim/),
   positive("precondition-exported", "a precondition on an exported function: checked assuming it, established by its module's call, and trusted of a caller outside the analyzed sources (ARITHMETIC.md, \"Preconditions\")"),
   { ...positive("precondition-value-import", "imported functions stating preconditions: the imported signature keeps the clause, and each call establishes it, below the length in a loop and under a length test"),

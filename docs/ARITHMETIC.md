@@ -753,9 +753,18 @@ its precondition in its leading JSDoc comment, `/** @requires C */`, in
 function initializer may use its binding statement's leading comment. The
 front end elaborates it to index facts at the call's positions; Lean reads
 them from the Fragment into the unit's request and into the signature its
-callers see, and callers prove the facts as stated. A precondition is
-refused on an async function; on one whose parameters are not plain required
-names; and on one naming the receiver without declaring it.
+callers see, and callers prove the facts as stated. A function
+declaration's optional or defaulted parameter is named as the call passes
+its argument: its input slot holds the actual at its position, `undefined`
+where the call passes none, and its type admits `undefined`, so a clause
+reads paths through it past a guard `p === undefined ||`; the default
+replaces an undefined argument in the body, after the entry the clause is
+assumed at. A call establishes the facts at the positions it passes; one
+naming a position the call passes no argument for is refused. A
+precondition is refused on an async function; on one with a rest
+parameter or a parameter written as a pattern; on a closure whose
+parameters are not plain required names; and on one naming the receiver
+without declaring it.
 
 **Exported functions.** An exported function's precondition is its
 signature's in every module that imports it: the front end elaborates the
@@ -804,7 +813,10 @@ arrow called at its array's length), `invalid-precondition-call` (a call at
 its clause bounds), `invalid-precondition-lengths` (a call with no
 length equality), `invalid-precondition-lengths-shrunk` (an equality
 a `pop` changed) and `invalid-precondition-literal-index` (a literal
-index past the clause's bound). Exported: positive
+index past the clause's bound). Optional and defaulted parameters: positive
+`precondition-optional-parameter`; negative, run under Node,
+`invalid-precondition-optional-parameter` (a cursor at the array's
+length). Exported: positive
 `precondition-exported` and `precondition-value-import` (an
 importer's calls of `imports-project/bounded.ts`'s functions); negative, run
 under Node, `invalid-precondition-value-import` (an importer's call

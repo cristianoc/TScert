@@ -156,10 +156,13 @@ and stores `NaN` there.
 
 ### 2.2 A defaulted parameter
 
-**Conjectured.** A clause naming a defaulted parameter is checked after
-parameter initialization in the body, and at each call that supplies the
-parameter (`bounds-default-precondition-gap`, pretext's defaulted start
-cursor).
+A clause names a defaulted parameter's argument as the call passes it,
+at a type admitting `undefined`, and each call passing the argument
+establishes it ([preconditions](../ARITHMETIC.md#preconditions)).
+**Conjectured.** A call that passes no argument establishes a clause the
+default meets, the clause checked of the default after parameter
+initialization in the body (`bounds-default-precondition-gap`, pretext's
+defaulted start cursor).
 
 ### 2.3 Values not shown integral
 

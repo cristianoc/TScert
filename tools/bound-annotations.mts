@@ -125,6 +125,15 @@ export function clientsTags(trivia: string): string[] {
   return tagsOf(trivia, "clients");
 }
 
+/** Whether a precondition may name a parameter: a name, not a rest. An
+ * optional or defaulted one is named at its call position, where its input
+ * slot holds the call's actual, `undefined` where the call passes none; the
+ * default replaces it in the body, after the entry (ARITHMETIC.md,
+ * "Preconditions"). */
+export function clauseParameterName(p: ts.ParameterDeclaration): boolean {
+  return !p.dotDotDotToken && ts.isIdentifier(p.name);
+}
+
 /** Whether a parameter is a plain required name: no rest, default or `?`,
  * and no pattern. Its input slot holds the call's actual at its position. */
 export function plainParameter(p: ts.ParameterDeclaration): boolean {

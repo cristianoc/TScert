@@ -16,7 +16,7 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { clauseCurrentRoots, clauseRoots, elaborateRequires, ensuresTags, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
+import { clauseCurrentRoots, clauseParameterName, clauseRoots, elaborateRequires, ensuresTags, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
   requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
 import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
@@ -2185,8 +2185,8 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
     let requires: IndexFact[] = [];
     if (clauses.length > 0) {
       if (isAsync) gate.fail(node, "a precondition (`@requires`) on an async function");
-      if (node.parameters.some(p => p.dotDotDotToken || p.initializer || p.questionToken || !ts.isIdentifier(p.name)))
-        gate.fail(node, "a precondition (`@requires`) on a function whose parameters are not plain required names");
+      if (node.parameters.some(p => !clauseParameterName(p)))
+        gate.fail(node, "a precondition (`@requires`) on a function whose parameters are not named, or one with a rest parameter");
       const elaborated = precondition(gate, clauses, node.parameters.map((p, i) => ({
         name: ts.isIdentifier(p.name) ? p.name.text : "", type: parameterTypes[i] })), !!receiverParam);
       if (typeof elaborated === "string") gate.fail(node, elaborated);
