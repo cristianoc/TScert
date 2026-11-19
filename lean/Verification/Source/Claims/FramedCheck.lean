@@ -203,14 +203,15 @@ def rowsKinds (rows : List ComponentWire.Clients) : List (Option Verification.Ki
     let c := rowsTheta (P := probePackage fun _ => false) rows ⟨none, k, none⟩
     if c == .keep then none else some (k, c)
 
-/-- **The index of a component's protocol** (`componentProtocol`), built
-once: its queries are the protocol (`componentIndex_query`). -/
+/-- **A component's protocol** (`componentProtocol`), built once: its
+held sites' set and its charges are computed before any part is queried
+(`componentIndex_eq`). -/
 @[noinline] def componentIndex {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
-    (lay : List (Nat × Bool × Nat × Nat)) : ProtocolIndex (markedPackage ofC O) :=
-  ProtocolIndex.ofWrites (flowWrites F) (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O))
+    (lay : List (Nat × Bool × Nat × Nat)) : Protocol (markedPackage ofC O) :=
+  componentProtocol F lay
 
-theorem componentIndex_query {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
-    (lay : List (Nat × Bool × Nat × Nat)) : (componentIndex F lay).query = componentProtocol F lay := rfl
+theorem componentIndex_eq {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
+    (lay : List (Nat × Bool × Nat × Nat)) : componentIndex F lay = componentProtocol F lay := rfl
 
 /-- A component's protocol at every part of its flow's sites, each part's
 change but `keep` (`componentProtocol`, `partsU`). -/
@@ -219,7 +220,7 @@ def protocolParts {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFl
   -- (the protocol's index built once, its parts queried)
   let idx := componentIndex F lay
   (partsU (flowSites F)).filterMap fun p =>
-    let c := idx.query p
+    let c := idx p
     if c == .keep then none else some (p.site, p.kind, c)
 
 /-- **A forged component** (`TSCERT_FORCE`, the controls'):

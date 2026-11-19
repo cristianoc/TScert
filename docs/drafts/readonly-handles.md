@@ -2751,7 +2751,7 @@ call's protocol $`\Psi_c=\Psi_C\sqcup\Theta_C\sqcup W_c`$ of
 [framed acceptance](framed-acceptance.md#charges), at $`\Theta_C=\mathsf{keep}`$:
 $`\Psi_C`$ (`componentProtocol`) and $`W_c`$ (`depthCharges`, over
 $`\mathrm{seg}(c)`$, `segCodes`, and $`L(c)`$, `callReach`) from the
-charges `writesT` gives each node of the flow's codes, the closure of
+kinds `writesK` gives the writes of each node of the flow's codes, the closure of
 sites `capClose`. The check is required at each node of the call's
 continuation and handler that may call outside code or makes a framed
 call (`reachesOut`).

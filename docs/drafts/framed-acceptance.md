@@ -155,7 +155,8 @@ records (Astra and Fable found none of them reopened, Fable's table).
   `publicCall_safe` ([the calls the claim is about](#the-calls-the-claim-is-about)).
 - **Write coverage of a residual redex** (Astra 4): a writing redex reached
   after its receiver is evaluated needs an invariant linking it to its
-  source write. Closed by `residual_charged` ([charges](#charges)).
+  source write. Closed by charging a write at every site of its kinds and
+  the residual invariant `WOk` ([charges](#charges)).
 - **Crossings beyond the entry** (Astra 5): stated as the subset milestone
   1 implements ([the history](#the-history-of-a-program)).
 - **The entry crossing falsifies `ActualCrossings`** (Fable N3,
@@ -166,7 +167,7 @@ records (Astra and Fable found none of them reopened, Fable's table).
   by the meet over the functions sharing a code
   ([the history](#the-history-of-a-program)).
 - **`writesIn` is partial** (Fable N6, `WritesInOpaque.lean`). Closed by a
-  total definition (`Round5.lean`, `writesT`).
+  total definition (`writesK`).
 - **Smaller points** (Fable N6): `FrameSpec` named the probe's structure
   (renamed `FramedSpec`); `entry_slot_holds_O_tokens` is the second
   review's check (`CodeClause.lean`), to be moved into the build;
@@ -219,12 +220,16 @@ $`C`$ active at it (`depthC`).
 
 ## Charges
 
-**The charges of a set of codes** $`\mathrm{Ch}(M)`$: the protocol joining,
-for each node of each code of $`M`$ at each of its contexts, each write of
-the node's expression at the parts of its receiver's sites and the kinds
-its form writes (`writesT` over the flow's nodes, `roleKinds (slotBound
-k)`), at $`\mathsf{any}`$, and each native step model's writes at its
-receivers' parts. The verifier computes it from the lowered node
+**The charges of a set of codes** $`\mathrm{Ch}(M)`$: the kinds the writes
+of the node expressions of the codes of $`M`$ may change, each field write
+under a key $`k`$ at `roleKinds (slotBound k)` and each element store at
+the element kind (`writesK`, `codeKinds`, `codesKinds`,
+`ReadOnlyCharges.lean`), the native step models' codes among them. A
+protocol from charges $`K`$ and a held set $`H`$ (`probeProtocol`) changes a
+part by $`\mathsf{any}`$ where its kind is in $`K`$, and keeps it at a local
+site outside $`H`$ and at every other kind: a write is charged at every site
+its kind may have, and the precision on local storage is $`H`$'s, from the
+local lemma below. The verifier computes the charges from the lowered node
 expressions the flow holds, which the binding checks make the request's
 lowered codes; nothing is discharged as fresh.
 
@@ -278,42 +283,34 @@ Its two instances, each reading the same closure:
 - **The call's protocol** $`\Psi_c=\Psi_j\sqcup W_c`$ with
   $`\Psi_j=\Psi_C\sqcup\Theta_C`$.
 
-**A step's changes are its charged writes** (`stepWrites_sound`, to be
-proved): every location $`l<|h|`$ a step of $`C`$'s code from a reached
-state changes is written by a writing redex whose receiver's location's
-part is among the charged parts of a write of the frame's node expression,
-at every context the frame may fit. $`\mathrm{Ch}`$ is computed by the
-total `writesT` (`ReadOnlyCharges.lean`): its definition is structural
-over the term and its argument lists, and charges a receiver with no
-computed set, and a `letE` body under a bound term with none, at `top`,
-every site of the flow and `none`.
+**A step's changes are its code's charges** (`step_kind_charged`, proved,
+`ReadOnlyWriteKinds.lean`): at a step from a term meeting the residual
+invariant, with valid references, every old location the step changes has
+a kind among the charges of the innermost frame's code.
 
-- **The residual invariant** (`residual_charged`, to be proved): from the
-  node's entry, the frame's running term is a *residual* of the node
-  expression `e` (`Residual e t`: `t` is `e` with some subterms replaced by
-  values they evaluated to, each meeting the set `syn` gives that subterm,
-  and a nested run in place of a call); each writing redex of a residual
-  `writeAt k v y` or `setElem v i w` has its receiver `v` meeting the set of
-  the source write's receiver, the set `writesT` charges. Plan: by
-  induction on the node's evaluation steps, each step a congruence step
-  inside a residual (`step_path`, proved) whose redex's value meets its
-  subterm's set (`fits_step`, `Fits.sub`, proved), so `Residual` is kept;
-  `holder.child.i++` evaluates `holder.child` first, a read whose value
-  meets the read's set, then writes at that value. At each context the
-  frame may fit (`framed_at_innermost_keys`' existential), the node's
-  charges at that context are joined in $`W_c`$ and $`\Psi_C`$.
-- Then `step_writes_active` (proved, `ReadOnlyStepWrites.lean`) locates
-  the changed location at the active redex of the innermost frame, a
-  writing redex at it (`WriteRedex`: a field write whose receiver holds it
-  under the written key, or an element store whose spine lists it at the
-  index); `write_site` (proved, from `Fits.active` and `VJ.sites`) puts its
-  site in a set the receiver, a value one step from it, meets at the fit
-  of the term; `residual_charged` makes that set the source write's
-  charged set, and `slotKind_sound` puts its kind among
-  `roleKinds (slotBound k)`. The invocation changes no old location.
+- **The residual invariant** (`WOk`, kept by every step, `step_wok`): at
+  every run of graph code in the term, `frame E K t …`, the writes its
+  running term may still perform are among its code's
+  (`writesK t ⊆ codeKinds E`), and the slots of a run, the captures of a
+  closure and the parts of a bound function perform none, with a heap of
+  such values (`HeapW`). A step's writes are among those of the term it
+  steps from; an entered node instantiates its code's expression with
+  plain values (`instantiate_wok`); a value performs no write
+  (`writesK_val`).
+- **The active redex's writes** (`active_writes`): the writes of the term
+  the next step reduces are among the charges of the innermost frame's
+  code.
+- `step_writes_active` (proved, `ReadOnlyStepWrites.lean`) locates the
+  changed location at the active redex, a writing redex at it
+  (`WriteRedex`), and `slotKind_sound` (proved) puts its kind among that
+  redex's writes: a slot under $`k`$ has a role of `slotBound k`
+  (`field_bound`), a spine's listed cell is an element cell. The
+  invocation changes no old location.
+- At a charged part whose site, where local, the held set holds, the
+  protocol from charges is $`\mathsf{any}`$ (`probeProtocol_charged`).
 
 So **within a call** (`within_charges`, to be proved, from `local_reach`,
-`stepWrites_sound`, `stepWithin_of_check`): every step of $`C`$'s code
+`step_kind_charged`, `probeProtocol_charged`, `stepWithin_of_check`): every step of $`C`$'s code
 inside a member's call from $`a`$ is `StepWithin Ψ_C |h_a|`, and every step
 of $`C`$'s code at the caller's depth in a segment from $`s_0`$ is
 `StepWithin W_c |h₀|`, its frame running a code of $`\mathrm{seg}(c)`$
@@ -1275,7 +1272,9 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `allocOf_some`, `stepSite_some`, `entryFnB_sound`, `agreeB_sound`
 (`ReadOnlyBinding.lean`), `realizedFlowB_sound` (`FramedBinding.lean`);
 `step_writes_active`, `Fits.active`, `write_site`
-(`ReadOnlyStepWrites.lean`); `graph_stepR`, `graph_safeR`,
+(`ReadOnlyStepWrites.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
+`active_writes`, `slotKind_sound`, `step_kind_charged`,
+`probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `graph_stepR`, `graph_safeR`,
 `SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
 `keeps_postExcR`, `safeRet_of_sim` (`TolerantFramesGuaranteeRuns.lean`),
 `nodesChecked_of_walkJR`, `nodesChecked_of_walkR`; `framedKept_holds`,
@@ -1300,8 +1299,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `local_reach`, `stepWrites_sound`,
-`writesT_sound`, `residual_charged`, `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
+**To be proved, milestone 1**: `local_reach`, `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `within_charges`, `segFrames`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
@@ -1349,7 +1347,7 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
    allocation `const c = { i: 0 }`, with the cursor's site the same in the
    realized and the request's code (`chk_sim` at that step); and, on the
    flow probe with `probeProtocol` replaced by $`\Psi_C`$ and $`W_c`$ as
-   defined here (`writesT`), the cursor fact `c.i < xs.length` kept at
+   defined here (`writesK`), the cursor fact `c.i < xs.length` kept at
    `visit(c.i)` under $`\Psi_c`$, and `nested-capture.mjs`'s fact dropped
    at `wrapper()`. Then the lemmas listed for milestone 1, the restrictions
    with their controls, the plan, the headline, and the refusal of units
@@ -1362,7 +1360,7 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 
 **Milestone 1 is specified to build**: each lemma it lists has its
 statement and plan, each definition it reads is given (the canonical
-sites, `RealizedAt`, `writesT`, `ActualCrossingsIn`, `PublicCall` over the
+sites, `RealizedAt`, `writesK`, `ActualCrossingsIn`, `PublicCall` over the
 core), its four restrictions are stated with their refusals and controls,
 and P22's layout meets them (measured).
 
@@ -1387,8 +1385,9 @@ and P22's layout meets them (measured).
   sites of $`O`$ and `%ElementAt%`'s token, and the cursor's local site lies
   outside it: `c.i < xs.length` and `0 <= c.i` are kept. At
   `nested-capture.mjs`'s `wrapper()` (its TypeScript form) the call is
-  framed through $`\mathrm{seg}(c)`$, `holder.child`'s site is in $`L(c)`$
-  and charged `any` by `bump`'s write: both facts are dropped.
+  framed through $`\mathrm{seg}(c)`$, the sites of `holder` and
+  `holder.child` are in $`L(c)`$, and the field kind is charged `any` by
+  `bump`'s write: both facts are dropped.
 
 ## Tests
 
@@ -1423,8 +1422,6 @@ and P22's layout meets them (measured).
 ## Open points for review
 
 1. **Milestone 2's disjoint supports** are a design to review.
-2. **`residual_charged`** reads `Residual` as an invariant of a node's
-   evaluation; natives' step models are writing redexes it must cover.
 
 ## Runs
 

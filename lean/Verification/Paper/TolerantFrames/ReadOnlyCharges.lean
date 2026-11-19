@@ -8,12 +8,10 @@ The draft "Accepting a unit through the read-only frame"
 charges the frame's protocols read, computed from a finite flow
 (`FFlow`) and the lowered node expressions it holds:
 
-- **The charged writes of a term** (`writesT`): for each write, the sites
-  of the written location and the kinds it may have, the receiver's
-  computed set (`syn`), or every site of the flow (`flowSites`) where it
-  has none; total, structural over the term. **The charges of a set of
-  codes** `Ch(M)` (`codeWrites`, `flowWrites`): each node's charged writes
-  at each of its contexts.
+- **The kinds a term's writes may change** (`writesK`): for each write,
+  the kinds its written location may have; total, structural over the
+  term. **The charges of a set of codes** `Ch(M)` (`codeKinds`,
+  `codesKinds`, `flowKinds`): the kinds of each node's writes.
 - **The closure of sites** $`\overline{S}`$ (`capClose`): the least superset
   closed under the heap of sites' contents and under captures, computed by
   iteration and checked closed (`capClosedB`, `capClosedB_sound`).
@@ -23,8 +21,7 @@ charges the frame's protocols read, computed from a finite flow
 - **The protocols**: $`\Psi_C`$ (`componentProtocol`), the reach of a call
   $`L(c)`$ (`callReach`) and the depth charges $`W_c`$ (`depthCharges`), each
   a protocol from charges (`probeProtocol`): a part changed by any change
-  where a charged write may reach it, kept at a local site outside the
-  held set. -/
+  at a charged kind, kept at a local site outside the held set. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
@@ -44,48 +41,45 @@ def flowSites (F : FFlow P) : Sites P :=
     F.codes.flatMap fun (_, cs) => cs.flatMap fun (_, c) => fromCode c)).toList
 
 mutual
-/-- **The charged writes of a term at a node's slots** (`writesT`, the
-draft "Framed acceptance", "Charges"): for each write, the sites of the
-written location (its object's, or its spine's for an element write) and
-the kinds it may have: a slot under a key, a field or a cell, or the array
-spine under the spine key (`slotBound`); an element cell. A receiver with
-no computed set, and a `letE` body under a bound term with none, are read
-at `top`, every site of the flow. Structural over the term and its
-argument lists. -/
-def writesT (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
-    (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × List (Option Verification.Kind))
-  | .writeAt k x y => [((syn F τ φ a κ d Γ x).getD top, roleKinds (Footprints.slotBound k))] ++
-      writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ y
-  | .setElem x i v => [((syn F τ φ a κ d Γ x).getD top, [some .elem])] ++
-      writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ i ++ writesT F top τ φ a κ d Γ v
-  | .letE x b => writesT F top τ φ a κ d Γ x ++
-      writesT F top τ φ a κ (d + 1) (consSites ((syn F τ φ a κ d Γ x).getD top) Γ) b
-  | .invoke f r args => writesT F top τ φ a κ d Γ f ++ writesT F top τ φ a κ d Γ r ++ writesTs F top τ φ a κ d Γ args
-  | .construct f args => writesT F top τ φ a κ d Γ f ++ writesTs F top τ φ a κ d Γ args
-  | .makeAt _ _ inits | .arrLit inits => writesTs F top τ φ a κ d Γ inits
-  | .indexAt x y | .arith _ x y | .elemAt x y | .merge _ x y | .makeKey x y =>
-    writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ y
-  | .ite x y z => writesT F top τ φ a κ d Γ x ++ writesT F top τ φ a κ d Γ y ++ writesT F top τ φ a κ d Γ z
-  | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => writesT F top τ φ a κ d Γ x
+/-- **The kinds a term's writes may change** (`writesK`, the draft "Framed
+acceptance", "Charges"): for each field write the kinds a slot under its
+key may have (`slotBound`), for each element store an element cell, at
+every position of the term that its own steps evaluate. It reads no
+closure's code, no bound function's parts and no run (`goto`, `frame`):
+those are evaluated in other frames, or are values. Structural over the
+term and its argument lists. -/
+def writesK : Tm → List (Option Verification.Kind)
+  | .writeAt k x y => roleKinds (Footprints.slotBound k) ++ writesK x ++ writesK y
+  | .setElem x i v => [some .elem] ++ writesK x ++ writesK i ++ writesK v
+  | .letE x b => writesK x ++ writesK b
+  | .invoke f r args => writesK f ++ writesK r ++ writesKs args
+  | .construct f args => writesK f ++ writesKs args
+  | .makeAt _ _ inits | .arrLit inits => writesKs inits
+  | .indexAt x y | .arith _ x y | .elemAt x y | .merge _ x y | .makeKey x y => writesK x ++ writesK y
+  | .ite x y z => writesK x ++ writesK y ++ writesK z
+  | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => writesK x
   | _ => []
-/-- The charged writes of a list of terms. -/
-def writesTs (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P) (κ : Nat)
-    (d : Nat) (Γ : Nat → Option (Sites P)) : List Tm → List (Sites P × List (Option Verification.Kind))
+/-- The kinds the writes of a list of terms may change. -/
+def writesKs : List Tm → List (Option Verification.Kind)
   | [] => []
-  | x :: xs => writesT F top τ φ a κ d Γ x ++ writesTs F top τ φ a κ d Γ xs
+  | x :: xs => writesK x ++ writesKs xs
 end
 
-/-- **The charges of one code** `Ch({m})`: the charged writes of each node
-of the code at each of its contexts. -/
-def codeWrites (F : FFlow P) (top : Sites P) (m : Code) (cs : List (Nat × FCode P)) :
-    List (Sites P × List (Option Verification.Kind)) :=
-  cs.flatMap fun (_, c) => (m.1.zip m.2).zipIdx.flatMap fun ((e, kx), l) =>
-    writesT F top (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
+@[simp] theorem writesKs_eq (xs : List Tm) : writesKs xs = xs.flatMap writesK := by
+  induction xs <;> simp_all [writesKs]
+
+/-- **The charges of one code** `Ch({m})`: the kinds the writes of each of
+its node expressions may change. -/
+def codeKinds (m : Code) : List (Option Verification.Kind) := m.1.flatMap writesK
+
+/-- The charges of a set of the flow's codes, by index. -/
+def codesKinds (F : FFlow P) (M : List Nat) : List (Option Verification.Kind) :=
+  M.flatMap fun i => match F.codes[i]? with
+    | some (m, _) => codeKinds m
+    | none => []
 
 /-- The charges of every code of a flow, `Ch` of all codes of `C`. -/
-def flowWrites (F : FFlow P) : List (Sites P × List (Option Verification.Kind)) :=
-  let top := flowSites F
-  F.codes.flatMap fun (m, cs) => codeWrites F top m cs
+def flowKinds (F : FFlow P) : List (Option Verification.Kind) := F.codes.flatMap fun (m, _) => codeKinds m
 
 /-- **The sites a code's closures may capture**: the sites of each capture
 slot at the code's entry at each of its contexts, its layout its arity, its
@@ -178,24 +172,13 @@ def reachesOut (F : FFlow P) (top : Sites P) (seg : List Nat) (Sf : Sites P) : B
     | some (m, cs) => (codeCalls F top m cs).any fun (f, _, _) => f.contains none
     | none => false
 
-structure ProtocolIndex (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
-  captures : Std.HashSet (Option P.Site)
-  writes : Std.HashMap (Option P.Site) (List (Option Verification.Kind))
-
-/-- Index each write's kinds by the sites its receiver may reach. -/
-def ProtocolIndex.ofWrites (W : List (Sites P × List (Option Verification.Kind))) (held : Sites P) : ProtocolIndex P :=
-  ⟨Std.HashSet.ofList held, W.foldl (fun m (sites, ks) =>
-    sites.foldl (fun m s => m.insert s ((ks ++ m.getD s []).eraseDups)) m) {}⟩
-
-/-- **A protocol from charges**: a part changed by any change where a
-charged write `W` may reach it, at its site and kind; kept where none may,
-and kept at a local site outside `held`. -/
-def ProtocolIndex.query (idx : ProtocolIndex P) : Protocol P := fun p =>
-  if p.site.any (fun s => P.mark s = .local) && !idx.captures.contains p.site then .keep
-  else if (idx.writes.getD p.site []).contains p.kind then .any else .keep
-
-def probeProtocol (W : List (Sites P × List (Option Verification.Kind))) (held : Sites P) : Protocol P :=
-  (ProtocolIndex.ofWrites W held).query
+/-- **A protocol from charges** (`probeProtocol`): a part changed by any
+change where its kind is among the charged kinds `K`; kept at a local site
+outside `held`, and at every other kind. -/
+def probeProtocol (K : List (Option Verification.Kind)) (held : Sites P) : Protocol P :=
+  let hs : Std.HashSet (Option P.Site) := Std.HashSet.ofList held
+  fun p => if p.site.any (fun s => P.mark s = .local) && !hs.contains p.site then .keep
+    else if K.contains p.kind then .any else .keep
 
 /-- The capture sites of the codes whose closures a token stands for. -/
 def tokenCaps (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (t : Option P.Site) : Sites P :=
@@ -206,7 +189,7 @@ def tokenCaps (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (t : Option
 of `C` at every part but a local part whose site is outside the closure of
 the capture sites and `O`, which is kept. -/
 def componentProtocol (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Protocol P :=
-  probeProtocol (flowWrites F) (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O))
+  probeProtocol (flowKinds F) (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O))
 
 /-- **The reach of a call** $`L(c)`$: the closure of its callee's,
 receiver's and arguments' sets and the capture sites of its segment's
@@ -221,10 +204,7 @@ def callReach (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (seg : List
 /-- **The depth charges** $`W_c`$ of a call: `Ch(seg(c))` at every part but
 a local part whose site is outside $`L(c)`$, which is kept. -/
 def depthCharges (F : FFlow P) (seg : List Nat) (L : Sites P) : Protocol P :=
-  let top := flowSites F
-  probeProtocol (seg.flatMap fun i => match F.codes[i]? with
-    | some (m, cs) => codeWrites F top m cs
-    | none => []) L
+  probeProtocol (codesKinds F seg) L
 
 
 /-! ## The closures, checked -/
