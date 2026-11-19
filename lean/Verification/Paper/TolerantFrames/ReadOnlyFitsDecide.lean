@@ -18,10 +18,10 @@ decided from it (proof scope: the lemmas below):
 - **Lowered code** (`lowB`, `lowB_sound`).
 - **The edges** (`carriesB`, `carriesFnB`): finitely many slots decide them,
   every slot past the widths reading the defaults.
-- **Open entries** (`openB`): a closure is created only where its code's
-  entry holds `O` at the slots a caller of unknown callee fills and its
-  return set lies within `O`; a known call's set is its callee's return
-  set (`invokeSites`).
+- **Closures** (`graphSites`, `openB`): a closure's set holds its code's
+  token; where the token lies in `O`, the code's entry holds `O` at the
+  slots a caller of unknown callee fills and its return set lies within
+  `O`; a known call's set is its callee's return set (`invokeSites`).
 - **The flow** (`FFlow.check`, `FFlow.check_sound`): every code's checks and
   the facts of `O` give `Flow.Facts`; a member's entry (`FFlow.entryB`)
   and the entry closures' shapes (`FFlow.shapesB`) give `EntryShape`'s
@@ -68,8 +68,8 @@ theorem OFits.sub : ∀ {d Γ a o S e}, OFits Fl τ φ d Γ a o S e → o = fals
   | makeAbsent Ss hst hx ha _ => intro ho _ hS; exact .makeAbsent Ss hst hx (hS _ ha) (by simp [ho])
   | makeBound Ss hst hx ha hp _ =>
     intro ho _ hS; exact .makeBound Ss hst hx (hS _ ha) (fun x hx => (hp x hx).sub hS) (by simp [ho])
-  | makeGraphC π Ss hst hx ha hc hcode hcaps hself hop hE _ =>
-    intro ho _ hS; exact .makeGraphC π Ss hst hx (hS _ ha) hc hcode hcaps hself hop hE (by simp [ho])
+  | makeGraphC π Ss hst hx ha hc hcode hcaps hself htok hop hE _ =>
+    intro ho _ hS; exact .makeGraphC π Ss hst hx (hS _ ha) hc hcode hcaps hself (hS _ htok) hop hE (by simp [ho])
   | makeGraphOut Ss hst hx ha hc hE hcaps _ =>
     intro ho _ hS; exact .makeGraphOut Ss hst hx (hS _ ha) hc hE (fun u hu => (hcaps u hu).sub hS) (by simp [ho])
   | readAt hx hq hcl hr _ => intro ho _ hS; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) (by simp [ho])
@@ -113,13 +113,15 @@ def FNode.fnAt (x : FNode P) (i : Nat) : Option Nat := x.fn.getD i none
 
 /-- **A code's finite proposal**: its nodes, the node of every label past
 them, the sites its frames allocate at, the table of signatures its
-nodes' indices name, and its return set. -/
+nodes' indices name, its return set, and the site standing for its
+closures. -/
 structure FCode (P : Package) where
   nodes : Array (FNode P)
   dflt : FNode P
   alloc : Alloc P
   sigs : Array FnSig
   ret : Sites P
+  tok : Option P.Site
 
 def FCode.node (c : FCode P) (l : Nat) : FNode P := c.nodes.getD l c.dflt
 
@@ -134,6 +136,7 @@ def FCode.flow (c : FCode P) : CodeFlow P where
   fn l i := c.sigAt ((c.node l).fnAt i)
   vfn l := c.sigAt (c.node l).vfn
   ret := c.ret
+  tok := c.tok
 
 /-- The first entry of a list at a key. -/
 def look {α β : Type} [DecidableEq α] (a : α) (l : List (α × β)) : Option β :=
@@ -246,7 +249,7 @@ def lowB : Tm → Bool
   | .makeAt (.bound t r pre) _ xs => partB t && partB r && pre.all partB && lowAll xs
   | .makeAt (.graph ar E K s caps _ rest comp) _ xs =>
     (!P.ofC comp || (look (E, K) F.codes).any fun c => selfFnB c ar E K s rest caps.length &&
-      openB F c ar s rest caps.length && capsOB F c ar s rest caps.length) && lowAll E &&
+      decide (c.tok ∈ F.O) && openB F c ar s rest caps.length && capsOB F c ar s rest caps.length) && lowAll E &&
       caps.all partB && lowAll xs
   | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => lowB a
   | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
@@ -286,8 +289,9 @@ theorem lowB_sound : ∀ {e : Tm}, lowB F e = true → Lowered F.flow e := by
     · cases hl : look (E, K) F.codes with
       | none => simp [hl] at hc
       | some c =>
-        simp only [hl, Option.any_some, Bool.and_eq_true] at hc
-        exact ⟨c.flow, by simp [FFlow.flow, hl], selfFnB_sound hc.1.1, openB_sound F hc.1.2, capsOB_sound F hc.2⟩
+        simp only [hl, Option.any_some, Bool.and_eq_true, decide_eq_true_eq] at hc
+        exact ⟨c.flow, by simp [FFlow.flow, hl], selfFnB_sound hc.1.1.1, hc.1.1.2, openB_sound F hc.1.2,
+          capsOB_sound F hc.2⟩
   all_goals try simp_all
   all_goals try exact h
 
@@ -400,7 +404,8 @@ def graphSites (d : Nat) (Γ : Nat → Option (Sites P)) (ar : Nat) (E : List Tm
     | some c =>
       if (List.range caps.length).all (fun i => (caps[i]?).all fun u =>
           (partSites τ d Γ u).any fun S' => decide (Sub S' (c.flow.env s (capSlot ar rest i)))) &&
-        selfFnB c ar E K s rest caps.length && openB F c ar s rest caps.length then some [a.obj] else none
+        selfFnB c ar E K s rest caps.length && (!decide (c.tok ∈ F.O) || openB F c ar s rest caps.length) then
+        some [a.obj, c.tok] else none
     | none => none
   else (partsSites τ d Γ caps).map (a.obj :: ·)
 
@@ -802,7 +807,12 @@ theorem syn_sound : ∀ e, SynOk F τ φ a e := by
               simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at hb
               obtain ⟨⟨hcaps, hself⟩, hop⟩ := hb
               refine .makeGraphC c.flow _ hst hx (List.mem_cons_self ..) hC (by simp [FFlow.flow, hc])
-                (fun i u hu => ?_) (selfFnB_sound hself) (openB_sound F hop) hE' (by simp)
+                (fun i u hu => ?_) (selfFnB_sound hself) (by simp [FCode.flow]) (fun ht => ?op) hE' (by simp)
+              case op =>
+                simp only [Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hop
+                rcases hop with hn | hop
+                · exact absurd ht hn
+                · exact openB_sound F hop
               have hi : i < caps.length := (List.getElem?_eq_some_iff.mp hu).1
               have := hcaps i hi
               rw [hu] at this
@@ -1165,8 +1175,10 @@ def FFlow.shapesB (F : FFlow P) (Sh : List Shape) : Bool :=
     ((List.range (c.node sc.1.s).fn.size).all fun i => (c.flow.fn sc.1.s i).all fun σ' =>
       decide (i = capSlot sc.1.ar sc.1.rest sc.2.length ∧ σ' = sc.1) ||
         (List.range sc.2.length).any fun j => decide (i = capSlot sc.1.ar sc.1.rest j ∧ sc.2[j]? = some (some σ'))) &&
-    openB F c sc.1.ar sc.1.s sc.1.rest sc.2.length &&
-    (List.range sc.2.length).all fun j => decide (none ∈ c.flow.env sc.1.s (capSlot sc.1.ar sc.1.rest j))
+    (!decide (c.tok ∈ F.O) || openB F c sc.1.ar sc.1.s sc.1.rest sc.2.length) &&
+    ((List.range sc.2.length).all fun j => decide (none ∈ c.flow.env sc.1.s (capSlot sc.1.ar sc.1.rest j))) &&
+    (List.range sc.2.length).all fun j => (sc.2[j]?.join).all fun σ' =>
+      (look σ'.code F.codes).any fun c' => decide (c'.tok ∈ c.flow.env sc.1.s (capSlot sc.1.ar sc.1.rest j))
 
 theorem FFlow.shapesB_sound {F : FFlow P} {Sh : List Shape} (h : F.shapesB Sh = true) : ShapesOk F.flow Sh := by
   intro σ cs hm
@@ -1175,8 +1187,22 @@ theorem FFlow.shapesB_sound {F : FFlow P} {Sh : List Shape} (h : F.shapesB Sh = 
   | none => simp [hl] at this
   | some c =>
     simp only [hl, Option.any_some, Bool.and_eq_true, List.all_eq_true, List.mem_range, decide_eq_true_eq] at this
-    obtain ⟨⟨this, hop⟩, hcs⟩ := this
-    refine ⟨c.flow, by simp [FFlow.flow, hl], fun i σ' hi => ?_, openB_sound F hop, hcs⟩
+    obtain ⟨⟨⟨this, hop⟩, hcs⟩, htk⟩ := this
+    refine ⟨c.flow, by simp [FFlow.flow, hl], fun i σ' hi => ?_, fun ht => ?_, hcs, fun j σ' hj => ?_⟩
+    rotate_left
+    · simp only [Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hop
+      rcases hop with hn | hop
+      · exact absurd ht hn
+      · exact openB_sound F hop
+    · have := htk j (List.getElem?_eq_some_iff.mp hj |>.1 |> fun h => by
+        rcases List.getElem?_eq_some_iff.mp hj with ⟨h, _⟩; exact h)
+      rw [hj] at this
+      simp only [Option.join, Option.bind_some, id, Option.all_some] at this
+      cases hl' : look σ'.code F.codes with
+      | none => simp [hl'] at this
+      | some c' =>
+        simp only [hl', Option.any_some, decide_eq_true_eq] at this
+        exact ⟨c'.flow, by simp [FFlow.flow, hl'], this⟩
     have h2 := this i (FCode.fn_lt hi)
     simp only [hi, Option.all_some, Bool.or_eq_true, decide_eq_true_eq, List.any_eq_true, List.mem_range] at h2
     rcases h2 with h2 | ⟨j, -, h3⟩

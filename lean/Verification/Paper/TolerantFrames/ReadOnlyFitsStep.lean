@@ -59,6 +59,19 @@ theorem leaves_self_vals {u : Val} (hu : isVal u = true) {l : Nat} (hl : Leaves 
     | step hm _ => simp [codeVals] at hm
     all_goals simp [isVal] at hu
 
+/-- **A part of a value's code holds what the value holds** (proved): an
+object among the values the value's code holds. -/
+theorem FnsIn.part {S : Sites P} {v u : Val} (h : FnsIn Fl S v)
+    (hu : ∀ fs cc i, u = .objAt fs cc i → u ∈ codeVals P.ofC v) : FnsIn Fl S u := by
+  intro y hy
+  cases u with
+  | objAt fs cc i => exact h y (.step (hu fs cc i rfl) hy)
+  | _ =>
+    intro fs ar E K s caps k rest comp oid he
+    cases hy with
+    | refl => cases he
+    | step hm _ => simp [codeVals] at hm
+
 /-- **A bound function's parts meet its set** (proved). -/
 theorem VJ.boundPart {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {t r : Tm} {pre : List Tm} {oid : Nat}
     (hv : VJ Fl g n S (.objAt fs (.bound t r pre) oid)) {u : Tm} (hu : u ∈ t :: r :: pre) : VJ Fl g n S u := by
@@ -82,7 +95,15 @@ theorem VJ.boundPart {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {t r :
     rcases List.mem_cons.mp hu with rfl | hu
     · exact .inl (.inr hx)
     · exact .inr ⟨u, hu, hx⟩
-  exact ⟨hval, hcl, fun l h => hv.below l (hl l h), fun l h => hv.sites l (hl l h),
+  have hF : FnsIn Fl S u := hv.fns.part fun fs cc i he => by
+    subst he
+    simp only [codeVals, List.mem_append, valsArgs_eq, List.mem_flatMap]
+    rcases List.mem_cons.mp hu with he | hu
+    · rw [← he, vals_objAt]; exact .inl (.inl (List.mem_cons_self ..))
+    rcases List.mem_cons.mp hu with he | hu
+    · rw [← he, vals_objAt]; exact .inl (.inr (List.mem_cons_self ..))
+    · exact .inr ⟨_, hu, by rw [vals_objAt]; exact List.mem_cons_self ..⟩
+  exact ⟨hval, hcl, fun l h => hv.below l (hl l h), fun l h => hv.sites l (hl l h), hF,
     fun w hw => hv.inner w (.bound hu hw)⟩
 
 /-- **A capture of a closure is a closed value within it** (proved). -/
@@ -110,20 +131,24 @@ theorem VJ.capOut {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat
     refine Leaves.code ?_ hxl
     simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append, valsArgs_eq, List.mem_flatMap]
     exact .inr ⟨u, hu, hx⟩
-  exact ⟨hval, hcl, fun l h => hv.below l (hl l h), fun l h => hv.sites l (hl l h), hin⟩
+  have hF : FnsIn Fl S u := hv.fns.part fun fs cc i he => by
+    subst he
+    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append, valsArgs_eq, List.mem_flatMap]
+    exact .inr ⟨_, hu, by rw [vals_objAt]; exact List.mem_cons_self ..⟩
+  exact ⟨hval, hcl, fun l h => hv.below l (hl l h), fun l h => hv.sites l (hl l h), hF, hin⟩
 
 /-- **A capture of a closure of `C`'s code meets its slot** (proved), and
-the closure's code is open at its entry. -/
+the closure's code is open at its entry where its token lies in `O`. -/
 theorem VJ.capC {n : Nat} {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
     {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {kd : Invoke} {rest : Bool}
     {comp : ComponentTag} {oid : Nat} (hc : P.ofC comp = true)
     (hv : VJ Fl g n S (.objAt fs (.graph ar E K s caps kd rest comp) oid)) :
     ∃ π, Fl.code (E, K) = some π ∧ (∀ i u, caps[i]? = some u → VJ Fl g n (π.env s (capSlot ar rest i)) u) ∧
-      CapFn π ar E K s caps rest ∧ OpenAt Fl π ar s rest caps.length := by
+      CapFn π ar E K s caps rest ∧ (π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length) := by
   obtain ⟨π, hπ, hcaps, hfn, hop⟩ := (hv.inner _ (.refl _)).2.1 fs ar E K s caps kd rest comp oid rfl hc
   refine ⟨π, hπ, fun i u hu => ?_, hfn, hop⟩
   obtain ⟨hval, hcl, hin⟩ := hv.capInner (List.mem_of_getElem? hu)
-  exact ⟨hval, hcl, (hcaps i u hu).2, (hcaps i u hu).1, hin⟩
+  exact ⟨hval, hcl, (hcaps i u hu).2, (hcaps i u hu).1.1, (hcaps i u hu).1.2, hin⟩
 
 /-- The entries of a run's environment at its entry (proved). -/
 theorem envOf_entry {pre caps : List Tm} {self : Tm} (i : Nat) :
@@ -344,6 +369,10 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
       · exact .inl (hpre x hx)
   · -- `C`'s code
     obtain ⟨π, hπ, hcaps, hfn, hop⟩ := hf.capC hc
+    have hop : OpenAt Fl π ar s rest caps.length := by
+      obtain ⟨π', hπ', ht⟩ := hf.fns _ (.refl _) fs ar E K s caps kd rest comp oid rfl hc
+      rw [hπ] at hπ'; cases hπ'
+      exact hop ht
     have hR : Sub π.ret S := hop.2.2.trans hS
     have hC : ∀ (Γ' : Nat → Option (Sites P)) (pre : List Tm), pre.length = (if rest then 1 else 0) + 1 + ar →
         (∀ x ∈ pre, VOr (VJ Fl g n) Γ' Fl.O x) → ∀ i,
@@ -914,11 +943,11 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
       exact ⟨.makeBound _ hst'' hi'' hs (fun x hx => (hp x hx).alloc hl) ho, hH'⟩
-    | makeGraphC π Ss hst' hi hs hc hcode hcaps hfn hop hE =>
+    | makeGraphC π Ss hst' hi hs hc hcode hcaps hfn htok hop hE =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
       obtain ⟨hst'', hi''⟩ := sites_set hai hst' hi hx' fun _ _ h => h.alloc hl
-      exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode (fun i u hu => (hcaps i u hu).alloc hl) hfn hop hE ho, hH'⟩
+      exact ⟨.makeGraphC π _ hst'' hi'' hs hc hcode (fun i u hu => (hcaps i u hu).alloc hl) hfn htok hop hE ho, hH'⟩
     | makeGraphOut Ss hst' hi hs hc hE hcaps =>
       obtain ⟨hx', hH'⟩ := ih key (hi _ (List.mem_of_getElem? hai)) hH
       simp only [stepSite, activeFrame, activeArgs_at hai hpre hn] at hx' hH' ⊢
@@ -1132,7 +1161,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | makeAbsent Ss hst hi hs =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he)) ho, ?_⟩
+      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
@@ -1141,7 +1170,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | makeView Ss hst hi hs hvw =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
-      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by cases hl; exact ⟨Nat.lt_of_lt_of_le (hvw.below _ (Leaves.of_next (a := .view) rfl)) (by simp), by rw [(Ghost.alloc_old (hvw.below _ (Leaves.of_next (a := .view) rfl))).1]; exact hvw.sites _ (Leaves.of_next (a := .view) rfl)⟩) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he)) ho, ?_⟩
+      refine ⟨.val rfl (VJ.obj (fun _ _ => rfl) (fun k l hk => ?_) (fun l hl => by cases hl; exact ⟨Nat.lt_of_lt_of_le (hvw.below _ (Leaves.of_next (a := .view) rfl)) (by simp), by rw [(Ghost.alloc_old (hvw.below _ (Leaves.of_next (a := .view) rfl))).1]; exact hvw.sites _ (Leaves.of_next (a := .view) rfl)⟩) (fun x hx => by simp [codeVals] at hx) (fun u hu => by rcases hu with ⟨_, _, _, _, _, _, _, _, _, _, he, _⟩ | ⟨_, _, _, _, _, he, _⟩ <;> cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (fun x hx => by simp [codeVals] at hx)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
@@ -1151,17 +1180,17 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
       have hall := fun y hy => (hp y hy).top
-      refine ⟨.val rfl (VJ.obj (closed_bound (hall _ (List.mem_cons_self ..)).closed (hall _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))).closed fun x hx => (hall x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))).closed) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (bound_code fun y hy => (hall y hy).alloc (by simp)) (bound_child fun y hy => (hall y hy).alloc (by simp)) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he)) ho, ?_⟩
+      refine ⟨.val rfl (VJ.obj (closed_bound (hall _ (List.mem_cons_self ..)).closed (hall _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))).closed fun x hx => (hall x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))).closed) (fun k l hk => ?_) (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) (bound_code fun y hy => (hall y hy).alloc (by simp)) (bound_child fun y hy => (hall y hy).alloc (by simp)) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (by intro _ _ _ _ _ _ _ _ _ _ he; cases he) (bound_fns fun y hy => hall y hy)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
       · rw [List.append_assoc]
         exact hH.fresh hst hvj [.nul] (by simp [primVal])
-    | makeGraphC π Ss hst hi hs hc hcode hcaps hfn hop hE =>
+    | makeGraphC π Ss hst hi hs hc hcode hcaps hfn htok hop hE =>
       have hvj := fun x hx => (hi x hx).value (hvs x hx)
       rw [stepSite_makeAt hvs]
       refine ⟨.val rfl (VJ.graphC hc hcode (fun k l hk => ?_) (fun i u hu => (hcaps i u hu).top.alloc (by simp)) hfn
-        hop (lowered_vj hE)) ho, ?_⟩
+        htok hop (lowered_vj hE)) ho, ?_⟩
       · have := mem_slots hk
         refine ⟨by simp; omega, ?_⟩
         simp [Ghost.alloc, Nat.not_lt.mpr this.1, hs]
