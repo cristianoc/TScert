@@ -1,5 +1,6 @@
 import Verification.Source.Claims.PassUnitSafe
 import Verification.Source.Claims.PassUnitFramed
+import Verification.Programs.TolerantFramesSinglePassSound
 
 /-! # The single pass's unit theorem: the headline
 
@@ -177,11 +178,15 @@ theorem qualified_requestSafe {f : FilePlans} {r : Req f}
 
 /-- **The framed claim from the check** (proved, under `RunSound` and
 `RunKeepsSummaries`, its request over the file's store; the draft,
-`framed_requestSafe`): the main graph's clauses from the returns
-`FramedAccepted`'s obligations state (`framedRun_of_returns`); the codes' clause by `codesAccepted_guarantees`,
-the codes accepted in order by the ordinary pass from the empty table with
-the read summaries their runs leave checked, each code's guarantee read on
-the term that runs it along every set of executions
+`framed_requestSafe`): the codes accepted in order by the ordinary pass
+from the empty table, with the read summaries their runs leave checked,
+make a sound table (`codesAccepted_sound`); the main graph's framed run
+over it gives the main graph's clauses at framed returns
+(`framedReturns_of_main` under the graph theorem at framed returns,
+`run_sound_framed`), and with the returns `FramedAccepted`'s obligations
+state, the five main-graph clauses (`framedRun_of_returns`); the codes'
+clause by `codesAccepted_guarantees`, each code's guarantee read on the
+term that runs it along every set of executions
 (`framedCode_of_guarantee`). -/
 theorem framed_requestSafe {f : FilePlans} {r : Req f}
     {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
@@ -189,10 +194,20 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, hs⟩, ⟨F, Ret, RetE, hguar, hret⟩⟩ := hacc
-  obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returns hguar hret
+  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, F, S, hm, hb, hreg, hframed, hs', ⟨RetE, hret⟩⟩, hregs⟩ := hacc
   have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
     intro c hc; simp [GraphCode.admits] at hc
+  have hentries : r.codes.zipIdx.map (·.1.entry) = r.codes.map (·.entry) := by
+    calc r.codes.zipIdx.map (·.1.entry) = (r.codes.zipIdx.map (·.1)).map (·.entry) := by
+          rw [List.map_map]; rfl
+      _ = r.codes.map (·.entry) := by rw [List.zipIdx_map_fst]
+  have htable : ProgramCertificates.CodesSound (StoreView.graph f.F.store)
+      (GraphCode.admits (r.codes.map (·.entry))) := by
+    have := codesAccepted_sound hrun hkeep (summaries_of_checked htypes hs) hcodes (fun _ h => h) hnone
+    rwa [List.nil_append, hentries] at this
+  have hguar := framedReturns_of_main Verification.TolerantFrames.run_sound_framed RetE hm hb hreg hregs htable
+    hframed (summaries_of_checked htypes hs')
+  obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returns hguar hret
   have hcodeG := codesAccepted_guarantees hrun hkeep (summaries_of_checked htypes hs) hcodes
     (fun _ h => h) hnone
   refine ⟨hsafe, hf, he, hg, ha, ?_⟩

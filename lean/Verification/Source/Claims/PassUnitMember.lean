@@ -1,4 +1,5 @@
 import Verification.Source.Claims.PassUnitPlans
+import Verification.Programs.TolerantFramesComposeYields
 
 /-! # The single pass's unit theorem: a member and the headline
 
@@ -83,31 +84,41 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- **The framed claim's obligations** (the draft "Accepting a unit through
 the read-only frame", "The theorems"): what no lemma yet proves from the
-pass's check of a framed plan. The main graph's five clauses of
-`FramedRequestSafe` follow from them (`framedRun_of_returns`): framed nodes
-`F` with returns `Ret`, `RetE` such that the request's graph is safe at
-those returns (`FramedReturnsGuarantee`, by `RunSoundFramed` over the
-framed run the pass is to make) and the returns hold at the executions the
-frame's claim is about (`FramedReturnsReached`, by `ret_reached`). A field
-leaves this structure in the commit that proves it from the check. -/
-structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
-  run : ∃ (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop),
-    FramedReturnsGuarantee r F Ret RetE ∧ FramedReturnsReached r (spec.frame r) F Ret RetE
+pass's check of a framed plan, at the framed nodes `F` keeping the supports
+`S` of its main graph's framed run: the returns `framedRet S` hold at the
+executions the frame's claim is about (`FramedReturnsReached`, by
+`ret_reached`), at some return premise of a throw. The main graph's five
+clauses of `FramedRequestSafe` follow from them and from the framed run's
+guarantee (`framedReturns_of_main`, `framedRun_of_returns`). A field leaves
+this structure in the commit that proves it from the check. -/
+structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) (F : Nat → Bool)
+    (S : Nat → List Footprints.Footprint) : Prop where
+  reached : ∃ RetE : Nat → Env → Heap → Heap → Prop,
+    FramedReturnsReached r (spec.frame r) F (Verification.TolerantFrames.framedRet S) RetE
 end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass
 checks"): its code requests accepted in order by the ordinary pass
-(`CodesAccepted`), the read summaries their runs leave checked, and the
-framed claim's obligations not yet proved from the checks.
-`FilePlans.passMember` refuses every framed plan, so no member `passGroup`
-accepts is accepted by this constructor until every obligation is proved
-from the checks the pass makes. -/
+(`CodesAccepted`), the read summaries their runs leave checked; each
+stated region meeting its entry conditions; its main graph, over the codes'
+table, accepted by the pass's framed mode at its bound and stated regions
+(`RunCall.AcceptsFramed` at the framed nodes `F` keeping the supports `S`),
+its read summaries checked; and the framed claim's obligations not yet
+proved from the checks. `FilePlans.passMember` refuses every framed plan,
+so no member `passGroup` accepts is accepted by this constructor until
+every obligation is proved from the checks the pass makes. -/
 structure FramedAccepted (f : FilePlans) (r : Req f)
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop where
   codes : ∃ a₀ a₁ : Answered (StoreView.graph f.F.store),
     CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ ∧
-      summariesChecked r a₁.summaries.toList = true
-  obligations : FramedObligations r spec
+      summariesChecked r a₁.summaries.toList = true ∧
+      ∃ (c : RunCall (StoreView.graph f.F.store) (StoreView.images f.F.store))
+        (after : Answered (StoreView.graph f.F.store)) (F : Nat → Bool) (S : Nat → List Footprints.Footprint),
+        MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary a₁ ∧ c.bound = mainBound r ∧
+        regionOf c.regional = regionalSpec r ∧ c.AcceptsFramed after (fun _ => True) F S ∧
+        summariesChecked r after.summaries.toList = true ∧ FramedObligations r spec F S
+  regions : ∀ Φ regions, r.regional = some (Φ, regions) →
+    GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true
 
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each

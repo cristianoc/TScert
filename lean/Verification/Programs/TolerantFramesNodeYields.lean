@@ -123,10 +123,57 @@ section Obligations
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
-/-- **A node's obligations from its step's parts, with its yields**:
-`nodeObligations_of_parts` with the judgment's values also meeting
-`YieldsOk ys` (`hjY`), which each normal exit's target obligation receives
-at the state after the step (`hnormal`). -/
+/-- **A node's obligations from its step's parts, with its yields, under
+return premises**: `nodeObligations_of_parts` with the judgment's values
+also meeting `YieldsOk ys` (`hjY`), which each normal exit's target
+obligation receives at the state after the step (`hnormal`), each exit's
+target required where its heap meets the return premise (`Rn` at a normal
+exit, `Re` at a throw), which the exit's obligation receives. -/
+theorem nodeObligationsR_of_partsY {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty ι)} {cn ce : Footprints.Closed}
+    {t : Tm} {out : HeapKnowledge.Knowledge} {Fn Fe : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    {ys : List (PromiseCalls.Yield ι)}
+    {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {k : Continuation} {x : Option Target}
+    {Rn Re : Heap → Prop}
+    (hp : StepParts G A cn ce t out ε Fn Fe ρ m s) (he : EnvOk G Γ ρ s.n s.W)
+    (hjY : SafePostExc (excOf G) (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u)
+      (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h') (fun h' => ce.Holds s.h h' ∧ True)
+      s.n s.W s.h (instantiate 0 ρ t))
+    (hshape : ∀ j (U : WorldT (j + 1)) v, meaning G A (j + 1) U v → ShapeOk v k)
+    (hnormal : ∀ (s' : IndexedHeap) v, Admissible s s' → isVal v = true → Fn (push v ρ) m s' →
+      PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
+      EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → HeapKnowledge.Holds out ε (push v ρ) s'.h →
+      (∃ j, j < s.n ∧ Steps j s.h (instantiate 0 ρ t) s'.h v) → Rn s'.h →
+      NormalTarget pre Tres Qres ρ m s' v k)
+    (hraise : ∀ (s' : IndexedHeap) e, Admissible s s' → Fe ρ m s' → EnvOk G Γ ρ s'.n s'.W → Scoped 0 e →
+      excOf G s'.n s'.W e → Re s'.h → RaiseTarget pre Ξres Rres ρ m s' e x) :
+    SafePostExc (excOf G) (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u)
+      (fun h' v => cn.Holds s.h h' ∧ (HeapKnowledge.Holds out ε (push v ρ) h' ∧
+        ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v))
+      (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
+    NodeObligationsR pre Ξres Tres Qres Rres (excOf G)
+      (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u) cn ce
+      (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h' ∧ ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v)
+      (fun _ => True) Rn Re ρ m s k x := by
+  obtain ⟨-, hn, hx⟩ := hp
+  refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace_lt hjY),
+    ⟨fun j U h v _ hT _ _ => hshape j U v hT.1, ?_, ?_⟩⟩
+  · intro s' v ha hv ⟨U, hU, hT, hY⟩ ⟨ho, k', hlt, hk⟩ hR
+    have hT' : meaning G A s'.n s'.W v := by
+      have := (meaning_adm G A).down_le (s'.n + 1) s'.n (Nat.le_succ _) U v hT
+      rwa [hU] at this
+    have hY' : PromiseCalls.YieldsOk G ys ρ s'.n s'.W v :=
+      hY.transfer s'.n (Nat.le_succ _) s'.W (by rw [hU]; exact WExt_refl _)
+    exact hnormal s' v ha.1 hv (hn k' s'.h v s' hk hv ha rfl ho) hY' ((envOk_admissible ha.1 he).push hT') ho
+      ⟨k', hlt, hk⟩ hR
+  · intro s' e ha hsc ⟨U, hU, hΞ⟩ _ hR
+    have hΞ' : excOf G s'.n s'.W e := by
+      have := (builtinExc_adm G _).down_le (s'.n + 1) s'.n (Nat.le_succ _) U e hΞ
+      rwa [hU] at this
+    exact hraise s' e ha.1 (hx s' ha) (envOk_admissible ha.1 he) hsc hΞ' hR
+
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- **A node's obligations from its step's parts, with its yields**
+(`nodeObligationsR_of_partsY` with no return premise). -/
 theorem nodeObligations_of_partsY {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty ι)} {cn ce : Footprints.Closed}
     {t : Tm} {out : HeapKnowledge.Knowledge} {Fn Fe : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {ys : List (PromiseCalls.Yield ι)}
@@ -150,22 +197,11 @@ theorem nodeObligations_of_partsY {G : NormalGraph ι} {A : Ty ι} {Γ : List (T
     NodeObligations pre Ξres Tres Qres Rres (excOf G)
       (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u) cn ce
       (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h' ∧ ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v)
-      (fun _ => True) ρ m s k x := by
-  obtain ⟨-, hn, hx⟩ := hp
-  refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace_lt hjY),
-    ⟨fun j U h v _ hT _ _ => hshape j U v hT.1, ?_, ?_⟩⟩
-  · intro s' v ha hv ⟨U, hU, hT, hY⟩ ⟨ho, k', hlt, hk⟩
-    have hT' : meaning G A s'.n s'.W v := by
-      have := (meaning_adm G A).down_le (s'.n + 1) s'.n (Nat.le_succ _) U v hT
-      rwa [hU] at this
-    have hY' : PromiseCalls.YieldsOk G ys ρ s'.n s'.W v :=
-      hY.transfer s'.n (Nat.le_succ _) s'.W (by rw [hU]; exact WExt_refl _)
-    exact hnormal s' v ha.1 hv (hn k' s'.h v s' hk hv ha rfl ho) hY' ((envOk_admissible ha.1 he).push hT') ho ⟨k', hlt, hk⟩
-  · intro s' e ha hsc ⟨U, hU, hΞ⟩ _
-    have hΞ' : excOf G s'.n s'.W e := by
-      have := (builtinExc_adm G _).down_le (s'.n + 1) s'.n (Nat.le_succ _) U e hΞ
-      rwa [hU] at this
-    exact hraise s' e ha.1 (hx s' ha) (envOk_admissible ha.1 he) hsc hΞ'
+      (fun _ => True) ρ m s k x :=
+  have h := nodeObligationsR_of_partsY (Rn := fun _ => True) (Re := fun _ => True) hp he hjY hshape
+    (fun s' v ha hv hF hy he' ho hk _ => hnormal s' v ha hv hF hy he' ho hk)
+    (fun s' e ha hFe he' hsc hx _ => hraise s' e ha hFe he' hsc hx)
+  ⟨h.1, h.2.toPlain (fun _ => trivial) (fun _ => trivial)⟩
 
 /-- **A step's judgment carries its kept yields** `ys`: at every state
 where the entry state `entry` holds, the context types the environment and

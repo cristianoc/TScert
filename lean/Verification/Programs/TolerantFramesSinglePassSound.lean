@@ -44,6 +44,27 @@ theorem run_sound_single_pass : Target.RunSound ι :=
   run_sound_single_pass_of_exits (exitsYield_of_kept
     (fun _ _ _ _ _ _ _ hc => hc.startWrittenImpliesStated))
 
+/-- **The single pass's graph theorem at framed returns**
+(`run_sound_passR` from the record soundness and checks
+`run_sound_single_pass` composes). -/
+theorem run_sound_framed : RunSoundFramed ι :=
+  have htables := regionalVisitTables_of_recordedAgreement
+    (regionalRecordedTableAgreement regionalRecordedReadback)
+  have hstep := regionalStepBridge (ι := ι)
+  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep exitStepPrefix)) visitsImplications) visitExits_answers_prefix
+  run_sound_passR (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) linearNearFuelEq
+    (regionsHeld_of (regionsRecorded_of_visitTables htables) (regionsTyped_of_visitTables htables hstep))
+
+/-- **An accepted call is accepted in the framed mode at every framed set**
+(`acceptsFramed_of_accepts` with the nodes' kept yields
+`run_sound_single_pass` reads). -/
+theorem acceptsFramed_of_accepted {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : CertificateProducer.Answered G} {admits}
+    (hacc : c.Accepts after) (F : Nat → Bool) (S : Nat → List Footprints.Footprint) :
+    c.AcceptsFramed after admits F S :=
+  acceptsFramed_of_accepts (nodesYield_of subtypeAnswersAll (exitsYield_of_kept
+    (fun _ _ _ _ _ _ _ hc => hc.startWrittenImpliesStated))) hacc F S
+
 end Run
 
 end Verification.TolerantFrames

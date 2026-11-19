@@ -874,11 +874,15 @@ and the request:
 (`FramedPlanAt`) and `FramedAccepted f r spec`: its code requests accepted
 in order by the ordinary pass (`CodesAccepted`, ordinary checker, from the
 empty table), the read summaries their runs leave checked
-(`summariesChecked`), and the field `FramedObligations`: framed nodes and
-returns at which the main graph is safe (`FramedReturnsGuarantee`, by
-`RunSoundFramed`) and the returns hold at the executions the claim is about
-(`FramedReturnsReached`, by `ret_reached`), both to be proved, from which
-`framedRun_of_returns` gives the main graph's five clauses of
+(`summariesChecked`), each stated region meeting its entry conditions, its
+main graph over the codes' table accepted by the pass's framed mode at its
+bound and stated regions (`RunCall.AcceptsFramed` at the framed nodes `F`
+keeping the supports `S`), its read summaries checked, and the field
+`FramedObligations r spec F S`: the returns `framedRet S` hold at the
+executions the claim is about (`FramedReturnsReached`, by `ret_reached`, to
+be proved). `framedReturns_of_main` gives `FramedReturnsGuarantee` from the
+framed run by `RunSoundFramed` (`run_sound_framed`), and
+`framedRun_of_returns` the main graph's five clauses of
 `FramedRequestSafe r (spec.frame r)`. `framed_requestSafe` (under `RunSound`,
 `RunKeepsSummaries` and the request over the file's store) and
 `member_safe`'s framed branch are proved from it; a field leaves the
@@ -997,7 +1001,7 @@ for units of the first kind.
 
 ### The graph at framed returns
 
-`RunSoundFramed ι` (to be proved) replaces `Target.RunSound`: an accepted
+`RunSoundFramed ι` (proved, `run_sound_framed`) replaces `Target.RunSound`: an accepted
 framed run of the claim's main graph gives each of its five clauses as
 safety at framed returns of the term that runs the graph
 (`FramedReturnsGuarantee r F Ret RetE`), where every evaluation of a framed
@@ -1062,14 +1066,25 @@ lines in 12 files of the 26.6K lines of `TolerantFrames*` and
 `SinglePass/` (a Lean dependency walk from `run_sound_single_pass` to
 `NodeObligations`: 30 theorems and 8 definitions, structure projections
 included). Below `StepEdgesSoundMarked` nothing is restated: a framed
-node's delivery enters as its obligations under its returns. To be proved:
-the framed node's delivery (`stepEdgesSound_of_yields` at a framed node:
-the step's output, its kept supports read from $`\mathrm{Ret}`$ in place
-of `callerFrame_post`, `FirstKept` from the callee's post), and
-`run_guarantee`, `run_sound_checked` at framed returns, which give
-`FramedReturnsGuarantee` from the framed run's walk: its five clauses by
-`safeRet_of_sim` and `keeps_postExcR`, the per-node hypotheses
-(`FootprintKept`, `ReturnsEnsured`, `RegionsKeptS`) as `NodesKeepR`.
+node's delivery enters as its obligations under its returns.
+
+The framed node's delivery is `stepEdgesSound_of_yieldsR`: at a framed
+node $`l`$ entered at $`h`$, an exit whose heap $`h'`$ meets
+$`\mathrm{Ret}_l(\rho,h,h')`$ holds each index fact of the step's input
+whose produced support (read with no stable key) lies in a support of
+$`S_l`$ (`framedKept_holds`, in place of `callerFrame_post`), which the
+node's exits read beside the step's output (`NodeYieldedR` at `framedK`).
+`run_guaranteeR` gives the five clauses on the term that runs the graph
+(`GraphGuaranteeR`) from a walk at framed returns (`PassWalkSoundR`), by
+`safeRet_of_sim` and `keeps_postExcR`; `run_sound_checkedR` and
+`run_sound_framed` give `RunSoundFramed` over the pass's framed mode
+`RunCall.AcceptsFramed`: the call accepted, each visited node's exits
+delivering with `framedK`. **The framed mode reads the walk
+`SinglePass.run` records**, whose states hold no kept fact: every accepted
+call meets it at every framed set (`acceptsFramed_of_accepted`), and a kept
+fact reaches no later node. The walk recording `framedKept` at a framed
+node's exits, with its records' soundness (`ExitsYield` at `framedK`), is
+to be built.
 
 ### The returns, at reached executions
 
@@ -1102,10 +1117,10 @@ Proved: the sixth clause by `codesAccepted_guarantees` and
 the guarantee and the reached returns: at each call and history the frame
 starts from, `SafeRet.under` (proved, by induction on the budget) reads the
 returns at each step keeping $`\Theta_C`$ from the invariant, and claims
-nothing past a step breaking it. `FramedObligations.run` is that guarantee
-and those returns; it leaves the structure when the pass makes the framed
-run (`RunCall.AcceptsFramed`), `RunSoundFramed` gives the guarantee and
-`ret_reached` the returns.
+nothing past a step breaking it. The guarantee is `framedReturns_of_main`'s,
+from the framed main run `FramedAccepted` holds; the returns are
+`FramedObligations.reached`, which leaves the structure when `ret_reached`
+gives it.
 
 ### The headline
 
@@ -1172,7 +1187,14 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 (`ReadOnlyStepWrites.lean`); `graph_stepR`, `graph_safeR`,
 `SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
 `keeps_postExcR`, `safeRet_of_sim` (`TolerantFramesGuaranteeRuns.lean`),
-`nodesChecked_of_walkJR`, `nodesChecked_of_walkR`.
+`nodesChecked_of_walkJR`, `nodesChecked_of_walkR`; `framedKept_holds`,
+`stepEdgesSound_of_yieldsR`, `run_sound_checkedR`
+(`TolerantFramesComposeYields.lean`), `nodeObligationsR_of_partsY`
+(`TolerantFramesNodeYields.lean`), `run_guaranteeR`
+(`TolerantFramesGuaranteeWalk.lean`), `run_sound_framed`,
+`acceptsFramed_of_accepted` (`TolerantFramesSinglePassSound.lean`),
+`framedReturns_of_guaranteeR`, `framedFootprint_of_bound`,
+`framedReturns_of_main` (`PassUnitSafe.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1188,7 +1210,8 @@ review's `CodeClause.lean`).
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `prologue_sim`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, `RunSoundFramed` (its conclusion `FramedReturnsGuarantee`),
+`startInv_public`, the framed mode's walk (`SinglePass.run` recording
+`framedKept` at a framed node's exits, `ExitsYield` at `framedK`),
 `ret_reached` (its conclusion `FramedReturnsReached`),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
