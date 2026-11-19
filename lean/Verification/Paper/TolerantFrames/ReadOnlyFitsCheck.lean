@@ -48,8 +48,8 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
   | invoke {d Γ a o S f r args} : OFits d Γ a o Fl.O f → OFits d Γ a o Fl.O r →
       (∀ x ∈ args, OFits d Γ a o Fl.O x) → Sub Fl.O S → a.arr ∈ Fl.O → (o = true → Sub S Fl.O) →
       OFits d Γ a o S (.invoke f r args)
-  | invokeC {d Γ a o S j r args} (σ : FnSig) (π : CodeFlow P) (Sa : Nat → Sites P) (Sr : Sites P) :
-      o = false → d ≤ j → φ (j - d) = some σ → Fl.code σ.code = some π →
+  | invokeC {d Γ a o S j r args} (σ : FnSig) (c : Nat) (π : CodeFlow P) (Sa : Nat → Sites P) (Sr : Sites P) :
+      o = false → d ≤ j → φ (j - d) = some σ → Fl.code σ.code c = some π →
       Sub (τ (j - d)) (π.env σ.s (capSlot σ.ar σ.rest σ.ncaps)) →
       OFits d Γ a o (π.env σ.s (recvSlot σ.rest)) r → (∀ i x, args[i]? = some x → OFits d Γ a o (Sa i) x) →
       (∀ x ∈ args, primVal x = true ∨ ∃ k, x = .var k) →
@@ -70,9 +70,10 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.bound t r pre) ns inits)
   | makeGraphC {d Γ a o S ar E K s caps k rest comp ns inits} (π : CodeFlow P) (Ss : Tm → Sites P) :
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
-      P.ofC comp = true → Fl.code (E, K) = some π →
-      (∀ i u, caps[i]? = some u → OVOr τ d Γ (π.env s (capSlot ar rest i)) u) →
-      SelfFn π ar E K s rest caps.length → π.tok ∈ S → (π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length) →
+      P.ofC comp = true → Fl.code (E, K) entryCx = some π →
+      (∀ c π', Fl.code (E, K) c = some π' →
+        (∀ i u, caps[i]? = some u → OVOr τ d Γ (π'.env s (capSlot ar rest i)) u) ∧ SelfFn π' ar E K s rest caps.length) →
+      π.tok ∈ S → (π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length) →
       (∀ e ∈ E, Lowered Fl e) →
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | makeGraphOut {d Γ a o S ar E K s caps k rest comp ns inits} (Ss : Tm → Sites P) :
@@ -141,9 +142,9 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
   | invoke _ _ _ hO ha ho ihf ihr iha =>
     simp only [instantiate, instantiateArgs_eq_map]
     exact .invoke ihf ihr (fun x hx => by obtain ⟨y, hy, rfl⟩ := mem_inst hx; exact iha y hy) hO ha ho
-  | @invokeC d _ _ _ _ j _ args σ π Sa Sr hof hj hφj hcode hself _ _ hat hpar hrest hO ho ihr iha =>
+  | @invokeC d _ _ _ _ j _ args σ c π Sa Sr hof hj hφj hcode hself _ _ hat hpar hrest hO ho ihr iha =>
     simp only [instantiate, instantiateArgs_eq_map, if_neg (by omega : ¬ j < d)]
-    refine .invokeC σ π Sa Sr hof (hφ _ σ hφj) hcode ((hρ _).sub hself) ihr (fun i x hx => ?_) (fun x hx => ?_)
+    refine .invokeC σ c π Sa Sr hof (hφ _ σ hφj) hcode ((hρ _).sub hself) ihr (fun i x hx => ?_) (fun x hx => ?_)
       hpar hrest hO ho
     · simp only [List.getElem?_map, Option.map_eq_some_iff] at hx
       obtain ⟨y, hy, rfl⟩ := hx; exact iha i y hy
@@ -172,14 +173,16 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     · exact (hp _ (by simp)).inst hρ
     · exact (hp _ (by simp)).inst hρ
     · exact (hp y (by simp [hy])).inst hρ
-  | @makeGraphC d _ _ _ _ ar E K s caps k rest comp _ _ π Ss hst _ hs hc hcode hcaps hself htok hop hE ho ih =>
+  | @makeGraphC d _ _ _ _ ar E K s caps k rest comp _ _ π Ss hst _ hs hc hcode hcaps htok hop hE ho ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
-    have hself' : SelfFn π ar E K s rest (caps.map (instantiate d ρ)).length := by rwa [List.length_map]
-    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) hself'.capFn htok (by rwa [List.length_map]) hE ho
+    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun c π' h' => ?_) htok (by rwa [List.length_map]) hE ho
+    have hself' : SelfFn π' ar E K s rest (caps.map (instantiate d ρ)).length := by
+      rw [List.length_map]; exact (hcaps c π' h').2
+    refine ⟨fun i u hu => ?_, hself'.capFn⟩
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
     obtain ⟨x, hx, rfl⟩ := hu
-    exact (hcaps i x hx).inst hρ
+    exact ((hcaps c π' h').1 i x hx).inst hρ
   | @makeGraphOut d _ _ _ _ _ _ _ _ _ _ _ _ _ _ Ss hst _ hs hc hE hcaps ho ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih

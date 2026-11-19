@@ -20,13 +20,23 @@ holds of it.
   the current proposal, its stores, what reaches outside code and the
   slots of a callee's entry added as requirements; a known call's value
   its callee's return set; a closure's set its code's token). `O` is held
-  where outside code supplies values: the entry slots of each closure's
-  code whose token reaches `O` (`OpenAt`), a handler's thrown value;
-  what outside code may supply at every slot of the unit's entry (outside
-  storage and the tokens `O` holds, `Supplied`), and at each slot naming a
+  where outside code supplies values: the slots a caller of unknown
+  callee fills at the entry of each closure's code whose token reaches `O`
+  (`OpenAt`) and its captures' slots, a handler's thrown value; what
+  outside code may supply (outside storage and the tokens `O` holds,
+  `Supplied`) at every slot of the unit's entry; at each slot naming a
   module function's signature its code's token. `O` is grown
   until closed and its storage holds all of it. A worklist runs the
   copies and the nodes until nothing changes or the fuel ends.
+- **Contexts** (`solveStart`, `mergeFlow`): each node holding a known call (a callee slot
+  naming a signature of a code of `C`, `knownCallees`) is a call site with
+  its own context, and each callee is proposed for once per call site
+  naming it, beside its entry context `entryCx`; the node's `FNode.cx`
+  names the context its calls enter. Only the entry context is open to
+  outside code; a closure's captures are grown at every copy of its code
+  (a closure is made once and entered at every context). The proposed
+  flow merges the contexts of a code whose entry sets are equal, a call
+  site's context the class of its callees' classes (`mergeFlow`).
 
 Codes and nodes are arrays, read by index. -/
 namespace Verification.TolerantFrames.ReadOnly
@@ -49,6 +59,8 @@ structure SolveCode (P : Package) where
   closure : Bool := true
   /-- The site standing for the code's closures. -/
   tok : Option P.Site := none
+  /-- The context this copy of the code is proposed at. -/
+  cx : Nat := entryCx
 
 def SolveCode.sig (c : SolveCode P) : FnSig := ⟨c.code, c.ar, c.start, c.rest, c.ncaps⟩
 
@@ -140,11 +152,13 @@ end SolveState
 
 section gen
 variable (table : Array (FnSig × Option Nat)) (τ : Nat → Sites P) (φ : Nat → FnIx) (a : Alloc P)
+  (inst : Nat → Option Nat) (allCx : Nat → List Nat)
 
 /-- **A term's sets, proposed** (`syn` at the current proposal): its stores
 added to the heap of sites, what reaches outside code added to `O`, the
 slots of a callee's entry grown. `table` gives each signature and the
-index of its code among `C`'s. -/
+index of its code among `C`'s; `inst` the copy of a callee code the node's
+context enters, `allCx` every copy of a code. -/
 partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (SolveState P) (Sites P) := do
   match e with
   | .var i => return if i < d then (Γ i).getD [] else τ (i - d)
@@ -154,7 +168,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
     let Ls ← args.mapM (gen d Γ)
     let viaC : Option (Nat × FnSig) := match f with
       | .var j => if d ≤ j ∧ args.all partB then
-          (φ (j - d)).bind fun t => (table[t]?).bind fun (σ, ci) => ci.map (·, σ)
+          (φ (j - d)).bind fun t => (table[t]?).bind fun (σ, ci) => (ci.bind inst).map (·, σ)
         else none
       | _ => none
     match viaC with
@@ -196,10 +210,11 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
     if P.ofC comp then
       match (table.find? fun e => e.2.isSome && e.1.code == (E, K)).bind (·.2) with
       | some ci =>
-        for i in List.range caps.length do
-          match caps[i]? with
-          | some u => modify fun st => st.slot ci s (capSlot ar rest i) ((partSites τ d Γ u).getD [])
-          | none => pure ()
+        for cj in allCx ci do
+          for i in List.range caps.length do
+            match caps[i]? with
+            | some u => modify fun st => st.slot cj s (capSlot ar rest i) ((partSites τ d Γ u).getD [])
+            | none => pure ()
         return [a.obj, (← get).toks.getD ci none]
       | none => return [a.obj]
     else return a.obj :: ((partsSites τ d Γ caps).getD [])
@@ -413,29 +428,34 @@ partial def readsO : Tm → Bool
 
 /-- **`O` closed**: grown by its contents, its storage holding all of it,
 and every variable outside code fills holding it: a handler's thrown value
-(`oVars`), the entry slots of each closure's code whose token lies in `O`
-(`entryVars`); the returns of each code whose token lies in `O`; the
-unit's entry slots (`noneVars`) holding the tokens it holds. -/
-def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat)) (noneVars : List Nat)
-    (st : SolveState P) : SolveState P := Id.run do
+(`oVars`), the slots a caller of unknown callee fills at the entry of each
+closure's code whose token lies in `O` (`entryVars`, `OpenAt`); the
+returns of each code whose token lies in `O`, at its entry context; and
+what outside code may supply (outside storage and the tokens `O` holds,
+`Supplied`) at the unit's entry slots (`noneVars`) and at the capture
+slots of each such code, at each of its contexts. -/
+def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × List Nat)) (noneVars : List Nat)
+    (entries : Array Bool) (st : SolveState P) : SolveState P := Id.run do
   let mut st := st.toO (contentsOf st.heapFlow st.O)
   for s in st.O do
     st := st.store s st.O
   for v in oVars do
     st := st.grow v st.O
-  for (t, vs) in entryVars do
+  let supplied := none :: st.O.filter fun t => st.toks.contains t
+  for (t, vs, ws) in entryVars do
     if t ∈ st.O then
       for v in vs do
         st := st.grow v st.O
-  -- the returns of each code whose token lies in `O`
-  for (rs, t) in st.rets.toList.zip st.toks.toList do
-    if t ∈ st.O then
+      for w in ws do
+        st := st.grow w st.O
+  -- the returns of each code whose token lies in `O`, at its entry context
+  for ((rs, t), e) in (st.rets.toList.zip st.toks.toList).zip entries.toList do
+    if e && t ∈ st.O then
       for v in rs do
         st := st.toO (st.vars.getD v [])
-  -- the unit's entry slots: the tokens `O` holds
-  let toksO := st.O.filter fun t => st.toks.contains t
+  -- the unit's entry slots: what outside code may supply
   for v in noneVars do
-    st := st.grow v toksO
+    st := st.grow v supplied
   return st
 
 /-- **The table of signatures**: each code's own at its index, then the
@@ -451,7 +471,15 @@ signatures, each node's signatures, the variables' layout, the copies of
 the edges, each variable's node, and the nodes reading the heap of sites
 or `O`. -/
 structure SolveStart (P : Package) where
+  /-- The codes' copies: each code at its entry context, at its index among
+  the codes, then each at the context of each call site naming it. -/
   cs : Array (SolveCode P)
+  /-- Each code's index among the codes, of each copy. -/
+  base : Array Nat
+  /-- Each code's copies: their contexts and indices. -/
+  ctxOf : Array (List (Nat × Nat))
+  /-- Each code's nodes' contexts. -/
+  nodeCx : Array (Array Nat)
   codes : Array (Array Tm × Array (Continuation × Option Target))
   table : Array (FnSig × Option Nat)
   fns : Array (Array (Array FnIx))
@@ -463,8 +491,9 @@ structure SolveStart (P : Package) where
   oReaders : List (Nat × Nat)
   /-- The variables outside code fills: the value a handler binds. -/
   oVars : List Nat
-  /-- The entry slots of each closure's code, with its token. -/
-  entryVars : List (Option P.Site × List Nat)
+  /-- The entry slots of each closure's code, with its token: those a caller
+  of unknown callee fills, at its entry context, and its captures' slots. -/
+  entryVars : List (Option P.Site × List Nat × List Nat)
   /-- The slots of the unit's entry. -/
   noneVars : List Nat
   st : SolveState P
@@ -504,17 +533,64 @@ def handlerVars (offs needs : Array Nat) (l : Nat) (x : Option Target) : List Na
     ((List.range tneed).filter fun j => mapIdx y.mapping j = 0).map (toff + ·) ++
       (if (List.range (R + 1 - tneed)).any fun j => mapIdx y.mapping (tneed + j) = 0 then [toff + tneed] else [])
 
+/-- **The codes a term's known calls enter** (`gen`'s known calls): the
+index among `C`'s codes of each callee a slot naming a signature gives. -/
+partial def knownCallees (table : Array (FnSig × Option Nat)) (φ : Nat → FnIx) (d : Nat) : Tm → List Nat
+  | .invoke f r args =>
+    (match f with
+      | .var j => if d ≤ j ∧ args.all partB then
+          ((φ (j - d)).bind fun t => (table[t]?).bind (·.2)).toList
+        else []
+      | _ => []) ++ knownCallees table φ d f ++ knownCallees table φ d r ++ args.flatMap (knownCallees table φ d)
+  | .letE x b => knownCallees table φ d x ++ knownCallees table φ (d + 1) b
+  | .construct f args => knownCallees table φ d f ++ args.flatMap (knownCallees table φ d)
+  | .makeAt _ _ inits | .arrLit inits => inits.flatMap (knownCallees table φ d)
+  | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b | .merge _ a b | .makeKey a b =>
+    knownCallees table φ d a ++ knownCallees table φ d b
+  | .ite a b c | .setElem a b c => knownCallees table φ d a ++ knownCallees table φ d b ++ knownCallees table φ d c
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => knownCallees table φ d a
+  | _ => []
+
 def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
-  let csA := cs.toArray
-  let codes := csA.map fun c => (c.code.1.toArray, c.code.2.toArray)
-  let table := sigTable csA
+  let bases := cs.toArray
+  let table := sigTable bases
   let ix (σ? : Option FnSig) : FnIx := σ?.bind fun σ => table.findIdx? (·.1 == σ)
-  let fns : Array (Array (Array FnIx)) := csA.mapIdx fun ci c =>
-    let (exprs, conts) := codes.getD ci (#[], #[])
+  let baseCodes := bases.map fun c => (c.code.1.toArray, c.code.2.toArray)
+  let baseFns : Array (Array (Array FnIx)) := bases.mapIdx fun ci c =>
+    let (exprs, conts) := baseCodes.getD ci (#[], #[])
     let self := capSlot c.ar c.rest c.ncaps
     let seed : Array FnIx := (List.range (max c.seeds.length (if c.closure then self + 1 else 0))).toArray.map fun i =>
       if c.closure && i = self then some ci else ix (c.seeds.getD i none)
     fnsOf exprs conts c.start seed
+  -- The call sites: each node with a known call, its own context.
+  let mut nodeCx : Array (Array Nat) := #[]
+  let mut ctxOf : Array (List (Nat × Nat)) := bases.mapIdx fun ci _ => [(entryCx, ci)]
+  let mut copies : Array (SolveCode P) := bases
+  let mut base : Array Nat := bases.mapIdx fun ci _ => ci
+  let mut next := entryCx + 1
+  for ci in [0:bases.size] do
+    let (exprs, _) := baseCodes.getD ci (#[], #[])
+    let fnRows := baseFns.getD ci #[]
+    let mut row : Array Nat := #[]
+    for l in [0:exprs.size] do
+      let fn := fnRows.getD l #[]
+      let callees := (knownCallees table (fun i => fn.getD i none) 0 (exprs.getD l .undef)).eraseDups
+      if callees.isEmpty then
+        row := row.push entryCx
+      else
+        let k := next
+        next := next + 1
+        row := row.push k
+        for cj in callees do
+          if !((ctxOf.getD cj []).any (·.1 == k)) then
+            if let some c := bases[cj]? then
+              ctxOf := ctxOf.modify cj ((k, copies.size) :: ·)
+              copies := copies.push { c with cx := k }
+              base := base.push cj
+    nodeCx := nodeCx.push row
+  let csA := copies
+  let codes := base.map fun b => baseCodes.getD b (#[], #[])
+  let fns := base.map fun b => baseFns.getD b #[]
   let needs : Array (Array Nat) := csA.mapIdx fun ci c =>
     let (exprs, conts) := codes.getD ci (#[], #[])
     neededWidths exprs conts c.start (max c.seeds.length (capSlot c.ar c.rest c.ncaps + 1))
@@ -530,7 +606,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let mut succ : Array (List Nat) := Array.replicate n []
   let mut readerOf : Array (Option (Nat × Nat)) := Array.replicate n none
   let mut oVars : List Nat := []
-  let mut entryVars : List (Option P.Site × List Nat) := []
+  let mut entryVars : List (Option P.Site × List Nat × List Nat) := []
   let mut tokVars : List (Nat × Option P.Site) := []
   let mut noneVars : List Nat := []
   let mut rets : Array (List Nat) := #[]
@@ -538,13 +614,19 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     let (_, conts) := codes.getD ci (#[], #[])
     let o := offs.getD ci #[]
     let nd := needs.getD ci #[]
-    -- The entry's slots: every slot outside code fills at a closure's
-    -- entry holds `O`; every slot of the unit's entry outside storage.
+    -- The entry's slots: every slot a caller of unknown callee fills at a
+    -- closure's entry holds `O`, at its entry context; every capture's
+    -- slot what outside code may supply, at every context; every slot of
+    -- the unit's entry outside storage.
     let so := o.getD c.start 0
     let sn := nd.getD c.start 0
     if c.closure then
-      entryVars := (c.tok, (List.range (capSlot c.ar c.rest c.ncaps + 1)).map fun i => so + min i sn) :: entryVars
-    else
+      let filled := if c.cx == entryCx then
+          List.range (capSlot c.ar c.rest 0) ++ [capSlot c.ar c.rest c.ncaps]
+        else []
+      let caps := (List.range c.ncaps).map (capSlot c.ar c.rest ·)
+      entryVars := (c.tok, filled.map (so + min · sn), caps.map (so + min · sn)) :: entryVars
+    else if c.cx == entryCx then
       for i in List.range (sn + 1) do
         noneVars := (so + i) :: noneVars
     -- A slot naming a code's signature at the entry holds its token.
@@ -570,7 +652,8 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
       needs := needs, rets := rets, toks := csA.map (·.tok) }
   let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
   let st0 := tokVars.foldl (fun st (v, t) => st.grow v [t]) st0
-  return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars, entryVars, noneVars, st0⟩
+  return ⟨csA, base, ctxOf, nodeCx, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars,
+    entryVars, noneVars, st0⟩
 
 /-- **A node's sets**: its expression's least set at its slots (`gen`), its
 value grown by it; a returned value given to `O` where the unit returns it
@@ -588,13 +671,16 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let slots : Array (Sites P) := (Array.range (need + 1)).map fun i => st.vars.getD (off + i) []
   let τ : Nat → Sites P := fun i => slots.getD (min i need) []
   let fn := (s.fns.getD ci #[]).getD l #[]
-  let (S, st') := (gen s.table τ (fun i => fn.getD i none) c.alloc 0 (fun _ => none) e).run st
+  let κ := (s.nodeCx.getD (s.base.getD ci ci) #[]).getD l entryCx
+  let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
+  let allCx (cj : Nat) : List Nat := (s.ctxOf.getD cj []).map (·.2)
+  let (S, st') := (gen s.table τ (fun i => fn.getD i none) c.alloc inst allCx 0 (fun _ => none) e).run st
   let before := (st'.vars.getD (off + need + 1) []).length
   let mut st := st'.grow (off + need + 1) S
   if (match k with | .ret => true | _ => false) then
     -- (a returned value reaches outside code where the unit returns it, or
     -- a closure outside code may call; `closeO` gives the rest)
-    if !c.closure || c.tok ∈ st.O then st := st.toO (st.vars.getD (off + need + 1) [])
+    if c.cx == entryCx && (!c.closure || c.tok ∈ st.O) then st := st.toO (st.vars.getD (off + need + 1) [])
     if (st.vars.getD (off + need + 1) []).length != before then st := { st with grewO := true }
   return st
 
@@ -657,7 +743,7 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
         runs := runs + 1
         st := siteNode s st ci l
       | [] =>
-        st := closeO s.oVars s.entryVars s.noneVars st
+        st := closeO s.oVars s.entryVars s.noneVars (s.cs.map (·.cx == entryCx)) st
         grewO := grewO || st.grewO
         grewHeap := grewHeap || st.grewHeap
         let more := (if grewO then s.oReaders else []) ++ (if grewHeap then s.heapReaders else [])
@@ -677,18 +763,66 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
   let O := st.O
   { O := O
     heap := st.heap
-    codes := s.cs.toList.zipIdx.map fun (c, ci) =>
+    codes := s.ctxOf.toList.zipIdx.filterMap fun (cxs, b) => (s.cs[b]?).map fun c₀ =>
+      (c₀.code, cxs.reverse.map fun (k, ci) =>
+      let c := (s.cs[ci]?).getD c₀
       let offs := st.offs.getD ci #[]
       let needs := st.needs.getD ci #[]
       let fns := s.fns.getD ci #[]
+      let cxs := s.nodeCx.getD b #[]
       let exprs := ((s.codes[ci]?).map (·.1)).getD #[]
-      (c.code, ⟨exprs.mapIdx (fun l e =>
+      (k, (⟨exprs.mapIdx (fun l e =>
           let off := offs.getD l 0
           let need := needs.getD l 0
           let fn := fns.getD l #[]
           ⟨(List.range need).toArray.map (fun i => st.vars.getD (off + i) []),
-            st.vars.getD (off + need) [], st.vars.getD (off + need + 1) [], fn, vfnIx fn e⟩),
-        ⟨#[], [], [], #[], none⟩, c.alloc, sigs, st.retOf ci, c.tok⟩) }
+            st.vars.getD (off + need) [], st.vars.getD (off + need + 1) [], fn, vfnIx fn e, cxs.getD l entryCx⟩),
+        ⟨#[], [], [], #[], none, entryCx⟩, c.alloc, sigs, st.retOf ci, c.tok⟩ : FCode P))) }
+
+/-- Two sets of the same sites. -/
+def sameSites (S T : Sites P) : Bool := decide (Sub S T) && decide (Sub T S)
+
+/-- **The flow with the contexts of equal entry sets merged**: two contexts
+of a code whose entry nodes' slots hold the same sites are one class,
+standing for the first of them (the entry context where it is in it); a
+call site's context is the class of its call sites whose callees' classes
+are its own, standing for the first of them, or the entry context where
+every callee's class is its entry context's. The merged flow is the
+proposal for each class's first context, and each node names its call
+site's class. Nothing here is trusted: `FFlow.check` decides the merged
+flow as any other. -/
+def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
+  let startOf (b : Nat) : Nat := ((s.cs[b]?).map (·.start)).getD 0
+  let entrySets (b : Nat) (c : FCode P) : List (Sites P) := (c.node (startOf b)).dflt :: (c.node (startOf b)).env.toList
+  let sameEntry (b : Nat) (c c' : FCode P) : Bool :=
+    let x := entrySets b c
+    let y := entrySets b c'
+    x.length == y.length && (x.zip y).all fun (S, T) => sameSites S T
+  let ctxs : Array (List (Nat × FCode P)) := F.codes.toArray.map (·.2)
+  -- each context's class in its code: the first context of equal entry sets
+  let rep (b k : Nat) : Nat :=
+    let cs := ctxs.getD b []
+    match look k cs with
+    | some c => ((cs.find? fun (_, c') => sameEntry b c c').map (·.1)).getD k
+    | none => k
+  -- each call site's callees, with their classes
+  let sites : List Nat := (ctxs.toList.flatMap fun cs => cs.map (·.1)).eraseDups.filter (· != entryCx)
+  let sigOf (k : Nat) : List (Nat × Nat) :=
+    (ctxs.toList.zipIdx.filter fun (cs, _) => cs.any (·.1 == k)).map fun (_, b) => (b, rep b k)
+  let newKey : Nat → Nat := fun k =>
+    let sg := sigOf k
+    if sg.all (·.2 == entryCx) then entryCx
+    else ((sites.find? fun k' => sigOf k' == sg).getD k)
+  let keys : List (Nat × Nat) := sites.map fun k => (k, newKey k)
+  let remap (k : Nat) : Nat := if k == entryCx then entryCx else (look k keys).getD k
+  let node (x : FNode P) : FNode P := { x with cx := remap x.cx }
+  let code (c : FCode P) : FCode P := { c with nodes := c.nodes.map node, dflt := node c.dflt }
+  let codes := F.codes.zipIdx.map fun ((m, cs), b) =>
+    let kept := cs.filter fun (k, _) => k == entryCx || (newKey k != entryCx && newKey k == k)
+    (m, kept.map fun (k, c) =>
+      let k₀ := if k == entryCx then k else rep b k
+      (k, code ((look k₀ cs).getD c)))
+  return { F with codes := codes }
 
 /-- **The proposed flow** of `C`'s codes: the signatures, then the sites
 until nothing changes or the fuel ends. -/

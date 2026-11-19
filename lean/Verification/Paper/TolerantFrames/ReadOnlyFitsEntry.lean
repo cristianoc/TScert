@@ -124,13 +124,15 @@ theorem Within.refsOkN {k : Nat} {W : WorldT k} {v w : Val} (hw : Within P v w) 
 variable (Fl : Flow P)
 
 /-- **A closure outside code may hold**: a closure of `C`'s code of a code
-whose token lies in `O`, open at its entry (`OpenAt`), whose entry names a
-signature only at a capture holding a closure of it or at its own slot
-(`CapFn`): one `C`'s code gave out. -/
+whose token lies in `O`, open at its entry context (`OpenAt`), at every
+context of which each capture's slot holds what outside code may supply
+and the entry names a signature only at a capture holding a closure of it
+or at its own slot (`CapFn`): one `C`'s code gave out. -/
 def GivenOut (w : Val) : Prop :=
   ∀ fs ar E K s caps k rest comp oid, w = .objAt fs (.graph ar E K s caps k rest comp) oid →
-    P.ofC comp = true → ∃ π, Fl.code (E, K) = some π ∧ π.tok ∈ Fl.O ∧ CapFn π ar E K s caps rest ∧
-      OpenAt Fl π ar s rest caps.length
+    P.ofC comp = true → (∃ π, Fl.code (E, K) entryCx = some π ∧ π.tok ∈ Fl.O ∧ OpenAt Fl π ar s rest caps.length) ∧
+      ∀ c π, Fl.code (E, K) c = some π → CapFn π ar E K s caps rest ∧
+        ∀ i, i < caps.length → Supplied Fl (π.env s (capSlot ar rest i))
 
 /-- **A well-formed value at an entry**: every value it holds in its code
 (`Within`) is a value, and every closure of `C`'s code such a value is or
@@ -144,7 +146,7 @@ which holds what outside code may supply (`Supplied`), whose slots naming
 a signature hold closures of it, its code's returns within `O`, every value
 of its environment and of the heap well formed. -/
 def EntryShape (h : Heap) (t : Tm) : Prop :=
-  ∃ E K l L d comp π, t = .goto E K l L d comp ∧ P.ofC comp = true ∧ Fl.code (E, K) = some π ∧
+  ∃ E K l L d comp π, t = .goto E K l L d comp ∧ P.ofC comp = true ∧ Fl.code (E, K) entryCx = some π ∧
     (∀ i, Supplied Fl (π.env l i)) ∧ Sub π.ret Fl.O ∧
     EnvFn π l L d ∧ (∀ i, EntryVal Fl (envOf L d i)) ∧ ∀ v ∈ h, EntryVal Fl v
 
@@ -156,7 +158,7 @@ token lies in `O`. -/
 theorem EntryVal.fnsIn {S : Sites P} {v w : Val} (hv : EntryVal Fl v) (hw : Within P v w) (hS : Supplied Fl S) :
     FnsIn Fl S w := by
   intro x hx fs ar E K s caps k rest comp oid he hc
-  obtain ⟨π, hπ, ht, -⟩ := (hv w hw).2 x hx fs ar E K s caps k rest comp oid he hc
+  obtain ⟨⟨π, hπ, ht, -⟩, -⟩ := (hv w hw).2 x hx fs ar E K s caps k rest comp oid he hc
   exact ⟨π, hπ, hS.2 _ _ hπ ht⟩
 
 /-- **A well-formed value at an entry meets every set holding what outside
@@ -178,18 +180,20 @@ theorem VJ.entry {g : Ghost P} {S : Sites P} {v : Val} {s : IndexedHeap}
     have hpw := hw.prov hp
     refine ⟨(hv w hw).1, ?_, ?_⟩
     · intro fs ar E K st caps k rest comp oid hw' hc'
-      obtain ⟨π, hπ, -, hfn, hop⟩ := (hv w hw).2 w (.refl w) fs ar E K st caps k rest comp oid hw' hc'
-      refine ⟨π, hπ, fun i u hu => ⟨⟨fun l _ => ?_, ?_⟩, ?_⟩, hfn, fun _ => hop⟩
-      · rw [hg]; exact (hop.2.2.2 i (List.getElem?_eq_some_iff.mp hu).1).1
-      · subst hw'
-        exact hv.fnsIn (hw.trans (.cap (List.mem_of_getElem? hu) (.refl u)))
-          (hop.2.2.2 i (List.getElem?_eq_some_iff.mp hu).1)
+      obtain ⟨⟨π, hπ, -, hop⟩, hall⟩ := (hv w hw).2 w (.refl w) fs ar E K st caps k rest comp oid hw' hc'
+      refine ⟨⟨π, hπ, fun _ => hop⟩, fun i u hu => ?_, fun c π' h' => ?_⟩
       · have hm : u ∈ caps := List.mem_of_getElem? hu
         have hru : RefsOkN s.W u := refsOkN_of_sub hrw fun r hr' => by
           subst hw'
           simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]
           exact .inr (.inr ⟨u, hm, hr'⟩)
         exact fun l hl => Leaves.lt hru hl
+      · obtain ⟨hfn, hsup⟩ := hall c π' h'
+        refine ⟨fun i u hu => ⟨fun l _ => ?_, ?_⟩, hfn⟩
+        · rw [hg]; exact (hsup i (List.getElem?_eq_some_iff.mp hu).1).1
+        · subst hw'
+          exact hv.fnsIn (hw.trans (.cap (List.mem_of_getElem? hu) (.refl u)))
+            (hsup i (List.getElem?_eq_some_iff.mp hu).1)
     · intro fs ar E K st caps k rest comp oid hw' hc' e he
       subst hw'
       simp only [prov, provs_eq, List.all_eq_true, Bool.and_eq_true, srcOk, decide_eq_true_eq] at hpw
@@ -228,7 +232,7 @@ theorem entryFits {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) {args : Heap → Tm
   refine ⟨?_, HeapInv.entry hF hsite hheap hcl.2 hsrc.2⟩
   have hok := x.ok
   rw [ht] at hok hcl hsrc ⊢
-  refine .gotoC π hcomp hcode (fun i => .inl ?_) hfn hret (fun _ => Sub.refl _)
+  refine .gotoC entryCx π hcomp hcode (fun i => .inl ?_) hfn hret (fun _ => Sub.refl _)
   -- The environment's value at `i`: an element of `L`, or `d`.
   have hmem : ∀ r ∈ refs (envOf L d i), r ∈ refs (.goto E K l L d comp) := by
     intro r hr

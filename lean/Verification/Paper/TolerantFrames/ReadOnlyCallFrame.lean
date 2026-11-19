@@ -278,10 +278,10 @@ theorem frame_sites {Fl : Flow P} {g : Ghost P} {n : Nat} {Γ : Nat → Option (
     {S : Sites P} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm}
     {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (hf : Fits Fl (VJ Fl g n) Γ a o S (.frame E K t L d k x comp)) (hc : P.ofC comp = true) :
-    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧ ∀ i, SitesOf g (π.env l i) (envOf L d i) := by
+    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧ ∀ i, SitesOf g (π.env l i) (envOf L d i) := by
   cases hf with
   | val hv => simp [isVal] at hv
-  | frameC π l _ hcode hn henv => exact ⟨π, l, hcode, hn, fun i => (henv i).sites⟩
+  | frameC c π l _ hcode hn henv => exact ⟨c, π, l, hcode, hn, fun i => (henv i).sites⟩
   | frameOut hc' => rw [hc] at hc'; cases hc'
 
 /-- **The check at a frame of `C`'s code gives the rule's premise**
@@ -293,7 +293,7 @@ theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : Alloc
     {L : List Tm} {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     {st : St P} (hf : Fits Fl (VJ Fl st.g st.s.h.length) Γ a o S₀ (.frame E K t L d k x comp))
     (hc : P.ofC comp = true) (hH : HeapInv Fl st.g st.s.h) :
-    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
       ∀ {q : SepQuery} {Ψ : Protocol P} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
         {prot : Region → Bool} {tv : TypeView} {dp : Nat},
         frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) st.s.h →
@@ -302,8 +302,8 @@ theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : Alloc
         (∀ e ∈ S, prot e.1 = true → ∀ w, w < st.s.h.length → e.1.mem (envOf L d) st.s.h w = true →
           st.g.Lent w → Witness tv dp st w) →
         Framed Φ Ψ S (envOf L d) st := by
-  obtain ⟨π, l, hcode, hn, henv⟩ := frame_sites hf hc
-  exact ⟨π, l, hcode, hn, fun hck hq hρ hkey hw => framed_of_sites hck hq hρ henv hH.sites hkey hw⟩
+  obtain ⟨c, π, l, hcode, hn, henv⟩ := frame_sites hf hc
+  exact ⟨c, π, l, hcode, hn, fun hck hq hρ hkey hw => framed_of_sites hck hq hρ henv hH.sites hkey hw⟩
 
 /-- **The check at the unit's frame of a reached state** (proved): where
 the flow's facts hold, the checks give fresh locations the flow's sites and
@@ -316,7 +316,7 @@ theorem ClientFrame.framed_at_frame {τ : Type} {fr : ClientFrame τ} {Fl : Flow
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (ht : b.1.t = .frame E K t L d k x comp) (hc : (fr.F.at fr.C).ofC comp = true) :
-    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
       ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
         {prot : Region → Bool} {tv : TypeView} {dp : Nat},
         frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
@@ -560,7 +560,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
       · exact ihr hf
       · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
         exact iha x hx hf
-  | invokeC σ π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
+  | invokeC σ c π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
     intro f hf
     simp only [ReadOnly.innermost, hfn.val, Bool.true_eq_false, if_false] at hf
     split at hf
@@ -584,7 +584,7 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     · exact ih hf
     · cases hf
   | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ ih
-  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
@@ -612,12 +612,12 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
       · split at hf
         · exact ihv hf
         · cases hf
-  | gotoC _ _ _ _ _ _ _ | gotoOut _ _ _ _ _ => intro f hf; simp [ReadOnly.innermost] at hf
-  | frameC π l hc hcode hn henv hfn hvfn ht hS ho ih =>
+  | gotoC _ _ _ _ _ _ _ _ | gotoOut _ _ _ _ _ => intro f hf; simp [ReadOnly.innermost] at hf
+  | frameC c π l hc hcode hn henv hfn hvfn ht hS ho ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     cases hi : ReadOnly.innermost _ with
-    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, Alloc.outside, _, _, .frameC π l hc hcode hn henv hfn hvfn ht hS ho⟩
+    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, Alloc.outside, _, _, .frameC c π l hc hcode hn henv hfn hvfn ht hS ho⟩
     | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
   | frameOut hc hE henv ht hS ho ih =>
     intro f hf
@@ -639,7 +639,7 @@ theorem ClientFrame.framed_at_innermost {τ : Type} {fr : ClientFrame τ} {Fl : 
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
     (activeFrame none b.1.t).1 = some ((E, K), comp) ∧
-    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
       ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
         {prot : Region → Bool} {tv : TypeView} {dp : Nat},
         frameCheckAt q Ψ Φ S Fl.H (π.env l) keys prot = true → q.Sound (envOf L d) b.1.s.h →
@@ -723,7 +723,7 @@ theorem ClientFrame.framed_at_innermost_keys {τ : Type} {fr : ClientFrame τ} {
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
     (activeFrame none b.1.t).1 = some ((E, K), comp) ∧
-    ∃ π l, Fl.code (E, K) = some π ∧ NodeOf (E, K) l k x ∧
+    ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
       ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView}
         {dp : Nat},
         frameCheckAt q Ψ Φ S Fl.H (π.env l) noKeys prot = true → q.Sound (envOf L d) b.1.s.h →
@@ -731,8 +731,8 @@ theorem ClientFrame.framed_at_innermost_keys {τ : Type} {fr : ClientFrame τ} {
         (∀ e ∈ S, prot e.1 = true → ∀ w, w < b.1.s.h.length → e.1.mem (envOf L d) b.1.s.h w = true →
           b.2.Lent w → Witness tv dp (lift fr.F fr.C none b.1 b.2) w) →
         Framed Φ Ψ S (envOf L d) (lift fr.F fr.C none b.1 b.2) := by
-  obtain ⟨ha, π, l, hcode, hn, hfr⟩ := ClientFrame.framed_at_innermost hF hS hE hb ht hc
-  exact ⟨ha, π, l, hcode, hn, fun hck hq hρ hw => hfr hck hq hρ (ClientFrame.reached_hkey hK hb _ _) hw⟩
+  obtain ⟨ha, c, π, l, hcode, hn, hfr⟩ := ClientFrame.framed_at_innermost hF hS hE hb ht hc
+  exact ⟨ha, c, π, l, hcode, hn, fun hck hq hρ hw => hfr hck hq hρ (ClientFrame.reached_hkey hK hb _ _) hw⟩
 
 /-! ## Live protection witnesses -/
 

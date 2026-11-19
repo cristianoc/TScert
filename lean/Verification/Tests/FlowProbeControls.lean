@@ -29,7 +29,7 @@ private def F0 : FFlow Pk := ⟨[none], [], []⟩
 /-- The writes of `writeAt arraySpineKey (var 0) (arr [])`, slot `0` holding
 outside storage. -/
 private def spineWrites : List (Sites Pk × List (Option Kind)) :=
-  writesIn F0 (fun _ => [none]) (fun _ => none) Alloc.outside 0 (fun _ => none)
+  writesIn F0 (fun _ => [none]) (fun _ => none) Alloc.outside entryCx 0 (fun _ => none)
     (.writeAt arraySpineKey (.var 0) (.arr []))
 
 #guard probeProtocol spineWrites [] ⟨none, some .spine, none⟩ = .any
@@ -46,7 +46,7 @@ private def spineWrites : List (Sites Pk × List (Option Kind)) :=
 /-- The writes of the closure's body `c.i = 1`, its capture slot `1`
 holding the local site `0`. -/
 private def setterWrites : List (Sites Pk × List (Option Kind)) :=
-  writesIn F0 (fun i => if i = 1 then [some 0] else [none]) (fun _ => none) Alloc.outside 0 (fun _ => none)
+  writesIn F0 (fun i => if i = 1 then [some 0] else [none]) (fun _ => none) Alloc.outside entryCx 0 (fun _ => none)
     (.writeAt (.str "i") (.var 1) (.num 1))
 
 -- a capture may hold the site: its field is charged
