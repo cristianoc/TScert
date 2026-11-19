@@ -296,7 +296,12 @@ a kind among the charges of the innermost frame's code.
   such values (`HeapW`). A step's writes are among those of the term it
   steps from; an entered node instantiates its code's expression with
   plain values (`instantiate_wok`); a value performs no write
-  (`writesK_val`).
+  (`writesK_val`). It holds at every reached state from calls meeting it
+  (`ClientFrame.wok_reached`), and lowered code meets it (`lowered_wok`,
+  proved); at a call the claim is about the term is the request's run,
+  whose code is lowered, at slots and a heap of plain values, which every
+  step of a program from an initial configuration keeps (`wok_program`, to
+  be proved with `fits_program`, by `step_wok`).
 - **The active redex's writes** (`active_writes`): the writes of the term
   the next step reduces are among the charges of the innermost frame's
   code.
@@ -1313,7 +1318,8 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 (`ReadOnlyBinding.lean`), `allocB_realized`, `compB_sound`
 (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
-`probeProtocol_charged`, `stepWithin_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
+`probeProtocol_charged`, `stepWithin_charged`, `ClientFrame.wok_reached`,
+`lowered_wok` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
 `framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`
 (`ReadOnlyCover.lean`); `graph_stepR`, `graph_safeR`,
 `SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
@@ -1345,7 +1351,7 @@ review's `CodeClause.lean`).
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `prologue_sim`, `project`, `keeps_canonical`,
-`fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
+`fits_program`, `chkSound_program`, `inv_program`, `wok_program`, `entryFits_public`,
 `startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s

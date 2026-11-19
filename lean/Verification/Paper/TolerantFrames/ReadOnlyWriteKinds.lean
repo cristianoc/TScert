@@ -821,4 +821,54 @@ theorem stepWithin_charged {P : Package} [DecidableEq P.Site] [Hashable P.Site] 
     rw [probeProtocol_charged (hK (step_kind_charged hs hw hk hr hv hne)) (hloc l v hb hR hv hne)]
     trivial
 
+/-- A part of lowered code a closure or a bound function holds, a variable
+or a primitive value, is plain. -/
+theorem CodePart.plain {t : Tm} (h : CodePart t) : Plain t := by
+  rcases h with ⟨i, rfl⟩ | hp
+  · exact ⟨rfl, trivial⟩
+  · cases t <;> simp_all [primVal, Plain, writesK, WOk]
+
+/-- **Lowered code meets the residual invariant** (proved, by induction on
+the term): it holds no run, and the parts of the closures and bound
+functions it creates are variables or primitive values. -/
+theorem lowered_wok {P : Package} {Fl : Flow P} (e : Tm) : Lowered Fl e → WOk e := by
+  induction e using Tm.induct with
+  | makeBound t r pre ns args _ _ _ iha =>
+    intro h
+    simp only [Lowered, loweredArgs_iff] at h
+    simp only [WOk, wOks_iff, plainArgs_iff]
+    exact ⟨⟨(CodePart.plain h.1), (CodePart.plain h.2.1), fun x hx => CodePart.plain (h.2.2.1 x hx)⟩,
+      fun x hx => iha x hx (h.2.2.2 x hx)⟩
+  | makeGraph n E K s caps k r comp ns args ihE _ iha =>
+    intro h
+    simp only [Lowered, loweredArgs_iff] at h
+    simp only [WOk, wOks_iff, plainArgs_iff]
+    exact ⟨⟨fun x hx => ihE x hx (h.2.1 x hx), fun x hx => CodePart.plain (h.2.2.1 x hx)⟩,
+      fun x hx => iha x hx (h.2.2.2 x hx)⟩
+  | _ =>
+    intro h
+    simp only [Lowered, loweredArgs_iff] at h
+    try simp only [WOk, wOks_iff]
+    try grind
+
+/-! ## Along the frame's executions -/
+
+namespace ClientFrame
+variable {τ : Type} {fr : ClientFrame τ}
+
+/-- **The residual invariant at every reached state** (proved, `step_wok`
+along the execution): from calls whose term meets it at a heap of plain
+values, every reached state's term meets it at a heap of plain values. -/
+theorem wok_reached
+    (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    {b : Conf × Ghost (fr.F.at fr.C)} (hb : fr.Reached b) : WOk b.1.t ∧ HeapW b.1.s.h := by
+  obtain ⟨a, n, hc, hs, hex⟩ := hb
+  refine hex.carry (r := fun x : Conf × Ghost (fr.F.at fr.C) => WOk x.1.t ∧ HeapW x.1.s.h) ?_ (hst a hc hs)
+  intro x y _ hxy hx
+  have := step_wok hxy.1.step hx.2 hx.1
+  exact ⟨this.1, this.2.1⟩
+
+end ClientFrame
+
 end Verification.TolerantFrames.ReadOnly
