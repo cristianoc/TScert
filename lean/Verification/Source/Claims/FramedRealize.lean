@@ -25,7 +25,14 @@ node past the body. Where the request's nodes target only its own labels
   crosses out the same values.
 - **The same crossings in** (`chk_entry_sim`): a step of related runs to
   related runs has the same entering crossings; with the two above, the
-  checks' data of related steps agree (`chk_sim`). -/
+  checks' data of related steps agree (`chk_sim`).
+- **The frame's starts from the program** (`lay_start`, `wok_start`): at
+  every call the frame's claim is about, layout provenance and the
+  residual invariant hold where they hold at initial configurations, read
+  along the public call and its realization (`entry_run`); an initial
+  configuration meets both where the initialization's node expressions and
+  the realm do and the client is lowered source (`initial_starts`); the
+  checks read the flow's sites (`flowSites`). -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
@@ -224,6 +231,88 @@ theorem chk_sim (spec : FramedSpec ι) (r : SourceRequest σ ι) {num : (spec.F.
   have hs : stepSite spec.flow none (K t₁) = stepSite spec.flow none (K t₂) := chk_site_sim hnum hb h₁ h₂ hK hr
   simp only [FramedSpec.chk, hs, chk_entry_sim spec r hK hr hs₁ hs₂ hr',
     chk_actual_sim (F := spec.F) (C := spec.C) (tv := spec.view.view) spec.outType h h' hK hr hr']
+
+namespace FramedSpec
+variable (spec : FramedSpec ι)
+
+/-- **The run an entry realizes** (proved): at an entry of the request, the
+state the public call reaches holds, in a context, the realized code's run
+at the request's start, with the frame's slots and default, and the frame's
+term is the request's run there. -/
+theorem entry_run (r : SourceRequest σ ι) {k : Nat} {W : WorldT k} {h : Heap} {t : Tm}
+    {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)} (he : spec.EntryAt r k W h t a₂) :
+    ∃ x₀ n x a₁ L d K, (spec.core r).PublicCall spec.Initial (realizedCode r) x₀ n x a₁ ∧
+      (∃ j, Ex (spec.core r).KStep (fun _ => True) j a₁ a₂) ∧ EvalCtx K ∧
+      a₂.1.t = K (.goto (realizedCode r).1 (realizedCode r).2 r.start L d r.comp) ∧ h = a₂.1.s.h ∧
+      t = PassUnit.gotoOf r.program r.start L d r.comp := by
+  obtain ⟨x₀, n, x, a₁, L, d, hp, ⟨-, ⟨j, hj⟩, hin⟩, -, -, hh, ht⟩ := he
+  obtain ⟨K, hK, hK'⟩ := innermostGoto_ctx hin
+  exact ⟨x₀, n, x, a₁, L, d, K, hp, ⟨j, hj.mono fun _ _ => trivial⟩, hK, hK', hh, ht⟩
+
+/-- **Layout provenance at the frame's calls** (proved, `lay_program`,
+`lay_ex`, `EvalCtx.layP_hole`; the start premise of `lay_reached`): from
+initial configurations meeting it, every call the frame's claim is about
+meets it, its term the request's run whose node expressions are the
+realized code's below the prologue. -/
+theorem lay_start (r : SourceRequest σ ι) {q : Code → ComponentTag → Layout → Bool}
+    (hinit : ∀ x, spec.Initial x → layP q x.t = true ∧ HeapLay q x.s.h) :
+    ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
+      (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →
+      layP q a.1.t = true ∧ HeapLay q a.1.s.h := by
+  intro a hc _
+  obtain ⟨a₂, he⟩ := hc.2
+  obtain ⟨x₀, n, x, a₁, L, d, K, hp, ⟨j, hj⟩, hK, ht₂, hh, ht⟩ := spec.entry_run r he
+  have h₁ := FrameCore.lay_program hinit hp
+  have h₂ := FrameCore.lay_ex hj h₁
+  have hg := hK.layP_hole (by rw [← ht₂]; exact h₂.1)
+  refine ⟨?_, by rw [hh]; exact h₂.2⟩
+  rw [ht]
+  simp only [layP, layPs_eq, realizedCode, List.all_append, Bool.and_eq_true] at hg
+  simp only [PassUnit.gotoOf, layP, layPs_eq, Bool.and_eq_true]
+  exact ⟨⟨hg.1.1.1, hg.1.2⟩, hg.2⟩
+
+/-- **The residual invariant at the frame's calls** (proved, `wok_program`,
+`wok_ex`, `EvalCtx.wok_hole`; the start premise of `wok_reached`): from
+initial configurations meeting it, every call the frame's claim is about
+meets it. -/
+theorem wok_start (r : SourceRequest σ ι) (hinit : ∀ x, spec.Initial x → WOk x.t ∧ HeapW x.s.h) :
+    ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
+      (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →
+      WOk a.1.t ∧ HeapW a.1.s.h := by
+  intro a hc _
+  obtain ⟨a₂, he⟩ := hc.2
+  obtain ⟨x₀, n, x, a₁, L, d, K, hp, ⟨j, hj⟩, hK, ht₂, hh, ht⟩ := spec.entry_run r he
+  have h₁ := FrameCore.wok_program hinit hp
+  have h₂ := FrameCore.wok_ex hj h₁
+  have hg := hK.wok_hole (by rw [← ht₂]; exact h₂.1)
+  refine ⟨?_, by rw [hh]; exact h₂.2⟩
+  rw [ht]
+  simp only [WOk, wOks_iff, realizedCode, List.mem_append] at hg
+  simp only [PassUnit.gotoOf, WOk, wOks_iff]
+  exact ⟨fun e he => hg.1 e (.inl he), hg.2⟩
+
+omit [Labels ι] in
+/-- **An initial configuration meets layout provenance and the residual
+invariant** (proved, `lay_initial`, `wok_initial`): where the
+initialization's node expressions meet both, the realm's heap meets both,
+and the client is lowered source. -/
+theorem initial_starts {q : Code → ComponentTag → Layout → Bool}
+    (hq : ∀ m c l, spec.F.ofC spec.C c = false → q m c l = true) {x₀ : Conf} (hx : spec.Initial x₀)
+    (hsrc : ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client →
+      LoweredSrc (spec.F.ofC spec.C) client)
+    (hEl : ∀ e ∈ spec.initE, layP q e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hRl : HeapLay q spec.realm) (hRw : HeapW spec.realm) :
+    (layP q x₀.t = true ∧ HeapLay q x₀.s.h) ∧ (WOk x₀.t ∧ HeapW x₀.s.h) := by
+  obtain ⟨client, hh, ht, -, -⟩ := hx
+  have hc := hsrc client ht
+  rw [ht, hh]
+  exact ⟨⟨lay_initial hq hEl hc, hRl⟩,
+    ⟨wok_initial (Fl := spec.flow) hEw (LoweredSrc.lowered (P := spec.F.at spec.C) (Fl := spec.flow) hc), hRw⟩⟩
+
+/-- **The checks read the flow's sites** (proved, by definition). -/
+theorem flowSites (r : SourceRequest σ ι) : (spec.frame r).FlowSites spec.flow := fun _ _ _ _ => rfl
+
+end FramedSpec
 
 end
 end Verification.SourceClaimJson

@@ -169,6 +169,37 @@ theorem _root_.Verification.HeapObservations.EvalCtx.wok_hole {K : Tm → Tm} (h
     simp only [WOk] at h
     grind
 
+/-- **A context's hole meets layout provenance where the whole term does**
+(proved, by induction on the context). -/
+theorem _root_.Verification.HeapObservations.EvalCtx.layP_hole {q : Code → ComponentTag → Layout → Bool}
+    {K : Tm → Tm} (hK : EvalCtx K) :
+    ∀ {u : Tm}, layP q (K u) = true → layP q u = true := by
+  induction hK with
+  | hole => exact fun h => h
+  | callArg _ _ hi _ _ ih =>
+    intro u h
+    simp only [layP, layPs_eq, Bool.and_eq_true, List.all_eq_true] at h
+    exact ih (h.2 _ (List.mem_of_getElem? (List.getElem?_set_self hi)))
+  | constructArg _ hi _ _ ih =>
+    intro u h
+    simp only [layP, layPs_eq, Bool.and_eq_true, List.all_eq_true] at h
+    exact ih (h.2 _ (List.mem_of_getElem? (List.getElem?_set_self hi)))
+  | @makeArg _ c _ _ _ hi _ _ ih =>
+    intro u h
+    cases c <;> simp only [layP, layPs_eq, Bool.and_eq_true, List.all_eq_true] at h
+    all_goals first
+      | exact ih (h _ (List.mem_of_getElem? (List.getElem?_set_self hi)))
+      | exact ih (h.2 _ (List.mem_of_getElem? (List.getElem?_set_self hi)))
+  | arrArg hi _ _ ih =>
+    intro u h
+    simp only [layP, layPs_eq, List.all_eq_true] at h
+    exact ih (h _ (List.mem_of_getElem? (List.getElem?_set_self hi)))
+  | _ =>
+    rename_i ih
+    intro u h
+    simp only [layP, layPs_eq, Bool.and_eq_true] at h
+    grind
+
 /-- **The residual invariant along an execution** (proved, `step_wok` at
 each step): the term reached meets it at a heap of plain values, its
 writes among the first term's. -/

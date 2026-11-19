@@ -268,7 +268,16 @@ $`\overline{S}`$ is closed under both, its closure under captures read
 through each code's layout `lay` (`tokenCaps`), the layout of a code's
 first entry (`layAt`, as the flow reads a code's proposals); its check
 gives `CapClosed` at those layouts where every code's tokens are sites
-(`capClosed_of_lay`, with `tokensSomeB`, proved).
+(`capClosed_of_lay`, with `tokensSomeB`, proved). At the frame of a plan the
+start premises of `lay_reached` and `wok_reached` come from the program
+(`FramedSpec.lay_start`, `FramedSpec.wok_start`, proved,
+`FramedRealize.lean`: along the public call and its realization,
+`entry_run`, the request's run is the realized code's below the prologue
+in a context, `EvalCtx.layP_hole`, `EvalCtx.wok_hole`), and an initial
+configuration meets both where the initialization's node expressions and
+the realm do and the client is lowered source (`initial_starts`, proved,
+its premise the client's `LoweredSrc`; `Initial` states the client's
+provenance, `prov (srcOk …)`).
 
 The layouts are a run invariant (`layouts_reached`, proved,
 `ReadOnlyLayouts.lean`): every closure a term or a heap holds or creates,
@@ -1451,7 +1460,9 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `prologue_steps`, `prologue_sim`, `chk_site_sim`, `chk_actual_sim`,
 `chk_entry_sim`, `chk_sim` (`FramedRealize.lean`), `path_ctx`,
 `depthC_ctx`, `tabRel_tags`, `entered_frame`, `frame_goto_tags`
-(`ReadOnlyRealize.lean`); `RunSeq.within` (`ReadOnlyCert.lean`); `RunSeq.mono`,
+(`ReadOnlyRealize.lean`), `entry_run`, `lay_start`, `wok_start`,
+`initial_starts`, `flowSites` (`FramedRealize.lean`), `EvalCtx.layP_hole`
+(`ReadOnlySegment.lean`); `RunSeq.within` (`ReadOnlyCert.lean`); `RunSeq.mono`,
 `RunSeq.keeps`, `traceMember`, `decompose_trace`, `exec_bound_trace`,
 `callRun_trace` (`ReadOnlyTraceCert.lean`); `seg_run`, `seg_bound`,
 `transfer_at`, `Leads.of_bound`, `frameC_shape`, `FrameCore.inside_run`,
