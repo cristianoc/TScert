@@ -26,15 +26,6 @@ guarantees and the two run-level statements (`RunSound`,
 export Verification.TolerantFrames.Target (ReachesIn EntryHolds GraphGuarantee CheckerScope RunCall
   RunCall.result RunCall.Accepts regionOf RunSound RunKeepsSummaries)
 
-section
-variable {ι : Type} [Labels ι]
-
-/-- The term that runs a program graph from `start`, frame `L`, receiver `d`,
-its frames tagged `comp`, the component whose code it is. -/
-def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) (comp : ComponentTag) : Tm :=
-  .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d comp
-
-end
 
 /-! ## Certificate-independent safety of a request and of a unit -/
 
@@ -250,7 +241,7 @@ def MemberSafe (f : FilePlans) (i : Nat) : Prop :=
   ∃ p c, f.plans[i]? = some (.ok p) ∧ p.certify = .ok c ∧
     match c with
     | .graph _ _ r => RequestSafe r
-    | .framed _ _ r fr => FramedRequestSafe r fr
+    | .framed _ _ r spec => FramedRequestSafe r (spec.frame r)
 
 /-- **A unit is safe**: every member of its group is. -/
 def PassUnitSafe (f : FilePlans) (i : Nat) : Prop :=

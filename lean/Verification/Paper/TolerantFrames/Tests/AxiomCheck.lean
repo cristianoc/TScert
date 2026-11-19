@@ -37,6 +37,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyFrame
 import Verification.Paper.TolerantFrames.ReadOnlyLocated
 import Verification.Paper.TolerantFrames.ReadOnlyOutside
 import Verification.Paper.TolerantFrames.ReadOnlyProvenance
+import Verification.Paper.TolerantFrames.ReadOnlyPublic
 import Verification.Paper.TolerantFrames.ReadOnlyRegion
 import Verification.Paper.TolerantFrames.ReadOnlyRuns
 import Verification.Paper.TolerantFrames.ReadOnlySites

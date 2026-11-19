@@ -684,8 +684,8 @@ def extractMember (fr : Front) (T : EquationStore.State)
     else tryCatch (finish d module c f) fun e =>
       throw (if RequestJson.hasDiagnostic e then e
         else sourceRefusal d.types f.namePos .genericValidation e)
-  let .graph _ _ r := plan
-  return (r.types, plan)
+  match plan with
+  | .graph _ _ r | .framed _ _ r _ => return (r.types, plan)
 
 /-- Whether a group's code mentions a qualified read. -/
 def Front.readsQualified (fr : Front) (group : List Nat) : Bool :=

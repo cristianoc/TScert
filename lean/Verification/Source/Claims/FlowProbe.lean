@@ -539,6 +539,7 @@ def FilePlans.flowProbe (f : FilePlans) (group : List Nat) (mods : List ProbeMod
       | .graph name _ _ => do
         let line ← probeProgram ofC name mods specs entryNames
         return some s!"{name}: {line}"
+      | .framed .. => return none
     | _ => return none
 
 /-- The module codes of a file's planned members. -/

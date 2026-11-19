@@ -307,6 +307,7 @@ def FilePlans.withFreshApart (f : FilePlans) (force : Bool := false) (group : Li
       let cands := extra.foldl (fun (cs : List (Nat × List HeapKnowledge.IndexAtom)) (l, as) =>
         if cs.any (·.1 == l) then cs.map fun (l', bs) => if l' == l then (l', bs ++ as.filter (!bs.contains ·)) else (l', bs)
         else cs ++ [(l, as)]) r.candidates
-      .graph name pos { r with candidates := cands } }
+      .graph name pos { r with candidates := cands }
+    | p@(.framed ..) => p }
 
 end Verification.SourceClaimJson

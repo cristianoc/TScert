@@ -19,6 +19,12 @@ abbrev Req (f : FilePlans) : Type :=
 def PlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req f) : Prop :=
   f.plans[i]? = some (Except.ok (FunctionPlan.graph name pos r))
 
+/-- The plan of unit `i` of `f` is the framed plan of the request `r` with
+the proposals `spec`. -/
+def FramedPlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req f)
+    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop :=
+  f.plans[i]? = some (Except.ok (FunctionPlan.framed name pos r spec))
+
 /-- Every plan of `f` is a request over `f`'s frozen store. -/
 def OverStore (f : FilePlans) : Prop :=
   ∀ i name pos (r : Req f), PlanAt f i name pos r → r.types = f.F.store
@@ -47,6 +53,15 @@ theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPl
         injection h with h
         cases h
         exact over_types hr
+    | framed n ps r₀ spec =>
+      simp only [Except.bind, FunctionPlan.over, bind, pure, Except.pure] at h
+      cases hr : SourceRequest.over F r₀ with
+      | error _ => rw [hr] at h; cases h
+      | ok r₁ =>
+        rw [hr] at h
+        cases hs : spec.over F with
+        | error _ => rw [hs] at h; cases h
+        | ok _ => rw [hs] at h; cases h
 
 theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {b : β}
     (h : (x >>= k) = .ok b) : ∃ a, x = .ok a ∧ k a = .ok b := by
@@ -143,6 +158,7 @@ theorem withHeadFacts_plan {f : FilePlans} {given : Std.HashMap String Json} {en
       simp only [Except.map, Except.ok.injEq, FunctionPlan.graph.injEq] at he
       obtain ⟨rfl, rfl, rfl⟩ := he
       exact ⟨r₀, hp', _, _, rfl⟩
+    | framed n ps r₀ spec => simp [Except.map] at he
 
 /-- Head facts keep the store every plan is over (proved). -/
 theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json} {entries inferred : Bool}

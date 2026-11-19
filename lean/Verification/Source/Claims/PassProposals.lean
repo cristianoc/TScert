@@ -435,7 +435,8 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
 /-- A plan's request at `top` with no throw bound: its walk unbounded. -/
 def openAt (f : FilePlans) (i : Nat) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map fun
-    | .graph name pos r => .graph name pos { r with footprint := .top, onThrow := false } }
+    | .graph name pos r => .graph name pos { r with footprint := .top, onThrow := false }
+    | p@(.framed ..) => p }
 
 /-- Whether member `i`'s plan runs its main graph with no bound when open
 (`passMember`'s `bounded`): no fresh result stated. -/
@@ -524,8 +525,9 @@ def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
   let members := (fp.fr.group j).map fun k =>
     let unit := (fp.fr.units[k]?).map fun (g, _, c) => (g.name, g.namePos, c.isSome)
     match fp.plans[k]? with
-    | some (.ok (.graph _ _ r)) =>
-      [hash (reprStr unit), hash (toJson r.program).compress, hash (r.claims.map fun c => (c.context, c.type)),
+    | some (.ok p) =>
+      let r := p.parts.2.2
+      [hash (reprStr unit), hash (match p with | .graph .. => 0 | .framed .. => 1), hash (toJson r.program).compress, hash (r.claims.map fun c => (c.context, c.type)),
         hash r.result, hash r.start, hash r.inputs, hash (toJson r.candidates).compress, hash r.cuts,
         hash (reprStr r.assertions), hash (toJson r.entryIndices).compress, hash (reprStr (r.codes.map (·.entry.goal))),
         hash (reprStr (r.footprint, r.onThrow, r.fresh, r.regional, r.async, r.qualification.isSome)),

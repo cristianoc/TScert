@@ -78,13 +78,48 @@ inductive MainAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : Sour
 
 end
 
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+/-- **The framed claim's obligations** (the draft "Accepting a unit through
+the read-only frame", "The theorems"): the clauses of `FramedRequestSafe`
+at the frame a framed plan's proposals define. Each field is the conclusion
+of lemmas of the draft's milestone 1 not yet proved from the pass's check
+of a framed plan: the main graph's clauses by `framed_requestSafe`'s
+induction over `RunSoundFramed` and `ret_reached`; the codes' clause by
+`codesAccepted_guarantees` and `assertedAt_of_graph`. A field leaves this
+structure in the commit that proves it from the check. -/
+structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
+  run : FramedSafeClause r (spec.frame r) ∧ FramedFootprintClause r (spec.frame r) ∧
+    FramedEnsuresClause r (spec.frame r) ∧ FramedRegionalClause r (spec.frame r) ∧
+    FramedAssertionsClause r (spec.frame r)
+  codes : FramedCodeAssertionsClause r (spec.frame r)
+
+/-- **A framed member as the pass accepts it** (the draft, "What the pass
+checks"): its checks and the framed claim's obligations not yet proved
+from them. `FilePlans.passMember` refuses every framed plan, so no member
+`passGroup` accepts is accepted by this constructor until every obligation
+is proved from the checks the pass makes. -/
+structure FramedAccepted (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
+  obligations : FramedObligations r spec
+
+/-- **The framed claim from the check** (proved; the draft,
+`framed_requestSafe`): a framed member accepted is safe under the frame its
+proposals define. -/
+theorem framed_requestSafe {r : SourceRequest σ ι} {spec : FramedSpec ι} (h : FramedAccepted r spec) :
+    FramedRequestSafe r (spec.frame r) :=
+  let ⟨⟨⟨hs, hf, he, hg, ha⟩, hc⟩⟩ := h
+  ⟨hs, hf, he, hg, ha, hc⟩
+end
+
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each
 stated region meets its entry conditions, its code requests are accepted in
 order (`CodesAccepted`) and its graph over their table (`MainAccepted`); or
 it is a qualified body, at the footprint letting everything change on
 normal return alone, with no postcondition, regions or codes, accepted by
-one call at its checker, its read summaries checked. -/
+one call at its checker, its read summaries checked; or its plan is a
+framed plan accepted (`FramedAccepted`). -/
 inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
   | ordinary (name : String) (pos : Span) (r : Req f) (a₀ a₁ : Answered (StoreView.graph f.F.store)) :
       PlanAt f i name pos r → r.qualification = none → declaredEffect r = true →
@@ -102,6 +137,9 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
       r.footprint = .top → r.onThrow = false → r.fresh = false → r.ensures = [] → r.regional = none →
       r.codes = [] → MainCall r c (GraphCode.admits []) (.qualified q.body q.ordinary) a₀ → c.bound = none → c.regional = none →
       c.Accepts after → summariesChecked r after.summaries.toList = true → MemberAccepted f i
+  | framed (name : String) (pos : Span) (r : Req f)
+      (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) :
+      FramedPlanAt f i name pos r spec → FramedAccepted r spec → MemberAccepted f i
 
 /-- **H3, the wrapper's statement**: `passGroup` accepting a group makes
 every member `MemberAccepted`, at every value of every argument. Proved

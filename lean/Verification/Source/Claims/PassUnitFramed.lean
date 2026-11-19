@@ -208,11 +208,11 @@ theorem callSafe_of_member {f : FilePlans} {j : Nat} (hm : MemberSafe f j) :
     ∃ p c, f.plans[j]? = some (.ok p) ∧ p.certify = .ok c ∧
       match c with
       | .graph _ _ r => ∀ Ent, CallSafe Ent r
-      | .framed _ _ r fr => fr.Met → CallSafe fr.Call r := by
+      | .framed _ _ r spec => (spec.frame r).Met → CallSafe (spec.frame r).Call r := by
   obtain ⟨p, c, hp, hc, hs⟩ := hm
   refine ⟨p, c, hp, hc, ?_⟩
   cases c with
   | graph _ _ r => exact requestSafe_callSafe hs
-  | framed _ _ r fr => exact framed_callSafe hs
+  | framed _ _ r spec => exact framed_callSafe hs
 
 end Verification.SourceClaimJson.PassUnit

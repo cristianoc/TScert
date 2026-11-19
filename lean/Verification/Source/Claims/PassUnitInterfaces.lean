@@ -386,6 +386,7 @@ theorem withFalseStartFact_overStore {f : FilePlans} (h : OverStore f) : OverSto
       injection he with h1 h2 h3
       subst h1 h2 h3
       exact h i _ _ r₀ hp
+    | framed n ps r₀ spec => simp [Except.map] at he
 
 /-- Mode 8's preparation of the planned file (`verifyUnitsFile`): its given
 head facts, with `infer` beside the proposals inference recorded, then the

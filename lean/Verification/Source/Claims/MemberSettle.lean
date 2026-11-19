@@ -37,7 +37,8 @@ def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (e
         codeSources := r.codeSources.zipIdx.map fun (c, ci) =>
           let start := ((r.codes[ci]?).map fun q => (q.asRequest r.toRequest).start).getD 0
           { c with candidates := headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "headFactsOfCodes" ci) ++
-            (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } } }
+            (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } }
+    | p@(.framed ..) => p }
 
 /-- **The slots holding an input's entry value** at each node: the pairs
 `(slot, input)` the seed states at the entry, carried along every edge to
@@ -172,7 +173,7 @@ def FilePlans.computedGiven (f : FilePlans) (given : Std.HashMap String Json) (f
             ("target", toJson x.target), ("type", toJson x.type)]).toArray), ("arguments", Json.arr #[]),
           ("inputs", toJson (ps.map fun (a, b) => [a, b]))]
       m.insert u (Json.mkObj ([("unit", toJson u), ("graph", Json.arr rows.toArray), ("codes", Json.arr #[])] ++ regional))
-    | .error _ => m
+    | .ok (.framed ..) | .error _ => m
 
 /-- The given file's loop-head facts of plan `i` (`headFacts`), by label:
 the candidates no rerun drops. -/
@@ -187,7 +188,8 @@ def FilePlans.givenAt (f : FilePlans) (given : Std.HashMap String Json) (i : Nat
 def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map fun
     | .graph name pos r => .graph name pos { r with candidates := r.candidates.map fun (l', as) =>
-        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) } }
+        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) }
+    | p@(.framed ..) => p }
 
 /-- The candidates of plan `i` at the heads that read the facts of the head
 at label `l` (each a label whose source span lies inside `l`'s, or after it
@@ -554,7 +556,8 @@ def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
   let fact : HeapKnowledge.IndexAtom :=
     { fact := .linear (.le [(HeapKnowledge.Term.value 0, 1), (HeapKnowledge.Term.value 0, -1)] (-1)) }
   { f with plans := f.plans.map fun p => p.map fun
-    | .graph name pos r => .graph name pos { r with candidates := (r.start, [fact]) :: r.candidates } }
+    | .graph name pos r => .graph name pos { r with candidates := (r.start, [fact]) :: r.candidates }
+    | p@(.framed ..) => p }
 
 /-- **A group accepted under client trust**: a member whose plan certifies
 to a framed plan, accepted for the executions in which outside code keeps

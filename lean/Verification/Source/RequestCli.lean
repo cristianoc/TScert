@@ -721,6 +721,7 @@ def PreparedFile.probeComponent (p : PreparedFile) (f : SourceClaimJson.FilePlan
               let reason := match g.plans[j]? with
                 | some (.error e) => e
                 | some (.ok (.graph _ _ r)) => s!"receiver {r.receiver}, rest {r.restParam}"
+                | some (.ok (.framed ..)) => "a framed plan"
                 | none => "no plan"
               IO.eprintln s!"probe component: no closure code for {x}: {(reason.splitOn "\n").head?.getD reason}"
             if pf.index == own.index then g.keepModuleCodes (pf.file.fr.group j)

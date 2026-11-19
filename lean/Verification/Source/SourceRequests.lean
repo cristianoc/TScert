@@ -400,7 +400,7 @@ open EquationStore
 
 /-- Translate labels through their JSON representation. Strict decoding
 refuses a label outside the frozen equations. -/
-private def relabel {α β : Type} [ToJson α] [FromJson β] [ToJson β] (a : α) : Except String β :=
+def relabel {α β : Type} [ToJson α] [FromJson β] [ToJson β] (a : α) : Except String β :=
   decodeStrict "request" (toJson a)
 
 /-- A type read as `F`'s, through `relabel`, each type's once. -/

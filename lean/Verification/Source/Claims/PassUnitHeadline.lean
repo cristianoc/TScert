@@ -187,5 +187,7 @@ theorem member_safe {f : FilePlans} {j : Nat}
       hcodes hmain⟩
   | qualified name pos r q c a₀ after hplan hq _ hfp hot hfr hens hreg hcodes hm _ hregc hacc hs =>
     exact ⟨_, _, hplan, rfl, qualified_requestSafe hrun hq hfp hot hfr hens hreg hcodes hm hregc hacc hs⟩
+  | framed name pos r spec hplan hacc =>
+    exact ⟨_, _, hplan, rfl, framed_requestSafe hacc⟩
 
 end Verification.SourceClaimJson.PassUnit

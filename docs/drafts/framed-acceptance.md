@@ -791,13 +791,54 @@ inductive FunctionPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
 
 def FunctionPlan.certify : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
   | .graph name pos request => pure (.graph name pos request)
-  | .framed name pos request spec => pure (.framed name pos request (spec.frame request))
+  | .framed name pos request spec => pure (.framed name pos request spec)
 ```
 
-`FramedSpec ι` holds the proposals: the family's numbering, the finite flow
-(its marks the ones it gives), $`\Psi_C`$, $`\Theta_C`$, and for each framed
-call node of the main graph the supports and invariants kept at its
-continuation and handler. **The codes are checked by the ordinary pass**
+`CertifiedPlan.framed` carries the proposals, and `MemberSafe` reads a
+framed plan's claim at the frame they define, `FramedRequestSafe r
+(spec.frame r)`: the frame holds the checks' data, which reads the
+crossings of a step classically, so the executable boundary carries the
+proposals and the claim the frame (`Plans.lean`).
+
+`FramedSpec ι` (`FramedSpec.lean`) holds the proposals: the family's
+numbering, $`C`$, $`\Theta_C`$, the flow, the types a crossing reads
+read-only, the type outgoing values cross at, the realm's heap, the
+initialization's code and the function's arity; the check reads beside
+them $`\Psi_C`$ and, for each framed call node of the main graph, the
+supports and invariants kept at its continuation and handler. From them
+and the request:
+
+- `realizedCode r`: the request's node lists behind the receiver's
+  prologue (`dropReceiver`'s lists over $`|\mathrm{r.inputs}|`$ slots);
+- `view`: a type is read-only where the proposals name it, and a type's
+  children are itself, so a read-only type is read-only throughout
+  (`ro_of_readOnlyShape` checks the names against the declared shape);
+- `chk r`: the flow's site of a step's fresh locations (`stepSite`), no
+  keys, and the crossings: at an entering step of the realized code its
+  first `arity` arguments into $`C`$ at their declared types (`entryXs`),
+  and every value reaching outside code out of $`C`$ (`actualXs`);
+- `Initial x₀`: the realm's heap, and `letE (goto initE initK 0 [] undefined C) client`
+  with `client` lowered outside source whose one free variable is the
+  exports;
+- `RealizedAt r a₁ a₂ L d`: `a₁` runs the realized code, and `a₂` is the
+  first state after it, along steps keeping $`\Theta_C`$, whose innermost
+  run is the realized code at `r.start`, with slots `L`, default `d` and
+  the request's tag;
+- `frame r`: its core `(fam, C, view, Θ_C, chk r)`, its codes those the
+  flow holds, its entries `EntryAt`, the realizations of the public calls
+  of the realized code (`FrameCore.PublicCall`, `ReadOnlyPublic.lean`) at
+  the program's world and heap, its term `gotoOf r.program r.start L d
+  r.comp`, and its start as stated above (total, by cases).
+
+`MemberAccepted.framed` holds a framed plan at the member
+(`FramedPlanAt`) and `FramedAccepted r spec`, whose field
+`FramedObligations` states the clauses of `FramedRequestSafe r (spec.frame
+r)` the lemmas below establish from the check: the main graph's five
+(by `RunSoundFramed` and `ret_reached`) and the codes' (by
+`codesAccepted_guarantees` and `assertedAt_of_graph`). `framed_requestSafe`
+and `member_safe`'s framed branch are proved from it; a field leaves the
+structure in the commit that proves it from the check. `passMember`
+refuses every framed plan until none is left. **The codes are checked by the ordinary pass**
 (`CodesAccepted`, ordinary checker), so a code's closure meets its ordinary
 arrow, and **the sixth clause** of `FramedRequestSafe` is the ordinary code
 clause of `RequestSafe`, proved by `codesAccepted_guarantees`
@@ -993,7 +1034,9 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `decompose`, `Run.bound`, `MemberRun.within`, `RBoundBelow.trans`,
 `RBound.mono`, `RBoundBelow.mono`, `StepWithin.mono`, `approx_stable`,
 `step?_sound` and `linked` (`Tests/FramedLinkedCall.lean`, the first check),
-`InR.mono`, `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
+`InR.mono`, `FrameCore.PublicCall.ex`, `FramedSpec.frame` (its
+`start_total`), `framed_requestSafe` from `FramedAccepted`, `member_safe`'s
+framed branch, `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
 `sim_step_back`, `asserted_of_reach`, `framed_callSafe`,
@@ -1017,9 +1060,9 @@ soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
 `prologue_sim`, `isolate`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `RunSoundFramed`, `runSound_of_framed`, `ret_reached`,
-`assertedAt_of_graph`, `framed_requestSafe`, `ro_of_readOnlyShape`,
-`FramedPlanAt`, `OverStore`, `member_safe`'s and `passMember_sound`'s
-framed branches.
+`assertedAt_of_graph`, each field of `FramedObligations` from the check,
+`ro_of_readOnlyShape`, `OverStore` over framed plans, `passMember_sound`'s
+framed branch.
 
 **To be proved, milestone 2**: `copies_sound`, `witness_of_path`,
 `framed_guarantee`, `pathFact_alloc`, `tolerant_of_storeKeepsInv` with

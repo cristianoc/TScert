@@ -190,7 +190,7 @@ def FilePlans.searchGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (unche
   for i in group do
     let searched : Except String (Response _ × List (ProgramCertificates.Evidence _) × CertificateProducer.Answered G) :=
       do
-      let .graph name namePos r ← (f.plans[i]?).getD (.error s!"no unit {i}")
+      let (name, namePos, r) := (← (f.plans[i]?).getD (.error s!"no unit {i}")).parts
       let labels := r.searchLabels
       let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
         (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
@@ -758,7 +758,8 @@ a statement's spine regions refused at their entry conditions (`spine
 regions`) at the declaration; none where the refusal names no node with a
 source span. -/
 def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
-  let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
+  let .ok plan := (f.plans[i]?).getD (.error "") | none
+  let (name, _, r) := plan.parts
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
       match (w.drop 5).toString.splitOn ": " with
       | n :: rest => ((n.toNat?), ": ".intercalate rest)
