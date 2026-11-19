@@ -408,13 +408,16 @@ and handler, and keeps the fact where all pass: `framed_at_innermost_keys`
 - **Keys.** Every location has the key `none` (`NoKeys`, `reached_key`,
   proved); `ComponentChecks.Ctx.boundAt` joins every entry of a site and
   kind at `none`, so `noKeys` is sound for `Framed`.
-- **The part universe.** `callParts` gives a region with no sites the full
-  part set $`U=(\mathrm{sites}(F)\cup\{\mathsf{none}\})\times\mathrm{kinds}\times\{\mathsf{none}\}`$,
-  with `regionSites` returning `some U` for it; its cover premise is
-  `sites_in_flow` (to be proved: every location's site is among the flow's
-  sites or `none`, by `stepAt_site`, proved, and the canonical allocation
-  sites, [the binding checks](#the-binding-checks)); `framed_of_cover` (to
-  be proved) gives `Framed` from it (`NoSites.lean`: at the base `[]`).
+- **The part universe.** The check at a universe (`frameCheckAtU`,
+  `ReadOnlyCover.lean`) reads a region with no sites at the parts of
+  $`U=(\mathrm{sites}(F)\cup\{\mathsf{none}\})\times\mathrm{kinds}\times\{\mathsf{none}\}`$
+  (`flowSites`); `framed_of_cover` (proved) gives `Framed` from it where
+  every location's site is in $`U`$, which `sites_in_flow` (proved) gives
+  at every reached state from starts whose sites are the flow's: a step's
+  fresh locations take the allocation sites of the innermost frame's
+  proposal or outside storage (`stepSite_mem`), and the canonical
+  allocation sites are the flow's ([the binding checks](#the-binding-checks)).
+  At the base `callParts` reads such a region at `[]` (`NoSites.lean`).
 
 ### Protection
 
@@ -1274,7 +1277,9 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `step_writes_active`, `Fits.active`, `write_site`
 (`ReadOnlyStepWrites.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
-`probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `graph_stepR`, `graph_safeR`,
+`probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
+`framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`
+(`ReadOnlyCover.lean`); `graph_stepR`, `graph_safeR`,
 `SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
 `keeps_postExcR`, `safeRet_of_sim` (`TolerantFramesGuaranteeRuns.lean`),
 `nodesChecked_of_walkJR`, `nodesChecked_of_walkR`; `framedKept_holds`,
@@ -1301,7 +1306,7 @@ review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `local_reach`, `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `within_charges`, `segFrames`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
-`frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
+`frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `prologue_sim`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
