@@ -135,6 +135,38 @@ theorem asserted_of_reach {P : Program} {assertions : List (Nat × HeapKnowledge
   cases hs' with
   | goto => exact hJ hj hst l k hl _ _ _ rfl
 
+/-- **A path of the term that runs a graph is a graph path** (proved, by
+`GraphCode.sim_step_back`). -/
+theorem sim_reaches {E : List Tm} {K : List (Continuation × Option Target)} :
+    ∀ {j : Nat} {h : Heap} {ts : Tm} {h' : Heap} {ts' : Tm},
+      HeapObservations.Steps j h ts h' ts' → ∀ {s : State}, GraphCode.Sim E K ts s →
+      ∃ s', ReachesIn (GraphCode.program E K) j h s h' s' ∧ GraphCode.Sim E K ts' s'
+  | _, _, _, _, _, .refl, _, hs => ⟨_, .refl, hs⟩
+  | _, _, _, _, _, .next st hrest, _, hs => by
+    obtain ⟨s₁, tr, hs₁⟩ := GraphCode.sim_step_back hs st
+    obtain ⟨s', hr, hs'⟩ := sim_reaches hrest hs₁
+    exact ⟨s', .step tr hr, hs'⟩
+
+/-- **An assertion at every state reached, from the graph's** (proved; the
+draft, `assertedAt_of_graph`, the converse of `asserted_of_reach`): where
+each stated assertion holds at every graph state reached at its label
+within the budget, it holds at every state the term that runs the graph
+reaches at a `goto` at its label. -/
+theorem assertedAt_of_graph {P : Program} {assertions : List (Nat × HeapKnowledge.Knowledge)} {ρ : Env}
+    {h : Heap} {n : Nat} {start : Nat} {L : List Tm} {d : Tm} {c : ComponentTag}
+    (hg : ∀ l k, (l, k) ∈ assertions → ∀ j h' ρ', j < n →
+      ReachesIn P j h (.at start (envOf L d)) h' (.at l ρ') → HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h') :
+    ∀ {j : Nat} {h' : Heap} {t' : Tm}, j < n → HeapObservations.Steps j h (gotoOf P start L d c) h' t' →
+      AssertedAt P assertions ρ h h' t' := by
+  intro j h' t' hj hst l k hl L' d' c' ht
+  subst ht
+  obtain ⟨s', hr, hs'⟩ := sim_reaches hst (sim_gotoOf P start L d c)
+  cases hs' with
+  | goto =>
+    rw [SourceExtraction.program_nodes P] at hr
+    exact hg l k hl j h' _ hj hr
+  | done hv => simp [gotoOf, isVal] at hv
+
 /-- **The framed claim is safety at every call where the obligation is
 met** (proved): under a client frame whose obligation is met from every
 history it starts from, a request safe under the frame is safe at every

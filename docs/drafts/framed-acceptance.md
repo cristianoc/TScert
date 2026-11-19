@@ -991,8 +991,8 @@ clause's start, simulating a state of `SafeGraphRet` over the claim's graph,
 on a $`\mathrm{Ret}`$-path. A step breaking $`\Theta_C`$ ends the
 obligation; any other is a `KStep`, mapped to a transition by
 `sim_step_back` (proved); at a framed node's return `ret_reached` gives
-$`\mathrm{Ret}`$. Assertions by `assertedAt_of_graph` (to be proved, the
-converse direction of `asserted_of_reach`).
+$`\mathrm{Ret}`$. Assertions by `assertedAt_of_graph` (proved, the converse
+direction of `asserted_of_reach`).
 
 ### The headline
 
@@ -1036,7 +1036,8 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `step?_sound` and `linked` (`Tests/FramedLinkedCall.lean`, the first check),
 `InR.mono`, `FrameCore.PublicCall.ex`, `FramedSpec.frame` (its
 `start_total`), `framed_requestSafe` from `FramedAccepted`, `member_safe`'s
-framed branch, `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
+framed branch, `assertedAt_of_graph` (by `sim_reaches`, a path of the
+term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
 `sim_step_back`, `asserted_of_reach`, `framed_callSafe`,
@@ -1060,7 +1061,7 @@ soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
 `prologue_sim`, `isolate`, `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `RunSoundFramed`, `runSound_of_framed`, `ret_reached`,
-`assertedAt_of_graph`, each field of `FramedObligations` from the check,
+each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `OverStore` over framed plans, `passMember_sound`'s
 framed branch.
 
