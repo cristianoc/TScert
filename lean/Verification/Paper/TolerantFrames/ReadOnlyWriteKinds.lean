@@ -1,4 +1,5 @@
 import Verification.Paper.TolerantFrames.ReadOnlyStepWrites
+import Verification.Paper.TolerantFrames.ReadOnlyCert
 
 /-! # Read-only handles: a frame's writes are its code's
 
@@ -794,5 +795,30 @@ theorem probeProtocol_charged {P : Package} [DecidableEq P.Site] [Hashable P.Sit
     have := hl hc.1
     simp [Std.HashSet.contains_ofList, this] at hc
   · simp [hk]
+
+/-- **A step of charged code is within the protocol from charges**
+(proved, `step_kind_charged`, `probeProtocol_charged`): at a step from a
+term meeting the invariant, with valid references, whose innermost frame's
+code's charges are among `K`, and whose every changed old location of a
+local site below `b` has a site the held set holds (what the local lemma
+gives), every location of `R_P` below `b` changes within the protocol from
+the charges `K` and the held set. -/
+theorem stepWithin_charged {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulHashable (Option P.Site)]
+    {K₀ K : List (Option Verification.Kind)} {held : Sites P} {b : Nat} {st st' : St P} {t t' : Tm}
+    (hs : Step st.s.h t st'.s.h t') (hw : WOk t) (hk : writesK t ⊆ K₀) (hr : RefsOk st.s.W t)
+    (hK : frameKinds K₀ (activeFrame none t).1 ⊆ K)
+    (hloc : ∀ l v, l < b → st.g.InR l → st.s.h[l]? = some v → st'.s.h[l]? ≠ some v →
+      (st.g.site l).any (fun s => P.mark s = .local) = true → st.g.site l ∈ held) :
+    StepWithin (probeProtocol K held) b st st' := by
+  intro l v hb hR hv
+  have hl' : l < st'.s.h.length :=
+    Nat.lt_of_lt_of_le (List.getElem?_eq_some_iff.mp hv).1 (Footprints.step_length_le hs)
+  obtain ⟨v', hv'⟩ : ∃ v', st'.s.h[l]? = some v' := ⟨_, List.getElem?_eq_getElem hl'⟩
+  refine ⟨v', hv', ?_⟩
+  by_cases he : v' = v
+  · subst he; exact Footprints.Change.Holds.refl _ _ _
+  · have hne : st'.s.h[l]? ≠ some v := by rw [hv']; exact fun h => he (Option.some.inj h)
+    rw [probeProtocol_charged (hK (step_kind_charged hs hw hk hr hv hne)) (hloc l v hb hR hv hne)]
+    trivial
 
 end Verification.TolerantFrames.ReadOnly

@@ -309,8 +309,12 @@ a kind among the charges of the innermost frame's code.
 - At a charged part whose site, where local, the held set holds, the
   protocol from charges is $`\mathsf{any}`$ (`probeProtocol_charged`).
 
-So **within a call** (`within_charges`, to be proved, from `local_reach`,
-`step_kind_charged`, `probeProtocol_charged`, `stepWithin_of_check`): every step of $`C`$'s code
+A step from a term meeting the residual invariant whose innermost frame's
+code's charges are among $`K`$, each changed old local location's site
+held, is `StepWithin` the protocol from $`K`$ and the held set
+(`stepWithin_charged`, proved). So **within a call** (`within_charges`, to
+be proved, from `local_reach`, which gives the held sites, and
+`stepWithin_charged`): every step of $`C`$'s code
 inside a member's call from $`a`$ is `StepWithin Ψ_C |h_a|`, and every step
 of $`C`$'s code at the caller's depth in a segment from $`s_0`$ is
 `StepWithin W_c |h₀|`, its frame running a code of $`\mathrm{seg}(c)`$
@@ -1309,7 +1313,7 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 (`ReadOnlyBinding.lean`), `allocB_realized`, `compB_sound`
 (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
-`probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
+`probeProtocol_charged`, `stepWithin_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
 `framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`
 (`ReadOnlyCover.lean`); `graph_stepR`, `graph_safeR`,
 `SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
