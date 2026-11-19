@@ -215,6 +215,23 @@ def ProbeModule.ofRequest {σ ι : Type} [LabelStore.Labels ι] [LabelStore.Stor
 /-- The signature of a module function's closure. -/
 def ProbeModule.sig (g : ProbeModule) : FnSig := ⟨g.code, g.ar, g.code.1.length - 1, false, g.siblings.length⟩
 
+/-- **A native's step model** (the contract of an audited native, as code
+of the component): the graph whose run the native's call performs, with its
+arity. The rule `Read-only frame` reads an audited native at its audited
+effect, not as code that is not `C`'s; its call is then a call of a
+closure of a known signature (`Fits.invokeC`), its actuals at its entry's
+slots, its value at its return set. Each row is trusted input, audited
+against the native's definition:
+
+- `%ElementAt%(xs, k)`: the element of `xs`'s spine at `k`, `undefined`
+  where none (`tools/intrinsics.mts`: on an array of the program the read
+  runs no code; no accessor or proxy, DESIGN.md "Trust surface"). Of an
+  array or a tuple only: the model reads the spine field. -/
+def hostModel? (name : String) : Option (Code × Nat) :=
+  if name == "%ElementAt%" then
+    some (([.elemAt (.readAt arraySpineKey (.var 1)) (.var 2)], [(.ret, none)]), 2)
+  else none
+
 /-- The module functions whose closures are values: those on no cycle of
 the module's names (a cycle's closures capture each other). -/
 def closable (mods : List ProbeModule) : List ProbeModule :=
@@ -244,7 +261,13 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   let closures := found.foldl (fun acc c => if acc.any (·.1 == c.1) then acc else acc ++ [c]) []
   let alloc : Nat → Alloc P := fun i => ⟨some (3 * i), some (3 * i + 1)⟩
   let tok (i : Nat) : Option P.Site := some (3 * i + 2)
-  let sibSig (x : String) : Option FnSig := (closed.find? (·.name == x)).map ProbeModule.sig
+  -- the natives with a step model the program or the module functions name
+  let hostNames := ((siblings ++ mods.flatMap (·.siblings)).filter fun x => (hostModel? x).isSome).eraseDups
+  let hosts : List (String × Code × Nat) := hostNames.filterMap fun x => (hostModel? x).map fun (c, ar) => (x, c, ar)
+  let hostSig (x : String) : Option FnSig :=
+    (hosts.find? (·.1 == x)).map fun (_, c, ar) => ⟨c, ar, 0, false, 0⟩
+  let sibSig (x : String) : Option FnSig :=
+    ((closed.find? (·.name == x)).map ProbeModule.sig).orElse fun _ => hostSig x
   let base := inputs - siblings.length
   let unitSeeds : List (Option FnSig) :=
     (List.range inputs).map fun i => if base ≤ i then (siblings[i - base]?).bind sibSig else none
@@ -254,8 +277,11 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
     let seeds := (List.range (c0 + g.siblings.length)).map fun j =>
       if c0 ≤ j then (g.siblings[j - c0]?).bind sibSig else none
     ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc (i + 1), true, tok (i + 1)⟩
-  let cs : List (SolveCode P) := unit :: modCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
-    ⟨c, ar, rest, n, s, [], alloc (i + 1 + mods.length), true, tok (i + 1 + mods.length)⟩
+  let hostCodes : List (SolveCode P) := hosts.zipIdx.map fun ((_, c, ar), i) =>
+    ⟨c, ar, false, 0, 0, [], alloc (i + 1 + mods.length), true, tok (i + 1 + mods.length)⟩
+  let base' := 1 + mods.length + hosts.length
+  let cs : List (SolveCode P) := unit :: modCodes ++ hostCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
+    ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base')⟩
   let t0 ← IO.monoNanosNow
   let s : SolveStart P ← IO.lazyPure fun _ =>
     let s : SolveStart P := solveStart cs
@@ -275,7 +301,7 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
     (code.1.zip code.2).zipIdx.filterMap fun ((e, k, x), l) =>
       if nodeAtB F c l e k x then none else some s!"{ci}:{l}"
   let nodes := (cs.map fun c => c.code.1.length).sum
-  let names := "unit" :: mods.map (·.name) ++ closures.map fun _ => "closure"
+  let names := "unit" :: mods.map (·.name) ++ hosts.map (·.1) ++ closures.map fun _ => "closure"
   let F' := remark F
   let held := captureSites F' (cs.map fun c => (c.ar, c.rest, c.ncaps, c.start))
   let Ψ := probeProtocol (flowWrites F') held
@@ -285,7 +311,7 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
       | some c => (probeFrames F.O F' Ψ c mc msm sp).map ("\n" ++ ·)
       | none => []
     | none => []
-  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2); refused nodes {bad}; captured {repr held}{frames}"
+  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; siblings {mods.map fun g => (g.name, g.siblings)}; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2); refused nodes {bad}; captured {repr held}{frames}"
 
 /-- The probe of each member of a group, the module functions' codes
 `mods`. -/

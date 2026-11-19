@@ -2613,10 +2613,13 @@ a callee's entry added, a known call's value its callee's return set
 code fills hold $`O`$: the entry slots up to its own slot of each code
 whose token lies in $`O`$, and a handler's thrown value; every slot of the
 member's entry holds outside storage and the tokens $`O`$ holds, and a
-slot naming a module function's signature its code's token. A worklist runs the copies and the
-nodes, then closes $`O`$, grows those slots by it, and runs again the
-nodes reading $`O`$, a return set or the heap of sites where either grew,
-until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
+slot naming a module function's signature its code's token. A returned
+value reaches $`O`$ where the member returns it or where its code's token
+lies in $`O`$; any other code's return set reaches only its callers. A
+worklist runs the copies and the nodes, then closes $`O`$, grows those
+slots by it, gives it the returns of each code whose token it holds, and
+runs again the nodes reading $`O`$, a return set or the heap of sites
+where either grew, until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
 each member checked, whether the proposal meets the checks, the member's
 entry (`FFlow.entryB`), and, at the marks the flow gives, `FFlow.marksB`
 and `FFlow.bindingsB`, with the time of the proposal and of the checks
@@ -2652,6 +2655,17 @@ values outside code supplies. Two controls
 at the spine key replaces the spine and where a closure writes a local
 cursor through its capture.
 
+**The natives in the probe.** The rule reads an audited native at its
+audited effect, not as code that is not $`C`$'s. The probe reads a native
+whose contract gives a step model (`hostModel?`) as a closure of that
+model's code at the slot naming the native: its call is a call of a known
+signature (`Fits.invokeC`), its actuals at the model's entry, its value at
+the model's return set. The one row: `%ElementAt%(xs, k)`, the element of
+`xs`'s spine at `k` (`elemAt` of `xs`'s spine field), audited against its
+definition (`tools/intrinsics.mts`: on an array of the program the read
+runs no code). The row is trust for the owner's review: that the native's
+call performs its model's steps.
+
 **The module's closures in the probe.** A member reaches the module
 functions its body names at its request's last inputs
 (`SourceRequest.siblings`). The probe places at each such slot the
@@ -2681,11 +2695,15 @@ at the visitor call, every fact read at the marks the flow gives:
   field charged by the closure's write, and both facts fail.
 - `bounds-pattern-unreachable-handle-refused.ts`: both length facts fail.
   The walker's object site, the site of `h` and of the two arrays it
-  holds, lies in $`O`$: `last` passes `h.starts` to `%ElementAt%`, a call
-  read at $`O`$, so `h`'s fields are released and the visitor's
-  `values: "any"` applies to them.
-- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 17 codes, 3823
-  nodes, proposal 1676 ms, checks 1142 ms): at `onLine`, `0 <=
+  holds, lies in $`O`$. `last` reads `h.starts` through `%ElementAt%`'s
+  model, whose value is the contents of the contents of the array's site:
+  with one object site per code, that set holds the site of `h` itself.
+  `last` returns it, and the exported `walk`, whose token lies in $`O`$,
+  returns `last`'s value to outside code, so `h`'s fields are released and
+  the visitor's `values: "any"` applies to them. One site per allocation
+  occurrence would keep `h` local.
+- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 18 codes, 3824
+  nodes, proposal 1582 ms, checks 1074 ms): at `onLine`, `0 <=
   cursor.segmentIndex`, `cursor.segmentIndex <= segmentCount`, `0 <=
   cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
   the two facts relating `segmentCount` to `prepared.widths.length` fail,
