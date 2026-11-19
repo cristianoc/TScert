@@ -2,26 +2,28 @@
 
 A design for the step from the read-only frame rule, proved at the paper's
 executions, to a unit's accepted verdict. It adds one constructor of
-`FunctionPlan`, a framed plan, with its branch in `FunctionPlan.certify`, and
-the theorem that the pass's check of a framed plan gives
-`PassUnit.FramedRequestSafe`, so that `SourceClaimJson.PassUnit.mode8Accepted_sound`
-covers a unit accepted that way under the client obligation $`\Theta_C`$ of
-[Trust](readonly-handles.md#trust). The design is stated for every function
-a component exports, every call inside the component that may run code
-outside it, and every fact the graph carries across a call.
+`FunctionPlan`, a framed plan, with its branch in `FunctionPlan.certify`,
+and the theorem that the pass's check of a framed plan gives
+`PassUnit.FramedRequestSafe` at a frame built from the request itself, so
+that `SourceClaimJson.PassUnit.mode8Accepted_sound` covers a unit accepted
+that way under the client obligation $`\Theta_C`$ of
+[Trust](readonly-handles.md#trust). It is stated for every function a
+component exports, every call inside the component whose run may reach
+code outside it, and every fact the graph carries across a call.
 [P22's walker](../../pipeline/examples/bounds-pattern-unreachable-field-refused.ts)
-and pretext's walkers are its tests ([Tests](#tests)).
+and pretext's walkers are its tests ([Tests](#tests)); the first buildable
+milestone is the bound route for P22 ([milestones](#milestones)).
 
-Base: branch `p22-accept` at `4c1d35f60`. Notation is that of
+Base: branch `p22-accept` at `f96ecd5e4`. Notation is that of
 [Read-only frames](readonly-frames-note/note.tex) and of
 [read-only handles](readonly-handles.md#the-rule): a component $`C`$, its
-region $`R_C`$, its protocol $`\Psi_C`$, the client obligation $`\Theta_C`$,
-the action $`h\xrightarrow{\Phi}_\rho h'`$ of an effect and
-$`\Phi\oplus_C\Psi`$. Each claim is labelled **proved** (with its Lean
-name, at this base), **to be proved** (with its proof plan and the proved
-results it reuses), **trust** (an assumption about code outside the analyzed
-sources), or **observed** (a program run under Node 26.13.0, sources in
-[Counter-models](#counter-models)).
+region $`R_C`$, its protocol $`\Psi_C`$, the client obligation
+$`\Theta_C`$, the action $`h\xrightarrow{\Phi}_\rho h'`$ of an effect and
+$`\Phi\oplus_C\Psi`$. Each claim is labelled **proved** (a Lean name at
+the base), **to be proved** (its plan and the proved results it reuses),
+**trust** (an assumption about code outside the analyzed sources), or
+**observed** (a run, under Node 26.13.0 or of a Lean file at the base,
+listed in [Runs](#runs)).
 
 ## The existing mechanism this extends
 
@@ -29,150 +31,208 @@ Three mechanisms, each kept, each changed at one place.
 
 1. **The graph's transfer at a call** ([footprints](../FOOTPRINTS.md#a-calls-effect-at-the-caller),
    rule Frame of [Tolerant frames](tolerant-frames-note/note.tex)). At a
-   call node the pass keeps a fact of the caller where the fact's support
+   call node the pass keeps a fact of the caller where its support
    respects the callee's effect read at the caller's slots, $`\Phi`$
-   (`PromiseCalls.callerFrame`): the terms it keeps (`callKept`,
-   `callKept_sound`), the terms it grows (`callGrown`, `callGrown_sound`)
-   and the index facts it keeps (`frameKeeps`), each sound from the heap
-   relation $`h\xrightarrow{\Phi}_\rho h'`$ that the callee's semantic type
-   gives at its return (`callerFrame_post`), and at a handler from the
-   exceptional effect where the callee states one (`callExc`). This design
-   changes one predicate: at a *framed call* the support may instead pass
-   the read-only frame's check, whose soundness is the support's
-   preservation between the call's heap and the return's heap, read from
-   the execution ([the transfer at a call](#the-transfer-at-a-call)).
+   (`PromiseCalls.callerFrame`): `callKept`, `callGrown`, `frameKeeps`,
+   each sound from the heap relation the callee's semantic type gives at
+   its return (`callerFrame_post`), and at a handler from the exceptional
+   effect where the callee states one (`callExc`). This design changes one
+   predicate: at a *framed call* a support may instead pass the read-only
+   frame's check, whose soundness is a return premise the execution
+   discharges ([the graph at framed returns](#the-graph-at-framed-returns)).
+   The ordinary graph theorem is its instance with no framed call.
 2. **The read-only frame rule** ([the rule](readonly-frames-note/note.tex),
-   [read-only handles](readonly-handles.md#what-the-lean-states)): the
-   rule's consequence over the paper's executions (proved: `exec_rely`,
+   [read-only handles](readonly-handles.md#what-the-lean-states)), with its
+   consequence over the paper's executions (proved: `exec_rely`,
    `ClientFrame.call_rely`), its premise checked at a frame of $`C`$'s code
-   (proved: `ClientFrame.framed_at_call`, `frameCheck_sound`), the flow of
-   sites and its check (proved: `FFlow.check_sound`,
-   `ClientFrame.chkSound_of_flow`). This design generalizes the rule's
-   premise from a call of outside code to a call of any code that may run
-   outside code, a function of $`C`$ among them
-   ([wrappers](#a-call-of-the-components-own-code)), restates the members'
-   certificates over the calls an execution makes
-   ([certificates](#certificates-over-the-calls-an-execution-makes)), and
-   states the transfer from the call's own state.
+   (proved: `ClientFrame.framed_at_call`, `framed_at_innermost_keys`,
+   `frameCheck_sound`) and the flow of sites (proved: `FFlow.check_sound`,
+   `fitsAt_reached`). This design generalizes the rule's premise from a
+   call of outside code to a call whose run may reach outside code, a
+   function of $`C`$ among them ([the transfer](#the-transfer-at-a-call)),
+   states one notion of charges for the members' certificates and for a
+   call's own steps ([charges](#charges)), and indexes certificates by the
+   calls an execution makes ([certificates](#certificates)).
 3. **The acceptance path** (CLAUDE.md, "Acceptance/soundness invariant").
    `CertifiedPlan.framed`, `PassUnit.FramedRequestSafe` and `MemberSafe`'s
    branch reading it exist (proved: `framed_callSafe`,
-   `callSafe_of_member`); no `FunctionPlan` certifies to a framed plan. This
-   design adds `FunctionPlan.framed`, its branch of `certify`, a
-   constructor `MemberAccepted.framed` for what the pass checks of it, and
-   the theorem `framed_requestSafe` from that check to
-   `FramedRequestSafe` ([the theorems](#the-theorems)).
+   `callSafe_of_member`); no `FunctionPlan` certifies to a framed plan.
+   This design adds `FunctionPlan.framed`, its branch of `certify`, the
+   constructor `MemberAccepted.framed`, and `framed_requestSafe`, at a frame
+   whose calls are the actual public calls of programs
+   ([the frame of a request](#the-frame-of-a-request)).
 
-No new judgment form and no new modality. The graph theorem is restated
-once, relative to the returns of the framed calls
-([the graph at assumed returns](#the-graph-at-assumed-returns)).
+## Findings this design closes
 
-## The five gaps
+Each finding below is a property of the base or of the previous version of
+this draft, verified by a run or by reading the Lean named, with the
+section that closes it. A premise moves into a theorem to be proved, a
+decided check, a restriction, or a row of trust.
 
-Five gaps lie between the proved results and an accepted verdict, as an
-independent review of an acceptance design (Astra, kept outside the
-repository) named them. Each is restated at the level of the note,
-verified against the Lean at the base, and closed in the section named.
-
-1. **The transfer across the call.** `ClientFrame.framed_at_call` gives
-   `Framed` at a reached state whose innermost frame is a frame of $`C`$'s
-   code about to call outside code (`ReadOnlyCallFrame.lean`, the
-   statement's `ht` and `hcall`). `ClientFrame.call_rely` reads `Framed` at
-   the first state of its segment, and that segment's states at depth
-   $`d`$ run outside code (its premise `hex` at the predicate
-   $`\neg(\delta=d\wedge\neg\mathrm{Outside})`$). The two states differ by
-   the step that invokes the callee, so no proved theorem connects them.
-   Verified by reading both statements: **a gap**. Closed by the transfer
-   stated from the call's own state ([the transfer](#the-transfer-at-a-call)).
-2. **A throw from the callback.** `call_rely` takes the action of one
-   effect $`\Phi`$ over the whole segment, whichever exit ends it. A
-   callee whose stated effect bounds its normal return alone can shorten an
-   array and throw. Observed (`throw.mjs`): the walker's handler reads
-   `xs[1]` of an emptied array, `{ s: NaN, i: 2 }`. **A gap.** Closed by
-   reading the exceptional exit at $`\Phi^{e}`$
-   ([an exceptional return](#an-exceptional-return)).
-3. **Re-entry with fresh storage.** `witness_reached` witnesses the
-   locations the unit's entry arguments reach read-only; a callback's fresh
-   array passed read-only to a re-entered member has no witness, since the
-   history records no crossing into $`C`$ after the entry (`actualXs`,
-   `ReadOnlyCrossings.lean`). **Not a gap of this design**: no fact of a
-   re-entered call is read by the unit's claim, and the members'
-   certificates read no fact ([re-entry](#re-entry)).
-4. **`Cert.tolerant` over every `PkgStep`.** The field quantifies over
-   every `R.Rel d t t'` at `R = StepRel.checked`, and `PkgStep`'s fields
-   (`ReadOnlyChecks.lean`, `PkgStep`) constrain allocation, the history,
-   crossings and stores into local storage, never which old location a step
-   changes; so a nonempty guarantee family asks a property of steps no code
-   makes. Likewise `Cert.ofBody` asks its bound of every `MemberRunOf`
-   between a call's two endpoints, whose intermediate steps the endpoints do
-   not determine. Verified by reading the definitions: **a gap**. Closed by
-   certificates indexed by the call's trace
-   ([certificates](#certificates-over-the-calls-an-execution-makes)).
-5. **(O) needs `hsup` and `hnew`.** `invIn_of_installs` holds given
-   `hnew` (each location the support reads after a step was read before,
-   is in $`R_C`$, or is reached through a stored value (O) checked), and
-   `installs_checked` given `hsup` (each store the support may read is one
-   (O) classifies). Neither is proved. **A gap of the guarantee route**;
-   the bound route reads neither. Closed by
-   [the guarantee route](#the-guarantee-route).
-
-The review's other findings are read as follows: the check at the call's
-label ([the check at a call](#the-check-at-a-call)); `NoKeys` sound for
-`Framed`, the protocol at `none` joining every key
-([the check](#the-check-at-a-call)); the proof direction of
-`framed_reaches` ([the framed claim](#the-framed-claim-from-the-check));
-the marks and bindings at the acceptance family (the marks the flow gives,
-`FFlow.MarksFrom`, below).
+- **Gaps of the proved results** (from a review of an earlier acceptance
+  design): (1) `framed_at_call` gives `Framed` before the invocation and
+  `call_rely` reads it after it ([the transfer](#the-transfer-at-a-call));
+  (2) a callback may shorten an array and throw, the segment being read at
+  one effect, observed `throw.mjs` ([an exceptional return](#an-exceptional-return));
+  (3) a re-entered member's fresh arguments have no witness
+  ([re-entry](#re-entry)); (4) `Cert.tolerant` ranges over every
+  `PkgStep` ([certificates](#certificates)); (5) the guarantee route's
+  `hsup` and `hnew` ([the guarantee route](#the-guarantee-route)).
+- **Vacuity** (Astra 1, Fable 1). `FramedRequestSafe r fr` holds of every
+  request at a frame whose `enters` admits no call (observed:
+  `Vacuous.lean`); an empty flow passes `FFlow.check` and `marksB` and
+  admits no `EntryShape` (observed: `EmptyFlow.lean`); a flow omitting the
+  walker's code keeps a fact across a call that breaks it (observed:
+  `forged-flow.mjs`, `NaN`); a heap value of a private closure makes
+  `EntryShape` false at every term (Astra, checked in Lean). Closed by the
+  frame built from the request, its calls defined by program executions,
+  and the binding checks ([the frame of a request](#the-frame-of-a-request)).
+- **The guarantee's return** (Astra 2): `Supported` cannot state an
+  invariant kept across a replacing write (an equal-length array
+  installed: the invariant holds, the field's `grow` bound fails). Closed
+  by an invariant return premise ([the graph at framed returns](#the-graph-at-framed-returns),
+  [the guarantee route](#the-guarantee-route)).
+- **The entering step and the joined protocol** (Astra 3, Fable 7): a
+  certificate's `tolerant` started after the entering step, which pushes
+  the history; `Run.bound` needs $`\Theta_C\sqsubseteq\Psi`$ at the
+  certificates' protocol. Closed in [certificates](#certificates).
+- **Witnesses for locations a region comes to include** (Astra 4): a
+  `scalar` write can redirect a path so that a region includes a location
+  the entry never reached. Closed in [protection](#protection).
+- **Charges tied to the lowered code** (Astra 5, Fable 9.3–9.4): the wire's
+  write list has no correspondence theorem, `allocAt` numbers allocations
+  within one reduction, the `π.out` filter can select no node at a
+  wrapper's call. Closed in [charges](#charges) and
+  [the check at a call](#the-check-at-a-call).
+- **Callers, importers and the callback's type** (Fable 2, 3, Astra 6): a
+  unit calling a framed unit is accepted with no trust stated (observed:
+  `dependent.mjs`, `NaN`); the callback's arrow is assumed unconditionally;
+  continuing past a failed return premise is unsafe (Astra, a callback
+  emptying `[7]`). Closed in [callers and callbacks](#callers-and-callbacks).
+- **`callParts`' universe** (Fable 4): a region with no sites gets no part
+  and `frameCheck` passes on it vacuously (observed: `NoSites.lean`).
+  Closed in [the check at a call](#the-check-at-a-call).
+- **Local storage in the certificate** (Fable 6): uncharged local parts
+  need a lemma. Closed in [charges](#charges), observed `capture.mjs`.
+- **Generality** (Fable 5): one notion of charges for $`W_c`$ and
+  $`\Psi_C`$; `RunSound` an instance; the top-frame scope stated; keys.
+  Closed in [charges](#charges), [the graph at framed returns](#the-graph-at-framed-returns)
+  and [scope](#scope).
+- **Build interfaces** (Astra 7, Fable 9): `OverStore` reads graph plans
+  alone; `FirstKept` and each exit's environment at a return; the
+  direction of `asserted_of_reach`; `ViewOver (Ty ι)`; the guarantee's
+  entry; the pretext measurements. Closed in [the plan](#the-plan),
+  [the theorems](#the-theorems), [the guarantee route](#the-guarantee-route)
+  and [tests](#tests).
 
 ## Definitions
 
-Let a state be a configuration of the paper's executions with its history,
-$`s=(x,g)`$ (`Conf × Ghost`), and $`\delta(s)`$ the number of calls of
+A state is a configuration of the paper's executions with its history,
+$`s=(x,g)`$ (`Conf × Ghost`); $`\delta(s)`$ is the number of calls of
 $`C`$ active at it (`depthC`).
 
-- **A call state.** $`s_0`$ is a call state of a frame $`f`$ when $`f`$,
-  a frame of $`C`$'s code with environment $`\rho_f`$, is the innermost
-  frame of $`s_0`$'s term and its term is a call whose callee, receiver
-  and arguments are values (`invoke` or `construct`). The pass's call
-  nodes have this form: a node expression that is a call is checked as one
-  sequent whose parts are values (`call_local_sound`, `LocalUsing … (.app e)`).
-- **The call's segment** from $`s_0`$: the steps until the first later
-  state $`s_1`$ at which $`f`$ is the innermost frame again, its term a
-  value (a normal return) or a throw (an exceptional return), $`s_1`$ the
-  *resumption*. Every state between has the call's run inside $`f`$'s
-  term, so $`\delta\ge\delta(s_0)`$ along it.
-- **The steps at the caller's depth.** A step of the segment from a state
-  $`s`$ with $`\delta(s)=\delta(s_0)`$ is a step of $`C`$'s code (the
-  invocation, and the body of a callee that is $`C`$'s own code) or a step
-  of outside code (`stepKind`). Every step at a greater depth is inside a
-  call of $`C`$ entered from outside code, a member's call.
-- **A framed call.** A call node of a code of $`C`$ at which the flow
-  (`Flow.code`, [the sites of a term](readonly-handles.md#the-sites-of-a-term))
-  lets the callee's run reach outside code: its callee's set holds outside
-  storage (`CodeFlow.out`, `FnsIn.notOut`), or holds the token of a code
-  of $`C`$ that reaches such a node by the flow's known calls and calls of
-  closures of $`C`$'s code, transitively (`reachesOut`, to be defined over
-  `FFlow` as `callsOut` is). A native with no step model is outside code
-  (`Fits.invoke`); the calculus has no implicit call (an arithmetic of a
-  non-primitive throws, `arithThrow`), so every run of outside code starts
-  at an `invoke` or `construct` step.
-- **The depth charges of a call** $`W_c`$: the protocol, part by part,
-  joining the charge of each write of each code of $`C`$ the callee's run
-  may execute at the caller's depth (the codes whose tokens the callee's
-  set holds, closed under their known calls and calls of closures of
-  $`C`$'s code), at the parts of its receiver's sites, discharging only a
-  write every location of whose receiver the write's own frame allocated.
-  The protocol's own discharge of a write through a confined closure of an
-  enclosing frame (*Fresh storage* of
-  [read-only handles](readonly-handles.md#what-the-lean-states)) is not
-  applied: that frame may be $`f`$ or below it, its storage older than
-  $`s_0`$. For a callee that is outside code alone, $`W_c`$ is
-  $`\mathsf{keep}`$ at every part: the invocation writes nothing.
-- **The call's protocol** $`\Psi_c=\Psi_C\sqcup\Theta_C\sqcup W_c`$.
+- **A call state** of a frame $`f`$: $`f`$, a frame of $`C`$'s code with
+  environment $`\rho_f`$, is the innermost frame of $`s_0`$'s term, and
+  its term is a call whose callee, receiver and arguments are values. The
+  pass's call nodes have this form (`call_local_sound`, a call node is one
+  sequent whose parts are values).
+- **The call's segment**: the steps from $`s_0`$ to the first later state
+  $`s_1`$ at which $`f`$ is innermost again, its term a value (a normal
+  return) or a throw (an exceptional return), the *resumption*. Along it
+  $`\delta\ge\delta(s_0)`$.
+- **The steps at the caller's depth** in a segment: steps from states with
+  $`\delta=\delta(s_0)`$, each of $`C`$'s code (the invocation, the body
+  of a callee of $`C`$'s code) or of outside code. Every deeper step is
+  inside a call of $`C`$ entered from outside code, a member's call.
+- **The segment's codes** $`\mathrm{seg}(c)`$ of a call node $`c`$: the
+  least set of codes of the flow holding each code whose token the
+  callee's set at $`c`$ holds, and closed under the same at every call
+  node of its members (`segCodes`, decided over the flow's slots and
+  tokens, every context). **A framed call**: a call node whose callee's
+  set holds outside storage, or such that some code of $`\mathrm{seg}(c)`$
+  has a node whose callee's set holds it (`reachesOut`, decided). A native
+  without a step model is outside code (`Fits.invoke`); the calculus has
+  no implicit call (an arithmetic of a non-primitive throws,
+  `arithThrow`), so each run of outside code starts at an `invoke` or
+  `construct` step.
 - **The effects at a call.** $`\Phi`$ is the callee's effect read at the
-  caller's slots (`callerFrame eff t`); $`\Phi^{e}`$ is $`\Phi`$ where the
-  callee's type states an exceptional bound (`onThrow`, `callExc`) and
-  $`\top`$ otherwise.
+  caller's slots; $`\Phi^{e}`$ is $`\Phi`$ where the callee's type states
+  an exceptional bound (`onThrow`, `callExc`) and $`\top`$ otherwise;
+  $`\Phi_\star`$ is $`\Phi`$ at a normal return and $`\Phi^{e}`$ at an
+  exceptional one.
+
+## Charges
+
+One notion of charges serves the members' certificates and a call's own
+steps.
+
+**The charges of a set of codes** $`\mathrm{Ch}(M)`$: the protocol joining,
+for each node of each code of $`M`$ at each of its contexts, each write of
+the node's expression, at the parts of its receiver's sites at that node
+and context and the kinds its form writes (`writesIn` over the flow's
+nodes, the function the frame probe uses: an element write at the spine's
+sites and the element kind, a write at a key at the receiver's sites
+under that key), at $`\mathsf{any}`$; and each native step model's writes
+at its receivers' parts. It is computed by the verifier from the lowered
+node expressions the flow holds, which [the binding
+checks](#the-binding-checks) make the request's lowered codes; no write
+list of the wire is read, and no write is discharged as fresh.
+
+- **The protocol** $`\Psi_C`$: $`\mathrm{Ch}(\text{all codes of }C)`$ at
+  every part, except a part of a local site that no capture slot of any
+  code may hold, through the heap of sites' contents (`captureSites`
+  closed under `contents`), which is $`\mathsf{keep}`$. The proposed
+  $`\Psi_C`$ on the wire is checked to be at least this
+  (`protocolDiags` restated over $`\mathrm{Ch}`$).
+- **The depth charges** of a call node $`c`$: $`W_c=\mathrm{Ch}(\mathrm{seg}(c))`$
+  at every part, local parts included: a code the call runs at the
+  caller's depth may hold the caller's local storage through an argument
+  of a call by name or a closure of the caller's frame (observed:
+  `wrapper.mjs`, a wrapper writing the walker's cursor, `NaN`).
+- **The call's protocol** $`\Psi_c=\Psi_j\sqcup W_c`$ with
+  $`\Psi_j=\Psi_C\sqcup\Theta_C`$, the joined protocol.
+
+The difference between the two bases is one lemma.
+
+- **Local storage at a member's call** (`local_unreached`, to be proved):
+  in a call of $`C`$ entered from outside code at a state $`a`$, a step of
+  $`C`$'s code changes no location $`l<|h_a|`$ of a local site that no
+  capture slot may hold. Plan: by induction along the call, every value
+  its frames hold is (i) a value outside code supplied (it meets $`O`$,
+  which holds no local site, `Flow.Facts.noLocal`), (ii) read from storage
+  of a site that is not local, which references no local site
+  (`LocalHeld`, `FFlow.marks_of_marksFrom`), (iii) a capture of a closure
+  of $`C`$ (its slots' sites), (iv) allocated in the call, at least
+  $`|h_a|`$, or (v) computed from such; by `reach_sites` (proved) a
+  location such a value reaches is of a site in the closure of those
+  sets, so a pre-entry local location it reaches is of a captured site.
+  Observed (`capture.mjs`, `NaN`): a closure of $`C`$ capturing the
+  walker's cursor, given to the visitor and called, writes the cursor in a
+  member's call; its site is a capture slot's, charged.
+- **A step's changes are its charged writes** (`stepWrites_sound`, to be
+  proved): every location $`l<|h|`$ a step of $`C`$'s code from a reached
+  state changes is written by a write of the instantiated node expression
+  of the code and node the frame fits at (`Fits.innermost`,
+  `fitsAt_reached`, proved), and $`l`$'s part is among that write's
+  charged parts. Plan: `step_changes` (proved) locates the changed slot or
+  cell among the stepped term's references; by cases on the writing steps
+  of `Step` (`writeAt`, `setElem`, a native's step model), the redex is a
+  subterm of the node expression after substitution, so its write is one
+  `writesIn` lists (`writesIn_sound`, to be proved by induction on the
+  expression, as `syn_sound` is); the receiver meets its set (`Fits`), so
+  $`l`$'s site is one of its sites (`reach_sites`); the kind is the
+  world's at $`l`$ (`kindAt`). The invocation changes no old location.
+
+So **within a call** (`within_charges`, to be proved, from the two lemmas
+and `stepWithin_of_check`, proved): every step of $`C`$'s code inside a
+member's call from $`a`$ is `StepWithin Ψ_C |h_a|`, and every step of
+$`C`$'s code at the caller's depth in a segment from $`s_0`$ is
+`StepWithin W_c |h₀|`, its frame running a code of $`\mathrm{seg}(c)`$
+(`segFrames`, to be proved: every frame at the caller's depth above $`f`$
+is pushed by a call step of such a frame or of $`f`$'s call, whose callee
+meets the callee's set at its node, and a closure of $`C`$ in a set holds
+its code's token there, `FnsIn`). No freshness is read, so no
+per-activation allocation record is needed.
 
 ## The transfer at a call
 
@@ -182,361 +242,394 @@ $`C`$ active at it (`depthC`).
 \frac{s_0\ \text{reached, a call state of}\ f\qquad s_0\to^{*}s_1\ \text{its segment, every step keeping}\ \Theta_C\qquad h_0\xrightarrow{\Phi_\star}_{\rho_f}h_1\qquad \mathrm{Framed}(\Phi_\star,\Psi_c,S,\rho_f,s_0)}{\mathrm{Supported}(S,\rho_f,h_0,h_1)}\ \textsf{(Framed transfer)}
 ```
 
-with $`h_0,h_1`$ the heaps of $`s_0,s_1`$, $`\Phi_\star=\Phi`$ at a
-normal return and $`\Phi^{e}`$ at an exceptional one, and `Supported` the
-support relation of [footprints](../FOOTPRINTS.md#support-and-respect):
-each location $`l<|h_0|`$ of each $`(r:\delta)\in S`$, read at
-$`(\rho_f,h_0)`$, changes within $`\delta`$. So every fact the support
-supports holds at $`(\rho_f,h_1)`$ where it held at $`(\rho_f,h_0)`$.
+with $`h_0,h_1`$ the heaps of $`s_0,s_1`$ and `Supported` the relation of
+[footprints](../FOOTPRINTS.md#support-and-respect): each location
+$`l<|h_0|`$ of each $`(r:\delta)\in S`$, read at $`(\rho_f,h_0)`$, changes
+within $`\delta`$.
 
-The argument, at the note's level:
+The argument: the segment's steps at the caller's depth of $`C`$'s code
+change each $`l<|h_0|`$ within $`W_c`$ ([charges](#charges)); each maximal
+run of outside code at that depth changes $`R_C`$ within $`\Psi_j`$, its
+member calls by their certificates at $`\Psi_j`$ ((L2)); $`R_C`$ grows
+inside the call ((L3)), so the segment changes each $`l\in R_C(s_0)`$,
+$`l<|h_0|`$, within $`\Psi_c`$; with $`\Phi_\star`$ bounding every other
+location the segment is an action of $`\Phi_\star\oplus_C\Psi_c`$, and
+`Framed` gives `Supported`.
 
-1. The segment's steps at the caller's depth that run $`C`$'s code change
-   each location $`l<|h_0|`$ of $`R_C`$ within $`W_c\sqcup\Psi_C`$ at its
-   part: each is a write of a code $`W_c`$ joins (a step's changes are its
-   writes, below), charged at its receiver's parts or to storage its own
-   frame allocated, which is at least $`|h_0|`$ since that frame is pushed
-   after $`s_0`$.
-2. Each maximal run of outside code at the caller's depth, from a state
-   whose active frame is outside $`C`$ to the next state of $`C`$'s code at
-   that depth, changes $`R_C`$ within $`\Psi_C\sqcup\Theta_C`$ and keeps the
-   invariants of states: (L2) at the paper's executions.
-3. $`R_C`$ only grows inside the call (L3), so the bounds compose: the
-   segment changes each $`l\in R_C(s_0)`$, $`l<|h_0|`$, within $`\Psi_c`$.
-4. With $`h_0\xrightarrow{\Phi_\star}h_1`$ bounding every other location,
-   the segment is an action of $`\Phi_\star\oplus_C\Psi_c`$ from $`s_0`$,
-   and `Framed` gives `Supported` location by location.
-
-Lean (to be proved, `ReadOnlyTransfer.lean`, namespace
-`TolerantFrames.ReadOnly.ClientFrame`):
+Lean (to be proved, `ReadOnlyTransfer.lean`, in `ClientFrame`):
 
 ```lean
-theorem framed_transfer (hc : fr.ChkSound) (hi : fr.StartInv) (certs : fr.Certs Ψ G)
-    (hΘ : ∀ p, (fr.Θ p).le (Ψc p) = true) (hΨ : ∀ p, (Ψ p).le (Ψc p) = true)
+theorem framed_transfer (hc : fr.ChkSound) (hi : fr.StartInv)
+    (certs : fr.Certs (Ψ ⊔ fr.Θ) G) (hW : ∀ p, ((Ψ ⊔ fr.Θ) p).le (Ψc p) = true)
     {a e : Conf × Ghost (fr.F.at fr.C)} {E K t L d k x comp} {n : Nat}
     (ha : fr.Reached a) (hcall : CallState a.1.t (.frame E K t L d k x comp))
     (hex : Ex fr.KStep (Inside a.1.t) n a e) (hres : Resumes a.1.t e.1.t)
-    (hown : ∀ y z, OnSegment a y → fr.KStep y z → δ fr.F fr.C none y = δ fr.F fr.C none a →
-      ¬ Outside fr.F fr.C none y.1 →
-      StepWithin Ψc a.1.s.h.length (lift fr.F fr.C none y.1 y.2) (lift fr.F fr.C none z.1 z.2))
+    (hown : SegWithin fr Ψc a)
     (hΦ : TolerantFrames.Action Φ (envOf L d) a.1.s e.1.s)
     (hfr : Framed Φ Ψc S (envOf L d) (lift fr.F fr.C none a.1 a.2)) :
     Footprints.Supported S (envOf L d) a.1.s.h e.1.s.h
 ```
 
-`CallState`, `Inside` (a state whose path extends the call state's by the
-callee's run) and `Resumes` (the call state's frame innermost again, its
-term a value or a throw) are new definitions over `path`
-(`ReadOnlySteps.lean`). Proof plan:
+`CallState`, `Inside`, `Resumes` (over `path`, `ReadOnlySteps.lean`) and
+`SegWithin` (every step of $`C`$'s code at the call's depth in the segment
+is `StepWithin Ψc |h₀|`) are new. Plan:
 
-- **The segment as a run** (`SegRun`, new): an inductive of steps of
-  $`C`$'s code at depth $`d`$ meeting a property, and runs of outside code
-  at depth $`d`$ (`Run Θ Ψ G k d`), as `MemberRun.Own` is at depth
-  $`d+1`$. `seg_run`: the segment is one, its runs the maximal `QRun d`
-  pieces, by `call_segment` and `decompose`'s first conjunct at `off = 0`
-  (proved), each piece starting at a reached state (`Reached.xstep`,
-  proved) that is `Ok d` (`reached_ok`, proved).
-- **Its bound** (`SegRun.within`, new): `RBoundBelow Ψc d |h₀|`, by
-  induction as `MemberRun.within` (proved): an own step by `hown` and
-  `pkg_step_ok` (proved), a run by `Run.bound` (proved) and
-  `RBound.mono` (new, from `Change.Holds.mono`), composed by
-  `RBoundBelow.trans` (proved), the region growing by `InR.mono` (proved).
-  Below `|h₀|` is all of `Framed`'s domain, which reads locations of the
-  call state's heap only.
-- **The action** (as `readOnly_rule`, proved): `RBoundBelow.all` and `hΦ`
-  give `OAction Φ Ψc` from the lifted call state; `supported_of_framed`
-  (proved) gives `Supported`.
-- **The saved environment.** At the unit's top frame (the only frames
-  whose facts the claim reads, [re-entry](#re-entry)) the frame is the
-  term itself, `.frame E K t L d k x comp`, and every step of the segment
-  is `frameC` of its running term, until the term is a value or a throw:
-  `L` and `d` are the frame's own fields, unchanged (`frameC_shape`, new,
-  by cases on `Step` at a frame). The `frameBind` or `frameHandle` step
-  after $`s_1`$ is the graph's transition to the continuation or the
-  handler at `push v (envOf L d)`.
-- **Allocation and crossings at the invocation.** The invocation is a
-  step of $`C`$'s code at depth $`d`$ (`stepKind … = .body`): a checked
-  step (`ChkSound`), so `pkg_step_ok` (proved) gives the marks kept, the
-  history growing at depth $`d`$ (its crossings out add to $`E`$ only) and
-  `Ok d` after it; its fresh locations are at least $`|h_0|`$, outside
-  `Framed`'s domain. `hown` holds of it: it writes nothing (below).
+- **The segment as a run.** `MemberRun.Own` (proved) takes a depth
+  parameter $`d'`$ for its own steps; the member's call is $`d'=d+1`$, the
+  segment $`d'=d`$; `MemberRun.within` (proved) is the one bound for both.
+  `seg_run` (to be proved): the segment is one, its inner runs the
+  maximal `QRun d` pieces (`call_segment`, `decompose`'s first conjunct at
+  `off = 0`, proved), each from a reached state that is `Ok d`
+  (`Reached.xstep`, `reached_ok`, proved).
+- **The protocols.** Certificates and runs are at $`\Psi_j`$, so
+  `Run.bound` (proved) has its premise $`\Theta_C\sqsubseteq\Psi_j`$;
+  `RBound.mono` (to be proved, from `Change.Holds.mono`) lifts each run's
+  bound to $`\Psi_c\sqsupseteq\Psi_j`$.
+- **The action**, as in `readOnly_rule` (proved): `RBoundBelow.all` and
+  `hΦ` give `OAction Φ Ψc`; `supported_of_framed` (proved) gives
+  `Supported`.
+- **The invocation** is a checked step at depth $`d`$ (`ChkSound`): marks
+  kept, the history grown, `Ok d` after it (`pkg_step_ok`, proved); its
+  fresh locations lie outside `Framed`'s domain; `SegWithin` holds of it
+  (it changes no old location).
+- **The saved environment.** The claim reads facts at the top frame of
+  each claim ([scope](#scope)), whose term is `.frame E K t L d k x comp`;
+  every step of the segment is `frameC` of its running term, so `L`, `d`,
+  `k`, `x` are kept (`frameC_shape`, to be proved by cases on `Step`).
 
-`hown` is discharged from the pass's check of $`W_c`$ by the step
-interpretation:
-
-- **A step's changes are its writes** (`stepWrites_sound`, to be proved):
-  every location below the heap's length that a step of $`C`$'s code from a
-  reached state changes is written by the step's redex, at a location
-  whose site and kind are among the parts of the write's receiver's set at
-  the redex's node and context. Plan: `step_changes` (proved: an old
-  location a step changes is a slot of an object or an element cell of a
-  spine the stepped term references), by cases on the writing steps of
-  `Step` (`writeAt`, `setElem`, a native's step model), with the redex's
-  fit (`Fits.innermost`, `fitsAt_reached`, proved) giving the receiver's
-  sites and `regionSites_sound`'s argument (proved) the location's site.
-  The invocation steps (`invoke`, `construct` of a closure) change no old
-  location.
-- **Own-frame freshness** (`ownFresh_sound`, to be proved): a write whose
-  receiver the check classifies as allocated by its own frame writes a
-  location allocated after that frame was pushed. Plan: the classification
-  is a flow fact of the frame's slots; along the located steps
-  (`Located`, `step_lift`, proved) a frame's allocations are numbered
-  within it (`allocAt`).
-- **The check of $`W_c`$** (`segWithin_of_check`, to be proved, from the
-  two above and `stepWithin_of_check`, proved): where every charge
-  $`W_c`$ joins is within $`\Psi_c`$, every step of $`C`$'s code at the
-  caller's depth in the segment is `StepWithin Ψc |h₀|`. The steps at the
-  caller's depth in the segment run the codes $`W_c`$ joins: the flow's
-  fit at each reached state names the code each frame runs, and a frame at
-  the caller's depth above $`f`$ is pushed by a call of the callee's run.
+`hown` comes from `within_charges` and the decided check that $`W_c`$ lies
+within $`\Psi_c`$; `certs` from [certificates](#certificates).
 
 ### An exceptional return
 
-At an exceptional return the transfer reads $`\Phi^{e}`$. The graph reads
-a call's handler at `callExc`, which bounds the heap by the callee's
-footprint only where it states `onThrow`
-([exceptional footprints](../SOURCE-ELABORATION.md#exceptional-footprints)),
-and by nothing otherwise: the frame's check at a handler's facts runs at
-$`\Phi^{e}=\top`$ there, and keeps only facts whose support lies in
-$`R_C`$ at parts $`\Psi_c`$ allows. So in `throw.mjs` the fact
-`c.i < xs.length` is lost at the handler (`xs` is outside storage, $`\top`$
-shortens it) and `0 <= c.i` is kept (`c` is local). $`\Psi_C`$ joins every
-member's normal and exceptional exits (the charges are of writes, each at
-both exits), so the outside runs' bound is the same at both returns.
-
-A callback that never returns has no resumption, so no transfer is read;
-every state of its run still takes a step with an admissible world and a
-typed heap, given by the callee's semantic type at the call
-(`call_local_sound`, proved), which the graph theorem below reads
-unchanged.
+At an exceptional return the transfer reads $`\Phi^{e}`$, which is
+$`\top`$ where the callee states no exceptional bound
+([exceptional footprints](../SOURCE-ELABORATION.md#exceptional-footprints)).
+The check at a handler's facts runs at $`\Phi^{e}`$, so it keeps a fact
+only where its support lies in $`R_C`$ at parts $`\Psi_c`$ allows: in
+`throw.mjs` the fact `c.i < xs.length` is lost at the handler and
+`0 <= c.i` kept. $`\mathrm{Ch}`$ charges a write at both exits, so the
+outside runs' bound is the same at both returns.
 
 ### A call of the component's own code
 
-The package flow of pretext finds the walkers' `onLine` always a closure of
-the package ([read-only handles](readonly-handles.md#deciding-the-flow),
-measured there): a function of $`C`$ that calls the client's visitor at
-its own call site, a *wrapper*. The design settles it as follows.
+A wrapper, a function of $`C`$ that calls the client at its own call
+site, is the callee of a framed call by the definition, and the transfer
+covers it: its own steps at the walker's depth are bounded by $`W_c`$,
+its calls of the client by $`\Psi_j`$. `wrapper.mjs` shows both
+obligations: a wrapper writing the walker's cursor (charged by $`W_c`$,
+the fact fails) and a client shortening the walker's array through the
+wrapper (outside storage off $`R_C`$, bounded by the wrapper's effect at
+the walker's slots, $`\top`$; the fact fails). Astra's run of a wrapper
+that calls a no-op client and then increments the walker's cursor through
+a closure of the walker's frame is covered the same way: the write is a
+write of a code of $`\mathrm{seg}(c)`$, charged at the cursor's site,
+since $`\mathrm{Ch}`$ discharges nothing.
 
-- **The obligation covers each step of client code, whoever called it.**
-  `ClientFrame.Keeps` constrains every step whose active frame runs no code
-  of $`C`$ and keeps the number of calls of $`C`$ active (`stepKind …
-  = .outside`). A client visitor that a wrapper calls is such a step's
-  code, at the wrapper's depth; the protection it reads is the history's at
-  that step, which the wrapper's crossings out (its arguments to the
-  client) extend by exposed locations only. So $`\Theta_C`$ binds the
-  client on $`R_C`$ alike whether an entry or a wrapper calls it.
-- **The walker's fact across the wrapper's call** is the transfer above
-  at the walker's call of the wrapper, a framed call by the definition
-  (the wrapper's code reaches a node calling outside code). The wrapper's
-  own steps run at the walker's depth, in the same call of $`C`$; they
-  are bounded by $`W_c`$, the charges of the wrapper's writes, those
-  through closures the walker's frame created included. Observed
-  (`wrapper.mjs`): a wrapper given the walker's cursor and writing it
-  makes the walker read past the end (`NaN`); $`W_c`$ charges that write at
-  the cursor's site, and the fact fails. A client shortening the walker's
-  array through the wrapper makes the walker read past the end too
-  (`NaN`): the array is outside storage given writable, off $`R_C`$, and
-  $`\Phi`$, the wrapper's effect at the walker's slots, bounds it, $`\top`$
-  where the wrapper calls a client of no stated effect.
-- **Preconditions of a re-entered member** are the obligation of its
-  caller, outside code: the client's call is one of the calls its type
-  describes, covered by the callback's semantic type (trust, below), not
-  by a check of $`C`$.
+The obligation $`\Theta_C`$ binds the client the wrapper calls as it binds
+one an entry calls: `ClientFrame.Keeps` constrains every step of outside
+code keeping the number of calls of $`C`$ active, wherever the call came
+from, against the protection of the history at that step.
 
-The note's rule reads, with this premise:
+The note's rule reads, with the generalized premise:
 
 ```math
-\frac{c:\Phi\mid\Phi^{e}\qquad c\ \text{a call, inside a call of}\ C,\ \text{whose run may run code outside}\ C\qquad W_c\ \text{bounds its steps of}\ C\text{'s code at the caller's depth}\qquad \text{(S)}\quad\text{(K)}}{c:\ \Phi\oplus_C(\Psi_C\sqcup\Theta_C\sqcup W_c)\ \mid\ \Phi^{e}\oplus_C(\Psi_C\sqcup\Theta_C\sqcup W_c)}
+\frac{c:\Phi\mid\Phi^{e}\qquad c\ \text{a call inside a call of}\ C\ \text{whose run may reach code outside}\ C\qquad W_c\ \text{bounds its steps of}\ C\text{'s code at the caller's depth}\qquad \text{(S)}\quad\text{(K)}}{c:\ \Phi\oplus_C(\Psi_C\sqcup\Theta_C\sqcup W_c)\ \mid\ \Phi^{e}\oplus_C(\Psi_C\sqcup\Theta_C\sqcup W_c)}
 ```
 
-At a call of outside code $`W_c=\mathsf{keep}`$ and the rule is the note's.
-The note's section "The rule" and Appendix A take this statement when it is
-built, with the paper's Lean (`readOnly_rule`) stated over `SegRun`.
+At a call of outside code alone $`\mathrm{seg}(c)=\emptyset`$,
+$`W_c=\mathsf{keep}`$ and the rule is the note's. The note's section "The
+rule" and Appendix A take this statement when it is built.
 
 ### The check at a call
 
-At a framed call node $`l`$ of code $`m`$, for each fact the existing
-transfer drops, the pass runs `frameCheckAt q Ψc Φ⋆ S Fl.H (π.env l')
-noKeys prot` for **every** context $`c`$ of $`m`$ and **every** node $`l'`$
-of $`m`$ whose continuation and handler are $`l`$'s and which may call
-outside code (`π.out l'`), and keeps the fact where all pass. This is the
-conjunction `framed_at_call` (proved) requires: it gives `Framed` at some
-context and some such node, which the frame's term does not name. A frame
-of a wrapper's call is read the same way through `framed_at_innermost_keys`
-(proved), at every node of $`m`$ with $`l`$'s continuation and handler.
+At a framed call node $`l`$ of code $`m`$, for each fact the ordinary
+transfer drops, the pass runs the frame's check of its support for
+**every** context of $`m`$ and **every** node $`l'`$ of $`m`$ with $`l`$'s
+continuation and handler, and keeps the fact where all pass.
+`framed_at_innermost_keys` (proved) gives `Framed` at some such context
+and node at every reached state whose innermost frame is a frame of
+$`m`$, whatever the callee; the conjunction covers it. The `π.out` filter
+of `framed_at_call` is not applied: at a wrapper's call it can select no
+node.
 
-- **Keys.** The checks give every location the key `none` (`NoKeys`,
-  `reached_key`, proved), and a protocol entry at `none` joins every key
-  of a site's records, so `noKeys` is sound for `Framed`
-  (`ComponentChecks.Ctx.boundAt` joins, at the key `none`, every entry of
-  the site and kind and the client change).
-- **A region the flow gives no sites** (a value's fields by enumeration,
-  a class, every location) is read at every part: the check requires
-  $`\Psi_c(p)\sqsubseteq\delta`$ at every part $`p`$ and
-  $`\gamma\sqsubseteq\delta`$ for every entry of $`\Phi_\star`$. `callParts`
-  returns the full part set for it, and `framed_of_sites`'s cover premise
-  holds of the full set trivially (to be proved, `framed_of_cover`, a
-  generalization of `framed_of_sites`).
-- **Protection** (`prot`) is read for a region only where its locations
-  are reached at the entry's heap, read-only, from an entry argument at
-  its parameter's type, and every part on the path to them preserves
-  references under $`\Psi_C\sqcup\Theta_C`$ (*Reference-preserving
-  protocol*). Then each such location has a live witness at the call:
-  `witness_reached` (proved) at the location the entry reached, which the
-  region names at the call because every reference on its path is
-  preserved (`witness_of_path`, to be proved by induction on the path,
-  each step by the bound of every step of $`C`$'s code between the entry
-  and the call within $`\Psi_C`$ below the entry's length and of every
-  outside run within $`\Psi_C\sqcup\Theta_C`$). Every other region is read
-  unprotected. The history records no crossing into $`C`$ after the entry
-  (`actualXs`), so no location becomes protected later, and a region read
-  unprotected loses only precision.
+- **Keys.** Every location has the key `none` (`NoKeys`, `reached_key`,
+  proved); a protocol entry at `none` is read through
+  `ComponentChecks.Ctx.boundAt`, which joins every entry of the site and
+  kind and the client change, so `noKeys` is sound for `Framed`.
+- **The part universe** (Fable 4). `callParts` gives a region with no
+  sites (`.fields`, `.pathFields`, `.cls`, `.all`) the full part set
+  $`U=(\mathrm{sites}(F)\cup\{\mathsf{none}\})\times\mathrm{kinds}\times\{\mathsf{none}\}`$,
+  a finite list, with `regionSites` returning `some U` for it, so
+  `frameCheckAt`'s `isSome` conjunct holds of every region. Its cover
+  premise is `sites_in_flow` (to be proved): every location of a reached
+  state has its site among the flow's sites or `none`, by induction along
+  the execution (`stepAt_site`, proved: a step's fresh locations get
+  `stepSite`, a site of the flow's allocation tables, or `none` at a step
+  of outside code; the start's sites are those the threaded history gave,
+  [the frame](#the-frame-of-a-request)). `framed_of_cover` (to be proved,
+  the cover generalization of `framed_of_sites`) gives `Framed` from it.
+  Observed (`NoSites.lean`): at the base `callParts` gives `[]` and
+  `frameCheck` passes on `.all` at every protocol; with $`U`$ the check at
+  `.all` requires $`\Psi_c(p)\sqsubseteq\delta`$ at every part and every
+  entry of $`\Phi_\star`$ within $`\delta`$.
 
-## Certificates over the calls an execution makes
+### Protection
+
+A region is read protected (`prot`) where its every location at the call
+was reached, read-only, at the entry from an entry argument at its
+parameter's type: then `witness_reached` gives each such location a live
+witness at the call. A region comes to include a location the entry did
+not reach where a write on its path changes a reference: Astra's
+counter-model replaces `root.p` (`undefined` at the entry) by an existing
+`child` within `scalar`, and `Region.path 0 ["p"] "i"` then includes
+`child.i`. So `prot` requires the path's references fixed since the entry:
+
+- **its root** is the entry's argument: the region's root slot at node
+  $`l`$ carries the parameter's slot from the request's start along every
+  graph path (`entryRootB`, decided over the edges' `mapIdx`; its
+  soundness `entryRoot_sound`, to be proved by induction on graph paths
+  with `carriesB_sound`, proved);
+- **each part its path passes before the last location** is
+  $`\mathsf{keep}`$ under $`\Psi_j`$ and under $`\mathrm{Ch}`$ of the
+  unit's own codes (the unit's steps between the entry and the call are
+  steps of $`C`$'s code at depth $`1`$, `within_charges` at the unit's own
+  call).
+
+Then `witness_of_path` (to be proved, induction on the path): each
+location the path passes at the call is the one it passed at the entry,
+every step between changing it within $`\mathsf{keep}`$; so the last is
+reached at the entry by a read-only path, and `witness_reached` applies.
+Every other region is read unprotected, which loses precision only
+(`frameCheck` checks both $`\Psi_c`$ and $`\Phi_\star`$ at a lent part).
+The history records no crossing into $`C`$ after the entry (`actualXs`), so
+no location becomes protected later.
+
+## Certificates
 
 A member's certificate states, of each actual call of a code from a
-reached state, what the pass's charges establish of that call's own steps.
+reached state, the bound and the guarantees over every step of that call's
+trace, the entering step and the exit included.
 
 ```lean
-structure Cert (Adm : Conf × Ghost (F.at C) → Prop) (Ψ : Protocol (F.at C))
-    (G : (St (F.at C) → Prop) → Prop) (m : Option Code) where
-  eff : Protocol (F.at C)
-  within : ∀ p, (eff p).le (Ψ p) = true
-  own : ∀ a a₁ b y z n, Adm a → XStep F C c Θ chk a a₁ → entered c a₁.1.t = m →
-    δ F C c a₁ = δ F C c a + 1 → Ex (XStep F C c Θ chk) (QCall F C c (δ F C c a)) n a₁ y →
-    XStep F C c Θ chk y z → δ F C c y = δ F C c a + 1 → ¬ Outside F C c y.1 →
-    StepWithin eff a.1.s.h.length (lift F C c y.1 y.2) (lift F C c z.1 z.2)
-  tolerant : ∀ I, G I → ∀ a a₁ y z n, Adm a → XStep F C c Θ chk a a₁ → entered c a₁.1.t = m →
-    δ F C c a₁ = δ F C c a + 1 → Ex (XStep F C c Θ chk) (QCall F C c (δ F C c a)) n a₁ y →
-    XStep F C c Θ chk y z → δ F C c y = δ F C c a + 1 → ¬ Outside F C c y.1 →
-    Ok (δ F C c a + 1) (lift F C c y.1 y.2) → I (lift F C c y.1 y.2) → I (lift F C c z.1 z.2)
+/-- The trace of a call of `m` from `a`: its entering step `a → a₁`, then
+the execution from `a₁` while the call is active, to `y`. -/
+def CallTrace (Adm) (m : Option Code) (a y : Conf × Ghost (F.at C)) : Prop :=
+  ∃ a₁ n, Adm a ∧ XStep F C c Θ chk a a₁ ∧ entered c a₁.1.t = m ∧ δ F C c a₁ = δ F C c a + 1 ∧
+    Ex (XStep F C c Θ chk) (QCall F C c (δ F C c a)) n a₁ y
+
+structure Cert (Adm) (Ψ : Protocol (F.at C)) (G : (St (F.at C) → Prop) → Prop) (m : Option Code) where
+  /-- every own step of the call (the entering step, its steps of C's code at
+  its depth, its exit) is within Ψ below the entry's length -/
+  own : ∀ a y z, (y = a ∨ CallTrace Adm m a y) → XStep F C c Θ chk y z →
+    OwnStep a y z → StepWithin Ψ a.1.s.h.length (lift F C c y.1 y.2) (lift F C c z.1 z.2)
+  /-- every own step keeps each invariant of G -/
+  tolerant : ∀ I, G I → ∀ a y z, (y = a ∨ CallTrace Adm m a y) → XStep F C c Θ chk y z →
+    OwnStep a y z → I (lift F C c y.1 y.2) → I (lift F C c z.1 z.2)
 ```
 
-`own` and `tolerant` read one step of the call's own trace: the trace
-from the call's entry $`a_1`$, made by the execution, every state of which
-the call leaves active (`QCall`), to a step at the call's own depth of
-$`C`$'s code, its exit among them. The steps belong to one execution, and
-the step's frame was pushed after the call's entry. This replaces
-`Cert.certified` and `Cert.tolerant` (`ReadOnlyExec.lean`), which quantify
-over every `MemberRunOf` and every `PkgStep` (gap 4).
+`OwnStep a y z`: the step from `y` is the entering step (`y = a`) or a
+step at the call's depth $`\delta(a)+1`$ of $`C`$'s code (the exit among
+them). The entering step pushes the history, so an invariant that reads
+the history's depth fails `tolerant` there (Astra's counter-model: "the
+stack has its pre-call length and the cell is false" holds before and
+fails after the entry, and the earlier statement kept it vacuously).
 
-- **`decompose` restated** (to be proved, the same induction): its second
-  conjunct builds the member's call as `MemberRun.Own` over the trace's
-  steps, each own step meeting `StepWithin eff |h(a)|` by `own`, its runs
-  one call deeper by the induction; `MemberRun.within` (proved) gives the
-  member's bound, and `MemberRun.keeps` with `tolerant` its invariants.
-  `Cert.member`, `exec_bound`, `exec_keeps`, `exec_rely` and `call_rely`
-  keep their statements, read at the new `Cert`.
-- **The certificate from the charges** (`cert_of_charges`, to be proved):
-  `eff := Ψ_C`; `own` from `stepWrites_sound`, `stepWithin_of_check`
-  (proved) at the protocol's charges (`ComponentChecks.protocolDiags` with
-  no failure), and the *Fresh storage* discharge read at the call: a
-  receiver allocated by the write's frame or, through a closure confined
-  to its frames, by an enclosing frame, was allocated after the call's
-  entry, since outside code holds no confined closure and the call's
-  frames are pushed after its entry (`fresh_within_call`, to be proved, by
-  `ownFresh_sound` and the flow's confinement of such closures). The
-  certificate is the same for every code $`m`$: $`\Psi_C`$ charges every
-  write of every code of $`C`$, so no member, entry label, argument or
-  capture of the suspended context is identified.
-- **`tolerant` from the guarantee's check**: at $`G=\emptyset`$ (the
-  bound route) it is vacuous; for the guarantee route, from
-  `keeps_of_charges` (proved) and `stepWrites_sound`, each step being an
-  actual step of the call ([the guarantee route](#the-guarantee-route)).
-
-The review's counter-model (a member writing nothing, a guarantee that a
-local cell is zero, an abstract `PkgStep` changing it) is excluded: the
-new `tolerant` quantifies over the member's own actual steps, and a
-member writing nothing has steps that change no old location
-(`stepWrites_sound`).
+- **`Member` over the trace.** `Member.Call d Inner st st'` becomes a
+  trace of the call with its inner segments: the steps of `MemberRun.Own`
+  are the trace's own steps, each `Inner` segment the trace's maximal run
+  of outside code one call deeper, so `Cert.own` and `Cert.tolerant` are
+  read on the steps the run consists of. `decompose` (proved) is restated
+  with this `Member.Call`; its induction is the same, prepending the
+  entering step as it does now.
+- **The joined protocol.** Certificates are at $`\Psi_j=\Psi_C\sqcup\Theta_C`$,
+  the protocol their inner runs are bounded at, so `Run.bound`'s
+  $`\Theta_C\sqsubseteq\Psi_j`$ holds; Astra's separating instance
+  ($`\Theta=\mathsf{any}`$, $`\Psi=\mathsf{keep}`$, $`\Psi_c=\mathsf{any}`$)
+  does not arise.
+- **From the charges** (`cert_of_charges`, to be proved): `own` from
+  `within_charges` ($`\Psi_C\sqsubseteq\Psi_j`$; the entering step changes
+  no old location); the same certificate for every code $`m`$, since
+  $`\mathrm{Ch}`$ charges every write of every code. `tolerant`: vacuous at
+  $`G=\emptyset`$; for the guarantee route, from `keeps_of_charges`
+  (proved) at each own step and from the invariant reading the heap, the
+  sites and the keys alone (`HeapOnly I`, a condition on $`G_C`$'s
+  candidates), so the entering and exiting steps, which change the
+  history and allocate, keep it.
 
 ## Re-entry
 
-A callback that re-enters $`C`$ with fresh storage creates calls of
-$`C`$ deeper than the unit's call. Three things the unit's claim reads of
-such a call, each without a fact of it:
+A callback re-entering $`C`$ creates calls of $`C`$ deeper than the
+claim's top frame. The claim reads three things of such a call, none a
+fact of it:
 
-1. **Its effect on $`R_C`$** is the certificate's, from the protocol's
-   charges, which read the flow and the writes, not the graph's facts
-   ([certificates](#certificates-over-the-calls-an-execution-makes)).
-   A charge does not depend on a fact: an element's write is charged
-   $`\mathsf{grow}`$ whatever its index, a `length` write
-   $`\mathsf{any}`$ (`ComponentChecks`, *Charges*).
-2. **Its progress and typed heap** inside the callback's run are given by
-   the callee's semantic type at the unit's call (`call_local_sound`): the
-   callback, an entry argument or a value the graph types, meets its arrow
-   at every world, its calls of $`C`$ included.
-3. **Its facts** are read by no clause of the unit's claim. The six
-   clauses of `FramedRequestSafe` read a stated assertion at a state whose
-   whole term runs the unit's graph at its label (`AssertedAt`:
-   `t' = gotoOf P l L' d' c'`), the codes' assertions at their own graphs'
-   top labels, and the posts at the unit's own exit; the graph's delivery
-   at each node is read at the unit's top frame. A re-entered call's
-   frames lie inside a callback's run inside the unit's frame, never the
-   whole term.
+1. its effect on $`R_C`$: the certificate, from $`\mathrm{Ch}`$, which
+   reads the lowered writes and the flow (an element write is charged
+   $`\mathsf{any}`$ whatever its index);
+2. its progress and typed heap inside the callback's run: the callback's
+   semantic type ([callers and callbacks](#callers-and-callbacks));
+3. its facts: read by no clause of the claim. The clauses read a stated
+   assertion at a state whose whole term runs the claim's graph at its
+   label (`AssertedAt`: `t' = gotoOf P l L' d' c'`) and the posts at the
+   claim's exit; the graph's facts are delivered at the claim's top
+   frame. A re-entered call's frames lie inside a callback's run inside
+   that frame.
 
-So the witnesses the unit's claim needs are those of its own frames, whose
-protected regions are reached by its entry arguments (`witness_reached`).
-The draft keeps this as a property of the design, enforced by two
-restrictions: the protocol's and the guarantee's checks read charges only,
-and the history records no crossing into $`C`$ after the entry. A design
-whose certificates read a member's framed facts would need, at a
-re-entry, the entry's crossing of the member's arguments at their
-parameter types in `chk` (the `enter` transition of `Ghost.stepAt` already
-lets a step's crossings cross after the push) and the witness from it.
+So the witnesses the claim needs are those of its own top frame, from its
+own entry ([protection](#protection)). This holds while the charges read
+no fact and the history records no crossing into $`C`$ after the entry,
+both properties of this design.
 
 ## The guarantee route
 
-The bound route ($`G_C=\emptyset`$) reads no ownership: $`R_C`$ grows by
-the marks and the history alone (`InR.mono`). The guarantee route keeps an
-invariant $`I\in G_C`$ whose support lies in $`R_C`$ (`InvIn`) at every
-resumption, and needs, at each step of $`C`$'s code, `hnew` of
-`InvIn.of_step` and `hsup` of `installs_checked`. Both follow from three
-facts about a support given by paths.
+The bound route ($`G_C=\emptyset`$) reads no ownership. The guarantee
+route keeps $`I\in G_C`$ across a framed call where `Supported` cannot
+state it: an installed array of equal length keeps
+`flags.length === widths.length` while the field `widths` changes
+identity, beyond `grow` (Astra: `Change.grow.Holds` is false between two
+distinct object identities; observed under Node, the invariant true and the
+field changed). So the graph's return premise at a framed call includes,
+for each invariant $`(I,\mathit{root})`$ the frame keeps there, the
+invariant itself ([the graph at framed returns](#the-graph-at-framed-returns)):
+$`I_{\mathit{root}}(\rho,h_0)\Rightarrow I_{\mathit{root}}(\rho,h_1)`$.
+It is discharged by `framed_guarantee` (to be proved), the guarantee
+analogue of `framed_transfer`: along the segment `InvIn I supp` holds at
+every state; at an outside step by `SupportAt.outside` (proved), whose
+`keeps` and `stays` hold of a path support (below) whose parts
+$`\Theta_C`$ tolerates (decided by `SupportParts` over the support's
+parts); at an own step by `invIn_of_installs` (proved), with $`I`$ after
+the step from `keeps_of_charges` (proved), and `hsup`, `hnew` from:
 
 - **A path support.** $`\mathrm{supp}(I)`$ at a state is the set of
-  locations on a fixed finite set of field paths $`\Pi`$ from the
-  invariant's root (`PathSupport`, new): $`l\in\mathrm{supp}_t`$ iff
-  $`h_t\vdash r\xrightarrow{\pi'}l`$ for a prefix $`\pi'`$ of some
-  $`\pi\in\Pi`$. The supports `Ctx.supportOf` computes are of this form,
-  paths read from a record of the candidate's first keys.
+  locations on a fixed finite set of field paths $`\Pi`$ from the root
+  (`PathSupport`). `Ctx.supportOf` falls back to the whole reachable
+  storage where a fact gives no paths (Astra: `factPaths (.element 0 1 2)`
+  is `none`); a candidate whose support is that fallback is not in
+  $`G_C`$ (decided, `pathSupportB`), so the route applies to path
+  supports, and a fact of the fallback form takes the bound route.
 - **A new location is reached through a write** (`supp_split`, to be
   proved, from `follows_split`, proved): for a step $`t\to t'`$ and
-  $`l\in\mathrm{supp}_{t'}`$, either $`l\in\mathrm{supp}_t`$, or the path
-  to $`l`$ at $`t'`$ has a first location $`w`$ the step changed, with
-  $`w\in\mathrm{supp}_t`$ (its prefix is unchanged) and $`l`$ reached from
-  the value stored at $`w`$ by the rest of the path.
+  $`l\in\mathrm{supp}_{t'}`$, $`l\in\mathrm{supp}_t`$, or the path to $`l`$
+  has a first location $`w`$ the step changed, $`w\in\mathrm{supp}_t`$,
+  and $`l`$ is reached from $`w`$'s new value.
 - **Every write the support reads is classified** (`protectedInto_of_supp`,
-  to be proved, giving `hsup`): $`w\in\mathrm{supp}_t\subseteq R_C(t)`$
-  by `InvIn` at $`t`$, so its mark is local or exposed, or it is outside
-  storage protected at the entry. A local $`w`$: its part is in
-  `Ctx.supportOf` (the static support covers the semantic one, by
-  `stepWrites_sound` at the write's receiver and the support's paths
-  read through the flow's contents, `pathSites`), so `cx.supported` holds
-  (`protectedInto_local`, proved). An exposed $`w`$:
-  `protectedInto_exposed` (proved). Protected outside storage: the
-  receiver's set holds the entry's supplied sites, so the receiver's
-  tokens hold the component's token for a value entering from outside
-  (`protectedInto`'s first disjunct; to be proved from `EntryShape`'s
-  `Supplied` slots). A released $`w`$ never lies in $`R_C`$: no crossing
-  into $`C`$ after the entry is recorded and the entry history holds no
-  released location (`entryStart_site`, proved), so none is protected.
+  to be proved, giving `hsup`): $`w\in\mathrm{supp}_t\subseteq R_C(t)`$,
+  so $`w`$ is local (its part in `Ctx.supportOf`, by `stepWrites_sound`
+  and `pathSites`, so `cx.supported`; `protectedInto_local`, proved),
+  exposed (`protectedInto_exposed`, proved) or outside storage protected
+  at the entry (the receiver's tokens hold the component's token for a
+  value entering from outside, from the entry's supplied slots). No
+  released location lies in $`R_C`$: no crossing into $`C`$ after the
+  entry is recorded.
 - **`hnew`** (`hnew_of_paths`, to be proved): by `supp_split`, a new
-  $`l`$ is reached from a value stored at a classified write, so it is
-  among that store's value's reachable sites, whose (O) check passed
-  (`installBad … = []`), the disjunct `invIn_of_installs` (proved) takes.
+  location is reached from a value of a classified store whose (O) check
+  passed, the disjunct `invIn_of_installs` takes.
 
-With the three, `invIn_of_installs` gives `InvIn` after every step of
-$`C`$'s code, `SupportAt.outside` (proved) after every outside step, and
-induction along the execution gives it at every resumption, exceptional
-ones included. The review's counter-model, observed (`redirect.mjs`): a
-re-entered member stores the client's writable array of the right length
-in the handle's field, and the walker reads past its end after the client
-shortens it (`NaN`); the store is into $`\mathrm{supp}_t`$, classified,
-and (O) refuses it (`installIncoming`: a value entering from outside other
-than read-only).
+**At the entry**: the invariant holds of the entry's handle argument by
+`EntryHolds` (the request's input at the handle type means its
+representation meeting `@invariant`, the row on handle parameters), and
+its support lies in $`R_C`$ by the entry's crossing at the read-only
+handle type. Observed (`redirect.mjs`, `NaN`): a re-entered member storing
+the client's writable array in the handle's field; the store is into
+$`\mathrm{supp}_t`$, classified, and (O) refuses it (`installIncoming`).
 
-## The plan and its check
+## The frame of a request
+
+The claim's calls and its frame are fixed by the request and the
+program's semantics; the wire's proposals are checked against them.
+
+### The calls the claim is about
+
+**A public call** of the request $`r`$ (`PublicCall r h L d`, new, read
+from no wire datum): there is a program, an initial configuration
+$`x_0`$, and an execution from $`x_0`$, every step of which keeps
+$`\Theta_C`$ at the history threaded from $`x_0`$, to a state whose active
+frame is outside $`C`$ and whose next step invokes $`r`$'s module closure
+with arguments `L` and receiver `d`, the heap being `h`. An initial
+configuration: an empty heap, a term that is outside code's lowered
+source (`LoweredSrc`, closed) with $`C`$'s module closures as values,
+$`C`$'s module initialization run first as $`C`$'s code. Its history is
+`bareStart`.
+
+```lean
+def FrameSpec.frame (spec : FrameSpec ι) (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
+  enters h t := ∃ L d, t = gotoOf r.program r.start L d r.comp ∧ PublicCall r h L d
+  start k W h t g := ∃ L d g₀, t = gotoOf r.program r.start L d r.comp ∧ ThreadedAt r h L d g₀ ∧
+    g = Ghost.crosses tv h (inputsAt r L d) ({ g₀ with A := [g₀.Prot] }.enter)
+  ...
+```
+
+`ThreadedAt r h L d g₀`: $`g_0`$ is the history threaded along such an
+execution at the invoking state. The start truncates the history to one
+set, which keeps every protection (observed: `Truncate.lean`,
+`truncate_prot`, `truncate_uniform`), pushes the call's set and lets the
+arguments cross in at the request's input types (`inputsAt`: `r.inputs`
+at the entry's slots, read from the request). `start_total` holds with
+`bareStart` at a state no execution reaches.
+
+So `enters` is the set of the request's actual public calls: no proposal
+narrows it (the vacuity of `Vacuous.lean` needs an `enters` admitting no
+call), and the conclusion of `mode8Accepted_sound` holds of each public
+call of each program whose clients keep $`\Theta_C`$ up to and through the
+call. A call inside a callback, at a depth above zero, is a public call
+too.
+
+**What the flow gives at a public call** (to be proved), replacing the
+premise `EntryShape` (whose clause on every heap value fails for a
+private closure in the heap, Astra):
+
+- `fits_program`: from an initial configuration meeting the flow
+  (`initFits`, decided: the module closures in the term meet $`O`$ with
+  their captures at their codes' capture slots; the heap is empty), every
+  state of every execution fits $`O`$ at a position of outside code and
+  its heap meets the flow at the threaded history (the proof of
+  `fitsAt_reached`, proved, from this start: `fits_step` keeps a fitting
+  term, `HeapInv.set`, `HeapInv.fresh` the heap, `stepAt_site` the fresh
+  sites). A private closure held in $`C`$'s storage meets its site's
+  contents; no clause asks it to be one $`C`$ gave out.
+- `entryFits_public`: at a public call the claim's start fits: the invoked
+  closure meets $`O`$ (`fits_roots`, proved), so its token is in $`O`$ and
+  its code is open at its entry context, whose slots hold the arguments
+  (`fits_graphEntry`, proved), and the heap meets the flow at the
+  truncated history (the sites unchanged). This is `EntryFits`; with
+  `Flow.Facts` (`FFlow.check_sound`), `FlowSites` and `ActualCrossings`
+  (by `chk`) it gives `ChkSound` (`chkSound_of_sites`,
+  `sitesSound_of_fits`, proved).
+- `startInv_public`: the invariants of states hold along the execution
+  from $`x_0`$ (`Inv` at the empty heap; `XStep.inv`, `Ex.inv`, proved),
+  and the start meets `StartInv` (one set; `enter` and the crossings keep
+  `Inv`, `crosses_uniform`, proved).
+- `witness_public`: an entry argument reaches its locations read-only at
+  the start's crossing, so `entryStart_prot`'s proof (proved) gives them
+  protected at the start and `witness_along` (proved) at every later state
+  of the call; `witness_reached` is restated at this start.
+
+### The binding checks
+
+Decided by the verifier from the request, the fragment's components and
+the lowered code, each with a forged-fragment control:
+
+- **codes**: the flow holds, at its entry context and at every context the
+  check quantifies over, a proposal for each code of $`C`$ by content: the
+  request's program and its codes, every module function of $`C`$'s
+  modules and their closures' codes, and each module's initialization
+  (`codesCoverB`). The frame's `codes` are these codes, computed from the
+  request and the module realization, never from the wire. A flow omitting
+  the walker's code (`forged-flow.mjs`) fails it.
+- **the component**: $`C`$ is `componentAt` of the request's place (the
+  outermost component of the family the request's tag runs in), and the
+  family's tags of $`C`$ are those the lowering assigns to $`C`$'s modules
+  (`compB`).
+- **the entry**: `entryB` at the request's own code and start
+  (`(r.program, r.start)` at `entryCx`), its slots naming signatures only
+  at the sibling slots, each the module closure's signature (`entryFnB`).
+- **the inputs**: `args` are `inputsAt r`, computed; the wire carries no
+  entry types.
+- **$`\Theta_C`$**: the component's `@clients` read from the source's
+  declaration document, equal to the wire's (`clientsB`); the verdict line
+  prints it.
+- **the protocol**: the wire's $`\Psi_C`$ at least $`\mathrm{Ch}`$ as
+  defined in [charges](#charges), at every part of $`U`$.
 
 ### The plan
 
@@ -547,284 +640,379 @@ inductive FunctionPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
 
 def FunctionPlan.certify : FunctionPlan σ ι → Except String (CertifiedPlan σ ι)
   | .graph name pos request => pure (.graph name pos request)
-  | .framed name pos request spec => pure (.framed name pos request spec.frame)
+  | .framed name pos request spec => pure (.framed name pos request (spec.frame request))
 ```
 
-`FunctionPlan.over` maps `spec` with the request. The exhaustive match
-makes the new constructor a compile error until its branch exists;
-`certify` converts it alone, no `Option` or projection discarding a plan.
+`FunctionPlan.over` maps the request and the spec. `FrameSpec ι` holds the
+proposals alone: the family's numbering, the finite flow (`FFlow`, its
+marks the ones it gives, `FFlow.MarksFrom`), the proposed $`\Psi_C`$ and
+$`\Theta_C`$ (checked as above), and for each framed call node the
+supports and the invariants kept at its continuation and handler.
+`spec.frame request` takes `codes`, `C`, `enters`, `start` and the inputs
+from the request. Its `view` is `ViewOver (Ty ι)` with `RO T` the type
+reader's "read-only throughout" of `T`, and
+`child T a := if RO T then T.readonlyChild a else T.child a`, a read-only
+type's every child read-only by construction, so `ro_child` holds by
+definition; unions, generics and recursive types are read by the type
+reader's own `child`, and a type it cannot decide is not read-only. `chk`
+is the flow's `stepSite` for fresh locations, the key `none`, and
+`actualXs`, so `FlowSites`, `NoKeys` and `ActualCrossings` hold by
+definition.
 
-`FrameSpec ι` is the wire's description of the unit's component, decoded
-like every document (one declared type, every field required):
-
-- the family of components with its sites numbered (`NumberedFamily`),
-  the component $`C`$, and $`\Theta_C`$ (`@clients`, read-only by
-  default);
-- the finite flow (`FFlow`) of $`C`$'s codes, its marks the ones it gives
-  (`FFlow.MarksFrom`: a site of $`O`$ released, every other local; the
-  acceptance family is this one, so the cursor's site is local and the
-  bindings check runs at it);
-- the proposed protocol $`\Psi_C`$, a change per part;
-- the entry's parameters with their declared types (`args`);
-- for each framed call node, its depth charges $`W_c`$ and the supports
-  the frame keeps at its continuation and at its handler.
-
-`FrameSpec.frame : ClientFrame (Ty ι)` builds the frame the claim reads:
-`codes` the flow's codes; `view` the read-only types of `Ty ι`; `chk` the
-flow's sites of each step's fresh locations (`stepSite`), the key `none`,
-and the step's actual crossings (`actualXs`); `start` the entry history at
-`args` (`StartsEntry`); `enters` the calls at the module's closures
-(`ReadOnlyFitsEntry`, the sibling slots) meeting `EntryShape` at the flow.
-Its `chk` gives `FlowSites` and `NoKeys` by definition and
-`ActualCrossings` by `actualXs`.
+`PlanAt` and `OverStore` (`PassUnitPlans.lean`) are restated over both
+constructors (`PlanAt f i name pos r` holds of a graph or a framed plan
+with request `r`; `over_types` per constructor), so `hover` types at a
+framed plan.
 
 ### What the pass checks
 
-`MemberAccepted.framed`, beside `ordinary`'s premises over the request
-(its codes accepted, its main graph accepted by the framed run, its read
-summaries checked):
+`MemberAccepted.framed`, beside `ordinary`'s premises over the request:
 
-- `FFlow.check (remark F) = true`, `FFlow.entryB`, `FFlow.marksB`
-  (decided; sound by `FFlow.check_sound`, `FFlow.marks_of_marksFrom`);
-- (S), (K) and (O) over every body of the component with no failure
-  (`ComponentChecks`), (S) the restriction *No suspension*;
-- the protocol: every charge of every write of $`C`$'s code within
-  $`\Psi_C`$ (`protocolDiags`), and $`\Theta_C\sqsubseteq\Psi_c`$;
-- at each framed call node: every charge $`W_c`$ joins within $`\Psi_c`$,
-  and each kept support passing the check of
-  [the check at a call](#the-check-at-a-call), at $`\Phi`$ for the
-  continuation's facts and $`\Phi^{e}`$ for the handler's;
-- the main graph accepted by the pass run with those supports kept at
-  the framed nodes (`RunCall.AcceptsFramed`, the pass's transfer with
-  `callerFrameKeeps` extended by the kept supports).
+- `FFlow.check (remark F)`, `marksB`, `initFits`, and the binding checks;
+- (S), (K), (O) over every body of the component (`ComponentChecks`), (S)
+  the restriction *No suspension*;
+- $`\Psi_C\sqsupseteq\mathrm{Ch}`$; at each framed call node $`c`$,
+  $`W_c=\mathrm{Ch}(\mathrm{seg}(c))`$ computed and the supports kept by
+  the check at $`\Psi_c`$ ([the check at a call](#the-check-at-a-call)),
+  at $`\Phi`$ for the continuation's facts and $`\Phi^{e}`$ for the
+  handler's;
+- the request's main graph and each of its codes' graphs accepted by the
+  framed run with those supports kept (`RunCall.AcceptsFramed`).
+
+## Callers and callbacks
+
+### The callback's type
+
+The graph reads a callee value at its arrow's ordinary semantic type
+(`call_local_sound`): its call is safe from every heap, its calls back
+into $`C`$ included. A client callback that calls a framed member of
+$`C`$ meets that only where the member is safe on executions breaking
+$`\Theta_C`$, which no framed claim proves. The design states it as trust,
+one row of its own:
+
+> **Callbacks into a framed component.** A function value that code
+> outside a component $`C`$ whose API states the read-only row passes to
+> $`C`$ at a function type meets that type: called by $`C`$, its run,
+> its calls of $`C`$ included, is safe and within its stated effect.
+
+Each framed claim proves the member's safety along the executions keeping
+$`\Theta_C`$, the only ones it is about; the row is stronger. Its
+replacement by a derivation is milestone 3: the arrow
+$`[\![T]\!]^{\Theta}`$ whose call is `SafeUnder fr.Keeps` from every
+reached state, read for outside callees and framed members alike, with
+`call_local_sound_under` giving `SafeUnder` from it.
+
+**The continuation after a failed return premise** is outside the claim:
+a callback emptying the walker's `[7]` and returning normally makes the
+next read `undefined` (Astra, observed). `RunSoundFramed` claims progress
+at the states of the paths whose framed returns meet their premise, and
+`framed_requestSafe` establishes the premise (`ret_reached`) before it
+follows the continuation; after a step that broke $`\Theta_C`$ the claim
+states nothing (`SafeUnder`).
+
+### Callers inside the component and importers
+
+`dependent.mjs` (observed `NaN`): an ordinary unit `total` calling a framed
+`walk` is accepted with no trust stated, its graph reading `walk` at its
+ordinary arrow, which `FramedRequestSafe` does not give. The design:
+
+- **A unit whose graph reads a framed member** (through a sibling slot,
+  `SourceRequest.siblings`, or any value whose type the graph reads from a
+  framed member's signature) is refused at that read, located there
+  ("calls a function accepted under client trust", a check of
+  `passMember`), until the obligation-relative arrow exists. No ordinary
+  verdict rests on a framed claim; `total` is refused.
+- **The verdict line** of a group with a framed member is
+  `accept under client trust Θ_C (component C)`, naming $`\Theta_C`$ and
+  $`C`$.
+- **Importers**: `FilePlans.establishVerdict` refuses to establish a
+  framed group (`MemberSettle.lean`), so a module importing a framed unit
+  is refused at the import; the interface document carries no framed
+  arrow.
+- With the obligation-relative arrow (milestone 3), a unit reading a
+  framed member at $`[\![T]\!]^{\Theta}`$ certifies to a framed plan with
+  the same frame, its label propagated along `depends`, and the interface
+  carries $`\Theta_C`$ with the arrow. Pretext's layout functions, which
+  call the walkers, need that milestone.
+
+## Scope
+
+- **Frames.** The transfer is applied at the top frame of each claim: the
+  request's graph and each of its codes' graphs (each code's clause runs
+  its own graph as the whole term). A framed call in another function is
+  that function's unit's. So every call node of every graph the plan
+  checks is covered.
+- **Keys.** The check reads every location at the key `none`: one protocol
+  entry bounds every field of a site's records. Facts that need two fields
+  of one record told apart (pretext's `prepared.widths` beside the `stats`
+  writes) are outside this design's precision; they are refused, located
+  at the part that fails.
+- **Charges discharge nothing as fresh**: a write to storage the writing
+  frame allocated is charged at its site, so a fact about another location
+  of that site is lost.
 
 ## The theorems
 
-### The graph at assumed returns
+### The graph at framed returns
 
-The graph theorem, relative to the returns of the framed calls
-(`RunSoundFramed ι`, to be proved, beside `Target.RunSound`): for an
-accepted run whose framed call nodes keep the supports $`S_l`$ at their
-continuations and $`S^{e}_l`$ at their handlers, each field of
+`RunSoundFramed ι` (to be proved) replaces `Target.RunSound`: for an
+accepted run whose framed call nodes $`l`$ keep supports $`S_l`$,
+$`S^{e}_l`$ and invariants $`G_l`$, $`G^{e}_l`$, each field of
 `GraphGuarantee` holds along the graph paths whose every evaluation of a
-framed node $`l`$, from its entry $`(\rho,h)`$ to its return
-$`(v,h')`$, meets
+framed node, from its entry $`(\rho,h)`$ to its return $`(v,h')`$, meets
 
 ```math
-\mathrm{Ret}_l(\rho,h,h')\iff\forall S\in S_l.\ \mathrm{Supported}(S,\rho,h,h')\qquad\mathrm{Ret}^{e}_l(\rho,h,h')\iff\forall S\in S^{e}_l.\ \mathrm{Supported}(S,\rho,h,h')
+\mathrm{Ret}_l(\rho,h,h')\iff\bigl(\forall S\in S_l.\ \mathrm{Supported}(S,\rho,h,h')\bigr)\wedge\bigl(\forall (I,\mathit{root})\in G_l.\ I_{\mathit{root}}(\rho,h)\Rightarrow I_{\mathit{root}}(\rho,h')\bigr)
 ```
 
-at a normal and an exceptional return. Paths that break it are cut: their
-later states are outside the claim. Progress at every state, the states
-inside a call included, is unconditional, as in `SafeGraph`.
+and $`\mathrm{Ret}^{e}_l`$ alike at an exceptional return; its states past
+an evaluation that fails it are outside the claim. `Target.RunSound` is
+the instance with no framed node (`runSound_of_framed`, to be proved:
+$`\mathrm{Ret}`$ is vacuous), and `run_sound_single_pass` is proved through
+it.
 
-Proof plan: the proof of `run_sound_single_pass` (proved), with the
-call node's delivery (`callEntry_holds`, `callKept_sound`,
-`callGrown_sound` and the index facts' `frameKeeps`, proved) taking, at a
-framed node, `Supported` from $`\mathrm{Ret}_l`$ in place of
-`callerFrame_post`; `Footprints.frame_step` reads its heap relation only
-through `Supported`. The graph state carries the pending framed node's
-entry, so $`\mathrm{Ret}_l`$ is read at the evaluation's end
-(`SafeGraphRet`, a `SafeGraph` with that ghost, as `SafeUnder` is a
-`SafePostExcW` with one). Size: every lemma between the node delivery and
-`run_sound_pass` takes the hypothesis; none changes its argument.
+The node delivery reads $`\mathrm{Ret}`$ in place of `callerFrame_post`
+for the kept supports (`callKept_sound`, `callGrown_sound`, `frameKeeps`,
+proved, read `Supported` through `Footprints.frame_step`), and the kept
+invariants as known after the call; the rest of the call's delivery is as
+at an ordinary call: the support's condition `FirstKept` read from the
+callee's post (`callEntry_holds`'s premise `hstable`), the continuation's
+facts at `push v ρ` through the continuation's mapping, the handler's at
+the thrown value through the handler's. The graph state carries the
+pending framed node's entry (`SafeGraphRet`, a `SafeGraph` with that
+datum, as `SafeUnder` is a `SafePostExcW` with a ghost).
 
 ### The returns, at reached executions
 
-`ret_reached` (to be proved): at every reached evaluation of a framed node
-of the unit's graph, a reached call state $`s_0`$ at the unit's top frame
-to its resumption $`s_1`$ along steps keeping $`\Theta_C`$, with the
-callee's post at $`s_1`$ ($`h_0\xrightarrow{\Phi}h_1`$ from `callPost`,
-or $`\Phi^{e}`$ from `callExc`), $`\mathrm{Ret}_l`$ or
-$`\mathrm{Ret}^{e}_l`$ holds. Plan: `framed_transfer` with
-`ChkSound` (`chkSound_of_flow`, proved, from the checks above and
-`EntryShape` at `enters`), `StartInv` (`startInv_of_entry`, proved),
-`certs` (`cert_of_charges`), `hown` (`segWithin_of_check`), `Framed` from
-`framed_at_call` or `framed_at_innermost_keys` with `frameCheck_sound`,
-`regionSites_sound`, `classQuery_sound` (proved) and the witnesses
-(`witness_of_path`).
+`ret_reached` (to be proved): at every evaluation of a framed node of a
+claim's top graph from a reached call state $`s_0`$ to its resumption
+$`s_1`$, along steps keeping $`\Theta_C`$, with the callee's post at
+$`s_1`$ (`callPost`, or `callExc` at a throw), $`\mathrm{Ret}_l`$ or
+$`\mathrm{Ret}^{e}_l`$ holds. The node's entry heap is $`s_0`$'s: the
+`goto` at $`l`$ enters its frame (`gotoEnter`, no heap change) and the
+call's parts are values, so the frame's term is the call and the first
+step of the segment is the invocation. Plan: `framed_transfer` and
+`framed_guarantee`, with `ChkSound` and `StartInv` from [the
+frame](#the-frame-of-a-request), `certs` from `cert_of_charges`, `hown`
+from `within_charges`, `Framed` from `framed_at_innermost_keys`,
+`framed_of_cover` and `classQuery_sound` (proved), and the witnesses of
+[protection](#protection).
 
 ### The framed claim, from the check
-
-`framed_requestSafe` (to be proved):
 
 ```lean
 theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FrameSpec _}
     (hrun : RunSoundFramed (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
-    FramedRequestSafe r spec.frame
+    FramedRequestSafe r (spec.frame r)
 ```
 
-Proof plan, for each of the six clauses: by induction on the budget, the
-invariant at each state being that it is reached from the clause's entry
-(`ClientFrame.Reached`, with the execution from the entry), that its term
-simulates a graph state of the unit's program (`GraphCode.Sim`, the
-pending framed node's call state with it), and that the graph state is
-safe along $`\mathrm{Ret}`$-paths (`RunSoundFramed`). A step from such a
-state either breaks the obligation, after which `SafeUnder` asks nothing,
-or is a `KStep` (`safeUnder_kstep`'s converse direction:
-`sim_step_back`, proved, maps it to a transition); at a framed node's
-return the execution so far is a reached segment, so `ret_reached` gives
-$`\mathrm{Ret}`$ and the graph path stays a $`\mathrm{Ret}`$-path.
-`AssertedAt` at a `gotoOf` state is the graph's assertion at that label
-(`asserted_of_reach`, proved, read in this direction). This builds the
-reached executions from the clause's entry without assuming the clause,
-the direction the review found missing in `framed_reaches` (which assumes
-`FramedAssertionsClause`; it stays the converse).
+Plan, for each of the six clauses, by induction on the budget, the
+invariant at a state being: it is reached from the clause's start
+(`Reached`, with the execution), its term simulates a graph state of the
+claim's graph (`GraphCode.Sim`, with the pending framed call state), and
+that graph state is on a $`\mathrm{Ret}`$-path of `RunSoundFramed`. A step
+breaking $`\Theta_C`$ ends the obligation; any other is a `KStep`, mapped
+to a transition by `sim_step_back` (proved); at a framed node's return
+`ret_reached` gives $`\mathrm{Ret}`$ and the path stays a
+$`\mathrm{Ret}`$-path. The assertions: a term state `gotoOf P l L' d' c'`
+reached from the start is simulated by the graph state
+`.at l (envOf L' d')` reached on a $`\mathrm{Ret}`$-path (`sim_step_back`
+along the execution), at which `RunSoundFramed`'s `asserted` gives
+`Holds` (`assertedAt_of_graph`, to be proved, the converse direction of
+`asserted_of_reach`, proved). The executions are built from the start
+without assuming the clause (`framed_reaches`, which assumes it, is not
+used).
 
 ### The headline
 
-`member_safe` gains the branch:
-
-```lean
-  | framed name pos r spec .. hplan .. hacc =>
-    exact ⟨_, _, hplan, rfl, framed_requestSafe hrunF hkeep (hover j name pos r hplan) hacc⟩
-```
-
-and `passMember_sound` (H3) shows `passGroup` accepting a group makes a
-framed member `MemberAccepted.framed`. `mode8Accepted_sound` keeps its
-statement:
+`member_safe` gains the branch `framed … => ⟨_, _, hplan, rfl,
+framed_requestSafe hrunF hkeep (hover j name pos r hplan) hacc⟩`, and
+`passMember_sound` (H3) shows `passGroup` accepting a group makes a
+framed member `MemberAccepted.framed`; the executable path is
+`FilePlans.passMember`'s framed branch, which runs the checks above.
+`mode8Accepted_sound` keeps its statement:
 
 ```lean
 theorem mode8Accepted_sound {f : FilePlans} {i : Nat} (h : Mode8Accepted f i) : PassUnitSafe f i
 ```
 
-- **Premise** (`Mode8Accepted f i`): unchanged, the exact CLI condition
-  at either print site; a group with a framed member reaches it with its
-  verdict printed `accept under client trust` (`CertifiedPlan.clientTrust`).
-- **Conclusion** (`PassUnitSafe f i`): every member $`j`$ of $`i`$'s group
-  is `MemberSafe f j`: its plan certifies (`FunctionPlan.certify`) to a
-  graph plan whose request is `RequestSafe`, or to a framed plan whose
-  request is `FramedRequestSafe r spec.frame`. For a framed member that
-  is: from every call meeting the frame's entry premises
-  (`ClientFrame.Call`) and the request's entry contracts, along every
-  execution each of whose steps of code outside $`C`$ keeps $`\Theta_C`$,
-  every state is a value, a throw or takes a step with an admissible world
-  and a typed heap, and the footprint, postcondition, regional and
-  assertion clauses hold, as `RequestSafe` states them. Where the
-  obligation is met, it is `RequestSafe` at every call (`framed_callSafe`,
-  proved).
+- **Premise** `Mode8Accepted f i`: unchanged, the exact CLI condition at
+  either print site; a group with a framed member reaches it printed
+  `accept under client trust Θ_C (component C)`.
+- **Conclusion** `PassUnitSafe f i`: every member of the group is
+  `MemberSafe`: a graph plan's request `RequestSafe`, a framed plan's
+  `FramedRequestSafe r (spec.frame r)`, that is: at each public call of
+  $`r`$ in a program whose outside code keeps $`\Theta_C`$ up to the call,
+  from the request's entry contracts, along each continuation keeping
+  $`\Theta_C`$, every state is a value, a throw or takes a step with an
+  admissible world and a typed heap, and the footprint, postcondition,
+  regional and assertion clauses hold. The calls are the program's, so no
+  proposal narrows the conclusion.
 
-Its premise and conclusion are reviewed again, as a change of the accepted
-plan type requires; the record of the commit that builds it states
-`Theorem modified (mode8Accepted_sound)` with this conclusion.
+The commit that builds it records `Theorem modified (mode8Accepted_sound)`
+with this conclusion and `MemberSafe`'s reading.
 
 ## Proved, to be proved, trust
 
-**Proved at the base**, reused: `FFlow.check_sound`,
-`ClientFrame.chkSound_of_flow`, `startInv_of_entry`, `entryStart_site`,
-`ClientFrame.framed_at_call`, `framed_at_innermost_keys`,
-`frameCheck_sound`, `framed_of_sites`, `regionSites_sound`, `reached_key`,
-`witness_reached`, `call_segment`, `call_premises`, `decompose` (its
-induction), `Run.bound`, `Run.keeps`, `MemberRun.within`,
-`RBoundBelow.trans`, `InR.mono`, `pkg_step_ok`, `stepWithin_of_check`,
-`keeps_of_charges`, `readOnly_rule`, `supported_of_framed`,
-`invIn_of_installs`, `installs_checked`, `protectedInto_local`,
-`protectedInto_exposed`, `SupportAt.outside`, `follows_split`,
-`step_changes`, `step_lift`, `Fits.innermost`, `fitsAt_reached`,
-`kstep_xstep`, `reached_ok`, `sim_step_back`, `asserted_of_reach`,
-`framed_callSafe`, `call_local_sound`, `callKept_sound`,
-`callGrown_sound`, `run_sound_single_pass`.
+**Proved at the base**, reused: `FFlow.check_sound`, `fitsAt_reached`
+(its proof), `fits_step`, `fits_roots`, `fits_graphEntry`,
+`chkSound_of_sites`, `sitesSound_of_fits`, `framed_at_innermost_keys`,
+`frameCheck_sound`, `framed_of_sites`, `regionSites_sound`, `reach_sites`,
+`reached_key`, `witness_along`, `entryStart_prot`, `crosses_uniform`,
+`call_segment`, `decompose`, `Run.bound`, `Run.keeps`,
+`MemberRun.within`, `RBoundBelow.trans`, `InR.mono`, `pkg_step_ok`,
+`stepWithin_of_check`, `keeps_of_charges`, `readOnly_rule`,
+`supported_of_framed`, `invIn_of_installs`, `installs_checked`,
+`protectedInto_local`, `protectedInto_exposed`, `SupportAt.outside`,
+`follows_split`, `step_changes`, `stepAt_site`, `Fits.innermost`,
+`XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`, `sim_step_back`,
+`asserted_of_reach`, `framed_callSafe`, `call_local_sound`,
+`callKept_sound`, `callGrown_sound`, `callEntry_holds`, `carriesB_sound`,
+`run_sound_single_pass`.
 
-**To be proved**, each with its plan above: `framed_transfer`,
-`SegRun.within`, `seg_run`, `RBound.mono`, `frameC_shape`,
-`stepWrites_sound`, `ownFresh_sound`, `fresh_within_call`,
-`segWithin_of_check`, `framed_of_cover`, `witness_of_path`, the new
-`Cert` with `decompose` restated, `cert_of_charges`, `RunSoundFramed`,
-`ret_reached`, `framed_requestSafe`, `member_safe`'s and
-`passMember_sound`'s framed branches; for the guarantee route
-`supp_split`, `protectedInto_of_supp`, `hnew_of_paths`. The order of the
-build: the bound route first ($`G_C=\emptyset`$, which P22 and the
-walkers' cursor facts read), then the guarantee route.
+**Observed at the base** (`Truncate.lean`): `truncate_prot`,
+`truncate_uniform`, to be moved into the build.
 
-**Trust**, each a row of the [trust surface](../DESIGN.md#trust-surface):
+**To be proved**: `local_unreached`, `stepWrites_sound`,
+`writesIn_sound`, `within_charges`, `segFrames`, `framed_transfer`,
+`seg_run`, `MemberRun.Own` at a depth parameter, `RBound.mono`,
+`frameC_shape`, `sites_in_flow`, `framed_of_cover`, `entryRoot_sound`,
+`witness_of_path`, the trace-indexed `Cert` and `Member.Call` with
+`decompose` restated, `cert_of_charges`, `fits_program`,
+`entryFits_public`, `startInv_public`, `witness_public`,
+`RunSoundFramed`, `runSound_of_framed`, `ret_reached`,
+`assertedAt_of_graph`, `framed_requestSafe`, `PlanAt`/`OverStore` over
+both constructors, `member_safe`'s and `passMember_sound`'s framed
+branches; for the guarantee route `framed_guarantee`, `supp_split`,
+`protectedInto_of_supp`, `hnew_of_paths`.
 
-- the client obligation $`\Theta_C`$ (`ClientFrame.Keeps`, `Row`), stated
-  in the component's API, owner-approved;
+**Trust**, rows of the [trust surface](../DESIGN.md#trust-surface):
+
+- the client obligation $`\Theta_C`$ (`ClientFrame.Keeps`, `Row`),
+  stated in the component's API (owner-approved);
 - *Clients* (Read-only frames, Assumption "Clients"): outside code enters
-  $`C`$ only through its interface, so every code tagged with $`C`$ is
-  $`C`$'s (`Provenance`), and every closure of $`C`$ that outside code
-  holds at an entry is one $`C`$ gave out (`EntryShape`, `GivenOut`),
-  premises of `ClientFrame.Call`; that a sequence of entries each checked
-  against one flow discharges `EntryShape` at each is conjectured;
-- the callback's semantic type at the call: an outside value passed at an
-  arrow type meets it (the existing rows on exported preconditions and on
-  a callback's stated effect);
+  $`C`$ only through its interface (`Provenance`), and a program's
+  outside code is lowered source of the calculus (`Source`, `LoweredSrc`),
+  closed (`ClosedAt`), in a well-formed configuration (`Discipline`), as
+  the initial configurations of `PublicCall` are;
+- **Callbacks into a framed component** (the row above);
+- the request's entry contracts at a public call (the existing rows on
+  exported preconditions and handle parameters);
 - a native's step model performs its model's steps (the `%ElementAt%`
-  row), where a flow reads one.
+  row), where the flow reads one.
+
+## Milestones
+
+Each is stated generally and buildable on the one before.
+
+1. **The bound route for P22** ($`G_C=\emptyset`$): the charges and their
+   lemmas (`local_unreached`, `stepWrites_sound`, `within_charges`,
+   `segFrames`), the trace-indexed certificates, the general
+   `framed_transfer` at every framed call, the check at a call over $`U`$,
+   the frame of a request with `PublicCall` and the binding checks
+   (`fits_program`, `entryFits_public`), `RunSoundFramed` with supports
+   only, `framed_requestSafe`, the plan and the headline, the refusal of
+   readers of framed members. `prot` is false at every region in this
+   milestone; P22 reads none.
+2. **Protection and the guarantee route**: `entryRoot_sound`,
+   `witness_of_path`; `framed_guarantee` with path supports.
+3. **The obligation-relative arrow**: $`[\![T]\!]^{\Theta}`$ replacing the
+   callback row, framed callers and importers, the label along `depends`.
+4. **Keys**: parts at field keys, for facts such as pretext's
+   `prepared.widths`.
 
 ## Tests
 
-- **P22**, `bounds-pattern-unreachable-field-refused`: a gap, positive
-  once built, renamed with its outcome. `walk`'s call `visit(c.i)` is a
-  framed call of outside code ($`W_c=\mathsf{keep}`$). The cursor's site is
-  local and captured by no closure, so $`\Psi_C`$ keeps `c.i` ($`\Psi_C`$
-  charges nothing at it: `walk`'s write `c.i++` is to storage its own
-  frame allocated); `xs`'s spine is outside storage given writable, off
-  $`R_C`$, bounded by the visitor's $`\mathsf{grow}`$. `c.i < xs.length`
-  and `0 <= c.i` pass the check (measured by the frame probe,
-  [read-only handles](readonly-handles.md#deciding-the-flow)).
-- **Kept negative**: `invalid-bounds-pattern-cursor-given` (the cursor
-  given to the visitor: its site in $`O`$, released, off $`R_C`$).
-- **New cases** (from [Counter-models](#counter-models)): a visitor that
-  shortens and throws, the walker's handler reading at the index
-  (negative, refused at the handler's read); the same walker reading at
-  the handler only `0 <= c.i` (positive); a wrapper calling the client,
-  the walker keeping its local cursor's bounds (positive); a wrapper
-  writing the walker's cursor (negative, refused: $`W_c`$ charges the
-  cursor's site); a client shortening the array through a wrapper
-  (negative).
-- **Controls** (forged fragments and forced proposals against the
-  verifier): a flow proposing the cursor's site outside every capture
-  slot where a closure captures it (refused by `FFlow.check`); a protocol
-  proposing $`\mathsf{keep}`$ at a part a member writes (refused by
-  `protocolDiags`); a $`W_c`$ omitting a wrapper's write (refused by the
-  depth charges' check); a frame check passing at the call's node and
-  failing at another node of the same continuation and handler (the fact
-  dropped).
-- **Pretext's walkers**: `walkPreparedLinesRaw` and
-  `walkPreparedComplexLines` at the package, their `onLine` a wrapper.
-  Their cursor bounds are read at local sites (measured to pass at every
-  context, by the probe at the direct-call obligation); the facts on
-  `prepared.widths` need keys beside `none` and the protected region of
-  an entry argument read-only, both read by this design's check and
-  neither required by the P22 case.
+- **P22**, `bounds-pattern-unreachable-field-refused` (a gap, positive at
+  milestone 1, renamed with its outcome). `visit(c.i)` is a framed call
+  of outside code, $`W_c=\mathsf{keep}`$. The cursor's site is local and
+  in no capture slot, so $`\Psi_C`$ is $`\mathsf{keep}`$ there, though
+  `walk`'s own `c.i++` is charged at it in $`\mathrm{Ch}`$; `xs`'s spine
+  is outside storage, off $`R_C`$, bounded by the visitor's
+  $`\mathsf{grow}`$. `c.i < xs.length` and `0 <= c.i` pass (measured by
+  the frame probe, [read-only handles](readonly-handles.md#deciding-the-flow)).
+- **Kept negative**: `invalid-bounds-pattern-cursor-given`.
+- **New cases**: `throw.mjs`'s walker (negative at the handler read) and
+  its variant reading only `0 <= c.i` there (positive); a wrapper calling
+  the client, the walker keeping its local cursor (positive); a wrapper
+  writing the cursor, and a wrapper incrementing it through a capture
+  (negative); a client shortening the array through a wrapper (negative);
+  `capture.mjs`'s walker (negative); `dependent.mjs`'s `total` (refused at
+  its read of `walk`).
+- **Controls** (forged fragments against the verifier): a flow omitting
+  the walker's code (`codesCoverB`); a flow whose entry context names a
+  signature at a non-sibling slot (`entryFnB`); a wire $`\Theta_C`$ other
+  than the source's (`clientsB`); a $`\Psi_C`$ below $`\mathrm{Ch}`$; a
+  framed call whose check passes at one node of the call's continuation
+  and handler and fails at another (the fact dropped); a region `.all` at
+  a protocol changing a part (the fact dropped, `NoSites.lean`'s case).
+- **Pretext's walkers**: their cursor bounds at local sites, measured by
+  the probe at the direct-call obligation (the raw walker's two
+  segment-index bounds and grapheme-index lower bound at 8/8 contexts, the
+  complex walker's segment-index bounds at 3/4), across the wrapper
+  `onLine`; the `prepared.widths` facts need milestone 4, and the layout
+  functions calling the walkers milestone 3.
 
 ## Open points for review
 
-1. **The callback's semantic type as a premise.** The framed claim
-   assumes an outside callback meets its arrow unconditionally, its calls
-   back into $`C`$ included, while what it proves of $`C`$'s entries holds
-   only along executions keeping $`\Theta_C`$. Composing the claim of a
-   client that re-enters $`C`$ with $`C`$'s framed claim needs a semantic
-   type read under the obligation. Whether the existing callback row
-   covers this, or a row of its own is needed, is for the owner.
-2. **$`W_c`$ at a wrapper.** Its soundness rests on own-frame freshness
-   being decided per frame and on the codes it joins covering every frame
-   at the caller's depth in the segment (`segWithin_of_check`); a
-   recursion back into the walker's code at the caller's depth writes the
-   walker's site again, charged there.
-3. **The conjunctive check** over every node with the call's continuation
-   and handler: sound by `framed_at_call`'s existential; two nodes of one
-   code sharing both are rare and lose the fact. The located labels
-   (`ReadOnlyLocated.lean`) would name the node exactly at the cost of
-   carrying them through `fitsAt_reached`.
-4. **`EntryShape` at every call** is a premise of the claim, narrowing
-   the calls it is about; its discharge from earlier entries is
-   conjectured.
+1. **`PublicCall`'s initial configurations**: the module initialization as
+   $`C`$'s code before the client's top level, and `initFits` at it, are
+   stated over a program realization the calculus has for one module
+   (`PassUnitFile`, the module realization); a package of modules needs
+   their initialization order.
+2. **`stepWrites_sound`** rests on the node expression's writes being the
+   only writing redexes of a frame's steps, natives' step models included;
+   a native without a step model is outside code, which `Fits.invoke`
+   states.
+3. **The local rule's sources**: `local_unreached` reads captures of
+   closures of $`C`$ only; a bound function's parts and a closure of
+   outside code's captures reach no local site (`CodeNoLocal`), a reading
+   of the value judgment for the proof to confirm.
+4. **The callback row** is a new trust row, stronger than each framed
+   claim; it is for the owner, until milestone 3 replaces it.
 5. **`RunSoundFramed`'s size**: threading $`\mathrm{Ret}`$ through the
-   graph theorem's proof is stated as touching only the call node's
-   delivery; that is a reading of `run_sound_pass`'s structure, not yet a
-   build.
+   graph theorem touches the call node's delivery and the path predicate,
+   a reading of `run_sound_pass`'s structure, not yet a build.
 
-## Counter-models
+## Runs
 
-Each runs under `node` (observed, Node 26.13.0); the claimed outcome is
-printed after it.
+Node 26.13.0, each printing the value shown; sources below, and
+`forged-flow.mjs` and `dependent.mjs` as the second review gives them:
+
+- `throw.mjs`: `{ s: NaN, i: 2 }`, a visitor shortens `xs` and throws, the
+  handler reads `xs[c.i]`;
+- `wrapper.mjs`: `NaN`, `NaN`, a client shortens `xs` through a wrapper; a
+  wrapper writes the walker's cursor;
+- `redirect.mjs`: `NaN`, a re-entered member installs the client's array
+  in a handle's field, the client shortens it;
+- `capture.mjs`: `NaN`, a closure of $`C`$ capturing the walker's cursor,
+  given to the visitor and called, writes the cursor;
+- `forged-flow.mjs`: `NaN`, the cursor given to the visitor;
+- `dependent.mjs`: `NaN`, an ordinary caller of a framed walker, the
+  client shortening a `readonly number[]` it passed.
+
+Lean files checked with `lake env lean` at the base, standard axioms only:
+`Vacuous.lean` (every request is `FramedRequestSafe` at a frame admitting
+no call), `EmptyFlow.lean` (an empty flow passes `FFlow.check` and
+`marksB`, and admits no `EntryShape`), `NoSites.lean` (`callParts` gives
+`[]` for `.all` and `frameCheck` passes on it), `Truncate.lean` (a history
+truncated to its one set protects what it protected, and is uniform).
 
 ```js
-// throw.mjs: { s: NaN, i: 2 }
+// capture.mjs
+function walk(xs, visit) {
+  const c = { i: 0 }; let s = 0;
+  const bump = () => { c.i += 5; };
+  while (c.i < xs.length) { visit(bump); s += xs[c.i]; c.i++; }
+  return s;
+}
+console.log(walk([1, 2, 3], (f) => f()));
+```
+
+```js
+// throw.mjs
 function walk(xs, visit) {
   const c = { i: 0 }; let s = 0;
   while (c.i < xs.length) { try { visit(c.i); } catch { s += xs[c.i]; } c.i++; }
@@ -835,7 +1023,7 @@ console.log(walk(xs, (i) => { if (i === 1) { xs.length = 0; throw new Error("sto
 ```
 
 ```js
-// wrapper.mjs: "client shortens xs: NaN", "wrapper writes cursor: NaN"
+// wrapper.mjs
 function walk(xs, onLine) {
   const c = { i: 0 }; let s = 0;
   while (c.i < xs.length) { onLine(c.i); s += xs[c.i]; c.i++; }
@@ -843,18 +1031,18 @@ function walk(xs, onLine) {
 }
 function layout(xs, user) { return walk(xs, (i) => user(i)); }
 const xs = [1, 2, 3];
-console.log("client shortens xs:", layout(xs, (i) => { if (i === 1) xs.length = 1; }));
+console.log(layout(xs, (i) => { if (i === 1) xs.length = 1; }));
 function walk2(xs, onLine) {
   const c = { i: 0 }; let s = 0;
   while (c.i < xs.length) { onLine(c); s += xs[c.i]; c.i++; }
   return s;
 }
 function layout2(xs, user) { return walk2(xs, (c) => { user(); c.i = c.i + 5; }); }
-console.log("wrapper writes cursor:", layout2([1, 2, 3], () => {}));
+console.log(layout2([1, 2, 3], () => {}));
 ```
 
 ```js
-// redirect.mjs: NaN
+// redirect.mjs
 function prepare(n) { return { buf: new Array(n).fill(1), n }; }   // invariant: buf.length === n
 function rebind(h, arr) { if (arr.length === h.n) h.buf = arr; }
 function walk(h, visit) {
@@ -865,4 +1053,11 @@ function walk(h, visit) {
 const h = prepare(3), mine = [5, 5, 5];
 let first = true;
 console.log(walk(h, () => { if (first) { first = false; rebind(h, mine); } else { mine.length = 0; } }));
+```
+
+```lean
+-- Truncate.lean
+theorem truncate_prot {P : Package} (g : Ghost P) (l : Nat) :
+    ({ g with A := [g.Prot] } : Ghost P).Prot l ↔ g.Prot l
+theorem truncate_uniform {P : Package} (g : Ghost P) : ({ g with A := [g.Prot] } : Ghost P).Uniform
 ```
