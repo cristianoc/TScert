@@ -216,6 +216,35 @@ def frameCheckAt (q : SepQuery) (Ψ : Protocol P) (Φ S : Footprint) (H : SiteHe
     (τ : Nat → List (Option P.Site)) (keys : Region → List (Option PropKey)) (prot : Region → Bool) : Bool :=
   S.all (fun e => (regionSites H τ e.1).isSome) && frameCheck q Ψ Φ S (callParts H τ keys) prot
 
+/-- **The class of a region's locations**: a class region's selector, every
+category for any other region. -/
+def regionSel : Region → Selector
+  | .cls c => c
+  | .inCls _ c => c
+  | _ => Selector.all
+
+/-- A location of a region is of its class (proved). -/
+theorem regionSel_mem {ρ : Env} {h : Heap} {l : Nat} {v : Val} :
+    ∀ {r : Region}, r.mem ρ h l = true → h[l]? = some v → (regionSel r).selects v = true
+  | .cls c, hm, hv => by simpa [regionSel, Region.mem, hv] using hm
+  | .inCls r c, hm, hv => by simp only [Region.mem, hv, Bool.and_eq_true] at hm; exact hm.2
+  | .field _ _, _, _ | .fields _, _, _ | .cells _, _, _ | .all, _, _ | .path _ _ _, _, _
+  | .pathFields _ _, _, _ | .pathCells _ _, _, _ | .spine _ _, _, _ => by
+    exact Selector.has_all _
+
+/-- **The separation of classes**: two regions of disjoint classes are
+disjoint. -/
+def classQuery : SepQuery := ⟨fun r s => (regionSel r).disjoint (regionSel s)⟩
+
+/-- **The separation of classes is sound at every state** (proved): a
+location holds one value, of one category. -/
+theorem classQuery_sound (ρ : Env) (h : Heap) : classQuery.Sound ρ h := by
+  intro r s l hl hd hr hs
+  obtain ⟨v, hv⟩ : ∃ v, h[l]? = some v := ⟨h[l], List.getElem?_eq_getElem hl⟩
+  have h1 := Selector.selects_disjoint hd (regionSel_mem hr hv)
+  rw [regionSel_mem hs hv] at h1
+  cases h1
+
 /-- **The frame's check at a call gives the rule's premise** (proved, by
 `flow_of_sites`, `regionSites_sound` and `frameCheck_sound`): where the
 query is sound, the roots valid, the environment meets the slots' sites,
