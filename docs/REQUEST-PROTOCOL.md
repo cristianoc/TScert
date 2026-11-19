@@ -131,8 +131,10 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   the file's refusal, which `--verify-interface-stage 8` reports as its
   refusal. `contracts` lists the contracts the group's check read, each
   once (`SourceExtraction.ContractRead`), which no verdict reads: a member,
-  `{"member":{"module","name","key"}}`, the key of the declaration whose row
-  states it, recorded where the walk or the lowering computes the member's
+  `{"member":{"declaration","key"}}`, the key of the declaration whose row
+  states it, the declaration by the identity `{"module","name","span"}` the
+  declaration document gives it and the key as that document writes one (a
+  string, or `{"symbol"}`), recorded where the walk or the lowering computes the member's
   type (`SourceExtraction.recordMember`); a value of the declaration
   document, `{"value":{"module","name","specifier","imported","local"}}`, its
   declaration and binding, for a name the walk types or the lowering reads a

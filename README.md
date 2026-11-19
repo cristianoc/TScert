@@ -221,10 +221,19 @@ where the check reads them: each value of the declaration document a unit
 reads, and each member whose type it computes (`StringProto.charAt`,
 `JSON.stringify`), by the declaration whose row states it
 ([verdict lines](docs/REQUEST-PROTOCOL.md#the-file-worker)); each with the
-overlay it is read through and the row of the
+overlay it is read through, the row of the
 [trust surface](docs/DESIGN.md#trust-surface) stating its trust, or none for
-a member read as its declaration states it; the same list, by trust row,
-goes to standard error.
+a member read as its declaration states it, and its type as the run's
+declaration document states it, the document the check read
+(`JSON.stringify: (p0: JsonValue, p1: null | undefined, p2: number | string | undefined) => string`);
+the same list, by trust row, one line per contract, goes to standard error.
+A type is written as TypeScript writes one, its parameters named by
+position, with TScert's spellings for what TypeScript has none of
+(`Dense<…>`, `Sparse<…>`, `Modifies<{…}, R>` for a normal return's frame,
+`Fresh<R>`; [annotations](docs/ANNOTATIONS.md)) and a signature with a
+precondition marked so; a callable's other postconditions and its
+preconditions' facts are not written. Signatures differing only
+in one frame are one line, `F` standing for each frame it lists.
 
 ## Develop
 

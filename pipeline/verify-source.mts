@@ -16,6 +16,8 @@ import { fieldOf, messageOf } from "../tools/thrown.mts";
 import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot, withinRunDirectory } from "./run-directory.mts";
 import type { Json as ParsedJson } from "../tools/calculus.mts";
 import type { Ast } from "../tools/fragment.mts";
+import type { CallEffect, DeclarationDocument, DeclarationIdentity, PropertyKey, Region, Selector, TypeDefinition, TypeTerm }
+  from "../tools/declaration-types.mts";
 import { initOmission } from "../tools/fragment-parse.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { intrinsicModule, resolvableDeclaration } from "../tools/intrinsics.mts";
@@ -35,11 +37,12 @@ import { refusalEnd, verifier, verifierProtocol, type ProcessCall, type Protocol
 export const invocationLog = "invocations.jsonl";
 
 /** A Fragment document this pipeline's parser wrote, read back by a test that
- * forges it. The tests (18 reads) edit fields deep in the document through
+ * forges it, or by `--contracts`, which renders the declarations the check
+ * read from it. The tests (18 reads) edit fields deep in the document through
  * its type; checking those fields at each test, in place of this assertion,
  * would rewrite each of them, and no TypeScript decoder of the Fragment
  * exists. The assertion stands for the parser's output; it is not checked
- * before the test reads it. */
+ * before a reader reads it. */
 export function readFragmentFile(file: string): Ast {
   const parsed: ParsedJson = JSON.parse(wireText(readFileSync(file), file));
   requireWellFormed(parsed, file);
@@ -779,7 +782,11 @@ export type ContractOrigin = "checked file" | "project" | "standard library" | "
  * a member of a type of TypeScript's standard library or of a package, read
  * as its declaration states, or of a type of the project's own sources. */
 export type ContractEntry = { kind: "value" | "member"; module: string; name: string; key: string | null;
-  specifier: string | null; origin: ContractOrigin; overlay: ContractOverlay | null; trust: TrustRow | null };
+  specifier: string | null; origin: ContractOrigin; overlay: ContractOverlay | null; trust: TrustRow | null;
+  /** The type the declaration document states for it, the document the
+   * check read (`statedType`): one line per signature of an overloaded
+   * callable, else one. */
+  type: string[] };
 /** The contracts a check's verdict relies on, each unit's as its verdict
  * line records them (`UnitContracts`), each once; the members of the checked
  * file's own types are counted. */
@@ -840,12 +847,244 @@ function valueOverlay(specifier: string, imported: string, local: string, id: Id
   return "imported";
 }
 
+/** The type a read contract has in the declaration document the check read
+ * (`ContractRead`): a value's type at its binding; a member's, at its key in
+ * the row of the declaration the record names, by its full identity, as the
+ * document writes it (an object's field, an index signature admitting the
+ * key, a class value's static, a part of an intersection, the prototype it
+ * states, or a base an interface's heritage names), at the declaration's
+ * parameters. Written as TypeScript writes a type (`typeText`), one line per
+ * signature of an overloaded callable; a row the document lacks is said so. */
+export function statedType(document: DeclarationDocument, read: ContractRead): string[] {
+  const named = (id: DeclarationIdentity): TypeDefinition | undefined => document.definitions.find((d) =>
+    d.declaration.module === id.module && d.declaration.name === id.name && d.declaration.span[0] === id.span[0] &&
+    d.declaration.span[1] === id.span[1]);
+  const texts = new TypeTexts(document);
+  if ("value" in read) {
+    const local = read.value.local;
+    const value = document.values.find((v) => v.binding.local === local);
+    if (value === undefined) return ["(no value of the declaration document binds it)"];
+    const binders = value.typeParams.map((p) => p.name);
+    return texts.signatures(value.type, [], binders);
+  }
+  const { declaration, key } = read.member;
+  const seen = new Set<TypeDefinition>();
+  const find = (d: TypeDefinition): TypeTerm[] => {
+    if (seen.has(d)) return [];
+    seen.add(d);
+    const inTerm = (t: TypeTerm): TypeTerm[] => {
+      switch (t.k) {
+        case "object": {
+          const field = t.fields.find((f) => sameKey(f.name, key));
+          if (field !== undefined) return [field.optional ? { k: "union", parts: [field.type, undefinedTerm], span: field.span } : field.type];
+          if (typeof key === "string") {
+            if (t.numberIndex && canonicalNumeric(key)) return [t.numberIndex.value];
+            if (t.stringIndex) return [t.stringIndex.value];
+          } else if (t.symbolIndex) return [t.symbolIndex.value];
+          return t.prototype ? inTerm(t.prototype) : [];
+        }
+        case "constructor": return (t.statics ?? []).filter((f) => sameKey(f.name, key)).map((f) => f.type);
+        case "intersection": return t.parts.flatMap(inTerm);
+        case "reference": {
+          const target = named(t.reference.target);
+          return target === undefined ? [] : find(target);
+        }
+        default: return [];
+      }
+    };
+    const own = d.expression === null ? [] : inTerm(d.expression);
+    return own.length > 0 ? own : d.bases.flatMap(inTerm);
+  };
+  const definition = named(declaration);
+  if (definition === undefined) return ["(no definition of the declaration document has this identity)"];
+  if (definition.expression === null) return ["(read at its meaning: the document states no equation)"];
+  const parameters = definition.parameters.map((p) => p.name);
+  const found = find(definition);
+  if (found.length === 0) return ["(the declaration's row in the document names no such key)"];
+  return found.flatMap((t) => texts.signatures(t, parameters, []));
+}
+const undefinedTerm: TypeTerm = { k: "atom", name: "undefined", span: [0, 0] };
+const sameKey = (name: PropertyKey, key: string | { symbol: number }): boolean =>
+  typeof name === "string" ? name === key : typeof key !== "string" && key.symbol === name.symbol;
+const canonicalNumeric = (key: string): boolean => String(Number(key)) === key;
+/** A member's key as written after its declaration's name: `.name`, a
+ * string that is no identifier as `["…"]`, a symbol by its declaration. */
+function keyText(document: DeclarationDocument, key: string | { symbol: number }): string {
+  if (typeof key !== "string") return `[${document.symbols[key.symbol]?.name ?? `symbol ${key.symbol}`}]`;
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`;
+}
+
+/** Type terms as TypeScript writes types, for a reader. A signature's
+ * parameters are named by position (`p0`, `p1`, `...rest`), the document
+ * naming none; its receiver is `this:` unless it is the declaration holding
+ * it. The type TScert reads a term at keeps its own spellings: an array's
+ * presence as `Dense<…>` or `Sparse<…>` (a readable array is plain), a
+ * callable's normal-return frame as `Modifies<{…}, R>` where it changes a
+ * location, by the region each change applies to, a fresh result as
+ * `Fresh<R>` (ANNOTATIONS.md), a type guard's or assertion's promise as
+ * TypeScript writes it, and a signature with a precondition marked so in a
+ * comment after its result; a callable's other postconditions, its
+ * throw's frame and its preconditions' facts are not written. */
+class TypeTexts {
+  private readonly document: DeclarationDocument;
+  constructor(document: DeclarationDocument) { this.document = document; }
+  /** The frames `effect` writes as `F` while `frames` is set, in order. */
+  private frames: string[] | null = null;
+  /** A term, one line per signature of a callable with several (a scheme's
+   * signatures, an intersection of callables), each once. Signatures that
+   * differ only in one frame, the same at each of their callables, are one
+   * line, `Modifies<F, …>` where it stands, followed by the frames `F` is. */
+  signatures(t: TypeTerm, parameters: readonly string[], binders: readonly string[]): string[] {
+    const callables: { head: string; binders: readonly string[]; s: Extract<TypeTerm, { k: "function" | "constructor" }> }[] = [];
+    const collect = (u: TypeTerm, bs: readonly string[]): boolean => {
+      if (u.k === "function" || u.k === "constructor") {
+        callables.push({ head: bs.length > 0 ? `<${bs.join(", ")}>` : "", binders: bs, s: u });
+        return true;
+      }
+      if (u.k === "scheme") {
+        const own = [...bs, ...u.binders.map((b) => b.name)];
+        return u.signatures.every((s) => collect(s, own));
+      }
+      return u.k === "intersection" && u.parts.length > 0 && u.parts.every((p) => collect(p, bs));
+    };
+    if (!collect(t, binders)) return [this.text(t, parameters, binders, 0)];
+    const lines: { text: string; frames: string[]; concrete: string }[] = [];
+    for (const { head, binders: bs, s } of callables) {
+      const concrete = head + this.callable(s, parameters, bs);
+      this.frames = [];
+      const shape = head + this.callable(s, parameters, bs);
+      const frames = this.frames;
+      this.frames = null;
+      const [frame] = frames;
+      if (frame !== undefined && frames.every((f) => f === frame)) {
+        const group = lines.find((l) => l.frames.length > 0 && l.text === shape);
+        if (group === undefined) lines.push({ text: shape, frames: [frame], concrete });
+        else if (!group.frames.includes(frame)) group.frames.push(frame);
+      } else if (!lines.some((l) => l.frames.length === 0 && l.text === concrete)) lines.push({ text: concrete, frames: [], concrete });
+    }
+    return lines.map((l) => l.frames.length <= 1 ? l.concrete : `${l.text}, F one of ${l.frames.join(", ")}`);
+  }
+  /** A term at a precedence: 0 anywhere, 1 inside a union or intersection,
+   * 2 as an array's element. */
+  text(t: TypeTerm, ps: readonly string[], bs: readonly string[], at: number): string {
+    const wrap = (text: string, level: number): string => at > level ? `(${text})` : text;
+    switch (t.k) {
+      case "atom":
+        switch (t.name) {
+          case "safeInt": return "SafeInt";
+          case "nonHost": return "NonHost";
+          case "nonHostObject": return "NonHostObject";
+          case "function": return wrap("(...args: never) => unknown", 0);
+          case "class": return wrap("abstract new (...args: never) => unknown", 0);
+          default: return t.name;
+        }
+      case "literal": return t.name === "string" ? JSON.stringify(t.text) : t.text;
+      case "unique": return `typeof ${this.document.symbols[t.symbol]?.name ?? `symbol ${t.symbol}`}`;
+      case "union":
+        if (t.parts.length === 0) return "never";
+        return wrap(t.parts.map((p) => this.text(p, ps, bs, p.k === "union" ? 0 : 1)).join(" | "), 0);
+      case "intersection":
+        if (t.parts.length === 0) return "unknown";
+        return wrap(t.parts.map((p) => this.text(p, ps, bs, p.k === "intersection" ? 0 : 1)).join(" & "), 0);
+      case "array": {
+        const text = `${t.readonly ? "readonly " : ""}${this.text(t.element, ps, bs, 2)}[]`;
+        return presence(t.presence, t.presence === "readable" ? wrap(text, 1) : text);
+      }
+      case "tuple": {
+        const parts = [...t.required.map((p) => this.text(p, ps, bs, 0)), ...t.optional.map((p) => `${this.text(p, ps, bs, 1)}?`),
+          ...(t.rest === null ? [] : [`...${this.text(t.rest, ps, bs, 2)}[]`])];
+        return presence(t.presence, `${t.readonly ? "readonly " : ""}[${parts.join(", ")}]`);
+      }
+      case "object": {
+        const members = [
+          ...t.fields.map((f) => `${f.readonly ? "readonly " : ""}${this.key(f.name)}${f.optional ? "?" : ""}: ${this.text(f.type, ps, bs, 0)}`),
+          ...(t.stringIndex ? [`${t.stringIndex.readonly ? "readonly " : ""}[k: string]: ${this.text(t.stringIndex.value, ps, bs, 0)}`] : []),
+          ...(t.numberIndex ? [`${t.numberIndex.readonly ? "readonly " : ""}[k: number]: ${this.text(t.numberIndex.value, ps, bs, 0)}`] : []),
+          ...(t.symbolIndex ? [`${t.symbolIndex.readonly ? "readonly " : ""}[k: symbol]: ${this.text(t.symbolIndex.value, ps, bs, 0)}`] : []),
+          ...t.calls.map((c) => this.callable(c, ps, bs, ": ")),
+        ];
+        return members.length === 0 ? "{}" : `{ ${members.join("; ")} }`;
+      }
+      case "function":
+      case "constructor": return wrap(this.callable(t, ps, bs), 0);
+      case "pack": return this.text(t.of, ps, bs, at);
+      case "scheme": return wrap(this.signatures(t, ps, []).join(" & "), 0);
+      case "callable": return "Function";
+      case "self": return "this";
+      case "parameter": return ps[t.index] ?? `parameter ${t.index}`;
+      case "binder": return t.name;
+      case "reference": {
+        const args = t.args.map((a) => this.text(a, ps, bs, 0));
+        return args.length > 0 ? `${t.reference.name}<${args.join(", ")}>` : t.reference.name;
+      }
+    }
+  }
+  /** A signature: `(this: R, p0: A, ...rest: E[]) => B`, a construct
+   * signature `new (…) => B`, a call signature of an object type `(…): B`. */
+  callable(t: Extract<TypeTerm, { k: "function" | "constructor" }>, ps: readonly string[], bs: readonly string[],
+      arrow: string = " => "): string {
+    const receiver = t.k === "function" && t.receiver !== null && t.receiver.k !== "self" ? [`this: ${this.text(t.receiver, ps, bs, 0)}`] : [];
+    const params = t.params.map((p, i) => `p${i}: ${this.text(p, ps, bs, 0)}`);
+    const rest = t.rest === null ? [] : [`...rest: ${t.rest.k === "pack" ? this.text(t.rest.of, ps, bs, 0) : `${this.text(t.rest, ps, bs, 2)}[]`}`];
+    let result = this.text(t.result, ps, bs, 0);
+    const promise = t.effect.promise;
+    if (promise !== null) result = promise.guards ? `p${promise.guards.param} is ${result}` : `asserts p${promise.asserts.param} is ${result}`;
+    result = this.effect(t.effect, result);
+    if (t.effect.pre.length > 0 || t.effect.requires !== null) result += " /* with a precondition */";
+    const statics = t.k === "constructor" && t.statics ? ` & { ${t.statics.map((f) => `${f.readonly ? "readonly " : ""}${this.key(f.name)}: ${this.text(f.type, ps, bs, 0)}`).join("; ")} }` : "";
+    return `${t.k === "constructor" ? "new " : ""}(${[...receiver, ...params, ...rest].join(", ")})${arrow}${result}${statics}`;
+  }
+  /** A result with its normal return's frame and freshness: the changes
+   * other than `keep`, by region, as `Modifies<{…}, R>`; a result the call
+   * allocated as `Fresh<R>`. */
+  effect(e: CallEffect, result: string): string {
+    const normal = e.exits.normal;
+    const fresh = normal.ensures.some((f) => typeof f === "object" && "operation" in f &&
+      (("freshSpine" in f.operation.post && f.operation.post.freshSpine.x === 0) ||
+       ("freshObject" in f.operation.post && f.operation.post.freshObject.x === 0)));
+    const shown = fresh ? `Fresh<${result}>` : result;
+    const changes = normal.frame.filter((c) => c.change !== "keep").map((c) => `${JSON.stringify(regionText(c.region))}: "${c.change}"`);
+    const frame = changes.length === 0 ? "{}" : `{ ${changes.join("; ")} }`;
+    if (this.frames !== null) {
+      this.frames.push(frame);
+      return `Modifies<F, ${shown}>`;
+    }
+    return changes.length === 0 ? shown : `Modifies<${frame}, ${shown}>`;
+  }
+  key(name: PropertyKey): string {
+    if (typeof name !== "string") return `[${this.document.symbols[name.symbol]?.name ?? `symbol ${name.symbol}`}]`;
+    return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
+  }
+}
+const presence = (p: "dense" | "readable" | "sparse", text: string): string =>
+  p === "dense" ? `Dense<${text}>` : p === "sparse" ? `Sparse<${text}>` : text;
+/** A call's entry position: `this` the receiver, `p<i>` the `i`-th actual. */
+const positionText = (x: number): string => x === 0 ? "this" : `p${x - 1}`;
+const pathText = (x: number, fields: readonly string[]): string => [positionText(x), ...fields].join(".");
+const regionKey = (k: string | { symbol: number }): string => typeof k === "string" ? k : `[symbol ${k.symbol}]`;
+const selectorText = (s: Selector): string =>
+  [s.value ? "values" : "", s.array ? "arrays" : "", s.view ? "views" : ""].filter((t) => t !== "").join(" and ");
+/** A region of a frame (`Region`), by the call's entry positions. */
+function regionText(r: Region): string {
+  if (r === "all") return "all";
+  if ("field" in r) return `${positionText(r.field.x)}.${regionKey(r.field.key)}`;
+  if ("fields" in r) return `${positionText(r.fields.x)}.*`;
+  if ("cells" in r) return `${positionText(r.cells.x)}[*]`;
+  if ("cls" in r) return selectorText(r.cls);
+  if ("path" in r) return `${pathText(r.path.x, r.path.fields)}.${regionKey(r.path.key)}`;
+  if ("pathFields" in r) return `${pathText(r.pathFields.x, r.pathFields.fields)}.*`;
+  if ("pathCells" in r) return `${pathText(r.pathCells.x, r.pathCells.fields)}[*]`;
+  if ("inCls" in r) return `${regionText(r.inCls.region)} (${selectorText(r.inCls.selector)})`;
+  return `${pathText(r.spine.x, r.spine.fields)} spine`;
+}
+
 /** The contracts the verdict lines of a check recorded (`Outcome.contracts`),
  * each placed by its overlay: a value by its binding (`valueOverlay`); a
  * member of a value's declaration, the type the value is read at, by that
  * value's, as its overlay states the value's members; any other member by
- * its declaration (`typeOverlay`). */
-export function contractsOf(units: readonly UnitContracts[]): Contracts {
+ * its declaration (`typeOverlay`). Each with the type `document`, the
+ * declaration document the check read, states for it (`statedType`). */
+export function contractsOf(units: readonly UnitContracts[], document: DeclarationDocument): Contracts {
   const reads = units.flatMap((u) => u.reads);
   const key = (r: ContractRead): string => JSON.stringify(r);
   const once = reads.filter((r, i) => reads.findIndex((q) => key(q) === key(r)) === i);
@@ -857,36 +1096,38 @@ export function contractsOf(units: readonly UnitContracts[]): Contracts {
     const overlay = valueOverlay(specifier, imported, local, { module, name });
     valueOverlays.set(`${module}\n${name}`, overlay);
     entries.push({ kind: "value", module, name: local, key: null, specifier,
-      origin: specifier === "ambient" ? "ambient" : originOf(module), overlay, trust: contractOverlays[overlay].trust });
+      origin: specifier === "ambient" ? "ambient" : originOf(module), overlay, trust: contractOverlays[overlay].trust,
+      type: statedType(document, r) });
   }
   let ownMembers = 0;
   for (const r of once) {
     if (!("member" in r)) continue;
-    const { module, name, key: member } = r.member;
+    const { declaration: { module, name }, key: member } = r.member;
     const overlay = valueOverlays.get(`${module}\n${name}`) ?? typeOverlay({ module, name });
     if (overlay === null && originOf(module) === "checked file") { ownMembers++; continue; }
-    entries.push({ kind: "member", module, name, key: member, specifier: null, origin: originOf(module), overlay,
-      trust: overlay === null ? null : contractOverlays[overlay].trust });
+    entries.push({ kind: "member", module, name, key: keyText(document, member), specifier: null, origin: originOf(module),
+      overlay, trust: overlay === null ? null : contractOverlays[overlay].trust, type: statedType(document, r) });
   }
   return { entries, ownMembers };
 }
 /** The contracts as text: by trust row, each with its overlay and the
- * values and members read through it, then the members no row states. */
+ * values and members read through it, each with its stated type, then the
+ * members no row states. */
 export function contractsText(contracts: Contracts): string {
-  const shown = (e: ContractEntry): string => e.kind === "member" ? `${e.name}.${e.key ?? ""}` :
+  const shown = (e: ContractEntry): string => e.kind === "member" ? `${e.name}${e.key ?? ""}` :
     e.specifier !== null && e.specifier !== "global" && e.specifier !== intrinsicModule && e.specifier !== "ambient" &&
     e.specifier !== "prototype" ? `${e.name} (${e.specifier})` : e.name;
+  const typed = (indent: string) => (e: ContractEntry): string[] => e.type.length === 1 ? [`${indent}${shown(e)}: ${e.type[0]}`]
+    : [`${indent}${shown(e)}:`, ...e.type.map((t) => `${indent}    ${t}`)];
+  const sorted = (es: readonly ContractEntry[]): ContractEntry[] => [...es].sort((a, b) =>
+    a.kind === b.kind ? shown(a).localeCompare(shown(b)) : a.kind === "value" ? -1 : 1);
   const lines = ["Contracts the verdict relies on, by trust row (docs/DESIGN.md#trust-surface):"];
   for (const overlay of Object.keys(contractOverlays).filter((o): o is ContractOverlay => o in contractOverlays)) {
     const read = contracts.entries.filter((e) => e.overlay === overlay);
     if (read.length === 0) continue;
     const { stated, trust } = contractOverlays[overlay];
     const at = [stated.names.map((n) => `\`${n}\``).join(", "), stated.in ?? ""].filter((t) => t !== "").join(" in ");
-    lines.push(`- ${trust.table}: "${trust.row} …"`, `  stated by ${at}`);
-    for (const kind of ["value", "member"] as const) {
-      const names = read.filter((e) => e.kind === kind).map(shown).sort();
-      if (names.length > 0) lines.push(`  ${kind}s: ${names.join(", ")}`);
-    }
+    lines.push(`- ${trust.table}: "${trust.row} …"`, `  stated by ${at}`, ...sorted(read).flatMap(typed("  ")));
   }
   const unstated = contracts.entries.filter((e) => e.trust === null);
   if (unstated.length > 0) {
@@ -894,7 +1135,7 @@ export function contractsText(contracts: Contracts): string {
     for (const origin of ["standard library", "package", "project", "reader", "checked file"] as const) {
       const read = unstated.filter((e) => e.origin === origin);
       for (const module of [...new Set(read.map((e) => e.module))].sort())
-        lines.push(`- ${origin}, ${module}: ${read.filter((e) => e.module === module).map(shown).sort().join(", ")}`);
+        lines.push(`- ${origin}, ${module}:`, ...sorted(read.filter((e) => e.module === module)).flatMap(typed("  ")));
     }
   }
   lines.push(`Members of the checked file's own types read: ${contracts.ownMembers}`);
@@ -959,7 +1200,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds, false,
         units);
       if (contracts) {
-        const relied = result.contractReads === undefined ? null : contractsOf(result.contractReads);
+        const relied = result.contractReads === undefined ? null :
+          contractsOf(result.contractReads, readFragmentFile(join(result.artifacts, "fragment.json")).declarations);
         process.stdout.write(JSON.stringify({ ...result, contracts: relied }, null, 2) + "\n");
         process.stderr.write(relied === null ? "Contracts: no unit's check recorded its reads\n" : contractsText(relied));
       } else process.stdout.write(JSON.stringify(result, null, 2) + "\n");

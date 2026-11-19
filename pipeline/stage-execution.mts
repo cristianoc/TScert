@@ -923,10 +923,13 @@ export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: rea
   components: readonly ComponentOutcome[] };
 /** A contract a unit's check read (`WorkerWire.memberRead`,
  * `WorkerWire.valueRead`), recorded where the check reads it: a member `key`
- * of the declaration `module`/`name` whose row states it, or a value of the
- * Fragment's declaration document, by its declaration and binding. */
+ * of the declaration whose row states it, by the identity the Fragment's
+ * declaration document gives that declaration and the key as the document
+ * writes one (`PropertyKey`), or a value of that document, by its
+ * declaration and binding. */
 export type ContractRead =
-  | { member: { module: string; name: string; key: string } }
+  | { member: { declaration: { module: string; name: string; span: [number, number] };
+      key: string | { symbol: number } } }
   | { value: { module: string; name: string; specifier: string; imported: string; local: string } };
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
  * with the first extraction refusal among its group's members, or null, and
@@ -977,8 +980,21 @@ export function decodeContractRead(value: unknown, what: string): ContractRead {
   const isMember = typeof value === "object" && value !== null && "member" in value;
   const { member, value: read } = exactFields(value, [isMember ? "member" : "value"], what);
   if (isMember) {
-    const m = exactFields(member, ["module", "name", "key"], what);
-    return { member: { module: text(m, "module"), name: text(m, "name"), key: text(m, "key") } };
+    const m = exactFields(member, ["declaration", "key"], what);
+    const d = exactFields(m["declaration"], ["module", "name", "span"], what);
+    const span = d["span"];
+    if (!Array.isArray(span) || span.length !== 2) throw Error(`${what}: no span`);
+    const [start, end]: unknown[] = span;
+    if (typeof start !== "number" || typeof end !== "number") throw Error(`${what}: no span`);
+    const k = m["key"];
+    let key: string | { symbol: number };
+    if (typeof k === "string") key = k;
+    else {
+      const symbol = exactFields(k, ["symbol"], what)["symbol"];
+      if (typeof symbol !== "number") throw Error(`${what}: no key`);
+      key = { symbol };
+    }
+    return { member: { declaration: { module: text(d, "module"), name: text(d, "name"), span: [start, end] }, key } };
   }
   const r = exactFields(read, ["module", "name", "specifier", "imported", "local"], what);
   return { value: { module: text(r, "module"), name: text(r, "name"), specifier: text(r, "specifier"),
