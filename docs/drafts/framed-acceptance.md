@@ -393,41 +393,48 @@ so the segment changes each $`l\in R_C(s_0)`$ within $`\Psi_c`$; with
 $`\Phi_\star`$ bounding every other location the segment is an action of
 $`\Phi_\star\oplus_C\Psi_c`$, and `Framed` gives `Supported`.
 
-Lean (to be proved, `ReadOnlyTransfer.lean`, in `ClientFrame`):
+Lean (proved, `ReadOnlyTransfer.lean`, in `ClientFrame`), at the claim's
+top frame $`f`$ with code `E, K`, slots `L`, default `d`, continuation `k`,
+handler `x` and tag `comp`:
 
 ```lean
 theorem framed_transfer (hc : fr.ChkSound) (hi : fr.StartInv)
-    (certs : fr.Certs (Ψ ⊔ fr.Θ) G) (hW : ∀ p, ((Ψ ⊔ fr.Θ) p).le (Ψc p) = true)
-    {a e : Conf × Ghost (fr.F.at fr.C)} {E K t L d k x comp} {n : Nat}
-    (ha : fr.Reached a) (hcall : CallState a.1.t (.frame E K t L d k x comp))
-    (hex : Ex fr.KStep (Inside a.1.t) n a e) (hres : Resumes a.1.t e.1.t)
-    (hown : SegWithin fr Ψc a)
-    (hΦ : TolerantFrames.Action Φ (envOf L d) a.1.s e.1.s)
-    (hfr : Framed Φ Ψc S (envOf L d) (lift fr.F fr.C none a.1 a.2)) :
-    Footprints.Supported S (envOf L d) a.1.s.h e.1.s.h
+    (certs : fr.TraceCerts Ψj G) (hΘ : ∀ p, (fr.Θ p).le (Ψj p) = true)
+    (hW : ∀ p, (Ψj p).le (Ψc p) = true) {a e : Conf × Ghost (fr.F.at fr.C)} {n : Nat}
+    (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
+    (hex : Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) n a e)
+    (hres : Resumes fr.F fr.C E K L d k x comp e.1.t) (hown : fr.SegWithin Ψc E K L d k x comp a)
+    (hΦ : TolerantFrames.Action Φ ρ a.1.s e.1.s) (hfr : Framed Φ Ψc S ρ (lift fr.F fr.C none a.1 a.2)) :
+    Footprints.Supported S ρ a.1.s.h e.1.s.h
 ```
 
-`CallState`, `Inside`, `Resumes` (over `path`) and `SegWithin` are new.
-Plan:
+`CallState`: $`f`$ at the top of the term, of $`C`$'s code, its running
+term a call of values. `Inside`: $`f`$ at the top, its running term not
+returned (a value or a throw, `Returned`). `Resumes`: $`f`$ at the top,
+its running term returned. `SegWithin Ψc`: every step of $`C`$'s code at
+the call's depth from a state of the segment is `StepWithin Ψc |h₀|`. The
+proof:
 
-- **The segment as a run.** `RunSeq R Inner d dᵢ q` (proved,
-  `ReadOnlyCert.lean`): own steps at depth $`d`$, inner runs from states
-  with at least $`d_i`$ sets, bounded by `RunSeq.within` for
-  $`d_i\in\{d,d+1\}`$. A member's call is $`d_i=d+1`$ (`MemberRun.Own`
-  is that instance, `MemberRun.within` by `RunSeq.within`), a segment
-  $`d_i=d`$. `seg_run`: the segment is a `RunSeq … d d`, its inner runs the
-  maximal `QRun d` pieces (`call_segment`, `decompose`, proved), each from a
-  reached state that is `Ok d` (`reached_ok`, proved).
-- **The protocols.** Certificates and runs at $`\Psi_j`$ (`Run.bound`'s
-  premise $`\Theta_C\sqsubseteq\Psi_j`$), lifted to $`\Psi_c`$ by
-  `RBound.mono`, `RBoundBelow.mono` and `StepWithin.mono` (proved).
-- **The action**, as in `readOnly_rule` (proved); `supported_of_framed`
-  (proved).
-- **The invocation** is a checked step at depth $`d`$ (`pkg_step_ok`,
-  proved), changing no old location.
-- **The saved environment.** The framed calls are the main graph's, whose
-  frame is the claim's term; every step of the segment is `frameC` of its
-  running term (`frameC_shape`, to be proved).
+- **The segment as a run** (`seg_run`, proved, by the strong induction of
+  `decompose` at the caller's depth). An execution from depth $`d>0`$ to
+  $`d`$ whose states keep at least $`d`$ calls active is a
+  `RunSeq … d d`: a step of $`C`$'s code at $`d`$ is a checked step at
+  $`d`$ (not an exit, the next state being at $`d`$), a step of outside
+  code at $`d`$ an inner run of one outside step, and an entry with the
+  execution up to the first state at $`d`$ again an inner run of one
+  member call (`callRun_trace`). Its bound (`seg_bound`) is
+  `RunSeq.within` at $`d_i=d`$, the inner runs by `Run.bound` at
+  $`\Psi_j`$ lifted to $`\Psi_c`$.
+- **The depth.** A call state and a resumption are at depth 1
+  (`CallState.depth`, `Resumes.depth`, `depthC_frame_val`), a state inside
+  at least 1 (`Inside.depth`, `depthC_frame`).
+- **The action**, as in `readOnly_rule` (`Leads.of_bound`), then
+  `supported_of_framed` (`transfer_at`).
+- **The saved environment.** A step of $`f`$ whose term has not returned
+  is a step of its term (`frameC_shape`, proved), so every state of the
+  segment is $`f`$ around a term the call's term reaches
+  (`FrameCore.inside_run`, proved): $`
+ho_f`$ is the same at every state.
 
 ### An exceptional return
 
@@ -516,10 +523,16 @@ structure Cert (Adm) (Ψ : Protocol (F.at C)) (G : (St (F.at C) → Prop) → Pr
 ```
 
 Every field reads the actual entering edge (`keep_rejects`: a body step
-`c.i++` of an existing cursor is outside `keep`). `Member.Call` becomes a
-trace of the call with its inner segments (`RunSeq … (d+1) (d+1)`), and
-`decompose` (proved) is restated with it, prepending the entering step.
-Certificates are at $`\Psi_j`$. `cert_of_charges` (to be proved):
+`c.i++` of an existing cursor is outside `keep`). Lean (proved,
+`ReadOnlyTraceCert.lean`): the structure is `TraceCert`, with
+`Entering` and `OwnAfter` as above; its member is `traceMember`, whose call
+is a `MemberRun.Own` run whose own steps are within $`\Psi`$ below the
+entry's heap and keep each invariant of $`G`$ (`ownQ`), bounded by
+`MemberRun.within` and keeping invariants by `RunSeq.keeps`; and
+`decompose_trace` is `decompose` over trace certificates, the entering
+step prepended, each own step's property read from the certificate of the
+code its call entered at the call's entry (`exec_bound_trace`,
+`callRun_trace`). Certificates are at $`\Psi_j`$. `cert_of_charges` (to be proved):
 `enterWithin` (the entering step and its incoming crossing change no heap
 location) and `own` from `within_charges`; `enterKeeps`, `tolerant`
 vacuous at $`G=\emptyset`$.
@@ -1416,7 +1429,12 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `stepSite_tabRel`, `vals_tabRel`, `vals_ctx`, `actualXs_congr`
 (`ReadOnlyRealize.lean`), `bodyTargetsB_sound`, `realized_agree`,
 `prologue_steps`, `prologue_sim`, `chk_site_sim`, `chk_actual_sim`
-(`FramedRealize.lean`); `RunSeq.within` (`ReadOnlyCert.lean`).
+(`FramedRealize.lean`); `RunSeq.within` (`ReadOnlyCert.lean`); `RunSeq.mono`,
+`RunSeq.keeps`, `traceMember`, `decompose_trace`, `exec_bound_trace`,
+`callRun_trace` (`ReadOnlyTraceCert.lean`); `seg_run`, `seg_bound`,
+`transfer_at`, `Leads.of_bound`, `frameC_shape`, `FrameCore.inside_run`,
+`CallState.depth`, `Inside.depth`, `Resumes.depth`, `framed_transfer`
+(`ReadOnlyTransfer.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1426,9 +1444,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `chk_sim`'s entering crossings, `publicCall_safe`, `entryHolds_realized`,
-`framed_transfer`, `seg_run`,
-`frameC_shape`, the trace-indexed
-`Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
+`SegWithin` at $`W_c`$ (from `within_depth`), `cert_of_charges`,
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),
