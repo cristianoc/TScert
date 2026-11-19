@@ -31,7 +31,7 @@ abbrev markedPackage (comp : ComponentTag) (O : List (Option Nat)) : TolerantFra
 /-- A finite flow read at the marks its `O` gives. -/
 def remark {comp : ComponentTag} (F : FFlow (probePackage comp)) : FFlow (markedPackage comp F.O) :=
   let node (x : FNode (probePackage comp)) : FNode (markedPackage comp F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn⟩
-  ⟨F.O, F.heap, F.codes.map fun (m, c) => (m, ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret⟩)⟩
+  ⟨F.O, F.heap, F.codes.map fun (m, c) => (m, ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok⟩)⟩
 
 theorem remark_marksFrom {comp : ComponentTag} (F : FFlow (probePackage comp)) : (remark F).MarksFrom := fun _ => rfl
 
@@ -238,19 +238,20 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   let mods := closable (mods.filter fun g => P.ofC g.comp && reached.contains g.name)
   let found := (m.1 ++ mods.flatMap (·.code.1)).flatMap (probeClosures P.ofC)
   let closures := found.foldl (fun acc c => if acc.any (·.1 == c.1) then acc else acc ++ [c]) []
-  let alloc : Nat → Alloc P := fun i => ⟨some (2 * i), some (2 * i + 1)⟩
+  let alloc : Nat → Alloc P := fun i => ⟨some (3 * i), some (3 * i + 1)⟩
+  let tok (i : Nat) : Option P.Site := some (3 * i + 2)
   let sibSig (x : String) : Option FnSig := (mods.find? (·.name == x)).map ProbeModule.sig
   let base := inputs - siblings.length
   let unitSeeds : List (Option FnSig) :=
     (List.range inputs).map fun i => if base ≤ i then (siblings[i - base]?).bind sibSig else none
-  let unit : SolveCode P := ⟨m, 0, false, 0, start, unitSeeds, alloc 0, false⟩
+  let unit : SolveCode P := ⟨m, 0, false, 0, start, unitSeeds, alloc 0, false, tok 0⟩
   let modCodes : List (SolveCode P) := mods.zipIdx.map fun (g, i) =>
     let c0 := capSlot g.ar false 0
     let seeds := (List.range (c0 + g.siblings.length)).map fun j =>
       if c0 ≤ j then (g.siblings[j - c0]?).bind sibSig else none
-    ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc (i + 1), true⟩
+    ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc (i + 1), true, tok (i + 1)⟩
   let cs : List (SolveCode P) := unit :: modCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
-    ⟨c, ar, rest, n, s, [], alloc (i + 1 + mods.length), true⟩
+    ⟨c, ar, rest, n, s, [], alloc (i + 1 + mods.length), true, tok (i + 1 + mods.length)⟩
   let t0 ← IO.monoNanosNow
   let s ← IO.lazyPure fun _ => solveStart cs
   let _ ← IO.lazyPure fun _ => (s.fns.map fun ns => (ns.map fun x => x.size).sum).sum + s.succ.size
@@ -277,7 +278,7 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
       | some c => (probeFrames F.O F' Ψ c mc msm sp).map ("\n" ++ ·)
       | none => []
     | none => []
-  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; O {repr F.O} (code i's object site 2i, array site 2i+1); refused nodes {bad}{frames}"
+  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2); refused nodes {bad}{frames}"
 
 /-- The probe of each member of a group, the module functions' codes
 `mods`. -/

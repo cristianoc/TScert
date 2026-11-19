@@ -2386,13 +2386,14 @@ sets of sites:
   restricts only what crosses out to outside code) has its receiver and actuals, each a value or a
   variable, meet the slots of the callee's entry, the closure its own
   slot, and a rest spine allocated at a site of the spine's slot holding
-  the rest's actuals; its value meets the callee's return set. A closure
-  of $`C`$'s code is created only where its code is open at its entry
-  (`OpenAt`): the rest's spine, the receiver, the parameters and the
+  the rest's actuals; its value meets the callee's return set. Each code
+  has a token, a site standing for its closures (`CodeFlow.tok`): a
+  closure of $`C`$'s code meets a set holding its code's token, and so
+  does every value holding it in the code of outside code or of a bound
+  function (`FnsIn`). A code whose token lies in $`O`$ is open at its
+  entry (`OpenAt`): the rest's spine, the receiver, the parameters and the
   closure's own slot there hold $`O`$, and the code's return set lies
-  within $`O`$. A closure reaches no location but its fields, so the flow
-  cannot tell a closure outside code may call from another, and every
-  closure's code is open at its entry. Every thrown value meets $`O`$; a read's result meets the
+  within $`O`$. Every thrown value meets $`O`$; a read's result meets the
   contents of a set closed under the reads' prototypes; a write's value
   is one the written storage may hold (`Stores`); an allocation's initial
   values what its site may hold. A capture, a bound part and a slot of a
@@ -2416,9 +2417,10 @@ sets of sites:
   the code's return set (`CodeFlow.ret`); $`O`$ holds outside storage, is
   closed in $`H`$, and its storage may hold all of $`O`$. A slot holds
   $`O`$ where outside code supplies its values: the entry slots `OpenAt`
-  names, a handler's thrown value, and every slot of a member's entry
-  outside storage (`EntryShape`); every other slot holds what its edges
-  carry into it.
+  names, of each code whose token lies in $`O`$, a handler's thrown value,
+  and every slot of a member's entry outside storage (`EntryShape`, with
+  the tokens of the closures its values hold); every other slot holds
+  what its edges carry into it.
 - **A heap meets the flow** (`HeapInv`): each location holds a value
   meeting its site's contents, its code's values the bindings; so it meets
   the heap of sites (`HeapInv.sites`). Writes and allocations that meet
@@ -2559,8 +2561,9 @@ code's first entry.
   read the contents of the closure of the sites it may read under the
   contents (`closeQ`: grown as often as the heap of sites lists contents,
   then checked closed); an allocation its site, each initial value checked
-  against its site's storage (`storesB`), a closure of $`C`$'s code only
-  where its code is open at its entry (`openB`); a call of a slot naming
+  against its site's storage (`storesB`), a closure of $`C`$'s code its
+  site and its code's token, open at its entry where the token lies in
+  $`O`$ (`openB`); a call of a slot naming
   a signature whose entry's slots hold the receiver's and actuals' sets
   the callee's return set, and a call whose callee, receiver and actuals
   lie within `O` the set `O`. Where it is
@@ -2582,8 +2585,8 @@ code's first entry.
   (`FFlow.check_sound`). A member's entry holding outside storage at every
   slot, its returns within $`O`$, is decided by `FFlow.entryB`, and the
   proposal meeting the shapes of $`C`$'s closures, open at their entries
-  and holding outside storage at their captures' slots, by
-  `FFlow.shapesB`.
+  where their tokens lie in $`O`$, holding outside storage and the
+  captured closures' tokens at their captures' slots, by `FFlow.shapesB`.
 - **The marks a flow gives** (`FFlow.MarksFrom`): a site of $`O`$ is
   released and every other site local. At these marks $`O`$ is lent
   (`Lendable`) and storage of a site that is not local, a site of $`O`$
@@ -2604,16 +2607,29 @@ one for its value; an edge copies each variable of its source into the
 one of its target that reads it, and a node's value is its expression's
 least set with its stores, what it gives to outside code and the slots of
 a callee's entry added, a known call's value its callee's return set
-(`gen`). The slots outside code fills hold $`O`$: each closure's entry
-slots up to its own slot, and a handler's thrown value; every slot of the
-member's entry holds outside storage. A worklist runs the copies and the
+(`gen`), a closure's set its site and its code's token. The slots outside
+code fills hold $`O`$: the entry slots up to its own slot of each code
+whose token lies in $`O`$, and a handler's thrown value; every slot of the
+member's entry holds outside storage, and a slot naming a module
+function's signature its code's token. A worklist runs the copies and the
 nodes, then closes $`O`$, grows those slots by it, and runs again the
 nodes reading $`O`$, a return set or the heap of sites where either grew,
 until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
-each member checked, whether the proposal meets the checks and the time of
-the proposal and of the checks (`FilePlans.flowProbe`); no verdict reads
-it. With `TSCERT_FLOW_PROBE=only` the members' checks are not run and no
-proposal of the groups below a member is read.
+each member checked, whether the proposal meets the checks, the member's
+entry (`FFlow.entryB`), and, at the marks the flow gives, `FFlow.marksB`
+and `FFlow.bindingsB`, with the time of the proposal and of the checks
+(`FilePlans.flowProbe`); no verdict reads it. With
+`TSCERT_FLOW_PROBE=only` the members' checks are not run and no proposal
+of the groups below a member is read. `TSCERT_FRAME_PROBE` names a file
+of calls of outside code (a member or module function, the source offset
+of the call, the call's effect) and linear facts over source variables;
+at each such call node the probe prints `frameCheckAt` of each fact's
+support (`Footprints.linearSupport`) at the separation of classes
+(`classQuery`, `classQuery_sound`), the keys `noKeys`, no region read as
+protected and the probe's protocol (`probeProtocol`: a part of a local
+site kept, any other part changed as the writes of the flow's codes
+reaching its site may change it), with each part that fails and the
+check it fails.
 
 **The module's closures in the probe.** A member reaches the module
 functions its body names at its request's last inputs
@@ -2630,14 +2646,35 @@ Proof scope: each decision is proved sound for the property it decides;
 none is proved complete. Nothing is proved of the proposal: the checks
 read it as given.
 
-Measured 2026-11-19 by the probe (`TSCERT_FLOW_PROBE=only`, the verifier
-run on the run directory's fragment): the walker of
-`bounds-pattern-unreachable-field-refused.ts` meets the checks with the
-cursor's site outside $`O`$. In pretext's `src/line-break.ts` every member
-meets the checks; `walkPreparedLinesRaw`, with the module's closures of
-the nine functions it reaches, has its cursor's site outside $`O`$ (its
-proposal 768 ms, its checks 77 ms over 3336 nodes); the largest,
-`countPreparedLines`, 1187 ms and 97 ms over 3627 nodes.
+Measured 2026-11-19 by the probe (`TSCERT_FLOW_PROBE=only`, with
+`TSCERT_FRAME_PROBE`, the verifier run on the run directory's fragment),
+at the visitor call, every fact read at the marks the flow gives:
+
+- `bounds-pattern-unreachable-field-refused.ts`: the cursor's slot holds
+  the walker's object site alone, local; `c.i + 1 <= xs.length` and
+  `0 <= c.i` pass the frame's check (the field local, `xs`'s spine
+  outside storage at `grow`, which the visitor's spines bound keeps).
+- `bounds-pattern-unreachable-handle-refused.ts`: both length facts fail.
+  The walker's object site, the site of `h` and of the two arrays it
+  holds, lies in $`O`$: `last` passes `h.starts` to `%ElementAt%`, a call
+  read at $`O`$, so `h`'s fields are released and the visitor's
+  `values: "any"` applies to them.
+- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 10 codes, 3336
+  nodes, proposal 513 ms, checks 271 ms): at `onLine`, `0 <=
+  cursor.segmentIndex`, `cursor.segmentIndex <= segmentCount`, `0 <=
+  cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
+  the two facts relating `segmentCount` to `prepared.widths.length` fail,
+  the field `widths` of outside storage changed by the walkers' writes
+  (`stats`) under `noKeys` and by the visitor's effect, no region read as
+  protected.
+- `walkPreparedComplexLines` reached from the raw walker, at its `onLine`:
+  the cursor's slot holds the raw walker's object site alone, its token
+  outside $`O`$; the two cursor facts and the two length facts pass.
+  Probed as a member, entered from outside, its cursor is outside storage
+  and both cursor facts fail.
+
+Every member of `src/line-break.ts` meets the checks, its entry and the
+bindings check.
 
 ### The frame at a call
 

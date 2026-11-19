@@ -44,12 +44,13 @@ theorem CapsOk.congr {g g' : Ghost P} {n : Nat} {w : Val} (he : ∀ l, l < n →
     (h : CapsOk Fl g n w) : CapsOk Fl g' n w := by
   intro fs ar E K s caps k rest comp oid hw hc
   obtain ⟨π, hπ, hcaps, hfn⟩ := h fs ar E K s caps k rest comp oid hw hc
-  exact ⟨π, hπ, fun i u hu => ⟨(hcaps i u hu).1.congr_below he (hcaps i u hu).2, (hcaps i u hu).2⟩, hfn⟩
+  exact ⟨π, hπ, fun i u hu => ⟨⟨(hcaps i u hu).1.1.congr_below he (hcaps i u hu).2, (hcaps i u hu).1.2⟩,
+    (hcaps i u hu).2⟩, hfn⟩
 
 /-- **A value reads the ghost's sites below its bound** (proved). -/
 theorem VJ.congr {g g' : Ghost P} {n : Nat} {S : Sites P} {v : Val} (he : ∀ l, l < n → g'.site l = g.site l)
     (h : VJ Fl g n S v) : VJ Fl g' n S v :=
-  ⟨h.val, h.closed, h.below, h.sites.congr_below he h.below,
+  ⟨h.val, h.closed, h.below, h.sites.congr_below he h.below, h.fns,
     fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.congr he, (h.inner w hw).2.2⟩⟩
 
 /-- **A heap reads the ghost's sites below its length** (proved). -/
@@ -341,7 +342,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact vor_roots (hp _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))) ho r hr
     · exact vor_roots (hp x (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx))) ho r hr
     · exact ih x hx r hr
-  | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ ih =>
+  | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ _ ih =>
     intro r hr
     simp only [vals, hc, Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false, List.nil_append, valsArgs_eq,
       List.mem_flatMap] at hr

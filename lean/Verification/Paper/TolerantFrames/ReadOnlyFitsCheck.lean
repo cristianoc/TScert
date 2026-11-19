@@ -72,7 +72,8 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
       P.ofC comp = true → Fl.code (E, K) = some π →
       (∀ i u, caps[i]? = some u → OVOr τ d Γ (π.env s (capSlot ar rest i)) u) →
-      SelfFn π ar E K s rest caps.length → OpenAt Fl π ar s rest caps.length → (∀ e ∈ E, Lowered Fl e) →
+      SelfFn π ar E K s rest caps.length → π.tok ∈ S → (π.tok ∈ Fl.O → OpenAt Fl π ar s rest caps.length) →
+      (∀ e ∈ E, Lowered Fl e) →
       (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | makeGraphOut {d Γ a o S ar E K s caps k rest comp ns inits} (Ss : Tm → Sites P) :
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
@@ -171,11 +172,11 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     · exact (hp _ (by simp)).inst hρ
     · exact (hp _ (by simp)).inst hρ
     · exact (hp y (by simp [hy])).inst hρ
-  | @makeGraphC d _ _ _ _ ar E K s caps k rest comp _ _ π Ss hst _ hs hc hcode hcaps hself hop hE ho ih =>
+  | @makeGraphC d _ _ _ _ ar E K s caps k rest comp _ _ π Ss hst _ hs hc hcode hcaps hself htok hop hE ho ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
     have hself' : SelfFn π ar E K s rest (caps.map (instantiate d ρ)).length := by rwa [List.length_map]
-    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) hself'.capFn (by rwa [List.length_map]) hE ho
+    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) hself'.capFn htok (by rwa [List.length_map]) hE ho
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
     obtain ⟨x, hx, rfl⟩ := hu
     exact (hcaps i x hx).inst hρ
