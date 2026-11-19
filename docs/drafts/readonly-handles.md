@@ -1147,13 +1147,43 @@ it gives is conjectured.
     the helpers' effects on those fresh records, with no callback before the
     return.
 
-  The public `LayoutCursor` has two numeric fields. A positive grapheme
-  index inside a segment requires fit advances for **that segment of
-  that handle**. In `normalizePreparedLineStart`, a segment index below
-  the segment count and a positive grapheme index suffice to return true.
-  The following client exercises this entry through the walker's package
-  wrapper. With text measured at eight pixels per character, the first
-  range ends at segment 0, grapheme 1.
+  **The public cursor.** A cursor is *valid for a handle* $`h`$ of
+  $`n`$ segments, with fit advances $`a_s`$ at segment $`s`$, when its
+  indices $`s`$ and $`g`$ are safe integers with $`0\le s\le n`$ and
+  $`0\le g`$, and $`g>0`$ implies $`s<n`$, $`a_s`$ an array and
+  $`g<|a_s|`$; a rich-inline cursor adds its item index, a safe integer
+  at least 0, read through the paragraph's item starts. The text's start
+  and every cursor a range, line or fragment of $`h`$ holds are valid for
+  $`h`$. Each exported function taking a cursor states it as the API's
+  type, a contract on callers (kind 5 of pretext's
+  [changes](../../.claude/skills/bounds-chain/SKILL.md)), in plain words
+  and in a `@requires` clause: `layoutNextLine`, `layoutNextLineRange`
+  and `layoutNextRichInlineLineRange` of their `start`, read past
+  `start === undefined`
+  ([preconditions](../ARITHMETIC.md#preconditions)), and
+  `materializeLineRange` and `materializeRichInlineLineRange` of their
+  range's cursors. The row on exported preconditions of the
+  [trust surface](../DESIGN.md#trust-surface) covers it, and the client
+  obligation already reads the API's types, so it states no new trust.
+
+  The clause states the segment part: the indices safe integers at least
+  0 and the segment index at most the handle's segment count, through the
+  handle's representation. The grapheme part, $`g>0\Rightarrow g<|a_s|`$,
+  names the element at the index $`s`$ a field of the cursor holds and the
+  length of an element that may be `null`; the clause language has no
+  such term (a quantified body naming `prepared.breakableFitAdvances[i].length`
+  is refused: the element has no length contract), so it is stated in
+  words alone.
+
+  Two well-typed clients break the contract, each run under Node with text
+  measured at eight pixels per character. One violates the clause:
+  `layoutNextLineRange(second, 8, { segmentIndex: -1, graphemeIndex: 1 })`,
+  with `second = prepare('a\nb', …, { whiteSpace: 'pre-wrap' })`, reaches
+  the complex walker's read of `segmentFlags[lineStartSegmentIndex]` at
+  index −1 of length 3, `undefined`, and its fit advances' length raises a
+  `TypeError`. The other meets the clause and violates the grapheme part
+  alone, passing a cursor of another handle back from a visitor that
+  writes nothing:
 
   ```ts
   const first = prepare('abcdefghi', '16px Arial')
@@ -1163,17 +1193,22 @@ it gives is conjectured.
   })
   ```
 
-  The client performs no writes. Under Node, the re-entrant call reaches
-  `walkPreparedComplexLines` with a null fit-advances array for segment 0
-  of `second`; reading its length raises a `TypeError`. The public entry
-  needs to establish cursor validity relative to the supplied handle
-  before the stepper consumes it. The read-only frame can preserve an
-  established fact across the callback. The same entry obligation applies
-  when the client calls the stream directly. For example, with `second`
-  and `{ segmentIndex: -1, graphemeIndex: 1 }`, Node reaches the complex
-  walker's read of `segmentFlags[lineStartSegmentIndex]` with index −1
-  and length 3. Its value is `undefined`, falsifying the numeric claim
-  at that read before any visitor call.
+  The first range ends at segment 0, grapheme 1, and the re-entrant call
+  reaches `walkPreparedComplexLines` with a null fit-advances array for
+  segment 0 of `second`; reading its length raises a `TypeError`. A client
+  passing each range's `end` back to the same handle, directly and from
+  the visitor, lays out nine lines (observed). So the complex walker's
+  claims at a cursor inside a segment need the grapheme part at its
+  entry, which no clause states.
+
+  Inside the package, the internal functions state what they read of a
+  cursor (kind 2): `normalizePreparedLineStart` requires the indices safe
+  integers at least 0 and ensures, where it returns true, the segment
+  index below the segment count; `stepPreparedLineGeometryFromStart`,
+  `stepPreparedSimpleLineGeometry` and `walkPreparedComplexLines` require
+  it below the count; `stepNextLine` requires the indices safe integers at
+  least 0; and `walkPreparedLinesRaw`'s loop states its cursor's bounds
+  and `prepared.widths.length === segmentCount` as its invariant.
 
 In all, checked as above: the README's section and six annotation
 comments, three with the obligation; brand-free records, casts through `unknown` and four checked
