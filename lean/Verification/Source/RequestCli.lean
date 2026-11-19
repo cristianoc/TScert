@@ -582,16 +582,45 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
   let memo ← p.proposals.get
   return below.flatMap fun h => (memo.get? h).getD []
 
+/-- **The functions a file exports**, for the flow probe: those of the
+fragment whose declaration the source text writes after `export`. -/
+def probeExported (ast : Json) (path : String) : IO (List String) := do
+  let text ← try IO.FS.readFile path catch _ => pure ""
+  -- the text before each UTF-16 offset
+  let before (n : Nat) : String := Id.run do
+    let mut acc := ""
+    let mut u := 0
+    for c in text.toList do
+      if u ≥ n then break
+      acc := acc.push c
+      u := u + (if c.val ≥ 0x10000 then 2 else 1)
+    return acc
+  let fns := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
+  let names := fns.toList.filterMap fun f => do
+    let name ← (f.getObjValAs? String "name").toOption
+    let pos ← ((f.getObjVal? "namePos").toOption.bind (·.getArr?.toOption)).bind (·[0]?)
+    let n ← (pos.getNat?).toOption
+    -- the words before the name, last first
+    let words : List String := ((before n).toList.foldl (fun (ws : List (List Char)) c =>
+        if c.isWhitespace then [] :: ws else match ws with
+          | w :: rest => (c :: w) :: rest
+          | [] => [[c]]) []).filterMap fun w => if w.isEmpty then none else some (String.ofList w.reverse)
+    if words.take 2 == ["function", "export"] || words.take 3 == ["function", "async", "export"] then some name
+    else none
+  return names
+
 /-- The module functions' codes the probe of a group reads
-(`TSCERT_FLOW_PROBE`): its members' and those of every group planned so
-far, the groups below it among them. A diagnostic. -/
-def PreparedFile.probeModules (p : PreparedFile) (f : SourceClaimJson.FilePlans) (group : List Nat) :
-    IO (List SourceClaimJson.ProbeModule) := do
+(`TSCERT_FLOW_PROBE`): its members', those of the functions the file
+exports (`exported`) and of every function they name, and those of every
+group planned so far, the groups below it among them. A diagnostic. -/
+def PreparedFile.probeModules (p : PreparedFile) (f : SourceClaimJson.FilePlans) (group : List Nat)
+    (exported : List String) : IO (List SourceClaimJson.ProbeModule) := do
   let fr := p.fr
   f.keepModuleCodes group
-  let mut work := f.siblingsOf group
+  let mut work := f.siblingsOf group ++ exported
   let mut tried : List String := []
-  for _ in List.range (fr.units.length + 1) do
+  -- (each name tried once; each tried name adds at most every unit's name)
+  for _ in List.range ((fr.units.length + 1) * (fr.units.length + 1) + exported.length) do
     match work with
     | [] => break
     | x :: rest =>
@@ -653,8 +682,9 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let probe ← IO.getEnv "TSCERT_FLOW_PROBE"
   if probe.isSome then
     if let .ok f := planned then
-      let mods ← p.probeModules f (fr.group i)
-      for line in ← f.flowProbe (fr.group i) mods do IO.eprintln line
+      let exported ← probeExported p.ast p.fileKey
+      let mods ← p.probeModules f (fr.group i) exported
+      for line in ← f.flowProbe (fr.group i) mods exported.contains do IO.eprintln line
   let planned := if probe == some "only" then .error "flow probe only" else planned
   let (lines, verdict, extraction, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, false)
