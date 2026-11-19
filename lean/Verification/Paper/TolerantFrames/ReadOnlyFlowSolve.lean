@@ -37,7 +37,8 @@ holds of it.
   outside code; a closure's captures are grown at every copy of its code
   (a closure is made once and entered at every context). The proposed
   flow merges the contexts of a code whose entry sets are equal, a call
-  site's context the class of its callees' classes (`mergeFlow`).
+  site's context the class of its callees' classes (`mergeFlow`); the
+  proposal is that merged flow (`SolveStart.propose`, `solveFlow`).
 
 Codes and nodes are arrays, read by index. -/
 namespace Verification.TolerantFrames.ReadOnly
@@ -825,10 +826,15 @@ def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
       (k, code ((look k₀ cs).getD c)))
   return { F with codes := codes }
 
-/-- **The proposed flow** of `C`'s codes: the signatures, then the sites
-until nothing changes or the fuel ends. -/
+/-- **The proposal at a state of the rounds**: its flow, the contexts of
+equal entry sets merged (`mergeFlow`). -/
+def SolveStart.propose (s : SolveStart P) (st : SolveState P) : FFlow P := s.mergeFlow (s.flow st)
+
+/-- **The proposed flow** of `C`'s codes: one context per known call site,
+the signatures, then the sites until nothing changes or the fuel ends,
+then the contexts of equal entry sets merged (`SolveStart.propose`). -/
 def solveFlow (cs : List (SolveCode P)) (fuel : Nat) : FFlow P :=
   let s := solveStart cs
-  s.flow (solveLoop s fuel s.st).1
+  s.propose (solveLoop s fuel s.st).1
 
 end Verification.TolerantFrames.ReadOnly

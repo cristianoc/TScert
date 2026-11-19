@@ -2657,8 +2657,9 @@ class, standing for its first context (the entry context where it is in
 the class), and a call site's context is the class of the call sites
 whose callees' classes are its own, the entry context where each callee's
 class is its entry context's. In plain terms, ctx(l) is the class of the
-call site l under equal entry sets of its callees. The merging is a
-policy of the solver: the checks decide the merged flow as any other. A returned
+call site l under equal entry sets of its callees. The proposal is the
+merged flow (`SolveStart.propose`): one context per known call site, then
+the merging, a policy of the solver; the checks decide it as any other. A returned
 value reaches $`O`$ where the member returns it or where its code's token
 lies in $`O`$; any other code's return set reaches only its callers. A
 worklist runs the copies and the nodes, then closes $`O`$, grows those
@@ -2667,8 +2668,8 @@ runs again the nodes reading $`O`$, a return set or the heap of sites
 where either grew, until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
 each member checked, whether the proposal meets the checks, the member's
 entry (`FFlow.entryB`), and, at the marks the flow gives, `FFlow.marksB`
-and `FFlow.bindingsB`, with the time of the proposal and of the checks
-(`FilePlans.flowProbe`); no verdict reads it. With
+and `FFlow.bindingsB`, with the time of the rounds, of the merging and of
+the checks (`FilePlans.flowProbe`); no verdict reads it. With
 `TSCERT_FLOW_PROBE=only` the members' checks are not run and no proposal
 of the groups below a member is read. `TSCERT_FRAME_PROBE` names a file
 of calls of outside code (a member or module function, the source offset

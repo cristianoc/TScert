@@ -7,7 +7,8 @@ import Verification.Paper.TolerantFrames.ReadOnlyCallFrame
 /-! # The flow of a unit's codes, probed
 
 A diagnostic (`TSCERT_FLOW_PROBE`): for each member of a group, the flow the
-read-only frame's checks read (`ReadOnly.solveFlow`) of its program and the
+read-only frame's checks read (`ReadOnly.SolveStart.propose`, the flow
+`ReadOnly.solveFlow` proposes) of its program and the
 closures of its component's code it creates, and whether its checks hold
 (`ReadOnly.FFlow.check`, the nodes they refuse), the member's entry
 (`FFlow.entryB`), and at the marks the flow gives (`FFlow.MarksFrom`) the
@@ -290,16 +291,13 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   let _ ← IO.lazyPure fun _ => (s.fns.map fun ns => (ns.map fun x => x.size).sum).sum + s.succ.size
   let ts ← IO.monoNanosNow
   let (st, rounds, batches) ← IO.lazyPure fun _ => solveLoop s 10000000 s.st
-  let F := s.flow st
-  let _ ← IO.lazyPure fun _ => F.O.length + F.heap.length + (F.codes.map fun c => (c.2.map (·.2.nodes.size)).sum).sum
+  let _ ← IO.lazyPure fun _ => st.O.length + st.heap.length + st.vars.size
   let t1 ← IO.monoNanosNow
-  let ok ← IO.lazyPure fun _ => F.check
+  let F ← IO.lazyPure fun _ => s.propose st
+  let _ ← IO.lazyPure fun _ => F.O.length + F.heap.length + (F.codes.map fun c => (c.2.map (·.2.nodes.size)).sum).sum
   let t2 ← IO.monoNanosNow
-  let Fm ← IO.lazyPure fun _ => s.mergeFlow F
-  let _ ← IO.lazyPure fun _ => (Fm.codes.map fun c => (c.2.map (·.2.nodes.size)).sum).sum
+  let ok ← IO.lazyPure fun _ => F.check
   let t3 ← IO.monoNanosNow
-  let okm ← IO.lazyPure fun _ => Fm.check
-  let t4 ← IO.monoNanosNow
   let nodes := (cs.map fun c => c.code.1.length).sum
   let names := "unit" :: mods.map (·.name) ++ hosts.map (·.1) ++ closures.map fun _ => "closure"
   let named : List (String × Code × RequestJson.SourceMap) := (name, m, sm) :: mods.map fun g => (g.name, g.code, g.sm)
@@ -333,7 +331,7 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
         | none => []
       | none => []
     s!"{tag}: {contexts} contexts, {ctxNodes} nodes over the contexts; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; refused nodes {bad}; captured {repr held}{frames}"
-  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; siblings {mods.map fun g => (g.name, g.siblings)}; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; merge {(t3 - t2) / 1000000} ms, merged check {okm} {(t4 - t3) / 1000000} ms; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2)\n{report "per call site" F}\n{report "merged" Fm}"
+  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; siblings {mods.map fun g => (g.name, g.siblings)}; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); merge {(t2 - t1) / 1000000} ms; check {ok} {(t3 - t2) / 1000000} ms; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2)\n{report "proposed" F}"
 
 /-- The probe of each member of a group, the module functions' codes
 `mods`. -/
