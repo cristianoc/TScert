@@ -433,8 +433,21 @@ proof:
 - **The saved environment.** A step of $`f`$ whose term has not returned
   is a step of its term (`frameC_shape`, proved), so every state of the
   segment is $`f`$ around a term the call's term reaches
-  (`FrameCore.inside_run`, proved): $`
-ho_f`$ is the same at every state.
+  (`FrameCore.inside_run`, proved): $`\rho_f`$ is the same at every state.
+- **The own steps** (`segWithin_of_run`, proved): `SegWithin` at the
+  protocol from every code's charges and a set $`T`$ passing the closure
+  check ($`W_c`$ at $`T=L(c)`$), by `within_run` at each own step. The
+  call's run in its context is the frame's term's (`FrameCore.inside_run`)
+  over the segment's heaps (`inside_prefix`), heaps of values by the flow
+  (`fitsAt_reached`); the residual invariant, the layouts and the heap's
+  flow at the call state by `wok_reached`, `lay_reached` and
+  `fitsAt_reached`; the old locations' sites kept (`ex_sites`); and at one
+  call of $`C`$ a step of $`C`$'s code has its innermost frame of $`C`$'s
+  code (`activeFrame_runsC`: every frame on the path inside $`f`$ is of
+  $`C`$'s code where the path has one block of $`C`$, `blocks_one_all`, and
+  the innermost frame's tag is on the path, `innermost_tag`). Its premise
+  at the call: the callee's, receiver's and arguments' sets are within
+  $`T`$, each meeting layout provenance (`hroots`).
 
 ### An exceptional return
 
@@ -1433,8 +1446,9 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `RunSeq.keeps`, `traceMember`, `decompose_trace`, `exec_bound_trace`,
 `callRun_trace` (`ReadOnlyTraceCert.lean`); `seg_run`, `seg_bound`,
 `transfer_at`, `Leads.of_bound`, `frameC_shape`, `FrameCore.inside_run`,
-`CallState.depth`, `Inside.depth`, `Resumes.depth`, `framed_transfer`
-(`ReadOnlyTransfer.lean`).
+`CallState.depth`, `Inside.depth`, `Resumes.depth`, `framed_transfer`,
+`innermost_tag`, `blocks_one_all`, `activeFrame_runsC`, `inside_prefix`,
+`ex_sites`, `segWithin_of_run` (`ReadOnlyTransfer.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1444,7 +1458,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `chk_sim`'s entering crossings, `publicCall_safe`, `entryHolds_realized`,
-`SegWithin` at $`W_c`$ (from `within_depth`), `cert_of_charges`,
+`segWithin_of_run`'s premise at the call (the call's values' sets within $`L(c)`$, from the call node's fit), `cert_of_charges`,
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),

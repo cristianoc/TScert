@@ -29,7 +29,14 @@ outside code at `d`.
   returned along the segment (`Inside`) and resumed at its end
   (`Resumes`), at depth `1` (`depthC_frame`, `depthC_frame_val`); the own
   steps within `Ψc` (`SegWithin`), the member calls read from trace
-  certificates (`TraceCerts`). -/
+  certificates (`TraceCerts`).
+- **The own steps within the charges** (`segWithin_of_run`, by
+  `within_run`): the segment's run is the frame's term's
+  (`FrameCore.inside_run`, `frameC_shape`), its heaps the segment's
+  (`inside_prefix`); at one call of `C` a step of `C`'s code has its
+  innermost frame of `C`'s code (`activeFrame_runsC`, by `innermost_tag`
+  and `blocks_one_all`); the reached-state invariants (`fitsAt_reached`,
+  `wok_reached`, `lay_reached`, `ex_sites`) give the rest. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -266,6 +273,173 @@ theorem Inside.depth {F : Family} {C : Nat} {E : List Tm}
   obtain ⟨u, ⟨rfl, hc⟩, -⟩ := h
   exact depthC_frame hc
 
+/-! ## The innermost frame at one call of `C` -/
+
+/-- **The innermost frame's tag is on the path** (proved, with
+`innermost_tag`): through a list evaluated left to right. -/
+theorem pathArgs_tag {c : ComponentTag} {f : Tm} {key : FrameKey} :
+    ∀ (xs : List Tm) (k : List Tm → Tm),
+      (∀ a ∈ xs, ∀ c, innermost a = some f → frameOf f = some key → key.1.2 ∈ (path c a).map Prod.fst) →
+      innermostArgs xs = some f → frameOf f = some key → key.1.2 ∈ (pathArgs c k xs).map Prod.fst
+  | [], _, _, h, _ => by simp [innermostArgs] at h
+  | a :: as, k, ih, h, hk => by
+    simp only [innermostArgs] at h
+    simp only [pathArgs]
+    split
+    · rename_i ha; rw [if_pos ha] at h; rw [wrap_fst]; exact ih a List.mem_cons_self c h hk
+    · rename_i ha; rw [if_neg ha] at h
+      exact pathArgs_tag as _ (fun x hx => ih x (List.mem_cons_of_mem _ hx)) h hk
+
+/-- Through a wrapped path (proved). -/
+theorem tag_wrap {a f : Tm} {key : FrameKey} {c : ComponentTag} {g : Tm → Tm}
+    (ih : ∀ (c : ComponentTag) {f : Tm} {key : FrameKey}, innermost a = some f → frameOf f = some key →
+      key.1.2 ∈ (path c a).map Prod.fst)
+    (h : innermost a = some f) (hk : frameOf f = some key) : key.1.2 ∈ (wrap g (path c a)).map Prod.fst := by
+  rw [wrap_fst]; exact ih c h hk
+
+/-- **The innermost frame's tag is on the path** (proved, by induction on
+the term, `innermost` and `path` following the same congruences). -/
+theorem innermost_tag (t : Tm) :
+    ∀ (c : ComponentTag) {f : Tm} {key : FrameKey}, innermost t = some f → frameOf f = some key →
+      key.1.2 ∈ (path c t).map Prod.fst := by
+  induction t using Tm.induct with
+  | frame E K t L d k x comp _ iht =>
+    intro c f key h hk
+    simp only [innermost] at h
+    simp only [path, List.map_append, List.mem_append, wrap_fst]
+    left
+    cases hi : innermost t with
+    | some f' => rw [hi] at h; cases h; exact iht comp hi hk
+    | none =>
+      rw [hi] at h; cases h
+      simp only [frameOf, Option.some.injEq] at hk; subst hk
+      obtain ⟨init, s, hp⟩ := path_last t comp
+      simp [hp]
+  | invoke f r args ihf ihr iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    split
+    · rename_i hf; rw [if_pos hf] at h; rw [wrap_fst]; exact ihf c h hk
+    · rename_i hf; rw [if_neg hf] at h
+      split
+      · rename_i hr; rw [if_pos hr] at h; rw [wrap_fst]; exact ihr c h hk
+      · rename_i hr; rw [if_neg hr] at h
+        exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | construct f args ihf iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    split
+    · rename_i hf; rw [if_pos hf] at h; rw [wrap_fst]; exact ihf c h hk
+    · rename_i hf; rw [if_neg hf] at h
+      exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | makeBound t r pre ns args _ _ _ iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | alloc ns args iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | makeView s f n ns args iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | makeGraph n E K s caps k r comp ns args _ _ iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    exact pathArgs_tag args _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | arrLit inits iha =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    exact pathArgs_tag inits _ (fun a ha c h' hk' => iha a ha c h' hk') h hk
+  | _ =>
+    intro c f' key h hk
+    simp only [innermost] at h
+    simp only [path]
+    repeat' (first | split at h | split)
+    all_goals first
+      | (refine tag_wrap ?_ h hk; assumption)
+      | simp_all
+
+/-- **One block ending a list holds all of it** (proved): a list whose
+head is `true`, followed by `true, false`, with one block of `true`, is
+all `true`. -/
+theorem blocks_one_all : ∀ (xs : List Bool), blocks (xs ++ [true, false]) = 1 → xs.head?.getD true = true →
+    ∀ b ∈ xs, b = true
+  | [], _, _, _, hb => by cases hb
+  | b :: rest, h, hh, x, hx => by
+    simp only [List.head?_cons, Option.getD_some] at hh
+    subst hh
+    have hge : 1 ≤ blocks (rest ++ [true, false]) := Nat.le_trans (by simp [blocks]) (blocks_append_ge rest [true, false])
+    simp only [List.cons_append, blocks] at h
+    have hhd : ((rest ++ [true, false]).head?.getD false) = true := by
+      cases e : ((rest ++ [true, false]).head?.getD false) <;> simp_all
+    have h1 : blocks (rest ++ [true, false]) = 1 := by simp at h; omega
+    have hr : rest.head?.getD true = true := by
+      cases rest with
+      | nil => rfl
+      | cons r rs => simpa using hhd
+    rcases List.mem_cons.mp hx with rfl | hx
+    · rfl
+    · exact blocks_one_all rest h1 hr x hx
+
+/-- **At one call of `C`, inside a frame of `C`'s code at the top whose
+active frame runs `C`'s code, every frame on its running term's path runs
+`C`'s code** (proved, `blocks_one_all`), so its innermost frame does
+(`innermost_tag`, `activeFrame_innermost`). -/
+theorem activeFrame_runsC {F : Family} {C : Nat} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {u : Tm} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    (hc : F.ofC C comp = true) (hd : depthC F C none (.frame E K u L d k x comp) = 1)
+    (hin : ¬ OutsideAt F C none (.frame E K u L d k x comp)) :
+    ∀ key, (activeFrame none u).1 = some key → F.ofC C key.1.2 = true := by
+  intro key hkey
+  obtain ⟨init, s, hp⟩ := path_last u comp
+  have hn : F.ofC C none = false := by simp [Family.ofC, Family.Runs]
+  have hm : (path none (.frame E K u L d k x comp)).map (fun p => F.ofC C p.1) =
+      (init.map fun p => F.ofC C p.1) ++ [true, false] := by
+    simp only [path, List.map_append, hp]
+    have e : (wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map (fun p => F.ofC C p.1) =
+        ((wrap (fun s => .frame E K s L d k x comp) (init ++ [(comp, s)])).map Prod.fst).map (F.ofC C) := by
+      simp [List.map_map, Function.comp_def]
+    rw [e, wrap_fst]
+    simp [hc, hn, Function.comp_def]
+  have hb : blocks ((init.map fun p => F.ofC C p.1) ++ [true, false]) = 1 := by
+    unfold depthC at hd; rwa [hm] at hd
+  have hhead : (init.map fun p => F.ofC C p.1).head?.getD true = true := by
+    have ht : F.ofC C (activeTag comp u) = true := by
+      have := hin
+      simp only [OutsideAt, activeTag_frame] at this
+      simpa [Family.ofC] using this
+    cases init with
+    | nil => rfl
+    | cons p ps =>
+      simp only [activeTag, hp, List.cons_append, List.head?_cons, Option.map_some, Option.getD_some] at ht
+      simpa using ht
+  have hall := blocks_one_all _ hb hhead
+  obtain ⟨hspec, -⟩ := activeFrame_innermost u none
+  rw [hkey] at hspec
+  cases hi : innermost u with
+  | none => rw [hi] at hspec; simp at hspec
+  | some f =>
+    rw [hi] at hspec
+    have hf : frameOf f = some key := by
+      cases e : frameOf f <;> simp_all
+    have hmem := innermost_tag u comp hi hf
+    rw [hp, List.map_append, List.mem_append] at hmem
+    rcases hmem with hmem | hmem
+    · obtain ⟨p, hpi, hpk⟩ := List.mem_map.mp hmem
+      have := hall _ (List.mem_map.mpr ⟨p, hpi, rfl⟩)
+      rw [← hpk]; exact this
+    · simp at hmem; rw [hmem]; exact hc
+
 /-- **A step of a frame whose term has not returned is a step of its term**
 (proved; the draft's `frameC_shape`): the frame's code, slots, default,
 continuation, handler and tag are kept, so the frame's environment is the
@@ -368,6 +542,113 @@ theorem framed_transfer (hc : fr.ChkSound) (hi : fr.StartInv) {Ψj Ψc : Protoco
     (fun m y z hpre hy hyz hdy ho _ => hown m y z
       (Ex.map (fun _ _ _ h => kstep_of_xstep h) hpre) hy (kstep_of_xstep hyz) (by rw [hdy, hda]) ho)
     hx ha hda hde (by simpa using hok.1) hok1 hΦ hfr
+
+/-- **The states of the segment's calculus run are the segment's** (proved,
+`frameC_shape`, `Step_det`): a run of `i` steps of the call's term from the
+call state's heap, within the segment's length, ends at the heap of a state
+of the segment. -/
+theorem inside_prefix {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm}
+    {d : Tm} {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag} :
+    ∀ {m : Nat} {a y : Conf × Ghost (fr.F.at fr.C)} {u₀ : Tm},
+      Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) m a y →
+      a.1.t = .frame E K u₀ L d k x comp → ∀ {i : Nat} {h₁ : Heap} {t₁ : Tm}, i ≤ m →
+      HeapObservations.Steps i a.1.s.h u₀ h₁ t₁ →
+      ∃ b n, Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) n a b ∧ b.1.s.h = h₁
+  | _, a, _, _, .refl _, _, _, _, _, hi, hs => by
+    cases Nat.le_zero.mp hi; cases hs; exact ⟨a, 0, .refl a, rfl⟩
+  | _, a, _, u₀, .next hin hab hrest, ha, i, h₁, t₁, hi, hs => by
+    cases hs with
+    | refl => exact ⟨a, 0, .refl a, rfl⟩
+    | next st hs' =>
+      obtain ⟨u, ⟨hu, -⟩, hnr⟩ := id hin
+      rw [ha] at hu; cases hu
+      have hst := hab.1.step
+      rw [ha] at hst
+      obtain ⟨u', hs₁, ht'⟩ := frameC_shape hst hnr
+      obtain ⟨rfl, rfl⟩ := Step_det st hs₁
+      obtain ⟨b, n, hb, hbh⟩ := inside_prefix hrest ht' (by omega) hs'
+      exact ⟨b, n + 1, .next hin hab hb, hbh⟩
+
+/-- A state an execution reaches from a reached state is reached (proved). -/
+theorem Reached.ex {q : Conf × Ghost (fr.F.at fr.C) → Prop} {n : Nat} {a b : Conf × Ghost (fr.F.at fr.C)}
+    (ha : fr.Reached a) (hex : Ex fr.KStep q n a b) : fr.Reached b :=
+  hex.carry (r := fr.Reached) (fun _ _ _ hk h => Reached.step h hk) ha
+
+/-- **The sites of the old locations stay along an execution** (proved,
+`next_site`): where the checks read the flow's sites, every step keeps the
+site of each location of the first heap. -/
+theorem ex_sites {Fl : Flow (fr.F.at fr.C)} (hS : fr.FlowSites Fl) {q : Conf × Ghost (fr.F.at fr.C) → Prop} :
+    ∀ {n : Nat} {a b : Conf × Ghost (fr.F.at fr.C)}, Ex fr.KStep q n a b →
+      a.1.s.h.length ≤ b.1.s.h.length ∧ ∀ l, l < a.1.s.h.length → b.2.site l = a.2.site l
+  | _, _, _, .refl _ => ⟨Nat.le_refl _, fun _ _ => rfl⟩
+  | _, a, _, .next _ hab hrest => by
+    obtain ⟨hl, hs⟩ := ex_sites hS hrest
+    have hlen := Footprints.step_length_le hab.1.step
+    refine ⟨Nat.le_trans hlen hl, fun l hla => ?_⟩
+    rw [hs l (Nat.lt_of_lt_of_le hla hlen), next_site hS hab l (Nat.lt_of_lt_of_le hla hlen)]
+    exact (Ghost.alloc_old hla).1
+
+/-- **The segment's own steps within the probe's protocol** (proved; the
+draft's `SegWithin` at `W_c`, by `within_run` at each step): at a reached
+call state of the claim's top frame, where every reached state fits the
+flow (`fitsAt_reached`), meets the residual invariant (`wok_reached`) and
+layout provenance (`lay_reached`), the flow's tokens are sites and its
+codes lowered, a set `T` passing the closure check holds the sets of the
+call's values, and the protocol from every code's charges and `T` is
+within `Ψc`, every step of `C`'s code at the call's depth from a state of
+the segment is within `Ψc` below the call state's heap. The call's run is
+the frame's term's (`FrameCore.inside_run`), its heaps the segment's
+(`inside_prefix`), so heaps of values (`HeapInv`); the innermost frame of
+a step of `C`'s code at depth `1` runs `C`'s code (`activeFrame_runsC`);
+the old locations keep their sites (`ex_sites`). -/
+theorem segWithin_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Sites (fr.F.at fr.C)} {Ψc : Protocol (fr.F.at fr.C)}
+    (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ F lay) a.1.t = true ∧ HeapLay (layQ F lay) a.1.s.h)
+    (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
+    (hlow : codesLoweredB F = true) (hle : ∀ p, (probeProtocol (flowKinds F) T p).le (Ψc p) = true)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
+    (hroots : ∀ f r args, a.1.t = .frame E K (.invoke f r args) L d k x comp →
+      ∀ v ∈ vals allC true (.invoke f r args), ∃ S', VJ F.flow a.2 a.1.s.h.length S' v ∧ Sub S' T ∧
+        layP (layQ F lay) v = true) :
+    fr.SegWithin Ψc E K L d k x comp a := by
+  intro m y z hex hy hyz hdy ho
+  obtain ⟨f, r, args, ⟨hat, hc⟩, hfv, hrv, hargs⟩ := id hcall
+  obtain ⟨u, hrun, hyt⟩ := FrameCore.inside_run hex hat
+  obtain ⟨w, ⟨hw, -⟩, hnr⟩ := id hy
+  rw [hyt] at hw; cases hw
+  have hyzs := hyz.1.step
+  rw [hyt] at hyzs
+  obtain ⟨u', hs, -⟩ := frameC_shape hyzs hnr
+  have hK : HeapObservations.EvalCtx (fun t => Tm.frame E K t L d k x comp) :=
+    .frameC E K L d k x comp .hole
+  have hya := Reached.ex ha hex
+  have hfa := fitsAt_reached hFa hS hE ha
+  have hfy := fitsAt_reached hFa hS hE hya
+  have hwa := wok_reached hwk ha
+  have hla := lay_reached hly ha
+  have hda : depthC fr.F fr.C none a.1.t = 1 := hcall.depth
+  refine (within_run (st := lift fr.F fr.C none y.1 y.2) (st' := lift fr.F fr.C none z.1 z.2) hK hrun
+    (fun i h₁ t₁ hi hs₁ => ?_) hs (by rw [← hat]; exact hwa.1) ?_ hwa.2
+    (by simp only [lift]; rw [← hyt]; exact y.1.ok) (by rw [← hyt]; exact hfy.1) ?_ hT htok hlow hfa.2 hla.2
+    (hroots f r args hat) (ex_sites hS hex).2).mono hle
+  · obtain ⟨b, n, hb, hbh⟩ := inside_prefix hex hat (Nat.le_of_lt hi) hs₁
+    have hfb := fitsAt_reached hFa hS hE (Reached.ex ha hb)
+    intro l v hv
+    rw [← hbh] at hv
+    exact (hfb.2 l v hv).val
+  · simp [writesK, writesK_val hfv, writesK_val hrv, List.flatMap_eq_nil_iff.mpr fun a ha => writesK_val (hargs a ha)]
+  · have hdy1 : depthC fr.F fr.C none (.frame E K u L d k x comp) = 1 := by
+      rw [← hyt]; have : δ fr.F fr.C none y = 1 := by rw [hdy]; exact hda
+      exact this
+    have hin : ¬ OutsideAt fr.F fr.C none (.frame E K u L d k x comp) := by rw [← hyt]; exact ho
+    exact activeFrame_runsC hc hdy1 hin
 
 end ClientFrame
 end Verification.TolerantFrames.ReadOnly
