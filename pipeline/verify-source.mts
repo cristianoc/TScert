@@ -16,8 +16,10 @@ import { fieldOf, messageOf } from "../tools/thrown.mts";
 import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot, withinRunDirectory } from "./run-directory.mts";
 import type { Json as ParsedJson } from "../tools/calculus.mts";
 import type { Ast } from "../tools/fragment.mts";
-import type { CallEffect, DeclarationDocument, DeclarationIdentity, PropertyKey, Region, Selector, TypeDefinition, TypeTerm }
-  from "../tools/declaration-types.mts";
+import type { BodyFact, BodyVariable, CallEffect, DeclarationDocument, DeclarationIdentity, IndexFact as StatedFact, Integer,
+  LinearTerm, PropertyKey, Region, Selector, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
+import type { BodyFormula, BodyVariable as FactVariable, IndexFact, LinearTerm as FactTerm } from "../tools/diagnostic.mts";
+import { indexFact } from "../tools/fact-text.mts";
 import { initOmission } from "../tools/fragment-parse.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { intrinsicModule, resolvableDeclaration } from "../tools/intrinsics.mts";
@@ -856,16 +858,28 @@ function valueOverlay(specifier: string, imported: string, local: string, id: Id
  * parameters. Written as TypeScript writes a type (`typeText`), one line per
  * signature of an overloaded callable; a row the document lacks is said so. */
 export function statedType(document: DeclarationDocument, read: ContractRead): string[] {
-  const named = (id: DeclarationIdentity): TypeDefinition | undefined => document.definitions.find((d) =>
-    d.declaration.module === id.module && d.declaration.name === id.name && d.declaration.span[0] === id.span[0] &&
-    d.declaration.span[1] === id.span[1]);
-  const texts = new TypeTexts(document);
+  const stated = statedTerms(document, read);
+  if ("missing" in stated) return [stated.missing];
+  const texts = new TypeTexts(document, "text");
+  return stated.terms.flatMap((t) => texts.signatures(t, stated.parameters, stated.binders));
+}
+/** What the declaration document states for a read contract, `statedType`'s
+ * lookup: the terms at it, with the parameters of the declaration holding a
+ * member and the binders of a value's type, or why the document states none. */
+type Stated = { terms: TypeTerm[]; parameters: string[]; binders: Binder[] } | { missing: string };
+/** A binder of a generic value or signature, with its bound and default
+ * where the document states one. */
+type Binder = { name: string; bound: TypeTerm | null; default?: TypeTerm | null };
+const definitionOf = (document: DeclarationDocument, id: DeclarationIdentity): TypeDefinition | undefined =>
+  document.definitions.find((d) => d.declaration.module === id.module && d.declaration.name === id.name &&
+    d.declaration.span[0] === id.span[0] && d.declaration.span[1] === id.span[1]);
+function statedTerms(document: DeclarationDocument, read: ContractRead): Stated {
+  const named = (id: DeclarationIdentity): TypeDefinition | undefined => definitionOf(document, id);
   if ("value" in read) {
     const local = read.value.local;
     const value = document.values.find((v) => v.binding.local === local);
-    if (value === undefined) return ["(no value of the declaration document binds it)"];
-    const binders = value.typeParams.map((p) => p.name);
-    return texts.signatures(value.type, [], binders);
+    if (value === undefined) return { missing: "(no value of the declaration document binds it)" };
+    return { terms: [value.type], parameters: [], binders: value.typeParams };
   }
   const { declaration, key } = read.member;
   const seen = new Set<TypeDefinition>();
@@ -896,12 +910,11 @@ export function statedType(document: DeclarationDocument, read: ContractRead): s
     return own.length > 0 ? own : d.bases.flatMap(inTerm);
   };
   const definition = named(declaration);
-  if (definition === undefined) return ["(no definition of the declaration document has this identity)"];
-  if (definition.expression === null) return ["(read at its meaning: the document states no equation)"];
-  const parameters = definition.parameters.map((p) => p.name);
+  if (definition === undefined) return { missing: "(no definition of the declaration document has this identity)" };
+  if (definition.expression === null) return { missing: "(read at its meaning: the document states no equation)" };
   const found = find(definition);
-  if (found.length === 0) return ["(the declaration's row in the document names no such key)"];
-  return found.flatMap((t) => texts.signatures(t, parameters, []));
+  if (found.length === 0) return { missing: "(the declaration's row in the document names no such key)" };
+  return { terms: found, parameters: definition.parameters.map((p) => p.name), binders: [] };
 }
 const undefinedTerm: TypeTerm = { k: "atom", name: "undefined", span: [0, 0] };
 const sameKey = (name: PropertyKey, key: string | { symbol: number }): boolean =>
@@ -914,6 +927,12 @@ function keyText(document: DeclarationDocument, key: string | { symbol: number }
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`;
 }
 
+/** A signature of a callable term (`TypeTexts.parts`): its binders, whether
+ * it constructs, its parameters and result as `callable` writes them, and
+ * the frames `F` stands for in it, where signatures differing only in one
+ * frame, the same at each of their callables, are one, else none. */
+type SignaturePart = { binders: readonly string[]; constructs: Extract<TypeTerm, { k: "constructor" }> | null; body: string;
+  frames: string[]; parameters: readonly string[] };
 /** Type terms as TypeScript writes types, for a reader. A signature's
  * parameters are named by position (`p0`, `p1`, `...rest`), the document
  * naming none; its receiver is `this:` unless it is the declaration holding
@@ -922,47 +941,86 @@ function keyText(document: DeclarationDocument, key: string | { symbol: number }
  * callable's normal-return frame as `Modifies<{…}, R>` where it changes a
  * location, by the region each change applies to, a fresh result as
  * `Fresh<R>` (ANNOTATIONS.md), a type guard's or assertion's promise as
- * TypeScript writes it, and a signature with a precondition marked so in a
- * comment after its result; a callable's other postconditions, its
- * throw's frame and its preconditions' facts are not written. */
+ * TypeScript writes it, and a signature's preconditions in a comment after
+ * its result, `/* requires … *\/`, over its positions (`this`, `p0`, …);
+ * a callable's other postconditions and its throw's frame are not written.
+ * In the `ts` mode every text is a TypeScript type: a frame or freshness
+ * around a promise is a comment after it, and signatures differing only in
+ * one frame bind it as `F extends Frame`, the frames it is one of in a
+ * comment. */
 class TypeTexts {
   private readonly document: DeclarationDocument;
-  constructor(document: DeclarationDocument) { this.document = document; }
+  private readonly mode: "text" | "ts";
+  constructor(document: DeclarationDocument, mode: "text" | "ts") {
+    this.document = document;
+    this.mode = mode;
+  }
   /** The frames `effect` writes as `F` while `frames` is set, in order. */
   private frames: string[] | null = null;
-  /** A term, one line per signature of a callable with several (a scheme's
-   * signatures, an intersection of callables), each once. Signatures that
-   * differ only in one frame, the same at each of their callables, are one
-   * line, `Modifies<F, …>` where it stands, followed by the frames `F` is. */
-  signatures(t: TypeTerm, parameters: readonly string[], binders: readonly string[]): string[] {
-    const callables: { head: string; binders: readonly string[]; s: Extract<TypeTerm, { k: "function" | "constructor" }> }[] = [];
+  /** A term's signatures, each once (a scheme's signatures, an intersection
+   * of callables), each written with `arrow` before its result; null for a
+   * term that is no callable. */
+  parts(t: TypeTerm, parameters: readonly string[], binders: readonly Binder[], arrow: string): SignaturePart[] | null {
+    const callables: { binders: readonly string[]; s: Extract<TypeTerm, { k: "function" | "constructor" }> }[] = [];
     const collect = (u: TypeTerm, bs: readonly string[]): boolean => {
       if (u.k === "function" || u.k === "constructor") {
-        callables.push({ head: bs.length > 0 ? `<${bs.join(", ")}>` : "", binders: bs, s: u });
+        callables.push({ binders: bs, s: u });
         return true;
       }
       if (u.k === "scheme") {
-        const own = [...bs, ...u.binders.map((b) => b.name)];
+        const own = [...bs, ...u.binders.map((b) => this.binder(b, parameters, bs))];
         return u.signatures.every((s) => collect(s, own));
       }
       return u.k === "intersection" && u.parts.length > 0 && u.parts.every((p) => collect(p, bs));
     };
-    if (!collect(t, binders)) return [this.text(t, parameters, binders, 0)];
-    const lines: { text: string; frames: string[]; concrete: string }[] = [];
-    for (const { head, binders: bs, s } of callables) {
-      const concrete = head + this.callable(s, parameters, bs);
+    if (!collect(t, binders.map((b) => this.binder(b, parameters, [])))) return null;
+    const lines: { key: string; shape: string; part: SignaturePart }[] = [];
+    for (const { binders: bs, s } of callables) {
+      const concrete = this.callable(s, parameters, bs, arrow);
       this.frames = [];
-      const shape = head + this.callable(s, parameters, bs);
+      const shape = this.callable(s, parameters, bs, arrow);
       const frames = this.frames;
       this.frames = null;
       const [frame] = frames;
+      const constructs = s.k === "constructor" ? s : null;
       if (frame !== undefined && frames.every((f) => f === frame)) {
-        const group = lines.find((l) => l.frames.length > 0 && l.text === shape);
-        if (group === undefined) lines.push({ text: shape, frames: [frame], concrete });
-        else if (!group.frames.includes(frame)) group.frames.push(frame);
-      } else if (!lines.some((l) => l.frames.length === 0 && l.text === concrete)) lines.push({ text: concrete, frames: [], concrete });
+        const key = `${bs.join(", ")}\n${shape}`;
+        const group = lines.find((l) => l.part.frames.length > 0 && l.key === key);
+        if (group === undefined) lines.push({ key, shape, part: { binders: bs, constructs, body: concrete, frames: [frame], parameters } });
+        else if (!group.part.frames.includes(frame)) group.part.frames.push(frame);
+      } else {
+        const key = `${bs.join(", ")}\n${concrete}`;
+        if (!lines.some((l) => l.part.frames.length === 0 && l.key === key))
+          lines.push({ key, shape: concrete, part: { binders: bs, constructs, body: concrete, frames: [], parameters } });
+      }
     }
-    return lines.map((l) => l.frames.length <= 1 ? l.concrete : `${l.text}, F one of ${l.frames.join(", ")}`);
+    return lines.map(({ shape, part }) => part.frames.length <= 1 ? { ...part, frames: [] } : { ...part, body: shape });
+  }
+  /** A binder as TypeScript declares one: `S extends B = D`. */
+  binder(b: Binder, ps: readonly string[], bs: readonly string[]): string {
+    const bound = b.bound === null ? "" : ` extends ${this.text(b.bound, ps, bs, 0)}`;
+    const dflt = b.default === undefined || b.default === null ? "" : ` = ${this.text(b.default, ps, bs, 0)}`;
+    return `${b.name}${bound}${dflt}`;
+  }
+  /** A signature's binders as written before its parameters: in the `ts`
+   * mode with `F` where it stands for several frames. */
+  head(p: SignaturePart): string {
+    const bs = this.mode === "ts" && p.frames.length > 1
+      ? [...p.binders, `F extends Frame /* one of ${p.frames.join(", ")} */`] : p.binders;
+    return bs.length > 0 ? `<${bs.join(", ")}>` : "";
+  }
+  /** A term, one line per signature of a callable with several. In the
+   * text mode, signatures that differ only in one frame are one line,
+   * `Modifies<F, …>` where it stands, followed by the frames `F` is. */
+  signatures(t: TypeTerm, parameters: readonly string[], binders: readonly Binder[]): string[] {
+    const parts = this.parts(t, parameters, binders, " => ");
+    if (parts === null) return [this.text(t, parameters, binders.map((b) => b.name), 0)];
+    return parts.map((p) => this.signature(p) + (this.mode === "text" && p.frames.length > 1 ? `, F one of ${p.frames.join(", ")}` : ""));
+  }
+  /** A signature as a type: its binders, then its parameters and result. */
+  signature(p: SignaturePart): string {
+    const signature = `${this.head(p)}${p.body}`;
+    return p.constructs === null ? signature : this.construct(p.constructs, signature, p.parameters, p.binders);
   }
   /** A term at a precedence: 0 anywhere, 1 inside a union or intersection,
    * 2 as an array's element. */
@@ -1006,9 +1064,12 @@ class TypeTexts {
         return members.length === 0 ? "{}" : `{ ${members.join("; ")} }`;
       }
       case "function":
-      case "constructor": return wrap(this.callable(t, ps, bs), 0);
+      case "constructor": return wrap(t.k === "constructor" ? this.construct(t, this.callable(t, ps, bs), ps, bs) : this.callable(t, ps, bs), 0);
       case "pack": return this.text(t.of, ps, bs, at);
-      case "scheme": return wrap(this.signatures(t, ps, []).join(" & "), 0);
+      case "scheme": {
+        const lines = this.signatures(t, ps, []);
+        return wrap(lines.length === 1 ? lines.join("") : lines.map((l) => `(${l})`).join(" & "), 0);
+      }
       case "callable": return "Function";
       case "self": return "this";
       case "parameter": return ps[t.index] ?? `parameter ${t.index}`;
@@ -1019,20 +1080,44 @@ class TypeTexts {
       }
     }
   }
-  /** A signature: `(this: R, p0: A, ...rest: E[]) => B`, a construct
-   * signature `new (…) => B`, a call signature of an object type `(…): B`. */
+  /** A signature's parameters and result, `(this: R, p0: A, ...rest: E[]) => B`,
+   * or with `arrow` `": "` as a call signature or a method writes them,
+   * `(…): B`; a construct signature's `new` is `construct`'s. */
   callable(t: Extract<TypeTerm, { k: "function" | "constructor" }>, ps: readonly string[], bs: readonly string[],
       arrow: string = " => "): string {
     const receiver = t.k === "function" && t.receiver !== null && t.receiver.k !== "self" ? [`this: ${this.text(t.receiver, ps, bs, 0)}`] : [];
     const params = t.params.map((p, i) => `p${i}: ${this.text(p, ps, bs, 0)}`);
     const rest = t.rest === null ? [] : [`...rest: ${t.rest.k === "pack" ? this.text(t.rest.of, ps, bs, 0) : `${this.text(t.rest, ps, bs, 2)}[]`}`];
-    let result = this.text(t.result, ps, bs, 0);
+    const returned = this.text(t.result, ps, bs, 0);
     const promise = t.effect.promise;
-    if (promise !== null) result = promise.guards ? `p${promise.guards.param} is ${result}` : `asserts p${promise.asserts.param} is ${result}`;
-    result = this.effect(t.effect, result);
-    if (t.effect.pre.length > 0 || t.effect.requires !== null) result += " /* with a precondition */";
-    const statics = t.k === "constructor" && t.statics ? ` & { ${t.statics.map((f) => `${f.readonly ? "readonly " : ""}${this.key(f.name)}: ${this.text(f.type, ps, bs, 0)}`).join("; ")} }` : "";
-    return `${t.k === "constructor" ? "new " : ""}(${[...receiver, ...params, ...rest].join(", ")})${arrow}${result}${statics}`;
+    const promised = promise === null ? null :
+      promise.guards ? `p${promise.guards.param} is ${returned}` : `asserts p${promise.asserts.param} is ${returned}`;
+    let result: string;
+    if (promised !== null && this.mode === "ts") {
+      const around = this.effect(t.effect, "…");
+      result = around === "…" ? promised : `${promised} /* ${around} */`;
+    } else result = this.effect(t.effect, promised ?? returned);
+    const requires = this.precondition(t.effect);
+    if (requires !== null) result += ` /* requires ${requires} */`;
+    return `(${[...receiver, ...params, ...rest].join(", ")})${arrow}${result}`;
+  }
+  /** A construct signature as a type, `new (…) => B`, with the static fields
+   * of the class value its type states, `(new (…) => B) & { … }`. */
+  construct(t: Extract<TypeTerm, { k: "constructor" }>, signature: string, ps: readonly string[], bs: readonly string[]): string {
+    const statics = (t.statics ?? []).map((f) => `${f.readonly ? "readonly " : ""}${this.key(f.name)}: ${this.text(f.type, ps, bs, 0)}`);
+    return statics.length === 0 ? `new ${signature}` : `(new ${signature}) & { ${statics.join("; ")} }`;
+  }
+  /** A signature's preconditions over its entry positions, `this` the
+   * receiver and `p<i>` the `i`-th actual, as one conjunction: the kinds the
+   * receiver's elements are of, then each fact (tools/fact-text.mts); null
+   * where it has none. */
+  precondition(e: CallEffect): string | null {
+    const named = (slot: number): string => positionText(slot);
+    const facts = [
+      ...(e.requires === null ? [] : [`every element of this is ${e.requires.join(" | ")}`]),
+      ...e.pre.map((f) => indexFact(factOf(f), named) ?? "true"),
+    ];
+    return facts.length === 0 ? null : facts.join(" && ");
   }
   /** A result with its normal return's frame and freshness: the changes
    * other than `keep`, by region, as `Modifies<{…}, R>`; a result the call
@@ -1056,6 +1141,36 @@ class TypeTexts {
     return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
   }
 }
+/** A fact of a declaration document as tools/fact-text.mts reads facts, the
+ * shape the verifier's diagnostics decode to (tools/diagnostic.mts): the same
+ * fact, its lists copied, a quantified fact's body variables as that decoder
+ * states them (a projection's term at slot 0, a free term bare). */
+function factOf(f: StatedFact): IndexFact {
+  const term = (t: LinearTerm): FactTerm => ({ ...t, path: [...t.path] });
+  const form = <V, W>(xs: readonly (readonly [V, Integer])[], to: (v: V) => W): [W, Integer][] => xs.map(([v, c]) => [to(v), c]);
+  const variable = (v: BodyVariable): FactVariable => {
+    if (v === "index" || v === "elem") return v;
+    if ("offset" in v) return { offset: { delta: v.offset.delta } };
+    if ("project" in v) return { project: { kind: v.project.kind, slot: 0, path: [...v.project.path] } };
+    return term(v.free.t);
+  };
+  const body = (b: BodyFact): BodyFormula => "either" in b ? { either: { left: body(b.either.left), right: body(b.either.right) } }
+    : "le" in b ? { form: form(b.le.form, variable), bound: b.le.bound, ne: false } : { form: form(b.ne.form, variable), bound: b.ne.bound, ne: true };
+  if ("linear" in f) {
+    const fact = f.linear.fact;
+    return { linear: { fact: "le" in fact ? { le: { form: form(fact.le.form, term), bound: fact.le.bound } }
+      : { ne: { form: form(fact.ne.form, term), bound: fact.ne.bound } } } };
+  }
+  if ("either" in f) return { either: { left: factOf(f.either.left), right: factOf(f.either.right) } };
+  if ("guarded" in f) return { guarded: { ...f.guarded, path: [...f.guarded.path], body: factOf(f.guarded.body) } };
+  if ("every" in f) {
+    const e = f.every;
+    return { every: { slot: e.slot, path: [...e.path], stop: term(e.stop), body: e.body.map(body) } };
+  }
+  if ("spineApart" in f) return { spineApart: { ...f.spineApart, path: [...f.spineApart.path], otherPath: [...f.spineApart.otherPath] } };
+  // (the others hold positions and flags alone)
+  return f;
+}
 const presence = (p: "dense" | "readable" | "sparse", text: string): string =>
   p === "dense" ? `Dense<${text}>` : p === "sparse" ? `Sparse<${text}>` : text;
 /** A call's entry position: `this` the receiver, `p<i>` the `i`-th actual. */
@@ -1078,6 +1193,8 @@ function regionText(r: Region): string {
   return `${pathText(r.spine.x, r.spine.fields)} spine`;
 }
 
+/** A contract placed by `contractsOf`, with the read it is of. */
+type Placed = { entry: ContractEntry; read: ContractRead };
 /** The contracts the verdict lines of a check recorded (`Outcome.contracts`),
  * each placed by its overlay: a value by its binding (`valueOverlay`); a
  * member of a value's declaration, the type the value is read at, by that
@@ -1085,19 +1202,23 @@ function regionText(r: Region): string {
  * its declaration (`typeOverlay`). Each with the type `document`, the
  * declaration document the check read, states for it (`statedType`). */
 export function contractsOf(units: readonly UnitContracts[], document: DeclarationDocument): Contracts {
+  const { placed, ownMembers } = placedContracts(units, document);
+  return { entries: placed.map((p) => p.entry), ownMembers };
+}
+function placedContracts(units: readonly UnitContracts[], document: DeclarationDocument): { placed: Placed[]; ownMembers: number } {
   const reads = units.flatMap((u) => u.reads);
   const key = (r: ContractRead): string => JSON.stringify(r);
   const once = reads.filter((r, i) => reads.findIndex((q) => key(q) === key(r)) === i);
   const valueOverlays = new Map<string, ContractOverlay>();
-  const entries: ContractEntry[] = [];
+  const placed: Placed[] = [];
   for (const r of once) {
     if (!("value" in r)) continue;
     const { module, name, specifier, imported, local } = r.value;
     const overlay = valueOverlay(specifier, imported, local, { module, name });
     valueOverlays.set(`${module}\n${name}`, overlay);
-    entries.push({ kind: "value", module, name: local, key: null, specifier,
+    placed.push({ read: r, entry: { kind: "value", module, name: local, key: null, specifier,
       origin: specifier === "ambient" ? "ambient" : originOf(module), overlay, trust: contractOverlays[overlay].trust,
-      type: statedType(document, r) });
+      type: statedType(document, r) } });
   }
   let ownMembers = 0;
   for (const r of once) {
@@ -1105,40 +1226,152 @@ export function contractsOf(units: readonly UnitContracts[], document: Declarati
     const { declaration: { module, name }, key: member } = r.member;
     const overlay = valueOverlays.get(`${module}\n${name}`) ?? typeOverlay({ module, name });
     if (overlay === null && originOf(module) === "checked file") { ownMembers++; continue; }
-    entries.push({ kind: "member", module, name, key: keyText(document, member), specifier: null, origin: originOf(module),
-      overlay, trust: overlay === null ? null : contractOverlays[overlay].trust, type: statedType(document, r) });
+    placed.push({ read: r, entry: { kind: "member", module, name, key: keyText(document, member), specifier: null,
+      origin: originOf(module), overlay, trust: overlay === null ? null : contractOverlays[overlay].trust,
+      type: statedType(document, r) } });
   }
-  return { entries, ownMembers };
+  return { placed, ownMembers };
 }
+/** Contracts in the order they are reported: by trust row, in the order of
+ * `contractOverlays`, each row with where its overlay is stated; then those
+ * no row states, by origin and module. */
+type ContractGroup<T> = { items: T[] } & ({ trust: TrustRow; stated: string } | { origin: ContractOrigin; module: string });
+function contractGroups<T>(items: readonly T[], entry: (t: T) => ContractEntry): ContractGroup<T>[] {
+  const groups: ContractGroup<T>[] = [];
+  for (const overlay of Object.keys(contractOverlays).filter((o): o is ContractOverlay => o in contractOverlays)) {
+    const read = items.filter((t) => entry(t).overlay === overlay);
+    if (read.length === 0) continue;
+    const { stated, trust } = contractOverlays[overlay];
+    const at = [stated.names.map((n) => `\`${n}\``).join(", "), stated.in ?? ""].filter((t) => t !== "").join(" in ");
+    groups.push({ items: read, trust, stated: at });
+  }
+  const unstated = items.filter((t) => entry(t).trust === null);
+  for (const origin of ["standard library", "package", "project", "reader", "checked file"] as const) {
+    const read = unstated.filter((t) => entry(t).origin === origin);
+    for (const module of [...new Set(read.map((t) => entry(t).module))].sort())
+      groups.push({ items: read.filter((t) => entry(t).module === module), origin, module });
+  }
+  return groups;
+}
+/** The module a value is imported from, where its binding names one. */
+const importedFrom = (e: ContractEntry): string | null => e.specifier !== null && e.specifier !== "global" &&
+  e.specifier !== intrinsicModule && e.specifier !== "ambient" && e.specifier !== "prototype" ? e.specifier : null;
 /** The contracts as text: by trust row, each with its overlay and the
  * values and members read through it, each with its stated type, then the
  * members no row states. */
 export function contractsText(contracts: Contracts): string {
-  const shown = (e: ContractEntry): string => e.kind === "member" ? `${e.name}${e.key ?? ""}` :
-    e.specifier !== null && e.specifier !== "global" && e.specifier !== intrinsicModule && e.specifier !== "ambient" &&
-    e.specifier !== "prototype" ? `${e.name} (${e.specifier})` : e.name;
+  const shown = (e: ContractEntry): string => {
+    if (e.kind === "member") return `${e.name}${e.key ?? ""}`;
+    const from = importedFrom(e);
+    return from === null ? e.name : `${e.name} (${from})`;
+  };
   const typed = (indent: string) => (e: ContractEntry): string[] => e.type.length === 1 ? [`${indent}${shown(e)}: ${e.type[0]}`]
     : [`${indent}${shown(e)}:`, ...e.type.map((t) => `${indent}    ${t}`)];
   const sorted = (es: readonly ContractEntry[]): ContractEntry[] => [...es].sort((a, b) =>
     a.kind === b.kind ? shown(a).localeCompare(shown(b)) : a.kind === "value" ? -1 : 1);
   const lines = ["Contracts the verdict relies on, by trust row (docs/DESIGN.md#trust-surface):"];
-  for (const overlay of Object.keys(contractOverlays).filter((o): o is ContractOverlay => o in contractOverlays)) {
-    const read = contracts.entries.filter((e) => e.overlay === overlay);
-    if (read.length === 0) continue;
-    const { stated, trust } = contractOverlays[overlay];
-    const at = [stated.names.map((n) => `\`${n}\``).join(", "), stated.in ?? ""].filter((t) => t !== "").join(" in ");
-    lines.push(`- ${trust.table}: "${trust.row} …"`, `  stated by ${at}`, ...sorted(read).flatMap(typed("  ")));
-  }
-  const unstated = contracts.entries.filter((e) => e.trust === null);
-  if (unstated.length > 0) {
-    lines.push("No trust row: read as their declarations state");
-    for (const origin of ["standard library", "package", "project", "reader", "checked file"] as const) {
-      const read = unstated.filter((e) => e.origin === origin);
-      for (const module of [...new Set(read.map((e) => e.module))].sort())
-        lines.push(`- ${origin}, ${module}:`, ...sorted(read.filter((e) => e.module === module)).flatMap(typed("  ")));
+  let unstated = false;
+  for (const group of contractGroups(contracts.entries, (e) => e)) {
+    if ("trust" in group) lines.push(`- ${group.trust.table}: "${group.trust.row} …"`, `  stated by ${group.stated}`);
+    else {
+      if (!unstated) lines.push("No trust row: read as their declarations state");
+      unstated = true;
+      lines.push(`- ${group.origin}, ${group.module}:`);
     }
+    lines.push(...sorted(group.items).flatMap(typed("  ")));
   }
   lines.push(`Members of the checked file's own types read: ${contracts.ownMembers}`);
+  return lines.join("\n") + "\n";
+}
+/** The declarations opening `contractsDeclarations`' file: TScert's forms
+ * as the aliases TypeScript reads them at, each with its meaning. */
+const declarationsPreamble = [
+  "// The contracts the verdict relies on, as TypeScript declarations (verify-source.mts --contracts=ts):",
+  "// by trust row (docs/DESIGN.md#trust-surface), each value and member at the type the run's",
+  "// declaration document states, parameters named by position. A module: its names shadow",
+  "// the standard library's.",
+  "export {};",
+  "/** An array with an element at every index below its length (docs/ANNOTATIONS.md). */",
+  "type Dense<A> = A;",
+  "/** An array that may hold no element at an index below its length. */",
+  "type Sparse<A> = A;",
+  "/** A normal return's value holds an array spine or an object the call allocated. */",
+  "type Fresh<R> = R;",
+  "/** The regions of a call's entry positions (`this`, `p0`, …) a normal return may change, each with its change. */",
+  "type Frame = { readonly [region: string]: string };",
+  "/** A call that, on a normal return, changes previously allocated locations only as `F` states, and returns `R`. */",
+  "type Modifies<F extends Frame, R> = R;",
+  "/** A safe integer. */",
+  "type SafeInt = number;",
+  "/** Every value but a host object. */",
+  "type NonHost = unknown;",
+  "/** An ordinary object: no host object. */",
+  "type NonHostObject = object;",
+];
+/** A name as a TypeScript identifier: itself where it is one, else its runs
+ * of identifier characters joined by `_` (`%Iterate%` as `Iterate`). */
+const identifierOf = (name: string): string => {
+  if (/^[A-Za-z_$][\w$]*$/.test(name)) return name;
+  const joined = name.split(/[^\w$]+/).filter((p) => p !== "").join("_");
+  return /^[A-Za-z_$]/.test(joined) ? joined : `_${joined}`;
+};
+/** The contracts as a TypeScript declaration file, of the same records and
+ * the same types as `contractsOf` (`statedTerms`): by trust row, as
+ * `contractGroups` orders them, each opened by a comment naming the row and
+ * where its overlay is stated; in each, a value as `declare function`, one
+ * signature per overload, or `declare const` at its type, its name made an
+ * identifier with the original in a comment; the members of one declaration
+ * as one `interface` at that declaration's parameters, a callable member as
+ * its methods, any other as a property. TScert's forms are the aliases of
+ * `declarationsPreamble`. */
+export function contractsDeclarations(units: readonly UnitContracts[], document: DeclarationDocument): string {
+  const { placed, ownMembers } = placedContracts(units, document);
+  const texts = new TypeTexts(document, "ts");
+  /** A contract's declarations, each line written after `name` and its
+   * binders as a method or a function, or as a property's type. */
+  const declared = (read: ContractRead): { signatures: SignaturePart[] } | { type: string } | { missing: string } => {
+    const stated = statedTerms(document, read);
+    if ("missing" in stated) return stated;
+    const parts = stated.terms.map((t) => texts.parts(t, stated.parameters, stated.binders, ": "));
+    const signatures = parts.flatMap((p) => p ?? []);
+    if (parts.every((p) => p !== null) && signatures.every((p) => p.constructs === null)) return { signatures };
+    const lines = stated.terms.flatMap((t) => texts.signatures(t, stated.parameters, stated.binders));
+    return { type: lines.length === 1 ? lines.join("") : lines.map((l) => `(${l})`).join(" & ") };
+  };
+  const lines = [...declarationsPreamble];
+  for (const group of contractGroups(placed, (p) => p.entry)) {
+    lines.push("", ...("trust" in group ? [`// ${group.trust.table}: "${group.trust.row} …"`, `// stated by ${group.stated}`]
+      : [`// No trust row: ${group.origin}, ${group.module}, read as its declarations state`]));
+    const values = group.items.filter((p) => p.entry.kind === "value").sort((a, b) => a.entry.name.localeCompare(b.entry.name));
+    for (const { entry, read } of values) {
+      const name = identifierOf(entry.name), from = importedFrom(entry);
+      const notes = [...(name === entry.name ? [] : [entry.name]), ...(from === null ? [] : [`from ${JSON.stringify(from)}`])];
+      const note = notes.length === 0 ? "" : ` // ${notes.join(", ")}`;
+      const d = declared(read);
+      if ("missing" in d) lines.push(`// ${entry.name}: ${d.missing}`);
+      else if ("type" in d) lines.push(`declare const ${name}: ${d.type};${note}`);
+      else lines.push(...d.signatures.map((p) => `declare function ${name}${texts.head(p)}${p.body};${note}`));
+    }
+    const members = group.items.flatMap((p) => "member" in p.read ? [{ entry: p.entry, member: p.read.member, read: p.read }] : []);
+    const identity = (id: DeclarationIdentity): string => `${id.module}\n${id.name}\n${id.span[0]}\n${id.span[1]}`;
+    const declarations = [...new Map(members.map((m) => [identity(m.member.declaration), m.member.declaration])).values()]
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const declaration of declarations) {
+      const parameters = definitionOf(document, declaration)?.parameters.map((p) => p.name) ?? [];
+      lines.push(`/** Declared in ${declaration.module}. */`,
+        `interface ${identifierOf(declaration.name)}${parameters.length > 0 ? `<${parameters.join(", ")}>` : ""} {`);
+      const own = members.filter((m) => identity(m.member.declaration) === identity(declaration))
+        .map((m) => ({ ...m, key: texts.key(m.member.key) })).sort((a, b) => a.key.localeCompare(b.key));
+      for (const { key, read } of own) {
+        const d = declared(read);
+        if ("missing" in d) lines.push(`  // ${key}: ${d.missing}`);
+        else if ("type" in d) lines.push(`  ${key}: ${d.type};`);
+        else lines.push(...d.signatures.map((p) => `  ${key}${texts.head(p)}${p.body};`));
+      }
+      lines.push("}");
+    }
+  }
+  lines.push("", `// Members of the checked file's own types read: ${ownMembers}`);
   return lines.join("\n") + "\n";
 }
 // A worker of `checkApart`'s pool: one check per message, answered with its outcome.
@@ -1184,12 +1417,13 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   // `--contracts` adds the contracts the verdict relies on, as its units'
   // verdict lines record them, each with its overlay and trust row
   // (`contractsOf`), to the outcome, and writes them by trust row to
-  // standard error.
-  const contracts = all.includes("--contracts");
-  const args = all.filter((a) => a !== "--typescript-errors" && a !== "--contracts");
+  // standard error: as text, or with `--contracts=ts` as a TypeScript
+  // declaration file (`contractsDeclarations`).
+  const contracts = all.includes("--contracts=ts") ? "ts" : all.includes("--contracts") ? "text" : null;
+  const args = all.filter((a) => a !== "--typescript-errors" && a !== "--contracts" && a !== "--contracts=ts");
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
     process.stderr.write("usage: node verify-source.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--subtype-rounds n] [--omit f,g] [--contracts]\n");
+      " [--subtype-rounds n] [--omit f,g] [--contracts[=ts]]\n");
     process.exitCode = 2;
   } else {
     // The printed outcome names the run's directory, kept for inspection.
@@ -1199,11 +1433,14 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
     try {
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds, false,
         units);
-      if (contracts) {
-        const relied = result.contractReads === undefined ? null :
-          contractsOf(result.contractReads, readFragmentFile(join(result.artifacts, "fragment.json")).declarations);
+      if (contracts !== null) {
+        const reads = result.contractReads;
+        const document = reads === undefined ? null : readFragmentFile(join(result.artifacts, "fragment.json")).declarations;
+        const relied = reads === undefined || document === null ? null : contractsOf(reads, document);
         process.stdout.write(JSON.stringify({ ...result, contracts: relied }, null, 2) + "\n");
-        process.stderr.write(relied === null ? "Contracts: no unit's check recorded its reads\n" : contractsText(relied));
+        process.stderr.write(reads === undefined || document === null || relied === null
+          ? "Contracts: no unit's check recorded its reads\n"
+          : contracts === "ts" ? contractsDeclarations(reads, document) : contractsText(relied));
       } else process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {

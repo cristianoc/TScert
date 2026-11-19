@@ -228,12 +228,28 @@ declaration document states it, the document the check read
 (`JSON.stringify: (p0: JsonValue, p1: null | undefined, p2: number | string | undefined) => string`);
 the same list, by trust row, one line per contract, goes to standard error.
 A type is written as TypeScript writes one, its parameters named by
-position, with TScert's spellings for what TypeScript has none of
-(`Dense<…>`, `Sparse<…>`, `Modifies<{…}, R>` for a normal return's frame,
-`Fresh<R>`; [annotations](docs/ANNOTATIONS.md)) and a signature with a
-precondition marked so; a callable's other postconditions and its
-preconditions' facts are not written. Signatures differing only
-in one frame are one line, `F` standing for each frame it lists.
+position and its binders with their bounds, with TScert's spellings for
+what TypeScript has none of (`Dense<…>`, `Sparse<…>`, `Modifies<{…}, R>`
+for a normal return's frame, `Fresh<R>`; [annotations](docs/ANNOTATIONS.md))
+and a signature's preconditions in a comment after its result
+(`/* requires safeInteger(p0) && 0 <= p0 && p0 + 1 <= strLength(this) */`);
+a callable's other postconditions and its throw's frame are not written.
+Signatures differing only in one frame are one line, `F` standing for each
+frame it lists.
+
+With `CONTRACTS=ts` (`--contracts=ts`) standard error holds the same
+contracts as a TypeScript declaration file, the outcome's JSON unchanged:
+TScert's spellings declared once at its top as type aliases, a comment
+opening each trust row with where its overlay is stated, a value as
+`declare function` (one signature per overload) or `declare const`, an
+intrinsic's `%…%` name made an identifier with the name in a comment, and
+the members read of one declaration as one `interface` of method
+signatures. Signatures differing only in one frame are one signature
+binding it, `F extends Frame`, the frames it is one of in a comment. The
+file is TypeScript syntax. Its type check can fail: a reference names a
+declaration the file does not declare, one the check read no member of,
+and the document may state a type TypeScript refuses, such as a type
+guard's type that is not its parameter's.
 
 ## Develop
 
