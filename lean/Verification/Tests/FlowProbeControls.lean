@@ -20,7 +20,7 @@ open Verification TolerantFrames.ReadOnly Footprints
 
 /-- The component `0`, outside code seeing outside storage only: site `0`
 is local. -/
-private abbrev Pk : TolerantFrames.ReadOnly.Package := markedPackage (some 0) [none]
+private abbrev Pk : TolerantFrames.ReadOnly.Package := markedPackage (· == some 0) [none]
 
 private def F0 : FFlow Pk := ⟨[none], [], []⟩
 

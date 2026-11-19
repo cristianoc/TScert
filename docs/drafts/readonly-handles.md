@@ -2653,12 +2653,13 @@ code fills hold $`O`$: at each code whose token lies in $`O`$, the slots a
 caller of unknown callee fills at its entry context (the rest's spine, the
 receiver, the parameters and its own slot), and a handler's thrown value.
 What outside code may supply (outside storage and the tokens $`O`$ holds)
-is held at every slot of the member's entry and at the captures' slots of
-each code whose token lies in $`O`$, at every context. A slot naming a
-module function's signature at a code's entry holds that function's
-token where a closure of the code is held: the member's entry holds its
-captures' closures, outside code the closures of each code whose token
-lies in $`O`$, and a held closure its captures' closures. Each set the proposal
+is held at every slot of each entry's first node, at its entry context
+(an execution starts at a call of an entry, `EntryShape`), and at the
+captures' slots of each code whose token lies in $`O`$, at every context.
+A slot naming a module function's signature at a code's entry holds that
+function's token where a closure of the code is held: outside code holds
+the closures of each code whose token lies in $`O`$, and a held closure
+its captures' closures. Each set the proposal
 gives is one a rule requires: a slot outside code fills (`OpenAt`,
 `HandlerOk`), what outside code may supply (`EntryShape`, `OpenAt`,
 `GivenOut`), what a value's rule reaches (`Fits`), and $`O`$'s closure
@@ -2713,12 +2714,23 @@ none does. A part of a local site no capture slot of a code of the flow
 may hold (`captureSites`) is kept: storage of a local site existing at a
 call of outside code is held only by the frames of $`C`$'s code suspended
 under the call, and a run the call starts reaches it only through a
-closure's capture (conjectured). The flow's codes are every module
-function of the file the member's module functions reach and every one
-the file exports (`probeExported`, read from the source text); an exported
-one is entered from outside code, its token in $`O`$ from the start: code
-of another module, an entry of the component among them, may call it with
-values outside code supplies. Two controls
+closure's capture (conjectured).
+
+**The component the probe reads** (`PreparedFile.probeComponent`). $`C`$
+is the outermost component of the probed file's family (the fragment's
+`components`): a package, a set of modules, where the nearest
+`package.json` states `exports`; the file's module otherwise. Its entries
+$`E`$ are the functions its interface names (for a package, the exports
+of the modules its `exports` names; for a module, its exports), and its
+tags those of the components nested in it. The flow's codes are the module
+functions of $`C`$'s modules reached from $`E`$ and from the probed member
+by the names their bodies read, an imported value naming the declaring
+module's function (`declarations.values`); each is planned alone in its
+file. `TSCERT_PROBE_PACKAGE` names the runs of $`C`$'s other modules (each
+module's `fragment.json` and `interfaces.json`), each prepared once per
+process. An entry's closure is held by outside code from the start, its
+token in $`O`$; a module function no entry names is entered only by
+$`C`$'s code that names it, at the sets its callers pass. Two controls
 (`Tests/FlowProbeControls.lean`) refuse a fact across a call where a write
 at the spine key replaces the spine and where a closure writes a local
 cursor through its capture.
@@ -2742,8 +2754,7 @@ declaring no `this` and collecting no rest, on no cycle of the module's
 names, its code the request's nodes behind one prologue node that
 continues at the request's start with the frame past the receiver
 (`PassUnit.dropReceiver`), its captures the module's closures of the
-functions it names. The member's own program is entered at its inputs, no
-slot of it holding the member itself.
+functions it names. The member is read at its module closure's code.
 
 Proof scope: each decision is proved sound for the property it decides;
 none is proved complete. Nothing is proved of the proposal: the checks
@@ -2791,7 +2802,18 @@ at the visitor call, every fact read at the marks the flow gives:
   entry context.
 
 Every member of `src/line-break.ts` meets the checks, its entry and the
-bindings check.
+bindings check (at the module as the component, its exports the entries).
+
+Measured 2026-11-19 by the probe over pretext's package (`TSCERT_PROBE_PACKAGE`
+naming the runs of `layout.ts`, `rich-inline.ts`, `prepare.ts`,
+`line-text.ts`, `measurement.ts`, `line-breaks.ts`, `graphemes.ts`,
+`han-kerning.ts` and `gecko-line-breaks.ts`; `analysis.ts` is refused at
+the source gate and its functions are no code of the flow), for
+`walkPreparedLinesRaw`: 17 entries, 147 module functions reached, 15253
+nodes, planned in 50.8 s; 762 copies, 48496 nodes over the copies,
+3138258 variables. The rounds do not finish within the 300 s limit: 400000
+rounds take 6.0 s, $`O`$ then holding 669 sites; 1500000 rounds do not end
+within 190 s. No frame check is measured at the package.
 
 ### The frame at a call
 

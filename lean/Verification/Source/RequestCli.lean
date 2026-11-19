@@ -439,7 +439,8 @@ each unit's planning gives the front its own reads), the selection's closure
 No unit is planned here: each unit's plans are computed in its own check
 (`PreparedFile.plan`). -/
 def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
-    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false) :
+    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false)
+    (outcome : Bool := true) :
     IO (Except String PreparedFile) := do
   let emit := fun (s : String) => if quiet then pure () else IO.eprintln s
   -- Per-kind timings only where asked (`TSCERT_PROFILE`).
@@ -498,7 +499,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let plans ← IO.mkRef {}
   let memo ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a) =>
-    { ast := a, components := componentOutcome a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+    { ast := a, components := if outcome then componentOutcome a else Json.null, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
       givenLines, fuel, located, quiet, t0, proposals, plans, memo }
 
@@ -582,61 +583,149 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
   let memo ← p.proposals.get
   return below.flatMap fun h => (memo.get? h).getD []
 
-/-- **The functions a file exports**, for the flow probe: those of the
-fragment whose declaration the source text writes after `export`. -/
-def probeExported (ast : Json) (path : String) : IO (List String) := do
-  let text ← try IO.FS.readFile path catch _ => pure ""
-  -- the text before each UTF-16 offset
-  let before (n : Nat) : String := Id.run do
-    let mut acc := ""
-    let mut u := 0
-    for c in text.toList do
-      if u ≥ n then break
-      acc := acc.push c
-      u := u + (if c.val ≥ 0x10000 then 2 else 1)
-    return acc
-  let fns := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
-  let names := fns.toList.filterMap fun f => do
-    let name ← (f.getObjValAs? String "name").toOption
-    let pos ← ((f.getObjVal? "namePos").toOption.bind (·.getArr?.toOption)).bind (·[0]?)
-    let n ← (pos.getNat?).toOption
-    -- the words before the name, last first
-    let words : List String := ((before n).toList.foldl (fun (ws : List (List Char)) c =>
-        if c.isWhitespace then [] :: ws else match ws with
-          | w :: rest => (c :: w) :: rest
-          | [] => [[c]]) []).filterMap fun w => if w.isEmpty then none else some (String.ofList w.reverse)
-    if words.take 2 == ["function", "export"] || words.take 3 == ["function", "async", "export"] then some name
-    else none
-  return names
+/-! ## The component a probe reads -/
 
-/-- The module functions' codes the probe of a group reads
-(`TSCERT_FLOW_PROBE`): its members', those of the functions the file
-exports (`exported`) and of every function they name, and those of every
-group planned so far, the groups below it among them. A diagnostic. -/
-def PreparedFile.probeModules (p : PreparedFile) (f : SourceClaimJson.FilePlans) (group : List Nat)
-    (exported : List String) : IO (List SourceClaimJson.ProbeModule) := do
-  let fr := p.fr
+/-- The other modules of the probed unit's component (`TSCERT_PROBE_PACKAGE`,
+a file listing each module's run as `{"fragment", "interfaces"}`), each
+prepared once per process, its components' outcome not computed. -/
+initialize probePackageFiles : IO.Ref (Option (List PreparedFile)) ← IO.mkRef none
+
+/-- The module functions' codes of the other modules planned so far, by
+their names in the probe. -/
+initialize probePackageSeen : IO.Ref (List SourceClaimJson.ProbeModule) ← IO.mkRef []
+
+def probePackageLoad (budget : PositiveCertificates.SearchBudget) (fuel : Nat) : IO (List PreparedFile) := do
+  if let some ps := ← probePackageFiles.get then return ps
+  let ps ← match ← IO.getEnv "TSCERT_PROBE_PACKAGE" with
+    | none => pure []
+    | some path => do
+      let rows ← match Json.parse (← IO.FS.readFile path) >>= (·.getArr?) with
+        | .ok rows => pure rows.toList
+        | .error e => IO.eprintln s!"probe package: {e}"; pure []
+      rows.filterMapM fun row => do
+        let some frag := (row.getObjValAs? String "fragment").toOption | pure none
+        let some ifs := (row.getObjValAs? String "interfaces").toOption | pure none
+        let key := match Json.parse (← IO.FS.readFile frag) >>= (·.getObjValAs? String "file") with
+          | .ok k => k
+          | .error _ => frag
+        let t0 ← IO.monoNanosNow
+        match ← prepareUnitsFile frag key fuel none budget ifs true false with
+        | .ok q =>
+          IO.eprintln s!"probe package: prepared {key} in {((← IO.monoNanosNow) - t0) / 1000000} ms"
+          pure (some q)
+        | .error e => IO.eprintln s!"probe package: {frag}: {e}"; pure none
+  probePackageFiles.set (some ps)
+  return ps
+
+/-- **A module of the probe's component**: its file, its index in the family
+(the component of kind module whose location is the file), and the module
+function each imported value names (its local name, the index of the
+declaring module, the declaration's name). -/
+structure ProbeFile where
+  file : PreparedFile
+  index : Option Nat
+  imports : List (String × Option Nat × String)
+
+def ProbeFile.of (q : PreparedFile) : ProbeFile :=
+  -- (each file's family names the same components in the same order, the
+  -- file itself by its snapshot)
+  let F := (Fragment.decodeComponents q.ast).toOption.getD ComponentWire.Components.empty
+  let file := (q.ast.getObjValAs? String "file").toOption.getD q.fileKey
+  let idx (loc : String) : Option Nat :=
+    F.components.findIdx? fun c => c.kind == .module && c.location == loc
+  -- (the imported values, `declarations.values`, each at the declaring
+  -- module's own declaration)
+  let values := (((q.ast.getObjVal? "declarations").toOption.bind (·.getObjVal? "values" |>.toOption)).bind
+    (·.getArr? |>.toOption)).getD #[]
+  let imports := values.toList.filterMap fun r => do
+    let b ← (r.getObjVal? "binding").toOption
+    let l ← (b.getObjValAs? String "local").toOption
+    let d ← (r.getObjVal? "declaration").toOption
+    let i ← idx ((d.getObjValAs? String "module").toOption.getD "")
+    pure (l, some i, ← (d.getObjValAs? String "name").toOption)
+  ⟨q, idx file, imports⟩
+
+/-- **The component a probe reads** (the draft, "Components"): the
+outermost component of the probed file's family, a set of modules (the
+tags nested in it), entered through the entries its interface names. Its
+modules' functions are named in the probe by `qualify`: the probed file's
+own by their names, another module's by its file's name and theirs; an
+import binding names the module function it imports. The codes are those
+of the component's module functions reached from the entries and from the
+probed group, by the names their bodies read, each module's function
+planned alone in its file (`PreparedFile.plan`). Returns the codes, the
+component's tags and its entries' names. A diagnostic. -/
+def PreparedFile.probeComponent (p : PreparedFile) (f : SourceClaimJson.FilePlans) (group : List Nat) :
+    IO (List SourceClaimJson.ProbeModule × (ComponentTag → Bool) × List String) := do
+  let F := (Fragment.decodeComponents p.ast).toOption.getD ComponentWire.Components.empty
+  let own := ProbeFile.of p
+  let others := (← probePackageLoad p.budget p.fuel).map ProbeFile.of
+  let files := own :: others
+  -- the component: the outermost of the probed module's chain
+  let rec top : Nat → Nat → Nat
+    | 0, c => c
+    | n + 1, c => match (F.components[c]?).bind (·.parent) with
+      | some q => top n q
+      | none => c
+  let C := own.index.map (top F.components.length)
+  let ofC : ComponentTag → Bool := fun t => match t, C with
+    | some i, some c => F.nested i c
+    | _, _ => false
+  let base (i : Option Nat) : String :=
+    let loc := ((i.bind (F.components[·]?)).map (·.location)).getD "?"
+    (loc.splitOn "/").getLast?.getD loc
+  let qualify (i : Option Nat) (x : String) : String := if i == own.index then x else s!"{base i}:{x}"
+  let fnsOf (pf : ProbeFile) : List String :=
+    pf.file.fr.units.filterMap fun (u, _, init) => if init.isNone then some u.name else none
+  let resolve (pf : ProbeFile) (x : String) : String :=
+    match pf.imports.find? (·.1 == x) with
+    | some (_, i, n) => qualify i n
+    | none => if (fnsOf pf).contains x then qualify pf.index x else x
+  let rename (pf : ProbeFile) (g : SourceClaimJson.ProbeModule) : SourceClaimJson.ProbeModule :=
+    { g with name := qualify pf.index g.name, siblings := g.siblings.map (resolve pf) }
+  let entries : List String := match (C.bind (F.components[·]?)).map (·.interface) with
+    | some (ComponentWire.Interface.known es) => es.map fun e =>
+      qualify (F.components.findIdx? fun c => c.kind == .module && c.location == e.module) e.name
+    | _ => []
+  -- the module functions by name: each file's function
+  let table : List (String × ProbeFile × String) := files.flatMap fun pf =>
+    (fnsOf pf).map fun x => (qualify pf.index x, pf, x)
   f.keepModuleCodes group
-  let mut work := f.siblingsOf group ++ exported
+  let mut work : List String := (f.siblingsOf group).map (resolve own) ++
+    (f.moduleCodes group).map (qualify own.index ·.name) ++ entries
   let mut tried : List String := []
-  -- (each name tried once; each tried name adds at most every unit's name)
-  for _ in List.range ((fr.units.length + 1) * (fr.units.length + 1) + exported.length) do
+  let mut out : List SourceClaimJson.ProbeModule := []
+  for _ in List.range ((table.length + 1) * (table.length + 1) + entries.length + 1) do
     match work with
     | [] => break
     | x :: rest =>
       work := rest
-      let seen ← SourceClaimJson.probeModulesSeen.get
       if tried.contains x then continue
       tried := x :: tried
-      if let some m := seen.find? (·.name == x) then
+      let some (_, pf, n) := table.find? (·.1 == x) | continue
+      let seen ← if pf.index == own.index then SourceClaimJson.probeModulesSeen.get else probePackageSeen.get
+      let found ← match seen.find? (·.name == (if pf.index == own.index then n else x)) with
+        | some m => pure (some m)
+        | none => do
+          let some j := pf.file.fr.units.findIdx? fun (u, _, init) => init.isNone && u.name == n | pure none
+          let t0 ← IO.monoNanosNow
+          let planned ← IO.lazyPure fun _ => pf.file.plan j [] {}
+          if (← IO.getEnv "TSCERT_PROBE_VERBOSE").isSome then
+            IO.eprintln s!"probe component: planned {x} in {((← IO.monoNanosNow) - t0) / 1000000} ms"
+          match planned with
+          | .ok g =>
+            let ms := g.moduleCodes (pf.file.fr.group j)
+            if pf.index == own.index then g.keepModuleCodes (pf.file.fr.group j)
+            else probePackageSeen.modify (· ++ (ms.map (rename pf)).filter fun m => !seen.any (·.name == m.name))
+            pure ((ms.find? (·.name == n)).map fun m => if pf.index == own.index then m else rename pf m)
+          | .error e =>
+            IO.eprintln s!"probe component: {x} not planned: {e.take 200}"
+            pure none
+      if let some m := found then
+        let m := if pf.index == own.index then rename pf m else m
+        if !out.any (·.name == m.name) then out := out ++ [m]
         work := work ++ m.siblings
-        continue
-      let some j := fr.units.findIdx? fun (u, _, init) => init.isNone && u.name == x | continue
-      let planned ← IO.lazyPure fun _ => p.plan j [] {}
-      if let .ok g := planned then
-        g.keepModuleCodes (fr.group j)
-        work := work ++ g.siblingsOf (fr.group j)
-  SourceClaimJson.probeModulesSeen.get
+  return (out, ofC, entries)
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
@@ -682,9 +771,10 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let probe ← IO.getEnv "TSCERT_FLOW_PROBE"
   if probe.isSome then
     if let .ok f := planned then
-      let exported ← probeExported p.ast p.fileKey
-      let mods ← p.probeModules f (fr.group i) exported
-      for line in ← f.flowProbe (fr.group i) mods exported.contains do IO.eprintln line
+      let c0 ← IO.monoNanosNow
+      let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
+      IO.eprintln s!"probe component: entries {entries}; {mods.length} module functions {mods.map (·.name)}, {(mods.map (·.code.1.length)).sum} nodes, planned in {((← IO.monoNanosNow) - c0) / 1000000} ms"
+      for line in ← f.flowProbe (fr.group i) mods ofC entries.contains do IO.eprintln line
   let planned := if probe == some "only" then .error "flow probe only" else planned
   let (lines, verdict, extraction, contracts, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [], false)

@@ -70,6 +70,10 @@ structure SolveCode (P : Package) where
   /-- The sites a frame of a node's continuation and handler allocates
   at. -/
   allocAt : NodeKey → Alloc P := fun _ => alloc
+  /-- Whether an execution may start at a call of the code's closure (an
+  entry of `C`): every slot of its first node then holds what outside code
+  may supply, at its entry context (`EntryShape`). -/
+  entry : Bool := false
 
 def SolveCode.sig (c : SolveCode P) : FnSig := ⟨c.code, c.ar, c.start, c.rest, c.ncaps⟩
 
@@ -89,7 +93,12 @@ where each node's variables start and how many slots it keeps apart, and
 what changed since it was last read. -/
 structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
   O : Sites P
-  heap : List (Option P.Site × Sites P × Sites P)
+  /-- The sites of `O`, as a hash set. -/
+  oSet : Std.HashSet (Option P.Site) := {}
+  /-- The heap of sites: each site's contents, as a list and a hash set. -/
+  heapM : Std.HashMap (Option P.Site) (Sites P × Std.HashSet (Option P.Site)) := {}
+  /-- The number of sites the heap's contents list, over all sites. -/
+  heapTotal : Nat := 0
   vars : Array (Sites P)
   offs : Array (Array Nat)
   needs : Array (Array Nat)
@@ -109,26 +118,35 @@ structure SolveState (P : Package) [DecidableEq P.Site] [Hashable P.Site] where
 namespace SolveState
 variable (st : SolveState P)
 
-/-- The heap of sites as a finite flow with no codes: what reads of the
-contents need. -/
+/-- The heap of sites as a list of entries, each site's contents and
+bindings (the solver grows both alike). -/
+def heap : List (Option P.Site × Sites P × Sites P) :=
+  st.heapM.toList.map fun (s, (c, _)) => (s, c, c)
+
+/-- The contents of a site's storage. -/
+def contents (s : Option P.Site) : Sites P := ((st.heapM[s]?).map (·.1)).getD []
+
+/-- The heap of sites as a finite flow with no codes. -/
 def heapFlow : FFlow P := ⟨st.O, st.heap, []⟩
+
+/-- The sites of `S` a hash set lacks, each once, and the set grown. -/
+def addNew (hs : Std.HashSet (Option P.Site)) (S : Sites P) : Sites P × Std.HashSet (Option P.Site) :=
+  let (acc, hs) := S.foldl (fun (acc, hs) x => if hs.contains x then (acc, hs) else (x :: acc, hs.insert x)) ([], hs)
+  (acc.reverse, hs)
 
 /-- Add sites to `O`. -/
 def toO (S : Sites P) : SolveState P :=
-  let O' := union st.O S
-  if O'.length = st.O.length then st else { st with O := O', grewO := true }
+  let (added, hs) := addNew st.oSet S
+  if added.isEmpty then st else { st with O := st.O ++ added, oSet := hs, grewO := true }
 
 /-- Add sites to the contents and bindings of a site's storage. -/
 def store (s : Option P.Site) (S : Sites P) : SolveState P :=
-  match look s st.heap with
-  | none => if S.isEmpty then st else { st with heap := (s, S, S) :: st.heap, grewHeap := true }
-  | some (c, b) =>
-    let c' := union c S
-    let b' := union b S
-    if c'.length = c.length ∧ b'.length = b.length then st
-    else
-      let heap := st.heap.map fun e => if e.1 = s then (s, c', b') else e
-      { st with heap := heap, grewHeap := true }
+  if S.isEmpty then st else
+  let (c, hs) := (st.heapM[s]?).getD ([], {})
+  let (added, hs) := addNew hs S
+  if added.isEmpty then st
+  else
+    { st with heapM := st.heapM.insert s (c ++ added, hs), heapTotal := st.heapTotal + added.length, grewHeap := true }
 
 /-- A variable holding more sites than this keeps them in a hash set too. -/
 def membFrom : Nat := 8
@@ -178,11 +196,11 @@ end SolveState
 /-- **The sites of a set and every site their storage may reference**, in
 the heap of sites `F`: the least set holding `S` closed under contents,
 each site once, by a worklist (the closure `closeQ` checks). -/
-def closeSites (F : FFlow P) (S : Sites P) : Sites P := Id.run do
+def closeSites (st : SolveState P) (S : Sites P) : Sites P := Id.run do
   let mut seen : Std.HashSet (Option P.Site) := {}
   let mut out : Sites P := []
   let mut work := S
-  for _ in [0:S.length + (F.heap.map fun e => e.2.1.length).sum + 1] do
+  for _ in [0:S.length + st.heapTotal + 1] do
     match work with
     | [] => break
     | s :: rest =>
@@ -190,15 +208,15 @@ def closeSites (F : FFlow P) (S : Sites P) : Sites P := Id.run do
       if !seen.contains s then
         seen := seen.insert s
         out := s :: out
-        work := F.contents s ++ work
+        work := st.contents s ++ work
   return out.reverse
 
 /-- The contents of the sites of a set, each site once. -/
-def contentsSet (F : FFlow P) (S : Sites P) : Sites P := Id.run do
+def contentsSet (st : SolveState P) (S : Sites P) : Sites P := Id.run do
   let mut seen : Std.HashSet (Option P.Site) := {}
   let mut out : Sites P := []
   for s in S do
-    for x in F.contents s do
+    for x in st.contents s do
       if !seen.contains x then
         seen := seen.insert x
         out := x :: out
@@ -246,7 +264,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
   | .letE x b =>
     let Sx ← gen d Γ x
     gen (d + 1) (consSites Sx Γ) b
-  | .spread x => let Sx ← gen d Γ x; return contentsSet (← get).heapFlow Sx
+  | .spread x => let Sx ← gen d Γ x; return contentsSet (← get) Sx
   | .makeAt .absent _ inits =>
     for x in inits do
       let S ← gen d Γ x
@@ -277,8 +295,8 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
     match e with
     | .indexAt _ k => let _ ← gen d Γ k
     | _ => pure ()
-    let F := (← get).heapFlow
-    return contentsSet F (closeSites F Sx)
+    let st ← get
+    return contentsSet st (closeSites st Sx)
   | .writeAt _ x y =>
     let Sx ← gen d Γ x
     let Sy ← gen d Γ y
@@ -298,7 +316,7 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
   | .elemAt x i =>
     let Sx ← gen d Γ x
     let _ ← gen d Γ i
-    return contentsSet (← get).heapFlow Sx
+    return contentsSet (← get) Sx
   | .setElem x i v =>
     let Sx ← gen d Γ x
     let _ ← gen d Γ i
@@ -313,10 +331,10 @@ partial def gen (d : Nat) (Γ : Nat → Option (Sites P)) (e : Tm) : StateM (Sol
   | .merge _ x y =>
     let Sx ← gen d Γ x
     let Sy ← gen d Γ y
-    let F := (← get).heapFlow
-    let Q := closeSites F (Sx ++ Sy)
+    let st₀ ← get
+    let Q := closeSites st₀ (Sx ++ Sy)
     for s in Q do
-      modify fun st => st.store a.obj (F.contents s)
+      modify fun st => st.store a.obj (st₀.contents s)
     return [a.obj]
   | .makeKey k x =>
     let _ ← gen d Γ k
@@ -494,7 +512,7 @@ captures' closures, outside code those of each code whose token lies in
 def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × List Nat)) (noneVars : List Nat)
     (entries : Array Bool) (units : List Nat) (nb : Nat) (tokVars : List (Nat × Nat × Nat × Option P.Site))
     (st : SolveState P) : SolveState P := Id.run do
-  let mut st := st.toO (contentsOf st.heapFlow st.O)
+  let mut st := st.toO (contentsSet st st.O)
   for s in st.O do
     st := st.store s st.O
   for v in oVars do
@@ -731,7 +749,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
         else []
       let caps := (List.range c.ncaps).map (capSlot c.ar c.rest ·)
       entryVars := (c.tok, filled.map (so + min · sn), caps.map (so + min · sn)) :: entryVars
-    else if c.cx == entryCx then
+    if c.cx == entryCx && (!c.closure || c.entry) then
       for i in List.range (sn + 1) do
         noneVars := (so + i) :: noneVars
     -- A slot naming a code's signature at the entry holds its token where
@@ -754,7 +772,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     (codes.toList.zipIdx.flatMap fun ((exprs, _), ci) =>
       (exprs.toList.zipIdx.filter fun (e, _) => p e).map fun (_, l) => (ci, l))
   let st0 : SolveState P :=
-    { O := [none], heap := [], vars := Array.replicate n [], delta := Array.replicate n [],
+    { O := [none], oSet := ({} : Std.HashSet _).insert none, vars := Array.replicate n [], delta := Array.replicate n [],
       memb := Array.replicate n none, offs := offs,
       needs := needs, rets := rets, toks := csA.map (·.tok) }
   let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
