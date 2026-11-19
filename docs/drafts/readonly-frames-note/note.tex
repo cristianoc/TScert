@@ -444,17 +444,21 @@ function, has its code's token in $S$
 $H=(H_c,H_b)$, with $H_c(s)$ the sites that the values stored at a
 location of site $s$ may reach first and $H_b(s)$ those that the values
 bound by a closure of outside code or a bound function stored there may;
-and for each code $m$ the sites $\tau_l(x)$ of each slot $x$ of each node
-$l$, the sites $\nu_l$ of the node's value, the sites $\rho_m$ of the
-values $m$'s runs return, and, where a slot holds closures of $\cC$'s code
-of one signature (a code, its arity, its entry, whether it collects a
-rest parameter, its number of captures), that signature $\phi_l(x)$. A
+and for each code $m$ at each \emph{context} $c$, a number, $c=0$ the
+entry from outside code: the sites $\tau_l(x)$ of each slot $x$ of each
+node $l$, the sites $\nu_l$ of the node's value, the sites $\rho_{m,c}$ of
+the values $m$'s runs return, and, where a slot holds closures of $\cC$'s
+code of one signature (a code, its arity, its entry, whether it collects
+a rest parameter, its number of captures), that signature $\phi_l(x)$, all
+at $(m,c)$. The contexts of a code \emph{agree}: each has the allocation
+sites and the token of context $0$, since a frame names its code and not
+its context. A
 heap \emph{meets} $H$ when the value of each location meets $H_c$ of its
 site and each value its code binds meets $H_b$ of it. Storage of site $s$
 \emph{stores} $S$ when $S\subseteq H_c(s)\cap H_b(s)$, and $S$ is
 \emph{closed} when $H_c(S)\subseteq S$, with
 $H_c(S)=\bigcup_{s\in S}H_c(s)$
-\status{Lean: \lean{Flow}, \lean{CodeFlow} (\lean{env}, \lean{val}, \lean{ret}, \lean{fn}, \lean{vfn}), \lean{FnSig}, \lean{SiteHeap}, \lean{HeapSites}, \lean{Stores}, \lean{Closed}}.
+\status{Lean: \lean{Flow}, \lean{CodeFlow} (\lean{env}, \lean{val}, \lean{ret}, \lean{fn}, \lean{vfn}), \lean{FnSig}, \lean{entryCx}, \lean{Flow.Agree}, \lean{allocOf\_C}, \lean{SiteHeap}, \lean{HeapSites}, \lean{Stores}, \lean{Closed}}.
 
 \begin{proposition}[Reach]\label{prop:reach}
 In a heap that meets $H$, a value that meets a closed set $S$ reaches only
@@ -476,39 +480,42 @@ closure a node expression creates names
 
 \paragraph{The rules.} A set $S$ is \emph{supplied} when it holds what
 outside code may supply: $\circ$ and the token of every code whose token
-is in $O$. Code $m$ is \emph{open} at an entry when its rest spine,
-receiver and parameter slots and the closure's own slot hold $O$, its
-capture slots are supplied, and $\rho_m\subseteq O$. Write $[e]$ for the
-set of a subterm $e$ of node $l$ of code $m$: its slot's set, or what the
+is in $O$. Code $m$ is \emph{open} at an entry when, at context $0$, its
+rest spine, receiver and parameter slots and the closure's own slot hold
+$O$, its capture slots are supplied, and $\rho_{m,0}\subseteq O$; no other
+context is open. Write $[e]$ for the set of a subterm $e$ of node $l$ of
+code $m$ at context $c$: its slot's set, or what the
 rules below give it, and $\emptyset$ for a test, an arithmetic operation
 or a length. The rules are inclusions:
 \[
 \begin{array}{@{}l@{\quad}l@{}}
 \text{allocation }\kw{new}\{\bar f:\bar e\} & \alpha_o(m)\in[\kw{new}],\ \ [e_i]\subseteq H_c(\alpha_o(m))\cap H_b(\alpha_o(m))\ \ (\alpha_a(m)\text{ for cells})\\
-\text{closure }\kw{fun}_{m'}[\bar u] & \alpha_o(m),\kappa_{m'}\in[\kw{fun}],\ \ [u_i]\subseteq\tau^{m'}(\mathit{cap}_i),\ \ \kappa_{m'}\in O\Rightarrow m'\text{ open}\\
+\text{closure }\kw{fun}_{m'}[\bar u] & \alpha_o(m),\kappa_{m'}\in[\kw{fun}],\ \ [u_i]\subseteq\tau^{m',c'}(\mathit{cap}_i)\text{ for every }c',\ \ \kappa_{m'}\in O\Rightarrow m'\text{ open}\\
 \text{read }e[k] & [e]\subseteq Q,\ \ H_c(Q)\subseteq Q,\ \ H_c(Q)\subseteq[e[k]]\\
 \text{write }e[k]:=e' & [e']\subseteq H_c(s)\cap H_b(s)\ \text{for}\ s\in[e]\\
 \text{edge }l\to l' & \tau_{l'}(y)\supseteq\text{the slot or }\nu_l\text{ that fills }y;\ \ \text{a handler's slot}\supseteq O\\
-\text{known call }f(e_r;\bar e),\ \phi(f)=\sigma & [e_r]\subseteq\tau^\sigma(\kw{this}),\ \ [e_i]\subseteq\tau^\sigma(x_i),\ \ \rho_\sigma\subseteq[f(\ldots)]\\
+\text{known call }f(e_r;\bar e),\ \phi(f)=\sigma & [e_r]\subseteq\tau^{\sigma,c'}(\kw{this}),\ \ [e_i]\subseteq\tau^{\sigma,c'}(x_i),\ \ \rho_{\sigma,c'}\subseteq[f(\ldots)]\\
 \text{unknown call }f(e_r;\bar e) & [f],[e_r],[e_i]\subseteq O,\ \ \alpha_a(m)\in O,\ \ O\subseteq[f(\ldots)];\ \ \text{throw }e{:}\ [e]\subseteq O\\
-\text{return at }l & \nu_l\subseteq\rho_m\\
+\text{return at }l & \nu_l\subseteq\rho_{m,c}\\
 O\text{ closed} & \circ\in O,\ \ H_c(O)\subseteq O,\ \ O\subseteq H_c(s)\cap H_b(s)\ \text{for}\ s\in O\\
 \text{open code} & \text{a closure of a code whose token is in }O\text{ has its code open at its entry}\\
-\text{unit entry} & \text{every slot of the entry node supplied},\ \ \rho_m\subseteq O
+\text{unit entry} & \text{at context }0\text{: every slot of the entry node supplied},\ \ \rho_{m,0}\subseteq O
 \end{array}
 \]
-and $[e_l]\subseteq\nu_l$ at each node. Here $\tau^\sigma$ is the entry
-node's slots of $\sigma$'s code and $\rho_\sigma$ its return set; a known
-call's actuals are values or variables, and a rest parameter collects the
+and $[e_l]\subseteq\nu_l$ at each node. Here $\tau^{\sigma,c'}$ is the
+entry node's slots of $\sigma$'s code at context $c'$, the one the
+proposal names for the call's node, and $\rho_{\sigma,c'}$ its return
+set; a closure, made once, may be entered at any context, so its captures
+meet every context's capture slots. A known call's actuals are values or variables, and a rest parameter collects the
 actuals past the parameters in an array of site $\alpha_a(m)$, which its
 slot holds and which stores them. A read reaches a closed set, since it
 may follow prototypes; an unknown call puts $\alpha_a(m)$ in $O$ for the
 rest spine of a callee that may be outside code. A nested run of $\cC$'s
-code meets its node's slots, and its result contains its code's return
-set; a run of outside code meets $O$. The code of every closure created
+code meets its node's slots at one context of its code, which its steps
+keep, and its result contains that context's return set; a run of outside code meets $O$. The code of every closure created
 is \emph{lowered}: a closure its node expressions create has its token in
 $O$, its code open, and its capture slots holding $O$
-\status{Lean: \lean{Fits} (allocation \lean{Fits.makeAbsent}, \lean{Fits.makeView}, \lean{Fits.makeBound}, \lean{Fits.arrLit}, \lean{Fits.makeKey}; closure \lean{Fits.makeGraphC}, \lean{Fits.makeGraphOut}; read \lean{Fits.readAt}, \lean{Fits.indexAt}, \lean{Fits.elemAt}, \lean{Fits.spread}, \lean{Fits.merge}; write \lean{Fits.writeAt}, \lean{Fits.setElem}; known call \lean{Fits.invokeC}; unknown call \lean{Fits.invoke}, \lean{Fits.construct}, \lean{Fits.throw}; runs \lean{Fits.frameC}, \lean{Fits.frameOut}, \lean{Fits.gotoC}, \lean{Fits.gotoOut}); \lean{ContOk}, \lean{HandlerOk}; \lean{Supplied}, \lean{OpenAt}, \lean{CapsOk}, \lean{Lowered}, \lean{OpenCaps}; the entry, \lean{EntryShape}}.
+\status{Lean: \lean{Fits} (allocation \lean{Fits.makeAbsent}, \lean{Fits.makeView}, \lean{Fits.makeBound}, \lean{Fits.arrLit}, \lean{Fits.makeKey}; closure \lean{Fits.makeGraphC}, \lean{Fits.makeGraphOut}; read \lean{Fits.readAt}, \lean{Fits.indexAt}, \lean{Fits.elemAt}, \lean{Fits.spread}, \lean{Fits.merge}; write \lean{Fits.writeAt}, \lean{Fits.setElem}; known call \lean{Fits.invokeC}; unknown call \lean{Fits.invoke}, \lean{Fits.construct}, \lean{Fits.throw}; runs \lean{Fits.frameC}, \lean{Fits.frameOut}, \lean{Fits.gotoC}, \lean{Fits.gotoOut}); \lean{ContOk}, \lean{HandlerOk}; \lean{Supplied}, \lean{OpenAt}, \lean{CapsOk}, \lean{Lowered}, \lean{OpenCaps}; an unknown call enters context $0$, \lean{VJ.entryC}, a closure's captures at every context, \lean{VJ.capC}; the entry, \lean{EntryShape}}.
 
 \begin{definition}[A flow of $\cC$]\label{def:flow}
 $F$ is a flow of $\cC$ when it meets the rules: (F1) each node's
@@ -521,10 +528,11 @@ node's value lies within its code's return set; (F4) $O$ is closed
 \begin{theorem}[Flow]\label{thm:flow}
 Let $F$ be a flow of $\cC$, each step allocate at the sites of its
 innermost frame's code, and every entry fit $F$: a run of a code $m$ of
-$\cC$ at a node whose every slot is supplied and whose named slots hold
-closures of their signatures, with $\rho_m\subseteq O$, every closure of
-$\cC$'s code its values and its heap's hold \emph{given out} (of a code
-whose token is in $O$, open at its entry), every location outside
+$\cC$ at context $0$ at a node whose every slot is supplied and whose
+named slots hold closures of their signatures, with $\rho_{m,0}\subseteq
+O$, every closure of $\cC$'s code its values and its heap's hold
+\emph{given out} (of a code whose token is in $O$, open at its entry, its
+capture slots supplied at every context), every location outside
 storage. At every state reached in a call of $\cC$ the heap meets $H$ and
 every value held by outside code meets $O$; so, by
 Proposition~\ref{prop:reach}, every location outside code reaches has its
@@ -542,12 +550,18 @@ location is of site $\circ\in O$, and every slot is supplied
 (1)~An untrusted worklist solver proposes a flow: one variable per slot a
 node keeps apart, one for its value, the return sets, $H$ and $O$; each
 rule reads some variables and adds to others, and a variable's growth
-re-fires the rules that read it, until nothing changes. Its unit entry's
+re-fires the rules that read it, until nothing changes. The solver gives
+each code context $0$ and one context per known call site naming it;
+then it merges the contexts of a code whose entry sets are equal, each
+call site taking its class's first context. Merging changes no solution:
+the merged flow is checked like any other, so it needs no proof. Its unit entry's
 slots grow with the tokens $O$ holds, and a code's returns reach $O$ only
 where the code is the unit or its token is in $O$.
 (2)~One pass checks the proposal: each node expression's least set at its
 slots against $\nu_l$, each edge's slots up to a width past which both ends
-are constant, (F4), and each entry's slots and return set.
+are constant, (F4), each entry's slots and return set, and the agreement of contexts.
+A node's known calls read their callee at the context the proposal names
+for the node.
 (3)~The marks are read from $O$ (Definition~\ref{def:marksfit}), and the
 bindings condition is checked.
 (4)~At each call of outside code, the frame check reads the slots' sets
@@ -556,16 +570,21 @@ bindings condition is checked.
 \begin{theorem}[Check]\label{thm:check}
 A finite flow the check accepts is a flow of $\cC$.
 \end{theorem}
-\noindent{\sloppy\status{Lean: \lean{FFlow.check\_sound}, from \lean{syn\_sound} (the least set fits, and so does every larger one), \lean{codeChkB\_sound} and \lean{codeOk\_of\_chk}; the entry, \lean{FFlow.entryB}, \lean{FFlow.entryB\_sound}, \lean{suppliedB\_sound}, \lean{openB\_sound}; the proposal is \lean{solveFlow}, untrusted. The check is not complete: it may refuse a flow of $\cC$.}\par}
+\noindent{\sloppy\status{Lean: \lean{FFlow.check\_sound}, from \lean{syn\_sound} (the least set fits, and so does every larger one), \lean{codeChkB\_sound} and \lean{codeOk\_of\_chk}, the context of a node's calls \lean{invokeSites}, captures at every context \lean{graphSites}; the solver's merge, \lean{SolveStart.mergeFlow}, untrusted; the entry, \lean{FFlow.entryB}, \lean{FFlow.entryB\_sound}, \lean{suppliedB\_sound}, \lean{openB\_sound}; the proposal is \lean{solveFlow}, untrusted. The check is not complete: it may refuse a flow of $\cC$.}\par}
 
 \paragraph{Cost.} With $n$ codes there are about $3n$ abstract values
-(two sites and a token per code), so each set holds at most $3n$ sites.
-Every set only grows, so each changes at most $3n$ times, and the solver
-costs about (constraint edges)~$\times$~(sites) set operations; the check
-costs about (nodes)~$\times$~(slots)~$\times$~(set size). Sets are lists,
-so a union costs a further factor of the set size. Measured 2026-11-19 on
-the flow the frame probe builds for pretext's \texttt{line-break.ts}: 18
-codes, 3824 nodes, proposal 1582~ms, check 1074~ms.
+(two sites and a token per code, shared by its contexts), so each set
+holds at most $3n$ sites. The unknowns are per (code, context) pair, and
+there are at most one context per known call site plus one per code, at
+one level. Every set only grows, so each changes at most $3n$ times, and
+the solver costs about (constraint edges over all pairs)~$\times$~(sites)
+set operations; the check costs about (nodes over all
+pairs)~$\times$~(slots)~$\times$~(set size). Sets are lists, so a union
+costs a further factor of the set size. Measured 2026-11-19 on the flow
+the frame probe builds for pretext's \texttt{line-break.ts} from
+\code{walkPreparedLinesRaw}: 18 codes; one context per call site, 117
+contexts, 16516 nodes, proposal 9288~ms, check 4308~ms; merged, 46
+contexts, 16183 nodes, merging 324~ms, check 4111~ms.
 
 \subsection{Read-only frames from the flow}\label{sec:flowro}
 
@@ -639,9 +658,13 @@ query says so, for instance by disjoint classes.
 
 \begin{proposition}[The frame from a flow]\label{prop:frameflow}
 Under the premises of Theorem~\ref{thm:flow}, at a call of outside code
-from the innermost frame of $\cC$'s code at node $l$ of a reached state,
-the check above gives the premise of Proposition~\ref{prop:rorely}.
+from the innermost frame of $\cC$'s code $m$ at node $l$ of a reached
+state, there is a context $c$ of $m$ at which the check above, read at the
+slots of $(m,c)$, gives the premise of Proposition~\ref{prop:rorely}.
 \end{proposition}
+\noindent
+The context is not known statically, so the check is run at every
+context of the code.
 \noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheck}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost\_keys}, the keys \lean{noKeys} by \lean{ClientFrame.NoKeys}; the crossing in as a live history witness, \lean{Witness}, \lean{entryStart\_witness}, \lean{witness\_along}; disjoint classes, \lean{classQuery}, \lean{classQuery\_sound}}.\par}
 
 \paragraph{The examples by the flow.}
@@ -653,7 +676,7 @@ local, so the check reads only $\Psi_\cC\sqcup\Theta_\cC=\keep$ at $c.i$
 (the frame probe passes both cursor facts on the field fixture).
 \item Examples~\ref{ex:roreleased} and~\ref{ex:roleaked}: the arrays
 returned (\code{held}, \code{row}, \code{last}) have their sites in $O$,
-released, by (F3) and a member entry's $\rho_m\subseteq O$, and the examples' arguments for released arrays apply.
+released, by (F3) and a member entry's $\rho_{m,0}\subseteq O$, and the examples' arguments for released arrays apply.
 \item Section~\ref{sec:problem}'s module and Examples~\ref{ex:roin}
 and~\ref{ex:ro}: \code{prepare} returns its record and its array, so, as
 above, their sites are in $O$, released, and the slot of \code{w} holds sites of $O$
@@ -668,7 +691,7 @@ component's checks: the copy is stored into a field of \code{h}, of a
 site of $O$, so the flow's marks release it, where (O) admits the store
 at the mark exposed.
 \end{itemize}
-Two limits of the flow show in the frame probe. A walker's handle and its
+Three limits of the flow show in the frame probe. A walker's handle and its
 arrays share the walker's object site, so the value of
 \code{\%ElementAt\%} read through its step model, the contents of the
 contents of the array's site, holds the handle's site; a helper returns
@@ -677,6 +700,11 @@ fail. And a fact about a field of outside storage, such as
 pretext's \code{prepared.widths}, fails where the protocol charges every
 outside field, one part under the key $\kw{none}$, with the members'
 writes to other outside fields, and no crossing in is read as protected.
+And at \code{stepPreparedLineGeometryFromStart}'s call of
+\code{walkPreparedComplexLines}, whose context's cursor slot holds $O$,
+the cursor facts fail: the call passes \code{undefined} for \code{onLine},
+but the flow does not tell a closure of outside code from \code{undefined},
+so \code{onLine?.(\ldots)} there counts as a call of outside code.
 
 \noindent
 Two more examples show the two calls.
@@ -699,7 +727,10 @@ meets \code{next}'s return set. No closure of \code{next} reaches outside
 code, so its token is outside $O$, its entry is not open, and its slots
 hold the cursor's site without $O$; the cursor's site stays local.
 Pretext's \code{walkPreparedLinesRaw} has this shape (the frame probe
-passes its four cursor facts at its visitor call).
+passes its four cursor facts at its visitor call), and so does its call of
+\code{walkPreparedComplexLines} with its cursor: at that call site's
+context the callee's cursor slot holds the raw walker's local site alone,
+and the probe passes the callee's cursor facts there.
 \end{example}
 
 \begin{example}[A cursor given away]\label{ex:rogiven}\mbox{}
