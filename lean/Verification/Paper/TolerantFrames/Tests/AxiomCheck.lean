@@ -46,6 +46,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyRegion
 import Verification.Paper.TolerantFrames.ReadOnlyRuns
 import Verification.Paper.TolerantFrames.ReadOnlySites
 import Verification.Paper.TolerantFrames.ReadOnlySteps
+import Verification.Paper.TolerantFrames.ReadOnlyStepWrites
 import Verification.Paper.TolerantFrames.ReadOnlyWire
 import Verification.Paper.TolerantFrames.Tests.ParityDerivationTests
 import Lean.Util.CollectAxioms

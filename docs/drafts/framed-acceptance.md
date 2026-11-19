@@ -302,9 +302,14 @@ every site of the flow and `none`.
   meets the read's set, then writes at that value. At each context the
   frame may fit (`framed_at_innermost_keys`' existential), the node's
   charges at that context are joined in $`W_c`$ and $`\Psi_C`$.
-- Then `step_changes` (proved) locates the changed location among the
-  redex's references, `reach_sites` (proved) puts its site among the
-  receiver's sites, and `slotKind_sound` its kind among
+- Then `step_writes_active` (proved, `ReadOnlyStepWrites.lean`) locates
+  the changed location at the active redex of the innermost frame, a
+  writing redex at it (`WriteRedex`: a field write whose receiver holds it
+  under the written key, or an element store whose spine lists it at the
+  index); `write_site` (proved, from `Fits.active` and `VJ.sites`) puts its
+  site in a set the receiver, a value one step from it, meets at the fit
+  of the term; `residual_charged` makes that set the source write's
+  charged set, and `slotKind_sound` puts its kind among
   `roleKinds (slotBound k)`. The invocation changes no old location.
 
 So **within a call** (`within_charges`, to be proved, from `local_reach`,
@@ -1125,7 +1130,9 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 (`FramedHistory.lean`); `capClosedB_sound`, `segClosedB_sound`
 (`ReadOnlyCharges.lean`); `codesCoverB_sound`, `allocSomeB_sound`,
 `allocOf_some`, `stepSite_some`, `entryFnB_sound`, `agreeB_sound`
-(`ReadOnlyBinding.lean`), `realizedFlowB_sound` (`FramedBinding.lean`).
+(`ReadOnlyBinding.lean`), `realizedFlowB_sound` (`FramedBinding.lean`);
+`step_writes_active`, `Fits.active`, `write_site`
+(`ReadOnlyStepWrites.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
