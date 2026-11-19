@@ -777,24 +777,37 @@ step is a `KStep` raising $`\delta`$ by one; `PkgProps` at that step is
 ### The binding checks
 
 Decided by the verifier from the request, the fragment's components and
-the lowered code, each with a forged-fragment control:
+the lowered code, each with a forged-fragment control. The checks over a
+finite flow are `ReadOnlyBinding.lean` and `FramedBinding.lean`, each with
+its soundness lemma (proved) and its forged flows refused in
+`Tests/FramedBindingControls.lean`; the forged fragments through the
+pipeline come with the producer's framed plans.
 
-- **codes** (`codesCoverB`): the flow holds, at its entry context and at
-  every context the check quantifies over, a proposal for each code of
-  $`C`$ by content: each module function's realized code (the prologue's
-  extension included), its closures' codes, the codes of its requests'
-  codes, and `initC`. The frame's `codes` are these.
+- **codes** (`codesCoverB`, `codesCoverB_sound`): the flow holds, at its
+  entry context, a proposal for each code of $`C`$ by content: each module
+  function's realized code (the prologue's extension included) and its
+  request's code (`requestCode`, the tables the claim's term runs), its
+  closures' codes, the codes of its requests' codes, and `initC`. The
+  frame's `codes` are these. A frame of a code with no proposal allocates
+  at outside storage (`allocOf`).
 - **allocation sites** (`allocB`): each allocation occurrence of a code of
   $`C`$ has the canonical site of `(bodyOf m, node, continuation and
   handler, kind)`, a `some` site, and the flow's allocation tables equal
-  that numbering; `allocSomeB` is its first half (`Round4.lean`: false on
-  `AstraR3.lean`'s flow, which `FFlow.check`, `marksB` and `entryB` pass);
-  `realizedFlowB` makes a realized code's proposals at body labels the
-  request's.
+  that numbering. Its first half is `allocSomeB` (`allocSomeB_sound`: every
+  proposal allocates at `some` sites at every node key, so a step of a
+  covered code of $`C`$ allocates at a `some` site, `stepSite_some`;
+  `Round4.lean`: false on `AstraR3.lean`'s flow, which `FFlow.check`,
+  `marksB` and `entryB` pass); the numbering's equality is to be built
+  with the canonical numbering. `realizedFlowB` (`realizedFlowB_sound`,
+  by `agreeB_sound`) makes a realized code's proposals at body labels the
+  request's: at every context of the realized code, the request's code
+  has a proposal with the same slots, value sets, signatures and outside
+  calls at each body label, the same allocation sites at each body node's
+  continuation and handler, and the same return set.
 - **the component** (`compB`): $`C`$ is `componentAt` of the request's
   place, its tags those the lowering assigns.
-- **the entry** (`entryB`, `entryFnB`): at the realized code's entry, its
-  slots naming signatures only at the sibling slots.
+- **the entry** (`entryB`, `entryFnB`, `entryFnB_sound`): at the realized
+  code's entry, its slots naming signatures only at the sibling slots.
 - **the inputs**: `paramTypes`, computed from the requests.
 - **$`\Theta_C`$** (`clientsB`): the join over $`C`$'s exported types of
   each `@clients` row's change per kind, read from the declaration
@@ -1109,7 +1122,10 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `pkgProps_actualIn`, `chkSound_of_escapeIn`, `chkSound_of_sitesIn`,
 `chkSound_of_flowIn` (`ReadOnlyIncoming.lean`),
 `FramedSpec.actualCrossingsIn`, `FramedSpec.entryXs_into`
-(`FramedHistory.lean`).
+(`FramedHistory.lean`); `capClosedB_sound`, `segClosedB_sound`
+(`ReadOnlyCharges.lean`); `codesCoverB_sound`, `allocSomeB_sound`,
+`allocOf_some`, `stepSite_some`, `entryFnB_sound`, `agreeB_sound`
+(`ReadOnlyBinding.lean`), `realizedFlowB_sound` (`FramedBinding.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1119,8 +1135,7 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `local_reach`, `stepWrites_sound`,
-`writesT_sound`, `residual_charged`, `chk_sim`, `realizedFlowB`'s
-soundness, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
+`writesT_sound`, `residual_charged`, `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `slotKind_sound`, `within_charges`, `segFrames`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, `sites_in_flow`, `framed_of_cover`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
@@ -1225,7 +1240,10 @@ and P22's layout meets them (measured).
   the framed member); the four restrictions' controls.
 - **Controls** (forged fragments): a flow omitting the walker's code
   (`codesCoverB`); an allocation site `none` (`allocB`, `AstraR3.lean`'s
-  flow); a signature at a non-sibling entry slot (`entryFnB`); a wire
+  flow); a signature at a non-sibling entry slot (`entryFnB`); a realized
+  code's proposal other than its request's at a body label
+  (`realizedFlowB`); the four as forged flows in
+  `Tests/FramedBindingControls.lean`; a wire
   $`\Theta_C`$ other than the source's (`clientsB`); a $`\Psi_C`$ below its
   definition; a check passing at one node of a call's continuation and
   handler and failing at another; a region `.all` at a protocol changing a

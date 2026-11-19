@@ -272,6 +272,7 @@ import Verification.Source.Claims.PassUnitVerdict
 import Verification.Source.Claims.PassUnitWrapper
 import Verification.Source.Claims.FramedSpec
 import Verification.Source.Claims.FramedHistory
+import Verification.Source.Claims.FramedBinding
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.RegionInference
@@ -334,6 +335,7 @@ import Verification.Source.WorkerWire
 import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests
 import Verification.Tests.FlowProbeControls
+import Verification.Tests.FramedBindingControls
 import Verification.Tests.FootprintControls
 import Verification.Tests.FramedLinkedCall
 import Verification.Tests.LinkControls
