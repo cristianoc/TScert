@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 2,
+  "kind": "app",
+  "name": "tscert-todo-webapp",
+  "modules": [
+    {
+      "type": "app",
+      "name": "web",
+      "path": "webapp",
+      "routes": [
+        {
+          "path": "/"
+        }
+      ],
+      "port": 8080,
+      "serve": "server",
+      "runtime": "node",
+      "build": {
+        "context": "webapp",
+        "dockerfile": "Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "node server.mts"
+      }
+    }
+  ]
+}
