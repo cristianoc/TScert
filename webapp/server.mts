@@ -26,8 +26,7 @@ const server = createServer((req, res) => {
     };
     const [next, response]: [AppState, Response] = handleRequest(state, request);
     state = next;
-    const contentType = request.path === "/" ? "text/html; charset=utf-8" : "application/json; charset=utf-8";
-    res.writeHead(response.status, { "content-type": contentType });
+    res.writeHead(response.status, { "content-type": response.contentType });
     res.end(response.body);
   });
 });
