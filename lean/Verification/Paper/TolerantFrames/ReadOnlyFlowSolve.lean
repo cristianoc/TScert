@@ -45,8 +45,11 @@ structure SolveCode (P : Package) where
 
 def SolveCode.sig (c : SolveCode P) : FnSig := ⟨c.code, c.ar, c.start, c.rest, c.ncaps⟩
 
+/-- The sites of `T` not in `S`, each once, last first. -/
+def freshOf (S T : Sites P) : Sites P := T.foldl (fun acc x => if x ∈ S || x ∈ acc then acc else x :: acc) []
+
 /-- The union of two sets, each site once. -/
-def union (S T : Sites P) : Sites P := T.foldl (fun acc x => if x ∈ acc then acc else acc ++ [x]) S
+def union (S T : Sites P) : Sites P := S ++ (freshOf S T).reverse
 
 /-- A slot's signature in the rounds: an index into the table of
 signatures, compared as a number. -/
@@ -63,6 +66,8 @@ structure SolveState (P : Package) where
   offs : Array (Array Nat)
   needs : Array (Array Nat)
   changedVars : List Nat := []
+  /-- The sites each variable gained since it was last copied. -/
+  delta : Array (Sites P) := #[]
   grewO : Bool := false
   grewHeap : Bool := false
 
@@ -95,8 +100,17 @@ def store (s : Option P.Site) (S : Sites P) : SolveState P :=
 /-- Grow variable `v` by `S`. -/
 def grow (v : Nat) (S : Sites P) : SolveState P :=
   let old := st.vars.getD v []
-  if S.all (· ∈ old) then st
-  else { st with vars := st.vars.set! v (union old S), changedVars := v :: st.changedVars }
+  let new := freshOf old S
+  if new.isEmpty then st
+  else
+    -- (the array taken out of the state before it is set, so that the
+    -- update is in place where the state is not shared)
+    let vars := st.vars
+    let delta := st.delta
+    let st := { st with vars := #[], delta := #[] }
+    let added := new.reverse
+    let delta := delta.modify v (fun d => d ++ added)
+    { st with vars := vars.set! v (old ++ added), delta := delta, changedVars := v :: st.changedVars }
 
 /-- The variable of slot `i` of node `l` of code `ci`: the slot's, or the
 one past the slots kept apart. -/
@@ -479,7 +493,8 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     (codes.toList.zipIdx.flatMap fun ((exprs, _), ci) =>
       (exprs.toList.zipIdx.filter fun (e, _) => p e).map fun (_, l) => (ci, l))
   return ⟨csA, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO,
-    { O := [none], heap := [], vars := Array.replicate n [], offs := offs, needs := needs }⟩
+    { O := [none], heap := [], vars := Array.replicate n [], delta := Array.replicate n [], offs := offs,
+      needs := needs }⟩
 
 /-- **A node's sets**: its expression's least set at its slots (`gen`), its
 value grown by it; a returned value given to `O`. -/
@@ -490,8 +505,10 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let some (k, _) := conts[l]? | return st
   let off := (st.offs.getD ci #[]).getD l 0
   let need := (st.needs.getD ci #[]).getD l 0
-  let vars := st.vars
-  let τ : Nat → Sites P := fun i => vars.getD (off + min i need) []
+  -- (the node's slots read once, so that the state's array is not shared
+  -- while the node's term grows it)
+  let slots : Array (Sites P) := (Array.range (need + 1)).map fun i => st.vars.getD (off + i) []
+  let τ : Nat → Sites P := fun i => slots.getD (min i need) []
   let fn := (s.fns.getD ci #[]).getD l #[]
   let (S, st') := (gen s.table τ (fun i => fn.getD i none) c.alloc 0 (fun _ => none) e).run st
   let mut st := st'.grow (off + need + 1) S
@@ -538,7 +555,12 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
       vfront := rest
       inQ := inQ.set! v false
       copies := copies + 1
-      let S := st.vars.getD v []
+      -- (only what the variable gained since it was last copied: its
+      -- readers hold the rest)
+      let S := st.delta.getD v []
+      let delta := st.delta
+      st := { st with delta := #[] }
+      st := { st with delta := delta.set! v [] }
       for w in s.succ.getD v [] do
         st := st.grow w S
     | [] =>
