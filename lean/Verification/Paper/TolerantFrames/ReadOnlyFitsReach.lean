@@ -66,11 +66,11 @@ theorem HeapInv.congr {g g' : Ghost P} {h : Heap} (he : ∀ l, l < h.length → 
 /-! ## The frame a fresh location's site is read at -/
 
 /-- The tag of a frame, `none` outside every frame. -/
-def frameTag : Option (Code × ComponentTag) → ComponentTag
-  | some (_, c) => c
+def frameTag : Option FrameKey → ComponentTag
+  | some ((_, c), _) => c
   | none => none
 
-theorem activeFrame_cong {cur : Option (Code × ComponentTag)} {a : Tm} (A : Tm)
+theorem activeFrame_cong {cur : Option FrameKey} {a : Tm} (A : Tm)
     (hf : activeFrame cur A = activeFrame cur a) (hp : activeTag (frameTag cur) A = activeTag (frameTag cur) a)
     (ih : frameTag (activeFrame cur a).1 = activeTag (frameTag cur) a) :
     frameTag (activeFrame cur A).1 = activeTag (frameTag cur) A := by
@@ -80,7 +80,7 @@ theorem activeFrame_cong {cur : Option (Code × ComponentTag)} {a : Tm} (A : Tm)
 (proved, by induction on the step): `activeFrame` and `path` follow the
 same congruences, and a step allocating runs no `goto`. -/
 theorem activeFrame_tag {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : h.length < h'.length) :
-    ∀ cur : Option (Code × ComponentTag), frameTag (activeFrame cur t).1 = activeTag (frameTag cur) t := by
+    ∀ cur : Option FrameKey, frameTag (activeFrame cur t).1 = activeTag (frameTag cur) t := by
   induction hs
   all_goals intro cur
   -- Steps that keep the heap's length allocate nothing.
@@ -200,7 +200,7 @@ theorem activeFrame_tag {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : 
 the path's innermost tag runs no code of `C`, the innermost frame's
 allocation sites are outside storage's. -/
 theorem stepSite_outside {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : h.length < h'.length)
-    {cur : Option (Code × ComponentTag)} (hout : P.ofC (activeTag (frameTag cur) t) = false) :
+    {cur : Option FrameKey} (hout : P.ofC (activeTag (frameTag cur) t) = false) :
     stepSite Fl cur t = none := by
   have htag := activeFrame_tag hs hlen cur
   have hal : allocOf Fl (activeFrame cur t).1 = Alloc.outside := by
@@ -208,7 +208,7 @@ theorem stepSite_outside {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen :
     cases hfr : (activeFrame cur t).1 with
     | none => rfl
     | some p =>
-      obtain ⟨m, c⟩ := p
+      obtain ⟨⟨m, c⟩, kx⟩ := p
       rw [hfr] at hout
       simp only [frameTag] at hout
       simp [allocOf, hout]

@@ -611,7 +611,7 @@ theorem fits_mergeAlloc {n : Nat} {Γ : Nat → Option (Sites P)} {a : FrameAt P
 the innermost frame (`stepSite`). A step reduces no term under a binder,
 so the terms are closed (`fun _ => none`). -/
 theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
-    ∀ {cur : Option (Code × ComponentTag)} {ou o : Bool} {S : Sites P} (key : Nat → Option PropKey),
+    ∀ {cur : Option FrameKey} {ou o : Bool} {S : Sites P} (key : Nat → Option PropKey),
       Fits Fl (VJ Fl g h.length) (fun _ => none) ⟨allocOf Fl cur, ou⟩ o S t → HeapInv Fl g h →
       Fits Fl (VJ Fl (g.alloc h.length (fun _ => stepSite Fl cur t) key) h'.length) (fun _ => none) ⟨allocOf Fl cur, ou⟩ o S t' ∧
         HeapInv Fl (g.alloc h.length (fun _ => stepSite Fl cur t) key) h' := by
@@ -983,7 +983,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     cases hfit with
     | val hv => simp [isVal] at hv
     | frameC c π l hc hcode hnode henv hfn hvfn ht hS =>
-      rw [show π.at l = ⟨π.alloc, π.out l⟩ from rfl, ← allocOf_C hF.agree hc hcode] at ht
+      rw [show π.at l (_, _) = ⟨π.alloc (_, _), π.out l⟩ from rfl, ← allocOf_C hF.agree hc hcode] at ht
       obtain ⟨ht', hH'⟩ := ih key ht hH
       rw [allocOf_C hF.agree hc hcode] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢
@@ -991,7 +991,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       have := (hvfn σ hσ).val; rw [notVal_of_step hst] at this; cases this
     | frameOut hc hE henv ht hS =>
       rw [show (FrameAt.outside : FrameAt P) = ⟨Alloc.outside, true⟩ from rfl,
-        ← allocOf_out (Fl := Fl) (m := (_, _)) hc] at ht
+        ← allocOf_out (Fl := Fl) (m := (_, _)) (kx := (_, _)) hc] at ht
       obtain ⟨ht', hH'⟩ := ih key ht hH
       rw [allocOf_out hc] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢

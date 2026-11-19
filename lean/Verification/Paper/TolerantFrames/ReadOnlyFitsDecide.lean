@@ -116,7 +116,8 @@ def FNode.envAt (x : FNode P) (i : Nat) : Sites P := x.env.getD i x.dflt
 def FNode.fnAt (x : FNode P) (i : Nat) : Option Nat := x.fn.getD i none
 
 /-- **A code's finite proposal**: its nodes, the node of every label past
-them, the sites its frames allocate at, the table of signatures its
+them, the sites a frame allocates at (per its node's continuation and
+handler, `allocs`, else `alloc`), the table of signatures its
 nodes' indices name, its return set, and the site standing for its
 closures. -/
 structure FCode (P : Package) where
@@ -126,8 +127,17 @@ structure FCode (P : Package) where
   sigs : Array FnSig
   ret : Sites P
   tok : Option P.Site
+  /-- The sites a frame of a node's continuation and handler allocates at,
+  where they are not `alloc`. -/
+  allocs : List (NodeKey × Option P.Site × Option P.Site) := []
 
 def FCode.node (c : FCode P) (l : Nat) : FNode P := c.nodes.getD l c.dflt
+
+/-- The sites a frame of a node's continuation and handler allocates at. -/
+def FCode.allocAt (c : FCode P) (kx : NodeKey) : Alloc P :=
+  match (c.allocs.find? fun e => decide (e.1 = kx)) with
+  | some (_, o, a) => ⟨o, a⟩
+  | none => c.alloc
 
 /-- The signature an index names. -/
 def FCode.sigAt (c : FCode P) (t : Option Nat) : Option FnSig := t.bind (c.sigs[·]?)
@@ -136,7 +146,7 @@ def FCode.sigAt (c : FCode P) (t : Option Nat) : Option FnSig := t.bind (c.sigs[
 def FCode.flow (c : FCode P) : CodeFlow P where
   env l i := (c.node l).envAt i
   val l := (c.node l).val
-  alloc := c.alloc
+  alloc := c.allocAt
   fn l i := c.sigAt ((c.node l).fnAt i)
   vfn l := c.sigAt (c.node l).vfn
   ret := c.ret
@@ -1086,7 +1096,7 @@ theorem vfnB_sound {l : Nat} {e : Tm} (h : vfnB (c.node l) e = true) :
 handler `x`, decided. -/
 def nodeAtB (l : Nat) (e : Tm) (k : Continuation) (x : Option Target) : Bool :=
   let nd := c.node l
-  (syn F nd.envAt (fun i => c.sigAt (nd.fnAt i)) ⟨c.alloc, nd.out⟩ nd.cx 0 (fun _ => none) e).any
+  (syn F nd.envAt (fun i => c.sigAt (nd.fnAt i)) ⟨c.allocAt (k, x), nd.out⟩ nd.cx 0 (fun _ => none) e).any
     (fun S => decide (Sub S nd.val)) &&
     vfnB nd e && contChkB c nd k && handlerChkB F c nd x
 
@@ -1110,8 +1120,8 @@ theorem codeChkB_sound {m : Code} (h : codeChkB F c m = true) : CodeChk F.flow m
   simp only [nodeAtB, Bool.and_eq_true] at this
   obtain ⟨⟨⟨hs, hv⟩, hc⟩, hh⟩ := this
   refine ⟨?_, vfnB_sound c hv, contChkB_sound c hc, handlerChkB_sound F c hh⟩
-  change (syn F (c.flow.env l) (c.flow.fn l) (c.flow.at l) (c.node l).cx 0 (fun _ => none) e).any _ = true at hs
-  cases hS : syn F (c.flow.env l) (c.flow.fn l) (c.flow.at l) (c.node l).cx 0 (fun _ => none) e with
+  change (syn F (c.flow.env l) (c.flow.fn l) (c.flow.at l (k, x)) (c.node l).cx 0 (fun _ => none) e).any _ = true at hs
+  cases hS : syn F (c.flow.env l) (c.flow.fn l) (c.flow.at l (k, x)) (c.node l).cx 0 (fun _ => none) e with
   | none => simp [hS] at hs
   | some S =>
     simp only [hS, Option.any_some, decide_eq_true_eq] at hs
@@ -1126,7 +1136,8 @@ def FFlow.check (F : FFlow P) : Bool :=
   decide (none ∈ F.O) && F.O.all (fun s => decide (Sub (F.contents s) F.O)) && F.O.all (fun s => storesB F s F.O) &&
     F.codes.all fun mc => mc.2.all fun cc =>
       codeChkB F cc.2 mc.1 && (F.at mc.1 entryCx).any fun c₀ =>
-        decide (c₀.alloc.obj = cc.2.alloc.obj ∧ c₀.alloc.arr = cc.2.alloc.arr ∧ c₀.tok = cc.2.tok)
+        decide (c₀.alloc.obj = cc.2.alloc.obj ∧ c₀.alloc.arr = cc.2.alloc.arr ∧ c₀.allocs = cc.2.allocs ∧
+          c₀.tok = cc.2.tok)
 
 /-- **The checks of a finite flow give its facts** (proved). -/
 theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := by
@@ -1144,10 +1155,13 @@ theorem FFlow.check_sound {F : FFlow P} (h : F.check = true) : F.flow.Facts := b
     | some c₀ =>
       rw [h0] at h2
       simp only [Option.any_some, decide_eq_true_eq] at h2
-      refine ⟨c₀.flow, by simp [FFlow.flow, h0], ?_, h2.2.2⟩
-      show c₀.alloc = fc.alloc
-      cases h₁ : c₀.alloc; cases h₂ : fc.alloc
-      rw [h₁, h₂] at h2; simp only at h2; rw [h2.1, h2.2.1]
+      refine ⟨c₀.flow, by simp [FFlow.flow, h0], ?_, h2.2.2.2⟩
+      show c₀.allocAt = fc.allocAt
+      have hA : c₀.alloc = fc.alloc := by
+        cases h₁ : c₀.alloc; cases h₂ : fc.alloc
+        rw [h₁, h₂] at h2; simp only at h2; rw [h2.1, h2.2.1]
+      funext kx
+      simp only [FCode.allocAt, hA, h2.2.2.1]
 
 /-! ## The marks and the entry -/
 

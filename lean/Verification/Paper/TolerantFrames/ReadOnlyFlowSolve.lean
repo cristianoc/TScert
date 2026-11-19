@@ -64,6 +64,9 @@ structure SolveCode (P : Package) where
   tok : Option P.Site := none
   /-- The context this copy of the code is proposed at. -/
   cx : Nat := entryCx
+  /-- The sites a frame of a node's continuation and handler allocates
+  at. -/
+  allocAt : NodeKey → Alloc P := fun _ => alloc
 
 def SolveCode.sig (c : SolveCode P) : FnSig := ⟨c.code, c.ar, c.start, c.rest, c.ncaps⟩
 
@@ -719,7 +722,7 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let some c := s.cs[ci]? | return st
   let some (exprs, conts) := s.codes[ci]? | return st
   let some e := exprs[l]? | return st
-  let some (k, _) := conts[l]? | return st
+  let some (k, x) := conts[l]? | return st
   let off := (st.offs.getD ci #[]).getD l 0
   let need := (st.needs.getD ci #[]).getD l 0
   -- (the node's slots read once, so that the state's array is not shared
@@ -730,7 +733,7 @@ def siteNode (s : SolveStart P) (st : SolveState P) (ci l : Nat) : SolveState P 
   let κ := (s.nodeCx.getD (s.base.getD ci ci) #[]).getD l entryCx
   let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
   let allCx (cj : Nat) : List Nat := (s.ctxOf.getD cj []).map (·.2)
-  let (S, st') := (gen s.table τ (fun i => fn.getD i none) c.alloc inst allCx 0 (fun _ => none) e).run st
+  let (S, st') := (gen s.table τ (fun i => fn.getD i none) (c.allocAt (k, x)) inst allCx 0 (fun _ => none) e).run st
   let before := (st'.vars.getD (off + need + 1) []).length
   let mut st := st'.grow (off + need + 1) S
   if (match k with | .ret => true | _ => false) then
@@ -827,6 +830,7 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
       let fns := s.fns.getD ci #[]
       let cxs := s.nodeCx.getD b #[]
       let exprs := ((s.codes[ci]?).map (·.1)).getD #[]
+      let keys := (((s.codes[ci]?).map (·.2)).getD #[]).toList.eraseDups
       (k, (⟨exprs.mapIdx (fun l e =>
           let off := offs.getD l 0
           let need := needs.getD l 0
@@ -837,7 +841,8 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           let inst (cj : Nat) : Option Nat := ((s.ctxOf.getD cj []).find? (·.1 == κ)).map (·.2)
           ⟨env, dflt, st.vars.getD (off + need + 1) [], fn, vfnIx fn e, κ,
             callsOut s.table (fun i => fn.getD i none) (fun i => env.getD i dflt) inst 0 e⟩),
-        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.retOf ci, c.tok⟩ : FCode P))) }
+        ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.retOf ci, c.tok,
+        keys.map fun kx => (kx, (c.allocAt kx).obj, (c.allocAt kx).arr)⟩ : FCode P))) }
 
 /-- Two sets of the same sites. -/
 def sameSites (S T : Sites P) : Bool := decide (Sub S T) && decide (Sub T S)

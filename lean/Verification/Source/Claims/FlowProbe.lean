@@ -33,7 +33,7 @@ abbrev markedPackage (comp : ComponentTag) (O : List (Option Nat)) : TolerantFra
 def remark {comp : ComponentTag} (F : FFlow (probePackage comp)) : FFlow (markedPackage comp F.O) :=
   let node (x : FNode (probePackage comp)) : FNode (markedPackage comp F.O) := ⟨x.env, x.dflt, x.val, x.fn, x.vfn, x.cx, x.out⟩
   ⟨F.O, F.heap, F.codes.map fun (m, cs) => (m, cs.map fun (k, c) =>
-    (k, ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok⟩))⟩
+    (k, ⟨c.nodes.map node, node c.dflt, ⟨c.alloc.obj, c.alloc.arr⟩, c.sigs, c.ret, c.tok, c.allocs⟩))⟩
 
 theorem remark_marksFrom {comp : ComponentTag} (F : FFlow (probePackage comp)) : (remark F).MarksFrom := fun _ => rfl
 
@@ -67,8 +67,8 @@ partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option F
 
 /-- The writes of every node of every code of a flow. -/
 def flowWrites (F : FFlow P) : List (Sites P × List (Option Verification.Kind)) :=
-  F.codes.flatMap fun (m, cs) => cs.flatMap fun (_, c) => m.1.zipIdx.flatMap fun (e, l) =>
-    writesIn F (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l) (c.node l).cx 0 (fun _ => none) e
+  F.codes.flatMap fun (m, cs) => cs.flatMap fun (_, c) => (m.1.zip m.2).zipIdx.flatMap fun ((e, kx), l) =>
+    writesIn F (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
 
 /-- **The sites a closure of the flow's codes may capture**: the sites of
 each capture slot at each code's entry at each context, each code's layout
@@ -285,17 +285,26 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   let base := inputs - siblings.length
   let unitSeeds : List (Option FnSig) :=
     (List.range inputs).map fun i => if base ≤ i then (siblings[i - base]?).bind sibSig else none
-  let unit : SolveCode P := ⟨m, 0, false, 0, start, unitSeeds, alloc 0, false, tok 0, entryCx⟩
+  let unit : SolveCode P := ⟨m, 0, false, 0, start, unitSeeds, alloc 0, false, tok 0, entryCx, fun _ => alloc 0⟩
   let modCodes : List (SolveCode P) := mods.zipIdx.map fun (g, i) =>
     let c0 := capSlot g.ar false 0
     let seeds := (List.range (c0 + g.siblings.length)).map fun j =>
       if c0 ≤ j then (g.siblings[j - c0]?).bind sibSig else none
-    ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc (i + 1), true, tok (i + 1), entryCx⟩
+    ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc (i + 1), true, tok (i + 1), entryCx,
+      fun _ => alloc (i + 1)⟩
   let hostCodes : List (SolveCode P) := hosts.zipIdx.map fun ((_, c, ar), i) =>
-    ⟨c, ar, false, 0, 0, [], alloc (i + 1 + mods.length), true, tok (i + 1 + mods.length), entryCx⟩
+    ⟨c, ar, false, 0, 0, [], alloc (i + 1 + mods.length), true, tok (i + 1 + mods.length), entryCx,
+      fun _ => alloc (i + 1 + mods.length)⟩
   let base' := 1 + mods.length + hosts.length
   let cs : List (SolveCode P) := unit :: modCodes ++ hostCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
-    ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base'), entryCx⟩
+    ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base'), entryCx, fun _ => alloc (i + base')⟩
+  -- each node's allocation sites: one object site and one array site per
+  -- continuation and handler of a code, numbered past the codes' sites
+  let offs := (cs.map fun c => c.code.2.length).foldl (fun (acc : List Nat) n => acc ++ [acc.getLast?.getD 0 + n]) [0]
+  let cs : List (SolveCode P) := cs.zipIdx.map fun (c, i) =>
+    { c with allocAt := fun kx => match c.code.2.findIdx? (· == kx) with
+      | some l => let k := 3 * cs.length + 2 * (offs.getD i 0 + l); ⟨some k, some (k + 1)⟩
+      | none => c.alloc }
   let t0 ← IO.monoNanosNow
   let s : SolveStart P ← IO.lazyPure fun _ =>
     let s : SolveStart P := solveStart cs
@@ -343,7 +352,7 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
         | none => []
       | none => []
     s!"{tag}: {contexts} contexts, {ctxNodes} nodes over the contexts; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; refused nodes {bad}; captured {repr held}{frames}"
-  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; siblings {mods.map fun g => (g.name, g.siblings)}; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); merge {(t2 - t1) / 1000000} ms; check {ok} {(t3 - t2) / 1000000} ms; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2)\n{report "proposed" F}"
+  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; siblings {mods.map fun g => (g.name, g.siblings)}; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); merge {(t2 - t1) / 1000000} ms; check {ok} {(t3 - t2) / 1000000} ms; O {repr F.O} (code i's closures 3i+2; a node's object site 3n+2k, array site 3n+2k+1, n codes, k the first node of its continuation and handler over all codes)\n{report "proposed" F}"
 
 /-- The probe of each member of a group, the module functions' codes
 `mods`. -/

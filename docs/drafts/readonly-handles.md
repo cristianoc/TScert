@@ -2350,9 +2350,12 @@ sets of sites:
 - **A flow** (`Flow`): $`O`$, the heap of sites $`H`$, and for each code
   of $`C`$ and each of its contexts a proposal (`CodeFlow`, `Flow.code m
   c`): at each node, the sites of each slot
-  of the environment and of the node expression's value, and the sites
-  its frames allocate at, objects (`obj`) and arrays (`arr`, a rest
-  parameter's spine and a grown cell among them); and, where a slot or a
+  of the environment and of the node expression's value, and the sites a
+  frame running the node allocates at, objects (`obj`) and arrays (`arr`,
+  a rest parameter's spine and a grown cell among them), one pair per
+  continuation and handler of a node (`alloc`, `NodeKey`: a frame carries
+  its node's continuation and handler, so the step reads them,
+  `activeFrame`, `FrameKey`); and, where a slot or a
   node's value holds a closure of $`C`$'s code of a known signature (its
   code, arity, entry label, rest and number of captures, `FnSig`), that
   signature (`fn`, `vfn`); and whether a run at a node may call outside
@@ -2629,8 +2632,10 @@ first proposal at the context.
 
 **The proposal** (`solveFlow`, `ReadOnlyFlowSolve.lean`) is computed from
 the lowered graphs, the only place their nodes, slots and labels exist.
-Each code of $`C`$ allocates at one object site and one array site. A
-slot names a signature where every edge into its node carries one naming
+Each continuation and handler of a node of a code of $`C`$ has one object
+site and one array site, so each allocating node has its own; two
+allocations of one kind in one node expression share its site. A slot
+names a signature where every edge into its node carries one naming
 it, from the entry's named slots and the closure's own slot, a node's row
 as wide as its edges' mappings or its source's, by a worklist over the
 nodes (`fnsOf`). The sites have one variable per slot a node keeps apart
@@ -2756,15 +2761,14 @@ at the visitor call, every fact read at the marks the flow gives:
 - the same walker passing the visitor a closure `setter(c)` returns, which
   writes `c.i`: the cursor's site is in the closure's capture slot, its
   field charged by the closure's write, and both facts fail.
-- `bounds-pattern-unreachable-handle-refused.ts`: both length facts fail.
-  The walker's object site, the site of `h` and of the two arrays it
-  holds, lies in $`O`$. `last` reads `h.starts` through `%ElementAt%`'s
-  model, whose value is the contents of the contents of the array's site:
-  with one object site per code, that set holds the site of `h` itself.
-  `last` returns it, and the exported `walk`, whose token lies in $`O`$,
-  returns `last`'s value to outside code, so `h`'s fields are released and
-  the visitor's `values: "any"` applies to them. One site per allocation
-  occurrence would keep `h` local.
+- `bounds-pattern-unreachable-handle-refused.ts`: `h` and its two array
+  objects are allocated at three nodes, each of its own site; `h`'s site
+  is local, captured by no closure, and both length facts pass the
+  frame's check. The bindings check at the marks the flow gives fails:
+  `h`'s storage holds the local array objects, and a write's value is
+  charged to the bindings of its storage as well as to its contents
+  (`Stores`), so the bindings of a local site holding a local object hold
+  a local site.
 - pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 18 codes, 3824
   nodes; one context per known call site: 117 contexts, 16516 nodes over
   them, proposal 9288 ms, checks 4308 ms; merged: 46 contexts, 16183

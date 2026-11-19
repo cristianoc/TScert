@@ -383,8 +383,8 @@ termination_by structural xs => xs
 end
 
 /-- The code and tag of a frame. -/
-def frameOf : Tm → Option (Code × ComponentTag)
-  | .frame E K _ _ _ _ _ comp => some ((E, K), comp)
+def frameOf : Tm → Option FrameKey
+  | .frame E K _ _ _ k x comp => some (((E, K), comp), (k, x))
   | _ => none
 
 theorem innermostArgs_mem : ∀ {xs : List Tm} {f : Tm}, innermostArgs xs = some f → ∃ x ∈ xs, innermost x = some f
@@ -401,7 +401,7 @@ theorem innermost_val {v : Tm} (hv : isVal v = true) : innermost v = none := by
   cases v <;> simp_all [isVal, innermost]
 
 /-- What `activeFrame` reads of the innermost frame. -/
-def InnSpec (cur : Option (Code × ComponentTag)) (o : Option Tm) (a : Option (Code × ComponentTag)) : Prop :=
+def InnSpec (cur : Option FrameKey) (o : Option Tm) (a : Option FrameKey) : Prop :=
   a = (o.bind frameOf).or cur ∧ ∀ f, o = some f → (frameOf f).isSome
 
 mutual
@@ -409,7 +409,7 @@ mutual
 induction, the two definitions following the same congruences): the code
 and tag `activeFrame` gives are the innermost frame's, `cur` where no frame
 is on the path, and the innermost frame is a frame. -/
-theorem activeFrame_innermost : ∀ (t : Tm) (cur : Option (Code × ComponentTag)),
+theorem activeFrame_innermost : ∀ (t : Tm) (cur : Option FrameKey),
     InnSpec cur (innermost t) (activeFrame cur t).1
   | .invoke f r args, cur => by
     have h₁ := activeFrame_innermost f cur
@@ -519,7 +519,7 @@ theorem activeFrame_innermost : ∀ (t : Tm) (cur : Option (Code × ComponentTag
       · exact h₂
       · exact ⟨by simp, by simp⟩
   | .frame E K t L d k x comp, cur => by
-    obtain ⟨h₁, h₂⟩ := activeFrame_innermost t (some ((E, K), comp))
+    obtain ⟨h₁, h₂⟩ := activeFrame_innermost t (some (((E, K), comp), (k, x)))
     simp only [activeFrame, innermost]
     refine ⟨?_, ?_⟩
     · rw [h₁]
@@ -538,7 +538,7 @@ theorem activeFrame_innermost : ∀ (t : Tm) (cur : Option (Code × ComponentTag
 termination_by structural t => t
 
 /-- The active frame through a list is the innermost frame's (proved). -/
-theorem activeArgs_innermost : ∀ (xs : List Tm) (cur : Option (Code × ComponentTag)) (t : Tm),
+theorem activeArgs_innermost : ∀ (xs : List Tm) (cur : Option FrameKey) (t : Tm),
     InnSpec cur (innermostArgs xs) (activeArgs cur t xs).1
   | [], cur, t => by simp only [activeArgs, innermostArgs]; exact ⟨by simp, by simp⟩
   | a :: as, cur, t => by
@@ -551,11 +551,11 @@ end
 /-- What `activeFrame` gives of the innermost frame's term: the innermost
 frame is a frame whose running term has no frame on its path, and the term
 the next step reduces is the one `activeFrame` gives in that frame. -/
-def RedexSpec (o : Option Tm) (p : Option (Code × ComponentTag) × Tm) : Prop :=
+def RedexSpec (o : Option Tm) (p : Option FrameKey × Tm) : Prop :=
   ∀ f, o = some f → ∃ E K t L d k x comp, f = .frame E K t L d k x comp ∧ innermost t = none ∧
-    p.2 = (activeFrame (some ((E, K), comp)) t).2
+    p.2 = (activeFrame (some (((E, K), comp), (k, x))) t).2
 
-theorem RedexSpec.none {p : Option (Code × ComponentTag) × Tm} :
+theorem RedexSpec.none {p : Option FrameKey × Tm} :
     RedexSpec none p := fun _ h => nomatch h
 
 mutual
@@ -563,7 +563,7 @@ mutual
 induction, the two definitions following the same congruences): the
 innermost frame is a frame with no frame on its running term's path, and
 the term `activeFrame` gives is the one it gives in that frame. -/
-theorem activeFrame_redex : ∀ (t : Tm) (cur : Option (Code × ComponentTag)),
+theorem activeFrame_redex : ∀ (t : Tm) (cur : Option FrameKey),
     RedexSpec (innermost t) (activeFrame cur t)
   | .invoke f r args, cur => by
     have h₁ := activeFrame_redex f cur
@@ -673,7 +673,7 @@ theorem activeFrame_redex : ∀ (t : Tm) (cur : Option (Code × ComponentTag)),
       · exact h₂
       · exact RedexSpec.none
   | .frame E K t L d k x comp, cur => by
-    have h₁ := activeFrame_redex t (some ((E, K), comp))
+    have h₁ := activeFrame_redex t (some (((E, K), comp), (k, x)))
     simp only [activeFrame, innermost]
     intro f hf
     cases hi : innermost t with
@@ -687,7 +687,7 @@ theorem activeFrame_redex : ∀ (t : Tm) (cur : Option (Code × ComponentTag)),
 termination_by structural t => t
 
 /-- The active term through a list is the innermost frame's (proved). -/
-theorem activeArgs_redex : ∀ (xs : List Tm) (cur : Option (Code × ComponentTag)) (t : Tm),
+theorem activeArgs_redex : ∀ (xs : List Tm) (cur : Option FrameKey) (t : Tm),
     RedexSpec (innermostArgs xs) (activeArgs cur t xs)
   | [], cur, t => by simp only [activeArgs, innermostArgs]; exact RedexSpec.none
   | a :: as, cur, t => by
@@ -793,7 +793,7 @@ theorem ClientFrame.framed_at_innermost {τ : Type} {fr : ClientFrame τ} {Fl : 
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
-    (activeFrame none b.1.t).1 = some ((E, K), comp) ∧
+    (activeFrame none b.1.t).1 = some (((E, K), comp), (k, x)) ∧
     ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
       ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {keys : Region → List (Option PropKey)}
         {prot : Region → Bool} {tv : TypeView} {dp : Nat},
@@ -818,13 +818,13 @@ def OutCall (P : Package) : Tm → Prop
   | _ => False
 
 /-- A value is no call (proved). -/
-theorem outCall_val {cur : Option (Code × ComponentTag)} {v : Tm} (hv : isVal v = true) :
+theorem outCall_val {cur : Option FrameKey} {v : Tm} (hv : isVal v = true) :
     ¬ OutCall P (activeFrame cur v).2 := by
   cases v <;> simp_all [isVal, activeFrame, OutCall]
 
 /-- **A list's active term**: every element a value, or the active term of
 its first element that is not one (proved). -/
-theorem activeArgs_split {cur : Option (Code × ComponentTag)} {t : Tm} : ∀ (xs : List Tm),
+theorem activeArgs_split {cur : Option FrameKey} {t : Tm} : ∀ (xs : List Tm),
     (activeArgs cur t xs = (cur, t) ∧ innermostArgs xs = none) ∨
       ∃ x ∈ xs, activeArgs cur t xs = activeFrame cur x ∧ innermostArgs xs = innermost x
   | [] => .inl ⟨by simp [activeArgs], by simp [innermostArgs]⟩
@@ -839,7 +839,7 @@ theorem activeArgs_split {cur : Option (Code × ComponentTag)} {t : Tm} : ∀ (x
 /-- The active term of a list of fitting terms calls outside code only
 where one of them does, or where every one is a value and the term `t`
 does (proved). -/
-theorem activeArgs_out {cur : Option (Code × ComponentTag)} {t : Tm} {xs : List Tm} {q : Prop}
+theorem activeArgs_out {cur : Option FrameKey} {t : Tm} {xs : List Tm} {q : Prop}
     (ih : ∀ x ∈ xs, innermost x = none → ∀ cur, OutCall P (activeFrame cur x).2 → q)
     (htop : OutCall P t → q) (hi : innermostArgs xs = none) (hc : OutCall P (activeArgs cur t xs).2) : q := by
   rcases activeArgs_split (cur := cur) (t := t) xs with ⟨h₁, _⟩ | ⟨x, hx, h₁, h₂⟩
@@ -975,7 +975,7 @@ theorem ClientFrame.framed_at_call {τ : Type} {fr : ClientFrame τ} {Fl : Flow 
   cases hf' with
   | val hv => simp [isVal] at hv
   | frameC c π l _ hcode hn henv _ _ hrun =>
-    have hout : (π.at l).out = true := hrun.outCall (fun _ _ hv => hv.fns) hi _ (by rw [← hred]; exact hcall)
+    have hout : (π.at l (k, x)).out = true := hrun.outCall (fun _ _ hv => hv.fns) hi _ (by rw [← hred]; exact hcall)
     exact ⟨c, π, l, hcode, hn, hout, fun hck hq hρ hkey hw =>
       framed_of_sites hck hq hρ (fun i => (henv i).sites) hH.sites hkey hw⟩
   | frameOut hc' => rw [hc] at hc'; cases hc'
@@ -1049,7 +1049,7 @@ theorem ClientFrame.framed_at_innermost_keys {τ : Type} {fr : ClientFrame τ} {
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {t : Tm} {L : List Tm} {d : Tm}
     {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
     (ht : innermost b.1.t = some (.frame E K t L d k x comp)) (hc : (fr.F.at fr.C).ofC comp = true) :
-    (activeFrame none b.1.t).1 = some ((E, K), comp) ∧
+    (activeFrame none b.1.t).1 = some (((E, K), comp), (k, x)) ∧
     ∃ c π l, Fl.code (E, K) c = some π ∧ NodeOf (E, K) l k x ∧
       ∀ {q : SepQuery} {Ψ : Protocol (fr.F.at fr.C)} {Φ S : Footprint} {prot : Region → Bool} {tv : TypeView}
         {dp : Nat},

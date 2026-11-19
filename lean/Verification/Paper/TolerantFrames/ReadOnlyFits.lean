@@ -12,8 +12,9 @@ by every step is not proved here):
 - **A flow** (`Flow`): the set `O` of the sites outside code may see, a
   heap of sites `H`, and for each code of `C` its proposal (`CodeFlow`):
   at each node, the sites of each slot of the environment and of the node
-  expression's value, the sites its frames allocate at, objects and
-  arrays apart (`Alloc`), and the sites of the values its runs return,
+  expression's value, the sites a frame allocates at, objects and arrays
+  apart (`Alloc`), per its node's continuation and handler (`NodeKey`,
+  which a frame carries), and the sites of the values its runs return,
   one proposal per context (`Flow.code m c`): context `entryCx` the
   code's entry from outside code, every other context the entry of the
   known calls (`Fits.invokeC`) that name it; the contexts of a code agree
@@ -65,6 +66,14 @@ theorem Sub.refl (S : Sites P) : Sub S S := fun _ h => h
 theorem Sub.trans {S₁ S₂ S₃ : Sites P} (h₁ : Sub S₁ S₂) (h₂ : Sub S₂ S₃) : Sub S₁ S₃ :=
   fun s hs => h₂ s (h₁ s hs)
 
+/-- **A node's continuation and handler**, which a frame running the node
+carries: the node a frame's fresh locations are allocated at. -/
+abbrev NodeKey := Continuation × Option Target
+
+/-- **The frame a step runs in**: its code, tag, continuation and
+handler. -/
+abbrev FrameKey := (Code × ComponentTag) × NodeKey
+
 /-- **The sites a frame allocates at**: an object's fields and identity
 (`obj`), an array's cells, a grown cell among them (`arr`). -/
 structure Alloc (P : Package) where
@@ -102,7 +111,8 @@ structure FnSig where
 
 /-- **The proposal for one code of `C`**: at each node, the sites of each
 slot of the environment (`env l i`) and of the node expression's value
-(`val l`); the sites its frames allocate at; where a slot (`fn l i`)
+(`val l`); the sites a frame allocates at, per its node's continuation and
+handler (`alloc`); where a slot (`fn l i`)
 or the node's value (`vfn l`) holds a closure of `C`'s code of a known
 signature, that signature; the sites of the values its runs return
 (`ret`); the site that stands for its closures in a set (`tok`); and
@@ -110,16 +120,17 @@ whether a run at a node may call outside code (`out l`). -/
 structure CodeFlow (P : Package) where
   env : Nat → Nat → Sites P
   val : Nat → Sites P
-  alloc : Alloc P
+  alloc : NodeKey → Alloc P
   fn : Nat → Nat → Option FnSig
   vfn : Nat → Option FnSig
   ret : Sites P
   tok : Option P.Site
   out : Nat → Bool
 
-/-- **A frame at a node of the code**: the code's allocation sites, and
-whether the node may call outside code. -/
-def CodeFlow.at (π : CodeFlow P) (l : Nat) : FrameAt P := ⟨π.alloc, π.out l⟩
+/-- **A frame at a node of the code**: the allocation sites of the node's
+continuation and handler `kx`, and whether the node may call outside
+code. -/
+def CodeFlow.at (π : CodeFlow P) (l : Nat) (kx : NodeKey) : FrameAt P := ⟨π.alloc kx, π.out l⟩
 
 /-- **A flow**: the sites outside code may see, the heap of sites, and the
 proposal for each code of `C` at each of its contexts. -/
@@ -444,7 +455,7 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → F
   | frameC {Γ a o S E K t L d k x comp} (c : Nat) (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
       Fl.code (E, K) c = some π → NodeOf (E, K) l k x → (∀ i, V (π.env l i) (envOf L d i)) → EnvFn π l L d →
       (∀ σ, π.vfn l = some σ → FnIs P σ t) →
-      Fits V Γ (π.at l) false (π.val l) t → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
+      Fits V Γ (π.at l (k, x)) false (π.val l) t → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
   | frameOut {Γ a o S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
       (∀ i, V Fl.O (envOf L d i)) →
       Fits V Γ FrameAt.outside true Fl.O t → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
@@ -565,7 +576,7 @@ mutual
 /-- **The innermost frame and the active term**: the code and tag of the
 innermost frame around the term `redex` the next step reduces, following
 `Step`'s congruence rules as `path` does; `cur` outside every frame. -/
-def activeFrame (cur : Option (Code × ComponentTag)) : Tm → Option (Code × ComponentTag) × Tm
+def activeFrame (cur : Option FrameKey) : Tm → Option FrameKey × Tm
   | .invoke f r args =>
     if isVal f = false then activeFrame cur f
     else if isVal r = false then activeFrame cur r
@@ -603,30 +614,32 @@ def activeFrame (cur : Option (Code × ComponentTag)) : Tm → Option (Code × C
   | .makeKey k a =>
     if isVal k = false then activeFrame cur k
     else if isVal a = false then activeFrame cur a else (cur, .makeKey k a)
-  | .frame E K t _ _ _ _ comp => activeFrame (some ((E, K), comp)) t
+  | .frame E K t _ _ k x comp => activeFrame (some (((E, K), comp), (k, x))) t
   | t => (cur, t)
 termination_by structural t => t
 
 /-- The active frame through a list evaluated left to right, `t` the term
 when every element is a value. -/
-def activeArgs (cur : Option (Code × ComponentTag)) (t : Tm) : List Tm → Option (Code × ComponentTag) × Tm
+def activeArgs (cur : Option FrameKey) (t : Tm) : List Tm → Option FrameKey × Tm
   | [] => (cur, t)
   | a :: as => if isVal a = false then activeFrame cur a else activeArgs cur t as
 termination_by structural xs => xs
 end
 
 variable (Fl) in
-/-- **The allocation sites of a frame**: its code's proposal for a frame of
-`C`'s code, outside storage for outside code. -/
-def allocOf : Option (Code × ComponentTag) → Alloc P
-  | some (m, comp) => if P.ofC comp = true then ((Fl.code m entryCx).map CodeFlow.alloc).getD Alloc.outside else Alloc.outside
+/-- **The allocation sites of a frame**: its code's proposal at its node's
+continuation and handler for a frame of `C`'s code, outside storage for
+outside code. -/
+def allocOf : Option FrameKey → Alloc P
+  | some ((m, comp), kx) => if P.ofC comp = true then ((Fl.code m entryCx).map (·.alloc kx)).getD Alloc.outside
+    else Alloc.outside
   | none => Alloc.outside
 
 variable (Fl) in
 /-- **The site of a step's fresh locations**: an array's cells where the
 active term builds or grows an array, an object's otherwise, at the
 allocation sites of the innermost frame. -/
-def stepSite (cur : Option (Code × ComponentTag)) (t : Tm) : Option P.Site :=
+def stepSite (cur : Option FrameKey) (t : Tm) : Option P.Site :=
   match activeFrame cur t with
   | (fr, .arrLit _) => (allocOf Fl fr).arr
   | (fr, .setElem _ _ _) => (allocOf Fl fr).arr
@@ -693,7 +706,7 @@ handler accepts it. -/
 def CodeOk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
     (∀ (g : Ghost P) n (L : List Tm) d, EnvIn (VJ Fl g n) (π.env l) L d → EnvFn π l L d →
-      Fits Fl (VJ Fl g n) (fun _ => none) (π.at l) false (π.val l) (instantiate 0 (envOf L d) e) ∧
+      Fits Fl (VJ Fl g n) (fun _ => none) (π.at l (k, x)) false (π.val l) (instantiate 0 (envOf L d) e) ∧
       ∀ σ, π.vfn l = some σ → FnIs P σ (instantiate 0 (envOf L d) e)) ∧
     ContOk Fl π l k ∧ HandlerOk Fl π l x ∧ ContFn π l k ∧ HandlerFn π l x
 
@@ -739,7 +752,7 @@ theorem notVal_of_step {h h' : Heap} {a a' : Tm} (hs : Step h a h' a') : isVal a
 
 /-- **The active frame of a list at its first term that is not a value**
 (proved). -/
-theorem activeArgs_at {cur : Option (Code × ComponentTag)} {t a : Tm} :
+theorem activeArgs_at {cur : Option FrameKey} {t a : Tm} :
     ∀ {args : List Tm} {i : Nat}, args[i]? = some a → (∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true) →
       isVal a = false → activeArgs cur t args = activeFrame cur a
   | [], _, h, _, _ => by simp at h
@@ -760,13 +773,13 @@ theorem mem_set_cases' {α : Type} {l : List α} {i : Nat} {b x : α} (hx : x �
 
 /-- **A frame of `C`'s code allocates at its code's sites**, the same at
 every context (proved, `Flow.Agree`). -/
-theorem allocOf_C {m : Code} {comp : ComponentTag} {c : Nat} {π : CodeFlow P} (hA : Fl.Agree) (hc : P.ofC comp = true)
-    (hcode : Fl.code m c = some π) : allocOf Fl (some (m, comp)) = π.alloc := by
+theorem allocOf_C {m : Code} {comp : ComponentTag} {kx : NodeKey} {c : Nat} {π : CodeFlow P} (hA : Fl.Agree)
+    (hc : P.ofC comp = true) (hcode : Fl.code m c = some π) : allocOf Fl (some ((m, comp), kx)) = π.alloc kx := by
   obtain ⟨π₀, h₀, ha, -⟩ := hA m c π hcode
   simp [allocOf, hc, h₀, ha]
 
-theorem allocOf_out {m : Code} {comp : ComponentTag} (hc : P.ofC comp = false) :
-    allocOf Fl (some (m, comp)) = Alloc.outside := by
+theorem allocOf_out {m : Code} {comp : ComponentTag} {kx : NodeKey} (hc : P.ofC comp = false) :
+    allocOf Fl (some ((m, comp), kx)) = Alloc.outside := by
   simp [allocOf, hc]
 
 open Classical in
@@ -1027,23 +1040,23 @@ theorem HeapInv.set_same {h : Heap} {w : Nat} {u : Val} {sf : Nat → Option P.S
   have := (hH.set hu hb).same (sf := sf) (key := key)
   rwa [List.length_set] at this
 
-theorem stepSite_setElem {cur : Option (Code × ComponentTag)} {ls : List (Option Nat)} {b : UInt64} {v : Tm}
+theorem stepSite_setElem {cur : Option FrameKey} {ls : List (Option Nat)} {b : UInt64} {v : Tm}
     (hv : isVal v = true) : stepSite Fl cur (.setElem (.arr ls) (.num b) v) = (allocOf Fl cur).arr := by
   simp only [stepSite, activeFrame, hv, show isVal (.arr ls) = true from rfl, show isVal (.num b) = true from rfl,
     Bool.true_eq_false, if_false]
 
-theorem activeArgs_vals {cur : Option (Code × ComponentTag)} {t : Tm} :
+theorem activeArgs_vals {cur : Option FrameKey} {t : Tm} :
     ∀ {xs : List Tm}, (∀ v ∈ xs, isVal v = true) → activeArgs cur t xs = (cur, t)
   | [], _ => by simp [activeArgs]
   | x :: xs, h => by
     simp only [activeArgs, h x (List.mem_cons_self ..), Bool.true_eq_false, if_false]
     exact activeArgs_vals fun v hv => h v (List.mem_cons_of_mem _ hv)
 
-theorem stepSite_makeAt {cur : Option (Code × ComponentTag)} {c : CallCode} {ns : List PropKey} {vs : List Tm}
+theorem stepSite_makeAt {cur : Option FrameKey} {c : CallCode} {ns : List PropKey} {vs : List Tm}
     (hvs : ∀ v ∈ vs, isVal v = true) : stepSite Fl cur (.makeAt c ns vs) = (allocOf Fl cur).obj := by
   simp only [stepSite, activeFrame, activeArgs_vals hvs]
 
-theorem stepSite_arrLit {cur : Option (Code × ComponentTag)} {vs : List Tm}
+theorem stepSite_arrLit {cur : Option FrameKey} {vs : List Tm}
     (hvs : ∀ v ∈ vs, isVal v = true) : stepSite Fl cur (.arrLit vs) = (allocOf Fl cur).arr := by
   simp only [stepSite, activeFrame, activeArgs_vals hvs]
 

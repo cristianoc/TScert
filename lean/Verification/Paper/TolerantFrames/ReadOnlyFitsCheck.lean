@@ -337,7 +337,7 @@ signature is a slot naming it; each continuation and handler carries the
 node into its targets. -/
 def CodeChk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
-    OFits Fl (π.env l) (π.fn l) 0 (fun _ => none) (π.at l) false (π.val l) e ∧
+    OFits Fl (π.env l) (π.fn l) 0 (fun _ => none) (π.at l (k, x)) false (π.val l) e ∧
     (∀ σ, π.vfn l = some σ → ∃ j, e = .var j ∧ π.fn l j = some σ) ∧
     ContChk π l k ∧ HandlerChk Fl π l x
 
