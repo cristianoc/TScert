@@ -40,13 +40,16 @@ theorem remark_marksFrom {comp : ComponentTag} (F : FFlow (probePackage comp)) :
 section frames
 variable {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site]
 
-/-- The writes of a term at a node's slots: the sites of each written
-location's object or spine, `true` for an element write. -/
+/-- **The writes of a term at a node's slots**: for each write, the sites
+of the written location (its object's, or its spine's for an element
+write) and the kinds it may have: a slot under a key, a field or a cell, or
+the array spine under the spine key (`slotBound`); an element cell. -/
 partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : Alloc P) (d : Nat)
-    (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × Bool)
-  | .writeAt _ x y => ((syn F τ φ a d Γ x).map fun S => [(S, false)]).getD [([none], false)] ++
+    (Γ : Nat → Option (Sites P)) : Tm → List (Sites P × List (Option Verification.Kind))
+  | .writeAt k x y => ((syn F τ φ a d Γ x).map fun S => [(S, roleKinds (Footprints.slotBound k))]).getD
+        [([none], roleKinds (Footprints.slotBound k))] ++
       writesIn F τ φ a d Γ x ++ writesIn F τ φ a d Γ y
-  | .setElem x i v => ((syn F τ φ a d Γ x).map fun S => [(S, true)]).getD [([none], true)] ++
+  | .setElem x i v => ((syn F τ φ a d Γ x).map fun S => [(S, [some .elem])]).getD [([none], [some .elem])] ++
       writesIn F τ φ a d Γ x ++ writesIn F τ φ a d Γ i ++ writesIn F τ φ a d Γ v
   | .letE x b => writesIn F τ φ a d Γ x ++ match syn F τ φ a d Γ x with
     | some Sx => writesIn F τ φ a (d + 1) (consSites Sx Γ) b
@@ -61,26 +64,31 @@ partial def writesIn (F : FFlow P) (τ : Nat → Sites P) (φ : Nat → Option F
   | _ => []
 
 /-- The writes of every node of every code of a flow. -/
-def flowWrites (F : FFlow P) : List (Sites P × Bool) :=
+def flowWrites (F : FFlow P) : List (Sites P × List (Option Verification.Kind)) :=
   F.codes.flatMap fun (m, c) => m.1.zipIdx.flatMap fun (e, l) =>
     writesIn F (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i)) c.alloc 0 (fun _ => none) e
 
-/-- **The probe's protocol**: a part of a local site kept (no code a call of
-outside code may run reaches local storage existing at the call); any
-other part changed as the writes of the flow's codes reaching its site
-may change it: a field by a field write, a cell or element by an element
-write, a spine grown by an element write. -/
-def probeProtocol (W : List (Sites P × Bool)) : Protocol P := fun p =>
+/-- **The sites a closure of the flow's codes may capture**: the sites of
+each capture slot at each code's entry, each code's layout its arity, its
+rest, its number of captures and its entry label. -/
+def captureSites (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Sites P :=
+  (F.codes.zip lay).flatMap fun ((_, c), (ar, rest, n, s)) =>
+    (List.range n).flatMap fun i => (c.node s).envAt (capSlot ar rest i)
+
+/-- **The probe's protocol**: a part changed by any change where a write of
+the flow's codes may reach it, at its site and kind (`flowWrites`); kept
+where none may. A part of a local site no capture may hold (`held`, the
+sites of `captureSites`) is kept: storage of a local site existing at a
+call of outside code is held only by the frames of `C`'s code suspended
+under the call, and a run the call starts reaches it only through a
+closure's capture (conjectured, the draft's "The protocol"). -/
+def probeProtocol (W : List (Sites P × List (Option Verification.Kind))) (held : Sites P) : Protocol P := fun p =>
   match p.site with
-  | some s => if P.mark s = .local then .keep else charge p
+  | some s => if P.mark s = .local && !held.contains p.site then .keep else charge p
   | none => charge p
 where
   charge (p : Part P) : Footprints.Change :=
-    let hits := W.filter fun (S, _) => p.site ∈ S
-    if hits.any (fun (_, e) => !e) && p.kind == some .field then .any
-    else if hits.any (·.2) && (p.kind == some .cell || p.kind == some .elem) then .any
-    else if hits.any (·.2) && p.kind == some .spine then .grow
-    else .keep
+    if W.any fun (S, ks) => S.contains p.site && ks.contains p.kind then .any else .keep
 
 end frames
 
@@ -220,27 +228,23 @@ def closable (mods : List ProbeModule) : List ProbeModule :=
     !(reach (mods.length * mods.length + mods.length + 1) [] g.siblings).contains g.name
 
 /-- The probe of a program at a component, timed: the solver's and the
-check's milliseconds. The module's closures sit at the slots of the module
-functions the program names (`mods`, the module functions its siblings
-reach). -/
+check's milliseconds. Every module function of the component is a code of
+the flow; one its module exports (`exported`) is entered from outside code
+(its token in `O`): code of another module, an entry of the component
+among them, may call it with values outside code supplies. The module's
+closures sit at the slots of the module functions the program names. -/
 def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (siblings : List String)
-    (mods : List ProbeModule) (name : String := "") (sm : RequestJson.SourceMap := []) (specs : List FrameSpec := []) :
+    (mods : List ProbeModule) (name : String := "") (sm : RequestJson.SourceMap := []) (specs : List FrameSpec := [])
+    (exported : String → Bool := fun _ => false) :
     IO String := do
   let P := probePackage comp
-  -- The module functions the program's siblings reach.
-  let rec reach : Nat → List String → List String → List String
-    | 0, seen, _ => seen
-    | _ + 1, seen, [] => seen
-    | n + 1, seen, x :: work =>
-      if seen.contains x then reach n seen work
-      else reach n (x :: seen) (((mods.find? (·.name == x)).map (·.siblings)).getD [] ++ work)
-  let reached := reach (mods.length * mods.length + mods.length + 1) [] siblings
-  let mods := closable (mods.filter fun g => P.ofC g.comp && reached.contains g.name)
+  let mods := mods.filter fun g => P.ofC g.comp
+  let closed := closable mods
   let found := (m.1 ++ mods.flatMap (·.code.1)).flatMap (probeClosures P.ofC)
   let closures := found.foldl (fun acc c => if acc.any (·.1 == c.1) then acc else acc ++ [c]) []
   let alloc : Nat → Alloc P := fun i => ⟨some (3 * i), some (3 * i + 1)⟩
   let tok (i : Nat) : Option P.Site := some (3 * i + 2)
-  let sibSig (x : String) : Option FnSig := (mods.find? (·.name == x)).map ProbeModule.sig
+  let sibSig (x : String) : Option FnSig := (closed.find? (·.name == x)).map ProbeModule.sig
   let base := inputs - siblings.length
   let unitSeeds : List (Option FnSig) :=
     (List.range inputs).map fun i => if base ≤ i then (siblings[i - base]?).bind sibSig else none
@@ -253,7 +257,9 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   let cs : List (SolveCode P) := unit :: modCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
     ⟨c, ar, rest, n, s, [], alloc (i + 1 + mods.length), true, tok (i + 1 + mods.length)⟩
   let t0 ← IO.monoNanosNow
-  let s ← IO.lazyPure fun _ => solveStart cs
+  let s : SolveStart P ← IO.lazyPure fun _ =>
+    let s : SolveStart P := solveStart cs
+    { s with st := s.st.toO ((mods.zip modCodes).filterMap fun (g, c) => if exported g.name then some c.tok else none) }
   let _ ← IO.lazyPure fun _ => (s.fns.map fun ns => (ns.map fun x => x.size).sum).sum + s.succ.size
   let ts ← IO.monoNanosNow
   let (st, rounds, batches) ← IO.lazyPure fun _ => solveLoop s 10000000 s.st
@@ -271,18 +277,20 @@ def probeProgram (m : Code) (start : Nat) (comp : ComponentTag) (inputs : Nat) (
   let nodes := (cs.map fun c => c.code.1.length).sum
   let names := "unit" :: mods.map (·.name) ++ closures.map fun _ => "closure"
   let F' := remark F
-  let Ψ := probeProtocol (flowWrites F')
+  let held := captureSites F' (cs.map fun c => (c.ar, c.rest, c.ncaps, c.start))
+  let Ψ := probeProtocol (flowWrites F') held
   let named : List (String × Code × RequestJson.SourceMap) := (name, m, sm) :: mods.map fun g => (g.name, g.code, g.sm)
   let frames := String.join <| specs.flatMap fun sp => match named.zipIdx.find? (·.1.1 == sp.unit) with
     | some ((_, mc, msm), ci) => match (F'.codes[ci]?).map (·.2) with
       | some c => (probeFrames F.O F' Ψ c mc msm sp).map ("\n" ++ ·)
       | none => []
     | none => []
-  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2); refused nodes {bad}{frames}"
+  return s!"flow probe: {cs.length} codes {names}, {nodes} nodes; solve {(t1 - t0) / 1000000} ms (signatures {(ts - t0) / 1000000} ms, {rounds} copies, {batches} nodes run); check {ok} {(t2 - t1) / 1000000} ms; entry {entry}; at the marks O gives: marks {marks}, bindings {bindings}; O {repr F.O} (code i's object site 3i, array site 3i+1, closures 3i+2); refused nodes {bad}; captured {repr held}{frames}"
 
 /-- The probe of each member of a group, the module functions' codes
 `mods`. -/
-def FilePlans.flowProbe (f : FilePlans) (group : List Nat) (mods : List ProbeModule) : IO (List String) := do
+def FilePlans.flowProbe (f : FilePlans) (group : List Nat) (mods : List ProbeModule)
+    (exported : String → Bool := fun _ => false) : IO (List String) := do
   let specs ← match ← IO.getEnv "TSCERT_FRAME_PROBE" with
     | some path => do
       match Json.parse (← IO.FS.readFile path) >>= frameSpecs with
@@ -293,7 +301,7 @@ def FilePlans.flowProbe (f : FilePlans) (group : List Nat) (mods : List ProbeMod
     | some (.ok p) => match p with
       | .graph name _ r => do
         let line ← probeProgram (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler))
-          r.start r.comp r.inputs.length r.siblings mods name r.sourceMap specs
+          r.start r.comp r.inputs.length r.siblings mods name r.sourceMap specs exported
         return some s!"{name}: {line}"
     | _ => return none
 

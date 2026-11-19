@@ -2626,10 +2626,29 @@ of the call, the call's effect) and linear facts over source variables;
 at each such call node the probe prints `frameCheckAt` of each fact's
 support (`Footprints.linearSupport`) at the separation of classes
 (`classQuery`, `classQuery_sound`), the keys `noKeys`, no region read as
-protected and the probe's protocol (`probeProtocol`: a part of a local
-site kept, any other part changed as the writes of the flow's codes
-reaching its site may change it), with each part that fails and the
-check it fails.
+protected and the probe's protocol (`probeProtocol`), with each part that
+fails and the check it fails.
+
+**The probe's protocol.** Each write of a node of a code of the flow is
+charged at the sites of its written location and the kinds that location
+may have (`writesIn`, `flowWrites`): a write at a key at the receiver's
+sites and the kinds of a slot under that key (`slotBound`: the array spine
+under the spine key, a field or a cell under every other), an element
+write at the spine's sites and the element kind, each at `any`. A part is
+changed by `any` where a charge names its site and kind, and kept where
+none does. A part of a local site no capture slot of a code of the flow
+may hold (`captureSites`) is kept: storage of a local site existing at a
+call of outside code is held only by the frames of $`C`$'s code suspended
+under the call, and a run the call starts reaches it only through a
+closure's capture (conjectured). The flow's codes are every module
+function of the file the member's module functions reach and every one
+the file exports (`probeExported`, read from the source text); an exported
+one is entered from outside code, its token in $`O`$ from the start: code
+of another module, an entry of the component among them, may call it with
+values outside code supplies. Two controls
+(`Tests/FlowProbeControls.lean`) refuse a fact across a call where a write
+at the spine key replaces the spine and where a closure writes a local
+cursor through its capture.
 
 **The module's closures in the probe.** A member reaches the module
 functions its body names at its request's last inputs
@@ -2651,16 +2670,20 @@ Measured 2026-11-19 by the probe (`TSCERT_FLOW_PROBE=only`, with
 at the visitor call, every fact read at the marks the flow gives:
 
 - `bounds-pattern-unreachable-field-refused.ts`: the cursor's slot holds
-  the walker's object site alone, local; `c.i + 1 <= xs.length` and
-  `0 <= c.i` pass the frame's check (the field local, `xs`'s spine
-  outside storage at `grow`, which the visitor's spines bound keeps).
+  the walker's object site alone, local and captured by no closure;
+  `c.i + 1 <= xs.length` and `0 <= c.i` pass the frame's check (the field
+  local, `xs`'s spine outside storage at `grow`, which the visitor's
+  spines bound keeps).
+- the same walker passing the visitor a closure `setter(c)` returns, which
+  writes `c.i`: the cursor's site is in the closure's capture slot, its
+  field charged by the closure's write, and both facts fail.
 - `bounds-pattern-unreachable-handle-refused.ts`: both length facts fail.
   The walker's object site, the site of `h` and of the two arrays it
   holds, lies in $`O`$: `last` passes `h.starts` to `%ElementAt%`, a call
   read at $`O`$, so `h`'s fields are released and the visitor's
   `values: "any"` applies to them.
-- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 10 codes, 3336
-  nodes, proposal 513 ms, checks 271 ms): at `onLine`, `0 <=
+- pretext's `walkPreparedLinesRaw` (`src/line-break.ts`, 8 codes, 3168
+  nodes, proposal 590 ms, checks 313 ms): at `onLine`, `0 <=
   cursor.segmentIndex`, `cursor.segmentIndex <= segmentCount`, `0 <=
   cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
   the two facts relating `segmentCount` to `prepared.widths.length` fail,
@@ -2668,8 +2691,10 @@ at the visitor call, every fact read at the marks the flow gives:
   (`stats`) under `noKeys` and by the visitor's effect, no region read as
   protected.
 - `walkPreparedComplexLines` reached from the raw walker, at its `onLine`:
-  the cursor's slot holds the raw walker's object site alone, its token
-  outside $`O`$; the two cursor facts and the two length facts pass.
+  the cursor's slot holds the local object sites of the raw walker and of
+  its exported module function, captured by no closure, its own token
+  outside $`O`$ (the file does not export it); the two cursor facts and
+  the two length facts pass.
   Probed as a member, entered from outside, its cursor is outside storage
   and both cursor facts fail.
 

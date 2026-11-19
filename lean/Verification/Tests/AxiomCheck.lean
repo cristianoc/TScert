@@ -329,6 +329,7 @@ import Verification.Source.SourceTypes
 import Verification.Source.WorkerWire
 import Verification.Tests.EffectCodecControls
 import Verification.Tests.ExecutionModelTests
+import Verification.Tests.FlowProbeControls
 import Verification.Tests.FootprintControls
 import Verification.Tests.LinkControls
 import Verification.Tests.SelectionControls
