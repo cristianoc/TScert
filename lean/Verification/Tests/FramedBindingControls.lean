@@ -16,7 +16,12 @@ and refuses a forged one:
 - **A signature at an entry slot that is not a sibling's** (`entryFnB`).
 - **A realized code whose proposal differs from its request's at a body
   label** (`agreeB`, which `realizedFlowB` reads): its value set, or its
-  allocation site at a body node's continuation and handler. -/
+  allocation site at a body node's continuation and handler.
+- **A wire $`\Theta_C`$ other than the source's** (`clientsB`): one changing
+  a kind no row states, one keeping a kind a row extends, and a row stating
+  a path key (the restriction "@clients by kind").
+- **A wire $`\Psi_C`$ below its definition** (`protocolAtLeastB`): one
+  keeping a part the component's charges change. -/
 namespace Verification.SourceClaimJson.FramedBindingControls
 open Verification TolerantFrames.ReadOnly ControlFlow
 
@@ -73,5 +78,34 @@ private def flowOf (codes : List (Code × List (Nat × FCode Pk))) : FFlow Pk :=
 -- the request's code without a proposal at a context of the realized code
 #guard !agreeB (flowOf [(m₁, [(entryCx, code [some 1]), (1, code [some 1])]), (m₀, [(entryCx, code [some 1])])])
   m₁ m₀ m₀.2 1
+
+/-! ## The client obligation -/
+
+/-- A row extending the array spines of `this`'s class, and one stating a
+path key. -/
+private def spineRow : ComponentWire.Clients :=
+  ⟨"m", "T", (0, 0), true, [(.cls ⟨false, true, false⟩, .extend)]⟩
+private def pathRow : ComponentWire.Clients :=
+  ⟨"m", "T", (0, 0), true, [(.path 0 [] (.str "items"), .extend)]⟩
+
+/-- The obligation of the spine row, by kind. -/
+private def spineTheta : Protocol Pk := fun p => if p.kind = some .spine then .extend else .keep
+
+#guard clientsB (P := Pk) [none, some 0] spineTheta [spineRow]
+-- a wire obligation changing a kind no row states
+#guard !clientsB (P := Pk) [none, some 0] (fun _ => .any) [spineRow]
+-- a wire obligation keeping the spines the row extends
+#guard !clientsB (P := Pk) [none, some 0] (fun _ => .keep) [spineRow]
+-- a row stating a path key
+#guard !clientsB (P := Pk) [none, some 0] (rowsTheta [pathRow]) [pathRow]
+-- no row states one: read-only
+#guard clientsB (P := Pk) [none, some 0] (fun _ => .keep) [{ spineRow with stated := false }]
+
+/-! ## The protocol -/
+
+-- the wire's protocol at least the charges' at every part of the flow's sites
+#guard protocolAtLeastB (P := Pk) [none, some 0] (probeProtocol [some .field] []) (fun _ => .any)
+-- a wire protocol keeping the field parts the charges change
+#guard !protocolAtLeastB (P := Pk) [none, some 0] (probeProtocol [some .field] []) (fun _ => .keep)
 
 end Verification.SourceClaimJson.FramedBindingControls

@@ -549,11 +549,23 @@ check) crosses at the entering step as the rest parameter's value.
   code at the state before the step, which meets $`O`$ there
   (`sitesAt_reached`, from `fitsAt_reached` and `fits_roots`); the step's
   allocation keeps the site of every location the value reaches; so by
-  `crossOk_of_sites` it reaches no local, internal or exposed location. The
-  premise `IncomingRoots` (each incoming value a root of outside code
-  before its step) is, for the framed frame, `entryXs_roots` (to be proved:
-  the slots past the receiver of the run an entering step starts are the
-  invocation's arguments, values at outside code's position).
+  `crossOk_of_sites` it reaches no local, internal or exposed location. A
+  value holding no location crosses alike (`crossOk_noLeaves`). The premise
+  `IncomingRoots` (each incoming value a root of outside code before its
+  step, or a value holding no location) is, for the framed frame,
+  `entryXs_roots` (to be proved). A root is an object, a spine or a view
+  spine (`vals_located`, proved), so an entering step whose argument is a
+  number, or whose actuals are fewer than the parameters (an `undefined`
+  pad), crosses a value that is no root (`num_not_root`, proved): the
+  premise reads such a value by its holding no location. Plan: an entering
+  step from outside code raises the calls of $`C`$ active by a `callGraph`
+  or `constructGraph` at the active redex, whose actuals are values at
+  outside code's position (in `vals` of the term before the step, or
+  primitive), or by the `letV` of a rest spine's `letE`, which the binding
+  checks exclude for a realized code (its closures collect no rest); it
+  needs that a run of $`C`$'s code appears in a reached term only at an
+  evaluation position or as that `letE`'s body, an invariant of lowered
+  code (`Lowered` holds no run).
 - **`Inv` after an incoming crossing** is `pkg_step_inv` (proved) at the
   history's crossings, which reads every crossing alike: a crossing changes
   no site or key (`crosses_site`), steps the history by `HStep.cross`
@@ -820,11 +832,14 @@ token, `componentCodes`): each module
   code's entry, its slots naming signatures only at the sibling slots and
   the closure's own slot.
 - **the inputs**: `paramTypes`, computed from the requests.
-- **$`\Theta_C`$** (`clientsB`): the join over $`C`$'s exported types of
-  each `@clients` row's change per kind, read from the declaration
-  document, equal to the wire's.
-- **the protocol**: the wire's $`\Psi_C`$ at least $`\Psi_C`$ as defined,
-  at every part of $`U`$.
+- **$`\Theta_C`$** (`clientsB`, `clientsB_sound`, `FramedBinding.lean`):
+  the rows of $`C`$'s exported types state class keys only
+  (`clientsByKindB`), and the plan's $`\Theta_C`$ is, at every part of
+  $`U`$ at the key `none`, the join of the stated rows' changes at the
+  part's kind (`rowsTheta`), read from the declaration document.
+- **the protocol** (`protocolAtLeastB`, `protocolAtLeastB_sound`,
+  `ReadOnlyBinding.lean`): the wire's $`\Psi_C`$ at least $`\Psi_C`$ as
+  defined, at every part of $`U`$ at the key `none` (`partsU`).
 - **the restrictions** below.
 
 ### The plan
@@ -1275,7 +1290,9 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `allocOf_some`, `stepSite_some`, `entryFnB_sound`, `agreeB_sound`
 (`ReadOnlyBinding.lean`), `realizedFlowB_sound` (`FramedBinding.lean`);
 `step_writes_active`, `Fits.active`, `write_site`
-(`ReadOnlyStepWrites.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
+(`ReadOnlyStepWrites.lean`); `crossOk_noLeaves`, `vals_located`,
+`num_not_root` (`ReadOnlyIncoming.lean`); `protocolAtLeastB_sound`
+(`ReadOnlyBinding.lean`), `clientsB_sound` (`FramedBinding.lean`); `step_wok`, `subst_wok`, `instantiate_wok`,
 `active_writes`, `slotKind_sound`, `step_kind_charged`,
 `probeProtocol_charged` (`ReadOnlyWriteKinds.lean`); `framed_of_cover`,
 `framed_of_frame_cover`, `stepSite_mem`, `sites_in_flow`
@@ -1416,8 +1433,9 @@ and P22's layout meets them (measured).
   code's proposal other than its request's at a body label
   (`realizedFlowB`); the four as forged flows in
   `Tests/FramedBindingControls.lean`; a wire
-  $`\Theta_C`$ other than the source's (`clientsB`); a $`\Psi_C`$ below its
-  definition; a check passing at one node of a call's continuation and
+  $`\Theta_C`$ other than the source's and a row stating a path key
+  (`clientsB`) and a $`\Psi_C`$ below its definition
+  (`protocolAtLeastB`), there too; a check passing at one node of a call's continuation and
   handler and failing at another; a region `.all` at a protocol changing a
   part.
 - **Pretext's walkers**: cursor bounds at local sites, measured by the

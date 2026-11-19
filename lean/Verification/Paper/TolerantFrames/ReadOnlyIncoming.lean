@@ -25,7 +25,9 @@ checks at the actual crossings give `ChkSound` there too:
   (`chkSound_of_sitesIn`, `chkSound_of_flowIn`): the restatements of
   `chkSound_of_sites` and `chkSound_of_flow`, with the premise that every
   incoming value is a root of outside code at the state before the step
-  (`IncomingRoots`). -/
+  or holds no location (`IncomingRoots`, `crossOk_noLeaves`).
+- **A root is located** (`vals_located`): the roots of a term are
+  objects, spines and view spines, so a primitive argument is no root. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
@@ -55,12 +57,15 @@ ones**, each actual one at the type `T`. -/
 def ActualCrossingsIn (T : τ) (inc : Heap → Tm → Heap → Tm → List (Crossing fr.view.view)) : Prop :=
   ∀ h t h' t', (fr.chk h t h' t').xs = inc h t h' t' ++ actualXs (tv := fr.view.view) fr.F fr.C T h t h' t'
 
-/-- **Every incoming value is one outside code held**: at each step of
-`C`'s code from a reached state, the value of each incoming crossing is a
-root of outside code at the state before the step. -/
+/-- **Every incoming value is one outside code held, or holds no
+location**: at each step of `C`'s code from a reached state, the value of
+each incoming crossing is a root of outside code at the state before the
+step, or a value with no location (a primitive argument, an `undefined`
+pad). -/
 def IncomingRoots (inc : Heap → Tm → Heap → Tm → List (Crossing fr.view.view)) : Prop :=
   ∀ a b, fr.Reached a → fr.KStep a b → kind fr.F fr.C none a.1 b.1 ≠ .outside →
-    ∀ c ∈ inc a.1.s.h a.1.t b.1.s.h b.1.t, c.val ∈ rootsOf fr.F fr.C none a.1.t
+    ∀ c ∈ inc a.1.s.h a.1.t b.1.s.h b.1.t,
+      c.val ∈ rootsOf fr.F fr.C none a.1.t ∨ ∀ l, ¬ Leaves (fr.F.at fr.C).ofC c.val l
 
 variable {fr}
 
@@ -109,6 +114,14 @@ theorem crossOk_incoming {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.a
   have hr : RefsOkN a.1.s.W c.val := vals_refsOkN (RefsOk.refsOkN a.1.ok) hc
   exact hv.alloc fun l hl => Leaves.lt (s := a.1.s) hr hl
 
+/-- **A crossing of a value with no location meets the marks** (proved,
+`crossOk_of_sites`): it reaches no location. -/
+theorem crossOk_noLeaves {H : SiteHeap (fr.F.at fr.C)} {O : List (Option (fr.F.at fr.C).Site)}
+    (hO : Closed H O) (hlend : Lendable O) {g : Ghost (fr.F.at fr.C)} {h : Heap} (hH : HeapSites g H h)
+    {c : Crossing fr.view.view} (hc : ∀ l, ¬ Leaves (fr.F.at fr.C).ofC c.val l) :
+    CrossOk fr.view.view g h c :=
+  crossOk_of_sites hH hO hlend fun l hl => (hc l hl).elim
+
 /-- **`ChkSound` from the sites, with incoming crossings** (proved, the
 restatement of `chkSound_of_sites`): at the actual crossings as there
 (`escapeAt_of_sites`), and at each incoming crossing by
@@ -126,7 +139,9 @@ theorem chkSound_of_sitesIn {T : τ} {inc : Heap → Tm → Heap → Tm → List
   rw [chkConf_xs hx]
   refine ⟨fun c hc => ?_, he.localStores, he.localBindings⟩
   rcases List.mem_append.mp hc with hi | hac
-  · exact crossOk_incoming hO hlend (hat a ha) hH (hin a b ha hk ho c hi)
+  · rcases hin a b ha hk ho c hi with hr | hn
+    · exact crossOk_incoming hO hlend (hat a ha) hH hr
+    · exact crossOk_noLeaves hO hlend hH hn
   · exact he.crossOk c hac
 
 /-- **`ChkSound` from the flow and the shape of the calls, with incoming
@@ -144,4 +159,33 @@ theorem chkSound_of_flowIn {T : τ} {inc : Heap → Tm → Heap → Tm → List 
     (fun _ ha => sitesAt_reached hF hS hE ha) hin
 
 end ClientFrame
+
+/-- A value with a location of its own: an object, a spine or a view
+spine. -/
+def LocatedVal : Tm → Bool
+  | .objAt .. | .arr _ | .viewSpine .. => true
+  | _ => false
+
+/-- **A root is located** (proved, by induction on the term): every value a
+term holds at its positions (`vals`) is an object, a spine or a view
+spine; a number, a string or `undefined` passed as an argument is no
+root. -/
+theorem vals_located {ofC : ComponentTag → Bool} (t : Tm) : ∀ o, ∀ v ∈ vals ofC o t, LocatedVal v = true := by
+  induction t using Tm.induct with
+  | _ =>
+    intro o v hv
+    simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap] at hv
+    repeat' split at hv
+    all_goals first
+      | (simp at hv; done)
+      | (simp_all [LocatedVal]; done)
+      | grind [LocatedVal]
+
+/-- **A primitive argument is no root** (proved, the counter-model to
+reading every incoming value as a root): at an entering step whose
+argument is a number, the crossing's value is no root of outside code,
+whatever the term. -/
+theorem num_not_root (F : Family) (C : Nat) (t : Tm) (b : UInt64) : Tm.num b ∉ rootsOf F C none t :=
+  fun h => by simpa [LocatedVal] using vals_located t _ _ h
+
 end Verification.TolerantFrames.ReadOnly
