@@ -94,19 +94,60 @@ end sub
 
 variable [DecidableEq P.Site] [Hashable P.Site]
 
-/-- **Inclusion of sets of sites**, decided: by the list where the larger
-set is small, by a hash set of it otherwise. -/
-def subB (S S' : Sites P) : Bool :=
+/-- The sites of `S` past the longest prefix it shares with `S'`. -/
+def pastShared : Sites P → Sites P → Sites P
+  | s :: S, t :: T => if s = t then pastShared S T else s :: S
+  | S, _ => S
+
+omit [Hashable P.Site] in
+theorem mem_pastShared : ∀ {S S' : Sites P} {s : Option P.Site}, s ∈ S → s ∈ pastShared S S' ∨ s ∈ S'
+  | [], _, _, h => by simp at h
+  | _ :: _, [], _, h => .inl h
+  | x :: S, y :: T, s, h => by
+    simp only [pastShared]
+    split
+    · next hxy =>
+      rcases List.mem_cons.mp h with rfl | h
+      · exact .inr (hxy ▸ List.mem_cons_self)
+      · exact (mem_pastShared h).imp id (List.mem_cons_of_mem _)
+    · exact .inl h
+
+omit [Hashable P.Site] in
+theorem pastShared_sub : ∀ {S S' : Sites P}, Sub (pastShared S S') S
+  | [], _ => Sub.refl _
+  | _ :: _, [] => Sub.refl _
+  | x :: S, y :: T => by
+    simp only [pastShared]
+    split
+    · exact fun _ h => List.mem_cons_of_mem _ (pastShared_sub _ h)
+    · exact Sub.refl _
+
+/-- Inclusion of a set in a set, decided by the list where the larger set
+is small, by a hash set of it otherwise. -/
+def subIn (S S' : Sites P) : Bool :=
   if S'.length < 8 then S.all fun s => decide (s ∈ S')
   else
     let h := Std.HashSet.ofList S'
     S.all h.contains
 
-theorem subB_iff {S S' : Sites P} : subB S S' = true ↔ Sub S S' := by
-  unfold subB Sub
+theorem subIn_iff {S S' : Sites P} : subIn S S' = true ↔ Sub S S' := by
+  unfold subIn Sub
   split
   · simp
   · simp
+
+theorem subPast_iff {S S' : Sites P} : subIn (pastShared S S') S' = true ↔ Sub S S' := by
+  rw [subIn_iff]
+  exact ⟨fun h s hs => (mem_pastShared hs).elim (h s) id, fun h => Sub.trans pastShared_sub h⟩
+
+/-- **Inclusion of sets of sites**, decided: at once where both are one
+object (`withPtrEq`, the proposal sharing equal sets), else past the
+prefix both share, by `subIn`. -/
+def subB (S S' : Sites P) : Bool :=
+  withPtrEq S S' (fun _ => subIn (pastShared S S') S') (fun h => subPast_iff.mpr (h ▸ Sub.refl S))
+
+theorem subB_iff {S S' : Sites P} : subB S S' = true ↔ Sub S S' := by
+  rw [subB, withPtrEq, subPast_iff]
 
 instance (S S' : Sites P) : Decidable (Sub S S') := decidable_of_iff (subB S S' = true) subB_iff
 

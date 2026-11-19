@@ -46,6 +46,8 @@ Codes and nodes are arrays, read by index. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
+deriving instance Hashable for Tag, Target, Continuation
+
 variable {P : Package} [DecidableEq P.Site] [Hashable P.Site]
 
 /-- **A code of `C` to propose for**: its graph, the layout of its entry,
@@ -866,6 +868,15 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
 def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
   let sigs := s.table.map (·.1)
   let O := st.O
+  -- each code's allocation sites per continuation and handler, read once
+  -- per code: its entry copy's, which every context shares
+  let allocsOf : Array (List (NodeKey × Option P.Site × Option P.Site)) := s.ctxOf.mapIdx fun b _ =>
+    match s.cs[b]?, s.codes[b]? with
+    | some c₀, some code =>
+      let keys := code.2.foldl (fun (seen, acc) kx => if seen.contains kx then (seen, acc) else (seen.insert kx, kx :: acc))
+        ((∅ : Std.HashSet NodeKey), ([] : List NodeKey))
+      keys.2.reverse.map fun kx => (kx, (c₀.allocAt kx).obj, (c₀.allocAt kx).arr)
+    | _, _ => []
   { O := O
     heap := st.heap
     codes := s.ctxOf.toList.zipIdx.filterMap fun (cxs, b) => (s.cs[b]?).map fun c₀ =>
@@ -876,7 +887,6 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
       let fns := s.fns.getD ci #[]
       let cxs := s.nodeCx.getD b #[]
       let exprs := ((s.codes[ci]?).map (·.1)).getD #[]
-      let keys := (((s.codes[ci]?).map (·.2)).getD #[]).toList.eraseDups
       (k, (⟨exprs.mapIdx (fun l e =>
           let off := offs.getD l 0
           let need := needs.getD l 0
@@ -888,10 +898,52 @@ def SolveStart.flow (s : SolveStart P) (st : SolveState P) : FFlow P :=
           ⟨env, dflt, st.vars.getD (off + need + 1) [], fn, vfnIx fn e, κ,
             callsOut s.table (fun i => fn.getD i none) (fun i => env.getD i dflt) inst 0 e⟩),
         ⟨#[], [], [], #[], none, entryCx, true⟩, c.alloc, sigs, st.retOf ci, c.tok,
-        keys.map fun kx => (kx, (c.allocAt kx).obj, (c.allocAt kx).arr)⟩ : FCode P))) }
+        allocsOf.getD b []⟩ : FCode P))) }
 
 /-- Two sets of the same sites. -/
 def sameSites (S T : Sites P) : Bool := decide (Sub S T) && decide (Sub T S)
+
+/-- A set's key among equal sets: its size and two sums of its sites'
+hashes, equal for equal sets in any order. -/
+def setKey (S : Sites P) : Nat × UInt64 × UInt64 := go S 0 0 0
+where
+  go : Sites P → Nat → UInt64 → UInt64 → Nat × UInt64 × UInt64
+    | [], n, a, b => (n, a, b)
+    | x :: S, n, a, b => let h := hash x; go S (n + 1) (a + h) (b ^^^ (h * 0x9E3779B97F4A7C15))
+
+/-- The sets met so far, by key, each with its hash set. -/
+abbrev SetTable (P : Package) [DecidableEq P.Site] [Hashable P.Site] :=
+  Std.HashMap (Nat × UInt64 × UInt64) (List (Sites P × Std.HashSet (Option P.Site)))
+
+/-- The first set met equal to `S`, else `S`, now met. The solver's sets
+hold each site once, so a set of the same size whose sites all lie in a
+met set is that set. -/
+def shareSet (tbl : SetTable P) (S : Sites P) : Sites P × SetTable P :=
+  let k := setKey S
+  let cands := tbl.getD k []
+  match cands.find? fun (_, h) => S.all h.contains with
+  | some (T, _) => (T, tbl)
+  | none => (S, tbl.insert k ((S, Std.HashSet.ofList S) :: cands))
+
+/-- **Equal sets as one object**: each set of a code's nodes and its
+return set replaced by the first equal set met, so that the check reads
+an inclusion of equal sets at once (`subB`). The sets are unchanged. -/
+def shareCode (tbl : SetTable P) (c : FCode P) : FCode P × SetTable P := Id.run do
+  let mut tbl := tbl
+  let mut nodes : Array (FNode P) := Array.emptyWithCapacity c.nodes.size
+  for x in c.nodes do
+    let mut env : Array (Sites P) := Array.emptyWithCapacity x.env.size
+    for S in x.env do
+      let (T, t) := shareSet tbl S
+      tbl := t
+      env := env.push T
+    let (dflt, t) := shareSet tbl x.dflt
+    tbl := t
+    let (val, t) := shareSet tbl x.val
+    tbl := t
+    nodes := nodes.push { x with env := env, dflt := dflt, val := val }
+  let (ret, t) := shareSet tbl c.ret
+  return ({ c with nodes := nodes, ret := ret }, t)
 
 /-- **The flow with the contexts of equal entry sets merged**: two contexts
 of a code whose entry nodes' slots hold the same sites are one class,
@@ -899,8 +951,8 @@ standing for the first of them (the entry context where it is in it); a
 call site's context is the class of its call sites whose callees' classes
 are its own, standing for the first of them, or the entry context where
 every callee's class is its entry context's. The merged flow is the
-proposal for each class's first context, and each node names its call
-site's class. Nothing here is trusted: `FFlow.check` decides the merged
+proposal for each class's first context, made once (`shareCode`), and
+each node names its call site's class. Nothing here is trusted: `FFlow.check` decides the merged
 flow as any other. -/
 def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
   let startOf (b : Nat) : Nat := ((s.cs[b]?).map (·.start)).getD 0
@@ -910,33 +962,56 @@ def SolveStart.mergeFlow (s : SolveStart P) (F : FFlow P) : FFlow P := Id.run do
     let y := entrySets b c'
     x.length == y.length && (x.zip y).all fun (S, T) => sameSites S T
   let ctxs : Array (List (Nat × FCode P)) := F.codes.toArray.map (·.2)
-  -- each context's class in its code: the first context of equal entry sets
-  let rep (b k : Nat) : Nat :=
-    let cs := ctxs.getD b []
-    match look k cs with
-    | some c => ((cs.find? fun (_, c') => sameEntry b c c').map (·.1)).getD k
-    | none => k
+  -- each context's class in its code: the first context of equal entry
+  -- sets, computed once per code
+  let reps : Array (Std.HashMap Nat Nat) := ctxs.mapIdx fun b cs => Id.run do
+    let mut seen : List (Nat × FCode P) := []
+    let mut m : Std.HashMap Nat Nat := {}
+    for (k, c) in cs do
+      if !m.contains k then
+        match seen.find? fun (_, c') => sameEntry b c c' with
+        | some (k', _) => m := m.insert k k'
+        | none => m := m.insert k k; seen := seen ++ [(k, c)]
+    return m
+  let rep (b k : Nat) : Nat := ((reps[b]?).bind (·[k]?)).getD k
   -- each call site's callees, with their classes
   let sites : List Nat := (ctxs.toList.flatMap fun cs => cs.map (·.1)).eraseDups.filter (· != entryCx)
-  let sigOf (k : Nat) : List (Nat × Nat) :=
-    (ctxs.toList.zipIdx.filter fun (cs, _) => cs.any (·.1 == k)).map fun (_, b) => (b, rep b k)
+  let codesOf : Std.HashMap Nat (List Nat) := ctxs.toList.zipIdx.foldl
+    (fun m (cs, b) => cs.foldl (fun m (k, _) => m.insert k ((m.getD k []) ++ [b])) m) {}
+  let sigOf (k : Nat) : List (Nat × Nat) := (codesOf.getD k []).eraseDups.map fun b => (b, rep b k)
+  -- each signature's first call site
+  let firstOf : Std.HashMap (List (Nat × Nat)) Nat := sites.foldl
+    (fun m k => let sg := sigOf k; if m.contains sg then m else m.insert sg k) {}
   let newKey : Nat → Nat := fun k =>
     let sg := sigOf k
     if sg.all (·.2 == entryCx) then entryCx
-    else ((sites.find? fun k' => sigOf k' == sg).getD k)
+    else firstOf.getD sg k
   let keys : List (Nat × Nat) := sites.map fun k => (k, newKey k)
   let remap (k : Nat) : Nat := if k == entryCx then entryCx else (look k keys).getD k
   let node (x : FNode P) : FNode P := { x with cx := remap x.cx }
   let code (c : FCode P) : FCode P := { c with nodes := c.nodes.map node, dflt := node c.dflt }
-  let codes := F.codes.zipIdx.map fun ((m, cs), b) =>
+  -- each class's proposal, its nodes naming the classes and its sets
+  -- shared, made once
+  let mut tbl : SetTable P := {}
+  let mut codes : List (Code × List (Nat × FCode P)) := []
+  for ((m, cs), b) in F.codes.zipIdx do
     let kept := cs.filter fun (k, _) => k == entryCx || (newKey k != entryCx && newKey k == k)
-    (m, kept.map fun (k, c) =>
+    let mut made : Std.HashMap Nat (FCode P) := {}
+    let mut out : List (Nat × FCode P) := []
+    for (k, c) in kept do
       let k₀ := if k == entryCx then k else rep b k
-      (k, code ((look k₀ cs).getD c)))
-  return { F with codes := codes }
+      match made[k₀]? with
+      | some fc => out := (k, fc) :: out
+      | none =>
+        let (fc, t) := shareCode tbl (code ((look k₀ cs).getD c))
+        tbl := t
+        made := made.insert k₀ fc
+        out := (k, fc) :: out
+    codes := (m, out.reverse) :: codes
+  return { F with codes := codes.reverse }
 
 /-- **The proposal at a state of the rounds**: its flow, the contexts of
-equal entry sets merged (`mergeFlow`). -/
+equal entry sets merged and equal sets shared (`mergeFlow`). -/
 def SolveStart.propose (s : SolveStart P) (st : SolveState P) : FFlow P := s.mergeFlow (s.flow st)
 
 /-- **The proposed flow** of `C`'s codes: one context per known call site,

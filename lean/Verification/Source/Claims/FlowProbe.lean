@@ -19,8 +19,6 @@ by part. It decides nothing a verdict reads. -/
 namespace Verification.SourceClaimJson
 open Lean Verification.TolerantFrames.ReadOnly ControlFlow
 
-deriving instance Hashable for Tag, Target, Continuation
-
 /-- The package a unit's probe reads: sites numbered, the unit's component
 its code. -/
 abbrev probePackage (comp : ComponentTag) : TolerantFrames.ReadOnly.Package :=
