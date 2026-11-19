@@ -316,8 +316,10 @@ a kind among the charges of the innermost frame's code.
   (`ClientFrame.wok_reached`), and lowered code meets it (`lowered_wok`,
   proved); at a call the claim is about the term is the request's run,
   whose code is lowered, at slots and a heap of plain values, which every
-  step of a program from an initial configuration keeps (`wok_program`, to
-  be proved with `fits_program`, by `step_wok`).
+  step of a program from an initial configuration keeps (`wok_program`,
+  proved, `ReadOnlyLocalReach.lean`: `wok_ex` along a public call, from
+  initial configurations meeting it; an initial configuration's term does,
+  `wok_initial`, its heap the realm's, of plain values).
 - **The active redex's writes** (`active_writes`): the writes of the term
   the next step reduces are among the charges of the innermost frame's
   code.
@@ -544,11 +546,12 @@ needed by milestone 1.
 `none`, and its crossings: the actual crossings out (`actualXs` at the
 type $`\top_{w}`$, a writable type, so an outgoing crossing reaches nothing
 read-only and adds nothing to $`E`$), and, **at an entering step**, the
-values of the entered run's environment (its receiver, its parameters, a
-rest parameter's spine) crossing in at the entered code's parameter types.
-They are read from the entered run, so a rest spine built by the
-invocation's `letE` before the depth increases (Astra's `Step.callGraph`
-check) crosses at the entering step as the rest parameter's value.
+arguments of the call the step reduces (the active redex, `invoke` or
+`construct`, in a frame of outside code), the first of them as many as the
+function's parameters, crossing in at the entered code's parameter types
+(`FramedSpec.entryXs`). A realized code collects no rest
+([the binding checks](#the-binding-checks)), so each such argument is the
+value of its parameter.
 
 - **The types of a shared code** (`sharedParamTypes`): the entered code is
   its tables (`entered`), which two functions of $`C`$ may share with
@@ -580,19 +583,14 @@ check) crosses at the entering step as the rest parameter's value.
   value holding no location crosses alike (`crossOk_noLeaves`). The premise
   `IncomingRoots` (each incoming value a root of outside code before its
   step, or a value holding no location) is, for the framed frame,
-  `entryXs_roots` (to be proved). A root is an object, a spine or a view
-  spine (`vals_located`, proved), so an entering step whose argument is a
-  number, or whose actuals are fewer than the parameters (an `undefined`
-  pad), crosses a value that is no root (`num_not_root`, proved): the
-  premise reads such a value by its holding no location. Plan: an entering
-  step from outside code raises the calls of $`C`$ active by a `callGraph`
-  or `constructGraph` at the active redex, whose actuals are values at
-  outside code's position (in `vals` of the term before the step, or
-  primitive), or by the `letV` of a rest spine's `letE`, which the binding
-  checks exclude for a realized code (its closures collect no rest); it
-  needs that a run of $`C`$'s code appears in a reached term only at an
-  evaluation position or as that `letE`'s body, an invariant of lowered
-  code (`Lowered` holds no run).
+  `entryXs_roots` (proved, `FramedHistory.lean`). A root is an object, a
+  spine or a view spine (`vals_located`, proved), so an entering step whose
+  argument is a number crosses a value that is no root (`num_not_root`,
+  proved): the premise reads such a value by its holding no location. Each
+  crossing is an argument of the active redex in a frame of outside code:
+  an object, a spine or a view spine there is a value at a position of
+  outside code of the term (`active_vals`, `redex_arg_root`,
+  `ReadOnlyLocalReach.lean`), any other value reaches no location.
 - **`Inv` after an incoming crossing** is `pkg_step_inv` (proved) at the
   history's crossings, which reads every crossing alike: a crossing changes
   no site or key (`crosses_site`), steps the history by `HStep.cross`
@@ -1357,8 +1355,10 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `framedReturns_of_guaranteeR`, `framedFootprint_of_bound`,
 `framedReturns_of_main` (`PassUnitSafe.lean`); `local_reach`,
 `valRun_noForge`, `reach_deep`, `stepWithin_reach`, `lowered_vals_all`,
-`deepIn_of_vj`, `heapDeep_of_heapInv`, `Fits.frameIn`, `frameKinds_flow`
-(`ReadOnlyLocalReach.lean`).
+`deepIn_of_vj`, `heapDeep_of_heapInv`, `Fits.frameIn`, `frameKinds_flow`,
+`wok_program`, `wok_initial`, `active_vals`, `redex_arg_root`
+(`ReadOnlyLocalReach.lean`), `FramedSpec.entryXs_roots`
+(`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1367,12 +1367,12 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `chk_sim`, `entryXs_roots`, `publicCall_safe`, `entryHolds_realized`, `within_charges` (its instance at the segments), `layouts_reached`, `CodesLowered` of the request's flow, `capClosed_of_lay`,
+**To be proved, milestone 1**: `chk_sim`, `publicCall_safe`, `entryHolds_realized`, `within_charges` (its instance at the segments), `layouts_reached`, `CodesLowered` of the request's flow, `capClosed_of_lay`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
 `prologue_sim`, `project`, `keeps_canonical`,
-`fits_program`, `chkSound_program`, `inv_program`, `wok_program`, `entryFits_public`,
+`fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `ret_reached` (its conclusion `FramedReturnsReached`),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s

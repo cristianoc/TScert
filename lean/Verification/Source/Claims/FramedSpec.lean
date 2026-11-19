@@ -169,15 +169,16 @@ abbrev F : Family := spec.fam.family
 open Classical in
 /-- **The crossings in at an entering step of the realized code**: from a
 term whose active frame runs outside code to one with one more call of `C`
-active whose innermost run is the realized code, each argument (the slots
-after the receiver, `arity` of them) crosses in at its declared type. -/
+active whose innermost run is the realized code, each argument of the call
+the step reduces (the first `arity` of them) crosses in at its declared
+type. -/
 noncomputable def entryXs (r : SourceRequest σ ι) (t t' : Tm) : List (Crossing spec.view.view) :=
-  if OutsideAt spec.F spec.C none t ∧ entered none t' = some (realizedCode r) ∧
+  if spec.F.ofC spec.C (frameTag (activeFrame none t).1) = false ∧ entered none t' = some (realizedCode r) ∧
       depthC spec.F spec.C none t' = depthC spec.F spec.C none t + 1 then
-    match innermostGoto t' with
-    | some (_, _, L, _, _) => (((L.drop 1).take spec.arity).zip (r.inputs.take spec.arity)).map
-        fun (v, T) => ⟨.into, T, v⟩
-    | none => []
+    match (activeFrame none t).2 with
+    | .invoke _ _ args | .construct _ args =>
+      ((args.take spec.arity).zip (r.inputs.take spec.arity)).map fun (v, T) => ⟨.into, T, v⟩
+    | _ => []
   else []
 
 /-- **What the checks give at a step** (the draft, "The binding checks" and

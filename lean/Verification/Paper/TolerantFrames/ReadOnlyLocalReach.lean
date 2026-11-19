@@ -1,4 +1,6 @@
 import Verification.Paper.TolerantFrames.ReadOnlyWriteKinds
+import Verification.Paper.TolerantFrames.ReadOnlyPublic
+import Verification.Paper.TolerantFrames.ReadOnlyIncoming
 
 /-! # Read-only handles: the local lemma at the base of a call
 
@@ -37,7 +39,13 @@ too, every old location the run changes is of a site of the set.
   and the flow's codes are lowered (`CodesLowered`).
 - **The frame a step runs in** (`Fits.frameIn`, `frameKinds_flow`): the
   innermost frame of a fitting term runs a code the flow proposes for, so
-  its charges are among the flow's codes'. -/
+  its charges are among the flow's codes'.
+- **The residual invariant along a program** (`wok_program`, `wok_initial`):
+  every state of a public call meets it from initial configurations that
+  do; an initial configuration's term does.
+- **The active redex of outside code** (`active_vals`, `redex_arg_root`):
+  the values at its positions are values at positions of outside code of
+  the term; an argument of a call there is a root or holds no location. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification
 
@@ -424,5 +432,122 @@ theorem frameKinds_flow {P : Package} [DecidableEq P.Site] {F : FFlow P} {K₀ :
     obtain ⟨fc, hfc, -⟩ := FFlow.code_at hπ
     obtain ⟨l, hl, -⟩ := FFlow.at_mem hfc
     exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨(m, l), hl, hk⟩)
+
+/-! ## The residual invariant along a program -/
+
+namespace FrameCore
+variable {τ : Type} {core : FrameCore τ}
+
+/-- **The residual invariant along an execution** (proved, `step_wok` at
+each step): from a state whose term meets it at a heap of plain values,
+every state of an execution of steps keeping the obligation does. -/
+theorem wok_ex {q : Conf × Ghost (core.F.at core.C) → Prop} {n : Nat} {a b : Conf × Ghost (core.F.at core.C)}
+    (hex : Ex core.KStep q n a b) (ha : WOk a.1.t ∧ HeapW a.1.s.h) : WOk b.1.t ∧ HeapW b.1.s.h :=
+  hex.carry (r := fun x : Conf × Ghost (core.F.at core.C) => WOk x.1.t ∧ HeapW x.1.s.h)
+    (fun _ _ _ hxy hx => have := step_wok hxy.1.step hx.2 hx.1; ⟨this.1, this.2.1⟩) ha
+
+/-- **The residual invariant at a public call** (proved, the draft's
+`wok_program`, `wok_ex` along the call's execution and its entering step):
+from initial configurations meeting it, the state a public call enters
+meets it. -/
+theorem wok_program {Init : Conf → Prop} {m : Code} {x₀ : Conf} {n : Nat} {x a₁ : Conf × Ghost (core.F.at core.C)}
+    (hinit : ∀ x, Init x → WOk x.t ∧ HeapW x.s.h) (h : core.PublicCall Init m x₀ n x a₁) :
+    WOk a₁.1.t ∧ HeapW a₁.1.s.h :=
+  wok_ex h.ex (hinit x₀ h.1)
+
+end FrameCore
+
+/-- **An initial configuration's term meets the residual invariant**
+(proved, `lowered_wok`): the initialization's run, its node expressions
+meeting it, at no slot and the default `undefined`, and the client's
+lowered source, in its scope. -/
+theorem wok_initial {P : Package} {Fl : Flow P} {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {l : Nat} {c : ComponentTag} {client : Tm} (hE : ∀ e ∈ E, WOk e) (hc : Lowered Fl client) :
+    WOk (.letE (.goto E K l [] .undef c) client) := by
+  simp only [WOk, wOks_iff, plainArgs_iff, List.not_mem_nil, false_imp_iff, imp_true_iff, true_and]
+  exact ⟨⟨hE, rfl, trivial⟩, lowered_wok client hc⟩
+
+/-! ## The values at the active redex of outside code -/
+
+section Active
+variable {ofC : ComponentTag → Bool}
+
+/-- **The active redex of outside code holds roots** (proved, by induction
+on the term, following `activeFrame`): where the innermost frame around the
+next redex runs outside code, every value at a position of the redex is a
+value at a position of outside code of the term, read from the frame `cur`
+outside it. -/
+theorem active_vals : ∀ (t : Tm) (cur : Option FrameKey) (p : Option FrameKey × Tm), activeFrame cur t = p →
+    ofC (frameTag p.1) = false → ∀ x ∈ vals ofC true p.2, x ∈ vals ofC (!ofC (frameTag cur)) t := by
+  have hargs : ∀ (xs : List Tm) (T : Tm) (cur : Option FrameKey) (p : Option FrameKey × Tm),
+      (∀ a ∈ xs, ∀ cur p, activeFrame cur a = p → ofC (frameTag p.1) = false →
+        ∀ x ∈ vals ofC true p.2, x ∈ vals ofC (!ofC (frameTag cur)) a) →
+      activeArgs cur T xs = p → ofC (frameTag p.1) = false → ∀ x ∈ vals ofC true p.2,
+        x ∈ vals ofC (!ofC (frameTag cur)) T ∨ ∃ a ∈ xs, x ∈ vals ofC (!ofC (frameTag cur)) a := by
+    intro xs T cur p ih hp hc x hx
+    rcases activeArgs_split (cur := cur) (t := T) xs with ⟨he, _⟩ | ⟨a, ha, he, _⟩
+    · rw [he] at hp; subst hp; simp only at hc hx; exact .inl (by simpa [hc] using hx)
+    · rw [he] at hp; exact .inr ⟨a, ha, ih a ha cur p hp hc x hx⟩
+  intro t
+  induction t using Tm.induct
+  all_goals intro cur p hp hc x hx
+  all_goals simp only [activeFrame] at hp
+  all_goals repeat' split at hp
+  -- The redex runs in `cur`: the term itself.
+  all_goals try (subst hp; simpa [hc] using hx)
+  -- A redex inside a subterm.
+  case invoke.isTrue f r args ihf _ _ _ => have := ihf cur p hp hc x hx; simp [vals, this]
+  case invoke.isFalse.isTrue f r args _ ihr _ _ _ => have := ihr cur p hp hc x hx; simp [vals, this]
+  case invoke.isFalse.isFalse f r args _ _ iha _ _ =>
+    rcases hargs args _ cur p iha hp hc x hx with h | ⟨a, ha, h⟩
+    · simpa [vals] using h
+    · simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr ⟨a, ha, h⟩
+  case construct.isTrue f args ihf _ _ => have := ihf cur p hp hc x hx; simp [vals, this]
+  case construct.isFalse f args _ iha _ =>
+    rcases hargs args _ cur p iha hp hc x hx with h | ⟨a, ha, h⟩
+    · simpa [vals] using h
+    · simp only [vals, valsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr ⟨a, ha, h⟩
+  -- A redex inside a list of arguments.
+  all_goals try (rcases hargs _ _ cur p (by assumption) hp hc x hx with h | ⟨a, ha, h⟩
+                 · exact h
+                 · first
+                   | exact vals_makeAt (mem_valsArgs_of ha h)
+                   | exact mem_valsArgs_of ha h
+                   | (simp only [vals, List.mem_append]; exact .inr (mem_valsArgs_of ha h)))
+  -- A frame's running term.
+  case frame =>
+    rename_i E K t L d k xx comp ihE iht ihL ihd
+    simp only [vals, List.mem_append]
+    exact .inr (iht _ p hp hc x hx)
+  -- A redex inside a subterm.
+  all_goals (simp only [vals, List.mem_append]
+             first
+               | solve_by_elim [Or.inl, Or.inr]
+               | exact .inl (.inl (by solve_by_elim))
+               | exact .inl (.inr (by solve_by_elim)))
+
+/-- **An argument at the active redex of outside code is a root or holds no
+location** (proved, `active_vals`): an object, a spine or a view spine
+among the arguments of the call the next step reduces, in a frame of
+outside code, is a value at a position of outside code; any other value
+reaches no location. -/
+theorem redex_arg_root {t f r v : Tm} {args : List Tm} (hc : ofC (frameTag (activeFrame none t).1) = false)
+    (hp : (activeFrame none t).2 = .invoke f r args ∨ (activeFrame none t).2 = .construct f args) (hv : v ∈ args) :
+    v ∈ vals ofC (!ofC (frameTag none)) t ∨ ∀ l, ¬ Leaves ofC v l := by
+  cases hl : LocatedVal v
+  · refine .inr fun l ⟨w, hw, a, hn⟩ => ?_
+    have hcv : codeVals ofC v = [] := by cases v <;> simp_all [LocatedVal, codeVals]
+    cases hw with
+    | refl => cases v <;> cases a <;> simp_all [LocatedVal, next, Footprints.fieldsOf, HeapKnowledge.descriptorSpine, spineEntries]
+    | step hx _ => rw [hcv] at hx; cases hx
+  · have hself : v ∈ vals ofC true v := by
+      cases v <;> simp_all [LocatedVal, vals_objAt]
+      all_goals simp [vals]
+    refine .inl (active_vals t none _ rfl hc v ?_)
+    rcases hp with hp | hp <;> rw [hp] <;> simp only [vals, List.mem_append, valsArgs_eq, List.mem_flatMap]
+    · exact .inr ⟨v, hv, hself⟩
+    · exact .inr ⟨v, hv, hself⟩
+
+end Active
 
 end Verification.TolerantFrames.ReadOnly
