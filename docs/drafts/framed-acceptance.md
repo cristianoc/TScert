@@ -358,10 +358,21 @@ depth in a segment from $`s_0`$ is `StepWithin W_c |h₀|`. Its core is
 proved at a run of the calculus (`stepWithin_reach`: `local_reach` gives
 the held sites), with the frame's code's charges among every code's
 (`Fits.frameIn`, `frameKinds_flow`: the innermost frame of a fitting term
-runs a code the flow proposes for); its instance at the frame's segments
-reads each segment as a run of the call's term in its evaluation context
-(`isolate`), to be proved with `framed_transfer`'s segment
-(`CallState`, `Inside`).
+runs a code the flow proposes for). Its instance at a call (`within_run`,
+proved, `ReadOnlySegment.lean`) reads the call's run as the run of the
+call's term $`u_0`$ in its evaluation context until it returns
+(`hole_run`, by `EvalCtx.steps_inv`), so the local lemma's base is
+$`u_0`$'s values, the callee, the receiver and the arguments: a step of
+$`C`$'s code, or of no frame, of that run is within the protocol from
+every code's charges and a set $`T`$ passing the closure check that holds
+their sets. The innermost frame inside the call's term is the whole
+term's (`activeFrame_ctx`, `activeFrame_hole`), so it runs a code of the
+flow (`Fits.frameIn_hole`); the residual invariant and the references
+pass from the whole term to the call's term (`EvalCtx.wok_hole`,
+`EvalCtx.refs_hole`, `wok_steps`). Its two instances are $`W_c`$ at
+$`T=L(c)`$ (`within_depth`) and $`\Psi_C`$ at the closure of the capture
+sites and $`O`$ (`within_member`); `framed_transfer`'s segment
+(`CallState`, `Inside`) supplies the context and the run.
 
 ## The transfer at a call
 
@@ -1382,7 +1393,10 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 (`FramedHistory.lean`); `step_layP`, `layDeep_of_layP`, `layouts_reached`
 (`ClientFrame.lay_reached`, `FrameCore.lay_program`, `lay_initial`),
 `capClosed_of_lay`, `codesLoweredB_sound`, `tokensSomeB_sound`,
-`heapDeep_of_checks`, `deepIn_of_checks` (`ReadOnlyLayouts.lean`).
+`heapDeep_of_checks`, `deepIn_of_checks` (`ReadOnlyLayouts.lean`);
+`activeFrame_ctx`, `activeFrame_hole`, `Fits.frameIn_hole`, `hole_run`,
+`valRun_of_steps`, `EvalCtx.refs_hole`, `EvalCtx.wok_hole`, `wok_steps`,
+`within_run`, `within_depth`, `within_member` (`ReadOnlySegment.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1391,7 +1405,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `AstraR3.lean`'s flow; `body_prefix` (`Round5.lean`); `entry_slot_holds_O_tokens` (the second
 review's `CodeClause.lean`).
 
-**To be proved, milestone 1**: `chk_sim`, `publicCall_safe`, `entryHolds_realized`, `within_charges` (its instance at the segments),
+**To be proved, milestone 1**: `chk_sim`, `publicCall_safe`, `entryHolds_realized`,
 `framed_transfer`, `seg_run`, `RunSeq.within`,
 `frameC_shape`, the trace-indexed
 `Cert`, `Member.Call` and `decompose`, `cert_of_charges`,
