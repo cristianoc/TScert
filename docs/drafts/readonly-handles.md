@@ -2378,14 +2378,21 @@ sets of sites:
   meets $`S`$; at a position of outside code (`o`, true outside every
   frame and in a frame of outside code, false in a frame of $`C`$'s code)
   every rule's set lies within $`O`$. A call of a callee that may be outside code (`invoke`,
-  `construct`) has its callee, receiver and actuals meet $`O`$, and the
+  `construct`) has its callee, receiver and actuals meet $`O`$, the
   calling frame allocates arrays at a site of $`O`$ (a rest spine goes to
-  a callee not known). A call of a closure of $`C`$'s code of a known
+  a callee not known), and its value meets $`O`$. A call of a closure of
+  $`C`$'s code of a known
   signature (`invokeC`, at a position of $`C`$'s code; the note's (K)
   restricts only what crosses out to outside code) has its receiver and actuals, each a value or a
   variable, meet the slots of the callee's entry, the closure its own
   slot, and a rest spine allocated at a site of the spine's slot holding
-  the rest's actuals. Every thrown value meets $`O`$; a read's result meets the
+  the rest's actuals; its value meets the callee's return set. A closure
+  of $`C`$'s code is created only where its code is open at its entry
+  (`OpenAt`): the rest's spine, the receiver, the parameters and the
+  closure's own slot there hold $`O`$, and the code's return set lies
+  within $`O`$. A closure reaches no location but its fields, so the flow
+  cannot tell a closure outside code may call from another, and every
+  closure's code is open at its entry. Every thrown value meets $`O`$; a read's result meets the
   contents of a set closed under the reads' prototypes; a write's value
   is one the written storage may hold (`Stores`); an allocation's initial
   values what its site may hold. A capture, a bound part and a slot of a
@@ -2393,8 +2400,8 @@ sets of sites:
   to a smaller set (`VOr`). A nested run of $`C`$'s code fits when
   its environment meets its node's slots and its term the node's value
   set; of outside code, when its code is lowered and its environment and
-  term meet $`O`$; either
-  returns a value of $`O`$. A run's slots naming a signature hold
+  term meet $`O`$; a run of $`C`$'s code returns a value of its code's
+  return set, a run of outside code one of $`O`$. A run's slots naming a signature hold
   closures of it (`EnvFn`), and a frame whose node value names one runs a
   closure of it. Fitting reads values only through `V`
   (`Fits.mono`), so allocation keeps it (`Fits.alloc`); a raised value
@@ -2406,8 +2413,12 @@ sets of sites:
   maps such an environment to one meeting its target, its slots and its
   signatures (`ContFn`, `HandlerFn`, a thrown value naming none); a
   returning node's value meets
-  $`O`$; every slot accepts $`O`$; $`O`$ holds outside storage, is closed
-  in $`H`$, and its storage may hold all of $`O`$.
+  the code's return set (`CodeFlow.ret`); $`O`$ holds outside storage, is
+  closed in $`H`$, and its storage may hold all of $`O`$. A slot holds
+  $`O`$ where outside code supplies its values: the entry slots `OpenAt`
+  names, a handler's thrown value, and every slot of a member's entry
+  outside storage (`EntryShape`); every other slot holds what its edges
+  carry into it.
 - **A heap meets the flow** (`HeapInv`): each location holds a value
   meeting its site's contents, its code's values the bindings; so it meets
   the heap of sites (`HeapInv.sites`). Writes and allocations that meet
@@ -2494,8 +2505,8 @@ has no such value; its calls are read at `O`. Pretext's walkers name
 `src/line-break.ts` on the `tscert-rewrites` branch), so each call passes
 the walker's cursor to a closure of a known signature (`Fits.invokeC`).
 Each of the three returns a boolean, a number or `null`, a value with no
-location, which meets every set: the rule that a return of $`C`$'s code
-meets $`O`$ (`ContOk` at `ret`) reads nothing of the cursor.
+location, which meets every set: the call's value meets the callee's
+return set (`Fits.invokeC`), which holds no site of the cursor.
 
 Proof scope: the lemmas above are proved. Not proved here: the shape of
 the calls (`EntryShape`) from the frame's well-formed entries, and the
@@ -2537,40 +2548,48 @@ proposal is [deciding the flow](#deciding-the-flow).
 A finite proposal (`FFlow`, `ReadOnlyFitsDecide.lean`) holds $`O`$, the
 heap of sites as a list of entries (a site's contents and bindings, none
 for a site no entry names), and for each code of $`C`$ its nodes (`FCode`,
-one node standing for every label past them). A code holds a set every
-slot and every node's value holds besides its own (`base`), a table of
-signatures, and for each node its slots as an array with one set for every
-slot past it, its value set and its signatures, each an index into the
-table. The flow it stands for (`FFlow.flow`) reads a code's first entry; a
-slot's sites are its own with `base`.
+one node standing for every label past them). A code holds its return
+set, a table of signatures, and for each node its slots as an array with
+one set for every slot past it, its value set and its signatures, each an
+index into the table. The flow it stands for (`FFlow.flow`) reads a
+code's first entry.
 
 - **A term's least set** (`syn`), computed bottom-up from the node's slots:
   a variable bound inside the term its binder's set, a slot its sites; a
   read the contents of the closure of the sites it may read under the
   contents (`closeQ`: grown as often as the heap of sites lists contents,
   then checked closed); an allocation its site, each initial value checked
-  against its site's storage (`storesB`); a call `O`, its callee, receiver
-  and actuals within `O`, or a call of a slot naming a signature whose
-  entry's slots hold the receiver's and actuals' sets. Where it is
+  against its site's storage (`storesB`), a closure of $`C`$'s code only
+  where its code is open at its entry (`openB`); a call of a slot naming
+  a signature whose entry's slots hold the receiver's and actuals' sets
+  the callee's return set, and a call whose callee, receiver and actuals
+  lie within `O` the set `O`. Where it is
   computed, the term fits it (`syn_sound`), and every larger set
   (`OFits.sub`).
 - **Lowered code** (`lowB`, `lowB_sound`) and the closure's own slot alone
   named at its entry (`selfFnB`), decided.
-- **The edges** (`carriesBaseB`, `carriesFnB`): the slots of both ends and
+- **The edges** (`carriesB`, `carriesFnB`): the slots of both ends and
   the mapping are constant past a width (`Stable`), the larger of the
-  ends' widths and the mapping's, so the slots below it decide `Carries`,
-  each target slot holding `base` besides its own (`carriesBaseB_sound`);
+  ends' widths and the mapping's, so the slots below it decide `Carries`
+  (`carriesB_sound`); a return's value lies within the code's return set;
   a target names signatures only within its row, and an index named there
   is the index the source's slot holds (`carriesFnB_sound`;
   `contChkB_sound`, `handlerChkB_sound`).
 - **The checks of a flow** (`FFlow.check`): each code's checks
   (`codeChkB_sound`, one pass over the nodes with their continuations and
-  handlers), `base` holding $`O`$, so every slot accepts it, $`O`$ holding
-  outside storage, closed in the heap of sites, its storage able to hold
-  all of $`O`$; they give `Flow.Facts` (`FFlow.check_sound`). The marks the
-  checks at the crossings read (`Lendable`, `LocalHeld`, no binding
-  reaching a local site) are decided by `FFlow.marksB`, and the proposal
-  meeting the shapes of $`C`$'s closures by `FFlow.shapesB`.
+  handlers), $`O`$ holding outside storage, closed in the heap of sites,
+  its storage able to hold all of $`O`$; they give `Flow.Facts`
+  (`FFlow.check_sound`). A member's entry holding outside storage at every
+  slot, its returns within $`O`$, is decided by `FFlow.entryB`, and the
+  proposal meeting the shapes of $`C`$'s closures, open at their entries
+  and holding outside storage at their captures' slots, by
+  `FFlow.shapesB`.
+- **The marks a flow gives** (`FFlow.MarksFrom`): a site of $`O`$ is
+  released and every other site local. At these marks $`O`$ is lent
+  (`Lendable`) and storage of a site that is not local, a site of $`O`$
+  or outside storage, references no local site (`LocalHeld`), both from
+  the facts of $`O`$ (`FFlow.marks_of_marksFrom`); no binding reaching a
+  local site is a separate condition, decided by `FFlow.bindingsB`.
 
 **The proposal** (`solveFlow`, `ReadOnlyFlowSolve.lean`) is computed from
 the lowered graphs, the only place their nodes, slots and labels exist.
@@ -2584,12 +2603,13 @@ needs through an edge, `neededWidths`), one for the slots past them and
 one for its value; an edge copies each variable of its source into the
 one of its target that reads it, and a node's value is its expression's
 least set with its stores, what it gives to outside code and the slots of
-a callee's entry added (`gen`). Every slot holds $`O`$ besides its own
-(`base`), so a value stored may be of $`O`$ and a write through a slot
-stores into $`O`$'s sites. A worklist runs the copies and the nodes, then
-closes $`O`$ and runs again the nodes reading $`O`$ or the heap of sites
-where either grew, until nothing changes (`solveLoop`). A site of $`O`$ is
-released and every other site local. `TSCERT_FLOW_PROBE=1` prints, for
+a callee's entry added, a known call's value its callee's return set
+(`gen`). The slots outside code fills hold $`O`$: each closure's entry
+slots up to its own slot, and a handler's thrown value; every slot of the
+member's entry holds outside storage. A worklist runs the copies and the
+nodes, then closes $`O`$, grows those slots by it, and runs again the
+nodes reading $`O`$, a return set or the heap of sites where either grew,
+until nothing changes (`solveLoop`). `TSCERT_FLOW_PROBE=1` prints, for
 each member checked, whether the proposal meets the checks and the time of
 the proposal and of the checks (`FilePlans.flowProbe`); no verdict reads
 it. With `TSCERT_FLOW_PROBE=only` the members' checks are not run and no

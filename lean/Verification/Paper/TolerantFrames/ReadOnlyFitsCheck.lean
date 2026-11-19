@@ -55,7 +55,7 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
       (∀ x ∈ args, primVal x = true ∨ ∃ k, x = .var k) →
       (∀ i, i < σ.ar → Sub (Sa i) (π.env σ.s (paramSlot σ.rest i))) →
       (σ.rest = true → a.arr ∈ π.env σ.s 0 ∧ Stores Fl a.arr Sr ∧ ∀ i, σ.ar ≤ i → Sub (Sa i) Sr) →
-      Sub Fl.O S → (o = true → Sub S Fl.O) → OFits d Γ a o S (.invoke (.var j) r args)
+      Sub π.ret S → (o = true → Sub S Fl.O) → OFits d Γ a o S (.invoke (.var j) r args)
   | construct {d Γ a o S f args} : OFits d Γ a o Fl.O f → (∀ x ∈ args, OFits d Γ a o Fl.O x) → Sub Fl.O S →
       a.arr ∈ Fl.O → (o = true → Sub S Fl.O) → OFits d Γ a o S (.construct f args)
   | letE {d Γ a o S Sx x b} : OFits d Γ a o Sx x → OFits (d + 1) (consSites Sx Γ) a o S b →
@@ -72,8 +72,8 @@ inductive OFits : Nat → (Nat → Option (Sites P)) → Alloc P → Bool → Si
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
       P.ofC comp = true → Fl.code (E, K) = some π →
       (∀ i u, caps[i]? = some u → OVOr τ d Γ (π.env s (capSlot ar rest i)) u) →
-      SelfFn π ar E K s rest caps.length → (∀ e ∈ E, Lowered Fl e) → (o = true → Sub S Fl.O) →
-      OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
+      SelfFn π ar E K s rest caps.length → OpenAt Fl π ar s rest caps.length → (∀ e ∈ E, Lowered Fl e) →
+      (o = true → Sub S Fl.O) → OFits d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns inits)
   | makeGraphOut {d Γ a o S ar E K s caps k rest comp ns inits} (Ss : Tm → Sites P) :
       (∀ x ∈ inits, Stores Fl a.obj (Ss x)) → (∀ x ∈ inits, OFits d Γ a o (Ss x) x) → a.obj ∈ S →
       P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) → (∀ u ∈ caps, OVOr τ d Γ S u) →
@@ -171,11 +171,11 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
     · exact (hp _ (by simp)).inst hρ
     · exact (hp _ (by simp)).inst hρ
     · exact (hp y (by simp [hy])).inst hρ
-  | @makeGraphC d _ _ _ _ ar E K s caps k rest comp _ _ π Ss hst _ hs hc hcode hcaps hself hE ho ih =>
+  | @makeGraphC d _ _ _ _ ar E K s caps k rest comp _ _ π Ss hst _ hs hc hcode hcaps hself hop hE ho ih =>
     simp only [instantiate, instantiateArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) _ _ _) (instantiate d ρ) hst ih
     have hself' : SelfFn π ar E K s rest (caps.map (instantiate d ρ)).length := by rwa [List.length_map]
-    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) hself'.capFn hE ho
+    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) hself'.capFn (by rwa [List.length_map]) hE ho
     simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
     obtain ⟨x, hx, rfl⟩ := hu
     exact (hcaps i x hx).inst hρ
@@ -238,12 +238,12 @@ target naming a signature reads a slot naming it. -/
 def CarriesFn (φ φ' : Nat → Option FnSig) (m : Option (List Nat)) : Prop :=
   ∀ i σ, φ' i = some σ → φ (mapIdx m i) = some σ
 
-variable (Fl) in
-/-- **The checks of a continuation**: a return's value meets `O`; each
+/-- **The checks of a continuation**: a return's value meets the code's
+return set; each
 edge carries the node's slots, the value it binds at the node's value set
 (a test's boolean at none), into its target's, and their signatures. -/
 def ContChk (π : CodeFlow P) (l : Nat) : Continuation → Prop
-  | .ret => Sub (π.val l) Fl.O
+  | .ret => Sub (π.val l) π.ret
   | .bind y => Carries (pushSites (π.val l) (π.env l)) (π.env y.label) y.mapping ∧
       CarriesFn (pushFn (π.vfn l) (π.fn l)) (π.fn y.label) y.mapping
   | .effect y => Carries (π.env l) (π.env y.label) y.mapping ∧ CarriesFn (π.fn l) (π.fn y.label) y.mapping
@@ -295,7 +295,7 @@ theorem push_fn {vf : Option FnSig} {φ : Nat → Option FnSig} {L : List Tm} {d
   | i + 1, σ, h => by simpa [envOf] using hfn i σ h
 
 /-- **The checks of a continuation give its conditions** (proved). -/
-theorem contOk_of_chk {π : CodeFlow P} {l : Nat} {k : Continuation} (h : ContChk Fl π l k) :
+theorem contOk_of_chk {π : CodeFlow P} {l : Nat} {k : Continuation} (h : ContChk π l k) :
     ContOk Fl π l k ∧ ContFn π l k := by
   cases k with
   | ret => exact ⟨h, trivial⟩
@@ -334,14 +334,14 @@ def CodeChk (m : Code) (π : CodeFlow P) : Prop :=
   ∀ l e k x, m.1[l]? = some e → m.2[l]? = some (k, x) →
     OFits Fl (π.env l) (π.fn l) 0 (fun _ => none) π.alloc false (π.val l) e ∧
     (∀ σ, π.vfn l = some σ → ∃ j, e = .var j ∧ π.fn l j = some σ) ∧
-    ContChk Fl π l k ∧ HandlerChk Fl π l x
+    ContChk π l k ∧ HandlerChk Fl π l x
 
 /-- **The checks of a code give `CodeOk`** (proved, `ofits_sound`,
 `contOk_of_chk`, `handlerOk_of_chk`). -/
 theorem codeOk_of_chk {m : Code} {π : CodeFlow P} (h : CodeChk Fl m π) : CodeOk Fl m π := by
   intro l e k x he hk
   obtain ⟨hf, hv, hc, hh⟩ := h l e k x he hk
-  have hc' := contOk_of_chk hc
+  have hc' := contOk_of_chk (Fl := Fl) hc
   have hh' := handlerOk_of_chk hh
   refine ⟨fun g n L d henv hfn => ⟨ofits_sound henv hfn hf, fun σ hσ => ?_⟩, hc'.1, hh'.1, hc'.2, hh'.2⟩
   obtain ⟨j, rfl, hj⟩ := hv σ hσ

@@ -104,22 +104,26 @@ theorem Within.refsOkN {k : Nat} {W : WorldT k} {v w : Val} (hw : Within P v w) 
 
 variable (Fl : Flow P)
 
-/-- **A closure of `C`'s code meets its proposal's entry signatures**: its
-code has a proposal whose entry names a signature only at a capture
-holding a closure of it or at the closure's own slot (`CapFn`). -/
+/-- **A closure of `C`'s code meets its proposal's entry**: its code has a
+proposal whose entry names a signature only at a capture holding a closure
+of it or at the closure's own slot (`CapFn`), is open at that entry
+(`OpenAt`), and holds outside storage at each capture's slot. -/
 def FnsOk (w : Val) : Prop :=
   ∀ fs ar E K s caps k rest comp oid, w = .objAt fs (.graph ar E K s caps k rest comp) oid →
-    P.ofC comp = true → ∃ π, Fl.code (E, K) = some π ∧ CapFn π ar E K s caps rest
+    P.ofC comp = true → ∃ π, Fl.code (E, K) = some π ∧ CapFn π ar E K s caps rest ∧
+      OpenAt Fl π ar s rest caps.length ∧ ∀ i, i < caps.length → none ∈ π.env s (capSlot ar rest i)
 
 /-- **A well-formed value at an entry**: every value it holds in its code
 is a value meeting its proposal's entry signatures. -/
 def EntryVal (v : Val) : Prop := ∀ w, Within P v w → isVal w = true ∧ FnsOk Fl w
 
-/-- **The shape of an entry**: a run of `C`'s code at a node whose slots
-naming a signature hold closures of it, every value of its environment
-and of the heap well formed. -/
+/-- **The shape of an entry**: a run of `C`'s code at a node whose every
+slot holds outside storage and whose slots naming a signature hold
+closures of it, its code's returns within `O`, every value of its
+environment and of the heap well formed. -/
 def EntryShape (h : Heap) (t : Tm) : Prop :=
   ∃ E K l L d comp π, t = .goto E K l L d comp ∧ P.ofC comp = true ∧ Fl.code (E, K) = some π ∧
+    (∀ i, none ∈ π.env l i) ∧ Sub π.ret Fl.O ∧
     EnvFn π l L d ∧ (∀ i, EntryVal Fl (envOf L d i)) ∧ ∀ v ∈ h, EntryVal Fl v
 
 variable {Fl}
@@ -129,7 +133,7 @@ storage** (proved): at a ghost whose every location is outside storage,
 a closed value with valid references, meeting code provenance and lowered
 source, whose every value is well formed, meets `S` at the heap's
 length. -/
-theorem VJ.entry {g : Ghost P} {S : Sites P} {v : Val} {s : IndexedHeap} (hF : Fl.Facts)
+theorem VJ.entry {g : Ghost P} {S : Sites P} {v : Val} {s : IndexedHeap}
     (hg : ∀ l, g.site l = none) (hS : none ∈ S) (hv : EntryVal Fl v) (hc : Scoped 0 v) (hr : RefsOkN s.W v)
     (hp : prov (srcOk P.ofC) v = true) : VJ Fl g s.h.length S v where
   val := (hv v (.refl v)).1
@@ -142,8 +146,9 @@ theorem VJ.entry {g : Ghost P} {S : Sites P} {v : Val} {s : IndexedHeap} (hF : F
     have hpw := hw.prov hp
     refine ⟨(hv w hw).1, ?_, ?_⟩
     · intro fs ar E K st caps k rest comp oid hw' hc'
-      obtain ⟨π, hπ, hfn⟩ := (hv w hw).2 fs ar E K st caps k rest comp oid hw' hc'
-      refine ⟨π, hπ, fun i u hu => ⟨fun l _ => by rw [hg]; exact hF.envO _ π hπ _ _ _ hF.none, ?_⟩, hfn⟩
+      obtain ⟨π, hπ, hfn, hop, hcs⟩ := (hv w hw).2 fs ar E K st caps k rest comp oid hw' hc'
+      refine ⟨π, hπ, fun i u hu => ⟨fun l _ => by
+        rw [hg]; exact hcs i (List.getElem?_eq_some_iff.mp hu).1, ?_⟩, hfn, hop⟩
       have hm : u ∈ caps := List.mem_of_getElem? hu
       have hru : RefsOkN s.W u := refsOkN_of_sub hrw fun r hr' => by
         subst hw'
@@ -166,7 +171,7 @@ theorem HeapInv.entry {g : Ghost P} {s : IndexedHeap} (hF : Fl.Facts) (hg : ∀ 
   have hl : w < s.h.length := (List.getElem?_eq_some_iff.mp hu).1
   have hst := hF.writable none hF.none
   rw [hg]
-  refine ⟨VJ.entry hF hg (hst.1 none hF.none) (hv u hm) (hc u hm) (RefsOk.refsOkN (contents_valid hl hu)) (hp u hm),
+  refine ⟨VJ.entry hg (hst.1 none hF.none) (hv u hm) (hc u hm) (RefsOk.refsOkN (contents_valid hl hu)) (hp u hm),
     fun x _ l _ => by rw [hg]; exact hst.2 none hF.none⟩
 
 /-! ## The closures an entry may hold -/
@@ -201,11 +206,13 @@ def WfVal (Sh : List Shape) (v : Val) : Prop :=
 variable (Fl) in
 /-- **The proposal meets the shapes** (the checker's condition): the code
 of each shape has a proposal whose entry names a signature only at a
-capture the shape names it for, or at the closure's own slot. -/
+capture the shape names it for, or at the closure's own slot, is open at
+that entry, and holds outside storage at each capture's slot. -/
 def ShapesOk (Sh : List Shape) : Prop :=
-  ∀ σ cs, (σ, cs) ∈ Sh → ∃ π, Fl.code σ.code = some π ∧ ∀ i σ', π.fn σ.s i = some σ' →
+  ∀ σ cs, (σ, cs) ∈ Sh → ∃ π, Fl.code σ.code = some π ∧ (∀ i σ', π.fn σ.s i = some σ' →
     (∃ j, i = capSlot σ.ar σ.rest j ∧ cs[j]? = some (some σ')) ∨
-      (i = capSlot σ.ar σ.rest cs.length ∧ σ' = σ)
+      (i = capSlot σ.ar σ.rest cs.length ∧ σ' = σ)) ∧
+    OpenAt Fl π σ.ar σ.s σ.rest cs.length ∧ ∀ j, j < cs.length → none ∈ π.env σ.s (capSlot σ.ar σ.rest j)
 
 /-- **A closure of a shape meets its proposal's entry signatures** (proved):
 a capture the shape names holds a closure of it, the closure's own slot
@@ -216,9 +223,9 @@ theorem OfShape.fnsOk {Sh : List Shape} (hS : ShapesOk Fl Sh) {w : Val} (hw : Of
   | @mk σ cs fs' caps' k' comp' oid' hm hl hn _ hcap =>
     simp only [Tm.objAt.injEq, CallCode.graph.injEq] at he
     obtain ⟨-, ⟨rfl, hE, hK, rfl, rfl, -, rfl, -⟩, -⟩ := he
-    obtain ⟨π, hπ, hfn⟩ := hS σ cs hm
+    obtain ⟨π, hπ, hfn, hop, hcs⟩ := hS σ cs hm
     have hσ : σ.code = (E, K) := by rw [← hE, ← hK]
-    refine ⟨π, hσ ▸ hπ, fun i σ' hi => ?_⟩
+    refine ⟨π, hσ ▸ hπ, fun i σ' hi => ?_, by rw [hl]; exact hop, fun i hi => hcs i (by rw [← hl]; exact hi)⟩
     rcases hfn i σ' hi with ⟨j, rfl, hj⟩ | ⟨hi', he'⟩
     · exact ⟨j, rfl, .inl (hcap j σ' hj)⟩
     · subst hi' he'
@@ -232,16 +239,18 @@ theorem WfVal.entryVal {Sh : List Shape} (hS : ShapesOk Fl Sh) {v : Val} (hv : W
     OfShape.fnsOk hS ((hv w hw).2 fs ar E K s caps k rest comp oid he hc) fs ar E K s caps k rest comp oid he hc⟩
 
 /-- **The shape of an entry from well-formed values** (proved): a run of
-`C`'s code at a node whose proposal names a signature only at slots `sl`
+`C`'s code at a node every slot of which holds outside storage, of a code
+returning within `O`, whose proposal names a signature only at slots `sl`
 names it for, which hold closures of it, its environment's and its heap's
 values well formed at shapes the proposal meets. -/
 theorem entryShape_of {Sh : List Shape} (hS : ShapesOk Fl Sh) {h : Heap} {E : List Tm}
     {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm} {comp : ComponentTag}
-    {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) = some π) {sl : Nat → Option FnSig}
+    {π : CodeFlow P} (hc : P.ofC comp = true) (hcode : Fl.code (E, K) = some π)
+    (hnone : ∀ i, none ∈ π.env l i) (hret : Sub π.ret Fl.O) {sl : Nat → Option FnSig}
     (hsl : ∀ i σ, π.fn l i = some σ → sl i = some σ) (hfn : ∀ i σ, sl i = some σ → FnIs P σ (envOf L d i))
     (henv : ∀ i, WfVal P Sh (envOf L d i)) (hheap : ∀ v ∈ h, WfVal P Sh v) :
     EntryShape Fl h (.goto E K l L d comp) :=
-  ⟨E, K, l, L, d, comp, π, rfl, hc, hcode, fun i σ hi => hfn i σ (hsl i σ hi),
+  ⟨E, K, l, L, d, comp, π, rfl, hc, hcode, hnone, hret, fun i σ hi => hfn i σ (hsl i σ hi),
     fun i => (henv i).entryVal hS, fun v hv => (hheap v hv).entryVal hS⟩
 
 namespace ClientFrame
@@ -256,13 +265,13 @@ theorem entryFits {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) {args : Heap → Tm
   intro x g hc hg
   rw [hst] at hg
   have hsite : ∀ l, g.site l = none := by subst hg; simp [entryStart_site]
-  obtain ⟨E, K, l, L, d, comp, π, ht, hcomp, hcode, hfn, henv, hheap⟩ := hsh _ _ hc
+  obtain ⟨E, K, l, L, d, comp, π, ht, hcomp, hcode, hnone, hret, hfn, henv, hheap⟩ := hsh _ _ hc
   obtain ⟨hpv, -, hsrc, hcl⟩ := hc.1
   refine ⟨?_, HeapInv.entry hF hsite hheap hcl.2 hsrc.2⟩
   have hok := x.ok
   rw [ht] at hok hcl hsrc ⊢
-  refine .gotoC π hcomp hcode (fun i => .inl ?_) hfn (Sub.refl _) (fun _ => Sub.refl _)
-  have hS : none ∈ π.env l i := hF.envO _ π hcode l i _ hF.none
+  refine .gotoC π hcomp hcode (fun i => .inl ?_) hfn hret (fun _ => Sub.refl _)
+  have hS : none ∈ π.env l i := hnone i
   -- The environment's value at `i`: an element of `L`, or `d`.
   have hmem : ∀ r ∈ refs (envOf L d i), r ∈ refs (.goto E K l L d comp) := by
     intro r hr
@@ -285,7 +294,7 @@ theorem entryFits {Fl : Flow (fr.F.at fr.C)} (hF : Fl.Facts) {args : Heap → Tm
     cases hi : L[i]? with
     | none => exact h1.2
     | some u => exact h1.1.2 u (List.mem_of_getElem? hi)
-  exact VJ.entry hF hsite hS (henv i) hsc (refsOkN_of_sub (RefsOk.refsOkN hok) hmem) hpr
+  exact VJ.entry hsite hS (henv i) hsc (refsOkN_of_sub (RefsOk.refsOkN hok) hmem) hpr
 
 /-- **`ChkSound` from the flow and the shape of the calls** (proved): the
 fit of every entry (`entryFits`) gives `SitesSound` (`sitesSound_of_fits`),

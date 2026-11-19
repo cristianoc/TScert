@@ -41,8 +41,8 @@ theorem Fits.sub_aux {V : Sites P → Val → Prop} (hV : Mono V) :
   | makeView Ss hst hi hs hv _ _ => intro _ hS ho; exact .makeView Ss hst hi (hS _ hs) (hV _ _ _ hS hv) ho
   | makeBound Ss hst hi hs hp _ _ =>
     intro _ hS ho; exact .makeBound Ss hst hi (hS _ hs) (fun x hx => (hp x hx).sub hV hS) ho
-  | makeGraphC π Ss hst hi hs hc hcode hcaps hfn hE _ _ =>
-    intro _ hS ho; exact .makeGraphC π Ss hst hi (hS _ hs) hc hcode hcaps hfn hE ho
+  | makeGraphC π Ss hst hi hs hc hcode hcaps hfn hop hE _ _ =>
+    intro _ hS ho; exact .makeGraphC π Ss hst hi (hS _ hs) hc hcode hcaps hfn hop hE ho
   | makeGraphOut Ss hst hi hs hc hE hcaps _ _ =>
     intro _ hS ho; exact .makeGraphOut Ss hst hi (hS _ hs) hc hE (fun u hu => (hcaps u hu).sub hV hS) ho
   | readAt hx hq hcl hr _ _ => intro _ hS ho; exact .readAt hx hq hcl (fun s hs => (hr s hs).trans hS) ho
@@ -237,11 +237,11 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     · exact (hp _ (by simp)).subst hv
     · exact (hp _ (by simp)).subst hv
     · exact (hp y (by simp [hy])).subst hv
-  | makeGraphC π Ss hst _ hs hc hcode hcaps hfn hE ho ih =>
+  | makeGraphC π Ss hst _ hs hc hcode hcaps hfn hop hE ho ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
     obtain ⟨Ss', h₁, h₂⟩ := sites_map (Fi := Fits Fl (VJ Fl g n) Γ _ _) (subst j v) hst fun x hx => ih x hx rfl
-    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) (fun i σ hi => ?_) hE ho
+    refine .makeGraphC π Ss' h₁ h₂ hs hc hcode (fun i u hu => ?_) (fun i σ hi => ?_) (by rwa [List.length_map]) hE ho
     · simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
       obtain ⟨x, hx, rfl⟩ := hu
       exact (hcaps i x hx).subst hv
@@ -516,12 +516,14 @@ theorem fits_lowered (hF : Fl.Facts) (ρ : Env) (hρ : ∀ i, VJ Fl g n Fl.O (ρ
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx; exact iha y hy d Γ (hargs y hy) hΓ
     cases hcomp : P.ofC comp with
     | true =>
-      obtain ⟨π, hcode, hself⟩ := hπ hcomp
+      obtain ⟨π, hcode, hself, hop, hoc⟩ := hπ hcomp
       have hself' : SelfFn π ar E K s r (caps.map (instantiate d ρ)).length := by rwa [List.length_map]
-      refine .makeGraphC π (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hcode (fun i u hu => ?_) hself'.capFn hE hoO
+      refine .makeGraphC π (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hcode (fun i u hu => ?_) hself'.capFn
+        (by rwa [List.length_map]) hE hoO
       simp only [List.getElem?_map, Option.map_eq_some_iff] at hu
       obtain ⟨x, hx, rfl⟩ := hu
-      exact codePart_instantiate hρ (hcaps x (List.mem_of_getElem? hx)) hΓ (hF.envO _ π hcode _ _)
+      exact codePart_instantiate hρ (hcaps x (List.mem_of_getElem? hx)) hΓ
+        (hoc i (List.getElem?_eq_some_iff.mp hx).1)
     | false =>
       refine .makeGraphOut (fun _ => Fl.O) (fun _ _ => hst) hi hF.none hcomp hE (fun u hu => ?_) hoO
       obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hu
