@@ -26,7 +26,8 @@ holds of it.
   (outside storage and the tokens `O` holds, `Supplied`) at every slot of
   the unit's entry and at the captures' slots of each code whose token
   reaches `O`; at each slot naming a module function's signature its
-  code's token. Each set is what a rule requires of it. `O` is grown
+  code's token, where a closure of the code naming it is held (the unit's
+  entry, outside code, a held closure's captures: `closeO`). Each set is what a rule requires of it. `O` is grown
   until closed and its storage holds all of it. A worklist runs the
   copies and the nodes until nothing changes or the fuel ends.
 - **Contexts** (`solveStart`, `mergeFlow`): each node holding a known call (a callee slot
@@ -435,9 +436,14 @@ closure's code whose token lies in `O` (`entryVars`, `OpenAt`); the
 returns of each code whose token lies in `O`, at its entry context; and
 what outside code may supply (outside storage and the tokens `O` holds,
 `Supplied`) at the unit's entry slots (`noneVars`) and at the capture
-slots of each such code, at each of its contexts. -/
+slots of each such code, at each of its contexts. A slot naming a module
+function's signature at a code's entry holds that function's token where
+a closure of the code is held (`tokVars`): the unit's entry holds its
+captures' closures, outside code those of each code whose token lies in
+`O`, and each held closure its captures' closures. -/
 def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × List Nat)) (noneVars : List Nat)
-    (entries : Array Bool) (st : SolveState P) : SolveState P := Id.run do
+    (entries : Array Bool) (units : List Nat) (nb : Nat) (tokVars : List (Nat × Nat × Nat × Option P.Site))
+    (st : SolveState P) : SolveState P := Id.run do
   let mut st := st.toO (contentsOf st.heapFlow st.O)
   for s in st.O do
     st := st.store s st.O
@@ -458,6 +464,18 @@ def closeO (oVars : List Nat) (entryVars : List (Option P.Site × List Nat × Li
   -- the unit's entry slots: what outside code may supply
   for v in noneVars do
     st := st.grow v supplied
+  -- the closures of the module's codes held: the unit's entry's, those of
+  -- each code whose token lies in `O`, and those a held closure captures
+  let mut held : List Nat := units ++ (List.range nb).filter fun b =>
+    match st.toks.getD b none with
+    | some t => some t ∈ st.O
+    | none => false
+  for _ in [0:tokVars.length + 1] do
+    let new := ((tokVars.filter fun (h, _, cj, _) => h ∈ held && cj ∉ held).map (·.2.2.1)).eraseDups
+    if new.isEmpty then break
+    held := held ++ new
+  for (h, v, _, t) in tokVars do
+    if h ∈ held then st := st.grow v [t]
   return st
 
 /-- **The table of signatures**: each code's own at its index, then the
@@ -498,6 +516,13 @@ structure SolveStart (P : Package) where
   entryVars : List (Option P.Site × List Nat × List Nat)
   /-- The slots of the unit's entry. -/
   noneVars : List Nat
+  /-- The codes entered as a unit, not as a closure, and the number of
+  codes before their copies. -/
+  units : List Nat
+  nb : Nat
+  /-- Each slot naming a module function's signature at a code's entry:
+  the code, the slot's variable, the function's code and token. -/
+  tokVars : List (Nat × Nat × Nat × Option P.Site)
   st : SolveState P
 
 /-- The copies of a node's edges: each variable of the target read from
@@ -609,7 +634,7 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
   let mut readerOf : Array (Option (Nat × Nat)) := Array.replicate n none
   let mut oVars : List Nat := []
   let mut entryVars : List (Option P.Site × List Nat × List Nat) := []
-  let mut tokVars : List (Nat × Option P.Site) := []
+  let mut tokVars : List (Nat × Nat × Nat × Option P.Site) := []
   let mut noneVars : List Nat := []
   let mut rets : Array (List Nat) := #[]
   for (c, ci) in csA.toList.zipIdx do
@@ -631,10 +656,11 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     else if c.cx == entryCx then
       for i in List.range (sn + 1) do
         noneVars := (so + i) :: noneVars
-    -- A slot naming a code's signature at the entry holds its token.
+    -- A slot naming a code's signature at the entry holds its token where
+    -- a closure of the code is held (`closeO`).
     for (sd, i) in c.seeds.zipIdx do
       match sd.bind (fun σ => (table.find? (·.1 == σ)).bind (·.2)) with
-      | some cj => tokVars := (so + min i sn, (csA[cj]?).bind (·.tok)) :: tokVars
+      | some cj => tokVars := (base.getD ci ci, so + min i sn, cj, (csA[cj]?).bind (·.tok)) :: tokVars
       | none => pure ()
     let mut rs : List Nat := []
     for l in [0:conts.size] do
@@ -653,9 +679,9 @@ def solveStart (cs : List (SolveCode P)) : SolveStart P := Id.run do
     { O := [none], heap := [], vars := Array.replicate n [], delta := Array.replicate n [], offs := offs,
       needs := needs, rets := rets, toks := csA.map (·.tok) }
   let st0 := (noneVars ++ oVars).foldl (fun st v => st.grow v [none]) st0
-  let st0 := tokVars.foldl (fun st (v, t) => st.grow v [t]) st0
+  let units := (List.range bases.size).filter fun b => !((bases[b]?).map (·.closure)).getD true
   return ⟨csA, base, ctxOf, nodeCx, codes, table, fns, succ, readerOf, readers readsHeap, readers readsO, oVars,
-    entryVars, noneVars, st0⟩
+    entryVars, noneVars, units, bases.size, tokVars, st0⟩
 
 /-- **A node's sets**: its expression's least set at its slots (`gen`), its
 value grown by it; a returned value given to `O` where the unit returns it
@@ -745,7 +771,7 @@ def solveLoop (s : SolveStart P) (fuel : Nat) (st0 : SolveState P) : SolveState 
         runs := runs + 1
         st := siteNode s st ci l
       | [] =>
-        st := closeO s.oVars s.entryVars s.noneVars (s.cs.map (·.cx == entryCx)) st
+        st := closeO s.oVars s.entryVars s.noneVars (s.cs.map (·.cx == entryCx)) s.units s.nb s.tokVars st
         grewO := grewO || st.grewO
         grewHeap := grewHeap || st.grewHeap
         let more := (if grewO then s.oReaders else []) ++ (if grewHeap then s.heapReaders else [])

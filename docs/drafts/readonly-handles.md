@@ -2637,8 +2637,11 @@ caller of unknown callee fills at its entry context (the rest's spine, the
 receiver, the parameters and its own slot), and a handler's thrown value.
 What outside code may supply (outside storage and the tokens $`O`$ holds)
 is held at every slot of the member's entry and at the captures' slots of
-each code whose token lies in $`O`$, at every context; a slot naming a
-module function's signature holds its code's token. Each set the proposal
+each code whose token lies in $`O`$, at every context. A slot naming a
+module function's signature at a code's entry holds that function's
+token where a closure of the code is held: the member's entry holds its
+captures' closures, outside code the closures of each code whose token
+lies in $`O`$, and a held closure its captures' closures. Each set the proposal
 gives is one a rule requires: a slot outside code fills (`OpenAt`,
 `HandlerOk`), what outside code may supply (`EntryShape`, `OpenAt`,
 `GivenOut`), what a value's rule reaches (`Fits`), and $`O`$'s closure
