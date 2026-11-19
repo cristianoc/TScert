@@ -1030,10 +1030,46 @@ both proved; at the claim, `framedReturns_of_requestSafe` (proved): a
 request safe for every execution meets `FramedReturnsGuarantee` with no
 framed node, whatever the returns.
 
-The node delivery reads $`\mathrm{Ret}`$ in place of `callerFrame_post`
-for the kept supports (`callKept_sound`, `callGrown_sound`, `frameKeeps`,
-proved), `FirstKept` from the callee's post, each exit's environment
-through its mapping.
+**The graph theorem at framed returns is the graph theorem, generalized
+once.** The composition of node obligations into the graph's safety reads
+a node's exits through one structure, `NodeObligations`; its version under
+return premises, `NodeObligationsR` (each exit's target required where the
+exit's heap meets $`R_n`$, or $`R_e`$ at a throw), is the only place a
+framed node differs (`SinglePass/GraphSafety.lean`). The graph machine's
+safety at framed returns `SafeGraphRet Ξ P T F Ret RetE` threads the pending
+evaluation as `SafeRet` does (`enterPend`, `pendG`, `RetAtG`), and
+`NodesCheckedR P pre F Ret RetE` gives a framed node $`l`$ entered at
+$`h_0`$ the premises $`\mathrm{Ret}_l(\rho,h_0,\cdot)`$ and
+$`\mathrm{Ret}^{e}_l(\rho,h_0,\cdot)`$. Proved, each with the ordinary
+statement as its instance with no framed node (`toR`, `toPlain`,
+`SafeGraphRet.erase`, `SafeRet.erase`), the ordinary proof deleted:
+
+- `graph_stepR`, `graph_safeR`, `graph_safe_atR` (instances `graph_step`,
+  `graph_safe`, `graph_safe_at`);
+- `keeps_stepR`, `keeps_postExcR` over `NodesKeepR` (instances
+  `keeps_step`, `keeps_postExc`), the latter with a state property `J` the
+  invariant gives, which carries the assertions clause;
+- `safeRet_of_sim`, `sim_pend`, `sim_retAt`: the term that runs graph code
+  is safe at framed returns as the graph machine is;
+- the walk's steps: `nodeObligationsR_marked`, `nodeObligationsR_mono`,
+  `nodesCheckedR_stable`, `nodesChecked_of_walkJR` from
+  `StepEdgesSoundMarkedR`, `nodesChecked_of_walkR` (instances the ordinary
+  ones).
+
+The size of the generalization, measured: the declarations between the
+node obligations and `run_sound_single_pass` that read them are 25, 638
+lines in 12 files of the 26.6K lines of `TolerantFrames*` and
+`SinglePass/` (a Lean dependency walk from `run_sound_single_pass` to
+`NodeObligations`: 30 theorems and 8 definitions, structure projections
+included). Below `StepEdgesSoundMarked` nothing is restated: a framed
+node's delivery enters as its obligations under its returns. To be proved:
+the framed node's delivery (`stepEdgesSound_of_yields` at a framed node:
+the step's output, its kept supports read from $`\mathrm{Ret}`$ in place
+of `callerFrame_post`, `FirstKept` from the callee's post), and
+`run_guarantee`, `run_sound_checked` at framed returns, which give
+`FramedReturnsGuarantee` from the framed run's walk: its five clauses by
+`safeRet_of_sim` and `keeps_postExcR`, the per-node hypotheses
+(`FootprintKept`, `ReturnsEnsured`, `RegionsKeptS`) as `NodesKeepR`.
 
 ### The returns, at reached executions
 
@@ -1133,7 +1169,10 @@ term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `
 `allocOf_some`, `stepSite_some`, `entryFnB_sound`, `agreeB_sound`
 (`ReadOnlyBinding.lean`), `realizedFlowB_sound` (`FramedBinding.lean`);
 `step_writes_active`, `Fits.active`, `write_site`
-(`ReadOnlyStepWrites.lean`).
+(`ReadOnlyStepWrites.lean`); `graph_stepR`, `graph_safeR`,
+`SafeGraphRet.erase` (`SinglePass/GraphSafety.lean`), `keeps_stepR`,
+`keeps_postExcR`, `safeRet_of_sim` (`TolerantFramesGuaranteeRuns.lean`),
+`nodesChecked_of_walkJR`, `nodesChecked_of_walkR`.
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1265,8 +1304,6 @@ and P22's layout meets them (measured).
 1. **Milestone 2's disjoint supports** are a design to review.
 2. **`residual_charged`** reads `Residual` as an invariant of a node's
    evaluation; natives' step models are writing redexes it must cover.
-3. **`RunSoundFramed`'s size** is a reading of `run_sound_pass`'s structure,
-   not yet a build.
 
 ## Runs
 
