@@ -69,7 +69,7 @@ theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : Ov
   have hr := requestSafe_of_member hj hplan
   have hG : RequestJson.graph r.toRequest = graphOf f := by
     show StoreView.graph r.types = _
-    rw [hover j name pos r hplan]
+    rw [hover.graph hplan]
   have hspec : ∀ η, RowSpec (reassign (RequestJson.graph r.toRequest) η) e'.arity e'.exprs e'.conts e'.start
       e'.captures e'.row c.sep := by
     rcases hcode with ⟨hu, rfl, hsep⟩ | ⟨hu, rfl, hsep⟩

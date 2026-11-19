@@ -831,24 +831,36 @@ and the request:
   r.comp`, and its start as stated above (total, by cases).
 
 `MemberAccepted.framed` holds a framed plan at the member
-(`FramedPlanAt`) and `FramedAccepted r spec`, whose field
-`FramedObligations` states the clauses of `FramedRequestSafe r (spec.frame
-r)` the lemmas below establish from the check: the main graph's five
-(by `RunSoundFramed` and `ret_reached`) and the codes' (by
-`codesAccepted_guarantees` and `assertedAt_of_graph`). `framed_requestSafe`
-and `member_safe`'s framed branch are proved from it; a field leaves the
+(`FramedPlanAt`) and `FramedAccepted f r spec`: its code requests accepted
+in order by the ordinary pass (`CodesAccepted`, ordinary checker, from the
+empty table), the read summaries their runs leave checked
+(`summariesChecked`), and the field `FramedObligations`, the main graph's
+five clauses of `FramedRequestSafe r (spec.frame r)` (by `RunSoundFramed`
+and `ret_reached`, to be proved). `framed_requestSafe` (under `RunSound`,
+`RunKeepsSummaries` and the request over the file's store) and
+`member_safe`'s framed branch are proved from it; a field leaves the
 structure in the commit that proves it from the check. `passMember`
-refuses every framed plan until none is left. **The codes are checked by the ordinary pass**
-(`CodesAccepted`, ordinary checker), so a code's closure meets its ordinary
-arrow, and **the sixth clause** of `FramedRequestSafe` is the ordinary code
-clause of `RequestSafe`, proved by `codesAccepted_guarantees`
+refuses every framed plan until none is left. **The codes are checked by the ordinary pass**,
+so a code's closure meets its ordinary arrow, and **the sixth clause** of
+`FramedRequestSafe` is proved from each code's guarantee
+(`codesAccepted_guarantees`) by `framedCode_of_guarantee`: the graph's
+safety read on the term that runs it (`GraphCode.safe_of_sim`), its
+assertions at every state reached (`assertedAt_of_graph`), along every set
+of executions (`SafeUnder.of_safe`)
 (`returned-closure.mjs`'s closure, whose fact needs a frame, is refused at
 its read). `view`: `ViewOver (Ty ι)` with `RO` the type reader's read-only
 throughout, a read-only type's children read-only by construction
 (`ro_child` by definition), agreeing with
 `ComponentChecks.readOnlyShape` on the declared shape
 (`ro_of_readOnlyShape`, to be proved). `PlanAt` stays the graph plans'
-(`RowRealized` reads it); `FramedPlanAt` is new and `OverStore` reads both.
+(`RowRealized` reads it); `FramedPlanAt` is new. `OverStore` reads every
+plan, a graph plan or a framed plan (`FunctionPlan.parts`), and the plan
+transforms change a plan's request alone, of either kind
+(`FunctionPlan.mapRequest`): a framed plan's request takes the given head
+facts and the inferred candidates as a graph plan's does, and
+`Recandidated` relates each plan to the one at its index with other
+candidates (`framedRequestSafe_recandidated`: the frame and the framed
+claim read no candidate).
 
 ### What the pass checks
 
@@ -985,7 +997,8 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FramedSpec _}
     FramedRequestSafe r (spec.frame r)
 ```
 
-Plan: the sixth clause by `codesAccepted_guarantees`; each other clause by
+Plan: the sixth clause by `codesAccepted_guarantees` and
+`framedCode_of_guarantee` (proved); each other clause by
 induction on the budget, the invariant at a state being: reached from the
 clause's start, simulating a state of `SafeGraphRet` over the claim's graph,
 on a $`\mathrm{Ret}`$-path. A step breaking $`\Theta_C`$ ends the
@@ -1035,8 +1048,9 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `RBound.mono`, `RBoundBelow.mono`, `StepWithin.mono`, `approx_stable`,
 `step?_sound` and `linked` (`Tests/FramedLinkedCall.lean`, the first check),
 `InR.mono`, `FrameCore.PublicCall.ex`, `FramedSpec.frame` (its
-`start_total`), `framed_requestSafe` from `FramedAccepted`, `member_safe`'s
-framed branch, `assertedAt_of_graph` (by `sim_reaches`, a path of the
+`start_total`), `framed_requestSafe` from `FramedAccepted` (its codes'
+clause by `framedCode_of_guarantee`), `member_safe`'s framed branch,
+`OverStore` over framed plans, `framedRequestSafe_recandidated`, `assertedAt_of_graph` (by `sim_reaches`, a path of the
 term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,
 `Fits.innermost`, `XStep.inv`, `Ex.inv`, `kstep_xstep`, `reached_ok`,
@@ -1062,7 +1076,7 @@ soundness, `crossOk_incoming`, the `chkSound_*` lemmas over
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `RunSoundFramed`, `runSound_of_framed`, `ret_reached`,
 each field of `FramedObligations` from the check,
-`ro_of_readOnlyShape`, `OverStore` over framed plans, `passMember_sound`'s
+`ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 
 **To be proved, milestone 2**: `copies_sound`, `witness_of_path`,

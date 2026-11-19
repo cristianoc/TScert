@@ -1,4 +1,5 @@
 import Verification.Source.Claims.PassUnitSafe
+import Verification.Source.Claims.PassUnitFramed
 
 /-! # The single pass's unit theorem: the headline
 
@@ -174,6 +175,30 @@ theorem qualified_requestSafe {f : FilePlans} {r : Req f}
   · intro Φ regions h; rw [hreg] at h; cases h
   · intro ci q' hci; rw [hcodes] at hci; cases hci
 
+/-- **The framed claim from the check** (proved, under `RunSound` and
+`RunKeepsSummaries`, its request over the file's store; the draft,
+`framed_requestSafe`): the main graph's clauses are the obligations
+`FramedAccepted` states; the codes' clause by `codesAccepted_guarantees`,
+the codes accepted in order by the ordinary pass from the empty table with
+the read summaries their runs leave checked, each code's guarantee read on
+the term that runs it along every set of executions
+(`framedCode_of_guarantee`). -/
+theorem framed_requestSafe {f : FilePlans} {r : Req f}
+    {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
+    (hrun : RunSound (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+    (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
+    FramedRequestSafe r (spec.frame r) := by
+  obtain ⟨⟨a₀, a₁, hcodes, hs⟩, ⟨hsafe, hf, he, hg, ha⟩⟩ := hacc
+  have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
+    intro c hc; simp [GraphCode.admits] at hc
+  have hcodeG := codesAccepted_guarantees hrun hkeep (summaries_of_checked htypes hs) hcodes
+    (fun _ h => h) hnone
+  refine ⟨hsafe, hf, he, hg, ha, ?_⟩
+  intro ci q hci η n W h L d comp hE hR _ g _
+  have hmem : (q, ci) ∈ r.codes.zipIdx := List.mk_mem_zipIdx_iff_getElem?.mpr hci
+  exact framedCode_of_guarantee (hcodeG (q, ci) hmem) η comp hE hR g
+
 /-- **A member `passGroup` accepts is safe** (proved, under `RunSound` and
 `RunKeepsSummaries`, its plans over the file's store): its plan crosses the exhaustive certification boundary and its
 request is safe. -/
@@ -183,11 +208,11 @@ theorem member_safe {f : FilePlans} {j : Nat}
     (hover : OverStore f) (h : MemberAccepted f j) : MemberSafe f j := by
   cases h with
   | ordinary name pos r a₀ a₁ hplan hq _ hregs hcodes hmain =>
-    exact ⟨_, _, hplan, rfl, ordinary_requestSafe hrun hkeep (hover j name pos r hplan) hq hregs
+    exact ⟨_, _, hplan, rfl, ordinary_requestSafe hrun hkeep (hover.graph hplan) hq hregs
       hcodes hmain⟩
   | qualified name pos r q c a₀ after hplan hq _ hfp hot hfr hens hreg hcodes hm _ hregc hacc hs =>
     exact ⟨_, _, hplan, rfl, qualified_requestSafe hrun hq hfp hot hfr hens hreg hcodes hm hregc hacc hs⟩
   | framed name pos r spec hplan hacc =>
-    exact ⟨_, _, hplan, rfl, framed_requestSafe hacc⟩
+    exact ⟨_, _, hplan, rfl, framed_requestSafe hrun hkeep (hover.framed hplan) hacc⟩
 
 end Verification.SourceClaimJson.PassUnit

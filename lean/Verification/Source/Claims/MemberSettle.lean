@@ -21,15 +21,14 @@ mode 9), the other statement entries' facts too (`entryFacts`): the search
 holds at each statement entry only what its candidates there give. -/
 def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (entries : Bool := false)
     (inferred : Bool := false) : FilePlans :=
-  { f with plans := f.plans.zipIdx.map fun (p, i) => p.map fun
-    | .graph name pos r =>
+  { f with plans := f.plans.zipIdx.map fun (p, i) => p.map (FunctionPlan.mapRequest fun r =>
       let line := given.get? (f.fr.unitId i)
       let field := fun (k : String) => (line.bind fun l => (l.getObjVal? k).toOption)
       let facts := fun (k : String) (sm : RequestJson.SourceMap) (cuts : List Nat) =>
         headFactsFromJson sm cuts ((field k).getD (Json.arr #[]))
       let ofCodes := fun (k : String) (ci : Nat) =>
         (((field k).bind fun cs => (cs.getArr?).toOption).bind (·[ci]?)).getD (Json.arr #[])
-      .graph name pos { r with
+      { r with
         -- With `inferred`, the loop heads' proposals the lowering recorded
         -- (`HeadInference`) kept beside the given file's.
         candidates := (if inferred then r.candidates else []) ++ facts "headFacts" r.sourceMap (r.start :: r.cuts) ++
@@ -37,8 +36,7 @@ def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (e
         codeSources := r.codeSources.zipIdx.map fun (c, ci) =>
           let start := ((r.codes[ci]?).map fun q => (q.asRequest r.toRequest).start).getD 0
           { c with candidates := headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "headFactsOfCodes" ci) ++
-            (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } }
-    | p@(.framed ..) => p }
+            (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } }) }
 
 /-- **The slots holding an input's entry value** at each node: the pairs
 `(slot, input)` the seed states at the entry, carried along every edge to
@@ -186,10 +184,9 @@ def FilePlans.givenAt (f : FilePlans) (given : Std.HashMap String Json) (i : Nat
 
 /-- Plan `i`'s candidates at label `l` less `drop`. -/
 def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
-  { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map fun
-    | .graph name pos r => .graph name pos { r with candidates := r.candidates.map fun (l', as) =>
-        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) }
-    | p@(.framed ..) => p }
+  { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map (FunctionPlan.mapRequest fun r =>
+      { r with candidates := r.candidates.map fun (l', as) =>
+        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) }) }
 
 /-- The candidates of plan `i` at the heads that read the facts of the head
 at label `l` (each a label whose source span lies inside `l`'s, or after it
@@ -555,9 +552,8 @@ pass's entry check refuses it. -/
 def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
   let fact : HeapKnowledge.IndexAtom :=
     { fact := .linear (.le [(HeapKnowledge.Term.value 0, 1), (HeapKnowledge.Term.value 0, -1)] (-1)) }
-  { f with plans := f.plans.map fun p => p.map fun
-    | .graph name pos r => .graph name pos { r with candidates := (r.start, [fact]) :: r.candidates }
-    | p@(.framed ..) => p }
+  { f with plans := f.plans.map fun p => p.map (FunctionPlan.mapRequest fun r =>
+      { r with candidates := (r.start, [fact]) :: r.candidates }) }
 
 /-- **A group accepted under client trust**: a member whose plan certifies
 to a framed plan, accepted for the executions in which outside code keeps

@@ -373,20 +373,14 @@ theorem fragmentPlansWithModules_overStore {ast : Json} {fileKey : String}
 
 /-- The false start fact keeps the store every plan is over (proved). -/
 theorem withFalseStartFact_overStore {f : FilePlans} (h : OverStore f) : OverStore f.withFalseStartFact := by
-  intro i name pos r hi
-  unfold PlanAt FilePlans.withFalseStartFact at hi
-  simp only [List.getElem?_map, Option.map_eq_some_iff] at hi
-  obtain ⟨p, hp, he⟩ := hi
+  refine overStore_of_mapRequest (fun i x hx => ?_) h
+  simp only [List.getElem?_map, Option.map_eq_some_iff] at hx
+  obtain ⟨p, hp, he⟩ := hx
   cases p with
   | error _ => cases he
   | ok q =>
-    cases q with
-    | graph n ps r₀ =>
-      simp only [Except.map, Except.ok.injEq] at he
-      injection he with h1 h2 h3
-      subst h1 h2 h3
-      exact h i _ _ r₀ hp
-    | framed n ps r₀ spec => simp [Except.map] at he
+    simp only [Except.map, Except.ok.injEq] at he
+    exact ⟨q, _, hp, he.symm, rfl⟩
 
 /-- Mode 8's preparation of the planned file (`verifyUnitsFile`): its given
 head facts, with `infer` beside the proposals inference recorded, then the

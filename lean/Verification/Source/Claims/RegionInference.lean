@@ -300,14 +300,12 @@ end
 separations its allocations state (`freshApartAt`), beside its other
 candidates. -/
 def FilePlans.withFreshApart (f : FilePlans) (force : Bool := false) (group : List Nat) : FilePlans :=
-  { f with plans := f.plans.zipIdx.map fun (p, i) => if !group.contains i then p else p.map fun
-    | .graph name pos r =>
+  { f with plans := f.plans.zipIdx.map fun (p, i) => if !group.contains i then p else p.map (FunctionPlan.mapRequest fun r =>
       let extra := freshApartAt r force
-      if extra.isEmpty then .graph name pos r else
+      if extra.isEmpty then r else
       let cands := extra.foldl (fun (cs : List (Nat × List HeapKnowledge.IndexAtom)) (l, as) =>
         if cs.any (·.1 == l) then cs.map fun (l', bs) => if l' == l then (l', bs ++ as.filter (!bs.contains ·)) else (l', bs)
         else cs ++ [(l, as)]) r.candidates
-      .graph name pos { r with candidates := cands }
-    | p@(.framed ..) => p }
+      { r with candidates := cands }) }
 
 end Verification.SourceClaimJson

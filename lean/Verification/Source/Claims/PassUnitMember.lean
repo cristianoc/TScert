@@ -83,34 +83,29 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- **The framed claim's obligations** (the draft "Accepting a unit through
 the read-only frame", "The theorems"): the clauses of `FramedRequestSafe`
-at the frame a framed plan's proposals define. Each field is the conclusion
-of lemmas of the draft's milestone 1 not yet proved from the pass's check
-of a framed plan: the main graph's clauses by `framed_requestSafe`'s
-induction over `RunSoundFramed` and `ret_reached`; the codes' clause by
-`codesAccepted_guarantees` and `assertedAt_of_graph`. A field leaves this
-structure in the commit that proves it from the check. -/
+at the frame a framed plan's proposals define that no lemma yet proves from
+the pass's check of a framed plan, the main graph's five, by the induction
+of `framed_requestSafe` over `RunSoundFramed` and `ret_reached`. A field
+leaves this structure in the commit that proves it from the check. -/
 structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
   run : FramedSafeClause r (spec.frame r) ∧ FramedFootprintClause r (spec.frame r) ∧
     FramedEnsuresClause r (spec.frame r) ∧ FramedRegionalClause r (spec.frame r) ∧
     FramedAssertionsClause r (spec.frame r)
-  codes : FramedCodeAssertionsClause r (spec.frame r)
+end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass
-checks"): its checks and the framed claim's obligations not yet proved
-from them. `FilePlans.passMember` refuses every framed plan, so no member
-`passGroup` accepts is accepted by this constructor until every obligation
-is proved from the checks the pass makes. -/
-structure FramedAccepted (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
+checks"): its code requests accepted in order by the ordinary pass
+(`CodesAccepted`), the read summaries their runs leave checked, and the
+framed claim's obligations not yet proved from the checks.
+`FilePlans.passMember` refuses every framed plan, so no member `passGroup`
+accepts is accepted by this constructor until every obligation is proved
+from the checks the pass makes. -/
+structure FramedAccepted (f : FilePlans) (r : Req f)
+    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop where
+  codes : ∃ a₀ a₁ : Answered (StoreView.graph f.F.store),
+    CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ ∧
+      summariesChecked r a₁.summaries.toList = true
   obligations : FramedObligations r spec
-
-/-- **The framed claim from the check** (proved; the draft,
-`framed_requestSafe`): a framed member accepted is safe under the frame its
-proposals define. -/
-theorem framed_requestSafe {r : SourceRequest σ ι} {spec : FramedSpec ι} (h : FramedAccepted r spec) :
-    FramedRequestSafe r (spec.frame r) :=
-  let ⟨⟨⟨hs, hf, he, hg, ha⟩, hc⟩⟩ := h
-  ⟨hs, hf, he, hg, ha, hc⟩
-end
 
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each
@@ -139,7 +134,7 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
       c.Accepts after → summariesChecked r after.summaries.toList = true → MemberAccepted f i
   | framed (name : String) (pos : Span) (r : Req f)
       (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) :
-      FramedPlanAt f i name pos r spec → FramedAccepted r spec → MemberAccepted f i
+      FramedPlanAt f i name pos r spec → FramedAccepted f r spec → MemberAccepted f i
 
 /-- **H3, the wrapper's statement**: `passGroup` accepting a group makes
 every member `MemberAccepted`, at every value of every argument. Proved

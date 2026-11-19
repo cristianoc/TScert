@@ -25,9 +25,22 @@ def FramedPlanAt (f : FilePlans) (i : Nat) (name : String) (pos : Span) (r : Req
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop :=
   f.plans[i]? = some (Except.ok (FunctionPlan.framed name pos r spec))
 
-/-- Every plan of `f` is a request over `f`'s frozen store. -/
+/-- Every plan of `f`, a graph plan or a framed plan, is over `f`'s frozen
+store: its request's store is the file's. -/
 def OverStore (f : FilePlans) : Prop :=
-  ∀ i name pos (r : Req f), PlanAt f i name pos r → r.types = f.F.store
+  ∀ (i : Nat) (p : FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
+      (EquationStore.CheckedLabel f.F.equations f.F.primitive)),
+    f.plans[i]? = some (Except.ok p) → p.parts.2.2.types = f.F.store
+
+/-- A graph plan of a file over its store has the file's store. -/
+theorem OverStore.graph {f : FilePlans} (h : OverStore f) {i name pos} {r : Req f} (hp : PlanAt f i name pos r) :
+    r.types = f.F.store :=
+  h i _ hp
+
+/-- A framed plan of a file over its store has the file's store. -/
+theorem OverStore.framed {f : FilePlans} (h : OverStore f) {i name pos} {r : Req f} {spec}
+    (hp : FramedPlanAt f i name pos r spec) : r.types = f.F.store :=
+  h i _ hp
 
 /-- A request over the frozen equations has their store. -/
 theorem over_types {F : EquationStore.Frozen} {r : SourceRequest EquationStore.State EquationGraphs.Tree} {r'}
@@ -37,13 +50,14 @@ theorem over_types {F : EquationStore.Frozen} {r : SourceRequest EquationStore.S
   repeat' split at h
   all_goals first | (cases h; done) | (injection h with h; subst h; rfl)
 
-/-- A plan over the frozen equations has their store. -/
+/-- A plan over the frozen equations, a graph plan or a framed plan, has
+their store. -/
 theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)}
-    {name pos r} (h : e.bind (FunctionPlan.over F) = .ok (.graph name pos r)) : r.types = F.store := by
+    {p} (h : e.bind (FunctionPlan.over F) = .ok p) : p.parts.2.2.types = F.store := by
   cases e with
   | error _ => cases h
-  | ok p =>
-    cases p with
+  | ok p₀ =>
+    cases p₀ with
     | graph n ps r₀ =>
       simp only [Except.bind, FunctionPlan.over, bind, pure, Except.pure] at h
       cases hr : SourceRequest.over F r₀ with
@@ -51,7 +65,7 @@ theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPl
       | ok r₁ =>
         rw [hr] at h
         injection h with h
-        cases h
+        subst h
         exact over_types hr
     | framed n ps r₀ spec =>
       simp only [Except.bind, FunctionPlan.over, bind, pure, Except.pure] at h
@@ -61,7 +75,11 @@ theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPl
         rw [hr] at h
         cases hs : spec.over F with
         | error _ => rw [hs] at h; cases h
-        | ok _ => rw [hs] at h; cases h
+        | ok _ =>
+          rw [hs] at h
+          injection h with h
+          subst h
+          exact over_types hr
 
 theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {b : β}
     (h : (x >>= k) = .ok b) : ∃ a, x = .ok a ∧ k a = .ok b := by
@@ -110,8 +128,8 @@ theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : Po
       interfaceSlots known memo = .ok f) :
     OverStore f := by
   obtain ⟨-, plans₀, hp⟩ := fragmentPlansCore_shape h
-  intro i name pos r hi
-  simp only [PlanAt, hp, List.getElem?_map, Option.map_eq_some_iff] at hi
+  intro i p hi
+  simp only [hp, List.getElem?_map, Option.map_eq_some_iff] at hi
   obtain ⟨e, -, he⟩ := hi
   exact planOver_types he
 
@@ -140,32 +158,33 @@ theorem fragmentPlans_modules {ast : Json} {fileKey : String} {budget : Positive
     (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : f.p.modules = [] :=
   fragmentPlansCore_modules h
 
-/-- The plans with the given head facts are those plans, each request with
-other candidates and code sources and every other field kept. -/
-theorem withHeadFacts_plan {f : FilePlans} {given : Std.HashMap String Json} {entries inferred : Bool} {i name pos}
-    {r : Req f} (h : PlanAt (f.withHeadFacts given entries inferred) i name pos r) :
-    ∃ r₀ : Req f, PlanAt f i name pos r₀ ∧ ∃ cands cs, r = { r₀ with candidates := cands, codeSources := cs } := by
-  unfold PlanAt FilePlans.withHeadFacts at h
-  simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
-  obtain ⟨⟨p, j⟩, hp, he⟩ := h
+/-- **A plan transform changing requests alone keeps the store** (proved):
+plans `P` of which each is a plan of `f` at the same index, its request
+changed by a map keeping the store, are over `f`'s store where `f`'s are. -/
+theorem overStore_of_mapRequest {f : FilePlans} {P : List (Except String (FunctionPlan
+      (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)))}
+    (hP : ∀ (i : Nat) x, P[i]? = some (Except.ok x) → ∃ x₀ g, f.plans[i]? = some (Except.ok x₀) ∧
+      x = x₀.mapRequest g ∧ (g x₀.parts.2.2).types = x₀.parts.2.2.types) (h : OverStore f) :
+    OverStore { f with plans := P } := by
+  intro i p hi
+  obtain ⟨x₀, g, h₀, rfl, hg⟩ := hP i p hi
+  rw [FunctionPlan.parts_mapRequest]
+  exact hg.trans (h i x₀ h₀)
+
+/-- Head facts keep the store every plan is over (proved): they change each
+plan's request's candidates and code sources alone. -/
+theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json} {entries inferred : Bool}
+    (h : OverStore f) : OverStore (f.withHeadFacts given entries inferred) := by
+  refine overStore_of_mapRequest (fun i x hx => ?_) h
+  simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at hx
+  obtain ⟨⟨p, j⟩, hp, he⟩ := hx
   simp only [Prod.mk.injEq] at hp
   obtain ⟨p', hp', rfl, rfl⟩ := hp
   cases p' with
   | error _ => cases he
   | ok q =>
-    cases q with
-    | graph n ps r₀ =>
-      simp only [Except.map, Except.ok.injEq, FunctionPlan.graph.injEq] at he
-      obtain ⟨rfl, rfl, rfl⟩ := he
-      exact ⟨r₀, hp', _, _, rfl⟩
-    | framed n ps r₀ spec => simp [Except.map] at he
-
-/-- Head facts keep the store every plan is over (proved). -/
-theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json} {entries inferred : Bool}
-    (h : OverStore f) : OverStore (f.withHeadFacts given entries inferred) := by
-  intro i name pos r hi
-  obtain ⟨r₀, h₀, _, _, rfl⟩ := withHeadFacts_plan hi
-  exact h i name pos r₀ h₀
+    simp only [Except.map, Except.ok.injEq] at he
+    exact ⟨q, _, hp', he.symm, rfl⟩
 
 /-- Plans `P` keep the store of `f` where each request plan of `P` is one of
 `f`'s at the same index (proved). -/
@@ -173,8 +192,8 @@ theorem overStore_of_plans {f : FilePlans} {P : List (Except String (FunctionPla
       (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)))}
     (hP : ∀ (i : Nat) x, P[i]? = some (Except.ok x) → f.plans[i]? = some (Except.ok x)) (h : OverStore f) :
     OverStore { f with plans := P } := by
-  intro i name pos r hi
-  exact h i name pos r (hP i _ hi)
+  intro i p hi
+  exact h i p (hP i _ hi)
 
 /-- **The rows check refuses plans, nothing else** (proved): `refuseRows`
 keeps every field but the plans, and each request plan it returns is the

@@ -15,35 +15,43 @@ namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-- **`f'` is `f` with other candidates**: the same file and store, each
-graph plan of `f'` one of `f`'s at the same index with other candidates,
-and each framed plan of `f'` the one of `f` at the same index. -/
+plan of `f'`, a graph plan or a framed plan, the one of `f` at the same
+index with its request's candidates replaced. -/
 def Recandidated (f f' : FilePlans) : Prop :=
   ∃ P : List (Except String (FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
       (EquationStore.CheckedLabel f.F.equations f.F.primitive))),
-    f' = { f with plans := P } ∧ (∀ i name pos (r : Req f), P[i]? = some (.ok (.graph name pos r)) →
-    ∃ r₀ : Req f, PlanAt f i name pos r₀ ∧ ∃ cands, r = { r₀ with candidates := cands }) ∧
+    f' = { f with plans := P } ∧
     ∀ (i : Nat) (x : FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
       (EquationStore.CheckedLabel f.F.equations f.F.primitive)), P[i]? = some (.ok x) →
-      (∃ name pos r spec, x = .framed name pos r spec) → f.plans[i]? = some (.ok x)
+      ∃ x₀, f.plans[i]? = some (.ok x₀) ∧ ∃ cands, x = x₀.mapRequest fun r => { r with candidates := cands }
+
+theorem mapRequest_candidates_self {σ ι : Type} [Labels ι] [StoreView σ ι] (x : FunctionPlan σ ι) :
+    x = x.mapRequest fun r => { r with candidates := x.parts.2.2.candidates } := by
+  cases x <;> rfl
+
+theorem mapRequest_candidates_twice {σ ι : Type} [Labels ι] [StoreView σ ι] (x : FunctionPlan σ ι) (c₀ c₁) :
+    (x.mapRequest fun r => { r with candidates := c₀ }).mapRequest (fun r => { r with candidates := c₁ }) =
+      x.mapRequest fun r => { r with candidates := c₁ } := by
+  cases x <;> rfl
 
 theorem Recandidated.refl (f : FilePlans) : Recandidated f f :=
-  ⟨f.plans, rfl, fun _ _ _ r h => ⟨r, h, r.candidates, rfl⟩, fun _ _ h _ => h⟩
+  ⟨f.plans, rfl, fun _ x h => ⟨x, h, _, mapRequest_candidates_self x⟩⟩
 
 theorem Recandidated.trans {f f' f'' : FilePlans} (h₁ : Recandidated f f') (h₂ : Recandidated f' f'') :
     Recandidated f f'' := by
-  obtain ⟨P, rfl, hP, hPf⟩ := h₁
-  obtain ⟨Q, rfl, hQ, hQf⟩ := h₂
-  refine ⟨Q, rfl, fun i name pos r h => ?_, fun i x h hx => hPf i x (hQf i x h hx) hx⟩
-  obtain ⟨r₁, h₁, c₁, rfl⟩ := hQ i name pos r h
-  obtain ⟨r₀, h₀, c₀, rfl⟩ := hP i name pos r₁ h₁
-  exact ⟨r₀, h₀, c₁, rfl⟩
+  obtain ⟨P, rfl, hP⟩ := h₁
+  obtain ⟨Q, rfl, hQ⟩ := h₂
+  refine ⟨Q, rfl, fun i x h => ?_⟩
+  obtain ⟨x₁, h₁, c₁, rfl⟩ := hQ i x h
+  obtain ⟨x₀, h₀, c₀, rfl⟩ := hP i x₁ h₁
+  exact ⟨x₀, h₀, c₁, mapRequest_candidates_twice x₀ c₀ c₁⟩
 
 /-- Other candidates keep the store every plan is over (proved). -/
 theorem Recandidated.overStore {f f' : FilePlans} (h : Recandidated f f') (hover : OverStore f) : OverStore f' := by
-  obtain ⟨P, rfl, hP, -⟩ := h
-  intro i name pos r hi
-  obtain ⟨r₀, h₀, _, rfl⟩ := hP i name pos r hi
-  exact hover i name pos r₀ h₀
+  obtain ⟨P, rfl, hP⟩ := h
+  exact overStore_of_mapRequest (fun i x hx => by
+    obtain ⟨x₀, h₀, c, rfl⟩ := hP i x hx
+    exact ⟨x₀, _, h₀, rfl, rfl⟩) hover
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
@@ -62,109 +70,91 @@ theorem requestSafe_recandidated (r : SourceRequest σ ι) c :
     fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
 end
 
+/-- A framed request safe at other candidates is safe (proved): the frame
+and the framed claim read no candidate. -/
+theorem framedRequestSafe_recandidated {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι)
+    (spec : FramedSpec ι) c :
+    FramedRequestSafe { r with candidates := c } (spec.frame { r with candidates := c }) →
+      FramedRequestSafe r (spec.frame r) := by
+  intro ⟨h1, h2, h3, h4, h5, h6⟩
+  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
+    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
+
 /-- A member safe at other candidates is safe (proved): a request's safety
-reads no candidate (`requestSafe_recandidated`). -/
+reads no candidate (`requestSafe_recandidated`,
+`framedRequestSafe_recandidated`). -/
 theorem Recandidated.memberSafe {f f' : FilePlans} (h : Recandidated f f') {j : Nat} (hs : MemberSafe f' j) :
     MemberSafe f j := by
-  obtain ⟨P, rfl, hP, hPf⟩ := h
+  obtain ⟨P, rfl, hP⟩ := h
   obtain ⟨p, c, hp, hc, hsafe⟩ := hs
-  cases p with
+  obtain ⟨x₀, h₀, cands, rfl⟩ := hP j p hp
+  cases x₀ with
   | graph name pos r =>
-    simp only [FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
+    simp only [FunctionPlan.mapRequest, FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
     subst hc
-    obtain ⟨r₀, h₀, c, rfl⟩ := hP j name pos r hp
-    exact ⟨.graph name pos r₀, .graph name pos r₀, h₀, rfl, requestSafe_recandidated r₀ c hsafe⟩
+    exact ⟨.graph name pos r, .graph name pos r, h₀, rfl, requestSafe_recandidated r cands hsafe⟩
   | framed name pos r spec =>
-    simp only [FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
+    simp only [FunctionPlan.mapRequest, FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
     subst hc
-    exact ⟨.framed name pos r spec, .framed name pos r spec, hPf j _ hp ⟨name, pos, r, spec, rfl⟩, rfl, hsafe⟩
+    exact ⟨.framed name pos r spec, .framed name pos r spec, h₀, rfl,
+      framedRequestSafe_recandidated r spec cands hsafe⟩
 
-/-- Plans mapped index by index, each request plan one of the original's
-with other candidates, are `Recandidated` (proved). -/
+/-- Plans mapped index by index, each one of the original's with its
+request's candidates replaced, are `Recandidated` (proved). -/
 theorem recandidated_of_map {f : FilePlans}
     (ψ : Except String (FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
       (EquationStore.CheckedLabel f.F.equations f.F.primitive)) × Nat →
       Except String (FunctionPlan (EquationStore.Checked f.F.equations f.F.primitive)
         (EquationStore.CheckedLabel f.F.equations f.F.primitive)))
-    (hψ : ∀ e j name pos (r : Req f), ψ (e, j) = .ok (.graph name pos r) →
-      ∃ r₀ : Req f, e = .ok (.graph name pos r₀) ∧ ∃ cands, r = { r₀ with candidates := cands })
-    (hψf : ∀ e j x, ψ (e, j) = .ok x → (∃ name pos r spec, x = .framed name pos r spec) → e = .ok x) :
+    (hψ : ∀ e j x, ψ (e, j) = .ok x → ∃ x₀, e = .ok x₀ ∧ ∃ cands, x = x₀.mapRequest fun r => { r with candidates := cands }) :
     Recandidated f { f with plans := f.plans.zipIdx.map ψ } := by
-  refine ⟨_, rfl, fun i name pos r h => ?_, fun i x h hx => ?_⟩
-  · simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
-    obtain ⟨⟨p, j⟩, hp, he⟩ := h
-    simp only [Prod.mk.injEq] at hp
-    obtain ⟨p', hp', rfl, rfl⟩ := hp
-    obtain ⟨r₀, rfl, hr⟩ := hψ _ _ _ _ _ he
-    exact ⟨r₀, hp', hr⟩
-  · simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
-    obtain ⟨⟨p, j⟩, hp, he⟩ := h
-    simp only [Prod.mk.injEq] at hp
-    obtain ⟨p', hp', rfl, rfl⟩ := hp
-    rw [hp', hψf _ _ _ he hx]
+  refine ⟨_, rfl, fun i x h => ?_⟩
+  simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
+  obtain ⟨⟨p, j⟩, hp, he⟩ := h
+  simp only [Prod.mk.injEq] at hp
+  obtain ⟨p', hp', rfl, rfl⟩ := hp
+  obtain ⟨x₀, rfl, hr⟩ := hψ _ _ _ he
+  exact ⟨x₀, hp', hr⟩
 
 /-- Candidates left out keep the plans `Recandidated` (proved). -/
 theorem dropCandidates_recandidated (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) :
     Recandidated f (f.dropCandidates i l drop) := by
   unfold FilePlans.dropCandidates
-  refine recandidated_of_map _ (fun e j name pos r h => ?_) (fun e j x h hx => ?_)
-  · dsimp only at h
-    split at h
-    · exact ⟨r, h, r.candidates, rfl⟩
-    · cases e with
-      | error _ => cases h
-      | ok q =>
-        cases q with
-        | graph n ps r₀ =>
-          simp only [Except.map, Except.ok.injEq, FunctionPlan.graph.injEq] at h
-          obtain ⟨rfl, rfl, rfl⟩ := h
-          exact ⟨r₀, rfl, _, rfl⟩
-        | framed n ps r₀ sp => simp [Except.map] at h
-  · dsimp only at h
-    split at h
-    · exact h
-    · cases e with
-      | error _ => cases h
-      | ok q =>
-        obtain ⟨name, pos, r, spec, rfl⟩ := hx
-        cases q with
-        | graph n ps r₀ => simp only [Except.map] at h; repeat' split at h
-                           all_goals simp at h
-        | framed n ps r₀ sp => simpa only [Except.map] using h
+  refine recandidated_of_map _ (fun e j x h => ?_)
+  dsimp only at h
+  split at h
+  · exact ⟨x, h, _, mapRequest_candidates_self x⟩
+  · cases e with
+    | error _ => cases h
+    | ok q =>
+      simp only [Except.map, Except.ok.injEq] at h
+      subst h
+      cases q <;> exact ⟨_, rfl, _, rfl⟩
 
 /-- The region separations proposed keep the plans `Recandidated` (proved). -/
 theorem withFreshApart_recandidated (f : FilePlans) (force : Bool) (group : List Nat) :
     Recandidated f (f.withFreshApart force group) := by
   unfold FilePlans.withFreshApart
-  refine recandidated_of_map _ (fun e j name pos r h => ?_) (fun e j x h hx => ?_)
-  · dsimp only at h
-    split at h
-    · exact ⟨r, h, r.candidates, rfl⟩
-    · cases e with
-      | error _ => cases h
-      | ok q =>
-        cases q with
-        | graph n ps r₀ =>
-          simp only [Except.map] at h
-          split at h
-          · simp only [Except.ok.injEq, FunctionPlan.graph.injEq] at h
-            obtain ⟨rfl, rfl, rfl⟩ := h
-            exact ⟨r₀, rfl, r₀.candidates, rfl⟩
-          · simp only [Except.ok.injEq, FunctionPlan.graph.injEq] at h
-            obtain ⟨rfl, rfl, rfl⟩ := h
-            exact ⟨r₀, rfl, _, rfl⟩
-        | framed n ps r₀ sp => simp [Except.map] at h
-  · dsimp only at h
-    split at h
-    · exact h
-    · cases e with
-      | error _ => cases h
-      | ok q =>
-        obtain ⟨name, pos, r, spec, rfl⟩ := hx
-        cases q with
-        | graph n ps r₀ => simp only [Except.map] at h; repeat' split at h
-                           all_goals simp at h
-        | framed n ps r₀ sp => simpa only [Except.map] using h
+  refine recandidated_of_map _ (fun e j x h => ?_)
+  dsimp only at h
+  split at h
+  · exact ⟨x, h, _, mapRequest_candidates_self x⟩
+  · cases e with
+    | error _ => cases h
+    | ok q =>
+      simp only [Except.map, Except.ok.injEq] at h
+      subst h
+      cases q with
+      | graph n ps r₀ =>
+        simp only [FunctionPlan.mapRequest]
+        split
+        · exact ⟨_, rfl, r₀.candidates, rfl⟩
+        · exact ⟨_, rfl, _, rfl⟩
+      | framed n ps r₀ sp =>
+        simp only [FunctionPlan.mapRequest]
+        split
+        · exact ⟨_, rfl, r₀.candidates, rfl⟩
+        · exact ⟨_, rfl, _, rfl⟩
 
 /-- **A member's runs end at a run of the state they reach** (proved):
 `settleInferred`'s run is `run` of its last state, and that state is

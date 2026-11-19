@@ -167,6 +167,49 @@ theorem assertedAt_of_graph {P : Program} {assertions : List (Nat × HeapKnowled
     exact hg l k hl j h' _ hj hr
   | done hv => simp [gotoOf, isVal] at hv
 
+/-- **Safety admits every outcome** (proved): a run safe at a result family
+and an exception family is safe with every value, every throw and every
+heap at its end admitted. -/
+theorem safePostExcW_true_of_safe {Ξ T : Fam} : ∀ {n : Nat} {W : WorldT n} {h : Heap} {t : Tm},
+    Safe Ξ T n W h t →
+    SafePostExcW (fun _ _ _ => True) (fun _ _ _ => True) (fun _ _ _ _ => True) (fun _ _ _ => True) n W h t
+  | 0, _, _, _, hs => hs
+  | _ + 1, _, _, _, ⟨hr, hs⟩ => ⟨hr, by
+      rcases hs with (⟨hv, -⟩ | ht) | ⟨U, h', t', hx, hu, st, hh, hs⟩
+      · exact .inl (.inl ⟨hv, trivial, trivial⟩)
+      · exact .inl (.inr ⟨ht.mono fun _ _ => trivial, trivial⟩)
+      · exact .inr ⟨U, h', t', hx, hu, st, hh, safePostExcW_true_of_safe hs⟩⟩
+
+omit [Labels ι] in
+/-- **A code's framed clause from its guarantee** (proved; the draft, "The
+framed claim, from the check", the sixth clause): where a graph's accepted
+run guarantees safety and its assertions at every assignment from every
+entry meeting its inputs and index facts, the term that runs it, at every
+tag, from every such entry with valid roots, is safe along the executions
+keeping every obligation, from every history, each assertion true at every
+state reached at its label: `GraphCode.safe_of_sim` reads the graph's
+safety on the term, `assertedAt_of_graph` its assertions, and
+`SafeUnder.of_safe` gives safety along every set of executions. -/
+theorem framedCode_of_guarantee {G : NormalGraph ι} {P : Program} {start : Nat} {goal : Goal ι}
+    {inputs : List (Ty ι)} {idx : List HeapKnowledge.IndexAtom} {assertions : List (Nat × HeapKnowledge.Knowledge)}
+    {bound : Option RunBound}
+    (hg : GraphGuarantee G (fun _ => True) P start goal inputs {} idx assertions bound [] none)
+    (η : MixedAssignment ι) {n : Nat} {W : WorldT n} {h : Heap} {L : List Tm} {d : Tm} (comp : ComponentTag)
+    (he : EntryHolds (reassign G η) inputs {} idx (envOf L d) n W h) (hR : RootsOk W (envOf L d))
+    (g : Verification.TolerantFrames.ReadOnly.Ghost (fr.F.at fr.C)) :
+    SafeFramed fr (AssertedAt P assertions (envOf L d) h) (fun _ _ _ => True) (fun _ _ _ => True)
+      (fun _ _ _ _ => True) (fun _ _ _ => True) n W g h (gotoOf P start L d comp) := by
+  have hnodes := program_source_refsOk hg.source W
+  have hsafe := hg.safe η trivial n W h (envOf L d) he hnodes hR
+  rw [← SourceExtraction.program_nodes P] at hsafe
+  have hE : ∀ e ∈ P.map (·.expression), RefsOk W e := by
+    intro e he'
+    obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he'
+    exact hnodes node hn
+  have ht := GraphCode.safe_of_sim n W h (sim_gotoOf P start L d comp) hE hsafe
+  exact SafeUnder.of_safe (assertedAt_of_graph (hg.asserted η trivial n W h (envOf L d) he hnodes hR))
+    (safePostExcW_true_of_safe ht)
+
 /-- **The framed claim is safety at every call where the obligation is
 met** (proved): under a client frame whose obligation is met from every
 history it starts from, a request safe under the frame is safe at every

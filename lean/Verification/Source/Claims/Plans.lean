@@ -19,6 +19,17 @@ inductive FunctionPlan (σ ι : Type) [Labels ι] [StoreView σ ι] where
 def FunctionPlan.parts {σ ι : Type} [Labels ι] [StoreView σ ι] : FunctionPlan σ ι → String × Span × SourceRequest σ ι
   | .graph name pos r | .framed name pos r _ => (name, pos, r)
 
+/-- **A plan with its request changed**: the same kind, name, position and
+proposals, its request `g`'s image. -/
+def FunctionPlan.mapRequest {σ ι : Type} [Labels ι] [StoreView σ ι] (g : SourceRequest σ ι → SourceRequest σ ι) :
+    FunctionPlan σ ι → FunctionPlan σ ι
+  | .graph name pos r => .graph name pos (g r)
+  | .framed name pos r spec => .framed name pos (g r) spec
+
+theorem FunctionPlan.parts_mapRequest {σ ι : Type} [Labels ι] [StoreView σ ι] (g : SourceRequest σ ι → SourceRequest σ ι)
+    (p : FunctionPlan σ ι) : (p.mapRequest g).parts = (p.parts.1, p.parts.2.1, g p.parts.2.2) := by
+  cases p <;> rfl
+
 /-- A plan admitted by the top-level verified outcome. Graph evidence is
 consumed separately. Adding a source-plan variant cannot silently enter this
 exhaustive boundary through a projection. A graph plan is accepted for every
