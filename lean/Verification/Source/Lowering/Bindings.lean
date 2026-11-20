@@ -12,6 +12,33 @@ namespace LoweringBindings
 
 set_option maxHeartbeats 1000000
 
+/-- Whether a callee's contract states a fresh result: every signature its
+type selects keeps the heap and states its normal result a fresh object, the
+premise of `call-fresh`. -/
+@[nospecialize] def freshResultContract (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Bool :=
+  let cs := PositiveRules.expand G A
+  !cs.isEmpty && cs.all fun
+    | .arrs arrows _ => !arrows.isEmpty && arrows.all fun ⟨_, _, _, effect⟩ =>
+        PromiseCalls.keepsHeap effect && effect.schema.normal.freshObjectResult
+    | .ctors signatures _ _ _ _ => !signatures.isEmpty && signatures.all fun s =>
+        PromiseCalls.keepsHeap s.effect && s.effect.schema.normal.freshObjectResult
+    | _ => false
+
+/-- Whether the value an initializer yields is fresh: the result of a step
+whose rule states its own locations apart from the fields of the slots below
+it, an allocation (an object or array literal) or a call whose callee's
+contract states a fresh result (`call-fresh`); a form whose value is one of
+its operands' (`e as T`, a conditional) yields a fresh value where each
+operand it may yield does. Every other form yields a value its rule states
+nothing of, and is not fresh. -/
+@[nospecialize] partial def allocates (fc : SourceClaims.Function Tree) : Fragment.Expr → Compiler Bool
+  | .alloc .. | .build .. | .arrayLit .. => pure true
+  | .cast _ _ e => allocates fc e
+  | .ifBody _ _ thn els => do return (← allocates fc thn) && (← allocates fc els)
+  | .construct _ callee _ _ _ | .call _ callee _ _ _ | .invoke _ callee _ _ _ => do
+    return freshResultContract (SourceTypes.graph (← table)) (← exprType fc callee)
+  | _ => pure false
+
 /-- One immutable declaration commits the value whose initializer schedule
     the graph action owns. The annotation is a separate checked obligation. -/
 @[nospecialize] partial def constant (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (pos : Span)
@@ -21,11 +48,9 @@ set_option maxHeartbeats 1000000
   if hasName scope b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
   let A ← exprType fc b.init
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
-  let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
-  -- An array literal's object is separated from the fields the older slots'
-  -- records name (`separationFacts`).
-  let apart := match b.init with | .arrayLit .. => some Γ | _ => none
-  let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh, apart := apart }
+  let allocated ← allocates fc b.init
+  let bound : ScopeBinding Tree :=
+    { source := ⟨b.name,some pos⟩, allocated, apart := if allocated then some Γ else none }
   -- The condition as its tests run it: an equality with a claimed singleton
   -- is that singleton's tag test (`comparisonsExpr`), which
   -- `constantImplications` narrows by as the test's own edge does.
@@ -72,7 +97,8 @@ set_option maxHeartbeats 1000000
       emitAt b.init.span (.var 0) (.effect continued) (A::Γ) contract
         "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
   let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, contract)]])
-  let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference, apart := some Γ }
+  let binding : ScopeBinding Tree :=
+    { source := ⟨b.name,some pos⟩, storage := .cell contract reference, allocated := true, apart := some Γ, reachable := false }
   let continued ← after (binding::scope)
   let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
     (fun j => if j == 0 then 0 else j+1))⟩

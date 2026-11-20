@@ -80,22 +80,33 @@ entry (`Request.entrySeparation`), and every statement entry restates it. -/
 
 /-- Whether a slot of `scope` may state a separation fact (`separationFacts`). -/
 @[nospecialize] def separating (scope : List (ScopeBinding ι)) : Bool :=
-  scope.any fun b => match b.storage with
-    | .cell .. | .early .. => true
-    | .value | .slot _ => b.iterator || b.fresh
+  scope.any (·.allocated)
 
-/-- The cells this lowering allocated sit at locations no other object in
-scope has: a private cell's identity never becomes a source value, and every
-record-typed slot holds something else. Stated at each cut so the allocation's
-freshness survives the reset of knowledge there; every incoming edge proves
-it, from the allocation or from the cut before. What the allocation proves is
-about the fields the older slots' records named then (`apart`), whatever a
-later test narrowed them to, and about the objects allocated after it, other
-cells and fresh constants; an object a later call returned may be any
-object. One separation fact per cell, its field `value` apart from each
-listed slot's fields, addressed by level at the context's depth. -/
-@[nospecialize] def separationFacts (commonFields : Ty ι → List PropKey) (scope : List (ScopeBinding ι))
-    (Γ : List (Ty ι)) : HeapSeparation.Separation :=
+/-- The separation each statement entry restates, so that an allocation's
+freshness survives the reset of knowledge at a cut; every incoming edge
+proves it, from the allocation or from the cut before.
+
+A value allocated at a binding (`allocated`: a `let`'s private cell, a
+`for...of` loop's iterator, a constant whose initializer allocates) has own
+locations that lie past the heap the allocation started in, so they differ
+from the field locations of every value bound before it
+(`HeapSeparation.allocate`). Each entry states, for every slot bound before
+the allocation, the fields its record named then (`apart`, where known) apart
+from the allocated value's own locations:
+
+- all of them, where the slot still holds the value it held then: no
+  assignment and no key-adding write rebinds it;
+- those its type names, where the slot may come to hold a value allocated
+  later, which that later allocation separates from them: a slot a
+  key-adding write rebinds to its copy, or any slot where the allocated value
+  is no source value (`reachable` false), so no assignment gives it to the
+  slot.
+
+A closure's capture states none: its entry knows nothing of the allocation.
+Module cells are two apart by the unit's entry assumption
+(`moduleCellFacts`). Addressed by level at the context's depth. -/
+@[nospecialize] def separationFacts (commonFields : Ty ι → List PropKey) (rebound : ScopeBinding ι → Bool)
+    (scope : List (ScopeBinding ι)) (Γ : List (Ty ι)) : HeapSeparation.Separation :=
   let depth := Γ.length
   let slots := scope.toArray
   -- Each slot type's common fields, computed once, where some slot may
@@ -104,62 +115,37 @@ listed slot's fields, addressed by level at the context's depth. -/
   let common (j : Nat) : List PropKey := commons[j]?.getD []
   -- The context's slot indices, from the innermost.
   let indices := List.range depth
-  -- The fields common to slot `j`'s type and to the type the record of the
-  -- slot `k` older slots below named at an allocation (`apart`).
-  let shared (olders : Array (List PropKey)) (j k : Nat) : List PropKey :=
-    match olders[k]? with
-    | some fieldsB => (common j).filter fieldsB.contains
-    | none => []
   HeapSeparation.norm depth <| moduleCellFacts depth (scope.zipIdx.filterMap fun (b,i) =>
     b.moduleCell.map (i, ·)) ++ scope.zipIdx.flatMap fun (b,i) =>
-    match b.storage with
-    | .cell .. | .early .. =>
-      -- A captured cell was allocated before the closure's entry, which
-      -- knows nothing of that allocation.
-      if b.captured || depth ≤ i then [] else
-      let olders := b.apart.map fun older => (older.map commonFields).toArray
-      [⟨depth - 1 - i, some [valueField], indices.filterMap fun j =>
-        if i == j then none else
-        let other := slots[j]?
-        let isCell := other.any fun o => match o.storage with | .cell .. | .early .. => true | .value | .slot _ => false
-        let fields :=
-          if j > i || (b.param && other.any (·.param)) then
-            -- Older than the cell: the fields its record named when the cell
-            -- was allocated, where that is known.
-            match olders with
-            | some olders => shared olders j (j - i - 1)
-            | none => common j
-          else if isCell || other.any (·.fresh) then common j
-          else []
-        if fields.isEmpty then none else some (depth - 1 - j, fields)⟩]
-    | .value | .slot _ =>
-      -- An iterator's field locations differ from the fields older slots'
-      -- records named when it was created. A constant holding an object it
-      -- allocated is left out: the edge from a key-adding write to it does
-      -- not carry that separation (`blocker-loop-key-adding-write`). A
-      -- constant holding an array literal's object keeps its spine field
-      -- apart from the spine fields of the older slots' arrays no write
-      -- replaces, a fresh one's among them.
-      let array := b.fresh && !b.iterator
-      if !(b.iterator || array) || depth ≤ i then [] else
-      match b.apart with
-      | none => []
-      | some older =>
-        let olders := (older.map commonFields).toArray
-        [⟨depth - 1 - i, if array then some [arraySpineKey] else none, indices.filterMap fun j =>
-          if j ≤ i || (!array && slots[j]?.any (·.fresh)) then none else
-          -- An array constant's partners are values no write replaces.
-          if array && !(slots[j]?.any fun o => match o.storage with | .value => true | _ => false) then none else
-          let fields := shared olders j (j - i - 1)
-          let fields := if array then fields.filter (· == arraySpineKey) else fields
-          if fields.isEmpty then none else some (depth - 1 - j, fields)⟩]
+    if !b.allocated || b.captured || depth ≤ i then [] else
+    let olders := b.apart.map fun older => (older.map commonFields).toArray
+    -- Each slot bound before the allocation (an older slot, or, for an
+    -- assigned parameter's cell, another parameter), with the fields its
+    -- record named then, and whether it still holds its value of then.
+    let partners := indices.filterMap fun j =>
+      slots[j]?.bind fun other =>
+      if !(j > i || (b.param && other.param && i != j)) then none else
+      let assigned := match other.storage with | .slot _ => true | .value | .cell .. | .early .. => false
+      if assigned && b.reachable then none else
+      let fields := if j > i then
+          match olders.bind (·[j - i - 1]?) with
+          | some fieldsB => (common j).filter fieldsB.contains
+          | none => common j
+        else common j
+      if fields.isEmpty then none else some (!assigned && !rebound other, (depth - 1 - j, fields))
+    ⟨depth - 1 - i, none, partners.filterMap fun (kept, p) => if kept then some p else none⟩ ::
+      if (common i).isEmpty then [] else
+      [⟨depth - 1 - i, some (common i), partners.filterMap fun (kept, p) => if kept then none else some p⟩]
 
 /-- `separationFacts` at the store, each type's common fields computed once
-while the store is unchanged (`commonFieldsOf`). -/
+while the store is unchanged (`commonFieldsOf`), a slot rebound where it
+holds the object of a key-adding write (`growSites`). -/
 @[nospecialize] def separationAt (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) :
     Compiler HeapSeparation.Separation := do
   let types := if separating scope then Γ ++ scope.flatMap (·.apart.getD []) else []
-  return separationFacts (← commonFieldsOf types) scope Γ
+  let holders ← rebindingHolders
+  let rebound := fun (b : ScopeBinding Tree) => holders.any fun (n, p) => b.source == ⟨n, some p⟩
+  return separationFacts (← commonFieldsOf types) rebound scope Γ
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/

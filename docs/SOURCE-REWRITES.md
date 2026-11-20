@@ -4417,15 +4417,14 @@ discriminant's members, which the subtyping of the calculus does not do.
 
 `tools/fragment-expressions.mts#template` folded a template's spans with
 `for (const part of node.templateSpans) { acc = { k: "arith", …, l: acc,
-r: gate.expr(…) }; acc = { … } }`. A `for...of` loop that replaces a
-binding's record with a fresh one on each pass is refused at the loop's
-entry: the loop head's knowledge from the back edge separates the fresh
-record from the loop's iterator, which the entry edge does not state
-(`blocker-for-of-fresh-record`, a gap in WORK.md).
+r: gate.expr(…) }; acc = { … } }`, which the pass refused at the loop's
+entry. The `for...of` form verifies: the loop's head separates the iterator
+from the fields its type names, which each fresh record's allocation
+separates from the record's fields
+([No general frame rule](PROGRAM-TYPING.md#no-general-frame-rule);
+`blocker-for-of-fresh-record`).
 
-- **Avoided form and cost:** support is a change to how loop-head
-  inference (`HeadInference`) generalizes separation knowledge at a loop
-  head; this round writes the one site out.
+- **Avoided form and cost:** the `reduce` form below, of the same cost.
 - **Equivalence:** `node.templateSpans.reduce((acc, part) => …, head)`
   visits the same spans in order: the span list is a compiler node array,
   dense, which `gate.expr` does not change (the compiler's tree is read
