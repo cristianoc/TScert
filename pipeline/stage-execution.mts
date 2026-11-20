@@ -29,9 +29,8 @@ export const isStageName = (value: unknown): value is StageName => stageNames.so
 /** The repository's build of the audited program, the Lean verifier, at its
  * build location. */
 export const verifierBuild: string = resolve(here, "../lean/.lake/build/bin/verifier");
-/** The verifier every stage runs: `VERIFIER` names a stand-in for it (a
- * control's injected failure), the build otherwise. */
-export const verifier: string = process.env.VERIFIER ?? verifierBuild;
+/** The verifier every production stage runs. */
+export const verifier: string = verifierBuild;
 /** The runner every process stage's program runs under
  * (`runner/stage-runner.c`, built by `make build-runner`), which reports the
  * CPU time of the stage's processes. */
@@ -63,13 +62,28 @@ let digestsRead: Map<string, string | null> | null = null;
 function noteRead(path: string, status: string | null): void {
   if (digestsRead && !digestsRead.has(path)) digestsRead.set(path, status);
 }
+/** Bound the allocation for a native executable or library. The synchronous
+ * reads finish consuming each block before the next file can reuse it. */
+const digestBlock = Buffer.allocUnsafe(256 * 1024);
+function digestFile(path: string, size: bigint): string {
+  if (size <= BigInt(digestBlock.length)) return sha256(readFileSync(path));
+  const hash = createHash("sha256");
+  const fd = openSync(path, "r");
+  try {
+    let count: number;
+    while ((count = readSync(fd, digestBlock)) > 0) hash.update(digestBlock.subarray(0, count));
+    return hash.digest("hex");
+  } finally {
+    closeSync(fd);
+  }
+}
 function known(path: string): { signature: string; digest: string } {
   const s = statSync(path, { bigint: true });
   const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
   noteRead(path, signature);
   const held = digests.get(path);
   if (held?.signature === signature) return held;
-  const fresh = { signature, digest: sha256(readFileSync(path)) };
+  const fresh = { signature, digest: digestFile(path, s.size) };
   digests.set(path, fresh);
   return fresh;
 }
@@ -666,13 +680,15 @@ export const workRole = "work.jsonl";
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
   const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
-  const [mode, ...rest] = args.slice(budget.length);
+  const afterBudget = args.slice(budget.length);
+  const controls = afterBudget[0] === "--force-proposals" ? afterBudget.slice(0, 2).map(text => ({ text })) : [];
+  const [mode, ...rest] = afterBudget.slice(controls.length);
   // A profiled request (`TSCERT_PROFILE`, `profileDirectory`): the verifier
   // records its work table (`TSCERT_PROFILE` in its environment, so in the
   // stage's key) and writes it as the output `work.jsonl`.
   const profiled = profileDirectory() !== null;
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
-    ({ stage, program, arguments: [...budget, { text: mode }, ...list, ...(profiled ? [{ written: workRole }] : [])],
+    ({ stage, program, arguments: [...budget, ...controls, { text: mode }, ...list, ...(profiled ? [{ written: workRole }] : [])],
       environment: profiled ? { ...environment, TSCERT_PROFILE: "1" } : environment, protocol: verifierProtocol });
   if (mode === "--module-interface-plan" && rest.length === 2)
     return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);

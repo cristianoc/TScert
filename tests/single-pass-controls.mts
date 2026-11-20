@@ -4,7 +4,7 @@
 // case is checked through the pipeline (the parse, then `verifier
 // --verify-interface-stage 8` with the interface stages it needs); a
 // control then runs the pass over its fragment under a forced proposal
-// (`TSCERT_FORCE`), or over a forged fragment, and requires the unit it
+// (`--force-proposals`), or over a forged fragment, and requires the unit it
 // names refused. Other controls read what the parser's document states or
 // run a native counterexample under Node. The controls of the test
 // infrastructure (the store-boundary controls of the interface stages, the
@@ -29,7 +29,7 @@ import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sou
 import { stringFamily } from "../pipeline/string-family.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { createHash } from "node:crypto";
-import { fileWorkerProtocol, verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
+import { fileWorkerProtocol, proposalArgs, verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
@@ -181,8 +181,7 @@ function mutatedPass(fragment: string, name: string, force: readonly string[] = 
   assert.ok(isObject(ast) && typeof ast.file === "string" && Array.isArray(ast.modules) && ast.modules.length === 0,
     "an import-free fragment");
   const environment: Record<string, string> = { TSCERT_TEST_MUTATIONS: name };
-  if (force.length > 0) environment.TSCERT_FORCE = force.join(",");
-  return passOf(counted(invokeProcess(verifierCall(program, ["--subtype-rounds", "4096", "--verify-interface-stage", "8",
+  return passOf(counted(invokeProcess(verifierCall(program, ["--subtype-rounds", "4096", ...proposalArgs(force), "--verify-interface-stage", "8",
     fragment, interfaces, ast.file, "12", ""], environment), { limitMs: 60_000, force: false, recorder: null })));
 }
 const serving: boolean = process.argv[2] === "--controls";
@@ -255,9 +254,24 @@ control("worker order: a unit's line whatever units the worker checked before it
   say(`worker order: ${units.length} units' lines identical in order, reversed and through a resumed worker`);
 });
 
+control("probe settings leave the production verdict intact", async (): Promise<void> => {
+  const artifacts = run("field-equality-union");
+  const fragment = fragmentOf(artifacts);
+  const interfaces = join(artifacts, "ordinary-interfaces.json");
+  writeFileSync(interfaces, '{"modules":[]}');
+  const args = ["--verify-interface-stage", "8", fragment, interfaces, sourceKey(artifacts), "12", ""];
+  const plain = spawnSync(verifierBuild, args, { encoding: "utf8", env: {} });
+  assert.equal(plain.status, 0, plain.stderr);
+  const observed = spawnSync(verifierBuild, args, { encoding: "utf8", env: {
+    TSCERT_FORCE: "start-facts", TSCERT_FLOW_PROBE: "only", TSCERT_OBSERVE: "node:999999999",
+  } });
+  assert.equal(observed.status, plain.status, observed.stderr);
+  assert.equal(observed.stdout, plain.stdout);
+});
+
 control("worker preparation over its limit: every unit recorded with its reason", async (): Promise<void> => {
   // The census's file run with the worker's preparation held past its limit
-  // (`TSCERT_FORCE=preparation-limit`): no unit has a verdict, and each
+  // (one millisecond for process startup and preparation): no unit has a verdict, and each
   // selected unit of the file is recorded with the preparation's timeout as
   // its reason.
   const work = runDirectory("single-pass-preparation-limit-");
@@ -273,7 +287,7 @@ process.stdout.write(JSON.stringify({ select, units: run.units }));
 process.exit(0);
 `);
   const p = spawnSync(process.execPath, [driver], { encoding: "utf8", timeout: 170_000,
-    env: { ...process.env, TSCERT_FORCE: "preparation-limit", TSCERT_STEP_LIMIT: "1",
+    env: { ...process.env, TSCERT_STEP_LIMIT: "0.001",
       TSCERT_STAGE_STORE: join(work, "store") } });
   assert.equal(p.status, 0, p.stderr);
   const out: unknown = JSON.parse(p.stdout);
@@ -2724,7 +2738,7 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
   // other than its complete refusal record (exit 1, a first line `reject: …`
   // and a last line `end of refusal`) is a tool failure, no verdict: no
   // output, an exception's text, and a record cut short. The injected failure
-  // is written into a stand-in the route runs (`VERIFIER`), so it is part of
+  // is written into a stand-in the test process installs, so it is part of
   // the executable the invocation runs; a stand-in is no audited program, so
   // its invocation executes without a key.
   const dir = runDirectory("single-pass-step-failures-");
@@ -2738,8 +2752,15 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
     writeFileSync(stand, `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--file-worker" ]; then\n` +
       `    [ -n ${quoted} ] && echo ${quoted} >&2\n    exit 1\n  fi\ndone\nexec "${real}" "$@"\n`);
     chmodSync(stand, 0o755);
-    const ran = spawnSync(process.execPath, [join(root, "pipeline/verify-source.mts"), join(root, "pipeline/examples/optional-chain-element-receiver.ts")],
-      { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: stand } });
+    const adapter = pathToFileURL(join(root, "pipeline/stage-execution.mts")).href;
+    const preload = join(at, "stand-in.mjs");
+    writeFileSync(preload, `import { mock } from "node:test";
+import * as adapter from ${JSON.stringify(adapter)};
+mock.module(${JSON.stringify(adapter)}, { exports: { ...adapter, verifier: ${JSON.stringify(stand)} } });
+`);
+    const ran = spawnSync(process.execPath, ["--experimental-test-module-mocks", "--import", preload,
+      join(root, "pipeline/verify-source.mts"), join(root, "pipeline/examples/optional-chain-element-receiver.ts")],
+      { encoding: "utf8", timeout: 120_000 });
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
     const failing = readInvocationLog(join(outcome.artifacts, invocationLog)).filter((r) => r.stage === "pass").at(-1);
     assert.ok(failing !== undefined && ranStage(failing) && failing.key === null, "the failing stage ran, without a key");

@@ -100,6 +100,15 @@ def Diag.render (d : Diag) : String := s!"({d.check}) {d.module} {d.place.1}-{d.
 /-- **The family with its values' sets**, for membership tests. -/
 structure Ctx where
   F : Components
+  values : Array Value
+  sites : Array Site
+  codes : Array Code
+  calls : Array Call
+  components : Array Component
+  lentSites : Array (List Nat)
+  /-- The client's change at every part, fixed for the whole family. -/
+  clientChange : Footprints.Change
+  entriesBySite : Std.HashMap (Nat × Option Nat) (List ProtocolEntry)
   sitesOf : Array (Std.HashSet Nat)
   incomingOf : Array (Std.HashSet Nat)
   readOnlyOf : Array (Std.HashSet Nat)
@@ -110,7 +119,15 @@ structure Ctx where
   escaped : Std.HashSet Nat := {}
 
 def Ctx.of (F : Components) : Ctx :=
-  { F, sitesOf := (F.values.map fun v => Std.HashSet.ofList v.sites).toArray,
+  let sites := F.sites.toArray
+  let lentSites := F.components.zipIdx.map fun (_, C) =>
+    F.sites.zipIdx.filterMap fun (s, i) => match s.marks.lookup C with
+      | some .exposed | some .released => some i
+      | _ => none
+  let entriesBySite := F.protocols.foldl (init := ({} : Std.HashMap (Nat × Option Nat) (List ProtocolEntry)))
+    fun index p => p.entries.foldl (fun m e => m.alter (p.component, e.site) fun es => some (e :: es.getD [])) index
+  { F, sites, entriesBySite, clientChange := if F.clients.any (·.stated) then .any else .keep, values := F.values.toArray, codes := F.codes.toArray, calls := F.calls.toArray,
+    components := F.components.toArray, lentSites := lentSites.toArray, sitesOf := (F.values.map fun v => Std.HashSet.ofList v.sites).toArray,
     incomingOf := (F.values.map fun v => Std.HashSet.ofList v.incoming).toArray,
     readOnlyOf := (F.values.map fun v => Std.HashSet.ofList v.incomingReadOnly).toArray,
     codeAtSite := F.codes.zipIdx.foldl (fun m (c, i) => match c.site with
@@ -120,11 +137,11 @@ def Ctx.of (F : Components) : Ctx :=
 namespace Ctx
 variable (cx : Ctx)
 
-def value (v : Nat) : Tokens := match cx.F.values[v]? with
+def value (v : Nat) : Tokens := match cx.values[v]? with
   | some x => ⟨x.sites, x.incoming, x.incomingReadOnly⟩
   | none => .empty
 
-def contents (t : Nat) : Tokens := match cx.F.sites[t]? with
+def contents (t : Nat) : Tokens := match cx.sites[t]? with
   | some s => cx.value s.contents
   | none => .empty
 
@@ -160,7 +177,8 @@ def closure (start : Tokens) : Tokens := Id.run do
   let mut incoming : Std.HashSet Nat := Std.HashSet.ofList start.incoming
   let mut ro : Std.HashSet Nat := Std.HashSet.ofList start.ro
   let mut work := start.sites
-  for _ in [0:cx.F.sites.length + 1] do
+  for _ in [0:cx.sites.size + 1] do
+    if work.isEmpty then break
     let mut next : List Nat := []
     for t in work do
       if !seen.contains t then
@@ -175,18 +193,18 @@ def closure (start : Tokens) : Tokens := Id.run do
 
 /-- A component's chain: itself and the components it is nested in,
 innermost first. -/
-def chain (c : Nat) : List Nat := go cx.F.components.length c
+def chain (c : Nat) : List Nat := go cx.components.size c
 where
   go : Nat → Nat → List Nat
     | 0, c => [c]
-    | n + 1, c => c :: match (cx.F.components[c]?).bind (·.parent) with
+    | n + 1, c => c :: match (cx.components[c]?).bind (·.parent) with
       | some p => go n p
       | none => []
 
 /-- A site's mark for a component, where the site is of its code. -/
-def mark (t C : Nat) : Option Mark := (cx.F.sites[t]?).bind fun s => s.marks.lookup C
+def mark (t C : Nat) : Option Mark := (cx.sites[t]?).bind fun s => s.marks.lookup C
 
-def siteName (t : Nat) : String := match cx.F.sites[t]? with
+def siteName (t : Nat) : String := match cx.sites[t]? with
   | some s => s!"{s.module} {s.pos.1}-{s.pos.2}"
   | none => s!"site {t}"
 
@@ -204,7 +222,7 @@ variable (cx : Ctx)
 /-- The codes a component's interface names: each entry's code, and of an
 entry naming a class, the class component's constructor. -/
 def entryCodes (C : Nat) : List Nat :=
-  match (cx.F.components[C]?).map Component.interface with
+  match (cx.components[C]?).map Component.interface with
   | some (Interface.known es) => es.flatMap fun e =>
     match cx.F.codes.zipIdx.find? (fun (c, _) => c.module == e.module && c.pos == e.pos) with
     | some (_, i) => [i]
@@ -569,25 +587,27 @@ given among them. -/
 def Ctx.runsOutside (cx : Ctx) : Std.HashSet Nat := Id.run do
   let located := cx.callSteps
   let mut out : Std.HashSet Nat := {}
-  for _ in [0:cx.F.codes.length + 1] do
+  for _ in [0:cx.codes.size + 1] do
+    let before := out.size
     for (k, _, runs, next) in located do
       for i in k do
         if !out.contains i && (runs || next.any out.contains) then out := out.insert i
+    if before == out.size then break
   return out
 
 /-- **The parameter of the code `i` a value is**: a value whose only source,
 through values of one source each, is that parameter, which no statement
 assigns (its sources none). -/
 def Ctx.paramOf (cx : Ctx) (i : Nat) (v : Nat) : Option Nat := do
-  let code ← cx.F.codes[i]?
+  let code ← cx.codes[i]?
   let rec go : Nat → Nat → Option Nat
     | 0, _ => none
     | n + 1, v => match code.params.findIdx? (·.1 == v) with
-      | some j => if (cx.F.values[v]?).any (·.sources.isEmpty) then some j else none
-      | none => match (cx.F.values[v]?).map (·.sources) with
+      | some j => if (cx.values[v]?).any (·.sources.isEmpty) then some j else none
+      | none => match (cx.values[v]?).map (·.sources) with
         | some [Source.value u] => go n u
         | _ => none
-  go (cx.F.values.length + 1) v
+  go (cx.values.size + 1) v
 
 /-- **The codes that run outside code only through their parameters, and
 the parameters each may call** (a joint least fixed point). A code calls a
@@ -612,7 +632,7 @@ def Ctx.paramBounded (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat ×
   let mut changed := true
   -- Each round that changes adds a code to `but` or a parameter to
   -- `called`, so the fixed point is reached within this many rounds.
-  for _ in [0:cx.F.codes.length + params + 1] do
+  for _ in [0:cx.codes.size + params + 1] do
     if !changed then break
     changed := false
     for (k, c, runs, all) in steps do
@@ -646,7 +666,7 @@ def Ctx.paramBounded (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat ×
             but := but.insert i
             changed := true
   -- Not reached: every code runs outside code besides its parameters.
-  if changed then but := Std.HashSet.ofList (List.range cx.F.codes.length)
+  if changed then but := Std.HashSet.ofList (List.range cx.codes.size)
   return (but, called)
 
 /-- **The quiet codes**: a code each of whose calls runs no outside code
@@ -669,12 +689,12 @@ def Ctx.quiet (cx : Ctx) (outside : Std.HashSet Nat) : Std.HashSet Nat := Id.run
     let next := if c.native.isSome || c.library.isSome then all else c.targets
     for i in k do
       if !callOk c runs next then bad := bad.insert i
-  return Std.HashSet.ofList ((List.range cx.F.codes.length).filter (!bad.contains ·))
+  return Std.HashSet.ofList ((List.range cx.codes.size).filter (!bad.contains ·))
 
 /-- **The code immediately enclosing a code**: the innermost other code of
 its module whose span contains its own. -/
 def Ctx.parentCode (cx : Ctx) (k : Nat) : Option Nat := do
-  let c ← cx.F.codes[k]?
+  let c ← cx.codes[k]?
   let (i, _) ← cx.F.codes.zipIdx.foldl (fun (b : Option (Nat × Nat)) (d, i) =>
     if i != k && d.module == c.module && d.pos.1 ≤ c.pos.1 && c.pos.2 ≤ d.pos.2 then
       match b with
@@ -701,9 +721,9 @@ and no outside code is passed it. It is then called only while a frame of
 the code that created it is active: the frames holding it are that frame's
 and those of the calls it makes. -/
 def Ctx.confined (cx : Ctx) (escaping : Std.HashSet Nat) (k : Nat) : Bool :=
-  match (cx.F.codes[k]?).bind (·.site) with
+  match (cx.codes[k]?).bind (·.site) with
   | none => false
-  | some s => !escaping.contains s && (cx.F.sites[s]?).any fun x => x.marks.all fun (_, m) => m == .local || m == .internal
+  | some s => !escaping.contains s && (cx.sites[s]?).any fun x => x.marks.all fun (_, m) => m == .local || m == .internal
 
 /-- **A value fresh in a frame of the codes `scope`**: every location it may
 hold was allocated by a frame of one of them, the first frame of the last
@@ -716,11 +736,11 @@ result, or every source of it is a site of such a code or another such
 value. -/
 def Ctx.freshIn (cx : Ctx) (boundary : Std.HashSet Nat) (scope : List Nat) : Nat → Nat → Bool
   | 0, _ => false
-  | n + 1, v => match cx.F.values[v]? with
+  | n + 1, v => match cx.values[v]? with
     | none => false
     | some x =>
       let inScope (o : Option Nat) : Bool := o.any scope.contains
-      let siteIn (t : Nat) : Bool := match cx.F.sites[t]? with
+      let siteIn (t : Nat) : Bool := match cx.sites[t]? with
         | some s => inScope (cx.codeAt s.module s.pos)
         | none => false
       x.incoming.isEmpty && x.incomingReadOnly.isEmpty && !boundary.contains v && inScope (cx.codeAt x.module x.pos) &&
@@ -743,7 +763,7 @@ def Ctx.freshScope (cx : Ctx) (boundary : Std.HashSet Nat) (module : String) (pl
   match cx.codeAt module place with
   | none => none
   | some k =>
-    let fuel := cx.F.values.length + 1
+    let fuel := cx.values.size + 1
     let rec up : Nat → Nat → List Nat → Option (List Nat)
       | 0, _, _ => none
       | n + 1, cur, scope =>
@@ -752,7 +772,7 @@ def Ctx.freshScope (cx : Ctx) (boundary : Std.HashSet Nat) (module : String) (pl
           | some p => up n p (p :: scope)
           | none => none
         else none
-    up (cx.F.codes.length + 1) k [k]
+    up (cx.codes.size + 1) k [k]
 
 /-- Whether a value is fresh at a place (`freshScope`). -/
 def Ctx.freshAt (cx : Ctx) (boundary : Std.HashSet Nat) (module : String) (place : Span) (v : Nat) : Bool :=
@@ -814,7 +834,7 @@ def Ctx.targets (cx : Ctx) (C : Nat) (r : Tokens) : List (Option Nat) :=
     | _ => false
   let own := (r.sites.filter lent).map some
   if r.components.contains C then
-    own ++ ((List.range cx.F.sites.length).filter lent).map some ++ [none]
+    own ++ ((cx.lentSites[C]?).getD []).map some ++ [none]
   else own
 
 /-- **The parts a store changes at one target, and by what**: a field at
@@ -879,7 +899,7 @@ part it changes at each target. -/
 def Ctx.chargesOf (cx : Ctx) (C : Nat) (w : Write) : List Charge :=
   if w.initial then []
   else (cx.targets C (cx.value w.receiver)).flatMap fun t =>
-    (w.parts (t.bind fun i => (cx.F.sites[i]?).map (·.kind))).map fun (k, key, δ) => ⟨t, k, key, δ⟩
+    (w.parts (t.bind fun i => (cx.sites[i]?).map (·.kind))).map fun (k, key, δ) => ⟨t, k, key, δ⟩
 
 def Ctx.charges (cx : Ctx) (boundary : Std.HashSet Nat) (C : Nat) (w : Write) : List Charge :=
   if cx.freshAt boundary w.module w.place w.receiver then [] else cx.chargesOf C w
@@ -907,13 +927,12 @@ def protocolDiags (cx : Ctx) (boundary : Std.HashSet Nat) : List Diag := Id.run 
     for e in p.entries do
       for t in e.site do
         if (cx.mark t p.component).isNone then
-          out := ⟨p.component, "Ψ", (cx.F.sites[t]?.map (·.module)).getD "", (cx.F.sites[t]?.map (·.pos)).getD (0, 0),
+          out := ⟨p.component, "Ψ", (cx.sites[t]?.map (·.module)).getD "", (cx.sites[t]?.map (·.pos)).getD (0, 0),
             s!"the protocol names the site {cx.siteName t}, of no code of the component"⟩ :: out
   for w in cx.writes do
     for C in cx.chain w.component do
-      let entries := cx.proposed C
       for ch in cx.charges boundary C w do
-        if !covers entries ch then
+        if !covers (cx.entriesBySite.getD (C, ch.site) []) ch then
           out := ⟨C, "Ψ", w.module, w.place,
             s!"the protocol omits the change {changeName ch.change} of {cx.partName ch.site ch.kind ch.key}"⟩ :: out
   return out
@@ -941,7 +960,7 @@ def Ctx.supportOf (cx : Ctx) (C : Nat) (g : Guarantee) : Charge → Bool :=
   match g.facts.mapM factPaths |>.map List.flatten with
   | some paths =>
     let firsts := paths.filterMap (·.2.head?)
-    let roots := (List.range cx.F.sites.length).filter fun t => ofC t && match cx.F.sites[t]? with
+    let roots := (List.range cx.sites.size).filter fun t => ofC t && match cx.sites[t]? with
       | some s => s.kind != .array && (s.anyKey || firsts.all s.keys.contains)
       | none => false
     let parts := paths.flatMap fun (kind, path) => Id.run do
@@ -955,7 +974,7 @@ def Ctx.supportOf (cx : Ctx) (C : Nat) (g : Guarantee) : Charge → Bool :=
       return acc
     fun ch => parts.any fun (s, k, key) => s == ch.site && k == ch.kind && (ch.key.isNone || key.isNone || key == ch.key)
   | none =>
-    let reach := (cx.closure (.ofSites ((List.range cx.F.sites.length).filter ofC))).sites
+    let reach := (cx.closure (.ofSites ((List.range cx.sites.size).filter ofC))).sites
     fun ch => ch.site.all reach.contains
 
 /-- The guarantee candidates of `C`: the type invariants of its modules. -/
@@ -1026,7 +1045,7 @@ code outside `C` and a caught value; a parameter of a primitive declared
 type holds no storage, callers passing values of the declared types. -/
 def mayComeBack (cx : Ctx) (C : Nat) : Bool :=
   let fuel := ComponentWire.shapeLimit * (cx.F.types.length + 1)
-  (cx.members C).any (fun m => match cx.F.codes[m]? with
+  (cx.members C).any (fun m => match cx.codes[m]? with
     | some code => !code.arrow || code.params.any fun (_, _, ty) => match ty with
       | some t => !primitiveShape cx.F.types fuel t
       | none => true
@@ -1052,7 +1071,7 @@ possible support of a guarantee candidate of `C` reads** (`Ctx.supportOf`). -/
 def Ctx.supported (cx : Ctx) (C : Nat) (w : Write) (t : Nat) : Bool :=
   (cx.candidates C).any fun g =>
     let supp := cx.supportOf C g
-    (w.parts ((cx.F.sites[t]?).map (·.kind))).any fun (k, key, δ) => supp ⟨some t, k, key, δ⟩
+    (w.parts ((cx.sites[t]?).map (·.kind))).any fun (k, key, δ) => supp ⟨some t, k, key, δ⟩
 
 /-- **The ownership failures** (O): a store into storage that may be
 protected, of a value whose reachable storage is not all of the
@@ -1131,11 +1150,16 @@ other code, and, where a value of `T` may enter `C` from outside, every
 exposed and released site of `C` and outside storage (`Ctx.targets`'s
 reading of an incoming value). -/
 def Ctx.frameParts (cx : Ctx) (C : Nat) (T : Tokens) : List (Option Nat) :=
-  let lent (t : Nat) : Bool := match cx.mark t C with
-    | some .exposed | some .released => true
-    | _ => false
   let own := T.sites.map fun t => if (cx.mark t C).isSome then some t else none
-  (if T.components.contains C then own ++ ((List.range cx.F.sites.length).filter lent).map some ++ [none] else own).eraseDups
+  let parts := if T.components.contains C then own ++ ((cx.lentSites[C]?).getD []).map some ++ [none] else own
+  Id.run do
+    let mut seen : Std.HashSet (Option Nat) := {}
+    let mut result := #[]
+    for part in parts do
+      if !seen.contains part then
+        seen := seen.insert part
+        result := result.push part
+    return result.toList
 
 /-- **Whether a region of the storage `T` is protected for `C`**: no value
 of it enters `C` from outside at a writable position, and every possible
@@ -1164,23 +1188,18 @@ def Ctx.partMayOut (cx : Ctx) (C : Nat) (prot : Bool) : Option Nat → Bool
     | _ => !prot
   | none => !prot
 
-/-- **The client obligation's change at a part**: `keep` where no exported
-type states `@clients`, else `any`, a stated frame being read at no part. -/
-def Ctx.clientChange (cx : Ctx) : Footprints.Change :=
-  if cx.F.clients.any (·.stated) then .any else .keep
-
 /-- **`Ψ_C ⊔ Θ_C` at the parts of a site of one kind**, at the key `key`
 (`none` every key): the join of the proposed entries naming the part, and
 the client obligation's change. -/
 def Ctx.boundAt (cx : Ctx) (C : Nat) (site : Option Nat) (kind : PartKind) (key : Option String) : Footprints.Change :=
-  (cx.proposed C).foldl (fun δ e =>
-    if e.site == site && e.kind == kind && (e.key.isNone || key.isNone || e.key == key) then δ.max e.change else δ)
+  (cx.entriesBySite.getD (C, site) []).foldl (fun δ e =>
+    if e.kind == kind && (e.key.isNone || key.isNone || e.key == key) then δ.max e.change else δ)
     cx.clientChange
 
 def Ctx.rootName (cx : Ctx) : FrameRoot → String
   | .path v fields =>
     let at_ := String.join (fields.map (s!".{·}"))
-    match cx.F.values[v]? with
+    match cx.values[v]? with
     | some x => s!"the value at {x.module} {x.pos.1}-{x.pos.2}{if fields.isEmpty then "" else s!", at {at_.drop 1}"}"
     | none => s!"value {v}{at_}"
   | .site t => s!"the site {cx.siteName t}"
@@ -1192,7 +1211,8 @@ def Ctx.frameFailures (cx : Ctx) (C : Nat) (f : ProposedFrame) : List String :=
   f.entries.flatMap fun e =>
     let T := cx.rootTokens e.root
     let what := s!"the {partKindName e.kind} of {cx.rootName e.root}"
-    let omitted := (cx.frameParts C T).filter (!e.parts.contains ·) |>.map fun t =>
+    let stated := Std.HashSet.ofList e.parts
+    let omitted := (cx.frameParts C T).filter (!stated.contains ·) |>.map fun t =>
       s!"the frame omits the possible part {cx.partName t e.kind e.key} of {what}"
     let falseProt := if e.prot && !cx.frameProtected C T then
       [s!"the frame reads {what} as protected, which a value may reach writable or which may be storage no crossing in protected"]
@@ -1216,7 +1236,7 @@ def Ctx.frameText (cx : Ctx) (C : Nat) (f : ProposedFrame) : List String :=
 /-- **Each frame of `C`**: at each call of code outside `C` inside `C`'s
 code that a frame names, its refusal or its entries, at the call's place. -/
 def Ctx.frames (cx : Ctx) (C : Nat) : List String :=
-  cx.F.frames.flatMap fun f => match cx.F.calls[f.call]? with
+  cx.F.frames.flatMap fun f => match cx.calls[f.call]? with
     | some c =>
       if (cx.outsideOf c).contains C && (cx.chain c.component).contains C then
         let at_ := s!"{c.module} {c.place.1}-{c.place.2}"
@@ -1230,7 +1250,7 @@ def Ctx.frames (cx : Ctx) (C : Nat) : List String :=
 the call's innermost component. -/
 def frameDiags (cx : Ctx) : List Diag :=
   cx.F.frames.filterMap fun f => do
-    let c ← cx.F.calls[f.call]?
+    let c ← cx.calls[f.call]?
     if (cx.outsideOf c).any (cx.chain c.component).contains then none
     else some ⟨c.component, "frame", c.module, c.place, "a frame names a call that runs no code outside the component"⟩
 

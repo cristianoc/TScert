@@ -1413,23 +1413,37 @@ def canonicalSymbol (symbols : Array Json) (what : String) (v : Json) : Except S
   | .str t => .error s!"{what} '{t}' is written as a string: an identity is a natural number below 2^41"
   | _ => .ok v
 
-/-- A JSON value with each symbol identity (a symbol key's field `symbol`, a
-symbol literal's `sym`'s `id`) at its canonical number (`canonicalSymbol`),
-outside the fields named in `skip`. -/
-partial def renumberSymbols (symbols : Array Json) (skip : List String := []) : Json → Except String Json
-  | .arr xs => .arr <$> xs.mapM (renumberSymbols symbols)
+/-- Validate every symbol as the document is traversed. Return a replacement
+only for subtrees containing a symbol field, so untouched objects and arrays
+can be shared with the input. -/
+private partial def symbolChanges (symbols : Array Json) (skip : List String := []) :
+    Json → Except String (Option Json)
+  | .arr xs => do
+    let mut changed := none
+    for h : i in [:xs.size] do
+      if let some v ← symbolChanges symbols [] xs[i] then
+        changed := some ((changed.getD xs).set! i v)
+    return changed.map Json.arr
   | .obj kvs => do
-    let kvs' ← kvs.toArray.toList.mapM fun (k, v) => do
-      if skip.contains k then return (k, v)
-      match k, v with
-      | "symbol", .num _ | "symbol", .str _ => return (k, ← canonicalSymbol symbols "a symbol key" v)
-      | "sym", .obj inner =>
-        match inner.get? "id" with
-        | some i => return (k, (← renumberSymbols symbols [] v).setObjVal! "id" (← canonicalSymbol symbols "a symbol literal" i))
-        | none => return (k, ← renumberSymbols symbols [] v)
-      | _, _ => return (k, ← renumberSymbols symbols [] v)
-    return Json.mkObj kvs'
-  | j => .ok j
+    let mut changed := none
+    for (k, v) in kvs do
+      if skip.contains k then continue
+      let next ← match k, v with
+        | "symbol", .num _ | "symbol", .str _ => some <$> canonicalSymbol symbols "a symbol key" v
+        | "sym", .obj inner => do
+          let nested ← symbolChanges symbols [] v
+          if let some i := inner.get? "id" then
+            return some ((nested.getD v).setObjVal! "id" (← canonicalSymbol symbols "a symbol literal" i))
+          return nested
+        | _, _ => symbolChanges symbols [] v
+      if let some v' := next then changed := some ((changed.getD kvs).insert k v')
+    return changed.map Json.obj
+  | _ => return none
+
+/-- A JSON value with each symbol identity at its canonical number, outside
+the fields named in `skip`. -/
+def renumberSymbols (symbols : Array Json) (skip : List String := []) (j : Json) : Except String Json := do
+  return (← symbolChanges symbols skip j).getD j
 
 /-- **A document at canonical symbol numbers**: its own symbol identities
 renumbered by its own `symbols`, and each module document it carries

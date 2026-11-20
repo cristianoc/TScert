@@ -102,7 +102,7 @@ def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body =>
         | some (annot, _) => part annot
         | none => pure (some [← lower (SourceTypes.use .source)])
       let some recv := recv | continue
-      -- (`TSCERT_FORCE=schemes`, and `literals`: keeping both, bounding its throws, the
+      -- (`--force-proposals schemes`, and `literals`: keeping both, bounding its throws, the
       -- adversarial proposal)
       let effect := if force.contains "schemes" || force.contains "literals" then
           CallEffects.Effect.ofClosed ⟨.keep, .keep, .keep⟩ true else
@@ -349,6 +349,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         | some vs => vs.map fun (n, A) => (n, .ok A)
         | none => atEntry
       | _ => atEntry
+    let facts := headClaims g node
     let row : SourceClaims.PointData Tree := {
       -- Each site's type as the walk records it; at a span sites of several
       -- statements share, as its own statement's walk records it.
@@ -360,9 +361,9 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
         | some (_, []), _ => []
         | some (_, cs), _ | none, some cs => [(node.source.1, cs)]
         | none, none => []
-      entryFacts := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.claim)
-      entrySpinesApart := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.spinesClaim)
-      entryEvery := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim) }
+      entryFacts := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.claim)
+      entrySpinesApart := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.spinesClaim)
+      entryEvery := facts.map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim) }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
@@ -1149,29 +1150,50 @@ def FilePlans.groupProposals (f : FilePlans) (i : Nat) : List (String × Option 
 def fragmentPlansOfInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
     (tables : List (String × RowTable)) (front : Option (Json × Front) := none)
-    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) : Except String FilePlans := do
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {})
+    (scope : Unit → Except String ImportScope := fun _ => ImportScope.of ast)
+    (code : Thunk (Except String ImporterCode) := Thunk.mk fun _ => decodeImporter ast) : Except String FilePlans := do
   if established.isEmpty then
     return ← fragmentPlansCore ast fileKey budget names standIns force (front := front) (known := known) (memo := memo)
-  let sc ← ImportScope.of ast
-  let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
+  let sc ← scope ()
+  let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name) code
   let rs := readsOf reads established
   let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2)) (front := front)
     (known := known) (memo := memo)
   return f.refuseRows reads established tables
+
+/-- The module scope and unbound import reads depend only on the fragment.
+A file worker shares this value across the groups it checks. -/
+structure PlanImports where
+  scope : ImportScope
+  code : Thunk (Except String ImporterCode)
+  unbound : List (String × List (String × String))
+
+def planImports (ast : Json) : Except String PlanImports := do
+  let sc ← ImportScope.of ast
+  return ⟨sc, Thunk.mk fun _ => decodeImporter ast, unboundImports sc ast⟩
 
 /-- Importer planning from closed interfaces (`fragmentPlansOfInterfaces`),
 each unit reading an import whose module's document leaves a name its read
 reaches unbound refused (`unboundImports`): the fragment's module documents
 are the interfaces' (`decodeInterfaces` refuses another), so a module's
 missing function is told from an entry not established on both paths. -/
-def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+def fragmentPlansWithImports (imports : Except String PlanImports) (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
     (tables : List (String × RowTable) := []) (front : Option (Json × Front) := none)
     (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
     Except String FilePlans := do
-  let unbound := unboundImports (← ImportScope.of ast) ast
-  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables front known memo).refuseUnbound
-    unbound
+  let ctx ← imports
+  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables front known memo
+    (fun _ => .ok ctx.scope) ctx.code).refuseUnbound ctx.unbound
+
+/-- The importer planned with the scope and unbound reads of this fragment. -/
+def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
+    (tables : List (String × RowTable) := []) (front : Option (Json × Front) := none)
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
+    Except String FilePlans :=
+  fragmentPlansWithImports (planImports ast) ast fileKey budget names standIns force established tables front known memo
 
 /-- Direct invocation uses the same canonical component computation as
 stored interfaces. Its result is local to this invocation. -/

@@ -15,6 +15,9 @@ def command (start : Nat) (args : List String) : IO UInt32 := do
       | some n => pure (({ rounds := n } : Verification.PositiveCertificates.SearchBudget), rest)
       | none => IO.eprintln "usage: subtype rounds must be a natural number"; return 2
     | _ => pure ({}, args)
+  let (force, args) := match args with
+    | "--force-proposals" :: controls :: rest => (controls.splitOn "," |>.filter (!·.isEmpty), rest)
+    | _ => ([], args)
   match args with
   | ["--module-interface-plan", astPath, selection] =>
       Verification.RequestCli.interfacePlanFile astPath selection
@@ -25,12 +28,12 @@ def command (start : Nat) (args : List String) : IO UInt32 := do
       | "8", some fuel =>
         -- Quiet but where its counts are asked (`TSCERT_COUNTS`, dev/perf-gate.mts).
         let quiet := (← IO.getEnv "TSCERT_COUNTS").isNone
-        Verification.RequestCli.verifyUnitsFile ast key fuel (if names.isEmpty then none else some names) budget interfaces quiet
+        Verification.RequestCli.verifyUnitsFile ast key fuel (if names.isEmpty then none else some names) budget interfaces quiet force
       | _, _ => usage
   | ["--file-worker", mode, ast, interfaces, key, depth, names] =>
       match mode, depth.toNat? with
       | "8", some fuel =>
-        Verification.RequestCli.fileWorker ast key fuel (if names.isEmpty then none else some names) budget interfaces start
+        Verification.RequestCli.fileWorker ast key fuel (if names.isEmpty then none else some names) budget interfaces start force
       | _, _ => usage
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath
@@ -47,6 +50,7 @@ where
     IO.eprintln "       verifier --lower-control-flow <ast.json>"
     IO.eprintln "       verifier --export rules arithmetic   (the arithmetic rules as Markdown)"
     IO.eprintln "       (any mode may be preceded by --subtype-rounds <rounds>; <names> selects units by a member's name, comma-separated)"
+    IO.eprintln "       (control invocations may add --force-proposals <names> after the budget)"
     return 2
 
 def main (args : List String) : IO UInt32 := do

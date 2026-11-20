@@ -131,34 +131,6 @@ private def documentReads (fragmentModules : List Fragment.ModuleAst) (code : Mo
   let names := out.map (·.localName)
   return out.filter fun r => names.count r.localName == 1
 
-/-- The names the code a set of a document's functions reaches mentions:
-those functions', the functions they mention, transitively, and the
-top-level code's where any of them mentions a name it binds (the
-initialization unit, which the front's edges reach the same way,
-`Front.edgesOf`), or where `init` is among the names. With `walked`, a
-function reached but not among `start` adds its body's names only where
-`walked` holds of it. -/
-private def reachMentions (functions : List Fragment.Fn) (init : List Fragment.Stmt) (start : List String)
-    (walked : Fragment.Fn → Bool := fun _ => true) : List String := Id.run do
-  let names := functions.map (·.name)
-  let owned := init.flatMap Fragment.Stmt.bound
-  let initNames := Fragment.stmtsFreeNames init
-  let mut set := start.eraseDups
-  let mut withInit := start.contains "init"
-  let mut out : List String := if withInit then initNames else []
-  for _ in [0:functions.length + 2] do
-    let bodies := (functions.filter fun f => set.contains f.name && (start.contains f.name || walked f)).flatMap
-      fun f => Fragment.stmtsFreeNames f.body
-    let seen := (out ++ bodies).eraseDups
-    let reachesInit := withInit || seen.any owned.contains
-    let seen := if reachesInit then (seen ++ initNames).eraseDups else seen
-    let next := (set ++ seen.filter names.contains).eraseDups
-    if next.length == set.length && reachesInit == withInit then return seen
-    set := next
-    withInit := reachesInit
-    out := seen
-  return out
-
 /-- The modules a fragment lists, and their code decoded where first asked
 (`ModuleCode`): what an importer's reads resolve against (`importerReads`,
 `moduleReads`). -/
@@ -170,9 +142,51 @@ def ImportScope.of (ast : Json) : Except String ImportScope := do
   let modules ← (← jArr ast "modules").mapM Fragment.decodeModule
   return ⟨modules, ModuleCode.of modules⟩
 
+/-- The importer's decoded source is shared by the groups of a file worker.
+Each body's free names are forced only when the selection reaches it. -/
+structure ImporterCode where
+  functions : List (String × Bool × Thunk (List String))
+  owned : List String
+  initNames : Thunk (List String)
+
+def ImporterCode.of (functions : List Fragment.Fn) (init : List Fragment.Stmt) : ImporterCode :=
+  ⟨functions.map (fun f => (f.name, f.async, Thunk.mk fun _ => Fragment.stmtsFreeNames f.body)),
+    init.flatMap Fragment.Stmt.bound, Thunk.mk fun _ => Fragment.stmtsFreeNames init⟩
+
+def decodeImporter (ast : Json) : Except String ImporterCode := do
+  let functions ← (← jArr ast "functions").mapM fun j => do return (← Fragment.decodeFn j).1
+  return ImporterCode.of functions (← Fragment.decodeInit ast)
+
+/-- Reachable mentions, including the initialization once an owned binding
+is read. Several declarations can share a name. A function whose name is in `kept`
+contributes its body only when requested directly. -/
+def ImporterCode.mentions (code : ImporterCode) (start : Option (List String)) (kept : Std.HashSet String) :
+    Std.HashSet String := Id.run do
+  let roots := Std.HashSet.ofList (start.getD (code.functions.map (·.1)))
+  let owned := Std.HashSet.ofList code.owned
+  let mut active := roots
+  let mut pending := active
+  let mut mentions : Std.HashSet String := {}
+  let mut init := roots.contains "init"
+  let mut addedInit := false
+  for _ in [0:code.functions.length + 2] do
+    if init && !addedInit then
+      mentions := code.initNames.get.foldl (·.insert ·) mentions
+      addedInit := true
+    for (name, _, body) in code.functions do
+      if pending.contains name && (roots.contains name || !kept.contains name) then
+        mentions := body.get.foldl (·.insert ·) mentions
+    let next := code.functions.foldl (fun set f => if mentions.contains f.1 then set.insert f.1 else set) active
+    let reachesInit := init || mentions.any owned.contains
+    if next.size == active.size && reachesInit == init then break
+    pending := next.filter (!active.contains ·)
+    active := next
+    init := reachesInit
+  return mentions
+
 /-- **What the importer's units read of the modules** (mode 8): the reads of
 the importer's document the code `start` names reaches mentions (every
-function's where none is given, `reachMentions`). The importer's reads of
+function's where none is given, `ImporterCode.mentions`). The importer's reads of
 the names `given` are left out (a stand-in states them). Of the importer's
 functions reached, those whose footprint the pass's steps propose
 (`PassProposals.proposals`) add the names their bodies mention: a function
@@ -180,24 +194,23 @@ the stand-ins name (`fixed`), or an async one (its footprint `top` by the
 language), is read at that footprint, its body neither run nor checked for
 the selected units. -/
 def importerReads (sc : ImportScope) (ast : Json) (start : Option (List String)) (given : List String := [])
-    (fixed : List String := []) : Except String (List FragmentRead) := do
+    (fixed : List String := []) (code : Thunk (Except String ImporterCode) := Thunk.mk fun _ => decodeImporter ast) :
+    Except String (List FragmentRead) := do
   if sc.modules.isEmpty then return []
-  let decoded ← (← jArr ast "functions").mapM Fragment.decodeFn
-  let functions := decoded.map (·.1)
-  let kept := (decoded.filter fun (f, _) => f.async || fixed.contains f.name).map (·.1.name)
-  let init ← Fragment.decodeInit ast
-  let own := reachMentions functions init (start.getD (functions.map (·.name))) (!kept.contains ·.name)
+  let importer ← code.get
+  let kept := Std.HashSet.ofList (fixed ++ (importer.functions.filter (·.2.1)).map (·.1))
+  let own := importer.mentions start kept
   return documentReads sc.modules sc.code (← jField ast "declarations") fun n => own.contains n && !given.contains n
 
 /-- **A module's own reads** for the functions `names` of it an importer
 reads: its imports the code those functions reach mentions, its top-level
-code's where they read a name it binds (`reachMentions`), each resolved as
+code's where they read a name it binds (`ImporterCode.mentions`), each resolved as
 the importer's are (`documentReads`). -/
 def moduleReads (sc : ImportScope) (m : Fragment.ModuleAst) (names : List String) : Except String (List FragmentRead) := do
   let decoded ← match sc.code[m.location]? with
     | some decoded => decoded.get
     | none => throw s!"a module the fragment does not list: {m.location}"
-  let more := reachMentions decoded.functions decoded.init names
+  let more := (ImporterCode.of decoded.functions decoded.init).mentions (some names) {}
   return documentReads sc.modules sc.code (← jField m.document "declarations") more.contains
 
 /-- A module whose units an importer reads (`fragmentPlansWithModules`): the

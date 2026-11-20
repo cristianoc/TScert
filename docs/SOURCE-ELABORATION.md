@@ -70,7 +70,7 @@ following, in one change:
    construct, the reason, the owning section and the cases.
 6. **Cases and controls.** Positive and negative pipeline cases
    (`pipeline/cases.mts`), and controls (`tests/single-pass-controls.mts`)
-   forcing a wrong proposal of the walk (`TSCERT_FORCE`) or forging the
+   forcing a wrong proposal of the walk (`--force-proposals`) or forging the
    Fragment, for which program point a type attaches to, which no proof
    covers.
 7. **A Node counterexample.** Each negative case whose refusal guards
@@ -2409,7 +2409,7 @@ This admits mapped records at a union's element type
 input elements can produce holes, so its sparse result fails a readable
 view excluding `undefined` (`invalid-spread-map-records`). A literal
 proposed at its spine contract whatever its operands' elements is refused at
-the literal (`TSCERT_FORCE=array-spreads` over `invalid-array-literal-spread`
+the literal (`--force-proposals array-spreads` over `invalid-array-literal-spread`
 and `invalid-dense-spread-element`, `tests/single-pass-controls.mts`).
 
 ## Patterns
@@ -3073,7 +3073,7 @@ the checked accesses; no type can omit a check, replace the cell by a
 value, or make an initialization an unchecked write
 (`early-bindings`, `invalid-early-binding-stale`, run under Node; in
 `tests/single-pass-controls.mts`, the binding proposed at its initializer's
-type, `TSCERT_FORCE=early` over `early-bindings`, is refused). The stated
+type, `--force-proposals early` over `early-bindings`, is refused). The stated
 type $`T`$ is the annotation; for a `let` of the source whose initializer
 the source writes as a literal naming nothing (a Boolean, number, string
 or bigint literal, a template with no substitution, a number or bigint
@@ -3084,7 +3084,7 @@ binding's annotation (`literalDeclaredType`; `early-let-literal`, run
 under Node, a `let` nothing assigns included; a later write at another
 type is refused, `invalid-early-let-literal-write`, run under Node; the
 initialized cell proposed at its initializer's type,
-`TSCERT_FORCE=early-contracts` over `early-let-literal`, is refused); or a function literal's
+`--force-proposals early-contracts` over `early-let-literal`, is refused); or a function literal's
 parameter and result annotations. A `const` enum member's read, which the
 fragment holds as its value, is no literal of the source: its declared type
 is the enum (`invalid-early-let-enum-member`). An early binding with none
@@ -3289,7 +3289,7 @@ logical assignment of a cell, `blocker-module-assignment`,
 initialization reads a cell of a module not yet evaluated throws at the
 checked access, `certified-cell-cycle-value-import`, run under Node; in
 `tests/single-pass-controls.mts`, a cell's contents kept across a write
-or a throw, `TSCERT_FORCE=cells` over `module-cells-written-in-turn` and
+or a throw, `--force-proposals cells` over `module-cells-written-in-turn` and
 `module-cache-keeps-lengths`, are refused).
 
 ### Module functions
@@ -3551,7 +3551,7 @@ extending another is within its base where its overriding members are within
 the base's (`closure-offer-extends`), and a compiler-API `Expression`, whose
 residual arm holds a brand beside the members of `Node`'s, is within `Node`
 (`compiler-api-closure-offer-node-list`). The pass checks each offered row;
-an offer proposed whatever its parameters (`TSCERT_FORCE=offers` over
+an offer proposed whatever its parameters (`--force-proposals offers` over
 `invalid-closure-offer-narrower-mutation`, `tests/single-pass-controls.mts`)
 is refused. An element whose method
 requires a stronger receiver or takes a narrower
@@ -3830,7 +3830,7 @@ The acceptance theorem includes effect checking (`FootprintClause` of
 `PassUnit.RequestSafe`). Pipeline cases exercise qualified callbacks passed
 or returned as values and ordinary-call fallbacks; controls of
 `tests/single-pass-controls.mts` force heap-preserving proposals on bodies
-that mutate storage (`TSCERT_FORCE=callees`, `schemes`, `callbacks`,
+that mutate storage (`--force-proposals callees`, `schemes`, `callbacks`,
 `results`, `imports`), each refused.
 
 ### Definition and application rules
@@ -4062,7 +4062,7 @@ written footprint and throw bound, its steps proposing its returned
 function's footprint. A wrong effect fails at the first node that does not preserve
 the heap (`declaration-preserving-callback`,
 `declaration-field-write-callback`, `invalid-declaration-pop-callback`; every
-declaration proposed heap-preserving, `TSCERT_FORCE=callees`, is refused for
+declaration proposed heap-preserving, `--force-proposals callees`, is refused for
 `invalid-declaration-pop-callback`).
 
 ### Returned closures
@@ -4095,7 +4095,7 @@ returned closure then keeps what a call at $`\Phi_r`$ keeps
 (`returned-closure-footprint`). A closure changing a spine gets no
 footprint, and a read after its call is refused
 (`invalid-returned-closure-footprint`, run under Node); $`\Phi_r`$ proposed
-at the empty footprint (`TSCERT_FORCE=results`) is refused for
+at the empty footprint (`--force-proposals results`) is refused for
 `invalid-returned-closure-footprint`.
 
 ### Stated effects

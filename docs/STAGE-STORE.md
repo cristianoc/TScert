@@ -865,7 +865,7 @@ the operation's result, executed or replayed.
   verifier is: its identity is its executable's digest and linked
   libraries, and it reads, beyond the verifier's I/O, only the variable
   `TSCERT_TEST_MUTATIONS`, which its invocation's environment fixes. A
-  mutation selection, like a forced proposal (`TSCERT_FORCE`), is therefore
+  mutation selection, like a forced proposal (`--force-proposals`), is therefore
   part of the key, and a rebuild giving the same bytes replays its
   entries.
 - *Protocol.* The exit protocol that decides whether an exit is a finished

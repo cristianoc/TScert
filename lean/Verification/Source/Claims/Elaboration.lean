@@ -521,19 +521,21 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
   let flowGraphs := graph :: nested
   let prologues ← prologueSites (unitSource.getD .null)
   checkPointSites flowGraphs prologues c.entries c.expressions c.contracts
-  let sites := functionSites f
-  let closures := (allFunctionSites f).2.2
-  for a in c.arrows.getD [] do
-    if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
-    for row in a.rows do
-      checkPointSites flowGraphs prologues row.entries row.expressions row.contracts
-      -- An expression body's entry is its prologue's, at the body's start.
-      if !row.entries.all (fun e => (sites.1.contains e.start || prologues.any (·.1.1 == e.start)) &&
-            a.pos.1 ≤ e.start && e.start < a.pos.2) ||
-          !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
-            a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
-          !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
-        throw "per-arrow claim site is outside its source closure"
+  let arrows := c.arrows.getD []
+  if !arrows.isEmpty then
+    let sites := allFunctionSites f
+    let closures := sites.2.2
+    for a in arrows do
+      if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
+      for row in a.rows do
+        checkPointSites flowGraphs prologues row.entries row.expressions row.contracts
+        -- An expression body's entry is its prologue's, at the body's start.
+        if !row.entries.all (fun e => (sites.1.contains e.start || prologues.any (·.1.1 == e.start)) &&
+              a.pos.1 ≤ e.start && e.start < a.pos.2) ||
+            !row.expressions.all (fun e => sites.2.1.contains e.pos && a.pos != e.pos &&
+              a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
+            !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
+          throw "per-arrow claim site is outside its source closure"
   -- The unit's source tree, and the generic closures it creates, each
   -- graph code at its scheme row.
   let closures := match unitSource with
@@ -628,12 +630,16 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
     -- A generic module function this unit calls: its slot holds the instances
     -- the calls name, and those reads and calls are claimed at them. The
     -- unit's scheme claims are scheme rows by now (`Scheme.closureRows`).
+    -- Every generic consults the same final body, including any binder
+    -- substitutions above. Traverse it once for each kind of lookup used.
+    let calls := Thunk.mk fun _ => Std.HashSet.ofList ((f.body.flatMap Fragment.Stmt.callees).map (·.2.2.1))
+    let reads := Thunk.mk fun _ => Std.HashSet.ofList (Fragment.stmtsFreeNames f.body)
     for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
       let prepared : Except String (Document EquationStore.State Tree × List (SourceElaboration.ModuleValue Tree) × Function Tree) := do
         let mut d := d
         let mut module := module
         let mut c := c
-        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
+        if calls.get.contains g.name then
           match Scheme.moduleInstances d.types g f.body c sourceScheme
             (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
           | .ok (T, slot, reads, calls) =>
@@ -654,7 +660,7 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
           | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
         -- A generic function or class the unit reads only as a value: its slot
         -- is its scheme.
-        else if (Fragment.stmtsFreeNames f.body).contains g.name then
+        else if reads.get.contains g.name then
           match Scheme.moduleScheme d.types g with
           | .ok (T, slot) =>
             d := { d with types := T }

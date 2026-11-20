@@ -19,7 +19,7 @@ it runs replays from the stage store. They are
 `tests/single-pass-controls.mts`, run by `test-all.sh` as the suite
 "Single-pass controls". A control checks its case through the pipeline,
 then runs the pass over the case's fragment under a forced proposal
-(`TSCERT_FORCE`), over a forged fragment, or with a mutation verifier of the
+(`--force-proposals`), over a forged fragment, or with a mutation verifier of the
 pass (`tests/single-pass-mutations.mts`). The forced proposals are one list,
 `tests/single-pass-control-inputs.mts`: each entry names a case, a unit and
 a force; a positive entry's unit is accepted unforced, with every unit it
@@ -40,7 +40,7 @@ Measured: `node tests/single-pass-controls.mts`, branch engine-cleanup,
 | Loop-head facts | The `head-*` forces, each stating a false fact among a loop head's proposals, refused at an edge into the head ([loop heads' proposals](SINGLE-PASS.md#loop-heads-proposals)). | A unit whose loop head needs a fact the walk does not propose is refused: a loss of coverage. |
 | The start's entry | `start-facts` (returntype-guard `isName@125`); the mutation `sp-entry` accepts it, so this control catches a pass without its entry check. | none |
 | The pass's checks (mutations) | `sp-entry` caught by the `start-facts` control; `sp-footprint` caught by three negative cases. | `sp-edge-evidence` flips no unit of the cases probed; the edge evidence is the pass's own ([below](#the-passs-own-evidence)), so no force of it is kept. `checkedEdge`, `checkedStep` and `returnCheck` have no mutation: their results carry the pass's answers, and a mutation must build that structure. |
-| Module interfaces and the stage store | A module's document leaving out a function an import reaches (the imported function, or one its code calls): each unit reading the import refused at its read, `unbound name <name> in <module>, read through the import '<local>'`, on the interface path and the one-process path; a forged interface row refused by the store-map check; a module's store stating no built-ins; rows of another signature; a forged stored interface recomputed; an interface stale for an edited module refused; forced and selected requests keyed apart; own-file and reordered requests reach the same keys; an importer's forced execution prints one payload; a timed-out or failed component unpublished; cold and warm runs agree, the interface stages replay warm, an importer's edit executes its stages and replays the module's interface, to a cold run's outcome; the pass's exit without a complete refusal, injected into the verifier `VERIFIER` names, a tool failure. | none |
+| Module interfaces and the stage store | A module's document leaving out a function an import reaches (the imported function, or one its code calls): each unit reading the import refused at its read, `unbound name <name> in <module>, read through the import '<local>'`, on the interface path and the one-process path; a forged interface row refused by the store-map check; a module's store stating no built-ins; rows of another signature; a forged stored interface recomputed; an interface stale for an edited module refused; forced and selected requests keyed apart; own-file and reordered requests reach the same keys; an importer's forced execution prints one payload; a timed-out or failed component unpublished; cold and warm runs agree, the interface stages replay warm, an importer's edit executes its stages and replays the module's interface, to a cold run's outcome; the pass's exit without a complete refusal, injected with a test-only verifier stand-in, a tool failure. | none |
 | Native and host contracts | Every negative case `tests/node-runs.mts` runs under Node refused, but one reviewed acceptance (invalid-native-promise-invariant-result `widen@89`, a valid instance the pass checks: `make<unknown>` at the expected result `Box<unknown>`); the stand-in host's reading rules, a declared-optional method, the string-tagged family, the compiler enums through an audited and a mismatched installation, nested installations. | `exhausted` at a written obligation is reported `unsupported` (`pipeline/verify-source.mts`). |
 | The lowering | The malformed bodies above; the front's refusal of a form it does not handle is a refusal (two `jsDoc` forms). | 996 refusals of the cases name a node and a Lean term, no span (`expression at node N`, measured 2026-11-12). |
 
@@ -67,7 +67,7 @@ accepts for a unit only through the identities the unit reads:
 
 ## Forced proposals
 
-A force (`TSCERT_FORCE=<force>`, comma-separated) makes the walk or the
+A force (`--force-proposals <force>`, comma-separated) makes the walk or the
 loop-head inference state something false. The pass checks every proposal
 at its node, so each forced unit is refused. Each force is described beside
 the rule it contradicts, in [the walk's rules](SINGLE-PASS-FRONT.md) or

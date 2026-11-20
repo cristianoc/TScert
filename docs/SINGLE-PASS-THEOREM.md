@@ -179,7 +179,7 @@ run's plans (`passGroupMode8_safe`).
 $`f = \mathrm{preparedMode8}(\mathit{force}, \mathit{givenLines}, \mathit{infer}, f_0)`$, the
 plans with the given head facts (with $`\mathit{infer}`$, beside the
 proposals inference recorded), and the false start fact where
-`TSCERT_FORCE` names `start-facts`:
+`--force-proposals` names `start-facts`:
 
 ```math
 \begin{aligned}
@@ -443,11 +443,9 @@ runs, the summaries' and obligations' checks, the outcome), and
   `notHandled`) only refuse.
 
 `passGroupChecks` (`passGroupChecks_of_sound passMember_sound`) is H3.
-With an observation asked (`TSCERT_OBSERVE`), a refusal at an observed
-node is replaced by the outcome of an observation rerun only where that
-outcome is no acceptance, so an accepted outcome is the main run's own; the
-location of a refusal's text (`TSCERT_PASS_REFUSALS`) changes the text
-alone.
+The command takes its verdict from the ordinary run with located refusals.
+An observation requested through `TSCERT_OBSERVE` or `TSCERT_PASS_REFUSALS`
+is written to standard error by a separate run.
 
 ## 4. Dependencies and linking
 

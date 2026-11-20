@@ -80,7 +80,7 @@ export function passMutationVerifier(dir: string = runDirectory("single-pass-mut
     const c = join(dir, `${module.replaceAll("/", "-")}.c`), o = c + ".o";
     writeFileSync(c, text.replace("#include <lean/lean.h>", "#include <lean/lean.h>\n" + header));
     const compiled = spawnSync(clang, ["-c", c, "-o", o, "-I", join(toolchain, "include"), "--sysroot", toolchain,
-      "-nostdinc", "-isystem", join(toolchain, "include/clang"), "-O1", "-DNDEBUG", "-DLEAN_EXPORTING"],
+      "-nostdinc", "-isystem", join(toolchain, "include/clang"), "-O0", "-DNDEBUG", "-DLEAN_EXPORTING"],
       { cwd: lean, encoding: "utf8", timeout: 600_000 });
     assert.ifError(compiled.error);
     assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);

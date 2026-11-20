@@ -15,7 +15,7 @@ and `RunKeepsSummaries`). Mode 8 plans the file from the interfaces it
 reads (`fragmentPlansFromInterfaces`, its rows and unbound-import checks
 included) or with its modules checked in the invocation
 (`fragmentPlansWithModules`), prepares it (`preparedMode8`: the given head
-facts, the false start fact where `TSCERT_FORCE` names `start-facts`), and
+facts, the false start fact where `--force-proposals` names `start-facts`), and
 prints unit `i` accepted where `passGroup` accepts its group; every member
 of that group is safe. Every other argument of the command is free: the
 comparison, node, repetition, observation, given lines, counting and

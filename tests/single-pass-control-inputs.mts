@@ -11,7 +11,7 @@ import type { Invoked } from "../pipeline/stages.mts";
 import { verifierBuild, verifierCall } from "../pipeline/stage-execution.mts";
 import type { Canonical } from "../pipeline/stage-execution.mts";
 
-/** A forced proposal (`TSCERT_FORCE=<force>`): the pass's type computation
+/** A forced proposal (`--force-proposals <force>`): the pass's type computation
  * states something false at the case's unit. A positive one's unit is
  * accepted unforced, with every unit it depends on; every one's unit is
  * refused under its force, at the refusal `at` matches where it states one. */

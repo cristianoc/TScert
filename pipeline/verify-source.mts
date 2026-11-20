@@ -328,8 +328,9 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         throw Error("invalid initialization statement position");
       return [s.pos[0], s.pos[1]];
     });
+    if (!("modules" in parsedData) || !Array.isArray(parsedData.modules)) throw Error("parser omitted modules");
     phase = "proposal";
-    return singlePass(recorder, artifacts, ast, snapshot, subtypeRounds, functions, unitIds, initialization,
+    return singlePass(recorder, artifacts, ast, snapshot, parsedData.modules.length > 0, subtypeRounds, functions, unitIds, initialization,
       (detail) => refusedByTypeScript(detail, refusedErrors), units.select);
   } catch (e) {
     return {
@@ -353,7 +354,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
  * `unsupported`, phase `proposal`, but a direct obligation the front finds
  * not established or exhausted, which is a refused unit's; a stage over its
  * limit is an error. */
-function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, subtypeRounds: number | undefined,
+function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, hasModules: boolean, subtypeRounds: number | undefined,
     functions: string[], unitIds: [string, string][], initialization: [number, number][], named: (detail: string) => string,
     select: string[] | null = null): Outcome {
   // The names a check of one unit selects: each function's, and the
@@ -369,7 +370,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     checked = verifyByUnits(ast, fileKey, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
-    });
+    }, hasModules);
   } catch (error) {
     const message = messageOf(error);
     return { status: "error", artifacts, phase: "check", units: null,

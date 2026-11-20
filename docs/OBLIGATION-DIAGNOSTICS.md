@@ -26,7 +26,7 @@ for a refusal of the unit's own graph, the pass's located text states one
 (`FilePlans.locatedRefusal`); for a refusal carrying a record,
 `verify-source.mts` adds the record's summary
 ([presentation](#presentation)) after it. A line `single pass: refused: …`
-follows, the pass's own text (`TSCERT_PASS_REFUSALS=raw` prints it alone).
+follows, the pass's own text (`TSCERT_PASS_REFUSALS=raw` prints it on standard error).
 
 ### A refusal named by TypeScript
 

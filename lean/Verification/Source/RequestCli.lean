@@ -210,9 +210,7 @@ def readJson (path : String) : IO (Except String Json) := do
     | return .error s!"{path}: a text that is not valid UTF-8 is refused"
   if let some what := wireSurrogate text then
     return .error s!"{path}: a string that is not well-formed Unicode, {what}, is refused"
-  if let some what := EffectCodec.duplicateKey? text then
-    return .error s!"{path}: {what}, which a document refuses"
-  return Json.parse text
+  return EffectCodec.parseDocument text
 
 /-- Export the same execution graph constructor used by lowering. -/
 def flowFile (astPath : String) : IO UInt32 := do
@@ -368,6 +366,7 @@ which a later unit reads instead of computing them again, and what their
 proposals established (`memo`). -/
 structure PreparedFile where
   ast : Json
+  imports : Thunk (Except String SourceClaimJson.PlanImports)
   /-- Each component's outcome of the read-only frame's checks
   (`componentOutcome`). -/
   components : Json
@@ -383,7 +382,6 @@ structure PreparedFile where
   force : List String
   givenLines : Std.HashMap String Json
   fuel : Nat
-  located : Bool
   quiet : Bool
   t0 : Nat
   proposals : IO.Ref (Std.HashMap Nat (List (String × Option SourceClaimJson.StandIn)))
@@ -446,7 +444,7 @@ No unit is planned here: each unit's plans are computed in its own check
 (`PreparedFile.plan`). -/
 def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false)
-    (outcome : Bool := true) :
+    (outcome : Bool := true) (force : List String := []) :
     IO (Except String PreparedFile) := do
   let emit := fun (s : String) => if quiet then pure () else IO.eprintln s
   -- Per-kind timings only where asked (`TSCERT_PROFILE`).
@@ -460,15 +458,6 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     Fragment.canonicalSymbols a
   -- No unit is given a line: every loop head's proposal is inferred.
   let givenLines : Std.HashMap String Json := {}
-  -- A pass refusal's text located at the source obligation it names
-  -- (`FilePlans.locatedRefusal`), unless `TSCERT_PASS_REFUSALS=raw`: the
-  -- pass's own text alone.
-  let located := (← IO.getEnv "TSCERT_PASS_REFUSALS") != some "raw"
-  -- Adversarial proposals forced, for the controls (`TSCERT_FORCE`, comma-separated).
-  let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
-  -- (`TSCERT_FORCE=preparation-limit`, a control's: the preparation held
-  -- past any stage's limit)
-  if force.contains "preparation-limit" then IO.sleep 600000
   let interfaces ← readJson interfacesPath
   -- A selection names its roots: the units checked are those and every unit
   -- their verdicts rest on (`selectionClosure`).
@@ -506,9 +495,9 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let memo ← IO.mkRef {}
   let framed ← IO.mkRef none
   return prepared.map fun (est, tables, front, a) =>
-    { ast := a, components := if outcome then componentOutcome a else Json.null, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
+    { ast := a, imports := Thunk.mk fun _ => SourceClaimJson.planImports a, components := if outcome then componentOutcome a else Json.null, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected,
       interfaceDemand := demandedInterfaces front.2 (front.2.selected selected), force,
-      givenLines, fuel, located, quiet, t0, proposals, plans, memo, framed }
+      givenLines, fuel, quiet, t0, proposals, plans, memo, framed }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -522,7 +511,7 @@ established read from `memo` for the same inputs, and prepared
 def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn))
     (memo : SourceClaimJson.ProposalMemo) : Except String SourceClaimJson.FilePlans := do
   let f ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
-    SourceClaimJson.fragmentPlansFromInterfaces p.ast p.fileKey p.budget
+    SourceClaimJson.fragmentPlansWithImports p.imports.get p.ast p.fileKey p.budget
       (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.force p.est p.tables (some p.front) known memo
   let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
     f.withHeadFacts p.givenLines false (inferred := true)
@@ -857,7 +846,7 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
     | .ok (some (f', shown)) =>
       if observing then for line in shown do IO.eprintln line
       let (_, v, _, _) ← IO.lazyPure fun _ => f'.passGroupMode8 true p.force (f'.givenAt p.givenLines) p.fuel
-        (f'.fr.group i) (located := p.located)
+        (f'.fr.group i) (located := true)
       return match v with
         | .error w => (.error s!"{reason}\n{w}", [])
         | .ok deps => (.ok deps, f'.clientComponents (f'.fr.group i))
@@ -884,8 +873,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
-  -- (`TSCERT_FLOW_PROBE=only`: no proposal of the groups below is read)
-  let known ← if (← IO.getEnv "TSCERT_FLOW_PROBE") == some "only" then pure [] else p.known i
+  let known ← p.known i
   -- (a group's plans kept from a later unit's proposals read once, here:
   -- no unit checked after this one reads them, only their proposals)
   let planned ← match (← p.plans.get).get? i with
@@ -902,32 +890,40 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
       let planned ← IO.lazyPure fun _ => p.plan i known memo
       if let .ok f := planned then p.memo.set f.proposed
       pure planned
-  -- The flow the read-only frame's checks read, probed (`TSCERT_FLOW_PROBE`).
-  -- (`TSCERT_FLOW_PROBE=only`: the group's check is not run)
-  let probe ← IO.getEnv "TSCERT_FLOW_PROBE"
-  if probe.isSome then
-    if let .ok f := planned then
-      let c0 ← IO.monoNanosNow
-      let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
-      IO.eprintln s!"probe component: entries {entries}; {mods.length} module functions {mods.map (·.name)}, {(mods.map (·.code.1.length)).sum} nodes, planned in {((← IO.monoNanosNow) - c0) / 1000000} ms"
-      for line in ← f.flowProbe (fr.group i) mods ofC entries do IO.eprintln line
-  -- A member's framed check (`TSCERT_FRAMED`), reported beside the verdict.
-  if (← IO.getEnv "TSCERT_FRAMED").isSome then
-    if let .ok f := planned then
-      let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
-      for j in fr.group i do
-        if let some (.ok (.graph name _ _)) := f.plans[j]? then
-          for line in f.framedCheck p.fuel j (SourceClaimJson.componentFlow ofC mods entries name) do IO.eprintln line
-  let planned := if probe == some "only" then .error "flow probe only" else planned
+  try
+    -- The flow the read-only frame's checks read, probed (`TSCERT_FLOW_PROBE`).
+    let probe ← IO.getEnv "TSCERT_FLOW_PROBE"
+    if probe.isSome then
+      if let .ok f := planned then
+        let c0 ← IO.monoNanosNow
+        let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
+        IO.eprintln s!"probe component: entries {entries}; {mods.length} module functions {mods.map (·.name)}, {(mods.map (·.code.1.length)).sum} nodes, planned in {((← IO.monoNanosNow) - c0) / 1000000} ms"
+        for line in ← f.flowProbe (fr.group i) mods ofC entries do IO.eprintln line
+    -- A member's framed check (`TSCERT_FRAMED`), reported beside the verdict.
+    if (← IO.getEnv "TSCERT_FRAMED").isSome then
+      if let .ok f := planned then
+        let (mods, ofC, entries) ← p.probeComponent f (fr.group i)
+        for j in fr.group i do
+          if let some (.ok (.graph name _ _)) := f.plans[j]? then
+            for line in f.framedCheck p.fuel j (SourceClaimJson.componentFlow ofC mods entries name) do IO.eprintln line
+  catch e => IO.eprintln s!"probe failed: {e}"
   let (lines, verdict, elaboration, contracts, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [], [])
     | .ok f => do
       if (fr.group i).head? == some i then
         p.proposals.modify (·.insert i (f.groupProposals i))
+      let raw := (← IO.getEnv "TSCERT_PASS_REFUSALS") == some "raw"
+      if compare || debugNode != 1000000000 || repeats != 1 || observe.isSome || raw then
+        let (diagnostics, observed, _, _) ← IO.lazyPure fun _ =>
+          f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (fr.group i)
+            compare debugNode repeats none observe counting (!raw)
+        for line in diagnostics do IO.eprintln line
+        if raw then
+          if let .error reason := observed then IO.eprintln reason
       IO.lazyPure fun _ =>
         let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
           f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
-          compare debugNode repeats none observe counting p.located
+          (counting := counting) (located := true)
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
           f.elaborationRefusal (some [SourceClaimJson.memberName unit]),
           f.contractReads (fr.group i), f.clientComponents (f.fr.group i))
@@ -959,8 +955,9 @@ proposal inferred (`HeadInference`); each unit's verdict on a line
 `{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`,
 flushed as its check ends. -/
 def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
-    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false) : IO UInt32 := do
-  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath quiet with
+    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false)
+    (force : List String := []) : IO UInt32 := do
+  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath quiet (force := force) with
   | .error e => refuse e
   | .ok p =>
     let mut refused : Option String := none
@@ -1002,8 +999,9 @@ units to check, `null` for every selected unit), each named unit checked
 ends, until standard input ends. A refusal of the preparation is the
 command's refusal, before any line. -/
 def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
-    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (start : Nat) : IO UInt32 := do
-  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath true with
+    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (start : Nat)
+    (force : List String := []) : IO UInt32 := do
+  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath true (force := force) with
   | .error e => refuse e
   | .ok p =>
     let units := p.units

@@ -180,7 +180,7 @@ implication, names a slot after the promised input only at that input's
 slot and after an input's entry value only at that input's own slot, and
 its written and proposed facts are entailed by the request's entry facts
 (its index facts and its inputs' separation, `ControlFlow.entryKnows`).
-`TSCERT_FORCE=start-facts` proposes a false fact at every start, the
+`--force-proposals start-facts` proposes a false fact at every start, the
 adversarial proposal the check refuses.
 Where an edge enters the start, the start is entered as any loop head: its
 slots outside the given inputs and the promised input take fresh names, and
@@ -361,7 +361,7 @@ postcondition (`source ensures refusal at [a,b)`), an edge at its target
 (`source effect refusal at [a,b)`); the pass's own text follows on the next
 line. A refusal before the pass that names no place is named at its unit's
 declaration (`source refusal at [a,b)`). `TSCERT_PASS_REFUSALS=raw` prints
-the pass's own text alone. A unit refused for a dependency also prints the
+the pass's own text on standard error. A unit refused for a dependency also prints the
 refusal that dependency rests on.
 
 `verifier --verify-interface-stage 8 <fragment> <interfaces> <file-key>
@@ -526,7 +526,7 @@ A fact left out at a head is left out, over the same bindings (each
 slot's descriptor), at the heads that read that head's facts too: those
 nested in its loop, and those after it inside the loop holding it (the
 walk carries a head's facts past its loop). A forced proposal
-(`TSCERT_FORCE=head-…`) is never left out.
+(`--force-proposals head-…`) is never left out.
 
 ### Counters and the entry's facts
 
@@ -545,7 +545,7 @@ nothing. The last three only where
 the entry entails them, the counter's entry value substituted: by a fact
 of the entry whose terms differ by lengths alone, each length's range
 (`0 ≤ n.length ≤ 2^32 - 1`) making up the difference; likewise a
-linearly written binding's `2^32 - 1`. `TSCERT_FORCE=head-entails` also
+linearly written binding's `2^32 - 1`. `--force-proposals head-entails` also
 states a counter at most `-1` where one of its candidates is left out so:
 `logical-guard-reads` `nonzeroPrefix` (`e < to` from `e = 0`, `to`
 unbounded below), accepted unforced, is refused at an edge into its loop's
@@ -596,18 +596,18 @@ a loop that may write a field, each carried fact also with a field path's
 term replaced by the value over bindings an entry equality gives it
 (`segmentCount = prepared.widths.length` and `segmentFlags.length =
 prepared.widths.length` give `segmentCount = segmentFlags.length`).
-`TSCERT_FORCE=head-called` and `head-eliminated` also state the first
+`--force-proposals head-called` and `head-eliminated` also state the first
 term of each such fact at most `-1`: `cursor-invariant-after-writing-call`
 `countMarked`, accepted unforced, is refused at an edge into its loop's
 head.
-`TSCERT_FORCE=head-ensures` also states each term of the binding a call's
+`--force-proposals head-ensures` also states each term of the binding a call's
 postcondition names at most `-1`: `assignment-call-postcondition`
 `sumBreaks`, accepted unforced, is refused at an edge into its loop's
-head. `TSCERT_FORCE=head-arms` also states a binding assigned a
+head. `--force-proposals head-arms` also states a binding assigned a
 choice at most `-1` after the assignment: pretext's `needsComplexTextPath`
 (`prepare.ts`), accepted unforced, is refused at
 an edge into its inner loop's head.
-`TSCERT_FORCE=head-counters` also states each counter at most `-1`:
+`--force-proposals head-counters` also states each counter at most `-1`:
 `adjacent-pair-reads` `pairProducts`, accepted unforced, is refused at an
 edge into its loop's head.
 The facts a loop's entry holds over bindings the loop does not assign
@@ -626,7 +626,7 @@ type store (a string's where each of its clauses but `null` and
 `undefined` is a string, an array's where each holds an array spine, a
 typed array's where each states a view length), and by a declaration's
 written type or initializer; a parameter whose type says none of them, or
-says two, has an array's. `TSCERT_FORCE=head-kinds` also states each
+says two, has an array's. `--force-proposals head-kinds` also states each
 string's or typed array's length a head's proposal names at most `-1`:
 `blocker-pretext-code-point-at-assertion` `astral`, accepted unforced, is refused
 at an edge into its loop's head. A heap write keeps a length but where it resizes the array
@@ -646,10 +646,10 @@ entry, beside a counter the update steps by `c`, is proposed its
 integrality, its entry value as a bound and its difference from the
 counter at entry: `n - i <= 0` for `n++` under a test in `for (let i = 0;
 …; i++)`, both ways where the update steps both (`for (…; i++, j++)`:
-`j - i = at`). `TSCERT_FORCE=head-paired` also states each such binding at
+`j - i = at`). `--force-proposals head-paired` also states each such binding at
 most `-1`: `element-write-keeps-lengths` `f`, accepted unforced, is refused
 at an edge into its loop's head.
-`TSCERT_FORCE=head-carried` also states each term of a carried fact at
+`--force-proposals head-carried` also states each term of a carried fact at
 most `-1`: `precondition-lengths` `dot`, accepted unforced, is refused at
 an edge into its loop's head.
 A spine separation is proposed for a fresh empty array field
@@ -675,7 +675,7 @@ the path: `w` and `d.widths` denote one value there
 read `xs[k]` at an index the facts place in `xs`'s range is bounded by
 such a fact's body at `k`: a binding it sets is proposed its integrality
 and the bounds, and a test comparing it bounds a counter
-(`element_facts`, `instantiate`). `TSCERT_FORCE=head-every` also states
+(`element_facts`, `instantiate`). `--force-proposals head-every` also states
 each carried quantified fact with the body `xs[i] <= -1`:
 `quantified-element-reads` `sumUpTo`, accepted unforced, is refused at an
 edge into its loop's head.
@@ -693,22 +693,22 @@ An array's element read (`%ElementAt%`) writes nothing: a fact of a path
 is kept across it. An element read `xs[k]`
 (a typed array's too) below a quantified fact's stop, its array's length
 or a prefix's bound (`forall i < n of xs`), is bounded by the fact's body.
-`TSCERT_FORCE=head-elements` also states a binding an element read bounds
+`--force-proposals head-elements` also states a binding an element read bounds
 at most `-1`: `typed-array-prefix-write` `buildPostfixPrefix`, accepted
 unforced, is refused at an edge into its inner loop's head; the control
 of quantified facts (`head-every`) is shown on
 `bounds-quantified-invariant` `read` too, its parameter's invariant kept
 across the element reads.
-`TSCERT_FORCE=head-exits` also states a counter an exit test bounds at most
+`--force-proposals head-exits` also states a counter an exit test bounds at most
 `-1`: `cursor-invariant-loop-write` `nextMarked`, accepted unforced, is
-refused at an edge into its loop's head. `TSCERT_FORCE=head-restated` also
+refused at an edge into its loop's head. `--force-proposals head-restated` also
 states each restated linear fact's first term at most `-1`:
 `invalid-sealed-handle-resize` `lastFlag`, accepted unforced, is refused at
-an edge into its loop's head. `TSCERT_FORCE=head-guards` also states a
+an edge into its loop's head. `--force-proposals head-guards` also states a
 discharged guarded fact's first term at most `-1`:
 `invalid-guarded-invariant-short` `narrowing`, accepted unforced, is refused at
 an edge into its loop's head.
-`TSCERT_FORCE=head-separations` also states a carried separation's first
+`--force-proposals head-separations` also states a carried separation's first
 spine apart from itself: `stated-argument-path` `measure`, accepted
 unforced, is refused at an edge into its loop's head.
 
@@ -722,7 +722,7 @@ along every edge to each slot whose mapping reads a slot holding it, those
 every predecessor carries (`GraphCode.trackTable`'s propagation over the
 claimed contexts' widths). Each is an obligation on every edge into a
 head.
-`TSCERT_FORCE=head-inputs` also restates each pair at a cut at the next
+`--force-proposals head-inputs` also restates each pair at a cut at the next
 slot: `written-ensures` `zeros`, accepted unforced, is refused at an edge
 into its loop's head.
 
@@ -744,7 +744,7 @@ the loop holding it carries them back to it
 The pass checks each on every edge into the entry; a member an edge
 refuses one for is run again without that one (each implication a
 proposal of its own, [the diagnosing walk](#the-diagnosing-walk)).
-`TSCERT_FORCE=head-implications` also states each at `undefined`:
+`--force-proposals head-implications` also states each at `undefined`:
 `blocker-pretext-constant-implication-statements` `advances`, accepted
 unforced, is refused at an edge into its loop's head.
 
@@ -765,7 +765,7 @@ edge into it; a member the regional check itself refuses (`spine regions …`,
 naming no lacking facts) is run again without them, and one a regional walk
 refuses at an edge into a statement entry for facts it lacks is run again with
 those of its proposals left out ([the diagnosing walk](#the-diagnosing-walk)),
-its tables kept (`regional-walk-lacking-head-fact`). `TSCERT_FORCE=head-region-values`, `head-region-cells`,
+its tables kept (`regional-walk-lacking-head-fact`). `--force-proposals head-region-values`, `head-region-cells`,
 `head-region-facts` and `head-region-fields` each add at every statement
 entry one entry of that kind no edge establishes (the next slot as a fresh
 value or cell, an argument path `forced` of slot 0, a fresh field of the
@@ -785,7 +785,7 @@ it holds (`freshApartAt`), as `IndexFact.apart`: an element write keeps a
 quantified fact over an array apart from the written one
 (`IndexWrites.writeAtoms`, `every-apart-write`). The pass checks each on
 every edge into the head; a member an edge refuses one for is run again
-without it. `TSCERT_FORCE=head-apart` also states each written side apart
+without it. `--force-proposals head-apart` also states each written side apart
 from itself: `quantified-freshness-builder` `build`, accepted unforced, is
 refused at an edge into its loop's head.
 

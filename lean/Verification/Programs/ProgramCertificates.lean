@@ -1432,15 +1432,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
         (CheckResult.ofBool (decide (r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = []))).bind fun _ =>
           checkMemberProofs G images j.context[i]? j.type k proofs rests receivers
     | _, _ => failure
-  | .var | .nul | .undef | .tru | .fls | .truLit | .flsLit | .numLit | .num | .strLit | .str
-    | .bigintLit | .bigint | .funGraph .. | .funGraphSelf | .ctorScheme .. | .ctorGraph .. | .callableGraph .. | .app ..
-    | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
-    | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
-    | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
-    | .unionVar .. | .callCallable .. | .readCallable | .readBagView | .writeCallable | .arrParts ..
-    | .callRest .. | .callPacked .. | .bindE | .bindRestE | .construct .. | .constructRest .. | .throw | .merge
-    | .makeKey
-    | .lenView .. | .readSummary .. =>
+  | _ =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes (sums := sums)))
 
 theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)

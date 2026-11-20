@@ -115,7 +115,7 @@ structure Walk where
   with their names: what a certificate's binder names. -/
   scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none
   /-- Adversarial proposals forced, for the referee's measurement
-  (`TSCERT_FORCE`): `literals` states every function literal at keep/keep,
+  (`--force-proposals`): `literals` states every function literal at keep/keep,
   `elements` every element read without `undefined`, `objects` every
   object literal at its expected type, `spreads` every spread with every
   key its operand's type states, `guards` every guard's and family guard's
@@ -167,13 +167,13 @@ structure Walk where
   /-- The unit's bindings held in slots (its parameters and declarations
   other than those held in cells): a completed member read narrows one. -/
   slots : Thunk (List String) := Thunk.pure []
-  /-- The bindings a member read was made of, under `TSCERT_FORCE=reads`:
+  /-- The bindings a member read was made of, under `--force-proposals reads`:
   held without `null` and `undefined` at every later statement. -/
   readForced : List String := []
   /-- A destructuring's collected bindings (`%v…`, `%rest`, `%items`) at
   the contracts the protocol's steps give them, by name. -/
   collected : List (String × Ty Tree) := []
-  /-- The member paths narrowed so far, under `TSCERT_FORCE=paths`: held
+  /-- The member paths narrowed so far, under `--force-proposals paths`: held
   narrowed at every later statement. -/
   pathsForced : List ((String × List PropKey) × Ty Tree) := []
   /-- Whether a function literal is being walked. -/
@@ -1036,7 +1036,7 @@ current-content fact, which no step keeps across a write without a
 separation and no throw keeps (the producer's `forget`,
 at a step that may write cells, and at a
 handler's edge).
-(`TSCERT_FORCE=cells` keeps them, the adversarial proposal) -/
+(`--force-proposals cells` keeps them, the adversarial proposal) -/
 def cellsDeclared (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   { e with vars := e.vars.map fun (n, A) =>
@@ -1333,7 +1333,7 @@ refused (the lowering splits the callee and selects each arm's signature,
 its position, else at its own type (the producer's `shared_actuals`); the
 value is the union of the arms' results, and the effect the arms' one effect,
 else the ordinary effect bounding a throw where every arm does. Any other
-callee is itself. `first` (`TSCERT_FORCE=arms`) states the first arm's
+callee is itself. `first` (`--force-proposals arms`) states the first arm's
 signature alone, the adversarial proposal. -/
 def armsCallee (G : PositiveGraphs.NormalGraph Tree) (T : EquationStore.State) (c : Callee)
     (callbacks : List Bool) (As : List (Option (Ty Tree))) (first : Bool := false) : Except String Callee := do
@@ -1995,7 +1995,7 @@ keys exactly; no stated key from a string or a function, and no bound; a
 record's fields, but its spine, its prototype link (a target's kept) and a
 key it also states as a method, which may sit on the prototype, its
 optional ones optional, its own keys exactly where it bounds them; a class
-value's static fields, with no bound. `force` (`TSCERT_FORCE=spreads`):
+value's static fields, with no bound. `force` (`--force-proposals spreads`):
 every key the record states, present, and its own keys exactly. -/
 def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (List Copy) := do
   let A ← boundOf A
@@ -2182,7 +2182,7 @@ def keyNames (K : Ty Tree) : Compiler (Option (List PropKey)) := do
 `index_type`): an array's or a string's element, and an object's field at
 each name the key may spell (an enum's reverse map, a record at a
 literal-union key), else its index at a dynamic key (a dictionary's, with
-`undefined`). `firstOnly` (`TSCERT_FORCE=keys`): an object's field at the
+`undefined`). `firstOnly` (`--force-proposals keys`): an object's field at the
 first name alone. -/
 def keyedRead (vars : List (String × Ty Tree)) (O K : Ty Tree) (missing : Bool) (firstOnly : Bool := false) :
     Compiler (Ty Tree) := do
@@ -2375,7 +2375,7 @@ def offerClass (n : String) (P : Ty Tree) : W Unit := do
       offer (⟨(), params, r.result, r.effect⟩, none)
 
 /-- The type proposed for the expression at `span`: its computed type, but
-under `TSCERT_FORCE=point@<start>-<end>` at that span (a control's wrong
+under `--force-proposals point@<start>-<end>` at that span (a control's wrong
 proposal at one program point) a narrower or other one: the first of two or
 more members, else `false` for `true` and `true` for any other. The walk goes
 on with the computed type. -/
@@ -2422,7 +2422,7 @@ partial def afterCall (env : Env) (r : Except String (Ty Tree × Ty Tree)) : W E
   let w ← get
   if w.changedValues || r.toOption.isNone then
     -- A binding a function literal assigns is held in a cell the call may
-    -- change: at its declared type again (`TSCERT_FORCE=stale` keeps it).
+    -- change: at its declared type again (`--force-proposals stale` keeps it).
     let reset := if w.force.contains "stale" then [] else w.closureAssigned
     ends .all
     let kept ← StateT.lift (env.paths.filterM fun ((r, p), _) => stablePath env r p)
@@ -2436,7 +2436,7 @@ answer (`decided`), `!e` where `e` cannot answer the other, `a || b` not
 `false` where either is never falsy and not `true` where neither is ever
 truthy, `a && b` dually (the edge's slice of each operand's value). -/
 partial def decidedTest (c : Expr) (q : Bool) : W Bool := do
-  -- (`TSCERT_FORCE=decided`: no test answers `false`)
+  -- (`--force-proposals decided`: no test answers `false`)
   if !q && (← get).force.contains "decided" then return true
   match c with
   | .not _ e => decidedTest e !q
@@ -3033,7 +3033,7 @@ may change a value location of the heap at its entry
 (`ClassSummary.changesValues`, `changedValues`). A call whose instance's result is the
 empty type never returns normally: its normal exit is unreached, its throw
 its signature's, which a handler or an async body routes to their normal
-exits (`ClassSummary.handle`, `ClassSummary.settle`). (`TSCERT_FORCE=no-return`:
+exits (`ClassSummary.handle`, `ClassSummary.settle`). (`--force-proposals no-return`:
 the throw of such a call left out too, the adversarial proposal.) -/
 def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W Unit := do
   let returns := !inst.result.isEmpty
@@ -3071,7 +3071,7 @@ def offerToParameters (args : List Expr) (Ps : List (Ty Tree)) : W Unit := do
     if supplies then recordAt x.span (kindOf x) (.ok P)
 
 /-- A call of a callee in the walk: a union of callables at one signature
-its arms meet (`armsCallee`; `TSCERT_FORCE=arms` at the first arm's). For a
+its arms meet (`armsCallee`; `--force-proposals arms` at the first arm's). For a
 declaration's footprint, a call of a union is a call of no one instance: it
 may change anything, and its throw too (the producer's `callable`,
 proposal.ml:85-92, reads one callee's signatures). -/
@@ -3090,7 +3090,7 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     -- other than it at what the condition narrows where it holds (the
     -- lowering's `constantImplications`, Control.lean:208-224).
     let w ← get
-    -- (`TSCERT_FORCE=implications`: every constant's initializer, every
+    -- (`--force-proposals implications`: every constant's initializer, every
     -- binding other than it)
     let forced := w.force.contains "implications"
     let some init := if q then w.conditions.lookup name else none | return e
@@ -3194,7 +3194,7 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
   -- (`Control.conditionContext`'s `.tagMember`, `PromiseCalls.memberFieldSlice`).
   | .tagMember _ _ (some f) tags onUndefined e =>
     let G ← StateT.lift graphNow
-    -- (`TSCERT_FORCE=guards`: the true answer's arms on both edges)
+    -- (`--force-proposals guards`: the true answer's arms on both edges)
     let q := q || (← get).force.contains "guards"
     let sliced (A : Ty Tree) : Ty Tree :=
       let A := if q || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
@@ -3319,7 +3319,7 @@ def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty T
     (ctx : Option (Ty Tree)) (walkedAtSig rest : Bool) : W (Ty Tree) := do
   let ownRow := if walkedAtSig then { a with arguments := qs } else a
   let T ← StateT.lift table
-  -- (`TSCERT_FORCE=offers`: whatever the leading ones, the adversarial
+  -- (`--force-proposals offers`: whatever the leading ones, the adversarial
   -- proposal)
   let forceOffers := (← get).force.contains "offers"
   let leads (Ds : List (Ty Tree)) : Bool := forceOffers || (Ds.zip qs).all fun (D, Q) => within T D Q
@@ -3542,7 +3542,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | _, _ => pure exp
     let (R, e2) ← expr e1 r expected
     -- `a ?? b`: `a` less null and undefined, or `b`.
-    -- (`TSCERT_FORCE=meets`: each type parameter's value dropped there)
+    -- (`--force-proposals meets`: each type parameter's value dropped there)
     let meets := (← get).force.contains "meets"
     let A ← attempt e do
       let L ← need L "the left operand"
@@ -3741,7 +3741,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | _ => pure O
     let narrowed := (memberPath e).bind fun p => e1.paths.lookup p
     if let (some p, some _) := (memberPath e, narrowed) then modify fun w => { w with readPaths := w.readPaths.insert p }
-    -- (`TSCERT_FORCE=optional-reads`: the read proposed without `undefined`)
+    -- (`--force-proposals optional-reads`: the read proposed without `undefined`)
     let dropUndefined := (← get).force.contains "optional-reads"
     let r ← attempt e do
       if let some P := narrowed then return P
@@ -4434,7 +4434,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       -- its parameters promising
       -- (`expression_values.ml`, `Bind`), which the lowering selects among
       -- the member's (`bindMember`); as the general form below.
-      -- `TSCERT_FORCE=binds` states it keeping values and spines, the
+      -- `--force-proposals binds` states it keeping values and spines, the
       -- adversarial proposal.
       let forced := (← get).force.contains "binds"
       let r ← match r with
@@ -4559,7 +4559,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       | .ok (args', As', _) => (args', As')
       | .error _ => (args, As)
     let c := (·.2.2) <$> c
-    -- (`TSCERT_FORCE=fresh`: every named receiver, the adversarial
+    -- (`--force-proposals fresh`: every named receiver, the adversarial
     -- proposal)
     let fcs := (← get).freshConsts
     let anyFresh := (← get).force.contains "fresh"
@@ -4887,7 +4887,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let mut chosen : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
   let mut fallback : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
   let mut promised : Option (CallEffects.Arrow (Ty Tree) × Option (CallEffects.RestArrow (Ty Tree))) := none
-  -- (`TSCERT_FORCE=callbacks`: the first, whatever its parameter, the
+  -- (`--force-proposals callbacks`: the first, whatever its parameter, the
   -- adversarial proposal)
   let forceCallbacks := (← get).force.contains "callbacks"
   for (a, r) in candidates do
@@ -4961,7 +4961,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     -- the expected type does not admit), the expected type's instance, where
     -- it binds every binder and admits the actuals (TypeScript's widening of
     -- an inferred literal at its context).
-    -- (`TSCERT_FORCE=instances` keeps the actuals' instance: its result is
+    -- (`--force-proposals instances` keeps the actuals' instance: its result is
     -- then stated at a type that does not admit it.)
     if !(← get).force.contains "instances" &&
         c.binders.all (fun b => hidden.contains b || (σ.lookup b).isSome) &&
@@ -5119,7 +5119,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- its type here: no write of it follows the closure's creation
   -- (`cellLocals`; the producer's `forget`, keeps
   -- every binding but a cell's).
-  -- (`TSCERT_FORCE=captures`: every captured binding at its type here, a
+  -- (`--force-proposals captures`: every captured binding at its type here, a
   -- cell's included, the adversarial proposal)
   let w0 ← get
   let captured := env.vars.map fun (n, A) =>
@@ -5185,7 +5185,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
   -- Each default runs at a call omitting its argument, before the body: its
   -- effect is the literal's, its value made at the parameter's type.
-  -- (`TSCERT_FORCE=defaults`: their changes left out of the literal's
+  -- (`--force-proposals defaults`: their changes left out of the literal's
   -- effect, the adversarial proposal)
   let beforeDefaults ← get
   -- The body binds a defaulted parameter after replacing `undefined`.
@@ -5276,7 +5276,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- body's; any other literal at its own parameters.
     let a : CallEffects.Arrow (Ty Tree) ← match sig with
       | some a =>
-        -- (`TSCERT_FORCE=callbacks`: at the parameter's effect, the
+        -- (`--force-proposals callbacks`: at the parameter's effect, the
         -- adversarial proposal)
         if (← get).force.contains "callbacks" then pure { a with result := R }
         else if pure_ then pure { a with result := R, effect := kept }
@@ -5404,7 +5404,7 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree))
     if let some (rp, q) := rest then
       -- The rest: a fresh object of the value's own fields but the named
       -- keys, at their types (`Object.assign`'s copy of one record).
-      -- (`TSCERT_FORCE=spreads`: the copies with every key stated)
+      -- (`--force-proposals spreads`: the copies with every key stated)
       let forced := (← get).force.contains "spreads"
       let R ← match A with
         | some A => StateT.lift (tryCatch (do
@@ -5540,7 +5540,7 @@ the loop walked again until its edges add nothing, at most three walks, the
 walk's state restored after each; kept where that join is strictly within
 the declared type and settles (the producer's fixpoint).
 The pass checks each edge's types against the head's.
-(`TSCERT_FORCE=head-entry`: at its entry type, unwalked, the adversarial
+(`--force-proposals head-entry`: at its entry type, unwalked, the adversarial
 proposal) -/
 partial def loopOverrides (env : Env) (c : Expr) (body update : List Stmt) : W (List (String × Ty Tree)) := do
   let head := loopHead env (.effect c.span c :: body ++ update)
@@ -5610,12 +5610,12 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
   let mut prev : Option Stmt := none
   for (s, i) in ss.zipIdx do
     let some e := env | return none
-    -- (`TSCERT_FORCE=reads`: a read's receiver kept present whatever ends it)
+    -- (`--force-proposals reads`: a read's receiver kept present whatever ends it)
     let forced := (← get).readForced
     let e ← if forced.isEmpty then pure e else do
       let G ← StateT.lift graphNow
       pure { e with vars := e.vars.map fun (n, A) => if forced.contains n then (n, present G A) else (n, A) }
-    -- (`TSCERT_FORCE=paths`: each path narrowed so far kept narrowed)
+    -- (`--force-proposals paths`: each path narrowed so far kept narrowed)
     let w ← get
     let e := if !w.force.contains "paths" then e else
       { e with paths := e.paths ++ (w.pathsForced.filter fun (p, _) => (e.paths.lookup p).isNone) }
@@ -5677,7 +5677,7 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     -- A cell's narrowed contents end at a change of a value location: a
     -- current-content fact no separation keeps (the producer's entries
     -- after a write; PROGRAM-TYPING, "No general frame rule").
-    -- (`TSCERT_FORCE=cells` keeps them)
+    -- (`--force-proposals cells` keeps them)
     let w ← get
     if w.valueWrites != before then
       env := env.map (cellsDeclared w)
@@ -5793,7 +5793,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- statement does not complete; what follows is walked for its entries,
     -- unreached, each binding at the empty type (the producer's
     -- `unreachable`).
-    -- (`TSCERT_FORCE=never`: every call's statement so, whatever it returns)
+    -- (`--force-proposals never`: every call's statement so, whatever it returns)
     let forced := (← get).force.contains "never" && match x with
       | .call .. | .callWithReceiver .. | .invoke .. => true
       | _ => false
@@ -5903,7 +5903,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         -- on, stays at its written contract: its declaration writes the
         -- cell, whose contents every later read checks against it, the
         -- producer's early declaration)
-        -- (`TSCERT_FORCE=early`: at its initializer's type, the adversarial
+        -- (`--force-proposals early`: at its initializer's type, the adversarial
         -- proposal)
         match (if b.early && !(← get).force.contains "early" then env.decl.lookup b.name else none) with
         | some C => env := { env with vars := upd env.vars b.name C }
@@ -6023,7 +6023,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- Past the loop, the paths narrowed before it that nothing in its test,
     -- body and update ends.
     let evs := (← get).pathEnds
-    -- (`TSCERT_FORCE=loops`: every path kept, whatever ends it)
+    -- (`--force-proposals loops`: every path kept, whatever ends it)
     let evs := if (← get).force.contains "loops" then [] else evs
     let kept := early ++ ((surviving env evs).filter fun ((r, p), _) => !declared.contains r && (early.lookup (r, p)).isNone)
     modify fun w => { w with pathEnds := evs ++ savedEnds, loopKept := kept }
@@ -6187,7 +6187,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       -- binding they assign at its declared type), and each jump passing it.
       let thrown := cellsDeclared (← get) (loopHead env (body ++ (handler.map (·.2)).getD []))
       let routes := (w1.breaks.take nb).map (·.2) ++ w1.continues.take nc
-      -- (`TSCERT_FORCE=finally`: the statement's normal completion alone)
+      -- (`--force-proposals finally`: the statement's normal completion alone)
       let entry := if (← get).force.contains "finally" then some (joined.getD thrown) else
         routes.foldl (fun acc e => join acc (some e)) (join joined (some thrown))
       let f ← stmts entry fs
@@ -6281,7 +6281,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | none => pure ()
     for p in f.params do
       match ← tryCatch (some <$> lower (Fragment.translate p.ty)) fun _ => pure none with
-      -- (`TSCERT_FORCE=annotations`: each parameter proposed at `undefined`)
+      -- (`--force-proposals annotations`: each parameter proposed at `undefined`)
       | some A => vars := upd vars p.name (if force.contains "annotations" then [Labels.undef] else A)
       | none => pure ()
     let unitCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)

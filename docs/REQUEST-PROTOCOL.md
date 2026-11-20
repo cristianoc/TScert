@@ -67,9 +67,11 @@ verifier --lower-control-flow       <ast.json>
   command's. `<depth>` limits a step's expression proof-search depth; it is
   not an execution budget and is not part of the request or the safety
   theorem. A refusal names the obligation at its source span, the pass's own
-  text on the next line (`TSCERT_PASS_REFUSALS=raw`: the pass's text
-  alone). `TSCERT_FORCE` (comma-separated) forces adversarial proposals, for
-  the controls; `TSCERT_COUNTS`, `TSCERT_OBSERVE` and `TSCERT_PROFILE` print
+  text on the next line. With `TSCERT_PASS_REFUSALS=raw` the pass also
+  writes its raw refusal to standard error. The controls supply adversarial proposals explicitly with
+  `--force-proposals name[,name…]` before the mode, after any
+  `--subtype-rounds` option. A control recorded as `TSCERT_FORCE=name`
+  uses that argument. `TSCERT_COUNTS`, `TSCERT_OBSERVE` and `TSCERT_PROFILE` print
   the pass's counts, its state at a point and its timings on standard error;
   `TSCERT_PROFILE` also writes, in every mode, the work table
   `work.jsonl` in the working directory ([work](SINGLE-PASS.md#work)).
@@ -171,9 +173,9 @@ and the TypeScript tools (`wireText` for the bytes,
 writing it: the parser's gate a source string holding a lone surrogate
 ([source fragment](SOURCE-FRAGMENT.md#refused-on-principle)).
 
-Decoders read the value Lean's JSON parser makes of the text: key order,
-whitespace and escapes are no part of a document, a key written twice holds
-its last value, and a natural number is an integer literal, in exponent form
+Lean compares decoded keys while reading each object, refusing the document
+if a key occurs twice. Key order, whitespace and equivalent escapes give
+the same value. A natural number is an integer literal, in exponent form
 too (`0e0`, `-0`), never a fraction (`0.0`).
 
 Decoding is strict: it decodes, re-encodes and compares, so every field is

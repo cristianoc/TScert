@@ -397,60 +397,60 @@ structure Rules where
   counter its update steps by `c`: its integrality, its entry's lower bound
   and its difference from the counter at entry. -/
   paired : Bool := true
-  /-- Forced (`TSCERT_FORCE=head-paired`): each paired binding also stated at
+  /-- Forced (`--force-proposals head-paired`): each paired binding also stated at
   most `-1`, the adversarial proposal the pass's edge check refuses. -/
   falsePaired : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-counters`): each counter also stated at
+  /-- Forced (`--force-proposals head-counters`): each counter also stated at
   most `-1`, the adversarial proposal the pass's edge check refuses. -/
   falseCounters : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-carried`): each term of a carried fact also
+  /-- Forced (`--force-proposals head-carried`): each term of a carried fact also
   stated at most `-1` (`xs.length ≤ -1`), the adversarial proposal the
   pass's edge check refuses. -/
   falseCarried : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-separations`): each carried separation's
+  /-- Forced (`--force-proposals head-separations`): each carried separation's
   first spine also stated apart from itself (`x.f !== x.f`), the adversarial
   proposal the pass's edge check refuses. -/
   falseSeparations : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-kinds`): each string's or typed array's
+  /-- Forced (`--force-proposals head-kinds`): each string's or typed array's
   length a proposal names also stated at most `-1`, the adversarial proposal
   the pass's edge check refuses. -/
   falseKinds : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-arms`): a binding assigned a choice arm by
+  /-- Forced (`--force-proposals head-arms`): a binding assigned a choice arm by
   arm (`armsOf`) also stated at most `-1` after it, the adversarial fact a
   loop head it reaches proposes and the pass's edge check refuses. -/
   falseArms : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-entails`): a counter one of whose candidates
+  /-- Forced (`--force-proposals head-entails`): a counter one of whose candidates
   the entry does not entail (`Ctx.entails`) also stated at most `-1`, the
   adversarial proposal the pass's edge check refuses. -/
   falseEntails : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-every`): each carried quantified fact also
+  /-- Forced (`--force-proposals head-every`): each carried quantified fact also
   stated with the body `a[i] ≤ -1`, the adversarial proposal the pass's
   edge check refuses. -/
   falseEvery : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-exits`): a counter of a test-free loop
+  /-- Forced (`--force-proposals head-exits`): a counter of a test-free loop
   bounded by an exit test (`headFacts`'s `exited`) also stated at most
   `-1`, the adversarial proposal the pass's edge check refuses. -/
   falseExits : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-guards`): of each guarded fact a test
+  /-- Forced (`--force-proposals head-guards`): of each guarded fact a test
   discharges (`Ctx.unguarded`), its first term also stated at most `-1`,
   the adversarial fact a loop head it reaches proposes and the pass's edge
   check refuses. -/
   falseGuards : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-restated`): of each linear fact restated
+  /-- Forced (`--force-proposals head-restated`): of each linear fact restated
   through a path's read or an alias (`Fact.restate`), its first term also
   stated at most `-1`, the adversarial fact a loop head it reaches proposes
   and the pass's edge check refuses. -/
   falseRestated : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-elements`): a binding an element read bounds
+  /-- Forced (`--force-proposals head-elements`): a binding an element read bounds
   (`Ctx.elemFacts`) also stated at most `-1`, the adversarial fact a loop head
   it reaches proposes (a counter's too) and the pass's edge check refuses. -/
   falseElements : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-called`): of each fact a call in the loop
+  /-- Forced (`--force-proposals head-called`): of each fact a call in the loop
   gives its actuals' fields (`headFacts`'s `called`), its first term also
   stated at most `-1`, the adversarial proposal the pass's edge check
   refuses. -/
   falseCalled : Bool := false
-  /-- Forced (`TSCERT_FORCE=head-eliminated`): of each carried fact a field
+  /-- Forced (`--force-proposals head-eliminated`): of each carried fact a field
   path's entry value rewrites over bindings (`headFacts`'s `eliminated`),
   its first term also stated at most `-1`, the adversarial proposal the
   pass's edge check refuses. -/
@@ -458,7 +458,7 @@ structure Rules where
   /-- Each function's postcondition (`@ensures`) by its name: a call's
   facts of the binding it sets (`callEnsures`). -/
   ensuresOf : String → List HeapKnowledge.IndexFact := fun _ => []
-  /-- Forced (`TSCERT_FORCE=head-ensures`): each term of the binding a
+  /-- Forced (`--force-proposals head-ensures`): each term of the binding a
   call's postcondition names also stated at most `-1` (`callEnsures`), the
   adversarial fact a loop head it reaches proposes and the pass's edge check
   refuses. -/
