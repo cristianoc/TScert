@@ -198,8 +198,8 @@ theorem framed_requestSafe {f : FilePlans} {name : String} {r : Req f}
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f name r spec)
     (hcb : spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r)) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, -, hreq⟩ := hacc
-  have hret := framedReturns_reached (by rw [spec.componentRefusal.property]; exact hcomp) hreq hcb
+  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hbind, hreq⟩ := hacc
+  have hret := framedReturns_reached (by rw [spec.componentRefusal.property]; exact hcomp) hbind hreq hcb
   rw [← hfr] at hret
   let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True
   have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by

@@ -107,11 +107,13 @@ def supportFailureText {P : Package} (site : P.Site → Nat) (l : Nat) :
 them: each node's entry facts' supports, observed in the walk framing the
 nodes found before it (none at a node the walk does not reach), those the
 node's check keeps (`framedNodeKeeps` at the request's code, the client
-obligation `Θ`); with a line per node, and a line per node that drops a
-support naming why it drops the first (`supportFailure`). -/
+obligation `Θ`, the regions `prot` reads as protected); with a line per
+node, and a line per node that drops a support naming why it drops the
+first (`supportFailure`). -/
 def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel i : Nat) (cf : ComponentFlow ofC)
     (Θ : Protocol (markedPackage ofC cf.O)) (r : SourceElaboration.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
-      (EquationStore.CheckedLabel f.F.equations f.F.primitive)) (nodes : List Nat) :
+      (EquationStore.CheckedLabel f.F.equations f.F.primitive)) (nodes : List Nat)
+    (prot : Nat → Footprints.Region → Bool) :
     List (Nat × List Footprints.Footprint) × List String × List String := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := LabelStore.StoreView.graph f.F.store
   -- (each node observed in the walk framing those found before it; a node
@@ -137,10 +139,10 @@ def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel
           let Ss := atoms.filterMap fun a => a.fact.support? {}
           let m := requestCode r
           let kept := match m.1[l]? with
-            | some e => framedNodeKeeps cf.flow cf.lay Θ m l e Φ Ss
+            | some e => framedNodeKeeps cf.flow cf.lay Θ m l e Φ (prot l) Ss
             | none => []
           let reason := match m.1[l]? with
-            | some e => (Ss.findSome? fun S => supportFailure cf.flow cf.lay Θ m l e Φ S).map (supportFailureText id l)
+            | some e => (Ss.findSome? fun S => supportFailure cf.flow cf.lay Θ m l e Φ (prot l) S).map (supportFailureText id l)
             | none => none
           why := why.filter (·.1 != l) ++ (reason.map fun w => (l, w)).toList
           let lost := atoms.filter fun a => !SinglePass.supportedIn kept a.fact
@@ -165,7 +167,8 @@ def FilePlans.framedCheck {ofC : ComponentTag → Bool} (f : FilePlans) (fuel : 
   let mut g := f
   for _ in List.range 12 do
     let (framed, shown, _) := match g.plans[i]? with
-      | some (.ok (.graph _ _ r')) => g.framedSupports fuel i cf (fun _ => .keep) r' nodes
+      -- (no plan, so no read-only position: no region read as protected)
+      | some (.ok (.graph _ _ r')) => g.framedSupports fuel i cf (fun _ => .keep) r' nodes (fun _ _ => false)
       | _ => ([], [], [])
     lines := lines ++ shown
     match g.passMember fuel i (framed := framed) with
@@ -519,7 +522,13 @@ def FilePlans.framedPlan (f : FilePlans) (fuel i : Nat) (fc : FramedComponent) (
   -- none is formed where no framed call's callee may be one)
   if !(nodes.any fun l => (F.ctxs m).any fun (_, c) => outsideCalleeAt c m l) then return none
   let Θ : Protocol (markedPackage fc.ofC fc.cf.O) := rowsTheta fc.rows
-  let (framed, shown, why) := f.framedSupports fuel i fc.cf Θ r nodes
+  -- (the regions read as protected, as the pass's check reads them:
+  -- `FramedSpec.protAt` at the plan the decoder forms)
+  let arity := r.inputs.length - r.siblings.length
+  let ro := readOnlyPositions fc.family fc.C name fc.cf.codes fc.cf.names m arity
+  let cp := copiesOf (requestCode r).1 (requestCode r).2 r.start arity FramedSpec.copyBound
+  let prot := fun l q => protRegionB (componentProtocol F fc.cf.lay) cp arity (fun j => ro.getD j false) (requestCode r) l q
+  let (framed, shown, why) := f.framedSupports fuel i fc.cf Θ r nodes prot
   let doc := forgeDocument force (framedDocument fc.C fc.entries (rowsKinds fc.rows) fc.psiDef framed)
   let spec ← (FramedSpec.decode fc name r doc).mapError fun e => s!"a framed plan's document is refused: {e}"
   return some (f.withPlan i (.framed name pos r (forgeSpec force r.inputs spec)),

@@ -166,7 +166,7 @@ theorem _root_.Verification.SourceClaimJson.FramedSpec.roPositionsB_sound {spec 
       ∀ m n, (m, n) ∈ spec.codes.zip spec.names → m = realizedCode r →
         declaredReadOnly spec.family spec.C n.1 j = true := by
   simp only [FramedSpec.roPositionsB, beq_iff_eq] at h
-  simp only [FramedSpec.roPos, h, readOnlyPositions]
+  simp only [FramedSpec.roPos, h, readOnlyPositions, sharingReadOnlyB]
   by_cases hj : j < spec.arity
   · simp only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hj, Option.map_some,
       Option.getD_some, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq]

@@ -183,7 +183,7 @@ is that of the call sets of every node sharing the call's continuation and
 handler, at every context: the proved check records a frame's node by its
 continuation and handler alone (`Fits.frameC`, `NodeOf`). -/
 def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (host : Nat → Bool) (ΨC Θ : Protocol P)
-    (m : Code) (l : Nat) (Φ : Footprint) (Ss : List Footprint) : List Footprint :=
+    (m : Code) (l : Nat) (Φ : Footprint) (prot : Region → Bool) (Ss : List Footprint) : List Footprint :=
   let kx := m.2[l]?
   let sharing := (List.range m.2.length).filter fun l' => m.2[l']? == kx
   -- (the call sets of every node sharing the continuation and handler, at
@@ -201,7 +201,7 @@ def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (hos
     let req := sharing.filter fun l' => (c.node l').out || framedNodeAt F host c m l'
     (c, if req.isEmpty then [l] else req)
   Ss.filter fun S => required.all fun (c, req) => req.all fun l' =>
-    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt (fun _ => false)
+    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt prot
 
 /-- **A flow holding a second code with the proposals of a first** at each
 of its contexts: the request's code beside its realized code, whose nodes

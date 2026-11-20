@@ -1970,13 +1970,14 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 
 ## Milestone 2: the protected reading
 
-Base: branch `route-extensions` at `a1ae24296`, on `single-pass` at
-`9ce75bd3e`. Every Lean name below is proved at that base unless it is
-labelled **to be proved**. The milestone makes the frame's check read a
-region as protected where [the decision](#the-decision) holds, so that the
-pass applies the frame's check of
-[Read-only frames](readonly-frames-note/note.tex) §4.1 in full. No Lean
-is written in this step; each piece below is one commit.
+The frame's check reads a region as protected where
+[the decision](#the-decision) holds, so that the pass applies the frame's
+check of [Read-only frames](readonly-frames-note/note.tex) §4.1 in full:
+the pass's check of each framed node (`framedNodesAt`) and the producer's
+supports (`FilePlans.framedSupports`) read `FramedSpec.protAt`, and the
+returns at reached executions discharge its witnesses
+(`framedReturns_reached`, `FramedSpec.prot_witness`). Every Lean name
+below is proved. The pieces are in [commit order](#the-pieces-in-commit-order).
 
 ### The existing mechanism this extends
 
@@ -2064,10 +2065,10 @@ history has grown inside the call since (`Grows 1`). This is the premise
 
 ### The crossings an entering step records
 
-`FramedSpec.entryXs` records the $`j`$-th argument at `r.inputs[j]`, the
-request's declared type, and the view reads a type read-only by
-membership in `spec.readOnly` (`FramedSpec.view`). Two things widen the
-recorded protection beyond Assumption "Clients":
+The view reads a type read-only by membership in `spec.readOnly`
+(`FramedSpec.view`). Recording the $`j`$-th argument at `r.inputs[j]`, the
+request's declared type, would widen the recorded protection beyond
+Assumption "Clients" in two ways:
 
 - a function of $`C`$ whose realized code is the request's enters the same
   code (`entered`), its arguments then recorded at the request's types,
@@ -2079,14 +2080,10 @@ recorded protection beyond Assumption "Clients":
   equal once `readonly` is erased) is recorded at a type the view reads
   read-only.
 
-Either way the history protects storage the client may change, so the
-headline's hypothesis (each outside step keeps $`\Theta_C`$ at the
-history) is stronger than Assumption "Clients" and the claim is about
-fewer executions than the paper's. No unsafe program is accepted
-through it, as no frame check reads protection (`prot` false; observed:
-the twins above, in either order of declaration, and `walk(h: H, w: W)`
-reading `w.flags` are refused). Piece 0 makes the recorded crossings the
-paper's:
+Either way the history would protect storage the client may change, and
+the headline's
+hypothesis (each outside step keeps $`\Theta_C`$ at the history) stronger
+than Assumption "Clients". The recorded crossings are the paper's:
 
 - **The read-only positions** `roPos j` (`FramedSpec.roPositions`, a
   field of the plan the decoder computes as `readOnlyPositions` and
@@ -2367,37 +2364,37 @@ the alias program returns its widths).
 
 | Case | Outcome | Shows |
 | --- | --- | --- |
-| `readonly-frame-other-key` (`ex:rokey`) | gap → positive | protection at keyed parts; (P) at `flags` with `rename` charged at `label` |
+| `readonly-frame-other-key` (`ex:rokey`) | accepted under client trust | protection at keyed parts; (P) at `flags` with `rename` charged at `label` |
 | `invalid-readonly-frame-same-key` (`ex:rosamekey`) | negative, kept | the protocol at `flags`, whatever the reading |
-| `readonly-frame-param-protected` | positive | `walk(h: H, visit)`: the spine of `h.flags` read protected |
+| `readonly-frame-param-protected` | accepted under client trust | `walk(h: H, visit)`: the spine of `h.flags` read protected |
 | `invalid-readonly-frame-param-writable` | negative | `walk(h: W, visit)`: no read-only position; the client pops `h.flags` |
 | `invalid-readonly-frame-param-partly-readonly` | negative | `h: { readonly flags: number[] }`: the field read-only, its array writable, so the type is not read-only throughout (the plan's view); the client pops `h.flags` |
-| `readonly-frame-param-positions` / `invalid-readonly-frame-param-positions` | positive / negative | `walk(h: H, w: W, visit)`, `H` and `W` equal once `readonly` is erased: the fact over `h.flags` kept, the fact over `w.flags` dropped; the client pops `w.flags` |
-| `readonly-frame-shared-code` / `invalid-readonly-frame-shared-code` | positive / negative | two exported walkers of one body: both `xs: readonly number[]`, accepted; one `xs: number[]`, position 0 not read-only in the meet, both refused; the client calls the writable twin and pops its array |
-| `readonly-frame-local-alias` | positive | Section 1's `const w = h.widths` (`ex:ro`): `w`'s slot holds `(0, [field widths])` |
-| `readonly-frame-param-copy` | positive | `const g = h`: `g`'s slot a copy |
+| `readonly-frame-param-positions` / `invalid-readonly-frame-param-positions` | accepted under client trust / negative | `walk(h: H, w: W, visit)`, `H` and `W` equal once `readonly` is erased: the fact over `h.flags` kept, the fact over `w.flags` dropped; the client pops `w.flags` |
+| `readonly-frame-shared-code` / `invalid-readonly-frame-shared-code` | accepted under client trust / negative | two exported walkers of one body: both `xs: readonly number[]`, accepted; one `xs: number[]`, position 0 not read-only in the meet, both refused; the client calls the writable twin and pops its array |
+| `readonly-frame-local-alias` | accepted under client trust | Section 1's `const w = h.widths` (`ex:ro`): `w`'s slot holds `(0, [widths])` |
+| `readonly-frame-param-copy` | accepted under client trust | `const g = h`: `g`'s slot a copy |
 | `invalid-readonly-frame-param-reassigned` | negative | `walk(h: H, w: W, visit)` with `h = w` before the loop: `h`'s slot names `w`; the client pops `w.flags` |
-| `readonly-frame-depth-two` / `invalid-readonly-frame-depth-two` | positive / negative | `h.inner.flags` with `H2 = { readonly inner: H }`: kept; with a member `swap(h)` writing `inner` (charged at `inner`), (P) fails at the path's first field; a visitor calling `swap(h)` makes the walker read past the new array |
-| `readonly-frame-cells` | positive | an element fact over the cells of `h.flags` (`0 <= h.flags[i]` from `@requires`) across a visitor stating `{ values: "any"; spines: "keep" }`: the cells read protected, `pre(cells)` the spine region |
-| `readonly-frame-handler` | positive | `try { visit(i) } catch { s += h.flags[i]!; }`: the fact read on the handler's edge, the copy table across `frameHandle`'s bound slot |
+| `readonly-frame-depth-two` / `invalid-readonly-frame-depth-two` | accepted under client trust / negative | `h.inner.flags` with `H2 = { readonly inner: H }`: kept; with a member `swap(h)` writing `inner` (charged at `inner`), (P) fails at the path's first field; a visitor calling `swap(h)` makes the walker read past the new array |
+| `readonly-frame-cells` | gap | an element fact `forall k in items: … items[k] < widths.length` over the cells of `items = h.items` across a visitor stating `{ values: "any"; spines: "keep" }`: the fact's support names a region of a class, which the frame's check gives no sites (`regionSites`), so the node drops it before any reading |
+| `readonly-frame-handler` | gap | `try { visit(i) } catch { s += h.flags[i]!; }`: the copies hold across `frameHandle`'s bound slot, but the framed returns claim a support at a normal return only (`RetAt`), so the catch block lacks the fact |
 
 Controls:
 
-- **Mutation controls** (`tests/single-pass-mutations.mts`): a verifier
-  whose `protRegionB` skips (C) accepts
-  `invalid-readonly-frame-param-reassigned`; one whose `roPositionsB`
-  reads the request's own shapes alone accepts
-  `invalid-readonly-frame-shared-code`. Each shows the check is what
-  refuses.
-- **A forced support** (`tests/single-pass-controls.mts`): at
-  `ex:rosamekey`'s walker, a support naming only `spine h ["flags"]` at
-  `keep`. No support the pass derives omits the field region, whose first
-  line already refuses, so only a forced support shows (P) at a region's
-  prefix: the spine is read unprotected.
-
-Piece 9 also updates the note's status of `ex:rokey` and `ex:ro` (to the
-Lean names of the chain), this section's labels, and the status row the
-[parity skill](../../.claude/skills/parity/SKILL.md) names.
+- **Mutation controls** (`tests/single-pass-mutations.mts`,
+  `tests/single-pass-controls.mts`): `fr-protected`, a verifier whose
+  `protRegionB` reads every region as protected, accepts
+  `invalid-readonly-frame-param-reassigned`; `fr-ro-sharing`, one whose
+  `sharingReadOnlyB` passes, so a position reads the member's own shape
+  alone, accepts `invalid-readonly-frame-shared-code`'s `walk`. Each shows
+  the check is what refuses.
+- **(P) at a region's prefix** (`Tests/FramedBindingControls.lean`): no
+  support the pass derives names a spine without its field region, whose
+  own check refuses first, and a forced support omitting the field leaves
+  the fact unsupported, so the walk refuses before the node's check; the
+  decision is shown at `protRegionB` itself: with slot 7 copying a
+  read-only argument, `spine 7 ["flags"]` is read as protected at a
+  protocol keeping every part and unprotected at one charging the field
+  `flags`, and a copy along `flags` is unprotected there too.
 
 ### What milestone 2 trusts
 
