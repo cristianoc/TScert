@@ -301,6 +301,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "getProgramDiagnostics", request: true, text: "getProgramDiagnostics(): readonly Diagnostic[];" },
     { name: "getSemanticDiagnostics", text: "getSemanticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
     { name: "getSourceFile", text: "getSourceFile(file: DocumentIdentifier): SourceFile | undefined;" },
+    { name: "getSourceFileMetadata", text: "getSourceFileMetadata(fileName: string): SourceFileMetadata | undefined;" },
     { name: "getSourceFileNames", request: true, text: "getSourceFileNames(): readonly string[];" },
     { name: "getSyntacticDiagnostics", text: "getSyntacticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
     { name: "isSourceFileDefaultLibrary", request: true, text: "isSourceFileDefaultLibrary(file: SourceFile): boolean;" },
