@@ -86,15 +86,16 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 the read-only frame", "The theorems"): what no lemma yet proves from the
 pass's check of a framed plan, at the framed nodes `F` keeping the supports
 `S` of its main graph's framed run: the returns `framedRet S` hold at the
-executions the frame's claim is about (`FramedReturnsReached`, by
-`ret_reached`), at some return premise of a throw. The main graph's five
-clauses of `FramedRequestSafe` follow from them and from the framed run's
-guarantee (`framedReturns_of_main`, `framedRun_of_returns`). A field leaves
+executions the frame's claim is about, read at their worlds
+(`FramedReturnsReachedW`, by `ret_reachedW_frame`), at some return premise
+of a throw. The main graph's five clauses of `FramedRequestSafe` follow
+from them and from the framed run's guarantee (`framedReturns_of_main`,
+`framedRun_of_returnsW`). A field leaves
 this structure in the commit that proves it from the check. -/
 structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) (F : Nat → Bool)
     (S : Nat → List Footprints.Footprint) : Prop where
   reached : ∃ RetE : Nat → Env → Heap → Heap → Prop,
-    FramedReturnsReached r (spec.frame r) F (Verification.TolerantFrames.framedRet S) RetE
+    FramedReturnsReachedW r (spec.frame r) F (Verification.TolerantFrames.framedRet S) RetE
 end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass

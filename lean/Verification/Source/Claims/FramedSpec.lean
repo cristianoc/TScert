@@ -58,6 +58,11 @@ equality of them is decided. -/
 instance (N : NumberedFamily) (C : Nat) : DecidableEq (N.family.at C).Site :=
   show DecidableEq {s : Nat // N.family.Runs (N.family.siteOf s) C} from inferInstance
 
+/-- A numbered family's sites seen from a component are hashed by their
+numbers. -/
+instance (N : NumberedFamily) (C : Nat) : Hashable (N.family.at C).Site :=
+  ⟨fun s => @hash Nat _ (show {s : Nat // N.family.Runs (N.family.siteOf s) C} from s).1⟩
+
 /-- **A framed plan's proposals** (the draft, "The plan"): the component
 `C`; the types a crossing reads read-only; the type outgoing values cross
 at; the realm's heap; the initialization's code and the order in which it
@@ -199,7 +204,7 @@ run in front of a client term of lowered outside source whose one free
 variable is the exports. -/
 def Initial (x₀ : Conf) : Prop :=
   ∃ client, x₀.s.h = spec.realm ∧ x₀.t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client ∧
-    prov (srcOk (spec.F.ofC spec.C)) client = true ∧ Scoped 1 client
+    LoweredSrc (spec.F.ofC spec.C) client ∧ Scoped 1 client
 
 /-- **The realization of an entering step** (the draft, "Realization",
 `RealizedAt`): `a₁` runs the realized code, and `a₂` is the first state
@@ -239,6 +244,27 @@ noncomputable def frame (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
     · obtain ⟨a₂, ha⟩ := he
       exact ⟨_, .inl ⟨a₂, ha, rfl⟩⟩
     · exact ⟨_, .inr ⟨he, rfl⟩⟩
+
+/-- The frame's sites are the plan's family's at its component: equality
+of them is decided. -/
+instance (r : SourceRequest σ ι) : DecidableEq ((spec.frame r).F.at (spec.frame r).C).Site :=
+  show DecidableEq (spec.fam.family.at spec.C).Site from inferInstance
+
+/-- The frame's sites are hashed by their numbers. -/
+instance (r : SourceRequest σ ι) : Hashable ((spec.frame r).F.at (spec.frame r).C).Site :=
+  show Hashable (spec.fam.family.at spec.C).Site from inferInstance
+
+omit [Labels ι] in
+/-- **An initial configuration's client is lowered outside source**
+(proved, by definition). -/
+theorem initial_lowered {x₀ : Conf} (hx : spec.Initial x₀) :
+    ∀ client, x₀.t = .letE (.goto spec.initE spec.initK 0 [] .undef (some spec.C)) client →
+      LoweredSrc (spec.F.ofC spec.C) client := by
+  obtain ⟨c, -, ht, hc, -⟩ := hx
+  intro client hcl
+  rw [ht] at hcl
+  cases hcl
+  exact hc
 
 /-- **The frame's entries are the realized public calls** (proved, by
 definition). -/

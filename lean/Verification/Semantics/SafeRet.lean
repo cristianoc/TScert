@@ -15,9 +15,10 @@ environment `ρ` meets `Ret l ρ h₀ h'` where the node's term is a value and
   state, the run followed past a step leaving a framed node only where the
   return meets `Ret` or `RetE`. The pending evaluation (the framed node and
   the heap it was entered at) is threaded along (`framedPend`).
-- `SafeRet.under` (proved): where an invariant of the obligation's ghost,
-  the pending evaluation and the state gives the returns at every step
-  keeping the obligation (`RetAt`), `SafeRet` gives `SafeUnder`.
+- `SafeRet.underW` (proved): where an invariant of the obligation's ghost,
+  the pending evaluation, the world and the state gives the returns at
+  every step keeping the obligation at the state's world (`RetAt`),
+  `SafeRet` gives `SafeUnder`.
 - `SafeRet.of_safe` (proved): ordinary safety with `J` along the run is
   `SafeRet` at every framed set; `SafeRet.erase` (proved): with no framed
   node, `SafeRet` is ordinary safety. -/
@@ -68,18 +69,28 @@ section
 variable {J : Heap → Tm → Prop} {Ξ T : Fam} {Q : WPost} {R : WExc} {F : Nat → Bool}
   {Ret RetE : Nat → Env → Heap → Heap → Prop}
 
+/-- The running term of a state safe at framed returns has valid
+references (proved). -/
+theorem SafeRet.refs : ∀ {n : Nat} {W : WorldT n} {p : Option (Nat × Heap)} {h : Heap} {t : Tm},
+    SafeRet J Ξ T Q R F Ret RetE n W p h t → RefsOk W t
+  | 0, _, _, _, _, hs => hs
+  | _ + 1, _, _, _, _, hs => hs.1
+
 /-- **Safety at framed returns along the executions keeping an obligation**
 (proved; the draft, `framed_requestSafe`'s induction): where an invariant
-`I` of the obligation's ghost, the pending framed evaluation and the state
-holds, and every step keeping the obligation from a state meeting it meets
-the framed returns and leaves a state meeting it, `SafeRet` gives
+`I` of the obligation's ghost, the pending framed evaluation, the world and
+the state holds, and every step keeping the obligation from a state meeting
+it, to a world and heap the derivation admits, meets the framed returns and
+leaves a state meeting it where its term is valid there, `SafeRet` gives
 `SafeUnder`: at each step keeping the obligation the return premise holds,
 and after a step breaking it nothing is claimed. -/
-theorem SafeRet.under {γ : Type} {K : γ → (k : Nat) → WorldT k → Heap → Tm → Heap → Tm → Prop}
-    {next : γ → Heap → Tm → Heap → Tm → γ} {I : γ → Option (Nat × Heap) → Heap → Tm → Prop}
-    (hinv : ∀ g p h t h' t' (k : Nat) (W : WorldT k), I g p h t → Step h t h' t' → K g k W h t h' t' →
-      RetAt Ret RetE p h' t t' ∧ I (next g h t h' t') (framedPend F p h t t') h' t') :
-    ∀ {n : Nat} {W : WorldT n} {g : γ} {p : Option (Nat × Heap)} {h : Heap} {t : Tm}, I g p h t →
+theorem SafeRet.underW {γ : Type} {K : γ → (k : Nat) → WorldT k → Heap → Tm → Heap → Tm → Prop}
+    {next : γ → Heap → Tm → Heap → Tm → γ}
+    {I : γ → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop}
+    (hinv : ∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
+      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → K g (k + 1) W h t h' t' →
+      RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (next g h t h' t') (framedPend F p h t t') k U h' t')) :
+    ∀ {n : Nat} {W : WorldT n} {g : γ} {p : Option (Nat × Heap)} {h : Heap} {t : Tm}, I g p n W h t →
       SafeRet J Ξ T Q R F Ret RetE n W p h t → SafeUnder K next J Ξ T Q R n W g h t := by
   intro n
   induction n with
@@ -91,8 +102,9 @@ theorem SafeRet.under {γ : Type} {K : γ → (k : Nat) → WorldT k → Heap �
     rcases hs with hv | ⟨U, h', t', hx, hu, st, hh, hs⟩
     · exact .inl hv
     · refine .inr ⟨U, h', t', hx, hu, st, hh, fun hK => ?_⟩
-      obtain ⟨hret, hi'⟩ := hinv g p h t h' t' _ W hi st hK
-      exact ih hi' (hs hret)
+      obtain ⟨hret, hi'⟩ := hinv g p n W h t U h' t' hi st hx hu hh hK
+      have hs' := hs hret
+      exact ih (hi' (SafeRet.refs hs')) hs'
 
 /-- **Ordinary safety is safety at every set of framed returns** (proved):
 `SafePostExcW` with `J` at every state reached within the budget gives

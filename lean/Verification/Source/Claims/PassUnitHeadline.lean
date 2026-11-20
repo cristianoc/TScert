@@ -208,7 +208,7 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     rwa [List.nil_append, hentries] at this
   have hguar := framedReturns_of_main Verification.TolerantFrames.run_sound_framed RetE hm hb hreg hregs htable
     (Verification.TolerantFrames.acceptsFramed_of_acceptedWalk hwalk) (summaries_of_checked htypes hs')
-  obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returns hguar hret
+  obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returnsW hguar hret
   have hcodeG := codesAccepted_guarantees hrun hkeep (summaries_of_checked htypes hs) hcodes
     (fun _ h => h) hnone
   refine ⟨hsafe, hf, he, hg, ha, ?_⟩

@@ -276,8 +276,8 @@ start premises of `lay_reached` and `wok_reached` come from the program
 in a context, `EvalCtx.layP_hole`, `EvalCtx.wok_hole`), and an initial
 configuration meets both where the initialization's node expressions and
 the realm do and the client is lowered source (`initial_starts`, proved,
-its premise the client's `LoweredSrc`; `Initial` states the client's
-provenance, `prov (srcOk …)`).
+its premise the client's `LoweredSrc`, which `Initial` states,
+`initial_lowered`).
 
 The layouts are a run invariant (`layouts_reached`, proved,
 `ReadOnlyLayouts.lean`): every closure a term or a heap holds or creates,
@@ -1389,7 +1389,7 @@ keeping $`\Theta_C`$ at the state's world, to a world and heap the step's
 safety admits, meets the returns (`RetAt`) and leaves a state meeting it
 where its term is valid there. `framedRun_of_returnsW` (proved, by
 `SafeRet.underW`) gives the main graph's five clauses from it and the
-guarantee, as `framedRun_of_returns` does from `FramedReturnsReached`.
+guarantee.
 
 Lean (proved, `FramedReturns.lean`):
 
@@ -1481,7 +1481,7 @@ Lean (proved, `FramedReturns.lean`):
     node's entry (`hq`).
 
 With no framed node the returns hold of every frame
-(`framedReturnsReached_none`, proved).
+(`framedReturnsReachedW_none`, proved).
 
 ### The framed claim, from the check
 
@@ -1495,9 +1495,9 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FramedSpec _}
 
 Proved: the sixth clause by `codesAccepted_guarantees` and
 `framedCode_of_guarantee`; the five main-graph clauses by
-`framedRun_of_returns` from `FramedObligations`' framed nodes and returns,
+`framedRun_of_returnsW` from `FramedObligations`' framed nodes and returns,
 the guarantee and the reached returns: at each call and history the frame
-starts from, `SafeRet.under` (proved, by induction on the budget) reads the
+starts from, `SafeRet.underW` (proved, by induction on the budget) reads the
 returns at each step keeping $`\Theta_C`$ from the invariant, and claims
 nothing past a step breaking it. The guarantee is `framedReturns_of_main`'s,
 from the framed main run `FramedAccepted` holds; the returns are
@@ -1548,8 +1548,8 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 `start_total`), `framed_requestSafe` from `FramedAccepted` (its codes'
 clause by `framedCode_of_guarantee`), `member_safe`'s framed branch,
 `OverStore` over framed plans, `framedRequestSafe_recandidated`,
-`SafeRet.under`, `SafeRet.of_safe`, `SafeRet.erase`, `framedRun_of_returns`,
-`framedReturns_of_requestSafe`, `framedReturnsReached_none`, `isolate`
+`SafeRet.underW`, `SafeRet.of_safe`, `SafeRet.erase`, `framedRun_of_returnsW`,
+`framedReturns_of_requestSafe`, `framedReturnsReachedW_none`, `isolate`
 (`innermostGoto_ctx`, `EvalCtx.step`, `EvalCtx.steps_inv`), `assertedAt_of_graph` (by `sim_reaches`, a path of the
 term that runs a graph is a graph path), `pkg_step_ok`, `stepWithin_of_check`, `readOnly_rule`,
 `supported_of_framed`, `step_changes`, `step_reach`, `stepAt_site`,

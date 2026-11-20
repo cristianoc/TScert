@@ -287,23 +287,26 @@ def FramedReturnsGuarantee (r : SourceRequest σ ι) (F : Nat → Bool) (Ret Ret
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun _ _ _ _ => True) (fun _ _ _ => True) F Ret RetE n W none h (gotoOf r.program r.start L d r.comp))
 
-/-- **The returns at reached executions** (`ret_reached`'s conclusion for
-the request and frame): an invariant of the frame's history, the pending
-framed evaluation and the state, holding at every call of the request the
-frame's claim is about (its entry contracts, valid roots, the frame's
-entry premises and a history it starts from, no evaluation pending), on
-which every step keeping the frame's obligation meets the returns `Ret`,
-`RetE` at the framed nodes `F` and leaves a state meeting it. -/
-def FramedReturnsReached (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (F : Nat → Bool)
+/-- **The returns at reached executions, at their worlds**: an invariant
+of the frame's history, the pending framed evaluation, the world and the
+state, holding at every call of the request the frame's claim is about,
+on which every step keeping the frame's obligation at the state's world,
+to a world `U` the step's safety admits and a heap it types, meets the
+returns `Ret`, `RetE` at the framed nodes `F`, and leaves a state meeting
+it at `U` where the term after the step is valid at `U`. -/
+def FramedReturnsReachedW (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (F : Nat → Bool)
     (Ret RetE : Nat → Env → Heap → Heap → Prop) : Prop :=
-  ∃ I : Verification.TolerantFrames.ReadOnly.Ghost (fr.F.at fr.C) → Option (Nat × Heap) → Heap → Tm → Prop,
+  ∃ I : Verification.TolerantFrames.ReadOnly.Ghost (fr.F.at fr.C) → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop,
     (∀ η n W h (L : List Tm) (d : Tm),
       EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
         (envOf L d) n W h → RootsOk W (envOf L d) →
       fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g → I g none h (gotoOf r.program r.start L d r.comp)) ∧
-    (∀ g p h t h' t' (k : Nat) (W : WorldT k), I g p h t → Step h t h' t' → fr.Keeps g k W h t h' t' →
-      HeapObservations.RetAt Ret RetE p h' t t' ∧ I (fr.next g h t h' t') (HeapObservations.framedPend F p h t t') h' t')
+      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
+        I g none n W h (gotoOf r.program r.start L d r.comp)) ∧
+    (∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
+      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → fr.Keeps g (k + 1) W h t h' t' →
+      HeapObservations.RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (fr.next g h t h' t') (HeapObservations.framedPend F p h t t') k U h' t'))
+
 end
 
 /-! ## A unit's members -/

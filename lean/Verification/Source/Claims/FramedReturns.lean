@@ -16,12 +16,8 @@ reached executions are an invariant of the frame's history, the pending
 framed evaluation, the world and the state, holding at every call the
 claim is about, on which every step keeping the obligation at the state's
 world, to a world and heap the step's safety gives, meets the returns
-(`FramedReturnsReachedW`).
+(`FramedReturnsReachedW`, `PassUnit.lean`).
 
-- `SafeRet.underW` (proved): `SafeRet.under` with the invariant read at
-  the worlds of the safety derivation;
-- `framedRun_of_returnsW` (proved): the main graph's five framed clauses
-  from the graph theorem at framed returns and `FramedReturnsReachedW`;
 - `ret_reachedW` (proved): `FramedReturnsReachedW` at the returns
   `framedRet S`, from the transfer at each framed node of the request's
   main graph (`FramedNodeTransfer`): along every execution of the frame
@@ -31,108 +27,6 @@ world, to a world and heap the step's safety gives, meets the returns
   configuration at the world, the term the request's graph code at the
   top (`TopRuns`), and the pending evaluation the execution from the
   entry of its node (`PendFrom`). -/
-namespace Verification.SourceClaimJson.PassUnit
-open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
-open Verification.TolerantFrames.ReadOnly
-open HeapObservations
-
-section
-variable {σ ι : Type} [Labels ι] [StoreView σ ι]
-
-/-- **The returns at reached executions, at their worlds**: an invariant
-of the frame's history, the pending framed evaluation, the world and the
-state, holding at every call of the request the frame's claim is about,
-on which every step keeping the frame's obligation at the state's world,
-to a world `U` the step's safety admits and a heap it types, meets the
-returns `Ret`, `RetE` at the framed nodes `F`, and leaves a state meeting
-it at `U` where the term after the step is valid at `U`. -/
-def FramedReturnsReachedW (r : SourceRequest σ ι) (fr : ClientFrame (Ty ι)) (F : Nat → Bool)
-    (Ret RetE : Nat → Env → Heap → Heap → Prop) : Prop :=
-  ∃ I : Ghost (fr.F.at fr.C) → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop,
-    (∀ η n W h (L : List Tm) (d : Tm),
-      EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-        (envOf L d) n W h → RootsOk W (envOf L d) →
-      fr.Call n W h (gotoOf r.program r.start L d r.comp) →
-      ∀ g, fr.start n W h (gotoOf r.program r.start L d r.comp) g →
-        I g none n W h (gotoOf r.program r.start L d r.comp)) ∧
-    (∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
-      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → fr.Keeps g (k + 1) W h t h' t' →
-      RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (fr.next g h t h' t') (framedPend F p h t t') k U h' t'))
-
-end
-
-/-! ## Safety at framed returns along the executions keeping an obligation -/
-
-section
-variable {J : Heap → Tm → Prop} {Ξ T : Fam} {Q : WPost} {R : WExc} {F : Nat → Bool}
-  {Ret RetE : Nat → Env → Heap → Heap → Prop}
-
-/-- The running term of a state safe at framed returns has valid
-references (proved). -/
-theorem SafeRet.refs : ∀ {n : Nat} {W : WorldT n} {p : Option (Nat × Heap)} {h : Heap} {t : Tm},
-    SafeRet J Ξ T Q R F Ret RetE n W p h t → RefsOk W t
-  | 0, _, _, _, _, hs => hs
-  | _ + 1, _, _, _, _, hs => hs.1
-
-/-- **Safety at framed returns along the executions keeping an obligation,
-at the derivation's worlds** (proved; `SafeRet.under` with the invariant
-read at the world of each state): where an invariant `I` of the
-obligation's ghost, the pending framed evaluation, the world and the state
-holds, and every step keeping the obligation from a state meeting it, to a
-world and heap the derivation admits, meets the framed returns and leaves a
-state meeting it where its term is valid there, `SafeRet` gives
-`SafeUnder`. -/
-theorem SafeRet.underW {γ : Type} {K : γ → (k : Nat) → WorldT k → Heap → Tm → Heap → Tm → Prop}
-    {next : γ → Heap → Tm → Heap → Tm → γ}
-    {I : γ → Option (Nat × Heap) → (k : Nat) → WorldT k → Heap → Tm → Prop}
-    (hinv : ∀ g p (k : Nat) (W : WorldT (k + 1)) h t (U : WorldT k) h' t', I g p (k + 1) W h t → Step h t h' t' →
-      WExt (trunc k (Nat.le_succ k) W) U → WorldAdm U → HeapOk k U h' → K g (k + 1) W h t h' t' →
-      RetAt Ret RetE p h' t t' ∧ (RefsOk U t' → I (next g h t h' t') (framedPend F p h t t') k U h' t')) :
-    ∀ {n : Nat} {W : WorldT n} {g : γ} {p : Option (Nat × Heap)} {h : Heap} {t : Tm}, I g p n W h t →
-      SafeRet J Ξ T Q R F Ret RetE n W p h t → SafeUnder K next J Ξ T Q R n W g h t := by
-  intro n
-  induction n with
-  | zero => intro _ _ _ _ _ _ hs; exact hs
-  | succ n ih =>
-    intro W g p h t hi hs
-    obtain ⟨hrf, hJ, hs⟩ := hs
-    refine ⟨hrf, hJ, ?_⟩
-    rcases hs with hv | ⟨U, h', t', hx, hu, st, hh, hs⟩
-    · exact .inl hv
-    · refine .inr ⟨U, h', t', hx, hu, st, hh, fun hK => ?_⟩
-      obtain ⟨hret, hi'⟩ := hinv g p n W h t U h' t' hi st hx hu hh hK
-      have hs' := hs hret
-      exact ih (hi' (SafeRet.refs hs')) hs'
-
-end
-
-section
-variable {σ ι : Type} [Labels ι] [StoreView σ ι] {fr : ClientFrame (Ty ι)}
-
-/-- **The main graph's framed clauses from the returns at their worlds**
-(proved; `framedRun_of_returns` with `FramedReturnsReachedW`): where the
-request's graph is safe at framed returns and the returns hold at the
-executions the frame's claim is about, read at their worlds, the five
-main-graph clauses of `FramedRequestSafe` hold, by `SafeRet.underW`. -/
-theorem framedRun_of_returnsW {r : SourceRequest σ ι} {F : Nat → Bool} {Ret RetE : Nat → Env → Heap → Heap → Prop}
-    (hg : FramedReturnsGuarantee r F Ret RetE) (hr : FramedReturnsReachedW r fr F Ret RetE) :
-    FramedSafeClause r fr ∧ FramedFootprintClause r fr ∧ FramedEnsuresClause r fr ∧ FramedRegionalClause r fr ∧
-      FramedAssertionsClause r fr := by
-  obtain ⟨hs, hf, he, hgr, ha⟩ := hg
-  obtain ⟨I, hstart, hinv⟩ := hr
-  refine ⟨fun η hη n W h L d hE hR hN g hg' => ?_, fun hb η n W h L d hE hR hL hd hN g hg' => ?_,
-    fun hn η n W h L d hE hR hN g hg' => ?_, fun Φ regions hreg η n W h L d hE hR hN g hg' => ?_,
-    fun η hη n W h L d hE hR hN g hg' => ?_⟩
-  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (hs η hη n W h L d hE hR)
-  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (hf hb η n W h L d hE hR hL hd)
-  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (he hn η n W h L d hE hR)
-  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (hgr Φ regions hreg η n W h L d hE hR)
-  · exact SafeRet.underW hinv (hstart η n W h L d hE hR hN g hg') (ha η hη n W h L d hE hR)
-
-end
-
-end Verification.SourceClaimJson.PassUnit
-
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow HeapObservations
 
