@@ -2161,45 +2161,36 @@ h` binds `.var`, so `g`'s slot gets `(j, [])`; `const w = h.widths` binds
 `readAt "widths" (.var h)`, so `w`'s slot gets `(j, [widths])`; `h = w`
 maps `h`'s slot from `w`'s, whose entry names the other parameter.
 
-**A region read as protected.** A region $`r`$ names a slot
-$`\mathrm{slot}(r)`$ ($`x`$ of `field x k`, `path x p k`, `spine x p`,
-`cells x` and `pathCells x p`; that of $`r`$ for `inCls r c`; none for
+**A region read as protected** (`FramedReading.lean`). A region $`r`$
+names a slot (`regionSlot`: $`x`$ of `field x k`, `path x p k`, `spine x
+p`, `cells x` and `pathCells x p`; that of $`r`$ for `inCls r c`; none for
 `fields`, `pathFields`, `cls` and `all`, which `frameCheckAt` refuses) and
-**prefix regions** $`\mathrm{pre}(r)`$, the regions whose locations'
-contents its membership reads (`Region.mem` through
-`HeapKnowledge.readPath` and `spineCells`), by cases on `Region`:
-
-| $`r`$ | $`\mathrm{pre}(r)`$, in order |
-| --- | --- |
-| `field x k` | none |
-| `path x p k`, `spine x p` | `path x (p.take i) p[i]` for each $`i<\lvert p\rvert`$ |
-| `cells x` | `spine x []` |
-| `pathCells x p` | those of `spine x p`, then `spine x p` |
-| `inCls r c` | those of $`r`$ |
+the steps of the locations its membership reads from the slot's value
+(`regionSteps`: `field 0 f` for each own field of its path, and for cells
+the spine they are read from, `field 0 []` and `spine 0 []`).
 
 At a framed node $`l`$ of the request's code $`m`$, with $`\Psi_C`$ =
-`componentProtocol F lay` and $`\Theta_C`$ the plan's obligation, $`r`$
-is **read as protected** (`protRegionB`, to be written) when at every
-node $`l'`$ sharing $`l`$'s continuation and handler (`sharingNodes m l`)
-some $`(\mathrm{slot}(r),j,\pi)\in\mathit{cp}(l')`$ has:
+`componentProtocol F lay`, $`r`$ is **read as protected**
+(`protRegionB Ψ_C cp arity roPos m l r`) when $`\Psi_C`$ keeps the parts of
+$`r`$'s steps (`stepsKeptB`) and at every node $`l'`$ sharing $`l`$'s
+continuation and handler (`sharingNodes m l`) some
+$`(\mathrm{slot}(r),j,\pi)\in\mathit{cp}(l')`$ has:
 
 - **(C) a read-only position**: `roPos j`, $`j`$ below the arity;
-- **(P) the path kept**: $`(\Psi_C\sqcup\Theta_C)(p)=\mathsf{keep}`$ at
-  each part $`p`$ of `pathParts H (π₀.env r.start j) π` at every context
-  $`\pi_0`$ of the request's code (the entry's sets of slot $`j`$), and at
-  every context $`c`$ and each $`q\in\mathrm{pre}(r)`$, $`q`$ has sites at
-  the slots of $`(m,c)`$ at $`l'`$ (`regionSites`) and the same holds at
-  each part of $`q`$ there (`callParts`).
+- **(P) the path kept**: $`\Psi_C`$ keeps the parts of the path's steps
+  (`stepsKeptB Ψ_C (pathSteps π)`).
 
-$`\Theta_C`$ keeps every part (`thetaKeepB`, checked at every framed
-plan), so (P) is decided by $`\Psi_C`$, which is $`\mathsf{keep}`$ at a
-part of no local site exactly where no write of $`C`$'s code or native
-step model is charged at its kind and key (`probeProtocol`). The decision
-is stated for every path of field and element reads from an entry value,
-as the paper's "reached read-only" is; with the plan's view a read-only
-type is read-only at every path (`TypeView.roPath_iff`, `ro_at`), so a
-prefix ending at a read-only position is the whole path from the
-parameter.
+A step's parts are those at a kind its bound holds and a key of the step,
+at the site `none` (`stepKeptB`); $`\Psi_C`$ is the same at every site but
+a local one, and no location a crossing in reaches is of a local site
+(the entering step's `CrossOk`). $`\Theta_C`$ keeps every part
+(`thetaKeepB`, checked at every framed plan), so $`(\Psi_C\sqcup\Theta_C)
+(p)=\mathsf{keep}`$ exactly where $`\Psi_C(p)=\mathsf{keep}`$, which holds
+at a part of no local site exactly where no write of $`C`$'s code or
+native step model is charged at its kind and key (`probeProtocol`). With
+the plan's view a read-only type is read-only at every path
+(`TypeView.roPath_iff`, `ro_at`), so a prefix ending at a read-only
+position is the whole path from the parameter.
 
 ### The theorem chain
 
@@ -2315,12 +2306,17 @@ proved results named.
    read-only positions reach at kept parts holds its contents along the
    call (`kept_along`), so the copies hold (`copies_along`) and the
    region's read locations are unchanged (`region_reach`).
-9. **The witness at a framed node** (`prot_witness`). At such a state,
-   every lent location of a region read as protected at `envOf L d` and
-   $`b_0`$'s heap is a location of the region at $`h_0`$
-   (`prefix_unchanged`, `region_mem_of_prefix`), reached from the
-   parameter's value (`region_follows`, `reads_follows`), witnessed at the
-   start (`start_witness`) and at $`b_0`$ (`witness_of_start`).
+9. **The witness at a framed node** (proved; `FramedReading.lean`).
+   `ClientFrame.prot_witness`: at a frame of the code entering node $`l`$,
+   reached from a call's start whose read-only arguments reach only
+   protected locations, witnessed where released or outside storage,
+   every released or outside location of a region `protRegionB` reads as
+   protected at $`l`$ is reached from the argument at $`h_0`$
+   (`region_reached`), so witnessed at the start and, the history growing
+   inside the call, at the frame's state (`witness_of_start`, `ex_sites`).
+   `FramedSpec.prot_witness`: the same at the plan's frame, the start's
+   protection by `start_protects`, at a checked table; `copiesOf_sound`:
+   the proposal's table is checked.
 10. **The returns with protection**. `framed_of_check` takes
     `prot : Nat → Region → Bool` and the witness premise at depth `1` in
     place of `fun _ _ hp => by cases hp`, its check at `prot l`;
