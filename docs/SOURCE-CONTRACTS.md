@@ -1701,7 +1701,7 @@ Write $`⟦\tau⟧`$ for the source term the declaration reader
 gives type syntax $`\tau`$ (`typeTerm`), and $`\mathit{lib}(N)`$ when every
 declaration TypeScript binds $`N`$ to is in a standard library file, one
 the compiler's own library resolution gives the program
-(`isSourceFileDefaultLibrary`), whatever else is named like one:
+(`getSourceFileMetadata`’s `isDefaultLibrary`), whatever else is named like one:
 
 ```math
 \frac{\mathit{lib}(\mathtt{Array})}

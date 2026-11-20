@@ -301,12 +301,10 @@ function moduleIds(clientFile: string, root: string, program: Program):
   // The standard library is the files the compiler's own library resolution
   // gives the program (`isSourceFileDefaultLibrary`), whatever else is
   // named like one; only names of that form are asked. Every library
-  // decision reads this membership.
+  // decision reads this membership. The metadata gives exactly the bit
+  // isSourceFileDefaultLibrary reads, without transferring a library’s AST.
   const libraries = new Set(program.getSourceFileNames().filter(name => /^lib\..*\.d\.ts$/.test(basename(name)))
-    .flatMap(name => {
-      const file = program.getSourceFile(name);
-      return file && program.isSourceFileDefaultLibrary(file) ? [realPath(name)] : [];
-    }));
+    .flatMap(name => program.getSourceFileMetadata(name)?.isDefaultLibrary ? [realPath(name)] : []));
   const libraryFile = (file: SourceFile): boolean => libraries.has(realPath(file.fileName));
   // The identities are disjoint by construction: the client by its absolute
   // path, a library file `typescript/lib/<file>`, any other file its path
