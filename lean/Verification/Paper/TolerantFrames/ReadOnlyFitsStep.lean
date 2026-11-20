@@ -344,7 +344,8 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
     {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm} {K : List (Continuation × Option Target)} {s : Nat}
     {caps : List Tm} {kd : Invoke} {rest : Bool} {comp : ComponentTag} {oid : Nat} {recv : Tm} {args : List Tm}
     (hf : VJ Fl g n Fl.O (.objAt fs (.graph ar E K s caps kd rest comp) oid)) (hr : VJ Fl g n Fl.O recv)
-    (hargs : ∀ x ∈ args, VJ Fl g n Fl.O x) (ha : a.arr ∈ Fl.O) (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O) :
+    (hargs : ∀ x ∈ args, VJ Fl g n Fl.O x) (ha : a.arr ∈ Fl.O) (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O)
+    (hao : P.ofC comp = false → a.out = true) :
     Fits Fl (VJ Fl g n) Γ a o S
       (CallArguments.graphEntry ar E K s caps (.objAt fs (.graph ar E K s caps kd rest comp) oid) rest comp recv args) := by
   -- every entry before the captures, the closure and the default meet `O`
@@ -368,12 +369,12 @@ theorem fits_graphEntry {n : Nat} (hF : Fl.Facts) {Γ : Nat → Option (Sites P)
       · rw [h]; exact .inl hf
       · rw [h]; exact .inl (VJ.prim rfl)
     cases rest with
-    | false => exact .gotoOut hc hlow (hO _ _ fun x hx => .inl (hpre x hx)) hS ho
+    | false => exact .gotoOut hc hlow (hO _ _ fun x hx => .inl (hpre x hx)) hS ho (hao hc)
     | true =>
       refine .letE (Sx := Fl.O) (.arrLit (fun _ => Fl.O) (fun _ _ => hF.writable _ ha)
         (fun x hx => .val (hargs x (List.mem_of_mem_drop hx)).val (hargs x (List.mem_of_mem_drop hx))
           (fun _ => Sub.refl _)) ha (fun _ => Sub.refl _)) ?_ ho
-      refine .gotoOut hc hlow (hO _ _ fun x hx => ?_) hS ho
+      refine .gotoOut hc hlow (hO _ _ fun x hx => ?_) hS ho (hao hc)
       rcases List.mem_cons.mp hx with rfl | hx
       · exact .inr ⟨0, Fl.O, rfl, rfl, Sub.refl _⟩
       · exact .inl (hpre x hx)
@@ -990,13 +991,13 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       simp only [stepSite, activeFrame] at ht' hH' ⊢
       exact ⟨.frameC c π l hc hcode hnode (fun i => (henv i).alloc hl) hfn (fun σ hσ => (hvfn σ hσ).step hst) ht' hS ho,
         hH'⟩
-    | frameOut hc hE henv ht hS =>
+    | frameOut hc hE henv ht hS _ hao =>
       rw [show (FrameAt.outside : FrameAt P) = ⟨Alloc.outside, true⟩ from rfl,
         ← allocOf_out (Fl := Fl) (m := (_, _)) (kx := (_, _)) hc] at ht
       obtain ⟨ht', hH'⟩ := ih ht hH
       rw [allocOf_out hc] at ht'
       simp only [stepSite, activeFrame] at ht' hH' ⊢
-      exact ⟨.frameOut hc hE (fun i => (henv i).alloc hl) ht' hS ho, hH'⟩
+      exact ⟨.frameOut hc hE (fun i => (henv i).alloc hl) ht' hS ho hao, hH'⟩
   | testV hv =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1246,7 +1247,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨.val hv ((((ht.value hv).sub hk).sub hS).alloc (Nat.le_refl _)) ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
+    | frameOut hc hE henv ht hS _ hao =>
       exact ⟨.val hv (((ht.value hv).sub hS).alloc (Nat.le_refl _)) ho, hH.same⟩
   | frameBind hv =>
     intro cur ou o S hfit hH
@@ -1258,8 +1259,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))
         (hkf _ _ _ hfn fun σ hσ => (hvfn σ hσ).fnIs hv) hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho hao, hH.same⟩
   | frameEffect hv =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1269,8 +1270,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))) (hkf _ _ hfn) hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho hao, hH.same⟩
   | frameYes  =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1280,8 +1281,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho hao, hH.same⟩
   | frameNo  =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1291,8 +1292,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (fun i => (henv i).alloc (Nat.le_refl _))) hS ho hao, hH.same⟩
   | frameYesBind  =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1302,8 +1303,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).1 (hkf _ _ hfn).1 hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho hao, hH.same⟩
   | frameNoBind  =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1313,8 +1314,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hk, hx⟩ := codeOk_node hF hcode hn
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hk _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _))).2 (hkf _ _ hfn).2 hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) (VJ.prim rfl))) hS ho hao, hH.same⟩
   | frameTag hv =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1331,8 +1332,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       · exact fits_gotoC hc hcode
           (hk _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _))).2
           (hkf _ _ _ hfn fun σ hσ => (hvfn σ hσ).fnIs hv).2 hS ho
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((ht.value hv).alloc (Nat.le_refl _)))) hS ho hao, hH.same⟩
   | frameHandle hr =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1343,8 +1344,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       exact ⟨fits_gotoC hc hcode (hx _ _ _ _ _ (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))
         (hxf _ _ _ hfn) hS ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
-      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))) hS ho, hH.same⟩
+    | frameOut hc hE henv ht hS _ hao =>
+      exact ⟨fits_gotoOut hc hE (envIn_map_O (envIn_cons (fun i => (henv i).alloc (Nat.le_refl _)) ((raises_fits hr ht).alloc (Nat.le_refl _)))) hS ho hao, hH.same⟩
   | frameRaise hr =>
     intro cur ou o S hfit hH
     have ho := hfit.out
@@ -1355,7 +1356,7 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hkf, hxf⟩ := codeFn_node hF hcode hn
       have hv := raises_fits hr ht
       exact ⟨.throw (.val hv.val (hv.alloc (Nat.le_refl _)) (fun _ => Sub.refl _)) ho, hH.same⟩
-    | frameOut hc hE henv ht hS =>
+    | frameOut hc hE henv ht hS _ hao =>
       have hv := raises_fits hr ht
       exact ⟨.throw (.val hv.val (hv.alloc (Nat.le_refl _)) (fun _ => Sub.refl _)) ho, hH.same⟩
   | letV hav =>
@@ -1384,9 +1385,9 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
       obtain ⟨hent, -⟩ := hF.ok _ c π hcode _ _ _ _ he hk
       exact ⟨.frameC c π _ hc hcode ⟨hk, _, he⟩ (fun i => (henv' i).alloc (Nat.le_refl _)) hfn
         (hent g _ _ _ henv' hfn).2 (hent _ _ _ _ (fun i => (henv' i).alloc (Nat.le_refl _)) hfn).1 hS ho, hH.same⟩
-    | gotoOut hc hE henv hS =>
+    | gotoOut hc hE henv hS _ hao =>
       have henv' := fun i => (henv i).top
-      refine ⟨.frameOut hc hE (fun i => (henv' i).alloc (Nat.le_refl _)) ?_ hS ho, hH.same⟩
+      refine ⟨.frameOut hc hE (fun i => (henv' i).alloc (Nat.le_refl _)) ?_ hS ho hao, hH.same⟩
       exact fits_lowered hF _ (fun i => (henv' i).alloc (Nat.le_refl _)) _ 0 _ (hE _ (List.mem_of_getElem? he))
         (fun i hi => absurd hi (Nat.not_lt_zero _))
   | callGraph hr hargs _ =>
@@ -1396,7 +1397,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | invoke hf hr' hargs' hS ha _ hSf hout =>
       exact ⟨fits_graphEntry hF (((hf.value rfl).sub hSf).alloc (Nat.le_refl _)) ((hr'.value hr).alloc (Nat.le_refl _))
-        (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS ho, hH.same⟩
+        (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS ho
+        (fun hc => hout ((hf.value rfl).fns.notOut ⟨_, _, _, _, _, _, _, _, _, _, rfl, hc⟩)), hH.same⟩
     | invokeC σ c π Sa Sr hof hfn hcode hself hr' hargs' hat hpar hrest hS =>
       obtain ⟨fs', caps', k', comp', oid', he, hlen, hc⟩ := hfn
       cases he
@@ -1411,7 +1413,8 @@ theorem fits_step (hF : Fl.Facts) {h t h' t'} (hs : Step h t h' t') :
     | val hv => simp [isVal] at hv
     | construct hf hargs' hS ha _ hSf hout =>
       exact ⟨fits_graphEntry hF (((hf.value rfl).sub hSf).alloc (Nat.le_refl _)) (VJ.prim rfl)
-        (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS ho, hH.same⟩
+        (fun x hx => ((hargs' x hx).value (hargs x hx)).alloc (Nat.le_refl _)) ha hS ho
+        (fun hc => hout ((hf.value rfl).fns.notOut ⟨_, _, _, _, _, _, _, _, _, _, rfl, hc⟩)), hH.same⟩
   | callBound hr hargs =>
     intro cur ou o S hfit hH
     have ho := hfit.out

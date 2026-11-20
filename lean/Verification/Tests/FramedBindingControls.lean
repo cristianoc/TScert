@@ -235,14 +235,14 @@ private def frameB (F : FFlow Pk := frameFlow) (lay : List (Nat × Bool × Nat �
 /-- A code of one node calling slot 0. -/
 private def m₂ : Code := ([.invoke (.var 0) .undef [.var 1]], [(.ret, none)])
 
-#guard framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => some []) (fun _ _ => false)
+#guard framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => some (some [])) (fun _ _ => false)
 -- a framed node calling a computed operand
 #guard !framedNodesAt (frameFlow) [] [] [(0, [])] ([.invoke (.readAt "f" (.var 0)) .undef []], [(.ret, none)])
-  (fun _ => some []) (fun _ _ => false)
+  (fun _ => some (some [])) (fun _ _ => false)
 -- a framed node with no stated effect of its callee
 #guard !framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => none) (fun _ _ => false)
 -- a framed node outside the code
-#guard !framedNodesAt (frameFlow) [] [] [(1, [])] m₂ (fun _ => some []) (fun _ _ => false)
+#guard !framedNodesAt (frameFlow) [] [] [(1, [])] m₂ (fun _ => some (some [])) (fun _ _ => false)
 
 /-! ## The protected reading (the decision's (P) at a region's prefix)
 

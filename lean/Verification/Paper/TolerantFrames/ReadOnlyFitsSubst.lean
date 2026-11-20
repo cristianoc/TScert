@@ -60,10 +60,10 @@ theorem Fits.sub_aux {V : Sites P → Val → Prop} (hV : Mono V) :
   | merge hx hy hq hcl hst hs hQ _ _ _ => intro _ hS ho; exact .merge hx hy hq hcl hst (hS _ hs) hQ ho
   | makeKey hk hst hx hs _ _ _ => intro _ hS ho; exact .makeKey hk hst hx (hS _ hs) ho
   | gotoC c π hc hcode henv hfn hO _ => intro _ hS ho; exact .gotoC c π hc hcode henv hfn (hO.trans hS) ho
-  | gotoOut hc hE henv hO _ => intro _ hS ho; exact .gotoOut hc hE henv (hO.trans hS) ho
+  | gotoOut hc hE henv hO _ hao => intro _ hS ho; exact .gotoOut hc hE henv (hO.trans hS) ho hao
   | frameC c π l hc hcode hn henv hfn hvfn ht hO _ _ =>
     intro _ hS ho; exact .frameC c π l hc hcode hn henv hfn hvfn ht (hO.trans hS) ho
-  | frameOut hc hE henv ht hO _ _ => intro _ hS ho; exact .frameOut hc hE henv ht (hO.trans hS) ho
+  | frameOut hc hE henv ht hO _ hao _ => intro _ hS ho; exact .frameOut hc hE henv ht (hO.trans hS) ho hao
 
 /-- **A term fitting a set fits every larger set** (proved), at a monotone
 value judgment, within `O` at a position of outside code. -/
@@ -318,10 +318,10 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     refine .gotoC c π hc hcode (fun i => by rw [envOf_map]; exact (henv i).subst hv) (fun i σ hi => ?_) hO ho
     rw [envOf_map, ((henv i).fn_closed (hfn i σ hi)) j v]
     exact hfn i σ hi
-  | gotoOut hc hE henv hO ho =>
+  | gotoOut hc hE henv hO ho hao =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
-    exact .gotoOut hc hE (fun i => by rw [envOf_map]; exact (henv i).subst hv) hO ho
+    exact .gotoOut hc hE (fun i => by rw [envOf_map]; exact (henv i).subst hv) hO ho hao
   | frameC c π l hc hcode hn henv hfn hvfn ht hO ho ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
@@ -330,10 +330,10 @@ theorem fits_subst_aux {Sx : Sites P} {v : Val} (hv : VJ Fl g n Sx v) :
     rcases hvfn σ hσ with hf | hm
     · rw [(ht.value hf.val).closed j v]; exact hf.tm
     · exact FnTm.subst_make j v hm
-  | frameOut hc hE henv _ hO ho ih =>
+  | frameOut hc hE henv _ hO ho hao ih =>
     intro j Γ hΓ; subst hΓ
     simp only [subst, substArgs_eq_map]
-    exact .frameOut hc hE (fun i => by rw [envOf_map, (henv i).closed j v]; exact henv i) (ih rfl) hO ho
+    exact .frameOut hc hE (fun i => by rw [envOf_map, (henv i).closed j v]; exact henv i) (ih rfl) hO ho hao
 
 /-- **Substitution keeps a term fitting** (proved): a value meeting the
 sites of the variable `j` replaces it. -/

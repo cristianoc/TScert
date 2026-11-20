@@ -568,8 +568,8 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint} {prot : Nat → Footprints.Region → Bool}
-    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+    {Φ : Nat → Footprints.Footprint} {own : Nat → Bool} {prot : Nat → Footprints.Region → Bool}
+    (hcheck : ∀ l e k x, F l = true → own l = false → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
@@ -580,7 +580,7 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
       (capClose spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)) = true)
     (hΘ : ∀ p, ((spec.frame r).Θ p).le (componentProtocol spec.fflow spec.lay p) = true)
     (hW : ∀ l p, (componentProtocol spec.fflow spec.lay p).le (Ψc l p) = true)
-    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true → own l = false →
       (spec.frame r).Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
@@ -589,7 +589,8 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
       Ex (spec.frame r).KStep (fun s => Inside (spec.frame r).F (spec.frame r).C (r.program.map (·.expression))
         (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
       a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
-        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hownc : OwnChecks spec.fflow.flow (requestCode r).1 (requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) := by
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
@@ -600,6 +601,6 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
   exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit hrets)
     (spec.chkSound r hFa (FFlow.marksB_sound hmk) hE)
     (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE htok hlow
-    hcomp hatom hT hle hslots hcheck hw (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ
+    hcomp hatom hT hle hslots hcheck hw (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ hownc
 
 end Verification.SourceClaimJson.PassUnit

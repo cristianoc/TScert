@@ -92,14 +92,15 @@ def partText {P : Package} (p : Part P) (site : P.Site → Nat) : String :=
   let key := (p.key.map propKeyText).getD "no key"
   s!"({s}, {k}, {key})"
 
-/-- **Why a framed node drops a support**, as a line (`supportFailure`). -/
-def supportFailureText {P : Package} (site : P.Site → Nat) (l : Nat) :
+/-- **Why a framed node drops a support**, as a line (`supportFailure`),
+the effect bounding its call named `bound`. -/
+def supportFailureText {P : Package} (site : P.Site → Nat) (l : Nat) (bound : String) :
     Footprints.Region × Option ((Footprints.Region × Footprints.Change) × Part P × Bool × Bool × Footprints.Change) →
       String
   | (r, none) => s!"framed node {l} drops a support: the region {regionText r} has no sites"
   | (_, some (e, p, inside, outside, ψ)) =>
     let why := (if inside then [s!"the node's protocol is {changeText ψ} there, above {changeText e.2}"] else []) ++
-      (if outside then [s!"the callee's stated effect changes it beyond {changeText e.2}, the region read unprotected"]
+      (if outside then [s!"{bound} changes it beyond {changeText e.2}, the region read unprotected"]
         else [])
     s!"framed node {l} drops a support: {regionText e.1} at {changeText e.2} fails at the part {partText p site}: {"; ".intercalate why}"
 
@@ -113,7 +114,7 @@ first (`supportFailure`). -/
 def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel i : Nat) (cf : ComponentFlow ofC)
     (Θ : Protocol (markedPackage ofC cf.O)) (r : SourceElaboration.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
       (EquationStore.CheckedLabel f.F.equations f.F.primitive)) (nodes : List Nat)
-    (prot : Nat → Footprints.Region → Bool) :
+    (prot : Nat → Footprints.Region → Bool) (client : Nat → Bool) :
     List (Nat × List Footprints.Footprint) × List String × List String := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := LabelStore.StoreView.graph f.F.store
   -- (each node observed in the walk framing those found before it; a node
@@ -128,9 +129,9 @@ def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel
     -- every later round repeats it)
     let start := framed
     for l in nodes do
-      let eff := match r.claims[l]?, r.program[l]? with
+      let eff := callBound (client l) (noOutB cf.flow) (match r.claims[l]?, r.program[l]? with
         | some c, some n => callEffectAt G c n.expression
-        | _, _ => none
+        | _, _ => none)
       let others := framed.filter (·.1 != l)
       match f.passMember fuel i (observe := some s!"node:{l}") (framed := others) with
       | .ok run => match (run.main.map (·.outcome)).getD run.outcome, eff with
@@ -142,11 +143,15 @@ def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel
             | some e => framedNodeKeeps cf.flow cf.lay Θ m l e Φ (prot l) Ss
             | none => []
           let reason := match m.1[l]? with
-            | some e => (Ss.findSome? fun S => supportFailure cf.flow cf.lay Θ m l e Φ (prot l) S).map (supportFailureText id l)
+            | some e => (Ss.findSome? fun S => supportFailure cf.flow cf.lay Θ m l e Φ (prot l) S).map (supportFailureText id l
+              (if client l then "the callee's stated effect" else "the top effect"))
             | none => none
           why := why.filter (·.1 != l) ++ (reason.map fun w => (l, w)).toList
           let lost := atoms.filter fun a => !SinglePass.supportedIn kept a.fact
-          shown := shown ++ [s!"  node {l}: effect {(reprStr Φ).replace "\n" " "}; {kept.length} of {Ss.length} entry supports kept; dropped {(toJson lost).compress}"]
+          let bound := match Φ with
+            | some Φ => s!"effect {(reprStr Φ).replace "\n" " "}"
+            | none => "bounded by its segment's charges"
+          shown := shown ++ [s!"  node {l}: {bound}; {kept.length} of {Ss.length} entry supports kept; dropped {(toJson lost).compress}"]
           framed := others ++ [(l, kept)]
         | .observed _, none => shown := shown ++ [s!"  node {l}: no stated effect of its callee"]
         | o, _ => shown := shown ++ [s!"  node {l} not observed: {o}"]
@@ -168,7 +173,7 @@ def FilePlans.framedCheck {ofC : ComponentTag → Bool} (f : FilePlans) (fuel : 
   for _ in List.range 12 do
     let (framed, shown, _) := match g.plans[i]? with
       -- (no plan, so no read-only position: no region read as protected)
-      | some (.ok (.graph _ _ r')) => g.framedSupports fuel i cf (fun _ => .keep) r' nodes (fun _ _ => false)
+      | some (.ok (.graph _ _ r')) => g.framedSupports fuel i cf (fun _ => .keep) r' nodes (fun _ _ => false) (fun _ => false)
       | _ => ([], [], [])
     lines := lines ++ shown
     match g.passMember fuel i (framed := framed) with
@@ -539,7 +544,11 @@ def FilePlans.framedPlan (f : FilePlans) (fuel i : Nat) (fc : FramedComponent) (
     fun p => (componentProtocol F fc.cf.lay p).max (nativeProtocol (nativeSites F fc.cf.lay) p)
   let prot := fun l q => calleeArgB cp 0 arity (requestCode r) l &&
     protRegionB Ψ cp arity (fun j => ro.getD j false) (requestCode r) l q
-  let (framed, shown, why) := f.framedSupports fuel i fc.cf Θ r nodes prot
+  -- (the calls of functions the client passes, as the pass's check reads
+  -- them: `FramedSpec.clientCallee` at the plan the decoder forms)
+  let inner := innerB F fc.entries name m
+  let client := fun l => !inner && calleeArgB cp 0 arity (requestCode r) l
+  let (framed, shown, why) := f.framedSupports fuel i fc.cf Θ r nodes prot client
   let doc := forgeDocument force (framedDocument fc.C fc.entries (rowsKinds fc.rows) fc.psiDef framed)
   let spec ← (FramedSpec.decode fc name r doc).mapError fun e => s!"a framed plan's document is refused: {e}"
   return some (f.withPlan i (.framed name pos r (forgeSpec force r.inputs spec)),

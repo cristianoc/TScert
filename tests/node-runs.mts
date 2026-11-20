@@ -74,6 +74,13 @@ assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-known-ca
   "the arrow moves the cursor its caller gave the walker past the array, under the walker's read");
 assert.equal(runExample("bounds-pattern-framed-known-calls", "total([1, 2])"), 3);
 assert.equal(runExample("bounds-pattern-framed-inner-walker", "countLines([1, 2, 3])"), 3);
+assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-construct",
+  "(() => { const xs = [1, 2, 3]; return total(xs, function () { xs.pop(); }); })()"))),
+  "the constructor of the class the arrow constructs pops the client's array under the walker's read");
+assert.equal(runExample("bounds-pattern-framed-mixed-local", "total(() => {})"), 6);
+assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-mixed",
+  "(() => { const xs = [1, 2, 3]; return total(xs, () => { xs.pop(); }); })()"))),
+  "the client's function the arrow calls pops the client's array under the walker's read");
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-walker-pops",
   "(() => { const o = { flags: [1, 1, 1] }; return walk(o, o, () => {}); })()"))),
   "the walker pops the array of the record it was given twice, under its own reads");

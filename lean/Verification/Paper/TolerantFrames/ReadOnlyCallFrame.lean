@@ -383,6 +383,47 @@ theorem framed_of_frame {Fl : Flow P} {Γ : Nat → Option (Sites P)} {a : Frame
   obtain ⟨c, π, l, hcode, hn, henv⟩ := frame_sites hf hc
   exact ⟨c, π, l, hcode, hn, fun hck hq hρ hw => framed_of_sites hck hq hρ henv hH.sites hw⟩
 
+/-! ## A call whose segment runs no outside code -/
+
+/-- **The charges' premise at every location**: each allocated location of
+each region `(r : δ)` of the support, read at the state, meets
+`Ψ(part(l)) ⊑ δ`, in `R_P` or not. -/
+def OwnFramed (Ψ : Protocol P) (S : Footprint) (ρ : Env) (st : St P) : Prop :=
+  ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → (Ψ (st.part l)).le e.2 = true
+
+/-- **The check of the charges' premise at a call's slots**, decided: each
+region of the support has sites, and the protocol's change at each part
+its locations may have is within the region's change. -/
+def frameCheckOwnAt (Ψ : Protocol P) (S : Footprint) (H : SiteHeap P) (τ : Nat → List (Option P.Site)) : Bool :=
+  S.all (fun e => (regionSites H τ e.1).isSome) && S.all fun e => (callParts H τ e.1).all fun p => (Ψ p).le e.2
+
+/-- **The check is sound for the charges' premise** (proved, as
+`framed_of_sites`): at an environment meeting the slots' sites, at a heap
+meeting the heap of sites, the parts the check reads cover each location's
+part (`flow_of_sites`). -/
+theorem ownFramed_of_sites {Ψ : Protocol P} {S : Footprint} {H : SiteHeap P}
+    {τ : Nat → List (Option P.Site)} {ρ : Env} {st : St P}
+    (hc : frameCheckOwnAt Ψ S H τ = true) (hρ : RootsOk st.s.W ρ)
+    (henv : ∀ i, SitesOf st.g (τ i) (ρ i)) (hH : HeapSites st.g H st.s.h) : OwnFramed Ψ S ρ st := by
+  simp only [frameCheckOwnAt, Bool.and_eq_true, List.all_eq_true] at hc
+  obtain ⟨hsome, hc⟩ := hc
+  intro e he l hl hm
+  have hsite : ∀ e' ∈ S, ∀ l, l < st.s.h.length → e'.1.mem ρ st.s.h l = true →
+      st.g.site l ∈ (regionSites H τ e'.1).getD [] := by
+    intro e' he' l' _ hm'
+    obtain ⟨T', hT'⟩ := Option.isSome_iff_exists.mp (hsome e' he')
+    rw [hT']
+    exact regionSites_sound hH henv hT' hm'
+  have hkey : ∀ e' ∈ S, ∀ l, l < st.s.h.length → e'.1.mem ρ st.s.h l = true →
+      keyAt st.s.W l ∈ (regionKeys e'.1).getD [] := by
+    intro e' he' l' hl' hm'
+    obtain ⟨T', hT'⟩ := Option.isSome_iff_exists.mp (hsome e' he')
+    obtain ⟨K, hK⟩ := Option.isSome_iff_exists.mp (regionKeys_of_sites hT')
+    rw [hK]
+    exact regionKeys_sound st.s.ok hρ hK hl' hm'
+  exact hc e he _ (flow_of_sites (sites := fun r => (regionSites H τ r).getD []) (keys := fun r => (regionKeys r).getD [])
+    hρ hsite hkey e he l hl hm)
+
 /-- **The check at the unit's frame of a reached state** (proved): where
 the flow's facts hold, the checks give fresh locations the flow's sites and
 every entry fits, a reached state whose term is a frame of `C`'s code (the
@@ -844,12 +885,101 @@ theorem Fits.innermost {Fl : Flow P} {V : Sites P → Val → Prop} :
     cases hi : ReadOnly.innermost _ with
     | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, FrameAt.outside, _, _, .frameC c π l hc hcode hn henv hfn hvfn ht hS ho⟩
     | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
-  | frameOut hc hE henv ht hS ho ih =>
+  | frameOut hc hE henv ht hS ho _ ih =>
     intro f hf
     simp only [ReadOnly.innermost] at hf
     cases hi : ReadOnly.innermost _ with
-    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, FrameAt.outside, _, _, .frameOut hc hE henv ht hS ho⟩
+    | none => rw [hi] at hf; simp at hf; subst hf; exact ⟨_, FrameAt.outside, _, _, .frameOut hc hE henv ht hS ho rfl⟩
     | some f' => rw [hi] at hf; simp at hf; subst hf; exact ih hi
+
+/-- **At a position that may not call outside code, every frame runs
+`C`'s code** (proved, by induction on `Fits`): where no node of a code of
+the flow may call outside code (`CodeFlow.out` false at each node), the
+innermost frame of a term fitting at a position that may not call outside
+code is a frame of `C`'s code: a frame of outside code fits only at a
+position that may call outside code (`Fits.frameOut`), and a frame of
+`C`'s code runs its term at its node's position (`Fits.frameC`). -/
+theorem Fits.innermostC {Fl : Flow P} {V : Sites P → Val → Prop}
+    (hflags : ∀ E K c π, Fl.code (E, K) c = some π → ∀ l k x, NodeOf (E, K) l k x → π.out l = false) :
+    ∀ {Γ a o S t}, Fits Fl V Γ a o S t → a.out = false → ∀ {f : Tm} {key : FrameKey}, ReadOnly.innermost t = some f →
+      frameOf f = some key → P.ofC key.1.2 = true := by
+  intro Γ a o S t h
+  induction h with
+  | val hv _ _ => intro _ f _ hf; rw [innermost_val hv] at hf; cases hf
+  | var _ _ _ => intro _ f _ hf; simp [ReadOnly.innermost] at hf
+  | invoke _ _ _ _ _ _ _ _ ihf ihr iha =>
+    intro ha f key hf hk
+    simp only [ReadOnly.innermost] at hf
+    split at hf
+    · exact ihf ha hf hk
+    · split at hf
+      · exact ihr ha hf hk
+      · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+        exact iha x hx ha hf hk
+  | invokeC σ c π Sa Sr _ hfn _ _ _ _ _ _ _ _ _ ihr iha =>
+    intro ha f key hf hk
+    simp only [ReadOnly.innermost, hfn.val, Bool.true_eq_false, ite_false] at hf
+    split at hf
+    · exact ihr ha hf hk
+    · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+      obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
+      exact iha i x hi ha hf hk
+  | construct _ _ _ _ _ _ _ ihf iha =>
+    intro ha f key hf hk
+    simp only [ReadOnly.innermost] at hf
+    split at hf
+    · exact ihf ha hf hk
+    · obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+      exact iha x hx ha hf hk
+  | letE _ _ _ ihx _ =>
+    intro ha f key hf hk; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihx ha hf hk
+    · cases hf
+  | spread _ _ _ ih =>
+    intro ha f key hf hk; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ih ha hf hk
+    · cases hf
+  | makeAbsent _ _ _ _ _ ih | makeView _ _ _ _ _ _ ih | makeBound _ _ _ _ _ _ _ _ _ ih
+  | makeGraphC _ _ _ _ _ _ _ _ _ _ _ _ ih | makeGraphOut _ _ _ _ _ _ _ _ _ _ _ _ ih | arrLit _ _ _ _ _ ih =>
+    intro ha f key hf hk
+    simp only [ReadOnly.innermost] at hf
+    obtain ⟨x, hx, hf⟩ := innermostArgs_mem hf
+    exact ih x hx ha hf hk
+  | readAt _ _ _ _ _ ih | test _ _ ih | lenOf _ _ ih | throw _ _ ih =>
+    intro ha f key hf hk; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ih ha hf hk
+    · cases hf
+  | ite _ _ _ _ ihc _ _ =>
+    intro ha f key hf hk; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihc ha hf hk
+    · cases hf
+  | indexAt _ _ _ _ _ _ ihx ihk | writeAt _ _ _ _ ihx ihk | arith _ _ _ ihx ihk | elemAt _ _ _ _ ihx ihk
+  | merge _ _ _ _ _ _ _ _ ihx ihk | makeKey _ _ _ _ _ ihx ihk =>
+    intro ha f key hf hk; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihx ha hf hk
+    · split at hf
+      · exact ihk ha hf hk
+      · cases hf
+  | setElem _ _ _ _ _ _ _ ihx ihi ihv =>
+    intro ha f key hf hk; simp only [ReadOnly.innermost] at hf; split at hf
+    · exact ihx ha hf hk
+    · split at hf
+      · exact ihi ha hf hk
+      · split at hf
+        · exact ihv ha hf hk
+        · cases hf
+  | gotoC _ _ _ _ _ _ _ _ | gotoOut _ _ _ _ _ _ => intro _ f _ hf; simp [ReadOnly.innermost] at hf
+  | frameC c π l hc hcode hn _ _ _ _ _ _ ih =>
+    intro _ f key hf hk
+    simp only [ReadOnly.innermost] at hf
+    cases hi : ReadOnly.innermost _ with
+    | none =>
+      rw [hi] at hf; simp at hf; subst hf
+      simp only [frameOf, Option.some.injEq] at hk; subst hk; exact hc
+    | some f' =>
+      rw [hi] at hf; simp at hf; subst hf
+      exact ih (hflags _ _ c π hcode l _ _ hn) hi hk
+  | frameOut _ _ _ _ _ _ hao _ => intro ha; rw [ha] at hao; cases hao
 
 /-- **The check at the innermost frame of a reached state** (proved): at a
 reached state, the innermost frame on its term's path, where it is a frame

@@ -54,6 +54,40 @@ theorem StepWithin.mono {Ψ Ψ' : Protocol P} (hle : ∀ p, (Ψ p).le (Ψ' p) = 
   let ⟨v', hv', hc⟩ := h l v hb hr hv
   ⟨v', hv', Change.Holds.mono (hle _) hc⟩
 
+/-- **A step within `Ψ` below `b` at every location**: every location below
+`b` before the step changes within `Ψ` at its part, in `R_P` or not. -/
+def StepAll (Ψ : Protocol P) (b : Nat) (st st' : St P) : Prop :=
+  ∀ l v, l < b → st.s.h[l]? = some v →
+    ∃ v', st'.s.h[l]? = some v' ∧ (Ψ (st.part l)).Holds st.s.h.length v v'
+
+/-- A step within `Ψ` at every location is one within `Ψ` on `R_P`. -/
+theorem StepAll.within {Ψ : Protocol P} {b : Nat} {st st' : St P} (h : StepAll Ψ b st st') :
+    StepWithin Ψ b st st' := fun l v hb _ hv => h l v hb hv
+
+/-- A step within a smaller protocol at every location is one within a larger. -/
+theorem StepAll.mono {Ψ Ψ' : Protocol P} (hle : ∀ p, (Ψ p).le (Ψ' p) = true) {b : Nat} {st st' : St P}
+    (h : StepAll Ψ b st st') : StepAll Ψ' b st st' := fun l v hb hv =>
+  let ⟨v', hv', hc⟩ := h l v hb hv
+  ⟨v', hv', Change.Holds.mono (hle _) hc⟩
+
+/-- **A bound below `b` at every location**: the marks kept, every location
+below `b` at the first state changed within `Ψ` at its part. -/
+def AllBelow (Ψ : Protocol P) (b : Nat) (st st' : St P) : Prop := Kept st st' ∧ StepAll Ψ b st st'
+
+theorem AllBelow.refl {Ψ : Protocol P} {b : Nat} (st : St P) : AllBelow Ψ b st st :=
+  ⟨Kept.refl st, fun _ v _ hv => ⟨v, hv, Change.Holds.refl _ _ _⟩⟩
+
+/-- **Bounds below `b` at every location compose** (proved, as
+`RBoundBelow.trans`): the marks fix each old location's part. -/
+theorem AllBelow.trans {Ψ : Protocol P} {b : Nat} {st₁ st₂ st₃ : St P} (h₁ : AllBelow Ψ b st₁ st₂)
+    (h₂ : AllBelow Ψ b st₂ st₃) : AllBelow Ψ b st₁ st₃ := by
+  refine ⟨h₁.1.trans h₂.1, fun l v₁ hb hv₁ => ?_⟩
+  have hl : l < st₁.s.h.length := (List.getElem?_eq_some_iff.mp hv₁).1
+  obtain ⟨v₂, hv₂, hc₁⟩ := h₁.2 l v₁ hb hv₁
+  obtain ⟨v₃, hv₃, hc₂⟩ := h₂.2 l v₂ hb hv₂
+  rw [h₁.1.part hl] at hc₂
+  exact ⟨v₃, hv₃, Change.Holds.trans h₁.1.1.length_le hc₁ hc₂⟩
+
 /-- **A bound on `R_P` below `b`**: the marks kept, the history growing,
 every location of `R_P` below `b` at the first state changed within `Ψ`. -/
 def RBoundBelow (Ψ : Protocol P) (d b : Nat) (st st' : St P) : Prop :=
