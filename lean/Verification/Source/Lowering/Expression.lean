@@ -850,6 +850,16 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- (`Rule.ctorGraph`).
     let .lambda _ none [] _ [] false (some _) _ none false [] _ := lam
       | throw "a class value is a constructor lambda with plain parameters"
+    if let some (_, scheme) := ProgramCertificates.schemeOf G A then
+      if !statics.isEmpty then throw "an internal constructor scheme has no static fields"
+      let some rows := fc.ctorBinders.lookup e.span
+        | throw "an internal constructor scheme needs its declaring parameter rows"
+      if rows.length != scheme.binders.length then
+        throw "an internal constructor scheme needs one row per binder"
+      let code ← withSourceBinderRows (rows.zip (scheme.binders.map ([·])))
+        (LoweringClosures.lambdaCode recursive fc scope Γ lam A (.ctor [Labels.undef]))
+      return DirectProof.node Γ (.makeFn (code.code .construct) .nul) A
+        (.ctorScheme [Labels.undef]) (code.capturePlans Γ)
     let P ← match PositiveRules.expand G A with
       | [.ctors _ _ P []] => pure P
       | _ => throw "a class value's claim must name its construct signatures and static fields"

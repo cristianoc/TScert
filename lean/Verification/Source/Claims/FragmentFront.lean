@@ -236,7 +236,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
   let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
-    SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
+    SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope (initBinders := if init then fr.initBinders else [])
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}

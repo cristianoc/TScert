@@ -142,6 +142,11 @@ def placeholderName (s : State) : Tree → Option String
 def rebind (s : State) (θ : List (String × List Tree)) (t : Tree) : List Tree :=
   normUnion (treeReplace (fun u => (placeholderName s u).bind fun n => θ.lookup n) t)
 
+/-- Read source annotations and proposals at the current body's parameter rows. -/
+def sourceRows (s : State) (A : Union) : Union :=
+  if s.sourceBinderRows.isEmpty then A
+  else normUnion (A.flatMap (treeReplace fun p => s.sourceBinderRows.lookup p))
+
 /-! ### What a diagnostic shows (OBLIGATION-DIAGNOSTICS, "The label projection") -/
 
 /-- A label's spelling: an application as its head's name at its arguments

@@ -167,13 +167,22 @@ theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool)
   simp only [capturesFree_reassign]
   rfl
 
+private theorem ctorSchemeChecked_reassign (A U : Ty ι) (codes : CodeEntry ι → Bool)
+    (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
+    (start : Nat) (Cs : List (Ty ι)) :
+    ctorSchemeChecked (reassign G η) A U codes arity E K start Cs =
+      ctorSchemeChecked G A U codes arity E K start Cs := by
+  unfold ctorSchemeChecked
+  simp only [capturesFree_reassign]
+  rfl
+
 theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
     LocalUsing (reassign G η) (images.reassign η) j r ps codes (sums := sums) =
       LocalUsing G images j r ps codes (sums := sums) := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
-    allocBuiltinsUsing_reassign]
+    ctorSchemeChecked_reassign, allocBuiltinsUsing_reassign]
   rfl
 
 theorem LocalRequires_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
@@ -182,7 +191,7 @@ theorem LocalRequires_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequen
       LocalUsing G images j r ps codes (sums := sums) (allowRequires := allow) := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
-    allocBuiltinsUsing_reassign]
+    ctorSchemeChecked_reassign, allocBuiltinsUsing_reassign]
   rfl
 
 /-- A body's explicit subsumption procedure is held fixed while its
@@ -194,7 +203,7 @@ theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι
       LocalUsing G images j r ps codes subtype sums := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
-    graphCodesChecked_reassign, allocBuiltinsUsing_reassign]
+    graphCodesChecked_reassign, ctorSchemeChecked_reassign, allocBuiltinsUsing_reassign]
   rfl
 
 theorem checkTreeWith_reassign

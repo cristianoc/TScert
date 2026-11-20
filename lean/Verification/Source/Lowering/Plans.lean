@@ -437,6 +437,38 @@ the call's typing. -/
           (X.map Subtype.val) (Y.map Subtype.val)
           (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the explicit type argument")
 
+/-- The instance used by a construction must implement its written type
+arguments. Read its scheme from the lexical slot and check the proposed
+instance with the same equation and bound checks used by subtyping. -/
+@[nospecialize] def explicitConstructorInstance (pos : Span) (scheme claimed : Ty Tree)
+    (typeArgs : List Json) : Compiler Unit := do
+  if typeArgs.isEmpty then return
+  let args ← typeArgs.mapM fun t => lower (Fragment.translate t)
+  let T ← table
+  let refuse (reason : String) := locatedRefusal T pos .schemeElimination reason
+  let F ← EquationStore.freeze T
+  let S ← EquationLowering.closedUnion F.equations "constructor scheme" scheme
+  let M ← EquationLowering.closedUnion F.equations "constructor instance" claimed
+  let args ← (args.mapM (EquationLowering.closedUnion F.equations "constructor type argument") : Except String _)
+  let G := StoreView.graph F.store
+  let [i] := S | throw (refuse "explicit type arguments require a constructor scheme")
+  let some s := G.schemes i | throw (refuse "explicit type arguments require a constructor scheme")
+  if args.length != s.binders.length then
+    throw (refuse "explicit type arguments must instantiate every constructor binder")
+  let images := StoreView.images F.store
+  let κ := s.binders.zip args
+  let operands := s.body.operands.flatten.eraseDups
+  let instance_ : PositiveCertificates.Instance _ :=
+    ⟨operands.map (fun l => (l, κ, l.substitute (EquationGraphs.parameterReplacement κ))), args, [], []⟩
+  match PositiveCertificates.selectInstancesUsing G images S M [instance_]
+      (CertificateProducer.instantiationUsing G images CertificateProducer.instanceFuel)
+      (CertificateProducer.rowInstances G images CertificateProducer.instanceFuel) with
+    | .established _ => pure ()
+    | .notEstablished => throw (refuse "the claimed type is not a checked constructor instance")
+    | .exhausted rounds visited => throw (subtypeFailure T pos .schemeElimination
+        (S.map Subtype.val) (M.map Subtype.val)
+        (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the constructor instance")
+
 /-- The type a meet row, a bounded binder read as its row met with its
 bound, is read at: the row holding exactly the meet's clauses, which the meet
 is below (`PositiveRules.meetSources`), stated as a hint for the search. Any

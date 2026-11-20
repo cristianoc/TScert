@@ -857,6 +857,14 @@ refused, as JavaScript throws. A construct signature is covered by one taking
 as many parameters, each at least as wide, with a result at most as wide, that
 supplies its effect: `new (params: Specific) => R` is a `new (params: never) => R`.
 
+`HasTyWith.ctorScheme` types a construct-only closure whose fixed
+signatures share a scheme's parameters and bounds. Its captures have
+types independent of the scheme parameters. Each signature requires a
+code specification at every allowed assignment, with `undefined` in
+the receiver slot. Scheme elimination substitutes in every signature
+operand and retains each signature's effect. The image of an exact
+allocation result retains its keys and storage roles.
+
 ### Packed binders
 
 A binder a declaration uses both as a value and as a rest's argument lists

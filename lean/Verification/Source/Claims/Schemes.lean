@@ -859,12 +859,10 @@ def genericClassNames (j : Json) : List String :=
   | .arr sts => sts.toList.flatMap fun st =>
     match (st.getObjVal? "bindings").toOption with
     | some (.arr bs) => bs.toList.filterMap fun b =>
-      match (b.getObjVal? "init").toOption with
-      | some init =>
-        if (init.getObjValAs? String "k").toOption == some "ctor" &&
-            ((init.getObjVal? "typeParams").toOption.bind (·.getArr?.toOption)).any (!·.isEmpty)
-        then (b.getObjValAs? String "name").toOption else none
-      | none => none
+      let init := EquationLowering.classConstructor bs b
+      if (init.getObjValAs? String "k").toOption == some "ctor" &&
+          ((init.getObjVal? "typeParams").toOption.bind (·.getArr?.toOption)).any (!·.isEmpty)
+      then (b.getObjValAs? String "name").toOption else none
     | _ => []
   | _ => []
 

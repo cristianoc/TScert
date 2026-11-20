@@ -143,7 +143,7 @@ by subtyping; or a scheme row's variadic signatures. -/
   let kind := (receiverAnnot.map Prod.snd).getD .call
   let top ← lower (SourceTypes.use .source)
   let scheme := match mode with
-    | .fn => ProgramCertificates.schemeOf G A
+    | .fn | .ctor _ => ProgramCertificates.schemeOf G A
     | _ => none
   -- A generic closure is graph code at its scheme row, which its claim names
   -- (`closureRows`); its annotations read its binders as the row's.
@@ -211,6 +211,8 @@ by subtyping; or a scheme row's variadic signatures. -/
         pure ([(⟨Rsource, sourceDs, R, effect⟩, some [restPack])], [own])
     | none => do
       let (L, S) ← match mode, scheme with
+        | .ctor U, some (_, s) =>
+          pure (s.signatures.map (·.withReceiver U), s.variadic.map (·.withReceiver U))
         | .ctor U, _ => match PositiveRules.expand G A with
           | [.ctors L S _ _] => do
             -- A variadic signature with an element rest is checked at the row

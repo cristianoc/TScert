@@ -255,6 +255,10 @@ structure Walk where
   binding `C.[[class]]`): its first construct signature gives the instance
   its body allocates. -/
   freshClass : Bool := false
+  freshGeneric : Option Generic := none
+  initBinders : List (String × Tree × Option (Ty Tree)) := []
+  explicitConstructors : List String := []
+  ctorBinders : List (Span × List Tree) := []
   /-- The allocations a fresh constructor's body returns last (its tails):
   made with their own keys exactly (`closure_offers.ml`, `tails`;
   `prepare_constructor`). -/
@@ -1160,6 +1164,8 @@ structure Callee where
   own : Option (Ty Tree) := none
   /-- A class's construct signatures: its instance is a constructor's. -/
   construct : Bool := false
+  /-- An internal constructor's full signature family is checked at the call. -/
+  exactConstructor : Bool := false
   /-- A generic module function's binders' names, each of `binders`; or
   its explicit type arguments, by its binders' names. -/
   names : List String := []
@@ -1642,10 +1648,12 @@ def methodCallee (vars : List (String × Ty Tree)) (O : Ty Tree) (fld : PropKey)
   calleeOf (← readField vars O fld) O typeArgs
 
 /-- The callee `new C(…)` calls: its construct signatures. -/
-def constructCallee (F : Ty Tree) (typeArgs : List Json) : Compiler Callee := do
+def constructCallee (F : Ty Tree) (typeArgs : List Json) (internal : Bool) : Compiler Callee := do
   let G ← graphNow
   if let [l] := F then
-    if (G.schemes l).isSome then return { ← calleeOf F [Labels.undef] typeArgs with construct := true }
+    if let some s := G.schemes l then
+      let c ← calleeOf F [Labels.undef] typeArgs
+      return { c with construct := true, exactConstructor := internal && s.construct }
   match PositiveRules.expand G F with
   | [.ctors L S ..] =>
     return { fixed := L.map (·.withReceiver [Labels.undef]), rests := S.map (·.withReceiver [Labels.undef]), construct := true }
@@ -3206,6 +3214,24 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     | _ => return env
   | _ => return env
 
+/-- The exact image keeps every signature and substitutes inside every operand. -/
+private def constructorImage (σ : List (Tree × Ty Tree))
+    (fixed : List (CallEffects.Arrow (Ty Tree))) (rests : List (CallEffects.RestArrow (Ty Tree))) :
+    Compiler (Ty Tree) := do
+  let sub (A : Ty Tree) := A.flatMap (EquationLowering.treeReplace fun l => σ.lookup l)
+  return [← lower (SourceTypes.use (.ctors
+    (fixed.map fun a => (a.map sub).withReceiver ())
+    (rests.map fun a => (a.map sub).withReceiver ())))]
+
+private def constructorDeclarationImage (binders : List (String × Tree × Option (Ty Tree)))
+    (names : List String) (s : PositiveGraphs.SchemeRow Tree) : Compiler (Ty Tree) := do
+  let (T, views) ← SourceClaimJson.binderRows (← table) binders
+  let args ← names.mapM fun name => do
+    let some view := views.lookup name | throw "missing class binder"
+    pure [view]
+  lower (set T)
+  constructorImage (s.binders.zip args) s.signatures s.variadic
+
 /-- The callee's type at a call: its own where it states one; a scheme's
 rest at the instance; a construct signature; else every signature of the
 scheme the actuals' count admits (`sigs`), at the binders `σ`. -/
@@ -3213,6 +3239,8 @@ def calleeAtCall (c : Callee) (σ : List (Tree × Ty Tree)) (inst : CallEffects.
     (rest : Option (CallEffects.RestArrow (Ty Tree))) (fitting : List (CallEffects.Arrow (Ty Tree))) :
     Compiler (Ty Tree) := do
   let sub (A : Ty Tree) : Ty Tree := substitute σ A
+  if c.exactConstructor then
+    return ← constructorImage σ c.fixed c.rests
   match c.own, rest with
   | some F, _ => pure F
   | none, some r => do
@@ -3475,6 +3503,15 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     if let some P := exp then
       offerUse n P
       offerClass n P
+      if n.endsWith ".[[class]]" then
+        if let .ok [l] := r then
+          let G ← StateT.lift graphNow
+          if let (some s, [.ctors ..]) := (G.schemes l, PositiveRules.expand G P) then
+            if s.construct then
+              let w ← get
+              let names := ((w.generics.lookup n).map (·.binders)).getD []
+              let F ← StateT.lift (constructorDeclarationImage w.initBinders names s)
+              return (← record e (.ok F), env)
     return (← record e r, env)
   | .lit _ v => return (← attempt e (literal v), env)
   | .logical _ andOp l r =>
@@ -4119,6 +4156,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     -- A fresh constructor (a class binding `C.[[class]]`) gives, first, the
     -- instance its body allocates (`expression_closures.ml`, `fresh_sig`).
     let fresh := (← get).freshClass
+    let generic := (← get).freshGeneric
+    let initBinders := (← get).initBinders
+    modify fun w => { w with freshGeneric := none }
     modify fun w => { w with freshClass := false }
     -- A class value whose code is a constructor an earlier class value of
     -- its declaration was walked at: that one's construct signatures, with
@@ -4169,13 +4209,38 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
           | some A => if A == I then [] else [A]
           | none => []
         let own : List (CallEffects.MethodArrow (Ty Tree)) := (allocates ++ [I]).map fun R => ⟨(), ps, R, .ordinary⟩
-        prim (.ctors (own ++ extra.filter (!own.contains ·)) extraRests fields)
+        if let some g := generic then
+          if !fields.isEmpty then throw "an internal constructor scheme has no static fields"
+          let binders ← g.binders.mapM fun n => do
+            let some (_, p, bound) := initBinders.find? (·.1 == n) | throw "missing class binder"
+            pure (p, bound)
+          let rows := binders.map Prod.fst
+          let bounds := binders.filterMap fun (p, B) => B.map (p, ·)
+          if bounds.any (fun (_, B) => B.any (EquationLowering.mentionsAny rows)) then
+            throw (locatedRefusal (← table) e.span .schemeIntroduction
+              "a specialized base constructor requires bounds independent of its parameters")
+          let label ← lower (modifyGet fun T =>
+            let (T, label) := EquationStore.scheme T rows
+              ((own ++ extra.filter (!own.contains ·)).map (·.withReceiver [Labels.undef])) bounds (extraRests.map (·.withReceiver [Labels.undef])) true
+            (label, T))
+          pure [label]
+        else
+          prim (.ctors (own ++ extra.filter (!own.contains ·)) extraRests fields)
       | .var _ n, none =>
         let some F := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
         ofClass F
       | _, _ => throw "a class of no written instance"
     if let (.lambda .., none, some C) := (lam, earlier, r) then
-      modify fun w => { w with classes := (lam.span, C) :: w.classes }
+      let F ← StateT.lift do
+        let G ← graphNow
+        if let (some g, some (_, s)) := (generic, ProgramCertificates.schemeOf G C) then
+          constructorDeclarationImage initBinders g.binders s
+        else pure C
+      modify fun w => { w with classes := (lam.span, F) :: w.classes }
+      if let some g := generic then
+        let rows := g.binders.filterMap fun name =>
+          (initBinders.find? (·.1 == name)).map fun (_, p, _) => p
+        modify fun w => { w with ctorBinders := (e.span, rows) :: w.ctorBinders }
     return (r, e1)
   | .block _ ss =>
     let _ ← stmts (some env) ss
@@ -4203,6 +4268,9 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     let generic := match callee with
       | .var _ n => gs.lookup n
       | _ => none
+    let internal := match callee with
+      | .var _ n => n.endsWith ".[[class]]"
+      | _ => false
     let mut actualTypes := As
     if F.isNone && generic.isSome then
       -- A packed construction's arguments are typed before its instance;
@@ -4220,7 +4288,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
               if !typeArgs.isEmpty then throw m
               let some c ← packedCallee g actualTypes spreads | throw m
               pure c
-          | _, _ => constructCallee (← need F "the class") typeArgs
+          | _, _ => constructCallee (← need F "the class") typeArgs internal
         let (args', As', c) ← spreadCall args actualTypes spreads c
         return Except.ok (args', As', c)) fun m => pure (.error m))
     let (args, As) := match c with
@@ -5766,7 +5834,10 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         modify fun w => { w with generalCalls := b.init.span :: w.generalCalls }
       let written ← declarationHint env b false written
       if let some D := written then modify fun w => { w with hints := (b.init.span, D) :: w.hints }
-      if b.name.endsWith ".[[class]]" then modify fun w => { w with freshClass := true }
+      if b.name.endsWith ".[[class]]" then
+        modify fun w =>
+          let generic := if w.explicitConstructors.contains b.name then w.generics.lookup b.name else none
+          { w with freshClass := true, freshGeneric := generic }
       -- The initializer made at the annotation's type.
       modify fun w => { w with lastFresh := false }
       let (A, e1) ← match b.init with
@@ -6187,7 +6258,8 @@ store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
-    (schemes : List (Span × Ty Tree) := []) :
+    (schemes : List (Span × Ty Tree) := [])
+    (initBinders : List (String × Tree × Option (Ty Tree)) := []) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -6212,7 +6284,13 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     let values := (f.params.map (·.name)).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
     let heldCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)
-    let start : Walk := { generics, expected, force, scope, locals, slots, schemes, values, heldCells, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let explicitConstructors := if initBinders.isEmpty then [] else
+      (f.body.flatMap Fragment.Stmt.callees).filterMap fun (_, _, name, args) =>
+        if name.endsWith ".[[class]]" && !args.isEmpty then some name else none
+    let start : Walk := {
+      generics, expected, force, scope, locals, slots, schemes, initBinders,
+      explicitConstructors, values, heldCells, moduleInit := f.name.isEmpty,
+      entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
       let mut assumed := initial
@@ -6265,14 +6343,15 @@ the unit's body completes (`Walk.completion`). -/
 def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (parts : String := "xec") (force : List String := [])
-    (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
+    (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
+    (initBinders : List (String × Tree × Option (Ty Tree)) := []) :
     Except String (EquationStore.State × SourceClaims.Function Tree × Option (List (String × Ty Tree)) ×
       Std.HashMap (Nat × String) (List (String × Ty Tree)) ×
       Std.HashMap Span (List (String × Ty Tree) × List (String × List (List PropKey × Ty Tree))) ×
       Std.HashMap (Span × Span) (SourceClaims.Candidate Tree) × (List ContractRead × List String)) := do
   -- A generic closure at the scheme its claim names.
   let schemes := fc.exprs.filterMap fun (sp, c) => c.toOption.map (sp, ·)
-  let (w, T') ← walkUnit T f module generics force scope (schemes := schemes)
+  let (w, T') ← walkUnit T f module generics force scope (schemes := schemes) (initBinders := initBinders)
   let exprs : List (Span × SourceClaims.Candidate Tree) := w.exprs.toList.map fun (span, (_, r)) =>
     (span, r.mapError undetermined)
   let envs : List (Nat × List (String × SourceClaims.Candidate Tree)) :=
@@ -6302,7 +6381,7 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
   let currents := w.currents.toList.map fun (at_, cs) =>
     (at_, (cs.map fun (root, ps) => (root, ps.filter fun (p, _) => read root p)).filter (!·.2.isEmpty))
   return (T', ({ fc with
-    exprs, envs, contracts
+    exprs, envs, contracts, ctorBinders := w.ctorBinders
     entryCurrent := if keep then fc.entryCurrent else currents
     exprCurrent := if keep then fc.exprCurrent else []
     arrowClaims := w.arrowClaims

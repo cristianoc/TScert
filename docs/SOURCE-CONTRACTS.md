@@ -1105,23 +1105,53 @@ resolution-qualified binder and a binder typing a rest are refused there,
 since the scheme row states none of them. A generic module value that is
 called is read at the instances its calls name (`Scheme.moduleInstances`).
 
-A generic constructor type `new <p⃗ extends β⃗>(x⃗: A⃗) => R` is the construct
-scheme $`S=(\vec p;\ \vec A\to R;\ \vec\beta)_{\mathsf{new}}`$: a value of it is a
-class value constructing an $`R`$ from $`\vec A`$ at every instance
-([scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)). A generic class
-read as a value meets its own construct scheme, by **module-scheme** with its
-construct signatures: its construct code is checked by the initialization
-unit at every assignment of the class's binders. The scheme states the
-construct signatures alone; a read of the class's static field reads the class
-value at an instance ([classes](#classes)), so a unit reading the class both as
-a value and through a static field holds the instances its reads name, which
-do not meet the scheme: the slot holds the scheme or the instances, rather
-than a scheme carrying the static-field facts.
+#### Construct schemes
+
+A class value can meet a generic constructor annotation. For example,
+given a class `Box<T>` whose constructor takes a `T` and stores it in a
+field `value: T`, the following binding checks the class value against
+a construct scheme. [Pipeline example](../pipeline/examples/generic-constructor-type.ts)
+
+```typescript
+const make: new <T>(value: T) => Box<T> = Box;
+```
+
+The annotation denotes a construct scheme
+$`S=(\vec p;\ \vec A\to R;\ \vec\beta)_{\mathsf{new}}`$.
+$`\vec p`$ names the type parameters, $`\vec\beta`$ gives their
+bounds, $`\vec A`$ gives the value parameter types, and $`R`$ is the
+result type. In the example, the binder is `T` with no declared bound,
+the value parameter has type `T`, and the result is `Box<T>`.
+
+The initialization unit checks the class’s constructor code at its
+abstract binders. Its scheme contains the construct signatures. A
+static-field read uses an instance of the class value whose contract
+carries the field. A unit that reads the class’s static fields gets a class
+slot holding those instances. They establish the construct signatures at
+the named instances only. See [class contracts](#classes) and
+[scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
 
 ```math
-\frac{C\ \text{a generic class}\quad \mathsf{ctor}(C)=\forall\vec p\le\vec\beta.\ \mathsf{new}\ \vec A\to C\langle\vec p\rangle\quad C\ \text{read, not constructed}}
-     {C:(\vec p;\ \vec A\to C\langle\vec p\rangle;\ \vec\beta)_{\mathsf{new}}}\ \textsf{class-scheme}
+\frac{
+  \mathsf{ctor}(C)=\forall\vec p\le\vec\beta.\,
+  \mathsf{new}(\vec A)\Rightarrow C\langle\vec p\rangle
+}{
+  C:(\vec p;\ \vec A\to C\langle\vec p\rangle;\ \vec\beta)_{\mathsf{new}}
+}
+\quad\textsf{class-scheme}
 ```
+
+Here $`C`$ is a generic class read as a value, and $`\mathsf{ctor}(C)`$
+is its checked constructor signature. The conclusion supplies the scheme
+that the annotation on `make` requires.
+
+A direct `new Box<number>(1)` uses a constructor signature instantiated
+from the class declaration. A call through a generic constructor annotation
+such as `new make<number>(1)` falls outside the source fragment.
+A generated `super` call checks an instance of the
+internal constructor scheme. Its type arguments come from the heritage
+clause and determine the exact image of the constructor’s parameters and
+allocation result. See [generic base lowering](SOURCE-ELABORATION.md#generic-bases).
 
 Schemes of one kind relate by quantified coverage up to renaming
 ([RECURSIVE-EQUATIONS §4.1](RECURSIVE-EQUATIONS.md#41-quantified-signatures));
@@ -1130,7 +1160,9 @@ a union of schemes is met by a member of either arm. So `identity<T>` meets
 `(<T>(x: T) => T) | (<T>(x: T) => string)` at its first arm, and a function
 returning a string at every type argument meets only the second.
 
-**Admitted instantiations.** A call of a scheme-typed value is typed at one
+#### Call scheme instantiation
+
+A call of a scheme-typed value is typed at one
 instance $`\vec p\mapsto\vec\theta`$ the walk computes, each $`\theta_p`$ a type
 of the graph of its binder's kind and within its bound, checked by the
 instance rule ([instances](POSITIVE-TYPES.md#instances-of-a-scheme-row),
@@ -1149,10 +1181,7 @@ whatever the families range over (`QInv`, admissibility of
 `schemeSemWithArgs`); every type's meaning, a scheme row's included, is such a
 family (`mixedMeaning_valid`), so it is an instance. Decidability comes from
 the checker comparing the one instance the walk computes for the call
-(`instancesFromWalk`), never searching instances over schemes. A construct
-scheme has no instance rule: a value of a generic
-constructor type is stored and compared, not constructed
-([model limits](SOURCE-FRAGMENT.md#model-limits)).
+(`instancesFromWalk`), never searching instances over schemes.
 
 ### Methods met with fields
 
@@ -1646,15 +1675,9 @@ derived class's constructor is the [derived form](SOURCE-ELABORATION.md#derived-
 this one; an override must be sound, since the derived class's declared type
 is its own members and its base's.
 
-A generic class's constructor uses its declaring unit's parameter rows, one per
-spelling, so a generic class may extend a generic base exactly at the base's
-own binders, which it declares too: `class D<T> extends B<T>`. The base's
-construction uses the derived constructor's parameter rows, and the derived
-form is the non-generic one. Its instance type
-$`D\langle T\rangle`$ is its application row, as a class with methods is,
-holding its own members met with those of $`B\langle T\rangle`$'s row. A base at
-other arguments (`extends B<number>`) is refused: its construction would have
-to be instantiated there.
+The instance type $`D\langle T\rangle`$ of an admitted generic subclass
+holds its own members met with those of the base application
+$`B\langle T\rangle`$. See [generic base lowering](SOURCE-ELABORATION.md#generic-bases).
 
 An instance method without its own type parameters quantifies the class binders
 in its closure, retaining each class parameter's bound.

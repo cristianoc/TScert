@@ -1885,6 +1885,73 @@ theorem instanceTarget_value [DecidableEq ι] {G : NormalGraph ι} {T L M parts}
       · cases h
     · cases h
 
+/-- A constructor scheme eliminates to its exact signature image, including the
+allocated result. Subtyping can subsequently weaken that result. -/
+@[nospecialize] def compareExactConstructorState [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (compare : List ι → List ι → σ → ComparisonResult α × σ)
+    (empty : α) (S T : List ι) (c : Instance ι) (state : σ) :
+    ComparisonResult (List α) × σ :=
+  match S with
+  | [i] =>
+    match G.schemes i with
+    | some s =>
+      let κ := s.binders.zip c.instances
+      if !G.params i && s.construct && c.instances.length == s.binders.length &&
+          instKinds G s.binders c.instances &&
+          s.body.operands.all (fun A => (tyImg c.table κ A).isSome) &&
+          expand G T == [clauseImg c.table κ s.body] then
+        match (images.compare s.binders c).andThen (fun _ => images.compareAllowed s c) with
+        | .established _ =>
+          ComparisonResult.collectState (compareBoundState compare empty s.binders c.instances) s.bounds state
+        | .notEstablished => (.notEstablished, state)
+        | .exhausted rounds visited => (.exhausted rounds visited, state)
+      else (.notEstablished, state)
+    | none => (.notEstablished, state)
+  | _ => (.notEstablished, state)
+
+theorem compareExactConstructorState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S T c state}
+    (hc : ∀ U V prior, (compare U V prior).1.accepted = true →
+      ∀ η, FamLe (mixedMeaning G η U) (mixedMeaning G η V))
+    (h : (compareExactConstructorState G images compare empty S T c state).1.accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareExactConstructorState at h
+  split at h
+  · rename_i i
+    split at h
+    · rename_i s hs
+      dsimp only at h
+      split at h
+      · rename_i shape
+        split at h
+        · rename_i checked imagesOk
+          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.all_eq_true] at shape
+          obtain ⟨⟨⟨⟨⟨hp, _⟩, hlen⟩, hkinds⟩, hcovered⟩, htarget⟩ := shape
+          have checks : ((images.compare s.binders c).andThen
+              (fun _ => images.compareAllowed s c)).accepted = true := by rw [imagesOk]; rfl
+          simp only [ComparisonResult.accepted_andThen, Bool.and_eq_true] at checks
+          have covered : ∀ A ∈ s.body.operands, ∃ U, tyImg c.table (s.binders.zip c.instances) A = some U :=
+            fun A hA => Option.isSome_iff_exists.mp (hcovered A hA)
+          intro η n W x hx
+          cases x with
+          | inl v =>
+            apply mixed_of_expand htarget
+            refine exactInstance_sound η hp hs hlen (images.allowed_sound s c checks.2 η) ?_
+              (images.sound s.binders c hlen hkinds checks.1 η) covered n W v hx
+            intro b hb U hU
+            obtain ⟨prior, bound⟩ := ComparisonResult.collectState_sound _ _ _ h b hb
+            unfold compareBoundState at bound
+            rw [hU] at bound
+            exact hc U b.2 prior bound η
+          | inr vs =>
+            have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hp
+            have hcs : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
+            simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs, NormalGraph.listParam] at hx
+        all_goals cases h
+      · cases h
+    · cases h
+  · cases h
+
 /-- Instantiate the arrow portion of a target and independently establish every
 opaque meet part through the enclosing comparison operation. -/
 @[nospecialize] def compareInstState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -1899,7 +1966,7 @@ opaque meet part through the enclosing comparison operation. -/
       (components.map fun partials => bounds ++ partials, last)
     | .notEstablished => (.notEstablished, next)
     | .exhausted rounds visited => (.exhausted rounds visited, next)
-  | none => (.notEstablished, state)
+  | none => compareExactConstructorState G images compare empty S T c state
 
 theorem compareInstState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S T c state}
@@ -1933,7 +2000,7 @@ theorem compareInstState_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
         have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hi
         have hcs : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hs]
         simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs, NormalGraph.listParam] at hx
-  · cases h
+  · exact compareExactConstructorState_sound hc h
 
 /-- Instance proposals, tried in order: each is computed when the engine
 reaches it, and proposes at most one instance. -/

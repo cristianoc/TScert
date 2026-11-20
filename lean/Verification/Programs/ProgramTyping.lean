@@ -103,6 +103,20 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       HasTyWith G images subtyping Γ (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest comp) .nul) [j]
+  /-- A constructor scheme with its graph checked under every allowed assignment. -/
+  | ctorScheme {Γ : List (Ty ι)} {U : Ty ι} {j : ι} {s : SchemeRow ι} {arity start : Nat} {E : List Tm}
+      {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+      {caps : List (Ty ι × Nat)} {comp : ComponentTag} :
+      G.params j = false → G.schemes j = some s → s.construct = true → s.variadic = [] →
+      Represents G U .undef →
+      (∀ η Bs, Bs.length = s.binders.length → G.domain.allowed s Bs →
+        ∀ p ∈ s.signatures, GraphCodeSpec (reassign G (assign η s.binders Bs)) arity E K start
+          (caps.map Prod.fst) ⟨U, p.arguments, p.result, p.effect⟩) →
+      capturesFree G s (caps.map Prod.fst) = true →
+      (∀ c ∈ caps, c.2 < Γ.length) →
+      (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
+      HasTyWith G images subtyping Γ
+        (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) .construct (comp := comp)) .nul) [j]
   /-- **A class value.** Construct-only graph code, checked at each construct
   signature, with its effect, from the frame with `undefined` for the receiver
   `new` passes, and at each variadic one, whose effect is plain, with an
@@ -499,7 +513,7 @@ abbrev HasTyUsing (G : NormalGraph ι) (images : PositiveCertificates.InstanceIm
   HasTyWith G images subtyping Γ t A
 
 namespace HasTyUsing
-export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funGraphSelf funScheme ctorGraph callableGraph construct constructRest callCallable readCallable readBagView writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest callPacked bindE bindRestE bindMember bindScheme throw merge makeKey sub)
+export HasTyWith (var nul undef tru fls truLit flsLit numLit num bigintLit bigint strLit str funGraph funGraphSelf funScheme ctorScheme ctorGraph callableGraph construct constructRest callCallable readCallable readBagView writeCallable app letE alloc allocDict read readView lenView readProto readOptional readDict indexDict write arith arrLit elem elemOpt elemAny setElem len lenStr elemStr test ifBool ifKnown ifBoolVar ifTag unionVar arrParts callRest callPacked bindE bindRestE bindMember bindScheme throw merge makeKey sub)
 end HasTyUsing
 
 /-- A type reading none of a scheme's binders means the same at every
@@ -816,6 +830,63 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
     simp only [Callee, hcon, Bool.false_eq_true, if_false]
     exact ⟨_, _, _, rfl, callable_of_kind hkind.1, by simpa [Scoped, vs, instantiate] using hsc⟩
+  | @ctorScheme Γ Undef i s arity start E K caps comp hp hq hcon hrest hu hspec hcf hlt hcap ih =>
+    obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
+    intro n W h ρ he hw hh href
+    have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map] at href ⊢
+    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl rfl href
+    intro j hj U hx
+    obtain ⟨hsc, -, hcapv⟩ := captures_sem he hlt
+      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh (hcr c hc)) hj hx
+    let vs := caps.map fun c => ρ c.2
+    -- The captures, at every instantiation of the scheme's binders: their
+    -- types read none of them.
+    have henv : ∀ As : List MixedFamily,
+        EnvOk (reassign G (assign G.env s.binders As)) (caps.map Prod.fst) (envOf vs .nul) j U := by
+      intro As
+      apply EnvOk.envOf_nul hsc (by simp)
+      intro k A hA v hv
+      simp only [List.getElem?_map, Option.map_eq_some_iff] at hA hv
+      obtain ⟨c, hc, rfl⟩ := hA
+      obtain ⟨c', hc', rfl⟩ := hv
+      cases hc.symm.trans hc'
+      exact meaning_assign_free hF (hfree c.1 (List.mem_map_of_mem (List.mem_of_getElem? hc))) As
+        (hcapv c (List.mem_of_getElem? hc))
+    have hsig : ∀ As : List MixedFamily, As.length = s.binders.length →
+        G.domain.allowed s As → instanceTWithArgs (excOf G) (fun η S => mixedValues G η S) G.env s As (graphArguments G) j U
+          (Tm.fnObj h.length (.graph arity E K start vs .construct (comp := comp))) := by
+      intro As hlen hal
+      have hctor := ctorsT_of_graph (comp := comp) (G := reassign G (assign G.env s.binders As))
+        (U := Undef) (L := s.signatures.map ctorOf) (oid := h.length + 1)
+        [(codeField, h.length)]
+        (by
+          intro p hp
+          obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+          exact hspec G.env As hlen hal q hq)
+        hu
+        (henv As) (by simp [vs]) hsc (by
+          intro v hv
+          obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
+          exact meaning_value (hcapv c hc) |>.1)
+      simp only [instanceTWithArgs, sigsT, hcon, if_true, instanceSigs,
+        instanceRestsWithArgs, hrest, List.map_nil]
+      refine ⟨?_, ?_⟩
+      · have hexc : excOf (reassign G (assign G.env s.binders As)) = excOf G := rfl
+        rw [hexc] at hctor
+        change ctorsT (excOf G)
+          ((s.signatures.map ctorOf).map (MethodArrow.map (mixedValues G (assign G.env s.binders As))))
+          j U (Tm.fnObj h.length (.graph arity E K start vs .construct (comp := comp))) at hctor
+        simpa [ctorOf, Contract.withReceiver, MethodArrow.map, Arrow.map,
+          Contract.map, List.map_map, Function.comp_def] using hctor
+      · exact ⟨hctor.1, by simp⟩
+    refine ⟨i, List.mem_singleton_self i, ?_⟩
+    change qDenoteWithArgs G (mixedParameters G) (G.env, i) j U _
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
+    refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
+    simp only [Callee, hcon, if_true]
+    exact ⟨_, _, _, _, _, _, _, _, _, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩
   | @ctorGraph Γ F U L S arity start E K caps parts comp hr hu hnd hp hspec hrest hlt hcap hpay hfit ih ihc =>
     intro n W h ρ he hw hh href
     have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href

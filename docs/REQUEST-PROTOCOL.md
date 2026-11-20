@@ -630,7 +630,7 @@ A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `bigintLit`, `bigint`, `funGraph`, `funGraphSelf`,
-`ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`, `read`, `readView`,
+`ctorScheme`, `ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`, `read`, `readView`,
 `write`, `arith`, `test`, `readDict`, `indexDict`, `readOptional`,
 `readProto`, `arrLit`, `elem`, `setElem`, `len`, `lenStr`, `elemStr`,
 `elemOpt`, `elemAny`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
@@ -718,7 +718,10 @@ inductive's constructors and a rule added there extends the protocol;
   entry per construct signature, its receiver the `undefined` type, its
   effect the signature's (a variadic signature's effect is plain), with the
   code field, then one initializer premise per static field, then the
-  captures. `callableGraph` (with `arrays`) creates a callable object: one
+  captures. `Rule.ctorScheme` carries `undef` and creates construct-only code
+  with the code field and capture premises. Its scheme has fixed signatures
+  checked at the scheme's parameter rows. The capture types are independent
+  of those rows. `callableGraph` (with `arrays`) creates a callable object: one
   initializer premise per field, then the captures, its code's entries as
   `funGraph`'s, one per advertised overload; its result has a single initial
   bag contract, to which subtyping can add equivalent invariant

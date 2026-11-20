@@ -354,7 +354,7 @@ meaning for an invalid serialized type reference. -/
           vs.all fun p => (subtypeChoiceTypes p).all (validTy ok)
       | .ifBoolVar T F => validTy ok T && validTy ok F
       | .funGraph As | .callableGraph As => As.all (validTy ok)
-      | .ctorGraph U => validTy ok U
+      | .ctorScheme U | .ctorGraph U => validTy ok U
       | .callRest _ _ _ _ E => validTy ok E
       | .arrParts E _ => validTy ok E
       | .constructRest _ _ P => validTy ok P

@@ -1763,6 +1763,54 @@ theorem table_instanceImages [DecidableEq ι] {G : NormalGraph ι} (η : MixedAs
   exact tyImg_mixed_iff hS fun l _ T hT =>
     table_row_mixed hok m _ η (l, _, T) (entryImg_mem hT) (hrel l) W x
 
+/-- A bounded scheme instance has the exact image of its signature clause.
+Each operand of the clause must have a checked image, including the result
+of a construct signature and every type inside that result. -/
+theorem exactInstance_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι)
+    {i : ι} {s : SchemeRow ι} {tbl : InstTable ι} {θs : List (List ι)}
+    (hp : G.params i = false) (hs : G.schemes i = some s)
+    (hlen : θs.length = s.binders.length)
+    (hal : G.domain.allowed s (θs.map fun U =>
+      ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩))
+    (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+      FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
+    (himages : InstanceImages G η s.binders θs tbl)
+    (hcovered : ∀ S ∈ s.body.operands, ∃ U, tyImg tbl (s.binders.zip θs) S = some U) :
+    FamLe (mixedValues G η [i]) (mixedSem G η (clauseImg tbl (s.binders.zip θs) s.body)) := by
+  intro n W v hv
+  obtain ⟨_, hm, hv⟩ := hv
+  cases List.mem_singleton.mp hm
+  have hscheme := (qDenoteWithArgs_unfold G (mixedParameters G) (η, i) n W v).mp hv
+  simp only [qLayerWithArgs, hp, hs, Bool.false_eq_true, if_false] at hscheme
+  let F : List ι → MixedFamily := fun U => ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩
+  let args := θs.map F
+  let assigned := assign η s.binders args
+  let instanceAt := fun As => instanceTWithArgs
+    (builtinExc G (setSem fun l =>
+      qDenoteWithArgs G (mixedParameters G) ((mixedParameters G).builtinsAt, l)))
+    (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S)
+    η s As (mixedParameters G).arguments
+  have hbody := bounded_substitution_elim η F
+    (fun η' S => mixedMeaning G η' S) s θs instanceAt G.domain
+    hlen hal hbnd n W v hscheme
+  dsimp only [instanceAt] at hbody
+  rw [instance_body] at hbody
+  have himg : ∀ S U, tyImg tbl (s.binders.zip θs) S = some U →
+      mixedMeaning G assigned S = mixedMeaning G η U := himages
+  have hvalue (S U : List ι) (h : mixedMeaning G assigned S = mixedMeaning G η U) :
+      Agree (mixedValues G assigned S) (mixedValues G η U) n :=
+    fun _ _ _ v => Iff.of_eq (congrFun (congrFun (congrFun h _) _) (.inl v))
+  have hargs (S U : List ι) (h : mixedMeaning G assigned S = mixedMeaning G η U) :
+      Agree (mixedArgs G assigned S) (mixedArgs G η U) n :=
+    fun _ _ _ vs => Iff.of_eq (congrFun (congrFun (congrFun h _) _) (.inr vs))
+  exact (clauseImg_row tbl (s.binders.zip θs) s.body (builtinValues G)
+    (mixedValues G assigned) (mixedValues G η) (mixedArgs G assigned) (mixedArgs G η)
+    n W v (fun S hS => by
+      obtain ⟨U, hU⟩ := hcovered S hS
+      exact ⟨U, hU, hvalue S U (himg S U hU), hargs S U (himg S U hU)⟩)
+    (hvalue [] [] (himg [] [] rfl)) (hargs [] [] (himg [] [] rfl))).mp
+    ⟨hbody, builtinInvariant_of_withoutInvariant (by unfold SchemeRow.body; split <;> rfl) n W v⟩
+
 /-- **Instantiation by inclusion** (`Inst≤`): a member of a scheme row, at an
 instance whose images mean what the substitution means, is in an arrow
 contract each of whose signatures one scheme signature's image covers,
