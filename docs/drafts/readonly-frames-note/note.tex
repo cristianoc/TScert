@@ -496,7 +496,7 @@ so a capture holding a closure of the group names that closure's
 signature. In Example~\ref{ex:rohelper} the initialization allocates
 the closures of \code{next} and \code{walk}, then writes \code{walk}'s
 capture of \code{next}, which names \code{next}'s signature
-\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{OCapFn}; at the entry, \lean{EntryShape}. conj.: a creation's value naming its code's signature, and a group created together; in the Lean a closure a node expression creates names a signature at a capture only where the capture is a slot of the node naming the same signature}.
+\status{Lean: \lean{EnvFn}, \lean{ContFn}, \lean{HandlerFn}, \lean{CapFn}, \lean{OCapFn}; at the entry, \lean{EntryShape}; a creation's value naming its code's signature, \lean{FnTm} (kept by a step, \lean{FnTm.step}), decided by \lean{vfnB}. conj.: a group created together}.
 
 \paragraph{The rules.} A set $S$ is \emph{supplied} when it holds what
 outside code may supply: $\circ$ and the token of every code whose token
@@ -908,7 +908,7 @@ $\keep$ at every part. A component that fails a gate has no framed plan.
 The flow's check refuses the flow of a component whose code creates a
 closure (observed on every such probe; the cause is not established), so
 the gate states as a restriction what the check would refuse
-\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (no module function naming another; no module function creating a closure, \lean{closureLayouts}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}. These gates are narrower than the item's: one module, no module function naming another, and each realm value an object or a native of the audited names, so \code{Infinity} is refused. conj.: the gates as the item states them, with (A2)}.
+\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (no module functions naming each other in a cycle, \lean{namingOrder}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}. These gates are narrower than the item's: one module, no cycle of names, and each realm value an object or a native of the audited names, so \code{Infinity} is refused; the code has no gate on closure creation, the solver proposing each closure a node expression creates lowered (\lean{SolveCode.lowered}), which the check of a component creating one passes. conj.: the gates as the item states them, with (A2)}.
 \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
 of $\cC$'s modules, each module function's code and the closures it creates, and the
 natives' step models; a code is a term, so module functions of one code
@@ -969,7 +969,7 @@ call of a module function by its name is checked by that function's
 specification; a framed call of a closure of $\cC$ is bounded by the
 charges of its segment, in $\Psi_c(l)$ of (B2). A unit with no framed
 call node has no framed plan
-\status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt}, \lean{segCodes}, \lean{reachesOut}. The code forms a framed plan only where a framed node's callee names no signature at some context (\lean{outsideCalleeAt}), and checks every unit at context $0$. conj.: the contexts of known calls, and a framed call of a closure of $\cC$}.
+\status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt} (a callee naming no signature, \lean{outsideCalleeAt}, whose set holds a token; a native's slot names its step model's signature), \lean{segCodes}, \lean{reachesOut}; the contexts at which $f$ is checked, \lean{FramedSpec.inner}, decided by \lean{innerB}. The code forms a framed plan only where a framed node's callee names no signature at some context, and reads every context of $f$'s code, which holds the contexts of its known calls; a framed call of a closure of $\cC$ as any framed call (\lean{framedReturns\_reached}), its action within its stated effect (\lean{CallbacksWithin})}.
 \item[(B2) Kept facts] At each framed node $c$, at the label $l$ of
 $f$'s request code: the call's operands are slots or constants; $\Phi$ is
 the callee's stated effect read at the caller's slots; the node's set
@@ -1016,7 +1016,7 @@ $f$'s tag is $\cC$; its node expressions are source terms; $\Theta_\cC$
 keeps every part; its start is a label of its program; the realized
 code's proposals at body labels are the request's; and (B2) at every
 framed node
-\status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; before the walk \lean{FramedSpec.bindingChecks} (\lean{FFlow.entryB}, \lean{codesCoverB} at \lean{requestCode}, \lean{entryFnB}, \lean{clientsB}, \lean{protocolAtLeastB}, \lean{readOnlyB}, \lean{framedCallNodes}), run by \lean{FilePlans.framedChecks}, decided as \lean{FramedSpec.bindingB}; after the walk \lean{FramedSpec.requestB} (\lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow). The producer forms the document after (B2) and (B3)'s observation, and \lean{FilePlans.framedRun} runs the walk (B3), settled with no fallback (\lean{FilePlans.framedSettle}). conj.: the check at the contexts of known calls, for a unit that is no entry and whose token is outside $O$; the code checks the open entry of every unit}.
+\status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; before the walk \lean{FramedSpec.bindingChecks} (\lean{FFlow.entryB}, \lean{codesCoverB} at \lean{requestCode}, \lean{entryFnB}, \lean{clientsB}, \lean{protocolAtLeastB}, \lean{readOnlyB}, \lean{framedCallNodes}), run by \lean{FilePlans.framedChecks}, decided as \lean{FramedSpec.bindingB}; after the walk \lean{FramedSpec.requestB} (\lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow). The producer forms the document after (B2) and (B3)'s observation, and \lean{FilePlans.framedRun} runs the walk (B3), settled with no fallback (\lean{FilePlans.framedSettle}). At a unit that is no entry with its token outside $O$ (\lean{innerB}), the code reads no open entry, reads the realized code's returns within $O$ at every context (\lean{retsInB}, among the checks after the walk), a gate narrower than the item's, and reads no region as protected}.
 \item[(B5) The verdict] $f$ is accepted under the client obligation of
 $\cC$ when its request is unqualified, every check of (A1)--(B4) passes
 and the framed walk accepts;
@@ -1085,7 +1085,7 @@ only at known calls, and a nested run of $\cC$'s code meets its node's
 slots at the context the proposal names for the node (``The rules'').
 A verdict of $f$ at those contexts covers $f$'s runs in every run of
 $\cC$ the claim is about
-\status{the argument is proved here from Theorem~\ref{thm:flow} and the rules of the flow; conj.: the headline (B5) at these contexts, whose Lean proof reads an open entry (\lean{FFlow.entryB})}.
+\status{the argument is proved here from Theorem~\ref{thm:flow} and the rules of the flow; Lean: the headline (B5) at these contexts, its calls every call of $f$'s code a program makes (\lean{FramedSpec.Called}), each entry's fit read from the program's flow (\lean{entry\_hole}, its returns within $O$ by \lean{retsInB}), \lean{framedReturns\_reached}, \lean{PassUnit.mode8Accepted\_sound}}.
 \item[(B1), (B2)] At a framed call, the segment from the call to its
 resumption changes each location of the support within its change, so a
 kept fact holds at the resumption (the \emph{framed transfer}): the
