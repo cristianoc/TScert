@@ -235,13 +235,39 @@ private def frameB (F : FFlow Pk := frameFlow) (lay : List (Nat × Bool × Nat �
 /-- A code of one node calling slot 0. -/
 private def m₂ : Code := ([.invoke (.var 0) .undef [.var 1]], [(.ret, none)])
 
-#guard framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => some [])
+#guard framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => some []) (fun _ _ => false)
 -- a framed node calling a computed operand
 #guard !framedNodesAt (frameFlow) [] [] [(0, [])] ([.invoke (.readAt "f" (.var 0)) .undef []], [(.ret, none)])
-  (fun _ => some [])
+  (fun _ => some []) (fun _ _ => false)
 -- a framed node with no stated effect of its callee
-#guard !framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => none)
+#guard !framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => none) (fun _ _ => false)
 -- a framed node outside the code
-#guard !framedNodesAt (frameFlow) [] [] [(1, [])] m₂ (fun _ => some [])
+#guard !framedNodesAt (frameFlow) [] [] [(1, [])] m₂ (fun _ => some []) (fun _ _ => false)
+
+/-! ## The protected reading (the decision's (P) at a region's prefix)
+
+A region of a slot copying an argument at a read-only position is read as
+protected where the component's protocol keeps the parts its membership
+reads: the spine of `x.flags` reads the field `flags` of `x`, so a
+protocol charging the field `flags` reads it unprotected. No support the
+pass derives names the spine without the field region, whose own check
+refuses first, so this decision shows only here. -/
+
+/-- A protocol charging the field `flags`, keeping every other part. -/
+private def chargesFlags : Protocol Pk := fun p =>
+  if p.kind = some .field && p.key = some (.str "flags") then .any else .keep
+
+/-- The protocol keeping every part. -/
+private def keepsAll : Protocol Pk := fun _ => .keep
+
+-- (slot 7 copies argument 0, read-only, at the one node of `m₂`)
+#guard protRegionB keepsAll [[(7, 0, [])]] 1 (fun _ => true) m₂ 0 (.spine 7 ["flags"])
+#guard !protRegionB chargesFlags [[(7, 0, [])]] 1 (fun _ => true) m₂ 0 (.spine 7 ["flags"])
+-- (the field itself, read from the slot's value, reads no location)
+#guard protRegionB chargesFlags [[(7, 0, [])]] 1 (fun _ => true) m₂ 0 (.field 7 (.str "widths"))
+-- (no copy at a read-only position)
+#guard !protRegionB keepsAll [[(7, 0, [])]] 1 (fun _ => false) m₂ 0 (.spine 7 ["flags"])
+-- (a copy along a path whose field the protocol charges)
+#guard !protRegionB chargesFlags [[(7, 0, [.str "flags"])]] 1 (fun _ => true) m₂ 0 (.spine 7 [])
 
 end Verification.SourceClaimJson.FramedBindingControls

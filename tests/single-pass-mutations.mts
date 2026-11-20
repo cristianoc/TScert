@@ -1,5 +1,5 @@
-// A verifier whose single pass (`Programs/SinglePass.lean`) has opt-in
-// mutations of its checks, for the controls showing each check is what
+// A verifier whose single pass (`Programs/SinglePass.lean`) and framed
+// plans' checks have opt-in mutations, for the controls showing each check is what
 // refuses some unit (tests/single-pass-controls.mts). Built from the current
 // build's generated C of the pass's module and of the module its generic
 // code is specialized into (`Source/Claims/Json`, the file plans), a
@@ -12,6 +12,8 @@
 //   sp-entry       `SinglePass.entryRefusal`: the start's entry refuses nothing
 //   sp-footprint   `SinglePass.footprintCheck`: every unit's footprint holds
 //   sp-edge-evidence  `SinglePass.edgeEvidenceChecked`: every edge's slot evidence is accepted
+//   fr-protected   `SourceClaimJson.protRegionB`: every region of a framed node is read as protected
+//   fr-ro-sharing  `SourceClaimJson.sharingReadOnlyB`: a position is read-only where the member declares it
 import assert from "node:assert/strict";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -31,11 +33,12 @@ function command(program: string, args: string[]): string {
   return result.stdout.trim();
 }
 
-/** `source` with `body` at the entry of every C definition of the pass's
- * check `name`: the generic one, its reduced form and its specializations
- * (`___at___…`); none of the boxed wrappers or lambdas. The count injected. */
+/** `source` with `body` at the entry of every C definition of the check
+ * `name` (its namespace's components joined by `_`): the generic one, its
+ * reduced form and its specializations (`___at___…`); none of the boxed
+ * wrappers or lambdas. The count injected. */
 function inject(source: string, name: string, body: string): { text: string; count: number } {
-  const pattern = new RegExp(`LEAN_EXPORT [^\\n]+ ${prefix}SinglePass_${name}(?:___redArg)?(?:___at___[A-Za-z0-9_]*?)?\\(([^;\\n]*)\\)\\{`, "g");
+  const pattern = new RegExp(`LEAN_EXPORT [^\\n]+ ${prefix}${name}(?:___redArg)?(?:___at___[A-Za-z0-9_]*?)?\\(([^;\\n]*)\\)\\{`, "g");
   const matches = [...source.matchAll(pattern)].filter((m) => !/___boxed\(|___lam__/.test(m[0]));
   let text = source;
   for (const match of matches.reverse()) {
@@ -57,10 +60,18 @@ static int mutation(const char *name) {
 /** The mutations, each the definitions it is injected into and what it
  * returns there: a Boolean check's success (1), or an absent refusal. */
 export const passMutations: readonly { name: string; check: string; returns: string }[] = [
-  { name: "sp-entry", check: "entryRefusal", returns: "lean_box(0)" },
-  { name: "sp-footprint", check: "footprintCheck", returns: "1" },
-  { name: "sp-edge-evidence", check: "edgeEvidenceChecked", returns: "1" },
+  { name: "sp-entry", check: "SinglePass_entryRefusal", returns: "lean_box(0)" },
+  { name: "sp-footprint", check: "SinglePass_footprintCheck", returns: "1" },
+  { name: "sp-edge-evidence", check: "SinglePass_edgeEvidenceChecked", returns: "1" },
+  { name: "fr-protected", check: "SourceClaimJson_protRegionB", returns: "1" },
+  { name: "fr-ro-sharing", check: "SourceClaimJson_sharingReadOnlyB", returns: "1" },
 ];
+
+/** The modules whose generated C holds the mutated checks' definitions:
+ * the pass's, the file plans' its generic code is specialized into, and
+ * the framed plans' checks. */
+const mutatedModules = ["Programs/SinglePass", "Source/Claims/Json", "Source/Claims/FramedNodeChecks",
+  "Source/Claims/FramedPassChecks"];
 
 /** Build the mutation verifier of the pass in `dir` (a run directory of
  * this process's by default); its path. */
@@ -69,7 +80,7 @@ export function passMutationVerifier(dir: string = runDirectory("single-pass-mut
   const clang = join(toolchain, "bin", "clang");
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
   const counts = new Map<string, number>();
-  for (const module of ["Programs/SinglePass", "Source/Claims/Json"]) {
+  for (const module of mutatedModules) {
     const original = join(lean, ".lake/build/ir/Verification", `${module}.c`);
     let text = readFileSync(original, "utf8");
     for (const m of passMutations) {
@@ -107,7 +118,7 @@ export function cachedPassMutationVerifier(dir: string): string {
   const executable = join(dir, "single-pass-mutation-verifier");
   const ir = (module: string): string => sha256(readFileSync(join(lean, ".lake/build/ir/Verification", `${module}.c`)));
   const input = canonical({ mutations: sha256(readFileSync(import.meta.filename)), verifier: sha256(readFileSync(verifierBuild)),
-    singlePass: ir("Programs/SinglePass"), json: ir("Source/Claims/Json"),
+    modules: mutatedModules.map(ir),
     link: sha256(readFileSync(join(lean, ".lake/build/bin/verifier.rsp"))), toolchain: command("lean", ["--print-prefix"]) });
   const key = sha256(input);
   const found = store?.finished("mutation-verifier", key, input)?.result.outputs.find(([role]) => role === "verifier")?.[1];

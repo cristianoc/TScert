@@ -734,7 +734,7 @@ Proposition~\ref{prop:rorely}.
 The context and the node are not known statically, since a frame names
 its node key, so the check is run at every context of the code and at
 every node of $l$'s key that may call outside code.
-\noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheck}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost}, each region at its keys \lean{regionKeys}; the crossing in as a live history witness, \lean{Witness}, \lean{entryStart\_witness}, \lean{witness\_along}; disjoint classes, \lean{classQuery}, \lean{classQuery\_sound}}.\par}
+\noindent{\sloppy\status{Lean: \lean{regionSites}, \lean{regionSites\_sound}, \lean{frameCheck}, \lean{frameCheckAt}, \lean{framed\_of\_sites} (through \lean{frameCheck\_sound}, \lean{flow\_of\_sites} and \lean{prot\_of\_witness}), \lean{framed\_of\_frame}, at the innermost frame of a reached state \lean{ClientFrame.framed\_at\_innermost}, each region at its keys \lean{regionKeys}; the crossing in as a live history witness, \lean{Witness}, \lean{crosses\_witness}, \lean{entryStart\_witness}, \lean{ClientFrame.witness\_of\_start}; disjoint classes, \lean{classQuery}, \lean{classQuery\_sound}. A region read as protected, decided: \lean{protRegionB}, a slot holding the reads of a path of keys from an argument at a read-only position (\lean{copiesB}, \lean{ClientFrame.copies\_along}; \lean{FramedSpec.roPositionsB\_sound}) whose read locations' parts $\Psi_\cC$ keeps (\lean{stepKeptB}), each of its lent locations witnessed by the crossing of that argument (\lean{FramedSpec.start\_protects}, \lean{ClientFrame.kept\_along}, \lean{ClientFrame.region\_reached}, \lean{FramedSpec.prot\_witness}); read by the pass's check at every framed node (\lean{FramedSpec.protAt}, \lean{framedReturns\_reached})}.\par}
 
 \paragraph{The examples by the flow.}
 \begin{itemize}[leftmargin=1.5em,itemsep=2pt]
@@ -760,15 +760,11 @@ component's checks: the copy is stored into a field of \code{h}, of a
 site of $O$, so the flow's marks release it, where (O) admits the store
 at the mark exposed.
 \end{itemize}
-{\sloppy Two limits of the flow show in the frame probe. A fact about a field of
-outside storage, such as
-pretext's \code{prepared.widths}, fails in the probe
-because the code reads no crossing in as protected, so every part of
-outside storage meets the callee's effect as well as the protocol. The
-code's protocol is at the keys of this section: a member's write is
-charged at the key it writes, and writes to other keys are charges at
-other parts (Example~\ref{ex:rokey}).
-And at \code{stepPreparedLineGeometryFromStart}'s call of
+{\sloppy A fact about a field of outside storage holds across a call of
+outside code where its regions are read as protected, at a protocol at the
+keys of this section: a member's write is charged at the key it writes, and
+writes to other keys are charges at other parts (Example~\ref{ex:rokey}).
+A limit of the flow shows in the frame probe. At \code{stepPreparedLineGeometryFromStart}'s call of
 \code{walkPreparedComplexLines}, whose context's cursor slot holds $O$,
 the cursor facts fail: the call passes \code{undefined} for \code{onLine},
 but the flow does not tell a closure of outside code from \code{undefined},
@@ -845,7 +841,7 @@ Two examples show the keys of parts.
 7 & \code{~~return s; \}}\\
 \end{tabular}
 \end{center}
-\emph{Accepted} by the rule at keyed parts (conj., this section), with \code{Visitor} of Example~\ref{ex:rocursor} and the
+\emph{Accepted} by the rule at keyed parts (Lean: \lean{protRegionB}, \lean{FramedSpec.prot\_witness}, \lean{framedReturns\_reached}; the case \code{readonly-frame-other-key}), with \code{Visitor} of Example~\ref{ex:rocursor} and the
 loop invariant $\len{h.\mathit{flags}}=n$. Across \code{visit(i)} the
 invariant has the support
 $\{h.\mathit{flags}:\grow,\ h.\mathit{flags}.\kw{spine}:\keep\}$. The
@@ -1120,6 +1116,7 @@ $\{w.\kw{spine}:\grow\}$ of $i<\len w$ is in $R_\cC$: exposed when
 \code{prepare} allocated it, under the marks of Section~\ref{sec:concepts},
 and protected by the crossing of \code{h} whoever allocated it, and $\keep\sqsubseteq\grow$: $i<\len w$ survives,
 under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$.
+\status{Lean: the slot of \code{w} holds the read of \code{widths} from \code{h}, \lean{copiesB}, \lean{ClientFrame.copies\_along}; its spine is read as protected, \lean{protRegionB}, witnessed by the crossing of \code{h}, \lean{FramedSpec.prot\_witness}; the case \code{readonly-frame-local-alias}}
 \end{example}
 
 \begin{example}[A member that shortens]\label{ex:rotrim}\mbox{}

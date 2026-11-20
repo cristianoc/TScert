@@ -56,15 +56,20 @@ def shapeReadOnly (F : ComponentWire.Components) : Option ComponentWire.Shape �
 def declaredReadOnly (F : ComponentWire.Components) (C : Nat) (member : String) (j : Nat) : Bool :=
   shapeReadOnly F (((memberShapes F C member)[j]?).join)
 
+/-- **Position `j` read-only at every module function sharing a code**:
+each module function of `C` whose code (in `codes`, named in `names`) is
+`m` declares parameter `j` read-only (`declaredReadOnly`). -/
+def sharingReadOnlyB (F : ComponentWire.Components) (C : Nat) (codes : List Code)
+    (names : List (String × Nat × List String)) (m : Code) (j : Nat) : Bool :=
+  (codes.zip names).all fun (m', n) => m' != m || declaredReadOnly F C n.1 j
+
 /-- **The read-only positions of a realized code** (the meet, by position,
 of the shapes its functions declare): below the arity, position `j` is
-read-only where the member and every module function of `C` whose code
-(in `codes`, named in `names`) is `m` declare it read-only
-(`declaredReadOnly`). -/
+read-only where the member and every module function sharing the code
+declare it read-only (`declaredReadOnly`, `sharingReadOnlyB`). -/
 def readOnlyPositions (F : ComponentWire.Components) (C : Nat) (member : String) (codes : List Code)
     (names : List (String × Nat × List String)) (m : Code) (arity : Nat) : List Bool :=
-  (List.range arity).map fun j => declaredReadOnly F C member j &&
-    (codes.zip names).all fun (m', n) => m' != m || declaredReadOnly F C n.1 j
+  (List.range arity).map fun j => declaredReadOnly F C member j && sharingReadOnlyB F C codes names m j
 
 section
 variable {ι : Type} [Labels ι]

@@ -1,4 +1,5 @@
 import Verification.Source.Claims.FramedKept
+import Verification.Source.Claims.FramedCopyDefs
 
 /-! # The slots of a framed call that hold reads of its arguments
 
@@ -31,22 +32,6 @@ contents.
 namespace Verification.TolerantFrames.ReadOnly
 open Verification ControlFlow
 
-/-- **A copy entry** `(i, j, π)`: slot `i` holds the reads of the keys `π`
-from argument `j`. -/
-abbrev CopyEntry := Nat × Nat × List PropKey
-
-/-- **A table of copies**: each label's entries. -/
-abbrev CopyTable := List (List CopyEntry)
-
-/-- The entries of a label. -/
-def CopyTable.at (cp : CopyTable) (l : Nat) : List CopyEntry := cp.getD l []
-
-/-- **The source slot a target's slot reads** (`envMap`): the slot the map
-names, slot `0` past the map; the slot itself where it maps none. -/
-def srcOf : Option (List Nat) → Nat → Nat
-  | none, i => i
-  | some slots, i => slots.getD i 0
-
 /-- The slot map reads each slot at its source (proved). -/
 theorem envMap_src (m : Option (List Nat)) (L : List Tm) (d : Tm) (i : Nat) :
     envOf (envMap m L d).1 (envMap m L d).2 i = envOf L d (srcOf m i) := by
@@ -57,105 +42,6 @@ theorem envMap_src (m : Option (List Nat)) (L : List Tm) (d : Tm) (i : Nat) :
     by_cases hi : i < slots.length
     · simp [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hi]
     · simp [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega : slots.length ≤ i)]
-
-/-- **The entry the value a node's expression gives copies**: a slot's
-entry for `.var i`; for `readAt f (.var i)` the entry of the path without
-its last key `f`. -/
-def boundEntryB (cp : CopyTable) (l : Nat) (e : Tm) (j : Nat) (π : List PropKey) : Bool :=
-  match e with
-  | .var i => (cp.at l).contains (i, j, π)
-  | .readAt f (.var i) => π.getLast? == some f && (cp.at l).contains (i, j, π.dropLast)
-  | _ => false
-
-/-- **The check of an edge** from node `l` whose expression is `e` to the
-target `t`: each entry of the target's table is the source slot's entry
-at `l`; where the edge binds a value in front (`bound = some b`), slot `0`
-past the map is that value, which has an entry where it is the node's own
-value (`b`) and `boundEntryB` gives it. -/
-def edgeOkB (cp : CopyTable) (l : Nat) (e : Tm) (bound : Option Bool) (t : Target) : Bool :=
-  (cp.at t.label).all fun (i', j, π) =>
-    let s := srcOf t.mapping i'
-    match bound with
-    | none => (cp.at l).contains (s, j, π)
-    | some b => if s = 0 then b && boundEntryB cp l e j π else (cp.at l).contains (s - 1, j, π)
-
-/-- The edges of a continuation, each with whether it binds the node's own
-value (`some true`), another value (`some false`) or none. -/
-def contEdges : Continuation → List (Option Bool × Target)
-  | .ret => []
-  | .bind t => [(some true, t)]
-  | .effect t => [(none, t)]
-  | .branch y n => [(none, y), (none, n)]
-  | .branchBind y n => [(some false, y), (some false, n)]
-  | .tagBind _ y n => [(some true, y), (some true, n)]
-
-/-- The edges of a node: its continuation's, then its handler's, which
-binds the thrown value. -/
-def nodeEdges (k : Continuation) (x : Option Target) : List (Option Bool × Target) :=
-  contEdges k ++ (match x with | some t => [(some false, t)] | none => [])
-
-/-- **The check of a table of copies** at the code `Pe`, `Pk` started at
-`start` with `arity` arguments: the start's entries the diagonal below
-the arity, and every edge of every node checked (`edgeOkB`). -/
-def copiesB (Pe : List Tm) (Pk : List (Continuation × Option Target)) (start arity : Nat) (cp : CopyTable) : Bool :=
-  (cp.at start).all (fun (i, j, π) => i == j && π.isEmpty && decide (j < arity)) &&
-  (List.range Pk.length).all fun l => match Pe[l]?, Pk[l]? with
-    | some e, some (k, x) => (nodeEdges k x).all fun (b, t) => edgeOkB cp l e b t
-    | _, _ => true
-
-/-! ## The proposal -/
-
-/-- The entries an edge gives its target from the node's, at most `bound`
-keys long. -/
-def edgeEntries (cur : List CopyEntry) (e : Tm) (b : Option Bool) (t : Target) (bound : Nat) : List CopyEntry :=
-  let fromSlot (s i' : Nat) : List CopyEntry :=
-    match b with
-    | none => (cur.filter (·.1 == s)).map fun (_, j, π) => (i', j, π)
-    | some own => if s = 0 then
-        (if own then match e with
-          | .var i => (cur.filter (·.1 == i)).map fun (_, j, π) => (i', j, π)
-          | .readAt f (.var i) => ((cur.filter (·.1 == i)).filter (·.2.2.length < bound)).map
-              fun (_, j, π) => (i', j, π ++ [f])
-          | _ => []
-        else [])
-      else (cur.filter (·.1 == s - 1)).map fun (_, j, π) => (i', j, π)
-  match t.mapping with
-  | some slots => (List.range slots.length).flatMap fun i' => fromSlot (srcOf t.mapping i') i'
-  | none =>
-    let slotsOf := (cur.map (·.1)).eraseDups
-    let ids := match b with
-      | none => slotsOf
-      | some _ => 0 :: slotsOf.map (· + 1)
-    ids.flatMap fun i' => fromSlot i' i'
-
-/-- One round of the must-analysis: each label's entries, intersected over
-its incoming edges, the start's its diagonal. -/
-def copiesRound (Pe : List Tm) (Pk : List (Continuation × Option Target)) (start arity bound : Nat)
-    (cp : List (Option (List CopyEntry))) : List (Option (List CopyEntry)) :=
-  let diag : List CopyEntry := (List.range arity).map fun j => (j, j, [])
-  let incoming : List (Nat × List CopyEntry) := (List.range Pk.length).flatMap fun l =>
-    match Pe[l]?, Pk[l]?, cp.getD l none with
-    | some e, some (k, x), some cur => (nodeEdges k x).map fun (b, t) => (t.label, edgeEntries cur e b t bound)
-    | _, _, _ => []
-  (List.range Pk.length).map fun l =>
-    let ins := (incoming.filter (·.1 == l)).map (·.2)
-    let meet : Option (List CopyEntry) := ins.foldl (fun acc s => match acc with
-      | none => some s
-      | some a => some (a.filter s.contains)) none
-    if l = start then some diag else match meet with
-      | some m => some m.eraseDups
-      | none => cp.getD l none
-
-/-- **The proposal of a table of copies** (`copiesB` decides it): the
-must-analysis iterated from the start's diagonal, each key path at most
-`bound` long; the empty table where its result fails the check. -/
-def copiesOf (Pe : List Tm) (Pk : List (Continuation × Option Target)) (start arity bound : Nat) : CopyTable :=
-  let init : List (Option (List CopyEntry)) := (List.range Pk.length).map fun l =>
-    if l = start then some ((List.range arity).map fun j => (j, j, [])) else none
-  let fin := (List.range (Pk.length * (bound + 2) + 2)).foldl (fun cp _ => copiesRound Pe Pk start arity bound cp) init
-  let cp : CopyTable := fin.map (·.getD [])
-  if copiesB Pe Pk start arity cp then cp else []
-
 
 /-! ## The invariant -/
 
@@ -404,16 +290,5 @@ theorem copies_along {τ : Type} {fr : ClientFrame τ} {Pe : List Tm} {Pk : List
   | _, _, _, .next hqa hab hrest, ha, hi =>
     copies_along hcp hlen hhv hrest (ClientFrame.Reached.step ha hab)
       (copyInv_step hcp hlen hi hab.1.step hqa (hhv _ ha))
-
--- RESEARCH (retired with the pipeline cases of milestone 2, piece 9): the
--- proposal at a walker reading `const w = h.widths` before a loop calling
--- `visit`, slots `h` and `visit` at the start: at the loop, `w`'s slot
--- holds `(0, [widths])`, `h`'s and `visit`'s their copies.
-#guard
-  let Pe : List Tm := [.readAt (.str "widths") (.var 0), .invoke (.var 2) .undef []]
-  let Pk : List (Continuation × Option Target) := [(.bind ⟨1, none⟩, none), (.effect ⟨1, none⟩, none)]
-  let cp := copiesOf Pe Pk 0 2 3
-  copiesB Pe Pk 0 2 cp && (cp.at 1).contains (0, 0, [.str "widths"]) && (cp.at 1).contains (1, 0, []) &&
-    (cp.at 1).contains (2, 1, [])
 
 end Verification.TolerantFrames.ReadOnly

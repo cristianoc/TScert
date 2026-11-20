@@ -4,6 +4,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyTransfer
 import Verification.Paper.TolerantFrames.ReadOnlyCallFrame
 import Verification.Paper.TolerantFrames.ReadOnlyBridge
 import Verification.Paper.TolerantFrames.ReadOnlyFitsReach
+import Verification.Source.Claims.FramedCopyDefs
 
 /-! # The checks of a framed plan's call nodes, at the frame's flow
 
@@ -103,15 +104,28 @@ def nodeProtocol (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Pr
   let W := probeProtocol (flowKinds F) T
   fun p => ((Θ p).max (Ψ₀ p)).max (W p)
 
+/-- **A region read as protected at a framed node** (the Read-only frames
+note, §4.1, decided): a region read from a slot whose read locations'
+steps `Ψ` keeps (`regionSteps`, `stepsKeptB`), where at every node sharing
+the node's continuation and handler the slot holds a copy of an argument
+at a read-only position below the arity (`roPos`), read along a path whose
+steps `Ψ` keeps (`pathSteps`). -/
+def protRegionB (Ψ : Protocol P) (cp : CopyTable) (arity : Nat) (roPos : Nat → Bool) (m : Code) (l : Nat)
+    (r : Footprints.Region) : Bool :=
+  match regionSlot r with
+  | none => false
+  | some x => stepsKeptB Ψ (regionSteps r) && (sharingNodes m l).all fun l' =>
+      (cp.at l').any fun (i, j, π) => i == x && decide (j < arity) && roPos j && stepsKeptB Ψ (pathSteps π)
+
 /-- **A support a framed node keeps**: at the node's protocol, the
 support passes the frame's check and the callee's stated effect `Φ` at
 every context of code `m` and every node sharing `l`'s continuation and
-handler. -/
+handler, the regions `prot` reads as protected read so. -/
 def supportKeptB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (m : Code) (l : Nat) (e : Tm)
-    (Φ : Footprints.Footprint) (S : Footprints.Footprint) : Bool :=
+    (Φ : Footprints.Footprint) (prot : Footprints.Region → Bool) (S : Footprints.Footprint) : Bool :=
   let Ψ := nodeProtocol F lay Θ (nodeSet F lay m l e)
   (F.ctxs m).all fun (_, c) => (sharingNodes m l).all fun l' =>
-    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt (fun _ => false)
+    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt prot
 
 /-- **Why a framed node drops a support** (a diagnostic, the frame's check
 of `supportKeptB` read back): at the first context and node sharing `l`'s
@@ -120,21 +134,22 @@ or the first part at which the node's protocol or the callee's stated
 effect exceeds the region's change (`frameCheckFailure`); `none` where the
 support is kept. -/
 def supportFailure (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (m : Code) (l : Nat) (e : Tm)
-    (Φ : Footprints.Footprint) (S : Footprints.Footprint) :
+    (Φ : Footprints.Footprint) (prot : Footprints.Region → Bool) (S : Footprints.Footprint) :
     Option (Footprints.Region × Option ((Footprints.Region × Footprints.Change) × Part P × Bool × Bool × Footprints.Change)) :=
   let Ψ := nodeProtocol F lay Θ (nodeSet F lay m l e)
   (F.ctxs m).findSome? fun (_, c) => (sharingNodes m l).findSome? fun l' =>
     let τ := (c.node l').envAt
     match S.find? fun e => (regionSites F.flow.H τ e.1).isNone with
     | some e => some (e.1, none)
-    | none => (frameCheckFailure classQuery Ψ Φ S (callParts F.flow.H τ) (fun _ => false)).map
+    | none => (frameCheckFailure classQuery Ψ Φ S (callParts F.flow.H τ) prot).map
         fun (e, p, i, o) => (e.1, some (e, p, i, o, Ψ p))
 
 /-- **The supports a framed node keeps, of those offered** (`supportKeptB`):
 the producer's proposal of a framed plan's supports. -/
 def framedNodeKeeps (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (m : Code) (l : Nat)
-    (e : Tm) (Φ : Footprints.Footprint) (Ss : List Footprints.Footprint) : List Footprints.Footprint :=
-  Ss.filter (supportKeptB F lay Θ m l e Φ)
+    (e : Tm) (Φ : Footprints.Footprint) (prot : Footprints.Region → Bool) (Ss : List Footprints.Footprint) :
+    List Footprints.Footprint :=
+  Ss.filter (supportKeptB F lay Θ m l e Φ prot)
 
 /-- **The checks of one framed node** `l` of code `m`, whose expression is
 `e`, its callee's stated effect `Φ`, keeping the supports `Ss`: the call's
@@ -143,19 +158,19 @@ sets, and each support passing the frame's check at the node's protocol at
 every context and every node sharing `l`'s continuation and handler
 (`supportKeptB`). -/
 def framedNodeOkB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (m : Code) (l : Nat) (e : Tm)
-    (Φ : Footprints.Footprint) (Ss : List Footprints.Footprint) : Bool :=
+    (Φ : Footprints.Footprint) (prot : Footprints.Region → Bool) (Ss : List Footprints.Footprint) : Bool :=
   atomCallB e && capClosedB F (tokenCaps F lay) (operandSets F m l e) (nodeSet F lay m l e) &&
-    Ss.all (supportKeptB F lay Θ m l e Φ)
+    Ss.all (supportKeptB F lay Θ m l e Φ prot)
 
 /-- **The checks of a plan's framed nodes** (`framedNodeOkB` at each): at
 the client obligation by kind `theta`, each node's expression and its
 callee's stated effect (`eff`) present. -/
 def framedNodesAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat))
     (theta : List (Option Verification.Kind × Footprints.Change)) (framed : List (Nat × List Footprints.Footprint))
-    (m : Code) (eff : Nat → Option Footprints.Footprint) : Bool :=
+    (m : Code) (eff : Nat → Option Footprints.Footprint) (prot : Nat → Footprints.Region → Bool) : Bool :=
   let Θ : Protocol P := protocolOfKinds theta
   framed.all fun (l, Ss) => match m.1[l]?, eff l with
-    | some e, some Φ => framedNodeOkB F lay Θ m l e Φ Ss
+    | some e, some Φ => framedNodeOkB F lay Θ m l e Φ (prot l) Ss
     | _, _ => false
 
 /-- **Why a plan's framed nodes fail their checks** (a refusal's text, at
@@ -164,7 +179,7 @@ operands other than slots, its set not closed, or how many of the
 supports it keeps fail the frame's check. -/
 def framedNodesWhy (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat))
     (theta : List (Option Verification.Kind × Footprints.Change)) (framed : List (Nat × List Footprints.Footprint))
-    (m : Code) (eff : Nat → Option Footprints.Footprint) : String :=
+    (m : Code) (eff : Nat → Option Footprints.Footprint) (prot : Nat → Footprints.Region → Bool) : String :=
   let Θ : Protocol P := protocolOfKinds theta
   (framed.findSome? fun (l, Ss) => match m.1[l]?, eff l with
     | none, _ => some s!" (its framed call node {l} is no node of its code)"
@@ -174,7 +189,7 @@ def framedNodesWhy (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat))
       else if !capClosedB F (tokenCaps F lay) (operandSets F m l e) (nodeSet F lay m l e) then
         some s!" (its framed call node {l}'s set is not closed)"
       else
-        let n := (Ss.filter fun S => !supportKeptB F lay Θ m l e Φ S).length
+        let n := (Ss.filter fun S => !supportKeptB F lay Θ m l e Φ (prot l) S).length
         if n == 0 then none else some s!" (at its framed call node {l}, {n} of the supports it keeps fail the frame's check)").getD ""
 end
 
@@ -182,6 +197,17 @@ end
 wire states by kind is `keep`. -/
 def thetaKeepB (theta : List (Option Verification.Kind × Footprints.Change)) : Bool :=
   theta.all fun e => e.2 == .keep
+
+/-- **A client obligation keeping every part keeps every part** (proved). -/
+theorem thetaKeepB_keep {P : Package} {theta : List (Option Verification.Kind × Footprints.Change)}
+    (h : thetaKeepB theta = true) (p : Part P) : (protocolOfKinds theta : Protocol P) p = .keep := by
+  simp only [protocolOfKinds]
+  cases hf : theta.find? (fun e => decide (e.1 = p.kind)) with
+  | none => rfl
+  | some e =>
+    have hm := List.mem_of_find?_eq_some hf
+    simp only [thetaKeepB, List.all_eq_true, beq_iff_eq] at h
+    simp [h e hm]
 
 /-- **A client obligation keeping every part is below every protocol**
 (proved). -/
@@ -211,6 +237,21 @@ checked flow's sites renamed into the family of one component, at the
 package whose tags of `C`'s code are those equal to `C`. -/
 def fflowC : FFlow (framePkg spec.C spec.mark) := frameFlowOf spec.C spec.checked
 
+/-- The longest path of key reads a table of copies records. -/
+def copyBound : Nat := 4
+
+/-- **The table of copies of a request's code** (`copiesOf`, which
+`copiesB` checks): from its start at the plan's arity. -/
+def copiesAt (r : SourceRequest σ ι) : CopyTable :=
+  copiesOf (requestCode r).1 (requestCode r).2 r.start spec.arity copyBound
+
+/-- **The regions read as protected at a request's framed nodes**
+(`protRegionB`): at the component's protocol over the flow `F`, the
+request's table of copies and the plan's read-only positions. -/
+def protAt {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (r : SourceRequest σ ι) (l : Nat)
+    (q : Footprints.Region) : Bool :=
+  protRegionB (componentProtocol F spec.lay) (spec.copiesAt r) spec.arity spec.roPos (requestCode r) l q
+
 /-- **The checks of a framed plan at its request** (the draft, "What the
 pass checks"): its request's tag `C` (`compB`), its request's node
 expressions source terms (`sourceTermsB`), its client obligation keeping
@@ -221,7 +262,8 @@ tags decided (`fflowC`), each node's callee's stated effect read by
 `eff`. -/
 def requestB (r : SourceRequest σ ι) (eff : Nat → Option Footprints.Footprint) : Bool :=
   compB spec.C r && sourceTermsB r && thetaKeepB spec.theta && decide (r.start < r.program.length) &&
-    realizedFlowB spec.fflowC r && framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r) eff
+    realizedFlowB spec.fflowC r &&
+    framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r) eff (spec.protAt spec.fflowC r)
 
 /-- **The callback row of the client obligation** (the owner's decision of
 2026-11-19, the draft "The callback's type"): a function value outside code

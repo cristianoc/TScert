@@ -1,5 +1,6 @@
 import Verification.Source.Claims.FramedInitial
 import Verification.Source.Claims.PassUnitMember
+import Verification.Source.Claims.FramedReading
 
 /-! # The framed returns, from the checks the pass makes
 
@@ -76,10 +77,11 @@ has an expression and a stated effect of its callee, at which
 `framedNodeOkB` passes for the supports it keeps. -/
 theorem framedNode_ok {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat)}
     {theta : List (Option Verification.Kind × Footprints.Change)} {framed : List (Nat × List Footprints.Footprint)}
-    {m : Code} {eff : Nat → Option Footprints.Footprint} (h : framedNodesAt F lay theta framed m eff = true)
+    {m : Code} {eff : Nat → Option Footprints.Footprint} {prot : Nat → Footprints.Region → Bool}
+    (h : framedNodesAt F lay theta framed m eff prot = true)
     {l : Nat} (hl : Verification.TolerantFrames.framedFOf framed l = true) :
     ∃ e Φ, m.1[l]? = some e ∧ eff l = some Φ ∧
-      framedNodeOkB F lay (protocolOfKinds theta) m l e Φ (Verification.TolerantFrames.framedSOf framed l) = true := by
+      framedNodeOkB F lay (protocolOfKinds theta) m l e Φ (prot l) (Verification.TolerantFrames.framedSOf framed l) = true := by
   simp only [Verification.TolerantFrames.framedFOf, SinglePass.framedAt, Option.isSome_map] at hl
   cases hf : framed.find? (·.1 == l) with
   | none => rw [hf] at hl; cases hl
@@ -105,7 +107,8 @@ sharing its continuation and handler within the node's set, and each
 support it keeps passing the frame's check there at the node's protocol. -/
 theorem framedNodesAt_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat)}
     {theta : List (Option Verification.Kind × Footprints.Change)} {framed : List (Nat × List Footprints.Footprint)}
-    {m : Code} {eff : Nat → Option Footprints.Footprint} (h : framedNodesAt F lay theta framed m eff = true) :
+    {m : Code} {eff : Nat → Option Footprints.Footprint} {prot : Nat → Footprints.Region → Bool}
+    (h : framedNodesAt F lay theta framed m eff prot = true) :
     (∀ l e, Verification.TolerantFrames.framedFOf framed l = true → m.1[l]? = some e → atomCallB e = true) ∧
     (∀ l, Verification.TolerantFrames.framedFOf framed l = true → eff l = some ((eff l).getD [])) ∧
     (∀ l, Verification.TolerantFrames.framedFOf framed l = true →
@@ -116,7 +119,7 @@ theorem framedNodesAt_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat
       ∀ c π l', F.flow.code m c = some π → NodeOf m l' k x →
       ∀ T ∈ Verification.TolerantFrames.framedSOf framed l,
         frameCheckAt classQuery (nodeProtocolOf F lay theta m l) ((eff l).getD []) T F.flow.H (π.env l')
-          (fun _ => false) = true) := by
+          (prot l) = true) := by
   -- (a framed node's sharing nodes, contexts and checks)
   have hshare : ∀ {l l' k x}, m.2[l]? = some (k, x) → NodeOf m l' k x → l' ∈ sharingNodes m l := by
     intro l l' k x hk hn
@@ -173,9 +176,11 @@ variable {ι : Type} (spec : FramedSpec ι)
 by `frame_transport` from the check at the flow with the frame's sites and
 decided tags). -/
 theorem framedNodes_frame {m : Code} {eff : Nat → Option Footprints.Footprint}
-    (h : framedNodesAt spec.fflowC spec.lay spec.theta spec.framed m eff = true) :
-    framedNodesAt spec.fflow spec.lay spec.theta spec.framed m eff = true :=
-  frame_transport spec.C spec.checked (fun _ Fl => framedNodesAt Fl spec.lay spec.theta spec.framed m eff = true) h
+    {prot : ∀ {P : Package} [DecidableEq P.Site] [Hashable P.Site], FFlow P → Nat → Footprints.Region → Bool}
+    (h : framedNodesAt spec.fflowC spec.lay spec.theta spec.framed m eff (prot spec.fflowC) = true) :
+    framedNodesAt spec.fflow spec.lay spec.theta spec.framed m eff (prot spec.fflow) = true :=
+  frame_transport spec.C spec.checked
+    (fun _ Fl => framedNodesAt Fl spec.lay spec.theta spec.framed m eff (prot Fl) = true) h
 /-- **The realization check at the frame's flow** (proved, by
 `frame_transport`). -/
 theorem realized_frame {σ : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
@@ -214,9 +219,9 @@ returns of the plan's framed nodes keeping their supports hold at the
 executions the frame's claim is about, read at their worlds; the initial
 configurations fit the flow and are entries by the component's checks
 (`FramedSpec.initialFits`, `FramedSpec.initialEntry`). -/
-theorem framedReturns_reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
+theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : SourceRequest σ ι}
     {eff : Nat → Option Footprints.Footprint} (hcomp₀ : spec.componentRefusal.val = none)
-    (hreq : spec.requestB r eff = true) (hcb : spec.CallbacksWithin r eff) :
+    (hbind : spec.bindingB name r = true) (hreq : spec.requestB r eff = true) (hcb : spec.CallbacksWithin r eff) :
     FramedReturnsReachedW r (spec.frame r) (Verification.TolerantFrames.framedFOf spec.framed)
       (Verification.TolerantFrames.framedRet (Verification.TolerantFrames.framedSOf spec.framed))
       (fun _ _ _ _ => True) := by
@@ -224,14 +229,35 @@ theorem framedReturns_reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
   simp only [FramedSpec.requestB, Bool.and_eq_true] at hreq
   obtain ⟨⟨⟨⟨⟨hc, hsrc⟩, hθ⟩, -⟩, -⟩, hn⟩ := hreq
   obtain ⟨hFa, -, htok, hlow, hTm, hEl, hEw, hRl, hRw, -, -, hLi, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
-  obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound (spec.framedNodes_frame hn)
+  obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound
+    (spec.framedNodes_frame (prot := fun F => spec.protAt F r) hn)
+  -- The witnesses of the regions read as protected.
+  obtain ⟨-, -, -, -, -, -, hro, har, -⟩ := FramedSpec.bindingB_iff.mp hbind
+  have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
+  have hr : noRestB spec.lay = true := hnone.2.2.2.2.2.1
+  have hcomp : (spec.F.at spec.C).ofC r.comp = true := compB_sound hc
+  have hm := FFlow.marksB_sound hmk
+  have hinitF := spec.initialFits r hcomp₀
+  have hinitE := spec.initialEntry r hcomp₀
+  have hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
+    fun x hx => spec.progOk_initial r hEf hEl hEw hLi hRl hRw hinitF hx (hinitE x hx).2.1.2
+  have hE := spec.entryFits r hr hFa hst hreal hcomp hinit
+  have hcs := spec.chkSound r hFa hm hE
+  have hsi := spec.startInv r hFa hm hinitF hinitE hcomp
+  have hwk := spec.wok_start r (fun x hx => (spec.initial_lay hEl hEw hLi hRl hRw x hx).2)
+  have hw : (spec.frame r).ProtWitness (r.program.map (·.expression))
+      (r.program.map fun n => (n.continuation, n.handler)) r.comp (Verification.TolerantFrames.framedFOf spec.framed)
+      (Verification.TolerantFrames.framedSOf spec.framed) (fun l => spec.protAt spec.fflow r l) := by
+    intro l b₀ e L d k x _ hb _ hk _ hbt T _ e' _ hp w _ hmem hL
+    exact spec.prot_witness r hr hFa hst hreal hcomp har hro hm hinitF hinitE hinit hcs hsi hE hwk
+      (fun p => thetaKeepB_keep hθ p) (copiesOf_sound _ _ _ _ _) hb hk hbt e'.1 hp w hmem hL
   exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
     (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hLi hRl hRw hFa hmk hst hreal hEf
-    (spec.initialFits r hcomp₀) (spec.initialEntry r hcomp₀) htok hlow (compB_sound hc) hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
+    hinitF hinitE htok hlow hcomp hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT
     (fun l _ p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).2) hslots
-    (Φ := fun l => (eff l).getD []) hcheck ClientFrame.ProtWitness.none hTm
+    (Φ := fun l => (eff l).getD []) hcheck hw hTm
     (fun p => thetaKeepB_sound hθ _ p)
     (fun l p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).1)
     (fun l b₀ a m e L d k x v hl hb he hk hL hbt hex hat hv =>

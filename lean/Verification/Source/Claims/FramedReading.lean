@@ -26,17 +26,6 @@ open Verification ControlFlow Footprints
 
 variable {P : Package}
 
-/-- **A step's parts kept**, decided: every part a location of the step may
-have, at a kind its bound holds and a key of the step, at the site `none`,
-is kept by `Ψ`; refused where the step fixes no finite set of keys. -/
-def stepKeptB (Ψ : Protocol P) (q : Region) : Bool :=
-  match regionKeys q with
-  | some K => (partsOf [none] K q).all fun p => Ψ p == .keep
-  | none => false
-
-/-- Every step of a list kept. -/
-def stepsKeptB (Ψ : Protocol P) (qs : List Region) : Bool := qs.all (stepKeptB Ψ)
-
 /-- **A step's location has a kept part** (proved, `Region.bound_sound`,
 `regionKeys_sound`): at a heap meeting its world, a location of a step
 read in a value with valid references has its kind and key among the
@@ -202,22 +191,6 @@ end Verification.TolerantFrames.ReadOnly
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceElaboration ControlFlow LabelStore
 open Verification.TolerantFrames.ReadOnly HeapObservations Verification.Footprints
-
-section
-variable {P : Package} [DecidableEq P.Site] [Hashable P.Site]
-
-/-- **A region read as protected at a framed node** (the Read-only frames
-note, §4.1, decided): a region read from a slot whose read locations'
-steps `Ψ` keeps, where at every node sharing the node's continuation and
-handler the slot holds a copy of an argument at a read-only position
-below the arity, read along a path whose steps `Ψ` keeps. -/
-def protRegionB (Ψ : Protocol P) (cp : CopyTable) (arity : Nat) (roPos : Nat → Bool) (m : Code) (l : Nat)
-    (r : Region) : Bool :=
-  match regionSlot r with
-  | none => false
-  | some x => stepsKeptB Ψ (regionSteps r) && (sharingNodes m l).all fun l' =>
-      (cp.at l').any fun (i, j, π) => i == x && decide (j < arity) && roPos j && stepsKeptB Ψ (pathSteps π)
-end
 
 /-- **The proposal of the copies passes the check** (proved, by its
 definition): `copiesOf` returns a table `copiesB` passes, or the empty

@@ -55,6 +55,21 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-same-key",
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-shared-code",
   "(() => { const xs = [1, 1, 1]; return walkAgain(xs, (i) => { if (i === 0) xs.pop(); }); })()"))),
   "a client pops the array it passed to the writable twin, under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-writable",
+  "(() => { const h = { flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) h.flags.pop(); }); })()"))),
+  "a client pops the array of the record it passed writable, under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-partly-readonly",
+  "(() => { const h = { flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) h.flags.pop(); }); })()"))),
+  "a client pops the writable array behind a read-only field, under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-positions",
+  "(() => { const w = { flags: [1, 1, 1] }; return walk({ flags: [1] }, w, (i) => { if (i === 0) w.flags.pop(); }); })()"))),
+  "a client pops the array of the record it passed at the writable position, under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-reassigned",
+  "(() => { const w = { flags: [1, 1, 1] }; return walk({ flags: [1, 1, 1] }, w, (i) => { if (i === 0) w.flags.pop(); }); })()"))),
+  "a client pops the writable array the reassigned parameter copies, under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-depth-two",
+  "(() => { const h = { inner: { flags: [1, 1, 1] } }; return walk(h, (i) => { if (i === 0) swap(h); }); })()"))),
+  "a visitor calls the member that replaces the handle's inner record under the walker");
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-trim",
   "(() => { const h = prepare(3); return walk(h, () => trim(0)); })()"))),
   "a visitor calls the member that pops the handle's widths under the walker");

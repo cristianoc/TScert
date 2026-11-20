@@ -66,7 +66,7 @@ function counted(invoked: Invoked): Invoked {
 /** A unit's verdict from the pass: accepted, and closed when it and every
  * unit it depends on are accepted (a module unit only where its line is
  * printed), as the route reads it. */
-type Verdict = { accepted: boolean; closed: boolean; refusal: string };
+type Verdict = { accepted: boolean; closed: boolean; refusal: string; trusted: boolean };
 /** The pass over `fragment` under `force` (none for an unforced run). */
 type Pass = { status: number | null; stdout: string; stderr: string; verdicts: Map<string, Verdict> };
 function pass(fragment: string, force: readonly string[] = [], names: string = ""): Pass {
@@ -88,7 +88,10 @@ function passOf(run: Invoked): Pass {
     const value: unknown = JSON.parse(line);
     if (!isObject(value) || typeof value.unit !== "string") continue;
     const accepted = value.accepted === true;
-    verdicts.set(value.unit, { accepted, closed: accepted, refusal: typeof value.refusal === "string" ? value.refusal : "" });
+    const trusted = Array.isArray(value.acceptedUnderClientTrust) && value.acceptedUnderClientTrust.length > 0 &&
+      typeof value.refusal !== "string";
+    verdicts.set(value.unit, { accepted, closed: accepted, refusal: typeof value.refusal === "string" ? value.refusal : "",
+      trusted });
     depends.set(value.unit, Array.isArray(value.depends) ? value.depends.filter((d) => typeof d === "string") : []);
   }
   for (let changed = true; changed; ) {
@@ -108,6 +111,11 @@ const words = (p: Pass): string => p.stderr + p.stdout;
 /** Require `unit` accepted with every unit it depends on. */
 function accepted(p: Pass, unit: string, what: string): void {
   assert.equal(p.verdicts.get(unit)?.closed, true, `${what}: ${unit} not accepted: ${words(p).slice(0, 2000)}`);
+}
+/** Require `unit` accepted under the client obligation of its component
+ * (a framed plan's, `acceptedUnderClientTrust`), refused by nothing. */
+function trustAccepted(p: Pass, unit: string, what: string): void {
+  assert.equal(p.verdicts.get(unit)?.trusted, true, `${what}: ${unit} not accepted under client trust: ${words(p).slice(0, 2000)}`);
 }
 /** Require `unit` refused: its own refusal, or a unit it depends on
  * refused; or the file refused before any unit's verdict (the front).
@@ -2875,6 +2883,20 @@ mutationControl("sp-footprint: the footprint check, caught by three negative cas
     accepted(mutatedPass(fragment, "sp-footprint"), unit, `${file} sp-footprint`);
   }
   say("mutation sp-footprint: a declaration's, a comparator's and a caught normal return's footprints exceeded, each accepted only without the footprint check");
+});
+
+mutationControl("fr-protected: the protected reading, caught by a reassigned read-only parameter", async (): Promise<void> => {
+  const fragment = fragmentOf(run("invalid-readonly-frame-param-reassigned"));
+  refused(pass(fragment), "walk@599", "invalid-readonly-frame-param-reassigned production");
+  trustAccepted(mutatedPass(fragment, "fr-protected"), "walk@599", "invalid-readonly-frame-param-reassigned fr-protected");
+  say("mutation fr-protected: the spine of a copy of a writable argument accepted only without the decision of a region read as protected");
+});
+
+mutationControl("fr-ro-sharing: the read-only positions, caught by two walkers of one body", async (): Promise<void> => {
+  const fragment = fragmentOf(run("invalid-readonly-frame-shared-code"));
+  refused(pass(fragment), "walk@692", "invalid-readonly-frame-shared-code production");
+  trustAccepted(mutatedPass(fragment, "fr-ro-sharing"), "walk@692", "invalid-readonly-frame-shared-code fr-ro-sharing");
+  say("mutation fr-ro-sharing: the read-only twin of a writable walker accepted only where its position reads its own shape alone");
 });
 
 // ---------------------------------------------------------------------------
