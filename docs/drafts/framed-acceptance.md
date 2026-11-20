@@ -1119,9 +1119,16 @@ token, `componentCodes`): each module
   code's layout `lay` (`layP (layQ F lay)`).
 - **$`\Theta_C`$** (`clientsB`, `clientsB_sound`, `FramedBinding.lean`):
   the rows of $`C`$'s exported types state class keys only
-  (`clientsByKindB`), and the plan's $`\Theta_C`$ is, at every part of
-  $`U`$ at the key `none`, the join of the stated rows' changes at the
-  part's kind (`rowsTheta`), read from the declaration document.
+  (`clientsByKindB`), and the plan's $`\Theta_C`$ by kind is, at every
+  kind, the join of the stated rows' changes at that kind (`rowsAt`), read
+  from the declaration document; so the frame's $`\Theta_C`$ is the rows'
+  at every part (`FramedSpec.theta_rows`).
+- **the read-only types** (`readOnlyB`, `FramedSpec.readOnly_declared`):
+  every type the frame's view reads read-only is an input of the member
+  whose parameter's declared shape is read-only throughout.
+- **the framed nodes** (`FramedSpec.framed_nodes`): the plan's framed
+  nodes are the realized code's framed call nodes in the flow
+  (`framedCallNodes`).
 - **the protocol** (`protocolAtLeastB`, `protocolAtLeastB_sound`,
   `ReadOnlyBinding.lean`): the wire's $`\Psi_C`$ at least $`\Psi_C`$ as
   defined, at every part of $`U`$ at the key `none` (`partsU`).
@@ -1235,51 +1242,56 @@ claim read no candidate).
 
 ### What the pass checks
 
-The executable check (`FramedFlow.lean`, `Json.lean`): `framedCallNodes`,
-the call nodes of the member's code framed at some context of the flow;
-`callEffectAt`, the callee's stated effect at the caller's slots;
-`framedSupportsAt`, the entry supports (in the pass's slot numbering)
-passing `frameCheckAt` at $`\Psi_c = \Psi_C \sqcup \Theta_C \sqcup W_c`$
-at every context and every node of the call's continuation and handler
-that may call outside code. `passMember`'s framed branch
-(`FilePlans.framedRun`) reads first the refusal of the checks that
-read the component alone (`componentBindingRefusal`,
-`FramedComponentChecks.lean`), evaluated once per component and shared
-by its plans, each carrying the evaluation with its value
-(`FramedSpec.componentRefusal`, a value with the equation that it is
-`componentBindingRefusal` at the plan's fields): `noRestB`, `FFlow.check`,
-`marksB`, `codesCoverB` over every module function's realized and request
-codes, `allocB` (`allocSomeB`, and `allocCanonB` at the bodies
-`moduleBody`, a module function's realized code's its request's, from
-three sites per code), `initB` (in the initialization's order, which
-names each module function once, each node allocating a closure of the
-code of the function the order names there, each linked capture the slot holding the closure its name names,
-allocated earlier, every other capture a realm identity, the last node the
-entries' array) and `frameFlowB` at the frame's sites. Then, per request: `entryB`, `compB`,
-`codesCoverB` at `requestCode r`, `entryFnB`, `realizedFlowB`, `clientsB`
-(the wire's $`\Theta_C`$ against the `@clients` rows, `rowsTheta`),
-`protocolAtLeastB` (the wire's $`\Psi_C`$ against `psiDef`, both at the
-flow's sites) and `readOnlyB`; the framed call nodes recomputed and each
-kept support passing the check at the wire's protocols; then the main
+The executable check (`FramedFlow.lean`, `FramedNodeChecks.lean`,
+`Json.lean`): `framedCallNodes`, the call nodes of the member's code framed
+at some context of the flow; `callEffectAt`, the callee's stated effect at
+the caller's slots; at each framed node $`l`$ of the request's code
+`framedNodeOkB`: the call's operands read from slots (`atomCallB`), the
+node's set $`T_l`$, the closure of the operand slots' sets at every context
+and node sharing the call's continuation and handler (`nodeSet`), checked
+closed (`capClosedB`), and each kept support passing `frameCheckAt` at
+$`\Psi_c(l)=\Theta_C\sqcup\Psi_C\sqcup W(T_l)`$ (`nodeProtocol`) and
+the callee's stated effect there (`supportKeptB`). The producer keeps, of
+each node's entry supports (in the pass's slot numbering), those
+`supportKeptB` passes (`framedNodeKeeps`), the check the pass runs on the
+plan. `passMember`'s framed branch (`FilePlans.framedRun`) reads first the
+refusal of the checks that read the component alone
+(`componentBindingRefusal`, `FramedComponentChecks.lean`), evaluated once
+per component and shared by its plans, each carrying the evaluation with
+its value (`FramedSpec.componentRefusal`, a value with the equation that
+it is `componentBindingRefusal` at the plan's fields): `noRestB`,
+`FFlow.check`, `marksB`, `codesCoverB` over every module function's
+realized and request codes, `allocB` (`allocSomeB`, and `allocCanonB` at
+the bodies `moduleBody`, a module function's realized code's its
+request's, from three sites per code), `initB` (in the initialization's
+order, which names each module function once, each node allocating a
+closure of the code of the function the order names there, each linked
+capture the slot holding the closure its name names, allocated earlier,
+every other capture a realm identity, the last node the entries' array)
+and `frameFlowB` at the frame's sites. Then, per request, the binding
+checks that read it (`FramedSpec.bindingChecks`, run by
+`FilePlans.framedChecks`, decided as `FramedSpec.bindingB`): `entryB`,
+`codesCoverB` at `requestCode r`, `entryFnB`, `clientsB` (the wire's
+$`\Theta_C`$ by kind against the `@clients` rows, `rowsAt`),
+`protocolAtLeastB` (the wire's $`\Psi_C`$ against `psiDef`, at the flow's
+sites), `readOnlyB` and the framed call nodes the flow's; then the main
 graph walked with those nodes framed (`passMemberGraph`), settled; then
 the checks the returns read at the request (`FramedSpec.requestB`,
-`FramedNodeChecks.lean`): its node expressions source terms
-(`sourceTermsB`), $`\Theta_C`$ keeping every part (`thetaKeepB`), its
-start a label of its program, `realizedFlowB` at the frame's flow, and at
-each framed node `framedNodeOkB` at the frame's flow (the call's operands
-read from slots, the node's set $`T_l`$, the closure of the operand slots'
-sets at every context and node sharing the call's continuation and
-handler, checked closed, and each kept support passing `frameCheckAt` at
-$`\Psi_c(l)=\Theta_C\sqcup\Psi_C\sqcup W(T_l)`$ there). It refuses at
-the first that fails, and otherwise accepts: its walk is the direct one,
-its walks run with no fallback (`passMemberGraph`'s `fallback`), settled
-at candidates (`framedSettle`), and `FramedAccepted` holds at the request
-with them (`framedRun_sound`, through `passMemberGraph_accepted`'s
-`GraphAccepted` and `MainAcceptedAt` at the framed nodes, the fallback
-excluded). The verdict line of its group names the components
-(`acceptedUnderClientTrust`, `FilePlans.clientComponents`), and the
-acceptance is a print site of `Mode8Accepted` (`Mode8Accepted.framed`:
-the plans with the member's plan the framed plan, `framedPlan_overStore`).
+`FramedNodeChecks.lean`): its tag `C` (`compB`), its node expressions
+source terms (`sourceTermsB`), $`\Theta_C`$ keeping every part
+(`thetaKeepB`), its start a label of its program, `realizedFlowB` at the
+frame's flow, and `framedNodesAt` (`framedNodeOkB` at each framed node) at
+the frame's flow, a failure's text naming the node and the check
+(`framedNodesWhy`). It refuses at the first that fails, and otherwise
+accepts: its walk is the direct one, its walks run with no fallback
+(`passMemberGraph`'s `fallback`), settled at candidates (`framedSettle`),
+and `FramedAccepted` holds at the request with them (`framedRun_sound`,
+through `passMemberGraph_accepted`'s `GraphAccepted` and `MainAcceptedAt`
+at the framed nodes, the fallback excluded). The verdict line of its group
+names the components (`acceptedUnderClientTrust`,
+`FilePlans.clientComponents`), and the acceptance is a print site of
+`Mode8Accepted` (`Mode8Accepted.framed`: the plans with the member's plan
+the framed plan, `framedPlan_overStore`).
 The component's checks include
 `frameFlowB` at the frame's flow (`FramedFrameFlow.lean`: `FFlow.check`,
 `marksB`, `tokensSomeB`, `codesLoweredB`, the closure of the capture
@@ -1309,7 +1321,8 @@ observed in the walk. Its document is the producer's inputs alone: the
 component, the entries, $`\Theta_C`$ by kind, $`\Psi_C`$ by numbered site
 and kind, and each framed call node with its supports (`framedDocument`).
 The decoder (`FramedSpec.decode`) reads the component's flow and refuses a
-document whose fields, entries, nodes or supports disagree with it;
+document whose fields, entries or nodes disagree with it; the supports are
+checked by `framedNodesAt` after the walk;
 `inputDigest` hashes the document. The framed plan's refusal follows the
 group's ordinary refusal; the verdict is the ordinary plan's.
 
@@ -1318,12 +1331,14 @@ group's ordinary refusal; the verdict is the ordinary plan's.
 alone (`FramedAccepted.component`: `componentBindingRefusal` at the
 plan's fields refuses nothing, which `componentBindingRefusal_none`
 reads as `FFlow.check (remark F)`, `marksB`, `codesCoverB`, `allocSomeB`,
-`allocCanonB`, `noRestB`, `initB` and `frameFlowB`, each passing); the binding checks that read the request; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
-main graph, $`W_c`$ computed and the supports kept by the check at
-$`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
-framed run (`RunCall.AcceptsFramed`) at the plan's framed nodes; the
-checks at the request (`FramedAccepted.request`, `FramedSpec.requestB` at
-`callEffects`). The premises on the initial configurations
+`allocCanonB`, `noRestB`, `initB` and `frameFlowB`, each passing); the
+binding checks that read the request (`FramedAccepted.binding`,
+`FramedSpec.bindingB` at the member's name, read by `FramedSpec.bindingB_iff`,
+`FramedSpec.theta_rows`, `FramedSpec.readOnly_declared`,
+`FramedSpec.framed_nodes` and `FramedSpec.entry_checked`); the main graph
+accepted by the framed run (`RunCall.AcceptsFramed`) at the plan's framed
+nodes; the checks at the request (`FramedAccepted.request`,
+`FramedSpec.requestB` at `callEffects`). The premises on the initial configurations
 (`InitialFits`, `InitialEntry`) are read from the component's checks
 (`FramedSpec.initialFits`, `FramedSpec.initialEntry`).
 
@@ -1413,6 +1428,13 @@ worlds, are parts of the client obligation. The row of $`\Theta_C`$
 > safe and within its stated effect; and every configuration of the
 > program, the client's own code included, has an admissible world typing
 > its heap (`AStep`, the configurations of `PublicCall`).
+
+The theorem reads the row's callback clause as `FramedSpec.CallbacksWithin`,
+a premise of `MemberSafe`'s framed branch: a call at a framed node of the
+request's code (a call whose callee may be a value of outside code,
+`framedCallNodes`) whose callee's type states an effect, from a reached
+state entering it to the state it returns to with a value, changes the
+heap within that effect at the node's slots. It says nothing of a throw.
 
 The continuation after a failed return premise is outside the claim
 (`RunSoundFramed` claims progress on paths whose framed returns meet their

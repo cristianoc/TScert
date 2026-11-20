@@ -100,10 +100,14 @@ checks"): the binding checks that read its component alone passing
 the ordinary pass (`CodesAccepted`); each stated region meeting its entry
 conditions; its main graph, over the codes' table, its walk accepted at
 its bound and stated regions (`RunCall.AcceptsWalk`) at the plan's framed
-nodes (`c.framed`), its read summaries checked; and the checks that read
-the request (`FramedSpec.requestB`, each framed node's callee's stated
-effect read by `callEffects`). -/
-structure FramedAccepted (f : FilePlans) (r : Req f)
+nodes (`c.framed`), its read summaries checked; the binding checks that
+read its request before its walk (`FramedSpec.bindingB`: `entryB`,
+`codesCoverB` at the request's code, `entryFnB`, `clientsB`,
+`protocolAtLeastB`, `readOnlyB` at the member `name`, the framed nodes the
+flow's); and the checks that read the request after its walk
+(`FramedSpec.requestB`, each framed node's callee's stated effect read by
+`callEffects`). -/
+structure FramedAccepted (f : FilePlans) (name : String) (r : Req f)
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop where
   codes : ∃ a₀ a₁ : Answered (StoreView.graph f.F.store),
     CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ ∧
@@ -116,7 +120,79 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
     GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true
   component : componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
     spec.initOrder spec.initE spec.initK spec.initL spec.C = none
+  binding : spec.bindingB name r = true
   request : spec.requestB r (callEffects (StoreView.graph f.F.store) r) = true
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+open Verification.TolerantFrames.ReadOnly
+
+/-- **The binding checks of a request are its checks, each passing**
+(proved, by their definition). -/
+theorem _root_.Verification.SourceClaimJson.FramedSpec.bindingB_iff {spec : FramedSpec ι} {name : String}
+    {r : SourceRequest σ ι} :
+    spec.bindingB name r = true ↔
+      spec.checked.entryB (realizedCode r) ((realizedCode r).1.length - 1) = true ∧
+      codesCoverB spec.checked [requestCode r] = true ∧
+      entryFnB spec.checked (realizedCode r) ((realizedCode r).1.length - 1)
+        ((List.range (r.siblings.length + 1)).map (capSlot spec.arity false 0 + ·)) = true ∧
+      clientsB spec.theta (componentRows spec.family spec.C) = true ∧
+      protocolAtLeastB (flowSites spec.checked) (protocolOfParts id (partsIndex spec.psiDef))
+        (protocolOfParts id (partsIndex spec.psi)) = true ∧
+      readOnlyB spec.family spec.C name r.inputs spec.readOnly = true ∧
+      spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) := by
+  simp [FramedSpec.bindingB, FramedSpec.bindingChecks]
+
+/-- **The frame's client obligation is the checked file's `@clients`
+rows'** (proved, `clientsB_sound`): where the binding checks pass, the
+frame's $`\Theta_C`$ is, at every part, the rows' of the exported types
+of `C`'s module in the family the declaration document describes, which
+state class keys only. -/
+theorem _root_.Verification.SourceClaimJson.FramedSpec.theta_rows {spec : FramedSpec ι} {name : String}
+    {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
+    clientsByKindB (componentRows spec.family spec.C) = true ∧
+      ∀ p, spec.Θ p = rowsTheta (componentRows spec.family spec.C) p :=
+  let hc := clientsB_sound (FramedSpec.bindingB_iff.mp h).2.2.2.1
+  ⟨hc.1, fun p => hc.2 p⟩
+
+/-- **The frame's read-only types are the member's declared read-only
+inputs** (proved, by `readOnlyB`): every type the frame's view reads
+read-only is an input of the member `name` whose parameter's declared
+shape in the family is read-only throughout. -/
+theorem _root_.Verification.SourceClaimJson.FramedSpec.readOnly_declared {spec : FramedSpec ι} {name : String}
+    {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
+    ∀ T, spec.view.RO T → T ∈ readOnlyInputs spec.family spec.C name r.inputs := by
+  intro T hT
+  have hro := (FramedSpec.bindingB_iff.mp h).2.2.2.2.2.1
+  simp only [readOnlyB, List.all_eq_true, List.contains_iff_mem] at hro
+  exact hro T hT
+
+/-- **The frame's framed nodes are the flow's framed call nodes** (proved,
+by the binding check): the nodes of the realized code whose call may
+reach outside code at some context of the checked flow. -/
+theorem _root_.Verification.SourceClaimJson.FramedSpec.framed_nodes {spec : FramedSpec ι} {name : String}
+    {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
+    spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) :=
+  (FramedSpec.bindingB_iff.mp h).2.2.2.2.2.2
+
+/-- **The entry of the realized code is an entry of the checked flow**
+(proved, `FFlow.entryB_sound`, `entryFnB_sound`, `codesCoverB_sound`):
+its proposal at the entry context holds what outside code may supply at
+every slot of its entry node and returns within `O`, names signatures
+there only at the sibling slots and the closure's own, and the request's
+code has a proposal at the entry context. -/
+theorem _root_.Verification.SourceClaimJson.FramedSpec.entry_checked {spec : FramedSpec ι} {name : String}
+    {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
+    (∃ π, spec.checked.flow.code (realizedCode r) entryCx = some π ∧
+      (∀ i, Supplied spec.checked.flow (π.env ((realizedCode r).1.length - 1) i)) ∧ Sub π.ret spec.checked.flow.O ∧
+      ∀ i σ', π.fn ((realizedCode r).1.length - 1) i = some σ' →
+        i ∈ (List.range (r.siblings.length + 1)).map (capSlot spec.arity false 0 + ·)) ∧
+    ∃ π, spec.checked.flow.code (requestCode r) entryCx = some π := by
+  obtain ⟨he, hc, hf, -⟩ := FramedSpec.bindingB_iff.mp h
+  obtain ⟨π, hπ, hs, hr⟩ := FFlow.entryB_sound he
+  exact ⟨⟨π, hπ, hs, hr, fun i σ' hi => entryFnB_sound hf hπ hi⟩,
+    codesCoverB_sound hc (requestCode r) (List.mem_singleton_self _)⟩
+end
 
 /-- **A graph plan's run accepted** (`passMemberGraph`'s, its walks framing
 the nodes `fr`, the footprint's fallback allowed where `fb`): unqualified,
@@ -170,7 +246,7 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
   | framed (name : String) (pos : Span) (r : Req f)
       (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive))
       (cands : List (Nat × List HeapKnowledge.IndexAtom)) :
-      FramedPlanAt f i name pos r spec → FramedAccepted f { r with candidates := cands } spec → MemberAccepted f i
+      FramedPlanAt f i name pos r spec → FramedAccepted f name { r with candidates := cands } spec → MemberAccepted f i
 
 /-- **H3, the wrapper's statement**: `passGroup` accepting a group makes
 every member `MemberAccepted`, at every value of every argument. Proved

@@ -853,19 +853,25 @@ some context of $m$, its callee set $S_f$ holds $\circ$, or some code of
 $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. A unit with
 no framed call node has no framed plan
 \status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt}, \lean{segCodes}, \lean{reachesOut}. The code forms a framed plan only where a framed node's callee names no signature at some context (\lean{outsideCalleeAt})}.
-\item[(B2) Kept facts] At each framed node $c$: its reach $L(c)$, its
-depth charges $W_c$ and its protocol $\Psi_c=\Psi_\cC\sqcup\Theta_\cC\sqcup
-W_c$ (Section~\ref{sec:flowro}), and $\Phi$, the callee's stated effect
-read at the caller's slots. A support $S$ is \emph{kept} at $c$ when the
-frame's check of $S$ at $\Psi_c$ and $\Phi$ passes at every context of $m$
-and at every node $l'$ of $c$'s key that may call outside code or is
-framed, $c$ itself where there is none. A fact of $f$'s graph at $c$'s
-entry is kept when its support lies in a kept support. So a fact is kept
-when each location it reads is of a local site that $\Psi_c$ keeps (a
-local site outside $L(c)$ and outside $\overline{\mathit{Cap}\cup O}$
-where $\Theta_\cC$ keeps it), or changes, under $\Phi$ joined with
-$\Psi_c$, only within what the fact allows
-\status{Lean: \lean{callReach} over the call sets of every node of $c$'s key at every context, \lean{depthCharges}, \lean{callEffectAt}, \lean{framedSupportsAt}, \lean{frameCheckAt}, \lean{SinglePass.supportedIn}; the producer's candidates, the supports of the facts at each framed node's entry observed in the walk framing the nodes before it, \lean{FilePlans.framedSupports}. The code reads one effect, \lean{callEffectAt}'s, at both exits of the node, and reads no region as protected (\lean{frameCheckAt}'s last argument false)}.
+\item[(B2) Kept facts] At each framed node $c$, at the label $l$ of
+$f$'s request code: the call's operands are slots or constants; $\Phi$ is
+the callee's stated effect read at the caller's slots; the node's set
+$T_l$ is the closure $\overline{S_l}$ of the union $S_l$ of the sets of
+the operand slots at every context of the code and every node $l'$ of
+$c$'s key, checked closed; and the node's protocol is
+$\Psi_c(l)=\Theta_\cC\sqcup\Psi_\cC\sqcup W(T_l)$, with $W(T)$ equal to
+$\mathrm{Ch}(\text{all codes of }\cC)$ at every part but a local part
+whose site is outside $T$, which is $\keep$. A support $S$ is
+\emph{kept} at $c$ when the frame's check of $S$ at $\Psi_c(l)$ and $\Phi$
+passes at every context and at every node $l'$ of $c$'s key. A fact of
+$f$'s graph at $c$'s entry is kept when its support lies in a kept
+support; the kept facts are added at $c$'s normal exit, and its handler
+reads the store the call's step leaves, with no fact kept. So a fact is
+kept when each location it reads is of a local site that $\Psi_c(l)$
+keeps (a local site outside $T_l$ and outside
+$\overline{\mathit{Cap}\cup O}$), or changes, under $\Phi$ joined with
+$\Psi_c(l)$, only within what the fact allows
+\status{Lean: \lean{atomCallB}, \lean{operandSets}, \lean{nodeSet}, \lean{capClosedB}, \lean{nodeProtocol} (\lean{componentProtocol} and \lean{probeProtocol} at \lean{flowKinds}), \lean{supportKeptB}, \lean{frameCheckAt}, \lean{framedNodeOkB}, \lean{framedNodesAt}, \lean{callEffectAt}, \lean{SinglePass.supportedIn}. The pass runs \lean{framedNodesAt} at the frame's flow after the walk (\lean{FramedSpec.requestB}); the producer offers the supports of the facts at each framed node's entry observed in the walk framing the nodes before it, and keeps those \lean{supportKeptB} passes (\lean{FilePlans.framedSupports}, \lean{framedNodeKeeps}). The kept facts are added to the normal exit's store only (\lean{SinglePass.keptStep}, \lean{keptDone\_thrown}); the code reads no region as protected (\lean{frameCheckAt}'s last argument false). \lean{callEffectAt} reads an effect only at a call of a slot whose type expands to one clause of signatures; any other callee has no stated effect, and the plan is refused}.
 \item[(B3) The framed walk] $f$'s graph is walked as the ordinary pass
 walks it, every framed node's exits reading the store after its step with
 the facts it keeps added, and settled as a member's run is: a candidate an
@@ -876,18 +882,24 @@ component, its entries, $\Theta_\cC$ per kind, $\Psi_\cC$ per site and
 kind, and each framed node with the supports it keeps.
 The decoder reads the flow of (A2), $f$'s request code beside its
 realized code with the realized code's proposals, and refuses a document
-with another field, other entries, framed nodes other than
-(B1)'s, or a support the check of (B2) fails. The binding checks that read
-$f$: its tag is $\cC$; the request's code has a proposal at context $0$; at the realized
-code's entry every slot holds what outside code may supply and the returns
-lie in $O$; its slots name signatures only at the sibling slots and the
-closure's own slot; and the realized code's proposals at body labels are
-the request's
-\status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; \lean{codesCoverB} at \lean{requestCode}, \lean{FFlow.entryB}, \lean{compB}, \lean{entryFnB}, \lean{realizedFlowB}, \lean{clientsB}, \lean{protocolAtLeastB}, \lean{readOnlyB}. The producer forms the document after (B2) and (B3)'s observation, the decoder checks it, and \lean{FilePlans.framedRun} then runs the binding checks (\lean{FilePlans.framedChecks}), (B1) and (B2) again and the walk (B3), settled with no fallback (\lean{FilePlans.framedSettle})}.
+with another field, other entries or framed nodes other than (B1)'s.
+The binding checks that read $f$, before the walk: the request's code
+has a proposal at context $0$; at the realized code's entry every slot
+holds what outside code may supply and the returns lie in $O$; its slots
+name signatures only at the sibling slots and the closure's own slot; the
+document's $\Theta_\cC$ is the \code{@clients} rows' at every kind; its
+$\Psi_\cC$ is at least the protocol of (A3) at the flow's sites; the types
+the plan reads read-only are $f$'s parameters whose declared shapes are
+read-only throughout; and its framed nodes are (B1)'s. After the walk:
+$f$'s tag is $\cC$; its node expressions are source terms; $\Theta_\cC$
+keeps every part; its start is a label of its program; the realized
+code's proposals at body labels are the request's; and (B2) at every
+framed node
+\status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; before the walk \lean{FramedSpec.bindingChecks} (\lean{FFlow.entryB}, \lean{codesCoverB} at \lean{requestCode}, \lean{entryFnB}, \lean{clientsB}, \lean{protocolAtLeastB}, \lean{readOnlyB}, \lean{framedCallNodes}), run by \lean{FilePlans.framedChecks}, decided as \lean{FramedSpec.bindingB}; after the walk \lean{FramedSpec.requestB} (\lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow). The producer forms the document after (B2) and (B3)'s observation, and \lean{FilePlans.framedRun} runs the walk (B3), settled with no fallback (\lean{FilePlans.framedSettle})}.
 \item[(B5) The verdict] $f$ is accepted under the client obligation of
 $\cC$ when every check of (A1)--(B4) passes and the framed walk accepts;
 otherwise the verdict is its ordinary plan's
-\status{Lean: \lean{FilePlans.passMember} at a framed plan, \lean{FilePlans.framedRun}, \lean{PreparedFile.framedVerdict}, the verdict line naming $\cC$ (\lean{FilePlans.clientComponents}); the acceptance condition, \lean{FramedAccepted}, its checks of (A2) and (A4) the field \lean{component}, the checks at its request the field \lean{request} (\lean{FramedSpec.requestB}: \lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow), the premises on the initial configurations read from the component's checks (\lean{FramedSpec.initialFits}, \lean{FramedSpec.initialEntry}). Where every check passes and the framed walk accepts, the unit is accepted under client trust at $\cC$; otherwise the verdict is the ordinary plan's, its text followed by the framed plan's line}.
+\status{Lean: \lean{FilePlans.passMember} at a framed plan, \lean{FilePlans.framedRun}, \lean{PreparedFile.framedVerdict}, the verdict line naming $\cC$ (\lean{FilePlans.clientComponents}); the acceptance condition, \lean{FramedAccepted}, its checks of (A2) and (A4) the field \lean{component}, the checks of (B4) before the walk the field \lean{binding}, those after it the field \lean{request} (\lean{FramedSpec.requestB}: \lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow), the premises on the initial configurations read from the component's checks (\lean{FramedSpec.initialFits}, \lean{FramedSpec.initialEntry}). Where every check passes and the framed walk accepts, the unit is accepted under client trust at $\cC$; otherwise the verdict is the ordinary plan's, its text followed by the framed plan's line}.
 \end{description}
 
 \subsection{The assumptions}\label{sec:accept-trust}
@@ -899,7 +911,8 @@ types, keeps $\Theta_\cC$ at each of its steps on $R_\cC$, passes function
 values that meet their arrow types, and runs typed configurations.
 \item[The client row] $\Theta_\cC$ is the protocol of the \code{@clients}
 rows, a change per class; a type with no row is read-only, $\keep$.
-\item[The callback row] A call of $\cC$'s code whose callee's type states an effect changes the heap within it, from its entry to its return, its calls of $\cC$ included \status{assumed, a part of $\Theta_\cC$: \lean{FramedSpec.CallbacksWithin}, a premise of \lean{MemberSafe}'s framed branch}.\par
+\item[The callback row] A call at a framed node of $f$'s request code, a call whose callee may be a value of outside code, whose callee's type states an effect, changes the heap within it from its entry to its return with a value, its calls of $\cC$ included \status{assumed, a part of $\Theta_\cC$: \lean{FramedSpec.CallbacksWithin}, a premise of \lean{MemberSafe}'s framed branch}.\par
+\item[The binding to the file] The plan's realm, initialization, flow, family and request are those of the checked file: the front end and the producer build them from the file's fragment and declaration document, and the theorem reads them from the plan \status{executable, unproved, the front end's trust: \lean{PreparedFile.prepareFramedComponent}, \lean{FramedComponent.of}, \lean{componentInit}, \lean{framedComponentFlow}, \lean{FramedSpec.decode}. Proved from the checks: the frame's $\Theta_\cC$ is the family's \code{@clients} rows' (\lean{FramedSpec.theta\_rows}), its read-only types $f$'s declared read-only parameters (\lean{FramedSpec.readOnly\_declared}), its framed nodes the flow's (\lean{FramedSpec.framed\_nodes}), its entry an entry of the checked flow (\lean{FramedSpec.entry\_checked}), its tag $\cC$ (\lean{compB\_sound})}.\par
 \item[The natives] Each native's step model describes the native, and the
 realm's intrinsic objects behave as standard
 \status{assumed: \lean{hostModel?}}.
@@ -925,7 +938,7 @@ entry the heap meets $H$ and outside code holds only values meeting $O$
 location only at its active writing redex, at a site its receiver meets
 \status{Lean: \lean{capClosedB\_sound}, \lean{segClosedB\_sound}, \lean{step\_writes\_active}, \lean{write\_site}. \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} ($\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth, under \lean{noRestB})}.
 \item[(A4), (B4)] Each binding check gives its property
-\status{Lean: \lean{componentBindingRefusal\_none} (each check of (A2) and (A4) passes where the refusal is none), \lean{codesCoverB\_sound}, \lean{allocSomeB\_sound}, \lean{FFlow.entryB\_sound}, \lean{entryFnB\_sound}, \lean{realizedFlowB\_sound}}.
+\status{Lean: \lean{componentBindingRefusal\_none} (each check of (A2) and (A4) passes where the refusal is none), \lean{codesCoverB\_sound}, \lean{allocSomeB\_sound}, \lean{realizedFlowB\_sound}; the checks before the walk, \lean{FramedSpec.bindingB\_iff}, with \lean{FramedSpec.theta\_rows} (\lean{clientsB\_sound}), \lean{FramedSpec.readOnly\_declared}, \lean{FramedSpec.framed\_nodes}, \lean{FramedSpec.entry\_checked} (\lean{FFlow.entryB\_sound}, \lean{entryFnB\_sound}), which tie the frame to the checked file and which no step of \lean{framed\_requestSafe} reads}.
 \item[(B1), (B2)] At a framed call, the segment from the call to its
 resumption changes each location of the support within its change, so a
 kept fact holds at the resumption (the \emph{framed transfer}): the

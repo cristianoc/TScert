@@ -30,9 +30,9 @@ request:
 - **The client obligation is the source's** (`clientsB`, `clientsB_sound`):
   each `@clients` row of the component's exported types states class keys
   only (`clientsByKindB`, the restriction "@clients by kind"), and the
-  plan's $`\Theta_C`$ is, at every part the history reads (a site of the
-  flow, the key `none`), the join of the rows' changes at the part's kind
-  (`rowsTheta`), a row read-only where it states none. -/
+  plan's $`\Theta_C`$ is, at every part of every package, the join of the
+  rows' changes at the part's kind (`rowsTheta`), a row read-only where it
+  states none. -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
@@ -124,14 +124,18 @@ end
 section clients
 variable {P : Package}
 
-/-- **The client obligation the rows state**, by kind: at a part, the join
-of each stated row's change at a class region whose classes the part's
-kind has; `any` at a region of another form, which `clientsByKindB`
-refuses; `keep` where no row states one. -/
-def rowsTheta (rows : List ComponentWire.Clients) : Protocol P := fun p =>
+/-- **The client obligation the rows state at a kind**: the join of each
+stated row's change at a class region whose classes the kind has; `any`
+at a region of another form, which `clientsByKindB` refuses; `keep` where
+no row states one. -/
+def rowsAt (rows : List ComponentWire.Clients) (k : Option Verification.Kind) : Footprints.Change :=
   rows.foldl (fun δ row => if row.stated then row.frame.foldl (fun δ e => match e.1 with
-      | .cls c => if (roleKinds c.roles).contains p.kind then δ.max e.2 else δ
+      | .cls c => if (roleKinds c.roles).contains k then δ.max e.2 else δ
       | _ => .any) δ else δ) .keep
+
+/-- **The client obligation the rows state**: at a part, the rows'
+obligation at its kind (`rowsAt`). -/
+def rowsTheta (rows : List ComponentWire.Clients) : Protocol P := fun p => rowsAt rows p.kind
 
 /-- **The rows state class keys only** (the restriction "@clients by
 kind"), decided. -/
@@ -141,20 +145,19 @@ def clientsByKindB (rows : List ComponentWire.Clients) : Bool :=
     | _ => false
 
 /-- **The plan's client obligation is the rows'**, decided: the rows state
-class keys only, and at every part of the flow's sites `U` at the key
-`none`, `Θ` is `rowsTheta`. -/
-def clientsB (U : Sites P) (Θ : Protocol P) (rows : List ComponentWire.Clients) : Bool :=
-  clientsByKindB rows && (partsU U).all fun p => decide (Θ p = rowsTheta rows p)
+class keys only, and at every kind the wire's change by kind `theta` is
+the rows' (`rowsAt`). -/
+def clientsB (theta : List (Option Verification.Kind × Footprints.Change)) (rows : List ComponentWire.Clients) : Bool :=
+  clientsByKindB rows && allKinds.all fun k => decide (((theta.find? fun e => decide (e.1 = k)).map (·.2)).getD .keep = rowsAt rows k)
 
 /-- **The client check is sound** (proved): the rows state class keys only,
-and `Θ` is the rows' obligation at every part whose site is in `U` and
-whose key is `none`, every part a reached history's location has
-(`sites_in_flow`, `reached_key`). -/
-theorem clientsB_sound {U : Sites P} {Θ : Protocol P} {rows : List ComponentWire.Clients}
-    (h : clientsB U Θ rows = true) :
-    clientsByKindB rows = true ∧ ∀ p : Part P, p.site ∈ U → p.key = none → Θ p = rowsTheta rows p := by
+and the wire's obligation by kind is the rows' at every part of every
+package. -/
+theorem clientsB_sound {theta : List (Option Verification.Kind × Footprints.Change)} {rows : List ComponentWire.Clients}
+    (h : clientsB theta rows = true) :
+    clientsByKindB rows = true ∧ ∀ {Q : Package} (p : Part Q), (protocolOfKinds theta : Protocol Q) p = rowsTheta rows p := by
   simp only [clientsB, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  exact ⟨h.1, fun p hs hk => h.2 p (mem_partsU hs hk)⟩
+  exact ⟨h.1, fun p => h.2 p.kind (mem_allKinds _)⟩
 
 end clients
 end Verification.SourceClaimJson

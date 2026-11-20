@@ -191,14 +191,14 @@ about (`framedReturns_reached`), the five main-graph clauses
 clause by `codesAccepted_guarantees`, each code's guarantee read on the
 term that runs it along every set of executions
 (`framedCode_of_guarantee`). -/
-theorem framed_requestSafe {f : FilePlans} {r : Req f}
+theorem framed_requestSafe {f : FilePlans} {name : String} {r : Req f}
     {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
     (hrun : RunSound (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec)
+    (htypes : r.types = f.F.store) (hacc : FramedAccepted f name r spec)
     (hcb : spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r)) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hreq⟩ := hacc
+  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, -, hreq⟩ := hacc
   have hret := framedReturns_reached (by rw [spec.componentRefusal.property]; exact hcomp) hreq hcb
   rw [← hfr] at hret
   let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True

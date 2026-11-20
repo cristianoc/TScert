@@ -6,13 +6,14 @@ import Verification.Source.Claims.MemberSettle
 The draft "Accepting a unit through the read-only frame"
 (`docs/drafts/framed-acceptance.md`, "What the pass checks"). At each call
 node of a member's main graph whose call may reach outside code (a framed
-call, `framedCallNodes`), the supports the frame keeps are decided by the
-read-only frame's check (`frameCheckAt`) at the call's protocol
-$`\Psi_c`$ (`componentProtocol` with the depth charges of the call's
-reach, `depthCharges`) and the callee's stated effect read at the caller's
-slots (`callEffectAt`), at every context of the member's code in the flow
-and every node of the call's continuation and handler that may call
-outside code (`framedSupportsAt`). The supports offered are those of the
+call, `framedCallNodes`), the supports the frame keeps are those the
+check of the node the pass runs keeps (`framedNodeKeeps`, `supportKeptB`):
+the read-only frame's check (`frameCheckAt`) at the node's protocol
+$`\Psi_c(l)`$ (`nodeProtocol`: the client obligation, the component's
+protocol and the depth charges at the node's set) and the callee's stated
+effect read at the caller's slots (`callEffectAt`), at every context of
+the request's code in the flow and every node of the call's continuation
+and handler. The supports offered are those of the
 call's entry facts, in the pass's slot numbering (`SinglePass.framedAt`).
 `FilePlans.framedCheck` runs the member's main graph with its framed calls
 keeping the supports the check passes, settled as a member's run is
@@ -60,13 +61,12 @@ def componentFlow (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entry
 
 /-- **The supports each framed call node keeps**, as the producer proposes
 them: each node's entry facts' supports, observed in the walk framing the
-nodes found before it (none at a node the walk does not reach), those
-passing the frame's check
-(`framedSupportsAt`, at the component's protocol `ΨC` and the client
+nodes found before it (none at a node the walk does not reach), those the
+node's check keeps (`framedNodeKeeps` at the request's code, the client
 obligation `Θ`); with a line per node. -/
 def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel i : Nat) (cf : ComponentFlow ofC)
-    (ΨC Θ : Protocol (markedPackage ofC cf.O)) (r : SourceExtraction.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
-      (EquationStore.CheckedLabel f.F.equations f.F.primitive)) (m : Code) (nodes : List Nat) :
+    (Θ : Protocol (markedPackage ofC cf.O)) (r : SourceExtraction.SourceRequest (EquationStore.Checked f.F.equations f.F.primitive)
+      (EquationStore.CheckedLabel f.F.equations f.F.primitive)) (nodes : List Nat) :
     List (Nat × List Footprints.Footprint) × List String := Id.run do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := LabelStore.StoreView.graph f.F.store
   -- (each node observed in the walk framing those found before it; a node
@@ -89,7 +89,10 @@ def FilePlans.framedSupports {ofC : ComponentTag → Bool} (f : FilePlans) (fuel
         | .observed o, some Φ =>
           let atoms := o.before.indices.filter fun a => (a.fact.support? {}).isSome
           let Ss := atoms.filterMap fun a => a.fact.support? {}
-          let kept := framedSupportsAt cf.flow cf.lay cf.host ΨC Θ m l Φ Ss
+          let m := requestCode r
+          let kept := match m.1[l]? with
+            | some e => framedNodeKeeps cf.flow cf.lay Θ m l e Φ Ss
+            | none => []
           let lost := atoms.filter fun a => !SinglePass.supportedIn kept a.fact
           shown := shown ++ [s!"  node {l}: effect {(reprStr Φ).replace "\n" " "}; {kept.length} of {Ss.length} entry supports kept; dropped {(toJson lost).compress}"]
           framed := others ++ [(l, kept)]
@@ -112,7 +115,7 @@ def FilePlans.framedCheck {ofC : ComponentTag → Bool} (f : FilePlans) (fuel : 
   let mut g := f
   for _ in List.range 12 do
     let (framed, shown) := match g.plans[i]? with
-      | some (.ok (.graph _ _ r')) => g.framedSupports fuel i cf (componentProtocol cf.flow cf.lay) (fun _ => .keep) r' m nodes
+      | some (.ok (.graph _ _ r')) => g.framedSupports fuel i cf (fun _ => .keep) r' nodes
       | _ => ([], [])
     lines := lines ++ shown
     match g.passMember fuel i (framed := framed) with
@@ -232,7 +235,7 @@ def exactFields (j : Json) (ks : List String) (what : String) : Except String Un
 change but `keep`. -/
 def rowsKinds (rows : List ComponentWire.Clients) : List (Option Verification.Kind × Footprints.Change) :=
   allKinds.filterMap fun k =>
-    let c := rowsTheta (P := probePackage fun _ => false) rows ⟨none, k, none⟩
+    let c := rowsAt rows k
     if c == .keep then none else some (k, c)
 
 /-- **A component's protocol** (`componentProtocol`), built once: its
@@ -352,15 +355,13 @@ def FramedComponent.refusalAt (fc : FramedComponent) (C : Nat) :
 open Verification.TolerantFrames.ReadOnly in
 /-- **The decoder of a framed plan's document**: its fields exactly those
 of `framedDocument`; the flow its component's (`fc`); the document refused
-where it disagrees with it: its entries other than the component's, its
-framed call nodes other than the flow's (`framedCallNodes`), or a support
-it keeps failing the frame's check (`framedSupportsAt`, at the component's
-protocol as defined and the `@clients` rows' obligation); then the plan's
-proposals: the document's component, client obligation and protocol,
+where it disagrees with it: its entries other than the component's or its
+framed call nodes other than the flow's (`framedCallNodes`); then the
+plan's proposals: the document's component, client obligation and protocol,
 which the pass checks (`compB`, `clientsB`, `protocolAtLeastB`), and the
 member's read-only inputs at their declared shapes (`readOnlyInputs`). -/
 def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι]
-    (G : NormalGraph ι) (fc : FramedComponent) (member : String)
+    (fc : FramedComponent) (member : String)
     (r : SourceExtraction.SourceRequest σ ι) (doc : Json) : Except String (FramedSpec ι) := do
   exactFields doc ["component", "entries", "theta", "protocol", "framed"] "a framed plan's document"
   let C ← doc.getObjValAs? Nat "component"
@@ -382,14 +383,6 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
   let F := fc.cf.flow
   let nodes := framedCallNodes F fc.cf.host m
   if framed.map (·.1) != nodes then throw s!"the document's framed call nodes {framed.map (·.1)} are not the flow's {nodes}"
-  let ΨC : Protocol (markedPackage fc.ofC fc.cf.O) := protocolOfParts id (partsIndex fc.psiDef)
-  let Θ : Protocol (markedPackage fc.ofC fc.cf.O) := rowsTheta (componentRows fc.family C)
-  for (l, Ss) in framed do
-    let some Φ := (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
-      | throw s!"the document's framed call node {l} has no stated effect of its callee"
-    let kept := framedSupportsAt F fc.cf.lay fc.cf.host ΨC Θ m l Φ Ss
-    if kept.length != Ss.length then
-      throw s!"at the document's framed call node {l}, {Ss.length - kept.length} of the supports it keeps fail the frame's check"
   let some componentRefusal := fc.refusalAt C | throw (fc.restriction.getD "")
   return { C, readOnly := readOnlyInputs fc.family C member r.inputs, outType := [], realm := fc.realm,
            initE := fc.initE, initK := fc.initK, initOrder := fc.initOrder, initL := fc.initL,
@@ -455,12 +448,10 @@ def FilePlans.framedPlan (f : FilePlans) (fuel i : Nat) (fc : FramedComponent) (
   -- (a framed plan keeps facts across a call of a value of outside code:
   -- none is formed where no framed call's callee may be one)
   if !(nodes.any fun l => (F.ctxs m).any fun (_, c) => outsideCalleeAt c m l) then return none
-  let ΨC : Protocol (markedPackage fc.ofC fc.cf.O) := protocolOfParts id (partsIndex fc.psiDef)
   let Θ : Protocol (markedPackage fc.ofC fc.cf.O) := rowsTheta fc.rows
-  let (framed, shown) := f.framedSupports fuel i fc.cf ΨC Θ r m nodes
+  let (framed, shown) := f.framedSupports fuel i fc.cf Θ r nodes
   let doc := forgeDocument force (framedDocument fc.C fc.entries (rowsKinds fc.rows) fc.psiDef framed)
-  let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := LabelStore.StoreView.graph f.F.store
-  let spec ← (FramedSpec.decode G fc name r doc).mapError fun e => s!"a framed plan's document is refused: {e}"
+  let spec ← (FramedSpec.decode fc name r doc).mapError fun e => s!"a framed plan's document is refused: {e}"
   return some (f.withPlan i (.framed name pos r (forgeSpec force r.inputs spec)), s!"framed plan, {name}: framed call nodes {nodes}" :: shown)
 
 end Verification.SourceClaimJson

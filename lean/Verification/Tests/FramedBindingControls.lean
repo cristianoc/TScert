@@ -126,18 +126,15 @@ private def spineRow : ComponentWire.Clients :=
 private def pathRow : ComponentWire.Clients :=
   ⟨"m", "T", (0, 0), true, [(.path 0 [] (.str "items"), .extend)]⟩
 
-/-- The obligation of the spine row, by kind. -/
-private def spineTheta : Protocol Pk := fun p => if p.kind = some .spine then .extend else .keep
-
-#guard clientsB (P := Pk) [none, some 0] spineTheta [spineRow]
+#guard clientsB [(some .spine, .extend)] [spineRow]
 -- a wire obligation changing a kind no row states
-#guard !clientsB (P := Pk) [none, some 0] (fun _ => .any) [spineRow]
+#guard !clientsB [(some .spine, .extend), (some .field, .any)] [spineRow]
 -- a wire obligation keeping the spines the row extends
-#guard !clientsB (P := Pk) [none, some 0] (fun _ => .keep) [spineRow]
+#guard !clientsB [] [spineRow]
 -- a row stating a path key
-#guard !clientsB (P := Pk) [none, some 0] (rowsTheta [pathRow]) [pathRow]
+#guard !clientsB [(some .spine, .extend)] [pathRow]
 -- no row states one: read-only
-#guard clientsB (P := Pk) [none, some 0] (fun _ => .keep) [{ spineRow with stated := false }]
+#guard clientsB [] [{ spineRow with stated := false }]
 
 /-! ## The protocol -/
 

@@ -427,6 +427,7 @@ theorem framedRun_sound (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
   rename_i hcomp
   split at hacc
   · simp [MemberRun.accepted, MemberRun.before] at hacc
+  rename_i hchk
   split at hacc
   · simp [MemberRun.accepted, MemberRun.before] at hacc
   rename_i hq
@@ -461,7 +462,7 @@ theorem framedRun_sound (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
     | fallback _ _ hfb => cases hfb
     | direct c after hm hb hreg hw hs =>
       refine .framed name pos r spec cands hp ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hw.1, hs, hw.2⟩,
-        fun Φ regions hr => (hregs Φ regions hr).2.2, ?_, hreq⟩
+        fun Φ regions hr => (hregs Φ regions hr).2.2, ?_, FilePlans.framedChecks_none hchk, hreq⟩
       rw [← spec.componentRefusal.property]; exact hcomp
 
 /-- **What an accepted member run establishes** (proved): a framed plan's

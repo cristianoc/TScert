@@ -871,22 +871,18 @@ diagnostic records of the run it read left to that run. -/
 def firstLine (t : String) : String := (t.splitOn "\n").headD t
 
 open Verification.TolerantFrames.ReadOnly in
-/-- **The checks of a framed plan that read its request, before its walk**
-(the draft, "What the pass checks"), in order: the entry's start
-`entryB`, the request's tag `compB`, the request's code covered
-`codesCoverB`, the entry's signatures `entryFnB` at the sibling slots and
-the closure's own, `realizedFlowB`, the wire's $`\Theta_C`$ the
-`@clients` rows' by kind `clientsB` and the wire's $`\Psi_C`$ at least
-the component's protocol as defined `protocolAtLeastB`, both at the flow's
-sites, and the read-only types `readOnlyB`; its framed call nodes, those
-of the realized code the flow frames (`framedCallNodes`); at each, every
-support it keeps passing the frame's check at the call's protocol, from
-the wire's $`\Psi_C`$ and $`\Theta_C`$, and the callee's stated effect
-(`framedSupportsAt`). The text of the first that fails; none where all
-pass. -/
-def FilePlans.framedChecks (f : FilePlans) (name : String)
-    (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Option String := Id.run do
+/-- **The binding checks of a framed plan that read its request**, with
+their names and the details of a failure (the draft, "What the pass
+checks"), in order: the entry's start `entryB`, the request's code
+covered `codesCoverB`, the entry's signatures `entryFnB` at the sibling
+slots and the closure's own, the wire's $`\Theta_C`$ the `@clients` rows'
+by kind `clientsB`, the wire's $`\Psi_C`$ at least the component's
+protocol as defined `protocolAtLeastB` at the flow's sites, the read-only
+types the member's declared read-only inputs `readOnlyB`, and its framed
+call nodes those of the realized code the flow frames
+(`framedCallNodes`). -/
+def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSpec ι) (name : String)
+    {σ : Type} [LabelStore.StoreView σ ι] (r : SourceRequest σ ι) : List (String × (Unit → Bool) × (Unit → String)) :=
   let F := spec.checked
   let m := realizedCode r
   let entry := m.1.length - 1
@@ -895,34 +891,47 @@ def FilePlans.framedChecks (f : FilePlans) (name : String)
   let sib := (List.range (r.siblings.length + 1)).map (c0 + ·)
   let U := flowSites F
   let ΨC : Protocol (markedPackage spec.ofC spec.marks) := protocolOfParts id (partsIndex spec.psi)
-  let Θ : Protocol (markedPackage spec.ofC spec.marks) := protocolOfKinds spec.theta
-  let checks : List (String × (Unit → Bool) × (Unit → String)) := [
-    ("its entry's start (entryB)", fun _ => F.entryB m entry, fun _ => ""),
-    ("its component (compB)", fun _ => compB spec.C r,
-      fun _ => s!" (the request's tag {r.comp}, the plan's component {spec.C})"),
+  [("its entry's start (entryB)", fun _ => F.entryB m entry, fun _ => ""),
     ("its request's code covered (codesCoverB)", fun _ => codesCoverB F [requestCode r], fun _ => ""),
     ("its entry's signatures (entryFnB)", fun _ => entryFnB F m entry sib, fun _ =>
       -- (the entry's slots naming a signature, at each context)
       let named := ((F.at m entryCx).map fun c =>
         (List.range (c.node entry).fn.size).filter fun j => ((c.node entry).fnAt j).isSome).getD []
       s!" (the entry's slots naming a signature {named}, its sibling slots {sib})"),
-    ("its realized code's proposals (realizedFlowB)", fun _ => realizedFlowB F r, fun _ => ""),
-    ("its client obligation (clientsB)", fun _ => clientsB U Θ (componentRows spec.family spec.C), fun _ => ""),
-    ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (protocolOfParts id (partsIndex spec.psiDef)) ΨC, fun _ => ""),
-    ("its read-only types (readOnlyB)", fun _ => readOnlyB spec.family spec.C name r.inputs spec.readOnly, fun _ => "")]
-  if let some (w, _, detail) := checks.find? (!·.2.1 ()) then
-    return some s!"framed plan: the binding check of {w} fails{detail ()}"
-  let nodes := framedCallNodes F spec.host m
-  if nodes != spec.framed.map (·.1) then
-    return some s!"framed plan: its framed call nodes {spec.framed.map (·.1)} are not the flow's {nodes}"
-  let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
-  for (l, Ss) in spec.framed do
-    let some Φ := (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
-      | return some s!"framed plan: its framed call node {l} has no stated effect of its callee"
-    let kept := framedSupportsAt F spec.lay spec.host ΨC Θ m l Φ Ss
-    if kept.length != Ss.length then
-      return some s!"framed plan: at its framed call node {l}, {Ss.length - kept.length} of the supports it keeps fail the frame's check"
-  return none
+    ("its client obligation (clientsB)", fun _ => clientsB spec.theta (componentRows spec.family spec.C), fun _ => ""),
+    ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (protocolOfParts id (partsIndex spec.psiDef)) ΨC,
+      fun _ => ""),
+    ("its read-only types (readOnlyB)", fun _ => readOnlyB spec.family spec.C name r.inputs spec.readOnly, fun _ => ""),
+    ("its framed call nodes (framedCallNodes)", fun _ => spec.framed.map (·.1) == framedCallNodes F spec.host m,
+      fun _ => s!" ({spec.framed.map (·.1)} are not the flow's {framedCallNodes F spec.host m})")]
+
+/-- **The binding checks of a framed plan that read its request pass**
+(`FramedSpec.bindingChecks`), decided. -/
+def FramedSpec.bindingB {ι : Type} [LabelStore.Labels ι] (spec : FramedSpec ι) (name : String)
+    {σ : Type} [LabelStore.StoreView σ ι] (r : SourceRequest σ ι) : Bool :=
+  (spec.bindingChecks name r).all fun c => c.2.1 ()
+
+/-- **The checks of a framed plan that read its request, before its walk**
+(`FramedSpec.bindingChecks`): the text of the first that fails; none
+where all pass. -/
+def FilePlans.framedChecks (_f : FilePlans) (name : String)
+    (r : SourceRequest (EquationStore.Checked _f.F.equations _f.F.primitive) (EquationStore.CheckedLabel _f.F.equations _f.F.primitive))
+    (spec : FramedSpec (EquationStore.CheckedLabel _f.F.equations _f.F.primitive)) : Option String :=
+  match (spec.bindingChecks name r).find? (!·.2.1 ()) with
+  | some (w, _, detail) => some s!"framed plan: the binding check of {w} fails{detail ()}"
+  | none => none
+
+/-- **No refusal before the walk is the binding checks passing**
+(proved). -/
+theorem FilePlans.framedChecks_none {f : FilePlans} {name : String}
+    {r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
+    {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
+    (h : f.framedChecks name r spec = none) : spec.bindingB name r = true := by
+  unfold FilePlans.framedChecks at h
+  split at h
+  · cases h
+  · rename_i hf
+    exact List.all_eq_true.mpr fun c hc => by simpa using List.find?_eq_none.mp hf c hc
 
 /-- The candidates `cands` with the atoms `drop` left out at the head `t`
 (`FilePlans.dropCandidates` at one request). -/
@@ -999,7 +1008,9 @@ def FilePlans.framedRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
             ("its framed call nodes at the frame's flow (framedNodesAt)", fun _ =>
               framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff)]
           let w := ((reqChecks.find? (!·.2 ())).map (·.1)).getD "its request (requestB)"
-          .before name (.refused s!"framed plan: the binding check of {w} fails")
+          let why := if w.endsWith "(framedNodesAt)" then
+            framedNodesWhy spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff else ""
+          .before name (.refused s!"framed plan: the binding check of {w} fails{why}")
 
 /-- **One member's single pass**: a graph plan's (`passMemberGraph`); a
 framed plan's (`framedRun`). -/

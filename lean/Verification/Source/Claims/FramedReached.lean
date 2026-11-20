@@ -61,6 +61,16 @@ def nodeProtocolOf (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat))
     (theta : List (Option Verification.Kind × Footprints.Change)) (m : Code) (l : Nat) : Protocol P :=
   nodeProtocol F lay (protocolOfKinds theta) (nodeSetOf F lay m l)
 
+/-- A node the plan frames is a framed node's (proved). -/
+theorem framedFOf_mem {framed : List (Nat × List Footprints.Footprint)} {l : Nat}
+    (hl : Verification.TolerantFrames.framedFOf framed l = true) : l ∈ framed.map (·.1) := by
+  simp only [Verification.TolerantFrames.framedFOf, SinglePass.framedAt, Option.isSome_map] at hl
+  cases hf : framed.find? (·.1 == l) with
+  | none => rw [hf] at hl; cases hl
+  | some p =>
+    have hk : p.1 = l := by simpa using List.find?_some hf
+    exact List.mem_map.mpr ⟨p, List.mem_of_find?_eq_some hf, hk⟩
+
 /-- **A framed node passes its checks** (proved): a node the plan frames
 has an expression and a stated effect of its callee, at which
 `framedNodeOkB` passes for the supports it keeps. -/
@@ -138,7 +148,7 @@ theorem framedNodesAt_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat
     exact ⟨(c, fc), FFlow.at_ctxs hfc, l', hshare hk hn, j, hj, hs⟩
   · obtain ⟨e', Φ, he', hΦ, hok⟩ := framedNode_ok h hl
     rw [he] at he'; cases he'
-    simp only [framedNodeOkB, Bool.and_eq_true, List.all_eq_true] at hok
+    simp only [framedNodeOkB, supportKeptB, Bool.and_eq_true, List.all_eq_true] at hok
     obtain ⟨fc, hfc, rfl⟩ := FFlow.code_at hc
     have := hok.2 T hT (c, fc) (FFlow.at_ctxs hfc) l' (hshare hk hn)
     simp only [nodeProtocolOf, nodeSetOf, he, hΦ, Option.getD_some]
@@ -225,7 +235,7 @@ theorem framedReturns_reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
     (fun p => thetaKeepB_sound hθ _ p)
     (fun l p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).1)
     (fun l b₀ a m e L d k x v hl hb he hk hL hbt hex hat hv =>
-      hcb l _ b₀ a m e L d k x v (heff l hl) hb he hk hL.1 hL.2 hbt hex hat hv)
+      hcb l _ b₀ a m e L d k x v (framedFOf_mem hl) (heff l hl) hb he hk hL.1 hL.2 hbt hex hat hv)
 end
 end PassUnit
 
