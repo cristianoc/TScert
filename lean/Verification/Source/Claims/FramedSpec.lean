@@ -110,6 +110,12 @@ structure FramedSpec (ι : Type) where
   componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes names entries
     realm initOrder initE initK initL C }
   framed : List (Nat × List Footprints.Footprint)
+  /-- **Whether the request is checked at the contexts of its known calls**
+  (the Read-only frames note, (B1)): its function is no entry and its
+  token lies outside `O`, so the claim is about every call of its code that
+  a program makes, each at a context of its code, and no region is read as
+  protected. -/
+  inner : Bool := false
 
 namespace FramedSpec
 variable {ι : Type} (spec : FramedSpec ι)
@@ -220,12 +226,35 @@ def RealizedAt (r : SourceRequest σ ι) (a₁ a₂ : Conf × Ghost ((spec.core 
       (fun a => ¬ ∃ L' d' c', innermostGoto a.1.t = some (realizedCode r, r.start, L', d', c')) j a₁ a₂) ∧
     innermostGoto a₂.1.t = some (realizedCode r, r.start, L, d, r.comp)
 
+/-- **A call of the realized code the claim is about**: from an initial
+configuration, an execution of steps keeping the obligation at the history
+before any entry to `x`, and a step keeping it from `x` to `a₁`; an
+entering step from outside code (`FrameCore.Entering`) unless the request
+is checked at the contexts of its known calls (`inner`), whose calls are
+every call a program makes. -/
+def Called (r : SourceRequest σ ι) (x₀ : Conf) (n : Nat)
+    (x a₁ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)) : Prop :=
+  spec.Initial x₀ ∧ Ex (spec.core r).KStep (fun _ => True) n (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) x ∧
+    (spec.core r).KStep x a₁ ∧ (spec.inner = false → (spec.core r).Entering (realizedCode r) x a₁)
+
+/-- **A call the claim is about is one execution** (proved). -/
+theorem Called.ex {r : SourceRequest σ ι} {x₀ : Conf} {n : Nat}
+    {x a₁ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)} (h : spec.Called r x₀ n x a₁) :
+    Ex (spec.core r).KStep (fun _ => True) (n + 1) (x₀, bareStart (spec.core r).F (spec.core r).C x₀.t) a₁ :=
+  h.2.1.snoc trivial h.2.2.1
+
+/-- **A call of a request checked at its entry is a public call** (proved). -/
+theorem Called.public {r : SourceRequest σ ι} {x₀ : Conf} {n : Nat}
+    {x a₁ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)} (h : spec.Called r x₀ n x a₁)
+    (hi : spec.inner = false) : (spec.core r).PublicCall spec.Initial (realizedCode r) x₀ n x a₁ :=
+  ⟨h.1, h.2.1, h.2.2.2 hi⟩
+
 /-- **An entry of the request at a program's state `a₂`**: `a₂` realizes a
-public call of the realized code, at the world `W`, the heap `h` and the
-request's run `t` at the slots it reached. -/
+call of the realized code the claim is about (`Called`), at the world `W`,
+the heap `h` and the request's run `t` at the slots it reached. -/
 def EntryAt (r : SourceRequest σ ι) (k : Nat) (W : WorldT k) (h : Heap) (t : Tm)
     (a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)) : Prop :=
-  ∃ x₀ n x a₁ L d, (spec.core r).PublicCall spec.Initial (realizedCode r) x₀ n x a₁ ∧
+  ∃ x₀ n x a₁ L d, spec.Called r x₀ n x a₁ ∧
     spec.RealizedAt r a₁ a₂ L d ∧ a₂.1.s.n = k ∧ HEq a₂.1.s.W W ∧ h = a₂.1.s.h ∧
     t = gotoOf r.program r.start L d r.comp
 

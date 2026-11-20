@@ -218,6 +218,11 @@ theorem realized_frame {σ : Type} [Labels ι] [StoreView σ ι] {r : SourceRequ
     (h : realizedFlowB spec.fflowC r = true) : realizedFlowB spec.fflow r = true :=
   frame_transport spec.C spec.checked (fun _ Fl => realizedFlowB Fl r = true) h
 
+/-- **The returns check at the frame's flow** (proved, by
+`frame_transport`). -/
+theorem rets_frame {m : Code} (h : retsInB spec.fflowC m = true) : retsInB spec.fflow m = true :=
+  frame_transport spec.C spec.checked (fun _ Fl => retsInB Fl m = true) h
+
 /-- **The checks of the program's starts** (proved): the premises of the
 returns at reached executions from a program's initial configurations
 (`ret_reachedW_public`, track C1) that the pass checks: the frame's flow's
@@ -230,7 +235,7 @@ theorem starts_checks {σ : Type} [Labels ι] [StoreView σ ι] {r : SourceReque
     spec.fflow.marksB = true ∧ r.start < r.program.length ∧ realizedFlowB spec.fflow r = true ∧
       ∀ e ∈ spec.initE, free false e = true := by
   simp only [FramedSpec.requestB, Bool.and_eq_true, decide_eq_true_eq] at hreq
-  obtain ⟨⟨⟨⟨⟨-, -⟩, -⟩, hst⟩, hreal⟩, -⟩ := hreq
+  obtain ⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, hst⟩, hreal⟩, -⟩, -⟩ := hreq
   obtain ⟨-, hmk, -, -, -, -, -, -, -, hEf, -, -, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
   exact ⟨hmk, hst, spec.realized_frame hreal, hEf⟩
 end FramedSpec
@@ -258,7 +263,7 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
       (fun _ _ _ _ => True) := by
   obtain ⟨hmk, hst, hreal, hEf⟩ := spec.starts_checks hcomp₀ hreq
   simp only [FramedSpec.requestB, Bool.and_eq_true] at hreq
-  obtain ⟨⟨⟨⟨⟨hc, hsrc⟩, hθ⟩, -⟩, -⟩, hn⟩ := hreq
+  obtain ⟨⟨⟨⟨⟨⟨hc, hsrc⟩, hθ⟩, -⟩, -⟩, hn⟩, hri⟩ := hreq
   obtain ⟨hFa, -, htok, hlow, hTm, hEl, hEw, hRl, hRw, -, -, hLi, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
   obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound
     (spec.framedNodes_frame (prot := fun F => spec.protAt F r) hn)
@@ -272,21 +277,29 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
   have hinitE := spec.initialEntry r hcomp₀
   have hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
     fun x hx => spec.progOk_initial r hEf hEl hEw hLi hRl hRw hinitF hx (hinitE x hx).2.1.2
-  have hE := spec.entryFits r hr hFa hst hreal hcomp hinit
+  have hrets : spec.RetsIn r := fun hi c π hc =>
+    FramedSpec.retsInB_sound (spec.rets_frame (by simpa [hi] using hri)) c π hc
+  have hE := spec.entryFits r hr hFa hst hreal hcomp hinit hrets
   have hcs := spec.chkSound r hFa hm hE
   have hsi := spec.startInv r hFa hm hinitF hinitE hcomp
   have hwk := spec.wok_start r (fun x hx => (spec.initial_lay hEl hEw hLi hRl hRw x hx).2)
   have hw : (spec.frame r).ProtWitness (r.program.map (·.expression))
       (r.program.map fun n => (n.continuation, n.handler)) r.comp (Verification.TolerantFrames.framedFOf spec.framed)
       (Verification.TolerantFrames.framedSOf spec.framed) (fun l => spec.protAt spec.fflow r l) := by
+    cases hi : spec.inner with
+    | true =>
+      have h0 : (fun l => spec.protAt spec.fflow r l) = fun _ _ => false := by
+        funext l q; simp [FramedSpec.protAt, hi]
+      rw [h0]; exact ClientFrame.ProtWitness.none
+    | false =>
     intro l b₀ e L d k x _ hb _ hk _ hbt T _ e' _ hp w _ hmem hL
-    exact spec.prot_witness r hr hFa hst hreal hcomp har hro hm hinitF hinitE hinit hcs hsi hE hwk
+    exact spec.prot_witness r hr hFa hst hreal hcomp har hro hi hm hinitF hinitE hinit hrets hcs hsi hE hwk
       (fun p => thetaKeepB_keep hθ p) (copiesOf_sound _ _ _ _ _) hb hk hbt e'.1
       (protRegionB_mono (fun p hp => Footprints.Change.max_keep_left hp)
         ((Bool.and_eq_true _ _).mp hp).2) w hmem hL
   exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
     (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hLi hRl hRw hFa hmk hst hreal hEf
-    hinitF hinitE htok hlow hcomp hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
+    hinitF hinitE htok hlow hcomp hrets hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT
     (fun l _ p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).2) hslots

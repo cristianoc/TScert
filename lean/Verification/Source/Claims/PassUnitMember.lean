@@ -132,7 +132,7 @@ open Verification.TolerantFrames.ReadOnly
 theorem _root_.Verification.SourceClaimJson.FramedSpec.bindingB_iff {spec : FramedSpec ι} {name : String}
     {r : SourceRequest σ ι} :
     spec.bindingB name r = true ↔
-      spec.checked.entryB (realizedCode r) ((realizedCode r).1.length - 1) = true ∧
+      (spec.inner = true ∨ spec.checked.entryB (realizedCode r) ((realizedCode r).1.length - 1) = true) ∧
       codesCoverB spec.checked [requestCode r] = true ∧
       entryFnB spec.checked (realizedCode r) ((realizedCode r).1.length - 1)
         ((List.range (r.siblings.length + 1)).map (capSlot spec.arity false 0 + ·)) = true ∧
@@ -140,7 +140,8 @@ theorem _root_.Verification.SourceClaimJson.FramedSpec.bindingB_iff {spec : Fram
       protocolAtLeastB (flowSites spec.checked) (partsKeys spec.psiDef) (protocolOfParts id (partsIndex spec.psiDef))
         (protocolOfParts id (partsIndex spec.psi)) = true ∧
       spec.roPositionsB name r = true ∧ readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true ∧
-      spec.arityB r = true ∧ spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) := by
+      spec.arityB r = true ∧ spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) ∧
+      spec.inner = innerB spec.checked spec.entries name (realizedCode r) := by
   simp [FramedSpec.bindingB, FramedSpec.bindingChecks]
 
 /-- **The frame's client obligation is the checked file's `@clients`
@@ -218,23 +219,24 @@ reach outside code at some context of the checked flow. -/
 theorem _root_.Verification.SourceClaimJson.FramedSpec.framed_nodes {spec : FramedSpec ι} {name : String}
     {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
     spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) :=
-  (FramedSpec.bindingB_iff.mp h).2.2.2.2.2.2.2.2
+  (FramedSpec.bindingB_iff.mp h).2.2.2.2.2.2.2.2.1
 
-/-- **The entry of the realized code is an entry of the checked flow**
-(proved, `FFlow.entryB_sound`, `entryFnB_sound`, `codesCoverB_sound`):
+/-- **The entry of the realized code is an entry of the checked flow**,
+at a function checked at its entry (proved, `FFlow.entryB_sound`,
+`entryFnB_sound`, `codesCoverB_sound`):
 its proposal at the entry context holds what outside code may supply at
 every slot of its entry node and returns within `O`, names signatures
 there only at the sibling slots and the closure's own, and the request's
 code has a proposal at the entry context. -/
 theorem _root_.Verification.SourceClaimJson.FramedSpec.entry_checked {spec : FramedSpec ι} {name : String}
-    {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
+    {r : SourceRequest σ ι} (h : spec.bindingB name r = true) (hi : spec.inner = false) :
     (∃ π, spec.checked.flow.code (realizedCode r) entryCx = some π ∧
       (∀ i, Supplied spec.checked.flow (π.env ((realizedCode r).1.length - 1) i)) ∧ Sub π.ret spec.checked.flow.O ∧
       ∀ i σ', π.fn ((realizedCode r).1.length - 1) i = some σ' →
         i ∈ (List.range (r.siblings.length + 1)).map (capSlot spec.arity false 0 + ·)) ∧
     ∃ π, spec.checked.flow.code (requestCode r) entryCx = some π := by
   obtain ⟨he, hc, hf, -⟩ := FramedSpec.bindingB_iff.mp h
-  obtain ⟨π, hπ, hs, hr⟩ := FFlow.entryB_sound he
+  obtain ⟨π, hπ, hs, hr⟩ := FFlow.entryB_sound (he.resolve_left (by simp [hi]))
   exact ⟨⟨π, hπ, hs, hr, fun i σ' hi => entryFnB_sound hf hπ hi⟩,
     codesCoverB_sound hc (requestCode r) (List.mem_singleton_self _)⟩
 end

@@ -282,25 +282,42 @@ def copiesAt (r : SourceRequest σ ι) : CopyTable :=
 (`calleeArgB`), a function the client passes, so its steps are outside
 code's; at the component's protocol over the flow `F` joined with the
 charges of the natives the realm does not model, the request's table of
-copies and the plan's read-only positions. -/
+copies and the plan's read-only positions; none at a request checked at
+the contexts of its known calls (`inner`), whose calls cross nothing in. -/
 def protAt {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (r : SourceRequest σ ι) (l : Nat)
     (q : Footprints.Region) : Bool :=
-  calleeArgB (spec.copiesAt r) 0 spec.arity (requestCode r) l &&
+  !spec.inner && calleeArgB (spec.copiesAt r) 0 spec.arity (requestCode r) l &&
     protRegionB (fun p => (componentProtocol F spec.lay p).max (nativeProtocol (nativeSites F spec.lay) p))
       (spec.copiesAt r) spec.arity spec.roPos (requestCode r) l q
+
+/-- **The returns of a code lie within `O`**, decided: at every context of
+the code `m`, the values its runs return. -/
+def retsInB {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (m : Code) : Bool :=
+  F.codes.all fun (m', cs) => m' != m || cs.all fun (_, fc) => decide (Sub fc.ret F.O)
+
+/-- **The returns of a code lie within `O`** (proved). -/
+theorem retsInB_sound {P : Package} [DecidableEq P.Site] [Hashable P.Site] {F : FFlow P} {m : Code}
+    (h : retsInB F m = true) : ∀ c π, F.flow.code m c = some π → Sub π.ret F.flow.O := by
+  intro c π hc
+  obtain ⟨fc, hfc, rfl⟩ := FFlow.code_at hc
+  obtain ⟨l, hl, hcl⟩ := FFlow.at_mem hfc
+  simp only [retsInB, List.all_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at h
+  exact (h _ hl).resolve_left (by simp) _ hcl
 
 /-- **The checks of a framed plan at its request** (the draft, "What the
 pass checks"): its request's tag `C` (`compB`), its request's node
 expressions source terms (`sourceTermsB`), its client obligation keeping
 every part (`thetaKeepB`), its start a label of its program, its realized
 code's proposals the request's at body labels (`realizedFlowB`) and the checks of its framed nodes at the
-request's code (`framedNodesAt`), at the flow the frame reads with its
-tags decided (`fflowC`), each node's callee's stated effect read by
-`eff`. -/
+request's code (`framedNodesAt`), and, at a request checked at the
+contexts of its known calls, the realized code's returns within `O`
+(`retsInB`), at the flow the frame reads with its tags decided (`fflowC`),
+each node's callee's stated effect read by `eff`. -/
 def requestB (r : SourceRequest σ ι) (eff : Nat → Option Footprints.Footprint) : Bool :=
   compB spec.C r && sourceTermsB r && thetaKeepB spec.theta && decide (r.start < r.program.length) &&
     realizedFlowB spec.fflowC r &&
-    framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r) eff (spec.protAt spec.fflowC r)
+    framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r) eff (spec.protAt spec.fflowC r) &&
+    (!spec.inner || retsInB spec.fflowC (realizedCode r))
 
 /-- **The callback row of the client obligation** (the owner's decision of
 2026-11-19, the draft "The callback's type"): a function value outside code

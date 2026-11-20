@@ -308,7 +308,7 @@ call's arguments; the prologue maps them to the request's start, keeping
 the heap and the calls of `C` active. -/
 theorem enter_args (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hcomp : (spec.F.at spec.C).ofC r.comp = true)
-    (har : spec.arityB r = true)
+    (har : spec.arityB r = true) (hi : spec.inner = false)
     (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     {k : Nat} {W : WorldT k} {h : Heap} {t : Tm} {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)}
     (he : spec.EntryAt r k W h t a₂) :
@@ -324,8 +324,8 @@ theorem enter_args (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF 
       ∀ j, j < spec.arity → envOf L d j = .undef ∨
         (⟨.into, spec.entryTy r j, envOf L d j⟩ : Crossing spec.view.view) ∈ spec.entryXs r x.1.t a₁.1.t := by
   obtain ⟨x₀, n, x, a₁, L, d, hp, ⟨⟨L₁, d₁, c₁, hin₁⟩, ⟨m, hm⟩, hin₂⟩, -, -, hh, ht⟩ := he
-  obtain ⟨hx₀, hex, hent⟩ := hp
-  obtain ⟨hk, hout, hentered, hdep⟩ := hent
+  obtain ⟨hx₀, hex, -, hent⟩ := hp
+  obtain ⟨hk, hout, hentered, hdep⟩ := hent hi
   have hx := spec.progOk_ex r hr hF hex (hinit x₀ hx₀)
   obtain ⟨K, hK, ht₁⟩ := innermostGoto_ctx hin₁
   obtain ⟨hL, hd, hc, hh₂, hda₂, hm'⟩ := spec.prologue_run r hst hK ht₁ hm hin₂
@@ -411,6 +411,7 @@ outside storage. -/
 theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hcomp : (spec.F.at spec.C).ofC r.comp = true)
     (har : spec.arityB r = true) (hro : readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true)
+    (hi : spec.inner = false)
     (hm : Lendable spec.flow.O ∧ LocalHeld spec.flow.H) (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
     (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
     {k : Nat} {W : WorldT k} {h : Heap} {t : Tm} {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)}
@@ -421,7 +422,7 @@ theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) 
         RowProtects (truncate a₂.2) ℓ ∧
         ((truncate a₂.2).Lent ℓ → ∀ st : St (spec.F.at spec.C), st.g = truncate a₂.2 → Witness spec.view.view 1 st ℓ) := by
   obtain ⟨x₀, n, x, a₁, L, d, m, hx₀, hex, hk, hdep, hda₂, hm', ht, hh, hh₁, hh₂, hcross⟩ :=
-    spec.enter_args r hr hF hst hcomp har hinit he
+    spec.enter_args r hr hF hst hcomp har hi hinit he
   refine ⟨L, d, ht, fun j hj hpos ℓ hreach => ?_⟩
   -- The slot's value is the argument crossing in at the entering step.
   have hρ : RootsOk y.s.W (envOf L d) := goto_rootsOk (by have := y.ok; rw [hyt, ht] at this; exact this)

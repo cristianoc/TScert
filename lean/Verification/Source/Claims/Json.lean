@@ -871,9 +871,18 @@ diagnostic records of the run it read left to that run. -/
 def firstLine (t : String) : String := (t.splitOn "\n").headD t
 
 open Verification.TolerantFrames.ReadOnly in
+/-- **A function checked at the contexts of its known calls** (the Read-only
+frames note, (B1)): it is no entry of its component, and its realized
+code's token lies outside `O`. -/
+def innerB {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (entries : List String) (name : String)
+    (m : Code) : Bool :=
+  !entries.contains name && !((F.at m entryCx).any fun c => F.O.contains c.tok)
+
+open Verification.TolerantFrames.ReadOnly in
 /-- **The binding checks of a framed plan that read its request**, with
 their names and the details of a failure (the draft, "What the pass
-checks"), in order: the entry's start `entryB`, the request's code
+checks"), in order: the entry's start `entryB` (at a function checked at
+its entry), the request's code
 covered `codesCoverB`, the entry's signatures `entryFnB` at the sibling
 slots and the closure's own, the wire's $`\Theta_C`$ the `@clients` rows'
 by kind `clientsB`, the wire's $`\Psi_C`$ at least the component's
@@ -882,7 +891,9 @@ positions those every function sharing the realized code declares
 (`roPositionsB`), the read-only types the inputs at them `readOnlyB`, the
 realized code's layout at the plan's arity (`arityB`), and its framed
 call nodes those of the realized code the flow frames
-(`framedCallNodes`). -/
+(`framedCallNodes`), and its function checked at the contexts of its known
+calls exactly where it is no entry and its token lies outside `O`
+(`innerB`). -/
 def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSpec ι) (name : String)
     {σ : Type} [LabelStore.StoreView σ ι] (r : SourceRequest σ ι) : List (String × (Unit → Bool) × (Unit → String)) :=
   let F := spec.checked
@@ -893,7 +904,7 @@ def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSp
   let sib := (List.range (r.siblings.length + 1)).map (c0 + ·)
   let U := flowSites F
   let ΨC : Protocol (markedPackage spec.ofC spec.marks) := protocolOfParts id (partsIndex spec.psi)
-  [("its entry's start (entryB)", fun _ => F.entryB m entry, fun _ => ""),
+  [("its entry's start (entryB)", fun _ => spec.inner || F.entryB m entry, fun _ => ""),
     ("its request's code covered (codesCoverB)", fun _ => codesCoverB F [requestCode r], fun _ => ""),
     ("its entry's signatures (entryFnB)", fun _ => entryFnB F m entry sib, fun _ =>
       -- (the entry's slots naming a signature, at each context)
@@ -907,7 +918,8 @@ def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSp
     ("its read-only types (readOnlyB)", fun _ => readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType, fun _ => ""),
     ("its arity (arityB)", fun _ => spec.arityB r, fun _ => ""),
     ("its framed call nodes (framedCallNodes)", fun _ => spec.framed.map (·.1) == framedCallNodes F spec.host m,
-      fun _ => s!" ({spec.framed.map (·.1)} are not the flow's {framedCallNodes F spec.host m})")]
+      fun _ => s!" ({spec.framed.map (·.1)} are not the flow's {framedCallNodes F spec.host m})"),
+    ("its contexts (innerB)", fun _ => spec.inner == innerB F spec.entries name m, fun _ => "")]
 
 /-- **The binding checks of a framed plan that read its request pass**
 (`FramedSpec.bindingChecks`), decided. -/
@@ -1010,7 +1022,9 @@ def FilePlans.framedRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
             ("its start a label of its program", fun _ => decide (r'.start < r'.program.length)),
             ("its realized code's proposals at the frame's flow (realizedFlowB)", fun _ => realizedFlowB spec.fflowC r'),
             ("its framed call nodes at the frame's flow (framedNodesAt)", fun _ =>
-              framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff (spec.protAt spec.fflowC r'))]
+              framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff (spec.protAt spec.fflowC r')),
+            ("its returns within O at the contexts of its known calls (retsInB)", fun _ =>
+              !spec.inner || FramedSpec.retsInB spec.fflowC (realizedCode r'))]
           let w := ((reqChecks.find? (!·.2 ())).map (·.1)).getD "its request (requestB)"
           let why := if w.endsWith "(framedNodesAt)" then
             framedNodesWhy spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff (spec.protAt spec.fflowC r')

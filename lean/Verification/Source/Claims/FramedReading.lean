@@ -290,10 +290,10 @@ start protects and witnesses. -/
 theorem prot_witness (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true) (har : spec.arityB r = true)
-    (hro : readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true)
+    (hro : readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true) (hinner : spec.inner = false)
     (hm : Lendable spec.flow.O ∧ LocalHeld spec.flow.H) (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
     (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
-    (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv) (hE : (spec.frame r).EntryFits spec.flow)
+    (hrets : spec.RetsIn r) (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv) (hE : (spec.frame r).EntryFits spec.flow)
     (hwk : ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
       (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →
         WOk a.1.t ∧ HeapW a.1.s.h)
@@ -308,9 +308,9 @@ theorem prot_witness (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (h
         Witness spec.view.view 1 (lift (spec.frame r).F (spec.frame r).C none b₀.1 b₀.2) w := by
   obtain ⟨a, n, hN, hg, hex⟩ := hb
   rcases hg with ⟨a₂, he, hga⟩ | ⟨hne, -⟩
-  · obtain ⟨L₀, d₀, hat, hprot⟩ := spec.start_protects r hr hF hst hcomp har hro hm hinitF hinitE hinit he a.1 rfl rfl
+  · obtain ⟨L₀, d₀, hat, hprot⟩ := spec.start_protects r hr hF hst hcomp har hro hinner hm hinitF hinitE hinit he a.1 rfl rfl
     have hL₀ : SlotVals L₀ d₀ :=
-      spec.slotVals r hr hF hst hreal hcomp hinit a.1.s.n a.1.s.W a.1.s.h L₀ d₀ (by rw [← hat]; exact hN)
+      spec.slotVals r hr hF hst hreal hcomp hinit hrets a.1.s.n a.1.s.W a.1.s.h L₀ d₀ (by rw [← hat]; exact hN)
     have hF' : spec.fflow.flow.Facts := hF
     have hS' : (spec.frame r).FlowSites spec.fflow.flow := spec.flowSites r
     have hE' : (spec.frame r).EntryFits spec.fflow.flow := hE

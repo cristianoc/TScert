@@ -151,11 +151,6 @@ def callsAtNode (F : FFlow P) (c : FCode P) (m : Code) (l : Nat) :
       (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
   | _, _ => []
 
-/-- **A framed call** (`probeFrames`'s): a call of node `l` reaches outside
-code at the context `c`. -/
-def framedNodeAt (F : FFlow P) (host : Nat → Bool) (c : FCode P) (m : Code) (l : Nat) : Bool :=
-  (callsAtNode F c m l).any fun (f, _, _) => reachesOut F (flowSites F) (segCodes F (flowSites F) host f) f
-
 /-- **A call of a value of outside code**: node `l` of code `m` calls a
 callee that is no slot naming a code's signature at the context `c` (a
 parameter's value, a callback, a computed callee), as the flow's
@@ -165,6 +160,14 @@ def outsideCalleeAt (c : FCode P) (m : Code) (l : Nat) : Bool :=
   | some (.invoke (.var j) _ _) => ((c.node l).fnAt j).isNone
   | some (.invoke ..) => true
   | _ => false
+
+/-- **A framed call** (the Read-only frames note, (B1)): at the context
+`c`, a call of node `l` reaches outside code (`probeFrames`'s), or its
+callee names no signature (`outsideCalleeAt`) and its set holds a token,
+a closure of `C`'s code the call reads by no specification. -/
+def framedNodeAt (F : FFlow P) (host : Nat → Bool) (c : FCode P) (m : Code) (l : Nat) : Bool :=
+  (callsAtNode F c m l).any fun (f, _, _) => reachesOut F (flowSites F) (segCodes F (flowSites F) host f) f ||
+    (outsideCalleeAt c m l && f.any fun s => F.codes.any fun (_, cs) => cs.any fun (_, fc) => decide (fc.tok = s))
 
 /-- **The framed call nodes of a code**: its call nodes framed at some
 context of the code in the flow. -/
