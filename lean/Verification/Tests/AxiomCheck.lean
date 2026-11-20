@@ -370,6 +370,7 @@ import Verification.Types.EquationSubstitution
 import Verification.Types.EquationSupport
 import Verification.Types.EquationValidator
 import Verification.Types.GraphRows
+import Verification.Types.ListEquality
 import Verification.Types.MethodMembers
 import Verification.Types.NativePromiseSeparation
 import Verification.Types.PairFamilies

@@ -244,6 +244,10 @@ def Equations.memo (E : Equations) : Equations :=
           | _ => m) m) m
       | none => m) {}
   { signature := E.signature, body, builtins := E.builtins, domain := E.domain
+    headForms := Array.ofFn (fun h => (body h).1.form)
+    headForms_ok := by
+      intro h f he
+      simpa [h.isLt] using he.symm
     literal := fun k => literals[k]?
     intLabel
     named := rows.toList.filterMap (·.map (·.1.1)) ++ named.toList.map (·.2.1.1)

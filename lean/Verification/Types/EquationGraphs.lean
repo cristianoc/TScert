@@ -830,6 +830,10 @@ structure Equations where
   /-- Whether a label's clauses overlap, where computed once
   (`NormalGraph.overlapping`, a hint any answer of which is sound). -/
   overlaps : Label signature → Option Bool := fun _ => none
+  /-- The forms of the templates of a frozen signature, indexed by head. -/
+  headForms : Array RowForm := #[]
+  headForms_ok : ∀ (h : Fin signature.length) (f : RowForm), headForms[h.val]? = some f →
+      f = (body h).1.form := by simp
 
 /-- The row of a label that is not a meet. -/
 def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
@@ -908,12 +912,25 @@ def Equations.graph (equations : Equations) : NormalGraph (Label equations.signa
     labelHash := fun l => hash l.1, overlapping := fun l => (equations.overlaps l).getD false,
     intLabel := equations.intLabel }
 
+/-- The form of a head, using the frozen table when present. -/
+def Equations.headForm (E : Equations) (h : Fin E.signature.length) : RowForm :=
+  match E.headForms[h.val]? with
+  | some f => f
+  | none => (E.body h).1.form
+
+theorem Equations.headForm_eq (E : Equations) (h : Fin E.signature.length) :
+    E.headForm h = (E.body h).1.form := by
+  unfold headForm
+  split
+  · exact E.headForms_ok _ _ (by assumption)
+  · rfl
+
 /-- The form of a label's row that is not a meet, read from its head's
 template without instantiating it (`Equations.baseForm_eq`). -/
 def Equations.baseForm (equations : Equations) (label : Label equations.signature) : RowForm :=
   match label with
   | ⟨.app h _, valid⟩ =>
-    GraphRow.form (equations.body ⟨h, arityOk_exists (Bool.and_eq_true_iff.mp valid).1⟩).1
+    equations.headForm ⟨h, arityOk_exists (Bool.and_eq_true_iff.mp valid).1⟩
   | ⟨.bound .., _⟩ | ⟨.var .., _⟩ => .param
   | _ => .clauses
 
@@ -931,7 +948,7 @@ theorem Equations.baseForm_eq (equations : Equations) (label : Label equations.s
   obtain ⟨t, valid⟩ := label
   cases t with
   | app h args =>
-    simp only [baseForm, baseRow, Label.view, Scope.ofRaw, Template.instantiate, GraphRow.form_map]
+    simp only [baseForm, headForm_eq, baseRow, Label.view, Scope.ofRaw, Template.instantiate, GraphRow.form_map]
   | bound | var | meet => simp [baseForm, baseRow, Label.view, GraphRow.form]
   | argument | «local» => simp [Tree.scoped] at valid
 

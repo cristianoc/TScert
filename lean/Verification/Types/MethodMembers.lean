@@ -1,3 +1,4 @@
+import Verification.Types.ListEquality
 import Verification.Types.ReferenceConjunctions
 import Verification.Semantics.CallEffects
 
