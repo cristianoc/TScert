@@ -191,13 +191,13 @@ def TermHolds (l : Nat) (L : List Tm) (d : Tm) (u : Tm) : Prop :=
 /-- **The invariant of the copies** at a term of the code's run: a run at a
 label, its slots values holding the label's entries; a frame of a node
 sharing the frame's continuation and handler, its slots holding the node's
-entries and its term what the node's expression makes it; or a term taking
-no step. -/
+entries and its term what the node's expression makes it; or a value or a
+throw of one, which the run returned. -/
 def CopyInv (t : Tm) : Prop :=
   (∃ l L d, t = .goto Pe Pk l L d c₀ ∧ SlotVals L d ∧ SlotsHold cp h₀ ρ₀ K l L d) ∨
   (∃ u L d k x l', t = .frame Pe Pk u L d k x c₀ ∧ SlotVals L d ∧ Pk[l']? = some (k, x) ∧
     SlotsHold cp h₀ ρ₀ K l' L d ∧ TermHolds Pe h₀ K l' L d u) ∨
-  (∀ h h' t', ¬ Step h t h' t')
+  isVal t = true ∨ ∃ v, t = .throw v ∧ isVal v = true
 
 end Inv
 
@@ -358,9 +358,8 @@ theorem copyInv_step {Pe : List Tm} {Pk : List (Continuation × Option Target)} 
           | readMissing hn hp' => exact .done rfl (hrk _ (.missing hn hp'))
         | done hv _ => exact absurd hs' (value_no_step hv)
       · trivial
-    | frameRet hv => exact .inr (.inr fun _ _ _ s => value_no_step hv s)
-    | frameRaise hr => exact .inr (.inr fun _ _ _ s => by
-        cases s with | throwC s => exact value_no_step (raises_val hr) s)
+    | frameRet hv => exact .inr (.inr (.inl hv))
+    | frameRaise hr => exact .inr (.inr (.inr ⟨_, rfl, raises_val hr⟩))
     | frameBind hv =>
       exact .inl ⟨_, _, _, rfl, (hL.cons hv).map _,
         (edge_holds hS (some true) (hedges _ (List.mem_append_left _ (List.mem_singleton_self _)))).2.2 _ rfl (hbound _ hv hT)⟩
@@ -384,25 +383,27 @@ theorem copyInv_step {Pe : List Tm} {Pk : List (Continuation × Option Target)} 
     | frameHandle hr =>
       exact .inl ⟨_, _, _, rfl, (hL.cons (raises_val hr)).map _,
         (edge_holds hS (some false) (hedges _ (List.mem_append_right _ (List.mem_singleton_self _)))).2.1 _ rfl⟩
-  · exact absurd hs (hn _ _ _)
+  · rcases hn with hv | ⟨v, rfl, hv⟩
+    · exact absurd hs (value_no_step hv)
+    · cases hs with | throwC s => exact absurd s (value_no_step hv)
 
 
 /-- **The invariant of the copies along an execution** (proved,
-`copyInv_step` at each step): along an execution of a frame each of whose
-states that steps keeps the entry's heap's contents at the locations `K`
-and holds values in its heap, the invariant at its first state holds at
-its last. -/
+`copyInv_step` at each step): along an execution of a frame from a reached
+state each of whose states that steps keeps the entry's heap's contents at
+the locations `K`, where reached states hold values in their heaps, the
+invariant at its first state holds at its last. -/
 theorem copies_along {τ : Type} {fr : ClientFrame τ} {Pe : List Tm} {Pk : List (Continuation × Option Target)}
     {c₀ : ComponentTag} {start arity : Nat} {cp : CopyTable} {h₀ : Heap} {ρ₀ : Env} {K : Nat → Prop}
     (hcp : copiesB Pe Pk start arity cp = true) (hlen : Pe.length = Pk.length)
-    {q : Conf × Ghost (fr.F.at fr.C) → Prop}
-    (hq : ∀ y, q y → (∀ l, K l → y.1.s.h[l]? = h₀[l]?) ∧ ∀ (l : Nat) (v : Tm), y.1.s.h[l]? = some v → isVal v = true) :
-    ∀ {n : Nat} {a b : Conf × Ghost (fr.F.at fr.C)}, Ex fr.KStep q n a b →
+    (hhv : ∀ y, fr.Reached y → ∀ (l : Nat) (v : Tm), y.1.s.h[l]? = some v → isVal v = true) :
+    ∀ {n : Nat} {a b : Conf × Ghost (fr.F.at fr.C)},
+      Ex fr.KStep (fun y => ∀ l, K l → y.1.s.h[l]? = h₀[l]?) n a b → fr.Reached a →
       CopyInv Pe Pk c₀ cp h₀ ρ₀ K a.1.t → CopyInv Pe Pk c₀ cp h₀ ρ₀ K b.1.t
-  | _, _, _, .refl _, hi => hi
-  | _, _, _, .next hqa hab hrest, hi =>
-    copies_along hcp hlen hq hrest (copyInv_step hcp hlen hi hab.1.step (hq _ hqa).1 (hq _ hqa).2)
-
+  | _, _, _, .refl _, _, hi => hi
+  | _, _, _, .next hqa hab hrest, ha, hi =>
+    copies_along hcp hlen hhv hrest (ClientFrame.Reached.step ha hab)
+      (copyInv_step hcp hlen hi hab.1.step hqa (hhv _ ha))
 
 -- RESEARCH (retired with the pipeline cases of milestone 2, piece 9): the
 -- proposal at a walker reading `const w = h.widths` before a loop calling

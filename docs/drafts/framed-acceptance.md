@@ -2299,20 +2299,22 @@ proved results named.
    stepping states agree with $`h_0`$ on `K`. A research `#guard` checks
    the proposal at a walker reading `const w = h.widths` (retired in
    piece 9).
-8. **The path and prefix unchanged** (`prefix_unchanged`). At a reached
-   state $`b_0`$ entering a framed node $`l`$ (the premises of
-   `framed_of_check`) with (C) and (P) at an entry $`(i,j,\pi)`$: the
-   locations a read of $`\pi`$ from the parameter passes at $`h_0`$ are
-   reached from it (`reads_follows`), so protected (chain 6), their parts
-   in `pathParts` (`pathParts_sound` at the start's sets, `entry_hole`),
-   kept by (P): `kept_along` to $`b_0`$, so slot $`i`$ holds the read's
-   value at $`h_0`$ (`copies_sound`). Then each location of each
-   $`q\in\mathrm{pre}(r)`$ at $`h_0`$, in order, is reached from the
-   parameter along $`\pi`$'s labels and $`q`$'s (`region_follows`), so
-   protected; its part at $`b_0`$ is a part of $`q`$ at the node and
-   context the frame fits (`framed_of_frame`'s $`(c,l')`$,
-   `region_mem_of_prefix`, `regionSites_sound`, `regionKeys_sound`), kept
-   by (P): `kept_along`.
+8. **The path and prefix unchanged** (proved; `FramedReading.lean`).
+   `stepKeptB` decides (P) at a step: every part a location of the step
+   may have, at a kind of its bound and a key of the step, at the site
+   `none`, is kept by $`\Psi_C`$; `stepKept_part`: then $`\Psi_C`$ keeps
+   each such location's part (`Region.bound_sound`, `regionKeys_sound`).
+   `ClientFrame.region_reached`: from a call's start at a run of the code
+   meeting `StartInv`, whose slots below the arity at read-only positions
+   reach only protected locations (step 4), along an execution to a frame
+   of the code, some node $`l''`$ with the frame's continuation and handler
+   has, for each entry $`(i,j,\pi)`$ of its table with $`j`$ read-only and
+   `stepsKeptB` at `pathSteps π`, every location of a region of slot
+   $`i`$ with `stepsKeptB` at its `regionSteps`, at the frame's slots and
+   heap, reached from argument $`j`$ at $`h_0`$. The set the arguments at
+   read-only positions reach at kept parts holds its contents along the
+   call (`kept_along`), so the copies hold (`copies_along`) and the
+   region's read locations are unchanged (`region_reach`).
 9. **The witness at a framed node** (`prot_witness`). At such a state,
    every lent location of a region read as protected at `envOf L d` and
    $`b_0`$'s heap is a location of the region at $`h_0`$
