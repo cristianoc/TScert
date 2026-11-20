@@ -817,6 +817,42 @@ control("forged fragment: a released and a caller-owned install", async (): Prom
   say("forged install: a released array marked exposed, a caller's array entering from nowhere and one claimed read-only, each refused where the forgery shows");
 });
 
+control("forged fragment: an incompatible heritage type argument on super", async (): Promise<void> => {
+  const file = "class-generic-inheritance";
+  const artifacts = run(file);
+  honest(file, "init");
+  const ast = fragmentAst(artifacts);
+  const source = readFileSync(join(root, "pipeline/examples", `${file}.ts`), "utf8");
+  const superPos = source.indexOf("super(value)");
+  assert.ok(superPos >= 0);
+  let changed = 0;
+  visitAll(ast.init, (node) => {
+    if (node.k !== "new" || !Array.isArray(node.pos) || node.pos[0] !== superPos) return;
+    assert.ok(Array.isArray(node.typeArgs) && node.typeArgs.length === 1 &&
+      isObject(node.typeArgs[0]) && node.typeArgs[0].name === "number");
+    node.typeArgs = [{ ...node.typeArgs[0], name: "string" }];
+    changed++;
+  });
+  assert.equal(changed, 1);
+  refused(pass(forged(artifacts, "forged-super-type-argument", ast)), "init",
+    "a numeric super argument at a string heritage type",
+    new RegExp(`source expression obligation at \\[${superPos},.*no derivation of its node-typing claim`));
+
+  const bounded = fragmentAst(artifacts);
+  changed = 0;
+  visitAll(bounded.init, (node) => {
+    if (node.k !== "new" || !isObject(node.callee) || node.callee.name !== "Tagged.[[class]]") return;
+    assert.ok(Array.isArray(node.typeArgs) && isObject(node.typeArgs[0]));
+    assert.ok(Array.isArray(node.args) && isObject(node.args[0]));
+    node.typeArgs = [{ k: "atom", name: "string", span: node.typeArgs[0].span }];
+    node.args = [{ k: "lit", lit: { a: "stringlit", v: "wrong" }, pos: node.args[0].pos }];
+    changed++;
+  });
+  assert.equal(changed, 1);
+  refused(pass(forged(artifacts, "forged-super-bound", bounded)), "init",
+    "a heritage type argument outside the base's bound", /the claimed type is not a checked constructor instance/);
+});
+
 control("forged fragment: a false bound in a Boolean postcondition", async (): Promise<void> => {
   const artifacts = run("pretext-clause-postcondition");
   const ast = fragmentAst(artifacts);

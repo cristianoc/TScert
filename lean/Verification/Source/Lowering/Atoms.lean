@@ -731,6 +731,14 @@ Mappings discard only the temporaries introduced by this expression. -/
     let t ← LoweringExpression.closureExpr recursive fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .construct _ callee args spreads _ => do
+    let original := (← originalExpression).getD e
+    if let .construct _ originalCallee _ _ written := original then
+      if let .var _ name := originalCallee then
+        if name.endsWith ".[[class]]" && !written.isEmpty then
+          let some S := (valueSlot scope name).bind (Γ[·]?)
+            | throw "the internal constructor has no lexical slot"
+          explicitConstructorInstance e.span S (← exprType fc callee) written
+
     -- Execution planning saves the callee and actuals left to right. A spread
     -- before executable actuals is copied there; read its saved tuple here.
     if !spreads.isEmpty && (args.drop (spreads.headD args.length + 1)).any

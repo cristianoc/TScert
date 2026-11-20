@@ -208,6 +208,7 @@ export const classKey = (cls: string): Modifies<{ values: "any"; spines: "grow" 
  * fresh instance it allocates. */
 export type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<string, string>; fresh: string;
   proto: string | null; binders: string[];
+  instantiateBase?: true;
   /** The class is the standard `Error` itself (`native`), or extends it
    * through classes of the file (SOURCE-ELABORATION.md, a class extending
    * `Error`). */

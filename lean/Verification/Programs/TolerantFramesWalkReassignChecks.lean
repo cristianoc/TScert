@@ -90,14 +90,11 @@ theorem instantiationUsing_reassign (fuel : Nat) :
     instantiationUsing (reassign G η) (images.reassign η) fuel = instantiationUsing G images fuel := by
   funext A B
   unfold instantiationUsing instanceProposals
-  show (match A, PositiveCertificates.instanceTarget G B with
-    | [i], some (L, M, _) => match G.schemes i with
-      | some s => ((unifiedInstance (reassign G η) (images.sub.map fun (r : Renaming G) => r.reassign η) s L M).toList.map
-          fun c => Thunk.pure (some c)) ++ [Thunk.mk fun _ => matchedInstance (reassign G η) fuel s L M]
-      | none => []
-    | _, _ => []) = _
+  have ht : instanceTarget (reassign G η) B = instanceTarget G B := rfl
+  have hs : (reassign G η).schemes = G.schemes := rfl
+  have hi : (images.reassign η).sub = images.sub.map (·.reassign η) := rfl
+  rw [ht, hs, Parametricity.expand_reassign, hi]
   simp only [unifiedInstance_reassign, matchedInstance_reassign]
-  rfl
 
 theorem instanceCandidates_reassign (sub : Option (Renaming G)) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (CallEffects.RestArrow (List ι))) :

@@ -7,6 +7,15 @@ open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules Posi
 
 /-! ### Lowering a source for the source path -/
 
+/-- The constructor that supplies a class binding's type parameters. A
+class without static fields may bind its internal constructor directly. -/
+def classConstructor (bindings : Array Json) (binding : Json) : Json := Id.run do
+  let init := binding.getObjValD "init"
+  let some name := (binding.getObjValAs? String "name").toOption | return init
+  let name := Json.str (name ++ ".[[class]]")
+  if kindOf init != some "id" || init.getObjValD "name" != name then return init
+  return ((bindings.find? fun b => b.getObjValD "name" == name).map (·.getObjValD "init")).getD init
+
 /-- A generic module value's type, its binders their name placeholders: a
 function's signature (receiver, parameters, rest element and result), a
 construct signature (parameters and result), or any other type. -/
@@ -309,7 +318,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     if (st.getObjValAs? String "k").toOption != some "const" then continue
     let .ok (.arr bs) := st.getObjVal? "bindings" | continue
     for (b, bi) in bs.toList.zipIdx do
-      let ctor := b.getObjValD "init"
+      let ctor := classConstructor bs b
       if (ctor.getObjValAs? String "k").toOption != some "ctor" then continue
       let tps := (ctor.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
       if tps.isEmpty then continue

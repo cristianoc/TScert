@@ -84,7 +84,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       fieldsExactly atom ["a", "label"]
       let label : Tree ← fromJson? (← jField atom "label")
       if !StoreView.valid (← get) label then throw "graph label is absent"
-      return [label]
+      return EquationStore.sourceRows (← get) [label]
     else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
         let (recv, args, result, rest, effect) ← callableShape a
@@ -324,7 +324,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       fieldsExactly atom ["a", "label"]
       let label : Tree ← fromJson? (← jField atom "label")
       if !StoreView.valid (← get) label then throw "graph label is absent"
-      return [label]
+      return EquationStore.sourceRows (← get) [label]
     | "callable" => return [← callableObject atom]
     | "constructor" => callableType single
     | "array" | "spine" => return [← arrayType atom]

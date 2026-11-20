@@ -4393,7 +4393,7 @@ export const cases: Case[] = [
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /typeof Derived is a class inheriting static members of its base/ },
   negative("invalid-spread-class-statics", "a copy of a class value holds its static fields at their types",
     /source expression obligation at \[304,323\): evidence search failed/),
-  positive("class-generic-inheritance", "a generic class extending a generic base at the base's own binders: one row per spelling, so the base's construction, its fields and methods are at the same rows; used at instances"),
+  positive("class-generic-inheritance", "explicit and inherited constructors at concrete, reordered, nested, bounded, and union heritage arguments; inherited fields remain writable at their instantiated types"),
   positive("class-array-method", "a method building a tuple, called where its result is typed at the front's own row for the declared type"),
   negative("invalid-class-array-method", "a claim at an element type the member declared result does not cover"),
   positive("module-constant-unannotated", "a function reads an unannotated module constant at its initializer's claimed type, a literal kept"),

@@ -1030,39 +1030,118 @@ declared in a block, and class members.
 
 ### Derived classes
 
-A derived class's constructor (`class D extends B`, its body
-`s̄₁; super(ā); s̄₂`, `s̄₁` reading no `this`) is its base's construction,
-bound to a name no source spells, then the class constructor's lowering
-([classes](SOURCE-CONTRACTS.md#classes)) whose
-allocation is the allocation from parts copying it:
+For a base class declared in the program, TScert models `super(...)` by
+constructing the base and copying its initialized own fields into the
+derived allocation. Consider a base with one field.
 
-```math
-\mathsf{class}(\vec x).\ \vec s_1\,;\ \mathsf{const}\ \textit{base} = \mathsf{new}\ B^{\circ}(\vec a)\,;\
-  \mathcal{C}(\vec s_2,\ \varphi_0,\ \varnothing)
-  \quad\text{with}\quad
-  \mathcal{C}(\varepsilon,\varphi,A) = \{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \ldots\textit{base},\ \varphi,\ \overline{f{:}\,\mathsf{undefined}}\}
+```typescript
+class Box<T> {
+  constructor(public value: T) {}
+}
+
+class Labeled<T> extends Box<T> {
+  label: string;
+  constructor(value: T, label: string) {
+    super(value);
+    this.label = label;
+  }
+}
 ```
 
-where $`B^{\circ}`$ is `B`'s constructor claimed also at the fresh instance it
-allocates, its keys exact (`ctorGraph` checks its code at that signature too).
-`D` without a constructor has JavaScript's implicit one,
-`constructor(...args) { super(...args); }`: its parameters are $`B`$'s, at
-their types, under names no source spells, and $`\vec a`$ is them. A class's
-prototype object is allocated once, at its definition:
+`public value: T` declares `Box`’s constructor parameter and initializes
+its writable own field `value`. The derived allocation takes that field
+from `super(value)` and adds `label: string` from the assignment.
+
+**Lowering.** Let $`D`$ extend $`B`$. The derived constructor has
+parameters $`\vec x`$, executes statements $`\vec s_1`$ before
+`super`, passes actuals $`\vec a`$, and executes $`\vec s_2`$
+afterward. The prefix $`\vec s_1`$ cannot read `this`. The name
+$`\mathit{base}`$ is internal, and $`B^\circ`$ is the base constructor
+at its exact allocation signature. The constructor lowering
+$`\mathcal C`$ starts with the own-field entries $`\varphi_0`$ from
+field initializers and parameter properties, and the empty set of
+assigned fields.
 
 ```math
-D.\texttt{[[prototype]]} = \{\texttt{[[proto]]}{:}\,B.\texttt{[[prototype]]},\ \kappa_D{:}\,\mathsf{undefined},\ m{:}\,D.m,\ \ldots\}
+\mathsf{class}(\vec x).\ \vec s_1\,;\
+\mathsf{const}\ \mathit{base}=\mathsf{new}\ B^\circ(\vec a)\,;\
+\mathcal C(\vec s_2,\varphi_0,\varnothing)
 ```
 
-its own methods, linked to its base's under the prototype key, as
-JavaScript's `D.prototype` is; $`\kappa_D`$, the class's key, is there where
-`instanceof D` is written in the file, below. A prototype holding nothing
-of its own that nothing tests is not allocated: `D`'s instances then hold
-the nearest ancestor's (or none), and every read and test answers the same.
-`super.m(ā)` is `B.m.call(this, ā)`, with `B.m` the closure `B`'s prototype
-chain holds. So the allocation's keys are exact, and `D`'s declared type,
-its own members and `B`'s, covers it through the prototype chain
-([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
+At the end of a path, $`\varphi`$ holds the accumulated field entries,
+$`A`$ records the fields assigned by the body, $`U`$ is the set of
+fields without initializers, and
+$`\overline{f{:}\mathsf{undefined}}`$ initializes the remaining fields
+that have no initializer. The entry list $`\pi_D`$ is empty when the
+derived allocation has no modeled prototype link. Where there is a link,
+$`\pi_D`$ holds the `[[proto]]` entry. See the
+[definition of the constructor lowering](SOURCE-CONTRACTS.md#classes).
+
+```math
+\mathcal C(\varepsilon,\varphi,A)=
+\{\pi_D,\ \ldots\mathit{base},\ \varphi,\
+  \overline{f{:}\mathsf{undefined}}^{\,f\in U\setminus A}\}
+```
+
+In the example, $`D=\mathsf{Labeled}`$, $`B=\mathsf{Box}`$ and
+$`\vec x=(\mathit{value},\mathit{label})`$. There is no prefix before
+`super`, $`\vec a=(\mathit{value})`$, and $`\varphi_0`$ and $`\pi_D`$
+are empty. The suffix assigns `label`, so the final set of assigned
+fields is $`A=\{\mathit{label}\}`$. The allocation takes `value` from
+$`\mathit{base}`$ and `label` from $`\varphi`$.
+
+A subclass that omits its constructor gets an implicit one with the
+base constructor’s parameter types at the heritage arguments. It forwards
+each parameter in order.
+
+**Constructor check.** Lean checks the base constructor’s code at
+$`B^\circ`$’s signature, whose result gives the exact own keys the code
+allocates. The derived constructor uses that result for the copy.
+[`ctorGraph`](../lean/Verification/Programs/ProgramTyping.lean)
+
+#### Generic bases
+
+For a generic base, the `extends` clause supplies one type argument per
+base parameter, in declaration order. The lowering reads those arguments
+in the subclass’s scope. If the base is $`B\langle\vec A\rangle`$, the
+generated construction is
+
+```math
+\mathsf{new}\ B^\circ\langle\vec A\rangle(\vec a).
+```
+
+Lean checks the constructor scheme at its bound parameters and checks
+each base call at the exact image of its signatures under the written
+arguments. The substitution preserves the result’s own keys and storage
+roles. In `class NumBox extends Box<number> {}`, the inherited parameter
+and the copied writable `value` field both have type `number`.
+[Construct schemes](SOURCE-CONTRACTS.md#construct-schemes)
+
+When every subclass supplies the base’s own parameter rows in order,
+the generated calls use the internal constructor directly at those rows.
+Specialization requires scheme bounds that can be read outside the scheme.
+
+#### Prototypes
+
+Each evaluation of a class definition allocates a prototype object if the
+class declares instance methods or supplies a key for an `instanceof` test.
+The object holds those methods and that key when present, and links to the
+nearest retained base prototype when one exists. For a class $`D`$ with
+base prototype $`P_B`$, test key $`\kappa_D`$ and method $`m`$, the entries
+are
+
+```math
+D.\texttt{[[prototype]]} =
+\{\texttt{[[proto]]}{:}\,P_B,\ \kappa_D{:}\,\mathsf{undefined},
+  \ m{:}\,D.m,\ \ldots\}
+```
+
+Here $`D.m`$ names the method closure installed on the prototype. An
+instance links to its class’s retained prototype or the nearest retained
+ancestor prototype. A call `super.m(...)` resolves the method closure
+through the base prototype chain and invokes it with `this` as receiver.
+The declared instance type covers own fields in the allocation and methods
+through that chain. See [method coverage](POSITIVE-TYPES.md#clause-coverage).
 
 ### A class extending `Error`
 
@@ -1435,9 +1514,8 @@ What a class declaration may not hold, each for its reason:
   and a copy holds no private slot), and `#x in o` (it tests an own slot,
   where $`\mathsf{hasKey}`$ walks the prototype chain and would find an
   instance's slot from an object inheriting from it);
-- extending a generic class other than at the base's own binders (a generic
-  base's construction is at its binders' rows, [classes](SOURCE-CONTRACTS.md#classes)), and
-  extending `Array` (its instances are what the library's constructor
+- [generic base constructor instantiation](#generic-bases),
+  and extending `Array` (its instances are what the library's constructor
   allocates, not an ordinary object).
 
 ## Object spreads

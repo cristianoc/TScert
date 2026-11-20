@@ -355,6 +355,14 @@ def instanceFuel : Nat := 64
     match G.schemes i with
     | some s => instanceProposals G images.sub fuel s L M
     | none => []
+  | [i], none =>
+    match G.schemes i, expand G B with
+    | some s, [.ctors L M _ _ _] =>
+      if s.construct then
+        instanceProposals G images.sub fuel s (L.map (·.withReceiver (s.signatures.head?.map (·.receiver) |>.getD [])))
+          (M.map (·.withReceiver (s.variadic.head?.map (·.receiver) |>.getD [])))
+      else []
+    | _, _ => []
   | _, _ => []
 
 /-- Instances of prototype members a table's rows ask for: for a row whose
@@ -823,6 +831,11 @@ came from a different context. No execution budget is inspected. -/
       let fresh := ns == [codeField] && inits == [.nul]
       let classFields := ns.head? == some codeField && inits.head? == some .nul
       return (A :: pool).findSearch? fun F => do
+        if let (.construct, some (_, s)) := (kind, ProgramCertificates.schemeOf G F) then
+          if !fresh || rest || !s.construct then none else do
+            let U ← pool.find? fun U => decide (expand G U = [.undef])
+            coerce G images aliases (.node ⟨Γ,t,F⟩ (.ctorScheme U) ps) A
+        else
         match kind, expand G F with
         | .call, [.arrs _ S] =>
           if !fresh then none else do

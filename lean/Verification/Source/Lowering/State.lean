@@ -338,6 +338,12 @@ def withFreshGraph (action : Compiler α) : Compiler α :=
 
 @[nospecialize] def table : Compiler EquationStore.State := readBuilt (·.types)
 
+/-- Lower a body with its annotations and claims read at its own binders. -/
+def withSourceBinderRows (rows : List (Tree × Ty Tree)) (action : Compiler α) : Compiler α :=
+  scopeState (·.types.sourceBinderRows)
+    (fun before => { before with types := { before.types with sourceBinderRows := rows ++ before.types.sourceBinderRows } })
+    (fun saved after => { after with types := { after.types with sourceBinderRows := saved } }) action
+
 @[nospecialize] def lower (m : SourceTypes.Lowering α) : Compiler α := ⟨fun s => do
   let (a,T) ← m.run s.types
   return (a,{ s with types := T, generation := s.generation + 1, withinAnswers := {}, fieldAnswers := {} })⟩

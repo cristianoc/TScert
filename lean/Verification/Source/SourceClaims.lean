@@ -110,6 +110,8 @@ structure Function (ι : Type) where
   entrySpinesApart : List (Nat × List SpinesApartClaim) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []
+  /-- The declaring unit's parameter rows for each internal constructor scheme. -/
+  ctorBinders : List (Span × List ι) := []
   /-- The complete point table survives selection and nested closure checking. -/
   points : List (String × PointData ι) := []
   contracts : Contracts ι := []
@@ -164,7 +166,7 @@ def Function.withOverlay (f : Function ι) (row : Overlay ι) : Function ι :=
 /-- Labels are checked against the request's own store, so even a direct
 caller cannot turn a label the store lacks into its empty default. -/
 def resolve (T : EquationStore.State) (c : Candidate EquationGraphs.Tree) : Except String (Ty EquationGraphs.Tree) := do
-  let A ← c
+  let A := EquationStore.sourceRows T (← c)
   if RequestJson.validTy (StoreView.valid T) A then pure A
   else throw "source claim contains an out-of-range type label"
 

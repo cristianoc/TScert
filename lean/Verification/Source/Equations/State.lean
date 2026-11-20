@@ -150,6 +150,9 @@ structure State where
   parameter of the unit's head, with its declared bound, if any, over those
   parameters. -/
   unitBinders : List (String × List (String × Tree × Option Union)) := []
+  /-- While lowering a constructor scheme's body, map its declaring
+  unit's parameter rows to the scheme's owned parameter rows. -/
+  sourceBinderRows : List (Tree × Union) := []
   /-- The binder names the source spells, each with its kind: the slots of
   the name placeholders (`placeholder`). -/
   names : Array (String × ParameterKind) := #[]

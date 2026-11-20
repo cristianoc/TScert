@@ -5,7 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { CLASS_ACCESS, classMemberRefusal, oneTerm, signature } from "./type-term.mts";
+import { CLASS_ACCESS, classMemberRefusal, mapTypeParts, oneTerm, resolutionSlots, signature } from "./type-term.mts";
 import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
@@ -277,8 +277,7 @@ export function classStmt(this: Gate, node: ClassDeclaration): Modifies<{ values
   // A class extending another reads what that class's lowering recorded:
   // one declared earlier in the file. A class value from elsewhere, an
   // ambient or library class (`Array` included) and an expression are
-  // outside the fragment: nothing here says what their constructors
-  // allocate. Generic classes take no part in inheritance yet.
+  // outside the fragment: nothing here says what their constructors allocate.
   const heritage = node.heritageClauses?.find((c) => c.token === ts.SyntaxKind.ExtendsKeyword);
   let base: ClassRecord | null = null;
   if (heritage) {
@@ -299,25 +298,20 @@ export function classStmt(this: Gate, node: ClassDeclaration): Modifies<{ values
       gate.fail(t, "a class declared in a block extends the standard `Error` or a class declared before it in its own or an enclosing block; a top-level class, a library class, an ambient declaration or a value is outside the fragment");
     if (!base)
       gate.fail(t, "a class extends a class declared earlier in the file, or the standard `Error`; one from a library, an ambient declaration or a value is outside the fragment");
-    // A generic class's binders are the declaring unit's parameter rows,
-    // one per spelling: a derived class extends a generic base at the
-    // base's own binders, which it declares too, so the base's
-    // construction and members are at the same rows. A base at other type
-    // arguments would need its construction instantiated there.
-    const own = (node.typeParameters ?? []).map((tp) => tp.name.text);
-    const args = t.typeArguments ?? [];
-    if (base.binders.length || args.length) {
-      const binders = base.binders;
-      const atOwn = args.length === binders.length && args.every((a, i) =>
-        ts.isTypeReferenceNode(a) && ts.isIdentifier(a.typeName) && !a.typeArguments?.length &&
-        a.typeName.text === binders[i] && own.includes(a.typeName.text));
-      if (!atOwn)
-        gate.fail(heritage, "a class extending a generic class other than at the base's own binders, which the derived class declares, is outside the fragment: the base's construction is at those binders' rows");
-    }
   }
-  const extended = fileClasses(gate.file).some((st) =>
-    !!st.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword &&
-      c.types.some((t) => ts.isIdentifier(t.expression) && t.expression.text === name.text)));
+  const uses = fileClasses(gate.file).flatMap((subclass) =>
+    (subclass.heritageClauses ?? []).filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+      .flatMap((clause) => clause.types.filter((type) =>
+        ts.isIdentifier(type.expression) && type.expression.text === name.text)
+        .map((type) => ({ subclass, args: type.typeArguments ?? [] }))));
+  const binders = node.typeParameters ?? [];
+  // The declaring unit shares rows for identical binders. Use that
+  // constructor directly when every heritage application is the identity.
+  const instantiateBase = binders.length > 0 && uses.some(({ subclass, args }) =>
+    args.length !== binders.length || !args.every((arg, i) =>
+      ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName) && !arg.typeArguments?.length &&
+      arg.typeName.text === binders[i].name.text &&
+      subclass.typeParameters?.some((p) => p.name.text === binders[i].name.text)));
   if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))
     gate.fail(node, "a class modifier outside the fragment");
   const declared = gate.declaredTypes.get(name.text);
@@ -327,7 +321,7 @@ export function classStmt(this: Gate, node: ClassDeclaration): Modifies<{ values
   // the code unit that declares the class.
   const typeParams = gate.enterTypeParams(node.typeParameters);
   try {
-    return gate.classBody(node, name, declared.declaration, typeParams, heritage, base, extended);
+    return gate.classBody(node, name, declared.declaration, typeParams, heritage, base, uses.length > 0, instantiateBase);
   } finally {
     gate.leaveTypeParams();
   }
@@ -335,9 +329,35 @@ export function classStmt(this: Gate, node: ClassDeclaration): Modifies<{ values
 
 export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifier, declaration: DeclarationIdentity,
     typeParams: TypeParamAst[], heritage: ts.HeritageClause | undefined, base: ClassRecord | null,
-    extended: boolean): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
+    extended: boolean, instantiateBase: boolean): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const binders = node.typeParameters ?? [];
+  const heritageArgs = heritage?.types[0]?.typeArguments ?? [];
+  if (base && heritageArgs.length !== base.binders.length)
+    gate.fail(heritage ?? node, "base construction requires one explicit heritage argument per binder");
+  const baseArgs = heritageArgs.map((argument) => gate.typeOf(argument, argument));
+  const baseBindings = new Map(base?.binders.map((binder, i) => [binder, baseArgs[i]]));
+  const specialize = (term: TypeTerm, bindings: ReadonlyMap<string, TypeTerm>):
+      Modifies<{ values: "any"; spines: "grow" }, TypeTerm> => {
+    if (term.k === "binder") return bindings.get(term.name) ?? term;
+    if (term.k !== "scheme") return mapTypeParts(term, part => specialize(part, bindings));
+    // Rename nested binders before substitution so a heritage argument's
+    // free parameter keeps its meaning inside the inherited signature.
+    const inner = new Map(bindings);
+    const local = term.binders.map((binder, i) => {
+      const name = `${binder.name}#heritage${term.span[0]}_${i}`;
+      const resolution = binder.resolution && resolutionSlots(name, binder.resolution.result ? "resolvable" : "awaitable");
+      inner.set(binder.name, { k: "binder", name, span: binder.span });
+      if (binder.resolution && resolution) {
+        inner.set(binder.resolution.observation, { k: "binder", name: resolution.observation, span: binder.span });
+        if (binder.resolution.result && resolution.result)
+          inner.set(binder.resolution.result, { k: "binder", name: resolution.result, span: binder.span });
+      }
+      return { ...binder, name, resolution };
+    });
+    return mapTypeParts({ ...term, binders: local }, part => specialize(part, inner));
+  };
+
   const instance: TypeTerm = { k: "reference", reference: { name: name.text, span: gate.span(name),
     arguments: binders.map((tp) => gate.span(tp.name)), target: declaration },
     args: binders.map((tp) => ({ k: "binder", name: tp.name.text, span: gate.span(tp.name) })),
@@ -483,9 +503,12 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       const keyword = heritage ? heritage.getStart(gate.file) : 0;
       if (base.params.length > "extends".length)
         gate.fail(node, "an implicit derived constructor forwarding more parameters than its `extends` keyword has characters has no source site for each");
-      return base.params.map((p, i) => ({ name: parameterName(i), local: parameterName(i), field: parameterName(i),
-        pos: [keyword + i, keyword + i + 1], property: false, at: gate.span(name), type: p.type,
-        fieldType: p.type, binding: null }));
+      return base.params.map((p, i) => {
+        const type = baseArgs.length ? specialize(p.type, baseBindings) : p.type;
+        return { name: parameterName(i), local: parameterName(i), field: parameterName(i),
+          pos: [keyword + i, keyword + i + 1], property: false, at: gate.span(name), type,
+          fieldType: type, binding: null };
+      });
     };
     // An optional parameter, `x?: T`, binds `T | undefined`, as a closure's.
     // A parameter with a default binds a hidden name, which the caller's
@@ -863,7 +886,8 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       } else {
         const slot = baseName(name.text);
         prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: slot, namePos: at, annot: null,
-          init: { k: "new", pos: at, callee: { k: "id", pos: calleeAt, name: base.fresh }, args: actuals } }] });
+          init: { k: "new", pos: at, callee: { k: "id", pos: calleeAt, name: base.fresh }, args: actuals,
+            ...(base.instantiateBase ? { typeArgs: baseArgs } : {}) } }] });
         derivedBase = { k: "id", pos: extendsAt, name: slot };
         // An `Error`-derived base's message, read where its instance holds
         // it, its first link.
@@ -929,7 +953,8 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     const derivedError: "derived" = "derived";
     gate.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
       methods: methodBindings, fresh: freshName(name.text), proto: protoBinding,
-      binders: binders.map((tp) => tp.name.text), ...(base?.error ? { error: derivedError } : {}) });
+      binders: binders.map((tp) => tp.name.text), ...(instantiateBase ? { instantiateBase: true } : {}),
+      ...(base?.error ? { error: derivedError } : {}) });
     return { k: "const", pos: gate.span(node),
       bindings: [...staticMethods, ...methods, ...prototypeBinding, ...freshBinding, ...statics, ...classBindings] };
   } finally {

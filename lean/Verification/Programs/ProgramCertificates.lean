@@ -383,6 +383,7 @@ inductive Rule (ι : Type) where
   | funGraphSelf
   /-- A class value: construct-only graph code, checked at each construct
   signature with `undef`, the `undefined` type, for its receiver. -/
+  | ctorScheme (undef : Ty ι)
   | ctorGraph (undef : Ty ι)
   /-- A callable object: the bag's fields, then the captures of its graph
   code; `arrays` as for `funGraph`. -/
@@ -545,6 +546,16 @@ allocation gives it. -/
             ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩, none⟩
         | none => false
   | _ => false
+
+/-- Fixed constructor signatures are checked with the receiver construction supplies. -/
+@[nospecialize] def ctorSchemeChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι)
+    (codes : CodeEntry ι → Bool) (arity : Nat) (E : List Tm)
+    (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
+    (Cs : List (Ty ι)) : Bool :=
+  match schemeOf G A with
+  | some (_, s) => s.construct && s.variadic.isEmpty && capturesFree G s Cs &&
+      s.signatures.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.arguments, p.result, p.effect⟩, none⟩
+  | none => false
 
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 @[nospecialize] def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
@@ -926,6 +937,14 @@ declared bounds. -/
   -- A class value: as a function's code, construct-only, at its construct
   -- signatures with `undefined` for the receiver; its code field, then one
   -- premise per static field, then one per capture.
+  | .ctorScheme U =>
+    match j.term with
+    | .makeAt (.graph arity E K start caps .construct false _) ns inits =>
+      ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+      (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
+      Represents G U .undef ∧
+      ctorSchemeChecked G j.type U codes arity E K start (ps.map Sequent.type) = true
+    | _ => False
   | .ctorGraph U =>
     match j.term, ps with
     | .makeAt (.graph arity E K start caps kind rest _) (f :: ns) (.nul :: inits), ps =>
@@ -1414,7 +1433,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
           checkMemberProofs G images j.context[i]? j.type k proofs rests receivers
     | _, _ => failure
   | .var | .nul | .undef | .tru | .fls | .truLit | .flsLit | .numLit | .num | .strLit | .str
-    | .bigintLit | .bigint | .funGraph .. | .funGraphSelf | .ctorGraph .. | .callableGraph .. | .app ..
+    | .bigintLit | .bigint | .funGraph .. | .funGraphSelf | .ctorScheme .. | .ctorGraph .. | .callableGraph .. | .app ..
     | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
@@ -1804,6 +1823,33 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraphSelf_of_local hcodes hctx hslots hok hp
+  · rename_i _ U _ arity E K start caps comp ns inits
+    obtain ⟨rfl, rfl, hterms, hctx, hslots, hu, hok⟩ := hl
+    obtain ⟨caps', hvar, hfst, hlt, hcap⟩ := caps_of_local hctx (by rw [hterms]; exact hslots) hp
+    subst caps
+    rw [← hvar]
+    unfold ctorSchemeChecked at hok
+    split at hok
+    · rename_i i s hs
+      simp only [Bool.and_eq_true, List.isEmpty_iff, List.all_eq_true] at hok
+      obtain ⟨⟨⟨hcon, hrest⟩, hfree⟩, hchecked⟩ := hok
+      unfold schemeOf at hs
+      split at hs
+      · rename_i i'
+        split at hs
+        · cases hs
+        · rename_i hpar
+          obtain ⟨s', hq, he⟩ := Option.map_eq_some_iff.mp hs
+          cases he
+          apply HasTyUsing.ctorScheme (U := U) (caps := caps') (by simpa using hpar) hq hcon hrest hu
+          · intro η Bs hlen hal p hp
+            rw [hfst]
+            exact hcodes _ (hchecked p hp) (assign η s.binders Bs)
+          · rwa [hfst]
+          · exact hlt
+          · exact hcap
+      · cases hs
+    · contradiction
   · rename_i U ps _ _ arity E K start caps kind rest comp f ns inits
     obtain ⟨rfl, rfl, rfl, hnd, hlen, hterms, hctx, hcaps, hslots, hu, hpay, hfit, hok⟩ := hl
     have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
