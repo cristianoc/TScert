@@ -878,4 +878,68 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
     (spec.wok_start r hinitW) (spec.lay_start r hinitL) htok hlow hcomp hatom hT hle hslots hcheck hq
     (spec.wfS_start r) hTm (spec.noPend_start r) hr hΘ hW hΦ
 
+/-- **The returns at reached executions of a framed plan, from its
+component's checks** (proved, `ret_reachedW_frame` at the plan's flow and
+layouts): the calls are typed (`call_typed`); the initial configurations
+meet layout provenance and the residual invariant where the
+initialization's node expressions and the realm's heap do
+(`initial_lay`); no code of the component collects a rest where its
+binding checks refuse nothing (`componentBindingRefusal_none`). -/
+theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (r : SourceRequest σ ι)
+    {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
+    (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
+    (hvals : ∀ n (W : WorldT n) h (L : List Tm) (d : Tm),
+      (spec.frame r).Call n W h (gotoOf r.program r.start L d r.comp) → SlotVals L d)
+    (hc : (spec.frame r).ChkSound) (hi : (spec.frame r).StartInv)
+    (hcomp₀ : spec.componentRefusal.val = none)
+    (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true) (hEw : ∀ e ∈ spec.initE, WOk e)
+    (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm)
+    (hFa : spec.fflow.flow.Facts) (hE : (spec.frame r).EntryFits spec.fflow.flow) (hK : (spec.frame r).NoKeys)
+    (htok : tokensSomeB spec.fflow = true) (hlow : codesLoweredB spec.fflow = true)
+    (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true)
+    (hatom : ∀ l e, F l = true → (r.program.map (·.expression))[l]? = some e → ClientFrame.atomCallB e = true)
+    {S₀ T : Nat → Sites ((spec.frame r).F.at (spec.frame r).C)}
+    {Ψc : Nat → Protocol ((spec.frame r).F.at (spec.frame r).C)}
+    (hT : ∀ l, F l = true → capClosedB spec.fflow (tokenCaps spec.fflow spec.lay) (S₀ l) (T l) = true)
+    (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds spec.fflow) (T l) p).le (Ψc l p) = true)
+    (hslots : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
+      spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
+      NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
+      ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
+    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
+      spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
+      NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T spec.fflow.flow.H (π.env l') noKeys (fun _ => false) = true)
+    (hq : ∀ l (b₀ : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) e L d k x, F l = true →
+      (spec.frame r).Reached b₀ →
+      (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        (instantiate 0 (envOf L d) e) L d k x r.comp →
+      (q l).Sound (envOf L d) b₀.1.s.h)
+    (hTm : capClosedB spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)
+      (capClose spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)) = true)
+    (hΘ : ∀ p, ((spec.frame r).Θ p).le (componentProtocol spec.fflow spec.lay p) = true)
+    (hW : ∀ l p, (componentProtocol spec.fflow spec.lay p).le (Ψc l p) = true)
+    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true →
+      (spec.frame r).Reached b₀ →
+      (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        (instantiate 0 (envOf L d) e) L d k x r.comp →
+      Ex (spec.frame r).KStep (fun s => Inside (spec.frame r).F (spec.frame r).C (r.program.map (·.expression))
+        (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
+      a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+    FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
+      (fun _ _ _ _ => True) := by
+  have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
+  have hinit := spec.initial_lay hEl hEw hRl hRw
+  exact ret_reachedW_frame spec r hsrc (spec.call_typed r) hvals hc hi (Fl := spec.fflow) rfl
+    (fun x hx => (hinit x hx).2) (fun x hx => (hinit x hx).1) hFa hE hK htok hlow hcomp hatom hT hle hslots
+    hcheck hq hTm hnone.2.2.2.2.2.1 hΘ hW hΦ
+
 end Verification.SourceClaimJson.PassUnit

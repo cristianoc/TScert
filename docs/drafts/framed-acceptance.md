@@ -1485,12 +1485,23 @@ Lean (proved, `FramedReturns.lean`):
     the heap along each framed call (`hΦ`, the callback's arrow);
   - *the initial configurations*: layout provenance and the residual
     invariant (`initial_starts`, from checks of the initialization's node
-    expressions, the realm's heap, and the client's lowered source);
+    expressions, the realm's heap, and the client's lowered source, which
+    `Initial` states, `initial_lowered`);
   - *invariants of the frame to be proved*: `ChkSound` and `StartInv`
     (`chkSound_program`, `startInv_public`), `EntryFits`
-    (`entryFits_public`), `NoKeys` at the starts, `hty` and `hvals` (from
+    (`entryFits_public`), `NoKeys` at the starts, `hvals` (from
     `EntryAt`), and the separation the frame check reads at each framed
     node's entry (`hq`).
+
+- `ret_reachedW_spec` (proved, `FramedReturns.lean`): `ret_reachedW_frame`
+  at the plan's flow (`spec.fflow`) and layouts (`spec.lay`), the hashing
+  of the plan's sites its instance: `hty` by `call_typed` (an entry is a
+  configuration, whose budget is positive, world admissible and heap
+  typed); the initial configurations by `initial_lay` from layout
+  provenance and the residual invariant of the initialization's node
+  expressions and of the realm's heap; `noRestB` from the component's
+  binding checks (`componentBindingRefusal_none`). Its other premises are
+  `ret_reachedW_frame`'s.
 
 With no framed node the returns hold of every frame
 (`framedReturnsReachedW_none`, proved).
@@ -1649,7 +1660,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
 (`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
 `FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
-`ret_reachedW_of_entries`, `ret_reachedW_frame` (`FramedReturns.lean`).
+`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1661,10 +1672,14 @@ review's `CodeClause.lean`).
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, `ret_reachedW_frame`'s premises to be proved (`hty` and `hvals` from
-`EntryAt`, `NoKeys` at the starts, the frame check's separation at each
-framed node's entry, the client's lowered source at an initial
-configuration),
+`startInv_public`, `ret_reachedW_spec`'s premises to be proved (`hvals`
+from `EntryAt`, `NoKeys` at the starts, the frame check's separation at
+each framed node's entry), its premises that are checks connected to the
+checks the pass runs (`FFlow.check` at `spec.fflow` from the component's
+check at `spec.checked`, `compB`, `tokensSomeB`, `codesLoweredB`,
+`atomCallB` at the framed nodes, the closure checks, `hslots` and
+`hcheck` from `framedSupportsAt`, the protocol orders, the layout
+provenance and residual invariant of the initialization and the realm),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.

@@ -341,6 +341,32 @@ theorem initial_starts {q : Code → ComponentTag → Layout → Bool}
 /-- **The checks read the flow's sites** (proved, by definition). -/
 theorem flowSites (r : SourceRequest σ ι) : (spec.frame r).FlowSites spec.flow := fun _ _ _ _ => rfl
 
+/-- **A call the frame's claim is about is at a typed configuration**
+(proved): its entry is a configuration of the program, whose budget is
+positive, whose world is admissible and types its heap. -/
+theorem call_typed (r : SourceRequest σ ι) :
+    ∀ n (W : WorldT n) h t, (spec.frame r).Call n W h t → 0 < n ∧ WorldAdm W ∧ HeapOk n W h := by
+  intro n W h t hc
+  obtain ⟨-, a₂, -, -, -, -, -, -, -, -, hn, hW, hh, -⟩ := hc
+  subst hn
+  cases eq_of_heq hW
+  subst hh
+  exact ⟨a₂.1.s.pos, a₂.1.s.adm, a₂.1.s.ok⟩
+
+omit [Labels ι] in
+/-- **The initial configurations meet layout provenance at the plan's
+layouts and the residual invariant** (proved, `initial_starts` at
+`initial_lowered`): where the initialization's node expressions and the
+realm's heap meet both. -/
+theorem initial_lay (hEl : ∀ e ∈ spec.initE, layP (layQ spec.fflow spec.lay) e = true)
+    (hEw : ∀ e ∈ spec.initE, WOk e) (hRl : HeapLay (layQ spec.fflow spec.lay) spec.realm) (hRw : HeapW spec.realm) :
+    ∀ x, spec.Initial x →
+      (layP (layQ spec.fflow spec.lay) x.t = true ∧ HeapLay (layQ spec.fflow spec.lay) x.s.h) ∧
+        (WOk x.t ∧ HeapW x.s.h) := fun _ hx =>
+  spec.initial_starts (fun _ _ _ hc => by
+    show (!(spec.F.ofC spec.C _) || _) = true
+    rw [hc]; rfl) hx (spec.initial_lowered hx) hEl hEw hRl hRw
+
 end FramedSpec
 
 end

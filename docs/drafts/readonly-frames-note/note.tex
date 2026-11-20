@@ -820,7 +820,7 @@ realm (\code{[[Array.prototype]]}), so the module imports no value but
 these; the graph of the names the module functions read is acyclic; and
 every \code{@clients} row of an exported type states a change per class
 only. A component that fails a gate has no framed plan
-\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (acyclic names, \lean{closable}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}}.
+\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (acyclic names, \lean{closable}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks. The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}}.
 \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
 of $\cC$'s module, each module function's code and the closures it creates, and the
 natives' step models; a code is a term, so module functions of one code
@@ -836,7 +836,7 @@ context, $\mathrm{Ch}(\{m\})$, the capture sites $\mathit{Cap}$, the
 closure $\overline{\mathit{Cap}\cup O}$ and the protocol $\Psi_\cC$
 (Section~\ref{sec:flowro}, ``Charges''); the client row $\Theta_\cC$,
 the join of the \code{@clients} rows per kind
-\status{Lean: \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, built once per file as \lean{componentIndex} and tabled at the flow's sites (\lean{protocolParts}); \lean{rowsTheta}. The wire states $\Psi_\cC$ and $\Theta_\cC$, checked per unit by \lean{protocolAtLeastB} and \lean{clientsB}; the code computes each closure by iteration (\lean{capClose}), with no run of its check \lean{capClosedB}}.
+\status{Lean: \lean{codeKinds}, \lean{flowKinds}, \lean{probeProtocol}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, built once per file as \lean{componentIndex} and tabled at the flow's sites (\lean{protocolParts}); \lean{rowsTheta}. The wire states $\Psi_\cC$ and $\Theta_\cC$, checked per unit by \lean{protocolAtLeastB} and \lean{clientsB}; the code computes each closure by iteration (\lean{capClose}), with no run of its check \lean{capClosedB}}.
 \item[(A4) Binding checks that read no unit] The flow holds a proposal at
 context $0$ for each module function's code, and every allocation site
 of every code at every context is a site
@@ -921,7 +921,7 @@ entry the heap meets $H$ and outside code holds only values meeting $O$
 \status{Lean: \lean{FFlow.check\_sound}, \lean{FFlow.marksB\_sound}, \lean{ClientFrame.fitsAt\_reached}. conj.: the same along a program from its initialization, every earlier call of $\cC$ included}.
 \item[(A3)] Each closure, checked, is closed; a step changes an old
 location only at its active writing redex, at a site its receiver meets
-\status{Lean: \lean{capClosedB\_sound}, \lean{segClosedB\_sound}, \lean{step\_writes\_active}, \lean{write\_site}. conj.: that $\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth}.
+\status{Lean: \lean{capClosedB\_sound}, \lean{segClosedB\_sound}, \lean{step\_writes\_active}, \lean{write\_site}. \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} ($\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth, under \lean{noRestB})}.
 \item[(A4), (B4)] Each binding check gives its property
 \status{Lean: \lean{componentBindingRefusal\_none} (each check of (A2) and (A4) passes where the refusal is none), \lean{codesCoverB\_sound}, \lean{allocSomeB\_sound}, \lean{FFlow.entryB\_sound}, \lean{entryFnB\_sound}, \lean{realizedFlowB\_sound}}.
 \item[(B1), (B2)] At a framed call, the segment from the call to its
@@ -932,17 +932,17 @@ of outside code within $\Psi_\cC\sqcup\Theta_\cC$ by
 Proposition~\ref{prop:rorely}'s argument, every other location within
 $\Phi$. The frame's check gives the premise at some context and node of
 the call's key (Proposition~\ref{prop:frameflow})
-\status{Lean: \lean{frameCheck\_sound}, \lean{ClientFrame.framed\_at\_innermost\_keys}. conj.: the framed transfer, which has no Lean statement at this commit}.
+\status{Lean: \lean{frameCheck\_sound}, \lean{ClientFrame.framed\_at\_innermost\_keys}, the framed transfer \lean{ClientFrame.framed\_transfer}, \lean{nodeTransfer\_of\_transfer}}.
 \item[(B3)] The graph theorem at framed returns: a walk the framed pass
 accepts is safe along the paths whose framed returns meet their premise,
 the kept facts holding at each framed node's exits; the ordinary graph
 theorem is its instance with no framed node
-\status{Lean: \lean{graph\_safeR}, \lean{nodesChecked\_of\_walkR}, \lean{run\_sound\_framed} (\lean{RunSoundFramed}), \lean{framedReturns\_of\_main}, \lean{framedRun\_of\_returns}; the codes, \lean{codesAccepted\_guarantees}, \lean{framedCode\_of\_guarantee}}.
+\status{Lean: \lean{graph\_safeR}, \lean{nodesChecked\_of\_walkR}, \lean{run\_sound\_framed} (\lean{RunSoundFramed}), \lean{framedReturns\_of\_main}, \lean{framedRun\_of\_returnsW}; the codes, \lean{codesAccepted\_guarantees}, \lean{framedCode\_of\_guarantee}}.
 \item[(B5)] The headline: a unit's accepted verdict implies safety of every
 function of the unit; for a framed plan, a member accepted with its
 framed obligations is safe at the frame its plan defines, for the
 executions keeping $\Theta_\cC$
-\status{Lean: \lean{SourceClaimJson.PassUnit.mode8Accepted\_sound}; the framed branch, \lean{framed\_requestSafe} from \lean{FramedAccepted}, \lean{member\_safe}. conj.: \lean{FramedObligations.reached}, that the framed returns hold at the executions the claim is about, from the framed transfer at each framed node}.
+\status{Lean: \lean{SourceClaimJson.PassUnit.mode8Accepted\_sound}; the framed branch, \lean{framed\_requestSafe} from \lean{FramedAccepted}, \lean{member\_safe}. the framed returns at the executions the claim is about, read at their worlds, from a plan's checks, \lean{ret\_reachedW\_spec}. conj.: its premises the pass does not establish (the frame's invariants \lean{ChkSound}, \lean{StartInv}, \lean{EntryFits}, \lean{NoKeys}, the slots of a call's values, the separation the frame check reads at a framed node's entry, the checks of the flow's tokens, lowered codes, closures and atomic calls), and so \lean{FramedObligations.reached}}.
 \end{description}
 
 \fussy
