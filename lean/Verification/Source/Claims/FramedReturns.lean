@@ -275,7 +275,7 @@ theorem rowAt_reads_world :
   let P : Package := ⟨Unit, fun _ => .exposed, fun _ => false⟩
   let Θ : Protocol P := fun p => if p.kind = some .field then .any else .keep
   let g : Ghost P := ⟨fun _ => some (), fun _ => none, fun _ => True, [], fun _ => False⟩
-  let W₁ : WorldT 1 := ofEntries [(.field, fun _ _ _ _ => True)]
+  let W₁ : WorldT 1 := ofEntries [(.field "f", fun _ _ _ _ => True)]
   let W₂ : WorldT 1 := ofEntries []
   refine ⟨P, Θ, g, [.num 0], [.num 1], W₁, W₂, fun l v _ hv => ⟨.num 1, ?_, ?_⟩, fun hrow => ?_⟩
   · cases l with

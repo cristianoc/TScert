@@ -151,8 +151,8 @@ spine (`ViewWrite.keep`). -/
 theorem elementWrite_not_respects :
     ¬ RespectsKinds (CallEffects.ElementWrite.spines.changes.Holds) := by
   intro H
-  let W : WorldT 0 := ofEntries [(.field, fun _ hj _ _ => absurd hj (Nat.not_lt_zero _))]
-  have hW : roleAt W 0 = some .field := by simp [W, roleAt, roles]
+  let W : WorldT 0 := ofEntries [(.field "f", fun _ hj _ _ => absurd hj (Nat.not_lt_zero _))]
+  have hW : roleAt W 0 = some (.field "f") := by simp [W, roleAt, roles]
   have hsh : Shaped W [.str "a"] := by
     intro l r hr
     have hl : l = 0 := by have := roleAt_lt hr; simp [W] at this; omega
@@ -168,7 +168,7 @@ theorem elementWrite_not_respects :
       subst this; simp at hl
     · simp [CallEffects.ElementWrite.changes] at hg
   obtain ⟨W', hx, -, hsh'⟩ := H 0 W _ _ (by simp [W]) hsh hc
-  obtain ⟨u, hu, hcat, -⟩ := hsh' 0 .field (WExt_roleAt hx hW)
+  obtain ⟨u, hu, hcat, -⟩ := hsh' 0 (.field "f") (WExt_roleAt hx hW)
   simp at hu; subst hu
   simp [Cat, isSourceVal] at hcat
 

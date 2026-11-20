@@ -50,7 +50,7 @@ theorem fields_location (keys : List PropKey) (k : PropKey) (l : Nat)
 
 /-- The location's contract admits no value, so every implication from it holds. -/
 noncomputable def emptyCell : Ctr 1 := fun _ _ _ _ => False
-noncomputable def witnessWorld : WorldT 1 := ofEntries [(.field, emptyCell)]
+noncomputable def witnessWorld : WorldT 1 := ofEntries [(.field (.str ""), emptyCell)]
 def witness (keys : List PropKey) : Val := .objAt (fields keys) .absent 1
 
 theorem witness_cell : lookup witnessWorld 0 = some emptyCell := by

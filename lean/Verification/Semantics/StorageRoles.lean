@@ -81,23 +81,24 @@ theorem mem_mapStored {α β : Type} {f : α → β} {fs : List (Stored α)} {k 
   · rintro ⟨⟨k', s', a⟩, hm, rfl, rfl, rfl⟩; exact ⟨a, hm, rfl⟩
   · rintro ⟨a, hm, rfl⟩; exact ⟨(k, s, a), hm, rfl, rfl, rfl⟩
 
-/-- The roles a storage role tag names. -/
+/-- The roles a storage role tag names: a field or a cell of any key, the
+key being the slot's (`SlotRole`), or an array spine. -/
 def StorageRole.permits : StorageRole → Role → Prop
-  | .field, r => r = .field
-  | .cell, r => r = .cell
+  | .field, r => ∃ k, r = .field k
+  | .cell, r => ∃ k, r = .cell k
   | .arraySpine, r => r = .spine .array
 
 /-- **Distinct tags name disjoint roles**: a role determines the tag naming it. -/
 theorem StorageRole.permits_unique {s s' : StorageRole} {r : Role}
     (h : s.permits r) (h' : s'.permits r) : s = s' := by
   cases s <;> cases s' <;> simp only [StorageRole.permits] at h h' <;>
-    first | rfl | (subst h; simp_all)
+    first | rfl | (obtain ⟨_, rfl⟩ := h; simp_all) | (subst h; simp_all)
 
 /-- Every tag names some role. -/
 theorem StorageRole.inhabited (s : StorageRole) : ∃ r, s.permits r := by
   cases s
-  · exact ⟨.field, rfl⟩
-  · exact ⟨.cell, rfl⟩
+  · exact ⟨.field (.str ""), _, rfl⟩
+  · exact ⟨.cell (.str ""), _, rfl⟩
   · exact ⟨.spine .array, rfl⟩
 
 

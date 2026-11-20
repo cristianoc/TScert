@@ -50,19 +50,28 @@ inductive SpineForm where
   | view (format : ViewFormat) (length : Nat)
   deriving DecidableEq, Repr
 
-/-- A location's role, fixed when the world is extended at its allocation. -/
+/-- A location's role, fixed when the world is extended at its allocation. A
+field or a cell location's role holds its **key**, the name of the property
+it stores (the note *Tolerant frames*, §3 and (W3): the field location of
+`o.n` has the key `n`, a cell location the key `value`). -/
 inductive Role where
-  | field | cell | elem
+  | field (key : PropKey) | cell (key : PropKey) | elem
   | spine (form : SpineForm)
   | identity
   deriving DecidableEq, Repr
 
 def Role.kind : Role → Kind
-  | .field => .field
-  | .cell => .cell
+  | .field _ => .field
+  | .cell _ => .cell
   | .elem => .elem
   | .spine _ => .spine
   | .identity => .identity
+
+/-- A role's key: a field's or a cell's, none for an element cell, a spine or
+an identity. -/
+def Role.key? : Role → Option PropKey
+  | .field k | .cell k => some k
+  | _ => none
 
 /-- The three categories of a location (the note *Tolerant frames*, §3, the
 class regions): value locations (field, cell, element and identity
@@ -78,7 +87,7 @@ inductive Category where
 def Role.category : Role → Category
   | .spine .array => .array
   | .spine (.view ..) => .view
-  | .field | .cell | .elem | .identity => .value
+  | .field _ | .cell _ | .elem | .identity => .value
 
 /-- A spine location's category is a spine's: an array's or a view's. -/
 theorem Role.category_spine {r : Role} : r.kind = .spine ↔ r.category ≠ .value := by
@@ -100,8 +109,8 @@ inductive RoleClass where
 
 /-- A role's class: a view spine's format and length are dropped. -/
 def Role.cls : Role → RoleClass
-  | .field => .field
-  | .cell => .cell
+  | .field _ => .field
+  | .cell _ => .cell
   | .elem => .elem
   | .spine .array => .arraySpine
   | .spine (.view ..) => .viewSpine
@@ -619,12 +628,13 @@ end
   induction xs <;> simp_all [refsArgs]
 
 /-- The role a slot under `key` must have: an array spine under `[]`, and a
-field or a cell under every other key. No slot holds a view spine: a typed
+field or a cell of the key `key` under every other key (the note *Tolerant
+frames*, (W3): the field location $`v(f)`$ is of kind $`F_f`$ or $`C_f`$). No slot holds a view spine: a typed
 array names its view spine by its descriptor (`Ref.view`). -/
 def SlotRole (key : PropKey) : Option Role → Prop
   | some (.spine .array) => key = arraySpineKey
-  | some .field => key ≠ arraySpineKey
-  | some .cell => key ≠ arraySpineKey
+  | some (.field k) => key = k ∧ key ≠ arraySpineKey
+  | some (.cell k) => key = k ∧ key ≠ arraySpineKey
   | _ => False
 
 /-- A reference's validity (the note *Tolerant frames*, (W3)): an identity
@@ -652,7 +662,7 @@ source value in F, C and E; an array's spine in an array spine; in a view
 spine of form `view_N`, a view spine of its format listing a cell at each of
 its `N` indices, so with no hole; `null` in I. -/
 def Cat : Role → Val → Prop
-  | .field, v | .cell, v | .elem, v => isSourceVal v = true
+  | .field _, v | .cell _, v | .elem, v => isSourceVal v = true
   | .spine .array, v => ∃ ls, v = .arr ls
   | .spine (.view f N), v => ∃ cs, v = .viewSpine f cs ∧ cs.length = N
   | .identity, v => v = .nul
@@ -686,7 +696,7 @@ def spineEntries : Val → Option (List (Option Nat))
 role's category (`Cat`). -/
 theorem Cat.category {r : Role} {u : Val} (h : Cat r u) : contentsCategory u = r.category := by
   cases r with
-  | field | cell | elem => cases u <;> simp_all [Cat, isSourceVal, contentsCategory, Role.category]
+  | field _ | cell _ | elem => cases u <;> simp_all [Cat, isSourceVal, contentsCategory, Role.category]
   | identity => subst h; rfl
   | spine f =>
     cases f with

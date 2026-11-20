@@ -114,6 +114,7 @@ theorem HeapOk.categories {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W 
         | view N => simp [SlotRole] at hs
       | field | cell =>
         simp only [SlotRole] at hs
+        obtain ⟨rfl, hs⟩ := hs
         simp only [hs, if_false]
         cases u <;> simp_all [Cat, isSourceVal, Selector.selects, Selector.values, Selector.has, contentsCategory]
       | elem | identity => simp [SlotRole] at hs

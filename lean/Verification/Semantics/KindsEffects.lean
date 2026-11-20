@@ -40,7 +40,7 @@ theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n
       h.IsPrefix h' ∧ (Capability.field f A).Holds U (slots h.length [f])) R (n + 2) W h (literal f x) := by
   have hv : isVal x = true := sourceVal_isVal hsrc
   let W₁ := trunc (n + 1) (Nat.le_succ _) W
-  let es : List (Role × Ctr (n + 1)) := objectEntries [.field] [res A]
+  let es : List (Role × Ctr (n + 1)) := objectEntries [.field f] [res A]
   let U := appendWs W₁ es
   have hok₁ : HeapOk (n + 1) W₁ h := HeapOk_trunc (n + 1) W h hok
   have hmake : RefsOk W₁ (.makeAt .absent [f] [x]) := by
@@ -75,7 +75,7 @@ theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n
   have hcap : (Capability.field f A).Holds U (slots h.length [f]) := by
     have hl₁ : h.length = (entries W₁).length := by simpa using hok₁.1.1
     rw [hl₁]
-    exact Capability.holds_alloc W₁ (ns := [f]) (rs := [.field]) (As := [A])  (by simp) rfl rfl
+    exact Capability.holds_alloc W₁ (ns := [f]) (rs := [.field f]) (As := [A])  (by simp) rfl rfl
       (i := 0) (by simp) rfl ⟨rfl, rfl⟩
   refine ⟨fun r hr => hxr r (by simpa [literal, refs, refsArgs_eq] using hr), .inr ⟨U, h ++ [x] ++ [.nul],
     o, WExt_appendWs _ _, WorldAdm_appendWs_plain (WorldAdm_trunc _ hadm) hadmE

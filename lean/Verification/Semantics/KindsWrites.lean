@@ -72,7 +72,7 @@ theorem writeOrdinary_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (Pro
 /-- **A binding update** writes a binding cell's location, a cell; a
 source value is its category. -/
 theorem bindingWrite_shaped {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {v : Val}
-    (hsh : Shaped W h) (hr : roleAt W l = some .cell) (hv : RefsOk W v) (hsrc : isSourceVal v = true) :
+    (hsh : Shaped W h) {key : PropKey} (hr : roleAt W l = some (.cell key)) (hv : RefsOk W v) (hsrc : isSourceVal v = true) :
     Shaped W (h.set l v) := Shaped_set hsh hr ⟨hsrc, hv⟩
 
 /-- **A spine write** writes an array's spine slot `[]`, an array spine;
@@ -495,12 +495,12 @@ theorem toString_ne_spine (n : Nat) : toString n ≠ "[]" := by
   simp at this
 
 theorem heapVal_src {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {r : Role}
-    (hsh : Shaped W h) (hr : roleAt W l = some r) (hc : r = .field ∨ r = .cell ∨ r = .elem) :
+    (hsh : Shaped W h) (hr : roleAt W l = some r) (hc : (∃ key, r = .field key) ∨ (∃ key, r = .cell key) ∨ r = .elem) :
     isSourceVal (heapVal h l) = true := by
   obtain ⟨u, hu, hcat, -⟩ := hsh l r hr
   simp only [heapVal, hu]
   split
-  · rcases hc with rfl | rfl | rfl <;> exact hcat
+  · rcases hc with ⟨_, rfl⟩ | ⟨_, rfl⟩ | rfl <;> exact hcat
   · rfl
 
 theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)} {c : CallCode}
@@ -515,8 +515,8 @@ theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)
   · rw [hr] at this
     refine heapVal_src hsh hr ?_
     cases r with
-    | field => exact .inl rfl
-    | cell => exact .inr (.inl rfl)
+    | field => exact .inl ⟨_, rfl⟩
+    | cell => exact .inr (.inl ⟨_, rfl⟩)
     | elem => cases this
     | identity => cases this
     | spine fm => cases fm <;> simp [SlotRole] at this <;> simp_all
