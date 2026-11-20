@@ -325,7 +325,8 @@ plan, located at the unit; the unit's verdict is its ordinary plan's.
 | --- | --- | --- | --- |
 | A framed unit that is not a module function of its module (a method, a class's code, the initialization) | Its entering step relates to no realized code of its request | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-method-refused` |
 | Module functions naming each other in a framed unit's component | Their closures have no finite initialization | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cycle-refused` |
-| A module function of a framed unit's component reading a module cell or constant, a native with no step model, or (the framed plan not formed) another module's value or a package's code | Its slot's contents vary with the depth of calls and the component's initialization does not set them | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cell-refused` |
+| A module function of a framed unit's component reading a module cell or constant, a native with no step model, or another module's value | Its slot's contents vary with the depth of calls and the component's initialization does not set them | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cell-refused` |
+| A framed unit whose outermost component is a package | Its component's code is beyond the checked file's | [restrictions](drafts/framed-acceptance.md#restrictions) | — |
 | A `@clients` row with a path key in a framed unit's component | Its part needs the declaration's sites | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-path-refused` |
 
 ### Opaque Node URLs

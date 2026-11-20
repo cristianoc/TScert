@@ -4,6 +4,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyPublic
 import Verification.Paper.TolerantFrames.ReadOnlyFits
 import Verification.Paper.TolerantFrames.ReadOnlyFitsDecide
 import Verification.Source.Claims.FramedFlow
+import Verification.Source.ComponentWire
 
 /-! # A framed plan's proposals and the frame they define
 
@@ -62,12 +63,17 @@ at; the realm's heap; the initialization's code; the number of the
 function's parameters; and what the pass's check reads (the draft, "What
 the pass checks"): the component's tags and the marks of its flow's sites,
 the flow the solver proposes for the component's codes at those marks
-(`checked`), each code's layout, the natives' codes, the `@clients` rows of
-the component's exported types, the component's module functions' codes
-and entries, and each framed call node of the main graph with the supports
-its frame keeps. The family, the client obligation and the finite flow the
-frame reads are defined from them (`FramedSpec.fam`, `FramedSpec.Θ`,
-`FramedSpec.fflow`). -/
+(`checked`), each code's layout, the natives' codes, the component family
+the declaration document describes (`family`, its `@clients` rows, its
+codes' declared shapes and its bodies' events), the checked file's name and
+functions, the component's module functions' codes, names, arities and the names
+their slots read, its entries, the wire's client obligation by kind
+(`theta`) and protocol by site and kind (`psi`), the component's protocol
+as defined (`psiDef`), the refusal of the checks that read the component
+alone (`componentRefusal`), and each framed call node
+of the main graph with the supports its frame keeps. The family of
+components, the client obligation and the finite flow the frame reads are
+defined from them (`FramedSpec.fam`, `FramedSpec.Θ`, `FramedSpec.fflow`). -/
 structure FramedSpec (ι : Type) where
   C : Nat
   readOnly : List (Ty ι)
@@ -81,9 +87,22 @@ structure FramedSpec (ι : Type) where
   checked : FFlow (markedPackage ofC marks)
   lay : List (Nat × Bool × Nat × Nat)
   host : Nat → Bool
-  clients : List Footprints.Footprint
+  family : ComponentWire.Components
+  file : String
+  fns : List (String × Span × Bool)
   codes : List Code
+  names : List (String × Nat × List String)
   entries : List String
+  theta : List (Option Verification.Kind × Footprints.Change)
+  psi : List (Option Nat × Option Verification.Kind × Footprints.Change)
+  /-- The component's protocol as defined (`componentProtocol`) at every
+  part of its flow's sites, each change but `keep`, computed once per
+  component. -/
+  psiDef : List (Option Nat × Option Verification.Kind × Footprints.Change)
+  /-- The refusal of the binding checks that read the component alone
+  (`componentBindingRefusal`), evaluated once per component; `none` where
+  they pass. -/
+  componentRefusal : Option String
   framed : List (Nat × List Footprints.Footprint)
 
 namespace FramedSpec
@@ -96,9 +115,9 @@ abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
 code marked as the flow marks it (`oneComponent`). -/
 def fam : NumberedFamily := oneComponent spec.C spec.mark
 
-/-- **The client obligation of a framed plan**: the `@clients` rows' change
-per kind (`clientsProtocol`). -/
-noncomputable def Θ : Protocol (spec.fam.family.at spec.C) := clientsProtocol spec.clients
+/-- **The client obligation of a framed plan**: the wire's change per kind
+(`protocolOfKinds`), which `clientsB` checks against the `@clients` rows. -/
+noncomputable def Θ : Protocol (spec.fam.family.at spec.C) := protocolOfKinds spec.theta
 
 /-- **The finite flow of a framed plan** (which the binding checks decide):
 the checked flow, its sites renamed into the family's (`FFlow.mapSites`). -/

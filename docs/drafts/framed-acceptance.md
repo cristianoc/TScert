@@ -841,18 +841,24 @@ crossings of a step classically, so the executable boundary carries the
 proposals and the claim the frame (`Plans.lean`).
 
 `FramedSpec ι` (`FramedSpec.lean`) holds the proposals: $`C`$, the types
-a crossing reads read-only, the type outgoing values cross at, the realm's
-heap, the initialization's code and the function's arity; and what the
-check reads: the component's tags, the marks of its flow's sites (`O`),
-the flow the solver proposes at those marks (`checked`), each code's
-layout, the natives' codes, the `@clients` rows, the component's module
-functions' codes and entries, and each framed call node of the main graph
-with the supports its frame keeps. The family is the numbered family of
-the one component $`C`$, each site marked by the flow (`oneComponent`);
-$`\Theta_C`$ is the rows' join per kind at their class entries
-(`clientsProtocol`); the finite flow (`fflow`, which the binding checks
-decide; `flow` is the flow it stands for) is `checked` with its sites
-renamed into the family's (`FFlow.mapSites`). From them and the request:
+a crossing reads read-only (the member's inputs whose declared shapes are
+read-only throughout, `readOnlyInputs`), the type outgoing values cross
+at, the realm's heap, the initialization's code and the function's arity;
+and what the check reads: the component's tags, the marks of its flow's
+sites (`O`), the flow the solver proposes at those marks (`checked`, each
+module function's request code beside its realized code), each code's
+layout, the natives' codes, the component family the declaration document
+describes and the checked file's functions, the component's module
+functions' codes, names, arities and slot names, its entries, the wire's
+$`\Theta_C`$ by kind (`theta`) and $`\Psi_C`$ by numbered site and kind
+(`psi`), $`\Psi_C`$ as defined at the flow's sites (`psiDef`), the
+refusal of the checks that read the component alone
+(`componentRefusal`), and each framed call node of the main graph with
+the supports its frame keeps. The family is the numbered family of the one
+component $`C`$, each site marked by the flow (`oneComponent`);
+$`\Theta_C`$ is the wire's change per kind (`protocolOfKinds`); the finite
+flow (`fflow`, which the binding checks decide; `flow` is the flow it
+stands for) is `checked` with its sites renamed into the family's (`FFlow.mapSites`). From them and the request:
 
 - `realizedCode r`: the request's node lists behind the receiver's
   prologue (`dropReceiver`'s lists over $`|\mathrm{r.inputs}|`$ slots);
@@ -925,27 +931,48 @@ the call nodes of the member's code framed at some context of the flow;
 passing `frameCheckAt` at $`\Psi_c = \Psi_C \sqcup \Theta_C \sqcup W_c`$
 at every context and every node of the call's continuation and handler
 that may call outside code. `passMember`'s framed branch
-(`FilePlans.framedRefusal`) runs, over the plan's flow, `FFlow.check`,
-`marksB`, `entryB`, `codesCoverB` (the module functions' codes and
-`requestCode r`), `allocSomeB`, `entryFnB` and `realizedFlowB`; the framed
-call nodes recomputed and each kept support passing the check; then the
-main graph walked with those nodes framed (`passMemberGraph`), settled; it
+(`FilePlans.framedRefusal`) reads first the refusal of the checks that
+read the component alone, evaluated once per component
+(`componentBindingRefusal`, `FramedPassChecks.lean`): `FFlow.check`,
+`marksB`, `codesCoverB` over every module function's realized and request
+codes, `allocB` (`allocSomeB`, and `allocCanonB` at the bodies
+`moduleBody`, a module function's realized code's its request's, from
+three sites per code), `initB` (each module function's closure allocated
+once, each linked capture the slot holding the closure its name names,
+allocated earlier, every other capture a realm identity, the last node the
+entries' array), and (S), (K), (O) at the component's bodies
+(`componentFrameDiags`). Then, per request: `entryB`, `compB`,
+`codesCoverB` at `requestCode r`, `entryFnB`, `realizedFlowB`, `clientsB`
+(the wire's $`\Theta_C`$ against the `@clients` rows, `rowsTheta`),
+`protocolAtLeastB` (the wire's $`\Psi_C`$ against `psiDef`, both at the
+flow's sites) and `readOnlyB`; the framed call nodes recomputed and each
+kept support passing the check at the wire's protocols; then the main
+graph walked with those nodes framed (`passMemberGraph`), settled; it
 refuses at the first that fails, and otherwise at
-`FramedObligations.reached`, which no check establishes.
+`FramedObligations.reached`, which no check establishes. Each binding
+check has a control forging its document, its flow, its initialization,
+its plan or its family (`tests/single-pass-control-inputs.mts`,
+`tests/single-pass-controls.mts`).
 
 The producer (`FilePlans.framedPlan`, `RequestCli.framedVerdict`) forms a
-framed plan for a member of a group the pass refused, where its module is
-its family's outermost component, imports no other module's value and its
-code calls: its component's module functions (those the member and the
-entries reach by name), the restrictions below, its framed call nodes,
-and each node's entry supports the check passes, observed in the walk.
-Its document is the producer's inputs alone: the component, the entries
-and each framed call node with its supports (`framedDocument`). The
-decoder (`FramedSpec.decode`) recomputes the flow from the component's
-codes and refuses a document whose fields, component, entries, nodes or
-supports disagree with it; `inputDigest` hashes the document. The framed
-plan's refusal follows the group's ordinary refusal; the verdict is the
-ordinary plan's.
+framed plan for a member of a group the pass refused whose code calls. It
+reads the file's framed component (`FramedComponent`,
+`PreparedFile.framedComponent`), prepared once per file on the first
+refused unit that reads it and kept beside the file's other prepared data
+(`PreparedFile.framed`): the module, where it is its family's outermost
+component and imports no other module's value (a located refusal
+otherwise), its module functions (every function a module binding holds,
+each planned alone), the restrictions below, its flow solved once
+(`framedComponentFlow`), $`\Psi_C`$ as defined at its flow's sites, its
+initialization and the checks that read the component alone. Per member:
+its framed call nodes and each node's entry supports the check passes,
+observed in the walk. Its document is the producer's inputs alone: the
+component, the entries, $`\Theta_C`$ by kind, $`\Psi_C`$ by numbered site
+and kind, and each framed call node with its supports (`framedDocument`).
+The decoder (`FramedSpec.decode`) reads the component's flow and refuses a
+document whose fields, entries, nodes or supports disagree with it;
+`inputDigest` hashes the document. The framed plan's refusal follows the
+group's ordinary refusal; the verdict is the ordinary plan's.
 
 `MemberAccepted.framed`, beside `ordinary`'s premises over the request
 (its codes by the ordinary pass): `FFlow.check (remark F)`, `marksB`,

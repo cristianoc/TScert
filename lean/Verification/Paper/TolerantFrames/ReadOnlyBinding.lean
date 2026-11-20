@@ -192,4 +192,108 @@ theorem agreeB_sound [DecidableEq P.Site] {F : FFlow P} {m₁ m₂ : Code} {keys
     simp only at ho ha
     rw [ho, ha]
 
+/-! ## The canonical allocation sites -/
+
+/-- **The allocation occurrences of a list of bodies**: each body with
+each of its node keys (a node's continuation and handler), in order. -/
+def allocOccs (bodies : List Code) : List (Code × NodeKey) := bodies.flatMap fun b => b.2.map (b, ·)
+
+/-- **The canonical site of an allocation occurrence** (the draft's "one
+site per body allocation"): from `base`, two numbers per occurrence of
+`allocOccs bodies`, the object's then the array's, by the occurrence's
+position. It reads the lowering alone: the bodies and their node keys. -/
+def canonSite (base : Nat) (bodies : List Code) (b : Code) (kx : NodeKey) (arr : Bool) : Nat :=
+  base + 2 * (allocOccs bodies).idxOf (b, kx) + if arr then 1 else 0
+
+/-- A member of a list is the element at its position (proved). -/
+theorem idxOf_inj_mem {α : Type} [BEq α] [LawfulBEq α] {l : List α} {x y : α} (hx : x ∈ l) (hy : y ∈ l)
+    (h : l.idxOf x = l.idxOf y) : x = y := by
+  have ex := List.getElem_idxOf (List.idxOf_lt_length_of_mem hx)
+  have ey := List.getElem_idxOf (List.idxOf_lt_length_of_mem hy)
+  simp only [h] at ex
+  exact ex.symm.trans ey
+
+/-- **Two occurrences of the bodies have different canonical sites**
+(proved): the position of an occurrence of a list determines it. -/
+theorem canonSite_inj {base : Nat} {bodies : List Code} {b b' : Code} {kx kx' : NodeKey} {a a' : Bool}
+    (h : (b, kx) ∈ allocOccs bodies) (h' : (b', kx') ∈ allocOccs bodies)
+    (he : canonSite base bodies b kx a = canonSite base bodies b' kx' a') : b = b' ∧ kx = kx' ∧ a = a' := by
+  simp only [canonSite] at he
+  have hp : (allocOccs bodies).idxOf (b, kx) = (allocOccs bodies).idxOf (b', kx') ∧ a = a' := by
+    cases a <;> cases a' <;> simp at he ⊢ <;> omega
+  have heq := idxOf_inj_mem h h' hp.1
+  simp only [Prod.mk.injEq] at heq
+  exact ⟨heq.1, heq.2, hp.2⟩
+
+/-- **The flow's allocation sites are the canonical ones**, decided
+(`allocB`'s second half): at every context of every code `m` of the flow
+and every node key of `m` that its body `bodyOf m` has, the proposal's
+object and array sites are, by the numbering `num`, the canonical sites of
+that occurrence of the body. -/
+def allocCanonB (num : P.Site → Nat) (base : Nat) (bodies : List Code) (bodyOf : Code → Code) (F : FFlow P) : Bool :=
+  F.codes.all fun (m, cs) => cs.all fun (_, fc) => m.2.all fun kx =>
+    !(bodyOf m).2.contains kx ||
+      ((fc.allocAt kx).obj.map num == some (canonSite base bodies (bodyOf m) kx false) &&
+        (fc.allocAt kx).arr.map num == some (canonSite base bodies (bodyOf m) kx true))
+
+/-- **The canonical check is sound** (proved): at every proposal of a code
+`m` at a node key of `m` its body has, the allocation sites number as the
+body's canonical ones. -/
+theorem allocCanonB_sound {num : P.Site → Nat} {base : Nat} {bodies : List Code} {bodyOf : Code → Code}
+    {F : FFlow P} (h : allocCanonB num base bodies bodyOf F = true) {m : Code} {c : Nat} {fc : FCode P}
+    (hfc : F.at m c = some fc) {kx : NodeKey} (hk : kx ∈ m.2) (hb : kx ∈ (bodyOf m).2) :
+    (fc.allocAt kx).obj.map num = some (canonSite base bodies (bodyOf m) kx false) ∧
+      (fc.allocAt kx).arr.map num = some (canonSite base bodies (bodyOf m) kx true) := by
+  obtain ⟨l, hl, hcl⟩ := FFlow.at_mem hfc
+  have h₁ := List.all_eq_true.mp (List.all_eq_true.mp (List.all_eq_true.mp h _ hl) _ hcl) kx hk
+  simp only [Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_true, beq_iff_eq] at h₁
+  rcases h₁ with hn | h₁
+  · exact absurd hb (by simpa using hn)
+  · exact h₁
+
+/-- **Two codes with one body allocate at the same sites** (proved): at
+every node key both have and their common body has, their proposals'
+allocation sites number alike. -/
+theorem allocCanon_same {num : P.Site → Nat} {base : Nat} {bodies : List Code} {bodyOf : Code → Code}
+    {F : FFlow P} (h : allocCanonB num base bodies bodyOf F = true) {m₁ m₂ : Code} (hb : bodyOf m₁ = bodyOf m₂)
+    {c₁ c₂ : Nat} {f₁ f₂ : FCode P} (h₁ : F.at m₁ c₁ = some f₁) (h₂ : F.at m₂ c₂ = some f₂) {kx : NodeKey}
+    (hk₁ : kx ∈ m₁.2) (hk₂ : kx ∈ m₂.2) (hkb : kx ∈ (bodyOf m₁).2) :
+    (f₁.allocAt kx).obj.map num = (f₂.allocAt kx).obj.map num ∧
+      (f₁.allocAt kx).arr.map num = (f₂.allocAt kx).arr.map num := by
+  have a₁ := allocCanonB_sound h h₁ hk₁ hkb
+  have a₂ := allocCanonB_sound h h₂ hk₂ (hb ▸ hkb)
+  rw [hb] at a₁
+  exact ⟨a₁.1.trans a₂.1.symm, a₁.2.trans a₂.2.symm⟩
+
+/-! ## A protocol at least another, at every part of a universe -/
+
+/-- Every kind a location may have, and none. -/
+def allKinds : List (Option Verification.Kind) :=
+  none :: [Verification.Kind.field, .cell, .elem, .spine, .identity].map some
+
+theorem mem_allKinds (k : Option Verification.Kind) : k ∈ allKinds := by
+  rcases k with _ | k
+  · simp [allKinds]
+  · cases k <;> simp [allKinds]
+
+/-- **The parts at a universe of sites**: each site of `U`, each kind, the
+key `none` (`NoKeys`). -/
+def partsU (U : Sites P) : List (Part P) := U.flatMap fun s => allKinds.map fun k => ⟨s, k, none⟩
+
+theorem mem_partsU {U : Sites P} {p : Part P} (hs : p.site ∈ U) (hk : p.key = none) : p ∈ partsU U := by
+  obtain ⟨s, k, key⟩ := p
+  simp only at hs hk; subst hk
+  exact List.mem_flatMap.mpr ⟨s, hs, List.mem_map.mpr ⟨k, mem_allKinds k, rfl⟩⟩
+
+/-- **A protocol at least another at a universe**, decided (the draft's
+check of the wire's $`\Psi_C`$): at every part of `partsU U`, `Ψ` is at most
+`Ψ'`. -/
+def protocolAtLeastB (U : Sites P) (Ψ Ψ' : Protocol P) : Bool := (partsU U).all fun p => (Ψ p).le (Ψ' p)
+
+/-- **The check is sound** (proved): at every part whose site is in `U` and
+whose key is `none`, `Ψ` is at most `Ψ'`. -/
+theorem protocolAtLeastB_sound {U : Sites P} {Ψ Ψ' : Protocol P} (h : protocolAtLeastB U Ψ Ψ' = true)
+    {p : Part P} (hs : p.site ∈ U) (hk : p.key = none) : (Ψ p).le (Ψ' p) = true :=
+  List.all_eq_true.mp h p (mem_partsU hs hk)
+
 end Verification.TolerantFrames.ReadOnly

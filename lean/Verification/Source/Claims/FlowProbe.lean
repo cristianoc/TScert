@@ -212,8 +212,8 @@ structure ComponentCodes (ofC : ComponentTag → Bool) where
   modCodes : List (SolveCode (probePackage ofC))
   cs : List (SolveCode (probePackage ofC))
 
-def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entryNames : List String) :
-    ComponentCodes ofC :=
+def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entryNames : List String)
+    (body : Code → Code := id) : ComponentCodes ofC :=
   let P := probePackage ofC
   let mods := mods.filter fun g => P.ofC g.comp
   let closed := closable mods
@@ -241,11 +241,13 @@ def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entr
   let cs : List (SolveCode P) := modCodes ++ hostCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
     ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base'), entryCx, fun _ => alloc (i + base'), false⟩
   -- each node's allocation sites: one object site and one array site per
-  -- continuation and handler of a code, numbered past the codes' sites
-  let offs := (cs.map fun c => c.code.2.length).foldl (fun (acc : List Nat) n => acc ++ [acc.getLast?.getD 0 + n]) [0]
+  -- continuation and handler of a code's body (`body`, a realized code's
+  -- its request's), numbered past the codes' sites (`canonSite` at the
+  -- base `3 * cs.length` over the bodies)
+  let offs := (cs.map fun c => (body c.code).2.length).foldl (fun (acc : List Nat) n => acc ++ [acc.getLast?.getD 0 + n]) [0]
   let cs : List (SolveCode P) := cs.zipIdx.map fun (c, i) =>
     -- (each continuation and handler's first node, read once per code)
-    let first : Std.HashMap NodeKey Nat := c.code.2.zipIdx.foldl
+    let first : Std.HashMap NodeKey Nat := (body c.code).2.zipIdx.foldl
       (fun m (kx, l) => if m.contains kx then m else m.insert kx l) {}
     { c with allocAt := fun kx => match first[kx]? with
       | some l => let k := 3 * cs.length + 2 * (offs.getD i 0 + l); ⟨some k, some (k + 1)⟩

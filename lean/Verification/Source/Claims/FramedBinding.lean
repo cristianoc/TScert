@@ -1,5 +1,6 @@
 import Verification.Source.Claims.FramedSpec
 import Verification.Paper.TolerantFrames.ReadOnlyBinding
+import Verification.Source.ComponentWire
 
 /-! # The binding checks of a framed plan, at its request
 
@@ -16,7 +17,22 @@ request:
   each label of the request's program, the same allocation sites at each
   of its nodes' continuations and handlers, and the same return set, so
   `Fits`, `Provenance` and the frame check read the same proposal in
-  either code. -/
+  either code.
+- **The component** (`compB`, `compB_sound`): the request's tag, which the
+  lowering assigns (`componentAt` at its name), is `C`, so the claim's
+  frames run `C`'s code.
+- **One site per body allocation** (`bodyOf`, `allocB`, `allocB_realized`):
+  a realized code's body is its request's code, every other code its own;
+  the flow allocates at `some` sites (`allocSomeB`) numbered as the
+  canonical sites of the body's allocation occurrences (`allocCanonB`), so
+  the realized code and its request's allocate at the same sites at every
+  node key of the request's program.
+- **The client obligation is the source's** (`clientsB`, `clientsB_sound`):
+  each `@clients` row of the component's exported types states class keys
+  only (`clientsByKindB`, the restriction "@clients by kind"), and the
+  plan's $`\Theta_C`$ is, at every part the history reads (a site of the
+  flow, the key `none`), the join of the rows' changes at the part's kind
+  (`rowsTheta`), a row read-only where it states none. -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
@@ -47,5 +63,98 @@ theorem realizedFlowB_sound {P : Package} [DecidableEq P.Site] {F : FFlow P} {r 
         π₁.vfn l = π₂.vfn l ∧ π₁.out l = π₂.out l :=
   agreeB_sound h h₁
 
+/-- **The component check** (`compB`): the request's tag, which the lowering
+assigns from the request's place (`Components.componentAt`), is `C`. -/
+def compB (C : Nat) (r : SourceRequest σ ι) : Bool := r.comp == some C
+
+/-- **The component check is sound** (proved): the claim's frames, tagged
+with the request's tag, run `C`'s code. -/
+theorem compB_sound {F : TolerantFrames.ReadOnly.Family} {C : Nat} {r : SourceRequest σ ι} (h : compB C r = true) :
+    (F.at C).ofC r.comp = true := by
+  simp only [compB, beq_iff_eq] at h
+  simp [Family.at, Family.ofC, Family.Runs, h, F.refl]
+
+/-- **The body of a code** (the draft, "Realization"): the request's code
+for its realized code, every other code itself. -/
+def bodyOf (r : SourceRequest σ ι) (m : Code) : Code := if m = realizedCode r then requestCode r else m
+
+/-- The realized code is not the request's: it has one node more. -/
+theorem requestCode_ne_realized (r : SourceRequest σ ι) : requestCode r ≠ realizedCode r := by
+  intro h
+  have := congrArg (fun m : Code => m.1.length) h
+  simp [requestCode, realizedCode] at this
+
+theorem bodyOf_realized (r : SourceRequest σ ι) : bodyOf r (realizedCode r) = requestCode r := by
+  simp [bodyOf]
+
+theorem bodyOf_request (r : SourceRequest σ ι) : bodyOf r (requestCode r) = requestCode r := by
+  simp [bodyOf, requestCode_ne_realized]
+
+/-- **The allocation sites check** (`allocB`): sites, and the canonical
+ones of the bodies by the sites' numbers `num` (for a numbered family's
+component, the number a site is). -/
+def allocB {P : Package} (num : P.Site → Nat) (F : FFlow P) (r : SourceRequest σ ι) (base : Nat)
+    (bodies : List Code) : Bool :=
+  allocSomeB F && allocCanonB num base bodies (bodyOf r) F
+
+/-- **The realized code and its request's allocate at the same sites**
+(proved, `allocCanon_same`): at every node key of the request's program,
+at any contexts of the two codes. -/
+theorem allocB_realized {P : Package} {num : P.Site → Nat} (hnum : ∀ a b, num a = num b → a = b) {F : FFlow P}
+    {r : SourceRequest σ ι} {base : Nat} {bodies : List Code} (h : allocB num F r base bodies = true) {c₁ c₂ : Nat}
+    {f₁ f₂ : FCode P}
+    (h₁ : F.at (realizedCode r) c₁ = some f₁) (h₂ : F.at (requestCode r) c₂ = some f₂) {kx : NodeKey}
+    (hk : kx ∈ (requestCode r).2) :
+    f₁.allocAt kx = f₂.allocAt kx := by
+  simp only [allocB, Bool.and_eq_true] at h
+  have hk₁ : kx ∈ (realizedCode r).2 := by
+    simp only [requestCode, realizedCode] at hk ⊢
+    exact List.mem_append_left _ hk
+  have hs := allocCanon_same h.2 ((bodyOf_realized r).trans (bodyOf_request r).symm) h₁ h₂ hk₁ hk
+    (by rw [bodyOf_realized]; exact hk)
+  have ho := Option.map_injective hnum hs.1
+  have ha := Option.map_injective hnum hs.2
+  cases e₁ : f₁.allocAt kx; cases e₂ : f₂.allocAt kx
+  rw [e₁, e₂] at ho ha
+  simp only at ho ha
+  rw [ho, ha]
+
 end
+
+section clients
+variable {P : Package}
+
+/-- **The client obligation the rows state**, by kind: at a part, the join
+of each stated row's change at a class region whose classes the part's
+kind has; `any` at a region of another form, which `clientsByKindB`
+refuses; `keep` where no row states one. -/
+def rowsTheta (rows : List ComponentWire.Clients) : Protocol P := fun p =>
+  rows.foldl (fun δ row => if row.stated then row.frame.foldl (fun δ e => match e.1 with
+      | .cls c => if (roleKinds c.roles).contains p.kind then δ.max e.2 else δ
+      | _ => .any) δ else δ) .keep
+
+/-- **The rows state class keys only** (the restriction "@clients by
+kind"), decided. -/
+def clientsByKindB (rows : List ComponentWire.Clients) : Bool :=
+  rows.all fun row => !row.stated || row.frame.all fun e => match e.1 with
+    | .cls _ => true
+    | _ => false
+
+/-- **The plan's client obligation is the rows'**, decided: the rows state
+class keys only, and at every part of the flow's sites `U` at the key
+`none`, `Θ` is `rowsTheta`. -/
+def clientsB (U : Sites P) (Θ : Protocol P) (rows : List ComponentWire.Clients) : Bool :=
+  clientsByKindB rows && (partsU U).all fun p => decide (Θ p = rowsTheta rows p)
+
+/-- **The client check is sound** (proved): the rows state class keys only,
+and `Θ` is the rows' obligation at every part whose site is in `U` and
+whose key is `none`, every part a reached history's location has
+(`sites_in_flow`, `reached_key`). -/
+theorem clientsB_sound {U : Sites P} {Θ : Protocol P} {rows : List ComponentWire.Clients}
+    (h : clientsB U Θ rows = true) :
+    clientsByKindB rows = true ∧ ∀ p : Part P, p.site ∈ U → p.key = none → Θ p = rowsTheta rows p := by
+  simp only [clientsB, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1, fun p hs hk => h.2 p (mem_partsU hs hk)⟩
+
+end clients
 end Verification.SourceClaimJson

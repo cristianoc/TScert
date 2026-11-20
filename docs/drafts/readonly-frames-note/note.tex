@@ -820,26 +820,25 @@ realm (\code{[[Array.prototype]]}), so the module imports no value but
 these; the graph of the names the module functions read is acyclic; and
 every \code{@clients} row of an exported type states a change per class
 only. A component that fails a gate has no framed plan
-\status{Lean: \lean{PreparedFile.framedVerdict} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}); \lean{framedRestriction} (acyclic names, \lean{closable}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{classEntry}). The code runs the first two once per refused group and \lean{framedRestriction} once per member, in \lean{FilePlans.framedPlan}}.
+\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (acyclic names, \lean{closable}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}}.
 \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
-the entries and $\cC$'s refused units reach by the names their bodies
-read, each module function's code and the closures it creates, and the
+of $\cC$'s module, each module function's code and the closures it creates, and the
 natives' step models. The solver proposes a flow of $M_\cC$
 (Section~\ref{sec:flow}, step~(1)); the check decides it (step~(2),
 Theorem~\ref{thm:check}) and its marks (step~(3)). The initialization of
 $\cC$ allocates each module function's closure after those it names,
 then the array of the entries
-\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}; the initialization, \lean{componentInit}. The code plans the module functions once per refused group, solves the flow once per member in \lean{FilePlans.framedPlan}, and runs the checks once per unit in \lean{FilePlans.framedRefusal}, over the flow with the unit's request code added}.
+\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}; the initialization, \lean{componentInit}, decided by \lean{initB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), the plan carrying their refusal}.
 \item[(A3) Charges] The charged writes of each code of $M_\cC$ at each
 context, $\mathrm{Ch}(\{m\})$, the capture sites $\mathit{Cap}$, the
 closure $\overline{\mathit{Cap}\cup O}$ and the protocol $\Psi_\cC$
 (Section~\ref{sec:flowro}, ``Charges''); the client row $\Theta_\cC$,
 the join of the \code{@clients} rows per kind
-\status{Lean: \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}; \lean{clientsProtocol}. The code evaluates \lean{componentProtocol} inside \lean{framedSupportsAt}, at each support, context and node it checks, and computes each closure by iteration (\lean{capClose}), with no run of its check \lean{capClosedB}}.
+\status{Lean: \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, built once per file as \lean{componentIndex} and tabled at the flow's sites (\lean{protocolParts}); \lean{rowsTheta}. The wire states $\Psi_\cC$ and $\Theta_\cC$, checked per unit by \lean{protocolAtLeastB} and \lean{clientsB}; the code computes each closure by iteration (\lean{capClose}), with no run of its check \lean{capClosedB}}.
 \item[(A4) Binding checks that read no unit] The flow holds a proposal at
 context $0$ for each module function's code, and every allocation site
 of every code at every context is a site
-\status{Lean: \lean{codesCoverB}, \lean{allocSomeB}. The code runs them once per unit, in \lean{FilePlans.framedRefusal}}.
+\status{Lean: \lean{codesCoverB}, \lean{allocSomeB}, \lean{allocCanonB} (run as \lean{allocCanonAtB}, \lean{allocCanonAtB\_eq}) at the bodies \lean{moduleBody}; the checks (S), (K) and (O), \lean{componentFrameDiags}. The code runs them once per file, in \lean{componentBindingRefusal}}.
 \end{description}
 
 \paragraph{Per unit.} For each module function $f$ of $\cC$ whose
@@ -850,7 +849,7 @@ behind the receiver's prologue):
 some context of $m$, its callee set $S_f$ holds $\circ$, or some code of
 $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. A unit with
 no framed call node has no framed plan
-\status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt}, \lean{segCodes}, \lean{reachesOut}}.
+\status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt}, \lean{segCodes}, \lean{reachesOut}. The code forms a framed plan only where a framed node's callee names no signature at some context (\lean{outsideCalleeAt})}.
 \item[(B2) Kept facts] At each framed node $c$: its reach $L(c)$, its
 depth charges $W_c$ and its protocol $\Psi_c=\Psi_\cC\sqcup\Theta_\cC\sqcup
 W_c$ (Section~\ref{sec:flowro}), and $\Phi$, the callee's stated effect
@@ -863,24 +862,25 @@ when each location it reads is of a local site that $\Psi_c$ keeps (a
 local site outside $L(c)$ and outside $\overline{\mathit{Cap}\cup O}$
 where $\Theta_\cC$ keeps it), or changes, under $\Phi$ joined with
 $\Psi_c$, only within what the fact allows
-\status{Lean: \lean{callReach}, \lean{depthCharges}, \lean{callEffectAt}, \lean{framedSupportsAt}, \lean{frameCheckAt}, \lean{SinglePass.supportedIn}; the producer's candidates, the supports of the facts at each framed node's entry observed in the walk framing the nodes before it, \lean{FilePlans.framedSupports}. The code reads one effect, \lean{callEffectAt}'s, at both exits of the node, and reads no region as protected (\lean{frameCheckAt}'s last argument false)}.
+\status{Lean: \lean{callReach} over the call sets of every node of $c$'s key at every context, \lean{depthCharges}, \lean{callEffectAt}, \lean{framedSupportsAt}, \lean{frameCheckAt}, \lean{SinglePass.supportedIn}; the producer's candidates, the supports of the facts at each framed node's entry observed in the walk framing the nodes before it, \lean{FilePlans.framedSupports}. The code reads one effect, \lean{callEffectAt}'s, at both exits of the node, and reads no region as protected (\lean{frameCheckAt}'s last argument false)}.
 \item[(B3) The framed walk] $f$'s graph is walked as the ordinary pass
 walks it, every framed node's exits reading the store after its step with
 the facts it keeps added, and settled as a member's run is: a candidate an
 edge lacks is left out at its head, and the walk is run again
 \status{Lean: \lean{FilePlans.passMemberGraph} at the framed nodes, \lean{SinglePass.framedAt}, \lean{SinglePass.framedKept}, \lean{SinglePass.keptStep}, \lean{keptDone}; settled in at most 12 runs, \lean{FilePlans.dropCandidates}}.
 \item[(B4) The plan document and its decoding] The document states the
-component, its entries, and each framed node with the supports it keeps.
+component, its entries, $\Theta_\cC$ per kind, $\Psi_\cC$ per site and
+kind, and each framed node with the supports it keeps.
 The decoder reads the flow of (A2), $f$'s request code beside its
 realized code with the realized code's proposals, and refuses a document
-with another field, another component or entries, framed nodes other than
+with another field, other entries, framed nodes other than
 (B1)'s, or a support the check of (B2) fails. The binding checks that read
-$f$: the request's code has a proposal at context $0$; at the realized
+$f$: its tag is $\cC$; the request's code has a proposal at context $0$; at the realized
 code's entry every slot holds what outside code may supply and the returns
 lie in $O$; its slots name signatures only at the sibling slots and the
 closure's own slot; and the realized code's proposals at body labels are
 the request's
-\status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; \lean{codesCoverB} at \lean{requestCode}, \lean{FFlow.entryB}, \lean{entryFnB}, \lean{realizedFlowB}. The producer forms the document after (B2) and (B3)'s observation, the decoder checks it, and \lean{FilePlans.framedRefusal} then runs the binding checks, (B1) and (B2) again and the walk (B3)}.
+\status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; \lean{codesCoverB} at \lean{requestCode}, \lean{FFlow.entryB}, \lean{compB}, \lean{entryFnB}, \lean{realizedFlowB}, \lean{clientsB}, \lean{protocolAtLeastB}, \lean{readOnlyB}. The producer forms the document after (B2) and (B3)'s observation, the decoder checks it, and \lean{FilePlans.framedRefusal} then runs the binding checks, (B1) and (B2) again and the walk (B3)}.
 \item[(B5) The verdict] $f$ is accepted under the client obligation of
 $\cC$ when every check of (A1)--(B4) passes and the framed walk accepts;
 otherwise the verdict is its ordinary plan's

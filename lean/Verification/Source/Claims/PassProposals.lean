@@ -535,7 +535,7 @@ def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
         hash (reprStr r.ensures), hash (reprStr r.stated), hash (reprStr r.promise),
         hash (match p with
           | .graph .. => ""
-          | .framed _ _ _ spec => (framedDocument spec.C spec.entries spec.framed).compress)].foldl mixHash 11
+          | .framed _ _ _ spec => (framedDocument spec.C spec.entries spec.theta spec.psi spec.framed).compress)].foldl mixHash 11
     | some (.error e) => mixHash (hash (reprStr unit)) (hash e)
     | none => hash (reprStr unit)
   mixHash (hash (reprStr read)) (members.foldl mixHash (hash proposalDepth))

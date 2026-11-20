@@ -11,6 +11,7 @@ import Verification.Source.Claims.Preparation
 -- Claims/Plans.lean owns the exhaustive certification boundary and frozen plans.
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.FramedBinding
+import Verification.Source.Claims.FramedPassChecks
 -- Claims/Extraction.lean coordinates source units and reconstructs graph requests.
 import Verification.Source.Claims.Extraction
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
@@ -862,40 +863,55 @@ def firstLine (t : String) : String := (t.splitOn "\n").headD t
 
 open Verification.TolerantFrames.ReadOnly in
 /-- **A framed plan's check by the pass** (the draft, "What the pass
-checks"): the binding checks over its flow (`FFlow.check`, `marksB`, the
-entry's start `entryB` and signatures `entryFnB`, at the sibling slots and
-the closure's own, at the realized code's prologue, `codesCoverB` over the component's codes and the request's code,
-`allocSomeB`, `realizedFlowB`); its framed call nodes, those of the realized
-code the flow frames (`framedCallNodes`); at each, every support it keeps
-passing the frame's check at the call's protocol and the callee's stated
-effect (`framedSupportsAt`); then its main graph walked with those nodes
-framed (`passMemberGraph` at the request's graph plan), settled as a
-member's run is (the candidates an edge lacks left out). Its text is the
-first that fails, and otherwise the obligation the framed claim still
-needs: `FramedObligations.reached`, the framed returns at the executions
-the claim is about (`ret_reached`), which no check establishes. A framed
-plan is never accepted here. -/
+checks"): the binding checks that read the component alone, evaluated
+once per component (`componentBindingRefusal`: `FFlow.check`, `marksB`,
+`codesCoverB`, `allocB`, `initB`, (S), (K) and (O)), its refusal carried by
+the plan; then those that read the request, in order: the entry's start
+`entryB`, the request's tag `compB`, the request's code covered
+`codesCoverB`, the entry's signatures `entryFnB` at the sibling slots and
+the closure's own, `realizedFlowB`, the wire's $`\Theta_C`$ the
+`@clients` rows' by kind `clientsB` and the wire's $`\Psi_C`$ at least
+the component's protocol as defined `protocolAtLeastB`, both at the flow's
+sites, and the read-only types `readOnlyB`; its framed call nodes, those
+of the realized code the flow frames (`framedCallNodes`); at each, every
+support it keeps passing the frame's check at the call's protocol, from
+the wire's $`\Psi_C`$ and $`\Theta_C`$, and the callee's stated effect
+(`framedSupportsAt`); then its main graph walked with those nodes framed
+(`passMemberGraph` at the request's graph plan), settled as a member's
+run is (the candidates an edge lacks left out). Its text is the first that
+fails, and otherwise the obligation the framed claim still needs:
+`FramedObligations.reached`, the framed returns at the executions the
+claim is about (`ret_reached`), which no check establishes. A framed plan
+is never accepted here. -/
 def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
     (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : String := Id.run do
+  if let some w := spec.componentRefusal then return w
   let F := spec.checked
   let m := realizedCode r
   let entry := m.1.length - 1
   let c0 := capSlot spec.arity false 0
   -- (the sibling slots, then the closure's own slot)
   let sib := (List.range (r.siblings.length + 1)).map (c0 + ·)
-  let checks : List (String × Bool) := [
-    ("its flow (FFlow.check)", F.check), ("its marks (marksB)", F.marksB),
-    ("its entry's start (entryB)", F.entryB m entry),
-    ("its codes covered (codesCoverB)", codesCoverB F (spec.codes ++ [requestCode r])),
-    ("its allocation sites (allocSomeB)", allocSomeB F),
-    ("its entry's signatures (entryFnB)", entryFnB F m entry sib),
-    ("its realized code's proposals (realizedFlowB)", realizedFlowB F r)]
-  if let some (w, _) := checks.find? (!·.2) then
-    -- (the entry's slots naming a signature, at each context)
-    let named := ((F.at m entryCx).map fun c =>
-      (List.range (c.node entry).fn.size).filter fun j => ((c.node entry).fnAt j).isSome).getD []
-    return s!"framed plan: the binding check of {w} fails (the entry's slots naming a signature {named}, its sibling slots {sib})"
+  let U := flowSites F
+  let ΨC : Protocol (markedPackage spec.ofC spec.marks) := protocolOfParts id (partsIndex spec.psi)
+  let Θ : Protocol (markedPackage spec.ofC spec.marks) := protocolOfKinds spec.theta
+  let checks : List (String × (Unit → Bool) × (Unit → String)) := [
+    ("its entry's start (entryB)", fun _ => F.entryB m entry, fun _ => ""),
+    ("its component (compB)", fun _ => compB spec.C r,
+      fun _ => s!" (the request's tag {r.comp}, the plan's component {spec.C})"),
+    ("its request's code covered (codesCoverB)", fun _ => codesCoverB F [requestCode r], fun _ => ""),
+    ("its entry's signatures (entryFnB)", fun _ => entryFnB F m entry sib, fun _ =>
+      -- (the entry's slots naming a signature, at each context)
+      let named := ((F.at m entryCx).map fun c =>
+        (List.range (c.node entry).fn.size).filter fun j => ((c.node entry).fnAt j).isSome).getD []
+      s!" (the entry's slots naming a signature {named}, its sibling slots {sib})"),
+    ("its realized code's proposals (realizedFlowB)", fun _ => realizedFlowB F r, fun _ => ""),
+    ("its client obligation (clientsB)", fun _ => clientsB U Θ (componentRows spec.family spec.C), fun _ => ""),
+    ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (protocolOfParts id (partsIndex spec.psiDef)) ΨC, fun _ => ""),
+    ("its read-only types (readOnlyB)", fun _ => readOnlyB spec.family spec.C name r.inputs spec.readOnly, fun _ => "")]
+  if let some (w, _, detail) := checks.find? (!·.2.1 ()) then
+    return s!"framed plan: the binding check of {w} fails{detail ()}"
   let nodes := framedCallNodes F spec.host m
   if nodes != spec.framed.map (·.1) then
     return s!"framed plan: its framed call nodes {spec.framed.map (·.1)} are not the flow's {nodes}"
@@ -903,7 +919,7 @@ def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos 
   for (l, Ss) in spec.framed do
     let some Φ := (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
       | return s!"framed plan: its framed call node {l} has no stated effect of its callee"
-    let kept := framedSupportsAt F spec.lay spec.host (clientsProtocol spec.clients) m l Φ Ss
+    let kept := framedSupportsAt F spec.lay spec.host ΨC Θ m l Φ Ss
     if kept.length != Ss.length then
       return s!"framed plan: at its framed call node {l}, {Ss.length - kept.length} of the supports it keeps fail the frame's check"
   let mut g := f.withPlan i (.graph name pos r)

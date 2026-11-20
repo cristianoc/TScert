@@ -22,9 +22,9 @@ otherwise (`markedPackage`, `remark`). A framed plan reads it twice:
   family with one component $`C`$ (`oneComponent`, each site of `C` with
   the mark the flow gives it), its sites renamed (`FFlow.mapSites`).
 
-The client obligation $`\Theta_C`$ (`clientsProtocol`) is the join over
-the component's exported types of each `@clients` row's change per kind,
-read at its class entries. -/
+The wire states the client obligation $`\Theta_C`$ by kind
+(`protocolOfKinds`) and the component's protocol $`\Psi_C`$ by numbered
+site and kind (`protocolOfParts`). -/
 
 namespace Verification.SourceClaimJson
 open Lean Verification.TolerantFrames.ReadOnly ControlFlow Footprints
@@ -93,26 +93,46 @@ def oneComponent (C : Nat) (mark : Nat → Mark) : NumberedFamily where
 def oneComponent.site (C : Nat) (mark : Nat → Mark) (s : Nat) : ((oneComponent C mark).family.at C).Site :=
   ⟨s, ⟨C, rfl, rfl⟩⟩
 
-/-! ## The client obligation -/
+/-! ## Protocols on the wire -/
 
-/-- **The client obligation of a component's `@clients` rows**, read at
-their class entries (the draft, `clientsB`): at a part, the join of each
-entry's change whose class may hold the part's contents: a field, cell or
-element location's value; a spine location's array or view length; every
-category at a part of no kind or an identity. -/
-def clientsProtocol {P : TolerantFrames.ReadOnly.Package} (rows : List Footprint) : Protocol P := fun p =>
-  let Φ := rows.flatten
-  match p.kind with
-  | some .field | some .cell | some .elem => Footprint.changeAt Φ .value
-  | some .spine => (Footprint.changeAt Φ .array).max (Footprint.changeAt Φ .view)
-  | _ => ((Footprint.changeAt Φ .value).max (Footprint.changeAt Φ .array)).max (Footprint.changeAt Φ .view)
+/-- A kind of location on the wire: its name, `null` for none. -/
+def kindNameJ : Option Verification.Kind → Json
+  | none => .null
+  | some .field => "field" | some .cell => "cell" | some .elem => "elem" | some .spine => "spine"
+  | some .identity => "identity"
 
-/-- A `@clients` entry is a class entry: its region names locations by
-their class alone. -/
-def classEntry (e : Region × Change) : Bool :=
-  match e.1 with
-  | .cls _ | .all => true
-  | _ => false
+def kindNameOf (j : Json) : Except String (Option Verification.Kind) := do
+  match j with
+  | .null => pure none
+  | .str "field" => pure (some .field) | .str "cell" => pure (some .cell) | .str "elem" => pure (some .elem)
+  | .str "spine" => pure (some .spine) | .str "identity" => pure (some .identity)
+  | _ => throw s!"{j.compress} is no kind of location"
+
+/-- **A protocol by kind**, as the wire states one: the change each listed
+kind has, `keep` at a kind it does not list. -/
+def protocolOfKinds {P : TolerantFrames.ReadOnly.Package} (tab : List (Option Verification.Kind × Change)) :
+    Protocol P := fun p =>
+  ((tab.find? fun e => decide (e.1 = p.kind)).map (·.2)).getD .keep
+
+/-- A kind of location's number, as an index's key reads it. -/
+def kindCode : Option Verification.Kind → Nat
+  | none => 0 | some .field => 1 | some .cell => 2 | some .elem => 3 | some .spine => 4
+  | some .identity => 5
+
+/-- **A protocol by numbered site and kind, indexed**: each listed part's
+change (the first listing of a part), by the part's site number and
+kind. -/
+def partsIndex (tab : List (Option Nat × Option Verification.Kind × Change)) :
+    Std.HashMap (Option Nat × Nat) Change :=
+  tab.foldl (fun m (s, k, c) => if m.contains (s, kindCode k) then m else m.insert (s, kindCode k) c) {}
+
+/-- **A protocol by numbered site and kind**, as the wire states one, read
+through its index (`partsIndex`): the change each listed part (a site's
+number, `none` outside storage, and a kind) has at every key, `keep` at a
+part it does not list. -/
+def protocolOfParts {P : TolerantFrames.ReadOnly.Package} (num : P.Site → Nat)
+    (idx : Std.HashMap (Option Nat × Nat) Change) : Protocol P := fun p =>
+  idx.getD (p.site.map num, kindCode p.kind) .keep
 
 /-! ## The framed calls and the supports they keep -/
 
@@ -132,6 +152,16 @@ code at the context `c`. -/
 def framedNodeAt (F : FFlow P) (host : Nat → Bool) (c : FCode P) (m : Code) (l : Nat) : Bool :=
   (callsAtNode F c m l).any fun (f, _, _) => reachesOut F (flowSites F) (segCodes F (flowSites F) host f) f
 
+/-- **A call of a value of outside code**: node `l` of code `m` calls a
+callee that is no slot naming a code's signature at the context `c` (a
+parameter's value, a callback, a computed callee), as the flow's
+signatures read it. -/
+def outsideCalleeAt (c : FCode P) (m : Code) (l : Nat) : Bool :=
+  match m.1[l]? with
+  | some (.invoke (.var j) _ _) => ((c.node l).fnAt j).isNone
+  | some (.invoke ..) => true
+  | _ => false
+
 /-- **The framed call nodes of a code**: its call nodes framed at some
 context of the code in the flow. -/
 def framedCallNodes (F : FFlow P) (host : Nat → Bool) (m : Code) : List Nat :=
@@ -140,25 +170,36 @@ def framedCallNodes (F : FFlow P) (host : Nat → Bool) (m : Code) : List Nat :=
 
 /-- **The supports a framed call keeps** (`probeFrames`'s check, decided):
 of the supports `Ss` over node `l`'s slots, those passing `frameCheckAt` at
-the call's protocol $`\Psi_c`$ (`componentProtocol` joined with the client
-obligation `Θ` and the depth charges of the call's reach) and the callee's
-effect `Φ`, at every context of code `m` and every node of the call's
-continuation and handler that may call outside code or makes a framed call
-(the node itself where none does). -/
-def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (host : Nat → Bool) (Θ : Protocol P)
+the call's protocol $`\Psi_c`$ (the component's protocol `ΨC` joined with
+the client obligation `Θ` and the depth charges of the call's reach) and
+the callee's effect `Φ`, at every context of code `m` and every node of the
+call's continuation and handler that may call outside code or makes a
+framed call (the node itself where none does). The call's reach $`L(c)`$
+is that of the call sets of every node sharing the call's continuation and
+handler, at every context: the proved check records a frame's node by its
+continuation and handler alone (`Fits.frameC`, `NodeOf`). -/
+def framedSupportsAt (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (host : Nat → Bool) (ΨC Θ : Protocol P)
     (m : Code) (l : Nat) (Φ : Footprint) (Ss : List Footprint) : List Footprint :=
   let top := flowSites F
   let kx := m.2[l]?
   let sharing := (List.range m.2.length).filter fun l' => m.2[l']? == kx
-  Ss.filter fun S => (F.ctxs m).all fun (_, c) =>
-    let required := sharing.filter fun l' => (c.node l').out || framedNodeAt F host c m l'
-    let (Sf, Sr, args) := (callsAtNode F c m l).head?.getD ([], [], [])
-    let seg := segCodes F top host Sf
-    let L := callReach F lay seg Sf Sr args
-    let Wc := depthCharges F seg L
-    let Ψ : Protocol P := fun p => ((componentProtocol F lay p).max (Θ p)).max (Wc p)
-    (if required.isEmpty then [l] else required).all fun l' =>
-      frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt noKeys (fun _ => false)
+  -- (the call sets of every node sharing the continuation and handler, at
+  -- every context, joined: callee, receiver and each argument position)
+  let sets := (F.ctxs m).flatMap fun (_, c) => sharing.flatMap fun l' => callsAtNode F c m l'
+  let Sf := sets.flatMap (·.1)
+  let Sr := sets.flatMap (·.2.1)
+  let width := (sets.map (·.2.2.length)).foldl max 0
+  let args := (List.range width).map fun i => sets.flatMap fun s => s.2.2.getD i []
+  let seg := segCodes F top host Sf
+  let L := callReach F lay seg Sf Sr args
+  let Wc := depthCharges F seg L
+  let Ψ : Protocol P := fun p => ((ΨC p).max (Θ p)).max (Wc p)
+  -- (at each context, the nodes the check reads)
+  let required := (F.ctxs m).map fun (_, c) =>
+    let req := sharing.filter fun l' => (c.node l').out || framedNodeAt F host c m l'
+    (c, if req.isEmpty then [l] else req)
+  Ss.filter fun S => required.all fun (c, req) => req.all fun l' =>
+    frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt noKeys (fun _ => false)
 
 /-- **A flow holding a second code with the proposals of a first** at each
 of its contexts: the request's code beside its realized code, whose nodes
@@ -168,10 +209,15 @@ def _root_.Verification.TolerantFrames.ReadOnly.FFlow.withCode (F : FFlow P) (m�
 end
 
 /-- **A framed plan's document** (the producer's inputs, the draft's
-plan on the wire): the component, its entries, and each framed call node
-with the supports its frame keeps. -/
-def framedDocument (C : Nat) (entries : List String) (framed : List (Nat × List Footprints.Footprint)) : Json :=
+plan on the wire): the component, its entries, the client obligation by
+kind and the component's protocol by numbered site and kind (each change
+but `keep`), and each framed call node with the supports its frame keeps. -/
+def framedDocument (C : Nat) (entries : List String) (theta : List (Option Verification.Kind × Change))
+    (psi : List (Option Nat × Option Verification.Kind × Change)) (framed : List (Nat × List Footprints.Footprint)) :
+    Json :=
   Json.mkObj [("component", toJson C), ("entries", toJson entries),
+    ("theta", Json.arr (theta.map fun (k, c) => Json.arr #[kindNameJ k, EffectCodec.changeJ c]).toArray),
+    ("protocol", Json.arr (psi.map fun (s, k, c) => Json.arr #[toJson s, kindNameJ k, EffectCodec.changeJ c]).toArray),
     ("framed", Json.arr (framed.map fun (l, Ss) => Json.mkObj [("node", toJson l),
       ("supports", Json.arr (Ss.map EffectCodec.frameJ).toArray)]).toArray)]
 

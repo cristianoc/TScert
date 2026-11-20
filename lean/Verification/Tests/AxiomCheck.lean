@@ -275,6 +275,7 @@ import Verification.Source.Claims.PassUnitWrapper
 import Verification.Source.Claims.FramedSpec
 import Verification.Source.Claims.FramedHistory
 import Verification.Source.Claims.FramedBinding
+import Verification.Source.Claims.FramedPassChecks
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.RegionInference
