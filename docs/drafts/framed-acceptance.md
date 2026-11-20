@@ -2538,11 +2538,14 @@ the flow's contexts of $`f`$'s code.
 segment. The check reads one bound at each framed node $`l`$
 (`FramedSpec.boundAt`, `callBound`):
 
-1. **A call of a function the client passes** (`clientCallee`: a request
-   checked at its entry, the callee an argument's own value,
+1. **A call of an argument's own value at an entry** (`clientCallee`: a
+   request checked at its entry, the callee an argument's own value,
    `calleeArgB`): the callee's stated effect $`\Phi`$, by the callback row
    of $`\Theta_C`$, "a function value outside code passes at a function
-   type meets that type" (`CallbacksWithin`). The frame's check reads
+   type meets that type" (`CallbacksWithin`). The argument may also be a
+   closure of $`C`$ that $`C`$'s own code passes to the entry (an exported
+   walker called by the component with an arrow of its own), which the
+   row covers too. The frame's check reads
    $`\Psi_c(l)`$ at a part that may lie in $`R_C`$ and $`\Phi`$ at one that
    may lie outside it (`frameCheckAt`).
 2. **Any other call, where no node of the flow may call outside code**
@@ -2598,9 +2601,17 @@ code is accepted: a template literal of an object lowers to an addition,
 which calls no code, and under Node the conversion calls the object's
 `toString` (`invalid-bounds-pattern-framed-template`). A verdict reading
 bound 2 at a node rests on the verdict of each module function holding a
-code of the node's $`\mathrm{seg}(c)`$ (`FramedComponent.segOwners`), on
-the verdict line's `depends`; a unit accepted under client trust is
-refused where a unit it depends on is refused (`verify-source.mts`).
+code the node's call runs (`FramedComponent.segOwners`, over `segRun`: a
+known call enters its signature's code, any other call each code whose
+token its callee's set holds, a native step model the codes its own nodes
+call), on the verdict line's `depends`; a code of the segment that is
+neither a native step model nor of a module function refuses the plan.
+The pipeline decides dependencies by what each unit reaches through them
+(`verify-source.mts`), so a cycle is decided together: a unit refused of
+its own, or with no verdict, refuses every unit reaching it, naming the
+dependency on a shortest path and that unit's refusal; otherwise a unit
+reaching one accepted under client trust is accepted under the client
+obligation, and one reaching none is verified.
 
 **Proof scope.** Bound 2's condition is the flow's, at every node: a
 component one of whose nodes may call outside code bounds each call of a
@@ -2611,19 +2622,23 @@ segment, which is not proved.
 
 ### What milestone 3 trusts
 
-The callback row ranges over the calls of functions the client passes
-(`clientCallee`). A call of a closure of $`C`$ that $`C`$'s own code
-passes is bounded by its segment's charges (bound 2) or by the top effect
-(bound 3), with no assumption about that closure.
+The callback row ranges over the calls whose callee is an argument's own
+value in a function checked at its entry (`clientCallee`), whoever passes
+it: outside code, or $`C`$'s own code calling the entry with a closure of
+its own. Any other call of a closure of $`C`$ (a function checked at the
+contexts of its known calls, or a callee read otherwise) is bounded by its
+segment's charges (bound 2) or by the top effect (bound 3), with no
+assumption about that closure.
 
 ### Tests
 
 | Case | Outcome | Shows |
 | --- | --- | --- |
-| `bounds-pattern-framed-inner-walker` (Example "A walker that is no entry") | gap: `walk` refused by its dependency on `countLines` | the visit's callee the arrow's token alone, bound 2 keeping the cursor; `countLines` refused at its call of `walk` (milestone 5) |
-| `bounds-pattern-framed-known-calls` | gap: `walk` refused by its dependency on `total` | the cursor its caller's, outside the visit's reach at the known call, kept by bound 2; exported, `walk` is refused at the visit (observed) |
+| `bounds-pattern-framed-inner-walker` (Example "A walker that is no entry") | gap: `walk` refused by its dependency on `countLines` | the visit's callee the arrow's token alone, bound 2 keeping the cursor; `countLines` refused at its call of `walk`, whose arrow writes the captured `stats` (cause not established; a caller whose arrow writes nothing is accepted) |
+| `bounds-pattern-framed-known-calls` | gap: `walk` refused by its dependency on `total` | the cursor its caller's, outside the visit's reach at the known call, kept by bound 2; exported, `walk` is refused at the visit (observed); `total` refused at its call of `walk`, its arrow writing the captured `seen` (cause not established) |
 | `invalid-bounds-pattern-framed-known-calls` | negative | the arrow moves the caller's cursor, charged at its site; `total([1, 2])` reads past the array (`NaN` under Node) |
-| `bounds-pattern-framed-arrow-exceeds` | gap: `walk` refused by its dependency on `countLines` | the arrow writes beyond its type's effect; bound 2 keeps the walker's array and cursor |
+| `bounds-pattern-framed-arrow-exceeds` | gap: `walk` refused by its dependency on `countLines` | the arrow writes beyond its type's effect; bound 2 keeps the walker's array and cursor; `countLines` refused at its call of `walk` |
+| `bounds-pattern-framed-made-visitor` | `walk` and `total` accepted under client trust | bound 2 at an arrow `mk` makes: `walk` rests on `mk`, verified, `total` on `walk` |
 | `invalid-bounds-pattern-framed-template` | negative | bound 2 at an arrow whose template literal lowers to an addition; `walk` refused by its dependency on `total`; `NaN` under Node |
 | `invalid-bounds-pattern-framed-construct` | negative | the arrow constructs a client's class: bound 3, the client's array may shrink; `NaN` under Node |
 | `bounds-pattern-framed-mixed-local` | `walk` accepted under client trust | a mixed segment, bound 3: the walker's own array and cursor lie in $`R_C`$, kept by the charges |

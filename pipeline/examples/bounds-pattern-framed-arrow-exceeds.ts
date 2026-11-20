@@ -5,7 +5,8 @@
 // arrow's write among them, and the walker's array and cursor lie outside
 // the visit's reach: walk's frame check keeps c.i < ys.length. The bound
 // reads the arrow's code as lowered, so walk's verdict rests on
-// countLines's, which is refused at its call of walk.
+// countLines's, which is refused at its call of walk, the arrow exceeding
+// its type's effect.
 type Visitor = (w: number) => Modifies<{ values: "keep"; spines: "any" }, void>;
 type Cursor = { i: number };
 

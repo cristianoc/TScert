@@ -1,7 +1,7 @@
 // The walker of bounds-pattern-framed-inner-walker, its visitor an arrow of
 // total constructing a client's class. The construction calls outside code,
-// so the visit's segment may run outside code; its callee is no function
-// the client passes, so the callback row does not bound it, and the visit
+// so the visit's segment may run outside code; its callee is no argument's
+// own value at an entry, so the callback row does not bound it, and the visit
 // is bounded by the top effect, which may shrink the client's array: the
 // read after the visit is refused. Run under Node, total([1, 2, 3], K) with
 // K's constructor popping the array reads past it (NaN,

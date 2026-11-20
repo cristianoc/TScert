@@ -1,7 +1,7 @@
 // A walker over an array it allocates, its visitor an arrow of total that
 // calls the client's function: the visit's segment runs the arrow, the
 // component's code, and the client's, outside code. Its callee is no
-// function the client passes, so the visit is bounded by the top effect
+// argument's own value at an entry, so the visit is bounded by the top effect
 // outside the component's region and by its charges inside it, where the
 // walker's array and cursor lie: c.i < ys.length is kept.
 type Visitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;

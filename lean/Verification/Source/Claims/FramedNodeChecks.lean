@@ -36,7 +36,7 @@ component's protocol at every part; and its request's node expressions are
 source terms (`sourceTermsB`).
 
 **The bound of a framed node's call** (`FramedSpec.boundAt`): at a call
-of a function the client passes, its type's stated effect, by **the
+of an argument's own value at an entry, its type's stated effect, by **the
 callback row** (`FramedSpec.CallbacksWithin`, the owner's decision of
 2026-11-19, a part of $`\Theta_C`$: such a call, from a reached state to
 its return, changes the heap within that effect); at any other call, where
@@ -152,9 +152,9 @@ theorem noOutB_sound {F : FFlow P} (h : noOutB F = true) :
   exact h _ hm _ hcs l hl
 
 /-- **The effect bounding a framed call**, from whether its callee is a
-function the client passes (`client`), whether no node of the flow may
+argument's own value at an entry (`client`), whether no node of the flow may
 call outside code (`noOut`) and the callee's stated effect (`eff`): the
-stated effect at a function the client passes; none, the segment's
+stated effect at an argument's own value at an entry; none, the segment's
 charges bounding it, where no node may call outside code; the top effect
 otherwise. -/
 def callBound (client noOut : Bool) (eff : Option Footprints.Footprint) : Option (Option Footprints.Footprint) :=
@@ -327,14 +327,15 @@ def protAt {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (r
     protRegionB (fun p => (componentProtocol F spec.lay p).max (nativeProtocol (nativeSites F spec.lay) p))
       (spec.copiesAt r) spec.arity spec.roPos (requestCode r) l q
 
-/-- **A call of a function the client passes**: at a request checked at
-its entry (no `inner`), a node whose callee is an argument's own value
-(`calleeArgB`), the value outside code passed at the parameter's type. -/
+/-- **A call of an argument's own value at an entry**: at a request
+checked at its entry (no `inner`), a node whose callee is an argument's
+own value (`calleeArgB`), the value its caller passed at the parameter's
+type: outside code, or `C`'s own code calling the entry. -/
 def clientCallee (r : SourceRequest σ ι) (l : Nat) : Bool :=
   !spec.inner && calleeArgB (spec.copiesAt r) 0 spec.arity (requestCode r) l
 
 /-- **The effect bounding a framed node's call** (the Read-only frames
-note, (B1)): at a call of a function the client passes (`clientCallee`),
+note, (B1)): at a call of an argument's own value at an entry (`clientCallee`),
 its type's stated effect (`eff`, the callback row of the client
 obligation); otherwise, where no node of the flow may call outside code
 (`noOutB`), none, the call's segment being bounded by its charges at every
@@ -376,8 +377,9 @@ def requestB (r : SourceRequest σ ι) (eff : Nat → Option Footprints.Footprin
 /-- **The callback row of the client obligation** (the owner's decision of
 2026-11-19, the draft "The callback's type"): a function value outside code
 passes to `C` at a function type meets that type, so a call at a framed
-node `l` of the request's code whose callee is a function the client
-passes (`clientCallee`) and whose type states the effect `Φ` (`eff`), from
+node `l` of the request's code whose callee is an argument's own value at
+an entry (`clientCallee`, the value its caller passed, outside code or
+`C`'s own) and whose type states the effect `Φ` (`eff`), from
 a reached state entering it to the state its evaluation returns to, its
 calls of `C` included, changes the heap within `Φ` at the node's slots. -/
 def CallbacksWithin (r : SourceRequest σ ι) (eff : Nat → Option Footprints.Footprint) : Prop :=
