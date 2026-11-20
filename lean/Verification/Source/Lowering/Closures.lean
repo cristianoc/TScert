@@ -77,7 +77,7 @@ state resume afterwards. -/
         if stmts.any (assignsStmt b.source.name) then
           if heldInCell b.source.name stmts then
             let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, contract)]])
-            pure { b with storage := .cell contract reference }
+            pure { b with storage := .cell contract reference, allocated := true, reachable := false }
           else pure { b with storage := .slot contract }
         else pure b
       let mut first ← recursive.body bodyExpr.span fc R bodyScope stmts

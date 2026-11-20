@@ -4639,6 +4639,11 @@ that may write every location but another module cell:
 every other cell and field is known by its contract alone, another module
 cell keeps its contents, and a member path through stable members keeps its
 entry (`module-cells-written-in-turn`).
+A constant holding an object literal keeps its fields' facts stated at a
+loop's head across a write of another object's field in the body, the
+other object an older constant's literal, rebound or not by a key-adding
+write ([no general frame rule](#no-general-frame-rule);
+`fresh-object-separation-older-fresh`).
 Where $`y`$ has
 no predicate, the write establishes no new contents and keeps the separated
 atoms all the same:
@@ -4836,10 +4841,28 @@ not. So the positive direction is proof-driven and the negative direction is
 total but for one timeless fact, the separation of two field locations: they
 differ whatever they hold. Allocation states it: a fresh object's locations
 differ from every field each record of a record-typed slot names
-(`contractFields`). The lowering restates, at each statement entry, the
-separation of a private cell the code allocated from the slots whose records'
-fields it was allocated after, or that were allocated after it
-([Source model](SOURCE-MODEL.md#current-content-assertions)); a cell a
+(`contractFields`). The lowering restates that freshness at each statement
+entry (`separationFacts`): a value allocated at a binding has its own
+locations apart from the fields the record of every slot bound before it
+named at the allocation. The value is a `let`'s private cell, a `for...of`
+loop's iterator, or a constant's fresh value: the result of a step whose
+rule states it apart (an object or array literal's allocation, or a call
+whose callee's contract states a fresh result, `call-fresh`), or of a form
+yielding one of its operands' values (`e as T`, a conditional) where each is
+fresh (`fresh-object-separation-operand`; negative, run under Node,
+`invalid-fresh-object-separation-cast-parameter`,
+`invalid-fresh-object-separation-conditional-parameter`). A code
+definition's call or construction states no fresh result, so
+`new K()` of a program's class and a factory's result are not fresh. Where the slot still holds
+its value of then (no assignment and no key-adding write rebinds it) the
+pair is of all the allocated value's own locations; where the slot may come
+to hold a value allocated later, which that allocation separates from the
+fields the allocated value's type names, the pair is of those fields: a slot
+a key-adding write rebinds to its copy, and any slot where the allocated
+value is no source value (a cell, an iterator), which no assignment gives to
+another slot. A slot that may come to hold the allocated value itself is no
+partner: a younger constant bound to it (`invalid-fresh-object-separation-younger-alias`,
+`invalid-fresh-object-separation-rebound-alias`, run under Node). A binding a
 closure captures was allocated before the closure's entry, which states no
 fact of that allocation, so its body states none.
 

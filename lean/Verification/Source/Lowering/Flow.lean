@@ -215,7 +215,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       let cells : List (ScopeBinding Tree) := (bindings.zip contracts).zipIdx.map
         fun (((pos, mutable, b), (stored, reference)), idx) =>
           { source := ⟨b.name, some pos⟩, storage := .early stored reference mutable,
-            apart := some ((contracts.take idx).reverse.map (·.2) ++ Γ) }
+            allocated := true, reachable := false, apart := some ((contracts.take idx).reverse.map (·.2) ++ Γ) }
       let inner := cells.reverse ++ scope
       let target ← successor next inner
       -- The cells, last first, then the marker, then the scope: each target
@@ -316,7 +316,8 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | [.arrs [⟨_, _, _, effect⟩] _] => PromiseCalls.ownOnly effect.schema.normal.frame
         | _ => false
       let apart : Option (List (Ty Tree)) := if fresh then some Γ else none
-      let binding : ScopeBinding Tree := { source := descriptor, fixed := some N, iterator := fresh, apart }
+      let binding : ScopeBinding Tree :=
+        { source := descriptor, fixed := some N, allocated := fresh, apart, reachable := false }
       let head ← successor next (binding :: scope)
       let mapping := (head.mapping.getD (List.range (scope.length+1))).map
         (fun i => if i == 0 then 0 else i+1)

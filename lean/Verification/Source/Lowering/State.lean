@@ -59,12 +59,17 @@ structure ScopeBinding (ι : Type) where
   /-- A module function's slot: its type is its own source signature, never a
   producer claim, and it is a value slot, so no assignment can reach it. -/
   fixed : Option (Ty ι) := none
-  /-- A `let`'s cell: the types of the slots below it when it was allocated,
-  whose records' fields its fresh location differs from. -/
+  /-- The binding's value is allocated at the binding: a `let`'s private
+  cell, a `for...of` loop's iterator, a constant whose initializer allocates
+  (`separationFacts`). -/
+  allocated : Bool := false
+  /-- The types of the slots below the binding when its value was allocated,
+  whose records' fields its fresh locations differ from. -/
   apart : Option (List (Ty ι)) := none
-  /-- A constant bound to an object or array it allocated: its fields are
-  fresh, so they differ from every older cell's location. -/
-  fresh : Bool := false
+  /-- Whether a source expression can read the binding's value. A cell's is
+  read through its field `value`, and an iterator's by no source name, so
+  neither becomes a source value. -/
+  reachable : Bool := true
   /-- A parameter: bound before the body runs, so before any cell the body
   allocates, and at the same time as an assigned parameter's cell. -/
   param : Bool := false
@@ -79,10 +84,6 @@ structure ScopeBinding (ι : Type) where
   moduleCell : Option String := none
   /-- An administrative value saved from a named member path. -/
   witness : Option (String × List PropKey) := none
-  /-- A `for...of` loop's iterator: a fresh object, every own location of
-  which differs from the fields the records of the slots below it named
-  when it was created (`apart`). -/
-  iterator : Bool := false
   deriving Repr
 
 @[nospecialize] def held (d : Descriptor) : ScopeBinding ι := { source := d }
@@ -582,6 +583,11 @@ def moduleOwnedCell (scope : List (ScopeBinding Tree)) (n : String) :
 it is a site (`growSites`). -/
 def growthHolders (span : Span) : Compiler (Option (List Holder)) :=
   readBuilt fun s => (s.grows.find? (·.span == span)).map (·.holders)
+
+/-- The bindings that hold the object of some key-adding write (`growSites`),
+each rebound to the write's copy. -/
+def rebindingHolders : Compiler (List Holder) :=
+  readBuilt fun s => s.grows.flatMap (·.holders)
 
 /-- Node allocation appends its claim and source-map slot at the same index. -/
 def appendNode (node : ControlFlow.Node) (claim : PointClaim Tree) : Compiler Target := ⟨fun s =>
