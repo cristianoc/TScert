@@ -762,12 +762,12 @@ at the mark exposed.
 \end{itemize}
 {\sloppy Two limits of the flow show in the frame probe. A fact about a field of
 outside storage, such as
-pretext's \code{prepared.widths}, fails in the probe for two reasons:
-the code's protocol, every part at the key $\kw{none}$, charges every
-outside field with the members' writes to other outside fields, and the
-code reads no crossing in as protected. At the keys of this section the
-members' writes to other keys are charges at other parts
-(Example~\ref{ex:rokey}).
+pretext's \code{prepared.widths}, fails in the probe
+because the code reads no crossing in as protected, so every part of
+outside storage meets the callee's effect as well as the protocol. The
+code's protocol is at the keys of this section: a member's write is
+charged at the key it writes, and writes to other keys are charges at
+other parts (Example~\ref{ex:rokey}).
 And at \code{stepPreparedLineGeometryFromStart}'s call of
 \code{walkPreparedComplexLines}, whose context's cursor slot holds $O$,
 the cursor facts fail: the call passes \code{undefined} for \code{onLine},
