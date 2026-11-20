@@ -1,9 +1,10 @@
 // P22's walker (bounds-pattern-unreachable-field) twice, under two
-// names, beside a module function both call. No module function of a
-// framed plan's component names another (docs/drafts/framed-acceptance.md,
-// "Restrictions"): each walker's capture of `total` is a linked capture,
-// so each walker's framed plan is refused at that gate, and its ordinary
-// plan is refused at the read after the visit.
+// names, beside a module function both call. The initialization creates
+// total's closure first, then each walker's, whose capture of total names
+// total's signature, the value of a creation naming the signature of its
+// code (docs/drafts/framed-acceptance.md, "Milestone 3"): total(xs) is a
+// known call, checked by total's specification, and each walker's framed
+// plan keeps the cursor facts at the visit.
 type Visitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
 type Cursor = { i: number };
 

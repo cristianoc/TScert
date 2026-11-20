@@ -2816,7 +2816,7 @@ at the visitor call, every fact read at the marks the flow gives:
 - the same walker passing the visitor a closure `setter(c)` returns, which
   writes `c.i`: the cursor's site is in the closure's capture slot, its
   field charged by the closure's write, and both facts fail.
-- `bounds-pattern-unreachable-handle-refused.ts`: `h` and its two array
+- `bounds-pattern-unreachable-handle.ts`: `h` and its two array
   objects are allocated at three nodes, each of its own site; `h`'s site
   is local, captured by no closure, and both length facts pass the
   frame's check; the checks and the marks hold at the marks the flow

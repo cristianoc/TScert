@@ -250,19 +250,20 @@ def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entr
     let seeds := (List.range (c0 + g.siblings.length)).map fun j =>
       if group.all fun g' => seedOf g' j == seedOf g j then seedOf g j else none
     ⟨g.code, g.ar, g.rest, g.siblings.length, g.code.1.length - 1, seeds, alloc i, true, tok i, entryCx,
-      fun _ => alloc i, group.any fun g' => entryNames.contains g'.name⟩
+      fun _ => alloc i, group.any fun g' => entryNames.contains g'.name, false⟩
   let hostCodes : List (SolveCode P) := hosts.zipIdx.map fun ((_, c, ar), i) =>
     ⟨c, ar, false, 0, 0, [], alloc (i + reps.length), true, tok (i + reps.length), entryCx,
-      fun _ => alloc (i + reps.length), false⟩
+      fun _ => alloc (i + reps.length), false, false⟩
   let base' := reps.length + hosts.length
   let cs : List (SolveCode P) := modCodes ++ hostCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
-    ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base'), entryCx, fun _ => alloc (i + base'), false⟩
+    { code := c, ar, rest, ncaps := n, start := s, seeds := [], alloc := alloc (i + base'), tok := tok (i + base'),
+      allocAt := fun _ => alloc (i + base'), lowered := true }
   -- (the initialization, a unit past the other codes)
   let base'' := base' + closures.length
   let cs : List (SolveCode P) := cs ++ match init with
     | some (c, realmNames) =>
       [⟨c, 0, false, 0, 0, realmNames.map hostSig, alloc base'', false, tok base'', entryCx, fun _ => alloc base'',
-        false⟩]
+        false, false⟩]
     | none => []
   -- each node's allocation sites: one object site and one array site per
   -- continuation and handler of a code's body (`body`, a realized code's
