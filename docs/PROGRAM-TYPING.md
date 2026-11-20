@@ -936,8 +936,17 @@ $`T^{*}:=\mathsf{Pack}(\tau)`$, the binder's values are exactly $`X`$'s:
 
 The lemma reads only the heap the program already holds; it allocates
 nothing. A declaration's packed parameter's argument at an application is
-its instance's value and lists (`packOf`), and a packed binder's lists are
-spelled with its packed name, `T#pack`.
+its instance's value and lists (`packOf`), in separate equation slots. A
+packed binder's lists are spelled with its packed name, `T#pack`.
+
+An internal base-constructor scheme can quantify the value and arguments
+separately. Each class owns its binder slots. Identity heritage shares the
+base's slots with the subclass. The constructor's code checks at every
+assignment of its slots. A written heritage argument supplies its value
+type to one slot and its array or tuple's argument lists to the other
+(`constructorTypeArguments`, `instancePack`). Code that forwards a value
+of the binder into its callback by spreading it requires the packed
+relationship (`callPacked`).
 
 ### Sorts and categories
 

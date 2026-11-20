@@ -853,6 +853,29 @@ control("forged fragment: an incompatible heritage type argument on super", asyn
     "a heritage type argument outside the base's bound", /the claimed type is not a checked constructor instance/);
 });
 
+control("forged fragment: reversed tuple positions on super", async (): Promise<void> => {
+  const file = "class-generic-inheritance-pack";
+  const artifacts = run(file);
+  honest(file, "init");
+  const ast = fragmentAst(artifacts);
+  let position: number | undefined;
+  visitAll(ast.init, (node) => {
+    if (node.k !== "new" || !isObject(node.callee) ||
+        node.callee.name !== "CallbackBase.[[class]]" || !Array.isArray(node.typeArgs)) return;
+    const argument = node.typeArgs[0];
+    if (!isObject(argument) || argument.k !== "tuple") return;
+    assert.equal(position, undefined);
+    assert.ok(Array.isArray(node.pos) && typeof node.pos[0] === "number");
+    assert.ok(Array.isArray(argument.required) && argument.required.length === 2);
+    position = node.pos[0];
+    argument.required = [argument.required[1], argument.required[0]];
+  });
+  assert.ok(position !== undefined);
+  refused(pass(forged(artifacts, "forged-super-tuple", ast)), "init",
+    "a tuple callback with the opposite heritage argument order",
+    new RegExp(`source expression obligation at \\[${position},.*no derivation of its node-typing claim`));
+});
+
 control("forged fragment: a false bound in a Boolean postcondition", async (): Promise<void> => {
   const artifacts = run("pretext-clause-postcondition");
   const ast = fragmentAst(artifacts);

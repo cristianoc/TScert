@@ -130,6 +130,8 @@ structure State where
   /-- `doc`'s packed parameters, by index (`packedParameters` of each
   declaration's expression): read at every reference, computed once. -/
   packings : Array (List Nat) := #[]
+  /-- Source binders with independent argument-list slots in internal constructor schemes. -/
+  constructorPacks : List String := []
   heads : Array Draft := #[]
   /-- `heads`' rows at no arguments, each instantiated when first read and
   kept while its head is unchanged (`EquationStore.graph`). -/
@@ -177,6 +179,12 @@ abbrev M := StateT State (Except String)
 for an index the document does not hold, as `doc[i]!`'s default expression
 has none. -/
 def packedOf (i : Nat) : M (List Nat) := return (← get).packings[i]?.getD []
+
+/-- A declaration's packed parameters have a value slot and an argument-list slot. -/
+def declarationPackSlots (i : Nat) : M (List (Nat × Nat)) := do
+  let ps ← packedOf i
+  let n := (← get).doc[i]!.parameters.size
+  return ps.zipIdx n
 
 
 end Verification.EquationLowering

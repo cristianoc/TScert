@@ -4394,6 +4394,7 @@ export const cases: Case[] = [
   negative("invalid-spread-class-statics", "a copy of a class value holds its static fields at their types",
     /source expression obligation at \[304,323\): evidence search failed/),
   positive("class-generic-inheritance", "explicit and inherited constructors at concrete, reordered, nested, bounded, and union heritage arguments; inherited fields remain writable at their instantiated types"),
+  positive("class-generic-inheritance-pack", "inherited constructors instantiate both a packed binder's array value and its callback's argument list at a tuple or an array"),
   positive("class-array-method", "a method building a tuple, called where its result is typed at the front's own row for the declared type"),
   negative("invalid-class-array-method", "a claim at an element type the member declared result does not cover"),
   positive("module-constant-unannotated", "a function reads an unannotated module constant at its initializer's claimed type, a literal kept"),

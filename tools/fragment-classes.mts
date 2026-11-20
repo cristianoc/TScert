@@ -3,7 +3,7 @@
  * reads `this.name(...)`; its body names the gate `gate`, typed, which lets a
  * call that never returns (`gate.fail`) narrow what follows. */
 import * as ts from "typescript/unstable/ast";
-import type { ClassDeclaration, Expression, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
+import type { ClassDeclaration, Expression, MethodDeclaration, Node, Statement, TypeNode } from "typescript/unstable/ast";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
 import { CLASS_ACCESS, classMemberRefusal, mapTypeParts, oneTerm, resolutionSlots, signature } from "./type-term.mts";
 import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
@@ -269,6 +269,14 @@ export function localClass(this: Gate, node: ClassDeclaration, name: ts.Identifi
   visit(gate.file, null, false);
 }
 
+/** An identity heritage application shares the base's parameter rows. */
+function identityHeritage(subclass: ClassDeclaration, args: readonly TypeNode[],
+    names: readonly string[]): Modifies<{ values: "any"; spines: "grow" }, boolean> {
+  return args.length === names.length && args.every((arg, i) =>
+    ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName) && !arg.typeArguments?.length &&
+    arg.typeName.text === names[i] && subclass.typeParameters?.some((p) => p.name.text === names[i]));
+}
+
 export function classStmt(this: Gate, node: ClassDeclaration): Modifies<{ values: "any"; spines: "grow" }, Stmt> {
   const gate: Gate = this;
   const name = node.name;
@@ -304,22 +312,22 @@ export function classStmt(this: Gate, node: ClassDeclaration): Modifies<{ values
       .flatMap((clause) => clause.types.filter((type) =>
         ts.isIdentifier(type.expression) && type.expression.text === name.text)
         .map((type) => ({ subclass, args: type.typeArguments ?? [] }))));
-  const binders = node.typeParameters ?? [];
-  // The declaring unit shares rows for identical binders. Use that
-  // constructor directly when every heritage application is the identity.
+  const binders = (node.typeParameters ?? []).map((tp) => tp.name.text);
   const instantiateBase = binders.length > 0 && uses.some(({ subclass, args }) =>
-    args.length !== binders.length || !args.every((arg, i) =>
-      ts.isTypeReferenceNode(arg) && ts.isIdentifier(arg.typeName) && !arg.typeArguments?.length &&
-      arg.typeName.text === binders[i].name.text &&
-      subclass.typeParameters?.some((p) => p.name.text === binders[i].name.text)));
+    !identityHeritage(subclass, args, binders));
   if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))
     gate.fail(node, "a class modifier outside the fragment");
   const declared = gate.declaredTypes.get(name.text);
   if (!declared) return gate.fail(node, "a class declaration has no instance type");
-  // A generic class's binders are in scope in its members; its instance
-  // type is the class applied to them. Lean reads them as parameter rows of
-  // the code unit that declares the class.
-  const typeParams = gate.enterTypeParams(node.typeParameters);
+  // The declaring unit owns a separate row for each class parameter, shared
+  // along identity heritage. A class's source spelling is local to it.
+  const shared = base && identityHeritage(node, heritage?.types[0]?.typeArguments ?? [],
+    base.binders.map((binder) => binder.source)) ? base.binders : [];
+  const position = gate.span(name)[0];
+  const typeParams = gate.enterTypeParams(node.typeParameters, (parameter) => {
+    const source = parameter.name.text;
+    return shared.find((binder) => binder.source === source)?.name ?? `${source}#class${position}`;
+  });
   try {
     return gate.classBody(node, name, declared.declaration, typeParams, heritage, base, uses.length > 0, instantiateBase);
   } finally {
@@ -336,7 +344,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   if (base && heritageArgs.length !== base.binders.length)
     gate.fail(heritage ?? node, "base construction requires one explicit heritage argument per binder");
   const baseArgs = heritageArgs.map((argument) => gate.typeOf(argument, argument));
-  const baseBindings = new Map(base?.binders.map((binder, i) => [binder, baseArgs[i]]));
+  const baseBindings = new Map(base?.binders.map((binder, i) => [binder.name, baseArgs[i]]));
   const specialize = (term: TypeTerm, bindings: ReadonlyMap<string, TypeTerm>):
       Modifies<{ values: "any"; spines: "grow" }, TypeTerm> => {
     if (term.k === "binder") return bindings.get(term.name) ?? term;
@@ -360,7 +368,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
 
   const instance: TypeTerm = { k: "reference", reference: { name: name.text, span: gate.span(name),
     arguments: binders.map((tp) => gate.span(tp.name)), target: declaration },
-    args: binders.map((tp) => ({ k: "binder", name: tp.name.text, span: gate.span(tp.name) })),
+    args: binders.map((tp, i) => ({ k: "binder", name: typeParams[i].name, span: gate.span(tp.name) })),
     span: gate.span(name) };
   const outerStrict = gate.strict;
   const outerSuper = gate.superClass;
@@ -953,7 +961,8 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     const derivedError: "derived" = "derived";
     gate.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
       methods: methodBindings, fresh: freshName(name.text), proto: protoBinding,
-      binders: binders.map((tp) => tp.name.text), ...(instantiateBase ? { instantiateBase: true } : {}),
+      binders: binders.map((tp, i) => ({ source: tp.name.text, name: typeParams[i].name })),
+      ...(instantiateBase ? { instantiateBase: true } : {}),
       ...(base?.error ? { error: derivedError } : {}) });
     return { k: "const", pos: gate.span(node),
       bindings: [...staticMethods, ...methods, ...prototypeBinding, ...freshBinding, ...statics, ...classBindings] };

@@ -70,6 +70,24 @@ def graph (T : State) : NormalGraph Tree := StoreView.graph T
 def arrayOf (T : State) (store : Tree) (readonly : Bool) : Clause (List Tree) :=
   arrayClause (arrayExcludedKeys (graph T) (StoreView.arrayProto T)) store (StoreView.arrayProto T) readonly
 
+/-- The argument lists of a binder typing both a value and a rest, at its
+instance `X`: those of `X`'s tuple contract, where `X` is an array or tuple
+type, whose fresh arrays are its values, and whose spine has no sparse holes,
+so that its values are packable by those lists (PROGRAM-TYPING.md, "Packed
+binders"). An instance with other members, a tagged array, is refused. -/
+def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
+    Except String (EquationStore.State × List Tree) := do
+  let G := graph T
+  let refuse := s!"the instance of '{n}', a type parameter typing a value and a rest's argument list, " ++
+    "is no array or tuple type: the argument lists are an array or tuple type's, whose fresh arrays are its values"
+  let [c@(.refs fs [] vs _ _ _ _)] := PositiveRules.expand G X | throw refuse
+  let some [s] := (Stored.views fs).lookup spineField <|> vs.lookup spineField | throw refuse
+  if c != arrayOf T s false && c != arrayOf T s true then throw refuse
+  let [.list τ []] := PositiveRules.expand G [s] | throw refuse
+  if τ.presence == .sparse then throw refuse
+  let (T, l) := EquationStore.intern T [.pack { τ with readonly := false, presence := .dense } []]
+  return (T, [l])
+
 /-- The one user-facing rendering boundary for graph types. Labels are
 implementation references into the store, so diagnostics must call this
 function rather than interpolate a `Ty ι`. The fallback names the semantic
