@@ -2532,14 +2532,79 @@ under the code's gates: the verdict of $`f`$ covers every call of $`f`$'s
 code in every program the claim is about, the context of each call one of
 the flow's contexts of $`f`$'s code.
 
+### A call of the component's own closure
+
+(B1) bounds a framed call of a closure of $`C`$ by the charges of its
+segment, in $`\Psi_c(l)`$ of (B2). The code reads the callee's stated
+effect there (`CallbacksWithin`), which assumes of $`C`$'s own arrow what
+$`\Theta_C`$ assumes of clients (observed: Fable's `s-q6-arrow-exceeds.ts`,
+whose arrow writes `stats.lines` beyond its type's `values: "keep"`, is
+accepted). Reading the closed top effect at such a node instead refuses
+inner-walker (observed): the frame's check reads the callee's effect at
+every part of a site in $`O`$ not read as protected (`Part.mayOut`),
+since a run of outside code inside the call may change such a location
+at will.
+
+**The existing mechanisms this extends.**
+
+1. **Whether a run at a node may call outside code** (`CodeFlow.out`,
+   `Fits.outCall`): a frame whose next step calls outside code fits at a
+   node whose `out` holds, by the rule of an unknown call (`outB`: a
+   callee set holding $`\circ`$ only at such a node). The flag is direct:
+   it reads the node's own callees, and a known call's callee code may
+   call outside code from a node of its own.
+2. **The segment's codes** $`\mathrm{seg}(c)`$ (`segCodes`, `segClosedB`,
+   `segClosedB_sound`, proved and read by no theorem) and **a framed
+   call** (`reachesOut`).
+3. **The transfer at a call** (`transfer_at`, `seg_bound`): own steps of
+   $`C`$'s code at the caller's depth within $`\Psi_c`$ (`StepWithin`),
+   runs of outside code bounded by $`\Theta_C`$, both on $`R_C`$ alone;
+   every other location within $`\Phi`$ (`Leads.of_bound`).
+
+**The change.** A node's `out` reads as the note's "a run at the node may
+call outside code", transitively:
+
+- the rules `Fits.gotoC` and `Fits.frameC` gain the premise that at a
+  position whose run may not call outside code, every node of the
+  entered code's proposal is one whose run may not either; `Fits.invokeC`
+  and the rule of an unknown call of a closure of $`C`$ gain the same of
+  the callee's code at the call's context, and of every code whose token
+  the callee's set holds; `Fits.gotoOut` and `Fits.frameOut` are admitted
+  only at a position whose run may call outside code. `fits_step` keeps
+  each premise: an entering step reads it from the call's rule, a frame's
+  continuation from its own;
+- **no outside run** (to be proved): from a call state at a node whose
+  `out` is false, every step of the segment is a step of $`C`$'s code at
+  the caller's depth (`Fits.outCall` at each state of the segment, by the
+  premises above);
+- **the charges at every location** (to be proved): `StepWithin` on every
+  location below the call's heap, not on $`R_C`$ alone (`within_run`,
+  whose argument reads the charged kinds of a step, `step_kind_charged`,
+  at any location);
+- **the check at such a node** (`frameCheckOwn`): $`\Psi_c(l)`$ at every
+  part, the callee's effect read nowhere; its soundness from the two
+  above, `Framed` with $`\Phi`$ the closed top effect;
+- **the callback row** (`CallbacksWithin`) ranges over the framed nodes
+  whose `out` holds; at the others the top effect's action holds of every
+  admissible transition (`action_top`).
+
+The flow's check and the solver decide the transitive flag (`callsOut`
+joined with the callee codes' flags, iterated to a fixed point).
+Inner-walker's `visit(c.i)` at its known call's context, its callee the
+arrow, whose code calls nothing, is a node whose run may not call outside
+code; the cursor and `xs` are kept by $`\Psi_c(l)`$, which keeps every part
+no code of $`C`$ writes. Fable's `s-q6-arrow-exceeds.ts` is decided by
+the charges: the arrow writes `stats`, which is outside the walker's
+facts.
+
 ### What milestone 3 trusts
 
-No trust row is added. At a framed node whose callee is a closure of
-$`C`$, the claim reads the callee's action within its stated effect
-(`CallbacksWithin`) as at any framed node: the callback row, "a function
-value at a function type meets that type", which already covered a
-framed node at a context holding $`O`$, whose callee may be a closure of
-$`C`$ given out.
+At a framed node whose callee is a closure of $`C`$ alone, the claim reads
+the callee's action within its stated effect (`CallbacksWithin`), the
+callback row "a function value outside code passes at a function type
+meets that type", there an assumption about $`C`$'s own code; [a call of
+the component's own closure](#a-call-of-the-components-own-closure)
+replaces it by the segment's charges.
 
 ### Tests
 
