@@ -467,7 +467,8 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
            arity, roPositions := ro, ofC := fc.ofC,
            marks := fc.cf.O, checked := F, lay := fc.cf.lay, host := fc.cf.host, family := fc.family,
            codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
-           theta, psi, psiDef := fc.psiDef, componentRefusal, framed }
+           theta, psi, psiDef := fc.psiDef, componentRefusal, framed,
+           inner := innerB F fc.entries member m }
 
 /-- **A forged document** (`--force-proposals`, the controls'): `framed-doc-node`
 names a node no call frames, `framed-doc-support` keeps a support the

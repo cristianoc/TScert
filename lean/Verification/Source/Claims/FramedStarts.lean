@@ -270,18 +270,26 @@ theorem prologue_det (r : SourceRequest σ ι) (hst : r.start < r.program.length
       | next q3 _ _ =>
         exact absurd ⟨_, _, _, by rw [e2, innermostGoto_ctx_goto hK]; rfl⟩ q3
 
+/-- **The returns of a request checked at its known calls lie within
+`O`** (a check of the binding, `innerB`): at every context of the realized
+code, the values its runs return lie within `O`. -/
+def RetsIn (r : SourceRequest σ ι) : Prop :=
+  spec.inner = true → ∀ c π, spec.flow.code (realizedCode r) c = some π → Sub π.ret spec.flow.O
+
 /-- **The fit of an entry's run** (proved): at an entry of the request, the
 program's state fits the flow (`progOk_ex` from the initial
-configurations), the entering step pushes the realized code's run at a
-position of outside code (`enter_hole_out`), the prologue keeps it there
-(`prologue_det`), so the run fits `O` there (`fits_ctx`) at a proposal of
-the realized code, which is the request's at its body labels
-(`realizedFlowB_sound`): the slots meet the proposal's sets at the
-request's start and its returns lie within `O`. -/
+configurations), the realized code's run in a context (`prologue_det`)
+fits there (`fits_ctx`) at a proposal of the realized code, which is the
+request's at its body labels (`realizedFlowB_sound`): the slots meet the
+proposal's sets at the request's start and its returns lie within `O`,
+since an entering step from outside code pushes the run at a position of
+outside code (`enter_hole_out`), or, for a request checked at its known
+calls, by the check of its returns (`RetsIn`). -/
 theorem entry_hole (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true)
     (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hrets : spec.RetsIn r)
     {k : Nat} {W : WorldT k} {h : Heap} {t : Tm} {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)}
     (he : spec.EntryAt r k W h t a₂) :
     ∃ L d c π, t = PassUnit.gotoOf r.program r.start L d r.comp ∧ h = a₂.1.s.h ∧
@@ -295,11 +303,20 @@ theorem entry_hole (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF 
   have ht₂ := spec.prologue_det r hst hK ht₁ hj hin₂
   have ha₂ := spec.progOk_ex r hr hF hj ha₁
   obtain ⟨c', hP, hFc⟩ := fits_ctx (Fl := spec.flow) (V := VJ spec.flow a₂.2 a₂.1.s.h.length) hK none
-  have hout : spec.F.ofC spec.C c' = false :=
-    enter_hole_out (F := spec.F) (C := spec.C) hp.2.2.1.1.step hx.1 hx.2.1 hx.2.2.2.1 hp.2.2.2.2.2 hK ht₁ hP
   have hO : (spec.F.at spec.C).ofC none = false := by simp [Family.at, Family.ofC, Family.Runs]
   obtain ⟨a', S', hfit⟩ := hFc rfl (by rw [hO, ← ht₂]; exact ha₂.2.2.2.2.1)
-  rw [show (spec.F.at spec.C).ofC c' = spec.F.ofC spec.C c' from rfl, hout] at hfit
+  rw [show (spec.F.at spec.C).ofC c' = spec.F.ofC spec.C c' from rfl] at hfit
+  -- (the returns lie within `O`: at a position of outside code, or by the check)
+  have hretO : ∀ c π, spec.flow.code (realizedCode r) c = some π → Sub π.ret S' →
+      ((!spec.F.ofC spec.C c') = true → Sub S' spec.flow.O) → Sub π.ret spec.flow.O := by
+    intro c π hcode hret ho
+    cases hi : spec.inner with
+    | true => exact hrets hi c π hcode
+    | false =>
+      have hout : spec.F.ofC spec.C c' = false :=
+        enter_hole_out (F := spec.F) (C := spec.C) hp.2.2.1.1.step hx.1 hx.2.1 hx.2.2.2.1 (hp.2.2.2 hi).2.2.2 hK ht₁
+          hP
+      exact fun s hs => ho (by rw [hout]; rfl) s (hret s hs)
   cases hfit with
   | val hv => simp [isVal] at hv
   | gotoOut hc => exact absurd (hcomp.symm.trans hc) (by simp)
@@ -309,7 +326,7 @@ theorem entry_hole (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF 
     refine ⟨L, d, c, π₂, ht, hh, hc₂, fun i => ?_, fun i σ hσ => hfn i σ (by rw [hf₂]; exact hσ), ?_,
       ha₂.2.2.2.2.2⟩
     · rw [← he₂]; exact (henv i).top
-    · rw [← hr₂]; exact fun s hs => ho rfl s (hret s hs)
+    · rw [← hr₂]; exact hretO c π hcode hret ho
 
 /-- **Every entry of a framed plan's frame fits the flow** (proved,
 `entry_hole`; the draft's `entryFits_public`): the frame's start at an
@@ -319,11 +336,12 @@ gives, and the heap meets the flow. -/
 theorem entryFits (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t)) :
+    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hrets : spec.RetsIn r) :
     (spec.frame r).EntryFits spec.flow := by
   intro x g hc hs
   rcases hs with ⟨a₂, he, rfl⟩ | ⟨hne, -⟩
-  · obtain ⟨L, d, c, π, ht, hh, hcode, henv, hfn, hret, hH⟩ := spec.entry_hole r hr hF hst hreal hcomp hinit he
+  · obtain ⟨L, d, c, π, ht, hh, hcode, henv, hfn, hret, hH⟩ := spec.entry_hole r hr hF hst hreal hcomp hinit hrets he
     refine ⟨?_, ?_⟩
     · rw [ht, hh]
       exact .gotoC c π hcomp hcode (fun i => .inl (VJ.congr (g := a₂.2) (g' := truncate a₂.2) (fun _ _ => rfl) (henv i))) hfn hret
@@ -336,12 +354,13 @@ theorem entryFits (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF :
 theorem slotVals (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF : spec.flow.Facts)
     (hst : r.start < r.program.length) (hreal : realizedFlowB spec.fflow r = true)
     (hcomp : (spec.F.at spec.C).ofC r.comp = true)
-    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t)) :
+    (hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t))
+    (hrets : spec.RetsIn r) :
     ∀ n (W : WorldT n) h (L : List Tm) (d : Tm),
       (spec.frame r).Call n W h (PassUnit.gotoOf r.program r.start L d r.comp) → SlotVals L d := by
   intro n W h L d hc
   obtain ⟨a₂, he⟩ := hc.2
-  obtain ⟨L', d', c, π, ht, -, -, henv, -⟩ := spec.entry_hole r hr hF hst hreal hcomp hinit he
+  obtain ⟨L', d', c, π, ht, -, -, henv, -⟩ := spec.entry_hole r hr hF hst hreal hcomp hinit hrets he
   simp only [PassUnit.gotoOf, Tm.goto.injEq] at ht
   obtain ⟨-, -, -, rfl, rfl, -⟩ := ht
   refine ⟨fun v hv => ?_, ?_⟩
@@ -538,7 +557,7 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
     (hEf : ∀ e ∈ spec.initE, TolerantFrames.ReadOnly.free false e = true)
     (hinitF : spec.InitialFits r) (hinitE : spec.InitialEntry r)
     (htok : tokensSomeB spec.fflow = true) (hlow : codesLoweredB spec.fflow = true)
-    (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true)
+    (hcomp : (spec.frame r).F.ofC (spec.frame r).C r.comp = true) (hrets : spec.RetsIn r)
     (hatom : ∀ l e, F l = true → (r.program.map (·.expression))[l]? = some e → ClientFrame.atomCallB e = true)
     {S₀ T : Nat → Sites ((spec.frame r).F.at (spec.frame r).C)}
     {Ψc : Nat → Protocol ((spec.frame r).F.at (spec.frame r).C)}
@@ -577,8 +596,8 @@ theorem ret_reachedW_public {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
   have hr : noRestB spec.lay = true := hnone.2.2.2.2.2.1
   have hinit : ∀ x, spec.Initial x → spec.ProgOk r (x, bareStart (spec.core r).F (spec.core r).C x.t) :=
     fun x hx => spec.progOk_initial r hEf hEl hEw hLi hRl hRw hinitF hx (hinitE x hx).2.1.2
-  have hE := spec.entryFits r hr hFa hst hreal hcomp hinit
-  exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit)
+  have hE := spec.entryFits r hr hFa hst hreal hcomp hinit hrets
+  exact ret_reachedW_spec spec r hsrc (spec.slotVals r hr hFa hst hreal hcomp hinit hrets)
     (spec.chkSound r hFa (FFlow.marksB_sound hmk) hE)
     (spec.startInv r hFa (FFlow.marksB_sound hmk) hinitF hinitE hcomp) hcomp₀ hEl hEw hLi hRl hRw hFa hE htok hlow
     hcomp hatom hT hle hslots hcheck hw (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm hΘ hW hΦ

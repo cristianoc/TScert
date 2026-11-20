@@ -70,6 +70,10 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-reassigne
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-depth-two",
   "(() => { const h = { inner: { flags: [1, 1, 1] } }; return walk(h, (i) => { if (i === 0) swap(h); }); })()"))),
   "a visitor calls the member that replaces the handle's inner record under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-known-calls", "total([1, 2])"))),
+  "the arrow moves the cursor its caller gave the walker past the array, under the walker's read");
+assert.equal(runExample("bounds-pattern-framed-known-calls", "total([1, 2])"), 3);
+assert.equal(runExample("bounds-pattern-framed-inner-walker", "countLines([1, 2, 3])"), 3);
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-walker-pops",
   "(() => { const o = { flags: [1, 1, 1] }; return walk(o, o, () => {}); })()"))),
   "the walker pops the array of the record it was given twice, under its own reads");

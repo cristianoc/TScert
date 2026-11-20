@@ -243,7 +243,7 @@ at the request's start, with the frame's slots and default, and the frame's
 term is the request's run there. -/
 theorem entry_run (r : SourceRequest σ ι) {k : Nat} {W : WorldT k} {h : Heap} {t : Tm}
     {a₂ : Conf × Ghost ((spec.core r).F.at (spec.core r).C)} (he : spec.EntryAt r k W h t a₂) :
-    ∃ x₀ n x a₁ L d K, (spec.core r).PublicCall spec.Initial (realizedCode r) x₀ n x a₁ ∧
+    ∃ x₀ n x a₁ L d K, spec.Called r x₀ n x a₁ ∧
       (∃ j, Ex (spec.core r).KStep (fun _ => True) j a₁ a₂) ∧ EvalCtx K ∧
       a₂.1.t = K (.goto (realizedCode r).1 (realizedCode r).2 r.start L d r.comp) ∧ h = a₂.1.s.h ∧
       t = PassUnit.gotoOf r.program r.start L d r.comp := by
@@ -264,7 +264,7 @@ theorem lay_start (r : SourceRequest σ ι) {q : Code → ComponentTag → Layou
   intro a hc _
   obtain ⟨a₂, he⟩ := hc.2
   obtain ⟨x₀, n, x, a₁, L, d, K, hp, ⟨j, hj⟩, hK, ht₂, hh, ht⟩ := spec.entry_run r he
-  have h₁ := FrameCore.lay_program hinit hp
+  have h₁ := FrameCore.lay_ex hp.ex (hinit x₀ hp.1)
   have h₂ := FrameCore.lay_ex hj h₁
   have hg := hK.layP_hole (by rw [← ht₂]; exact h₂.1)
   refine ⟨?_, by rw [hh]; exact h₂.2⟩
@@ -284,7 +284,7 @@ theorem wok_start (r : SourceRequest σ ι) (hinit : ∀ x, spec.Initial x → W
   intro a hc _
   obtain ⟨a₂, he⟩ := hc.2
   obtain ⟨x₀, n, x, a₁, L, d, K, hp, ⟨j, hj⟩, hK, ht₂, hh, ht⟩ := spec.entry_run r he
-  have h₁ := FrameCore.wok_program hinit hp
+  have h₁ := FrameCore.wok_ex hp.ex (hinit x₀ hp.1)
   have h₂ := FrameCore.wok_ex hj h₁
   have hg := hK.wok_hole (by rw [← ht₂]; exact h₂.1)
   refine ⟨?_, by rw [hh]; exact h₂.2⟩
