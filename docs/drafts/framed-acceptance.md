@@ -2474,11 +2474,10 @@ Four mechanisms, each kept, each changed at one place.
      of a group is conj.
 2. **The framed call nodes** ((B1); `framedCallNodes`). A call is framed
    where its callee set holds $`\circ`$ or its segment reaches outside
-   code. The note adds a callee that is a slot naming no module function's
-   signature and holding a token: a closure of $`C`$ that the call reads by
-   no specification. The code reads it as a callee naming no signature
-   (`outsideCalleeAt`) whose set holds a token: a native's slot names its
-   step model's signature, so a native call is not framed by this clause.
+   code. The note adds a callee that is a slot naming no signature and
+   holding a token (`outsideCalleeAt`): a closure of $`C`$ that the call
+   reads by no specification. A native's slot names its step model's
+   signature, so a native call is not framed by this clause.
    Framing more nodes is sound: the framed walk is proved for any set of
    framed nodes whose checks pass.
 3. **The binding checks** ((B4); `FramedSpec.bindingChecks`). The open

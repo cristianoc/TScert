@@ -901,14 +901,13 @@ unfolding. Such a variable is decided by its name.
 ECMA-262 makes their global bindings not writable; \code{Math},
 \code{RangeError} and the realm's intrinsic objects
 (\code{[[Array.prototype]]}) are realm values by the assumption on the
-natives (Section~\ref{sec:accept-trust}). No module function creates a
-closure; every \code{@clients} row of an exported type states a change
-per class only, and every row keeps every part, so $\Theta_\cC$ is
-$\keep$ at every part. A component that fails a gate has no framed plan.
-The flow's check refuses the flow of a component whose code creates a
-closure (observed on every such probe; the cause is not established), so
-the gate states as a restriction what the check would refuse
-\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (no module functions naming each other in a cycle, \lean{namingOrder}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}. These gates are narrower than the item's: one module, no cycle of names, and each realm value an object or a native of the audited names, so \code{Infinity} is refused; the code has no gate on closure creation, the solver proposing each closure a node expression creates lowered (\lean{SolveCode.lowered}), which the check of a component creating one passes. conj.: the gates as the item states them, with (A2)}.
+natives (Section~\ref{sec:accept-trust}). Every \code{@clients} row of
+an exported type states a change per class only, and every row keeps
+every part, so $\Theta_\cC$ is $\keep$ at every part. A component that
+fails a gate has no framed plan. A closure a module function creates is
+lowered code (``The rules''): its token in $O$, its code open, its
+capture slots holding $O$
+\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (no module functions naming each other in a cycle, \lean{namingOrder}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}. These gates are narrower than the item's: one module, no cycle of names, and each realm value an object or a native of the audited names, so \code{Infinity} is refused; the solver proposes each closure a node expression creates lowered (\lean{SolveCode.lowered}). conj.: the gates as the item states them, with (A2)}.
 \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
 of $\cC$'s modules, each module function's code and the closures it creates, and the
 natives' step models; a code is a term, so module functions of one code
@@ -963,13 +962,13 @@ checked} are context $0$ where $f$ is an entry or its token is in $O$,
 and otherwise the contexts the flow gives $m$ at its known calls. A call
 node $c$ of $m$ is framed when, at some context of $m$ at which $f$ is
 checked, its callee set $S_f$ holds $\circ$, or its callee is a slot
-naming no module function's signature whose set holds a token, or some
+naming no signature whose set holds a token, or some
 code of $\mathrm{seg}(c)$ has a call whose callee set holds $\circ$. A
 call of a module function by its name is checked by that function's
 specification; a framed call of a closure of $\cC$ is bounded by the
 charges of its segment, in $\Psi_c(l)$ of (B2). A unit with no framed
 call node has no framed plan
-\status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt} (a callee naming no signature, \lean{outsideCalleeAt}, whose set holds a token; a native's slot names its step model's signature), \lean{segCodes}, \lean{reachesOut}; the contexts at which $f$ is checked, \lean{FramedSpec.inner}, decided by \lean{innerB}. The code forms a framed plan only where a framed node's callee names no signature at some context, and reads every context of $f$'s code, which holds the contexts of its known calls; a framed call of a closure of $\cC$ as any framed call (\lean{framedReturns\_reached}), its action within its stated effect (\lean{CallbacksWithin})}.
+\status{Lean: \lean{framedCallNodes}, \lean{framedNodeAt} (a callee naming no signature, \lean{outsideCalleeAt}, whose set holds a token), \lean{segCodes}, \lean{reachesOut}; the contexts at which $f$ is checked, \lean{FramedSpec.inner}, decided by \lean{innerB}. The code forms a framed plan only where a framed node's callee names no signature at some context, and reads every context of $f$'s code, which holds the contexts of its known calls; a framed call of a closure of $\cC$ as any framed call (\lean{framedReturns\_reached}), its action within its stated effect (\lean{CallbacksWithin})}.
 \item[(B2) Kept facts] At each framed node $c$, at the label $l$ of
 $f$'s request code: the call's operands are slots or constants; $\Phi$ is
 the callee's stated effect read at the caller's slots; the node's set
@@ -1248,9 +1247,7 @@ at every state, so the slot is the same at every depth of unfolding
 7 & \code{~~const stats = \{ lines: 0 \}; walk(xs, () => \{ stats.lines++; \}); return stats.lines; \}}\\
 \end{tabular}
 \end{center}
-\emph{Accepted} by (B1) and (B4) at known calls, where (A1)'s gate on
-closure creation is lifted: \code{countLines} creates the visitor, and
-that gate refuses it. \code{walk} is no entry, and no closure of it
+\emph{Accepted} by (B1) and (B4) at known calls. \code{walk} is no entry, and no closure of it
 reaches outside code, so its token is outside $O$; it is checked at the
 context of its call on line 7 alone. There the slot of \code{visit}
 holds the token of the arrow alone, so \code{visit(c.i)} is framed, and
