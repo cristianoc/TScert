@@ -121,10 +121,12 @@ def StatedEffect.effect (s : StatedEffect) (pre : List HeapKnowledge.IndexFact :
 theorem StatedEffect.effect_exits (s : StatedEffect) (pre : List HeapKnowledge.IndexFact) :
     (s.effect pre).exits = s.exits := rfl
 
-/-- The argument spine region an entry of a frame states, where it is one
-(`ArgumentSpineRegion.entry`). -/
+/-- The argument region an entry of a frame states, where it is one
+(`ArgumentSpineRegion.entry`): a path's field or spine, or a path's
+fields, at a change. -/
 def spineRegionOf : Footprints.Region × Footprints.Change → Option Footprints.ArgumentSpineRegion
-  | (.path p path k, .any) => if k = arraySpineKey then some ⟨p, path⟩ else none
+  | (.path p path k, δ) => some ⟨p, path, some k, δ⟩
+  | (.pathFields p path, δ) => some ⟨p, path, none, δ⟩
   | _ => none
 
 /-- **The statement whose exits these are**, where there is one: the normal

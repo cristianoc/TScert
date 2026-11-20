@@ -153,7 +153,10 @@ cells at a spine's end, as `push` does, and `onThrow: true` makes the bound hold
 declaration, `"x[*]": "any"` excepts the spine parameter `x` holds at the
 call, and `"x.f[*]": "any"` the spine its `@stable` field `f` holds, which
 may change arbitrarily; the declared type at the region's path is an
-array type, each member an array, `null` or `undefined`. TypeScript reads it as `T`; the
+array type, each member an array, `null` or `undefined`. A field region
+`"x.g": c` (or `"x.f.g": c`) lets the field `g` of the object `x` (or its
+`@stable` field `f`) holds at the call change within the change `c`, and
+`"x.*": c` (or `"x.f.*": c`) every field of it. TypeScript reads it as `T`; the
 verifier certifies it from the function's code.
 [Stated effects](SOURCE-ELABORATION.md#stated-effects).
 

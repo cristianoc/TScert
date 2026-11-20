@@ -1332,10 +1332,16 @@ function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modi
       if (!isChange(text) && !classMap)
         return scope.fail(member, `a location key's change is one of "keep", "init", "scalar", "extend", "grow", "any", or a class map \`{ values?: c; spines?: c }\``);
       const spine = /^([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))?\[\*\]$/.exec(key);
+      const field = /^([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)?)\.([A-Za-z_$][\w$]*|\*)$/.exec(key);
       if (spine?.[1] !== undefined && text === "any")
-        regions.push({ position: regionPosition(scope, member, spine[1], at), path: spine[2] === undefined ? [] : [spine[2]] });
+        regions.push({ position: regionPosition(scope, member, spine[1], at), path: spine[2] === undefined ? [] : [spine[2]],
+          key: "[]", change: "any" });
       else if (spine) return scope.fail(member, `a spine region "${key}" is stated at "any": its spine and cells may change arbitrarily`);
-      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`spines\`, \`onThrow\` and a parameter's spine region \`"x[*]"\` or \`"x.f[*]"\``);
+      else if (field?.[1] !== undefined && field[2] !== undefined && field[3] !== undefined && isChange(text))
+        regions.push({ position: regionPosition(scope, member, field[1], at), path: field[2] === "" ? [] : [field[2].slice(1)],
+          key: field[3] === "*" ? null : field[3], change: text });
+      else if (field) return scope.fail(member, `a field region "${key}" is stated at a change: a class map at a field region is outside the fragment`);
+      else return scope.fail(member, `the location key "${key}" names regions no source statement reaches yet: a frame states \`values\`, \`spines\`, \`onThrow\`, a parameter's spine region \`"x[*]"\` or \`"x.f[*]"\`, and a parameter's field region \`"x.g"\`, \`"x.*"\`, \`"x.f.g"\` or \`"x.f.*"\``);
     } else if (ts.isIdentifier(member.name) && (key === "value" || key === "store"))
       return scope.fail(member, `\`${key}\` is no key of a frame: the class keys are \`values\` and \`spines\`, and a module cell is written \`"cell(${key})"\``);
     else if (!ts.isIdentifier(member.name) || key === "values" || key === "spines" || key === "onThrow") return scope.fail(member, shape);

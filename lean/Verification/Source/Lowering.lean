@@ -324,7 +324,7 @@ gives of the names it read. -/
       if s.regions.isEmpty then none else some (s.closed, s.regions)).mapM
         fun ((c, rs) : Footprints.Closed × List Footprints.ArgumentSpineRegion) =>
           (rs.mapM fun (r : Footprints.ArgumentSpineRegion) => (regionSlot r.position).map fun q =>
-            (⟨q, r.path⟩ : Footprints.ArgumentSpineRegion)).map (c, ·)
+            ({ r with position := q } : Footprints.ArgumentSpineRegion)).map (c, ·)
     | throw "a stated spine region names the receiver, which the function does not declare"
   let (program, claims, source, start) := compactLowered built.program built.claims built.source entry.label
   let hasRestParam := match f.params.getLast? with

@@ -274,7 +274,7 @@ theorem regionX_start {Φ : Footprints.Closed} {regions : List ArgumentSpineRegi
     RegionX Φ regions table ft ε h₀ start ε.env h₀ := by
   simp only [Bool.and_eq_true, List.isEmpty_iff] at hfresh
   simp only [List.isEmpty_iff] at hfieldStart
-  refine ⟨(Footprints.Closed.Holds.refl Φ h₀).on _, ArgumentPathTracking.checkEntry_sound hstart _ _, ⟨?_, ?_⟩, ?_⟩
+  refine ⟨Footprints.Post.refl _ _ _, ArgumentPathTracking.checkEntry_sound hstart _ _, ⟨?_, ?_⟩, ?_⟩
   · intro i hi; rw [hfresh.1] at hi; cases hi
   · intro i hi; rw [hfresh.2] at hi; cases hi
   · intro p hp; rw [hfieldStart] at hp; cases hp

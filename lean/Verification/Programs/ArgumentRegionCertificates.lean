@@ -651,7 +651,7 @@ def readOrigins (regions : List ArgumentSpineRegion) (facts : List ArgumentPathT
   | .readAt (.str f) (.var i) =>
     (facts.filter fun g => g.slot == i && g.region.path.isEmpty &&
       (ArgumentPathTracking.stableFields regions).contains (g.region.position, f)).map
-      fun g => ⟨g.region.position, [f]⟩
+      fun g => { position := g.region.position, path := [f] }
   | _ => []
 
 /-- A node's candidate origins: a copy's, and a stable read's. -/
@@ -667,7 +667,7 @@ def nodeOrigins (regions : List ArgumentSpineRegion) (facts : List ArgumentPathT
         | some A => HeapExpressionRules.fieldOperand (expand G A) (.str f)
         | none => false) &&
       rs.all fun r =>
-        r.path == [f] && facts.contains ⟨i, ⟨r.position, []⟩⟩ &&
+        r.path == [f] && facts.contains ⟨i, { position := r.position, path := [] }⟩ &&
           (ArgumentPathTracking.stableFields regions).contains (r.position, f)
   | _ => false
 

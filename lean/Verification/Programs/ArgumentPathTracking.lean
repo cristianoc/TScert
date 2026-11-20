@@ -198,17 +198,19 @@ or `undefined`), at an array spine: every alternative is an `arrayClause`. -/
 @[nospecialize] def arrayType [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (A : ProgramTyping.Ty ι) : Bool :=
   G.plainTy A && (PositiveRules.expand G A).all (arrayClause G)
 
-/-- **A spine region is well-formed**: the declared type at its path, its
-position's input type or the type of the field it reads on every present
-alternative, is a collection type (`arrayType`). -/
+/-- **An argument region is well-formed**: its position is an input; a
+spine region's declared type at its path, its position's input type or the
+type of the field it reads on every present alternative, is a collection
+type (`arrayType`), and a field region's path reads at most one field. -/
 def regionKindOk [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (inputs : List (ProgramTyping.Ty ι))
     (r : ArgumentSpineRegion) : Bool :=
   match inputs[r.position]? with
   | none => false
-  | some A => match r.path with
-    | [] => arrayType G A
-    | [f] => (HeapExpressionRules.fieldTys (presentClauses G A) (.str f)).all (arrayType G)
-    | _ => false
+  | some A => if r.key = some arraySpineKey then match r.path with
+      | [] => arrayType G A
+      | [f] => (HeapExpressionRules.fieldTys (presentClauses G A) (.str f)).all (arrayType G)
+      | _ => false
+    else r.path.length ≤ 1
 
 /-- **The entry check of traversed fields.** Each region is well-formed
 (`regionKindOk`); each field is a field of its position's entry contract
@@ -271,7 +273,7 @@ theorem checkEntryFields_sound [DecidableEq ι] {G : PositiveGraphs.NormalGraph 
 traversed field the value has, reads the field's entry value. -/
 theorem read_now {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {fields : List (Nat × String)}
     {n : Nat} {W : WorldT n} {i x : Nat} {f : String}
-    (hs : Holds facts ρ entry h₀) (hf : (⟨i, ⟨x, []⟩⟩ : Fact) ∈ facts) (hfld : (x, f) ∈ fields)
+    (hs : Holds facts ρ entry h₀) (hf : (⟨i, { position := x, path := [] }⟩ : Fact) ∈ facts) (hfld : (x, f) ∈ fields)
     (hst : StableNow fields entry h₀ W) (hn : 0 < n) (hh : HeapOk n W h)
     (hpresent : (Footprints.fieldsOf (ρ i)).lookup (.str f) ≠ none) :
     ∃ v, isVal v = true ∧ HeapKnowledge.readPath h₀ (entry x) [f] = some v ∧
@@ -290,7 +292,7 @@ theorem read {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {f : Fact} {fi
     (hr : HeapKnowledge.readPath h (ρ f.slot) [field] = some v)
     (hp : HeapKnowledge.readPath h₀ (ρ f.slot) [field] =
       HeapKnowledge.readPath h (ρ f.slot) [field]) :
-    Holds (⟨0, ⟨f.region.position, f.region.path ++ [field]⟩⟩ :: shift facts)
+    Holds (⟨0, { position := f.region.position, path := f.region.path ++ [field] }⟩ :: shift facts)
       (push v ρ) entry h₀ := by
   intro g hg
   rcases List.mem_cons.mp hg with rfl | hg
@@ -305,7 +307,7 @@ theorem read_stable {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {f : Fa
     (hs : Holds facts ρ entry h₀) (hf : f ∈ facts)
     (hp : StablePath W (ρ f.slot) [field] v) (hm : m ≤ n) (hn : 0 < m)
     (hx : WExt (trunc m hm W) U) (hh₀ : HeapOk n W h₀) (hh : HeapOk m U h) :
-    Holds (⟨0, ⟨f.region.position, f.region.path ++ [field]⟩⟩ :: shift facts)
+    Holds (⟨0, { position := f.region.position, path := f.region.path ++ [field] }⟩ :: shift facts)
       (push v ρ) entry h₀ :=
   read hs hf ((hp.transfer hm hx).read hn hh)
     ((hp.read (Nat.lt_of_lt_of_le hn hm) hh₀).trans ((hp.transfer hm hx).read hn hh).symm)

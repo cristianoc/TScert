@@ -471,7 +471,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
       · exact entryKnows_sound hk (by simpa only [hin] using he) hsep hidx
     · simp only [Bool.and_eq_true, List.isEmpty_iff] at hfresh
       simp only [List.isEmpty_iff] at hfieldStart
-      refine ⟨(Footprints.Closed.Holds.refl Φ h).on _,
+      refine ⟨Footprints.Post.refl _ _ _,
         ArgumentPathTracking.checkEntry_sound hstart _ _, ⟨?_, ?_⟩, ?_⟩
       · intro i hi; rw [hfresh.1] at hi; cases hi
       · intro i hi; rw [hfresh.2] at hi; cases hi

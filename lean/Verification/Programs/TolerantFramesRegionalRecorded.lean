@@ -240,7 +240,7 @@ theorem regionalAt_state {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd 
     (h : regionalAt G I env l en sd rg a incoming = .ok done) :
     let here : RegionState := if l == env.start then
       { facts := ((rg.regions.map fun (x : Footprints.ArgumentSpineRegion) =>
-          (⟨x.position, []⟩ : Footprints.ArgumentSpineRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
+          ({ position := x.position, path := [] } : Footprints.ArgumentSpineRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
       else if env.isHead[l]! then ((rg.heads[l]?).join).getD {}
       else RegionState.meet (incoming[l]!)
     done.state.facts = here.facts ∧ done.state.values = here.values ∧ RegionBelow done.state here := by

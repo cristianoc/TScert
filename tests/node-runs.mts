@@ -23,6 +23,13 @@ assert.ok(Number.isNaN(Number(runExample("invalid-invariant-local-index-lacking"
 assert.ok(Number.isNaN(Number(runExample("invalid-handler-edge-lacking-invariant", "h([1], -1)"))),
   "the catch block's loop starts at the index the try block set, -1");
 
+assert.ok(Number.isNaN(Number(runExample("invalid-stated-field-region-fields",
+  "(() => { const h = { i: 0, widths: [1, 1], extras: null }; return pairAt(h, h); })()"))),
+  "a cursor that is the handle: moveTo installs an empty extras array, and pairAt reads past it");
+assert.ok(Number.isNaN(Number(runExample("invalid-stated-field-region-escape", "pair({ widths: [1, 1], extras: null })"))),
+  "moveTo installs an empty extras array outside its frame, and pair reads past it");
+assert.equal(runExample("stated-field-region-key",
+  "(() => { const h = { i: 0, widths: [1, 1], extras: null }; return pairAt(h, h); })()"), 1);
 assert.throws(() => runExample("invalid-native-length-literal", 'past("a")'), /TypeError/);
 
 // The read-only frame's checks (S), (K) and (O): each refused module's

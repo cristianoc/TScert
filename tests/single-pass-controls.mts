@@ -967,7 +967,7 @@ type Stated = NonNullable<Ast["functions"][number]["stated"]>;
 /** The spine regions a statement's normal frame states. */
 const statedRegions = (stated: Stated): SpineRegion[] => stated.normal.frame.flatMap(({ region, change }) =>
   typeof region === "object" && "path" in region && region.path.key === "[]" && change === "any"
-    ? [{ position: region.path.x, path: [...region.path.fields] }] : []);
+    ? [{ position: region.path.x, path: [...region.path.fields], key: "[]", change: "any" as const }] : []);
 function forgedStatement(artifacts: string, name: string, document: string, stated: StatedFrame,
     expected?: SpineRegion[]): Pass {
   const ast = fragmentAst(artifacts);
@@ -1052,11 +1052,11 @@ control("forged fragment: spine regions moved", async (): Promise<void> => {
   honest("stated-argument-store", trim, unforced);
   honest("stated-argument-store", shrink, unforced);
   refused(forgedStatement(artifacts, "trim", "forged-region-fragment",
-    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] },
-    [{ position: 2, path: [] }]), trim, "trim's region at n");
+    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [], key: "[]", change: "any" }] },
+    [{ position: 2, path: [], key: "[]", change: "any" }]), trim, "trim's region at n");
   const ownAst = fragmentAst(artifacts);
   must(ownAst.functions.find((f) => f.name === "shrink"), "shrink").stated =
-    statedExits({ footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [] }] });
+    statedExits({ footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [], key: "[]", change: "any" }] });
   refused(pass(forged(artifacts, "forged-receiver-region-fragment", ownAst)), shrink, "shrink's region at the receiver");
   say("forged spine regions: a region moved to another parameter, and one at an undeclared receiver, each refused at its unit");
 });
@@ -1069,8 +1069,8 @@ control("forged fragment: path regions moved", async (): Promise<void> => {
     { document: "forged-path-field-fragment", path: ["closed"] }];
   for (const { document, path } of moved)
     refused(forgedStatement(artifacts, "readRuns", document,
-      { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path }] },
-      [{ position: 1, path: ["openBrackets"] }]), unit, document);
+      { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path, key: "[]", change: "any" }] },
+      [{ position: 1, path: ["openBrackets"], key: "[]", change: "any" }]), unit, document);
   say("forged path regions: a path region moved to its record's own spine, and one through a field the type does not state, refused at the unit");
 });
 
@@ -1079,14 +1079,14 @@ control("forged fragment: rebased regions", async (): Promise<void> => {
   const scan = unitOf(fragmentAst(steps), "scan");
   honest("stated-region-steps", scan);
   refused(forgedStatement(steps, "scan", "forged-rebased-fragment",
-    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [] }] },
-    [{ position: 1, path: ["open"] }]), scan, "scan's region at its record");
+    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 1, path: [], key: "[]", change: "any" }] },
+    [{ position: 1, path: ["open"], key: "[]", change: "any" }]), scan, "scan's region at its record");
   const nullable = run("stated-region-nullable-write");
   const mark = unitOf(fragmentAst(nullable), "mark");
   honest("stated-region-nullable-write", mark);
   refused(forgedStatement(nullable, "mark", "forged-witness-fragment",
-    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 2, path: ["open"] }] },
-    [{ position: 1, path: ["open"] }]), mark, "mark's region through a number");
+    { footprint: { value: "any", spine: "keep" }, onThrow: false, fresh: false, regions: [{ position: 2, path: ["open"], key: "[]", change: "any" }] },
+    [{ position: 1, path: ["open"], key: "[]", change: "any" }]), mark, "mark's region through a number");
   say("forged rebasing: a caller's region moved from the field's array to its record, and a region through a number parameter, each refused at its unit");
 });
 
@@ -2553,13 +2553,13 @@ control("forged effect: a rest closure's statement past its scope or through a p
   // at a location, is accepted; the spine of its field `f`, read through
   // the path, is refused at the code's obligations, where the two differ
   // only in reading the heap at a location (`framesAtLocation`).
-  const own = pass(forged(artifacts, "rest-body-own-region", restate([{ position: 0, path: [] }])));
+  const own = pass(forged(artifacts, "rest-body-own-region", restate([{ position: 0, path: [], key: "[]", change: "any" }])));
   accepted(own, "init", "a region read at a location");
   // A region at a position past the closure's arity, read at a location:
   // the code's scope (`Effect.belowRow`) refuses it.
-  refused(pass(forged(artifacts, "rest-body-far-region", restate([{ position: 5, path: [] }]))), "init",
+  refused(pass(forged(artifacts, "rest-body-far-region", restate([{ position: 5, path: [], key: "[]", change: "any" }]))), "init",
     "a region past the arity", /single pass: refused: code 0: its signature/);
-  const p = pass(forged(artifacts, "rest-body-path-region", restate([{ position: 0, path: ["f"] }])));
+  const p = pass(forged(artifacts, "rest-body-path-region", restate([{ position: 0, path: ["f"], key: "[]", change: "any" }])));
   refused(p, "init", "a rest body stated with a spine region", /single pass: refused: code 0: its signature/);
 
   say(`forged effect: a rest closure's statement re-stated accepted (${units.join(", ")}), with a region at a location accepted, with one past its arity or through a path refused at its code`);
