@@ -2088,24 +2088,32 @@ the twins above, in either order of declaration, and `walk(h: H, w: W)`
 reading `w.flags` are refused). Piece 0 makes the recorded crossings the
 paper's:
 
-- **The read-only positions** `roPos j` (`FramedSpec.roPositions`, a new
-  field of the plan, decided by `roPositionsB`, to be written): position
-  $`j`$ is read-only in the declared shape (`memberShapes`,
-  `shapeReadOnly`) of every function of $`C`$ the plan's `names` maps to
-  the request's realized code, the request's own among them. This is the
-  meet of the draft's `sharedParamTypes`, by position.
-- **The recorded type**: `entryXs` records argument $`j`$ at `r.inputs[j]`
-  where `roPos j`, and at `spec.outType` otherwise, the writable type the
-  outgoing crossings use; `readOnlyB` becomes "`spec.readOnly` is the set
-  of `r.inputs[j]` with `roPos j`, and `spec.outType` is not in it". A
-  writable position is then recorded at a type no view reads read-only,
-  whatever its calculus type equals.
+- **The read-only positions** `roPos j` (`FramedSpec.roPositions`, a
+  field of the plan the decoder computes as `readOnlyPositions` and
+  `roPositionsB` checks; it is on no document): position $`j`$ is
+  read-only where it is below the arity and the member and every module
+  function of $`C`$ whose code in `codes` is the request's realized code
+  declare it read-only throughout (`declaredReadOnly`: `memberShapes`,
+  `shapeReadOnly`). This is the meet of the draft's `sharedParamTypes`,
+  by position. The meet reads the module functions `names` lists; the
+  component's restriction that no module function creates a closure
+  leaves the natives' models as the only other closures of $`C`$'s code,
+  and a model's code equal to a request's realized code is not read.
+- **The recorded type** (`entryTy`): `entryXs` records argument $`j`$ at
+  `r.inputs[j]` where `roPos j`, and at `spec.outType` otherwise, the
+  writable type the outgoing crossings use; `readOnlyB` states that
+  `spec.readOnly` holds exactly the inputs at the read-only positions
+  (`readOnlyInputs`) and not `spec.outType`. A writable position is then
+  recorded at a type no view reads read-only, whatever its calculus type
+  equals.
 
-`FramedSpec.readOnly_declared` restates as: every crossing an entering
-step records at a type the view reads read-only is at a position every
-function sharing the code declares read-only. The proofs reading
-`entryXs` (`entryXs_into`, `entryXs_root`, `chk_entry_sim`) read only its
-direction and values, which are unchanged.
+`FramedSpec.readOnly_declared` states: every crossing an entering step
+records at a type the view reads read-only is the argument at a position
+$`j`$ below the arity, at `r.inputs[j]`, which the member and every module
+function sharing the realized code declare read-only
+(`FramedSpec.roPositionsB_sound`). The proofs reading `entryXs`
+(`entryXs_into`, `entryXs_root`, `chk_entry_sim`) read only its direction
+and values, which are unchanged.
 
 ### The decision
 
@@ -2195,10 +2203,11 @@ parameter.
 
 ### The theorem chain
 
-Each step is **to be proved**, its plan from the proved results named.
+Each step is **to be proved** unless marked proved, its plan from the
+proved results named.
 
-0. **The recorded crossings** (`FramedSpec.lean`, `PassUnitMember.lean`).
-   `roPositionsB_sound`: where the binding checks pass, `roPos j` holds
+0. **The recorded crossings** (proved; `FramedSpec.lean`,
+   `PassUnitMember.lean`). `roPositionsB_sound`: where the binding checks pass, `roPos j` holds
    exactly when every function of $`C`$ sharing the realized code declares
    position $`j`$ read-only; `readOnly_declared` restated as above.
 1. **The history at the start** (`ReadOnlyRegion.lean`,
@@ -2311,7 +2320,7 @@ estimated from the proved lemmas each mirrors.
 
 | # | Piece | Proves | Size | Tests |
 | --- | --- | --- | --- | --- |
-| 0 | The recorded crossings at the read-only positions | `roPositions`, `roPositionsB`, `entryXs` at `outType` off them, chain 0 | 150–250 | `lake build`; `node tests/json-field-names.mts` (the plan's document gains `roPositions`); `node pipeline/run-cases.mts framed`, `readonly-frame`, `bounds-pattern` unchanged; the shared-code twins below as cases, refused as before |
+| 0 | The recorded crossings at the read-only positions | `roPositions`, `roPositionsB`, `entryXs` at `outType` off them, chain 0 | 150–250 | `lake build`; `node tests/json-field-names.mts` (no document changes: the decoder computes `roPositions`); `node pipeline/run-cases.mts framed`, `readonly-frame`, `bounds-pattern` unchanged; the shared-code twins below as cases, refused as before |
 | 1 | The history at the start and witness growth | chain 1 and 2, `entryStart_witness` and `witness_reached` as instances | 100–150 | `lake build` of the two modules |
 | 2 | The entry's slots and the start's witness | chain 3 and 4 | 250–350 | `lake build` |
 | 3 | Paths and regions | `Reads`, `pathParts`, `prefixRegions`, chain 5 | 300–400 | `lake build` |

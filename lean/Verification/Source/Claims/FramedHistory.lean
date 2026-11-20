@@ -32,7 +32,7 @@ theorem entryXs_into (r : SourceRequest σ ι) {t t' : Tm} {c : Crossing spec.vi
   unfold entryXs at hc
   split at hc
   · split at hc <;> first
-      | (simp only [List.mem_map] at hc; obtain ⟨_, -, rfl⟩ := hc; rfl)
+      | (simp only [List.mem_mapIdx] at hc; obtain ⟨_, _, rfl⟩ := hc; rfl)
       | cases hc
   · cases hc
 
@@ -46,13 +46,13 @@ theorem entryXs_root (r : SourceRequest σ ι) {t t' : Tm} {c : Crossing spec.vi
   split at hc
   · rename_i hcond
     have hroot : ∀ f r' (args : List Tm), ((activeFrame none t).2 = .invoke f r' args ∨
-        (activeFrame none t).2 = .construct f args) → c ∈ ((args.take spec.arity).zip (r.inputs.take spec.arity)).map
-          (fun (v, T) => (⟨.into, T, v⟩ : Crossing spec.view.view)) →
+        (activeFrame none t).2 = .construct f args) → c ∈ (args.take spec.arity).mapIdx
+          (fun j v => (⟨.into, spec.entryTy r j, v⟩ : Crossing spec.view.view)) →
         c.val ∈ rootsOf spec.F spec.C none t ∨ ∀ l, ¬ Leaves (spec.F.at spec.C).ofC c.val l := by
       intro f r' args hp hm
-      obtain ⟨⟨v, T⟩, hvT, rfl⟩ := List.mem_map.mp hm
+      obtain ⟨j, hj, rfl⟩ := List.mem_mapIdx.mp hm
       exact redex_arg_root (ofC := spec.F.ofC spec.C) hcond.1 hp
-        (List.mem_of_mem_take (List.of_mem_zip hvT).1)
+        (List.mem_of_mem_take (List.getElem_mem hj))
     split at hc
     · rename_i f r' args heq; exact hroot f r' args (.inl heq) hc
     · rename_i f args heq; exact hroot f .undef args (.inr heq) hc

@@ -52,6 +52,9 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-comes-back",
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-same-key",
   "(() => { const h = { widths: [1, 1, 1], flags: [1, 1, 1] }; return walk(h, (i) => { if (i === 0) reset(h); }); })()"))),
   "a visitor calls the member that replaces the handle's flags under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-shared-code",
+  "(() => { const xs = [1, 1, 1]; return walkAgain(xs, (i) => { if (i === 0) xs.pop(); }); })()"))),
+  "a client pops the array it passed to the writable twin, under the walker");
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-trim",
   "(() => { const h = prepare(3); return walk(h, () => trim(0)); })()"))),
   "a visitor calls the member that pops the handle's widths under the walker");

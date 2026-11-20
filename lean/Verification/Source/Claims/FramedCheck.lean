@@ -422,8 +422,9 @@ of `framedDocument`; the flow its component's (`fc`); the document refused
 where it disagrees with it: its entries other than the component's or its
 framed call nodes other than the flow's (`framedCallNodes`); then the
 plan's proposals: the document's component, client obligation and protocol,
-which the pass checks (`compB`, `clientsB`, `protocolAtLeastB`), and the
-member's read-only inputs at their declared shapes (`readOnlyInputs`). -/
+which the pass checks (`compB`, `clientsB`, `protocolAtLeastB`), the
+realized code's read-only positions (`readOnlyPositions`) and the inputs
+at them (`readOnlyInputs`). -/
 def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι]
     (fc : FramedComponent) (member : String)
     (r : SourceElaboration.SourceRequest σ ι) (doc : Json) : Except String (FramedSpec ι) := do
@@ -449,9 +450,11 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
   let nodes := framedCallNodes F fc.cf.host m
   if framed.map (·.1) != nodes then throw s!"the document's framed call nodes {framed.map (·.1)} are not the flow's {nodes}"
   let some componentRefusal := fc.refusalAt C | throw (fc.restriction.getD "")
-  return { C, readOnly := readOnlyInputs fc.family C member r.inputs, outType := [], realm := fc.realm,
+  let arity := r.inputs.length - r.siblings.length
+  let ro := readOnlyPositions fc.family C member fc.cf.codes fc.cf.names m arity
+  return { C, readOnly := readOnlyInputs r.inputs ro, outType := [], realm := fc.realm,
            initE := fc.initE, initK := fc.initK, initOrder := fc.initOrder, initL := fc.initL,
-           arity := r.inputs.length - r.siblings.length, ofC := fc.ofC,
+           arity, roPositions := ro, ofC := fc.ofC,
            marks := fc.cf.O, checked := F, lay := fc.cf.lay, host := fc.cf.host, family := fc.family,
            codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
            theta, psi, psiDef := fc.psiDef, componentRefusal, framed }
