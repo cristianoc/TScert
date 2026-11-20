@@ -59,7 +59,7 @@ the program must justify the rest.
 
 **Proposals are untrusted; the pass decides.** Computed types, footprints,
 instances, loop-head facts and construction hints are proposals. The pass
-checks every proposal used to establish an extracted obligation against the
+checks every proposal used to establish an elaborated obligation against the
 source Lean reads itself. How a proposal is computed, the fuel and the
 subtype budget decide whether a unit is accepted, never what acceptance
 requires. A unit the pass refuses is *unverified*, never disproved.
@@ -100,10 +100,10 @@ say how a node reads in the source, never reach a judgment.
 ## Architecture
 
 The pipeline has two distinct jobs: computing type information and checking
-whether that information follows from the program. It also has two stages of
-lowering, meaning translation into a simpler program representation. The first
-fixes execution order without needing types; the second constructs the typed
-calculus program that the pass checks.
+whether that information follows from the program. Stages 2 to 4 are
+[elaboration](SOURCE-ELABORATION.md#elaboration-synthesis-and-lowering): the
+execution plans fix execution order without types, synthesis computes types,
+and lowering constructs the typed calculus program that the pass checks.
 
 ### Stages
 
@@ -119,16 +119,16 @@ calculus program that the pass checks.
    handler. Expression schedules record operand order and conditional
    evaluation. Binding schedules record parameter defaults and destructuring.
    These plans depend on source syntax alone.
-3. **Compute types in Lean.** One forward walk over each function's fragment
+3. **Compute types in Lean (synthesis).** One forward walk over each function's fragment
    body (`Synthesis.retypeUnit`) computes the type of each expression
    occurrence and of each binding at each statement entry, from the types the
    source writes and the typing of each construct; a generic call's instance
    is read off its actuals (`instancesFromWalk`), and a function's footprint
    is the one its declaration states or its checked steps establish
    (`PassProposals.proposals`). Each is a proposal.
-4. **Elaborate the typed program in Lean.** Lean reads annotations and the
+4. **Lower the typed program in Lean.** Lean reads annotations and the
    computed types at the execution plans' points (the **front**,
-   `FragmentFront.lean`) and elaborates operations into a **calculus graph**:
+   `FragmentFront.lean`) and lowers operations into a **calculus graph**:
    the program over which typing and safety are defined. This stage can depend
    on types, for example when choosing how to read an array element or a field.
    It produces a request containing that graph and the obligations it must meet.
@@ -148,7 +148,7 @@ Implementation entry points are [the parser](../tools/fragment-parse.mts),
 [the execution-plan writer](../lean/Verification/Source/FlowJson.lean),
 [the type computation](../lean/Verification/Source/Synthesis.lean),
 [the front](../lean/Verification/Source/Claims/FragmentFront.lean),
-[typed extraction](../lean/Verification/Source/Lowering.lean),
+[lowering](../lean/Verification/Source/Lowering.lean),
 [head inference](../lean/Verification/Source/Claims/HeadInference.lean) and
 [the pass](../lean/Verification/Programs/SinglePass.lean).
 [LANGUAGES](LANGUAGES.md) maps each representation to its definitions.
@@ -174,7 +174,7 @@ A **type label** names a type in that graph; the label's number or spelling
 has no independent meaning. Comparisons use the types denoted by labels.
 [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) defines that interpretation.
 
-The extractor also writes a **source map** linking calculus nodes and local
+The lowering also writes a **source map** linking calculus nodes and local
 slots to source descriptions. Diagnostics use it to locate failures. It is
 diagnostic metadata and supplies nothing to acceptance.
 
@@ -244,14 +244,14 @@ Its inputs include parameters and the module, imported and host values it
 uses.
 
 For inputs that satisfy their types and a heap that satisfies its storage
-contracts, the extracted program does not get stuck or return a value outside
+contracts, the lowered program does not get stuck or return a value outside
 its result type; a type guard's or an assertion function's returns keep its
 promise. It may throw or run forever. Generic units have this guarantee
-at every admissible assignment of their type parameters. All extracted plans
+at every admissible assignment of their type parameters. All elaborated plans
 pass through the checked conversion to `CertifiedPlan`; acceptance cannot
 silently omit an unhandled kind of plan.
 
-This is a theorem about the extracted calculus program. Correspondence between
+This is a theorem about the lowered calculus program. Correspondence between
 source JavaScript and that program, the interpretation of annotations, and the
 host's compliance with assumed contracts remain review obligations. The
 [trust surface](#trust-surface) lists them. The proofs, checked by
@@ -413,8 +413,8 @@ own code checks within it, and a closure within the unit creating it.
 **Units of a check.** The verifier reads a file's Fragment once and builds
 its **front** (the equations, the module environment with each module
 value's signature and effect, the generic instances, the initialization's
-types and order), and extracts each code unit's plan from
-it, one store grown through the units in turn; a unit whose extraction fails
+types and order), and elaborates each code unit's plan from
+it, one store grown through the units in turn; a unit whose elaboration fails
 keeps its refusal and leaves the store as it was. Code units that reach each
 other through the names their code mentions form one **unit** of the check,
 certified together: a recursive group's members are discharged by one check,
@@ -504,7 +504,7 @@ text.
 
 Equation well-formedness and inclusion are proved over the lowered equations
 ([validation and soundness](RECURSIVE-EQUATIONS.md#6-trust-and-acceptance)).
-Interpreting source annotations as those equations is part of source extraction's
+Interpreting source annotations as those equations is part of source elaboration's
 trusted obligation below.
 
 **Trusted tools.**
@@ -513,7 +513,7 @@ trusted obligation below.
 | --- | --- |
 | The parser represents the source faithfully: it admits only the fragment, and its lowerings (unbraced arms, `switch`, `for`, templates, enums, optional chains, async forms (each callable definition's completion kind, `sync` or `async`, from its own modifier), a written signature's statement of its effect (`Modifies<P, T>`, by the declaration TypeScript binds `Modifies` to, where it is the result annotation, and refused elsewhere; [stated effects](SOURCE-ELABORATION.md#stated-effects)), patterns, dead code, a shadowing local's renaming by the declaration TypeScript binds each reference to, a namespace member read as the binding of the export TypeScript binds it to, a `let` nothing writes as a `const` (a `for...of` or `for...in` head's too), a `for...in` whose body reads the entry at its key before anything that could change it runs as the steps of `%Iterate:ForIn%` with that read the step's value (`forInEntryReads`: the object's name written nowhere in the outermost function holding the loop, and a chain of reads from it unchanged by a body that runs no code and writes no property), a written `let` pattern as a `const` pattern and `let`s, a `for...of` pattern binding as a `const` pattern over the element at the body's start, a static block as a closure called at once, a class's static field initializers as bindings before the class value, which holds them as its fields, `instanceof` of a class with a static `[Symbol.hasInstance]` as its call, `k in o` with a key TypeScript types as other than string literals as `%HasProperty%(k, o)`, `xs[k]` of an array, a tuple or a node list at a `number` key as `%ElementAt%(xs, k)`, `b[k]` at a number and `b.length` of a view of bytes as `%ByteAt%(b, k)` and `%ByteLength%(b)`, and `b[k] = v` at a number as `%ByteSet%(b, k, v)`, an element read in an optional chain as either on the chain's present value, an element read a call takes as its callee as a member read, a call of a member read through `!`, `as`, `<T>` or `satisfies` as the call of the member's value with its object, saved, as the receiver, a private name as its member's symbol, a regex literal as a call of `%RegExp:Σ%` for its shape, an array literal's spread of a host iterable as a spread of `%Spread:K%`'s array, `s.m(o, …)` of a string method dispatching to an object `o` as `%Dispatch:m%(s, o, …)`, a type guard's or an assertion function's `return e` of a Boolean by its form as `if (e) return true; else return false` ([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), a rest parameter's alias equation, the iterator protocol of a program's iterable in a `for...of`, a spread and an array pattern, with its closing region) preserve JavaScript's execution. | `tools/fragment-parse.mts` and its parts (`fragment-classes`, `fragment-expressions`, `fragment-guards`, `fragment-statements`, `fragment-support`), `fragment.mts` |
 | A function declaration's precondition is what its `@requires` clause means: the front end reads the clause from the declaration's leading JSDoc comment and states it, as index facts at the call's positions, on the signature its module's callers see and on its unit's request, which Lean reads from the one Fragment field, and, by the same elaboration, on the signature a module importing it reads from its declaration (`writtenImport`), which the store-map checks relate to the unit's where the import is read at an established entry (`FilePlans.refuseRows`); a clause outside the language read, and one on an async function, is refused. | [`tools/bound-annotations.mts`](../tools/bound-annotations.mts), `functionDecl` in `tools/fragment-statements.mts`, `writtenImport` in `tools/fragment-parse.mts`; [preconditions](ARITHMETIC.md#preconditions) |
-| Source extraction preserves control flow, lexical binding, evaluation order and annotations: which program point a type is attached to is unproved. No source-to-graph preservation theorem exists. A key-adding write is lowered as a copy only where every reference to the object is a local holding it, the one that allocated it or a constant bound to it since, and the copy is rebound to each (`growSites`, a syntactic analysis; a holder is found in scope by its name and declaring statement): that JavaScript's write in place and the copy agree rests on it, and, at a string key known only at run time, on the dispatch that leaves the object as it is where the key is `__proto__` and the object does not own it. That a `new` of a class the file declares returns an object nothing else holds rests on the parser's class lowering (the constructor reads no `this` and ends in the allocation). A mutable binding is held in a slot of its activation where `cellLocals`, a syntactic analysis, finds no closure that writes it and no write after the creation of a closure that mentions it: that the binding is then its activation's alone rests on it. A condition in a test position is lowered by the short-circuit translation, each operand dispatched on its truth and `!` exchanging the outcomes, and a leaf reading an immutable binding whose context type answers the test takes that arm alone, holding the binding's value from its slot: that these evaluate the operands as the operators do and take the edges a run takes rests on the equations of [conditions](SOURCE-ELABORATION.md#conditions). | `Source/Fragment.lean`, `Source/SourceFacts.lean`, `Source/Lowering.lean` |
+| Lowering preserves control flow, lexical binding, evaluation order and annotations: which program point a type is attached to is unproved. No source-to-graph preservation theorem exists. A key-adding write is lowered as a copy only where every reference to the object is a local holding it, the one that allocated it or a constant bound to it since, and the copy is rebound to each (`growSites`, a syntactic analysis; a holder is found in scope by its name and declaring statement): that JavaScript's write in place and the copy agree rests on it, and, at a string key known only at run time, on the dispatch that leaves the object as it is where the key is `__proto__` and the object does not own it. That a `new` of a class the file declares returns an object nothing else holds rests on the parser's class lowering (the constructor reads no `this` and ends in the allocation). A mutable binding is held in a slot of its activation where `cellLocals`, a syntactic analysis, finds no closure that writes it and no write after the creation of a closure that mentions it: that the binding is then its activation's alone rests on it. A condition in a test position is lowered by the short-circuit translation, each operand dispatched on its truth and `!` exchanging the outcomes, and a leaf reading an immutable binding whose context type answers the test takes that arm alone, holding the binding's value from its slot: that these evaluate the operands as the operators do and take the edges a run takes rests on the equations of [conditions](SOURCE-ELABORATION.md#conditions). | `Source/Fragment.lean`, `Source/SourceFacts.lean`, `Source/Lowering.lean` |
 | Decoding represents the submitted AST, declarations and module interfaces faithfully; the strict decoders read their shapes ([wire text](REQUEST-PROTOCOL.md#wire-text)). | `Source/Fragment.lean`, `Claims/ModuleInterfaces.lean`, `RequestCli.lean` |
 | TypeScript's checker resolves each name to its declaration in the file's project, whose strict `tsconfig.json` (paths, links, library set, type packages) reflects the real build; a TypeScript error in a collected declaration or on an import it passes through refuses the graph. The parser checks TypeScript read the bytes it parsed. | `tools/declaration-graph.mts` |
 | TypeScript's evaluation is trusted as its resolution is: a computed type (`typeof`, `keyof`, `T[K]`, template literal types, conditional types, primitive intersections, mapped keys) means what its checker computes; a computed form naming a declaration's parameters, at an application, means what the checker computes for a probe declaration with that declaration's parameters (merged across its declarations) and the application's arguments copied verbatim, every copied name checked to resolve to what it resolves to where it is written (a parameter of the declaration, merged parts included, to the probe's parameter at its position), the generated reference checked to bind to the inserted probe declaration, and the answer read from the inserted declaration found where it was placed ([written applications](SOURCE-CONTRACTS.md#written-applications)); an enum member's value is `getConstantValue`'s, which its emit writes; a `const enum` read is the member TypeScript binds it to; global member and overload resolution selects which declared signatures are assumed. | [`tools/computed-types.mts`](../tools/computed-types.mts), [`tools/type-probe.mts`](../tools/type-probe.mts), `declaration-graph.mts` |
@@ -589,7 +589,7 @@ the model's reading of an operation relies.
 | The standard `Object.assign`, `Function.prototype.call`, `apply` and `bind` are the intrinsics the parser lowers where TypeScript binds `Object` and its member `assign`, or the member `call`, `apply` or `bind`, to the standard library's declarations alone (a declaration augmenting `ObjectConstructor.assign` makes `Object.assign` refused) (a local, an import or a namespace member of that spelling is an ordinary binding); the fragment cannot write those properties. | `tools/fragment-parse.mts` |
 | A native regex (what a regex literal evaluates to) keeps, throughout its lifetime, the realm's `RegExp.prototype`, whose `exec`, `test`, `[Symbol.match]`, `[Symbol.matchAll]`, `[Symbol.replace]`, `[Symbol.search]`, `[Symbol.split]`, flag accessors, `constructor` and `%RegExp%[Symbol.species]` are the standard ones; it owns no property but `lastIndex`, which holds a number, and keeps the pattern and flags it was created with. Its methods therefore meet `N(Σ)` for its literal's shape Σ, and the iterator its `[Symbol.matchAll]` returns has no `return` and runs no client code. Its methods write no property but `lastIndex`: `[Symbol.search]` restores it, `[Symbol.split]` and `[Symbol.matchAll]` write only a fresh clone's, and those of a regex neither global nor sticky write none. The fragment writes no property of a regex, calls no `compile`, names neither `RegExp.prototype` nor the species, and extends no library class; external code preserves the same of every native regex it reaches. | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions); `tools/regexp.mts` |
 | A value a unit receives at a `RegExp` annotation meets the structural regex `⟦RegExp⟧`, its whole behavioural contract: each method returns its stated result, every capture a string or `undefined`, and reading a stated member runs no code. No provenance is assumed of it: it reaches neither `matchAll`, `replaceAll` nor the native iteration. | `EnvOk` over the input types; `libraryRegExpTerm` in `tools/regexp.mts` |
-| A value of type `Promise<T>` is a genuine native promise with the built-in stable standard prototype, constructor, methods and species. The source contract excludes own replacements of those inherited members through structural aliases. Direct observation retains its fulfilled `T`, which may be an object that later acquires `then`; fresh resolution operations require their stated stable non-thenable result contracts. External code supplies and preserves the same native invariant; a declaration's `Symbol.toStringTag` is no evidence of it. The declaration document's symbol list is the library's, every symbol the source reaches listed, a trusted extraction obligation. `Object.prototype` and `Function.prototype` own no `Symbol.toStringTag` ([ECMA-262](REFERENCES.md#ecma-262)). | [native promise contracts](SOURCE-CONTRACTS.md#async-functions-and-await); [objects owning `then`](SOURCE-CONTRACTS.md#objects-owning-then); the prototype overlay in `tools/declaration-graph.mts` |
+| A value of type `Promise<T>` is a genuine native promise with the built-in stable standard prototype, constructor, methods and species. The source contract excludes own replacements of those inherited members through structural aliases. Direct observation retains its fulfilled `T`, which may be an object that later acquires `then`; fresh resolution operations require their stated stable non-thenable result contracts. External code supplies and preserves the same native invariant; a declaration's `Symbol.toStringTag` is no evidence of it. The declaration document's symbol list is the library's, every symbol the source reaches listed, a trusted elaboration obligation. `Object.prototype` and `Function.prototype` own no `Symbol.toStringTag` ([ECMA-262](REFERENCES.md#ecma-262)). | [native promise contracts](SOURCE-CONTRACTS.md#async-functions-and-await); [objects owning `then`](SOURCE-CONTRACTS.md#objects-owning-then); the prototype overlay in `tools/declaration-graph.mts` |
 
 ## Lasting decisions
 
@@ -759,7 +759,7 @@ owner; other documents link to them and give only the context their readers need
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
 | [ARITHMETIC](ARITHMETIC.md) | Integer facts: linear facts over values, lengths and paths and their certificates, the clause language, preconditions, postconditions, type invariants, guarded and quantified clauses and loop invariants. |
 | [ANNOTATIONS](ANNOTATIONS.md) | The cheat sheet of every annotation TScert reads: where each is written, an example, and its owning section. |
-| [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | The lowering of every source form (statements, guards, iteration, mutable bindings, closures, inferred effects) and the checklist for adding one. |
+| [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | Elaboration (synthesis and lowering), and the lowering of every source form (statements, guards, iteration, mutable bindings, closures, inferred effects) and the checklist for adding one. |
 | [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Reading types, declarations and annotations; library contracts and their audits; certified imports. |
 | [CALLABLES](CALLABLES.md) | What a function is in the calculus: callable values, their call and code rules and their proof scope. |
 | [FOOTPRINTS](FOOTPRINTS.md) | Footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas, and natives as its instances, whose footprints are trusted and argued in a model of their specification steps. |
@@ -818,7 +818,7 @@ and constructs each function request. Separate modules handle
 its owner. Lowering components compose an abstract `Compiler` through operations
 for graph construction, observations, obligations and code publication. Temporary
 execution bindings, receivers, handlers and graph frames have scoped operations.
-The extraction runner returns an immutable result containing the completed
+The elaboration runner returns an immutable result containing the completed
 graph and shared outputs. The type boundary excludes general state access and
 raw compiler-state replacement from consumers.
 
@@ -828,9 +828,9 @@ The front builds a file's claims in the shape of
 with [scheme interpretation](../lean/Verification/Source/Claims/Schemes.lean),
 [source-site validation](../lean/Verification/Source/Claims/Sites.lean) and
 [equation preparation](../lean/Verification/Source/Claims/Preparation.lean).
-[Request extraction](../lean/Verification/Source/Claims/Elaboration.lean) combines
+[Request elaboration](../lean/Verification/Source/Claims/Elaboration.lean) combines
 them with typed lowering. [Plan certification](../lean/Verification/Source/Claims/Plans.lean)
-requires every extracted plan to cross an exhaustive conversion before the
+requires every elaborated plan to cross an exhaustive conversion before the
 pass checks it ([the file plans](../lean/Verification/Source/Claims/Json.lean),
 `passGroupMode8`).
 [PassUnitRun.lean](../lean/Verification/Source/Claims/PassUnitRun.lean) owns

@@ -36,17 +36,17 @@ languages.
 | **Claim expressions** — structural type expressions used by diagnostics and internal source-type conversion | [Claim.lean](../lean/Verification/Types/Claim.lean) | [claim.mts](../tools/claim.mts), printed by [claim-text.mts](../tools/claim-text.mts) | claim parsing and type conversion |
 | **Source execution plans** — type-independent control-flow graphs with expression and binding schedules | [FlowJson.lean](../lean/Verification/Source/FlowJson.lean) writes [FlowGraph.lean](../lean/Verification/Source/FlowGraph.lean), [ExpressionPlan.lean](../lean/Verification/Source/ExpressionPlan.lean) and [BindingPlan.lean](../lean/Verification/Source/BindingPlan.lean) (`verifier --lower-control-flow`); [ExecutionRoots.lean](../lean/Verification/Source/ExecutionRoots.lean) selects each node's expressions | [source-flow.mts](../tools/source-flow.mts), read by [lowering-dump.mts](../dev/lowering-dump.mts) (`make lowering`) | Lean source lowering |
 | **Resolution metadata** — a qualified type parameter's owned names (`resolution` in the Fragment's `typeParams`) | [ResolutionWire.lean](../lean/Verification/Source/ResolutionWire.lean) | [declaration-types.mts](../tools/declaration-types.mts) (`ResolutionSlots`) | the parser |
-| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](../lean/Verification/Semantics/Calculus.lean) | [calculus.mts](../tools/calculus.mts) | extraction |
-| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](../lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](../tools/control-flow.mts) | extraction |
-| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](../lean/Verification/Types/PositiveNormalization.lean) | [type-graph.mts](../tools/type-graph.mts) | extraction |
-| **Request** — a unit's extracted program and obligations, in memory | [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | — | extraction |
+| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](../lean/Verification/Semantics/Calculus.lean) | [calculus.mts](../tools/calculus.mts) | lowering |
+| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](../lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](../tools/control-flow.mts) | lowering |
+| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](../lean/Verification/Types/PositiveNormalization.lean) | [type-graph.mts](../tools/type-graph.mts) | lowering |
+| **Request** — a unit's lowered program and obligations, in memory | [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | — | lowering |
 | **Module interface** — each checked module's established functions with their footprints and interface rows, read by the modules importing it | [ModuleInterfaces.lean](../lean/Verification/Source/Claims/ModuleInterfaces.lean) | [module-interfaces.mts](../pipeline/module-interfaces.mts) carries it between stages ([single-pass module interfaces](STAGE-STORE.md#single-pass-module-interfaces)) | the verifier (`--module-interface`) |
 | **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | [diagnostic.mts](../tools/diagnostic.mts), rendered by [diagnostic-view.mts](../tools/diagnostic-view.mts) | the verifier |
 
 A representation's syntax does not establish the truth of what it says.
 Fragment and declaration collection are trusted translations of source. Source
 execution plans are the graphs the pass walks, printed for inspection.
-Request contains the extracted program and obligations the pass checks. A
+Request contains the lowered program and obligations the pass checks. A
 module interface states what an imported module's check established.
 Diagnostic explains an outcome and has no role in acceptance.
 

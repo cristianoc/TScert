@@ -179,7 +179,7 @@ represented by copying the object with the additional field and updating every
 local binding that holds it. This translation is valid only when no other
 reference can observe the old object, the strong update of alias types
 ([Smith, Walker and Morrisett 2000](REFERENCES.md#smith-walker-and-morrisett-2000)).
-Source extraction checks that ownership condition;
+Source elaboration checks that ownership condition;
 [key-adding writes](PROGRAM-TYPING.md#key-adding-writes) states the restriction.
 
 A record type is **open**: it describes named properties without excluding
@@ -240,7 +240,7 @@ the value (`object-computed-literal-key`). The Fragment marks the field
 computed, and Lean refuses one whose key is not the key $`\ell`$ converts to
 (`computedGate` in `Claims/Preparation.lean`). The check holds of the fields
 the parser marks: that every computed key is marked is the parser's, a
-trusted extraction obligation. A key at a union of
+trusted lowering obligation. A key at a union of
 literals, at `string` or `number`, or written as any other expression is
 refused, as the allocation's keys are then known only at run time;
 `__proto__`, a key whose possible values include `Symbol.toStringTag`, and

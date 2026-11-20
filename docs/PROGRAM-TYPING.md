@@ -560,7 +560,7 @@ $`\mathsf{undefined}`$ and must therefore be admitted by $`E`$. Creation checks 
 frame with the rest spine in slot 0, the receiver in slot 1, then the fixed
 parameters: the second case of $`\mathrm{Offers}_G`$ (`funGraph`;
 `callableGraph` adds a field bag). The code's entry node wraps the spine into
-the array the rest parameter names, an ordinary allocation the extractor
+the array the rest parameter names, an ordinary allocation the lowering
 emits.
 
 [RestCalls.lean](../lean/Verification/Programs/RestCalls.lean) proves variadic calls: eliminating a variadic signature, allocating the rest spine, spreading actuals.
@@ -3006,7 +3006,7 @@ A new expression rule touches each layer once:
    `pipeline/cases.mts`, the negative one also run under Node
    (`tests/node-runs.mts`) when it guards a JavaScript behaviour, and a
    control in `tests/single-pass-controls.mts` (a forced proposal or a forged
-   fragment) when the rule reads a type whose program point extraction chooses
+   fragment) when the rule reads a type whose program point elaboration chooses
    ([which tests to keep](../AGENTS.md#which-tests-to-keep)).
 
 ## Control flow
@@ -3239,7 +3239,7 @@ contract its result key states, the $`V`$ of an entry whose class admits the
 key, or its copied value for a key the result does not state. Evidence names
 the rule `merge` with the two operands' derivations; the search types a slot
 operand at the slot's type and tries the requested type, then the pool's,
-for the result, coercing; extraction proposes the clauses
+for the result, coercing; elaboration proposes the clauses
 (`ObjectMerge.mergeResult`: where a side states an index, the dictionary over
 the sides' classes, each at the union of the index types and the admitted
 fields' types of the classes overlapping it, if the rule admits it, else the

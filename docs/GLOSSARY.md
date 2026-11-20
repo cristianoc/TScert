@@ -35,11 +35,11 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **candidate** (at a statement entry): a fact proposed at a statement entry, which the pass keeps there where every edge into the entry establishes it and no check requires ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
 - **certificate**: a finite description of a derivation the checker validates, such as a subtype comparison's dependencies or a qualified binder's resolution ([incompleteness](DESIGN.md#incompleteness)).
 - **checker** / **verifier**: the Lean program that validates a certificate against the exact translated program; its success is what acceptance means ([stages](DESIGN.md#stages), [the CLI](REQUEST-PROTOCOL.md#run-the-verifier)).
-- **claim**: a type or state description proposed at a program point; it becomes an obligation where extraction uses it ([source claims](SOURCE-CLAIMS.md)).
+- **claim**: a type or state description proposed at a program point; it becomes an obligation where elaboration uses it ([source claims](SOURCE-CLAIMS.md)).
 - **code unit** / **unit**: a function, a group of functions that reach each other by name, or a module's initialization body, certified together and given one verdict ([modules and code units](DESIGN.md#modules-and-code-units), [what "verified" means](DESIGN.md#what-verified-means)).
 - **declaration graph** / **declaration document**: the types and external values a source uses, as the front end collects them ([stages](DESIGN.md#stages)).
 - **declaration reader**: the type reader's part that reads the declarations a type reaches ([source contracts](SOURCE-CONTRACTS.md)).
-- **elaboration** / **extraction**: Lean's translation of a function, with the proposed types, into a calculus graph and its obligations ([stages](DESIGN.md#stages)).
+- **elaboration**: Lean's translation of a code unit's Fragment into a calculus program with its obligations, by synthesis and lowering ([elaboration, synthesis and lowering](SOURCE-ELABORATION.md#elaboration-synthesis-and-lowering)).
 - **environment**: the proposed types of the local bindings at a program point, with facts about their current contents ([stages](DESIGN.md#stages)).
 - **equation lowering**: Lean's translation of declarations, annotations and claim labels into recursive type equations ([implementation map](DESIGN.md#implementation-map)).
 - **evidence**: a node's derivations and the facts they cite, as the pass builds and checks them ([evidence](REQUEST-PROTOCOL.md#evidence)).
@@ -48,14 +48,15 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **Fragment**: the parser's output, a syntax tree of the supported source constructs ([stages](DESIGN.md#stages), [format](FRAGMENT-FORMAT.md)).
 - **front end**: the TypeScript program on the compiler's API (`tools/`) that reads the source and the declarations it uses ([stages](DESIGN.md#stages)).
 - **gate** (the parser's gate): the parser's admission of a source form only where it is lowered faithfully, with a located refusal elsewhere ([adding a source form](SOURCE-ELABORATION.md#adding-a-source-form)).
-- **lowering**: a translation into a simpler program representation; the parser's fixes execution order, Lean's builds the typed calculus program ([architecture](DESIGN.md#architecture)).
-- **obligation**: a typing or subtype judgment the extracted program must meet for acceptance ([types at program points](DESIGN.md#types-at-program-points)).
+- **lowering**: elaboration's construction of the calculus program from the Fragment, form by form, at the types synthesis proposes, with each form's obligations; the **parser's lowering** is the parser's translation of a TypeScript form into Fragment constructs ([elaboration, synthesis and lowering](SOURCE-ELABORATION.md#elaboration-synthesis-and-lowering)).
+- **obligation**: a typing or subtype judgment the lowered program must meet for acceptance ([types at program points](DESIGN.md#types-at-program-points)).
 - **parser**: the front end's part that emits the Fragment (`tools/fragment-parse.mts` and its parts) ([stages](DESIGN.md#stages)).
-- **pipeline**: parse, plan, compute types, elaborate, propose loop-head facts, check in one pass, run by `pipeline/verify-source.mts` ([the entry point](DESIGN.md#the-pipeline-entry-point)).
+- **pipeline**: parse, plan, synthesize types, lower, propose loop-head facts, check in one pass, run by `pipeline/verify-source.mts` ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 - **request**: the translated program with the obligations it must meet, which the pass checks ([stages](DESIGN.md#stages)).
 - **search**: the untrusted choice among derivations a step or a subtype comparison makes; its failure shows nothing about safety ([incompleteness](DESIGN.md#incompleteness)).
 - **source map**: diagnostic metadata linking calculus nodes to source descriptions; it supplies no evidence ([types at program points](DESIGN.md#types-at-program-points)).
 - **source span**: a pair of offsets locating syntax in the source file ([types at program points](DESIGN.md#types-at-program-points)).
+- **synthesis**: elaboration's computation of types, one forward walk proposing each expression's and binding's type, which lowering states and the pass checks ([elaboration, synthesis and lowering](SOURCE-ELABORATION.md#elaboration-synthesis-and-lowering)).
 - **type label**: a name of a type in the graph of recursive type equations; its spelling has no meaning of its own ([types at program points](DESIGN.md#types-at-program-points)).
 - **type reader**: the translation of annotations, declarations and library contracts into graph types ([source contracts](SOURCE-CONTRACTS.md)).
 - **wire**: the JSON documents passed between stages (Fragment, module interfaces, execution graphs, diagnostics), each one declared type ([languages](LANGUAGES.md)).
@@ -71,7 +72,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **safety**: an accepted unit, given inputs meeting their types, returns a value of its type, steps or throws; it never gets stuck or returns a wrong value ([principles](DESIGN.md#principles)).
 - **unsupported**: source processing or proposal refused a construct (`unsupported/source`, `unsupported/proposal`) ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 - **unverified**: the pass did not establish a required derivation (`unverified/search`) ([the entry point](DESIGN.md#the-pipeline-entry-point)).
-- **verified**: certificate checking accepted the extracted request ([the entry point](DESIGN.md#the-pipeline-entry-point)).
+- **verified**: certificate checking accepted the elaborated request ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 
 ## Cases, controls and tests
 
@@ -239,7 +240,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **T1–T8**: the compiler API's trust rows: T1 node invariant, T2 guards, T3 node methods (no server request, no client code but `forEachChild`'s visitors), T4 restricted values, T5 enum objects, T6 sync API, T7 stated type guards, T8 external code ([trust](COMPILER-API.md#trust)).
 - **trust row**: one assumption of the trust surface, with where it is stated ([trust surface](DESIGN.md#trust-surface)).
 - **trust surface**: everything the safety theorem does not establish, each item a premise or a trusted tool ([trust surface](DESIGN.md#trust-surface)).
-- **trusted tool**: a component whose correctness acceptance relies on: the parser, extraction, decoding, TypeScript's checker, Lean, the store's replay ([trust surface](DESIGN.md#trust-surface)).
+- **trusted tool**: a component whose correctness acceptance relies on: the parser, lowering, decoding, TypeScript's checker, Lean, the store's replay ([trust surface](DESIGN.md#trust-surface)).
 
 ## Project process
 

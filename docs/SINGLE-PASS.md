@@ -419,7 +419,7 @@ its work by kind and item, an item being a function
 `<name>~<k>` for an overloaded function's `k`-th signature, `init`) or a
 file (`<sha256 prefix>`): preparation
 (`prepare:` the claims, the file lowering, the initialization typing, each
-function's extraction, the freezing, the plans over the store, the head
+function's elaboration, the freezing, the plans over the store, the head
 facts, an importer's plans), body walks (`walk:` a proposal walk, the
 returned-callable round's, a recursive function's walks after its first,
 the retype walk, the instance walk, and within any of them each further

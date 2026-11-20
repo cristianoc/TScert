@@ -42,7 +42,7 @@ def statementRoots : Stmt → List Expr
   | .forOf _ _ _ _ iterable _ => [iterable]
   | .brk .. | .cont .. | .block .. | .tryStmt .. | .closing .. => []
 
-/-- The source expressions elaborated at an action, in source preorder. -/
+/-- The source expressions lowered at an action, in source preorder. -/
 def actionRoots : Action → List Expr
   | .declaration _ _ binding _ => [binding.init]
   | .statement statement _ | .branch statement _ _ | .returnValue statement

@@ -16,7 +16,7 @@ set_option maxHeartbeats 1000000
 
 /-- Expression-body parameter defaults follow the shared binding schedule.
     Inputs retain their original frame indices while names enter source scope
-    in the parameter order supplied by extraction. -/
+    in the parameter order lowering supplies. -/
 @[nospecialize] private partial def defaultEntry (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (pos : Span)
     (params : List (String × Ty Tree)) (defaults : List (Nat × Fragment.Expr))
     (k : List (ScopeBinding Tree) → List (Ty Tree) → Compiler Target) :

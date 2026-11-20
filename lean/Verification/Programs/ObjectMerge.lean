@@ -2038,7 +2038,7 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
 
 /-! ### The result a merge is typed at
 
-Untrusted: what extraction proposes for a merge, one clause per pair of the
+Untrusted: what lowering proposes for a merge, one clause per pair of the
 operands' clauses. `MergeClause` checks it, as any claim. -/
 
 /-- The type a side's field or view states for a key. -/

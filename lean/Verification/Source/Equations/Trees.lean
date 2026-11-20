@@ -105,7 +105,7 @@ primitive values are the nullary heads 0 to 3, which `primitives` allocates
 first and compaction keeps first. -/
 
 instance : LabelStore.Labels Tree where
-  -- An extracted label's store still grows: instances are proposed over the
+  -- An elaborated label's store still grows: instances are proposed over the
   -- frozen equations (`EquationStore.Checked`).
   propose _ _ _ := none
   toJson := Tree.toJson

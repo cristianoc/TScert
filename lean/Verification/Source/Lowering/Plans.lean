@@ -852,7 +852,7 @@ reach; one in scope that its name does not resolve to is refused. -/
     | some slot => pure (slots ++ [slot])
     | none =>
       if scope.any (declares h) then
-        throw s!"internal extraction error: the holder '{h.1}' of an owned object is in scope under another binding of its name"
+        throw s!"internal lowering error: the holder '{h.1}' of an owned object is in scope under another binding of its name"
       pure slots
   return some slots
 

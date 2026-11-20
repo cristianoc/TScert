@@ -402,7 +402,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   drain
   -- Every producer row has its head before the heads are hash-consed, so a
   -- row equal to a declaration's literal is merged with it (§8.1) whether or
-  -- not a unit's extraction names it first. A row whose lowering is refused
+  -- not a unit's elaboration names it first. A row whose lowering is refused
   -- is left to the unit that names it, which meets the refusal there.
   for n in [4:P.rows.size] do
     let saved ← get

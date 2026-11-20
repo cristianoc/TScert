@@ -127,7 +127,7 @@ def overloadSlot (arrows : List Json) : Except String Json := do
 /-- What a file's units share: its document and claims read once (the
 equations, the module environment, the generic instances, the
 initialization's claims and order), and its units, each a function or the
-module's initialization with its claims. Every input a unit's extraction
+module's initialization with its claims. Every input a unit's elaboration
 reads beside its own code and claims is a field of the front. -/
 structure Front where
   ast : Json
@@ -467,7 +467,7 @@ def Front.withQualified (fr : Front)
       | _, _ => v
     qualifiedNames := qualified.map (·.1) }
 
-/-- What replaces a unit's claims before its extraction, where one does:
+/-- What replaces a unit's claims before its elaboration, where one does:
 its claims with the types a computation gives (`Synthesis.retypeUnit`), over
 a grown store, and the members and names the computation read
 (`SourceElaboration.contractReads`). -/
@@ -488,7 +488,7 @@ the unit's source tree, over a grown store. -/
 abbrev ClosureSchemes := EquationStore.State → Json →
   Except String (EquationStore.State × List (Expression Tree))
 
-/-- One unit's plan, extracted from the front over the store `T`. -/
+/-- One unit's plan, elaborated from the front over the store `T`. -/
 def elaborateMember (fr : Front) (T : EquationStore.State)
     (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) (retype : Option Retype := none)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
@@ -678,7 +678,7 @@ def elaborateMember (fr : Front) (T : EquationStore.State)
     -- read.
     let contractReads := (members ++ readValues values names ++ request.contractReads).eraseDups
     return .graph f.name f.namePos { request with sourceScheme, contractReads }
-  -- A generic unit's graph extraction reports where it stops as a
+  -- A generic unit's lowering reports where it stops as a
   -- located refusal at the function, as the direct checker's do.
   let plan ← if tps.isEmpty then finish d module c f
     else tryCatch (finish d module c f) fun e =>

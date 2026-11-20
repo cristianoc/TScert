@@ -794,7 +794,7 @@ footprint its steps establish (`PassProposals.proposals`, as for a file's own
 functions, [footprints](FOOTPRINTS.md#the-checked-callback-contract)). It checks with
 the single pass every group that the functions whose footprint is more than
 the ordinary effect reach, the module's initialisation where they reach a
-name it binds (the initialisation unit and order, `Extraction.lean`). A
+name it binds (the initialisation unit and order, `Elaboration.lean`). A
 function's footprint is established where its group and, transitively,
 every group it depends on are accepted (`establishedUnits`); an
 established footprint is published as an entry where its function is laid
@@ -894,7 +894,7 @@ against each other's signatures, on which the units of one module rely too.
 A dependency whose initialisation throws stops the importer's evaluation:
 certifying a body proves no initialisation succeeds. The invariant is a
 review obligation, listed with the import assumption and in the
-[parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
+[parser, lowering, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
 
 **A catch.** A certified import's footprint holds on normal return, and on
 a throw where its entry states `onThrow`
@@ -940,11 +940,11 @@ with $`\varphi_i`$ a declaration's fields, methods and index signatures and
 $`\vec\sigma_i`$ its call signatures, each read in the scope of
 $`X_1\ldots X_{k_i}`$ (`interface-merge-prefix-parameters`).
 
-The store a unit is extracted over is the lowering's heads, and extraction
+The store a unit is elaborated over is the lowering's heads, and elaboration
 grows it ([Equations/Store.lean](../lean/Verification/Source/Equations/Store.lean)): a union of clauses, a scheme over a closure's
 binders and a bounded binder's meet each become a head whose template lifts
 the owned parameters it names to arguments. Every unit of a file grows the
-one store in turn, and once extraction is done the heads are validated
+one store in turn, and once elaboration is done the heads are validated
 (`Equations.ofRaw`) and every request is checked over their
 `Equations.graph` (`fragmentPlansWithModules` in `FragmentFront.lean`).
 
@@ -1051,7 +1051,7 @@ establishes a parameter's bound $`B`$ through that one:
 ```
 
 A binder the source spells by its name, in an annotation or a claim, is its
-name's placeholder until the unit or closure that binds it is extracted: a
+name's placeholder until the unit or closure that binds it is elaborated: a
 generic unit's binders are the owned parameters of its head
 (`EquationLowering.enterUnit`), a generic closure's those of the scheme its
 claim states (`Scheme.schemeRowOf`), and each annotation and claim inside
@@ -2600,7 +2600,7 @@ reader of a class value states one constructor without a rest
 A written function type supplies its parameter list directly, including
 optional and rest positions. Each position retains its complete annotation,
 including a callback's `Modifies` effect. The enclosing function's result
-and effect do not qualify the extracted parameters.
+and effect do not qualify the parameters it supplies.
 
 A guard's result is its Boolean, which TypeScript computes as a union of
 literals (`returntype-guard`); a generic function's `typeof` is refused, as
@@ -6372,7 +6372,7 @@ object owning $`\sigma_{\mathit{tag}}`$. Lean checks:
 
 The symbol list's authenticity and completeness, that its entry is the
 library's own symbol and that a symbol the source reaches is listed, are the
-parser's, a trusted extraction obligation: Lean checks duplicate entries and
+parser's, a trusted lowering obligation: Lean checks duplicate entries and
 the identity's module and name.
 
 The exclusion these give is conjectured, not proved. It concerns the

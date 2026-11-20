@@ -117,7 +117,7 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
   let sites := allFunctionSites f
   (sites.1, sites.2.1)
 
-/-- Source sites owned by one elaboration action. Structural successors own
+/-- Source sites owned by one lowering action. Structural successors own
 separate claims even when they share source syntax. -/
 def actionSites : SourceFlow.Action → List Span
   | .declaration _ _ binding _ => (exprSitesCore false binding.init).2.1

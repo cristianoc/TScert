@@ -58,11 +58,11 @@ function recordType(table: Table, labels: JsonRead): string {
 
 /* ---------- source maps ---------- */
 // A descriptor says how one context binding is named in the source: a binding
-// name, or the expression whose value it holds. Extraction guarantees one of the
+// name, or the expression whose value it holds. Lowering guarantees one of the
 // two for every binding and fails rather than emit a context it cannot describe,
 // so a position should never reach a reader. The `slot N` fallback below is for
 // a record that arrives without a source map at all; seeing one means
-// extraction broke that invariant.
+// lowering broke that invariant.
 // A name lowering makes up for a value no source binding holds (`%next@264%`,
 // `.path:0`) is shown by the source expression it holds where the descriptor
 // gives one.

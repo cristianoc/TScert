@@ -46,7 +46,7 @@ slots are introduced only after the operand supplying their type is checked. -/
         | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
   | .equality .. => throw "internal unresolved equality"
-  | .block .. => throw "internal extraction error: statements outside a closure body"
+  | .block .. => throw "internal lowering error: statements outside a closure body"
   | .objectAssign .. => throw (locatedRefusal (← table) e.span .expressionClaim
       "Object.assign in a closure's term code is outside the fragment: its copies are graph nodes")
   | .var _ name =>
@@ -69,10 +69,10 @@ slots are introduced only after the operand supplying their type is checked. -/
       let no := DirectProof.var F 0 (F.headD [])
       -- The intrinsic's call, at the intrinsic's own slot type.
       let some (t, _) := resolve scope throwUninitializedName
-        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+        | throw s!"internal lowering error: an early binding's access without {throwUninitializedName}"
       let some Ti := K[t+1]? | throw "internal closure slot mismatch"
       let [.arrs L _] := PositiveRules.expand G Ti
-        | throw s!"internal extraction error: {throwUninitializedName} is no arrow"
+        | throw s!"internal lowering error: {throwUninitializedName} is no arrow"
       let ⟨Rt, Ds, R, effect⟩ ← selectSignature G L []
       let raise := DirectProof.node K (.call (.var (t+1)) []) R (.app effect)
         (DirectProof.var K (t+1) Ti :: plainReceiver K Rt :: omittedPremises K Ds 0)

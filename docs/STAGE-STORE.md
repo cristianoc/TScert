@@ -713,7 +713,7 @@ the file key, the depth, the selection and the environment, all in `W`.
 Its preparation line is a function of `P`. A unit's line is
 `check(P, i)` (`PreparedFile.check`): unit `i`'s group planned in its own
 check (`PreparedFile.plan`: the plans of that group alone, its import reads,
-proposals and extraction, over `P`'s front), then the group checked. The
+proposals and elaboration, over `P`'s front), then the group checked. The
 planning reads the proposals of the groups `i`'s group reaches outside
 itself, each computed by that group's own planning, callees first
 (`PreparedFile.known`). A group's proposals are a function of the file and

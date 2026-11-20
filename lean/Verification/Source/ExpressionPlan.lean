@@ -1,8 +1,8 @@
--- expression elaboration consumes a syntax-owned execution plan with explicit sequencing and branch choices.
+-- expression lowering consumes a syntax-owned execution plan with explicit sequencing and branch choices.
 import Verification.Source.Fragment
 
 /-! Execution plans separate source operand evaluation from typed primitive
-    elaboration. Saved values retain their source origin for claim lookup. -/
+    lowering. Saved values retain their source origin for claim lookup. -/
 namespace Verification.SourceExecution
 open Fragment
 

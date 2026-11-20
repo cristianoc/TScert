@@ -337,7 +337,7 @@ each is refused. The constant's singleton is interned and offered to search. -/
     else throw (located ++ "a unary numeric operator needs an operand of one numeric family, number or bigint")
   let (arith, factor) ← match op with
     | .neg => pure (Arith.mul, -1) | .plus => pure (.mul, 1) | .bitNot => pure (.xor, -1)
-    | .typeof => throw "internal extraction error: typeof is not a numeric operator"
+    | .typeof => throw "internal lowering error: typeof is not a numeric operator"
   if bigint then
     if op == .plus then throw (located ++ "unary + on a bigint throws a TypeError")
     let label ← lower (SourceTypes.use (.bigintLit factor))

@@ -214,7 +214,7 @@ def readJson (path : String) : IO (Except String Json) := do
     return .error s!"{path}: {what}, which a document refuses"
   return Json.parse text
 
-/-- Export the same execution graph constructor used by typed elaboration. -/
+/-- Export the same execution graph constructor used by lowering. -/
 def flowFile (astPath : String) : IO UInt32 := do
   let ast ← readJson astPath
   match ast >>= SourceFlow.document with

@@ -8,7 +8,7 @@ read as JavaScript directly and tested against node.
 
 ## The bridges
 
-[`mode8Accepted_sound`](DESIGN.md#what-verified-means) proves the extracted
+[`mode8Accepted_sound`](DESIGN.md#what-verified-means) proves the lowered
 calculus program safe. Between the source a user writes and that program,
 four bridges rest on review; the [trust surface](DESIGN.md#trust-surface)
 lists them with the rest of what the theorem assumes:
@@ -16,26 +16,26 @@ lists them with the rest of what the theorem assumes:
 | Bridge | Where | What is trusted |
 | --- | --- | --- |
 | **Parser rewrites** | `tools/fragment-parse.mts` with its parts `fragment-classes.mts`, `fragment-expressions.mts`, `fragment-statements.mts`, `fragment-support.mts` and `fragment-guards.mts` (TypeScript) | Its lowerings (`switch`, `for`, templates, enums, optional chains, patterns, `super`, the iterator protocol, shadowing renames, …) preserve JavaScript's execution; TypeScript's binder names each reference's declaration; for [certified imports](SOURCE-CONTRACTS.md#certified-imports), each imported module's document lowers the bytes its digest names, no code of it left unlowered writes the binding of one of its function declarations, and each import resolves to its unit's terminal declaration. |
-| **Extraction** | `Source/Lowering.lean`, `Source/Fragment.lean` (Lean) | The calculus program it builds from the Fragment AST means what the Fragment means: control flow, lexical binding, evaluation order, and the program point each claim attaches to; for certified imports, a unit's run, its initialisation included, is its module's. |
+| **Lowering** | `Source/Lowering.lean`, `Source/Fragment.lean` (Lean) | The calculus program it builds from the Fragment AST means what the Fragment means: control flow, lexical binding, evaluation order, and the program point each claim attaches to; for certified imports, a unit's run, its initialisation included, is its module's. |
 | **Declared types** | `tools/declaration-graph.mts`, `type-term.mts`, `computed-types.mts`, `written-applications.mts`; `Source/Equations/Lowering.lean` | A declaration or annotation is read as the type TypeScript means, and its written applications are supplied with their scopes, each one ([written applications](SOURCE-CONTRACTS.md#written-applications)); the standard library's declarations are reviewed, the applications inside them included; for certified imports, a module's declarations are read in its own document. |
 | **Host** | intrinsics, library overlay, environment premises | Native code meets its stated types ([the host](#the-host)); for certified imports, the module loader binds an import resolved to a function to its unit's closure, evaluated once ([the linking obligation](SOURCE-CONTRACTS.md#certified-imports)). |
 
-Extraction runs inside Lean, so what is checked is exactly what it produced;
+Lowering runs inside Lean, so what is checked is exactly what it produced;
 but no theorem states that it preserves the source's meaning, because the
 Fragment AST has no semantics in Lean. Its faithfulness is a reviewed
 definition, as the parser's is.
 
 ## Options, cheapest first
 
-1. **Structural theorems about extraction.** Provable in Lean over the AST it
+1. **Structural theorems about lowering.** Provable in Lean over the AST it
    already has, with no JavaScript semantics: every edge targets a node; slots
    are fresh; every variable reference resolves to the declaration it names;
    every claim sits at its source span; every early exit passes the finalizers
-   it leaves. These rule out the binding and control-flow errors extraction can
+   it leaves. These rule out the binding and control-flow errors lowering can
    make without ruling out every semantic one.
 2. **Rewrites move from the parser into Lean.** The parser emits an AST close
    to the source (statement-level `switch`, `for`, templates, `super`,
-   patterns, the iterator protocol) and extraction performs the rewrites.
+   patterns, the iterator protocol) and lowering performs the rewrites.
    Trusted TypeScript shrinks to reading syntax and TypeScript's name and type
    resolution; the rewrites become subject to (1) and (3). Where a rewrite is
    chosen by a TypeScript type (`%Iterate:K%`, `%ElementAt%`), stating its
@@ -43,7 +43,7 @@ definition, as the parser's is.
    which is how a forged host value is caught.
 3. **A Fragment semantics and a preservation theorem.** Give the Fragment AST
    an operational semantics in Lean, written as JavaScript's statement-level
-   rules, and prove extraction a simulation: every run of the extracted program
+   rules, and prove lowering a simulation: every run of the lowered program
    corresponds to a run of the Fragment with related states, throws included.
    Faithfulness then rests on the Fragment semantics, which reads like the
    specification and is reviewable against it. With (2), it covers the
@@ -57,17 +57,17 @@ definition, as the parser's is.
 
 ## How they compose
 
-Faithfulness of the extracted program to JavaScript splits in two with (3):
+Faithfulness of the lowered program to JavaScript splits in two with (3):
 the Fragment semantics against JavaScript, stated at the level of
-JavaScript's statements, and extraction against the Fragment semantics,
+JavaScript's statements, and lowering against the Fragment semantics,
 which is (3). The first half is read and tested against node; proving it
 would take a mechanized specification M, which (5) needs as well.
 
 | Option | Retires | Needs |
 | --- | --- | --- |
-| (1) structural theorems | binding, control-flow and claim-placement errors in extraction | nothing new |
+| (1) structural theorems | binding, control-flow and claim-placement errors in lowering | nothing new |
 | (2) rewrites in Lean | trust in the parser's rewrites | (1) or (3) to prove them |
-| (3) Fragment semantics | extraction's faithfulness, relative to the Fragment semantics | a Fragment semantics |
+| (3) Fragment semantics | lowering's faithfulness, relative to the Fragment semantics | a Fragment semantics |
 | (4) declared-type meaning | the declaration reader's faithfulness | a meaning of type syntax |
 | (5) host lemmas | the ECMA rows of the trust surface | M |
 
@@ -75,7 +75,7 @@ would take a mechanized specification M, which (5) needs as well.
 
 Errors of the kinds these options address have been found in each bridge
 by review or tests, none by the proofs, which hold of the program the
-bridges deliver: in extraction, a binding resolved by name and source keys
+bridges deliver: in lowering, a binding resolved by name and source keys
 spelling the model's reserved keys ((1) or (3)); in the parser's rewrites,
 a program-built object passing for a host `Set` ((2) with (3)); in the
 declaration reader, generic contracts erased ((4)); in the host, an

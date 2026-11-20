@@ -16,7 +16,7 @@ stated as a *hypothesis*, a `Prop` a theorem takes as a premise. A
 ## What a verdict states
 
 A unit's accepted verdict implies, for every function of the unit, safety
-of its extracted graph at every admitted assignment, from every environment
+of its lowered graph at every admitted assignment, from every environment
 meeting its inputs, with its footprint, fresh result, postcondition,
 regional bound and stated assertions (`RequestSafe`, section 1). The
 theorem's premise is the exact condition under which the CLI prints the
@@ -262,7 +262,7 @@ each level's; their statements follow.
   them, section 7), the step's provenance (`EstablishProvenance`, a
   statement about `establishFold`, not proved), the publication order
   (`ReadsEarlier`, not proved), the slots holding the module's values
-  (`HoldsModuleValue`, the extraction) and the replay
+  (`HoldsModuleValue`, the lowering) and the replay
   (`InterfaceProvenance`, trusted). The built-ins in a module's store bear
   on coverage only: a store stating none makes the importer's row check
   refuse (section 7, "Built-ins in one graph only").
@@ -615,7 +615,7 @@ $`\mathrm{RequestSafe}(r)`$: the prologue's two transitions lead from
 $`\mathit{recv} :: L`$ to the request's start at $`L`$, and every later
 transition is one of the request's program.
 
-**H5a, the module's layout** (`ModuleLayout`, the extraction's frame
+**H5a, the module's layout** (`ModuleLayout`, the lowering's frame
 layout). A set $`D`$ of the file's functions laid out (any set, a mutually
 recursive group's non-leaders included), and for each $`x \in D`$: its
 code, interface and slots as above, its interface one clause, one slot per
@@ -640,7 +640,7 @@ indexed by function, its captured values one unfolding below, so
 `approx_meets` covers every $`x \in D`$; the verdicts' closure
 (`closedUnits`) is per group. `layout_realizes` (proved under
 `ReceiverDropSound`) gives every $`x \in D`$ realized from its members'
-safety (`rowRealized_spec`). H5a is a statement about the extraction (the
+safety (`rowRealized_spec`). H5a is a statement about the elaboration (the
 slot table `ordinarySlots` builds, `withStandIns`, `withNeverImports`, the
 frame `elaborateMember` lays out), not proved: every function on that path is
 a `do` block over the front with no theorem about its frame; part of it is
@@ -747,7 +747,7 @@ gives `OutsideContracts` from the five kinds met (`KindMet`):
   `:init` request stating, per module constant, its walk type met with its
   annotation, per early cell its storage contract; (b) the slot's value at
   each depth is slot $`s`$'s value at a reached finish state (the
-  extraction); (c) a cell's later writes keep it, each unit's write being
+  lowering); (c) a cell's later writes keep it, each unit's write being
   checked at the contract. A cell holds a reference, whose meaning depends
   on the world, so (a) gives it at the worlds the run reaches, and
   `KindMet`'s every world needs the meaning's world independence for the

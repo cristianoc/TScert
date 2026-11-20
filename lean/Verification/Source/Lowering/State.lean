@@ -499,7 +499,7 @@ def withSavedInvocation (original : Fragment.Expr) (receiver : String)
       executionOriginal := original
       executionReceiver := receiver }) action
 
-/-- The ownership gate covers one source statement's elaboration. -/
+/-- The ownership gate covers one source statement's lowering. -/
 def withOwnedWrite (source : Span) (enabled : Bool) (action : Compiler α) : Compiler α :=
   scopeState (·.executionOwned) (fun s => if enabled then { s with executionOwned := some source } else s)
     (fun saved after => { after with executionOwned := saved }) action
@@ -593,7 +593,7 @@ def appendNode (node : ControlFlow.Node) (claim : PointClaim Tree) : Compiler Ta
 def recordNodeSource (target : Target) (source : SourceMapEntry) : Compiler Unit :=
   updateBuilt fun s => { s with sourceMap := s.sourceMap.setIfInBounds target.label (some source) }
 
-/-- Complete a reserved cyclic entry with its already elaborated successor. -/
+/-- Complete a reserved cyclic entry with its already lowered successor. -/
 def completeFlowEntry (reserved target : Target) : Compiler Unit :=
   updateBuilt fun s => { s with program := s.program.setIfInBounds reserved.label ⟨.nul,.effect target,none⟩ }
 
@@ -642,7 +642,7 @@ def recordMember (L : Ty Tree) (fld : PropKey) : Compiler Unit := do
   updateBuilt fun s => { s with memberReads := reads.foldl (·.insert ·) s.memberReads }
 
 /-- A name the walk typed: a value of the declaration document where it
-names one (`ContractRead.value`, resolved by the unit's extraction). -/
+names one (`ContractRead.value`, resolved by the unit's elaboration). -/
 def recordName (n : String) : Compiler Unit :=
   updateBuilt fun s => { s with nameReads := s.nameReads.insert n }
 
@@ -661,7 +661,7 @@ private def graphOutput (s : Built) : LoweredGraph :=
 
 def graphResult : Compiler LoweredGraph := readBuilt graphOutput
 
-/-- Extraction receives the graph and shared outputs through this projection. -/
+/-- Lowering receives the graph and shared outputs through this projection. -/
 structure LoweringResult extends LoweredGraph where
   types : EquationStore.State
   obligations : List (ExpressionClaims.Required Tree)

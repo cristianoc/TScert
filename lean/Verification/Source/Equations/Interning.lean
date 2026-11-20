@@ -313,7 +313,7 @@ def arrayHead (readonly : Bool) (proto : Tree) : M Nat := do
 
 /-! ### Heads added after the declarations
 
-What the store adds while a unit is extracted (`EquationStore`): a union of
+What the store adds while a unit is elaborated (`EquationStore`): a union of
 clauses, a scheme over fresh binders, a bounded binder's meet. A template
 holds no owned parameter or variable (§3.1: it names parameters only through
 its arguments), so each such closed subtree is lifted to an argument, as a

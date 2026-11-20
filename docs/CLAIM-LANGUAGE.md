@@ -94,4 +94,4 @@ record is validated as program data rather than inferred from its expression;
 claim text; [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) owns the
 record and [its presentation](OBLIGATION-DIAGNOSTICS.md#presentation).
 TypeScript compilation (the `Front-end types` suite) checks these shared
-declarations against source extraction and the diagnostic presentation.
+declarations against source elaboration and the diagnostic presentation.

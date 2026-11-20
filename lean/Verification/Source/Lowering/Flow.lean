@@ -81,7 +81,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
       work := later
   return found.reverse.map (SourceFlow.pointId graph.owner)
 
-/-- Elaborate one immutable control-flow action. Reserved entries permit
+/-- Lower one immutable control-flow action. Reserved entries permit
     cyclic edges; every entry retains the context required of its predecessors. -/
 @[nospecialize] private partial def clauseAtoms (scope : List (ScopeBinding Tree)) (source : Span) :
     SourceClaims.ClauseClaim → Compiler (List HeapKnowledge.IndexAtom)

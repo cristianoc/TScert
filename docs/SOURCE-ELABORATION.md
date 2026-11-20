@@ -2,10 +2,36 @@
 
 Source verification checks the core judgments at every point of a unit's
 lowered program, and requires a lowering of source operations that preserves
-their meaning. This document specifies how a unit is checked and the
-lowering of every source form: derived forms, statements, guards, iteration,
-patterns, mutable bindings, closures, the certification of inferred call
-effects and parameter initialization.
+their meaning. This document specifies the elaboration of a unit, how it is
+checked, and the lowering of every source form: derived forms, statements,
+guards, iteration, patterns, mutable bindings, closures, the certification of
+inferred call effects and parameter initialization.
+
+## Elaboration, synthesis and lowering
+
+**Elaboration** is Lean's translation of a code unit's Fragment into a
+calculus program with the obligations it must meet, the request the pass
+checks. It has two parts, over the execution plans Lean derives from the
+syntax:
+
+- **Synthesis** computes types: one forward walk over each function's body
+  ([Synthesis.lean](../lean/Verification/Source/Synthesis.lean)) proposes
+  the type of each expression and of each binding at each statement entry,
+  from the types the source writes and the typing of each construct. What it
+  computes is a proposal; lowering states it and the pass checks it.
+- **Lowering** builds the program: it translates each source form, at the
+  types synthesis proposes, into calculus graph code
+  ([Lowering.lean](../lean/Verification/Source/Lowering.lean) and the modules
+  under `Source/Lowering/`), and emits each check the form needs as a
+  located obligation. Lowering is trusted on review
+  ([trust reduction](TRUST-REDUCTION.md)); synthesis adds no trust.
+
+The parser's own translation of a TypeScript form into Fragment constructs
+(its [gate](#adding-a-source-form), and the
+[derived forms](#derived-source-forms) it writes with constructs the
+Fragment already has) is the **parser's lowering**, which reads no computed
+type. The Lean code of elaboration is under the namespace
+`Verification.SourceElaboration`.
 
 The prerequisites are the expression, graph and heap judgments in
 [Program typing](PROGRAM-TYPING.md), the operational language and worlds in
@@ -931,7 +957,7 @@ literal (`guard-boolean-return`, `invalid-guard-boolean-return`).
 ### Closure branches
 
 Closure branches whose two arms fall through require no additional typing rule.
-Their extracted shape is:
+Their lowered shape is:
 
 ```math
 \mathsf{let}\ z = (\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e)
@@ -948,7 +974,7 @@ The continuation occurs once, so nested branching does not duplicate its term.
 
 An early-return branch with one fully returning arm and one return-free arm
 uses the same conditional rules. For example, `if (c) { return r; } else { s; } k`
-has the extracted shape
+has the lowered shape
 
 ```math
 \mathsf{if}\ c\ \mathsf{then}\ r\ \mathsf{else}\quad
@@ -3718,10 +3744,10 @@ operations must remain distinct:
 1. **Annotation translation** preserves the source contract. An ordinary
    TypeScript arrow imposes no heap-preservation guarantee. It must never become
    an effect-qualified arrow merely because a consumer needs one.
-2. **Inference** proposes a stronger type for a definition, including an effect
+2. **Inference** (synthesis) proposes a stronger type for a definition, including an effect
    on each call signature. This is the walk's untrusted proposal. It can use bodies
    and inferred contracts of callees; it need not change the source annotation.
-3. **Elaboration and verification** attach the proposal to the lowered
+3. **Lowering and verification** attach the proposal to the lowered
    definition and discharge its additional obligation. Lowering emits proof
    obligations; it does not establish an effect by translating syntax. Lean must
    check both ordinary body safety and the claimed effect, with the original

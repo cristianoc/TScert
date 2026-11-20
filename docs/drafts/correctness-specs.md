@@ -399,10 +399,10 @@ one conjunct stating both the knowledge contract and, by
 
 Two integration obligations come with it:
 
-- **Inventory.** `DocumentSafe` quantifies over the extracted plans, so
+- **Inventory.** `DocumentSafe` quantifies over the elaborated plans, so
   exhaustive conversion cannot show a contract missing from them. A
   registration statement is an ordinary call, which stays in the Fragment
-  as part of the lowered program; extraction inventories every call whose
+  as part of the lowered program; elaboration inventories every call whose
   callee is the binding of `spec`, `invariant` or `lemma` and requires
   exactly one plan or a located refusal for each. Which declaration a name
   binds to stays the parser's trusted name resolution.
@@ -596,11 +596,11 @@ A proved contract states §1 and §3 of the lowered graph and the lowered
 predicates. Its trust differs from a type claim's in three ways.
 
 - **Value faithfulness becomes load-bearing.** The function and its
-  predicates pass through the same trusted front end and extraction, so
+  predicates pass through the same trusted front end and elaboration, so
   an error both share (a misread operator, an assignment to the wrong
   slot) can make a false source property proved. A type claim is
   sensitive to errors that change types, a contract to every error that
-  changes values. The part most needing its own proof is extraction's data
+  changes values. The part most needing its own proof is elaboration's data
   flow for the forms contracts use (`let` and assignment, loops, `if`,
   `return`, the operators, element reads):
   [option (3)](../TRUST-REDUCTION.md#options-cheapest-first) of trust
@@ -671,5 +671,5 @@ predicates. Its trust differs from a type claim's in three ways.
    of `Number.isInteger`; reification, `reify_sound`, the lemma registry and
    its axiom control; the binary search cases.
 6. Host value contracts for `JSON` and `Object.keys`; the round-trip case.
-7. Extraction's data flow proved (the Fragment semantics row), starting
+7. Elaboration's data flow proved (the Fragment semantics row), starting
    with the forms the cases use.

@@ -117,7 +117,7 @@ each item's design and evidence, not its progress.
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
-| [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
+| [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | lowering is proved a simulation of a Lean interpreter of the Fragment |
 | [A connection to ECMA-262](#a-connection-to-ecma-262) | open | the host's stated types are lemmas of a mechanized specification |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
@@ -717,11 +717,11 @@ It also discharges each unit's entry separation, its module cells two apart
 initialization's allocation of each cell.
 
 <a id="a-semantics-of-the-fragment"></a>
-**A semantics of the Fragment.** The parser's rewrites and extraction rest
+**A semantics of the Fragment.** The parser's rewrites and lowering rest
 on review. The Fragment moves close to source JavaScript, the rewrites move
-into extraction, and the Fragment gets a direct semantics in Lean: an
+into lowering, and the Fragment gets a direct semantics in Lean: an
 executable interpreter that reads it as JavaScript does, with types erased.
-Extraction is proved a simulation of it. The interpreter's faithfulness to
+Lowering is proved a simulation of it. The interpreter's faithfulness to
 JavaScript is tested against node, not proved: the target is fixed, so
 testing converges without a mechanized specification. A rewrite chosen by a
 type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
