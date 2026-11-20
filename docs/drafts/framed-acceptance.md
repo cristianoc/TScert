@@ -1399,7 +1399,7 @@ then checked by an ordinary plan), and has a control.
   component reaches read-only, such as `{ spines: "grow" }`, for which the
   returns at reached executions read $`\Theta_C`$ within the component's
   protocol (`hΘ` of `ret_reachedW_spec`) and the frame's guarantee route
-  is milestone 4's. Refusal: "framed plan: the binding check of its
+  is milestone 4's. Refusal: "framed plan: the request check of its
   client obligation keeping every part (thetaKeepB) fails"; control: a
   framed walker in a component whose exported type states
   `@clients { spines: "grow" }`, refused, its ordinary plan's refusal at
@@ -2484,9 +2484,10 @@ Four mechanisms, each kept, each changed at one place.
 3. **The binding checks** ((B4); `FramedSpec.bindingChecks`). The open
    entry `entryB` is read where $`f`$ is an entry or its token lies in
    $`O`$. Where $`f`$ is no entry and its token lies outside $`O`$ (`innerB`,
-   the plan's `inner` tied to the checked file), `entryB` is not read,
-   the realized code's returns lie within $`O`$ at every context
-   (`retsInB`, a gate narrower than the note's (B4), which states none),
+   the plan's `inner` tied to the checked file), `entryB` is not read;
+   after the walk, a check of the request (`requestB`) reads the realized
+   code's returns within $`O`$ at every context (`retsInB`, a gate
+   narrower than the note's (B4), which states none);
    and no region is read as protected (`protAt` false): no argument of a
    known call crosses in. (B2)'s sets and the frame's check at each framed
    node already read every context of the code (`operandSets`,
@@ -2552,6 +2553,7 @@ $`C`$ given out.
 | `bounds-pattern-framed-shared-helper` | both walkers accepted under client trust, the helper verified | a module function naming another |
 | `bounds-pattern-unreachable-handle` | accepted under client trust | a known call of a module function after a framed visit |
 | `bounds-pattern-framed-cycle-refused` | gap | the gate on a cycle of names |
+| `bounds-pattern-framed-returns-local-refused` | gap | the request check of the returns within $`O`$ (`retsInB`), at a walker returning an object it allocates |
 
 ## Milestones
 

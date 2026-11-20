@@ -26,7 +26,7 @@ export const forcedProposals: readonly ForcedProposal[] = [
   // (a support the frame's check fails: the pass's check of the framed
   // nodes, the one the returns read, refuses it after the walk)
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-support",
-    at: /framed plan: the binding check of its framed call nodes at the frame's flow \(framedNodesAt\) fails \(at its framed call node 10, 1 of the supports it keeps fail the frame's check\)/ },
+    at: /framed plan: the request check of its framed call nodes at the frame's flow \(framedNodesAt\) fails \(at its framed call node 10, 1 of the supports it keeps fail the frame's check\)/ },
   // (at another component, the initialization's codes are not its code)
   { file: "bounds-pattern-unreachable-field", unit: "walk@1190", force: "framed-doc-component",
     at: /framed plan: the binding check of its flow at the frame's sites \(frameFlowB\) fails/ },
