@@ -113,6 +113,23 @@ def supportKeptB (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Pr
   (F.ctxs m).all fun (_, c) => (sharingNodes m l).all fun l' =>
     frameCheckAt classQuery Ψ Φ S F.flow.H (c.node l').envAt (fun _ => false)
 
+/-- **Why a framed node drops a support** (a diagnostic, the frame's check
+of `supportKeptB` read back): at the first context and node sharing `l`'s
+continuation and handler where the check fails, a region with no sites,
+or the first part at which the node's protocol or the callee's stated
+effect exceeds the region's change (`frameCheckFailure`); `none` where the
+support is kept. -/
+def supportFailure (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (m : Code) (l : Nat) (e : Tm)
+    (Φ : Footprints.Footprint) (S : Footprints.Footprint) :
+    Option (Footprints.Region × Option ((Footprints.Region × Footprints.Change) × Part P × Bool × Bool × Footprints.Change)) :=
+  let Ψ := nodeProtocol F lay Θ (nodeSet F lay m l e)
+  (F.ctxs m).findSome? fun (_, c) => (sharingNodes m l).findSome? fun l' =>
+    let τ := (c.node l').envAt
+    match S.find? fun e => (regionSites F.flow.H τ e.1).isNone with
+    | some e => some (e.1, none)
+    | none => (frameCheckFailure classQuery Ψ Φ S (callParts F.flow.H τ) (fun _ => false)).map
+        fun (e, p, i, o) => (e.1, some (e, p, i, o, Ψ p))
+
 /-- **The supports a framed node keeps, of those offered** (`supportKeptB`):
 the producer's proposal of a framed plan's supports. -/
 def framedNodeKeeps (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (m : Code) (l : Nat)
