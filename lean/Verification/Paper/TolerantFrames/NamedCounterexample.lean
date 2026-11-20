@@ -21,7 +21,7 @@ fact of the object the name holds fails after an action of
 
 /-- A state of one location holding `v`, at budget 1. -/
 def oneState (v : Val) (hv : isVal v = true) (hs : isSourceVal v = true) (hn : refs v = []) : IndexedHeap :=
-  ⟨1, ofEntries [(.field, anyCtr)], [v], Nat.one_pos,
+  ⟨1, ofEntries [(.field "f", anyCtr)], [v], Nat.one_pos,
     ⟨fun l c hl => by
       simp only [lookup, toList, entries_ofEntries] at hl
       rcases l with _ | l <;> simp at hl
@@ -55,7 +55,7 @@ theorem slotless_not_framed :
     exact ⟨[("f", 0)], .absent, 0, .nul, rfl, by simp [HeapFacts.ReadGave, oneState], by decide⟩)
   have ha : Action Footprints.Closed.top.fp η (oneState .nul rfl rfl rfl) (oneState .tru rfl rfl rfl) :=
     action_top ⟨Nat.le_refl 1, by
-      show WExt (trunc 1 (Nat.le_refl 1) (ofEntries [(.field, anyCtr)])) (ofEntries [(.field, anyCtr)]); rw [trunc_id]; exact WExt_refl _⟩
+      show WExt (trunc 1 (Nat.le_refl 1) (ofEntries [(.field "f", anyCtr)])) (ofEntries [(.field "f", anyCtr)]); rw [trunc_id]; exact WExt_refl _⟩
   have := hb _ ha _ (List.mem_singleton_self _) _ (List.mem_singleton_self _)
   obtain ⟨flds, c, oid, u, he, hr, hm⟩ := this
   simp only [η, Tm.objAt.injEq] at he

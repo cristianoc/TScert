@@ -193,7 +193,7 @@ spine and every other location. -/
 /-- The roles and contracts of the initial host world, by location. -/
 def hostEntries {k : Nat} : List (Role × Ctr k) :=
   [(.spine (.view .uint8 1), viewSpineCtr k .uint8 1), (.elem, viewCellCtr k .uint8), (.identity, idCtr),
-   (.spine .array, anyCtr), (.elem, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr)]
+   (.spine .array, anyCtr), (.elem, anyCtr), (.identity, idCtr), (.field "p", anyCtr), (.identity, idCtr)]
 
 def hostWorld {k : Nat} : WorldT k := ofEntries hostEntries
 
@@ -344,8 +344,8 @@ theorem host_viewWrite (n : Nat) :
 /-- The host world extended by a binding cell, an object's prototype
 property, a closure's code field and a forwarding descriptor's identity. -/
 def familiesEntries {k : Nat} : List (Role × Ctr k) :=
-  hostEntries ++ [(.cell, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr),
-    (.field, anyCtr), (.identity, idCtr), (.identity, idCtr)]
+  hostEntries ++ [(.cell valueField, anyCtr), (.identity, idCtr), (.field CallArguments.protoField, anyCtr),
+    (.identity, idCtr), (.field codeField, anyCtr), (.identity, idCtr), (.identity, idCtr)]
 
 def familiesWorld {k : Nat} : WorldT k := ofEntries familiesEntries
 
@@ -386,8 +386,8 @@ theorem familiesWorld_adm {k : Nat} : WorldAdm (familiesWorld (k := k)) := by
     exact ⟨_, by simp [lookup, toList, familiesWorld, familiesEntries, hostEntries], fun _ _ _ _ => Iff.rfl⟩
 
 theorem familiesWorld_ext {k : Nat} : WExt (hostWorld (k := k)) (familiesWorld (k := k)) :=
-  ⟨[(.cell, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr), (.field, anyCtr),
-    (.identity, idCtr), (.identity, idCtr)], by simp [hostWorld, familiesWorld, familiesEntries]⟩
+  ⟨[(.cell valueField, anyCtr), (.identity, idCtr), (.field CallArguments.protoField, anyCtr), (.identity, idCtr),
+    (.field codeField, anyCtr), (.identity, idCtr), (.identity, idCtr)], by simp [hostWorld, familiesWorld, familiesEntries]⟩
 
 /-- **Every family's value is valid in the families' world**: a typed array
 with its view spine of its format and length, an array with its spine and

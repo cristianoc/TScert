@@ -441,9 +441,10 @@ def SepEvidence.fresh (E : SepEvidence) (r s : Region) : Bool :=
   | _, _ => false
 
 /-- **The one disjointness check**: by the regions' bounds under the
-evidence, by freshness, or by a separation fact, either way round. -/
+evidence or their keys (`Region.keysApart`), by freshness, or by a
+separation fact, either way round. -/
 def SepEvidence.query (E : SepEvidence) : SepQuery :=
-  ⟨fun r s => ((E.bound r).inter (E.bound s)).isEmpty || E.fresh r s || E.fresh s r ||
+  ⟨fun r s => (((E.bound r).inter (E.bound s)).isEmpty || r.keysApart s) || E.fresh r s || E.fresh s r ||
     E.facts.any fun f => E.byFact r s f || E.byFact s r f⟩
 
 theorem SepEvidence.byFact_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {W : WorldT n} {h : Heap}
@@ -540,12 +541,13 @@ theorem SepEvidence.query_sound {E : SepEvidence} {μ : Nat → Nat} {n : Nat} {
     {ρ : Env} (hE : E.Holds μ ρ h) (hok : HeapOk n W h) (hρ : RootsOk W ρ) : E.query.Sound ρ h := by
   intro r s l hl hd hr hs
   simp only [SepEvidence.query, Bool.or_eq_true] at hd
-  rcases hd with ((hd | hd) | hd) | hd
+  rcases hd with (((hd | hd) | hd) | hd) | hd
   · obtain ⟨role, hrole, hb⟩ := E.bound_sound hE hok hρ r hl hr
     obtain ⟨role', hrole', hb'⟩ := E.bound_sound hE hok hρ s hl hs
     rw [hrole] at hrole'; cases hrole'
     rw [RoleSet.inter_isEmpty hd hb] at hb'
     cases hb'
+  · exact Region.apart_of_keys hok hρ hd hr hs
   · exact SepEvidence.fresh_sound hE hd hr hs
   · exact SepEvidence.fresh_sound hE hd hs hr
   · obtain ⟨f, hf, hb⟩ := List.any_eq_true.mp hd
@@ -563,9 +565,9 @@ theorem RoleSet.inter_comm (a b : RoleSet) : a.inter b = b.inter a := by
 /-- The check is symmetric. -/
 theorem SepEvidence.query_symm (E : SepEvidence) (r s : Region) :
     E.query.disjoint r s = E.query.disjoint s r := by
-  simp only [SepEvidence.query, RoleSet.inter_comm (E.bound r)]
-  cases ((E.bound s).inter (E.bound r)).isEmpty <;> cases E.fresh r s <;> cases E.fresh s r <;>
-    simp [Bool.or_comm]
+  simp only [SepEvidence.query, RoleSet.inter_comm (E.bound r), Region.keysApart_symm r s]
+  cases ((E.bound s).inter (E.bound r)).isEmpty <;> cases s.keysApart r <;> cases E.fresh r s <;>
+    cases E.fresh s r <;> simp [Bool.or_comm]
 
 /-- A region's bound under the evidence is within its bound. -/
 theorem SepEvidence.bound_le (E : SepEvidence) :
@@ -589,6 +591,9 @@ theorem SepEvidence.bound_le (E : SepEvidence) :
 (`boundQuery`). -/
 theorem SepEvidence.query_of_bound (E : SepEvidence) {r s : Region}
     (hd : boundQuery.disjoint r s = true) : E.query.disjoint r s = true := by
+  simp only [boundQuery, Bool.or_eq_true] at hd
+  rcases hd with hd | hd
+  case inr => simp [SepEvidence.query, hd]
   have : ((E.bound r).inter (E.bound s)).isEmpty = true := by
     refine RoleSet.isEmpty_iff.mpr fun c => ?_
     have h0 := RoleSet.isEmpty_iff.mp hd c
@@ -607,14 +612,15 @@ theorem SepEvidence.query_inCls_left (E : SepEvidence) {r s : Region} (c : Selec
   simp only [SepEvidence.query, Bool.or_eq_true] at hd ⊢
   have hb : ∀ c', (E.bound (.inCls r c)).contains c' = true → (E.bound r).contains c' = true := by
     intro c' h; simp only [SepEvidence.bound, RoleSet.contains_inter, Bool.and_eq_true] at h; exact h.1
-  rcases hd with ((hd | hd) | hd) | hd
-  · left; left; left
+  rcases hd with (((hd | hd) | hd) | hd) | hd
+  · left; left; left; left
     refine RoleSet.isEmpty_iff.mpr fun c' => ?_
     have h0 := RoleSet.isEmpty_iff.mp hd c'
     simp only [RoleSet.contains_inter] at h0 ⊢
     cases hr : (E.bound (.inCls r c)).contains c'
     · simp
     · simp only [hb c' hr, Bool.true_and] at h0; simp [h0]
+  · left; left; left; right; simpa [Region.keysApart, Region.key?] using hd
   · left; left; right; simpa [SepEvidence.fresh, fieldSite] using hd
   · left; right; simpa [SepEvidence.fresh, fieldSite] using hd
   · right
@@ -701,7 +707,7 @@ theorem SepEvidence.query_pathCells_field (E : SepEvidence) (x : Nat) (p : List 
 
 theorem SepEvidence.query_pathCells_cls (E : SepEvidence) (x : Nat) (p : List String) {c : Selector}
     (hd : Selector.values.disjoint c = true) : E.query.disjoint (.pathCells x p) (.cls c) = true := by
-  refine E.query_of_bound (RoleSet.isEmpty_iff.mpr fun cl => ?_)
+  refine E.query_of_bound (boundQuery_of_isEmpty (RoleSet.isEmpty_iff.mpr fun cl => ?_))
   rcases c with ⟨v, a, w⟩
   simp only [Selector.disjoint, Selector.values] at hd
   cases v <;> simp at hd

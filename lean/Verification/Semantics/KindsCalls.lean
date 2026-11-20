@@ -169,7 +169,7 @@ def allocThrow (f : PropKey) (v : Tm) : Tm := .throw (.makeAt .absent [f] [v])
 
 /-- The world the callback's allocation extends: the property `f` in F and
 the object's identity in I, the property with a contract admitting every value, the identity with one admitting `null` alone. -/
-def allocEntries {k : Nat} : List (Role × Ctr k) := objectEntries [.field] [valCtr]
+def allocEntries {k : Nat} (f : PropKey) : List (Role × Ctr k) := objectEntries [.field f] [valCtr]
 
 /-- **The callback is safe with no exceptional postcondition** (an effect
 without `onThrow`): from every well-formed configuration with the initializer
@@ -184,7 +184,7 @@ theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat
     SafePostExcW Ξ T Q (fun _ _ _ => True) (n + 2) W h (allocThrow f v) := by
   have hv : isVal v = true := sourceVal_isVal hsrc
   let W₁ := trunc (n + 1) (Nat.le_succ _) W
-  let U := appendWs W₁ (allocEntries (k := n + 1))
+  let U := appendWs W₁ (allocEntries (k := n + 1) f)
   have hok₁ : HeapOk (n + 1) W₁ h := HeapOk_trunc (n + 1) W h hok
   have hmake : RefsOk W₁ (.makeAt .absent [f] [v]) := by
     intro r hr; simp only [refs, refsArgs_eq, List.flatMap_cons, List.flatMap_nil, List.append_nil] at hr
@@ -192,7 +192,7 @@ theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat
   obtain ⟨hsh, hobj⟩ := objectLiteral_shaped (c := .absent) (ns := [f]) (vs := [v]) [valCtr]
     (by simpa using hok₁.1.1) hok₁.2 rfl rfl hmake (by simpa using hf) (by simpa using hsrc)
   have hokU : HeapOk (n + 1) U (h ++ [v] ++ [.nul]) := by
-    have := HeapOk_appendWs (es := allocEntries (k := n + 1)) (vs := [v, .nul]) hok₁
+    have := HeapOk_appendWs (es := allocEntries (k := n + 1) f) (vs := [v, .nul]) hok₁
       (WorldAdm_trunc _ hadm) (fun e he => by
         simp only [allocEntries, objectEntries, List.cons_append, List.nil_append, List.zip_cons_cons,
           List.zip_nil_right, List.mem_cons, List.not_mem_nil, or_false] at he
@@ -363,13 +363,13 @@ theorem not_respects_of_breaks {Rel : Heap → Heap → Prop} {k : Nat} {W : Wor
   exact hbad u hu hc
 
 /-- The world of one property location. -/
-def fieldWorld : WorldT 0 := ofEntries [(.field, fun _ hj _ _ => absurd hj (Nat.not_lt_zero _))]
+def fieldWorld : WorldT 0 := ofEntries [(.field "f", fun _ hj _ _ => absurd hj (Nat.not_lt_zero _))]
 
 theorem fieldWorld_shaped : Shaped fieldWorld [.str "a"] := by
   intro l r hr
   have hl : l = 0 := by have := roleAt_lt hr; simp [fieldWorld] at this; omega
   subst hl
-  have hW : roleAt fieldWorld 0 = some .field := by simp [fieldWorld, roleAt, roles]
+  have hW : roleAt fieldWorld 0 = some (.field "f") := by simp [fieldWorld, roleAt, roles]
   rw [hW] at hr; cases hr
   exact ⟨_, rfl, rfl, fun _ h => by simp [refs] at h⟩
 
@@ -381,7 +381,7 @@ theorem confined_not_respects :
     ¬ RespectsKinds (fun h h' => h'.length = h.length ∧ ∀ l, l ≠ 0 → h'[l]? = h[l]?) :=
   not_respects_of_breaks (W := fieldWorld) (h := [.str "a"]) (h' := [.arr []]) (by simp [fieldWorld])
     fieldWorld_shaped ⟨rfl, fun l hl => by rcases l with _ | l <;> simp_all⟩
-    (l := 0) (r := .field) (by simp [fieldWorld, roleAt, roles])
+    (l := 0) (r := .field "f") (by simp [fieldWorld, roleAt, roles])
     (fun u hu => by simp at hu; subst hu; simp [Cat, isSourceVal])
 
 /-- **An unrestricted exceptional postcondition does not respect kinds**:

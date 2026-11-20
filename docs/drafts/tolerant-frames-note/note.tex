@@ -469,7 +469,7 @@ the intermediate state's world
 \item[(T2) Growth] If $h\tr{}_\rho h'$ then $\len h\le\len{h'}$, and
 every location of $h$ has in $h'$ the kind, form and key it had: a
 transition allocates and never removes or re-purposes a location
-\status{Lean: \lean{Admissible.length\_le}, \lean{Admissible.roleAt}, for the kind and the form; the key by the definition of extension, since the Lean world records no key}.
+\status{Lean: \lean{Admissible.length\_le}, \lean{Admissible.roleAt}; the Lean world records the key in a location's role (\lean{Role.key?})}.
 \item[(T3) Fixed objects] Let $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ be an
 object value and $h\tr{}_\rho h'$. The domain of $v$ and each location
 $v(f)$ are the same before and after: the field $f$ of $v$ is read as
@@ -1984,7 +1984,7 @@ any region of locations below the mark. Two regions $\pi.f$ and
 $\pi'.g$ with $f\ne g$ are disjoint whatever $\pi$ and $\pi'$ read: by
 (W3) the one location of $(\pi.f)(\rho,h)$ has the key $f$, the one of
 $(\pi'.g)(\rho,h)$ the key $g$, and a location has one key
-\status{proved here from (W3); no Lean theorem states it, and the Lean world records no key}.
+\status{Lean: \lean{Region.apart\_of\_keys}, from (W3) as \lean{SlotRole} states it}.
 
 The locations below the mark are those that existed at the entry. A
 region $\pi.f$, $\pi.\kw{fields}$ or $\pi.\kw{spine}$ is below the mark

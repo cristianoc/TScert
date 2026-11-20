@@ -106,7 +106,7 @@ theorem slotBound_sound {n : Nat} {W : WorldT n} {k : PropKey} {l : Nat}
       | view => simp [SlotRole] at hs
     | field | cell =>
       simp only [SlotRole] at hs
-      simp [slotBound, hs, Role.cls, RoleSet.contains, RoleSet.fieldsAndCells]
+      simp [slotBound, hs.2, Role.cls, RoleSet.contains, RoleSet.fieldsAndCells]
     | _ => simp [SlotRole] at hs
 
 /-- A field of a value with valid references (`field`, `path`). -/
@@ -280,17 +280,115 @@ theorem Region.cls_apart_of_bound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
     cases hb'
   · cases hc
 
+/-! ## Keys
+
+A field or a cell location has a key fixed at its allocation (the note
+*Tolerant frames*, §3 and (W3)), which the world records in its role
+(`Role.key?`). A region at a field `k`, read from any value, holds only
+locations of the key `k`: a slot under `k` is a location of `k`'s role
+(`SlotRole`). So two regions at different keys share no location, whatever
+the values they are read from (the note, Definition "Derivations": $`\pi.f`$
+and $`\pi'.g`$ with $`f\ne g`$ are disjoint). -/
+
+/-- **The key of a region's locations**, where the region's form fixes one:
+the key `k` of a field or a path's field `k` other than the spine key, and
+the key of `r` for its part in a class. -/
+def Region.key? : Region → Option PropKey
+  | .field _ k | .path _ _ k => if k = arraySpineKey then none else some k
+  | .inCls r _ => r.key?
+  | _ => none
+
+/-- A slot under a key other than the spine key is a location of that
+key. -/
+theorem slotRole_key {n : Nat} {W : WorldT n} {k : PropKey} {l : Nat} (hk : k ≠ arraySpineKey)
+    (hs : SlotRole k (roleAt W l)) : ∃ role, roleAt W l = some role ∧ role.key? = some k := by
+  rcases hr : roleAt W l with _ | role
+  · rw [hr] at hs; cases hs
+  · rw [hr] at hs
+    refine ⟨role, rfl, ?_⟩
+    cases role with
+    | field k' => simp only [SlotRole] at hs; simp [Role.key?, hs.1]
+    | cell k' => simp only [SlotRole] at hs; simp [Role.key?, hs.1]
+    | spine f => cases f <;> simp [SlotRole] at hs; exact absurd hs hk
+    | _ => simp [SlotRole] at hs
+
+/-- **Key soundness**: in a well-formed state, every allocated location of a
+region whose form fixes a key is a location of that key. -/
+theorem Region.key_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
+    (hok : HeapOk n W h) (hρ : RootsOk W ρ) :
+    ∀ (r : Region) {k : PropKey} {l : Nat}, r.key? = some k → r.mem ρ h l = true →
+      ∃ role, roleAt W l = some role ∧ role.key? = some k
+  | .field x k', k, l, hk, hm => by
+    simp only [Region.key?] at hk
+    split at hk
+    · cases hk
+    · rename_i hne; cases hk
+      exact slotRole_key hne (slotRole_of_refs (hρ x) (by simpa [Region.mem] using hm))
+  | .path x p k', k, l, hk, hm => by
+    simp only [Region.key?] at hk
+    split at hk
+    · cases hk
+    · rename_i hne; cases hk
+      simp only [Region.mem] at hm
+      split at hm
+      · rename_i v hv
+        exact slotRole_key hne (slotRole_of_refs (readPath_refs hok p (hρ x) hv) (by simpa using hm))
+      · cases hm
+  | .inCls r c, k, l, hk, hm => by
+    simp only [Region.mem, Bool.and_eq_true] at hm
+    exact Region.key_sound hok hρ r (by simpa [Region.key?] using hk) hm.1
+  | .fields _, _, _, hk, _ | .cells _, _, _, hk, _ | .cls _, _, _, hk, _ | .all, _, _, hk, _
+  | .pathFields _ _, _, _, hk, _ | .pathCells _ _, _, _, hk, _ | .spine _ _, _, _, hk, _ => by
+    simp [Region.key?] at hk
+
+/-- **Regions at different keys**: both fix a key, and the keys differ. -/
+def Region.keysApart (r s : Region) : Bool :=
+  match r.key?, s.key? with
+  | some a, some b => a != b
+  | _, _ => false
+
+theorem Region.keysApart_symm (r s : Region) : r.keysApart s = s.keysApart r := by
+  unfold Region.keysApart
+  cases r.key? <;> cases s.key? <;> simp [bne_comm]
+
+/-- **Regions at different keys share no location**, in a well-formed
+state (the note, Definition "Derivations": $`\pi.f`$ and $`\pi'.g`$ with
+$`f\ne g`$ are disjoint, whatever $`\pi`$ and $`\pi'`$ read). -/
+theorem Region.apart_of_keys {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env}
+    (hok : HeapOk n W h) (hρ : RootsOk W ρ) {r s : Region} (hd : r.keysApart s = true) {l : Nat}
+    (hr : r.mem ρ h l = true) (hs : s.mem ρ h l = true) : False := by
+  unfold Region.keysApart at hd
+  split at hd
+  · rename_i a b ha hb
+    obtain ⟨role, hrole, hk⟩ := Region.key_sound hok hρ r ha hr
+    obtain ⟨role', hrole', hk'⟩ := Region.key_sound hok hρ s hb hs
+    rw [hrole] at hrole'; cases hrole'
+    rw [hk] at hk'; cases hk'
+    simp at hd
+  · cases hd
+
 /-! ## The query by bounds -/
 
 /-- **Disjointness by bounds** (the note, §3: no kind of location belongs
-to both): two regions whose bounds hold no role class in common. -/
-def boundQuery : SepQuery := ⟨fun r s => (r.bound.inter s.bound).isEmpty⟩
+to both, and Definition "Derivations": no key belongs to both): two regions
+whose bounds hold no role class in common, or whose forms fix different
+keys. -/
+def boundQuery : SepQuery := ⟨fun r s => (r.bound.inter s.bound).isEmpty || r.keysApart s⟩
+
+/-- Bounds with no class in common answer the query. -/
+theorem boundQuery_of_isEmpty {r s : Region} (h : (r.bound.inter s.bound).isEmpty = true) :
+    boundQuery.disjoint r s = true := by
+  simp [boundQuery, h]
 
 /-- **The query by bounds is sound** at a heap meeting its world with
-valid roots (`Region.apart_of_bound`). -/
+valid roots (`Region.apart_of_bound`, `Region.apart_of_keys`). -/
 theorem boundQuery_sound {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env} (hok : HeapOk n W h)
-    (hρ : RootsOk W ρ) : boundQuery.Sound ρ h :=
-  fun _ _ _ hl hd hr hs => Region.apart_of_bound hok hρ hd hl hr hs
+    (hρ : RootsOk W ρ) : boundQuery.Sound ρ h := by
+  intro _ _ _ hl hd hr hs
+  simp only [boundQuery, Bool.or_eq_true] at hd
+  rcases hd with hd | hd
+  · exact Region.apart_of_bound hok hρ hd hl hr hs
+  · exact Region.apart_of_keys hok hρ hd hr hs
 
 /-- **The query by bounds separates every pair of a class region and a
 region's part in a disjoint class**, the part `inCls r c` against
@@ -301,8 +399,8 @@ theorem boundQuery_inCls_cls (r : Region) {c c' : Selector} (hd : c.disjoint c' 
     intro cl
     have := RoleSet.isEmpty_iff.mp ((Selector.roles_inter_isEmpty c c').trans hd) cl
     simpa using this
-  simp only [boundQuery, Region.bound]
-  constructor <;> refine RoleSet.isEmpty_iff.mpr fun cl => ?_ <;> have := h0 cl <;>
+  simp only [boundQuery, Region.bound, Bool.or_eq_true]
+  constructor <;> refine .inl (RoleSet.isEmpty_iff.mpr fun cl => ?_) <;> have := h0 cl <;>
     simp only [RoleSet.contains_inter] <;> revert this <;>
     cases r.bound.contains cl <;> cases c.roles.contains cl <;> cases c'.roles.contains cl <;> simp
 

@@ -158,8 +158,8 @@ theorem objectLiteral_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode}
     (href : RefsOk W (.makeAt c ns vs))
     (hkeys : ∀ f ∈ ns, f ≠ arraySpineKey)
     (hsrc : ∀ v ∈ vs, isSourceVal v = true) :
-    Shaped (appendWs W (objectEntries (ns.map fun _ => .field) cs)) (h ++ vs ++ [.nul]) ∧
-      RefsOk (appendWs W (objectEntries (ns.map fun _ => .field) cs))
+    Shaped (appendWs W (objectEntries (ns.map .field) cs)) (h ++ vs ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries (ns.map .field) cs))
         (.objAt (slots h.length ns) c (h.length + vs.length)) :=
   makeFields_shaped _ cs hlen hsh (by simp) hcs hns href
     (fun i hi => by simpa [SlotRole] using hkeys _ (List.getElem_mem hi))
@@ -177,15 +177,15 @@ the field read and write at that location (`Step.readField`,
 theorem bindingCell_shaped {k : Nat} {W : WorldT k} {h : Heap} {v : Tm} (c : Ctr k)
     (hlen : h.length = (entries W).length) (hsh : Shaped W h)
     (href : RefsOk W v) (hsrc : isSourceVal v = true) :
-    Shaped (appendWs W (objectEntries [.cell] [c])) (h ++ [v] ++ [.nul]) ∧
-      RefsOk (appendWs W (objectEntries [.cell] [c]))
+    Shaped (appendWs W (objectEntries [.cell valueField] [c])) (h ++ [v] ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries [.cell valueField] [c]))
         (.objAt [(valueField, h.length)] .absent (h.length + 1)) := by
   have hne1 : valueField ≠ arraySpineKey := by decide
-  have := makeFields_shaped (c := .absent) (ns := [valueField]) (vs := [v]) [.cell] [c] hlen hsh
+  have := makeFields_shaped (c := .absent) (ns := [valueField]) (vs := [v]) [.cell valueField] [c] hlen hsh
     rfl rfl rfl (fun r hr => href r (by simpa [refs_makeAt, codeRefs] using hr))
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
-      exact hne1)
+      exact ⟨rfl, hne1⟩)
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
       simpa [Cat] using hsrc)
@@ -194,9 +194,9 @@ theorem bindingCell_shaped {k : Nat} {W : WorldT k} {h : Heap} {v : Tm} (c : Ctr
 /-- **A binding read** yields the cell's contents, a source value whose
 references are valid. -/
 theorem bindingRead_shape {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {v : Val}
-    (hsh : Shaped W h) (hr : roleAt W l = some .cell) (hv : h[l]? = some v) :
+    (hsh : Shaped W h) {key : PropKey} (hr : roleAt W l = some (.cell key)) (hv : h[l]? = some v) :
     isSourceVal v = true ∧ RefsOk W v := by
-  obtain ⟨u, hu, hc, hs⟩ := hsh l .cell hr
+  obtain ⟨u, hu, hc, hs⟩ := hsh l (.cell key) hr
   rw [hv] at hu; cases hu
   exact ⟨hc, hs⟩
 
@@ -208,15 +208,15 @@ references they had, which the allocation term's validity states. -/
 theorem closure_shaped {k : Nat} {W : WorldT k} {h : Heap} {code : CallCode} {a : Tm}
     (c : Ctr k) (hlen : h.length = (entries W).length) (hsh : Shaped W h)
     (href : RefsOk W (.makeFn code a)) (hsrc : isSourceVal a = true) :
-    Shaped (appendWs W (objectEntries [.field] [c])) (h ++ [a] ++ [.nul]) ∧
-      RefsOk (appendWs W (objectEntries [.field] [c]))
+    Shaped (appendWs W (objectEntries [.field codeField] [c])) (h ++ [a] ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries [.field codeField] [c]))
         (.objAt [(codeField, h.length)] code (h.length + 1)) := by
   have hne1 : codeField ≠ arraySpineKey := by decide
-  have := makeFields_shaped (c := code) (ns := [codeField]) (vs := [a]) [.field] [c] hlen hsh
+  have := makeFields_shaped (c := code) (ns := [codeField]) (vs := [a]) [.field codeField] [c] hlen hsh
     rfl rfl rfl href
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
-      exact hne1)
+      exact ⟨rfl, hne1⟩)
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
       simpa [Cat] using hsrc)

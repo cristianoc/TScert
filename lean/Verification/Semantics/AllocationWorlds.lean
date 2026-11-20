@@ -6,12 +6,13 @@ namespace Verification.AllocationWorlds
 open OperationResults OperationWorlds Kinds
 
 /-- **The roles an allocation's entries record**, at the values it
-allocates: each entry's tag's concrete role at its value
+allocates under the keys `ns`: each entry's tag's concrete role at its key
+and its value
 (`Kinds.concreteRoles`; `StorageRole.concrete_permits`,
 `StorageRole.concrete_cat`, `StorageRole.concrete_view`), none where a value
 is not of its tag's category. -/
-def roles (Es : List (StorageRole × Fam)) (vs : List Val) : Option (List Role) :=
-  Kinds.concreteRoles (Es.map Prod.fst) vs
+def roles (Es : List (StorageRole × Fam)) (ns : List PropKey) (vs : List Val) : Option (List Role) :=
+  Kinds.concreteRoles (Es.map Prod.fst) ns vs
 
 /-- The allocation's entries, a role and a contents type per field, determine
 the successor world: each field's entry is its tag's concrete role at the
@@ -22,7 +23,7 @@ its tag's category no entry is recorded and the configuration is left as it
 is: no typed allocation takes that step. -/
 def next (Es : List (StorageRole × Fam)) : Config → Config
   | ⟨n+1,W,h,.makeAt code ns vs⟩ =>
-      match roles Es vs with
+      match roles Es ns vs with
       | some rs => ⟨n, appendWs (trunc n (Nat.le_succ n) W)
           (objectEntries rs (Es.map (fun e => (res e.2 : Ctr n)))),
           h ++ vs ++ [.nul], .objAt (slots h.length ns) code (h.length + vs.length)⟩
@@ -56,9 +57,9 @@ theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss :
   cases n with
   | zero => exact href
   | succ p =>
-    obtain ⟨rs, hrs⟩ := concreteRoles_of_holds (by omega) hhold
-    obtain ⟨-, hrl, hri⟩ := concreteRoles_spec hrs
-    have hroles : roles (ss.zip As) vs = some rs := by
+    obtain ⟨rs, hrs⟩ := concreteRoles_of_holds (ks := ns) (by omega) (by omega) hhold
+    obtain ⟨-, -, hrl, hri⟩ := concreteRoles_spec hrs
+    have hroles : roles (ss.zip As) ns vs = some rs := by
       simp only [roles, List.map_fst_zip (show ss.length ≤ As.length by omega)]; exact hrs
     have hE : (ss.zip As).map (fun e => (res e.2 : Ctr p)) = As.map (fun A => (res A : Ctr p)) := by
       rw [show (fun e : StorageRole × Fam => (res e.2 : Ctr p)) = (fun A => (res A : Ctr p)) ∘ Prod.snd
@@ -112,8 +113,8 @@ theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss :
           List.getElem?_append_left (by omega)]
         simp [cs, List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
       · intro i hi
-        obtain ⟨r, hr, hc⟩ := hri i (ss[i]'(by omega)) (vs[i]'(by omega)) (List.getElem?_eq_getElem _)
-          (List.getElem?_eq_getElem _)
+        obtain ⟨r, hr, hc⟩ := hri i (ss[i]'(by omega)) ns[i] (vs[i]'(by omega)) (List.getElem?_eq_getElem _)
+          (List.getElem?_eq_getElem _) (List.getElem?_eq_getElem _)
         refine ⟨r, ?_, StorageRole.concrete_permits hc⟩
         rw [hlen, roleAt_appendWs', objectEntries_fst (by omega), List.getElem?_append_left (by omega)]
         exact hr
