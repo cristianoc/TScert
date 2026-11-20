@@ -761,9 +761,11 @@ def PreparedFile.prepareFramedComponent (p : PreparedFile) :
   let ofC : ComponentTag → Bool := fun t => match t with
     | some j => F.nested j C
     | none => false
-  let entries : List String := match comp.interface with
-    | .known es => es.map (·.name)
-    | .unknown _ => []
+  -- (a component whose interface is unknown gives code out where no entry
+  -- states its type: no framed plan reads it)
+  let entries ← match comp.interface with
+    | .known es => pure (es.map (·.name))
+    | .unknown w => return .error s!"a framed plan's component has no known interface: {w}"
   -- the module's functions, each planned alone
   let memo ← p.memo.get
   let mut mods : List SourceClaimJson.ProbeModule := []

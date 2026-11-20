@@ -3,9 +3,9 @@
 // label of a record a caller passes writable, so the component's protocol
 // changes outside storage only at the key label and keeps the parts of
 // h.flags and its spine. The fact h.flags.length === n across visit(i)
-// needs both regions, of outside storage, read as protected (the crossing
-// of h at H their witness, §4.1); the code reads no region as protected,
-// so the visitor's stated effect drops it.
+// holds: both regions, of outside storage, are read as protected, the
+// crossing of h at H their witness (§4.1), and the unit is accepted under
+// the client obligation of its component.
 export type H = { readonly widths: readonly number[]; readonly flags: readonly number[] };
 export type Note = { label: string };
 

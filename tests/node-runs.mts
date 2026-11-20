@@ -70,6 +70,15 @@ assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-param-reassigne
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-depth-two",
   "(() => { const h = { inner: { flags: [1, 1, 1] } }; return walk(h, (i) => { if (i === 0) swap(h); }); })()"))),
   "a visitor calls the member that replaces the handle's inner record under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-walker-pops",
+  "(() => { const o = { flags: [1, 1, 1] }; return walk(o, o, () => {}); })()"))),
+  "the walker pops the array of the record it was given twice, under its own reads");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-trim",
+  "(() => { const h = { widths: [1, 1, 1] }; return walk(h, () => trim(h)); })()"))),
+  "a visitor calls the member that pops the record's widths under the walker");
+assert.ok(Number.isNaN(Number(runExample("invalid-readonly-frame-alias-export",
+  "(() => { const w = { flags: [1, 1, 1] }; return walkW(w, (i) => { if (i === 0) w.flags.pop(); }); })()"))),
+  "a client pops the array it passed to the walker exported at a writable type");
 assert.ok(Number.isNaN(Number(runExample("invalid-readonly-trim",
   "(() => { const h = prepare(3); return walk(h, () => trim(0)); })()"))),
   "a visitor calls the member that pops the handle's widths under the walker");

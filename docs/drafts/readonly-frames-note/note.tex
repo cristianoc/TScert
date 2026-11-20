@@ -1116,7 +1116,7 @@ $\{w.\kw{spine}:\grow\}$ of $i<\len w$ is in $R_\cC$: exposed when
 \code{prepare} allocated it, under the marks of Section~\ref{sec:concepts},
 and protected by the crossing of \code{h} whoever allocated it, and $\keep\sqsubseteq\grow$: $i<\len w$ survives,
 under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$.
-\status{Lean: the slot of \code{w} holds the read of \code{widths} from \code{h}, \lean{copiesB}, \lean{ClientFrame.copies\_along}; its spine is read as protected, \lean{protRegionB}, witnessed by the crossing of \code{h}, \lean{FramedSpec.prot\_witness}; the case \code{readonly-frame-local-alias}}
+\status{Lean: the slot of \code{w} holds the read of \code{widths} from \code{h}, \lean{copiesB}, \lean{ClientFrame.copies\_along}; its spine is read as protected, \lean{protRegionB}, witnessed by the crossing of \code{h}, \lean{FramedSpec.prot\_witness}; the case \code{readonly-frame-local-alias} is this module without \code{prepare} and with a sum in place of \code{push}. conj.: the module as printed, whose natives \code{fill} and \code{push} the code charges $\any$ at every part their calls reach, where this note charges their stated effects}
 \end{example}
 
 \begin{example}[A member that shortens]\label{ex:rotrim}\mbox{}
@@ -1125,7 +1125,7 @@ under Assumption~\ref{ass:clients} with $\Theta_\cC=\keep$.
 1 & \code{export function trim(h: H): void \{ (h.widths as number[]).pop(); \}}\\
 \end{tabular}
 \end{center}
-\emph{Refused by the protocol.} \code{trim} is a member, and line 1
+\emph{Refused by the protocol} (the case \code{invalid-readonly-frame-trim}, its record a parameter: the code charges the native call's steps to $\cC$, \lean{nativeSites}). \code{trim} is a member, and line 1
 shortens exposed storage, so a protocol that bounds the members has
 $\any$ at that spine; $\any\not\sqsubseteq\grow$ fails the premise of
 Proposition~\ref{prop:rorely} for $i<\len w$ in \code{walk}. A visitor

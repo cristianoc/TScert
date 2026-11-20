@@ -117,6 +117,9 @@ def copiesRound (Pe : List Tm) (Pk : List (Continuation × Option Target)) (star
       | some m => some m.eraseDups
       | none => cp.getD l none
 
+/-- The longest path of key reads a table of copies records. -/
+def copyBound : Nat := 4
+
 /-- **The proposal of a table of copies** (`copiesB` decides it): the
 must-analysis iterated from the start's diagonal, each key path at most
 `bound` long; the empty table where its result fails the check. -/

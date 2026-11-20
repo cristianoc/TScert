@@ -526,8 +526,11 @@ def FilePlans.framedPlan (f : FilePlans) (fuel i : Nat) (fc : FramedComponent) (
   -- `FramedSpec.protAt` at the plan the decoder forms)
   let arity := r.inputs.length - r.siblings.length
   let ro := readOnlyPositions fc.family fc.C name fc.cf.codes fc.cf.names m arity
-  let cp := copiesOf (requestCode r).1 (requestCode r).2 r.start arity FramedSpec.copyBound
-  let prot := fun l q => protRegionB (componentProtocol F fc.cf.lay) cp arity (fun j => ro.getD j false) (requestCode r) l q
+  let cp := copiesOf (requestCode r).1 (requestCode r).2 r.start arity copyBound
+  let Ψ : Protocol (markedPackage fc.ofC fc.cf.O) :=
+    fun p => (componentProtocol F fc.cf.lay p).max (nativeProtocol (nativeSites F fc.cf.lay) p)
+  let prot := fun l q => calleeArgB cp 0 arity (requestCode r) l &&
+    protRegionB Ψ cp arity (fun j => ro.getD j false) (requestCode r) l q
   let (framed, shown, why) := f.framedSupports fuel i fc.cf Θ r nodes prot
   let doc := forgeDocument force (framedDocument fc.C fc.entries (rowsKinds fc.rows) fc.psiDef framed)
   let spec ← (FramedSpec.decode fc name r doc).mapError fun e => s!"a framed plan's document is refused: {e}"

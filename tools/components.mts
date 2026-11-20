@@ -804,6 +804,37 @@ export function describeFamily(input: FamilyInput): ComponentsAst {
     for (const name of exportNames(f)) exportedCodes(exportOf(f, name), name, own);
     for (const [name, n] of own) if (fileAt(n) === f) entriesOf(f.module).set(name, n);
   }
+  // A module exporting a binding whose value is no code it declares but
+  // names one of its functions or classes (`export const g = f`,
+  // `export const api = { f }`) gives that code out under the binding's
+  // type, which no entry states: its interface is unknown.
+  for (const f of files) {
+    const declared = new Set(f.source.statements.flatMap((s) =>
+      (ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name ? [s.name.text] : []));
+    const named = (n: Node): string | null => {
+      if (ts.isIdentifier(n) && declared.has(n.text)) {
+        const p = n.parent;
+        const label = p !== undefined && ((ts.isPropertyAccessExpression(p) && p.name === n) ||
+          (ts.isPropertyAssignment(p) && p.name === n) || (ts.isMethodDeclaration(p) && p.name === n));
+        if (!label) return n.text;
+      }
+      let found: string | null = null;
+      n.forEachChild((c: Node) => { found ??= named(c); });
+      return found;
+    };
+    for (const s of f.source.statements) {
+      if (!ts.isVariableStatement(s) || !exported(s)) continue;
+      for (const d of s.declarationList.declarations) {
+        if (!d.initializer) continue;
+        const init = unwrap(d.initializer);
+        if (functionLike(init) || classLike(init)) continue;
+        const x = named(d.initializer);
+        const component = components[f.module];
+        if (x !== null && component && "known" in component.interface)
+          component.interface = { unknown: { reason: `${f.location} exports ${d.name.getText(f.source)}, a value naming its code ${x}, which no entry states` } };
+      }
+    }
+  }
   if (packageIndex !== null)
     for (const m of entryModules) {
       const f = fileOf.get(m);

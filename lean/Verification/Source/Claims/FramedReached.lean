@@ -166,8 +166,39 @@ theorem nodeProtocolOf_ge {P : Package} [DecidableEq P.Site] [Hashable P.Site] (
     (l : Nat) (p : Part P) :
     (componentProtocol F lay p).le (nodeProtocolOf F lay theta m l p) = true ∧
       (probeProtocol (flowKinds F) (nodeSetOf F lay m l) p).le (nodeProtocolOf F lay theta m l p) = true :=
-  ⟨Footprints.Change.le_trans (Footprints.Change.le_max_right _ _) (Footprints.Change.le_max_left _ _),
-    Footprints.Change.le_max_right _ _⟩
+  ⟨Footprints.Change.le_trans (Footprints.Change.le_trans (Footprints.Change.le_max_right _ _)
+      (Footprints.Change.le_max_left _ _)) (Footprints.Change.le_max_left _ _),
+    Footprints.Change.le_trans (Footprints.Change.le_max_right _ _) (Footprints.Change.le_max_left _ _)⟩
+
+/-- A join that keeps keeps its left side (proved). -/
+theorem _root_.Verification.Footprints.Change.max_keep_left {a b : Footprints.Change} (h : a.max b = .keep) :
+    a = .keep := by
+  revert h; cases a <;> cases b <;> decide
+
+/-- **A step kept at a larger protocol is kept** (proved). -/
+theorem stepKeptB_mono {P : Package} {Ψ Ψ' : Protocol P} (h : ∀ p, Ψ' p = .keep → Ψ p = .keep) {q : Footprints.Region}
+    (hq : stepKeptB Ψ' q = true) : stepKeptB Ψ q = true := by
+  unfold stepKeptB at hq ⊢
+  split at hq
+  · simp only [List.all_eq_true, beq_iff_eq] at hq ⊢
+    exact fun p hp => h p (hq p hp)
+  · cases hq
+
+/-- **A region read as protected at a larger protocol is read so** (proved,
+`stepKeptB_mono`). -/
+theorem protRegionB_mono {P : Package} [DecidableEq P.Site] [Hashable P.Site] {Ψ Ψ' : Protocol P}
+    (h : ∀ p, Ψ' p = .keep → Ψ p = .keep) {cp : CopyTable} {arity : Nat} {roPos : Nat → Bool} {m : Code} {l : Nat}
+    {r : Footprints.Region} (hr : protRegionB Ψ' cp arity roPos m l r = true) :
+    protRegionB Ψ cp arity roPos m l r = true := by
+  unfold protRegionB at hr ⊢
+  split at hr
+  · cases hr
+  · simp only [stepsKeptB, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hr ⊢
+    obtain ⟨hs, hall⟩ := hr
+    refine ⟨fun q hq => stepKeptB_mono h (hs q hq), fun l' hl' => ?_⟩
+    obtain ⟨e, he, hc⟩ := hall l' hl'
+    obtain ⟨hc1, hc2⟩ := hc
+    exact ⟨e, he, hc1, fun q hq => stepKeptB_mono h (hc2 q hq)⟩
 
 namespace FramedSpec
 variable {ι : Type} (spec : FramedSpec ι)
@@ -250,7 +281,9 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
       (Verification.TolerantFrames.framedSOf spec.framed) (fun l => spec.protAt spec.fflow r l) := by
     intro l b₀ e L d k x _ hb _ hk _ hbt T _ e' _ hp w _ hmem hL
     exact spec.prot_witness r hr hFa hst hreal hcomp har hro hm hinitF hinitE hinit hcs hsi hE hwk
-      (fun p => thetaKeepB_keep hθ p) (copiesOf_sound _ _ _ _ _) hb hk hbt e'.1 hp w hmem hL
+      (fun p => thetaKeepB_keep hθ p) (copiesOf_sound _ _ _ _ _) hb hk hbt e'.1
+      (protRegionB_mono (fun p hp => Footprints.Change.max_keep_left hp)
+        ((Bool.and_eq_true _ _).mp hp).2) w hmem hL
   exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
     (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hLi hRl hRw hFa hmk hst hreal hEf
     hinitF hinitE htok hlow hcomp hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
