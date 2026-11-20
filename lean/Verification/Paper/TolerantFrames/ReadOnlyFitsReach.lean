@@ -416,7 +416,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     intro r hr
     simp only [vals, hc, ite_true, List.nil_append, Bool.not_true] at hr
     exact ih r hr
-  | frameOut hc hE henv _ _ _ ih =>
+  | frameOut hc hE henv _ _ _ _ ih =>
     intro r hr
     simp only [vals, hc, Bool.false_eq_true, ite_false, Bool.not_false, valsArgs_eq, List.mem_append,
       List.mem_flatMap] at hr

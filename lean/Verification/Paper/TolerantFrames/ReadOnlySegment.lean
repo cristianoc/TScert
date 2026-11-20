@@ -236,6 +236,37 @@ theorem hole_run {K : Tm → Tm} (hK : EvalCtx K) {j : Nat} {h h' : Heap} {u₀ 
   · obtain ⟨h₂, t₂, hst⟩ := hgo i h₁ t₁ hi hs₁
     exact absurd hst (hn h₂ t₂)
 
+/-- **A step of a call's run is within the charges at every location**
+(proved, as `within_run` by `stepAll_reach`): `within_run`'s step changes
+every location below `|h₀|`, in `R_P` or not, within the protocol from
+every code's charges and the set `T`. -/
+theorem within_run_all {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulHashable (Option P.Site)]
+    {F : FFlow P} {lay : List Layout} {S₀ T : Sites P} {g₀ : Ghost P} {n : Nat} {V : Sites P → Val → Prop}
+    {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {Sx : Sites P} {K : Tm → Tm} (hK : EvalCtx K)
+    {h₀ : Heap} {u₀ u u' : Tm} {j : Nat} {st st' : St P}
+    (hrun : Steps j h₀ u₀ st.s.h u) (hvals : ∀ i h₁ t₁, i < j → Steps i h₀ u₀ h₁ t₁ → HeapVals h₁)
+    (hs : Step st.s.h u st'.s.h u') (hw₀ : WOk (K u₀)) (hk₀ : writesK u₀ = []) (hW₀ : HeapW h₀)
+    (hrefs : RefsOk st.s.W (K u)) (hfit : Fits F.flow V Γ a o Sx (K u))
+    (hC : ∀ key, (activeFrame none u).1 = some key → P.ofC key.1.2 = true)
+    (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
+    (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
+    (hroots : ∀ x ∈ vals allC true u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' T ∧ layP (layQ F lay) x = true)
+    (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
+    StepAll (probeProtocol (flowKinds F) T) h₀.length st st' := by
+  have hu : isVal u = false := by
+    cases e : isVal u
+    · rfl
+    · exact absurd hs (value_no_step e)
+  have hfr : frameKinds [] (activeFrame none u).1 ⊆ flowKinds F := by
+    have := frameKinds_flow (K₀ := []) (Fits.frameIn_hole hK hu hfit) hC
+    simpa using this
+  have hwu := wok_steps hrun hW₀ (hK.wok_hole hw₀)
+  refine stepAll_reach (K₀ := []) (valRun_of_steps hrun hvals) hs hwu.1 (by rw [← hk₀]; exact hwu.2.2)
+    (hrefs.sub fun r hr => hK.refs_hole r hr) hfr
+    (heapDeep_of_checks hT htok hlow hH hl) (fun x hx => ?_) hsite
+  obtain ⟨S', hv, hS, hlx⟩ := hroots x hx
+  exact deepIn_of_checks hT htok hlow hv hS hlx
+
 /-- **A step of a call's run is within the charges** (proved, the draft's
 `within_charges`, by `stepWithin_reach`, `heapDeep_of_checks`,
 `deepIn_of_checks` and `Fits.frameIn_hole`): let `u₀`, a term performing
@@ -261,7 +292,24 @@ theorem within_run {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulH
     (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
     (hroots : ∀ x ∈ vals allC true u₀, ∃ S', VJ F.flow g₀ n S' x ∧ Sub S' T ∧ layP (layQ F lay) x = true)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
-    StepWithin (probeProtocol (flowKinds F) T) h₀.length st st' := by
+    StepWithin (probeProtocol (flowKinds F) T) h₀.length st st' :=
+  (within_run_all hK hrun hvals hs hw₀ hk₀ hW₀ hrefs hfit hC hT htok hlow hH hl hroots hsite).within
+
+/-- **A step of a call's run is within the charges at every location, its
+values read in depth** (proved, as `within_deep` by `stepAll_reach`). -/
+theorem within_deep_all {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulHashable (Option P.Site)]
+    {F : FFlow P} {lay : List Layout} {S₀ T : Sites P} {g₀ : Ghost P} {V : Sites P → Val → Prop}
+    {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {Sx : Sites P} {K : Tm → Tm} (hK : EvalCtx K)
+    {h₀ : Heap} {u₀ u u' : Tm} {j : Nat} {st st' : St P}
+    (hrun : Steps j h₀ u₀ st.s.h u) (hvals : ∀ i h₁ t₁, i < j → Steps i h₀ u₀ h₁ t₁ → HeapVals h₁)
+    (hs : Step st.s.h u st'.s.h u') (hw₀ : WOk (K u₀)) (hk₀ : writesK u₀ = []) (hW₀ : HeapW h₀)
+    (hrefs : RefsOk st.s.W (K u)) (hfit : Fits F.flow V Γ a o Sx (K u))
+    (hC : ∀ key, (activeFrame none u).1 = some key → P.ofC key.1.2 = true)
+    (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
+    (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
+    (hroots : ∀ x ∈ vals allC true u₀, DeepIn g₀.site T x)
+    (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
+    StepAll (probeProtocol (flowKinds F) T) h₀.length st st' := by
   have hu : isVal u = false := by
     cases e : isVal u
     · rfl
@@ -270,11 +318,9 @@ theorem within_run {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulH
     have := frameKinds_flow (K₀ := []) (Fits.frameIn_hole hK hu hfit) hC
     simpa using this
   have hwu := wok_steps hrun hW₀ (hK.wok_hole hw₀)
-  refine stepWithin_reach (K₀ := []) (valRun_of_steps hrun hvals) hs hwu.1 (by rw [← hk₀]; exact hwu.2.2)
+  exact stepAll_reach (K₀ := []) (valRun_of_steps hrun hvals) hs hwu.1 (by rw [← hk₀]; exact hwu.2.2)
     (hrefs.sub fun r hr => hK.refs_hole r hr) hfr
-    (heapDeep_of_checks hT htok hlow hH hl) (fun x hx => ?_) hsite
-  obtain ⟨S', hv, hS, hlx⟩ := hroots x hx
-  exact deepIn_of_checks hT htok hlow hv hS hlx
+    (heapDeep_of_checks hT htok hlow hH hl) hroots hsite
 
 /-- **A step of a call's run is within the charges, its values read in
 depth** (proved, as `within_run` by `stepWithin_reach`): `within_run`
@@ -293,18 +339,8 @@ theorem within_deep {P : Package} [DecidableEq P.Site] [Hashable P.Site] [Lawful
     (hlow : codesLoweredB F = true) (hH : HeapInv F.flow g₀ h₀) (hl : HeapLay (layQ F lay) h₀)
     (hroots : ∀ x ∈ vals allC true u₀, DeepIn g₀.site T x)
     (hsite : ∀ l, l < h₀.length → st.g.site l = g₀.site l) :
-    StepWithin (probeProtocol (flowKinds F) T) h₀.length st st' := by
-  have hu : isVal u = false := by
-    cases e : isVal u
-    · rfl
-    · exact absurd hs (value_no_step e)
-  have hfr : frameKinds [] (activeFrame none u).1 ⊆ flowKinds F := by
-    have := frameKinds_flow (K₀ := []) (Fits.frameIn_hole hK hu hfit) hC
-    simpa using this
-  have hwu := wok_steps hrun hW₀ (hK.wok_hole hw₀)
-  exact stepWithin_reach (K₀ := []) (valRun_of_steps hrun hvals) hs hwu.1 (by rw [← hk₀]; exact hwu.2.2)
-    (hrefs.sub fun r hr => hK.refs_hole r hr) hfr
-    (heapDeep_of_checks hT htok hlow hH hl) hroots hsite
+    StepWithin (probeProtocol (flowKinds F) T) h₀.length st st' :=
+  (within_deep_all hK hrun hvals hs hw₀ hk₀ hW₀ hrefs hfit hC hT htok hlow hH hl hroots hsite).within
 
 /-- **A value meeting a set in depth meets it at every value it holds**
 (proved, `vals_codeReach`, `CodeReach.trans`). -/

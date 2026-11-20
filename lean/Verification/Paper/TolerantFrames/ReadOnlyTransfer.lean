@@ -724,5 +724,113 @@ theorem segWithin_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at f
     have hin : ¬ OutsideAt fr.F fr.C none (.frame E K u L d k x comp) := by rw [← hyt]; exact ho
     exact activeFrame_runsC hc hdy1 hin
 
+/-- **A segment within `Ψ` at every location meets every support the
+premise holds of** (proved): each location of a region changes within
+`Ψ` at its part, within the region's change. -/
+theorem supported_of_own {P : Package} {Ψ : Protocol P} {S : Footprint} {ρ : Env} {st st' : St P}
+    (hf : OwnFramed Ψ S ρ st) (ha : AllBelow Ψ st.s.h.length st st') : Supported S ρ st.s.h st'.s.h := by
+  intro e he l v hm hv
+  have hl : l < st.s.h.length := (List.getElem?_eq_some_iff.mp hv).1
+  obtain ⟨v', hv', hb⟩ := ha.2 l v hl hv
+  exact ⟨v', hv', hb.mono (hf e he l hl hm)⟩
+
+/-- **A step of the segment keeps the marks** (proved): its world
+transition is admissible and every old location keeps its site
+(`next_site`). -/
+theorem kept_of_kstep {Fl : Flow (fr.F.at fr.C)} (hS : fr.FlowSites Fl) {y z : Conf × Ghost (fr.F.at fr.C)}
+    (hyz : fr.KStep y z) : Kept (lift fr.F fr.C none y.1 y.2) (lift fr.F fr.C none z.1 z.2) := by
+  refine ⟨hyz.1.adm, fun l hl => ?_⟩
+  have hlen := Footprints.step_length_le hyz.1.step
+  simp only [lift] at hl ⊢
+  rw [next_site hS hyz l (Nat.lt_of_lt_of_le hl hlen)]
+  exact Ghost.alloc_old hl
+
+/-- **The segment of a call whose code calls no outside code is within the
+charges at every location** (proved; the Read-only frames note, (B1), a
+framed call bounded by the charges of its segment): where no node of a
+code of the flow may call outside code, at a reached call state of the
+claim's top frame, with `segWithin_of_deep`'s premises, every location
+below the call state's heap changes within `Ψc` along the segment, in
+`R_P` or not. Each state of the segment fits the flow
+(`fitsAt_reached`); its top frame of `C`'s code runs its term at a node
+that may not call outside code, so every frame of that term runs `C`'s
+code (`Fits.innermostC`), and each step is within the charges at every
+location (`within_deep_all`); the steps compose (`AllBelow.trans`), the
+marks fixing each location's part (`kept_of_kstep`). -/
+theorem segAll_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Sites (fr.F.at fr.C)} {Ψc : Protocol (fr.F.at fr.C)}
+    (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ F lay) a.1.t = true ∧ HeapLay (layQ F lay) a.1.s.h)
+    (hT : capClosedB F (tokenCaps F lay) S₀ T = true) (htok : tokensSomeB F = true)
+    (hlow : codesLoweredB F = true) (hle : ∀ p, (probeProtocol (flowKinds F) T p).le (Ψc p) = true)
+    (hflags : ∀ E K c π, F.flow.code (E, K) c = some π → ∀ l k x, NodeOf (E, K) l k x → π.out l = false)
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm} {d : Tm}
+    {k : ControlFlow.Continuation} {x : Option ControlFlow.Target} {comp : ComponentTag}
+    {a : Conf × Ghost (fr.F.at fr.C)} (ha : fr.Reached a) (hcall : CallState fr.F fr.C E K L d k x comp a.1.t)
+    (hroots : ∀ f r args, a.1.t = .frame E K (.invoke f r args) L d k x comp →
+      ∀ v ∈ vals allC true (.invoke f r args), DeepIn a.2.site T v) {m : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
+    (hex : Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) m a e) :
+    AllBelow Ψc a.1.s.h.length (lift fr.F fr.C none a.1 a.2) (lift fr.F fr.C none e.1 e.2) := by
+  obtain ⟨f, r, args, ⟨hat, hc⟩, hfv, hrv, hargs⟩ := id hcall
+  have hfa := fitsAt_reached hFa hS hE ha
+  have hwa := wok_reached hwk ha
+  have hla := lay_reached hly ha
+  have hK : HeapObservations.EvalCtx (fun t => Tm.frame E K t L d k x comp) :=
+    .frameC E K L d k x comp .hole
+  -- (one step of the segment, from a state an execution of it reaches)
+  have hstep : ∀ n y z, Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) n a y →
+      Inside fr.F fr.C E K L d k x comp y.1.t → fr.KStep y z →
+      AllBelow Ψc a.1.s.h.length (lift fr.F fr.C none y.1 y.2) (lift fr.F fr.C none z.1 z.2) := by
+    intro n y z hpre hy hyz
+    obtain ⟨u, hrun, hyt⟩ := FrameCore.inside_run hpre hat
+    obtain ⟨w, ⟨hw, -⟩, hnr⟩ := id hy
+    rw [hyt] at hw; cases hw
+    have hyzs := hyz.1.step
+    rw [hyt] at hyzs
+    obtain ⟨u', hs, -⟩ := frameC_shape hyzs hnr
+    have hfy := fitsAt_reached hFa hS hE (Reached.ex ha hpre)
+    have hfit := hfy.1
+    rw [hyt] at hfit
+    have hC : ∀ key, (activeFrame none u).1 = some key → (fr.F.at fr.C).ofC key.1.2 = true := by
+      intro key hkey
+      cases hfit with
+      | val hv => simp [isVal] at hv
+      | frameOut hc' => exact absurd hc' (by simpa [Family.at] using hc)
+      | frameC c π l _ hcode hn _ _ _ hu =>
+        obtain ⟨hspec, -⟩ := activeFrame_innermost u none
+        rw [hkey] at hspec
+        cases hi : innermost u with
+        | none => rw [hi] at hspec; simp at hspec
+        | some f' =>
+          rw [hi] at hspec
+          have hf : frameOf f' = some key := by
+            cases e : frameOf f' <;> simp_all
+          exact hu.innermostC hflags (hflags _ _ c π hcode l _ _ hn) hi hf
+    refine ⟨kept_of_kstep hS hyz, ?_⟩
+    refine (within_deep_all (st := lift fr.F fr.C none y.1 y.2) (st' := lift fr.F fr.C none z.1 z.2) hK hrun
+      (fun i h₁ t₁ hi hs₁ => ?_) hs (by rw [← hat]; exact hwa.1) ?_ hwa.2
+      (by simp only [lift]; rw [← hyt]; exact y.1.ok) (by rw [← hyt]; exact hfy.1) hC hT htok hlow hfa.2 hla.2
+      (hroots f r args hat) (ex_sites hS hpre).2).mono hle
+    · obtain ⟨b, n', hb, hbh⟩ := inside_prefix hpre hat (Nat.le_of_lt hi) hs₁
+      have hfb := fitsAt_reached hFa hS hE (Reached.ex ha hb)
+      intro l v hv
+      rw [← hbh] at hv
+      exact (hfb.2 l v hv).val
+    · simp [writesK, writesK_val hfv, writesK_val hrv,
+        List.flatMap_eq_nil_iff.mpr fun a ha => writesK_val (hargs a ha)]
+  -- (the steps composed, from each state an execution of the segment reaches)
+  have hgo : ∀ n y, Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) n a y →
+      ∀ n' e', Ex fr.KStep (fun s => Inside fr.F fr.C E K L d k x comp s.1.t) n' y e' →
+      AllBelow Ψc a.1.s.h.length (lift fr.F fr.C none y.1 y.2) (lift fr.F fr.C none e'.1 e'.2) := by
+    intro n y hpre n' e' hrest
+    induction hrest generalizing n with
+    | refl => exact AllBelow.refl _
+    | next hq hyz _ ih => exact (hstep n _ _ hpre hq hyz).trans (ih (n + 1) (hpre.snoc hq hyz))
+  exact hgo 0 a (.refl a) m e hex
+
 end ClientFrame
 end Verification.TolerantFrames.ReadOnly

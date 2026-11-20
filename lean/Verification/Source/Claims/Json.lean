@@ -1022,12 +1022,14 @@ def FilePlans.framedRun (f : FilePlans) (fuel i : Nat) (name : String) (pos : Sp
             ("its start a label of its program", fun _ => decide (r'.start < r'.program.length)),
             ("its realized code's proposals at the frame's flow (realizedFlowB)", fun _ => realizedFlowB spec.fflowC r'),
             ("its framed call nodes at the frame's flow (framedNodesAt)", fun _ =>
-              framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff (spec.protAt spec.fflowC r')),
+              framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r') (spec.boundAt spec.fflowC r' eff)
+                (spec.protAt spec.fflowC r')),
             ("its realized code's returns within O at every context (retsInB)", fun _ =>
               !spec.inner || FramedSpec.retsInB spec.fflowC (realizedCode r'))]
           let w := ((reqChecks.find? (!·.2 ())).map (·.1)).getD "requestB"
           let why := if w.endsWith "(framedNodesAt)" then
-            framedNodesWhy spec.fflowC spec.lay spec.theta spec.framed (requestCode r') eff (spec.protAt spec.fflowC r')
+            framedNodesWhy spec.fflowC spec.lay spec.theta spec.framed (requestCode r') (spec.boundAt spec.fflowC r' eff)
+              (spec.protAt spec.fflowC r')
           else ""
           .before name (.refused s!"framed plan: the request check of {w} fails{why}")
 

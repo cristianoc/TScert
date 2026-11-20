@@ -115,6 +115,19 @@ theorem frame_to_frame {h h' : Heap} {E : List Tm} {K : List (Continuation × Op
 
 /-! ## The returns at reached executions -/
 
+/-- **The checks at the framed nodes whose segment runs no outside code**
+(`own`): no node of a code of the flow may call outside code, and each
+support of such a node passes the check of the charges' premise at every
+context of the code `Pe`, `Pk` and every node sharing the node's
+continuation and handler. -/
+def OwnChecks {P : Package} (Fl : Flow P) (Pe : List Tm) (Pk : List (Continuation × Option Target))
+    (F own : Nat → Bool) (S : Nat → List Footprints.Footprint) (Ψc : Nat → Protocol P) : Prop :=
+  (∀ l, F l = true → own l = true → ∀ E K c π, Fl.code (E, K) c = some π →
+      ∀ l' k x, NodeOf (E, K) l' k x → π.out l' = false) ∧
+    ∀ l e k x, F l = true → own l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+      Fl.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x →
+      ∀ T ∈ S l, frameCheckOwnAt (Ψc l) T Fl.H (π.env l') = true
+
 namespace ClientFrame
 variable {τ : Type} (fr : ClientFrame τ)
 
@@ -318,21 +331,23 @@ theorem atomCall_inst {e : Tm} (he : atomCallB e = true) {L : List Tm} {d : Tm} 
     exact atomB_inst (ha a' ha') hv
   | _ => simp [atomCallB] at he
 
-/-- **The transfer at the framed nodes, from the framed transfer** (proved;
-the draft, "The transfer at a call", at the claim's top frame): where each
-framed node of the code calls operands read from its slots
-(`atomCallB`), a reached state entering it is a call state of the top
-frame (`CallState`, `atomCall_inst`), and its evaluation to a value is the
-call's segment to its resumption (`Inside`, `Resumes`), so
-`framed_transfer` gives each support of `S l` supported: with trace
-certificates at `Ψj` (`Θ ⊑ Ψj ⊑ Ψc l`), the segment's own steps within
-`Ψc l` (`SegWithin`, by `segWithin_of_run`), the callee's effect `Φ l`
-bounding the heap along the call's segment (the callback's arrow, part of
-`Θ_C`), and the rule's premise at the call state (`Framed`, by
-`framed_at_innermost` from the pass's check of the node's kept
-supports). -/
+/-- **The transfer at the framed nodes, from the framed transfer or the
+charges** (proved; the draft, "The transfer at a call", at the claim's top
+frame): where each framed node of the code calls operands read from its
+slots (`atomCallB`), a reached state entering it is a call state of the
+top frame (`CallState`, `atomCall_inst`), and its evaluation to a value is
+the call's segment to its resumption (`Inside`, `Resumes`). At a node
+`own` reads, the segment changes every location below the entry's heap
+within `Ψc l` (`AllBelow`) and each support meets the charges' premise at
+every location (`OwnFramed`), so it is supported (`supported_of_own`). At
+any other, `framed_transfer` gives each support of `S l` supported: with
+trace certificates at `Ψj` (`Θ ⊑ Ψj ⊑ Ψc l`), the segment's own steps
+within `Ψc l` (`SegWithin`, by `segWithin_of_run`), the effect `Φ l`
+bounding the heap along the call's segment, and the rule's premise at the
+call state (`Framed`, by `framed_at_innermost` from the pass's check of
+the node's kept supports). -/
 theorem nodeTransfer_of_transfer {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag}
-    {F : Nat → Bool} {S : Nat → List Footprints.Footprint} (hc : fr.ChkSound) (hi : fr.StartInv)
+    {F own : Nat → Bool} {S : Nat → List Footprints.Footprint} (hc : fr.ChkSound) (hi : fr.StartInv)
     (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
     {Ψj : Protocol (fr.F.at fr.C)} {G : (St (fr.F.at fr.C) → Prop) → Prop} (certs : fr.TraceCerts Ψj G)
     (hΘ : ∀ p, (fr.Θ p).le (Ψj p) = true) {Ψc : Nat → Protocol (fr.F.at fr.C)}
@@ -340,23 +355,39 @@ theorem nodeTransfer_of_transfer {Pe : List Tm} {Pk : List (Continuation × Opti
     (hown : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       fr.SegWithin (Ψc l) Pe Pk L d k x c₀ b₀)
-    (hfr : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
-      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+    (hfr : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → own l = false → fr.Reached b₀ →
+      Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       ∀ T ∈ S l, Framed (Φ l) (Ψc l) T (envOf L d) (lift fr.F fr.C none b₀.1 b₀.2))
-    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ → Pe[l]? = some e →
-      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → own l = false → fr.Reached b₀ →
+      Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       Ex fr.KStep (fun s => Inside fr.F fr.C Pe Pk L d k x c₀ s.1.t) m b₀ a →
-      a.1.t = .frame Pe Pk v L d k x c₀ → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+      a.1.t = .frame Pe Pk v L d k x c₀ → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hall : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → own l = true → fr.Reached b₀ →
+      Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ m (a : Conf × Ghost (fr.F.at fr.C)), Ex fr.KStep (fun s => Inside fr.F fr.C Pe Pk L d k x c₀ s.1.t) m b₀ a →
+      AllBelow (Ψc l) b₀.1.s.h.length (lift fr.F fr.C none b₀.1 b₀.2) (lift fr.F fr.C none a.1 a.2))
+    (hof : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → own l = true → fr.Reached b₀ →
+      Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ T ∈ S l, OwnFramed (Ψc l) T (envOf L d) (lift fr.F fr.C none b₀.1 b₀.2)) :
     fr.FramedNodeTransfer Pe Pk c₀ F S := by
   intro l b₀ a m e L d k x v hFl hb he hk hL hbt hex hat hv T hT
-  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
-  have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
-    ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
   have hex' : Ex fr.KStep (fun s => Inside fr.F fr.C Pe Pk L d k x c₀ s.1.t) m b₀ a :=
     hex.mono fun s ⟨u, hu, hnr⟩ => ⟨u, ⟨hu, hcomp⟩, hnr⟩
-  have hres : Resumes fr.F fr.C Pe Pk L d k x c₀ a.1.t := ⟨v, ⟨hat, hcomp⟩, .inl hv⟩
-  exact framed_transfer hc hi certs hΘ (hW l) hb hcall hex' hres (hown l b₀ e L d k x hFl hb he hk hL hbt)
-    (hΦ l b₀ a m e L d k x v hFl hb he hk hL hbt hex' hat hv) (hfr l b₀ e L d k x hFl hb he hk hL hbt T hT)
+  cases ho : own l with
+  | true =>
+    exact supported_of_own (hof l b₀ e L d k x hFl ho hb he hk hL hbt T hT)
+      (hall l b₀ e L d k x hFl ho hb he hk hL hbt m a hex')
+  | false =>
+    obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+    have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
+      ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
+    have hres : Resumes fr.F fr.C Pe Pk L d k x c₀ a.1.t := ⟨v, ⟨hat, hcomp⟩, .inl hv⟩
+    exact framed_transfer hc hi certs hΘ (hW l) hb hcall hex' hres (hown l b₀ e L d k x hFl hb he hk hL hbt)
+      (hΦ l b₀ a m e L d k x v hFl ho hb he hk hL hbt hex' hat hv) (hfr l b₀ e L d k x hFl ho hb he hk hL hbt T hT)
 
 /-- **The own steps at each framed node, from the call's run** (proved, by
 `segWithin_of_run` at each node's set `T l`): where every reached state
@@ -410,9 +441,8 @@ theorem atom_vj {P : Package} {Fl : Flow P} {g : Ghost P} {n : Nat} {env : Nat �
     fun h => absurd rfl (h j), hl⟩
   all_goals exact ⟨[], VJ.prim (by simp [instantiate, primVal]), fun _ h => (by cases h), fun _ => rfl, hl⟩
 
-/-- **The own steps at each framed node, from the frame's fit** (proved,
-`segWithin_of_deep` at each node's set `T l`): `own_of_run` with its root
-premise discharged. A reached state entering a framed node fits the flow
+/-- **The call's values meet its node's set in depth, from the frame's fit**
+(proved): a reached state entering a framed node fits the flow
 (`fitsAt_reached`), so its frame of `C`'s code runs a node `l'` of its code
 with `l`'s continuation and handler, at a context `c`, each slot value
 meeting the slot's set at `l'` (`Fits.frameC`); each operand of the node's
@@ -420,28 +450,27 @@ call read from a slot meets that set, a constant every set (`atom_vj`), and
 where `T l` holds the operand slots' sets at every such node and context,
 each value of the call's term meets `T l` in depth (`deepIn_of_checks`,
 `DeepIn.held`). -/
-theorem own_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+theorem roots_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
-    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    {S₀ T : Nat → Sites (fr.F.at fr.C)}
     {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
     (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
-    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
-      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
     (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
       fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
     (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true) (htok : tokensSomeB Fl = true)
-    (hlow : codesLoweredB Fl = true) (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hlow : codesLoweredB Fl = true)
     (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
     (hslots : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x → ∀ j ∈ atomSlots e, Sub (π.env l' j) (T l)) :
     ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
-      fr.SegWithin (Ψc l) Pe Pk L d k x c₀ b₀ := by
+      ∀ f' r' args', b₀.1.t = .frame Pe Pk (.invoke f' r' args') L d k x c₀ →
+      ∀ v ∈ vals allC true (.invoke f' r' args'), DeepIn b₀.2.site (T l) v := by
   intro l b₀ e L d k x hFl hb he hk hL hbt
   obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
   have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
     ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
-  refine segWithin_of_deep hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall fun f' r' args' ht v hv => ?_
+  intro f' r' args' ht v hv
   rw [hbt, hinst] at ht
   cases ht
   have hfit := (fitsAt_reached hFa hS hE hb).1
@@ -486,6 +515,66 @@ theorem own_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
         · simp only [instantiateArgs_eq_map, List.mem_map]; exact ⟨o, ho, rfl⟩
     | _ => simp [atomCallB] at hae
 
+
+/-- **The own steps at each framed node, from the frame's fit** (proved,
+`segWithin_of_deep` at each node's set `T l`, its root premise from
+`roots_of_fit`): `own_of_run` with its root premise discharged. -/
+theorem own_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
+    (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true) (htok : tokensSomeB Fl = true)
+    (hlow : codesLoweredB Fl = true) (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
+    (hslots : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x → ∀ j ∈ atomSlots e, Sub (π.env l' j) (T l)) :
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      fr.SegWithin (Ψc l) Pe Pk L d k x c₀ b₀ := by
+  intro l b₀ e L d k x hFl hb he hk hL hbt
+  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+  have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
+    ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
+  exact segWithin_of_deep hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hb hcall
+    (roots_of_fit hFa hS hE hly hT htok hlow hcomp hatom hslots l b₀ e L d k x hFl hb he hk hL hbt)
+
+/-- **The segment at each framed node within its protocol at every
+location, from the frame's fit** (proved, `segAll_of_deep` at each node's
+set `T l`): where no node of a code of the flow may call outside code,
+along every execution of the segment from a reached state entering a
+framed node `l`, every location below the entry's heap changes within
+`Ψc l` at its part. -/
+theorem all_of_fit [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    {Pe : List Tm} {Pk : List (Continuation × Option Target)} {c₀ : ComponentTag} {F : Nat → Bool}
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
+    (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true) (htok : tokensSomeB Fl = true)
+    (hlow : codesLoweredB Fl = true) (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
+    (hslots : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x → ∀ j ∈ atomSlots e, Sub (π.env l' j) (T l))
+    (hflags : ∀ E K c π, Fl.flow.code (E, K) c = some π → ∀ l k x, NodeOf (E, K) l k x → π.out l = false) :
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
+      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ m (a : Conf × Ghost (fr.F.at fr.C)), Ex fr.KStep (fun s => Inside fr.F fr.C Pe Pk L d k x c₀ s.1.t) m b₀ a →
+      AllBelow (Ψc l) b₀.1.s.h.length (lift fr.F fr.C none b₀.1 b₀.2) (lift fr.F fr.C none a.1 a.2) := by
+  intro l b₀ e L d k x hFl hb he hk hL hbt m a hex
+  obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
+  have hcall : CallState fr.F fr.C Pe Pk L d k x c₀ b₀.1.t :=
+    ⟨f, r, args, ⟨by rw [hbt, hinst], hcomp⟩, hf, hr, ha⟩
+  exact segAll_of_deep hFa hS hE hwk hly (hT l hFl) htok hlow (hle l hFl) hflags hb hcall
+    (roots_of_fit hFa hS hE hly hT htok hlow hcomp hatom hslots l b₀ e L d k x hFl hb he hk hL hbt) hex
+
 /-- **A frame's slots have valid references where the frame does**
 (proved). -/
 theorem frame_rootsOk {n : Nat} {W : WorldT n} {E : List Tm} {K : List (Continuation × Option Target)} {t : Tm}
@@ -526,21 +615,22 @@ each support meets `Framed` at
 `Ψc l`, where each lent location of a region the check reads as protected
 has a live witness (`ProtWitness`). -/
 theorem framed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Continuation × Option Target)}
-    {c₀ : ComponentTag} {F : Nat → Bool} {S : Nat → List Footprints.Footprint} {Φ : Nat → Footprints.Footprint}
+    {c₀ : ComponentTag} {F own : Nat → Bool} {S : Nat → List Footprints.Footprint} {Φ : Nat → Footprints.Footprint}
     {Ψc : Nat → Protocol (fr.F.at fr.C)} {q : Nat → Footprints.SepQuery} {prot : Nat → Footprints.Region → Bool}
     (hFa : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl)
     (hcomp : fr.F.ofC fr.C c₀ = true) (hatom : ∀ l e, F l = true → Pe[l]? = some e → atomCallB e = true)
-    (hcheck : ∀ l e k x, F l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+    (hcheck : ∀ l e k x, F l = true → own l = false → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
       Fl.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x →
       ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.H (π.env l') (prot l) = true)
     (hw : fr.ProtWitness Pe Pk c₀ F S prot)
     (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
       Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       (q l).Sound (envOf L d) b₀.1.s.h) :
-    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ → Pe[l]? = some e →
-      Pk[l]? = some (k, x) → SlotVals L d → b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → own l = false → fr.Reached b₀ →
+      Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
       ∀ T ∈ S l, Framed (Φ l) (Ψc l) T (envOf L d) (lift fr.F fr.C none b₀.1 b₀.2) := by
-  intro l b₀ e L d k x hFl hb he hk hL hbt T hT
+  intro l b₀ e L d k x hFl ho hb he hk hL hbt T hT
   obtain ⟨f, r, args, hinst, hf, hr, ha⟩ := atomCall_inst (hatom l e hFl he) hL
   have hinn : innermost b₀.1.t = some (.frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀) := by
     have hi : innermost (.invoke f r args) = none := by
@@ -557,8 +647,34 @@ theorem framed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Co
   obtain ⟨-, c, π, l', hcode, hn, hfr⟩ :=
     ClientFrame.framed_at_innermost hFa hS hE hb hinn (by simpa [Family.at] using hcomp)
   have hρ : RootsOk b₀.1.s.W (envOf L d) := frame_rootsOk (by rw [← hbt]; exact b₀.1.ok)
-  exact hfr (tv := fr.view.view) (dp := 1) (hcheck l e k x hFl he hk c π l' hcode hn T hT)
+  exact hfr (tv := fr.view.view) (dp := 1) (hcheck l e k x hFl ho he hk c π l' hcode hn T hT)
     (hq l b₀ e L d k x hFl hb he hk hL hbt) hρ (hw l b₀ e L d k x hFl hb he hk hL hbt T hT)
+
+/-- **The charges' premise at each own framed node, from the frame's
+check** (proved, `frame_sites`, `ownFramed_of_sites`): at a reached state
+entering a framed node `l`, the frame fits the flow at a node `l'` with
+`l`'s continuation and handler, at a context of its code, so where the
+check of the charges' premise passes at every such node and context, each
+support meets it at the frame's environment. -/
+theorem ownFramed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Continuation × Option Target)}
+    {c₀ : ComponentTag} {F own : Nat → Bool} {S : Nat → List Footprints.Footprint}
+    {Ψc : Nat → Protocol (fr.F.at fr.C)} (hFa : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.EntryFits Fl)
+    (hcomp : fr.F.ofC fr.C c₀ = true)
+    (hcheck : ∀ l e k x, F l = true → own l = true → Pe[l]? = some e → Pk[l]? = some (k, x) → ∀ c π l',
+      Fl.code (Pe, Pk) c = some π → NodeOf (Pe, Pk) l' k x →
+      ∀ T ∈ S l, frameCheckOwnAt (Ψc l) T Fl.H (π.env l') = true) :
+    ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → own l = true → fr.Reached b₀ →
+      Pe[l]? = some e → Pk[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame Pe Pk (instantiate 0 (envOf L d) e) L d k x c₀ →
+      ∀ T ∈ S l, OwnFramed (Ψc l) T (envOf L d) (lift fr.F fr.C none b₀.1 b₀.2) := by
+  intro l b₀ e L d k x hFl ho hb he hk _ hbt T hT
+  have hfit := fitsAt_reached hFa hS hE hb
+  have hf := hfit.1
+  rw [hbt] at hf
+  obtain ⟨c, π, l', hcode, hn, henv⟩ := frame_sites hf (by simpa [Family.at] using hcomp)
+  have hρ : RootsOk b₀.1.s.W (envOf L d) := frame_rootsOk (by rw [← hbt]; exact b₀.1.ok)
+  exact ownFramed_of_sites (st := lift fr.F fr.C none b₀.1 b₀.2) (hcheck l e k x hFl ho he hk c π l' hcode hn T hT)
+    hρ henv hfit.2.sites
 
 end ClientFrame
 end Verification.TolerantFrames.ReadOnly
@@ -634,9 +750,9 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    {Φ : Nat → Footprints.Footprint} {own : Nat → Bool} {q : Nat → Footprints.SepQuery}
     {prot : Nat → Footprints.Region → Bool}
-    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+    (hcheck : ∀ l e k x, F l = true → own l = false → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
@@ -651,7 +767,7 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       (q l).Sound (envOf L d) b₀.1.s.h)
     {Ψj : Protocol (fr.F.at fr.C)} {G : (St (fr.F.at fr.C) → Prop) → Prop} (certs : fr.TraceCerts Ψj G)
     (hΘ : ∀ p, (fr.Θ p).le (Ψj p) = true) (hW : ∀ l p, (Ψj p).le (Ψc l p) = true)
-    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → own l = false → fr.Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
       b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
@@ -659,13 +775,17 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
       Ex fr.KStep (fun s => Inside fr.F fr.C (r.program.map (·.expression))
         (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
       a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
-        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
   ret_reachedW hsrc hty hvals
-    (ClientFrame.nodeTransfer_of_transfer hc hi hcomp hatom certs hΘ hW
+    (ClientFrame.nodeTransfer_of_transfer (own := own) hc hi hcomp hatom certs hΘ hW
       (ClientFrame.own_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots)
-      (ClientFrame.framed_of_check hFa hS hE hcomp hatom hcheck hw hq) hΦ)
+      (ClientFrame.framed_of_check hFa hS hE hcomp hatom hcheck hw hq) hΦ
+      (fun l b₀ e L d k x hFl ho => ClientFrame.all_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots
+        (hownc.1 l hFl ho) l b₀ e L d k x hFl)
+      (ClientFrame.ownFramed_of_check hFa hS hE hcomp hownc.2))
 
 /-- **The returns at reached executions, from the checks and the charges**
 (proved; `ret_reachedW_of_checks` at the members' certificates
@@ -702,9 +822,9 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    {Φ : Nat → Footprints.Footprint} {own : Nat → Bool} {q : Nat → Footprints.SepQuery}
     {prot : Nat → Footprints.Region → Bool}
-    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+    (hcheck : ∀ l e k x, F l = true → own l = false → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
@@ -728,7 +848,7 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
           Sub S' (capClose Fl (tokenCaps Fl lay) (captureSites Fl lay ++ Fl.O)) ∧ layP (layQ Fl lay) x = true)
     (hΘ : ∀ p, (fr.Θ p).le (componentProtocol Fl lay p) = true)
     (hW : ∀ l p, (componentProtocol Fl lay p).le (Ψc l p) = true)
-    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → own l = false → fr.Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
       b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
@@ -736,11 +856,12 @@ theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       Ex fr.KStep (fun s => Inside fr.F fr.C (r.program.map (·.expression))
         (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
       a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
-        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
   ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hw hq
-    (fun m => ClientFrame.cert_of_charges hFa hS hE hst hwk hly hTm htok hlow hroots m) hΘ hW hΦ
+    (fun m => ClientFrame.cert_of_charges hFa hS hE hst hwk hly hTm htok hlow hroots m) hΘ hW hΦ hownc
 
 /-- **The returns at reached executions, from the checks, the charges and
 the entries** (proved; `ret_reachedW_of_charges` with its premise `hroots`
@@ -778,9 +899,9 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    {Φ : Nat → Footprints.Footprint} {own : Nat → Bool} {q : Nat → Footprints.SepQuery}
     {prot : Nat → Footprints.Region → Bool}
-    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+    (hcheck : ∀ l e k x, F l = true → own l = false → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
@@ -802,7 +923,7 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
     (hr : noRestB lay = true)
     (hΘ : ∀ p, (fr.Θ p).le (componentProtocol Fl lay p) = true)
     (hW : ∀ l p, (componentProtocol Fl lay p).le (Ψc l p) = true)
-    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → own l = false → fr.Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
       b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
@@ -810,12 +931,13 @@ theorem ret_reachedW_of_entries {σ ι : Type} [Labels ι] [StoreView σ ι] {r 
       Ex fr.KStep (fun s => Inside fr.F fr.C (r.program.map (·.expression))
         (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
       a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
-        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
   ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hwk hly htok hlow hcomp hatom hT hle hslots hcheck hw hq
     (fun m => ClientFrame.cert_of_deep hFa hS hE hst hwk hly hTm htok hlow
-      (ClientFrame.entry_roots hFa hS hE hst hly hnp hTm htok hlow hr) m) hΘ hW hΦ
+      (ClientFrame.entry_roots hFa hS hE hst hly hnp hTm htok hlow hr) m) hΘ hW hΦ hownc
 
 /-- **The returns at reached executions of a framed plan's frame** (proved,
 `ret_reachedW_of_entries` at `spec.frame r` and the spec's flow): its
@@ -852,9 +974,9 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    {Φ : Nat → Footprints.Footprint} {own : Nat → Bool} {q : Nat → Footprints.SepQuery}
     {prot : Nat → Footprints.Region → Bool}
-    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+    (hcheck : ∀ l e k x, F l = true → own l = false → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
@@ -873,7 +995,7 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
     (hr : noRestB lay = true)
     (hΘ : ∀ p, ((spec.frame r).Θ p).le (componentProtocol Fl lay p) = true)
     (hW : ∀ l p, (componentProtocol Fl lay p).le (Ψc l p) = true)
-    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true → own l = false →
       (spec.frame r).Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
@@ -882,12 +1004,13 @@ theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : 
       Ex (spec.frame r).KStep (fun s => Inside (spec.frame r).F (spec.frame r).C (r.program.map (·.expression))
         (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
       a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
-        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hownc : OwnChecks Fl.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) :=
   ret_reachedW_of_entries (Fl := Fl) hsrc hty hvals hc hi hFa (hFl ▸ spec.flowSites r) hE
     (spec.wok_start r hinitW) (spec.lay_start r hinitL) htok hlow hcomp hatom hT hle hslots hcheck hw hq
-    (spec.wfS_start r) hTm (spec.noPend_start r) hr hΘ hW hΦ
+    (spec.wfS_start r) hTm (spec.noPend_start r) hr hΘ hW hΦ hownc
 
 /-- **The returns at reached executions of a framed plan, from its
 component's checks** (proved, `ret_reachedW_frame` at the plan's flow and
@@ -919,9 +1042,9 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
       ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
-    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    {Φ : Nat → Footprints.Footprint} {own : Nat → Bool} {q : Nat → Footprints.SepQuery}
     {prot : Nat → Footprints.Region → Bool}
-    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+    (hcheck : ∀ l e k x, F l = true → own l = false → (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
       spec.fflow.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
       NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
@@ -939,7 +1062,7 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
       (capClose spec.fflow (tokenCaps spec.fflow spec.lay) (captureSites spec.fflow spec.lay ++ spec.fflow.O)) = true)
     (hΘ : ∀ p, ((spec.frame r).Θ p).le (componentProtocol spec.fflow spec.lay p) = true)
     (hW : ∀ l p, (componentProtocol spec.fflow spec.lay p).le (Ψc l p) = true)
-    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true →
+    (hΦ : ∀ l (b₀ a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)) m e L d k x v, F l = true → own l = false →
       (spec.frame r).Reached b₀ →
       (r.program.map (·.expression))[l]? = some e →
       (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
@@ -948,13 +1071,14 @@ theorem ret_reachedW_spec {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : F
       Ex (spec.frame r).KStep (fun s => Inside (spec.frame r).F (spec.frame r).C (r.program.map (·.expression))
         (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
       a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
-        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s)
+    (hownc : OwnChecks spec.fflow.flow (SourceClaimJson.requestCode r).1 (SourceClaimJson.requestCode r).2 F own S Ψc) :
     FramedReturnsReachedW r (spec.frame r) F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
       (fun _ _ _ _ => True) := by
   have hnone := componentBindingRefusal_none (spec.componentRefusal_none hcomp₀)
   have hinit := spec.initial_lay hEl hEw hLi hRl hRw
   exact ret_reachedW_frame spec r hsrc (spec.call_typed r) hvals hc hi (Fl := spec.fflow) rfl
     (fun x hx => (hinit x hx).2) (fun x hx => (hinit x hx).1) hFa hE htok hlow hcomp hatom hT hle hslots
-    hcheck hw hq hTm hnone.2.2.2.2.2.1 hΘ hW hΦ
+    hcheck hw hq hTm hnone.2.2.2.2.2.1 hΘ hW hΦ hownc
 
 end Verification.SourceClaimJson.PassUnit

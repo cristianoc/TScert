@@ -135,6 +135,24 @@ theorem local_reach {site : Nat → α} {L : List α} {h₀ h h' : Heap} {u₀ u
   · exact absurd hlt (Nat.not_lt.mpr hfresh)
 
 /-- **A step of charged code in a run is within the protocol from its
+charges and the set at every location** (proved, `local_reach` gives
+`stepAll_charged`'s held sites): at a step of a run from `h₀`, from a term
+meeting the residual invariant, with valid references, whose innermost
+frame's code's charges are among `K`, at states whose ghost keeps the
+sites of `h₀`'s locations, every location below `|h₀|` changes within
+the protocol from `K` and a set of sites `h₀` and the run's first term's
+values meet in depth. -/
+theorem stepAll_reach {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulHashable (Option P.Site)]
+    {K₀ K : List Charge} {L : Sites P} {site : Nat → Option P.Site} {h₀ : Heap} {u₀ : Tm}
+    {st st' : St P} {t t' : Tm} (hr : ValRun h₀ u₀ st.s.h t) (hs : Step st.s.h t st'.s.h t')
+    (hw : WOk t) (hk : writesK t ⊆ K₀) (hrefs : RefsOk st.s.W t) (hK : frameKinds K₀ (activeFrame none t).1 ⊆ K)
+    (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC true u₀, DeepIn site L x)
+    (hsite : ∀ l, l < h₀.length → st.g.site l = site l) :
+    StepAll (probeProtocol K L) h₀.length st st' :=
+  stepAll_charged hs hw hk hrefs hK fun l _ hlt hv hne _ => by
+    rw [hsite l hlt]; exact local_reach hr hs hH hroots hlt hv hne
+
+/-- **A step of charged code in a run is within the protocol from its
 charges and the set** (proved, `local_reach` gives `stepWithin_charged`'s
 held sites): at a step of a run from `h₀`, from a term meeting the residual
 invariant, with valid references, whose innermost frame's code's charges
@@ -148,8 +166,7 @@ theorem stepWithin_reach {P : Package} [DecidableEq P.Site] [Hashable P.Site] [L
     (hH : HeapDeep site L h₀) (hroots : ∀ x ∈ vals allC true u₀, DeepIn site L x)
     (hsite : ∀ l, l < h₀.length → st.g.site l = site l) :
     StepWithin (probeProtocol K L) h₀.length st st' :=
-  stepWithin_charged hs hw hk hrefs hK fun l _ hlt _ hv hne _ => by
-    rw [hsite l hlt]; exact local_reach hr hs hH hroots hlt hv hne
+  (stepAll_reach hr hs hw hk hrefs hK hH hroots hsite).within
 
 /-! ## The values of a flow meet a closed set in depth -/
 
@@ -414,7 +431,7 @@ theorem Fits.frameIn : ∀ {Γ a o S t}, Fits Fl V Γ a o S t → ∀ cur, Frame
       simp only [Option.some.injEq, Prod.mk.injEq] at he
       obtain ⟨⟨rfl, rfl⟩, rfl⟩ := he
       exact ⟨c, π, hcode⟩
-  | frameOut hc' _ _ _ _ _ ih =>
+  | frameOut hc' _ _ _ _ _ _ ih =>
     intro cur _; simp only [activeFrame]
     exact ih _ fun m comp kx he hcomp => by
       simp only [Option.some.injEq, Prod.mk.injEq] at he

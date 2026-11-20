@@ -244,7 +244,7 @@ theorem Fits.active_aux :
   | frameC _ _ _ _ _ _ _ _ _ ht _ _ ih =>
     intro cur; simp only [activeFrame]
     exact .inr ((ih _).elim (fun he => ⟨_, _, _, _, he ▸ ht⟩) id)
-  | frameOut _ _ _ ht _ _ ih =>
+  | frameOut _ _ _ ht _ _ _ ih =>
     intro cur; simp only [activeFrame]
     exact .inr ((ih _).elim (fun he => ⟨_, _, _, _, he ▸ ht⟩) id)
 

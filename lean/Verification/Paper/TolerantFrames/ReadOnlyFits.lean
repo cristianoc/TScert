@@ -508,15 +508,19 @@ inductive Fits (V : Sites P → Val → Prop) : (Nat → Option (Sites P)) → F
       (o = true → Sub S Fl.O) → Fits V Γ a o S (.makeKey k x)
   | gotoC {Γ a o S E K l L d comp} (c : Nat) (π : CodeFlow P) : P.ofC comp = true → Fl.code (E, K) c = some π →
       (∀ i, VOr V Γ (π.env l i) (envOf L d i)) → EnvFn π l L d → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.goto E K l L d comp)
+  /-- A run of outside code: only at a frame that may call outside code. -/
   | gotoOut {Γ a o S E K l L d comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
-      (∀ i, VOr V Γ Fl.O (envOf L d i)) → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.goto E K l L d comp)
+      (∀ i, VOr V Γ Fl.O (envOf L d i)) → Sub Fl.O S → (o = true → Sub S Fl.O) → a.out = true →
+      Fits V Γ a o S (.goto E K l L d comp)
   | frameC {Γ a o S E K t L d k x comp} (c : Nat) (π : CodeFlow P) (l : Nat) : P.ofC comp = true →
       Fl.code (E, K) c = some π → NodeOf (E, K) l k x → (∀ i, V (π.env l i) (envOf L d i)) → EnvFn π l L d →
       (∀ σ, π.vfn l = some σ → FnTm P σ t) →
       Fits V Γ (π.at l (k, x)) false (π.val l) t → Sub π.ret S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
+  /-- A frame of outside code: only at a frame that may call outside code. -/
   | frameOut {Γ a o S E K t L d k x comp} : P.ofC comp = false → (∀ e ∈ E, Lowered Fl e) →
       (∀ i, V Fl.O (envOf L d i)) →
-      Fits V Γ FrameAt.outside true Fl.O t → Sub Fl.O S → (o = true → Sub S Fl.O) → Fits V Γ a o S (.frame E K t L d k x comp)
+      Fits V Γ FrameAt.outside true Fl.O t → Sub Fl.O S → (o = true → Sub S Fl.O) → a.out = true →
+      Fits V Γ a o S (.frame E K t L d k x comp)
 
 /-- **A value judgment monotone in its set of sites.** -/
 def Mono (V : Sites P → Val → Prop) : Prop := ∀ S S' v, Sub S S' → V S v → V S' v
@@ -559,10 +563,10 @@ theorem Fits.mono {V V' : Sites P → Val → Prop} (hV : ∀ S v, V S v → V' 
   | merge _ _ hq hcl hst hs hQ ho ihx ihy => exact .merge ihx ihy hq hcl hst hs hQ ho
   | makeKey _ hst _ hs ho ihk ihx => exact .makeKey ihk hst ihx hs ho
   | gotoC c π hc hcode henv hfn hS ho => exact .gotoC c π hc hcode (fun i => (henv i).imp hV) hfn hS ho
-  | gotoOut hc hE henv hS ho => exact .gotoOut hc hE (fun i => (henv i).imp hV) hS ho
+  | gotoOut hc hE henv hS ho hao => exact .gotoOut hc hE (fun i => (henv i).imp hV) hS ho hao
   | frameC c π l hc hcode hn henv hfn hvfn _ hS ho ih =>
     exact .frameC c π l hc hcode hn (fun i => hV _ _ (henv i)) hfn hvfn ih hS ho
-  | frameOut hc hE henv _ hS ho ih => exact .frameOut hc hE (fun i => hV _ _ (henv i)) ih hS ho
+  | frameOut hc hE henv _ hS ho hao ih => exact .frameOut hc hE (fun i => hV _ _ (henv i)) ih hS ho hao
 
 /-- **A term at a position of outside code fits a subset of `O`** (proved):
 every rule states it. -/
@@ -1462,7 +1466,7 @@ theorem fits_gotoC {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)
 theorem fits_gotoOut {V : Sites P → Val → Prop} {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool}
     {S : Sites P} {E : List Tm} {K : List (Continuation × Option Target)} {l : Nat} {L : List Tm} {d : Tm}
     {comp : ComponentTag} (hc : P.ofC comp = false) (hE : ∀ e ∈ E, Lowered Fl e) (henv : ∀ i, V Fl.O (envOf L d i))
-    (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O) : Fits Fl V Γ a o S (.goto E K l L d comp) :=
-  .gotoOut hc hE (fun i => .inl (henv i)) hS ho
+    (hS : Sub Fl.O S) (ho : o = true → Sub S Fl.O) (hao : a.out = true) : Fits Fl V Γ a o S (.goto E K l L d comp) :=
+  .gotoOut hc hE (fun i => .inl (henv i)) hS ho hao
 
 end Verification.TolerantFrames.ReadOnly
