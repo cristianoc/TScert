@@ -214,7 +214,7 @@ def readJson (path : String) : IO (Except String Json) := do
     return .error s!"{path}: {what}, which a document refuses"
   return Json.parse text
 
-/-- Export the same execution graph constructor used by typed extraction. -/
+/-- Export the same execution graph constructor used by typed elaboration. -/
 def flowFile (astPath : String) : IO UInt32 := do
   let ast ← readJson astPath
   match ast >>= SourceFlow.document with
@@ -868,7 +868,7 @@ the proposals below it read through `PreparedFile.known`; the plans an
 earlier unit's proposals planned it at, where kept, then released), then
 `FilePlans.passGroupMode8` over its group: its verdict line
 (`WorkerWire.verdictLine`), accepted with its dependencies or refused, with
-its group's first extraction refusal; and its refusal. A function of the
+its group's first elaboration refusal; and its refusal. A function of the
 prepared file and `i`. -/
 def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option String) := do
   let emit := fun (s : String) => if p.quiet then pure () else IO.eprintln s
@@ -919,7 +919,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
         if let some (.ok (.graph name _ _)) := f.plans[j]? then
           for line in f.framedCheck p.fuel j (SourceClaimJson.componentFlow ofC mods entries name) do IO.eprintln line
   let planned := if probe == some "only" then .error "flow probe only" else planned
-  let (lines, verdict, extraction, contracts, trusted) ← match planned with
+  let (lines, verdict, elaboration, contracts, trusted) ← match planned with
     | .error reason => pure ([], .error reason, some reason, [], [])
     | .ok f => do
       if (fr.group i).head? == some i then
@@ -942,7 +942,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let kinds ← SinglePass.kindNanos.get
   emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
   emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
-  return (WorkerWire.verdictLine unit members verdict extraction contracts trusted, match verdict with | .ok _ => none | .error r => some r)
+  return (WorkerWire.verdictLine unit members verdict elaboration contracts trusted, match verdict with | .ok _ => none | .error r => some r)
 
 /-- A line on standard output, flushed: a reader of the stream sees it as
 soon as it is written. -/
@@ -964,7 +964,7 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   | .error e => refuse e
   | .ok p =>
     let mut refused : Option String := none
-    let mut extraction : Option String := none
+    let mut elaboration : Option String := none
     let mut trusted := false
     printFlushed (WorkerWire.componentsLine p.components)
     for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none [] [])
@@ -973,9 +973,9 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
       printFlushed line
       trusted := trusted || WorkerWire.lineTrusted line
       if refused.isNone then refused := refusal
-      if extraction.isNone then
-        extraction := (WorkerWire.lineElaboration line).toOption.join
-    match extraction with
+      if elaboration.isNone then
+        elaboration := (WorkerWire.lineElaboration line).toOption.join
+    match elaboration with
     | some reason => refuse reason
     | none =>
       match refused with
@@ -995,7 +995,7 @@ def writeWorkNow (start : Nat) : IO Unit := do
 /-- **The file worker** (`--file-worker 8`, docs/REQUEST-PROTOCOL.md, "The
 file worker"): the file prepared once (`prepareUnitsFile`), its preparation's
 line printed (`WorkerWire.preparedLine`: the selected units with their
-members, the established module units, the extraction refusal), then, for
+members, the established module units, the elaboration refusal), then, for
 each request line read from standard input (`WorkerWire.decodeRequest`: the
 units to check, `null` for every selected unit), each named unit checked
 (`PreparedFile.check`) and its verdict line printed and flushed as its check

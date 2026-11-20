@@ -400,7 +400,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   }
   const prepared = decodeWorkerPrepared(wireText(Buffer.from(preparation.stdout), "verifier --file-worker").trim());
   const lines: string[] = prepared.established.map((u) =>
-    JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], extraction: null, contracts: [] }));
+    JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], elaboration: null, contracts: [] }));
   // Each component's outcome of the read-only frame's checks, which no
   // verdict reads.
   const log: string[] = prepared.components.flatMap((c) => [`component ${c.component} (${c.kind} ${c.location}): ${
@@ -413,7 +413,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
     if (part.execution === "timed-out" || part.execution === "timeout-replayed") {
       // A unit over its limit: its own refusal.
-      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution), extraction: null,
+      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution), elaboration: null,
         contracts: [] }));
       log.push(`unit ${unit.unit}: ${over(part.execution)}`);
       continue;
@@ -429,15 +429,15 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     log.push(line);
   }
   writeFileSync(join(artifacts, "pass.log"), log.join("\n"));
-  // The file's refusal beside its units': the first extraction refusal
+  // The file's refusal beside its units': the first elaboration refusal
   // among the selected groups, as their units' lines state it, in the order
   // their checks run.
   const decoded = lines.map(decodeVerdictLine);
-  const extraction = decoded.map((l) => l.extraction).find((e) => e !== null) ?? null;
+  const elaboration = decoded.map((l) => l.elaboration).find((e) => e !== null) ?? null;
   // The contracts each of the file's units' checks read, as its line records them.
   const contractReads: UnitContracts[] = decoded.filter((l, i) => !l.unit.startsWith("module:") &&
     decoded.findIndex((m) => m.unit === l.unit) === i).map((l) => ({ unit: l.unit, reads: [...l.contracts] }));
-  const refusal = extraction === null ? null : `reject: ${extraction}`;
+  const refusal = elaboration === null ? null : `reject: ${elaboration}`;
   // Where the module interfaces were not established, a unit refused at
   // ordinary contracts is refused for that first.
   const unestablished = checked.interfaceFailure === null ? null :

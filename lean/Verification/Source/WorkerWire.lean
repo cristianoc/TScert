@@ -9,19 +9,19 @@ field names. -/
 namespace Verification.WorkerWire
 open Lean
 
-/-- A unit's verdict line: `{"unit","members","accepted","depends","extraction","contracts"}`,
+/-- A unit's verdict line: `{"unit","members","accepted","depends","elaboration","contracts"}`,
 its group accepted with the units its verdict rests on;
-`{"unit","members","acceptedUnderClientTrust","depends","extraction","contracts"}`, its
+`{"unit","members","acceptedUnderClientTrust","depends","elaboration","contracts"}`, its
 group accepted for the executions in which outside code keeps the client
 obligation of each component `acceptedUnderClientTrust` lists (`trusted`,
 `FilePlans.clientComponents`); or
-`{"unit","members","refusal","extraction","contracts"}`; `extraction` the first
-extraction refusal among its group's members, or null; `contracts` the
+`{"unit","members","refusal","elaboration","contracts"}`; `elaboration` the first
+elaboration refusal among its group's members, or null; `contracts` the
 contracts its group's check read, each once, in their compressed text's
 order (`SourceElaboration.ContractRead.toJson`), reporting only. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
-    (extraction : Option String) (contracts : List Json) (trusted : List Nat) : String :=
-  let ext := ("extraction", match extraction with | some r => toJson r | none => Json.null)
+    (elaboration : Option String) (contracts : List Json) (trusted : List Nat) : String :=
+  let ext := ("elaboration", match elaboration with | some r => toJson r | none => Json.null)
   let read := ("contracts", Json.arr (contracts.eraseDups.toArray.qsort (·.compress < ·.compress)))
   (match verdict with
     | .ok deps => Json.mkObj ([("unit", toJson unit), ("members", toJson members)] ++
@@ -50,10 +50,10 @@ def lineTrusted (line : String) : Bool :=
   | .ok j => (j.getObjVal? "acceptedUnderClientTrust").toOption.isSome
   | .error _ => false
 
-/-- A verdict line's extraction refusal (`verdictLine`). -/
+/-- A verdict line's elaboration refusal (`verdictLine`). -/
 def lineElaboration (line : String) : Except String (Option String) := do
   let j ← Json.parse line
-  let e ← j.getObjVal? "extraction"
+  let e ← j.getObjVal? "elaboration"
   if e.isNull then return none
   return some (← fromJson? e)
 

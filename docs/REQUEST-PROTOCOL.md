@@ -130,10 +130,10 @@ same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
   `{"components"}`;
 - a request line `{"units"}`: the identities of the units to check, each one
   the preparation line names, or `null` for every one in order;
-- a verdict line, `{"unit","members","accepted","depends","extraction","contracts"}`,
-  `{"unit","members","acceptedUnderClientTrust","depends","extraction","contracts"}` or
-  `{"unit","members","refusal","extraction","contracts"}`, as `--verify-interface-stage 8`
-  prints it; `extraction` the first extraction refusal among the unit's
+- a verdict line, `{"unit","members","accepted","depends","elaboration","contracts"}`,
+  `{"unit","members","acceptedUnderClientTrust","depends","elaboration","contracts"}` or
+  `{"unit","members","refusal","elaboration","contracts"}`, as `--verify-interface-stage 8`
+  prints it; `elaboration` the first elaboration refusal among the unit's
   group, or `null`. The first non-null one in the order the checks run is
   the file's refusal, which `--verify-interface-stage 8` reports as its
   refusal. `contracts` lists the contracts the group's check read, each

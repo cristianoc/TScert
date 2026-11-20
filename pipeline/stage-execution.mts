@@ -932,16 +932,16 @@ export type ContractRead =
       key: string | { symbol: number } } }
   | { value: { module: string; name: string; specifier: string; imported: string; local: string } };
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
- * with the first extraction refusal among its group's members, or null, and
+ * with the first elaboration refusal among its group's members, or null, and
  * the contracts its group's check read: its group accepted, accepted under
  * client trust (for the executions in which outside code keeps the client
  * obligation of each component listed), or refused. */
 export type VerdictLine =
-  { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; extraction: string | null;
+  { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; elaboration: string | null;
     contracts: readonly ContractRead[] } |
   { unit: string; members: readonly string[]; acceptedUnderClientTrust: readonly number[]; depends: readonly string[];
-    extraction: string | null; contracts: readonly ContractRead[] } |
-  { unit: string; members: readonly string[]; refusal: string; extraction: string | null;
+    elaboration: string | null; contracts: readonly ContractRead[] } |
+  { unit: string; members: readonly string[]; refusal: string; elaboration: string | null;
     contracts: readonly ContractRead[] };
 
 /** A parsed JSON value's own fields, exactly `fields`, or a refusal. */
@@ -960,28 +960,28 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const value: unknown = JSON.parse(text);
   const accepted = typeof value === "object" && value !== null && "accepted" in value;
   const trusted = typeof value === "object" && value !== null && "acceptedUnderClientTrust" in value;
-  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "extraction", "contracts"]
-    : trusted ? ["unit", "members", "acceptedUnderClientTrust", "depends", "extraction", "contracts"]
-    : ["unit", "members", "refusal", "extraction", "contracts"], what);
-  const { unit, members, depends, refusal, extraction } = v;
+  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "elaboration", "contracts"]
+    : trusted ? ["unit", "members", "acceptedUnderClientTrust", "depends", "elaboration", "contracts"]
+    : ["unit", "members", "refusal", "elaboration", "contracts"], what);
+  const { unit, members, depends, refusal, elaboration } = v;
   if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
-  if (!(extraction === null || typeof extraction === "string")) throw Error(`${what}: a malformed extraction refusal`);
+  if (!(elaboration === null || typeof elaboration === "string")) throw Error(`${what}: a malformed elaboration refusal`);
   const read = v["contracts"];
   if (!Array.isArray(read)) throw Error(`${what}: no contracts`);
   const contracts = read.map((c: unknown) => decodeContractRead(c, `${what}'s contract`));
   if (accepted) {
     if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, accepted: true, depends, extraction, contracts };
+    return { unit, members, accepted: true, depends, elaboration, contracts };
   }
   if (trusted) {
     const components = v["acceptedUnderClientTrust"];
     if (!Array.isArray(components) || !components.every((c): c is number => typeof c === "number") || components.length === 0)
       throw Error(`${what}: no components`);
     if (!isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, acceptedUnderClientTrust: components, depends, extraction, contracts };
+    return { unit, members, acceptedUnderClientTrust: components, depends, elaboration, contracts };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
-  return { unit, members, refusal, extraction, contracts };
+  return { unit, members, refusal, elaboration, contracts };
 }
 /** A contract read (`ContractRead`), read field by field. */
 export function decodeContractRead(value: unknown, what: string): ContractRead {
