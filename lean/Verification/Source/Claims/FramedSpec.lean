@@ -62,8 +62,7 @@ the pass checks"): the component's tags and the marks of its flow's sites,
 the flow the solver proposes for the component's codes at those marks
 (`checked`), each code's layout, the natives' codes, the component family
 the declaration document describes (`family`, its `@clients` rows, its
-codes' declared shapes and its bodies' events), the checked file's name and
-functions, the component's module functions' codes, names, arities and the names
+codes' declared shapes), the component's module functions' codes, names, arities and the names
 their slots read, its entries, the wire's client obligation by kind
 (`theta`) and protocol by site and kind (`psi`), the component's protocol
 as defined (`psiDef`), the refusal of the checks that read the component
@@ -91,8 +90,6 @@ structure FramedSpec (ι : Type) where
   lay : List (Nat × Bool × Nat × Nat)
   host : Nat → Bool
   family : ComponentWire.Components
-  file : String
-  fns : List (String × Span × Bool)
   codes : List Code
   names : List (String × Nat × List String)
   entries : List String
@@ -107,7 +104,7 @@ structure FramedSpec (ι : Type) where
   is: computed once per component and shared by its plans; `none` where
   they pass. -/
   componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes names entries
-    realm initOrder initE initK initL family file fns C }
+    realm initOrder initE initK initL C }
   framed : List (Nat × List Footprints.Footprint)
 
 namespace FramedSpec
@@ -120,7 +117,7 @@ abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
 plan's refusal of them is none (proved, by the refusal's evaluation). -/
 theorem componentRefusal_none (h : spec.componentRefusal.val = none) :
     componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
-      spec.initOrder spec.initE spec.initK spec.initL spec.family spec.file spec.fns spec.C = none :=
+      spec.initOrder spec.initE spec.initK spec.initL spec.C = none :=
   spec.componentRefusal.property ▸ h
 
 /-- **The family of a framed plan**: the one component `C`, each site of its

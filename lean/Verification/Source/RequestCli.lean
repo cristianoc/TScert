@@ -775,15 +775,6 @@ def PreparedFile.prepareFramedComponent (p : PreparedFile) :
   let entries : List String := match comp.interface with
     | .known es => es.map (·.name)
     | .unknown _ => []
-  -- (the checked file's functions, by name, the span of their names and
-  -- whether they are async, which the check (S) reads)
-  let file := ((p.ast.getObjValAs? String "file").toOption).getD ""
-  let fns : List (String × Span × Bool) := match p.ast.getObjVal? "functions" >>= Json.getArr? with
-    | .ok fs => fs.toList.filterMap fun fj => (do
-        let name ← fj.getObjValAs? String "name"
-        let pos ← fj.getObjValAs? Span "namePos"
-        return (name, pos, (fj.getObjValAs? String "completion").toOption == some "async") : Except String _).toOption
-    | .error _ => []
   -- the module's functions, each planned alone
   let memo ← p.memo.get
   let mut mods : List SourceClaimJson.ProbeModule := []
@@ -804,7 +795,7 @@ def PreparedFile.prepareFramedComponent (p : PreparedFile) :
     let m := if fn.params.getLast?.any (·.rest) && !m.rest then { m with rest := true, ar := m.ar - 1 } else m
     mods := mods ++ [m]
   let t0 ← IO.monoNanosNow
-  let fc ← IO.lazyPure fun _ => SourceClaimJson.FramedComponent.of C ofC entries mods unplanned F file fns p.force
+  let fc ← IO.lazyPure fun _ => SourceClaimJson.FramedComponent.of C ofC entries mods unplanned F p.force
   let _ ← IO.lazyPure fun _ => (fc.cf.flow.codes.length, fc.refusal.val.isSome)
   framedComponentsPrepared.modify (· + 1)
   if (← IO.getEnv "TSCERT_FRAMED").isSome then

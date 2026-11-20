@@ -610,20 +610,6 @@ control("read-only frame checks: each module's certificate, held and refused", a
   say("read-only frame checks: the walker's, a slice copy's and a number-entry module's certified; a suspension, released and caller's installs, a lookalike slice, rows that come back and a void visitor's result refused, each at its code");
 });
 
-control("framed plan: the checks (S), (K) and (O) of its component, at a forged family", async (): Promise<void> => {
-  // P22's walker with its cursor held by a module binding: (K) refuses the
-  // binding of a local site, and the framed plan's check refuses the plan
-  // at that failure (docs/drafts/framed-acceptance.md, "What the pass checks").
-  const walker = familyCase("bounds-pattern-unreachable-field");
-  const site = siteIndex(walker.ast, walker.at("{ i: 0 }"));
-  const value = walker.ast.components.values.findIndex((v) => v.sites.includes(site));
-  assert.ok(value >= 0, "a value holding the cursor");
-  walker.ast.components.holds.push({ module: walker.ast.components.sites[site]?.module ?? "", at: [0, 0], component: 0, value, name: "kept" });
-  refused(pass(forged(walker.artifacts, "forged-cursor-held", walker.ast)), "walk@1190", "the cursor held",
-    /framed plan: the checks \(S\), \(K\) and \(O\) of its component fail: \(K\) \S+ 0-0: the binding kept holds the local site/);
-  say("framed plan: a forged binding of the walker's cursor refused by (K) at the framed plan's check");
-});
-
 /** The module's outcome of a single-file case. */
 const moduleOutcome = (p: Pass): ComponentOutcome => must(componentOutcomes(p).find((c) => c.kind === "module"), "the module's outcome");
 

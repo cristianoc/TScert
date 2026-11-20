@@ -115,7 +115,7 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
   regions : ∀ Φ regions, r.regional = some (Φ, regions) →
     GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true
   component : componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
-    spec.initOrder spec.initE spec.initK spec.initL spec.family spec.file spec.fns spec.C = none
+    spec.initOrder spec.initE spec.initK spec.initL spec.C = none
   request : spec.requestB r (callEffects (StoreView.graph f.F.store) r) = true
 
 /-- **A graph plan's run accepted** (`passMemberGraph`'s, its walks framing

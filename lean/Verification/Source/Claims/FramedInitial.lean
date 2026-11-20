@@ -222,7 +222,7 @@ theorem frameFlow_checks (h : spec.componentRefusal.val = none) :
     frameFlowB spec.fflow spec.lay spec.realm spec.initE spec.initK spec.initL = true :=
   frame_transport spec.C spec.checked
     (fun _ Fl => frameFlowB Fl spec.lay spec.realm spec.initE spec.initK spec.initL = true)
-    (componentBindingRefusal_none (spec.componentRefusal_none h)).2.2.2.2.2.2.2.1
+    (componentBindingRefusal_none (spec.componentRefusal_none h)).2.2.2.2.2.2.2
 
 omit [Labels ι] in
 /-- **What the checks give of the initialization**, at the frame's flow

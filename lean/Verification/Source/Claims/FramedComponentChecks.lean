@@ -31,26 +31,11 @@ acceptance reads of its component, evaluated once per component
   realm's heap; its continuations bind each closure in turn and return;
   its last node is the array of the entries' closures, each read at the
   slot holding it.
-- **The checks (S), (K) and (O)** (`componentFrameDiags`): their failures
-  at `C`'s bodies (`ComponentChecks.suspensionDiags`, `marksDiags`,
-  `ownershipDiags`), each rendered with its module and span. -/
+- **The flow the frame reads** (`frameFlowB` at `frameFlowOf`). -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping ControlFlow
 open Verification.TolerantFrames.ReadOnly
-
-/-- **The failures of the checks (S), (K) and (O) at a component's bodies**,
-as the component's outcome renders them (`ComponentChecks.familyOutcome`). -/
-def componentFrameDiags (F : ComponentWire.Components) (file : String) (fns : List (String × Span × Bool))
-    (C : Nat) : List String :=
-  let cx := ComponentChecks.Ctx.of F
-  let cx := { cx with escaped := cx.escaping }
-  let boundary := cx.boundaryValues
-  let quiet := cx.quiet cx.runsOutside
-  ((ComponentChecks.suspensionDiags cx file fns ++ ComponentChecks.marksDiags cx ++
-    ComponentChecks.ownershipDiags cx boundary quiet).filter (·.component == C)).map ComponentChecks.Diag.render
-    |>.eraseDups
-
 
 /-- **The initialization check** (`initB`, the draft "Initialization"): the
 code `(E, K)` of the initialization of a component whose module functions
@@ -213,13 +198,12 @@ numbered canonically by the codes' bodies (`moduleBody`) from three per
 code (`allocSomeB`, `allocCanonB` in its executable form
 `allocCanonAtB`), no code collecting a rest (`noRestB`), its
 initialization in its order (`initB`), the checks of the flow the frame
-reads (`frameFlowB` at the frame's sites, `frameFlowOf`) and the checks
-(S), (K) and (O) at its bodies; `none` where every one passes. -/
+reads (`frameFlowB` at the frame's sites, `frameFlowOf`); `none` where
+every one passes. -/
 def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) (codes : List Code) (names : List (String × Nat × List String))
     (entries : List String) (realm : Heap) (order : List String) (initE : List Tm)
-    (initK : List (Continuation × Option Target)) (initL : List Tm) (family : ComponentWire.Components) (file : String)
-    (fns : List (String × Span × Bool)) (C : Nat) : Option String :=
+    (initK : List (Continuation × Option Target)) (initL : List Tm) (C : Nat) : Option String :=
   let body := moduleBody codes
   let checks : List (String × (Unit → Bool)) := [
     ("no code collecting a rest (noRestB)", fun _ => noRestB lay),
@@ -231,26 +215,24 @@ def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)
     ("its flow at the frame's sites (frameFlowB)", fun _ => frameFlowB (frameFlowOf C F) lay realm initE initK initL)]
   match checks.find? (!·.2 ()) with
   | some (w, _) => some s!"framed plan: the binding check of {w} fails"
-  | none => (componentFrameDiags family file fns C).head?.map fun d =>
-    s!"framed plan: the checks (S), (K) and (O) of its component fail: {d}"
+  | none => none
 
 /-- **No refusal is every check passing** (proved): where
 `componentBindingRefusal` refuses nothing, the flow's check, its marks,
 the codes covered, the allocation sites some and canonical (`allocCanonB`),
-no code collecting a rest, the initialization, the checks of the flow the
-frame reads and (S), (K) and (O) pass. -/
+no code collecting a rest, the initialization and the checks of the flow
+the frame reads pass. -/
 theorem componentBindingRefusal_none {ofC : ComponentTag → Bool} {O : List (Option Nat)}
     {F : FFlow (markedPackage ofC O)} {lay : List (Nat × Bool × Nat × Nat)} {codes : List Code}
     {names : List (String × Nat × List String)} {entries : List String} {realm : Heap} {order : List String}
     {initE : List Tm} {initK : List (Continuation × Option Target)} {initL : List Tm}
-    {family : ComponentWire.Components} {file : String} {fns : List (String × Span × Bool)} {C : Nat}
-    (h : componentBindingRefusal F lay codes names entries realm order initE initK initL family file fns C = none) :
+    {C : Nat} (h : componentBindingRefusal F lay codes names entries realm order initE initK initL C = none) :
     F.check = true ∧ F.marksB = true ∧ codesCoverB F (codes ++ codes.map (moduleBody codes)) = true ∧
       allocSomeB F = true ∧
       allocCanonB id (3 * lay.length) (F.codes.map fun e => moduleBody codes e.1) (moduleBody codes) F = true ∧
       noRestB lay = true ∧
       initB ofC realm.length initL codes names entries order initE initK = true ∧
-      frameFlowB (frameFlowOf C F) lay realm initE initK initL = true ∧ componentFrameDiags family file fns C = [] := by
+      frameFlowB (frameFlowOf C F) lay realm initE initK initL = true := by
   unfold componentBindingRefusal at h
   dsimp only at h
   rw [← allocCanonAtB_eq]
@@ -262,9 +244,6 @@ theorem componentBindingRefusal_none {ofC : ComponentTag → Bool} {O : List (Op
       Bool.not_eq_false] at hall
     simp only [Bool.and_eq_true] at hall
     obtain ⟨h1, h2, h3, h4, ⟨h5, h6⟩, h7, h8⟩ := hall
-    refine ⟨h2, h3, h4, h5, h6, h1, h7, h8, ?_⟩
-    cases hd : componentFrameDiags family file fns C with
-    | nil => rfl
-    | cons d ds => rw [hd] at h; simp at h
+    exact ⟨h2, h3, h4, h5, h6, h1, h7, h8⟩
 
 end Verification.SourceClaimJson

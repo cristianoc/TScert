@@ -280,7 +280,7 @@ def forgeComponent {ofC : ComponentTag → Bool} (force : List String) (cf : Com
 /-- **A framed plan's component, prepared once per component** (the draft,
 "The plan"): its index `C` among the family's components, the tags of its
 code, its entries, its module functions, the family the declaration
-document describes, the checked file's name and functions, its `@clients`
+document describes, its `@clients`
 rows; the restriction its module functions or rows violate; its flow
 (`framedComponentFlow`, solved once); its protocol as defined at its flow's
 sites (`protocolParts`); its realm and initialization (`componentInit`);
@@ -292,8 +292,6 @@ structure FramedComponent where
   entries : List String
   mods : List ProbeModule
   family : ComponentWire.Components
-  file : String
-  fns : List (String × Span × Bool)
   rows : List ComponentWire.Clients
   restriction : Option String
   cf : ComponentFlow ofC
@@ -306,7 +304,7 @@ structure FramedComponent where
   /-- The refusal of the checks that read the component alone, with the
   evaluation it is where the component meets the restrictions. -/
   refusal : { w : Option String // restriction = none → w = componentBindingRefusal cf.flow cf.lay cf.codes
-    cf.names entries realm initOrder initE initK initL family file fns C }
+    cf.names entries realm initOrder initE initK initL C }
 
 /-- **A framed plan's component flow**: the component flow of `mods`
 (`componentFlow`), its allocation sites numbered by the codes' bodies
@@ -323,8 +321,7 @@ module functions and rows meet the restrictions, the flow solved once and
 the checks that read the component alone run once (forged where `force`
 asks, `forgeComponent`). -/
 def FramedComponent.of (C : Nat) (ofC : ComponentTag → Bool) (entries : List String) (mods : List ProbeModule)
-    (unplanned : List String) (family : ComponentWire.Components) (file : String) (fns : List (String × Span × Bool))
-    (force : List String) : FramedComponent :=
+    (unplanned : List String) (family : ComponentWire.Components) (force : List String) : FramedComponent :=
   let rows := componentRows family C
   let restriction := framedRestriction mods rows entries unplanned
   let tag := (mods.head?.map (·.comp)).getD none
@@ -337,8 +334,8 @@ def FramedComponent.of (C : Nat) (ofC : ComponentTag → Bool) (entries : List S
   let psiDef := if restriction.isSome then [] else protocolParts cf.flow cf.lay
   -- (evaluated once per component, where it meets the restrictions)
   let refusal := if restriction.isSome then none else
-    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm initOrder initE initK initL family file fns C
-  { C, ofC, entries, mods, family, file, fns, rows, restriction, cf, psiDef, realm, initE, initK, initOrder, initL,
+    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm initOrder initE initK initL C
+  { C, ofC, entries, mods, family, rows, restriction, cf, psiDef, realm, initE, initK, initOrder, initL,
     refusal := ⟨refusal, fun h => by simp [refusal, h]⟩ }
 
 /-- **The refusal of the checks that read the component alone, at the
@@ -347,7 +344,7 @@ at its own index; evaluated at another index; none where the component
 fails a restriction. -/
 def FramedComponent.refusalAt (fc : FramedComponent) (C : Nat) :
     Option { w : Option String // w = componentBindingRefusal fc.cf.flow fc.cf.lay fc.cf.codes fc.cf.names fc.entries
-      fc.realm fc.initOrder fc.initE fc.initK fc.initL fc.family fc.file fc.fns C } :=
+      fc.realm fc.initOrder fc.initE fc.initK fc.initL C } :=
   match hr : fc.restriction with
   | some _ => none
   | none => some (if hC : C = fc.C then ⟨fc.refusal.val, by subst hC; exact fc.refusal.property hr⟩ else ⟨_, rfl⟩)
@@ -398,7 +395,7 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
            initE := fc.initE, initK := fc.initK, initOrder := fc.initOrder, initL := fc.initL,
            arity := r.inputs.length - r.siblings.length, ofC := fc.ofC,
            marks := fc.cf.O, checked := F, lay := fc.cf.lay, host := fc.cf.host, family := fc.family,
-           file := fc.file, fns := fc.fns, codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
+           codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
            theta, psi, psiDef := fc.psiDef, componentRefusal, framed }
 
 /-- **A forged document** (`TSCERT_FORCE`, the controls'): `framed-doc-node`

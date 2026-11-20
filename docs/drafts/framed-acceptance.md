@@ -1255,8 +1255,7 @@ three sites per code), `initB` (in the initialization's order, which
 names each module function once, each node allocating a closure of the
 code of the function the order names there, each linked capture the slot holding the closure its name names,
 allocated earlier, every other capture a realm identity, the last node the
-entries' array), and (S), (K), (O) at the component's bodies
-(`componentFrameDiags`). Then, per request: `entryB`, `compB`,
+entries' array) and `frameFlowB` at the frame's sites. Then, per request: `entryB`, `compB`,
 `codesCoverB` at `requestCode r`, `entryFnB`, `realizedFlowB`, `clientsB`
 (the wire's $`\Theta_C`$ against the `@clients` rows, `rowsTheta`),
 `protocolAtLeastB` (the wire's $`\Psi_C`$ against `psiDef`, both at the
@@ -1319,8 +1318,7 @@ group's ordinary refusal; the verdict is the ordinary plan's.
 alone (`FramedAccepted.component`: `componentBindingRefusal` at the
 plan's fields refuses nothing, which `componentBindingRefusal_none`
 reads as `FFlow.check (remark F)`, `marksB`, `codesCoverB`, `allocSomeB`,
-`allocCanonB`, `noRestB`, `initB` and (S), (K), (O) over every body of the
-component, each passing); the binding checks that read the request; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
+`allocCanonB`, `noRestB`, `initB` and `frameFlowB`, each passing); the binding checks that read the request; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
 main graph, $`W_c`$ computed and the supports kept by the check at
 $`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
 framed run (`RunCall.AcceptsFramed`) at the plan's framed nodes; the
