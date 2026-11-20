@@ -162,7 +162,7 @@ initial segment $\{0,\dots,\len h-1\}$: an allocation extends it, and no
 location is ever removed. The locations of a heap $h$ are of five kinds, by what allocated them:
 $\kF$, $\kC$, $\kE$, $\kS$ and $\kI$. Write $\mathit{Loc}_\kappa$ for the
 set of its locations of kind $\kappa$; the five sets
-partition its domain, $\mathrm{dom}\,h=\LF\uplus\LC\uplus\LE\uplus\LS\uplus\LI$. A location's kind is fixed for its life. Each kind belongs to one of two
+partition its domain, $\mathrm{dom}\,h=\LF\uplus\LC\uplus\LE\uplus\LS\uplus\LI$. A location's kind is fixed for its life. A location of kind $\kF$ or $\kC$ also has a \emph{key} $f\in\mathit{Key}$, the name of the property it stores, fixed for its life like its kind: the field location of \code{o.n} has the key \code{n}, and a cell location the key \code{value}. Each kind belongs to one of two
 classes, \emph{value} or \emph{spine}; effects refer to locations by
 class.
 
@@ -264,7 +264,11 @@ one location has one kind. Thus, from \code{r.value = 0}, a write
 would admit \code{r = o}, making that conclusion false without a separate
 separation premise. The distinction supplies this reasoning at an interface,
 where the allocation history of the two objects is unavailable; both kinds
-use the same field-read and field-write operations.
+use the same field-read and field-write operations. The keys carry a
+second separation fact of the same sort: \code{o.n} and \code{p.m} denote
+different locations when $\code{n}\ne\code{m}$, whatever objects
+\code{o} and \code{p} are, since one location has one key. So a write
+\code{p.m = 1} preserves \code{o.n = 0} also where \code{p} is \code{o}.
 
 \paragraph{A whole heap.} Take an ordinary object
 \code{o = \{n: 1, m: 2\}}, a private cell \code{r = \{value: 0\}},
@@ -364,15 +368,22 @@ programs make only admissible transitions (Theorem~\ref{thm:pres}).
 A \emph{world} $W$ is a finite map from locations to pairs
 $(\kappa,T)$ of a kind $\kappa\in\{\kF,\kC,\kE,\kS,\kI\}$ and a \emph{contract}
 $T$; for a location of kind $\kS$ the kind includes its form,
-$\mathsf{array}$ or $\mathsf{view}_L$. A contract is a type; it denotes a predicate on contents that is
+$\mathsf{array}$ or $\mathsf{view}_L$. The kind of a field or a cell
+location includes its key $f$, written $\kF_f$ or $\kC_f$. A contract
+is a type; it denotes a predicate on contents that is
 step-indexed and world-monotone~\cite{ahmed}. A world $W'$
 \emph{extends} $W$, written $W\sqsubseteq W'$, when
 $\mathrm{dom}\,W\subseteq\mathrm{dom}\,W'$ and $W'(l)=W(l)$ for every
 $l\in\mathrm{dom}\,W$.
 \end{definition}
 \noindent
-Example: for the heap of Section~2, $W(0)=(\kF,\code{number})$,
-$W(3)=(\kS\ \mathsf{array},\text{spines of number cells})$ and $W(6)=(\kI,\{\code{null}\})$.
+Example: for the heap of Section~2,
+\[
+\begin{array}{ll}
+W(0)=(\kF_{\code{n}},\code{number}), & W(2)=(\kC_{\code{value}},\code{number}),\\
+W(3)=(\kS\ \mathsf{array},\text{spines of number cells}), & W(6)=(\kI,\{\code{null}\}).
+\end{array}
+\]
 After \code{a.push(40)} the world is $W$ with one more entry,
 $10\mapsto(\kE,\code{number})$, and it extends $W$.
 
@@ -386,8 +397,8 @@ when:
 $h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a spine when $\kappa=\kS$, of length $L$ and without holes when its
 form is $\mathsf{view}_L$, and \code{null} when $\kappa=\kI$.
 \item[(W3) valid references] Every cell that a spine of $h$ lists is a
-location of kind $\kE$. For every object that occurs in $h$ or in $\rho$,
-each field location is of kind $\kF$ or $\kC$ and its identity location
+location of kind $\kE$. For every object $v$ that occurs in $h$ or in $\rho$,
+each field location $v(f)$ is of kind $\kF_f$ or $\kC_f$, and its identity location
 is of kind $\kI$; the spine location of an array is of kind $\kS$ and
 form $\mathsf{array}$, and that of a typed array of length $L$ of form
 $\mathsf{view}_L$.
@@ -402,7 +413,9 @@ means well-formed state.
 Example: the heap of Section~2 with its environment is a well-formed
 state. The same heap with $\langle 4,\circ,12\rangle$ at location 3 is
 not: 12 is no location, against (W3). Neither is it with
-$\langle 4,\circ,6\rangle$ there: 6 is an identity location.
+$\langle 4,\circ,6\rangle$ there: 6 is an identity location. Nor is
+it with \code{o} the object $\{\code{n}\mapsto 0,\ \code{m}\mapsto 0\}$: location 0
+has the key \code{n}, so it is no location of \code{o.m}.
 
 A write within a location's contract preserves every typing judgment,
 whatever aliases exist~\cite{ahmed}. This is the one use this paper makes
@@ -454,9 +467,9 @@ $h'\tr{}_\rho h''$ then $h\tr{}_\rho h''$, the worlds composing through
 the intermediate state's world
 \status{Lean: \lean{Admissible.refl}, \lean{Admissible.trans}}.
 \item[(T2) Growth] If $h\tr{}_\rho h'$ then $\len h\le\len{h'}$, and
-every location of $h$ has in $h'$ the kind and form it had: a
+every location of $h$ has in $h'$ the kind, form and key it had: a
 transition allocates and never removes or re-purposes a location
-\status{Lean: \lean{Admissible.length\_le}, \lean{Admissible.roleAt}}.
+\status{Lean: \lean{Admissible.length\_le}, \lean{Admissible.roleAt}, for the kind and the form; the key by the definition of extension, since the Lean world records no key}.
 \item[(T3) Fixed objects] Let $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ be an
 object value and $h\tr{}_\rho h'$. The domain of $v$ and each location
 $v(f)$ are the same before and after: the field $f$ of $v$ is read as
@@ -1967,7 +1980,11 @@ no kind of location belongs to both, or when a separation at hand says
 so: $\pi\sep\pi'$ for $\pi.\kw{spine}$ and $\pi'.\kw{spine}$ where
 the types of the two paths have no typed-array member,
 $\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and $\fresh(r)$ for $r$ and
-any region of locations below the mark.
+any region of locations below the mark. Two regions $\pi.f$ and
+$\pi'.g$ with $f\ne g$ are disjoint whatever $\pi$ and $\pi'$ read: by
+(W3) the one location of $(\pi.f)(\rho,h)$ has the key $f$, the one of
+$(\pi'.g)(\rho,h)$ the key $g$, and a location has one key
+\status{proved here from (W3); no Lean theorem states it, and the Lean world records no key}.
 
 The locations below the mark are those that existed at the entry. A
 region $\pi.f$, $\pi.\kw{fields}$ or $\pi.\kw{spine}$ is below the mark
@@ -1982,6 +1999,38 @@ changes only the iterator's fields keeps what
 $\mathit{node}.\mathit{statement}$ holds. The separation $\pi\sep\pi'$
 says nothing of a typed array: $b\sep b$ holds of a typed array $b$.
 \end{definition}
+
+\begin{example}[A cursor that may be the record]\label{ex:key}\mbox{}
+\begin{center}\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{type H = \{ readonly widths: readonly number[]; extras: number[] | null \};}\\
+2 & \code{function moveTo(c: \{ i: number \}, j: number)}\\
+ & \code{~~: Modifies<\{ "c.i": "scalar" \}, void> \{ c.i = j; \}}\\
+3 & \code{export function pairAt(h: H, c: \{ i: number \}): number \{}\\
+4 & \code{~~if (h.widths.length < 2) return 0;}\\
+5 & \code{~~moveTo(c, 1);}\\
+6 & \code{~~return h.widths[c.i]! + (h.extras === null ? 0 : h.extras[c.i]!); \}}\\
+\end{tabular}
+\end{center}
+\code{pairAt} requires
+$F=(h.\mathit{extras}\doteq\code{null}\vee\len{h.\mathit{extras}}=\len{h.\mathit{widths}})$,
+and \code{moveTo} has the effect $\{c.i:\kw{scalar}\}$ and the
+postcondition $c.i=j$. The call of line 5 keeps $F$ and
+$2\le\len{h.\mathit{widths}}$: their support holds the regions
+$h.\mathit{extras}$, $h.\mathit{widths}$ and the two spines, and each is
+disjoint from $c.i$, the fields by their keys and the spines by their
+kind. So the reads of line 6 are in bounds, also for the call
+\code{pairAt(h, h)}, where \code{c} is \code{h}. With the effect
+$\{c.\kw{fields}:\kw{scalar}\}$ in place of $\{c.i:\kw{scalar}\}$, which
+also bounds a \code{moveTo} that sets an \code{extras} field holding
+\code{null} to \code{[]}, the region $c.\kw{fields}$ holds the fields
+of \code{h} where \code{c} is \code{h}. No rule separates it from
+$h.\mathit{extras}$, and $\kw{scalar}\not\sqsubseteq\keep$, so $F$ is not
+kept and the reads of line 6 are refused. For
+that \code{moveTo}, \code{pairAt(h, h)} with $h.\mathit{extras}$
+holding \code{null} reads \code{undefined} from the array it installs
+(observed under Node 26: the sum is \code{NaN}).
+\end{example}
 
 \paragraph{Sound graphs.} Annotate each point of a graph with knowledge.
 The annotated graph is \emph{sound} when its entry state satisfies the
