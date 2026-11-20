@@ -212,7 +212,7 @@ decides whether the result holds on every edge. -/
     (regions : List Footprints.ArgumentSpineRegion) : List (List GraphCode.ArgumentPathTracking.Fact) :=
   let nodes := (P.zip C).zipIdx
   -- Each region's root, its position's own value, and the region itself.
-  let roots := (regions.map fun r => (⟨r.position, []⟩ : Footprints.ArgumentSpineRegion)).eraseDups
+  let roots := (regions.map fun r => ({ position := r.position, path := [] } : Footprints.ArgumentSpineRegion)).eraseDups
   let candidates := (roots ++ regions).eraseDups
   let init := (nodes.map fun ((_, c), l) =>
     if l = start then roots.map fun r => ⟨r.position, r⟩

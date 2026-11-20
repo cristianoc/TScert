@@ -3312,7 +3312,7 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let st := sd.st
   let here : RegionState := if l == env.start then
       { facts := ((rg.regions.map fun (x : Footprints.ArgumentSpineRegion) =>
-          (⟨x.position, []⟩ : Footprints.ArgumentSpineRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
+          ({ position := x.position, path := [] } : Footprints.ArgumentSpineRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
     else if env.isHead[l]! then ((rg.heads[l]?).join).getD {}
     else RegionState.meet (regionIn[l]!)
   let sums := answers.summaries.toList

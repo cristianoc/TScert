@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, ExactElementWrite, Exits, ExitSchema, Formula, Frame, IndexFact, LinearTerm, OperationPost, PropertyKey, Selector, TransportSchema, WitnessSeq } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, Change, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, ExactElementWrite, Exits, ExitSchema, Formula, Frame, IndexFact, LinearTerm, OperationPost, PropertyKey, Selector, TransportSchema, WitnessSeq } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -55,10 +55,14 @@ export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", spine: "grow" }, { value: "any", spine: "grow" },
   { value: "keep", spine: "any" }, { value: "any", spine: "any" },
 ];
-/** A spine region of a written frame: the spine the value at the call
- * position `position` (`0` the receiver) selects through the fields `path`
- * at the call's entry (`Footprints.ArgumentSpineRegion`). */
-export type SpineRegion = { readonly position: number; readonly path: readonly string[] };
+/** An argument region of a written frame: what the object the value at the
+ * call position `position` (`0` the receiver) reads through the fields
+ * `path` at the call's entry selects, its field at `key` (the spine at the
+ * spine key `[]`) or, where `key` is null, every field of it, at the change
+ * `change` (`Footprints.ArgumentSpineRegion`). */
+export type SpineRegion = {
+  readonly position: number; readonly path: readonly string[]; readonly key: string | null; readonly change: Change;
+};
 /** A written statement's frame (`Modifies<P, T>`, `Fresh<T>`,
  * SOURCE-ELABORATION.md, "Stated effects"), an authoring form: its closed
  * footprint, off the spines its `regions` select, which may change
@@ -208,7 +212,9 @@ export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOpti
  * and on a throw the same frame where it states `onThrow`, `⊤` otherwise. */
 export const statedExits = (s: StatedFrame): Modifies<{}, Exits<ExitSchema>> => {
   const frame: Frame = [...classFrame(s.footprint),
-    ...s.regions.map((r): Frame[number] => ({ region: { path: { x: r.position, fields: r.path, key: "[]" } }, change: "any" }))];
+    ...s.regions.map((r): Frame[number] => r.key === null
+      ? { region: { pathFields: { x: r.position, fields: r.path } }, change: r.change }
+      : { region: { path: { x: r.position, fields: r.path, key: r.key } }, change: r.change })];
   return { normal: exitSchema(frame, s.fresh ? [operation({ freshSpine: { x: 0 } })] : []),
     exceptional: s.onThrow ? exitSchema(frame) : exitSchema(topFrame) };
 };

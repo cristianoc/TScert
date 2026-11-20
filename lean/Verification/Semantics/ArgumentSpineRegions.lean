@@ -55,15 +55,4 @@ theorem Closed.HoldsOn.trans_on {c : Closed} {P : Nat → Prop} {h₀ h h' : Hea
     rw [heq] at hc₂
     exact hc₁.trans h₁.1 hc₂
 
-/-- A nested call composes when its selected spines agree with entry's.
-The agreement is an obligation on paths, independent of the footprint. -/
-theorem ArgumentSpineRegionsWithin.trans {c : Closed} {regions : List ArgumentSpineRegion}
-    {ρ : Env} {entry middle after : Heap}
-    (h₁ : ArgumentSpineRegionsWithin c regions ρ entry middle)
-    (h₂ : ArgumentSpineRegionsWithin c regions ρ middle after)
-    (hs : ∀ r ∈ regions, r.resolve ρ middle = r.resolve ρ entry) :
-    ArgumentSpineRegionsWithin c regions ρ entry after := by
-  apply h₁.trans_on
-  exact h₂.weaken (fun l hl r hr => by rw [hs r hr]; exact hl.2 r hr)
-
 end Verification.Footprints

@@ -39,7 +39,7 @@ def observationLine (tag : String) (record : Json) : String :=
 /-- The refusal of a spine region at a path of another kind (the note's
 §3, "Regions"; `ArgumentPathTracking.regionKindOk`). -/
 def kindRefusal : String :=
-  "states a spine region at a path whose declared type is no collection type: a member of it is not an array, null or undefined"
+  "states a spine region at a path whose declared type is no collection type, or a region at an input it does not have or through more than one field: a member of it is not an array, null or undefined"
 
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
@@ -266,7 +266,7 @@ def regionalFromJson (n : Nat) (j : Json) : Except String (List String × Array 
   for e in (← (← j.getObjVal? "heads").getArr?) do
     let l ← e.getObjValAs? Nat "label"
     let facts ← e.getObjValAs? (List (Nat × Nat × List String)) "facts"
-    let st : SinglePass.RegionState := ⟨facts.map fun (sl, pos, path) => ⟨sl, ⟨pos, path⟩⟩,
+    let st : SinglePass.RegionState := ⟨facts.map fun (sl, pos, path) => ⟨sl, { position := pos, path := path }⟩,
       ← e.getObjValAs? (List Nat) "values", ← e.getObjValAs? (List Nat) "cells",
       ← e.getObjValAs? (List (Nat × String)) "fields"⟩
     if l < n then heads := heads.set! l (some st)

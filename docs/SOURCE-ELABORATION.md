@@ -4119,9 +4119,12 @@ a spine `init` and `scalar` are `keep`, and on a view spine `extend` is
 region `"x[*]": "any"`, `x` a parameter of a function declaration (`this`
 its `this` parameter), excepts from the frame the spine `x` holds at the
 call, and `"x.f[*]": "any"` the spine its field `f` holds there, which may
-change arbitrarily (see **Spine regions** below). Any other quoted location
-key (`"x.f"`, `"x.*"`, `"cell(b)"`, a path of more than one field) is
-refused: the regions it names are proved in the model
+change arbitrarily (see **Spine regions** below). A field region
+`"x.g": c`, `"x.*": c`, `"x.f.g": c` or `"x.f.*": c`, at a change `c`, lets the
+field `g`, or every field, of the object `x` or `x.f` holds at the call
+change within `c` (see **Field regions** below). Any other quoted location
+key (`"cell(b)"`, a path of more than one field, a field region at a class
+map) is refused: the regions it names are proved in the model
 ([footprints](FOOTPRINTS.md#changes-and-footprints)) and are not read from
 the source. A result `Fresh<T>`, `T` an array type, states that a normal
 return's value holds an array spine the call allocated, at or above the
@@ -4294,6 +4297,24 @@ closed bound above the frame (`Effect.changeBound`).
 
 Every other heap fact is kept only as the closed approximation `top` keeps
 it.
+
+**Field regions.** A region `"R.g": c` is the entry `path p q g` at `c`, and
+`"R.*": c` the entry `pathFields p q` at `c`, with $`p`$ the root's call
+position and $`q`$ the path, `[]` or $`[f]`$ (`ArgumentSpineRegion.entry`,
+its `key` the field or none): the statement's frame is the closed bound with
+each region's entry (`ArgumentSpineRegionsWithin`, the regional `Post`). The
+regional check certifies it by the same step-frame rule: a field write of a
+slot holding the root's entry value at its frame `{x.g: any}`, or, where the
+field's type and the written value's are primitives, `{x.g: scalar}`
+(`ExpressionEffects.scalarWrite_sound`), rebased to the entry and included
+in the frame. Across the call, a caller's fact about another field survives
+whatever objects the two paths read: a field location's role records its
+key, so regions at different keys share no location
+(`Footprints.Region.apart_of_keys`; `stated-field-region-key`). A region of
+every field separates from no field of an object it may be
+(`invalid-stated-field-region-fields`, run under Node), and a body writing
+outside its regions is refused (`invalid-stated-field-region-escape`, run
+under Node).
 
 **Over the whole domain.** A statement on `m(this: C, …)` holds for every
 receiver of type `C`, so every call in `m`'s body is at a contract stating
