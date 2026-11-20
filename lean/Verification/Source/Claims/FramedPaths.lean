@@ -217,6 +217,20 @@ theorem readsAt_snoc {h : Heap} :
     · exact .inl (.there hk' h₁)
     · exact .inr h₂
 
+/-- **The locations a path reads are read by its extensions** (proved). -/
+theorem readsAt_append {h : Heap} :
+    ∀ {v : Val} {π : List PropKey} {l : Nat} {w : Val} {q : Region} (π' : List PropKey),
+      ReadsAt h v π l w q → ReadsAt h v (π ++ π') l w q
+  | _, _ :: _, _, _, _, _, .here hk => .here hk
+  | _, _ :: _, _, _, _, π', .there hk hr => .there hk (readsAt_append π' hr)
+
+/-- **A path extended by a read reads the locations of the read from its
+value** (proved). -/
+theorem readsAt_of_keyLoc {h : Heap} {f : PropKey} :
+    ∀ {v π m : _}, Reads h v π m → ∀ {l w q}, KeyLoc h f m l w q → ReadsAt h v (π ++ [f]) l w q
+  | _, _, _, .nil _, _, _, _, hk => .here hk
+  | _, _, _, .cons hk' hr, _, _, _, hk => .there hk' (readsAt_of_keyLoc hr hk)
+
 /-! ## The locations a region's membership reads -/
 
 /-- **The slot a region is read from**: that of a field, a path, a spine or
