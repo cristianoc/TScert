@@ -721,9 +721,9 @@ checks: the spec's premises (`hsrc`, `hty`, `hvals`, `ChkSound`,
 `StartInv`, the flow's facts at the frame's starts), the members' trace
 certificates at `Ψj` (`cert_of_charges` gives them at `Ψ_C`,
 `ret_reachedW_of_charges`), the separation the
-frame check reads at each framed node's entry, and the callee's effect
-bounding the heap along the call's segment (the callback's arrow, part of
-`Θ_C`). -/
+frame check reads at each framed node's entry, and, at each framed node
+`own` does not read, the effect `Φ l` bounding the heap along the call's
+segment (`hΦ`). -/
 theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
     {fr : ClientFrame (Ty ι)} [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)]
@@ -948,7 +948,8 @@ at the frame's calls (`wfS_start`, `noPend_start`), the flow's sites
 the rest are the checks a framed plan's pass runs, the invariants of the
 frame left to prove (the history's `ChkSound` and `StartInv`, the entry's
 fit, keys, typing and slots, the frame check's separation at each framed
-node's entry) and the trust of `Θ_C` (the callback's arrow, `hΦ`). -/
+node's entry) and the effect bounding each framed call `own` does not read
+(`hΦ`: the callback row of `Θ_C` at a function the client passes). -/
 theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (r : SourceRequest σ ι)
     [Hashable ((spec.frame r).F.at (spec.frame r).C).Site]
     [LawfulHashable (Option ((spec.frame r).F.at (spec.frame r).C).Site)]

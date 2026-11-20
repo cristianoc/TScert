@@ -77,6 +77,10 @@ assert.equal(runExample("bounds-pattern-framed-inner-walker", "countLines([1, 2,
 assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-construct",
   "(() => { const xs = [1, 2, 3]; return total(xs, function () { xs.pop(); }); })()"))),
   "the constructor of the class the arrow constructs pops the client's array under the walker's read");
+assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-template",
+  "(() => { const xs = [1, 2, 3]; return total(xs, { v: 1, toString() { xs.pop(); return \"x\"; } }); })()"))),
+  "the object the arrow converts pops the client's array in its toString under the walker's read");
+assert.equal(runExample("bounds-pattern-framed-arrow-exceeds", "countLines()"), 3);
 assert.equal(runExample("bounds-pattern-framed-mixed-local", "total(() => {})"), 6);
 assert.ok(Number.isNaN(Number(runExample("invalid-bounds-pattern-framed-mixed",
   "(() => { const xs = [1, 2, 3]; return total(xs, () => { xs.pop(); }); })()"))),

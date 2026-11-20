@@ -475,6 +475,26 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
            theta, psi, psiDef := fc.psiDef, componentRefusal, framed,
            inner := innerB F fc.entries member m }
 
+/-- **The module function a code of the flow belongs to**: the one whose
+code it is, or one of whose closures it is, at any depth. -/
+def FramedComponent.ownerOf (fc : FramedComponent) (m : Code) : Option String :=
+  (fc.cf.codes.zip fc.cf.names).findSome? fun (c, (n, _, _)) =>
+    if c == m || (c.1.flatMap (TolerantFrames.ReadOnly.closureLayouts fc.ofC)).any (·.1 == m) then some n else none
+
+/-- **The module functions a framed call's segment runs the code of**
+(the Read-only frames note, (B1)): at each node of `nodes` of the code `m`,
+the codes of its segment $`\mathrm{seg}(c)`$ (`segCodes` of its callee's
+sets at every context and every node sharing its continuation and
+handler), each read at the module function it belongs to (`ownerOf`).
+The bound of such a call by its segment's charges reads the segment's
+code as lowered, so a verdict reading it rests on the verdicts of those
+functions. -/
+def FramedComponent.segOwners (fc : FramedComponent) (m : Code) (nodes : List Nat) : List String :=
+  let F := fc.cf.flow
+  (nodes.flatMap fun l =>
+    let Sf := (F.ctxs m).flatMap fun (_, c) => (sharingNodes m l).flatMap fun l' => (callsAtNode F c m l').flatMap (·.1)
+    (segCodes F (flowSites F) fc.cf.host Sf).filterMap fun i => (F.codes[i]?).bind fun (m', _) => fc.ownerOf m').eraseDups
+
 /-- **A forged document** (`--force-proposals`, the controls'): `framed-doc-node`
 names a node no call frames, `framed-doc-support` keeps a support the
 frame's check fails, `framed-doc-component` and `framed-doc-entries` name

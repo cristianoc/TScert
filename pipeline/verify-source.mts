@@ -464,7 +464,8 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     const listed = Array.isArray(components) ? components.map((c: unknown) => String(c)).join(", ") : "";
     if (!accepted && !trusted && typeof reason !== "string")
       throw Error("tool failure: the single pass printed a verdict without its refusal");
-    return { unit, members: strings(field(value, "members")), accepted, depends: accepted ? strings(field(value, "depends")) : [],
+    return { unit, members: strings(field(value, "members")), accepted, trusted,
+      depends: accepted || trusted ? strings(field(value, "depends")) : [],
       refusal: trusted ? `accepted only under client trust Θ_C (component ${listed})`
         : typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
         : "" };
@@ -481,6 +482,23 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       const open = v.depends.find((d) => closed.get(d) === false || !byUnit.has(d));
       if (open === undefined) continue;
       closed.set(v.unit, false);
+      openBy.set(v.unit, open);
+      changed = true;
+    }
+  }
+  // A unit accepted under client trust is open where a unit it depends on
+  // is refused: neither accepted nor accepted under client trust, or open
+  // in turn.
+  const refused = (d: string): boolean => {
+    const w = byUnit.get(d);
+    return w === undefined || (!w.accepted && !w.trusted) || openBy.has(d);
+  };
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const v of verdicts) {
+      if (!v.trusted || openBy.has(v.unit)) continue;
+      const open = v.depends.find(refused);
+      if (open === undefined) continue;
       openBy.set(v.unit, open);
       changed = true;
     }
@@ -513,14 +531,15 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
           seen.add(u);
           const d = byUnit.get(u);
           if (d === undefined) return `${u}: no verdict`;
-          if (!d.accepted) return described(d.refusal);
+          if (!d.accepted && !(d.trusted && openBy.has(u))) return described(d.refusal);
           u = openBy.get(u);
         }
         return "";
       };
       const open = openBy.get(v.unit) ?? "";
       const reason = cause(open);
-      const detail = v.accepted ? `reject: a unit it depends on is refused: ${open}${reason === "" ? "" : `\n${reason}`}`
+      const detail = v.accepted || openBy.has(v.unit)
+        ? `reject: a unit it depends on is refused: ${open}${reason === "" ? "" : `\n${reason}`}`
         : `reject: ${described(v.refusal)}`;
       return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
     });

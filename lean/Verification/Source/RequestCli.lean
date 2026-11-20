@@ -853,9 +853,22 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
       if observing then for line in shown do IO.eprintln line
       let (_, v, _, _) ← IO.lazyPure fun _ => f'.passGroupMode8 true p.force (f'.givenAt p.givenLines) p.fuel
         (f'.fr.group i) (located := true)
+      -- (a framed node bounded by its segment's charges reads the codes of
+      -- its segment as lowered: the verdict rests on the module functions
+      -- they belong to, `FramedComponent.segOwners`)
+      let segDeps : List String := match f'.plans[j]? with
+        | some (.ok (.framed _ _ r spec)) =>
+          let own := (spec.framed.map (·.1)).filter fun l =>
+            !spec.clientCallee r l && SourceClaimJson.noOutB fc.cf.flow
+          let names := fc.segOwners (SourceClaimJson.realizedCode r) own
+          (List.range fr.units.length).filterMap fun k => match fr.units[k]? with
+            | some (fn, _, none) =>
+              if names.contains fn.name && !(fr.group i).contains k then some (fr.unitId k) else none
+            | _ => none
+        | _ => []
       return match v with
         | .error w => (.error ("\n".intercalate (s!"{reason}\n{w}" :: why)), [])
-        | .ok deps => (.ok deps, f'.clientComponents (f'.fr.group i))
+        | .ok deps => (.ok (deps ++ segDeps.filter (!deps.contains ·)), f'.clientComponents (f'.fr.group i))
   return (.error reason, [])
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
