@@ -1013,7 +1013,7 @@ member returning `#widths` at `readonly number[]` and the walker's visitor
 reading it, the walker reading `#widths[i]` after each call (`[1, 1]`);
 `private-frozen-view`, the same with the view frozen by the client before
 the walk (`[1, 1]`);
-`bounds-pattern-unreachable-field-refused` and
+`bounds-pattern-unreachable-field` and
 `bounds-pattern-unreachable-handle-refused` rewritten with a class with
 private state.
 

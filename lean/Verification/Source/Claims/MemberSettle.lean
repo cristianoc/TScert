@@ -559,6 +559,16 @@ def FilePlans.clientTrust (f : FilePlans) (group : List Nat) : Bool :=
       | .error _ => false
     | _ => false
 
+/-- **The components a group is accepted under the client obligation of**:
+each framed member's component, once. -/
+def FilePlans.clientComponents (f : FilePlans) (group : List Nat) : List Nat :=
+  let at_ : Nat → List Nat := fun j => match f.plans[j]? with
+    | some (.ok p) => match p.certify with
+      | .ok (.framed _ _ _ spec) => [spec.C]
+      | _ => []
+    | _ => []
+  (group.flatMap at_).eraseDups
+
 /-- **A group's verdict as a module's interface establishes it**: the
 pass's, but a group accepted under client trust is not established, an
 interface's entry carrying no client obligation. -/

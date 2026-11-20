@@ -12,19 +12,20 @@ open Lean
 /-- A unit's verdict line: `{"unit","members","accepted","depends","extraction","contracts"}`,
 its group accepted with the units its verdict rests on;
 `{"unit","members","acceptedUnderClientTrust","depends","extraction","contracts"}`, its
-group accepted for the executions in which outside code keeps a member's
-client obligation (`trusted`, `FilePlans.clientTrust`); or
+group accepted for the executions in which outside code keeps the client
+obligation of each component `acceptedUnderClientTrust` lists (`trusted`,
+`FilePlans.clientComponents`); or
 `{"unit","members","refusal","extraction","contracts"}`; `extraction` the first
 extraction refusal among its group's members, or null; `contracts` the
 contracts its group's check read, each once, in their compressed text's
 order (`SourceExtraction.ContractRead.toJson`), reporting only. -/
 def verdictLine (unit : String) (members : List String) (verdict : Except String (List String))
-    (extraction : Option String) (contracts : List Json) (trusted : Bool) : String :=
+    (extraction : Option String) (contracts : List Json) (trusted : List Nat) : String :=
   let ext := ("extraction", match extraction with | some r => toJson r | none => Json.null)
   let read := ("contracts", Json.arr (contracts.eraseDups.toArray.qsort (·.compress < ·.compress)))
   (match verdict with
     | .ok deps => Json.mkObj ([("unit", toJson unit), ("members", toJson members)] ++
-        (if trusted then [("acceptedUnderClientTrust", toJson true)] else [("accepted", toJson true)]) ++
+        (if trusted.isEmpty then [("accepted", toJson true)] else [("acceptedUnderClientTrust", toJson trusted)]) ++
         [("depends", toJson deps), ext, read])
     | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
         ("refusal", toJson reason), ext, read]).compress

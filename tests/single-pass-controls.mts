@@ -614,7 +614,7 @@ control("framed plan: the checks (S), (K) and (O) of its component, at a forged 
   // P22's walker with its cursor held by a module binding: (K) refuses the
   // binding of a local site, and the framed plan's check refuses the plan
   // at that failure (docs/drafts/framed-acceptance.md, "What the pass checks").
-  const walker = familyCase("bounds-pattern-unreachable-field-refused");
+  const walker = familyCase("bounds-pattern-unreachable-field");
   const site = siteIndex(walker.ast, walker.at("{ i: 0 }"));
   const value = walker.ast.components.values.findIndex((v) => v.sites.includes(site));
   assert.ok(value >= 0, "a value holding the cursor");
@@ -707,7 +707,7 @@ const frameAt = (ast: Ast, at: number): Ast["components"]["frames"][number] => {
 control("forged fragment: a frame's false protection bit, omitted part, and one bad member's frame", async (): Promise<void> => {
   // A cursor the walker allocates lies in the region; the array passed in
   // writable lies in it or outside it.
-  const cursor = familyCase("bounds-pattern-unreachable-field-refused");
+  const cursor = familyCase("bounds-pattern-unreachable-field");
   const visit = cursor.at("visit(c.i); //");
   const held = moduleFrames(pass(fragmentOf(cursor.artifacts)));
   assert.ok(held.some((f) => new RegExp(`^at \\S+ ${visit}-\\d+: the fields of the site \\S+ \\d+-\\d+: in the region, within keep$`).test(f)), JSON.stringify(held));

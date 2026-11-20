@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused beside an exported
+// The walker of bounds-pattern-unreachable-field beside an exported
 // function collecting a rest parameter. No code of a framed plan's
 // component collects a rest (docs/drafts/framed-acceptance.md,
 // "Restrictions"): a closure with a rest is entered at its rest's binding,

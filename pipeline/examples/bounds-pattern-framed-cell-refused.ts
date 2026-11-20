@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused in a module with a
+// The walker of bounds-pattern-unreachable-field in a module with a
 // `let` cell an exported function writes. Every outside slot of a framed
 // plan's module function holds an audited realm value
 // (docs/drafts/framed-acceptance.md, "Restrictions"): a module cell's

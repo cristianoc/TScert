@@ -834,14 +834,16 @@ refused whose code calls (a node of its graph or of a closure it creates),
 the file's framed component, prepared once (`framedComponent`; its located
 refusal where the file's module is not one); the member's framed plan
 (`FilePlans.framedPlan`, which states the restrictions and decodes the
-producer's document); and that plan's check by the pass (`passGroupMode8`),
-whose refusal follows the group's. A framed plan is never accepted
-(`passMember`), so the group's verdict is the pass's over its graph plans;
-its refusal's text gains the framed plan's line: the component's, a
-restriction's or the decoder's refusal, or the framed plan's check's. With
-`TSCERT_FRAMED`, the producer's lines (observation). -/
+producer's document); and that plan's check by the pass (`passGroupMode8`
+over the plans with the member's plan the framed plan). Where that check
+accepts, the group's verdict is acceptance under the client obligation of
+the framed members' components (`FilePlans.clientComponents`,
+`Mode8Accepted.framed`); otherwise the group's refusal, its text gaining the
+framed plan's line: the component's, a restriction's or the decoder's
+refusal, or the framed plan's check's. With `TSCERT_FRAMED`, the
+producer's lines (observation). -/
 def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans) (i : Nat) (reason : String) :
-    IO String := do
+    IO (Except String (List String) × List Nat) := do
   let fr := p.fr
   -- (a member's code calls: a node of its graph or of a closure it creates)
   let invokes := fun (E : List Tm) => E.any fun e => (e matches .invoke ..)
@@ -850,15 +852,15 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
       invokes E || (E.flatMap (TolerantFrames.ReadOnly.closureLayouts fun _ => true)).any (invokes ·.1.1)
     | _ => false
   let members := (fr.group i).filter calls
-  if members.isEmpty then return reason
+  if members.isEmpty then return (.error reason, [])
   let fc ← match ← p.framedComponent with
     | .ok fc => pure fc
-    | .error w => return s!"{reason}\nframed plan of {fr.unitId (members.headD i)}: refused: {w}"
+    | .error w => return (.error s!"{reason}\nframed plan of {fr.unitId (members.headD i)}: refused: {w}", [])
   let observing := (← IO.getEnv "TSCERT_FRAMED").isSome
   for j in members do
     match f.framedPlan p.fuel j fc p.force with
     | .error w =>
-      return s!"{reason}\nframed plan of {fr.unitId j}: refused: {w}"
+      return (.error s!"{reason}\nframed plan of {fr.unitId j}: refused: {w}", [])
     | .ok none =>
       if observing then IO.eprintln s!"framed plan of {fr.unitId j}: no framed call node"
     | .ok (some (f', shown)) =>
@@ -866,9 +868,9 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
       let (_, v, _, _) ← IO.lazyPure fun _ => f'.passGroupMode8 true p.force (f'.givenAt p.givenLines) p.fuel
         (f'.fr.group i) (located := p.located)
       return match v with
-        | .error w => s!"{reason}\n{w}"
-        | .ok _ => reason
-  return reason
+        | .error w => (.error s!"{reason}\n{w}", [])
+        | .ok deps => (.ok deps, f'.clientComponents (f'.fr.group i))
+  return (.error reason, [])
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
 the proposals below it read through `PreparedFile.known`; the plans an
@@ -927,7 +929,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
           for line in f.framedCheck p.fuel j (SourceClaimJson.componentFlow ofC mods entries name) do IO.eprintln line
   let planned := if probe == some "only" then .error "flow probe only" else planned
   let (lines, verdict, extraction, contracts, trusted) ← match planned with
-    | .error reason => pure ([], .error reason, some reason, [], false)
+    | .error reason => pure ([], .error reason, some reason, [], [])
     | .ok f => do
       if (fr.group i).head? == some i then
         p.proposals.modify (·.insert i (f.groupProposals i))
@@ -937,11 +939,11 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
           compare debugNode repeats none observe counting p.located
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
           f.extractionRefusal (some [SourceClaimJson.memberName unit]),
-          f.contractReads (fr.group i), f.clientTrust (f.fr.group i))
+          f.contractReads (fr.group i), f.clientComponents (f.fr.group i))
   -- A refused group's framed plan, checked (`framedVerdict`).
-  let verdict ← match verdict, planned with
-    | .error reason, .ok f => do pure (.error (← p.framedVerdict f i reason))
-    | v, _ => pure v
+  let (verdict, trusted) ← match verdict, planned with
+    | .error reason, .ok f => p.framedVerdict f i reason
+    | v, _ => pure (v, trusted)
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -974,7 +976,7 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
     let mut extraction : Option String := none
     let mut trusted := false
     printFlushed (WorkerWire.componentsLine p.components)
-    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none [] false)
+    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none [] [])
     for i in p.units do
       let (line, refusal) ← p.check i
       printFlushed line

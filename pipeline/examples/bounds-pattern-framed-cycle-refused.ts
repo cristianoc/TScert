@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused in a module whose
+// The walker of bounds-pattern-unreachable-field in a module whose
 // exported functions `even` and `odd` name each other. A framed plan's
 // component has an acyclic name graph among its module functions
 // (docs/drafts/framed-acceptance.md, "Restrictions"): the closures of two

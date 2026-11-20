@@ -81,7 +81,7 @@ theorem member_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r :
     cases hm with
     | ordinary name' pos' r' _ _ hplan _ hdecl _ _ _ => rw [planAt_unique hp hplan]; exact hdecl
     | qualified name' pos' r' _ _ _ _ hplan _ hdecl _ _ _ _ _ _ _ _ _ _ _ => rw [planAt_unique hp hplan]; exact hdecl
-    | framed _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
+    | framed _ _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
   simp only [declaredEffect, RequestJson.asyncEffects, Bool.and_eq_true, ha,
     Bool.not_true, Bool.false_or, beq_iff_eq] at hd
   exact hd.1.1
@@ -118,6 +118,6 @@ theorem codes_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r : 
   | qualified name' pos' r' _ _ _ _ hplan _ _ _ _ _ _ _ hcodes _ _ _ _ _ =>
     rw [← planAt_unique hp hplan] at hcodes
     rw [hcodes] at hq; cases hq
-  | framed _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
+  | framed _ _ _ _ _ hplan _ => exact (planAt_not_framed hp hplan).elim
 
 end Verification.SourceClaimJson.PassUnit

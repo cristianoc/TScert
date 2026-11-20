@@ -1,4 +1,4 @@
-// P22's walker (bounds-pattern-unreachable-field-refused) twice, under two
+// P22's walker (bounds-pattern-unreachable-field) twice, under two
 // names, beside a module function both call.
 //
 // A code of the component is a term: `walk` and `walkAgain` have the same

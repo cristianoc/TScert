@@ -390,6 +390,27 @@ def preparedMode8 (force : List String) (givenLines : Std.HashMap String Json) (
   if force.contains "start-facts" then (f.withHeadFacts givenLines false infer).withFalseStartFact
   else f.withHeadFacts givenLines false infer
 
+/-- **The plans mode 8 checks are over the file's store** (proved): either
+planning route's plans, prepared for mode 8. -/
+theorem preparedMode8_overStore
+    {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
+    {prepare : String → FilePlans → FilePlans}
+    {check : FilePlans → List Nat → List String × Except String (List String)}
+    {givenLines : Std.HashMap String Json} {infer : Bool}
+    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo = .ok f₀) ∨
+      (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
+        .ok (f₀, ms, notes))) :
+    OverStore (preparedMode8 force givenLines infer f₀) := by
+  have h0 : OverStore f₀ := by
+    rcases hplanned with ⟨est, tables, front, known, memo, h⟩ | ⟨ms, notes, h⟩
+    · exact fragmentPlansFromInterfaces_overStore h
+    · exact fragmentPlansWithModules_overStore h
+  unfold preparedMode8
+  split
+  · exact withFalseStartFact_overStore (withHeadFacts_overStore h0)
+  · exact withHeadFacts_overStore h0
+
 /-- **The headline at the command line's exact condition** (proved, under
 H1 and H2): mode 8 plans the file from the interfaces it reads
 (`fragmentPlansFromInterfaces`) or with its modules checked in the
@@ -411,16 +432,7 @@ theorem passUnitCli_safe
     (haccepted : ((preparedMode8 force givenLines infer f₀).passGroupMode8 infer force keep fuel
       ((preparedMode8 force givenLines infer f₀).fr.group i) compare debugNode repeats given observe counting
       located).2.1 = .ok deps) :
-    PassUnitSafe (preparedMode8 force givenLines infer f₀) i := by
-  have h0 : OverStore f₀ := by
-    rcases hplanned with ⟨est, tables, front, known, memo, h⟩ | ⟨ms, notes, h⟩
-    · exact fragmentPlansFromInterfaces_overStore h
-    · exact fragmentPlansWithModules_overStore h
-  have hover : OverStore (preparedMode8 force givenLines infer f₀) := by
-    unfold preparedMode8
-    split
-    · exact withFalseStartFact_overStore (withHeadFacts_overStore h0)
-    · exact withHeadFacts_overStore h0
-  exact passGroupMode8_safe hrun hkeep hover haccepted
+    PassUnitSafe (preparedMode8 force givenLines infer f₀) i :=
+  passGroupMode8_safe hrun hkeep (preparedMode8_overStore hplanned) haccepted
 
 end Verification.SourceClaimJson.PassUnit

@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused as a method of an
+// The walker of bounds-pattern-unreachable-field as a method of an
 // exported class. A framed plan's request is a module function with a
 // realization (docs/drafts/framed-acceptance.md, "Restrictions": framed
 // units are realized units): a method's entering step relates to no

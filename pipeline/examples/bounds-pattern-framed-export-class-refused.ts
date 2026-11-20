@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused in a module that
+// The walker of bounds-pattern-unreachable-field in a module that
 // also exports a class. Every export of a framed plan's component is a
 // module function (docs/drafts/framed-acceptance.md, "Restrictions"): the
 // initialization's last node is the array of the exports' closures, so the

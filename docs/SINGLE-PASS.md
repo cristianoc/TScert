@@ -369,8 +369,9 @@ refusal that dependency rests on.
 interfaces its imports read (`RequestCli.verifyUnitsFile`): each selected
 unit's group checked by `FilePlans.passGroupMode8`, each verdict on a line
 `{"unit","members","accepted","depends"}`,
-`{"unit","members","acceptedUnderClientTrust","depends"}` or
-`{"unit","members","refusal"}`.
+`{"unit","members","acceptedUnderClientTrust","depends"}` (its
+`acceptedUnderClientTrust` the components whose client obligations a
+framed member is accepted under) or `{"unit","members","refusal"}`.
 `verifier --module-interface <request>` computes a component's module
 interfaces, checking each module's groups the same way
 ([module interfaces](STAGE-STORE.md#single-pass-module-interfaces)).

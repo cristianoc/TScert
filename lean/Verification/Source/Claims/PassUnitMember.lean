@@ -59,23 +59,36 @@ def MainCall {G : NormalGraph ι} {I : InstanceImageCheck G} (r : SourceRequest 
     c.entryIndices = r.entryIndices ∧ c.codes = codes ∧ c.passChecker = checker ∧ c.answers = a ∧
     c.ensures = r.ensures ∧ c.entrySeparation = r.entrySeparation
 
-/-- **The main graph accepted** as `passGroup` accepts it: directly, at its
-bound and stated regions; or, the bound refused, by the footprint's
-regional fallback (no regions), followed by the stated regions' run where
-it states any. Each accepted run's read summaries checked. -/
-inductive MainAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
-    (codes : CodeEntry ι → Bool) (a : Answered G) : Prop where
+/-- **A run accepted at framed nodes `fr`**: its walk accepted, framing
+those nodes. -/
+def _root_.Verification.TolerantFrames.Target.RunCall.AcceptsAt {G : NormalGraph ι} {I : InstanceImageCheck G}
+    (c : RunCall G I) (after : Answered G) (fr : List (Nat × List Footprints.Footprint)) : Prop :=
+  c.AcceptsWalk after ∧ c.framed = fr
+
+/-- **The main graph accepted** as `passGroup` accepts it, its walks framing
+the nodes `fr`: directly, at its bound and stated regions; or, the bound
+refused and the fallback allowed (`fb`), by the footprint's regional
+fallback (no regions), followed by the stated regions' run where it states
+any. Each accepted run's read summaries checked. -/
+inductive MainAcceptedAt (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
+    (codes : CodeEntry ι → Bool) (fr : List (Nat × List Footprints.Footprint)) (fb : Bool) (a : Answered G) : Prop where
   | direct (c : RunCall G I) (after : Answered G) :
       MainCall r c codes .ordinary a → c.bound = mainBound r → regionOf c.regional = regionalSpec r →
-      c.Accepts after → summariesChecked r after.summaries.toList = true → MainAccepted G I r codes a
-  | fallback (c₁ : RunCall G I) (a₁ : Answered G) :
+      c.AcceptsAt after fr → summariesChecked r after.summaries.toList = true → MainAcceptedAt G I r codes fr fb a
+  | fallback (c₁ : RunCall G I) (a₁ : Answered G) : fb = true →
       r.fresh = false → MainCall r c₁ codes .ordinary a → c₁.bound = none →
-      regionOf c₁.regional = some (r.footprint, [], r.onThrow) → c₁.Accepts a₁ →
+      regionOf c₁.regional = some (r.footprint, [], r.onThrow) → c₁.AcceptsAt a₁ fr →
       summariesChecked r a₁.summaries.toList = true →
       (r.regional = none ∨ ∃ (c₂ : RunCall G I) (a₂ : Answered G), MainCall r c₂ codes .ordinary a ∧
-        c₂.bound = none ∧ regionOf c₂.regional = regionalSpec r ∧ c₂.Accepts a₂ ∧
+        c₂.bound = none ∧ regionOf c₂.regional = regionalSpec r ∧ c₂.AcceptsAt a₂ fr ∧
         summariesChecked r a₂.summaries.toList = true) →
-      MainAccepted G I r codes a
+      MainAcceptedAt G I r codes fr fb a
+
+/-- **The main graph accepted** as `passGroup` accepts it: framing no node,
+directly or by the fallback (`MainAcceptedAt`). -/
+abbrev MainAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
+    (codes : CodeEntry ι → Bool) (a : Answered G) : Prop :=
+  MainAcceptedAt G I r codes [] true a
 
 end
 
@@ -84,19 +97,16 @@ end
 checks"): the binding checks that read its component alone passing
 (`componentBindingRefusal` at the plan's fields refusing nothing,
 `componentBindingRefusal_none`); its code requests accepted in order by
-the ordinary pass (`CodesAccepted`), the read summaries their runs leave
-checked; each stated region meeting its entry conditions; its main graph,
-over the codes' table, its walk accepted at its bound and stated regions
-(`RunCall.AcceptsWalk`) at the plan's framed nodes (`c.framed`), its read
-summaries checked; and the checks that read the request
-(`FramedSpec.requestB`, each framed node's callee's stated effect read by
-`callEffects`). `FilePlans.passMember` refuses every framed plan, so no
-member `passGroup` accepts is accepted by this constructor. -/
+the ordinary pass (`CodesAccepted`); each stated region meeting its entry
+conditions; its main graph, over the codes' table, its walk accepted at
+its bound and stated regions (`RunCall.AcceptsWalk`) at the plan's framed
+nodes (`c.framed`), its read summaries checked; and the checks that read
+the request (`FramedSpec.requestB`, each framed node's callee's stated
+effect read by `callEffects`). -/
 structure FramedAccepted (f : FilePlans) (r : Req f)
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop where
   codes : ∃ a₀ a₁ : Answered (StoreView.graph f.F.store),
     CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ ∧
-      summariesChecked r a₁.summaries.toList = true ∧
       ∃ (c : RunCall (StoreView.graph f.F.store) (StoreView.images f.F.store))
         (after : Answered (StoreView.graph f.F.store)),
         MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary a₁ ∧ c.bound = mainBound r ∧
@@ -108,6 +118,29 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
     spec.initOrder spec.initE spec.initK spec.initL spec.family spec.file spec.fns spec.C = none
   request : spec.requestB r (callEffects (StoreView.graph f.F.store) r) = true
 
+/-- **A graph plan's run accepted** (`passMemberGraph`'s, its walks framing
+the nodes `fr`, the footprint's fallback allowed where `fb`): unqualified,
+its code requests accepted in order and its main graph over their table
+(`MainAcceptedAt`); or a qualified body accepted by one call at its
+checker, as `MemberAccepted` states them. -/
+inductive GraphAccepted (f : FilePlans) (i : Nat) (fr : List (Nat × List Footprints.Footprint)) (fb : Bool) : Prop where
+  | ordinary (name : String) (pos : Span) (r : Req f) (a₀ a₁ : Answered (StoreView.graph f.F.store)) :
+      PlanAt f i name pos r → r.qualification = none → declaredEffect r = true →
+      (∀ Φ regions, r.regional = some (Φ, regions) → r.async = false ∧ r.fresh = false ∧
+        GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true) →
+      CodesAccepted (StoreView.graph f.F.store) (StoreView.images f.F.store) r [] r.codes.zipIdx a₀ a₁ →
+      MainAcceptedAt (StoreView.graph f.F.store) (StoreView.images f.F.store) r
+        (GraphCode.admits (r.codes.map (·.entry))) fr fb a₁ →
+      GraphAccepted f i fr fb
+  | qualified (name : String) (pos : Span) (r : Req f)
+      (q : QualifiedBody (RequestJson.graph r.toRequest) (StoreView.images r.types))
+      (c : RunCall (RequestJson.graph r.toRequest) (StoreView.images r.types))
+      (a₀ after : Answered (RequestJson.graph r.toRequest)) :
+      PlanAt f i name pos r → r.qualification = some q → declaredEffect r = true →
+      r.footprint = .top → r.onThrow = false → r.fresh = false → r.ensures = [] → r.regional = none →
+      r.codes = [] → MainCall r c (GraphCode.admits []) (.qualified q.body q.ordinary) a₀ → c.bound = none → c.regional = none →
+      c.Accepts after → summariesChecked r after.summaries.toList = true → GraphAccepted f i fr fb
+
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each
 stated region meets its entry conditions, its code requests are accepted in
@@ -115,7 +148,8 @@ order (`CodesAccepted`) and its graph over their table (`MainAccepted`); or
 it is a qualified body, at the footprint letting everything change on
 normal return alone, with no postcondition, regions or codes, accepted by
 one call at its checker, its read summaries checked; or its plan is a
-framed plan accepted (`FramedAccepted`). -/
+framed plan accepted (`FramedAccepted`), its request at the candidates its
+walk settled at. -/
 inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
   | ordinary (name : String) (pos : Span) (r : Req f) (a₀ a₁ : Answered (StoreView.graph f.F.store)) :
       PlanAt f i name pos r → r.qualification = none → declaredEffect r = true →
@@ -134,8 +168,9 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
       r.codes = [] → MainCall r c (GraphCode.admits []) (.qualified q.body q.ordinary) a₀ → c.bound = none → c.regional = none →
       c.Accepts after → summariesChecked r after.summaries.toList = true → MemberAccepted f i
   | framed (name : String) (pos : Span) (r : Req f)
-      (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) :
-      FramedPlanAt f i name pos r spec → FramedAccepted f r spec → MemberAccepted f i
+      (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive))
+      (cands : List (Nat × List HeapKnowledge.IndexAtom)) :
+      FramedPlanAt f i name pos r spec → FramedAccepted f { r with candidates := cands } spec → MemberAccepted f i
 
 /-- **H3, the wrapper's statement**: `passGroup` accepting a group makes
 every member `MemberAccepted`, at every value of every argument. Proved

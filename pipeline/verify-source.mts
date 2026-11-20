@@ -456,12 +456,15 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     if (typeof unit !== "string") throw Error("tool failure: the single pass printed a verdict without its unit");
     const accepted = field(value, "accepted") === true;
     // A unit accepted under client trust is accepted for the executions in
-    // which outside code keeps a member's client obligation: not verified.
-    const trusted = field(value, "acceptedUnderClientTrust") === true;
+    // which outside code keeps the client obligation of each component
+    // listed: not verified.
+    const components: unknown = field(value, "acceptedUnderClientTrust");
+    const trusted = Array.isArray(components);
+    const listed = Array.isArray(components) ? components.map((c: unknown) => String(c)).join(", ") : "";
     if (!accepted && !trusted && typeof reason !== "string")
       throw Error("tool failure: the single pass printed a verdict without its refusal");
     return { unit, members: strings(field(value, "members")), accepted, depends: accepted ? strings(field(value, "depends")) : [],
-      refusal: trusted ? "accepted only under client trust (a member's client obligation)"
+      refusal: trusted ? `accepted only under client trust Θ_C (component ${listed})`
         : typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
         : "" };
   }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);

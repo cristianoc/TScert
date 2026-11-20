@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused in a component
+// The walker of bounds-pattern-unreachable-field in a component
 // whose exported type states a `@clients` row with a path key. A framed
 // plan reads a component's client obligation by kind
 // (docs/drafts/framed-acceptance.md, "Restrictions": `@clients` by kind): a

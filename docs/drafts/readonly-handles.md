@@ -2808,7 +2808,7 @@ Measured 2026-11-19 by the probe (`TSCERT_FLOW_PROBE=only`, with
 `TSCERT_FRAME_PROBE`, the verifier run on the run directory's fragment),
 at the visitor call, every fact read at the marks the flow gives:
 
-- `bounds-pattern-unreachable-field-refused.ts`: the cursor's slot holds
+- `bounds-pattern-unreachable-field.ts`: the cursor's slot holds
   the walker's object site alone, local and captured by no closure;
   `c.i + 1 <= xs.length` and `0 <= c.i` pass the frame's check (the field
   local, `xs`'s spine outside storage at `grow`, which the visitor's

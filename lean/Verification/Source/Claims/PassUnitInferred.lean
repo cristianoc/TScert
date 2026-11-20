@@ -53,33 +53,6 @@ theorem Recandidated.overStore {f f' : FilePlans} (h : Recandidated f f') (hover
     obtain ⟨x₀, h₀, c, rfl⟩ := hP i x hx
     exact ⟨x₀, _, h₀, rfl, rfl⟩) hover
 
-section
-variable {σ ι : Type} [Labels ι] [StoreView σ ι]
-
-theorem admits_recandidated (r : SourceRequest σ ι) c η :
-    ({ r with candidates := c } : SourceRequest σ ι).Admits η ↔ r.Admits η := by
-  unfold SourceRequest.Admits
-  cases h : r.qualification <;> simp_all
-
-/-- A request safe at other candidates is safe (proved): its safety reads
-no candidate. -/
-theorem requestSafe_recandidated (r : SourceRequest σ ι) c :
-    RequestSafe { r with candidates := c } → RequestSafe r := by
-  intro ⟨h1, h2, h3, h4, h5, h6⟩
-  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
-    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
-end
-
-/-- A framed request safe at other candidates is safe (proved): the frame
-and the framed claim read no candidate. -/
-theorem framedRequestSafe_recandidated {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι)
-    (spec : FramedSpec ι) c :
-    FramedRequestSafe { r with candidates := c } (spec.frame { r with candidates := c }) →
-      FramedRequestSafe r (spec.frame r) := by
-  intro ⟨h1, h2, h3, h4, h5, h6⟩
-  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
-    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
-
 /-- A member safe at other candidates is safe (proved): a request's safety
 reads no candidate (`requestSafe_recandidated`,
 `framedRequestSafe_recandidated`). -/

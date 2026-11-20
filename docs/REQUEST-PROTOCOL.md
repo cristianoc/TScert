@@ -58,7 +58,9 @@ verifier --lower-control-flow       <ast.json>
   `{"unit","members","accepted","depends"}`,
   `{"unit","members","acceptedUnderClientTrust","depends"}` (a group with a
   member accepted under its client frame's obligation,
-  [the framed claim](drafts/readonly-handles.md#the-framed-claim)) or
+  [the framed claim](drafts/readonly-handles.md#the-framed-claim);
+  `acceptedUnderClientTrust` the numbers of the components whose client
+  obligations it is accepted under) or
   `{"unit","members","refusal"}`,
   whose acceptance `SourceClaimJson.PassUnit.mode8Accepted_sound` states.
   With every unit accepted it exits 0; otherwise the first refusal is the

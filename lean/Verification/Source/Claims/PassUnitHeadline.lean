@@ -64,7 +64,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
       c.Accepts after ∧ summariesChecked r after.summaries.toList = true := by
     cases hmain with
     | direct c after hm _ _ hacc hs => exact ⟨c, after, hm, hacc, hs⟩
-    | fallback c₁ a₂ _ hm _ _ hacc hs _ => exact ⟨c₁, a₂, hm, hacc, hs⟩
+    | fallback c₁ a₂ _ _ hm _ _ hacc hs _ => exact ⟨c₁, a₂, hm, hacc, hs⟩
   obtain ⟨c, after, hm, hacc, hs⟩ := primary
   have hsums := summaries_of_checked htypes hs
   have hsub : ∀ s ∈ a₁.summaries.toList, s ∈ after.summaries.toList := by
@@ -111,7 +111,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
       r.start r.goal r.inputs r.entrySeparation r.entryIndices r.assertions bound r.ensures regional := by
     cases hmain with
     | direct c after hm _ hreg hacc hs => exact ⟨_, _, guarantee c after hm hacc hs (stated c hreg)⟩
-    | fallback c₁ a₂ _ hm _ hreg hacc hs _ => exact ⟨_, _, guarantee c₁ a₂ hm hacc hs (fallbackRegions c₁ hreg)⟩
+    | fallback c₁ a₂ _ _ hm _ hreg hacc hs _ => exact ⟨_, _, guarantee c₁ a₂ hm hacc hs (fallbackRegions c₁ hreg)⟩
   obtain ⟨bound, regional, g⟩ := hprimary
   refine ⟨fun η _ n W h ρ he hρ => g.safe η trivial n W h ρ he (program_source_refsOk g.source W) hρ, ?_, ?_, ?_,
     fun η _ n W h ρ he hρ => g.asserted η trivial n W h ρ he (program_source_refsOk g.source W) hρ, ?_⟩
@@ -122,7 +122,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
       have g' := guarantee c after hm hacc hs (stated c hreg)
       rw [hb] at g'
       exact footprint_of_bound g' heffect η n W h L d he href hvalues hd
-    | fallback c₁ a₂ hfr hm _ hreg hacc hs _ =>
+    | fallback c₁ a₂ _ hfr hm _ hreg hacc hs _ =>
       have g' := guarantee c₁ a₂ hm hacc hs (fallbackRegions c₁ hreg)
       rw [hreg] at g'
       exact footprint_of_fallback g' hfr η n W h L d he href
@@ -136,7 +136,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
     | direct c after hm _ hreg hacc hs =>
       have g' := guarantee c after hm hacc hs (stated c hreg)
       exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d r.comp he (gotoOf_refsOk g'.source href)
-    | fallback _ _ _ _ _ _ _ _ hrest =>
+    | fallback _ _ _ _ _ _ _ _ _ hrest =>
       rcases hrest with hnone' | ⟨c₂, a₂, hm, _, hreg, hacc, hs⟩
       · rw [hnone'] at hr; cases hr
       · have g' := guarantee c₂ a₂ hm hacc hs (stated c₂ hreg)
@@ -198,7 +198,7 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec)
     (hcb : spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r)) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hreq⟩ := hacc
+  obtain ⟨⟨a₀, a₁, hcodes, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hreq⟩ := hacc
   have hret := framedReturns_reached (by rw [spec.componentRefusal.property]; exact hcomp) hreq hcb
   rw [← hfr] at hret
   let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True
@@ -208,19 +208,52 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     calc r.codes.zipIdx.map (·.1.entry) = (r.codes.zipIdx.map (·.1)).map (·.entry) := by
           rw [List.map_map]; rfl
       _ = r.codes.map (·.entry) := by rw [List.zipIdx_map_fst]
+  have hsums := summaries_of_checked htypes hs'
+  have hsub : ∀ s ∈ a₁.summaries.toList, s ∈ after.summaries.toList := by
+    intro s hs''
+    obtain ⟨-, -, -, -, -, -, -, -, -, hans, -, -⟩ := hm
+    obtain ⟨counts, trace, hres⟩ := hwalk
+    have := hkeep _ _ c s (hans ▸ hs'')
+    rwa [hres] at this
   have htable : ProgramCertificates.CodesSound (StoreView.graph f.F.store)
       (GraphCode.admits (r.codes.map (·.entry))) := by
-    have := codesAccepted_sound hrun hkeep (summaries_of_checked htypes hs) hcodes (fun _ h => h) hnone
+    have := codesAccepted_sound hrun hkeep hsums hcodes hsub hnone
     rwa [List.nil_append, hentries] at this
   have hguar := framedReturns_of_main Verification.TolerantFrames.run_sound_framed RetE hm hb hreg hregs htable
     (Verification.TolerantFrames.acceptsFramed_of_acceptedWalk hwalk) (summaries_of_checked htypes hs')
   obtain ⟨hsafe, hf, he, hg, ha⟩ := framedRun_of_returnsW hguar hret
-  have hcodeG := codesAccepted_guarantees hrun hkeep (summaries_of_checked htypes hs) hcodes
-    (fun _ h => h) hnone
+  have hcodeG := codesAccepted_guarantees hrun hkeep hsums hcodes hsub hnone
   refine ⟨hsafe, hf, he, hg, ha, ?_⟩
   intro ci q hci η n W h L d comp hE hR _ g _
   have hmem : (q, ci) ∈ r.codes.zipIdx := List.mk_mem_zipIdx_iff_getElem?.mpr hci
   exact framedCode_of_guarantee (hcodeG (q, ci) hmem) η comp hE hR g
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+theorem admits_recandidated (r : SourceRequest σ ι) c η :
+    ({ r with candidates := c } : SourceRequest σ ι).Admits η ↔ r.Admits η := by
+  unfold SourceRequest.Admits
+  cases h : r.qualification <;> simp_all
+
+/-- A request safe at other candidates is safe (proved): its safety reads
+no candidate. -/
+theorem requestSafe_recandidated (r : SourceRequest σ ι) c :
+    RequestSafe { r with candidates := c } → RequestSafe r := by
+  intro ⟨h1, h2, h3, h4, h5, h6⟩
+  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
+    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
+end
+
+/-- A framed request safe at other candidates is safe (proved): the frame
+and the framed claim read no candidate. -/
+theorem framedRequestSafe_recandidated {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι)
+    (spec : FramedSpec ι) c :
+    FramedRequestSafe { r with candidates := c } (spec.frame { r with candidates := c }) →
+      FramedRequestSafe r (spec.frame r) := by
+  intro ⟨h1, h2, h3, h4, h5, h6⟩
+  exact ⟨fun η hη => h1 η ((admits_recandidated r c η).2 hη), h2, h3, h4,
+    fun η hη => h5 η ((admits_recandidated r c η).2 hη), h6⟩
 
 /-- **A member `passGroup` accepts is safe** (proved, under `RunSound` and
 `RunKeepsSummaries`, its plans over the file's store): its plan crosses the exhaustive certification boundary and its
@@ -235,7 +268,8 @@ theorem member_safe {f : FilePlans} {j : Nat}
       hcodes hmain⟩
   | qualified name pos r q c a₀ after hplan hq _ hfp hot hfr hens hreg hcodes hm _ hregc hacc hs =>
     exact ⟨_, _, hplan, rfl, qualified_requestSafe hrun hq hfp hot hfr hens hreg hcodes hm hregc hacc hs⟩
-  | framed name pos r spec hplan hacc =>
-    exact ⟨_, _, hplan, rfl, fun hcb => framed_requestSafe hrun hkeep (hover.framed hplan) hacc hcb⟩
+  | framed name pos r spec cands hplan hacc =>
+    exact ⟨_, _, hplan, rfl, fun hcb => framedRequestSafe_recandidated r spec cands
+      (framed_requestSafe (r := { r with candidates := cands }) hrun hkeep (hover.framed hplan :) hacc hcb)⟩
 
 end Verification.SourceClaimJson.PassUnit

@@ -934,12 +934,12 @@ export type ContractRead =
 /** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
  * with the first extraction refusal among its group's members, or null, and
  * the contracts its group's check read: its group accepted, accepted under
- * client trust (for the executions in which outside code keeps a member's
- * client obligation), or refused. */
+ * client trust (for the executions in which outside code keeps the client
+ * obligation of each component listed), or refused. */
 export type VerdictLine =
   { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; extraction: string | null;
     contracts: readonly ContractRead[] } |
-  { unit: string; members: readonly string[]; acceptedUnderClientTrust: true; depends: readonly string[];
+  { unit: string; members: readonly string[]; acceptedUnderClientTrust: readonly number[]; depends: readonly string[];
     extraction: string | null; contracts: readonly ContractRead[] } |
   { unit: string; members: readonly string[]; refusal: string; extraction: string | null;
     contracts: readonly ContractRead[] };
@@ -974,8 +974,11 @@ export function decodeVerdictLine(text: string): VerdictLine {
     return { unit, members, accepted: true, depends, extraction, contracts };
   }
   if (trusted) {
-    if (v["acceptedUnderClientTrust"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, acceptedUnderClientTrust: true, depends, extraction, contracts };
+    const components = v["acceptedUnderClientTrust"];
+    if (!Array.isArray(components) || !components.every((c): c is number => typeof c === "number") || components.length === 0)
+      throw Error(`${what}: no components`);
+    if (!isStrings(depends)) throw Error(`${what}: no dependencies`);
+    return { unit, members, acceptedUnderClientTrust: components, depends, extraction, contracts };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
   return { unit, members, refusal, extraction, contracts };

@@ -30,7 +30,7 @@ under the canonical numbering keyed by the body (`bodyOf`).
   different at a numbering per code.
 
 `walkCode` is the verifier's lowering of
-`pipeline/examples/bounds-pattern-unreachable-field-refused.ts` (P22),
+`pipeline/examples/bounds-pattern-unreachable-field.ts` (P22),
 behind the prologue `PassUnit.dropReceiver` appends, read from the flow
 probe's module code (`SourceClaimJson.ProbeModule.ofRequest`). -/
 namespace Verification.Tests.FramedLinkedCall

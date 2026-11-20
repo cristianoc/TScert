@@ -1,4 +1,4 @@
-// The walker of bounds-pattern-unreachable-field-refused beside an exported
+// The walker of bounds-pattern-unreachable-field beside an exported
 // function that writes an element of a caller's array. The component's
 // protocol Ψ_C (docs/drafts/framed-acceptance.md, "Charges") changes the
 // elements of storage outside code may hold: a framed plan states it on

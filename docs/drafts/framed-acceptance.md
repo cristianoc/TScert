@@ -12,7 +12,7 @@ component exports, every call inside the component whose run may reach
 code outside it, and every fact the graph carries across a call, with the
 restrictions of the language it needs stated and enforced
 ([restrictions](#restrictions)).
-[P22's walker](../../pipeline/examples/bounds-pattern-unreachable-field-refused.ts)
+[P22's walker](../../pipeline/examples/bounds-pattern-unreachable-field.ts)
 and pretext's walkers are its tests ([Tests](#tests)); the first buildable
 milestone is the bound route for P22 ([milestones](#milestones)).
 
@@ -858,7 +858,7 @@ milestone.
 flow's codes, `initFlowB` among them; `initC`'s proposal returns within
 $`O`$; its slot `0` (`[[Array.prototype]]`) holds outside storage, its
 slot `1` names `%ElementAt%`'s signature and holds the native's token,
-which lies outside $`O`$. The five restrictions are unchanged.
+which lies outside $`O`$. The restrictions hold.
 
 ## The frame of a request
 
@@ -1209,8 +1209,9 @@ framed run by `RunSoundFramed` (`run_sound_framed`), and
 `FramedRequestSafe r (spec.frame r)`. `framed_requestSafe` (under `RunSound`,
 `RunKeepsSummaries` and the request over the file's store) and
 `member_safe`'s framed branch are proved from it. `passMember`
-checks a framed plan and refuses it (`framedRefusal`, [what the pass
-checks](#what-the-pass-checks)) until none is left. **The codes are checked by the ordinary pass**,
+checks a framed plan (`framedRun`, [what the pass
+checks](#what-the-pass-checks)) and accepts it where every check passes
+(`framedRun_sound`). **The codes are checked by the ordinary pass**,
 so a code's closure meets its ordinary arrow, and **the sixth clause** of
 `FramedRequestSafe` is proved from each code's guarantee
 (`codesAccepted_guarantees`) by `framedCode_of_guarantee`: the graph's
@@ -1241,7 +1242,7 @@ the call nodes of the member's code framed at some context of the flow;
 passing `frameCheckAt` at $`\Psi_c = \Psi_C \sqcup \Theta_C \sqcup W_c`$
 at every context and every node of the call's continuation and handler
 that may call outside code. `passMember`'s framed branch
-(`FilePlans.framedRefusal`) reads first the refusal of the checks that
+(`FilePlans.framedRun`) reads first the refusal of the checks that
 read the component alone (`componentBindingRefusal`,
 `FramedComponentChecks.lean`), evaluated once per component and shared
 by its plans, each carrying the evaluation with its value
@@ -1271,8 +1272,16 @@ read from slots, the node's set $`T_l`$, the closure of the operand slots'
 sets at every context and node sharing the call's continuation and
 handler, checked closed, and each kept support passing `frameCheckAt` at
 $`\Psi_c(l)=\Theta_C\sqcup\Psi_C\sqcup W(T_l)`$ there). It refuses at
-the first that fails, and otherwise as no member run accepting a framed
-plan. The component's checks include
+the first that fails, and otherwise accepts: its walk is the direct one,
+its walks run with no fallback (`passMemberGraph`'s `fallback`), settled
+at candidates (`framedSettle`), and `FramedAccepted` holds at the request
+with them (`framedRun_sound`, through `passMemberGraph_accepted`'s
+`GraphAccepted` and `MainAcceptedAt` at the framed nodes, the fallback
+excluded). The verdict line of its group names the components
+(`acceptedUnderClientTrust`, `FilePlans.clientComponents`), and the
+acceptance is a print site of `Mode8Accepted` (`Mode8Accepted.framed`:
+the plans with the member's plan the framed plan, `framedPlan_overStore`).
+The component's checks include
 `frameFlowB` at the frame's flow (`FramedFrameFlow.lean`: `FFlow.check`,
 `marksB`, `tokensSomeB`, `codesLoweredB`, the closure of the capture
 sites and $`O`$ checked closed, the initialization's node expressions and
@@ -1354,6 +1363,19 @@ then checked by an ordinary plan), and has a control.
   `"this.items[*]": "extend"`, whose part needs the declaration's sites.
   Control: a framed walker in a component whose exported type states a path
   key, refused.
+- **A client obligation keeping every part.** A framed plan's
+  $`\Theta_C`$ keeps every part (`thetaKeepB`, checked at the request,
+  `FramedSpec.requestB`; `thetaKeepB_sound`): the component's `@clients`
+  rows state no change. Excluded: outside code changing storage the
+  component reaches read-only, such as `{ spines: "grow" }`, for which the
+  returns at reached executions read $`\Theta_C`$ within the component's
+  protocol (`hΘ` of `ret_reachedW_spec`) and the frame's guarantee route
+  is milestone 2's. Refusal: "framed plan: the binding check of its
+  client obligation keeping every part (thetaKeepB) fails"; control: a
+  framed walker in a component whose exported type states
+  `@clients { spines: "grow" }`, refused, its ordinary plan's refusal at
+  the call (`bounds-pattern-framed-clients-change-refused`), and the Lean
+  control in `Tests/FramedBindingControls.lean`.
 - **No rest in a framed component.** No code of a framed plan's component
   collects a rest: every layout of its flow's codes has none (`noRestB`,
   `ReadOnlyEnterRoots.lean`; with layout provenance every closure of
@@ -1416,8 +1438,9 @@ premise; `ret_reachedW` establishes it before the continuation).
   shortening it, breaks $`\Theta_C`$. The verdict line of such a unit is
   unchanged; the trust surface's caller row names $`\Theta_C`$.
 
-The verdict line of a group with a framed member is
-`accept under client trust Θ_C (component C)`. Milestone 3 brings the
+The verdict line of a group with a framed member accepted lists its
+components (`"acceptedUnderClientTrust": [C]`), the pipeline's outcome
+`accepted only under client trust Θ_C (component C)`. Milestone 3 brings the
 obligation-relative arrow $`[\![T]\!]^{\Theta}`$ and its linking theorem,
 for units of the first kind.
 
@@ -1713,9 +1736,10 @@ statement:
 theorem mode8Accepted_sound {f : FilePlans} {i : Nat} (h : Mode8Accepted f i) : PassUnitSafe f i
 ```
 
-- **Premise** `Mode8Accepted f i`: unchanged, the exact CLI condition; a
-  group with a framed member is printed
-  `accept under client trust Θ_C (component C)`.
+- **Premise** `Mode8Accepted f i`: the exact CLI condition, at the print
+  sites `main`, `freshModule` and `framed` (a group accepted at a member's
+  framed plan, `PreparedFile.framedVerdict`); a group with a framed member
+  is printed accepted under client trust at its components.
 - **Conclusion** `PassUnitSafe f i`: every member is `MemberSafe`: a graph
   plan's request `RequestSafe`; a framed plan's `FramedRequestSafe r
   (spec.frame r)`, that is: at each entry of $`r`$'s realized code from
@@ -1835,7 +1859,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
 (`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
 `FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
-`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `capSig_not_lowered` (`FramedStarts.lean`); `OCapFn.inst`, `SelfFn.ocapFn` (`ReadOnlyFitsCheck.lean`), `ocapFnB_sound` (`ReadOnlyFitsDecide.lean`); `prov_mono`, `prov_loweredSrc`, `instantiate_of_scoped`, `realmSlot_vj`, `realmSlot_scoped`, `init_fits`, `FramedSpec.frameFlow_checks`, `FramedSpec.init_checks`, `FramedSpec.initialFits`, `FramedSpec.initialEntry`, `FramedSpec.codeOk_ok` (`FramedInitial.lean`); `framedReturns_reached` (`FramedReached.lean`); `entryXs_root` (`FramedHistory.lean`).
+`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `capSig_not_lowered` (`FramedStarts.lean`); `OCapFn.inst`, `SelfFn.ocapFn` (`ReadOnlyFitsCheck.lean`), `ocapFnB_sound` (`ReadOnlyFitsDecide.lean`); `prov_mono`, `prov_loweredSrc`, `instantiate_of_scoped`, `realmSlot_vj`, `realmSlot_scoped`, `init_fits`, `FramedSpec.frameFlow_checks`, `FramedSpec.init_checks`, `FramedSpec.initialFits`, `FramedSpec.initialEntry`, `FramedSpec.codeOk_ok` (`FramedInitial.lean`); `framedReturns_reached` (`FramedReached.lean`); `passMemberGraph_accepted`, `framedSettle_ok`, `framedRun_sound`, `passMember_sound`'s framed branch (`PassUnitMemberRun.lean`); `overStore_withPlan`, `framedPlan_overStore`, `mode8Accepted_sound`'s framed case (`PassUnitRun.lean`); `preparedMode8_overStore` (`PassUnitInterfaces.lean`); `entryXs_root` (`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1845,8 +1869,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
-`project`, `keeps_canonical`, `ro_of_readOnlyShape`, `passMember_sound`'s
-framed branch.
+`project`, `keeps_canonical`, `ro_of_readOnlyShape`.
 
 **To be proved, milestone 2**: `copies_sound`, `witness_of_path`,
 `framed_guarantee`, `pathFact_alloc`, `tolerant_of_storeKeepsInv` with
@@ -1899,7 +1922,7 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 **Milestone 1 is specified to build**: each lemma it lists has its
 statement and plan, each definition it reads is given (the canonical
 sites, `RealizedAt`, `writesK`, `ActualCrossingsIn`, `PublicCall` over the
-core), its five restrictions are stated with their refusals and controls,
+core), its restrictions are stated with their refusals and controls,
 and P22's layout meets them (measured).
 
 **The first check** (observed, [Runs](#runs)):
@@ -1929,8 +1952,8 @@ and P22's layout meets them (measured).
 
 ## Tests
 
-- **P22**, `bounds-pattern-unreachable-field-refused` (a gap, positive at
-  milestone 1, renamed with its outcome): the first check above.
+- **P22**, `bounds-pattern-unreachable-field` (positive, accepted under
+  client trust): the first check above.
 - **Kept negative**: `invalid-bounds-pattern-cursor-given`.
 - **Two module functions of one code**,
   `bounds-pattern-framed-shared-code-refused` (a gap at P22's line): P22's
@@ -1942,7 +1965,7 @@ and P22's layout meets them (measured).
   shortening the array through a wrapper (negative); `capture.mjs`
   (negative); `returned-closure.mjs` (refused at its closure's read);
   `dependent.mjs`'s `total` and a recursive walker (refused at the read of
-  the framed member); the five restrictions' controls.
+  the framed member); the restrictions' controls.
 - **Controls** (forged fragments): a flow omitting the walker's code
   (`codesCoverB`); an allocation site `none` (`allocB`, `AstraR3.lean`'s
   flow); a signature at a non-sibling entry slot (`entryFnB`); a realized
@@ -2007,10 +2030,11 @@ scratch directories (`framed-review/`, `round2/fable/`, `round3/`,
   the call (`v = xs.length` and `xs.length <= v`), which the spines'
   growth breaks; at node 10 (effect `keep`) it keeps all 15; settled,
   the main graph's walk with both framed is accepted;
-- P22 through the pipeline (`verify-source.mts`, `m1-build/a5-p22-4.out`):
-  its framed plan formed and decoded, its binding checks passing, its
-  framed call nodes 10 and 13, its framed walk accepted after the head's
-  `c.i <= 0` is left out; refused at `FramedObligations.reached`;
+- P22 through the pipeline (`verify-source.mts`, `m1-build/f2/p22-flip.out`):
+  its framed plan formed and decoded, its binding checks passing, the
+  initialization a code of the flow, its framed call nodes 10 and 13, its
+  framed walk accepted after the head's `c.i <= 0` is left out, direct;
+  `walk@1190` accepted only under client trust Θ_C (component 0);
 - `nested-capture.mjs`: `undefined`, a wrapper's captured closure writes
   storage its own capture reaches; `boxed-capture.mjs`: `NaN`, a handed-out
   closure capturing a box holding the cursor, called at the walker's
