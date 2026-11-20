@@ -825,11 +825,13 @@ their consumers need:
   outside source); each value of the realm's heap a primitive
   (`primVal`); and each identity meeting layout provenance, the residual
   invariant and free of runs.
-- **What they give.** `InitialFits`: the `letE` by `Fits.letE` at the set
+- **What they give** (proved, `FramedInitial.lean`). `InitialFits`
+  (`FramedSpec.initialFits`): the `letE` by `Fits.letE` at the set
   $`O`$, the run by `gotoC` at `initC`'s proposal (its slots by the checks
   above, the default `undefined` a primitive), the client by
   `fits_lowered` (`LoweredSrc.lowered`, its variable `0` bound to
-  $`O`$), the realm's heap by `VJ.prim`. `InitialEntry`: provenance
+  $`O`$), the realm's heap by `VJ.prim`. `InitialEntry`
+  (`FramedSpec.initialEntry`): provenance
   (`initC` and the natives' codes are flow codes; the client creates only
   closures of outside code, `LoweredSrc`), the discipline (`wf` of the
   term, the realm's heap free of runs, primitives), outside code lowered
@@ -1198,16 +1200,15 @@ empty table), the read summaries their runs leave checked
 (`summariesChecked`), each stated region meeting its entry conditions, its
 main graph over the codes' table accepted by the pass's framed mode at its
 bound and stated regions (`RunCall.AcceptsFramed` at the framed nodes `F`
-keeping the supports `S`), its read summaries checked, and the field
-`FramedObligations r spec F S`: the returns `framedRet S` hold at the
-executions the claim is about (`FramedReturnsReachedW`, by `ret_reachedW`,
-from the check). `framedReturns_of_main` gives `FramedReturnsGuarantee` from the
+keeping the supports `S`), its read summaries checked, and the checks at
+its request; the returns `framedRet S` hold at the executions the claim
+is about (`FramedReturnsReachedW`, `framedReturns_reached`, from the
+checks). `framedReturns_of_main` gives `FramedReturnsGuarantee` from the
 framed run by `RunSoundFramed` (`run_sound_framed`), and
 `framedRun_of_returnsW` the main graph's five clauses of
 `FramedRequestSafe r (spec.frame r)`. `framed_requestSafe` (under `RunSound`,
 `RunKeepsSummaries` and the request over the file's store) and
-`member_safe`'s framed branch are proved from it; a field leaves the
-structure in the commit that proves it from the check. `passMember`
+`member_safe`'s framed branch are proved from it. `passMember`
 checks a framed plan and refuses it (`framedRefusal`, [what the pass
 checks](#what-the-pass-checks)) until none is left. **The codes are checked by the ordinary pass**,
 so a code's closure meets its ordinary arrow, and **the sixth clause** of
@@ -1270,9 +1271,8 @@ read from slots, the node's set $`T_l`$, the closure of the operand slots'
 sets at every context and node sharing the call's continuation and
 handler, checked closed, and each kept support passing `frameCheckAt` at
 $`\Psi_c(l)=\Theta_C\sqcup\Psi_C\sqcup W(T_l)`$ there). It refuses at
-the first that fails, and otherwise at `FramedObligations`, the two
-premises on the initial configurations (`InitialFits`, `InitialEntry`),
-which no check establishes. The component's checks include
+the first that fails, and otherwise as no member run accepting a framed
+plan. The component's checks include
 `frameFlowB` at the frame's flow (`FramedFrameFlow.lean`: `FFlow.check`,
 `marksB`, `tokensSomeB`, `codesLoweredB`, the closure of the capture
 sites and $`O`$ checked closed, the initialization's node expressions and
@@ -1316,9 +1316,9 @@ main graph, $`W_c`$ computed and the supports kept by the check at
 $`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
 framed run (`RunCall.AcceptsFramed`) at the plan's framed nodes; the
 checks at the request (`FramedAccepted.request`, `FramedSpec.requestB` at
-`callEffects`); and the premises on the initial configurations
-(`FramedAccepted.obligations`, `FramedObligations`: `InitialFits`,
-`InitialEntry`).
+`callEffects`). The premises on the initial configurations
+(`InitialFits`, `InitialEntry`) are read from the component's checks
+(`FramedSpec.initialFits`, `FramedSpec.initialEntry`).
 
 ## Restrictions
 
@@ -1640,7 +1640,7 @@ Lean (proved, `FramedReturns.lean`):
   expressions and of the realm's heap; `noRestB` from the component's
   binding checks (`componentBindingRefusal_none`). Its other premises are
   `ret_reachedW_frame`'s.
-- `FramedObligations.reached` (proved, `FramedReached.lean`):
+- `framedReturns_reached` (proved, `FramedReached.lean`):
   `ret_reachedW_public` with every premise that is a check read from the
   pass's: the component's at the frame's flow (`frameFlowB_sound`,
   `frameFlow_checks`), the request's (`framedNodesAt_sound`,
@@ -1652,9 +1652,9 @@ Lean (proved, `FramedReturns.lean`):
   program's starts by `FramedSpec.starts_checks` (`marksB` and
   `realizedFlowB` at the frame's flow, the start a label, the
   initialization free of runs); the two premises on the initial
-  configurations, `InitialFits` and `InitialEntry`, from
-  `FramedObligations`, whose fields they are. At the pass's checks both
-  are false ([the initialization in the flow](#the-initialization-in-the-flow)).
+  configurations, `InitialFits` and `InitialEntry`, from the component's
+  checks (`FramedSpec.initialFits`, `FramedSpec.initialEntry`,
+  `FramedInitial.lean`; [the initialization in the flow](#the-initialization-in-the-flow)).
 - `ret_reachedW_public` (proved, `FramedStarts.lean`): `ret_reachedW_spec`
   with the frame's invariants read along the program. The program's
   states (`ProgOk`: `wfS`, a heap free of runs, layout provenance,
@@ -1694,14 +1694,13 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f} {spec : FramedSpec _}
 
 Proved: the sixth clause by `codesAccepted_guarantees` and
 `framedCode_of_guarantee`; the five main-graph clauses by
-`framedRun_of_returnsW` from `FramedObligations`' framed nodes and returns,
-the guarantee and the reached returns: at each call and history the frame
+`framedRun_of_returnsW` from the plan's framed nodes and returns, the
+guarantee and the reached returns: at each call and history the frame
 starts from, `SafeRet.underW` (proved, by induction on the budget) reads the
 returns at each step keeping $`\Theta_C`$ from the invariant, and claims
 nothing past a step breaking it. The guarantee is `framedReturns_of_main`'s,
 from the framed main run `FramedAccepted` holds; the returns are
-`FramedObligations.reached`, which leaves the structure when `ret_reachedW`
-gives it.
+`framedReturns_reached`'s.
 
 ### The headline
 
@@ -1836,7 +1835,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
 (`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
 `FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
-`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `capSig_not_lowered` (`FramedStarts.lean`); `OCapFn.inst`, `SelfFn.ocapFn` (`ReadOnlyFitsCheck.lean`), `ocapFnB_sound` (`ReadOnlyFitsDecide.lean`); `FramedObligations.reached` (`FramedReached.lean`); `entryXs_root` (`FramedHistory.lean`).
+`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `capSig_not_lowered` (`FramedStarts.lean`); `OCapFn.inst`, `SelfFn.ocapFn` (`ReadOnlyFitsCheck.lean`), `ocapFnB_sound` (`ReadOnlyFitsDecide.lean`); `prov_mono`, `prov_loweredSrc`, `instantiate_of_scoped`, `realmSlot_vj`, `realmSlot_scoped`, `init_fits`, `FramedSpec.frameFlow_checks`, `FramedSpec.init_checks`, `FramedSpec.initialFits`, `FramedSpec.initialEntry`, `FramedSpec.codeOk_ok` (`FramedInitial.lean`); `framedReturns_reached` (`FramedReached.lean`); `entryXs_root` (`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1846,12 +1845,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
-`project`, `keeps_canonical`, `ofits_sound` at `OFits.makeGraphC`'s
-open `CapFn` and `goodIn_vals_vj` at codes holding no located value
-([the initialization in the flow](#the-initialization-in-the-flow)),
-`InitialFits` and `InitialEntry` from the checks of
-[the initialization in the flow](#the-initialization-in-the-flow),
-`ro_of_readOnlyShape`, `passMember_sound`'s
+`project`, `keeps_canonical`, `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 
 **To be proved, milestone 2**: `copies_sound`, `witness_of_path`,

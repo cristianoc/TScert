@@ -1,4 +1,4 @@
-import Verification.Source.Claims.FramedStarts
+import Verification.Source.Claims.FramedInitial
 import Verification.Source.Claims.PassUnitMember
 
 /-! # The framed returns, from the checks the pass makes
@@ -33,8 +33,9 @@ callback row of the client obligation (`FramedSpec.CallbacksWithin`, a
 trust). The invariants of the frame's executions are read along the
 program (`ret_reachedW_public`), from the checks of its starts
 (`FramedSpec.starts_checks`) and the two premises on the initial
-configurations, `FramedObligations`' fields. `FramedObligations.reached`
-assembles them. -/
+configurations, which the component's checks give
+(`FramedSpec.initialFits`, `FramedSpec.initialEntry`).
+`framedReturns_reached` assembles them. -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
@@ -158,15 +159,6 @@ theorem nodeProtocolOf_ge {P : Package} [DecidableEq P.Site] [Hashable P.Site] (
 namespace FramedSpec
 variable {ι : Type} (spec : FramedSpec ι)
 
-/-- **The component's checks at the frame's flow** (proved, by
-`frame_transport` from the check `componentBindingRefusal` runs at the
-flow with the frame's sites and decided tags). -/
-theorem frameFlow_checks (h : spec.componentRefusal.val = none) :
-    frameFlowB spec.fflow spec.lay spec.realm spec.initE spec.initK spec.initL = true :=
-  frame_transport spec.C spec.checked
-    (fun _ Fl => frameFlowB Fl spec.lay spec.realm spec.initE spec.initK spec.initL = true)
-    (componentBindingRefusal_none (spec.componentRefusal_none h)).2.2.2.2.2.2.2.1
-
 /-- **The checks of a plan's framed nodes at the frame's flow** (proved,
 by `frame_transport` from the check at the flow with the frame's sites and
 decided tags). -/
@@ -206,14 +198,15 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 /-- **The framed returns at the executions the claim is about, from the
 checks** (proved, `ret_reachedW_public`): where the component's binding
 checks refuse nothing and the request's checks pass (`requestB`, each
-framed node's callee's stated effect read by `eff`), the initial
-configurations fit the flow and are entries (`FramedObligations`) and
-calls meet the callback row of the client obligation at `eff` (`CallbacksWithin`), the returns of the
-plan's framed nodes keeping their supports hold at the executions the
-frame's claim is about, read at their worlds. -/
-theorem FramedObligations.reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
+framed node's callee's stated effect read by `eff`), and calls meet the
+callback row of the client obligation at `eff` (`CallbacksWithin`), the
+returns of the plan's framed nodes keeping their supports hold at the
+executions the frame's claim is about, read at their worlds; the initial
+configurations fit the flow and are entries by the component's checks
+(`FramedSpec.initialFits`, `FramedSpec.initialEntry`). -/
+theorem framedReturns_reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
     {eff : Nat → Option Footprints.Footprint} (hcomp₀ : spec.componentRefusal.val = none)
-    (hreq : spec.requestB r eff = true) (hob : FramedObligations r spec) (hcb : spec.CallbacksWithin r eff) :
+    (hreq : spec.requestB r eff = true) (hcb : spec.CallbacksWithin r eff) :
     FramedReturnsReachedW r (spec.frame r) (Verification.TolerantFrames.framedFOf spec.framed)
       (Verification.TolerantFrames.framedRet (Verification.TolerantFrames.framedSOf spec.framed))
       (fun _ _ _ _ => True) := by
@@ -224,7 +217,7 @@ theorem FramedObligations.reached {spec : FramedSpec ι} {r : SourceRequest σ �
   obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound (spec.framedNodes_frame hn)
   exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
     (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hLi hRl hRw hFa hmk hst hreal hEf
-    hob.fits hob.entry htok hlow (compB_sound hc) hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
+    (spec.initialFits r hcomp₀) (spec.initialEntry r hcomp₀) htok hlow (compB_sound hc) hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT
     (fun l _ p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).2) hslots

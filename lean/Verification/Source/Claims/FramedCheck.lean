@@ -22,7 +22,7 @@ states the plan's restrictions (`framedRestriction`), the realm and the
 initialization of the component (`componentInit`), and its document, which
 the decoder (`FramedSpec.decode`) checks against the flow it recomputes;
 `FilePlans.passMember` checks the plan and refuses it
-(`FilePlans.framedRefusal`) until its obligations are discharged. -/
+(`FilePlans.framedRefusal`). -/
 
 namespace Verification.SourceClaimJson
 open Lean Verification.TolerantFrames.ReadOnly ControlFlow PositiveGraphs

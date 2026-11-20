@@ -185,8 +185,9 @@ make a sound table (`codesAccepted_sound`); the main graph's framed run
 over it, accepted in the framed mode at its framed nodes
 (`acceptsFramed_of_acceptedWalk`), gives the main graph's clauses at framed
 returns (`framedReturns_of_main` under the graph theorem at framed returns,
-`run_sound_framed`), and with the returns `FramedAccepted`'s obligations
-state, the five main-graph clauses (`framedRun_of_returns`); the codes'
+`run_sound_framed`), and with the returns at the executions the claim is
+about (`framedReturns_reached`), the five main-graph clauses
+(`framedRun_of_returnsW`); the codes'
 clause by `codesAccepted_guarantees`, each code's guarantee read on the
 term that runs it along every set of executions
 (`framedCode_of_guarantee`). -/
@@ -197,8 +198,8 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec)
     (hcb : spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r)) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hreq, hob⟩ := hacc
-  have hret := FramedObligations.reached (by rw [spec.componentRefusal.property]; exact hcomp) hreq hob hcb
+  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hreq⟩ := hacc
+  have hret := framedReturns_reached (by rw [spec.componentRefusal.property]; exact hcomp) hreq hcb
   rw [← hfr] at hret
   let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True
   have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by

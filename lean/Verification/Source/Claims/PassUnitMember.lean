@@ -79,22 +79,6 @@ inductive MainAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : Sour
 
 end
 
-section
-variable {σ ι : Type} [Labels ι] [StoreView σ ι]
-
-/-- **The framed claim's obligations** (the draft "Accepting a unit
-through the read-only frame", "The flow along a program"): the premises
-of the returns at reached executions from a program's initial
-configurations (`ret_reachedW_public`) that no check establishes: every
-initial configuration fits the flow at the history before any entry
-(`InitialFits`) and is an entry (`InitialEntry`). With them and the
-checks the pass makes, the returns hold at the executions the claim is
-about (`FramedObligations.reached`). A field leaves this structure in the
-commit that proves it. -/
-structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
-  fits : spec.InitialFits r
-  entry : spec.InitialEntry r
-end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass
 checks"): the binding checks that read its component alone passing
@@ -104,12 +88,10 @@ the ordinary pass (`CodesAccepted`), the read summaries their runs leave
 checked; each stated region meeting its entry conditions; its main graph,
 over the codes' table, its walk accepted at its bound and stated regions
 (`RunCall.AcceptsWalk`) at the plan's framed nodes (`c.framed`), its read
-summaries checked; the checks that read the request (`FramedSpec.requestB`,
-each framed node's callee's stated effect read by `callEffects`); and the
-framed claim's obligations no check establishes (`FramedObligations`).
-`FilePlans.passMember` refuses every framed plan, so no member `passGroup`
-accepts is accepted by this constructor until every obligation is proved
-from the checks the pass makes. -/
+summaries checked; and the checks that read the request
+(`FramedSpec.requestB`, each framed node's callee's stated effect read by
+`callEffects`). `FilePlans.passMember` refuses every framed plan, so no
+member `passGroup` accepts is accepted by this constructor. -/
 structure FramedAccepted (f : FilePlans) (r : Req f)
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop where
   codes : ∃ a₀ a₁ : Answered (StoreView.graph f.F.store),
@@ -125,7 +107,6 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
   component : componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
     spec.initOrder spec.initE spec.initK spec.initL spec.family spec.file spec.fns spec.C = none
   request : spec.requestB r (callEffects (StoreView.graph f.F.store) r) = true
-  obligations : FramedObligations r spec
 
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each

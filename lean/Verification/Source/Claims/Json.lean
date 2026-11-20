@@ -887,10 +887,7 @@ the wire's $`\Psi_C`$ and $`\Theta_C`$, and the callee's stated effect
 (`framedSupportsAt`); then its main graph walked with those nodes framed
 (`passMemberGraph` at the request's graph plan), settled as a member's
 run is (the candidates an edge lacks left out). Its text is the first that
-fails, and otherwise the obligations the framed claim still needs:
-`FramedObligations`, every initial configuration fitting the flow and
-being an entry, which no check establishes. A framed plan is never
-accepted here. -/
+fails; a framed plan is never accepted here. -/
 def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
     (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : String := Id.run do
@@ -947,7 +944,7 @@ def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos 
             framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r) eff)]
         if let some (w, _) := reqChecks.find? (!·.2 ()) then
           return s!"framed plan: the binding check of {w} fails"
-        return s!"framed plan of {name}: its binding checks pass, its framed call nodes {nodes} keep only supports the frame's check passes, and its main graph's framed walk is accepted; refused: the obligations FramedObligations (InitialFits, InitialEntry: every initial configuration fits the flow and is an entry) are not established"
+        return s!"framed plan of {name}: its binding checks pass, its framed call nodes {nodes} keep only supports the frame's check passes, and its main graph's framed walk is accepted; refused: no member run accepts a framed plan"
       | .refused w (some (t, xs)) _ =>
         let held := match g.plans[i]? with
           | some (.ok p) => (p.parts.2.2.candidates.filter fun (q : Nat × List HeapKnowledge.IndexAtom) => q.1 == t).flatMap
