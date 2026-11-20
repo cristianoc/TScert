@@ -1,0 +1,370 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">4 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-300"><code>3ba496aceb580caf6531d8bd16348075dc0a3cbc..pr-300</code></a><ul><li>4 commits</li><li>changes: 6 Tooling, 1 Wire, 1 Definition, 1 Check</li><li>parts: <span class="chip">parser</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip strong">wire</span> <span class="chip">tests</span></li><li>wire: strict JSON and symbol validation retained; forced proposals are explicit arguments</li></ul></li></ul></section>
+<h2 id="g-pr-300"><code>3ba496aceb580caf6531d8bd16348075dc0a3cbc..pr-300</code></h2><article class="card" id="c-b77bba1c9"><header><div><div class="sha">b77bba1c9 · Cristiano Calcagno · Nov 20, 09:48</div><h3>Classify TypeScript libraries without loading their syntax trees</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Reading the declaration graph for pretext's prepare.ts requested the compiler's full syntax trees for default libraries just to tell whether to exclude them. A profiled parse spent time decoding those trees.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">front end: declaration graph discovery</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Read the source file and classify it by the compiler's library flag.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Read the library flag from the same program's file metadata. Resolve</span><span class="ln">paths as before and load source files when their declarations are needed.</span></pre></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>field-equality-union</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">same declaration graph</span></summary><pre class="code"><span class="tk-c">// A field's equality with a string literal is a fact of the field where its</span>
+<span class="tk-c">// type is a union holding objects too (parsed JSON): a later read of the</span>
+<span class="tk-c">// field is of the literal, from a record's field and a dictionary's entry,</span>
+<span class="tk-c">// through one test or either of two.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> = <span class="tk-k">null</span> | boolean | number | string | <span class="tk-t">Json</span>[] | { [key: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">export</span> <span class="tk-k">function</span> kindOf(c: { kind: <span class="tk-t">Json</span> }): <span class="tk-s">&quot;a&quot;</span> | <span class="tk-k">null</span> {
+  <span class="tk-k">let</span> mode: <span class="tk-s">&quot;a&quot;</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (c.kind === <span class="tk-s">&quot;a&quot;</span>) mode = c.kind;
+  <span class="tk-k">return</span> mode;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> codeKind(c: {
+  [key: string]: <span class="tk-t">Json</span>;
+}): <span class="tk-s">&quot;construct&quot;</span> | <span class="tk-s">&quot;sloppy&quot;</span> | <span class="tk-k">null</span> {
+  <span class="tk-k">let</span> mode: <span class="tk-s">&quot;construct&quot;</span> | <span class="tk-s">&quot;sloppy&quot;</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (c.kind === <span class="tk-s">&quot;construct&quot;</span> || c.kind === <span class="tk-s">&quot;sloppy&quot;</span>) mode = c.kind;
+  <span class="tk-k">return</span> mode;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The pinned client supplies the same default-library flag for the same program snapshot. The fragment for prepare.ts matches byte for byte.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">tools</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext prepare.ts front end, 17.51 s → 13.18 s, 12377608 identical bytes</dd><dt>Tests</dt><dd>compiler API audit and unchecked-access audit</dd></dl>
+<details><summary>4 files changed, 6 insertions(+), 6 deletions(-)</summary><pre class="code"> docs/COMPILER-API.md        | 1 +
+ docs/SOURCE-CONTRACTS.md    | 2 +-
+ tools/compiler-api.mts      | 1 +
+ tools/declaration-graph.mts | 8 +++-----</pre></details>
+<div class="sha">with Codex</div>
+</article>
+<article class="card" id="c-9cbf64fca"><header><div><div class="sha">9cbf64fca · Cristiano Calcagno · Nov 20, 10:22</div><h3>Share file and store checks across verifier requests</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A pretext file's component report took 99 seconds before its first function could be checked. Planning each group decoded the importer again. Checking a refused call rebuilt the component's capture closure for each protocol part and repeated the same built-in prototype check during certificate walks.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">verifier: component frame and protocol tables</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Look up numbered entries in lists, scan the protocols for individual</span><span class="ln">sites and rebuild the capture closure when querying a framed part.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Use arrays for numbered entries and index protocol entries by site,</span><span class="ln">preserve their first-occurrence ordering, and stop closures at their</span><span class="ln">fixed point. Materialize the charged kinds and closed captured sites.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">verifier: planning and certificate checks</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Recompute the import scope, reachable names, generic references and</span><span class="ln">loop-head facts for successive uses. Recreate the image checker on</span><span class="ln">every walk over an immutable equation store.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Share file-level import reads, traverse each reachable body once and</span><span class="ln">reuse a store's checked image computation. Share scoped expression</span><span class="ln">effects and compute arrow sites only for claims that refer to them.</span><span class="ln">Index a proposed store map's scheme binders before checking its rows.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">verifier: document decoding</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Scan for duplicate decoded keys before parsing. Rebuild each document subtree while checking symbol identities. Decode the importer's wire document again in Node to inspect its module list.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Reject duplicate keys during parsing, preserving UTF-8 and surrogate checks. Share unchanged subtrees and use the parsed module list.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">verifier: controls and observations</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Environment variables selected forced proposals, could omit a verdict</span><span class="ln">and could replace the verifier executable in the production route.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Pass forced proposals as explicit keyed command arguments. Run probes</span><span class="ln">for their diagnostics and inject the failure stand-in inside its test.</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">build: certificate decisions and process identities</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Generate a separate native branch for each ordinary local rule, compile</span><span class="ln">a control-only mutation at production optimization, and read entire</span><span class="ln">executables into new buffers to identify their contents.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Share the ordinary decision branch, compile the mutation at -O0 and</span><span class="ln">hash large files incrementally with the same SHA-256 algorithm.</span></pre></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>field-equality-union</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">both field checks hold</span></summary><pre class="code"><span class="tk-c">// A field's equality with a string literal is a fact of the field where its</span>
+<span class="tk-c">// type is a union holding objects too (parsed JSON): a later read of the</span>
+<span class="tk-c">// field is of the literal, from a record's field and a dictionary's entry,</span>
+<span class="tk-c">// through one test or either of two.</span>
+<span class="tk-k">type</span> <span class="tk-t">Json</span> = <span class="tk-k">null</span> | boolean | number | string | <span class="tk-t">Json</span>[] | { [key: string]: <span class="tk-t">Json</span> };
+<span class="tk-k">export</span> <span class="tk-k">function</span> kindOf(c: { kind: <span class="tk-t">Json</span> }): <span class="tk-s">&quot;a&quot;</span> | <span class="tk-k">null</span> {
+  <span class="tk-k">let</span> mode: <span class="tk-s">&quot;a&quot;</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (c.kind === <span class="tk-s">&quot;a&quot;</span>) mode = c.kind;
+  <span class="tk-k">return</span> mode;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> codeKind(c: {
+  [key: string]: <span class="tk-t">Json</span>;
+}): <span class="tk-s">&quot;construct&quot;</span> | <span class="tk-s">&quot;sloppy&quot;</span> | <span class="tk-k">null</span> {
+  <span class="tk-k">let</span> mode: <span class="tk-s">&quot;construct&quot;</span> | <span class="tk-s">&quot;sloppy&quot;</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">if</span> (c.kind === <span class="tk-s">&quot;construct&quot;</span> || c.kind === <span class="tk-s">&quot;sloppy&quot;</span>) mode = c.kind;
+  <span class="tk-k">return</span> mode;
+}</pre></details></li><li><details><summary><code>invalid-round-conditional-path-call</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a call can change the tested property</span></summary><pre class="code"><span class="tk-c">// Spine growth permits replacing a tested field's value through another alias.</span>
+<span class="tk-k">type</span> <span class="tk-t">Expression</span> =
+  | { kind: <span class="tk-s">&quot;property&quot;</span>; name: { text: string } }
+  | { kind: <span class="tk-s">&quot;other&quot;</span> };
+<span class="tk-k">export</span> <span class="tk-k">function</span> wrong(
+  node: { expression: <span class="tk-t">Expression</span> | <span class="tk-k">undefined</span> },
+  change: () =&gt; <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-k">void</span>&gt;,
+): <span class="tk-t">Expression</span> {
+  <span class="tk-k">if</span> (!node.expression) <span class="tk-k">return</span> { kind: <span class="tk-s">&quot;other&quot;</span> };
+  <span class="tk-k">if</span> (
+    node.expression.kind === <span class="tk-s">&quot;property&quot;</span> &amp;&amp;
+    node.expression.name.text === <span class="tk-s">&quot;apply&quot;</span>
+  )
+    <span class="tk-k">return</span> { kind: <span class="tk-s">&quot;other&quot;</span> };
+  <span class="tk-k">if</span> (
+    node.expression.kind === <span class="tk-s">&quot;property&quot;</span> &amp;&amp;
+    [<span class="tk-s">&quot;call&quot;</span>, <span class="tk-s">&quot;bind&quot;</span>].includes(node.expression.name.text) &amp;&amp;
+    (change(), <span class="tk-k">true</span>)
+  )
+    <span class="tk-k">return</span> node.expression;
+  <span class="tk-k">return</span> { kind: <span class="tk-s">&quot;other&quot;</span> };
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The compiler replacement for a frozen store's image checker carries its equality to the original. The indexed store-map check agrees with the original on every map. Indexed component charges give the original protocol by definitional equality. The pass still checks the evidence of each unit against its frozen store.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>SourceClaimJson.PassUnit.mode8Accepted_sound · SourceClaimJson.componentIndex_eq · EquationStore.Checked.imageCheck_eq_cached</dd><dt>Wire</dt><dd>strict JSON and symbol validation retained · forced proposals are explicit arguments</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>15-component frame report 99259 ms → 2261 ms identical bytes · 12.38 MB strict JSON 935 ms → 303 ms · certificate object compilation 58.68 s → 26.27 s CPU</dd><dt>Tests</dt><dd><span class="test pos">field-equality-union</span> <span class="test neg">invalid-round-conditional-path-call</span> <span class="test forged">duplicate-key</span> <span class="test forced">start-facts</span></dd></dl>
+<details><summary>39 files changed, 575 insertions(+), 410 deletions(-)</summary><pre class="code"> dev/perf-gate.mts                                  |   2 +-
+ dev/record-render.mts                              |   4 +-
+ docs/DESIGN.md                                     |   2 +-
+ docs/FOOTPRINTS.md                                 |   2 +-
+ docs/OBLIGATION-DIAGNOSTICS.md                     |   2 +-
+ docs/PROGRAM-TYPING.md                             |   6 +-
+ docs/REQUEST-PROTOCOL.md                           |  14 +--
+ docs/SINGLE-PASS-CONTROLS.md                       |   6 +-
+ docs/SINGLE-PASS-FRONT.md                          |  34 +++---
+ docs/SINGLE-PASS-THEOREM.md                        |  10 +-
+ docs/SINGLE-PASS.md                                |  42 ++++----
+ docs/SOURCE-ELABORATION.md                         |  18 ++--
+ docs/STAGE-STORE.md                                |   2 +-
+ lean/Main.lean                                     |   8 +-
+ .../Verification/Programs/ProgramCertificates.lean |  10 +-
+ lean/Verification/Source/Claims/Elaboration.lean   |  36 ++++---
+ lean/Verification/Source/Claims/FragmentFront.lean |  44 ++++++--
+ lean/Verification/Source/Claims/FramedCheck.lean   |  30 ++++--
+ lean/Verification/Source/Claims/HeadInference.lean |  30 +++---
+ lean/Verification/Source/Claims/Imports.lean       |  87 +++++++++-------
+ lean/Verification/Source/Claims/MemberSettle.lean  |   8 +-
+ lean/Verification/Source/Claims/PassProposals.lean |  15 ++-
+ .../Source/Claims/PassUnitInterfaces.lean          |   4 +-
+ .../Source/Claims/PassUnitVerdict.lean             |   2 +-
+ .../Source/Claims/RegionInference.lean             |   2 +-
+ lean/Verification/Source/ComponentChecks.lean      | 116 ++++++++++++---------
+ lean/Verification/Source/EffectCodec.lean          |  86 +++++++--------
+ lean/Verification/Source/Equations/Store.lean      |  17 ++-
+ lean/Verification/Source/Fragment.lean             |  46 +++++---
+ lean/Verification/Source/RequestCli.lean           |  82 +++++++--------
+ lean/Verification/Source/Synthesis.lean            |  68 ++++++------
+ lean/Verification/Types/StoreMapsCheck.lean        |  40 +++++++
+ pipeline/module-interfaces.mts                     |  30 +++---
+ pipeline/stage-execution.mts                       |  28 +++--
+ pipeline/verify-source.mts                         |   7 +-
+ tests/node-runs.mts                                |   2 +-
+ tests/single-pass-control-inputs.mts               |   2 +-
+ tests/single-pass-controls.mts                     |  39 +++++--
+ tests/single-pass-mutations.mts                    |   2 +-</pre></details>
+<div class="sha">with Codex</div>
+</article>
+<article class="card" id="c-293c86999"><header><div><div class="sha">293c86999 · Cristiano Calcagno · Nov 20, 10:32</div><h3>Hold the test worker past its preparation deadline</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>With competing jobs, a one-millisecond deadline could expire before the runner reported its own startup. The census then correctly reported a runner failure, but the test expected a preparation timeout.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">controls: worker preparation timeout</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">Depend on ordinary startup taking longer than one millisecond.</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">Start the runner on a test-only worker that sleeps for thirty seconds,</span><span class="ln">give it a three-second deadline and assert that every selected unit</span><span class="ln">records the resulting preparation timeout. Reuse the stand-in loader</span><span class="ln">from the incomplete-refusal control.</span></pre></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>five selected units recorded the preparation timeout in the targeted control</dd><dt>Tests</dt><dd>worker preparation over its limit · step failures</dd></dl>
+<details><summary>1 file changed, 22 insertions(+), 10 deletions(-)</summary><pre class="code"> tests/single-pass-controls.mts | 32 ++++++++++++++++++++++----------</pre></details>
+<div class="sha">with Codex</div>
+</article>
+<article class="card" id="c-7b8e3f22b"><header><div><div class="sha">7b8e3f22b · Cristiano Calcagno · Nov 20, 12:08</div><h3>Reuse template row forms and shared list tails in type comparisons</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>blocker-round-imported-find-shape.ts#unionMembers</span><span>blocker-compiler-api-token-subtype.ts#chainComparison</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Checking a property of a TypeScript compiler node asks which kind of type row its head denotes many times. Answering fetched the template, even though its constructor is fixed when the equations are frozen. Comparing method signatures also traversed equal lists of operands held by both sides. These two operations appeared repeatedly in the native profiles of the slow corpus functions.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">the kind of a frozen type row</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Read the head's entire template to select its row constructor</span>.</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">Read the constructor from a table indexed by the head</span>. <span class="m-text">For every</span></span></div><div class="row"><span><span class="m-text">stored entry Lean proves that it is the constructor of the template</span>.</span></div><div class="row"><span><span class="m-text">An equation system without a table reads its template as before</span>.</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">equality of lists of type operands</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Compare elements and tails structurally, including shared lists.</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>A shared tail finishes the comparison. A shared element finishes that element's comparison. All other elements use their ordinary equality check. The compiler replacement proves equality to the original decision procedure for every element type.</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-round-imported-find-shape</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the mapped declarations retain their fields</span></summary><pre class="code"><span class="tk-c">// A host-declaration map/get/find result losing its node field in an importing module.</span>
+<span class="tk-c">// Census functions:</span>
+<span class="tk-c">// computed-types.mts#computedType</span>
+<span class="tk-c">// computed-types.mts#aliasApplication</span>
+<span class="tk-c">// computed-types.mts#unionMembers</span>
+<span class="tk-c">// computed-types.mts#distributed</span>
+
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">Checker</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/sync&quot;</span>;
+
+<span class="tk-k">import</span> <span class="tk-k">type</span> {
+  <span class="tk-t">Node</span>,
+  <span class="tk-t">TypeNode</span>,
+  <span class="tk-t">TypeReferenceNode</span>,
+} <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+
+<span class="tk-c">// The imported module is part of the missing-field example's context.</span>
+<span class="tk-k">import</span> { computedAlias } <span class="tk-k">from</span> <span class="tk-s">&quot;../../tools/type-term.mts&quot;</span>;
+
+<span class="tk-k">type</span> <span class="tk-t">ComputedContext</span> = { checker: <span class="tk-t">Checker</span> };
+
+<span class="tk-k">type</span> <span class="tk-t">Member</span> = { node: <span class="tk-t">TypeNode</span>; params: <span class="tk-t">ReadonlyMap</span>&lt;<span class="tk-t">Node</span>, <span class="tk-t">Member</span>&gt; };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> unionMembers(
+  context: <span class="tk-t">ComputedContext</span>,
+  node: <span class="tk-t">TypeReferenceNode</span>,
+  params: <span class="tk-t">ReadonlyMap</span>&lt;<span class="tk-t">Node</span>, <span class="tk-t">Member</span>&gt; = <span class="tk-k">new</span> <span class="tk-t">Map</span>(),
+): <span class="tk-t">Member</span>[] {
+  <span class="tk-k">const</span> declarations = (
+    context.checker.getSymbolAtLocation(node.typeName)?.declarations ?? []
+  ).map((d) =&gt; d.resolve());
+  <span class="tk-k">const</span> standing = declarations
+    .map((d) =&gt; d &amp;&amp; params.<span class="tk-k">get</span>(d))
+    .find((m) =&gt; m !== <span class="tk-k">undefined</span>);
+  <span class="tk-k">if</span> (standing) <span class="tk-k">return</span> [{ node: standing.node, params: standing.params }];
+  <span class="tk-k">return</span> [{ node, params }];
+}</pre></details></li><li><details><summary><code>blocker-compiler-api-token-subtype</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the missing structural subtype evidence is still required</span></summary><pre class="code"><span class="tk-c">// A binary operator token meets the Node contract at a call, though the run's</span>
+<span class="tk-c">// selection names some of its kinds and leaves the others: the operator</span>
+<span class="tk-c">// token's tag set, which a selected shape's member is read at, is selected whole.</span>
+<span class="tk-c">// Census functions:</span>
+<span class="tk-c">// fragment-expressions.mts#chainComparison.</span>
+<span class="tk-k">import</span> * <span class="tk-k">as</span> ts <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+
+<span class="tk-k">import</span> <span class="tk-k">type</span> {
+  <span class="tk-t">BinaryExpression</span>,
+  <span class="tk-t">Identifier</span>,
+  <span class="tk-t">Node</span>,
+} <span class="tk-k">from</span> <span class="tk-s">&quot;typescript/unstable/ast&quot;</span>;
+
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">Expr</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;../../tools/fragment.mts&quot;</span>;
+
+<span class="tk-k">import</span> { <span class="tk-t">CHAIN</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;../../tools/fragment.mts&quot;</span>;
+
+<span class="tk-k">import</span> {
+  bindingScope,
+  skipParentheses,
+} <span class="tk-k">from</span> <span class="tk-s">&quot;../../tools/fragment-support.mts&quot;</span>;
+
+<span class="tk-k">import</span> <span class="tk-k">type</span> { <span class="tk-t">Gate</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;../../tools/fragment-parse.mts&quot;</span>;
+
+<span class="tk-k">function</span> chainReceiver(
+  at: <span class="tk-t">Node</span>,
+): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-t">Node</span> | <span class="tk-k">null</span>&gt; {
+  <span class="tk-k">return</span> <span class="tk-k">null</span>;
+}
+
+<span class="tk-k">function</span> inertRead(
+  gate: <span class="tk-t">Gate</span>,
+  receiver: <span class="tk-t">Node</span>,
+): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, boolean&gt; {
+  <span class="tk-k">if</span> (!ts.isIdentifier(receiver)) <span class="tk-k">return</span> <span class="tk-k">false</span>;
+  <span class="tk-k">const</span> declaration = gate.resolve(receiver);
+  <span class="tk-k">return</span> (
+    declaration !== <span class="tk-k">undefined</span> &amp;&amp; !(declaration.flags &amp; ts.<span class="tk-t">NodeFlags</span>.<span class="tk-t">Ambient</span>)
+  );
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> chainComparison(
+  gate: <span class="tk-t">Gate</span>,
+  node: <span class="tk-t">BinaryExpression</span>,
+  op: <span class="tk-s">&quot;===&quot;</span> | <span class="tk-s">&quot;!==&quot;</span> | <span class="tk-s">&quot;==&quot;</span> | <span class="tk-s">&quot;!=&quot;</span>,
+  l: <span class="tk-t">Expr</span>,
+  r: <span class="tk-t">Expr</span>,
+): <span class="tk-t">Modifies</span>&lt;{ values: <span class="tk-s">&quot;any&quot;</span>; spines: <span class="tk-s">&quot;grow&quot;</span> }, <span class="tk-t">Expr</span> | <span class="tk-k">null</span>&gt; {
+  <span class="tk-k">const</span> chainLeft = l.k === <span class="tk-s">&quot;optional&quot;</span>;
+  <span class="tk-k">const</span> chain = chainLeft ? l : r;
+  <span class="tk-k">const</span> other = chainLeft ? r : l;
+  <span class="tk-k">if</span> (chain.k !== <span class="tk-s">&quot;optional&quot;</span> || other.k !== <span class="tk-s">&quot;lit&quot;</span>) <span class="tk-k">return</span> <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> source = chainReceiver(
+    <mark>skipParentheses(chainLeft ? node.left : node.right)</mark>,
+  );
+  <span class="tk-k">if</span> (!source || !inertRead(gate, source)) <span class="tk-k">return</span> <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> receiver = chain.receiver;
+
+  <span class="tk-k">const</span> reread: <span class="tk-t">Expr</span> =
+    receiver.k === <span class="tk-s">&quot;id&quot;</span>
+      ? { k: <span class="tk-s">&quot;id&quot;</span>, pos: chain.at, name: receiver.name }
+      : { k: <span class="tk-s">&quot;this&quot;</span>, pos: chain.at };
+
+  <span class="tk-k">const</span> reads = (e: <span class="tk-t">Expr</span>): <span class="tk-t">Expr</span> | <span class="tk-k">null</span> =&gt; {
+    <span class="tk-k">if</span> (e.k === <span class="tk-s">&quot;id&quot;</span> &amp;&amp; e.name === <span class="tk-t">CHAIN</span>) <span class="tk-k">return</span> reread;
+    <span class="tk-k">if</span> (e.k !== <span class="tk-s">&quot;read&quot;</span>) <span class="tk-k">return</span> <span class="tk-k">null</span>;
+    <span class="tk-k">const</span> inner = reads(e.e);
+    <span class="tk-k">return</span> inner ? { ...e, e: inner } : <span class="tk-k">null</span>;
+  };
+  <span class="tk-k">const</span> body = reads(chain.body);
+  <span class="tk-k">if</span> (!body) <span class="tk-k">return</span> <span class="tk-k">null</span>;
+  <span class="tk-k">const</span> lit = other.lit.a;
+  <span class="tk-k">const</span> equal = op === <span class="tk-s">&quot;===&quot;</span> || op === <span class="tk-s">&quot;==&quot;</span>;
+
+  <span class="tk-k">const</span> undefinedEquals =
+    op === <span class="tk-s">&quot;==&quot;</span> || op === <span class="tk-s">&quot;!=&quot;</span>
+      ? lit === <span class="tk-s">&quot;null&quot;</span> || lit === <span class="tk-s">&quot;undefined&quot;</span>
+      : lit === <span class="tk-s">&quot;undefined&quot;</span>;
+  <span class="tk-k">const</span> absent = undefinedEquals === equal;
+  <span class="tk-k">const</span> test: <span class="tk-t">Expr</span> = {
+    k: <span class="tk-s">&quot;bin&quot;</span>,
+    pos: chain.pos,
+    op: absent ? <span class="tk-s">&quot;==&quot;</span> : <span class="tk-s">&quot;!=&quot;</span>,
+    l: receiver,
+    r: { k: <span class="tk-s">&quot;lit&quot;</span>, pos: [chain.at[<span class="tk-n">0</span>], chain.at[<span class="tk-n">0</span>] + <span class="tk-n">1</span>], lit: { a: <span class="tk-s">&quot;null&quot;</span> } },
+  };
+  <span class="tk-k">const</span> comparison: <span class="tk-t">Expr</span> = {
+    k: <span class="tk-s">&quot;bin&quot;</span>,
+    pos: gate.span(node.operatorToken),
+    op,
+    l: chainLeft ? body : other,
+    r: chainLeft ? other : body,
+  };
+  <span class="tk-k">return</span> {
+    k: <span class="tk-s">&quot;bin&quot;</span>,
+    pos: gate.span(node),
+    op: absent ? <span class="tk-s">&quot;||&quot;</span> : <span class="tk-s">&quot;&amp;&amp;&quot;</span>,
+    l: test,
+    r: comparison,
+  };
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The finite table records only proved row forms. Lean's standard pointer-equality primitive returns early with a proof of equality. Different pointers still require a structural decision. The statement of the end-to-end theorem is unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span></dd><dt>Lean</dt><dd>EquationGraphs.Equations.headForm_eq · listEq_eq_sharedListEq · SourceClaimJson.PassUnit.mode8Accepted_sound</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>alternating native runs, CPU medians · shared list equality alone, unionMembers 15.10 s → 10.22 s · cached forms alone, chainComparison 11.38 s → 9.80 s · verdicts and contracts identical</dd><dt>Tests</dt><dd><span class="test pos">blocker-round-imported-find-shape</span> <span class="test neg">invalid-guard-constant-across-loops</span></dd></dl>
+<details><summary>5 files changed, 55 insertions(+), 2 deletions(-)</summary><pre class="code"> lean/Verification/Tests/AxiomCheck.lean        |  1 +
+ lean/Verification/Types/EquationGraphs.lean    | 21 ++++++++++++++++--
+ lean/Verification/Types/EquationValidator.lean |  4 ++++
+ lean/Verification/Types/ListEquality.lean      | 30 ++++++++++++++++++++++++++
+ lean/Verification/Types/MethodMembers.lean     |  1 +</pre></details>
+<div class="sha">with Codex</div>
+</article>
+</main></body></html>
