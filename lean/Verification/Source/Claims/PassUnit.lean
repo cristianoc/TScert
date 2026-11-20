@@ -315,9 +315,9 @@ end
 boundary (`FunctionPlan.certify`), and the request of the certified plan is
 safe: a graph plan's for every execution (`RequestSafe`), a framed plan's
 under its frame's client obligation (`FramedRequestSafe`), the obligation's
-callback row included (`FramedSpec.CallbacksWithin`: a call of a function
-the client passes whose type states an effect, `callEffects`, changes the
-heap within it). -/
+callback row included (`FramedSpec.CallbacksWithin`: a call of an
+argument's own value at an entry whose type states an effect,
+`callEffects`, changes the heap within it). -/
 def MemberSafe (f : FilePlans) (i : Nat) : Prop :=
   ∃ p c, f.plans[i]? = some (.ok p) ∧ p.certify = .ok c ∧
     match c with

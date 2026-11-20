@@ -481,19 +481,109 @@ def FramedComponent.ownerOf (fc : FramedComponent) (m : Code) : Option String :=
   (fc.cf.codes.zip fc.cf.names).findSome? fun (c, (n, _, _)) =>
     if c == m || (c.1.flatMap (TolerantFrames.ReadOnly.closureLayouts fc.ofC)).any (·.1 == m) then some n else none
 
+section
+variable {P : TolerantFrames.ReadOnly.Package} [DecidableEq P.Site] [Hashable P.Site]
+
+mutual
+/-- **The codes a term's calls may enter**, at a node's slots: for each
+`invoke` and `construct`, the code of the signature a callee slot names
+(`.inl`, a known call entering that code), or else the callee's set
+(`.inr`), each `top` where it has no computed set, with the sets of its
+actuals. Structural over the term, as `callSets`. -/
+def callTargets (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P)
+    (κ : Nat) (d : Nat) (Γ : Nat → Option (Sites P)) : Tm → List ((Code ⊕ Sites P) × List (Sites P))
+  | .invoke f r args =>
+    let set (x : Tm) := (syn F τ φ a κ d Γ x).getD top
+    let tgt : Code ⊕ Sites P := match f with
+      | .var j => if d ≤ j then (match φ (j - d) with | some σ => .inl σ.code | none => .inr (set f)) else .inr (set f)
+      | _ => .inr (set f)
+    (tgt, args.map set) :: callTargets F top τ φ a κ d Γ f ++ callTargets F top τ φ a κ d Γ r ++
+      callTargetsAll F top τ φ a κ d Γ args
+  | .construct f args =>
+    let set (x : Tm) := (syn F τ φ a κ d Γ x).getD top
+    (.inr (set f), args.map set) :: callTargets F top τ φ a κ d Γ f ++ callTargetsAll F top τ φ a κ d Γ args
+  | .letE x b => callTargets F top τ φ a κ d Γ x ++
+      callTargets F top τ φ a κ (d + 1) (consSites ((syn F τ φ a κ d Γ x).getD top) Γ) b
+  | .makeAt _ _ inits | .arrLit inits => callTargetsAll F top τ φ a κ d Γ inits
+  | .indexAt x y | .writeAt _ x y | .arith _ x y | .elemAt x y | .merge _ x y | .makeKey x y =>
+    callTargets F top τ φ a κ d Γ x ++ callTargets F top τ φ a κ d Γ y
+  | .ite x y z | .setElem x y z =>
+    callTargets F top τ φ a κ d Γ x ++ callTargets F top τ φ a κ d Γ y ++ callTargets F top τ φ a κ d Γ z
+  | .readAt _ x | .test _ x | .lenOf x | .spread x | .throw x => callTargets F top τ φ a κ d Γ x
+  | _ => []
+/-- The codes a list of terms' calls may enter. -/
+def callTargetsAll (F : FFlow P) (top : Sites P) (τ : Nat → Sites P) (φ : Nat → Option FnSig) (a : FrameAt P)
+    (κ : Nat) (d : Nat) (Γ : Nat → Option (Sites P)) : List Tm → List ((Code ⊕ Sites P) × List (Sites P))
+  | [] => []
+  | x :: xs => callTargets F top τ φ a κ d Γ x ++ callTargetsAll F top τ φ a κ d Γ xs
+end
+
+/-- The codes node `l` of code `m` may enter at the context `c`
+(`callTargets` of its expression at its slots). -/
+def targetsAtNode (F : FFlow P) (c : FCode P) (m : Code) (l : Nat) : List ((Code ⊕ Sites P) × List (Sites P)) :=
+  match m.1[l]?, m.2[l]? with
+  | some e, some kx => callTargets F (flowSites F) (c.node l).envAt (fun i => c.sigAt ((c.node l).fnAt i))
+      (c.flow.at l kx) (c.node l).cx 0 (fun _ => none) e
+  | _, _ => []
+end
+
+/-- **The codes a framed call's segment runs**, by index (the Read-only
+frames note, (B1), $`\mathrm{seg}(c)`$ read at the codes calls enter):
+from the call at node `l` of code `m`, at every context of `m` and every
+node sharing its continuation and handler, each code a call enters
+(`targetsAtNode`: a known call's code, or each code whose token the
+callee's set holds), closed under the same at every node of every
+context of its members. A native step model is a code of the flow, so the
+calls its model makes of its actuals are among its nodes' calls. `none`
+where a call names a code the flow does not hold. -/
+def FramedComponent.segRun (fc : FramedComponent) (m : Code) (l : Nat) : Option (List Nat) := Id.run do
+  let F := fc.cf.flow
+  let idx (c : Code) : Option Nat := (F.codes.zipIdx.find? fun ((c', _), _) => c' == c).map (·.2)
+  let entered (t : (Code ⊕ Sites (markedPackage fc.ofC fc.cf.O)) × List (Sites (markedPackage fc.ofC fc.cf.O))) :
+      Option (List Nat) :=
+    match t.1 with
+    | .inl c => (idx c).map ([·])
+    | .inr S => some (holdingCodes F S)
+  let start := (F.ctxs m).flatMap fun (_, c) => (sharingNodes m l).flatMap fun l' => targetsAtNode F c m l'
+  let some first := start.mapM entered | return none
+  let mut seen : List Nat := []
+  let mut work := first.flatten
+  for _ in List.range (F.codes.length + 1) do
+    match work with
+    | [] => break
+    | _ =>
+      let fresh := work.eraseDups.filter (!seen.contains ·)
+      seen := seen ++ fresh
+      let mut next : List Nat := []
+      for i in fresh do
+        let some (mi, cs) := F.codes[i]? | return none
+        for (_, c) in cs do
+          for l' in List.range mi.1.length do
+            let some ts := (targetsAtNode F c mi l').mapM entered | return none
+            next := next ++ ts.flatten
+      work := next
+  return some seen
+
 /-- **The module functions a framed call's segment runs the code of**
 (the Read-only frames note, (B1)): at each node of `nodes` of the code `m`,
-the codes of its segment $`\mathrm{seg}(c)`$ (`segCodes` of its callee's
-sets at every context and every node sharing its continuation and
-handler), each read at the module function it belongs to (`ownerOf`).
-The bound of such a call by its segment's charges reads the segment's
-code as lowered, so a verdict reading it rests on the verdicts of those
-functions. -/
-def FramedComponent.segOwners (fc : FramedComponent) (m : Code) (nodes : List Nat) : List String :=
+each code of its segment (`segRun`) read at the module function it belongs
+to (`ownerOf`); a native step model belongs to none. The bound of such a
+call by its segment's charges reads the segment's code as lowered, so a
+verdict reading it rests on the verdicts of those functions. An error
+names a code of the segment the flow does not hold, or one that is
+neither a native step model nor of a module function. -/
+def FramedComponent.segOwners (fc : FramedComponent) (m : Code) (nodes : List Nat) : Except String (List String) := do
   let F := fc.cf.flow
-  (nodes.flatMap fun l =>
-    let Sf := (F.ctxs m).flatMap fun (_, c) => (sharingNodes m l).flatMap fun l' => (callsAtNode F c m l').flatMap (·.1)
-    (segCodes F (flowSites F) fc.cf.host Sf).filterMap fun i => (F.codes[i]?).bind fun (m', _) => fc.ownerOf m').eraseDups
+  let mut out : List String := []
+  for l in nodes do
+    let some seg := fc.segRun m l | throw s!"the segment of framed node {l} enters a code the flow does not hold"
+    for i in seg do
+      if fc.cf.host i then continue
+      let some (mi, _) := F.codes[i]? | throw s!"the segment of framed node {l} holds no code {i}"
+      let some n := fc.ownerOf mi
+        | throw s!"the segment of framed node {l} runs a code of no module function"
+      if !out.contains n then out := out ++ [n]
+  return out
 
 /-- **A forged document** (`--force-proposals`, the controls'): `framed-doc-node`
 names a node no call frames, `framed-doc-support` keeps a support the
@@ -564,7 +654,7 @@ def FilePlans.framedPlan (f : FilePlans) (fuel i : Nat) (fc : FramedComponent) (
     fun p => (componentProtocol F fc.cf.lay p).max (nativeProtocol (nativeSites F fc.cf.lay) p)
   let prot := fun l q => calleeArgB cp 0 arity (requestCode r) l &&
     protRegionB Ψ cp arity (fun j => ro.getD j false) (requestCode r) l q
-  -- (the calls of functions the client passes, as the pass's check reads
+  -- (the calls of arguments' own values at an entry, as the pass's check reads
   -- them: `FramedSpec.clientCallee` at the plan the decoder forms)
   let inner := innerB F fc.entries name m
   let client := fun l => !inner && calleeArgB cp 0 arity (requestCode r) l

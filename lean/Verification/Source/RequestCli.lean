@@ -856,19 +856,25 @@ def PreparedFile.framedVerdict (p : PreparedFile) (f : SourceClaimJson.FilePlans
       -- (a framed node bounded by its segment's charges reads the codes of
       -- its segment as lowered: the verdict rests on the module functions
       -- they belong to, `FramedComponent.segOwners`)
-      let segDeps : List String := match f'.plans[j]? with
-        | some (.ok (.framed _ _ r spec)) =>
+      let segDeps : Except String (List String) := match f'.plans[j]? with
+        | some (.ok (.framed _ _ r spec)) => do
           let own := (spec.framed.map (·.1)).filter fun l =>
             !spec.clientCallee r l && SourceClaimJson.noOutB fc.cf.flow
-          let names := fc.segOwners (SourceClaimJson.realizedCode r) own
-          (List.range fr.units.length).filterMap fun k => match fr.units[k]? with
-            | some (fn, _, none) =>
-              if names.contains fn.name && !(fr.group i).contains k then some (fr.unitId k) else none
-            | _ => none
-        | _ => []
+          let names ← fc.segOwners (SourceClaimJson.realizedCode r) own
+          let unitOf (n : String) : Except String (Option String) :=
+            match (List.range fr.units.length).find? fun k => match fr.units[k]? with
+                | some (fn, _, none) => fn.name == n
+                | _ => false with
+            | some k => pure (if (fr.group i).contains k then none else some (fr.unitId k))
+            | none => throw s!"the segment's module function {n} is no unit of the file"
+          let ids ← names.mapM unitOf
+          pure (ids.filterMap id)
+        | _ => pure []
       return match v with
         | .error w => (.error ("\n".intercalate (s!"{reason}\n{w}" :: why)), [])
-        | .ok deps => (.ok (deps ++ segDeps.filter (!deps.contains ·)), f'.clientComponents (f'.fr.group i))
+        | .ok deps => match segDeps with
+          | .ok sd => (.ok (deps ++ sd.filter (!deps.contains ·)), f'.clientComponents (f'.fr.group i))
+          | .error w => (.error s!"{reason}\nframed plan of {fr.unitId j}: refused: {w}", [])
   return (.error reason, [])
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,

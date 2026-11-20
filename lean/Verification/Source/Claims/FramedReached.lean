@@ -327,7 +327,7 @@ theorem framedReturns_reached {spec : FramedSpec ι} {name : String} {r : Source
     (fun l b₀ a m e L d k x v hl ho hb he hk hL hbt hex hat hv => by
       have hb' := heff l hl
       by_cases hcl : spec.clientCallee r l = true
-      · -- (a function the client passes: the callback row)
+      · -- (an argument's own value at an entry: the callback row)
         simp only [FramedSpec.boundAt, callBound, hcl, ite_true] at hb' ho ⊢
         cases hE : eff l with
         | none => rw [hE] at hb'; cases hb'

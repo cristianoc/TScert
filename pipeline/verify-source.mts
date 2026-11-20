@@ -465,44 +465,43 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     if (!accepted && !trusted && typeof reason !== "string")
       throw Error("tool failure: the single pass printed a verdict without its refusal");
     return { unit, members: strings(field(value, "members")), accepted, trusted,
+      components: Array.isArray(components) ? components.map((c: unknown) => String(c)) : [],
       depends: accepted || trusted ? strings(field(value, "depends")) : [],
       refusal: trusted ? `accepted only under client trust Θ_C (component ${listed})`
         : typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
         : "" };
   }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);
-  // A unit is closed when it and every unit it depends on are accepted; a
-  // unit depended on with no verdict, the file's or a module's, is open.
+  // A unit's dependencies are decided by what it reaches through them, so a
+  // cycle of units is decided together: a unit refused of its own (neither
+  // accepted nor accepted under client trust), or one with no verdict, the
+  // file's or a module's, refuses every unit reaching it, by the first
+  // dependency on a shortest path to it; otherwise a unit reaching one
+  // accepted under client trust is accepted under the client obligations of
+  // the components every such unit lists, and one reaching none is verified.
   const byUnit = new Map(verdicts.map((v) => [v.unit, v]));
-  const closed = new Map(verdicts.map((v) => [v.unit, v.accepted]));
-  const openBy = new Map<string, string>();
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const v of verdicts) {
-      if (closed.get(v.unit) !== true) continue;
-      const open = v.depends.find((d) => closed.get(d) === false || !byUnit.has(d));
-      if (open === undefined) continue;
-      closed.set(v.unit, false);
-      openBy.set(v.unit, open);
-      changed = true;
-    }
-  }
-  // A unit accepted under client trust is open where a unit it depends on
-  // is refused: neither accepted nor accepted under client trust, or open
-  // in turn.
-  const refused = (d: string): boolean => {
-    const w = byUnit.get(d);
-    return w === undefined || (!w.accepted && !w.trusted) || openBy.has(d);
+  const ownRefused = (u: string): boolean => {
+    const w = byUnit.get(u);
+    return w === undefined || (!w.accepted && !w.trusted);
   };
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const v of verdicts) {
-      if (!v.trusted || openBy.has(v.unit)) continue;
-      const open = v.depends.find(refused);
-      if (open === undefined) continue;
-      openBy.set(v.unit, open);
-      changed = true;
+  type Reach = { root: string; via: string } | { components: string[] };
+  const reach = (unit: string): Reach => {
+    const via = new Map<string, string>([[unit, unit]]);
+    const queue = [unit];
+    const components = new Set<string>();
+    for (let k = 0; k < queue.length; k++) {
+      const u = queue[k] ?? "";
+      const w = byUnit.get(u);
+      if (u !== unit && ownRefused(u)) return { root: u, via: via.get(u) ?? u };
+      if (w === undefined) continue;
+      for (const c of w.components) components.add(c);
+      for (const d of w.depends) {
+        if (via.has(d)) continue;
+        via.set(d, u === unit ? d : (via.get(u) ?? d));
+        queue.push(d);
+      }
     }
-  }
+    return { components: [...components] };
+  };
   // A refusal whose record has a source-named summary (`presentObligation`):
   // that summary as an `obligation:` line, after the refusal's first line
   // and any `obligation:` line the pass states.
@@ -520,27 +519,17 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
   const results: UnitResult[] = verdicts.filter((v) => !v.unit.startsWith("module:"))
     .sort((a, b) => place(a.unit) - place(b.unit)).map((v): UnitResult => {
-      if (closed.get(v.unit) === true)
+      if (ownRefused(v.unit))
+        return { unit: v.unit, members: v.members, status: refusalStatus(`reject: ${described(v.refusal)}`),
+          phase: "search", detail: `reject: ${described(v.refusal)}`, depends: [] };
+      const r = reach(v.unit);
+      if ("components" in r && r.components.length === 0)
         return { unit: v.unit, members: v.members, status: "verified", phase: "check", detail: "", depends: v.depends };
-      // A unit open by a dependency: that dependency, then the refusal it
-      // rests on, followed through the dependencies open in turn.
-      const cause = (unit: string): string => {
-        const seen = new Set<string>();
-        let u: string | undefined = unit;
-        while (u !== undefined && !seen.has(u)) {
-          seen.add(u);
-          const d = byUnit.get(u);
-          if (d === undefined) return `${u}: no verdict`;
-          if (!d.accepted && !(d.trusted && openBy.has(u))) return described(d.refusal);
-          u = openBy.get(u);
-        }
-        return "";
-      };
-      const open = openBy.get(v.unit) ?? "";
-      const reason = cause(open);
-      const detail = v.accepted || openBy.has(v.unit)
-        ? `reject: a unit it depends on is refused: ${open}${reason === "" ? "" : `\n${reason}`}`
-        : `reject: ${described(v.refusal)}`;
+      // A unit open by a dependency: the dependency on its path, then the
+      // refusal of the unit refused of its own that the path reaches.
+      const detail = "root" in r
+        ? `reject: a unit it depends on is refused: ${r.via}\n${byUnit.has(r.root) ? described(byUnit.get(r.root)?.refusal ?? "") : `${r.root}: no verdict`}`
+        : `reject: accepted only under client trust Θ_C (component ${r.components.join(", ")})`;
       return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
     });
   const first = results.find((u) => u.status !== "verified");

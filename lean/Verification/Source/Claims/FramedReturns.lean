@@ -949,7 +949,7 @@ the rest are the checks a framed plan's pass runs, the invariants of the
 frame left to prove (the history's `ChkSound` and `StartInv`, the entry's
 fit, keys, typing and slots, the frame check's separation at each framed
 node's entry) and the effect bounding each framed call `own` does not read
-(`hΦ`: the callback row of `Θ_C` at a function the client passes). -/
+(`hΦ`: the callback row of `Θ_C` at an argument's own value at an entry). -/
 theorem ret_reachedW_frame {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (r : SourceRequest σ ι)
     [Hashable ((spec.frame r).F.at (spec.frame r).C).Site]
     [LawfulHashable (Option ((spec.frame r).F.at (spec.frame r).C).Site)]
