@@ -4657,23 +4657,22 @@ atoms all the same:
 ```
 
 where $`\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid \mathrm{apart}(x.f,z.g)\lor\mathrm{sibling}(x.f,z.g)\}`$ (`writeOutput`,
-`writeKeeps`, `write_sound`). A write keeps what is known of the other keys
-of its own object where every alternative of the receiver's type states the
-written field in its first invariant operand (`ownedField`), whose location
-then belongs to its key alone
-([owned locations](POSITIVE-TYPES.md#records)):
+`writeKeeps`, `write_sound`). A write keeps what is known of every other key,
+of any object: a field or a cell location's role records its key (the note
+*Tolerant frames*, (W3); `Role.key?`), so the location the write finds under
+$`f`$ and a location found under $`g\neq f`$ are different locations,
+whatever objects $`x`$ and $`z`$ hold:
 
 ```math
-\frac{\forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\mathrm{dom}(\varphi_0(c))\qquad z\in[x]\qquad g\neq f}
+\frac{g\neq f}
      {\mathrm{sibling}(x.f,z.g)}\ \textsf{write-sibling}
 ```
 
-$`z\in[x]`$ holds $`\rho(z)=\rho(x)`$, and the object's location at $`f`$
-is found by no other key, so the location at $`g`$ is another one
-(`ownedField_sound`). A slot another parameter holds, which may be the same
-object, is no member of $`[x]`$: a write through it keeps nothing of the
-first object's fields (`blocker-pretext-sibling-field-write`;
-`invalid-sibling-field-alias`, run under Node). A field that is an accessor
+(`writeKeeps_ne`, by `SlotRole`). A read link of $`z.g`$ is kept so too
+(`write-sibling-other-object`). A write through a slot that may hold the
+same object at the same key keeps nothing of that field
+(`blocker-pretext-sibling-field-write`; `invalid-sibling-field-alias`, run
+under Node). A field that is an accessor
 answering from the written field is outside the model's records, data
 properties only; the fragment admits no accessor in a literal
 (`invalid-sibling-field-accessor`, run under Node), and the caller contract

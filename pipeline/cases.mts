@@ -2788,6 +2788,7 @@ export const cases: Case[] = [
   { ...positive("stated-extend-value-import", "an imported function stating `spines: \"extend\"`, which its module's run certifies: the closed footprint `{value: any, spine: extend}` crosses the declaration document, and `i < xs.length` holds after the call"),
     project: "pipeline/imports-project" },
   positive("stated-scalar-field-write", "a write of a number to a field of type `number` is within `values: \"scalar\"`: its old and new contents are neither objects nor spines"),
+  positive("write-sibling-other-object", "a write under another key keeps a field's link and facts whatever objects the two slots hold: `c.i === j` holds after `h.extras = []`"),
   positive("stated-field-region-key", "Tolerant frames, Example \"A cursor that may be the record\": a frame `\"c.i\": \"scalar\"` keeps the facts of `h.extras`, `h.widths` and their spines across the call, apart from `c.i` by key and by kind, also where `c` is `h`"),
   negative("invalid-stated-field-region-fields", "the same with the frame `\"c.*\"`: `c`'s fields may be `h`'s, no rule separates them from `h.extras`, and `h.extras[c.i]` is refused (run under Node: `pairAt(h, h)` returns `NaN`)",
     /The callee requires c\.i \+ 1 <= h\.extras\.length/),
