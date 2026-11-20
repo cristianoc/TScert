@@ -1,6 +1,7 @@
 import Verification.Paper.TolerantFrames.ReadOnlyBinding
 import Verification.Source.Claims.FramedFlow
 import Verification.Source.ComponentChecks
+import Verification.Paper.TolerantFrames.ReadOnlyEnterRoots
 
 /-! # The binding checks that read a framed plan's component alone
 
@@ -18,6 +19,9 @@ acceptance reads of its component, evaluated once per component
   executable form `allocCanonAtB`, `allocCanonAtB_eq`): each code's
   allocation sites numbered canonically by the codes' bodies
   (`moduleBody`, a module function's realized code's its request's).
+- **No code collecting a rest** (`noRestB`, the draft's restrictions): no
+  layout of the flow's codes collects a rest, so a run of the component is
+  entered only at a call of its code.
 - **The initialization** (`initB`): the initialization's code allocates,
   node by node, in its order (`order`, by name), each module function's
   closure once, every linked capture the slot holding the closure of the
@@ -201,8 +205,9 @@ theorem allocCanonAtB_eq {P : Package} (num : P.Site → Nat) (base : Nat) (bodi
 and request codes covered (`codesCoverB`), its allocation sites some and
 numbered canonically by the codes' bodies (`moduleBody`) from three per
 code (`allocSomeB`, `allocCanonB` in its executable form
-`allocCanonAtB`), its initialization in its order (`initB`) and the checks
-(S), (K) and (O) at its bodies; `none` where every one passes. -/
+`allocCanonAtB`), no code collecting a rest (`noRestB`), its
+initialization in its order (`initB`) and the checks (S), (K) and (O) at
+its bodies; `none` where every one passes. -/
 def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) (codes : List Code) (names : List (String × Nat × List String))
     (entries : List String) (realmN : Nat) (order : List String) (initE : List Tm)
@@ -210,6 +215,7 @@ def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)
     (fns : List (String × Span × Bool)) (C : Nat) : Option String :=
   let body := moduleBody codes
   let checks : List (String × (Unit → Bool)) := [
+    ("no code collecting a rest (noRestB)", fun _ => noRestB lay),
     ("its flow (FFlow.check)", fun _ => F.check), ("its marks (marksB)", fun _ => F.marksB),
     ("its codes covered (codesCoverB)", fun _ => codesCoverB F (codes ++ codes.map body)),
     ("its allocation sites (allocB)", fun _ =>
@@ -223,7 +229,7 @@ def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)
 /-- **No refusal is every check passing** (proved): where
 `componentBindingRefusal` refuses nothing, the flow's check, its marks,
 the codes covered, the allocation sites some and canonical (`allocCanonB`),
-the initialization and (S), (K) and (O) pass. -/
+no code collecting a rest, the initialization and (S), (K) and (O) pass. -/
 theorem componentBindingRefusal_none {ofC : ComponentTag → Bool} {O : List (Option Nat)}
     {F : FFlow (markedPackage ofC O)} {lay : List (Nat × Bool × Nat × Nat)} {codes : List Code}
     {names : List (String × Nat × List String)} {entries : List String} {realmN : Nat} {order : List String}
@@ -233,13 +239,14 @@ theorem componentBindingRefusal_none {ofC : ComponentTag → Bool} {O : List (Op
     F.check = true ∧ F.marksB = true ∧ codesCoverB F (codes ++ codes.map (moduleBody codes)) = true ∧
       allocSomeB F = true ∧
       allocCanonB id (3 * lay.length) (F.codes.map fun e => moduleBody codes e.1) (moduleBody codes) F = true ∧
+      noRestB lay = true ∧
       initB ofC realmN codes names entries order initE initK = true ∧ componentFrameDiags family file fns C = [] := by
   unfold componentBindingRefusal at h
   rw [← allocCanonAtB_eq]
   cases h1 : F.check <;> cases h2 : F.marksB <;>
     cases h3 : codesCoverB F (codes ++ codes.map (moduleBody codes)) <;> cases h4 : allocSomeB F <;>
     cases h5 : allocCanonAtB id (3 * lay.length) (F.codes.map fun e => moduleBody codes e.1) (moduleBody codes) F <;>
-    cases h6 : initB ofC realmN codes names entries order initE initK <;>
+    cases h7 : noRestB lay <;> cases h6 : initB ofC realmN codes names entries order initE initK <;>
     simp_all [List.find?]
 
 end Verification.SourceClaimJson

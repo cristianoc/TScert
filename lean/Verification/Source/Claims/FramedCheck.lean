@@ -141,10 +141,13 @@ def intrinsicName (x : String) : Bool := x.startsWith "[[" && x.endsWith "]]"
 of its exported types: no two module functions naming each other; every
 outside slot of a module function an audited realm value (a native with a
 step model, `hostModel?`, or an intrinsic object); the rows stating class
-keys only (`clientsByKindB`). The first violated, as its located refusal's
-text. A framed plan's member is moreover a realized module function
+keys only (`clientsByKindB`); every module function of the module with
+closure code (`unplanned` lists those without) and every entry a module
+function. The first violated, as its located refusal's text. A framed
+plan's member is moreover a realized module function
 (`FilePlans.framedPlan`). -/
-def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clients) : Option String :=
+def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clients) (entries unplanned : List String) :
+    Option String :=
   if (closable mods).length != mods.length then
     some "a framed plan's component has module functions naming each other"
   else
@@ -154,8 +157,11 @@ def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clien
   let slots := slots.filter (!·.2.startsWith "%") ++ slots.filter (·.2.startsWith "%")
   match slots.find? fun (_, x) => !(mods.any (·.name == x) || (hostModel? x).isSome || intrinsicName x) with
   | some (g, x) => some s!"a framed plan's module function {g} reads {x}, which is not an audited realm value"
-  | none => if clientsByKindB rows then none
-    else some "a framed plan's component states a `@clients` path key"
+  | none => if !clientsByKindB rows then some "a framed plan's component states a `@clients` path key"
+    else if let some x := unplanned.head? then
+      some s!"a framed plan's module function {x} has no closure code (it declares `this`, or its file plans it at no graph)"
+    else (entries.find? fun x => !(mods.any (·.name == x))).map fun x =>
+      s!"a framed plan's component exports {x}, which is no module function"
 
 /-- **The realm and the initialization of a component** (the draft,
 "Initialization", `initC`): the realm's heap, one identity per audited
@@ -184,7 +190,7 @@ def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List
   -- (at node `k`, the closure of node `j < k` is at slot `k - 1 - j`)
   let closures : List Tm := order.zipIdx.map fun (g, k) =>
     .makeAt (.graph g.ar g.code.1 g.code.2 (g.code.1.length - 1)
-      (g.siblings.map fun x => if mods.any (·.name == x) then .var (k - 1 - slotOf x) else realmValue x) .call false tag) [] []
+      (g.siblings.map fun x => if mods.any (·.name == x) then .var (k - 1 - slotOf x) else realmValue x) .call g.rest tag) [] []
   let exports : Tm := .arrLit (entries.map fun x => .var (order.length - 1 - slotOf x))
   return (realmNames.map fun _ => .nul, closures ++ [exports],
     (List.range order.length).map (fun k => (.bind ⟨k + 1, none⟩, none)) ++ [(.ret, none)], order.map (·.name))
@@ -290,10 +296,10 @@ module functions and rows meet the restrictions, the flow solved once and
 the checks that read the component alone run once (forged where `force`
 asks, `forgeComponent`). -/
 def FramedComponent.of (C : Nat) (ofC : ComponentTag → Bool) (entries : List String) (mods : List ProbeModule)
-    (family : ComponentWire.Components) (file : String) (fns : List (String × Span × Bool)) (force : List String) :
-    FramedComponent :=
+    (unplanned : List String) (family : ComponentWire.Components) (file : String) (fns : List (String × Span × Bool))
+    (force : List String) : FramedComponent :=
   let rows := componentRows family C
-  let restriction := framedRestriction mods rows
+  let restriction := framedRestriction mods rows entries unplanned
   let cf := if restriction.isSome then componentFlow ofC [] entries "" else framedComponentFlow ofC mods entries
   let tag := (mods.head?.map (·.comp)).getD none
   let (realm, initE, initK, initOrder) := componentInit tag mods entries

@@ -328,6 +328,8 @@ plan, located at the unit; the unit's verdict is its ordinary plan's.
 | A module function of a framed unit's component reading a module cell or constant, a native with no step model, or another module's value | Its slot's contents vary with the depth of calls and the component's initialization does not set them | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cell-refused` |
 | A framed unit whose outermost component is a package | Its component's code is beyond the checked file's | [restrictions](drafts/framed-acceptance.md#restrictions) | — |
 | A `@clients` row with a path key in a framed unit's component | Its part needs the declaration's sites | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-path-refused` |
+| A function collecting a rest parameter in a framed unit's component | It enters the component at its rest's binding, whose state's fit bounds the run's slots from below alone | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-rest-refused` |
+| An export of a framed unit's component other than a module function, or a module function declaring `this` | The initialization's last node is the array of the exports' closures, each a module function's | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-export-class-refused` |
 
 ### Opaque Node URLs
 

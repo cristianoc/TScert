@@ -1126,7 +1126,7 @@ read the component alone (`componentBindingRefusal`,
 `FramedComponentChecks.lean`), evaluated once per component and shared
 by its plans, each carrying the evaluation with its value
 (`FramedSpec.componentRefusal`, a value with the equation that it is
-`componentBindingRefusal` at the plan's fields): `FFlow.check`,
+`componentBindingRefusal` at the plan's fields): `noRestB`, `FFlow.check`,
 `marksB`, `codesCoverB` over every module function's realized and request
 codes, `allocB` (`allocSomeB`, and `allocCanonB` at the bodies
 `moduleBody`, a module function's realized code's its request's, from
@@ -1156,7 +1156,8 @@ refused unit that reads it and kept beside the file's other prepared data
 (`PreparedFile.framed`): the module, where it is its family's outermost
 component and imports no other module's value (a located refusal
 otherwise), its module functions (every function a module binding holds,
-each planned alone), the restrictions below, its flow solved once
+each planned alone, its closure collecting a rest where its source
+declares one), the restrictions below, its flow solved once
 (`framedComponentFlow`), $`\Psi_C`$ as defined at its flow's sites, its
 initialization and the checks that read the component alone. Per member:
 its framed call nodes and each node's entry supports the check passes,
@@ -1173,7 +1174,7 @@ group's ordinary refusal; the verdict is the ordinary plan's.
 alone (`FramedAccepted.component`: `componentBindingRefusal` at the
 plan's fields refuses nothing, which `componentBindingRefusal_none`
 reads as `FFlow.check (remark F)`, `marksB`, `codesCoverB`, `allocSomeB`,
-`allocCanonB`, `initB` and (S), (K), (O) over every body of the
+`allocCanonB`, `noRestB`, `initB` and (S), (K), (O) over every body of the
 component, each passing); the binding checks that read the request; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
 main graph, $`W_c`$ computed and the supports kept by the check at
 $`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
@@ -1222,9 +1223,20 @@ then checked by an ordinary plan), and has a control.
   call; that state's fit gives the run's slots their sets as lower bounds
   alone, and the entering step's crossings (`FramedSpec.entryXs`) read a
   call's arguments. Refusal: "framed plan: the binding check of no code
-  collecting a rest (noRestB) fails"; control: a framed walker whose module
-  function has a rest parameter, refused, its ordinary plan's refusal at
-  the call.
+  collecting a rest (noRestB) fails", the first of the component's binding
+  checks; a module function's closure collects a rest where its source
+  declares one, of any type. Control: a framed walker beside a module
+  function with a rest parameter, refused, its ordinary plan's refusal at
+  the call (`bounds-pattern-framed-rest-refused`).
+- **Exports are module functions.** Every module function of a framed
+  plan's module has closure code, and every export of its component is a
+  module function. Excluded: an exported class, another exported value, a
+  module function declaring `this`, which the initialization (`initC`,
+  whose last node is the array of the exports' closures) does not create.
+  Refusals: "a framed plan's component exports X, which is no module
+  function", "a framed plan's module function X has no closure code";
+  control: a framed walker beside an exported class, refused
+  (`bounds-pattern-framed-export-class-refused`).
 
 ## Callers and callbacks
 

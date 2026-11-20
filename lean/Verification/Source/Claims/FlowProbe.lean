@@ -146,9 +146,9 @@ def probeFrames {ofC : ComponentTag → Bool} (O : List (Option Nat)) (F : FFlow
 /-- **A module function's closure code** (`PassUnit.dropReceiver`): the
 request's node lists behind one prologue node, appended, evaluating
 `undefined` and continuing at the request's start with the frame past the
-receiver; its arity, the module values it names (its captures) and its
-component. A function declaring `this` or collecting a rest parameter has
-none here. -/
+receiver; its arity, the module values it names (its captures), its
+component and whether it collects a rest parameter. A function declaring
+`this` has none here. -/
 structure ProbeModule where
   name : String
   code : Code
@@ -156,19 +156,21 @@ structure ProbeModule where
   siblings : List String
   comp : ComponentTag
   sm : RequestJson.SourceMap := []
+  rest : Bool := false
 
 def ProbeModule.ofRequest {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (name : String)
     (r : SourceExtraction.SourceRequest σ ι) : Option ProbeModule :=
-  if r.receiver || r.restParam then none else
-  let ar := r.inputs.length - r.siblings.length
-  let ncaps := r.siblings.length
+  if r.receiver then none else
+  -- (the rest's spine is one input, past the arity)
+  let ar := r.inputs.length - r.siblings.length - (if r.restParam then 1 else 0)
   let exprs := r.program.map (·.expression)
   let conts := r.program.map fun n => (n.continuation, n.handler)
-  some ⟨name, (exprs ++ [.undef], conts ++ [(.effect ⟨r.start, some ((List.range (ar + ncaps + 1)).map (· + 1))⟩, none)]),
-    ar, r.siblings, r.comp, r.sourceMap⟩
+  let code : Code := (exprs ++ [.undef],
+    conts ++ [(.effect ⟨r.start, some ((List.range (r.inputs.length + 1)).map (· + 1))⟩, none)])
+  some ⟨name, code, ar, r.siblings, r.comp, r.sourceMap, r.restParam⟩
 
 /-- The signature of a module function's closure. -/
-def ProbeModule.sig (g : ProbeModule) : FnSig := ⟨g.code, g.ar, g.code.1.length - 1, false, g.siblings.length⟩
+def ProbeModule.sig (g : ProbeModule) : FnSig := ⟨g.code, g.ar, g.code.1.length - 1, g.rest, g.siblings.length⟩
 
 /-- **A native's step model** (the contract of an audited native, as code
 of the component): the graph whose run the native's call performs, with its
@@ -203,7 +205,7 @@ def closable (mods : List ProbeModule) : List ProbeModule :=
 functions of `C`'s modules (`ofC`), the natives with a step model they name
 (`hostModel?`) and the closures their codes create; each code's
 signatures, sites and entry. A code is a term: module functions of one
-code, arity and number of captures are one code of the flow (`reps`, the
+code, arity, rest and number of captures are one code of the flow (`reps`, the
 first of each, beside `modCodes`), its entry's slots naming a signature
 where every one of them names the same, and an entry where one of them is.
 Code `i`'s object and array sites are `3i` and `3i + 1`, its closures'
@@ -234,16 +236,17 @@ def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entr
   let sibSig (x : String) : Option FnSig :=
     ((closed.find? (·.name == x)).map ProbeModule.sig).orElse fun _ => hostSig x
   -- (one code per term, arity and number of captures)
-  let same (g g' : ProbeModule) : Bool := g'.code == g.code && g'.ar == g.ar && g'.siblings.length == g.siblings.length
+  let same (g g' : ProbeModule) : Bool :=
+    g'.code == g.code && g'.ar == g.ar && g'.rest == g.rest && g'.siblings.length == g.siblings.length
   let reps := mods.foldl (fun acc g => if acc.any (same g) then acc else acc ++ [g]) []
   let modCodes : List (SolveCode P) := reps.zipIdx.map fun (g, i) =>
     let group := mods.filter (same g)
-    let c0 := capSlot g.ar false 0
+    let c0 := capSlot g.ar g.rest 0
     let seedOf (g' : ProbeModule) (j : Nat) : Option FnSig :=
       if c0 ≤ j then (g'.siblings[j - c0]?).bind sibSig else none
     let seeds := (List.range (c0 + g.siblings.length)).map fun j =>
       if group.all fun g' => seedOf g' j == seedOf g j then seedOf g j else none
-    ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc i, true, tok i, entryCx,
+    ⟨g.code, g.ar, g.rest, g.siblings.length, g.code.1.length - 1, seeds, alloc i, true, tok i, entryCx,
       fun _ => alloc i, group.any fun g' => entryNames.contains g'.name⟩
   let hostCodes : List (SolveCode P) := hosts.zipIdx.map fun ((_, c, ar), i) =>
     ⟨c, ar, false, 0, 0, [], alloc (i + reps.length), true, tok (i + reps.length), entryCx,

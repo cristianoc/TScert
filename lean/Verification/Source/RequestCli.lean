@@ -787,15 +787,24 @@ def PreparedFile.prepareFramedComponent (p : PreparedFile) :
   -- the module's functions, each planned alone
   let memo ← p.memo.get
   let mut mods : List SourceClaimJson.ProbeModule := []
+  let mut unplanned : List String := []
   for j in List.range fr.units.length do
     let some (fn, _, none) := fr.units[j]? | continue
     if mods.any (·.name == fn.name) then continue
     let planned ← IO.lazyPure fun _ => p.plan j [] memo
-    if let .ok g := planned then
-      if let some m := (g.moduleCodes (g.fr.group j)).find? (·.name == fn.name) then
-        mods := mods ++ [m]
+    -- (a module function with no closure code, a function declaring
+    -- `this` or one not planned, is a restriction of the framed plan)
+    let found : Option SourceClaimJson.ProbeModule := match planned with
+      | .ok g => (g.moduleCodes (g.fr.group j)).find? (·.name == fn.name)
+      | .error _ => none
+    let some m := found
+      | unplanned := unplanned ++ [fn.name]
+    -- (its closure collects a rest parameter where it declares one, of any
+    -- type: the request reads an array's as its last input)
+    let m := if fn.params.getLast?.any (·.rest) && !m.rest then { m with rest := true, ar := m.ar - 1 } else m
+    mods := mods ++ [m]
   let t0 ← IO.monoNanosNow
-  let fc ← IO.lazyPure fun _ => SourceClaimJson.FramedComponent.of C ofC entries mods F file fns p.force
+  let fc ← IO.lazyPure fun _ => SourceClaimJson.FramedComponent.of C ofC entries mods unplanned F file fns p.force
   let _ ← IO.lazyPure fun _ => (fc.cf.flow.codes.length, fc.refusal.val.isSome)
   framedComponentsPrepared.modify (· + 1)
   if (← IO.getEnv "TSCERT_FRAMED").isSome then
