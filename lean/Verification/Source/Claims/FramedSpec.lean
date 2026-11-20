@@ -234,6 +234,19 @@ its sets truncated to the one of the entered call (the protected set), the
 crossing in recorded at the entering step. -/
 def truncate {P : Package} (g : Ghost P) : Ghost P := { g with A := [fun l => g.Prot l] }
 
+omit [Labels ι] in
+/-- **The truncation keeps the protected set** (proved). -/
+theorem truncate_prot {P : Package} (g : Ghost P) (l : Nat) : (truncate g).Prot l ↔ g.Prot l := by
+  simp only [Ghost.Prot, truncate, List.mem_singleton, exists_eq_left]
+  exact ⟨fun h => h.elim id .inr, .inl⟩
+
+omit [Labels ι] in
+/-- **The truncation grows a history inside a call** (proved,
+`truncate_prot`): with a call active, the one set is the protected set,
+and `B` and `E` are kept. -/
+theorem truncate_grows {P : Package} {g : Ghost P} (hA : 1 ≤ g.A.length) : Grows 1 g (truncate g) :=
+  ⟨Nat.one_pos, hA, by simp [truncate], rfl, fun l h => (truncate_prot g l).mpr h, fun _ h => h⟩
+
 /-- **The frame of a framed plan** (the draft, `FramedSpec.frame`). -/
 noncomputable def frame (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
   toFrameCore := spec.core r

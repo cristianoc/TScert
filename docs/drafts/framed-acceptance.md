@@ -1822,7 +1822,7 @@ with this conclusion and the readings of `MemberSafe`, `FramedRequestSafe`
 (its proof), `fits_step`, `fits_roots`, `fits_graphEntry`, `fits_lowered`,
 `chkSound_of_sites`, `sitesSound_of_fits`, `ClientFrame.framed_at_innermost`,
 `frameCheck_sound`, `framed_of_sites`, `regionSites_sound`, `reach_sites`,
-`regionKeys_sound`, `witness_along`, `HStep.uniform`, `call_segment`,
+`regionKeys_sound`, `grows_of_start`, `HStep.uniform`, `call_segment`,
 `decompose`, `Run.bound`, `MemberRun.within`, `RBoundBelow.trans`,
 `RBound.mono`, `RBoundBelow.mono`, `StepWithin.mono`, `approx_stable`,
 `step?_sound` and `linked` (`Tests/FramedLinkedCall.lean`, the first check),
@@ -2210,19 +2210,20 @@ proved results named.
    `PassUnitMember.lean`). `roPositionsB_sound`: where the binding checks pass, `roPos j` holds
    exactly when every function of $`C`$ sharing the realized code declares
    position $`j`$ read-only; `readOnly_declared` restated as above.
-1. **The history at the start** (`ReadOnlyRegion.lean`,
-   `FramedSpec.lean`). `Ghost.cross_into_prot`; `FramedSpec.truncate_prot`
-   (`(truncate g).Prot ℓ ↔ g.Prot ℓ`); `FramedSpec.truncate_grows`
-   (`Grows 1 g (truncate g)` where $`1\le\lvert g.A\rvert`$);
-   `Ghost.crosses_witness`, the argument of `entryStart_witness` for any
-   uniform history with $`d`$ sets and a lent location, of which
-   `entryStart_witness` becomes an instance.
-2. **Witness growth from a start** (`ReadOnlyCallFrame.lean`).
-   `ClientFrame.witness_of_start`: at a call of the frame whose term's top
-   is a run of $`C`$'s code (`TopC`) and whose start meets `StartInv` (the
-   history's length its depth), a witness at the start gives a witness at
-   every state reached with the call active (`ex_depth`, `ex_xstep`,
-   `Ex.grows`, `Witness.grow`); `witness_reached` becomes its instance.
+1. **The history at the start** (proved; `ReadOnlyCallFrame.lean`,
+   `FramedSpec.lean`). `crosses_witness`: after a sequence of crossings
+   from a uniform history with $`d\ge 1`$ sets, a released or outside
+   location an incoming crossing reaches read-only has `Witness view d`,
+   of which `entryStart_witness` is an instance; `FramedSpec.truncate_prot`
+   (`(truncate g).Prot ℓ ↔ g.Prot ℓ`) and `FramedSpec.truncate_grows`
+   (`Grows 1 g (truncate g)` where $`1\le\lvert g.A\rvert`$).
+2. **Witness growth from a start** (proved; `ReadOnlyCallFrame.lean`).
+   `ClientFrame.grows_of_start`: at a call of the frame whose term's top
+   is a run of $`C`$'s code (`TopC`) and whose start meets `StartInv`, the
+   history grows at depth `1` from the start's to every state reached with
+   the call active (`ex_depth`, `ex_xstep`, `Ex.grows`);
+   `witness_of_start` carries a witness along it (`Witness.grow`), and
+   `witness_reached` is its instance at `entryStart`.
 3. **The entry's slots** (`FramedSpec.enter_slots`, a new
    `FramedProtection.lean`). At `spec.EntryAt r k W h t a₂` with
    `t = gotoOf r.program r.start L d r.comp`, the entering step `x → a₁`
