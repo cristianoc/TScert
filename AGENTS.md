@@ -258,7 +258,7 @@ requires.
 The end-to-end pipeline cases are the primary signal: a source file through
 the parser and the single pass (`pipeline/cases.mts`, run by
 `run-cases.mts`). They exercise the unproved parts together (parser,
-extraction, the pass's front, wire), and what Lean proves needs no test.
+lowering, the pass's front, wire), and what Lean proves needs no test.
 
 - **Prefer a pipeline case.** A new feature's test is a source file with its
   expected outcome, positive and negative, not a unit test of an
@@ -280,7 +280,7 @@ extraction, the pass's front, wire), and what Lean proves needs no test.
   trusted input (the `ArrayProto` overlay), or a speed-critical check.
 - **Remove what adds no signal.** A test a proof already covers, or one that
   repeats another's inputs through the same path, goes. Before removing a
-  forged-fragment control, check it does not test extraction: the lowering
+  forged-fragment control, check it does not test lowering: the lowering
   of the fragment to the graphs the pass checks is unproved.
 
 ## The suite's shape, and the rules that keep it
