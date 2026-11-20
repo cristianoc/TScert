@@ -43,12 +43,14 @@ are read from the sites:
   fits at a node of its continuation and handler that may call outside
   code (`CodeFlow.out`), at a context of its code, so the check is
   required at those nodes and contexts only.
-- **Live protection witnesses** (`Witness.grow`, `entryStart_witness`): a
-  location an entry's argument reaches read-only at its parameter's type
-  has a witness at the entry history, and at every history the entry's
-  grows into inside the call; every step of an execution that keeps at
-  least `d` calls active grows the history at depth `d` (`XStep.grows`,
-  `Ex.grows`), so a witness stays live along it. -/
+- **Live protection witnesses** (`Witness.grow`, `crosses_witness`,
+  `entryStart_witness`): a location a crossing in reaches read-only while
+  it is released or outside storage has a witness after the crossings, at
+  the entry history among them, and at every history that one grows into
+  inside the call; every step of an execution that keeps at least `d`
+  calls active grows the history at depth `d` (`XStep.grows`, `Ex.grows`),
+  so along a unit's call a witness at its start stays live
+  (`grows_of_start`, `witness_of_start`). -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification Footprints
 
@@ -1052,36 +1054,42 @@ theorem Witness.grow {tv : TypeView} {d : Nat} {st st' : St P} {l : Nat} (hw : W
   obtain ⟨g, T, h, v, hA, hr, hL, hgr⟩ := hw
   exact ⟨g, T, h, v, hA, hr, hL, hgr.trans hg⟩
 
-/-- **An entry's argument is witnessed** (proved): at the entry history, a
-location an argument reaches read-only at its parameter's type, inside a
-call of `C`, has a live witness at every depth up to the calls active: the
-argument's crossing reached it while it was outside storage, and the
-crossings after it grow the history. -/
-theorem entryStart_witness {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : Tm} {args : List (tv.Ty × Val)}
-    {d : Nat} (hd : 0 < d) (hdl : d ≤ depthC F C none t) {T : tv.Ty} {v : Val} (ha : (T, v) ∈ args) {l : Nat}
-    (hr : ReachRO tv (F.at C).ofC T h v l) {st : St (F.at C)} (hst : st.g = entryStart F C tv h t args) :
-    Witness tv d st l := by
-  suffices ∀ (xs : List (Crossing tv)) (g : Ghost (F.at C)), d ≤ g.A.length → g.site = (fun _ => none) →
-      g.Uniform → ∀ x ∈ xs, x.dir = .into → ReachRO tv (F.at C).ofC x.ty h x.val l →
-      ∃ (g₀ : Ghost (F.at C)) (T₀ : tv.Ty) (v₀ : Val), g₀.A ≠ [] ∧ ReachRO tv (F.at C).ofC T₀ h v₀ l ∧
-        g₀.Lent l ∧ Grows d (g₀.cross tv .into T₀ h v₀) (Ghost.crosses tv h xs g) by
-    obtain ⟨g₀, T₀, v₀, hA, hr₀, hL, hg⟩ := this (args.map fun a => ⟨.into, a.1, a.2⟩) (bareStart F C t)
-      (by simpa [bareStart] using hdl) rfl
-      (bareStart_uniform F C t) ⟨.into, T, v⟩ (List.mem_map.mpr ⟨(T, v), ha, rfl⟩) rfl hr
-    exact ⟨g₀, T₀, h, v₀, hA, hr₀, hL, by rw [hst]; exact hg⟩
+/-- **A crossing in witnesses what it reaches read-only** (proved, by
+induction on the crossings): after a sequence of crossings from a uniform
+history with at least `d ≥ 1` calls active, a released or outside location
+an incoming crossing of the sequence reaches read-only has a live witness at
+depth `d`: that crossing reached it while it was released or outside
+storage, and the crossings after it grow the history. -/
+theorem crosses_witness {tv : TypeView} {d : Nat} (hd : 0 < d) {h : Heap} {l : Nat} :
+    ∀ (xs : List (Crossing tv)) (g : Ghost P), d ≤ g.A.length → g.Uniform → ∀ x ∈ xs, x.dir = .into →
+      ReachRO tv P.ofC x.ty h x.val l → g.Lent l → ∀ {st : St P}, st.g = Ghost.crosses tv h xs g →
+      Witness tv d st l := by
   intro xs
   induction xs with
-  | nil => intro _ _ _ _ x hx; cases hx
+  | nil => intro _ _ _ x hx; cases hx
   | cons y ys ih =>
-    intro g hl hs hu x hx hdir hrx
+    intro g hl hu x hx hdir hrx hL st hst
     have hl' : d ≤ (g.cross tv y.dir y.ty h y.val).A.length := by simpa [Ghost.cross, Ghost.add] using hl
     have hu' := (HStep.cross (h := h) g y.dir y.ty y.val).uniform hu
     rcases List.mem_cons.mp hx with rfl | hx
-    · refine ⟨g, x.ty, x.val, ?_, hrx, .inr (by simp [Ghost.origin, hs]), ?_⟩
+    · refine ⟨g, x.ty, h, x.val, ?_, hrx, hL, ?_⟩
       · intro hA; rw [hA] at hl; simp at hl; omega
-      · rw [← hdir]
+      · rw [hst, ← hdir]
         exact ((Ghost.crosses_hsteps (d := d) ys _ hl').grows hu' hd hl').1
-    · exact ih _ hl' (by rw [← hs]; rfl) hu' x hx hdir hrx
+    · exact ih _ hl' hu' x hx hdir hrx hL hst
+
+/-- **An entry's argument is witnessed** (proved, `crosses_witness`): at the
+entry history, a location an argument reaches read-only at its parameter's
+type, inside a call of `C`, has a live witness at every depth up to the
+calls active: every location of the history before an entry is outside
+storage. -/
+theorem entryStart_witness {F : Family} {C : Nat} {tv : TypeView} {h : Heap} {t : Tm} {args : List (tv.Ty × Val)}
+    {d : Nat} (hd : 0 < d) (hdl : d ≤ depthC F C none t) {T : tv.Ty} {v : Val} (ha : (T, v) ∈ args) {l : Nat}
+    (hr : ReachRO tv (F.at C).ofC T h v l) {st : St (F.at C)} (hst : st.g = entryStart F C tv h t args) :
+    Witness tv d st l :=
+  crosses_witness hd (args.map fun a => (⟨.into, a.1, a.2⟩ : Crossing tv)) (bareStart F C t)
+    (by simpa [bareStart] using hdl) (bareStart_uniform F C t) ⟨.into, T, v⟩ (List.mem_map.mpr ⟨(T, v), ha, rfl⟩)
+    rfl hr (.inr (by simp [Ghost.origin, bareStart])) (by rw [hst]; rfl)
 
 section Growth
 variable {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {Θ : Protocol (F.at C)}
@@ -1128,21 +1136,6 @@ theorem Ex.grows {d : Nat} {q : Conf × Ghost (F.at C) → Prop} (hd : 0 < d)
 
 end Growth
 
-/-- **An entry's argument is witnessed along the call** (proved): from an
-entry whose history is the entry's (`entryStart`), along an execution
-keeping the call active, every location an argument reaches read-only at
-its parameter's type has a live witness at the call's depth `1`
-(`entryStart_witness`, `Ex.grows`, `Witness.grow`). -/
-theorem witness_along {F : Family} {C : Nat} {tv : TypeView} {Θ : Protocol (F.at C)}
-    {chk : Conf → Conf → CheckData (F.at C) tv} {q : Conf × Ghost (F.at C) → Prop}
-    (hq : ∀ y, q y → 1 ≤ δ F C none y) {x : Conf} {args : List (tv.Ty × Val)} {n : Nat}
-    {e : Conf × Ghost (F.at C)} (hex : Ex (XStep F C none Θ chk) q n (x, entryStart F C tv x.s.h x.t args) e)
-    (hdx : 1 ≤ depthC F C none x.t) (hde : 1 ≤ δ F C none e) {T : tv.Ty} {v : Val} (ha : (T, v) ∈ args)
-    {l : Nat} (hr : ReachRO tv (F.at C).ofC T x.s.h v l) :
-    Witness tv 1 (lift F C none e.1 e.2) l := by
-  have hw := entryStart_witness (st := lift F C none x (entryStart F C tv x.s.h x.t args)) (d := 1) Nat.one_pos hdx ha hr rfl
-  exact hw.grow (Ex.grows Nat.one_pos hq hex (entryStart_len _) (entryStart_inv x args) hdx hde)
-
 /-! ## A reached state inside the unit's call
 
 A unit's call starts at a `goto` of its code at the top of the term
@@ -1150,8 +1143,9 @@ A unit's call starts at a `goto` of its code at the top of the term
 top of the term is a `goto` or a frame of that code, then a value or a
 throw of one (`TopC`), the last two taking no step. So every state but the
 last of an execution from the entry has the unit's call active
-(`ex_depth`), and a reached state with it active is reached by the
-execution at depth `1` that `witness_along` reads (`witness_reached`). -/
+(`ex_depth`), and the history grows at depth `1` from the start's to
+every reached state with it active (`grows_of_start`), along which a
+witness at the start stays live (`witness_of_start`, `witness_reached`). -/
 
 /-- The blocks of a list end in those of its suffix. -/
 theorem blocks_append_ge : ∀ (xs ys : List Bool), blocks ys ≤ blocks (xs ++ ys)
@@ -1231,9 +1225,32 @@ theorem ex_depth : ∀ {n : Nat} {a e : Conf × Ghost (fr.F.at fr.C)}, Ex fr.KSt
   | _, _, _, .next _ hab he, ht =>
     .next (TopC.depth hab.1.step ht) hab (ex_depth he (TopC.step hab.1.step ht))
 
+/-- **The history grows from a start along a unit's call** (proved,
+`ex_depth`, `ex_xstep`, `Ex.grows`): from a call the claim is about, at the
+top a `goto` of `C`'s code, and a start meeting the invariants of states
+(`StartInv`), at every state the execution reaches with the call still
+active the history has grown at depth `1` from the start's. -/
+theorem grows_of_start (hc : fr.ChkSound) (hi : fr.StartInv) {x : Conf} {g : Ghost (fr.F.at fr.C)}
+    (hN : fr.Call x.s.n x.s.W x.s.h x.t) (hg : fr.start x.s.n x.s.W x.s.h x.t g) (htop : TopC fr.F fr.C x.t)
+    (hdx : 1 ≤ depthC fr.F fr.C none x.t) {n : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
+    (hex : Ex fr.KStep (fun _ => True) n (x, g) e) (hde : 1 ≤ δ fr.F fr.C none e) : Grows 1 g e.2 := by
+  have hx := ex_xstep hc ⟨(x, g), 0, hN, hg, .refl _⟩ (ex_depth hex htop)
+  obtain ⟨hI, hl⟩ := hi x g hN.1 hg
+  exact Ex.grows Nat.one_pos (fun _ h => h) hx hl hI hdx hde
+
+/-- **A witness at a start stays live along a unit's call** (proved,
+`grows_of_start`, `Witness.grow`). -/
+theorem witness_of_start (hc : fr.ChkSound) (hi : fr.StartInv) {x : Conf} {g : Ghost (fr.F.at fr.C)}
+    (hN : fr.Call x.s.n x.s.W x.s.h x.t) (hg : fr.start x.s.n x.s.W x.s.h x.t g) (htop : TopC fr.F fr.C x.t)
+    (hdx : 1 ≤ depthC fr.F fr.C none x.t) {n : Nat} {e : Conf × Ghost (fr.F.at fr.C)}
+    (hex : Ex fr.KStep (fun _ => True) n (x, g) e) (hde : 1 ≤ δ fr.F fr.C none e) {l : Nat}
+    (hw : Witness fr.view.view 1 (lift fr.F fr.C none x g) l) :
+    Witness fr.view.view 1 (lift fr.F fr.C none e.1 e.2) l :=
+  hw.grow (grows_of_start hc hi hN hg htop hdx hex hde)
+
 /-- **An entry's argument is witnessed at a reached state of its call**
-(proved, `ex_depth`, `ex_xstep`, `witness_along`): from a call the claim is
-about, at the top a `goto` of `C`'s code, and the entry history of its
+(proved, `entryStart_witness`, `witness_of_start`): from a call the claim
+is about, at the top a `goto` of `C`'s code, and the entry history of its
 arguments, at every state the execution reaches with the call still
 active, each location an argument reaches read-only at its parameter's
 type has a live witness at depth `1`. -/
@@ -1243,11 +1260,9 @@ theorem witness_reached (hc : fr.ChkSound) {args : Heap → Tm → List (fr.view
     {n : Nat} {e : Conf × Ghost (fr.F.at fr.C)} (hex : Ex fr.KStep (fun _ => True) n (x, g) e)
     (hde : 1 ≤ δ fr.F fr.C none e) {T : fr.view.view.Ty} {v : Val} (ha : (T, v) ∈ args x.s.h x.t) {l : Nat}
     (hr : ReachRO fr.view.view (fr.F.at fr.C).ofC T x.s.h v l) :
-    Witness fr.view.view 1 (lift fr.F fr.C none e.1 e.2) l := by
-  have hgs : g = entryStart fr.F fr.C fr.view.view x.s.h x.t (args x.s.h x.t) := (hse _ _ _ _ _).mp hg
-  have hx := ex_xstep hc ⟨(x, g), 0, hN, hg, .refl _⟩ (ex_depth hex htop)
-  subst hgs
-  exact witness_along (fun _ h => h) hx hdx hde ha hr
+    Witness fr.view.view 1 (lift fr.F fr.C none e.1 e.2) l :=
+  witness_of_start hc (startInv_of_entry hse) hN hg htop hdx hex hde
+    (entryStart_witness (st := lift fr.F fr.C none x g) Nat.one_pos hdx ha hr ((hse _ _ _ _ _).mp hg))
 
 end ClientFrame
 
