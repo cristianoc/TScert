@@ -287,11 +287,11 @@ theorem passSteps_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    (href : RefsOk W (instantiate 0 ρ j.term)) (hρ : (∃ i v R q, e = .written i v R q) → RootsOk W ρ) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   rcases passSteps_value hok hc with hu | ⟨p, rfl, hj, rfl, hreq⟩ | ⟨i, p, fld, Ref, rfl, hj, ht, hi, hopt, htree, rfl⟩
-  · exact checkStep_sound hu hcodes hsums he hk hw hh href
+  · exact checkStep_sound hu hcodes hsums he hk hw hh href hρ
   · obtain ⟨eff, -, hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums p hreq
     subst hj
     apply of_value_property _ (erase (hs he hk hw hh href))
@@ -307,9 +307,9 @@ pass's tree check holds. -/
   run := fun j k e codes sums =>
     if passTreeOk G images k codes sums e then checkStepResult G images j k e codes sums (tree := false) else failure
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href _
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hρ
     split at hc
-    · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh href
+    · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh href fun _ => hρ
     · cases hc
   normal := fun _ _ e _ _ => stepsNormal e
   normal_sound := by
@@ -317,7 +317,8 @@ pass's tree check holds. -/
     obtain ⟨hord, hwr⟩ := stepsNormal_empty hn
     split at hc
     · rename_i hok
-      have hs := erase (passSteps_sound hok hc hcodes hsums he hk hw hh href)
+      have hs := erase (passSteps_sound hok hc hcodes hsums he hk hw hh href
+        fun ⟨i, v, R, q, hq⟩ => absurd hq (hwr i v R q))
       rcases passSteps_value hok hc with hu | ⟨p, rfl, -⟩ | ⟨i, p, fld, Ref, rfl, -, ht, hi, -⟩
       · exact base_keeps hu hord hwr hcodes hsums he hk hw hh href
       · exact absurd rfl (hord p)
