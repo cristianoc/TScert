@@ -1,4 +1,4 @@
--- typed source elaboration consumes one syntax-owned graph of normal and exceptional control transfers.
+-- typed source lowering consumes one syntax-owned graph of normal and exceptional control transfers.
 import Verification.Source.Fragment
 import Verification.Source.RequestJson
 
@@ -12,7 +12,7 @@ def pointId (owner : Span) (id : Nat) : String :=
   s!"{owner.1}:{owner.2}:{id}"
 
 /-- Control destinations preserve lexical identities; slot adaptation belongs
-    to typed elaboration. -/
+    to typed lowering. -/
 structure Handler where
   target : Nat
   scope : Scope
@@ -269,7 +269,7 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
 end
 
 /-- One graph for one executable body. Construction consults syntax and lexical
-    bindings only; the same graph is consumed by typed elaboration. -/
+    bindings only; the same graph is consumed by typed lowering. -/
 def build (owner : Span) (scope : Scope) (body : List Stmt) : Except String Graph := do
   let (entry, nodes) ← (do
     let finish ← emit owner scope {} .finish

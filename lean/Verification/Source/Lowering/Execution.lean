@@ -479,7 +479,7 @@ written to the cell at its contract, and the right side's value. -/
     (original : Fragment.Expr) (g : Growth) (i : Nat) (stored : Ty Tree) (next : Target) : Compiler Target := do
   let G := SourceTypes.graph (← table)
   let some (t, _) := resolve scope throwUninitializedName
-    | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+    | throw s!"internal lowering error: an early binding's access without {throwUninitializedName}"
   let X ← initializedContract stored
   let S := (X ++ (← uninitializedTy)).eraseDups
   let found := BranchRefinement.tagSlice G S (.hasKey uninitializedKey) true
@@ -1121,7 +1121,7 @@ the one the graph checker computes for the dispatch. -/
         | some destination, .atom _ (.outcome _ outcome) => destination scope' Δ outcome
         | _, _ => arm truth T body
       -- A proved answer admits only its selected execution. Keeping A retains
-      -- the evaluated value and avoids elaborating observations in a dead arm.
+      -- the evaluated value and avoids lowering observations in a dead arm.
       if decide (Answers G A tag answer) then
         let selected ← arm true A yes
         return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
@@ -1159,7 +1159,7 @@ the one the graph checker computes for the dispatch. -/
 (`SourceExecution.buildCondition`): each dispatch whose arm is an outcome
 goes to that outcome's destination, the dispatch's edge refining what the
 operand's answer establishes. A destination no path answers is not
-elaborated (`for (;;)`, `while (true)`: no edge to the statement after the
+lowered (`for (;;)`, `while (true)`: no edge to the statement after the
 loop, which is then no point of the graph). -/
 @[nospecialize] partial def compileCondition (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (cond : Fragment.Expr)
@@ -1173,7 +1173,7 @@ loop, which is then no point of the graph). -/
     (fun _ _ _ => throw "internal execution plan: a condition's outcome outside a dispatch")
     (exit := some fun _ Δ truth => destination Δ truth)
 
-/-- Source operand scheduling is owned by ExpressionPlan. Atomic elaboration
+/-- Source operand scheduling is owned by ExpressionPlan. Atomic lowering
     receives only saved operands and source annotation metadata. -/
 @[nospecialize] partial def compileExpr (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))

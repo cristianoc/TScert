@@ -135,7 +135,7 @@ def importerRowsAgree {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t :
   | none => false
 
 /-- The module values unit `j`'s request captures, in its frame's order
-after its parameters: the values its extraction reaches
+after its parameters: the values its elaboration reaches
 (`elaborateMember`), each of those its body mentions (`moduleReadNames`). -/
 def Front.captureNames (fr : Front) (j : Nat) : List String :=
   match fr.units[j]? with

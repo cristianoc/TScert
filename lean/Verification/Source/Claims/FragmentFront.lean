@@ -231,11 +231,11 @@ def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Ter
 graphs, each point holding its node's sites' expressions and its statement
 entry's bindings, where `checkPointSites` places a producer's; its
 parameters' and result's types its annotations', each read where the
-extraction reads them. -/
+elaboration reads them. -/
 def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc module scope => do
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
-  let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+  let (T, fc, completion, declarations, spanEntries, exprsAt, reads) ← SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
     SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope (initBinders := if init then fr.initBinders else [])
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
@@ -411,7 +411,7 @@ def instancesFromWalk (force : List String := []) : Instances := fun fr T f c mo
   let used := fr.generics.filter fun g => calls.any (·.2.2.1 == g.name)
   if used.isEmpty then return (T, c)
   let (schemes, generics) := fr.genericValues
-  let (w, T) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
+  let (w, T) ← SinglePass.timedKind "lower: of elaborateSome, the walk" fun _ =>
     SinglePass.work "walk: instances" (fr.fnItem f) fun _ => Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
       (schemes := c.expressions.filterMap fun e => match e.type with
         | .labels A => some (e.pos, A)
@@ -544,7 +544,7 @@ of `fragmentClaims`, no import planned, each import read at its declared
 type, at its stand-in's footprint, or at the footprint `qualified` gives it
 (an import whose module's units establish it, `fragmentPlansWithModules`),
 the module values typed by the initialization's walk, and each selected
-group's units extracted over their computed types (`retypeFromFragment`),
+group's units elaborated over their computed types (`retypeFromFragment`),
 the functions' footprints their own steps give (`PassProposals.proposals`),
 those `known` names taken as given. With
 `closure`, the selected groups and every group they reach; with
@@ -619,7 +619,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   -- the ordinary effect alone, and what they reach.
   let names := if !proposed then names else names.map (·.filter fr.proposes)
   let wanted := wantedOf fr names
-  let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
+  let (T, plans) := SinglePass.timedKind "lower: elaborateSome" fun _ =>
     fr.elaborateSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
       (some (writtenSchemes force))
   -- With `interfaceSlots`, each ordinary function's type as its callers

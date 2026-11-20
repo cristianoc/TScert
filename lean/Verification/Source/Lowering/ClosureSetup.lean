@@ -133,7 +133,7 @@ by subtyping; or a scheme row's variadic signatures. -/
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
     Compiler (LambdaSetup Tree) := do
   let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard stated async requires body := lam
-    | throw "internal extraction error: a closure's code is a lambda's"
+    | throw "internal lowering error: a closure's code is a lambda's"
   let G := SourceTypes.graph (← table)
   let paramNames := params.map Prod.fst
   if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || hasName scope name) then

@@ -270,7 +270,7 @@ inductive Expr where
   | write (pos : Span) (field : PropKey) (receiver rhs : Expr)
   /-- `e[key]`: the receiver, then the key, then the read of the field the
   key's claimed type names. The decoder leaves the field unresolved; the
-  extractor fills it from the key's claim, a string singleton, and the key's
+  lowering fills it from the key's claim, a string singleton, and the key's
   expression obligation must establish it. -/
   | index (pos : Span) (field : Option String) (e key : Expr)
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)

@@ -386,7 +386,7 @@ actual's entry path and a path suffix's agreement), is included in the
 stated frame, which is the accumulated bound and so an invariant through
 loops (`Post.compose_at`; stated in
 [argument-path spine regions](../FOOTPRINTS.md#argument-path-spine-regions)).
-The checker extracts each step's frame only: a call's signature frame, push's
+The checker elaborates each step's frame only: a call's signature frame, push's
 `ReceiverGrows` frame, an element write's frame (`elemWriteFrame`), a step within
 the closed bound. Slot copies and stable reads are provenance steps.
 

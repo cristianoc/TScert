@@ -860,7 +860,7 @@ merely saving the source array's identity.
 `callsT_adm`, `restsT_adm` and the corresponding congruence lemmas establish
 world monotonicity and guardedness of both domains and results. The
 source/calculus correspondence remains the documented trusted-adapter
-boundary; these theorems establish safety of the extracted program.
+boundary; these theorems establish safety of the lowered program.
 
 Worlds have different types at different budgets. Consequently, “the type is
 just the intersection of its approximations” is not a complete standalone

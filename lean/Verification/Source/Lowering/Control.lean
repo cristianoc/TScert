@@ -272,7 +272,7 @@ defaults (`Fragment.restFromName`). The array is claimed at the rest's span
 with the call's instance. -/
 @[nospecialize] def sliceCall (scope : List (ScopeBinding ι)) (obj k : Nat) : Except String Tm := do
   let some (i, _) := resolve scope (Fragment.restFromName k)
-    | throw "internal extraction error: a slice rest without its intrinsic"
+    | throw "internal lowering error: a slice rest without its intrinsic"
   return Tm.call (.var i) [.var obj]
 
 /-- What a literal position of an array reads, by the array's contract: a
@@ -375,7 +375,7 @@ read through its own mapping, found in `scope` by descriptor, else by name
     | some i => pure i
     | none => match byName.get[b.source.name]? with
       | some i => pure i
-      | none => throw s!"internal extraction error: lost binding '{b.source.name}'"
+      | none => throw s!"internal lowering error: lost binding '{b.source.name}'"
   let slots := slots.toArray
   return ⟨target.label, some ((target.mapping.getD (List.range targetScope.length)).map
     fun i => slots[i]?.getD 0)⟩

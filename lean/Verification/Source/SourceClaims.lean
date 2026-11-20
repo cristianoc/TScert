@@ -128,7 +128,7 @@ structure Function (ι : Type) where
   from it, computed where first read; `none` where the lowering states none. -/
   reachable : Option (Thunk (List String)) := none
 
-/-- Select one execution point for expression elaboration. A missing point has
+/-- Select one execution point for expression lowering. A missing point has
 no claims, so an obligation there fails instead of borrowing another copy's. -/
 def Function.atPoint (f : Function ι) (point : String) : Function ι :=
   let row := (f.points.lookup point).getD {}

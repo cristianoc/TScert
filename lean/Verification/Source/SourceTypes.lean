@@ -2,7 +2,7 @@ import Verification.Types.Claim
 import Verification.Source.Equations.Store
 
 /-! Source types and the graph they are checked against. A program's types
-are labels of the store (`EquationStore.State`): extraction interns each compound
+are labels of the store (`EquationStore.State`): elaboration interns each compound
 type the program mentions, so a label exists only because something used it,
 and a clause the store lacks has no label rather than a wrong one. Primitive
 unions translate into the four primitive labels. -/

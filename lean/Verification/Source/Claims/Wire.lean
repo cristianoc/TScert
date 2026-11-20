@@ -466,7 +466,7 @@ private partial def validType (T : EquationStore.State) : ClaimType Tree → Boo
 field one the point's own record contract names, at a type this table has.
 A path of two fields or more only at a statement entry (`paths`), whose
 lowering reads its later fields. The asserted type need not be finite: a
-field the extractor cannot turn into a literal assertion becomes an obligation
+field the lowering cannot turn into a literal assertion becomes an obligation
 that the storage contract already implies it. -/
 private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current : Option (CurrentFields Tree))
     (paths : Bool := false) : Bool :=

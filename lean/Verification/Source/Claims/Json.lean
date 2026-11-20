@@ -124,14 +124,14 @@ def Front.selected (fr : Front) (names : Option (List String)) : List Nat :=
     | none => true
     | some ns => (fr.group i).any fun j => ns.contains (memberName (fr.unitId j))
 
-/-- `extractAll` over the units `wanted` names, by index, only: another
+/-- `elaborateMember` over the units `wanted` names, by index, only: another
 unit's plan is a refusal no check of the wanted units reads. -/
 def Front.elaborateSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option Retype := none)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
-    if !wanted.contains i then (T, plans.push (.error "not extracted")) else
-    match SinglePass.work "prepare: extraction" (fr.workItem i) fun _ =>
+    if !wanted.contains i then (T, plans.push (.error "not elaborated")) else
+    match SinglePass.work "prepare: elaboration" (fr.workItem i) fun _ =>
         elaborateMember fr T u retype instances closureSchemes with
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
@@ -167,7 +167,7 @@ def FilePlans.dependencies (f : FilePlans) (group : List Nat) : List String :=
     -- The module units a read of an import the group's code mentions rests on.
     ((f.p.depends.filter fun (n, _) => group.any fun i => (f.fr.mentions i).contains n).flatMap (·.2)).eraseDups
 
-/-- The first extraction refusal among the groups `names` selects: a check
+/-- The first elaboration refusal among the groups `names` selects: a check
 reports it before any refusal at the evidence. -/
 def FilePlans.elaborationRefusal (f : FilePlans) (names : Option (List String)) : Option String :=
   ((f.fr.selected names).flatMap f.fr.group).findSome? fun i =>

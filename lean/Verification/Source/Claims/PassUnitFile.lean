@@ -85,7 +85,7 @@ theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : Ov
   · rw [hp]
     exact rowSpec_plain_of_promise hπ hadm he
 
-/-- **The module's layout** (H5a, the extraction's frame layout): the
+/-- **The module's layout** (H5a, the lowering's frame layout): the
 functions `D` laid out (any set of the file's functions, a mutually
 recursive group's non-leaders included), the code of each by its identity
 and its interface, such that each function `x` of `D` has an interface presenting one clause of signatures its code's kind

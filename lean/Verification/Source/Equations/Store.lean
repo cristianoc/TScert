@@ -8,7 +8,7 @@ import Verification.Types.NativePromiseSeparation
 
 /-! The label store over recursive equations (RECURSIVE-EQUATIONS §8;
 REQUEST-PROTOCOL.md, "Equations and tree labels").
-Extraction grows the lowering's heads (`EquationLowering.State`), its labels
+Elaboration grows the lowering's heads (`EquationLowering.State`), its labels
 closed trees (`Tree`): a union of clauses, a scheme over fresh binders and a
 bounded binder's meet become heads with lifted templates, and a binder the
 source spells by its name is read as the label a unit or closure gives it
@@ -16,8 +16,8 @@ source spells by its name is read as the label a unit or closure gives it
 arguments, which leaves every application inside unexpanded, exactly as
 `Equations.row` reads it, so no family is enumerated.
 
-A checked request is over the equations the extracted heads present,
-validated by `Equations.ofRaw` once extraction is done (`freeze`): its labels
+A checked request is over the equations the elaborated heads present,
+validated by `Equations.ofRaw` once elaboration is done (`freeze`): its labels
 are the closed labels of those equations, and its graph is their
 `Equations.graph` (`Checked`). -/
 namespace Verification.EquationStore
@@ -782,7 +782,7 @@ def nativePromise (s : State) (E : Equations) : Except String (Option (NativePro
     else throw "native Promise Ξ head is outside the frozen equations"
   | _ => throw "multiple native Promise Ξ declarations"
 
-/-- The store of a checked request: the extracted heads, whose validated
+/-- The store of a checked request: the elaborated heads, whose validated
 equations are `E`, and their variances, computed as checks ask for them and
 shared by every request over the store. It no longer grows. -/
 structure Checked (E : Equations) (p : Primitive E) where
@@ -836,7 +836,7 @@ theorem Checked.images_eq (c c' : Checked E p) (hv : c.variances = c'.variances)
 
 end
 
-/-- Extracted heads, frozen: their validated equations and the store over
+/-- Elaborated heads, frozen: their validated equations and the store over
 them. -/
 structure Frozen where
   equations : Equations

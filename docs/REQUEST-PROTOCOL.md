@@ -2,7 +2,7 @@
 
 The verifier reconstructs, from a source's Fragment tree and the types the
 front computes, one request of the stateful calculus per code unit, and the
-single pass checks it. This is a consumer boundary for extracted programs; it
+single pass checks it. This is a consumer boundary for lowered programs; it
 does not certify TypeScript text by itself.
 
 This document owns the verifier's command line, the wire text every document
@@ -917,8 +917,8 @@ labels are trees over the equations' heads. The source path checks every
 request over them.
 
 **Source path.** The pass reads no equations from the wire. Lean lowers
-the declarations and the claims to heads, grows them while it extracts every
-unit of the file, and validates them with `Equations.ofRaw` once extraction
+the declarations and the claims to heads, grows them while it elaborates every
+unit of the file, and validates them with `Equations.ofRaw` once elaboration
 is done (`EquationStore.freeze`). Each request is then checked over the
 equations' `Equations.graph`. A tree is decoded through the validator
 (`Label.ofTree?`), and no checked request holds a name placeholder.

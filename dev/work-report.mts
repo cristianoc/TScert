@@ -51,7 +51,7 @@ const sites = {
   ordinary: "4 ordinary-contract attempt",
   omission: "5 census omission rounds",
   dependency: "6 census dependency rounds",
-  walks: "7 declaration proposal and body extraction",
+  walks: "7 declaration proposal and body elaboration",
   init: "8 initialization and returned callables",
   recursive: "9 recursive effect proposals",
   retries: "13 synthesis rounds within one walk",
@@ -226,7 +226,7 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
       if (o.cls === "body walk") {
         // One walk of a body is the processing: the proposal walk where
         // there is one; the returned-callable round, recursive walks and
-        // the extraction's walks are repetitions.
+        // the elaboration's walks are repetitions.
         // A walk's own rounds over the body after its first (an evolving
         // binding's growth, offered rows) are counted apart, nested in it.
         let first = true;

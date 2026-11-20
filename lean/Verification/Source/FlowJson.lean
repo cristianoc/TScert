@@ -216,7 +216,7 @@ partial def nestedGraphs : Json → Except String (List Graph)
   | _ => pure []
 
 /-- Decode only execution syntax. Annotations remain uninterpreted payloads;
-no producer claim or declaration-type elaboration chooses a control edge. -/
+no producer claim or declaration-type lowering chooses a control edge. -/
 def graphs (ast : Json) : Except String (List Graph) := do
   let functions ← jArr ast "functions"
   let top ← functions.mapM fun raw => do

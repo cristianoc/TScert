@@ -26,7 +26,7 @@ This document owns the claims' shape and meaning and the execution graph
 document (`verifier --lower-control-flow`, [below](#execution-graph)).
 `SourceClaimJson.PassUnit.mode8Accepted_sound` proves calculus safety for
 every function of a unit the pass accepts, at every permitted
-interpretation of its type parameters. The theorem concerns the extracted
+interpretation of its type parameters. The theorem concerns the lowered
 calculus graph; correspondence with the source is a separate boundary,
 specified below.
 
@@ -334,7 +334,7 @@ The action's `kind` determines its fields:
 A `statement` is a source span identifying syntax in the Fragment. A `binding`
 or `element` is a scope-binding descriptor. Every normal and handler target
 names a node in its graph. The verifier builds the graph from the Fragment
-for claim association and typed elaboration; the printed document is for
+for claim association and lowering; the printed document is for
 inspection (`make lowering`) and carries no acceptance authority.
 
 Each node's `executions` array contains `{source, plan}` for its expressions
@@ -518,7 +518,7 @@ invariant field bag, readonly views and optional fields. Every alternative must
 name each asserted field in one of those components. Additional
 simultaneous invariant contracts in a clause are outside this profile.
 
-Extraction checks an assertion in one of two ways. If every plain record
+Elaboration checks an assertion in one of two ways. If every plain record
 alternative's declared read result implies the asserted type, an ordinary
 property-read typing obligation checks it; the asserted type can be nonprimitive.
 Otherwise, a point observation requires a supported finite predicate from the

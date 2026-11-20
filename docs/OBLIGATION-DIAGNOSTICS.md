@@ -212,7 +212,7 @@ the node, and each of its context bindings, in the words of the source it was
 lowered from. It is nullable. When present, it contains:
 
 - `pos`: source span, in the parser's UTF-16 offsets.
-- `role`: assigned where extraction creates the obligation.
+- `role`: assigned where elaboration creates the obligation.
 - `environmentStart`: optional source statement-entry offset, only where known.
 - `context`: one descriptor per context binding, in context order.
 
@@ -331,7 +331,7 @@ owns their interpretation.
 ## Scope of a record
 
 No recursive proof-search trace, minimal failing premise, or complete dependency
-graph is promised. Extraction, type-decoding and missing-claim failures use typed
+graph is promised. Elaboration, type-decoding and missing-claim failures use typed
 source locations. A source map entry does not identify every contributing
 computed type or prove any premise separately.
 There are no retained mutable-heap observations. A form with obligations of its

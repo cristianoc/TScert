@@ -2191,7 +2191,7 @@ framed plan at its name, `FilePlans.passMember`), so acceptance and
 `mode8Accepted_sound` state what they state for every unit. A group with a
 framed member is printed as accepted under client trust at
 `--verify-interface-stage 8`
-(`{"unit","members","acceptedUnderClientTrust","depends","extraction"}`,
+(`{"unit","members","acceptedUnderClientTrust","depends","elaboration"}`,
 then `accept under client trust:`), and a module's interface does not
 establish it (`FilePlans.establishVerdict`).
 
@@ -2849,7 +2849,7 @@ with the bindings component the heap of sites had then).
 At pretext's package boundary the measured flow has 147 codes, 48,496
 nodes over 762 copies and 193,004 inclusion variables for 3,138,258
 slot and value occurrences. The merged proposal passes the flow and mark
-checks. It covers 16 of the 17 public entries. Extraction refuses
+checks. It covers 16 of the 17 public entries. Elaboration refuses
 `prepareWithSegments` at the assignment to `prepared.kinds`, five
 reachable helper bodies also lack graphs, and the source gate refuses
 `analysis.ts`.

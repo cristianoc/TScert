@@ -441,8 +441,8 @@ private def partsOver (F : Frozen) (r : SourceRequest EquationStore.State Tree) 
     let nodePlans ← r.nodePlans.mapM (planOver F)
     return (obligations, claims, nodePlans) : Relabeled F _).run' {}
 
-/-- An extracted unit's request over the frozen equations. The program is
-the extracted one; every label is read as `F`'s. -/
+/-- An elaborated unit's request over the frozen equations. The program is
+the lowered one; every label is read as `F`'s. -/
 def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree) :
     Except String (SourceRequest (Checked F.equations F.primitive)
       (CheckedLabel F.equations F.primitive)) := do

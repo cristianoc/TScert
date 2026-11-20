@@ -433,18 +433,18 @@ and the test above runs on the rest, at the domain's obligation. -/
 @[nospecialize] def memberAt (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (e : Fragment.Expr) (i : Nat)
     (cont : Nat → Continuation) : Compiler Target := do
-  let .tagMember p domain field tags onUndefined _ := e | throw "internal extraction error: a family guard's test"
+  let .tagMember p domain field tags onUndefined _ := e | throw "internal lowering error: a family guard's test"
   let A ← exprType fc e
   let D ← lower (Fragment.translate domain)
   let G := SourceTypes.graph (← table)
-  let some X := Γ[i]? | throw "internal extraction error: a family guard's slot"
+  let some X := Γ[i]? | throw "internal lowering error: a family guard's slot"
   -- The test on the domain, the slot at `Γ`'s type.
   let test := fun (Γ : List (Ty Tree)) => do
     -- The value within the guard's domain, an obligation of its slot; the
     -- operand's claim is its evaluation's, the test's claim its node's.
     let check := DirectProof.var Γ i D
     obligation p check.goal (some check) "guard-domain" scope
-    let some X := Γ[i]? | throw "internal extraction error: a family guard's slot"
+    let some X := Γ[i]? | throw "internal lowering error: a family guard's slot"
     -- The test's derivation is one node per tag (`memberPlan`), whatever the
     -- tested value's type.
     match field with
@@ -482,7 +482,7 @@ which the test reads and which `cont`'s mappings drop. -/
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (e : Fragment.Expr) (cont : Nat → Continuation)
     (operand : Fragment.Expr → Target → Compiler Target) :
     Compiler Target := do
-  let .tagMember p _ _ _ _ a := e | throw "internal extraction error: a family guard's test"
+  let .tagMember p _ _ _ _ a := e | throw "internal lowering error: a family guard's test"
   match a with
   | .var _ saved =>
     -- A saved operand read from an immutable name is tested at that name's
@@ -511,9 +511,9 @@ Mappings discard only the temporaries introduced by this expression. -/
   match _he : e with
   | .nullishAssign .. | .arrayAssign .. | .build .. | .objectAssign .. | .ifBody ..
     | .logical .. | .coalesce .. | .optional .. | .withObject .. | .comma .. | .logicalAssign .. | .update .. =>
-    throw "internal execution plan: compound source syntax reached atomic elaboration"
+    throw "internal execution plan: compound source syntax reached atomic lowering"
   | .equality .. => throw "internal unresolved equality"
-  | .block .. => throw "internal extraction error: statements outside a closure body"
+  | .block .. => throw "internal lowering error: statements outside a closure body"
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) | some (i, .slot _) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
@@ -527,7 +527,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     | some (i, .early _ _ _) =>
       let G := SourceTypes.graph (← table)
       let some (t, _) := resolve scope throwUninitializedName
-        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+        | throw s!"internal lowering error: an early binding's access without {throwUninitializedName}"
       -- The contents are what the read is claimed at, or the marker: the
       -- contract, or less where the cell's current contents are known.
       let stored := (A ++ (← uninitializedTy)).eraseDups
@@ -561,7 +561,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       -- assignment's.
       let G := SourceTypes.graph (← table)
       let some (t, _) := resolve scope throwUninitializedName
-        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+        | throw s!"internal lowering error: an early binding's access without {throwUninitializedName}"
       let C ← exprType fc rhs
       let contract ← initializedContract stored
       let effects := held ⟨"",some rhs.span⟩ :: scope
@@ -1021,7 +1021,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         emitAt e.span (Tm.elemAt (.var 1) (.var 0)) (.bind drop) (K::B::Γ) A (scope := temporaries)
       else do
         let index ← arrayKeyTerm key.span K
-        let .num b := index | throw "internal extraction error: an array key is a number"
+        let .num b := index | throw "internal lowering error: an array key is a number"
         -- Planned where the receiver's contract names its spine; otherwise
         -- the choice is open, and the node is searched.
         let plan? ← tryCatch (some <$> elemReadPlan G (K::B::Γ) (DirectProof.var (K::B::Γ) 1 B) b)

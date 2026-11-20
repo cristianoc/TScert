@@ -368,7 +368,7 @@ def moduleScheme (T : EquationStore.State) (g : Instantiable) :
 
 /-- A claim with a generic unit's binders read as their parameter rows, in
 ground form. A claim that does not ground keeps the reason at its site, as
-`ground` does, so only a site the extraction reads refuses. -/
+`ground` does, so only a site the elaboration reads refuses. -/
 private def atRows (θ : List (String × (ClaimType Tree))) (t : ClaimType Tree) :
     StateM EquationStore.State (ClaimType Tree) := modifyGet fun T =>
   let named := θ.filterMap fun (n, c) => match c with

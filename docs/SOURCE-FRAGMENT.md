@@ -1,7 +1,7 @@
 # Source fragment
 
 The source fragment is the subset of TypeScript admitted by the parser and
-source elaborator. This document is the index of its refusals: each row names
+source elaboration. This document is the index of its refusals: each row names
 a construct, the reason it is refused, the section that owns the rule, and the
 pipeline cases that exercise it, where one does (`pipeline/cases.mts`; a case marked
 "Node" also runs under Node in `tests/node-runs.mts`). A refusal establishes
@@ -9,7 +9,7 @@ that this pipeline cannot verify that source under its rules; it does not
 establish that the program is unsafe.
 [Source contracts](SOURCE-CONTRACTS.md) gives the interpretation of annotations
 and external declarations; [the trust surface](DESIGN.md#trust-surface) states
-the assumptions used when connecting the extracted graph to JavaScript.
+the assumptions used when connecting the lowered graph to JavaScript.
 
 ## Fragment boundary
 

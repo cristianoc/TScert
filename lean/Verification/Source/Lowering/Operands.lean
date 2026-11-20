@@ -4,7 +4,7 @@ import Verification.Source.Lowering.Observations
 import Verification.Source.Lowering.Plans
 import Verification.Source.ExpressionPlan
 
-/-! Elaborates saved spread and method operands. -/
+/-! Lowers saved spread and method operands. -/
 namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson

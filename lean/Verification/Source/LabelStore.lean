@@ -5,7 +5,7 @@ import Verification.Programs.CertificateProducer
 
 /-! What the source path asks of the labels it types a program with, and of
 the store that gives them meaning. The checked requests are written against
-these two interfaces, which two stores provide: the store extraction grows
+these two interfaces, which two stores provide: the store elaboration grows
 over the lowering's heads (`EquationStore.State`, labels `Tree`), and the
 equations those heads present, frozen (`EquationStore.Checked`, labels
 `CheckedLabel`). Neither interface carries a proof obligation: a store's graph

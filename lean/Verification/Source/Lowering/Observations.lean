@@ -26,7 +26,7 @@ scope ends with, past the node's own `Γ.length - n` inner slots. -/
   | some (entry, n) =>
     if cannotThrow t then return none
     if Γ.length < n then
-      throw "internal extraction error: a node inside a try is outside the try's scope"
+      throw "internal lowering error: a node inside a try is outside the try's scope"
     let inner := Γ.length - n
     return some ⟨entry.label, some ((entry.mapping.getD (List.range (n+1))).map
       fun i => if i == 0 then 0 else i + inner)⟩
@@ -38,7 +38,7 @@ scope ends with, past the node's own `Γ.length - n` inner slots. -/
 
 /-- Record this node's source map entry. Explanatory only; never part of the
 certified request. The context must be describable binding for binding: a
-context this cannot name is an extraction bug, not a slot number for a reader,
+context this cannot name is a lowering bug, not a slot number for a reader,
 so it fails here rather than reaching a message. -/
 @[nospecialize] def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Tree)) (A : Ty Tree)
     (role : String := "node-typing") (environmentStart : Option Nat := none)
@@ -49,9 +49,9 @@ so it fails here rather than reaching a message. -/
     reservedWriteCheck pos (Γ[i]?.getD []) (errorOwnedKey fld)
   let target ← emit t k Γ A
   if scope.length != Γ.length then
-    throw s!"internal extraction error: source map covers {scope.length} of {Γ.length} bindings at {pos.1}"
+    throw s!"internal lowering error: source map covers {scope.length} of {Γ.length} bindings at {pos.1}"
   if let some b := scope.find? (!·.source.describes) then
-    throw s!"internal extraction error: undescribed binding '{b.source.name}' at {pos.1}"
+    throw s!"internal lowering error: undescribed binding '{b.source.name}' at {pos.1}"
   recordNodeSource target ⟨pos,role,environmentStart,sources scope⟩
   return target
 
@@ -184,9 +184,9 @@ justify its supplied current-heap assertion, including backedges. -/
 @[nospecialize] def obligation (pos : Span) (j : ProgramCertificates.Sequent Tree) (plan : Option (DirectProof.Plan Tree))
     (role : String) (scope : List (ScopeBinding Tree)) : Compiler Unit := do
   if scope.length != j.context.length then
-    throw s!"internal extraction error: source map covers {scope.length} of {j.context.length} bindings at {pos.1}"
+    throw s!"internal lowering error: source map covers {scope.length} of {j.context.length} bindings at {pos.1}"
   if scope.any (!·.source.describes) then
-    throw s!"internal extraction error: undescribed binding at {pos.1}"
+    throw s!"internal lowering error: undescribed binding at {pos.1}"
   recordObligation ⟨pos,j,plan,role,sources scope⟩
 
 /-- Ordinary lambda proofs cannot retain transient heap observations across

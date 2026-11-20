@@ -543,7 +543,7 @@ message and nothing else. -/
 
 /-- How one context binding is named in the source: a source binding it is
 addressable by, the expression whose value it holds, or both. At least one is
-present — a context this cannot describe is an extraction error, not a slot
+present — a context this cannot describe is a lowering error, not a slot
 number shown to a reader. -/
 structure Descriptor where
   name : String := ""

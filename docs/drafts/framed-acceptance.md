@@ -145,7 +145,7 @@ records (Astra and Fable found none of them reopened, Fable's table).
 - **`approx_stable`** (Astra 2, Fable N2): false where an outside slot
   varies with the depth (`ApproxStable.lean`). Closed by a restriction,
   every outside slot an audited realm value constant in the depth, which
-  P22's extracted layout meets (measured, `layout.out` and the probe's
+  P22's elaborated layout meets (measured, `layout.out` and the probe's
   module code), and the stability lemma under it (`PassUnit.approx_stable`;
   [initialization](#initialization), [restrictions](#restrictions)).
 - **Coverage from each actual invocation** (Astra 3, Fable N5): the
@@ -766,7 +766,7 @@ module code the flow probe reads): one function, `walk`; no module
 initialization statement (`init: []`); no imported module; two outside
 slots, the intrinsic `%ElementAt%` the read `xs[c.i]!` lowers to, an
 audited native with a step model, and `[[Array.prototype]]`, the realm's
-array prototype every unit that uses arrays sees (`Extraction.lean`), an
+array prototype every unit that uses arrays sees (`Elaboration.lean`), an
 intrinsic object of $`h_R`$. `walk` names no function of its module. So
 P22 meets the restriction and its `initC` allocates one closure.
 

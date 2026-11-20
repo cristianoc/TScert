@@ -33,7 +33,7 @@ Lowering is untrusted in what it proposes (the hash-consing of literal
 heads) and trusted in what it states: the equations
 are the meaning of the source. The source path reads it through
 `EquationLowering.source` (`SourceClaimJson.equationFront`), and the store
-extraction grows is its state (`EquationStore`). -/
+elaboration grows is its state (`EquationStore`). -/
 namespace Verification.EquationLowering
 open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules PositiveCertificates
   CallEffects

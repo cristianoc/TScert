@@ -10,7 +10,7 @@ import Verification.Source.Lowering.Plans
 import Verification.Source.Lowering.Control
 -- Lowering/ClosureSetup.lean prepares closure signatures, parameters and captures.
 import Verification.Source.Lowering.ClosureSetup
--- Lowering/Operands.lean elaborates saved spread and method operands.
+-- Lowering/Operands.lean lowers saved spread and method operands.
 import Verification.Source.Lowering.Operands
 -- Lowering/Callbacks.lean declares the recursive lowering entry points.
 import Verification.Source.Lowering.Callbacks
@@ -18,7 +18,7 @@ import Verification.Source.Lowering.Callbacks
 import Verification.Source.Lowering.Closures
 -- Lowering/Expression.lean builds compositional expression proof plans.
 import Verification.Source.Lowering.Expression
--- Lowering/Atoms.lean elaborates atomic expressions and predicates.
+-- Lowering/Atoms.lean lowers atomic expressions and predicates.
 import Verification.Source.Lowering.Atoms
 -- Lowering/Execution.lean follows operand execution plans.
 import Verification.Source.Lowering.Execution
@@ -31,16 +31,16 @@ import Verification.Source.SourceFacts
 -- SourceRequests.lean defines the requests and validates their evidence.
 import Verification.Source.SourceRequests
 import Verification.Source.Fragment
--- FlowGraph.lean owns the execution identities and control destinations that typed elaboration consumes.
+-- FlowGraph.lean owns the execution identities and control destinations that typed lowering consumes.
 import Verification.Source.FlowGraph
--- ExpressionPlan.lean owns operand execution order; typed atoms elaborate its saved values.
+-- ExpressionPlan.lean owns operand execution order; typed atoms lower its saved values.
 import Verification.Source.ExpressionPlan
 -- BindingPlan.lean owns persistent bindings and the conditional execution of pattern and parameter defaults.
 import Verification.Source.BindingPlan
 import Verification.Source.SourceClaims
 import Verification.Source.FragmentTypes
 
-/-! Source extraction for the stateful consumer: it lowers a unit of the
+/-! Source lowering for the stateful consumer: it lowers a unit of the
 Fragment AST (`Fragment`) to a calculus program with its point claims. Names
 are resolved against initialized local bindings. Supplied expression types and
 source annotations become distinct obligations. The consumer reconstructs the
@@ -49,7 +49,7 @@ checked against.
 
 Active-name shadowing is refused here: the parser gives a shadowing local a
 name of its own (SOURCE-ELABORATION.md, "Shadowing"). This compiler remains a reviewed
-extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
+lowering boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.SourceElaboration
 open CallEffects (Arrow RestArrow Contract Effect)
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
@@ -155,7 +155,7 @@ gives of the names it read. -/
       if let some (_, reference) := storage then return reference
       do
         match ty with
-        | Except.ok (.cell _) => throw "internal extraction error: a module cell's storage"
+        | Except.ok (.cell _) => throw "internal lowering error: a module cell's storage"
         | Except.ok (.written ty) => lower (Fragment.translate ty)
         | Except.ok (.claimed A annotation) => do
           let inferred ← (SourceClaims.resolve (← table) A).mapError fun msg =>

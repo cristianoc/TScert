@@ -13,7 +13,7 @@ evaluation order, is declared and commented in
 justified by calculus rules; [source contracts](SOURCE-CONTRACTS.md)
 interprets declarations and annotations. [SOURCE-CLAIMS](SOURCE-CLAIMS.md)
 owns the execution-plan and claim formats, and
-[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) owns extracted calculus requests. [The fragment boundary](SOURCE-FRAGMENT.md) lists source
+[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) owns elaborated calculus requests. [The fragment boundary](SOURCE-FRAGMENT.md) lists source
 restrictions.
 
 ## Source mode
@@ -167,12 +167,12 @@ rule; a computed type cannot establish a test result.
 
 The [source commands](REQUEST-PROTOCOL.md#run-the-verifier) consume the
 Fragment and the module interfaces of its imports. Lean computes the execution
-plans, the types at their points and the extracted requests from the syntax.
+plans, the types at their points and the elaborated requests from the syntax.
 Source identity, declaration dependencies, inputs, outputs and required
 obligations are checked before acceptance.
 
 The acceptance theorem (`mode8Accepted_sound`) proves each member of an
-accepted unit safe: its extracted calculus program is safe from every entry
+accepted unit safe: its lowered calculus program is safe from every entry
 meeting its input contracts and meets its stated footprint, result and
 assertions. Faithful parsing, source evaluation order and the
 interpretation of external declarations remain the review obligations named
