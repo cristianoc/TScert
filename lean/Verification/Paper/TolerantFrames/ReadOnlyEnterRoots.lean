@@ -662,7 +662,7 @@ theorem entry_roots [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).S
   have hsite : ∀ l, l < a.1.s.h.length → a₁.2.site l = a.2.site l := by
     intro l hl
     rw [next_site hS (kstep_of_xstep hx) l (by rw [hheap]; exact hl)]
-    exact (Ghost.alloc_old hl).1
+    exact (Ghost.alloc_old hl)
   have hOT : Sub F.flow.O (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) :=
     fun s hs => (capClosedB_sound hT).1 s (List.mem_append_right _ hs)
   have hdeep : ∀ v S₁, VJ F.flow a.2 a.1.s.h.length S₁ v → Sub S₁ F.flow.O → layP (layQ F lay) v = true →

@@ -163,7 +163,7 @@ theorem decompose_trace (off : Nat) : ∀ n : Nat,
         have hk' := kind_outside ho heq
         have hA : a.2.A ≠ [] := by
           intro h; rw [h] at hl; simp only [δ, List.length_nil] at hl hda; omega
-        have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) (chk a.1 b.1).key := by
+        have hb : b.2 = a.2.alloc a.1.s.h.length (fun _ => none) := by
           rw [hg]; simp only [Ghost.next, Ghost.stepAt, stepKind_conf, hk']; exact outsideNext_of_ne hA
         have hrow := hyp_row hk' hh
         rw [← hg, hb] at hrow

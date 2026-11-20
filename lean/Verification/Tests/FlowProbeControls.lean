@@ -35,9 +35,8 @@ private def F0 : FFlow Pk := { O := [none], heap := [], codes := [] }
 
 /-! ## A spine replaced through the spine key -/
 
-/-- The kinds the write `writeAt arraySpineKey (var 0) (arr [])` may
-change. -/
-private def spineWrites : List (Option Kind) :=
+/-- The charges of the write `writeAt arraySpineKey (var 0) (arr [])`. -/
+private def spineWrites : List Charge :=
   writesK (.writeAt arraySpineKey (.var 0) (.arr []))
 
 #guard probeProtocol (P := Pk) spineWrites [] ⟨none, some .spine, none⟩ = .any
@@ -47,23 +46,25 @@ private def spineWrites : List (Option Kind) :=
 -- `i + 1 ≤ xs.length` across a call, `xs` in slot `0`: its spine at `grow`,
 -- refused
 #guard frameCheckAt classQuery (probeProtocol (P := Pk) spineWrites []) [] [(.spine 0 [], .grow)] F0.flow.H
-  (fun _ => [none]) noKeys (fun _ => false) = false
+  (fun _ => [none]) (fun _ => false) = false
 
 /-! ## A local cursor written through a capture -/
 
-/-- The kinds the closure's body `c.i = 1` may change. -/
-private def setterWrites : List (Option Kind) :=
+/-- The charges of the closure's body `c.i = 1`. -/
+private def setterWrites : List Charge :=
   writesK (.writeAt (.str "i") (.var 1) (.num 1))
 
 -- a capture may hold the site: its field is charged
-#guard probeProtocol (P := Pk) setterWrites [some 0] ⟨some 0, some .field, none⟩ = .any
+#guard probeProtocol (P := Pk) setterWrites [some 0] ⟨some 0, some .field, some (.str "i")⟩ = .any
+-- its field at another key: kept
+#guard probeProtocol (P := Pk) setterWrites [some 0] ⟨some 0, some .field, some (.str "j")⟩ = .keep
 -- no capture may hold the site: kept
-#guard probeProtocol (P := Pk) setterWrites [] ⟨some 0, some .field, none⟩ = .keep
+#guard probeProtocol (P := Pk) setterWrites [] ⟨some 0, some .field, some (.str "i")⟩ = .keep
 
 -- `0 ≤ c.i` across a call, `c` in slot `0` of the local site `0`, its field
 -- captured: refused
 #guard frameCheckAt classQuery (probeProtocol (P := Pk) setterWrites [some 0]) [] [(.field 0 (.str "i"), .keep)] F0.flow.H
-  (fun _ => [some 0]) noKeys (fun _ => false) = false
+  (fun _ => [some 0]) (fun _ => false) = false
 
 /-! ## Storage reached through another closure's capture -/
 
@@ -87,11 +88,11 @@ private def caps1 : Option Nat → Sites Pk
 #guard !capClosedB F1 caps1 [some 4] [some 4, some 3, some 1]
 #guard !capClosedB F1 caps1 [some 4] [some 3, some 1, some 2]
 
-/-- The kinds `bump`'s write `holder.child.i++` may change. -/
-private def bumpWrites : List (Option Kind) := writesK (.writeAt (.str "i") (.readAt (.str "child") (.var 0)) (.num 1))
+/-- The charges of `bump`'s write `holder.child.i++`. -/
+private def bumpWrites : List Charge := writesK (.writeAt (.str "i") (.readAt (.str "child") (.var 0)) (.num 1))
 
 -- charged within the call's reach, kept outside it
-#guard probeProtocol (P := Pk) bumpWrites (capClose F1 caps1 [some 4]) ⟨some 2, some .field, none⟩ = .any
-#guard probeProtocol (P := Pk) bumpWrites [some 4, some 3, some 1] ⟨some 2, some .field, none⟩ = .keep
+#guard probeProtocol (P := Pk) bumpWrites (capClose F1 caps1 [some 4]) ⟨some 2, some .field, some (.str "i")⟩ = .any
+#guard probeProtocol (P := Pk) bumpWrites [some 4, some 3, some 1] ⟨some 2, some .field, some (.str "i")⟩ = .keep
 
 end Verification.SourceClaimJson.FlowProbeControls

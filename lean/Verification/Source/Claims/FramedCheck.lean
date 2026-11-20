@@ -246,13 +246,13 @@ here keeps the native compiler from postponing the closure until a part is
 queried. -/
 @[noinline] def componentCharges {ofC : ComponentTag → Bool} {O : List (Option Nat)}
     (F : FFlow (markedPackage ofC O)) (lay : List (Nat × Bool × Nat × Nat)) :
-    List (Option Verification.Kind) × Std.HashSet (Option Nat) :=
+    List Charge × Std.HashSet (Option Nat) :=
   (flowKinds F, Std.HashSet.ofList (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)))
 
 def chargeAt {ofC : ComponentTag → Bool} {O : List (Option Nat)}
-    (charges : List (Option Verification.Kind) × Std.HashSet (Option Nat)) : Protocol (markedPackage ofC O) :=
+    (charges : List Charge × Std.HashSet (Option Nat)) : Protocol (markedPackage ofC O) :=
   fun p => if p.site.any (fun s => (markedPackage ofC O).mark s = .local) && !charges.2.contains p.site then .keep
-    else if charges.1.contains p.kind then .any else .keep
+    else if charges.1.contains (p.kind, p.key) then .any else .keep
 
 def componentIndex {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) : Protocol (markedPackage ofC O) :=
@@ -261,15 +261,16 @@ def componentIndex {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FF
 theorem componentIndex_eq {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) : componentIndex F lay = componentProtocol F lay := rfl
 
-/-- A component's protocol at every part of its flow's sites, each part's
-change but `keep` (`componentProtocol`, `partsU`). -/
+/-- A component's protocol at every part of its flow's sites and its
+charges' keys, each part's change but `keep` (`componentProtocol`,
+`partsU`); it is `keep` at every other key (`probeProtocol`). -/
 def protocolParts {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
-    (lay : List (Nat × Bool × Nat × Nat)) : List (Option Nat × Option Verification.Kind × Footprints.Change) :=
+    (lay : List (Nat × Bool × Nat × Nat)) : List (Option Nat × Option Verification.Kind × Option PropKey × Footprints.Change) :=
   -- (the protocol's index built once, its parts queried)
   let charges := componentCharges F lay
-  (partsU (flowSites F)).filterMap fun p =>
+  (partsU (flowSites F) (none :: charges.1.map (·.2)).eraseDups).filterMap fun p =>
     let c := chargeAt (ofC := ofC) (O := O) charges p
-    if c == .keep then none else some (p.site, p.kind, c)
+    if c == .keep then none else some (p.site, p.kind, p.key, c)
 
 /-- **A forged component** (`--force-proposals`, the controls'):
 `framed-flow-site` swaps the object and array sites of the first
@@ -311,7 +312,7 @@ structure FramedComponent where
   rows : List ComponentWire.Clients
   restriction : Option String
   cf : ComponentFlow ofC
-  psiDef : List (Option Nat × Option Verification.Kind × Footprints.Change)
+  psiDef : List (Option Nat × Option Verification.Kind × Option PropKey × Footprints.Change)
   realm : Heap
   initE : List Tm
   initK : List (Continuation × Option Target)
@@ -383,8 +384,9 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
     let #[k, c] := (← e.getArr?) | throw "an entry of the document's theta: not a kind and a change"
     return (← kindNameOf k, ← EffectCodec.changeOf c)
   let psi ← (← (← doc.getObjVal? "protocol").getArr?).toList.mapM fun e => do
-    let #[s, k, c] := (← e.getArr?) | throw "an entry of the document's protocol: not a site, a kind and a change"
-    return (← fromJson? (α := Option Nat) s, ← kindNameOf k, ← EffectCodec.changeOf c)
+    let #[s, k, key, c] := (← e.getArr?)
+      | throw "an entry of the document's protocol: not a site, a kind, a key and a change"
+    return (← fromJson? (α := Option Nat) s, ← kindNameOf k, ← (if key.isNull then pure none else some <$> EffectCodec.keyOf key), ← EffectCodec.changeOf c)
   let rows ← (← doc.getObjVal? "framed").getArr?
   let framed ← rows.toList.mapM fun row => do
     exactFields row ["node", "supports"] "a framed call node of the document"

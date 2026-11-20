@@ -226,13 +226,13 @@ crossings and exits change no site. -/
 theorem stepAt_site {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {d : CheckData (F.at C) tv}
     {h : Heap} {t : Tm} {h' : Heap} {t' : Tm} {g : Ghost (F.at C)} :
     (Ghost.stepAt F C c d h t h' t' g).site =
-      (g.alloc h.length (if stepKind F C c t t' = .outside then fun _ => none else d.site) d.key).site := by
+      (g.alloc h.length (if stepKind F C c t t' = .outside then fun _ => none else d.site)).site := by
   unfold Ghost.stepAt
   split <;> rename_i hk
   · rw [if_pos hk]; unfold outsideNextAt; split <;> rfl
-  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _).1
-  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _).1
-  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _).1
+  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
+  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
+  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
 
 /-! ## The roots of outside code -/
 
@@ -459,7 +459,7 @@ at a step of outside code, whose innermost frame `stepSite` reads is then
 outside code's (`stepSite_outside`), and the checks' sites otherwise. -/
 theorem next_site (hS : fr.FlowSites Fl) {a b : Conf × Ghost (fr.F.at fr.C)} (hk : fr.KStep a b) :
     ∀ l, l < b.1.s.h.length →
-      b.2.site l = (a.2.alloc a.1.s.h.length (fun _ => stepSite Fl none a.1.t) (fr.chkConf a.1 b.1).key).site l := by
+      b.2.site l = (a.2.alloc a.1.s.h.length (fun _ => stepSite Fl none a.1.t)).site l := by
   obtain ⟨hst, hg, -⟩ := hk
   intro l hl
   rw [hg]
@@ -478,7 +478,7 @@ theorem next_site (hS : fr.FlowSites Fl) {a b : Conf × Ghost (fr.F.at fr.C)} (h
 /-- **Every step keeps a state fitting the flow** (proved, `fits_step`). -/
 theorem fitsAt_step (hF : Fl.Facts) (hS : fr.FlowSites Fl) {a b : Conf × Ghost (fr.F.at fr.C)} (hk : fr.KStep a b)
     (ha : fr.FitsAt Fl a) : fr.FitsAt Fl b := by
-  obtain ⟨hfit, hH⟩ := fits_step hF hk.1.step (cur := none) (fr.chkConf a.1 b.1).key ha.1 ha.2
+  obtain ⟨hfit, hH⟩ := fits_step hF hk.1.step (cur := none) ha.1 ha.2
   have he := next_site hS hk
   exact ⟨hfit.mono fun _ _ hv => hv.congr he, hH.congr he⟩
 
@@ -499,9 +499,9 @@ theorem sitesSound_of_fits (hF : Fl.Facts) (hS : fr.FlowSites Fl) (hE : fr.Entry
     fr.SitesSound Fl.H Fl.O := by
   intro a b ha hk _
   have hfa := fitsAt_reached hF hS hE ha
-  obtain ⟨hfit, hH⟩ := fits_step hF hk.1.step (cur := none) (fr.chkConf a.1 b.1).key hfa.1 hfa.2
+  obtain ⟨hfit, hH⟩ := fits_step hF hk.1.step (cur := none) hfa.1 hfa.2
   have hmid : midOf fr.chkConf a.1 b.1 a.2 =
-      a.2.alloc a.1.s.h.length (fun _ => stepSite Fl none a.1.t) (fr.chkConf a.1 b.1).key := by
+      a.2.alloc a.1.s.h.length (fun _ => stepSite Fl none a.1.t) := by
     simp only [midOf, chkConf]; rw [hS]
   rw [hmid]
   refine ⟨hH.sites, fun r hr => fits_roots hfit r ?_⟩

@@ -77,14 +77,14 @@ theorem follows_split {ofC : ComponentTag → Bool} {h h' : Heap} :
 /-! ## The history keeps the marks -/
 
 theorem HStep.marks {tv : TypeView} {h : Heap} {g g' : Ghost P} (hs : HStep tv h g g') :
-    g'.site = g.site ∧ g'.key = g.key := by
-  cases hs <;> exact ⟨rfl, rfl⟩
+    g'.site = g.site := by
+  cases hs <;> rfl
 
 theorem HSteps.marks {tv : TypeView} {d : Nat} {g g' : Ghost P} (hs : HSteps tv d g g') :
-    g'.site = g.site ∧ g'.key = g.key := by
+    g'.site = g.site := by
   induction hs with
-  | refl => exact ⟨rfl, rfl⟩
-  | step _ hst _ _ ih => exact ⟨ih.1.trans hst.marks.1, ih.2.trans hst.marks.2⟩
+  | refl => rfl
+  | step _ hst _ _ ih => exact ih.trans hst.marks
 
 theorem HStep.exposed_mono {tv : TypeView} {h : Heap} {g g' : Ghost P} (hs : HStep tv h g g') {l : Nat}
     (he : g.E l) : g'.E l := by
@@ -150,7 +150,7 @@ stored into storage"). The frames' values stay valid. -/
 structure PkgStep (tv : TypeView) (d : Nat) (st st' : St P) : Type where
   adm : Admissible st.s st'.s
   mid : Ghost P
-  sites : ∀ l, l < st.s.h.length → mid.site l = st.g.site l ∧ mid.key l = st.g.key l
+  sites : ∀ l, l < st.s.h.length → mid.site l = st.g.site l
   midE : mid.E = st.g.E
   midA : mid.A = st.g.A
   midB : mid.B = st.g.B
@@ -176,10 +176,10 @@ the marks. (P2): an exposed location so reached was in
 theorem pkg_step_inv {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d st st') (hok : Inv st) :
     Inv st' := by
   have hm := hp.hist.marks
-  have hkept : Kept st st' := ⟨hp.adm, fun l hl => by rw [hm.1, hm.2]; exact hp.sites l hl⟩
+  have hkept : Kept st st' := ⟨hp.adm, fun l hl => by rw [hm]; exact hp.sites l hl⟩
   have hu := hp.hist.uniform (Ghost.uniform_congr hp.midA hp.midB hok.uniform)
   have hgE : ∀ l, st.g.E l → st'.g.E l := fun l h => hp.hist.exposed_mono (by rw [hp.midE]; exact h)
-  have horig : ∀ l, st'.g.origin l = hp.mid.origin l := fun l => by simp only [Ghost.origin, hm.1]
+  have horig : ∀ l, st'.g.origin l = hp.mid.origin l := fun l => by simp only [Ghost.origin, hm]
   -- A location reached afterwards from a value that crossed meets the marks.
   have hcross : ∀ c ∈ hp.xs, ∀ l, Reaches P.ofC st'.s.h c.val l →
       st'.g.origin l ≠ some .local ∧ st'.g.origin l ≠ some .internal ∧
@@ -220,7 +220,7 @@ theorem pkg_step_inv {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv 
       have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
       have hl' : l < st.s.h.length := next_lt (RefsOk.refsOkN (contents_valid hw hv₀)) hn
       have hmo : ∀ x, x < st.s.h.length → hp.mid.origin x = st.g.origin x := fun x hx => by
-        simp only [Ghost.origin, (hp.sites x hx).1]
+        simp only [Ghost.origin, (hp.sites x hx)]
       rw [hmo l hl'] at hloc
       rw [hmo w hw]
       exact hok.localClosed w _ hv₀ a l hn hloc
@@ -235,7 +235,7 @@ theorem pkg_step_inv {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv 
       have hw : w < st.s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
       have hl' : l < st.s.h.length :=
         Leaves.lt (s := st.s) (codeVals_refsOkN (RefsOk.refsOkN (contents_valid hw hv₀)) hx) hl
-      have hmo : hp.mid.origin l = st.g.origin l := by simp only [Ghost.origin, (hp.sites l hl').1]
+      have hmo : hp.mid.origin l = st.g.origin l := by simp only [Ghost.origin, (hp.sites l hl')]
       rw [hmo] at hloc
       exact hok.bindings w _ hv₀ x hx l hl hloc
     · exact hp.localBindings w u hs hu' x hx l hl hloc
@@ -247,7 +247,7 @@ and grows the history. -/
 theorem pkg_step_ok {tv : TypeView} {d : Nat} {st st' : St P} (hp : PkgStep tv d st st') (hok : Ok d st) :
     Ok d st' ∧ Kept st st' ∧ Grows d st.g st'.g := by
   have hm := hp.hist.marks
-  have hkept : Kept st st' := ⟨hp.adm, fun l hl => by rw [hm.1, hm.2]; exact hp.sites l hl⟩
+  have hkept : Kept st st' := ⟨hp.adm, fun l hl => by rw [hm]; exact hp.sites l hl⟩
   have hmid : Grows d st.g hp.mid :=
     ⟨hok.pos, hok.len, by rw [hp.midA]; exact hok.len, hp.midB,
       fun l h => (Ghost.prot_congr hp.midA hp.midB l).mpr h, fun l h => by rw [hp.midE]; exact h⟩
@@ -559,7 +559,7 @@ possible keys of its locations (`hkey`); the kind is the region's bound's
 theorem flow_of_sites {S : Footprint} {ρ : Env} {st : St P} (hρ : RootsOk st.s.W ρ)
     {sites : Region → List (Option P.Site)} {keys : Region → List (Option PropKey)}
     (hsite : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.site l ∈ sites e.1)
-    (hkey : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → st.g.key l ∈ keys e.1) :
+    (hkey : ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true → keyAt st.s.W l ∈ keys e.1) :
     ∀ e ∈ S, ∀ l, l < st.s.h.length → e.1.mem ρ st.s.h l = true →
       st.part l ∈ partsOf (sites e.1) (keys e.1) e.1 := by
   intro e he l hl hm

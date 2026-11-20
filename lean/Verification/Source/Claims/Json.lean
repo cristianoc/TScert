@@ -899,7 +899,7 @@ def FramedSpec.bindingChecks {ι : Type} [LabelStore.Labels ι] (spec : FramedSp
         (List.range (c.node entry).fn.size).filter fun j => ((c.node entry).fnAt j).isSome).getD []
       s!" (the entry's slots naming a signature {named}, its sibling slots {sib})"),
     ("its client obligation (clientsB)", fun _ => clientsB spec.theta (componentRows spec.family spec.C), fun _ => ""),
-    ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (protocolOfParts id (partsIndex spec.psiDef)) ΨC,
+    ("its protocol (protocolAtLeastB)", fun _ => protocolAtLeastB U (partsKeys spec.psiDef) (protocolOfParts id (partsIndex spec.psiDef)) ΨC,
       fun _ => ""),
     ("its read-only types (readOnlyB)", fun _ => readOnlyB spec.family spec.C name r.inputs spec.readOnly, fun _ => ""),
     ("its framed call nodes (framedCallNodes)", fun _ => spec.framed.map (·.1) == framedCallNodes F spec.host m,

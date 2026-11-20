@@ -115,7 +115,7 @@ theorem framedNodesAt_sound {F : FFlow P} {lay : List (Nat × Bool × Nat × Nat
     (∀ l e k x, Verification.TolerantFrames.framedFOf framed l = true → m.1[l]? = some e → m.2[l]? = some (k, x) →
       ∀ c π l', F.flow.code m c = some π → NodeOf m l' k x →
       ∀ T ∈ Verification.TolerantFrames.framedSOf framed l,
-        frameCheckAt classQuery (nodeProtocolOf F lay theta m l) ((eff l).getD []) T F.flow.H (π.env l') noKeys
+        frameCheckAt classQuery (nodeProtocolOf F lay theta m l) ((eff l).getD []) T F.flow.H (π.env l')
           (fun _ => false) = true) := by
   -- (a framed node's sharing nodes, contexts and checks)
   have hshare : ∀ {l l' k x}, m.2[l]? = some (k, x) → NodeOf m l' k x → l' ∈ sharingNodes m l := by

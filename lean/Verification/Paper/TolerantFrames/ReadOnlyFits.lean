@@ -536,8 +536,8 @@ theorem VJ.sub {S S' : Sites P} {v : Val} (h : VJ Fl g n S v) (hS : Sub S S') : 
 
 theorem VJ.mono : Mono (VJ Fl g n) := fun _ _ _ hS h => h.sub hS
 
-theorem CapsOk.alloc {w : Val} {n' : Nat} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
-    (h : CapsOk Fl g n w) (hn : n ≤ n') : CapsOk Fl (g.alloc n sf key) n' w := by
+theorem CapsOk.alloc {w : Val} {n' : Nat} {sf : Nat → Option P.Site}
+    (h : CapsOk Fl g n w) (hn : n ≤ n') : CapsOk Fl (g.alloc n sf) n' w := by
   intro fs ar E K s caps k rest comp oid hw hc
   obtain ⟨h₀, hbelow, hall⟩ := h fs ar E K s caps k rest comp oid hw hc
   refine ⟨h₀, fun i u hu l hl => Nat.lt_of_lt_of_le (hbelow i u hu l hl) hn, fun c π hπ => ?_⟩
@@ -546,24 +546,24 @@ theorem CapsOk.alloc {w : Val} {n' : Nat} {sf : Nat → Option P.Site} {key : Na
 
 /-- **Allocation keeps what a value meets** (proved): the allocation keeps
 the site of every location the value references. -/
-theorem VJ.alloc {S : Sites P} {v : Val} {n' : Nat} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
-    (h : VJ Fl g n S v) (hn : n ≤ n') : VJ Fl (g.alloc n sf key) n' S v :=
+theorem VJ.alloc {S : Sites P} {v : Val} {n' : Nat} {sf : Nat → Option P.Site}
+    (h : VJ Fl g n S v) (hn : n ≤ n') : VJ Fl (g.alloc n sf) n' S v :=
   ⟨h.val, h.closed, fun l hl => Nat.lt_of_lt_of_le (h.below l hl) hn, h.sites.alloc h.below, h.fns,
     fun w hw => ⟨(h.inner w hw).1, (h.inner w hw).2.1.alloc hn, (h.inner w hw).2.2.1,
       fun x hx l hl => by
         obtain ⟨hlt, ho⟩ := (h.inner w hw).2.2.2 x hx l hl
         refine ⟨Nat.lt_of_lt_of_le hlt hn, ?_⟩
-        unfold Ghost.origin; rw [(Ghost.alloc_old hlt).1]; exact ho⟩⟩
+        unfold Ghost.origin; rw [(Ghost.alloc_old hlt)]; exact ho⟩⟩
 
 /-- **Allocation keeps a term fitting** (proved, `Fits.mono`). -/
 theorem Fits.alloc {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P} {t : Tm} {n' : Nat}
-    {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : Fits Fl (VJ Fl g n) Γ a o S t) (hn : n ≤ n') :
-    Fits Fl (VJ Fl (g.alloc n sf key) n') Γ a o S t :=
+    {sf : Nat → Option P.Site} (h : Fits Fl (VJ Fl g n) Γ a o S t) (hn : n ≤ n') :
+    Fits Fl (VJ Fl (g.alloc n sf) n') Γ a o S t :=
   h.mono fun _ _ hv => hv.alloc hn
 
 theorem VOr.alloc {Γ : Nat → Option (Sites P)} {S : Sites P} {u : Tm} {n' : Nat}
-    {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (h : VOr (VJ Fl g n) Γ S u) (hn : n ≤ n') :
-    VOr (VJ Fl (g.alloc n sf key) n') Γ S u :=
+    {sf : Nat → Option P.Site} (h : VOr (VJ Fl g n) Γ S u) (hn : n ≤ n') :
+    VOr (VJ Fl (g.alloc n sf) n') Γ S u :=
   h.imp fun _ _ hv => hv.alloc hn
 
 /-- **At a closed term a position is a value** (proved). -/
@@ -753,11 +753,11 @@ structure Flow.Facts : Prop where
 
 /-- A heap meeting the flow keeps meeting it at a step that allocates
 nothing (proved). -/
-theorem HeapInv.same {h : Heap} {sf : Nat → Option P.Site} {key : Nat → Option PropKey} (hH : HeapInv Fl g h) :
-    HeapInv Fl (g.alloc h.length sf key) h := by
+theorem HeapInv.same {h : Heap} {sf : Nat → Option P.Site} (hH : HeapInv Fl g h) :
+    HeapInv Fl (g.alloc h.length sf) h := by
   intro w u hw
   have hl : w < h.length := (List.getElem?_eq_some_iff.mp hw).1
-  rw [(Ghost.alloc_old hl).1]
+  rw [(Ghost.alloc_old hl)]
   exact (hH w u hw).alloc (Nat.le_refl _)
 
 /-- A term that steps is not a value. -/
@@ -960,18 +960,18 @@ theorem closed_graph {fs : List (PropKey × Nat)} {ar : Nat} {E : List Tm}
 
 /-- **An allocation keeps the heap meeting the flow** (proved): each fresh
 value meets the contents of its fresh location's site. -/
-theorem HeapInv.append {h : Heap} {xs : List Val} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
+theorem HeapInv.append {h : Heap} {xs : List Val} {sf : Nat → Option P.Site}
     (hH : HeapInv Fl g h)
-    (hnew : ∀ i u, xs[i]? = some u → VJ Fl (g.alloc h.length sf key) (h ++ xs).length
+    (hnew : ∀ i u, xs[i]? = some u → VJ Fl (g.alloc h.length sf) (h ++ xs).length
       (Fl.H.contents (sf (h.length + i))) u) :
-    HeapInv Fl (g.alloc h.length sf key) (h ++ xs) := by
+    HeapInv Fl (g.alloc h.length sf) (h ++ xs) := by
   intro w u hw
   by_cases hlt : w < h.length
   · rw [List.getElem?_append_left hlt] at hw
-    rw [(Ghost.alloc_old hlt).1]
+    rw [(Ghost.alloc_old hlt)]
     exact (hH w u hw).alloc (by simp)
   · rw [List.getElem?_append_right (by omega)] at hw
-    have hs : (g.alloc h.length sf key).site w = sf (h.length + (w - h.length)) := by
+    have hs : (g.alloc h.length sf).site w = sf (h.length + (w - h.length)) := by
       simp [Ghost.alloc, hlt, show h.length + (w - h.length) = w by omega]
     rw [hs]
     exact hnew _ u hw
@@ -1046,10 +1046,10 @@ theorem cells_leaves {u : Val} {ls : List (Option Nat)} (hu : u = .arr ls) {l : 
   exact Leaves.of_next (a := .cell i) (by simp [next, spineEntries, hi])
 
 /-- **A write keeps the heap meeting the flow at the step's ghost** (proved). -/
-theorem HeapInv.set_same {h : Heap} {w : Nat} {u : Val} {sf : Nat → Option P.Site} {key : Nat → Option PropKey}
+theorem HeapInv.set_same {h : Heap} {w : Nat} {u : Val} {sf : Nat → Option P.Site}
     (hH : HeapInv Fl g h) (hu : VJ Fl g h.length (Fl.H.contents (g.site w)) u) :
-    HeapInv Fl (g.alloc h.length sf key) (h.set w u) := by
-  have := (hH.set hu).same (sf := sf) (key := key)
+    HeapInv Fl (g.alloc h.length sf) (h.set w u) := by
+  have := (hH.set hu).same (sf := sf)
   rwa [List.length_set] at this
 
 theorem stepSite_setElem {cur : Option FrameKey} {ls : List (Option Nat)} {b : UInt64} {v : Tm}
@@ -1084,10 +1084,10 @@ theorem mem_slots : ∀ {base : Nat} {ns : List PropKey} {k : PropKey} {l : Nat}
 /-- **An allocation of values each meeting the contents of one site keeps
 the heap meeting the flow** (proved), a trailing identity location
 included. -/
-theorem HeapInv.fresh {h : Heap} {vs : List Val} {o : Option P.Site} {key : Nat → Option PropKey}
+theorem HeapInv.fresh {h : Heap} {vs : List Val} {o : Option P.Site}
     {Ss : Tm → Sites P} (hH : HeapInv Fl g h) (hst : ∀ x ∈ vs, Stores Fl o (Ss x))
     (hv : ∀ x ∈ vs, VJ Fl g h.length (Ss x) x) (tail : List Val) (htail : ∀ x ∈ tail, primVal x = true) :
-    HeapInv Fl (g.alloc h.length (fun _ => o) key) (h ++ (vs ++ tail)) := by
+    HeapInv Fl (g.alloc h.length (fun _ => o)) (h ++ (vs ++ tail)) := by
   refine hH.append fun i u hu => ?_
   rcases List.mem_append.mp (List.mem_of_getElem? hu) with hm | hm
   · exact ((hv u hm).sub (hst u hm)).alloc (by simp)

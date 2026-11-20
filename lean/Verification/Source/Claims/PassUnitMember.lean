@@ -137,7 +137,7 @@ theorem _root_.Verification.SourceClaimJson.FramedSpec.bindingB_iff {spec : Fram
       entryFnB spec.checked (realizedCode r) ((realizedCode r).1.length - 1)
         ((List.range (r.siblings.length + 1)).map (capSlot spec.arity false 0 + ·)) = true ∧
       clientsB spec.theta (componentRows spec.family spec.C) = true ∧
-      protocolAtLeastB (flowSites spec.checked) (protocolOfParts id (partsIndex spec.psiDef))
+      protocolAtLeastB (flowSites spec.checked) (partsKeys spec.psiDef) (protocolOfParts id (partsIndex spec.psiDef))
         (protocolOfParts id (partsIndex spec.psi)) = true ∧
       readOnlyB spec.family spec.C name r.inputs spec.readOnly = true ∧
       spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) := by

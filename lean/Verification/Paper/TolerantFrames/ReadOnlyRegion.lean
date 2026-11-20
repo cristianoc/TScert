@@ -429,13 +429,12 @@ structure Package where
   ofC : ComponentTag → Bool
 
 /-- **The ghost state** (the draft, "What the Lean states"): the site that
-allocated each location, `none` for storage outside code allocated; each
-field location's key, both fixed at allocation; the exposed locations `E`;
+allocated each location, `none` for storage outside code allocated, fixed
+at allocation; the exposed locations `E`;
 the history `A`, one set per active call of the package, bottom first; and
 the between-calls record `B`. -/
 structure Ghost (P : Package) where
   site : Nat → Option P.Site
-  key : Nat → Option PropKey
   E : Nat → Prop
   A : List (Nat → Prop)
   B : Nat → Prop

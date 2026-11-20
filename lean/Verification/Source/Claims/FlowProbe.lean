@@ -63,7 +63,7 @@ def frameSpecs (j : Json) : Except String (List FrameSpec) := do
 
 /-- **The frame's check at each call the spec names**, in the code `c` of a
 flow, of graph `m` and source map `sm` (`frameCheckAt`, at the class
-query, the probe's protocol and the keys `noKeys`, no region read as
+query, the probe's protocol and each region's keys, no region read as
 protected): per call node, per fact, its result, and each part its
 support's regions may have that fails, with the check it fails. The check
 is required at each node of the call node's continuation and handler (a
@@ -120,12 +120,12 @@ def probeFrames {ofC : ComponentTag → Bool} (O : List (Option Nat)) (F : FFlow
         | some G =>
           let fact : Linear.Fact HeapKnowledge.Term := if ff.ne then .ne G ff.bound else .le G ff.bound
           let S := Footprints.linearSupport {} fact
-          let ok := frameCheckAt classQuery Ψ sp.effect S F.flow.H τ noKeys (fun _ => false)
+          let ok := frameCheckAt classQuery Ψ sp.effect S F.flow.H τ (fun _ => false)
           let per := S.map fun (r, δ) =>
             match regionSites F.flow.H τ r with
             | none => s!"{repr r} at {repr δ}: no sites"
             | some T =>
-              let parts := callParts F.flow.H τ noKeys r
+              let parts := callParts F.flow.H τ r
               let reasons (p : Part (markedPackage ofC O)) :=
                 (p.mayIn && !(Ψ p).le δ,
                   p.mayOut false && sp.effect.any fun f => !(f.2.le δ) && !classQuery.disjoint r f.1)

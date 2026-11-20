@@ -54,48 +54,67 @@ structure St (P : Package) where
   g : Ghost P
   roots : List Val
 
+/-- **A location's key** (the Tolerant frames note, (W3)): a field's or a
+cell's key, which the world records in its role, fixed at allocation; none
+for an element cell, a spine or an identity. -/
+def keyAt {k : Nat} (W : WorldT k) (l : Nat) : Option PropKey := (roleAt W l).bind Role.key?
+
 /-- **A part** (the draft, "Parts and the protocol"): a site or `out`, a
-kind of the Tolerant frames note's world and, for a field location, its key. -/
+kind of the Tolerant frames note's world and, for a field or a cell
+location, its key. -/
 structure Part (P : Package) where
   site : Option P.Site
   kind : Option Kind
   key : Option PropKey
 
-/-- A location's part at a state. -/
-def St.part (st : St P) (l : Nat) : Part P := ⟨st.g.site l, kindAt st.s.W l, st.g.key l⟩
+/-- A location's part at a state: its site, and its kind and key in the
+world. -/
+def St.part (st : St P) (l : Nat) : Part P := ⟨st.g.site l, kindAt st.s.W l, keyAt st.s.W l⟩
 
 /-- **A protocol** `Ψ_P`: a change for each part. -/
 abbrev Protocol (P : Package) := Part P → Change
 
 /-- **A transition keeping the marks**: admissible, every old location's
-site and key fixed (the marks fixed at allocation, the draft's (M)). -/
+site fixed (the marks fixed at allocation, the draft's (M)). -/
 def Kept (st st' : St P) : Prop :=
-  Admissible st.s st'.s ∧ ∀ l, l < st.s.h.length → st'.g.site l = st.g.site l ∧ st'.g.key l = st.g.key l
+  Admissible st.s st'.s ∧ ∀ l, l < st.s.h.length → st'.g.site l = st.g.site l
 
-theorem Kept.refl (st : St P) : Kept st st := ⟨Admissible.refl _, fun _ _ => ⟨rfl, rfl⟩⟩
+theorem Kept.refl (st : St P) : Kept st st := ⟨Admissible.refl _, fun _ _ => rfl⟩
 
 theorem Kept.trans {st₁ st₂ st₃ : St P} (h₁ : Kept st₁ st₂) (h₂ : Kept st₂ st₃) : Kept st₁ st₃ := by
   refine ⟨WorldReach.trans h₁.1 h₂.1, fun l hl => ?_⟩
   have hl₂ : l < st₂.s.h.length := Nat.lt_of_lt_of_le hl h₁.1.length_le
-  exact ⟨(h₂.2 l hl₂).1.trans (h₁.2 l hl).1, (h₂.2 l hl₂).2.trans (h₁.2 l hl).2⟩
+  exact (h₂.2 l hl₂).trans (h₁.2 l hl)
 
-/-- **An admissible transition keeps each old location's kind.** -/
-theorem kindAt_kept {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} (hl : l < s.h.length) :
-    kindAt s'.W l = kindAt s.W l := by
+/-- **An admissible transition keeps each old location's role.** -/
+theorem roleAt_kept {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} (hl : l < s.h.length) :
+    roleAt s'.W l = roleAt s.W l := by
   obtain ⟨hle, hx⟩ := ha
   have hlen : l < (entries (trunc s'.n hle s.W)).length := by
     have := s.ok.1.1
     simp only [toList, List.length_map] at this
     simpa [entries_trunc] using this ▸ hl
-  rw [WExt_kindAt hx hlen, kindAt_trunc]
+  have hr : roleAt (trunc s'.n hle s.W) l = some ((roles (trunc s'.n hle s.W))[l]'(by simpa using hlen)) :=
+    List.getElem?_eq_getElem _
+  rw [WExt_roleAt hx hr, ← hr, roleAt_trunc]
+
+/-- **An admissible transition keeps each old location's kind.** -/
+theorem kindAt_kept {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} (hl : l < s.h.length) :
+    kindAt s'.W l = kindAt s.W l := by
+  simp only [kindAt, roleAt_kept ha hl]
+
+/-- **An admissible transition keeps each old location's key.** -/
+theorem keyAt_kept {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} (hl : l < s.h.length) :
+    keyAt s'.W l = keyAt s.W l := by
+  simp only [keyAt, roleAt_kept ha hl]
 
 theorem Kept.part {st st' : St P} (hk : Kept st st') {l : Nat} (hl : l < st.s.h.length) :
     st'.part l = st.part l := by
-  simp only [St.part, (hk.2 l hl).1, (hk.2 l hl).2, kindAt_kept hk.1 hl]
+  simp only [St.part, hk.2 l hl, kindAt_kept hk.1 hl, keyAt_kept hk.1 hl]
 
 theorem Kept.origin {st st' : St P} (hk : Kept st st') {l : Nat} (hl : l < st.s.h.length) :
     st'.g.origin l = st.g.origin l := by
-  simp only [Ghost.origin, (hk.2 l hl).1]
+  simp only [Ghost.origin, hk.2 l hl]
 
 /-! ## The action of `Φ ⊕_P Ψ_P` -/
 
@@ -146,7 +165,7 @@ theorem Leads.trans {d : Nat} {Φ : Footprint} {Ψ : Protocol P} {ρ : Env} {st�
   obtain ⟨v₂, hv₂, hb₁⟩ := h₁.1.2 l v₁ hv₁
   obtain ⟨v₃, hv₃, hb₂⟩ := h₂.1.2 l v₂ hv₂
   refine ⟨v₃, hv₃, fun hr => ?_, fun hr => ?_⟩
-  · have hr₂ : st₂.g.InR l := InR.mono h₁.2 (h₁.1.1.2 l hl).1 hr
+  · have hr₂ : st₂.g.InR l := InR.mono h₁.2 (h₁.1.1.2 l hl) hr
     have hp : st₂.part l = st₁.part l := h₁.1.1.part hl
     exact Change.Holds.trans h₁.1.1.1.length_le (hb₁.1 hr) (hp ▸ hb₂.1 hr₂)
   · obtain ⟨v₃', hv₃', hal⟩ := hc.2.2 l v₁ hv₁
@@ -429,7 +448,7 @@ theorem RBound.trans {Ψ : Protocol P} {d : Nat} {st₁ st₂ st₃ : St P} (h�
   refine ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1, fun l v₁ hr hv₁ => ?_⟩
   have hl : l < st₁.s.h.length := (List.getElem?_eq_some_iff.mp hv₁).1
   obtain ⟨v₂, hv₂, hc₁⟩ := h₁.2.2 l v₁ hr hv₁
-  have hr₂ : st₂.g.InR l := InR.mono h₁.2.1 (h₁.1.2 l hl).1 hr
+  have hr₂ : st₂.g.InR l := InR.mono h₁.2.1 (h₁.1.2 l hl) hr
   obtain ⟨v₃, hv₃, hc₂⟩ := h₂.2.2 l v₂ hr₂ hv₂
   rw [h₁.1.part hl] at hc₂
   exact ⟨v₃, hv₃, Change.Holds.trans h₁.1.1.length_le hc₁ hc₂⟩
@@ -585,7 +604,7 @@ theorem SupportAt.outside {Θ : Protocol P} {I : St P → Prop} {supp : St P →
       fun l hp => (Ghost.prot_congr ho.calls ho.record l).mpr hp, fun l he => by rw [ho.exposed]; exact he⟩
   refine ⟨hs.keeps st st' hi.1 ho.kept hb, fun l hl => ?_⟩
   obtain ⟨hlt, hr⟩ := hi.2 l (hs.stays st st' hi.1 ho.kept hb l hl)
-  exact ⟨Nat.lt_of_lt_of_le hlt ho.kept.1.length_le, InR.mono hg (ho.kept.2 l hlt).1 hr⟩
+  exact ⟨Nat.lt_of_lt_of_le hlt ho.kept.1.length_le, InR.mono hg (ho.kept.2 l hlt) hr⟩
 
 theorem RunAt.keeps {Θ Ψ : Protocol P} (hΘ : ∀ p, (Θ p).le (Ψ p) = true) {G : (St P → Prop) → Prop}
     {I : St P → Prop} (hG : G I) (hs : OutsideKeeps Θ I) {Inner : Nat → St P → St P → Prop}
@@ -630,7 +649,7 @@ theorem ownership {d : Nat} {st t : St P} {L : Nat → Prop} (ha : Admitted st L
     (hL : ∀ l, L l → l < st.s.h.length) (hk : Kept st t) (hg : Grows d st.g t.g) : ∀ l, L l → t.g.InR l := by
   intro l hl
   have hr : st.g.InR l := (ha l hl).elim (fun h => .inr (.inl h)) id
-  exact InR.mono hg (hk.2 l (hL l hl)).1 hr
+  exact InR.mono hg (hk.2 l (hL l hl)) hr
 
 /-- **A member's write keeps the invariant's support in `R_P`** (the
 guarantee's check at a write, a replacing write among them): where the
@@ -645,7 +664,7 @@ theorem InvIn.of_step {I : St P → Prop} {supp : St P → Nat → Prop} {d : Na
   refine ⟨hI, fun l hl => ⟨(hnew l hl).1, ?_⟩⟩
   rcases (hnew l hl).2 with hs | hr | ⟨ha, hlt⟩
   · obtain ⟨hlt, hr⟩ := hi.2 l hs
-    exact InR.mono hg (hk.2 l hlt).1 hr
+    exact InR.mono hg (hk.2 l hlt) hr
   · exact hr
   · exact ownership ha (fun _ h => h ▸ hlt) hk hg l rfl
 

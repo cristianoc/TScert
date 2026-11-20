@@ -2744,7 +2744,7 @@ of each fact's support, read at each node of the call's continuation and
 handler that may call outside code or makes a framed call
 (`ClientFrame.framed_at_call`), or that it is not required where none may
 (`Footprints.linearSupport`) at the separation of classes
-(`classQuery`, `classQuery_sound`), the keys `noKeys`, no region read as
+(`classQuery`, `classQuery_sound`), each region at its keys, no region read as
 protected and the call's protocol (below), with each part that
 fails and the check it fails. A request with `"inspect": true` also
 evaluates the predicate at the named call when no obligation arises,
@@ -2829,7 +2829,7 @@ at the visitor call, every fact read at the marks the flow gives:
   cursor.graphemeIndex` and `segmentCount <= segmentFlags.length` pass;
   the two facts relating `segmentCount` to `prepared.widths.length` fail,
   the field `widths` of outside storage changed by the walkers' writes
-  (`stats`) under `noKeys` and by the visitor's effect, no region read as
+  (`stats`) at a protocol of every part at the key `none` and by the visitor's effect, no region read as
   protected.
 - `walkPreparedComplexLines` reached from the raw walker, at its `onLine`
   (node 73, the one node of its continuation and handler): at the raw
@@ -2932,11 +2932,11 @@ premise of the rule (`ReadOnlyCallFrame.lean`):
   handler that may call outside code, at that node's slots, and at no
   other; a frame of a node whose callee's set lacks outside storage (an
   `undefined` visitor) performs no call of outside code there.
-- **The keys of a region** (`ClientFrame.NoKeys`, `reached_key`,
-  `framed_at_innermost_keys`): the checks read the protocol per site and
-  kind, giving every location they allocate the key `none`, as the entry
-  history does (`entryStart_key`); every location of a reached state has
-  the key `none`, the one key `noKeys` gives each region.
+- **The keys of a region** (`regionKeys`, `regionKeys_sound`,
+  `regionKeys_of_sites`): a location's key is the one its role in the
+  world records (`keyAt`); every location of a region has one of the
+  region's keys, the key its form fixes or none where its bound holds no
+  field or cell.
 - **Live protection witnesses** (`entryStart_witness`, `Witness.grow`): a
   location an entry's argument reaches read-only at its parameter's type,
   inside a call of $`C`$, has a witness at the entry history, and at every

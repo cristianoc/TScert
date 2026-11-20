@@ -5,9 +5,10 @@ import Verification.Paper.TolerantFrames.ReadOnlyCert
 
 The draft "Accepting a unit through the read-only frame"
 (`docs/drafts/framed-acceptance.md`, "Charges", `residual_charged`). The
-charges of a set of codes are the kinds their node expressions' writes may
-change (`writesK`, `codeKinds`); this module proves that a step of a frame
-changes an old location only at a kind its code's charges hold.
+charges of a set of codes are the kinds and keys their node expressions'
+writes may change (`writesK`, `codeKinds`); this module proves that a step
+of a frame changes an old location only at a kind and key its code's
+charges hold.
 
 - **The residual invariant** (`WOk`): at every run of graph code in a
   term, the writes its running term may still perform are among its code's
@@ -20,13 +21,13 @@ changes an old location only at a kind its code's charges hold.
 - **The active redex's writes** (`active_writes`): the writes of the term
   the next step reduces are among the charges of the innermost frame's
   code.
-- **The written location's kind** (`slotKind_sound`): a writing redex
-  whose references are valid writes a location of a kind its write may
-  change (`writeKinds`).
+- **The written location's kind and key** (`slotKind_sound`): a writing
+  redex whose references are valid writes a location whose kind and key
+  its write charges.
 - **A step's changes are its code's charges** (`step_kind_charged`): at a
   step from a term meeting the invariant, with valid references, every old
-  location the step changes has a kind the innermost frame's code's charges
-  hold. -/
+  location the step changes has a kind and a key the innermost frame's
+  code's charges hold. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification
 
@@ -501,7 +502,7 @@ theorem step_wok {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hh : HeapW h) 
 
 /-- **The charges of a frame**: those of its code, the kinds its node
 expressions' writes may change; `K₀` outside every frame. -/
-def frameKinds (K₀ : List (Option Verification.Kind)) : Option FrameKey → List (Option Verification.Kind)
+def frameKinds (K₀ : List Charge) : Option FrameKey → List Charge
   | none => K₀
   | some key => codeKinds key.1.1
 
@@ -509,7 +510,7 @@ def frameKinds (K₀ : List (Option Verification.Kind)) : Option FrameKey → Li
 induction on the term): in a term meeting the invariant whose writes are
 among the charges of the frame `cur` around it, the writes of the term the
 next step reduces are among the charges of the innermost frame around it. -/
-theorem active_writes (K₀ : List (Option Verification.Kind)) (t : Tm) :
+theorem active_writes (K₀ : List Charge) (t : Tm) :
     ∀ cur, WOk t → writesK t ⊆ frameKinds K₀ cur →
       writesK (activeFrame cur t).2 ⊆ frameKinds K₀ (activeFrame cur t).1 := by
   have hlist : ∀ (xs : List Tm) (t₀ : Tm) cur, (∀ x ∈ xs, ∀ cur, WOk x → writesK x ⊆ frameKinds K₀ cur →
@@ -748,45 +749,49 @@ theorem refs_active (t : Tm) : ∀ cur, ∀ r ∈ refs (activeFrame cur t).2, r 
       | (rename_i ih; have := ih _ r' hr; simp only [refs, List.mem_append]; grind)
       | (simp only [refs, List.mem_append]; grind)
 
-/-- **A writing redex writes a location of a kind its writes may change**
-(proved): a field write under the key `k` writes a slot of a role of
-`slotBound k` (`field_bound`), an element store an element cell, in a world
+/-- **A writing redex writes a location of a kind and key its writes
+charge** (proved): a field write under the key `k` writes a slot of a role
+of `slotBound k` (`field_bound`) and of the key `slotKey k`
+(`slotKey_sound`), an element store an element cell, of no key, in a world
 in which the redex's references are valid. -/
 theorem slotKind_sound {n : Nat} {W : WorldT n} {l : Nat} {r : Tm} (hw : WriteRedex l r) (hr : RefsOk W r) :
-    kindAt W l ∈ writesK r := by
+    (kindAt W l, keyAt W l) ∈ writesK r := by
   match r, hw with
   | .writeAt k (.objAt fs c oid) y, hw =>
     have hv : RefsOk W (.objAt fs c oid) := fun x hx => hr x (by simp only [refs, List.mem_append]; exact .inl hx)
-    obtain ⟨role, hrole, hb⟩ := Footprints.field_bound hv (k := k) (l := l) (by simpa [Footprints.fieldsOf, WriteRedex] using hw)
-    simp only [kindAt, hrole, Option.map_some, writesK, List.mem_append]
-    exact .inl (.inl (roleKinds_mem hb))
+    have hl : (Footprints.fieldsOf (.objAt fs c oid)).lookup k = some l := by
+      simpa [Footprints.fieldsOf, WriteRedex] using hw
+    obtain ⟨role, hrole, hb⟩ := Footprints.field_bound hv (k := k) (l := l) (by simpa using hl)
+    have hkey := slotKey_sound (Footprints.slotRole_of_refs hv hl)
+    simp only [kindAt, hrole, Option.map_some, writesK, List.mem_append, hkey]
+    exact .inl (.inl (List.mem_map.mpr ⟨_, roleKinds_mem hb, rfl⟩))
   | .setElem (.arr ls) (.num b) y, hw =>
     have hv : RefsOk W (.arr ls) := fun x hx => hr x (by simp only [refs, List.mem_append]; exact .inl (.inl hx))
     have hrole := RefsOk_arr_iff.mp hv l (Kinds.elemLoc_mem (by simpa [WriteRedex] using hw))
-    simp [kindAt, hrole, Role.kind, writesK]
+    simp [kindAt, keyAt, hrole, Role.kind, Role.key?, writesK]
 
 /-- **A step's changes are its code's charges** (proved): at a step from a
 term meeting the invariant whose writes outside every frame are among
 `K₀`, with valid references, every old location the step changes has a
-kind among the charges of the innermost frame's code: the step writes it at
-its active redex (`step_writes_active`), of a kind that redex's writes may
-change (`slotKind_sound`), which are its frame's charges
+kind and a key among the charges of the innermost frame's code: the step
+writes it at its active redex (`step_writes_active`), of a kind and key that
+redex's writes charge (`slotKind_sound`), which are its frame's charges
 (`active_writes`). -/
-theorem step_kind_charged {K₀ : List (Option Verification.Kind)} {h h' : Heap} {t t' : Tm}
+theorem step_kind_charged {K₀ : List Charge} {h h' : Heap} {t t' : Tm}
     (hs : Step h t h' t') (hw : WOk t) (hk : writesK t ⊆ K₀) {n : Nat} {W : WorldT n} (hr : RefsOk W t)
     {l : Nat} {v : Val} (hv : h[l]? = some v) (hne : h'[l]? ≠ some v) :
-    kindAt W l ∈ frameKinds K₀ (activeFrame none t).1 :=
+    (kindAt W l, keyAt W l) ∈ frameKinds K₀ (activeFrame none t).1 :=
   active_writes K₀ t none hw hk
     (slotKind_sound (step_writes_active hs hv hne none) fun x hx => hr x (refs_active t none x hx))
 
 /-! ## The protocol at a charged part -/
 
 /-- **A charged part changes by any change** (proved): at a part whose kind
-the charges hold and whose site, where local, the held set holds, the
+and key the charges hold and whose site, where local, the held set holds, the
 protocol from charges is `any`. -/
 theorem probeProtocol_charged {P : Package} [DecidableEq P.Site] [Hashable P.Site]
-    [LawfulHashable (Option P.Site)] {K : List (Option Verification.Kind)} {held : Sites P} {p : Part P}
-    (hk : p.kind ∈ K) (hl : p.site.any (fun s => P.mark s = .local) = true → p.site ∈ held) :
+    [LawfulHashable (Option P.Site)] {K : List Charge} {held : Sites P} {p : Part P}
+    (hk : (p.kind, p.key) ∈ K) (hl : p.site.any (fun s => P.mark s = .local) = true → p.site ∈ held) :
     probeProtocol K held p = .any := by
   simp only [probeProtocol]
   split
@@ -804,7 +809,7 @@ local site below `b` has a site the held set holds (what the local lemma
 gives), every location of `R_P` below `b` changes within the protocol from
 the charges `K` and the held set. -/
 theorem stepWithin_charged {P : Package} [DecidableEq P.Site] [Hashable P.Site] [LawfulHashable (Option P.Site)]
-    {K₀ K : List (Option Verification.Kind)} {held : Sites P} {b : Nat} {st st' : St P} {t t' : Tm}
+    {K₀ K : List Charge} {held : Sites P} {b : Nat} {st st' : St P} {t t' : Tm}
     (hs : Step st.s.h t st'.s.h t') (hw : WOk t) (hk : writesK t ⊆ K₀) (hr : RefsOk st.s.W t)
     (hK : frameKinds K₀ (activeFrame none t).1 ⊆ K)
     (hloc : ∀ l v, l < b → st.g.InR l → st.s.h[l]? = some v → st'.s.h[l]? ≠ some v →
