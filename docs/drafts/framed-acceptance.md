@@ -2117,19 +2117,20 @@ and values, which are unchanged.
 
 ### The decision
 
-**Paths of entry values.** A path $`\pi`$ is a list of read steps,
-`field f` (the calculus's `readAt f`: an own field, or the key read from
-the `[[proto]]` field's value, `Step.readField`, `Step.readProto`) or
-`elem` (`elemAt`: the spine, then a cell). `Reads h v π u` states that
-the reads of $`\pi`$ from $`v`$ at the heap $`h`$ give $`u`$; a missing
-key or cell gives a primitive, which reaches nothing. The locations a read
-of $`\pi`$ passes are the field locations, `[[proto]]` locations, spines
-and cells whose contents it reads; their parts at a set of sites $`S`$
-are `pathParts H S π`: for a `field f` step the parts at kind field and
-keys $`f`$ and `[[proto]]` of the closure of $`S`$ under the heap of
-sites (the prototype chain), for an `elem` step the spine parts of $`S`$
-and the cell parts of their contents, each step continuing at the
-contents' sites.
+**Paths of entry values** (`FramedPaths.lean`). A path $`\pi`$ is a list
+of keys, each read by the calculus's `readAt f`: an own field, or the key
+read from the `[[proto]]` field's value, or `undefined` where neither is
+present (`ReadKey`, mirroring `Step.readField`, `Step.readProto` and
+`Step.readMissing`). `Reads h v π u` states that the reads of $`\pi`$
+from $`v`$ at the heap $`h`$ give $`u`$; `undefined` reaches nothing. An
+element read (`elemAt`) reads a cell its index selects, which no
+proposal can name: a slot bound to one has no copy entry. Each location a
+read passes is named with the value holding it and its **step**, the
+region that location is a member of at the holding value: `field 0 f` for
+an own field, `field 0 [[proto]]` for the prototype field (`KeyLoc`,
+`ReadsAt`; `keySteps f`, `pathSteps π`). A step fixes the location's
+kinds and key (`Region.bound_sound`, `regionKeys_sound`), so its parts are
+read at the step, at any site.
 
 **The slot copies** $`\mathit{cp}`$ (`copiesOf m r.start arity`, to be
 written): $`(i,j,\pi)\in\mathit{cp}(l)`$ states that at every run of $`m`$
@@ -2250,18 +2251,21 @@ proved results named.
    `readOnlyB` puts the input at a read-only position in `spec.readOnly`;
    `Ex.grows` over the prologue at the program's frame,
    `progFrame_chkSound`, `reached_ok`; `truncate_grows`).
-5. **Paths and regions** (`ReadOnlyCallFrame.lean`). `reads_follows`: a
-   location a read of $`\pi`$ from $`v`$ passes, and every location below
-   the value it gives, is reached from $`v`$ along labels (a field key or
-   `[[proto]]` per field step, the spine key or `.view` and a cell per
-   element step); `pathParts_sound`: at a heap meeting the heap of sites,
-   from a value meeting $`S`$, each such location's part is in
-   `pathParts H S π`; `reads_congr`: where those locations keep their
-   contents, the reads give the same value. `region_mem_of_prefix`: where
-   each location of each $`q\in\mathrm{pre}(r)`$, in order, keeps its
-   contents from $`h_0`$ to $`h_1`$, each $`q`$ and $`r`$ have the same
-   locations at both; `region_follows`: a location of $`r`$ is reached
-   from the value of $`\mathrm{slot}(r)`$ along the region's labels.
+5. **Paths and regions** (proved; `FramedPaths.lean`). `readKey_reach`,
+   `reads_reach`: a read's value is reached from the value read
+   (`ValReach`: the value itself, or the contents of a location a path
+   from it reaches), or is `undefined`; `keyLoc_reach`, `readsAt_reach`:
+   a location a path reads is in a value reached, a member of a step of
+   the path there; `readKey_congr`, `reads_congr`: at a heap agreeing
+   with $`h_0`$ on the locations a read reads at $`h_0`$, the read is
+   $`h_0`$'s; `reads_snoc`, `readsAt_snoc`: a path extended by one read.
+   The prefix of a region is stated by the locations its membership reads
+   from its slot's value (`RegionReadsAt`: its path's own fields,
+   `OwnAt`, and for cells the spine they are read from, `SpineAt`), with
+   their steps (`regionSteps`); `region_reach`: at a heap agreeing with
+   $`h_0`$ on those, every location of the region is reached from the
+   slot's value at $`h_0`$; `regionReadsAt_reach`, `spineAt_mem`: each
+   read location is a member of a step of the region in a value reached.
 6. **A kept location** (`FramedProtection.lean`). `kept_step`: a step of
    the frame from a reached state keeps the contents of a location below
    the heap's length that the history protects (`RowProtects`), of no
