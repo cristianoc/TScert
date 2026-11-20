@@ -511,10 +511,10 @@ and handler, and keeps the fact where all pass: `ClientFrame.framed_at_innermost
 ### Protection
 
 Milestone 1 reads every region unprotected (`prot` false), which loses
-precision only. Milestone 2 reads a region protected by a decided
-condition on its root slot, its root parameter's declared type and the
-parts of its path's prefix, with its witness from the entering step's
-crossing ([the protected reading](#milestone-2-the-protected-reading)).
+precision only. Milestone 2 reads a region protected where its slot holds
+the value of a path of reads from an entry parameter at a read-only
+position, and the locations the path and the region's prefix pass are
+kept, with its witness from the entering step's crossing ([the protected reading](#milestone-2-the-protected-reading)).
 `prefix.mjs` (`undefined`): a writable prefix is read unprotected.
 
 ## Certificates
@@ -662,7 +662,9 @@ parameter.
   different declared types (`EnteredTables.lean`). A parameter's crossing
   type is the meet of the declared types of every function of $`C`$ whose
   realized code is the entered code: read-only at a position only where
-  every one declares it read-only.
+  every one declares it read-only, by position
+  ([the crossings an entering step records](#the-crossings-an-entering-step-records),
+  piece 0 of milestone 2).
 - **The subset milestone 1 implements.** The note counts a callback's
   result and a caught value as incoming crossings too. Milestone 1 records
   the entering step's alone: with fewer recorded crossings fewer locations
@@ -1971,8 +1973,8 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 Base: branch `route-extensions` at `a1ae24296`, on `single-pass` at
 `9ce75bd3e`. Every Lean name below is proved at that base unless it is
 labelled **to be proved**. The milestone makes the frame's check read a
-region as protected where the decision of [the decision](#the-decision)
-holds, so that the pass applies the frame's check of
+region as protected where [the decision](#the-decision) holds, so that the
+pass applies the frame's check of
 [Read-only frames](readonly-frames-note/note.tex) §4.1 in full. No Lean
 is written in this step; each piece below is one commit.
 
@@ -1988,7 +1990,7 @@ discharges that from a live history witness (`Witness`); `framed_of_sites`,
 `framed_of_frame` and `ClientFrame.framed_at_innermost`
 (`ReadOnlyCallFrame.lean`) carry the witness premise to a reached state.
 The history records the witness: an entering step of a public call pushes
-the call's set and then crosses each argument in at its declared type
+the call's set and then crosses each argument in at a type
 (`Ghost.stepAt` at kind `enter`, `FramedSpec.entryXs`), a crossing in adds
 what it reaches read-only to every set (`Ghost.cross`, `Ghost.incoming`),
 and every step inside the call grows the history (`XStep.grows`,
@@ -1998,8 +2000,10 @@ The code passes `prot` false at each reader: `framed_of_check`
 (`FramedReturns.lean`, its last argument to `framed_at_innermost`),
 `supportKeptB` and `supportFailure` (`FramedNodeChecks.lean`) and
 `framedSupportsAt` (`FramedFlow.lean`). The milestone gives them a decided
-`prot` and proves the witness premise. It adds no rule, no history
-transition and no trust.
+`prot` and proves the witness premise. It adds no rule and no trust; it
+changes the types an entering step's crossings are recorded at to the
+meet the draft's [history of a program](#the-history-of-a-program) states
+(piece 0).
 
 Three proved mechanisms are reused as they stand:
 
@@ -2007,27 +2011,27 @@ Three proved mechanisms are reused as they stand:
   `StartsEntry` reads a start equal to `entryStart`; the framed spec's
   start is the program's history at the entry truncated to one set
   (`FramedSpec.truncate`, `FramedSpec.frame`), so the premise fails at the
-  framed spec, as the previous attempt found. The argument does not need
-  it: a witness at the start grows to every reached state with the call
-  active (`Witness.grow`, `Ex.grows`, `ex_depth`, `ex_xstep`). The route
-  keeps the witness interface and replaces `entryStart_witness` by a
-  witness at the truncated start, built from the entering step's crossing.
-  Proving the protected set directly, as the previous attempt proposed,
-  reaches the same set but bypasses `Witness`, which `framed_of_sites` and
-  its callers read; the witness costs one existential and keeps their
-  statements.
+  framed spec. The argument does not need it: a witness at the start grows
+  to every reached state with the call active (`Witness.grow`,
+  `Ex.grows`, `ex_depth`, `ex_xstep`). The route keeps the witness
+  interface and replaces `entryStart_witness` by a witness at the
+  truncated start, built from the entering step's crossing. Proving the
+  protected set directly reaches the same set but bypasses `Witness`,
+  which `framed_of_sites` and its callers read; the witness costs one
+  existential and keeps their statements.
 - **The charges of a step** (`step_kind_charged`, `frameKinds_flow`,
   `probeProtocol_charged`, `componentProtocol`): a step of $`C`$'s code
   changes an old location only at a kind and key the flow's charges hold.
-  They keep the prefix of a path.
+  They keep the locations a path passes.
 - **The top of the request's run** (`TopRuns.step`, `FramedReturns.lean`):
   every step of the frame keeps the request's graph code at the top of the
   term. Its case analysis carries the slot-copy invariant.
 
-One mechanism is new: a must-analysis of slot copies with its decided
-check, an instance of the pattern of a computed proposal and a proved
-check (`capClose`, `capClosedB`). The flow cannot serve: it records the
-sites a slot's value may reach, which do not identify the value.
+One mechanism is new: a must-analysis of the paths of entry values that
+slots hold, with its decided check, an instance of the pattern of a
+computed proposal and a proved check (`capClose`, `capClosedB`). The flow
+cannot serve: it records the sites a slot's value may reach, which do not
+identify the value.
 
 ### The rule as the paper states it
 
@@ -2037,11 +2041,16 @@ $`\Psi(p)\sqsubseteq\delta`$ always, and $`\gamma\sqsubseteq\delta`$ for
 each $`(r':\gamma)\in\Phi`$ not apart from $`r`$ where $`s\in O`$ and
 $`r`$ is not read as protected. A region is read as protected when each of
 its locations of a site of $`O`$ has a crossing in of the active call that
-reached it read-only (§4.1, after Definition "The marks of a flow").
-Example "A member writing another key" (`ex:rokey`) is accepted: both
-regions of $`h.\mathit{flags}`$ are read as protected, the crossing of
-`h` at `H` their witness, and $`\Psi_C\sqcup\Theta_C=\mathsf{keep}`$ at
-their parts. Example "A member writing the same key" (`ex:rosamekey`) is
+reached it read-only (§4.1, after Definition "The marks of a flow"); a
+location is reached read-only from a crossing at $`T`$ when a chain of
+field and element reads from the value to it has a prefix ending at a
+read-only position (§2, "Crossing"). Section 1's module reads
+`const w = h.widths` and keeps $`i<\mathit{len}(w)`$ across the visit, the
+spine of `w` reached read-only from the crossing of `h` at `H`
+(Example "The module above", `ex:ro`). Example "A member writing another
+key" (`ex:rokey`) is accepted: both regions of $`h.\mathit{flags}`$ are
+read as protected and $`\Psi_C\sqcup\Theta_C=\mathsf{keep}`$ at their
+parts. Example "A member writing the same key" (`ex:rosamekey`) is
 refused by the first line, whatever the reading: $`\Psi_C`$ is
 $`\mathsf{any}`$ at $`(s,\mathsf{F},\mathtt{flags})`$.
 
@@ -2053,16 +2062,104 @@ reached $`\ell`$ read-only (`ReachRO`) while $`\ell`$ was lent, and the
 history has grown inside the call since (`Grows 1`). This is the premise
 `framed_of_sites` reads.
 
+### The crossings an entering step records
+
+`FramedSpec.entryXs` records the $`j`$-th argument at `r.inputs[j]`, the
+request's declared type, and the view reads a type read-only by
+membership in `spec.readOnly` (`FramedSpec.view`). Two things widen the
+recorded protection beyond Assumption "Clients":
+
+- a function of $`C`$ whose realized code is the request's enters the same
+  code (`entered`), its arguments then recorded at the request's types,
+  read-only where the request declares read-only and the other function
+  writable (`walk(xs: readonly number[])` and `walkAgain(xs: number[])`
+  of one body);
+- a writable parameter whose calculus type equals a read-only one's (`W =
+  { flags: number[] }` beside `H = { readonly flags: readonly number[] }`,
+  equal once `readonly` is erased) is recorded at a type the view reads
+  read-only.
+
+Either way the history protects storage the client may change, so the
+headline's hypothesis (each outside step keeps $`\Theta_C`$ at the
+history) is stronger than Assumption "Clients" and the claim is about
+fewer executions than the paper's. No unsafe program is accepted
+through it, as no frame check reads protection (`prot` false; observed:
+the twins above, in either order of declaration, and `walk(h: H, w: W)`
+reading `w.flags` are refused). Piece 0 makes the recorded crossings the
+paper's:
+
+- **The read-only positions** `roPos j` (`FramedSpec.roPositions`, a new
+  field of the plan, decided by `roPositionsB`, to be written): position
+  $`j`$ is read-only in the declared shape (`memberShapes`,
+  `shapeReadOnly`) of every function of $`C`$ the plan's `names` maps to
+  the request's realized code, the request's own among them. This is the
+  meet of the draft's `sharedParamTypes`, by position.
+- **The recorded type**: `entryXs` records argument $`j`$ at `r.inputs[j]`
+  where `roPos j`, and at `spec.outType` otherwise, the writable type the
+  outgoing crossings use; `readOnlyB` becomes "`spec.readOnly` is the set
+  of `r.inputs[j]` with `roPos j`, and `spec.outType` is not in it". A
+  writable position is then recorded at a type no view reads read-only,
+  whatever its calculus type equals.
+
+`FramedSpec.readOnly_declared` restates as: every crossing an entering
+step records at a type the view reads read-only is at a position every
+function sharing the code declares read-only. The proofs reading
+`entryXs` (`entryXs_into`, `entryXs_root`, `chk_entry_sim`) read only its
+direction and values, which are unchanged.
+
 ### The decision
 
-A region $`r`$ has a **root slot** $`\mathrm{root}(r)`$, the slot whose
-value its membership reads ($`x`$ of `field x k`, `path x p k`,
-`spine x p`, `cells x` and `pathCells x p`; that of $`r`$ for
-`inCls r c`; none for `fields`, `pathFields`, `cls` and `all`, which
-`frameCheckAt` refuses), and **prefix regions** $`\mathrm{pre}(r)`$, the
-regions whose locations' contents its membership reads
-(`Region.mem` through `HeapKnowledge.readPath` and `spineCells`), by cases
-on `Region`:
+**Paths of entry values.** A path $`\pi`$ is a list of read steps,
+`field f` (the calculus's `readAt f`: an own field, or the key read from
+the `[[proto]]` field's value, `Step.readField`, `Step.readProto`) or
+`elem` (`elemAt`: the spine, then a cell). `Reads h v π u` states that
+the reads of $`\pi`$ from $`v`$ at the heap $`h`$ give $`u`$; a missing
+key or cell gives a primitive, which reaches nothing. The locations a read
+of $`\pi`$ passes are the field locations, `[[proto]]` locations, spines
+and cells whose contents it reads; their parts at a set of sites $`S`$
+are `pathParts H S π`: for a `field f` step the parts at kind field and
+keys $`f`$ and `[[proto]]` of the closure of $`S`$ under the heap of
+sites (the prototype chain), for an `elem` step the spine parts of $`S`$
+and the cell parts of their contents, each step continuing at the
+contents' sites.
+
+**The slot copies** $`\mathit{cp}`$ (`copiesOf m r.start arity`, to be
+written): $`(i,j,\pi)\in\mathit{cp}(l)`$ states that at every run of $`m`$
+at label $`l`$ reached from the request's start with slots `L₀`, while
+the locations a read of $`\pi`$ from `envOf L₀ d₀ j` passes keep their
+contents, slot $`i`$ holds the value `u` with `Reads h₀ (envOf L₀ d₀ j) π
+u`. `copiesB m start arity cp` decides it:
+
+- each entry of $`\mathit{cp}(\mathit{start})`$ is $`(j,j,[])`$ with
+  $`j`$ below the arity;
+- for each node $`l`$ and each edge from it (the targets of its
+  continuation, `bind`, `effect`, `branch`, `branchBind` and `tagBind`, and
+  its handler), each $`(i',j,\pi)`$ of the target's label has the slot the
+  edge reads for $`i'`$ (by `envMap` of the target's mapping, over `L`, or
+  over `v :: L` for a bound edge) either a slot $`i`$ of `L` with
+  $`(i,j,\pi)\in\mathit{cp}(l)`$, or the bound value `v` of a `bind` or
+  `tagBind` edge of a node whose expression is
+  `.var i`, `readAt f (.var i)` or `elemAt (.var i) e`, with
+  $`(i,j,\pi_0)\in\mathit{cp}(l)`$ and $`\pi`$ respectively $`\pi_0`$,
+  $`\pi_0`$ followed by `field f`, or $`\pi_0`$ followed by `elem`. A
+  handler's bound value, a branch's Boolean and every other bound value
+  have no entry.
+
+The proposal `entryCopies` (unproved, the greatest fixpoint by iteration
+from the start's diagonal, paths bounded by the longest region path the
+plan's supports name) is used where `copiesB` passes, and the empty
+table, which passes, otherwise. `const g = h` binds `.var`, so `g`'s slot
+gets `(j, [])`; `const w = h.widths` binds `readAt "widths" (.var h)`, so
+`w`'s slot gets `(j, [field widths])`; `h = w` maps `h`'s slot from `w`'s,
+whose entry names the other parameter.
+
+**A region read as protected.** A region $`r`$ names a slot
+$`\mathrm{slot}(r)`$ ($`x`$ of `field x k`, `path x p k`, `spine x p`,
+`cells x` and `pathCells x p`; that of $`r`$ for `inCls r c`; none for
+`fields`, `pathFields`, `cls` and `all`, which `frameCheckAt` refuses) and
+**prefix regions** $`\mathrm{pre}(r)`$, the regions whose locations'
+contents its membership reads (`Region.mem` through
+`HeapKnowledge.readPath` and `spineCells`), by cases on `Region`:
 
 | $`r`$ | $`\mathrm{pre}(r)`$, in order |
 | --- | --- |
@@ -2072,148 +2169,131 @@ on `Region`:
 | `pathCells x p` | those of `spine x p`, then `spine x p` |
 | `inCls r c` | those of $`r`$ |
 
-At a framed node $`l`$ of the request's code $`m`$, with
-$`\Psi_C`$ = `componentProtocol F lay` and $`\Theta_C`$ the plan's
-obligation, $`r`$ is **read as protected** (`protRegionB`, to be
-written) when $`\mathrm{root}(r)=x`$ and:
+At a framed node $`l`$ of the request's code $`m`$, with $`\Psi_C`$ =
+`componentProtocol F lay` and $`\Theta_C`$ the plan's obligation, $`r`$
+is **read as protected** (`protRegionB`, to be written) when at every
+node $`l'`$ sharing $`l`$'s continuation and handler (`sharingNodes m l`)
+some $`(\mathrm{slot}(r),j,\pi)\in\mathit{cp}(l')`$ has:
 
-- **(C) the root is an entry parameter's value.** At every node $`l'`$
-  sharing $`l`$'s continuation and handler (`sharingNodes m l`), some
-  $`j`$ has $`(x,j)\in\mathit{cp}(l')`$, $`j`$ below the plan's arity, and
-  the $`j`$-th declared input read-only (`ro j`).
-- **(P) the prefix is kept.** At every context $`c`$ of $`m`$ and every
-  such $`l'`$, each $`q\in\mathrm{pre}(r)`$ has sites at the slots of
-  $`(m,c)`$ at $`l'`$ (`regionSites`) and
-  $`(\Psi_C\sqcup\Theta_C)(p)=\mathsf{keep}`$ at each part $`p`$ of $`q`$
-  there (`callParts`).
+- **(C) a read-only position**: `roPos j`, $`j`$ below the arity;
+- **(P) the path kept**: $`(\Psi_C\sqcup\Theta_C)(p)=\mathsf{keep}`$ at
+  each part $`p`$ of `pathParts H (π₀.env r.start j) π` at every context
+  $`\pi_0`$ of the request's code (the entry's sets of slot $`j`$), and at
+  every context $`c`$ and each $`q\in\mathrm{pre}(r)`$, $`q`$ has sites at
+  the slots of $`(m,c)`$ at $`l'`$ (`regionSites`) and the same holds at
+  each part of $`q`$ there (`callParts`).
 
-The two inputs:
-
-- **The slot copies** $`\mathit{cp}`$ (`copiesOf m r.start arity`, to be
-  written): $`(i,j)\in\mathit{cp}(l)`$ states that at every run of $`m`$
-  at label $`l`$ reached from the request's start, slot $`i`$ holds the
-  value slot $`j`$ held at the start. `copiesB m start arity cp` decides
-  it: each $`(i,j)\in\mathit{cp}(\mathit{start})`$ has $`i=j`$ below the
-  arity; and for each node $`l`$ and each edge from it (the targets of its
-  continuation, `bind`, `effect`, `branch`, `branchBind` and `tagBind`, and
-  its handler), each $`(i',j)\in\mathit{cp}`$ of the target's label has
-  the slot the edge reads for $`i'`$ (by `envMap` of the target's mapping,
-  over `L`, or over `v :: L` for a bound edge, `Step.frameBind` to
-  `Step.frameHandle`) a slot $`i`$ of `L` with $`(i,j)\in\mathit{cp}(l)`$.
-  The proposal `entryCopies` (unproved, the greatest fixpoint by
-  iteration from the start's diagonal) is used where `copiesB` passes,
-  and the empty table, which passes, otherwise.
-- **The read-only inputs** `ro j`: the plan's view reads
-  `r.inputs[j]` read-only (`spec.view.RO`, the type in `spec.readOnly`,
-  a declared input whose shape is read-only throughout by `readOnlyB`),
-  and every function of $`C`$ whose realized code is the request's
-  declares its $`j`$-th parameter read-only (`sharedReadOnlyB`, to be
-  written, over `spec.names` and the family's shapes; the draft's
-  `sharedParamTypes`, [what is trusted](#what-milestone-2-trusts)). With
-  this view a read-only type is read-only at every path
-  (`TypeView.roPath_iff`, `ro_at`), so (C) states the paper's "reached
-  read-only" for every location of $`r`$.
-
-(C) and (P) are decided from the plan: `copiesB`, `sharingNodes`,
-`F.ctxs`, `regionSites`, `callParts` and the two protocols. The decision
-reads as protected a subset of what the paper's reading protects: a
-region rooted at a local holding a path of a parameter (`const w =
-h.widths`) is read unprotected, which loses precision only.
+$`\Theta_C`$ keeps every part (`thetaKeepB`, checked at every framed
+plan), so (P) is decided by $`\Psi_C`$, which is $`\mathsf{keep}`$ at a
+part of no local site exactly where no write of $`C`$'s code or native
+step model is charged at its kind and key (`probeProtocol`). The decision
+is stated for every path of field and element reads from an entry value,
+as the paper's "reached read-only" is; with the plan's view a read-only
+type is read-only at every path (`TypeView.roPath_iff`, `ro_at`), so a
+prefix ending at a read-only position is the whole path from the
+parameter.
 
 ### The theorem chain
 
 Each step is **to be proved**, its plan from the proved results named.
 
+0. **The recorded crossings** (`FramedSpec.lean`, `PassUnitMember.lean`).
+   `roPositionsB_sound`: where the binding checks pass, `roPos j` holds
+   exactly when every function of $`C`$ sharing the realized code declares
+   position $`j`$ read-only; `readOnly_declared` restated as above.
 1. **The history at the start** (`ReadOnlyRegion.lean`,
-   `FramedSpec.lean`). `Ghost.cross_into_prot`: a crossing in protects each
-   lent location its value reaches read-only. `FramedSpec.truncate_prot`
-   (`(truncate g).Prot ℓ ↔ g.Prot ℓ`) and `FramedSpec.truncate_grows`
-   (`Grows 1 g (truncate g)` where $`1\le\lvert g.A\rvert`$: `B` and `E`
-   kept, the protected set equal). `Ghost.crosses_witness`, the argument
-   of `entryStart_witness` stated for any uniform history with $`d`$ sets
-   and a lent location: each location a crossing in of the list reaches
-   read-only has a witness at depth $`d`$ after the crossings;
-   `entryStart_witness` becomes its instance.
+   `FramedSpec.lean`). `Ghost.cross_into_prot`; `FramedSpec.truncate_prot`
+   (`(truncate g).Prot ℓ ↔ g.Prot ℓ`); `FramedSpec.truncate_grows`
+   (`Grows 1 g (truncate g)` where $`1\le\lvert g.A\rvert`$);
+   `Ghost.crosses_witness`, the argument of `entryStart_witness` for any
+   uniform history with $`d`$ sets and a lent location, of which
+   `entryStart_witness` becomes an instance.
 2. **Witness growth from a start** (`ReadOnlyCallFrame.lean`).
    `ClientFrame.witness_of_start`: at a call of the frame whose term's top
-   is a run of $`C`$'s code (`TopC`) and whose start meets the frame's
-   start invariants (`StartInv`, the history's length its depth), a
-   witness at the start's history gives a witness at every state reached with the call active
-   (`ex_depth`, `ex_xstep`, `Ex.grows`, `Witness.grow`).
-   `witness_reached` becomes its instance at `entryStart_witness`.
+   is a run of $`C`$'s code (`TopC`) and whose start meets `StartInv` (the
+   history's length its depth), a witness at the start gives a witness at
+   every state reached with the call active (`ex_depth`, `ex_xstep`,
+   `Ex.grows`, `Witness.grow`); `witness_reached` becomes its instance.
 3. **The entry's slots** (`FramedSpec.enter_slots`, a new
    `FramedProtection.lean`). At `spec.EntryAt r k W h t a₂` with
-   `t = gotoOf r.program r.start L d r.comp`, the public call's entering
-   step `x → a₁` reduces an active redex `invoke f v args` (or `construct
-   f args`) in a frame of outside code; the heap is `x`'s through the
-   entering step and the prologue (`enter_keeps_heap`, `prologue_steps`);
-   and `envOf L d j` is `(parameters arity args).getD j .undef` for $`j`$
-   below the arity (`graphEntry` with no rest, `noRestB`; the prologue's
-   mapping, `prologueTarget`; `prologue_det`).
+   `t = gotoOf r.program r.start L d r.comp`, the entering step `x → a₁`
+   reduces an active redex `invoke f v args` (or `construct f args`) in a
+   frame of outside code; the heap is `x`'s through the entering step and
+   the prologue (`enter_keeps_heap`, `prologue_steps`); `envOf L d j` is
+   `(parameters arity args).getD j .undef` for $`j`$ below the arity
+   (`graphEntry` with no rest, `noRestB`; `prologueTarget`;
+   `prologue_det`).
 4. **The start's witness** (`FramedSpec.start_witness`). At such an entry,
-   for $`j`$ below the arity with `ro j`, every location $`\ell`$ that
-   `envOf L d j` reaches read-only at `r.inputs[j]` in `h`, lent, has
-   `Witness view 1` at the truncated start: the crossing
-   `⟨.into, r.inputs[j], args[j]⟩` is in `entryXs` at the entering step
-   (a missing argument is `undefined`, which reaches nothing);
-   `crosses_witness` at `a₁`'s history; `Ex.grows` over the prologue at
-   the program's frame (`progFrame_chkSound`, `reached_ok`);
-   `truncate_grows`.
-5. **Slot copies** (`copies_sound`, a new `FramedCopies.lean`). Where
+   for $`j`$ below the arity with `roPos j`, every lent location that
+   `envOf L d j` reaches in `h` has `Witness view 1` at the truncated
+   start: the crossing `⟨.into, r.inputs[j], args[j]⟩` is in `entryXs`,
+   read-only for the view (piece 0); `crosses_witness` at `a₁`'s history;
+   `Ex.grows` over the prologue at the program's frame
+   (`progFrame_chkSound`, `reached_ok`); `truncate_grows`.
+5. **Paths and regions** (`ReadOnlyCallFrame.lean`). `reads_follows`: a
+   location a read of $`\pi`$ from $`v`$ passes, and every location below
+   the value it gives, is reached from $`v`$ along labels (a field key or
+   `[[proto]]` per field step, the spine key or `.view` and a cell per
+   element step); `pathParts_sound`: at a heap meeting the heap of sites,
+   from a value meeting $`S`$, each such location's part is in
+   `pathParts H S π`; `reads_congr`: where those locations keep their
+   contents, the reads give the same value. `region_mem_of_prefix`: where
+   each location of each $`q\in\mathrm{pre}(r)`$, in order, keeps its
+   contents from $`h_0`$ to $`h_1`$, each $`q`$ and $`r`$ have the same
+   locations at both; `region_follows`: a location of $`r`$ is reached
+   from the value of $`\mathrm{slot}(r)`$ along the region's labels.
+6. **A kept location** (`FramedProtection.lean`). `kept_step`: a step of
+   the frame from a reached state keeps the contents of a location below
+   the heap's length that the history protects (`RowProtects`), of no
+   local site, with $`(\Psi_C\sqcup\Theta_C)(\mathrm{part}(\ell))=\mathsf{keep}`$:
+   a step of outside code by `FrameCore.Keeps` (`RowAt` at $`\Theta_C`$);
+   a step of $`C`$'s code by `step_kind_charged`, its writes from
+   `wok_reached`, its frame's kinds within `flowKinds`
+   (`frameKinds_flow`), and `componentProtocol` $`\mathsf{any}`$ at a
+   charged kind and key of no local site (`probeProtocol_charged`).
+   `kept_along`: the same along an execution, the part fixed
+   (`Kept.part`), the protection kept (`Grows.prot`, `Grows.exposed`). A
+   location an entry's argument reaches at $`h_0`$ is of no local or
+   internal site (the entering step's `PkgProps.crossOk`,
+   `crossOk_incoming`), so exposed and in `E` by the crossing, or lent and
+   witnessed (`start_witness`): it is protected along the call.
+7. **Slot copies** (`copies_sound`, a new `FramedCopies.lean`). Where
    `copiesB` passes, every reached state of `spec.frame r` from a start at
    `gotoOf r.program r.start L₀ d₀ r.comp` meets `CopyInv`: a top `goto`
-   at label $`l`$ with slots `L`, `d` has `envOf L d i = envOf L₀ d₀ j` for
-   each $`(i,j)\in\mathit{cp}(l)`$; a top frame with continuation and
-   handler `(k, x)` has some $`l'`$ with `m.2[l']? = some (k, x)` and the
-   same at $`\mathit{cp}(l')`$. `copyInv_step` follows `TopRuns.step`'s
-   cases: `gotoEnter` keeps the slots, `frameC` keeps the frame, each of
-   `frameBind`, `frameEffect`, `frameYes`, `frameNo`, `frameYesBind`,
-   `frameNoBind`, `frameTag` and `frameHandle` maps them by its target's
-   `envMap`, which `copiesB` checks, and `frameRet` and `frameRaise` leave
-   the code.
-6. **A region through its prefix** (`ReadOnlyCallFrame.lean`).
-   `region_mem_of_prefix`: where each location of each
-   $`q\in\mathrm{pre}(r)`$ at $`(\rho,h_0)`$, taken in order, has the same
-   contents in $`h_1`$, each $`q`$ and $`r`$ have the same locations at
-   $`(\rho,h_1)`$ as at $`(\rho,h_0)`$. `region_reachRO`: a location of
-   $`r`$ at $`(\rho,h)`$ is reached from $`\rho(\mathrm{root}(r))`$ along
-   the region's labels (a key per field of the path, the key $`k`$, the
-   spine key or `.view`, a cell), so at a type read-only for the view it
-   is `ReachRO`; each prefix region's locations are reached along a
-   prefix of those labels.
-7. **A kept location** (`FramedProtection.lean`). `kept_step`: a step of
-   the frame from a reached state keeps the contents of a location
-   $`\ell`$ below the heap's length that the history protects
-   (`RowProtects`), of no local site, with
-   $`(\Psi_C\sqcup\Theta_C)(\mathrm{part}(\ell))=\mathsf{keep}`$. A step of
-   outside code by `FrameCore.Keeps` (`RowAt` at $`\Theta_C`$); a step of
-   $`C`$'s code by `step_kind_charged`, its writes from `wok_reached` and
-   its frame's kinds within `flowKinds` (`frameKinds_flow`), and at a part
-   of no local site `componentProtocol` is $`\mathsf{any}`$ at a charged
-   kind and key (`probeProtocol_charged`). `kept_along`: the same along an
-   execution, the part fixed (`Kept.part`) and the protection kept
-   (`Grows.prot`, `Grows.exposed`).
-8. **The prefix unchanged** (`prefix_unchanged`). At a reached state
-   $`b_0`$ entering a framed node $`l`$ (the premises of
-   `framed_of_check`) with (C) and (P), each location of each
-   $`q\in\mathrm{pre}(r)`$ at the start's heap $`h_0`$ has the same
-   contents at $`b_0`$'s heap. Induction over $`\mathrm{pre}(r)`$ in
-   order: the earlier prefixes unchanged, $`q`$'s locations at $`b_0`$ are
-   its locations at $`h_0`$ (`region_mem_of_prefix`); each is reached
-   read-only from the root's value at $`h_0`$ (`region_reachRO`,
-   `copies_sound`), so it is not local or internal (the entering step's
-   `PkgProps.crossOk`, `crossOk_incoming`) and is protected, exposed and in
-   `E` by the crossing or lent with a witness (`start_witness`,
-   `witness_of_start`); its part at $`b_0`$ is a part of $`q`$ at the node
-   and context the frame fits (`framed_of_frame`'s $`(c,l')`$,
-   `regionSites_sound`, `regionKeys_sound`), kept by (P); so `kept_along`.
+   at label $`l`$ with slots `L`, `d`, and each $`(i,j,\pi)\in\mathit{cp}(l)`$
+   whose passed locations kept their contents along the execution so far,
+   has `Reads h₀ (envOf L₀ d₀ j) π (envOf L d i)`; a top frame with
+   continuation and handler `(k, x)` has some $`l'`$ with
+   `m.2[l']? = some (k, x)` and the same at $`\mathit{cp}(l')`$. The
+   condition is monotone in the path and in the execution, so the
+   invariant is inductive. `copyInv_step` follows `TopRuns.step`'s cases:
+   `gotoEnter` keeps the slots, `frameC` keeps the frame (a read keeps the
+   heap), each of `frameBind`, `frameEffect`, `frameYes`, `frameNo`,
+   `frameYesBind`, `frameNoBind`, `frameTag` and `frameHandle` maps the
+   slots by its target's `envMap`, which `copiesB` checks, a bound read's
+   value given by `Step.readField`, `Step.readProto` or the element steps
+   at the frame's heap (`reads_congr` to $`h_0`$), and `frameRet` and
+   `frameRaise` leave the code.
+8. **The path and prefix unchanged** (`prefix_unchanged`). At a reached
+   state $`b_0`$ entering a framed node $`l`$ (the premises of
+   `framed_of_check`) with (C) and (P) at an entry $`(i,j,\pi)`$: the
+   locations a read of $`\pi`$ from the parameter passes at $`h_0`$ are
+   reached from it (`reads_follows`), so protected (chain 6), their parts
+   in `pathParts` (`pathParts_sound` at the start's sets, `entry_hole`),
+   kept by (P): `kept_along` to $`b_0`$, so slot $`i`$ holds the read's
+   value at $`h_0`$ (`copies_sound`). Then each location of each
+   $`q\in\mathrm{pre}(r)`$ at $`h_0`$, in order, is reached from the
+   parameter along $`\pi`$'s labels and $`q`$'s (`region_follows`), so
+   protected; its part at $`b_0`$ is a part of $`q`$ at the node and
+   context the frame fits (`framed_of_frame`'s $`(c,l')`$,
+   `region_mem_of_prefix`, `regionSites_sound`, `regionKeys_sound`), kept
+   by (P): `kept_along`.
 9. **The witness at a framed node** (`prot_witness`). At such a state,
-   every location of a region read as protected at `envOf L d` and
-   $`b_0`$'s heap, lent, has `Witness view 1` at $`b_0`$: its root holds
-   the parameter's value (`copies_sound`), the region has the same
-   locations at $`h_0`$ (`prefix_unchanged`, `region_mem_of_prefix`), each
-   reached read-only (`region_reachRO`), witnessed at the start
-   (`start_witness`) and at $`b_0`$ (`witness_of_start`).
+   every lent location of a region read as protected at `envOf L d` and
+   $`b_0`$'s heap is a location of the region at $`h_0`$
+   (`prefix_unchanged`, `region_mem_of_prefix`), reached from the
+   parameter's value (`region_follows`, `reads_follows`), witnessed at the
+   start (`start_witness`) and at $`b_0`$ (`witness_of_start`).
 10. **The returns with protection**. `framed_of_check` takes
     `prot : Nat → Region → Bool` and the witness premise at depth `1` in
     place of `fun _ _ hp => by cases hp`, its check at `prot l`;
@@ -2231,47 +2311,64 @@ estimated from the proved lemmas each mirrors.
 
 | # | Piece | Proves | Size | Tests |
 | --- | --- | --- | --- | --- |
-| 1 | The history at the start and witness growth | chain 1 and 2; `entryStart_witness` and `witness_reached` restated as instances | 100–150 | `lake build` of the two modules; no case changes |
-| 2 | The entry's slots and the start's witness | chain 3 and 4 | 250–350 | `lake build Verification.Source.Claims.FramedProtection` |
-| 3 | Regions through their prefixes | `prefixRegions`, chain 6 | 150–250 | `lake build` of `ReadOnlyCallFrame` |
-| 4 | Slot copies | `entryCopies`, `copiesB`, `copiesOf`, chain 5 | 250–350 | `lake build`; a research `#guard` that `copiesOf` of `readonly-frame-other-key`'s walker holds `h`'s slot at the visit, retired in piece 8 |
-| 5 | Kept prefixes | chain 7 and 8 | 200–300 | `lake build` |
-| 6 | The decision and its witness | `protRegionB`, `sharedReadOnlyB`, chain 9 | 150–250 | `lake build` |
-| 7 | Protection threaded, read nowhere | chain 10 at `prot` false at every reader | 100–150 | `lake build`; `node pipeline/run-cases.mts readonly-frame`, `framed` and `bounds-pattern`, every expectation unchanged |
-| 8 | Protection read | `protRegionB` at `supportKeptB`, `supportFailure`, `framedNodeOkB`, `framedNodesAt`, `framedNodesWhy` and `framedSupportsAt`; the cases and the control below | 50–100, and the cases | the cases below; `node tests/node-runs.mts`; `node pipeline/run-cases.mts readonly-frame`, `framed`, `bounds-pattern`; `make test` before the merge |
+| 0 | The recorded crossings at the read-only positions | `roPositions`, `roPositionsB`, `entryXs` at `outType` off them, chain 0 | 150–250 | `lake build`; `node tests/json-field-names.mts` (the plan's document gains `roPositions`); `node pipeline/run-cases.mts framed`, `readonly-frame`, `bounds-pattern` unchanged; the shared-code twins below as cases, refused as before |
+| 1 | The history at the start and witness growth | chain 1 and 2, `entryStart_witness` and `witness_reached` as instances | 100–150 | `lake build` of the two modules |
+| 2 | The entry's slots and the start's witness | chain 3 and 4 | 250–350 | `lake build` |
+| 3 | Paths and regions | `Reads`, `pathParts`, `prefixRegions`, chain 5 | 300–400 | `lake build` |
+| 4 | Kept locations | chain 6 | 200–300 | `lake build` |
+| 5 | Slot copies | `entryCopies`, `copiesB`, `copiesOf`, chain 7 | 450–600 | `lake build`; a research `#guard` that `copiesOf` of the alias case's walker gives `w`'s slot `(0, [field widths])` at the visit, retired in piece 9 |
+| 6 | The path and prefix unchanged | chain 8 | 200–300 | `lake build` |
+| 7 | The decision and its witness | `protRegionB`, chain 9 | 150–250 | `lake build` |
+| 8 | Protection threaded, read nowhere | chain 10 at `prot` false at every reader | 100–150 | `lake build`; `run-cases.mts readonly-frame`, `framed`, `bounds-pattern`, every expectation unchanged |
+| 9 | Protection read | `protRegionB` at `supportKeptB`, `supportFailure`, `framedNodeOkB`, `framedNodesAt`, `framedNodesWhy` and `framedSupportsAt`; the cases and controls below | 50–100, the cases and controls | the cases below; `node tests/node-runs.mts`; `make test-checks` for the controls; `run-cases.mts readonly-frame`, `framed`, `bounds-pattern`; `make test` before the merge |
 
-Piece 8 changes acceptance; pieces 1 to 7 change none. Piece 8's cases:
+Lean in all: 1950–2850 lines. Pieces 1 to 8 change no acceptance; piece 0
+changes the recorded history and no verdict; piece 9 changes acceptance.
 
-- **`readonly-frame-other-key`** (`ex:rokey`), a gap, becomes positive,
-  accepted under client trust: `h.flags` at `grow` and its spine at `keep`
-  are read as protected, (P) holding at $`(s,\mathsf{F},\mathtt{flags})`$
-  since `rename`'s write is charged at `label`.
-- **`invalid-readonly-frame-same-key`** (`ex:rosamekey`) stays negative,
-  refused by the protocol at $`(s,\mathsf{F},\mathtt{flags})`$
-  ($`\mathsf{any}\not\sqsubseteq\mathsf{grow}`$), and its spine read
-  unprotected by (P).
-- **`readonly-frame-param-protected`** (positive, new): `walk(h: H, visit)`
-  with `H = { readonly flags: readonly number[] }`, a visitor stating
-  `{ values: "any"; spines: "any" }` and no member writing; the
-  invariant `h.flags.length === n` across `visit(i)` holds only by
-  protection, the visitor's effect allowing `any` at every spine.
-- **`invalid-readonly-frame-param-reassigned`** (negative, new): the same
-  walker with a second parameter `w: { flags: number[] }`, reading through
-  `let g = h; if (w.flags.length > 0) g = w;`. The slot of `g` at the loop
-  is no copy of `h`'s, so (C) fails, the spine of `g.flags` is read
-  unprotected and the visitor's effect drops the fact. Under Node 26.13.0,
-  `walk({ flags: [1, 1, 1] }, w, (i) => { if (i === 0) w.flags.pop(); })`
-  with `w = { flags: [1, 1, 1] }` prints `NaN` (observed, a JavaScript
-  transcription run in the scratchpad); the case's run goes in
-  `tests/node-runs.mts`.
-- **Control** (`tests/single-pass-controls.mts`, a forced proposal): at
-  `ex:rokey`'s walker with `rename` replaced by a member writing `flags`,
-  a support naming only the spine region `spine h ["flags"]` at `keep`.
-  No support the pass derives omits the field region, whose first line
-  already refuses, so only a forced support shows (P): the spine is read
-  unprotected, its part meeting the visitor's `spines` change.
+### Tests
 
-Piece 8 also updates the note's status of `ex:rokey` (its "conj." to the
+Each walker reads `h.flags[i]!` (or the region named) across `visit(i)`
+under the invariant `h.flags.length === n`, with `n = h.flags.length`;
+`H = { readonly flags: readonly number[] }`, `W = { flags: number[] }`.
+A visitor states `{ values: "keep"; spines: "any" }`, so only protection
+keeps a spine fact (`{ values: "any"; spines: "any" }` is refused at the
+gate). Each negative's program is unsafe under Node: the named client
+makes the walker read past the array (`NaN`), run by
+`tests/node-runs.mts` (observed under Node 26.13.0 for the reassigned,
+shared-code and depth-two programs as JavaScript transcriptions: `NaN`;
+the alias program returns its widths).
+
+| Case | Outcome | Shows |
+| --- | --- | --- |
+| `readonly-frame-other-key` (`ex:rokey`) | gap → positive | protection at keyed parts; (P) at `flags` with `rename` charged at `label` |
+| `invalid-readonly-frame-same-key` (`ex:rosamekey`) | negative, kept | the protocol at `flags`, whatever the reading |
+| `readonly-frame-param-protected` | positive | `walk(h: H, visit)`: the spine of `h.flags` read protected |
+| `invalid-readonly-frame-param-writable` | negative | `walk(h: W, visit)`: no read-only position; the client pops `h.flags` |
+| `invalid-readonly-frame-param-partly-readonly` | negative | `h: { readonly flags: number[] }`: the field read-only, its array writable, so the type is not read-only throughout (the plan's view); the client pops `h.flags` |
+| `readonly-frame-param-positions` / `invalid-readonly-frame-param-positions` | positive / negative | `walk(h: H, w: W, visit)`, `H` and `W` equal once `readonly` is erased: the fact over `h.flags` kept, the fact over `w.flags` dropped; the client pops `w.flags` |
+| `readonly-frame-shared-code` / `invalid-readonly-frame-shared-code` | positive / negative | two exported walkers of one body: both `xs: readonly number[]`, accepted; one `xs: number[]`, position 0 not read-only in the meet, both refused; the client calls the writable twin and pops its array |
+| `readonly-frame-local-alias` | positive | Section 1's `const w = h.widths` (`ex:ro`): `w`'s slot holds `(0, [field widths])` |
+| `readonly-frame-param-copy` | positive | `const g = h`: `g`'s slot a copy |
+| `invalid-readonly-frame-param-reassigned` | negative | `walk(h: H, w: W, visit)` with `h = w` before the loop: `h`'s slot names `w`; the client pops `w.flags` |
+| `readonly-frame-depth-two` / `invalid-readonly-frame-depth-two` | positive / negative | `h.inner.flags` with `H2 = { readonly inner: H }`: kept; with a member `swap(h)` writing `inner` (charged at `inner`), (P) fails at the path's first field; a visitor calling `swap(h)` makes the walker read past the new array |
+| `readonly-frame-cells` | positive | an element fact over the cells of `h.flags` (`0 <= h.flags[i]` from `@requires`) across a visitor stating `{ values: "any"; spines: "keep" }`: the cells read protected, `pre(cells)` the spine region |
+| `readonly-frame-handler` | positive | `try { visit(i) } catch { s += h.flags[i]!; }`: the fact read on the handler's edge, the copy table across `frameHandle`'s bound slot |
+
+Controls:
+
+- **Mutation controls** (`tests/single-pass-mutations.mts`): a verifier
+  whose `protRegionB` skips (C) accepts
+  `invalid-readonly-frame-param-reassigned`; one whose `roPositionsB`
+  reads the request's own shapes alone accepts
+  `invalid-readonly-frame-shared-code`. Each shows the check is what
+  refuses.
+- **A forced support** (`tests/single-pass-controls.mts`): at
+  `ex:rosamekey`'s walker, a support naming only `spine h ["flags"]` at
+  `keep`. No support the pass derives omits the field region, whose first
+  line already refuses, so only a forced support shows (P) at a region's
+  prefix: the spine is read unprotected.
+
+Piece 9 also updates the note's status of `ex:rokey` and `ex:ro` (to the
 Lean names of the chain), this section's labels, and the status row the
 [parity skill](../../.claude/skills/parity/SKILL.md) names.
 
@@ -2281,15 +2378,13 @@ No trust row is added. A unit accepted through a protected region relies
 on $`\Theta_C`$ (the row owner-approved on 2026-11-19) at storage the
 history protects: a client keeps the row at what an entry's argument
 reaches read-only at its declared type, through its own writable alias
-too (Assumption "Clients"; Example "Storage passed in read-only"). The
-history records an entering step's crossings at the request's declared
-inputs (`entryXs` reads `r.inputs`), and a function of $`C`$ whose
-realized code is the request's enters the same code; `sharedReadOnlyB`
-restricts the protected reading to positions every such function declares
-read-only, so the protection acceptance relies on is the one the paper's
-$`\Theta_C`$ grants. The read-only types are the plan's view, the
-binding of the plan to the checked file (an existing row), with
-`FramedSpec.readOnly_declared` proved of it.
+too (Assumption "Clients"; Example "Storage passed in read-only"). With
+piece 0 the history protects what a crossing reaches only at a position
+every function sharing the entered code declares read-only, so the
+headline's hypothesis is Assumption "Clients" at the declared types.
+The read-only positions are read from the family's declared shapes, part
+of the binding of the plan to the checked file (an existing row), with
+`roPositionsB_sound` proved of it.
 
 ## Milestones
 
