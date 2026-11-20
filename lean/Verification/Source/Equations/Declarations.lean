@@ -250,6 +250,7 @@ space of the row being built, or closed outside one. -/
 structure Ctx where
   decl : Option Nat := none
   params : Array Union := #[]
+  packSlots : List (Nat × Nat) := []
   self : Option Union := none
   binders : List (String × Binding) := []
   aliases : List Nat := []

@@ -59,6 +59,12 @@ export function readPair(n: number, labels: string[]): number {
   return pair.first;
 }
 
+class Nested<N, M> extends Reordered<M, N[]> {}
+
+export function readNested(numbers: number[], labels: string[]): number[] {
+  return new Nested<number, string>(numbers, labels).first;
+}
+
 class Tagged<Tag extends { tag: string }> {
   constructor(public value: Tag) {}
 }

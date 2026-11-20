@@ -207,7 +207,7 @@ export const classKey = (cls: string): Modifies<{ values: "any"; spines: "grow" 
  * its own overriding them), and the binding holding its constructor at the
  * fresh instance it allocates. */
 export type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<string, string>; fresh: string;
-  proto: string | null; binders: string[];
+  proto: string | null; binders: { source: string; name: string }[];
   instantiateBase?: true;
   /** The class is the standard `Error` itself (`native`), or extends it
    * through classes of the file (SOURCE-ELABORATION.md, a class extending

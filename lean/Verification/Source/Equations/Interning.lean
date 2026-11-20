@@ -226,6 +226,7 @@ def ctxValue (ctx : Ctx) : Item → Except String Union
 def ctxKind (ctx : Ctx) : Item → ParameterKind
   | .binder n => if (ctx.binders.lookup n).any (·.packed) then .packed
     else if (ctx.binders.lookup n).any (·.pack) then .arguments else .value
+  | .param i => if ctx.packSlots.any (·.2 == i) then .arguments else .value
   | _ => .value
 
 /-- What a head is lifted over: a packed binder's argument lists, under its
@@ -245,6 +246,7 @@ def liftedItems (ctx : Ctx) (named : List Item) : List Item :=
   canonical ++ canonical.filterMap fun it => match it with
     | .binder n => if (ctx.binders.lookup (packedName n)).isSome && !sameRow n &&
         !canonical.contains (.binder (packedName n)) then some (.binder (packedName n)) else none
+    | .param i => (ctx.packSlots.lookup i).map Item.param
     | _ => none
 
 /-- The scope inside a head lifted over `items`: each item is its argument. -/
@@ -252,6 +254,7 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
   let indexed := items.zipIdx
   let size := indexed.foldl (fun n (it, _) => match it with | .param i => max n (i + 1) | _ => n) 0
   { decl := ctx.decl
+    packSlots := ctx.packSlots
     params := (Array.range size).map fun i =>
       match indexed.find? (fun (it, _) => it == .param i) with
       | some (_, j) => [.argument j]
@@ -417,10 +420,9 @@ def schemeOver (binders : List Tree) (sigs : List (Arrow (List Tree))) (bounds :
   let s ← get
   let names := binders.map fun b => match b with
     | .var o i _ => if o == freshOwner then (s.fresh[i]?).getD "_" else "_"
+    | .bound h _ j => ((s.heads[h]?.bind (·.binders[j]?)).map (·.name)).getD "_"
     | _ => "_"
-  let bs : List Binder := (names.zip binders).map fun (n, b) => ⟨n, match b with
-    | .var _ _ k => k
-    | _ => .value⟩
+  let bs : List Binder := (names.zip binders).map fun (n, b) => ⟨n, rigidKindIn s.heads b⟩
   let row : GraphRow Tree (List Tree) :=
     .scheme ((List.range binders.length).map Tree.local) sigs bounds rests [] construct
   let key := s!"schemeOver|{spelling kinds}|{bindersSpelling bs}|{spelling row}"

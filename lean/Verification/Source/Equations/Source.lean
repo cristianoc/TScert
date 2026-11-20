@@ -16,6 +16,16 @@ def classConstructor (bindings : Array Json) (binding : Json) : Json := Id.run d
   if kindOf init != some "id" || init.getObjValD "name" != name then return init
   return ((bindings.find? fun b => b.getObjValD "name" == name).map (·.getObjValD "init")).getD init
 
+private partial def explicitConstructorNames (j : Json) : List String :=
+  match j with
+  | .arr xs => xs.toList.flatMap explicitConstructorNames
+  | .obj fields =>
+    let here := if kindOf j == some "new" && (j.getObjValAs? (Array Json) "typeArgs").toOption.any (!·.isEmpty) then
+      ((j.getObjValD "callee").getObjValAs? String "name").toOption.filter (·.endsWith ".[[class]]")
+    else none
+    here.toList ++ fields.toList.flatMap (fun (_, v) => explicitConstructorNames v)
+  | _ => []
+
 /-- A generic module value's type, its binders their name placeholders: a
 function's signature (receiver, parameters, rest element and result), a
 construct signature (parameters and result), or any other type. -/
@@ -292,6 +302,15 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       if result == .null then throw s!"{path}: a generic module function's type needs its result's annotation"
       return .function none params rest (← lowerType ctx result)]
   let init := ast.getObjValD "init"
+  let targets := explicitConstructorNames init
+  let constructorPacks ← ((init.getArr?.toOption.getD #[]).toList.flatMap fun st =>
+    ((st.getObjValAs? (Array Json) "bindings").toOption.getD #[]).toList).flatMapM fun b => do
+      if !(b.getObjValAs? String "name").toOption.any targets.contains then return []
+      let ctor := b.getObjValD "init"
+      let params := (ctor.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
+      let names ← sourceNames params
+      names.filterM fun n => binderPacked n ctor
+  modify fun s => { s with constructorPacks := constructorPacks.eraseDups }
   let _classes ← classScope init
   let initBinders := ((← get).unitBinders.reverse.filter (·.1.startsWith "/init/")).flatMap (·.2)
     |>.foldl (fun (acc : List (String × Tree × Option Union)) (n, t, B) =>

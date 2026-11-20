@@ -17,7 +17,10 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
     unionOfArms ctx.site U meets
   | "parameter" =>
     fieldsExactly term ["k", "index", "span"]
-    ctxValue ctx (.param (← (← field term "index").getNat?))
+    let p ← (← field term "index").getNat?
+    if ctx.packSlots.any (·.2 == p) then
+      throw s!"{ctx.site}: declaration parameter index {p} outside the application"
+    ctxValue ctx (.param p)
   | "self" =>
     fieldsExactly term ["k", "span"]
     ctxValue ctx .self
@@ -52,11 +55,7 @@ partial def lowerRest (ctx : Ctx) (term : Json) : M Union := do
   if kindOf term == some "pack" then
     fieldsExactly term ["k", "of", "span"]
     let operand ← field term "of"
-    -- A declaration's own parameter: its argument, which every application
-    -- completes with its array's argument lists (`packOf`).
-    if kindOf operand == some "parameter" then
-      return ← ctxValue ctx (.param (← (← field operand "index").getNat?))
-    if kindOf operand != some "binder" then throw s!"{ctx.site}: a pack rest must name a type parameter"
+    if kindOf operand != some "binder" then return ← packOf ctx operand
     let n ← str operand "name"
     -- A binder whose argument lists are a placeholder of their own.
     if let some p := ctx.binders.lookup (packedName n) then return p.value
@@ -80,7 +79,9 @@ partial def protoLabel : M Tree := do
 partial def declHead (i : Nat) : M Nat := do
   let d := (← get).doc[i]!
   let kind := if ImplicitDependency.arrayProto.selects d.identity then HeadKind.proto else .declaration i
-  alloc s!"decl|{i}" { name := d.name, kind, kinds := List.replicate d.parameters.size .value }
+  let packs ← packedOf i
+  let kinds := List.replicate d.parameters.size .value ++ List.replicate packs.length .arguments
+  alloc s!"decl|{i}" { name := d.name, kind, kinds }
     fun h => some (.declaration h i)
 
 /-- A reference: its arguments, one per parameter, applied to the
@@ -93,36 +94,32 @@ partial def reference (ctx : Ctx) (term : Json) : M Union := do
   let values ← application ctx i supplied
   -- A packed parameter's argument, its bound checked, is completed with its
   -- argument lists.
-  let packed := (← packedOf i).eraseDups
-  let values ← values.zipIdx.mapM fun (U, p) => do
-    match packed.contains p, argTerms[p]? with
-    | true, some t => return normUnion (U ++ (← packOf ctx t))
-    | _, _ => return U
-  instantiateDecl ctx i values
+  let packs ← (← packedOf i).mapM fun p => do
+    let some t := argTerms[p]? | throw s!"{ctx.site}: no argument for a packed parameter"
+    packOf ctx t
+  instantiateDecl ctx i (values ++ packs)
 
 /-- The argument lists an argument of a packed parameter adds to it: an
-array's or a tuple's, the lists a call collects into one of its arrays; none
-for a packed binder or an enclosing declaration's packed parameter, whose
-value holds them already; a binder's argument-list placeholder. Any other
+array's or a tuple's, the lists a call collects into one of its arrays; a
+packed binder's argument-list projection or a declaration's pack slot. Any other
 instance is refused: its argument lists are no array's (PROGRAM-TYPING.md,
 "Packed binders"). -/
 partial def packOf (ctx : Ctx) (term : Json) : M Union := do
   let refuse := s!"{ctx.site}: the instance of a type parameter typing a value and a rest's argument list is no array or tuple type: the argument lists are an array or tuple type's, whose fresh arrays are its values"
   match kindOf term with
-  | some "array" | some "tuple" => lowerRest ctx term
+  | some "array" | some "tuple" =>
+    if (← field term "presence") == .str "sparse" then throw refuse
+    packBound ctx term
   | some "binder" =>
     let n ← str term "name"
     if let some p := ctx.binders.lookup (packedName n) then return p.value
     match ctx.binders.lookup n with
-    | some b => if b.packed then return [] else throw refuse
+    | some b => if b.packed || b.pack then return b.value else throw refuse
     | none => throw refuse
   | some "parameter" =>
     let p ← (← field term "index").getNat?
-    match ctx.decl with
-    | some d =>
-      if (← packedOf d).contains p then return []
-      throw refuse
-    | none => throw refuse
+    let some slot := ctx.packSlots.lookup p | throw refuse
+    ctxValue ctx (.param slot)
   | _ => throw refuse
 
 /-- An application's arguments: one per parameter. A reference carries
@@ -144,7 +141,7 @@ partial def instantiateDecl (ctx : Ctx) (i : Nat) (values : List Union) : M Unio
   if d.isHead then return [mkApp (← declHead i) values]
   if ctx.aliases.contains i then
     throw s!"{ctx.site}: unguarded alias cycle through {d.name}: a recursive alias must reach itself through an object, array, tuple or function type"
-  let inner := { ctx with decl := some i, params := values.toArray, self := none }
+  let inner := { ctx with decl := some i, params := values.toArray, packSlots := ← declarationPackSlots i, self := none }
   lowerType { inner with binders := [], aliases := i :: ctx.aliases } d.expression
 
 /-- An intersection: meet labels over the product of the operands' unions
@@ -517,10 +514,11 @@ partial def schemeRow (ctx : Ctx) (term : Json) :
 rows (§8.1, heritage). -/
 partial def declarationRow (h i : Nat) : M (GraphRow Tree (List Tree)) := do
   let d := (← get).doc[i]!
-  let n := d.parameters.size
+  let n := d.parameters.size + (← packedOf i).length
   let args := (List.range n).map fun k => [Tree.argument k]
   let ctx : Ctx :=
-    { decl := some i, params := args.toArray, self := some [mkApp h args], owner := some h,
+    { decl := some i, params := args.toArray, packSlots := ← declarationPackSlots i,
+      self := some [mkApp h args], owner := some h,
       site := d.name }
   let own := d.expression
   let empty := kindOf own == some "object" &&
@@ -543,15 +541,15 @@ annotations and a generic value's from its lowered type
 (`GenericValue`), never from this row, so it states nothing further, and a
 bound naming another binder of the unit (`U extends T`) needs no scheme bound
 (the unit reads it as a meet, `SourceClaimJson.binderRows`). -/
-partial def unitRow (_ctx : Ctx) (node : Json) : M (GraphRow Tree (List Tree)) := do
+partial def unitRow (h : Nat) (node : Json) : M (GraphRow Tree (List Tree)) := do
   let tps := (node.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
   let parameters ← tps.toList.mapM fun p => do
     let name ← str p "name"
     let resolution ← (fromJson? (← field p "resolution") : Except String (Option ResolutionWire.Slots))
     return (name, resolution)
   ResolutionWire.validateOwnership parameters
-  let names := parameters.flatMap fun (n, s) => ResolutionWire.ownedNames n s
-  return .scheme ((List.range names.length).map Tree.local) [] [] [] (ResolutionWire.groups parameters)
+  let binders := (← draft h).binders
+  return .scheme ((List.range binders.length).map Tree.local) [] [] [] (ResolutionWire.groups parameters)
 
 /-- Producer row `n`'s head, lifted over the binder names it mentions
 freely; its row is a job. -/
@@ -660,7 +658,10 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
         throw s!"source claims: a declaration's label has one argument per parameter: {ds[i]!.name} has {ds[i]!.parameters.size}, given {args.length}"
       let ctx : Ctx := { binders := scope, site := "source claims" }
       let values ← application ctx i args
-      instantiateDecl ctx i values
+      -- A claim supplies both projections of a packed argument in one
+      -- union. Each occurrence in the equation reads its own projection.
+      let packs := (← packedOf i).map (values.getD · [])
+      instantiateDecl ctx i (values ++ packs)
     else if let some ps := get? "meet" then
       fieldsExactly j ["meet"]
       let parts ← (← ps.getArr?).toList.mapM (claimUnion scope)
@@ -725,7 +726,7 @@ partial def runJob (job : Job) : M Unit := do
       let (row, defaults) ← schemeRow ctx term
       if !defaults.isEmpty then setDefaults h defaults
       pure row
-    | .unit _ ctx node => unitRow ctx node
+    | .unit h _ node => unitRow h node
     | .row _ n => rowBody n
   setBody h row
   modify fun s => { s with processing := s.processing.erase h }

@@ -198,24 +198,6 @@ def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : G
     Json.mkObj [("top", toJson false), ("atoms", Json.arr #[first])]
   | .other U => graphClaim (normUnion (U.flatMap (rebind T θ)))
 
-/-- The argument lists of a binder typing both a value and a rest, at its
-instance `X`: those of `X`'s tuple contract, where `X` is an array or tuple
-type, whose fresh arrays are its values, and whose spine has no sparse holes,
-so that its values are packable by those lists (PROGRAM-TYPING.md, "Packed
-binders"). An instance with other members, a tagged array, is refused. -/
-def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
-    Except String (EquationStore.State × List Tree) := do
-  let G := SourceTypes.graph T
-  let refuse := s!"the instance of '{n}', a type parameter typing a value and a rest's argument list, " ++
-    "is no array or tuple type: the argument lists are an array or tuple type's, whose fresh arrays are its values"
-  let [c@(.refs fs [] vs _ _ _ _)] := PositiveRules.expand G X | throw refuse
-  let some [s] := (Stored.views fs).lookup SourceTypes.spineField <|> vs.lookup SourceTypes.spineField | throw refuse
-  if c != SourceTypes.arrayOf T s false && c != SourceTypes.arrayOf T s true then throw refuse
-  let [.list τ []] := PositiveRules.expand G [s] | throw refuse
-  if τ.presence == .sparse then throw refuse
-  let (T, l) := EquationStore.intern T [.pack { τ with readonly := false, presence := .dense } []]
-  return (T, [l])
-
 private def emptyDeclarations : Json := Json.mkObj [("roots", Json.arr #[]),
   ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[]),
   ("applications", Json.arr #[])]
@@ -276,7 +258,7 @@ def equationFront (ast claims : Json) (fileKey : String)
     let θ ← θ.mapM fun (n, j) => do return (n, ← claimLabels j)
     let (T, θ) ← g.packed.foldlM (fun (T, θ) n => do
       let some X := θ.lookup n | throw s!"no type argument for '{n}'"
-      let (T, P) ← instancePack T X n
+      let (T, P) ← SourceTypes.instancePack T X n
       return (T, θ ++ [(EquationLowering.packedName n, P)])) (T, θ)
     let t ← g.type
     let bounds := g.bounds.map fun (n, B) =>

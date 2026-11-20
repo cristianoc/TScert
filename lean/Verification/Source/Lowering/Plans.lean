@@ -437,13 +437,41 @@ the call's typing. -/
           (X.map Subtype.val) (Y.map Subtype.val)
           (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the explicit type argument")
 
+/-- Read the written instances of a constructor's value binders, then the
+argument-list instances of any companion slots. -/
+def constructorTypeArguments (binders : List Tree) (typeArgs : List Json) :
+    Compiler (List (Ty Tree)) := do
+  let args ← typeArgs.mapM fun t => lower (Fragment.translate t)
+  let T ← table
+  let rows ← binders.mapM fun b => match b with
+    | .bound h _ j => match T.heads[h]?.bind (·.binders[j]?) with
+      | some row => pure row
+      | none => throw "missing constructor binder"
+    | _ => throw "a constructor scheme needs owned binders"
+  let (values, packs) := rows.partition (·.kind != .arguments)
+  if args.length != values.length then
+    throw "explicit type arguments must instantiate every constructor binder"
+  let θ := (values.map (·.name)).zip args
+  let packs ← packs.mapM fun row => do
+    let some name := row.name.dropSuffix? "#pack" | throw "a constructor pack needs its companion value binder"
+    let base := name.toString
+    let some U := θ.lookup base | throw "missing the value argument of a constructor pack"
+    lower do
+      let (T, P) ← SourceTypes.instancePack (← get) U base
+      set T
+      return P
+  return args ++ packs
+
 /-- The instance used by a construction must implement its written type
 arguments. Read its scheme from the lexical slot and check the proposed
 instance with the same equation and bound checks used by subtyping. -/
 @[nospecialize] def explicitConstructorInstance (pos : Span) (scheme claimed : Ty Tree)
     (typeArgs : List Json) : Compiler Unit := do
   if typeArgs.isEmpty then return
-  let args ← typeArgs.mapM fun t => lower (Fragment.translate t)
+  let G := SourceTypes.graph (← table)
+  let [l] := scheme | throw "explicit type arguments require a constructor scheme"
+  let some s := G.schemes l | throw "explicit type arguments require a constructor scheme"
+  let args ← constructorTypeArguments s.binders typeArgs
   let T ← table
   let refuse (reason : String) := locatedRefusal T pos .schemeElimination reason
   let F ← EquationStore.freeze T

@@ -90,9 +90,14 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
   -- lists is packed: one row, read in both components (PROGRAM-TYPING.md,
   -- "Packed binders").
   let packed ← names.filterM fun n => binderPacked n node
+  let constructorPacks := (← get).constructorPacks
+  let split := if kindOf node == some "ctor" then packed.filter constructorPacks.contains else []
+  let packed := packed.filter (!split.contains ·)
+  let packs := split.map packedName
   let d : Draft :=
     { name, kind := .unit path, kinds := items.map fun _ => .value,
-      binders := names.map fun n => ⟨n, if packed.contains n then .packed else .value⟩ }
+      binders := (names.map fun n => ⟨n, if packed.contains n then .packed else .value⟩) ++
+        (packs.map fun n => ⟨n, .arguments⟩) }
   let u ← alloc s!"unit|{path}" d fun u => some (.unit u (liftedCtx ctx items u) node)
   let rigid := names.zipIdx.map fun (n, j) =>
     (n, ({ pack := false, value := [mkBound u args j], packed := packed.contains n } : Binding))
@@ -111,15 +116,17 @@ def enterUnit (path : String) (scope : List (String × Binding)) (node : Json) (
   -- A packed binder is its row, in both components: its values under its
   -- name, its argument lists under its packed name; its bound is checked at
   -- its instances. A value binder's values are within its bound.
-  let bindings := bounded.flatMap fun (n, r, B) =>
+  let packRows := (packs.zipIdx names.length).map fun (n, j) => (n, mkBound u args j)
+  let bindings := (bounded.flatMap fun (n, r, B) =>
     if r.packed then [(n, r), (packedName n, { pack := true, value := r.value })] else
     match B with
     | none => [(n, r)]
-    | some B => [(n, ({ pack := false, value := meetUnions [r.value, B] } : Binding))]
+    | some B => [(n, ({ pack := false, value := meetUnions [r.value, B] } : Binding))]) ++
+    packRows.map (fun (n, t) => (n, { pack := true, value := [t] }))
   -- A packed binder, and its argument lists, are its row itself.
-  let owned := bounded.flatMap fun (n, r, B) => match r.value with
+  let owned := (bounded.flatMap fun (n, r, B) => match r.value with
     | [t] => if r.packed then [(n, t, none), (packedName n, t, none)] else [(n, t, B)]
-    | _ => []
+    | _ => []) ++ packRows.map (fun (n, t) => (n, t, none))
   modify fun s => { s with scopes := (path, bindings) :: s.scopes, unitBinders := (path, owned) :: s.unitBinders }
   return bindings ++ scope
 
@@ -130,16 +137,21 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
     (tps : Array Json) : M (List (String × Binding) × List (Tree × Union)) := do
   let tps ← expandedSourceParameters tps
   let names ← sourceNames tps
+  let constructorPacks := (← get).constructorPacks
+  let split := if kindOf node == some "ctor" then constructorPacks else []
   let bound ← names.mapM fun n => do
     let u := binderUse n node
     -- Used as both, a packed binder: a value binder whose rest reads its
     -- argument lists, under its packed name.
     if ← binderPacked n node then
+      if split.contains n then return (n, ({ pack := false, value := [← placeholder n .value] } : Binding))
       return (n, ({ pack := false, value := [← placeholder n .packed], packed := true } : Binding))
     let pack := u.pack
     return (n, ({ pack, value := [← placeholder n (if pack then .arguments else .value)] } : Binding))
   let lists : List (String × Binding) ← bound.filterMapM fun (n, b) => do
     if b.packed then return some (packedName n, { pack := true, value := b.value })
+    if split.contains n && (← binderPacked n node) then
+      return some (packedName n, { pack := true, value := [← placeholder (packedName n) .arguments] })
     return none
   let inner := bound ++ lists ++ scope
   -- A value binder's declared bound, read where an application over it
@@ -199,9 +211,10 @@ def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
 /-- Every annotation of the function tree lowered in its scope, keyed by its
 path. A binder is its name placeholder (`bindNames`). -/
 partial def walk (path : String) (scope : List (String × Binding)) (bounds : List (Tree × Union))
-    (j : Json) : M (List (String × Union)) := do
+    (j : Json) (constructorParams : Bool := false) : M (List (String × Union)) := do
   match j with
-  | .arr xs => return (← xs.toList.zipIdx.mapM fun (x, i) => walk s!"{path}/{i}" scope bounds x).flatten
+  | .arr xs => return (← xs.toList.zipIdx.mapM fun (x, i) =>
+      walk s!"{path}/{i}" scope bounds x constructorParams).flatten
   | .obj kvs =>
     let tps := (j.getObjValAs? (Array Json) "typeParams").toOption.getD #[]
     let (scope, bounds) ← if tps.isEmpty then pure (scope, bounds) else bindNames scope bounds j tps
@@ -211,8 +224,11 @@ partial def walk (path : String) (scope : List (String × Binding)) (bounds : Li
       let here := s!"{path}/{name}"
       if annotationFields.contains name && value != .null then
         out := out ++ [(here, ← lowerType { ctx with site := here } value)]
-        if let some parts ← arrayParts { ctx with site := here } value then
-          modify fun s => { s with arrayAnnotations := s.arrayAnnotations ++ [(here, parts)] }
+        -- A constructor's fixed parameters keep the original equation
+        -- applications so their inherited types substitute inside bounds.
+        if !(constructorParams && name == "type") then
+          if let some parts ← arrayParts { ctx with site := here } value then
+            modify fun s => { s with arrayAnnotations := s.arrayAnnotations ++ [(here, parts)] }
       else if name == "typeArgs" then
         let .arr values := value | throw s!"{here}: type arguments are a list"
         for (v, i) in values.toList.zipIdx do
@@ -221,7 +237,9 @@ partial def walk (path : String) (scope : List (String × Binding)) (bounds : Li
       -- postconditions (`ensures`) and a loop's invariant (`invariant`), index
       -- facts, hold no type annotation.
       else if name != "resolution" && name != "requires" && name != "ensures" && name != "invariant" then
-        out := out ++ (← walk here scope bounds value)
+        let constructorParams := (kindOf j == some "ctor" && name == "lambda") ||
+          (constructorParams && kindOf j == some "lambda" && name == "params")
+        out := out ++ (← walk here scope bounds value constructorParams)
     return out
   | _ => return []
 

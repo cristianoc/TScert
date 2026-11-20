@@ -47,7 +47,7 @@ def source (ast claims : Json)
   let ds ← (definitions document).mapError Failure.refusal
   if let some i := (List.range ds.size).find? (fun i => ImplicitDependency.arrayProto.selects ds[i]!.identity) then
     if i != 0 || !ds[i]!.parameters.isEmpty then throw (.refusal "ArrayProto must be the first declaration")
-  let packings := ds.map fun d => packedParameters d.expression
+  let packings := ds.map fun d => (packedParameters d.expression).eraseDups
   let ((annotations, values, generics, units, initBinders, claims), s) ←
     ((lowerSource ast claims).run
         { doc := ds, identities := identityIndex ds, packings, subtypeBudget := budget, tags := tagSymbols document }).mapError

@@ -1652,8 +1652,11 @@ def constructCallee (F : Ty Tree) (typeArgs : List Json) (internal : Bool) : Com
   let G ← graphNow
   if let [l] := F then
     if let some s := G.schemes l then
-      let c ← calleeOf F [Labels.undef] typeArgs
-      return { c with construct := true, exactConstructor := internal && s.construct }
+      if internal && s.construct && !typeArgs.isEmpty then
+        let c ← calleeOf F [Labels.undef]
+        let args ← constructorTypeArguments s.binders typeArgs
+        return { c with construct := true, exactConstructor := true, seed := s.binders.zip args }
+      return { ← calleeOf F [Labels.undef] typeArgs with construct := true, exactConstructor := internal && s.construct }
   match PositiveRules.expand G F with
   | [.ctors L S ..] =>
     return { fixed := L.map (·.withReceiver [Labels.undef]), rests := S.map (·.withReceiver [Labels.undef]), construct := true }
@@ -3223,10 +3226,19 @@ private def constructorImage (σ : List (Tree × Ty Tree))
     (fixed.map fun a => (a.map sub).withReceiver ())
     (rests.map fun a => (a.map sub).withReceiver ())))]
 
+private def constructorBinderNames (binders : List (String × Tree × Option (Ty Tree)))
+    (names : List String) : List String :=
+  let rows := binders.map fun (n, p, _) => (n, p)
+  names ++ names.filterMap fun n => do
+    let value ← rows.lookup n
+    let pack := EquationLowering.packedName n
+    let args ← rows.lookup pack
+    if args != value then some pack else none
+
 private def constructorDeclarationImage (binders : List (String × Tree × Option (Ty Tree)))
     (names : List String) (s : PositiveGraphs.SchemeRow Tree) : Compiler (Ty Tree) := do
   let (T, views) ← SourceClaimJson.binderRows (← table) binders
-  let args ← names.mapM fun name => do
+  let args ← (constructorBinderNames binders names).mapM fun name => do
     let some view := views.lookup name | throw "missing class binder"
     pure [view]
   lower (set T)
@@ -4211,7 +4223,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         let own : List (CallEffects.MethodArrow (Ty Tree)) := (allocates ++ [I]).map fun R => ⟨(), ps, R, .ordinary⟩
         if let some g := generic then
           if !fields.isEmpty then throw "an internal constructor scheme has no static fields"
-          let binders ← g.binders.mapM fun n => do
+          let binders ← (constructorBinderNames initBinders g.binders).mapM fun n => do
             let some (_, p, bound) := initBinders.find? (·.1 == n) | throw "missing class binder"
             pure (p, bound)
           let rows := binders.map Prod.fst
@@ -4238,7 +4250,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         else pure C
       modify fun w => { w with classes := (lam.span, F) :: w.classes }
       if let some g := generic then
-        let rows := g.binders.filterMap fun name =>
+        let rows := (constructorBinderNames initBinders g.binders).filterMap fun name =>
           (initBinders.find? (·.1 == name)).map fun (_, p, _) => p
         modify fun w => { w with ctorBinders := (e.span, rows) :: w.ctorBinders }
     return (r, e1)
