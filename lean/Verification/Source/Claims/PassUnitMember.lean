@@ -83,24 +83,17 @@ section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- **The framed claim's obligations** (the draft "Accepting a unit
-through the read-only frame", "The returns, at reached executions"): the
-premises of the returns at reached executions (`ret_reachedW_spec`) that
-are invariants of the frame's executions, which no check establishes:
-every call the claim is about runs the request's code at slots of values
-(from `EntryAt`), the checks' data sound along the frame's executions
-(`ChkSound`), the frame's starts meeting the history's invariant
-(`StartInv`), every entry fitting the flow the frame reads (`EntryFits`),
-and every location's key `none` (`NoKeys`). With them and the checks the
-pass makes, the returns hold at the executions the claim is about
-(`FramedObligations.reached`). A field leaves this structure in the
+through the read-only frame", "The flow along a program"): the premises
+of the returns at reached executions from a program's initial
+configurations (`ret_reachedW_public`) that no check establishes: every
+initial configuration fits the flow at the history before any entry
+(`InitialFits`) and is an entry (`InitialEntry`). With them and the
+checks the pass makes, the returns hold at the executions the claim is
+about (`FramedObligations.reached`). A field leaves this structure in the
 commit that proves it. -/
 structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
-  vals : ∀ n (W : WorldT n) h (L : List Tm) (d : Tm),
-    (spec.frame r).Call n W h (gotoOf r.program r.start L d r.comp) → (∀ v ∈ L, isVal v = true) ∧ isVal d = true
-  chk : (spec.frame r).ChkSound
-  start : (spec.frame r).StartInv
-  fits : (spec.frame r).EntryFits spec.fflow.flow
-  keys : (spec.frame r).NoKeys
+  fits : spec.InitialFits r
+  entry : spec.InitialEntry r
 end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass

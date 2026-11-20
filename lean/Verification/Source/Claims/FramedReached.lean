@@ -1,4 +1,4 @@
-import Verification.Source.Claims.FramedReturns
+import Verification.Source.Claims.FramedStarts
 import Verification.Source.Claims.PassUnitMember
 
 /-! # The framed returns, from the checks the pass makes
@@ -30,8 +30,11 @@ premise that is a check is read from the check the pass makes:
 
 The callee's effect bounding the heap along each framed call is the
 callback row of the client obligation (`FramedSpec.CallbacksWithin`, a
-trust). The invariants of the frame's executions are `FramedObligations`'
-fields. `FramedObligations.reached` assembles them. -/
+trust). The invariants of the frame's executions are read along the
+program (`ret_reachedW_public`), from the checks of its starts
+(`FramedSpec.starts_checks`) and the two premises on the initial
+configurations, `FramedObligations`' fields. `FramedObligations.reached`
+assembles them. -/
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow LabelStore
@@ -200,11 +203,11 @@ section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- **The framed returns at the executions the claim is about, from the
-checks** (proved, `ret_reachedW_spec`): where the component's binding
+checks** (proved, `ret_reachedW_public`): where the component's binding
 checks refuse nothing and the request's checks pass (`requestB`, each
-framed node's callee's stated effect read by `eff`), the framed claim's
-obligations hold (`FramedObligations`) and calls meet the callback row of
-the client obligation at `eff` (`CallbacksWithin`), the returns of the
+framed node's callee's stated effect read by `eff`), the initial
+configurations fit the flow and are entries (`FramedObligations`) and
+calls meet the callback row of the client obligation at `eff` (`CallbacksWithin`), the returns of the
 plan's framed nodes keeping their supports hold at the executions the
 frame's claim is about, read at their worlds. -/
 theorem FramedObligations.reached {spec : FramedSpec ι} {r : SourceRequest σ ι}
@@ -213,18 +216,18 @@ theorem FramedObligations.reached {spec : FramedSpec ι} {r : SourceRequest σ �
     FramedReturnsReachedW r (spec.frame r) (Verification.TolerantFrames.framedFOf spec.framed)
       (Verification.TolerantFrames.framedRet (Verification.TolerantFrames.framedSOf spec.framed))
       (fun _ _ _ _ => True) := by
+  obtain ⟨hmk, hst, hreal, hEf⟩ := spec.starts_checks hcomp₀ hreq
   simp only [FramedSpec.requestB, Bool.and_eq_true] at hreq
   obtain ⟨⟨⟨⟨⟨hc, hsrc⟩, hθ⟩, -⟩, -⟩, hn⟩ := hreq
   obtain ⟨hFa, -, htok, hlow, hTm, hEl, hEw, hRl, hRw, -⟩ := frameFlowB_sound (spec.frameFlow_checks hcomp₀)
   obtain ⟨hatom, heff, hT, hslots, hcheck⟩ := framedNodesAt_sound (spec.framedNodes_frame hn)
-  exact ret_reachedW_spec spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
-    (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hob.vals hob.chk hob.start hcomp₀ hEl hEw hRl hRw
-    hFa hob.fits hob.keys htok hlow (compB_sound hc) hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
+  exact ret_reachedW_public spec r (F := Verification.TolerantFrames.framedFOf spec.framed)
+    (S := Verification.TolerantFrames.framedSOf spec.framed) hsrc hcomp₀ hEl hEw hRl hRw hFa hmk hst hreal hEf
+    hob.fits hob.entry htok hlow (compB_sound hc) hatom (S₀ := operandSetsOf spec.fflow (requestCode r))
     (T := nodeSetOf spec.fflow spec.lay (requestCode r))
     (Ψc := nodeProtocolOf spec.fflow spec.lay spec.theta (requestCode r)) hT
     (fun l _ p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).2) hslots
-    (Φ := fun l => (eff l).getD []) (q := fun _ => classQuery) hcheck
-    (fun _ _ _ _ _ _ _ _ _ _ _ _ _ => classQuery_sound _ _) hTm
+    (Φ := fun l => (eff l).getD []) hcheck hTm
     (fun p => thetaKeepB_sound hθ _ p)
     (fun l p => (nodeProtocolOf_ge spec.fflow spec.lay spec.theta (requestCode r) l p).1)
     (fun l b₀ a m e L d k x v hl hb he hk hL hbt hex hat hv =>

@@ -176,12 +176,6 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 namespace FramedSpec
 variable (spec : FramedSpec ι)
 
-/-- **An initial configuration fits the flow** (named check premise): its
-term fits `O` at a position of outside code, and the realm meets the flow,
-at the history before any entry. -/
-def InitialFits (r : SourceRequest σ ι) : Prop :=
-  ∀ x, spec.Initial x → (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t)
-
 /-- **The invariants of a program's states**: a reached term, a heap free
 of runs, layout provenance at the plan's layouts, no run of `C` waiting as
 a binding's body, and the fit of the flow. -/
@@ -387,11 +381,6 @@ theorem chkSound (r : SourceRequest σ ι) (hF : spec.flow.Facts)
     (ClientFrame.sitesSound_of_fits hF (spec.flowSites r) hE)
     (fun _ ha => ClientFrame.sitesAt_reached hF (spec.flowSites r) hE ha) (spec.entryXs_roots r)
 
-/-- **An initial configuration is an entry** (named check premise): code
-provenance, the call discipline, outside code lowered source and closed
-values hold at the realm's heap and the initialization's term. -/
-def InitialEntry (r : SourceRequest σ ι) : Prop := ∀ x, spec.Initial x → (spec.frame r).Entry x.s.h x.t
-
 /-- **The program's frame**: the plan's core and codes, its calls the
 initial configurations, started from the history before any entry. Its
 reached states are the program's. -/
@@ -465,6 +454,89 @@ theorem startInv (r : SourceRequest σ ι) (hF : spec.flow.Facts)
     · rw [ht]
       simp [truncate, depthC, PassUnit.gotoOf, path, blocks, hc', hn']
   · exact ⟨entryStart_inv (tv := (spec.frame r).view.view) x [], by simp only [bareStart, List.length_replicate]; rfl⟩
+
+/-! ## The initialization's code and the flow (a counter-model)
+
+Both named premises on the initial configurations read the
+initialization's code at the plan's flow: an initial configuration's
+term runs it at a tag of `C`, so code provenance (`InitialEntry`) needs
+it among `C`'s codes, the codes the flow proposes for, and its fit
+(`InitialFits`) needs a proposal of the flow for it (`gotoC`). Every code
+the flow proposes for is lowered (`codesLoweredB`), so where a node
+expression of the initialization is not lowered code, as one capturing
+an identity of the realm is (`initB`'s captures of realm values), no
+initial configuration is an entry or fits the flow. -/
+
+/-- **The initialization's tag runs `C`'s code** (proved, `framePkg_ofC`). -/
+theorem init_ofC (r : SourceRequest σ ι) : (spec.frame r).F.ofC (spec.frame r).C (some spec.C) = true := by
+  change (oneComponent spec.C spec.mark).family.ofC spec.C (some spec.C) = true
+  rw [← framePkg_ofC spec.C spec.mark]
+  simp
+
+/-- **An initial configuration that is an entry runs a code of the flow**
+(proved, by code provenance at the initialization's run). -/
+theorem initialEntry_code (r : SourceRequest σ ι) {x : Conf} (hx : spec.Initial x)
+    (he : (spec.frame r).Entry x.s.h x.t) : ∃ cx π, spec.flow.code (spec.initE, spec.initK) cx = some π := by
+  obtain ⟨client, -, ht, -, -⟩ := hx
+  have hp := he.1.1
+  rw [ht] at hp
+  simp only [prov, Bool.and_eq_true] at hp
+  have hok := hp.1.1.1.1
+  simp only [ClientFrame.ok, decide_eq_true_eq] at hok
+  have hruns : (spec.frame r).F.Runs (some spec.C) (spec.frame r).C := by
+    have := spec.init_ofC r
+    simpa [Family.ofC] using this
+  exact hok hruns
+
+/-- **An initial configuration that fits the flow runs a code of the flow**
+(proved, by the rules of `Fits` at a `letE` and at a run of `C`'s code). -/
+theorem initialFits_code (r : SourceRequest σ ι) {x : Conf} (hx : spec.Initial x)
+    (hf : (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t)) :
+    ∃ cx π, spec.flow.code (spec.initE, spec.initK) cx = some π := by
+  obtain ⟨client, -, ht, -, -⟩ := hx
+  have h := hf.1
+  simp only at h
+  rw [ht] at h
+  cases h with
+  | val hv _ _ => simp [isVal] at hv
+  | letE hx _ _ =>
+    cases hx with
+    | val hv _ _ => simp [isVal] at hv
+    | gotoC c π _ hcode _ _ _ _ => exact ⟨c, π, hcode⟩
+    | gotoOut hc _ _ _ _ =>
+      have h2 : ((spec.frame r).F.at (spec.frame r).C).ofC (some spec.C) = true := spec.init_ofC r
+      rw [hc] at h2; cases h2
+
+/-- **No initial configuration is an entry or fits the flow where the
+initialization is not lowered code** (proved: the counter-model to
+`InitialEntry` and `InitialFits` at the pass's checks). Where the flow's
+codes are lowered (`codesLoweredB`, a check the pass runs) and a node
+expression of the initialization is not lowered code, every initial
+configuration fails both. -/
+theorem initial_refuted (r : SourceRequest σ ι) (hlow : codesLoweredB spec.fflow = true)
+    (hnl : ∃ e ∈ spec.initE, ¬ Lowered spec.flow e) {x : Conf} (hx : spec.Initial x) :
+    ¬ (spec.frame r).Entry x.s.h x.t ∧
+      ¬ (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t) := by
+  obtain ⟨e, he, hne⟩ := hnl
+  have hL := codesLoweredB_sound hlow
+  exact ⟨fun hent => by
+      obtain ⟨cx, π, hc⟩ := spec.initialEntry_code r hx hent
+      exact hne (hL _ _ _ hc e he),
+    fun hf => by
+      obtain ⟨cx, π, hc⟩ := spec.initialFits_code r hx hf
+      exact hne (hL _ _ _ hc e he)⟩
+
+/-- **A closure capturing an identity of the realm is not lowered code**
+(proved): a capture of lowered code is a variable or a primitive. -/
+theorem capture_objAt_not_lowered {P : Package} {Fl : Flow P} {ar : Nat} {E : List Tm}
+    {K : List (Continuation × Option Target)} {s : Nat} {caps : List Tm} {k} {rest : Bool}
+    {comp : ComponentTag} {ns} {xs : List Tm} {fs fn} {loc : Nat}
+    (hc : Tm.objAt fs fn loc ∈ caps) : ¬ Lowered Fl (.makeAt (.graph ar E K s caps k rest comp) ns xs) := by
+  intro h
+  simp only [Lowered] at h
+  rcases h.2.2.1 _ hc with ⟨i, hi⟩ | hp
+  · cases hi
+  · simp [primVal] at hp
 
 end FramedSpec
 end

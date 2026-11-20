@@ -724,7 +724,7 @@ with no linked slot has height `0`, one unfolding at every depth.
 $`c_C`$) whose node expression allocates, in reverse topological order of
 the name graph, each module function's closure at its stable unfolding
 (`makeAt (.graph …)`, its linked captures the closures already allocated,
-its outside captures the natives), and returns the array of the exported
+its outside captures the slots holding the realm's identities), and returns the array of the exported
 ones. Its order names each module function once, by name (`initOrder`):
 two module functions of one code are two closures of that code. Its
 allocations are at canonical sites.
@@ -733,7 +733,8 @@ allocations are at canonical sites.
 $`h_R`$, holding the intrinsic objects the outside slots of $`C`$'s module
 functions name (`Array.prototype`), a world at which it is typed, and the
 closed term
-`letE (gotoOf initC 0 [] .undef c_C) client`, whose `client` is lowered
+`letE (gotoOf initC 0 Lr .undef c_C) client`, `Lr` the realm's
+identities ([the initialization in the flow](#the-initialization-in-the-flow)), whose `client` is lowered
 source of outside code (`LoweredSrc`, holding no closure,
 `loweredSrc_no_closure`) scoped at one binder (`Scoped 1 client`, its
 variable `0` the exports' array; the whole `letE` is `Scoped 0`).
@@ -746,6 +747,69 @@ audited native with a step model, and `[[Array.prototype]]`, the realm's
 array prototype every unit that uses arrays sees (`Extraction.lean`), an
 intrinsic object of $`h_R`$. `walk` names no function of its module. So
 P22 meets the restriction and its `initC` allocates one closure.
+
+### The initialization in the flow
+
+**Both premises on the initial configurations read the initialization's
+code at the flow** (proved, `FramedStarts.lean`). An initial
+configuration's term runs `initC` at $`c_C`$, a tag of $`C`$
+(`init_ofC`). Code provenance at an entry (`InitialEntry`) holds only
+where `initC` is a code the flow proposes for (`initialEntry_code`), and
+the fit (`InitialFits`) only where the flow has a proposal for it, the
+rule `gotoC` being the only rule fitting a run of $`C`$'s code
+(`initialFits_code`). Every code the flow proposes for is lowered code
+(`codesLoweredB`, which `frameFlowB` checks), and a closure whose capture
+is a located value is not (`capture_objAt_not_lowered`). So where a node
+expression of `initC` is not lowered code, no initial configuration is an
+entry or fits the flow (`initial_refuted`): the premises are false, not
+unproved.
+
+**P22 is such a case** (observed, by construction). `componentInit`
+writes each capture of a realm value as the realm's identity
+(`realmValue`, an `objAt` at the realm's location), and `initB` requires
+it (`capOk`: a capture naming no module function is an `objAt` below the
+realm's length); `walk` names two realm values (`%ElementAt%`,
+`[[Array.prototype]]`), so `initC`'s first node is not lowered code. The
+flow the pass solves (`componentCodes`) proposes for the module
+functions' codes, the natives' and the closures they create, and for no
+initialization's code.
+
+**The design.** The initialization is a code of $`C`$ the flow proposes
+for, lowered, reading the realm's values from its slots:
+
+- **The initial configuration** is
+  `letE (.goto initE initK 0 Lr .undef c_C) client`, `Lr` the realm's
+  identities in `componentInit`'s order. `initE`'s captures of realm
+  values are the variables of the slots holding them (at node `k`, the
+  slot `k + j` of the realm value `j`, past the `k` closures bound before
+  it); `initB` checks them so. `initC`'s node expressions are then lowered
+  code.
+- **The flow proposes for `initC`** (`componentCodes`: one more code of
+  $`C`$, entered at `entryCx` at its node `0`, each slot holding a realm
+  value seeded with that value's signature where it is a native's
+  closure, as a module function's sibling slots are). `FFlow.check`,
+  `codesLoweredB`, `codesCoverB` and `marksB` then cover it.
+- **The checks `frameFlowB` adds**, the premises of the two rules the
+  initial term fits by: `initC`'s proposal at `entryCx`, its return set
+  within $`O`$ (the exports' array reaches the client); at each slot of
+  the entry the realm identity it holds meeting the slot's set at the
+  history before any entry (outside storage in the set; for a native's
+  closure, its token in the set, the native's proposal at `entryCx`, open
+  where its token lies in $`O`$, and the slot naming its signature,
+  `EnvFn`); and each value of the realm's heap a primitive (`primVal`).
+- **What they give.** `InitialFits`: the `letE` by `Fits.letE` at the set
+  $`O`$, the run by `gotoC` at `initC`'s proposal (its slots by the checks
+  above, the default `undefined` a primitive), the client by
+  `fits_lowered` (`LoweredSrc.lowered`, its variable `0` bound to
+  $`O`$), the realm's heap by `VJ.prim`. `InitialEntry`: provenance
+  (`initC` and the natives' codes are flow codes; the client creates only
+  closures of outside code, `LoweredSrc`), the discipline (`wf` of the
+  term, the realm's heap free of runs, primitives), outside code lowered
+  source (the client; no value of the realm is code) and closed values
+  (`Lr` closed, `Scoped 1 client`, primitives).
+
+Whether the solver's proposal for `initC` passes `FFlow.check` at P22 is
+to be measured; the five restrictions are unchanged.
 
 ## The frame of a request
 
@@ -1158,8 +1222,9 @@ read from slots, the node's set $`T_l`$, the closure of the operand slots'
 sets at every context and node sharing the call's continuation and
 handler, checked closed, and each kept support passing `frameCheckAt` at
 $`\Psi_c(l)=\Theta_C\sqcup\Psi_C\sqcup W(T_l)`$ there). It refuses at
-the first that fails, and otherwise at `FramedObligations`, the frame's
-invariants, which no check establishes. The component's checks include
+the first that fails, and otherwise at `FramedObligations`, the two
+premises on the initial configurations (`InitialFits`, `InitialEntry`),
+which no check establishes. The component's checks include
 `frameFlowB` at the frame's flow (`FramedFrameFlow.lean`: `FFlow.check`,
 `marksB`, `tokensSomeB`, `codesLoweredB`, the closure of the capture
 sites and $`O`$ checked closed, the initialization's node expressions free
@@ -1202,9 +1267,9 @@ main graph, $`W_c`$ computed and the supports kept by the check at
 $`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
 framed run (`RunCall.AcceptsFramed`) at the plan's framed nodes; the
 checks at the request (`FramedAccepted.request`, `FramedSpec.requestB` at
-`callEffects`); and the frame's invariants (`FramedAccepted.obligations`,
-`FramedObligations`: the slots' values at the calls, `ChkSound`,
-`StartInv`, `EntryFits`, `NoKeys`).
+`callEffects`); and the premises on the initial configurations
+(`FramedAccepted.obligations`, `FramedObligations`: `InitialFits`,
+`InitialEntry`).
 
 ## Restrictions
 
@@ -1527,18 +1592,20 @@ Lean (proved, `FramedReturns.lean`):
   binding checks (`componentBindingRefusal_none`). Its other premises are
   `ret_reachedW_frame`'s.
 - `FramedObligations.reached` (proved, `FramedReached.lean`):
-  `ret_reachedW_spec` with every premise that is a check read from the
+  `ret_reachedW_public` with every premise that is a check read from the
   pass's: the component's at the frame's flow (`frameFlowB_sound`,
   `frameFlow_checks`), the request's (`framedNodesAt_sound`,
   `framedNodes_frame`, `compB_sound`), $`T_l`$ and $`\Psi_c(l)`$ as the
   check defines them (`nodeSetOf`, `nodeProtocolOf`, `nodeProtocolOf_ge`
   giving `hle` and `hW`), `hΘ` by `thetaKeepB_sound`, the separation by
   `classQuery_sound`, `hΦ` from the callback row
-  (`FramedSpec.CallbacksWithin` at `callEffects`); the frame's invariants
-  from `FramedObligations`. `FramedSpec.starts_checks` (proved) gives the
-  checks `ret_reachedW_public` (track C1) reads in their place: `marksB`
-  and `realizedFlowB` at the frame's flow, the start a label, the
-  initialization free of runs.
+  (`FramedSpec.CallbacksWithin` at `callEffects`), the checks of the
+  program's starts by `FramedSpec.starts_checks` (`marksB` and
+  `realizedFlowB` at the frame's flow, the start a label, the
+  initialization free of runs); the two premises on the initial
+  configurations, `InitialFits` and `InitialEntry`, from
+  `FramedObligations`, whose fields they are. At the pass's checks both
+  are false ([the initialization in the flow](#the-initialization-in-the-flow)).
 - `ret_reachedW_public` (proved, `FramedStarts.lean`): `ret_reachedW_spec`
   with the frame's invariants read along the program. The program's
   states (`ProgOk`: `wfS`, a heap free of runs, layout provenance,
@@ -1720,7 +1787,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
 (`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
 `FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
-`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public` (`FramedStarts.lean`); `entryXs_root` (`FramedHistory.lean`).
+`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `initial_refuted`, `capture_objAt_not_lowered` (`FramedStarts.lean`); `FramedObligations.reached` (`FramedReached.lean`); `entryXs_root` (`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1731,10 +1798,8 @@ review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
 `project`, `keeps_canonical`,
-`InitialFits` and `InitialEntry` from the checks of the initialization
-and the realm and the client being lowered source, which then make up
-`FramedObligations` once `FramedObligations.reached` reads
-`ret_reachedW_public`,
+`InitialFits` and `InitialEntry` from the checks of
+[the initialization in the flow](#the-initialization-in-the-flow),
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 

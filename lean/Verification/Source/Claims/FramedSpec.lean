@@ -235,6 +235,17 @@ noncomputable def frame (r : SourceRequest σ ι) : ClientFrame (Ty ι) where
       exact ⟨_, .inl ⟨a₂, ha, rfl⟩⟩
     · exact ⟨_, .inr ⟨he, rfl⟩⟩
 
+/-- **An initial configuration fits the flow** (named check premise): its
+term fits `O` at a position of outside code, and the realm meets the flow,
+at the history before any entry. -/
+def InitialFits (r : SourceRequest σ ι) : Prop :=
+  ∀ x, spec.Initial x → (spec.frame r).FitsAt spec.flow (x, bareStart (spec.core r).F (spec.core r).C x.t)
+
+/-- **An initial configuration is an entry** (named check premise): code
+provenance, the call discipline, outside code lowered source and closed
+values hold at the realm's heap and the initialization's term. -/
+def InitialEntry (r : SourceRequest σ ι) : Prop := ∀ x, spec.Initial x → (spec.frame r).Entry x.s.h x.t
+
 /-- The frame's sites are the plan's family's at its component: equality
 of them is decided. -/
 instance (r : SourceRequest σ ι) : DecidableEq ((spec.frame r).F.at (spec.frame r).C).Site :=
