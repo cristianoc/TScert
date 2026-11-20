@@ -88,6 +88,13 @@ def FramedSpec.roPositionsB {σ ι : Type} [Labels ι] [StoreView σ ι] (spec :
     (r : SourceRequest σ ι) : Bool :=
   spec.roPositions == readOnlyPositions spec.family spec.C name spec.codes spec.names (realizedCode r) spec.arity
 
+/-- **The arity check**, decided: the layout of the realized code in the
+plan's flow has the plan's arity, so every closure of it a term or heap
+meeting layout provenance holds takes `arity` parameters, and the
+parameters are among the request's inputs. -/
+def FramedSpec.arityB {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : FramedSpec ι) (r : SourceRequest σ ι) : Bool :=
+  (layAt spec.checked spec.lay (realizedCode r)).map (·.1) == some spec.arity && decide (spec.arity ≤ r.inputs.length)
+
 /-- The realized code's body is the request's code (proved). -/
 theorem moduleBody_realized {σ ι : Type} [Labels ι] [StoreView σ ι] {codes : List Code}
     {r : SourceRequest σ ι} (h : realizedCode r ∈ codes) : moduleBody codes (realizedCode r) = requestCode r := by

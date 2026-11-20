@@ -103,7 +103,7 @@ its bound and stated regions (`RunCall.AcceptsWalk`) at the plan's framed
 nodes (`c.framed`), its read summaries checked; the binding checks that
 read its request before its walk (`FramedSpec.bindingB`: `entryB`,
 `codesCoverB` at the request's code, `entryFnB`, `clientsB`,
-`protocolAtLeastB`, `roPositionsB` at the member `name`, `readOnlyB`, the framed nodes the
+`protocolAtLeastB`, `roPositionsB` at the member `name`, `readOnlyB`, `arityB`, the framed nodes the
 flow's); and the checks that read the request after its walk
 (`FramedSpec.requestB`, each framed node's callee's stated effect read by
 `callEffects`). -/
@@ -140,7 +140,7 @@ theorem _root_.Verification.SourceClaimJson.FramedSpec.bindingB_iff {spec : Fram
       protocolAtLeastB (flowSites spec.checked) (partsKeys spec.psiDef) (protocolOfParts id (partsIndex spec.psiDef))
         (protocolOfParts id (partsIndex spec.psi)) = true ∧
       spec.roPositionsB name r = true ∧ readOnlyB r.inputs spec.readOnly spec.roPositions spec.outType = true ∧
-      spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) := by
+      spec.arityB r = true ∧ spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) := by
   simp [FramedSpec.bindingB, FramedSpec.bindingChecks]
 
 /-- **The frame's client obligation is the checked file's `@clients`
@@ -189,7 +189,7 @@ theorem _root_.Verification.SourceClaimJson.FramedSpec.readOnly_declared {spec :
     ∃ j, c.ty = r.inputs.getD j spec.outType ∧ j < spec.arity ∧ declaredReadOnly spec.family spec.C name j = true ∧
       ∀ m n, (m, n) ∈ spec.codes.zip spec.names → m = realizedCode r →
         declaredReadOnly spec.family spec.C n.1 j = true := by
-  obtain ⟨-, -, -, -, -, hpos, hro', -⟩ := FramedSpec.bindingB_iff.mp h
+  obtain ⟨-, -, -, -, -, hpos, hro', -, -⟩ := FramedSpec.bindingB_iff.mp h
   have hout : ¬ spec.view.RO spec.outType := by
     intro hm
     have h3 : (!spec.readOnly.contains spec.outType) = true := by
@@ -218,7 +218,7 @@ reach outside code at some context of the checked flow. -/
 theorem _root_.Verification.SourceClaimJson.FramedSpec.framed_nodes {spec : FramedSpec ι} {name : String}
     {r : SourceRequest σ ι} (h : spec.bindingB name r = true) :
     spec.framed.map (·.1) = framedCallNodes spec.checked spec.host (realizedCode r) :=
-  (FramedSpec.bindingB_iff.mp h).2.2.2.2.2.2.2
+  (FramedSpec.bindingB_iff.mp h).2.2.2.2.2.2.2.2
 
 /-- **The entry of the realized code is an entry of the checked flow**
 (proved, `FFlow.entryB_sound`, `entryFnB_sound`, `codesCoverB_sound`):
