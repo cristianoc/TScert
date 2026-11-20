@@ -56,6 +56,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyTraceCert
 import Verification.Paper.TolerantFrames.ReadOnlyPending
 import Verification.Paper.TolerantFrames.ReadOnlyEnter
 import Verification.Paper.TolerantFrames.ReadOnlyMemberCert
+import Verification.Paper.TolerantFrames.ReadOnlyEnterRoots
 import Verification.Paper.TolerantFrames.ReadOnlyStepWrites
 import Verification.Paper.TolerantFrames.ReadOnlyWriteKinds
 import Verification.Paper.TolerantFrames.ReadOnlyWire

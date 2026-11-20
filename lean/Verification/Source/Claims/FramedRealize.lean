@@ -1,6 +1,7 @@
 import Verification.Source.Claims.FramedBinding
 import Verification.Paper.TolerantFrames.ReadOnlyRealize
 import Verification.Paper.TolerantFrames.ReadOnlyPending
+import Verification.Paper.TolerantFrames.ReadOnlyEnterRoots
 
 /-! # The realization of a framed plan's request
 
@@ -305,6 +306,19 @@ theorem wfS_start (r : SourceRequest σ ι) :
   have hw := hc.1.2.1.1
   rw [ht] at hw ⊢
   simpa [PassUnit.gotoOf, wf, wfS] using hw
+
+/-- **No run of `C`'s code waits as a binding's body at the frame's calls**
+(proved, `entry_run`): the term of every call the frame's claim is about is
+the request's run. -/
+theorem noPend_start (r : SourceRequest σ ι) :
+    ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
+      (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →
+      NoPend ((spec.frame r).F.at (spec.frame r).C) a.1.t := by
+  intro a hc _
+  obtain ⟨a₂, he⟩ := hc.2
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, ht⟩ := spec.entry_run r he
+  rw [ht]
+  exact noPend_goto
 
 omit [Labels ι] in
 /-- **An initial configuration meets layout provenance and the residual

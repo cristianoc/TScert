@@ -19,11 +19,11 @@ The draft "Accepting a unit through the read-only frame"
 - **The own steps of the call run `C`'s code** (`hole_runsC`): at one call
   more than the context's, a state whose active frame runs `C`'s code has
   every frame of its run on `C`'s code.
-- **A member's certificate from the charges** (`ClientFrame.cert_of_charges`):
-  at `Ψ_C = componentProtocol`, with no invariant to keep, its entering
-  step keeps the heap and its own steps are within the charges
-  (`within_member`), where the entered run's values meet the closure of the
-  capture sites and `O`. -/
+- **A member's certificate from the charges** (`ClientFrame.cert_of_deep`,
+  `ClientFrame.cert_of_charges`): at `Ψ_C = componentProtocol`, with no
+  invariant to keep, its entering step keeps the heap and its own steps are
+  within the charges (`within_deep`), where the entered run's values meet
+  the closure of the capture sites and `O` in depth. -/
 namespace Verification.TolerantFrames.ReadOnly
 open Verification HeapObservations Footprints
 
@@ -310,19 +310,20 @@ theorem reached_wfS
   intro x y _ hxy hx
   exact ⟨Entry.step fr hx.1 hxy.1.step, (step_wfS hxy.1.step hx.2 hx.1.2.1.2).1⟩
 
-/-- **A member's certificate from the charges** (proved; the draft's
-`cert_of_charges`): at the component's protocol and no invariant to keep,
-every member's calls from reached states meet their certificate. The
+/-- **A member's certificate from the charges, the entered runs' values
+read in depth** (proved; the draft's `cert_of_charges`): at the
+component's protocol and no invariant to keep, every member's calls from
+reached states meet their certificate. The
 entering step keeps the heap (`enter_keeps_heap`), so it is within any
 protocol; it pushes a run of `C`'s code in a context (`enter_ctx`), whose
 run stays in the hole while the call is active (`hole_ex`), and every own
 step of the call is a step of that run whose frames run `C`'s code
 (`hole_runsC`), within the component's protocol below the entry's heap
-(`within_member`), where the entered run's values meet the closure of the
-capture sites and `O` (`hroots`). The reached states are reached terms
-(`reached_wfS`), meet the flow (`fitsAt_reached`), the residual invariant
-(`wok_reached`) and layout provenance (`lay_reached`). -/
-theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+(`within_deep`), where the entered run's values meet the closure of the
+capture sites and `O` in depth (`hroots`). The reached states are reached
+terms (`reached_wfS`), meet the flow (`fitsAt_reached`), the residual
+invariant (`wok_reached`) and layout provenance (`lay_reached`). -/
+theorem cert_of_deep [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
     [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
     (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
     (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
@@ -337,8 +338,7 @@ theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.
     (hroots : ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
       δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, EvalCtx K →
       a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
-        ∃ S', VJ F.flow a₁.2 a₁.1.s.h.length S' x ∧
-          Sub S' (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) ∧ layP (layQ F lay) x = true)
+        DeepIn a₁.2.site (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) x)
     (m : Option Code) :
     TraceCert fr.F fr.C none fr.Θ fr.chkConf fr.Reached (componentProtocol F lay) (fun _ => False) m := by
   -- The entering step keeps the heap.
@@ -379,7 +379,8 @@ theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.
       rw [← hyt]; simpa only [δ] using hdy
     have hC := hole_runsC (F := fr.F) (C := fr.C) hP hcc hc' hD hru hdyK (by rw [← hyt]; exact hoy)
     rw [← hh]
-    refine within_member (st := lift fr.F fr.C none y.1 y.2) (st' := lift fr.F fr.C none z.1 z.2) hK hrun
+    refine within_deep (S₀ := captureSites F lay ++ F.O) (st := lift fr.F fr.C none y.1 y.2)
+      (st' := lift fr.F fr.C none z.1 z.2) hK hrun
       (fun i h₁ t₁ hi hs₁ => ?_) (by simp only [lift]; rw [← hzh] at hs'; exact hs') (by rw [← ht₁]; exact hwa.1)
       (by simp [writesK]) hwa.2 (by simp only [lift]; rw [← hyt]; exact y.1.ok) (by rw [← hyt]; exact hfy.1)
       hC hT htok hlow hfa.2 hla.2 (hroots a a₁ hA hx hd K E Kc l L d cc hK ht₁)
@@ -389,6 +390,34 @@ theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.
     intro l' v hv
     rw [← hbh] at hv
     exact (hfb.2 l' v hv).val
+
+/-- **A member's certificate from the charges** (proved, `cert_of_deep`):
+where the entered run's values meet sets within the closure of the capture
+sites and `O`, each meeting layout provenance, they meet it in depth
+(`deepIn_of_checks`). -/
+theorem cert_of_charges [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)] {F : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hFa : F.flow.Facts) (hS : fr.FlowSites F.flow) (hE : fr.EntryFits F.flow)
+    (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → wfS a.1.t = true)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ F lay) a.1.t = true ∧ HeapLay (layQ F lay) a.1.s.h)
+    (hT : capClosedB F (tokenCaps F lay) (captureSites F lay ++ F.O)
+      (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) = true)
+    (htok : tokensSomeB F = true) (hlow : codesLoweredB F = true)
+    (hroots : ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
+      δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, EvalCtx K →
+      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
+        ∃ S', VJ F.flow a₁.2 a₁.1.s.h.length S' x ∧
+          Sub S' (capClose F (tokenCaps F lay) (captureSites F lay ++ F.O)) ∧ layP (layQ F lay) x = true)
+    (m : Option Code) :
+    TraceCert fr.F fr.C none fr.Θ fr.chkConf fr.Reached (componentProtocol F lay) (fun _ => False) m :=
+  cert_of_deep hFa hS hE hst hwk hly hT htok hlow
+    (fun a a₁ hA hx hd K E Kc l L d cc hK ht x hx' =>
+      let ⟨_, hv, hS', hl⟩ := hroots a a₁ hA hx hd K E Kc l L d cc hK ht x hx'
+      deepIn_of_checks hT htok hlow hv hS' hl) m
 
 end ClientFrame
 

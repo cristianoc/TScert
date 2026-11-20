@@ -583,13 +583,24 @@ code has every frame of the run on $`C`$'s code (`hole_runsC`), so `own`
 follows from `within_member` at the entered run, its base heap the entry's.
 Its premises besides the reached-state invariants: the closure check of
 the capture sites and $`O`$, and `hroots`, the values of each run an
-entering step pushes meeting sets within that closure. At an entry
-through a call of graph code these are the call's receiver, actuals,
-captures and callee; at an entry through a binding (the rest binding of
-`graphEntry`, entered by its `letV` step) the fit of the entering state
-gives the environment its slots' sets, which `OpenAt` bounds from below
-only, so their sets come from the call's values at the call of graph code
-that left the binding (to be proved).
+entering step pushes meeting that closure in depth (`cert_of_deep`;
+`cert_of_charges` reads them as values meeting sets within it).
+
+`hroots` holds where no code of $`C`$ collects a rest
+([restrictions](#restrictions); `ClientFrame.entry_roots`, proved,
+`ReadOnlyEnterRoots.lean`). The term before the step is the context of the
+pushed run around a term stepping to it (`step_hole_inv`: the positions off
+the evaluation path are free of runs). That term is a call of graph code, a
+binding whose body is the run, or a frame of the run's code. A frame's step
+to its code's next node keeps the calls of $`C`$ active (`depthC_ctx`). A
+binding's body that is a run not yet entered runs outside code
+(`noPend_reached`): such a run is a graph call's rest binding, of a closure
+collecting a rest, and every closure of $`C`$'s code has its code's layout
+(`layQ_noRest`). So the step is a call of a closure of $`C`$'s code from a
+position of outside code (`depth_push`, `fits_ctx`); the call's fit gives
+its callee, receiver and actuals sets within $`O`$, and the run's values
+are theirs and the values its callee holds (`deep_entry`), within the
+closure in depth (`deepIn_of_checks`).
 
 ## Re-entry
 
@@ -644,9 +655,9 @@ read-only and adds nothing to $`E`$), and, **at an entering step**, the
 arguments of the call the step reduces (the active redex, `invoke` or
 `construct`, in a frame of outside code), the first of them as many as the
 function's parameters, crossing in at the entered code's parameter types
-(`FramedSpec.entryXs`). A realized code collects no rest
-([the binding checks](#the-binding-checks)), so each such argument is the
-value of its parameter.
+(`FramedSpec.entryXs`). No code of $`C`$ collects a rest
+([restrictions](#restrictions)), so each such argument is the value of its
+parameter.
 
 - **The types of a shared code** (`sharedParamTypes`): the entered code is
   its tables (`entered`), which two functions of $`C`$ may share with
@@ -1202,6 +1213,18 @@ then checked by an ordinary plan), and has a control.
   `"this.items[*]": "extend"`, whose part needs the declaration's sites.
   Control: a framed walker in a component whose exported type states a path
   key, refused.
+- **No rest in a framed component.** No code of a framed plan's component
+  collects a rest: every layout of its flow's codes has none (`noRestB`,
+  `ReadOnlyEnterRoots.lean`; with layout provenance every closure of
+  $`C`$'s code has its code's layout, `layQ_noRest`). Excluded: a call
+  from outside code of a closure of $`C`$'s code with a rest, which enters
+  $`C`$ at the step of its rest's binding (`letV`), two steps after the
+  call; that state's fit gives the run's slots their sets as lower bounds
+  alone, and the entering step's crossings (`FramedSpec.entryXs`) read a
+  call's arguments. Refusal: "framed plan: the binding check of no code
+  collecting a rest (noRestB) fails"; control: a framed walker whose module
+  function has a rest parameter, refused, its ordinary plan's refusal at
+  the call.
 
 ## Callers and callbacks
 
@@ -1428,6 +1451,34 @@ Lean (proved, `FramedReturns.lean`):
   closure check of the capture sites and $`O`$, `hroots`
   ([certificates](#certificates)) and
   $`\Theta_C\sqsubseteq\Psi_C\sqsubseteq\Psi_c(l)`$.
+- `ret_reachedW_of_entries`: `ret_reachedW_of_charges` with `hroots`
+  given by `entry_roots` at `cert_of_deep`; in its place it reads `noRestB`
+  and that no run of $`C`$'s code waits as a binding's body at the starts
+  (`NoPend`).
+- `ret_reachedW_frame`: `ret_reachedW_of_entries` at `spec.frame r` and a
+  flow whose `Flow` is the spec's. The facts of the spec discharge the
+  reached-term invariants at the frame's calls (`wfS_start`,
+  `noPend_start`), the flow's sites (`flowSites`), and layout provenance
+  and the residual invariant at the calls (`lay_start`, `wok_start`, from
+  the initial configurations meeting them). Its premises:
+  - *checks the pass runs*: the program's source terms (`hsrc`),
+    `FFlow.check` (`Facts`, `FFlow.check_sound`), `tokensSomeB`,
+    `codesLoweredB`, the request's tag (`compB`), `atomCallB` at the framed
+    nodes, the closure check of each $`T_l`$ and of the capture sites and
+    $`O`$, $`W_c(T_l)\sqsubseteq\Psi_c(l)`$, `hslots` and the frame check
+    at every node sharing $`l`$'s continuation and handler and every
+    context, `noRestB`, $`\Theta_C\sqsubseteq\Psi_C`$ (`clientsB`,
+    `protocolAtLeastB`) and $`\Psi_C\sqsubseteq\Psi_c(l)`$;
+  - *the trust* of $`\Theta_C`$: the callee's effect $`\Phi_l`$ bounding
+    the heap along each framed call (`hΦ`, the callback's arrow);
+  - *the initial configurations*: layout provenance and the residual
+    invariant (`initial_starts`, from checks of the initialization's node
+    expressions, the realm's heap, and the client's lowered source);
+  - *invariants of the frame to be proved*: `ChkSound` and `StartInv`
+    (`chkSound_program`, `startInv_public`), `EntryFits`
+    (`entryFits_public`), `NoKeys` at the starts, `hty` and `hvals` (from
+    `EntryAt`), and the separation the frame check reads at each framed
+    node's entry (`hq`).
 
 With no framed node the returns hold of every frame
 (`framedReturnsReached_none`, proved).
@@ -1579,8 +1630,14 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `ctx_val_tags` (`ReadOnlyEnter.lean`); `enter_keeps_heap`, `enter_ctx`,
 `hole_ex`, `hole_runsC`, `ClientFrame.reached_wfS`,
 `ClientFrame.cert_of_charges` (`ReadOnlyMemberCert.lean`);
-`FramedSpec.wfS_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`
-(`FramedReturns.lean`).
+`ClientFrame.cert_of_deep` (`ReadOnlyMemberCert.lean`);
+`EvalCtx.free_hole`, `EvalCtx.not_free`, `noRun`, `list_hole_inv`,
+`step_hole_inv`, `EvalCtx.wfS_hole`, `noRestB`, `layQ_noRest`, `NoPend`,
+`noPend_goto`, `noPend_step`, `PathAt.keep`, `fits_ctx`, `depth_push`,
+`deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
+(`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
+`FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
+`ret_reachedW_of_entries`, `ret_reachedW_frame` (`FramedReturns.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1590,11 +1647,12 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
-`hroots` of `cert_of_charges` (the entered run's values within the
-closure of the capture sites and $`O`$), `project`, `keeps_canonical`,
+`project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, `ret_reachedW`'s premises for `spec.frame r` (`hty` and `hvals` from
-`EntryAt`; `ret_reachedW_of_checks`' other premises from the check),
+`startInv_public`, `ret_reachedW_frame`'s premises to be proved (`hty` and `hvals` from
+`EntryAt`, `NoKeys` at the starts, the frame check's separation at each
+framed node's entry, the client's lowered source at an initial
+configuration),
 each field of `FramedObligations` from the check,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
@@ -1650,7 +1708,7 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 **Milestone 1 is specified to build**: each lemma it lists has its
 statement and plan, each definition it reads is given (the canonical
 sites, `RealizedAt`, `writesK`, `ActualCrossingsIn`, `PublicCall` over the
-core), its four restrictions are stated with their refusals and controls,
+core), its five restrictions are stated with their refusals and controls,
 and P22's layout meets them (measured).
 
 **The first check** (observed, [Runs](#runs)):
@@ -1693,7 +1751,7 @@ and P22's layout meets them (measured).
   shortening the array through a wrapper (negative); `capture.mjs`
   (negative); `returned-closure.mjs` (refused at its closure's read);
   `dependent.mjs`'s `total` and a recursive walker (refused at the read of
-  the framed member); the four restrictions' controls.
+  the framed member); the five restrictions' controls.
 - **Controls** (forged fragments): a flow omitting the walker's code
   (`codesCoverB`); an allocation site `none` (`allocB`, `AstraR3.lean`'s
   flow); a signature at a non-sibling entry slot (`entryFnB`); a realized
