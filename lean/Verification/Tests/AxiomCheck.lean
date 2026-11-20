@@ -285,6 +285,7 @@ import Verification.Source.Claims.FramedReached
 import Verification.Source.Claims.FramedStarts
 import Verification.Source.Claims.FramedProtection
 import Verification.Source.Claims.FramedPaths
+import Verification.Source.Claims.FramedKept
 import Verification.Source.Claims.FramedInitial
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation

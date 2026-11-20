@@ -2266,21 +2266,24 @@ proved results named.
    $`h_0`$ on those, every location of the region is reached from the
    slot's value at $`h_0`$; `regionReadsAt_reach`, `spineAt_mem`: each
    read location is a member of a step of the region in a value reached.
-6. **A kept location** (`FramedProtection.lean`). `kept_step`: a step of
-   the frame from a reached state keeps the contents of a location below
-   the heap's length that the history protects (`RowProtects`), of no
-   local site, with $`(\Psi_C\sqcup\Theta_C)(\mathrm{part}(\ell))=\mathsf{keep}`$:
-   a step of outside code by `FrameCore.Keeps` (`RowAt` at $`\Theta_C`$);
-   a step of $`C`$'s code by `step_kind_charged`, its writes from
-   `wok_reached`, its frame's kinds within `flowKinds`
-   (`frameKinds_flow`), and `componentProtocol` $`\mathsf{any}`$ at a
-   charged kind and key of no local site (`probeProtocol_charged`).
-   `kept_along`: the same along an execution, the part fixed
-   (`Kept.part`), the protection kept (`Grows.prot`, `Grows.exposed`). A
-   location an entry's argument reaches at $`h_0`$ is of no local or
-   internal site (the entering step's `PkgProps.crossOk`,
-   `crossOk_incoming`), so exposed and in `E` by the crossing, or lent and
-   witnessed (`start_witness`): it is protected along the call.
+6. **A kept location** (proved; `FramedKept.lean`).
+   `ClientFrame.kept_step`: a step of the frame from a reached state whose
+   term holds no write outside every frame keeps the contents of an old
+   location the history protects (`RowProtects`) where
+   $`\Psi_C`$ keeps its kind and key (read at site `none`, where
+   `componentProtocol` is `any` exactly at a charged kind and key): a step
+   of outside code by the client obligation (`Row`, $`\Theta_C`$ keeping
+   every part); a step of $`C`$'s code by `step_kind_charged`, its frame
+   the path's innermost (`activeFrame_tag_ne`), its kinds within
+   `flowKinds` (`frameKinds_flow`), and `probeProtocol_charged`; a step
+   changing the calls of $`C`$ active keeps the heap
+   (`depth_of_heap_ne`). `ClientFrame.kept_along`: from a call's start at
+   a run of $`C`$'s code meeting `StartInv`, a set of locations allocated
+   and protected at the start, at kinds and keys $`\Psi_C`$ keeps, holds
+   the start's contents at every state of the execution, the protection
+   kept by the growth of the history (`XStep.grows`), the sites by
+   `next_site` and the kinds and keys by `kindAt_kept`, `keyAt_kept`.
+   The protection at the start is `start_protects` (step 4).
 7. **Slot copies** (`copies_sound`, a new `FramedCopies.lean`). Where
    `copiesB` passes, every reached state of `spec.frame r` from a start at
    `gotoOf r.program r.start L₀ d₀ r.comp` meets `CopyInv`: a top `goto`
