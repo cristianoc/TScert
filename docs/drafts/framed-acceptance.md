@@ -2224,22 +2224,32 @@ proved results named.
    the call active (`ex_depth`, `ex_xstep`, `Ex.grows`);
    `witness_of_start` carries a witness along it (`Witness.grow`), and
    `witness_reached` is its instance at `entryStart`.
-3. **The entry's slots** (`FramedSpec.enter_slots`, a new
-   `FramedProtection.lean`). At `spec.EntryAt r k W h t a₂` with
-   `t = gotoOf r.program r.start L d r.comp`, the entering step `x → a₁`
-   reduces an active redex `invoke f v args` (or `construct f args`) in a
-   frame of outside code; the heap is `x`'s through the entering step and
-   the prologue (`enter_keeps_heap`, `prologue_steps`); `envOf L d j` is
-   `(parameters arity args).getD j .undef` for $`j`$ below the arity
-   (`graphEntry` with no rest, `noRestB`; `prologueTarget`;
-   `prologue_det`).
-4. **The start's witness** (`FramedSpec.start_witness`). At such an entry,
-   for $`j`$ below the arity with `roPos j`, every lent location that
-   `envOf L d j` reaches in `h` has `Witness view 1` at the truncated
-   start: the crossing `⟨.into, r.inputs[j], args[j]⟩` is in `entryXs`,
-   read-only for the view (piece 0); `crosses_witness` at `a₁`'s history;
-   `Ex.grows` over the prologue at the program's frame
-   (`progFrame_chkSound`, `reached_ok`); `truncate_grows`.
+3. **The entry's slots** (proved; `FramedProtection.lean`).
+   `enter_call`: an entering step from a term with no pending binding of
+   $`C`$'s runs is, in an evaluation context, a call or a `new` of a
+   closure of the pushed run's code from a position of outside code (the
+   term's active frame and redex, `activeFrame_pathAt`), keeping the heap,
+   the run's slots `recv :: parameters n args ++ caps ++ [self]`;
+   `FramedSpec.prologue_run` (the prologue's two steps, as
+   `prologue_det`); `FramedSpec.enter_args`: at `spec.EntryAt r k W h t
+   a₂`, `t = gotoOf r.program r.start L d r.comp`, the heap is the
+   entering state's, and for $`j`$ below the arity `envOf L d j` is
+   `undefined` or the crossing `⟨.into, entryTy r j, envOf L d j⟩` the
+   entering step records. The closure's arity is the plan's by a new
+   binding check, `arityB` (the realized code's layout has the plan's
+   arity, and the arity is at most the inputs'), read through layout
+   provenance at the program's state.
+4. **The start's protection** (proved; `FramedSpec.start_protects`). At
+   such an entry, from a configuration at it, for $`j`$ below the arity
+   with `roPos j`, every location `envOf L d j` reaches in `h` is
+   allocated, of no local or internal site at the truncated start (the
+   entering step's `CrossOk`), `RowProtects` there (exposed and in `E` by
+   `Ghost.crosses_covers`, or released or outside and protected), and has
+   `Witness view 1` there where it is released or outside storage
+   (`crosses_witness` at the entering step's history, read-only since
+   `readOnlyB` puts the input at a read-only position in `spec.readOnly`;
+   `Ex.grows` over the prologue at the program's frame,
+   `progFrame_chkSound`, `reached_ok`; `truncate_grows`).
 5. **Paths and regions** (`ReadOnlyCallFrame.lean`). `reads_follows`: a
    location a read of $`\pi`$ from $`v`$ passes, and every location below
    the value it gives, is reached from $`v`$ along labels (a field key or
