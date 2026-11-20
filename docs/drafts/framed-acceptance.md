@@ -774,21 +774,56 @@ flow the pass solves (`componentCodes`) proposes for the module
 functions' codes, the natives' and the closures they create, and for no
 initialization's code.
 
+**A closure whose code names a signature at a capture** is created by no
+lowered code and fits openly by no rule (proved, `FramedStarts.lean`).
+`Lowered`'s clause for a closure of $`C`$'s code requires `SelfFn` at every
+context of the created code (only the closure's own slot names a signature
+at its entry; `capSig_not_lowered`), and so does the open fit of a closure
+creation (`OFits.makeGraphC`; `capSig_not_ofits`), so the flow's check of
+a node creating one fails at every proposal (`capSig_nodeAtB`). P22's
+`walk` is such a code (measured): its entry names `%ElementAt%`'s
+signature at its capture slot `4`, the seed `componentCodes` gives a
+module function's sibling slot of a native (`sibSig`), by which its read
+`xs[c.i]!` is a known call (`Fits.invokeC`). So with `initC` a code of the
+flow whose captures of realm values are slot variables, `FFlow.check`
+refuses `initC`'s node `0` (`syn` none: `graphSites`'s `selfFnB` fails at
+`walk`'s one context; the captures' sets and `walk`'s openness pass) and
+`codesLoweredB` refuses the same node. The semantic rule is not the
+obstacle: `Fits.makeGraphC` reads `CapFn` at the instantiated captures,
+which a capture holding a closure of the named signature meets.
+
 **The design.** The initialization is a code of $`C`$ the flow proposes
-for, lowered, reading the realm's values from its slots:
+for, reading the realm's values from its slots, and two rules read what
+their consumers need:
 
 - **The initial configuration** is
   `letE (.goto initE initK 0 Lr .undef c_C) client`, `Lr` the realm's
   identities in `componentInit`'s order. `initE`'s captures of realm
   values are the variables of the slots holding them (at node `k`, the
   slot `k + j` of the realm value `j`, past the `k` closures bound before
-  it); `initB` checks them so. `initC`'s node expressions are then lowered
-  code.
+  it); `initB` checks them so.
 - **The flow proposes for `initC`** (`componentCodes`: one more code of
-  $`C`$, entered at `entryCx` at its node `0`, each slot holding a realm
-  value seeded with that value's signature where it is a native's
-  closure, as a module function's sibling slots are). `FFlow.check`,
-  `codesLoweredB`, `codesCoverB` and `marksB` then cover it.
+  $`C`$, a unit entered at `entryCx` at its node `0` with no closure of
+  its own, each slot holding a realm value seeded with that value's
+  signature where it is a native's closure, as a module function's
+  sibling slots are; its returns reach $`O`$, as a unit's do).
+  `FFlow.check`, `codesCoverB` and `marksB` then cover it.
+- **The open fit of a closure creation reads the creating node's
+  signatures** (`OFits.makeGraphC`, decided by `graphSites`): `SelfFn` is
+  replaced by `CapFn` read on the open term: each slot naming a signature
+  at the created code's entry, at every context, is the closure's own
+  slot, or the slot of a capture that is a slot of the node naming the
+  same signature ($`\varphi`$). Instantiation keeps it (`ofits_sound`: the
+  instantiated capture is the environment's value at that slot, a closure
+  of the signature by `EnvFn`), giving `Fits.makeGraphC`'s `CapFn`.
+  `SelfFn` is the case of no capture naming a signature.
+- **The flow's codes hold no located value** (`CodesLowered` stated as its
+  one consumer reads it, `goodIn_vals_vj`: the values of each node
+  expression of a code the flow proposes for are spines with no cell,
+  `lowered_vals_all`), decided by `codesLoweredB` over that property.
+  `Lowered` stays the condition on outside code (`LoweredSrc.lowered`) and
+  on the code of a closure a term creates (`Fits.makeGraphC`), which
+  `walk`'s code meets.
 - **The checks `frameFlowB` adds**, the premises of the two rules the
   initial term fits by: `initC`'s proposal at `entryCx`, its return set
   within $`O`$ (the exports' array reaches the client); at each slot of
@@ -808,8 +843,12 @@ for, lowered, reading the realm's values from its slots:
   source (the client; no value of the realm is code) and closed values
   (`Lr` closed, `Scoped 1 client`, primitives).
 
-Whether the solver's proposal for `initC` passes `FFlow.check` at P22 is
-to be measured; the five restrictions are unchanged.
+**At P22** (measured, the two rules relaxed executably, their proofs not
+built): the component's checks pass, `initC` among the flow's codes, and
+the framed plan reaches `FramedObligations`; `initC`'s proposal returns
+within $`O`$; its slot `0` (`[[Array.prototype]]`) holds outside storage,
+its slot `1` names `%ElementAt%`'s signature and holds the native's token,
+which lies outside $`O`$. The five restrictions are unchanged.
 
 ## The frame of a request
 
@@ -1787,7 +1826,7 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `deep_entry`, `ClientFrame.noPend_reached`, `ClientFrame.entry_roots`
 (`ReadOnlyEnterRoots.lean`); `FramedSpec.wfS_start`,
 `FramedSpec.noPend_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`,
-`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `initial_refuted`, `capture_objAt_not_lowered` (`FramedStarts.lean`); `FramedObligations.reached` (`FramedReached.lean`); `entryXs_root` (`FramedHistory.lean`).
+`ret_reachedW_of_entries`, `ret_reachedW_frame`, `ret_reachedW_spec` (`FramedReturns.lean`); `call_typed`, `initial_lay`, `initial_lowered` (`FramedRealize.lean`, `FramedSpec.lean`); `innermostGoto_ctx_goto`, `innermostGoto_ctx_frame`, `enter_hole_out`, `loweredSrc_free`, `noPend_letGoto`, `progOk_step`, `progOk_ex`, `progOk_initial`, `prologue_det`, `entry_hole`, `entryFits`, `slotVals`, `noKeys`, `chkSound`, `progFrame_chkSound`, `startInv`, `ret_reachedW_public`, `init_ofC`, `initialEntry_code`, `initialFits_code`, `initial_refuted`, `capture_objAt_not_lowered`, `capSig_not_lowered`, `capSig_not_ofits`, `capSig_nodeAtB` (`FramedStarts.lean`); `FramedObligations.reached` (`FramedReached.lean`); `entryXs_root` (`FramedHistory.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1797,7 +1836,9 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
-`project`, `keeps_canonical`,
+`project`, `keeps_canonical`, `ofits_sound` at `OFits.makeGraphC`'s
+open `CapFn` and `goodIn_vals_vj` at codes holding no located value
+([the initialization in the flow](#the-initialization-in-the-flow)),
 `InitialFits` and `InitialEntry` from the checks of
 [the initialization in the flow](#the-initialization-in-the-flow),
 `ro_of_readOnlyShape`, `passMember_sound`'s

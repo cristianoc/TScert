@@ -538,6 +538,68 @@ theorem capture_objAt_not_lowered {P : Package} {Fl : Flow P} {ar : Nat} {E : Li
   · cases hi
   · simp [primVal] at hp
 
+/-! ## A closure whose code names a signature at a capture (a counter-model)
+
+The initialization read as a code of the flow, its realm captures the
+variables of its slots, creates each module function's closure. A module
+function's code whose entry names a signature at a capture slot (P22's
+`walk`, its slot of `%ElementAt%` naming the native's signature, its read
+`xs[c.i]!` a known call) is created by no lowered code (`Lowered`'s
+`SelfFn`), and by no node expression the flow's check accepts: the open fit
+of a closure creation (`OFits.makeGraphC`) reads `SelfFn` at every context
+of the created code, so the check of such a node (`nodeAtB`) fails. -/
+
+/-- **A closure creation whose code names a signature at a capture slot is
+not lowered code** (proved): lowered code's closures of `C`'s code name a
+signature only at their own slot (`SelfFn`). -/
+theorem capSig_not_lowered {P : Package} {Fl : Flow P} {ar s j c : Nat} {E : List Tm}
+    {K : List (Continuation × Option Target)} {caps : List Tm} {k} {rest : Bool} {comp : ComponentTag} {ns}
+    {xs : List Tm} {π : CodeFlow P} {σ : FnSig} (hC : P.ofC comp = true) (hπ : Fl.code (E, K) c = some π)
+    (hj : j < caps.length) (hσ : π.fn s (capSlot ar rest j) = some σ) :
+    ¬ Lowered Fl (.makeAt (.graph ar E K s caps k rest comp) ns xs) := by
+  intro h
+  simp only [Lowered] at h
+  have := (((h.1 hC).2 c π hπ).1 _ σ hσ).1
+  simp only [capSlot, Nat.add_left_cancel_iff] at this
+  omega
+
+/-- **A closure creation whose code names a signature at a capture slot
+fits openly by no rule** (proved): `OFits.makeGraphC` reads `SelfFn` at
+every context of the created code, and `OFits.makeGraphOut` a code outside
+`C`. -/
+theorem capSig_not_ofits {P : Package} {Fl : Flow P} {τ : Nat → Sites P} {φ : Nat → Option FnSig} {d : Nat}
+    {Γ : Nat → Option (Sites P)} {a : FrameAt P} {o : Bool} {S : Sites P} {ar s j c : Nat} {E : List Tm}
+    {K : List (Continuation × Option Target)} {caps : List Tm} {k} {rest : Bool} {comp : ComponentTag} {ns}
+    {xs : List Tm} {π : CodeFlow P} {σ : FnSig} (hC : P.ofC comp = true) (hπ : Fl.code (E, K) c = some π)
+    (hj : j < caps.length) (hσ : π.fn s (capSlot ar rest j) = some σ) :
+    ¬ OFits Fl τ φ d Γ a o S (.makeAt (.graph ar E K s caps k rest comp) ns xs) := by
+  intro h
+  cases h with
+  | prim hp _ => simp [primVal] at hp
+  | makeGraphC _ _ _ _ _ _ _ hcaps _ _ _ _ =>
+    have := ((hcaps c π hπ).2 _ σ hσ).1
+    simp only [capSlot, Nat.add_left_cancel_iff] at this
+    omega
+  | makeGraphOut _ _ _ _ hc _ _ _ _ _ _ _ => rw [hC] at hc; cases hc
+
+/-- **The flow's check of a node creating such a closure fails** (proved,
+`syn_sound` and `capSig_not_ofits`), at every proposal and context: so
+`FFlow.check` refuses a flow holding a code with such a node. -/
+theorem capSig_nodeAtB {P : Package} [DecidableEq P.Site] [Hashable P.Site] {F : FFlow P} {fc : FCode P} {l : Nat}
+    {k' : Continuation} {x : Option Target} {ar s j c : Nat} {E : List Tm} {K : List (Continuation × Option Target)}
+    {caps : List Tm} {k} {rest : Bool} {comp : ComponentTag} {ns} {xs : List Tm} {π : CodeFlow P} {σ : FnSig}
+    (hC : P.ofC comp = true) (hπ : F.flow.code (E, K) c = some π) (hj : j < caps.length)
+    (hσ : π.fn s (capSlot ar rest j) = some σ) :
+    nodeAtB F fc l (.makeAt (.graph ar E K s caps k rest comp) ns xs) k' x = false := by
+  cases h : nodeAtB F fc l (.makeAt (.graph ar E K s caps k rest comp) ns xs) k' x with
+  | false => rfl
+  | true =>
+    exfalso
+    simp only [nodeAtB, Bool.and_eq_true] at h
+    obtain ⟨⟨⟨hs, -⟩, -⟩, -⟩ := h
+    obtain ⟨S, hS, -⟩ := (Option.any_eq_true _ _).mp hs
+    exact capSig_not_ofits hC hπ hj hσ (syn_sound _ 0 _ S hS)
+
 end FramedSpec
 end
 end Verification.SourceClaimJson
