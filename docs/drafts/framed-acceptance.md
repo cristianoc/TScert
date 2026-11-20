@@ -1972,7 +1972,8 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 
 The frame's check reads a region as protected where
 [the decision](#the-decision) holds, so that the pass applies the frame's
-check of [Read-only frames](readonly-frames-note/note.tex) §4.1 in full:
+check of [Read-only frames](readonly-frames-note/note.tex) §4.1, within
+the [restrictions](#restrictions-of-the-protected-reading) below:
 the pass's check of each framed node (`framedNodesAt`) and the producer's
 supports (`FilePlans.framedSupports`) read `FramedSpec.protAt`, and the
 returns at reached executions discharge its witnesses
@@ -2395,6 +2396,40 @@ Controls:
   read-only argument, `spine 7 ["flags"]` is read as protected at a
   protocol keeping every part and unprotected at one charging the field
   `flags`, and a copy along `flags` is unprotected there too.
+
+### Restrictions of the protected reading
+
+Where the note's rule is wider, the code reads a region unprotected and
+keeps the frame's check; each is sound and gives up acceptance only.
+
+- **Read-only positions** (`readOnlyPositions`): a parameter is read-only
+  where its declared shape is read-only throughout; the note's "a prefix
+  ending at a read-only position" is read at the whole parameter.
+- **Copies** (`copiesB`): a slot holds a copy along own and prototype key
+  reads at most `copyBound` (4) long; an element read gives none.
+- **Sites** (`stepKeptB`): (P) is decided at the site `none`, so for every
+  site but a local one.
+- **Witnesses**: only an entry's arguments witness protection; a callback's
+  result and a caught value protect nothing.
+- **Callees** (`calleeArgB`): a node's regions are read as protected only
+  where its callee is an argument's own value at every sharing node, a
+  function the client passes; a callee read from storage may be a native.
+- **Natives the realm does not model** (`nativeSites`, `nativeProtocol`):
+  the framed realm models `[[Array.prototype]]` with no fields, so a call
+  of C's code whose callee may be outside code and is no argument's own
+  value (`a.pop()`, `a.fill(1)`, `out.push(x)`) is charged `any` at every
+  part its callee, receiver and actuals may reach, in every framed node's
+  protocol and in (P). The note charges each native's stated effect at its
+  receivers' parts, which is narrower: Section 1's printed module, whose
+  `prepare` fills the array `walk` reads, is refused here
+  (`readonly-frame-local-alias` is the module without `prepare` and with a
+  sum in place of `push`). The Lean model runs no such native, so these
+  charges are read by the checks and by no theorem of the model: the
+  theorems hold of any protocol joined to $`\Psi_C`$
+  (`nodeProtocolOf_ge`, `protRegionB_mono`).
+- **Exports** (`tools/components.mts`): a module exporting a value binding
+  that names one of its functions or classes (`export const g = f`) has an
+  unknown interface, and no framed plan reads it.
 
 ### What milestone 2 trusts
 

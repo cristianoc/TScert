@@ -338,6 +338,19 @@ verdict is its ordinary plan's.
 | A `@clients` row with a path key in a framed unit's component | Its part needs the declaration's sites | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-path-refused` |
 | A function collecting a rest parameter in a framed unit's component | It enters the component at its rest's binding, whose state's fit bounds the run's slots from below alone | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-rest-refused` |
 | An export of a framed unit's component other than a module function, or a module function declaring `this` | The initialization's last node is the array of the exports' closures, each a module function's | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-export-class-refused` |
+| An exported value binding of a framed unit's module naming one of the module's functions or classes (`export const g = f`, `export const api = { f }`) | It gives that code out at the binding's type, which no entry states, so the read-only positions would read the code's own declaration alone; the front end makes the module's interface unknown and no framed plan reads it | [the protected reading's restrictions](drafts/framed-acceptance.md#restrictions-of-the-protected-reading) | `invalid-readonly-frame-alias-export` |
+
+Where the protected reading of Read-only frames §4.1 is wider than the
+code's, the framed plan keeps the frame's check and reads the region
+unprotected ([restrictions of the protected reading](drafts/framed-acceptance.md#restrictions-of-the-protected-reading)):
+a parameter is a read-only position only where its declared type is
+read-only throughout; a slot holds a copy only along own and prototype
+key reads, at most `copyBound` long, an element read giving none; (P) is
+decided at every site but a local one; only an entry's arguments witness
+protection; a node's regions are read as protected only where its callee
+is an argument's own value; and a call of C's code whose callee may be
+outside code and is no argument's own value, such as a method of a
+standard object, is charged `any` at every part its call may reach.
 
 ### Opaque Node URLs
 

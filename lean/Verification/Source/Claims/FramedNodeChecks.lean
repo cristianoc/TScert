@@ -97,12 +97,47 @@ under contents and captures. -/
 def nodeSet (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (m : Code) (l : Nat) (e : Tm) : Sites P :=
   capClose F (tokenCaps F lay) (operandSets F m l e)
 
+/-- **A call's callee is an argument's own value**, decided at a table of
+copies: at every node sharing the call's continuation and handler, the
+callee's slot copies an entry slot in `[lo, hi)` along no read. -/
+def calleeArgB (cp : CopyTable) (lo hi : Nat) (m : Code) (l : Nat) : Bool :=
+  match m.1[l]? with
+  | some (.invoke (.var f) _ _) => (sharingNodes m l).all fun l' =>
+      (cp.at l').any fun (i, j, π) => i == f && π.isEmpty && decide (lo ≤ j) && decide (j < hi)
+  | _ => false
+
+/-- **The reach of the calls of natives the realm does not model**: at each
+code of the flow with a closure's layout `(ar, _, _, s)`, run from its
+entry `s` (the receiver then the `ar` parameters in its slots), each call
+whose callee may be outside code (`outsideCalleeAt`) and is no
+argument's own value (`calleeArgB`) is a call of a value read from
+storage, such as a method of a standard object (`a.pop()`), whose steps
+are `C`'s; the reach of its callee, receiver and actuals (`callReach`). -/
+def nativeSites (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) : Sites P :=
+  F.codes.flatMap fun (m, _) => match layAt F lay m with
+    | some (ar, _, _, s) =>
+      let cp := copiesOf m.1 m.2 s (ar + 1) copyBound
+      (F.ctxs m).flatMap fun (_, c) => (List.range m.1.length).flatMap fun l =>
+        if outsideCalleeAt c m l && !calleeArgB cp 1 (ar + 1) m l then
+          let sets := callsAtNode F c m l
+          let width := (sets.map (·.2.2.length)).foldl max 0
+          callReach F lay (sets.flatMap (·.1)) (sets.flatMap (·.2.1))
+            ((List.range width).map fun i => sets.flatMap fun x => x.2.2.getD i [])
+        else []
+    | none => []
+
+/-- **The charges of the natives the realm does not model**: `any` at
+every part of a site such a call may reach. -/
+def nativeProtocol (N : Sites P) : Protocol P := fun p => if N.contains p.site then .any else .keep
+
 /-- **A framed node's protocol** $`\Psi_c(l)`$: the client obligation, the
-component's protocol and the depth charges at the node's set, joined. -/
+component's protocol, the depth charges at the node's set and the charges
+of the natives the realm does not model (`nativeSites`), joined. -/
 def nodeProtocol (F : FFlow P) (lay : List (Nat × Bool × Nat × Nat)) (Θ : Protocol P) (T : Sites P) : Protocol P :=
   let Ψ₀ := componentProtocol F lay
   let W := probeProtocol (flowKinds F) T
-  fun p => ((Θ p).max (Ψ₀ p)).max (W p)
+  let N := nativeProtocol (nativeSites F lay)
+  fun p => (((Θ p).max (Ψ₀ p)).max (W p)).max (N p)
 
 /-- **A region read as protected at a framed node** (the Read-only frames
 note, §4.1, decided): a region read from a slot whose read locations'
@@ -237,20 +272,22 @@ checked flow's sites renamed into the family of one component, at the
 package whose tags of `C`'s code are those equal to `C`. -/
 def fflowC : FFlow (framePkg spec.C spec.mark) := frameFlowOf spec.C spec.checked
 
-/-- The longest path of key reads a table of copies records. -/
-def copyBound : Nat := 4
-
 /-- **The table of copies of a request's code** (`copiesOf`, which
 `copiesB` checks): from its start at the plan's arity. -/
 def copiesAt (r : SourceRequest σ ι) : CopyTable :=
-  copiesOf (requestCode r).1 (requestCode r).2 r.start spec.arity copyBound
+  copiesOf (requestCode r).1 (requestCode r).2 r.start spec.arity TolerantFrames.ReadOnly.copyBound
 
 /-- **The regions read as protected at a request's framed nodes**
-(`protRegionB`): at the component's protocol over the flow `F`, the
-request's table of copies and the plan's read-only positions. -/
+(`protRegionB`): at a node whose callee is an argument's own value
+(`calleeArgB`), a function the client passes, so its steps are outside
+code's; at the component's protocol over the flow `F` joined with the
+charges of the natives the realm does not model, the request's table of
+copies and the plan's read-only positions. -/
 def protAt {P : Package} [DecidableEq P.Site] [Hashable P.Site] (F : FFlow P) (r : SourceRequest σ ι) (l : Nat)
     (q : Footprints.Region) : Bool :=
-  protRegionB (componentProtocol F spec.lay) (spec.copiesAt r) spec.arity spec.roPos (requestCode r) l q
+  calleeArgB (spec.copiesAt r) 0 spec.arity (requestCode r) l &&
+    protRegionB (fun p => (componentProtocol F spec.lay p).max (nativeProtocol (nativeSites F spec.lay) p))
+      (spec.copiesAt r) spec.arity spec.roPos (requestCode r) l q
 
 /-- **The checks of a framed plan at its request** (the draft, "What the
 pass checks"): its request's tag `C` (`compB`), its request's node
