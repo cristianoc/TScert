@@ -97,7 +97,7 @@ theorem Recandidated.memberSafe {f f' : FilePlans} (h : Recandidated f f') {j : 
     simp only [FunctionPlan.mapRequest, FunctionPlan.certify, pure, Except.pure, Except.ok.injEq] at hc
     subst hc
     exact ⟨.framed name pos r spec, .framed name pos r spec, h₀, rfl,
-      framedRequestSafe_recandidated r spec cands hsafe⟩
+      fun hcb => framedRequestSafe_recandidated r spec cands (hsafe hcb)⟩
 
 /-- Plans mapped index by index, each one of the original's with its
 request's candidates replaced, are `Recandidated` (proved). -/

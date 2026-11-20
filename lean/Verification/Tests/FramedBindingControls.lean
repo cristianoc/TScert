@@ -1,5 +1,6 @@
 import Verification.Source.Claims.FramedBinding
 import Verification.Source.Claims.FlowProbe
+import Verification.Source.Claims.FramedNodeChecks
 
 /-! Controls for the binding checks of a framed plan's flow
 (`TolerantFrames.ReadOnly.codesCoverB`, `allocSomeB`, `entryFnB`,
@@ -28,7 +29,15 @@ and refuses a forged one:
   keeping a part the component's charges change.
 - **A forged request tag** (`compB`): a request tagged with another
   component, or with outside code's tag, whose frames would not run `C`'s
-  code. -/
+  code.
+- **The flow the frame reads** (`frameFlowB`, `wokB`, `plainB`): a code
+  without a token; an initialization node running a write its code does not
+  hold, and one holding a run; a realm value of `C`'s code without its
+  code's layout, and one capturing a write.
+- **The request's checks** (`sourceTermsB`, `thetaKeepB`,
+  `framedNodesAt`): a node expression holding a run; a client obligation
+  changing a kind; a framed node calling a computed operand, one with no
+  stated effect of its callee, and one outside the code. -/
 namespace Verification.SourceClaimJson.FramedBindingControls
 open Verification TolerantFrames.ReadOnly ControlFlow
 
@@ -144,5 +153,52 @@ private def req₀ : SourceExtraction.SourceRequest EquationStore.State Equation
 -- a forged request tag: another component's, or outside code's
 #guard !compB 0 { req₀ with comp := some 1 }
 #guard !compB 0 { req₀ with comp := none }
+
+/-! ## The flow the frame reads -/
+
+/-- A flow passing `FFlow.check`: the one code `m₀`, `O` outside storage,
+its row outside storage. -/
+private def frameFlow (tok : Option (Option Nat) := some (some 5)) : FFlow Pk :=
+  { O := [none], heap := [(none, [none])], codes := [(m₀, [(entryCx, { code [] with tok := tok.getD none })])] }
+
+/-- A closure of `m₀`'s code at the tag `comp`, capturing `caps`. -/
+private def closure (comp : ComponentTag) (caps : List Tm := []) : Tm :=
+  .objAt [] (.graph 0 m₀.1 m₀.2 0 caps .call false comp) 0
+
+/-- A run of `m₀` whose running term writes an element. -/
+private def writing : Tm := .frame m₀.1 m₀.2 (.setElem (.var 0) (.num 0) (.num 1)) [] .undef .ret none (some 0)
+
+#guard (frameFlow).check && frameFlowB (frameFlow) [(0, false, 0, 0)] [closure (some 0)] [.undef]
+-- a code without a token
+#guard (frameFlow (tok := some none)).check && !frameFlowB (frameFlow (tok := some none)) [(0, false, 0, 0)] [] []
+-- an initialization node running a write its code does not hold
+#guard !wokB writing && !frameFlowB (frameFlow) [(0, false, 0, 0)] [] [writing]
+-- an initialization node holding a run
+#guard wokB (.goto m₀.1 m₀.2 0 [] .undef (some 0)) &&
+  !frameFlowB (frameFlow) [(0, false, 0, 0)] [] [.goto m₀.1 m₀.2 0 [] .undef (some 0)]
+-- a realm value of `C`'s code at no layout of its code
+#guard !frameFlowB (frameFlow) [] [closure (some 0)] []
+-- a realm value capturing a write
+#guard !plainB (closure none [writing]) && !frameFlowB (frameFlow) [(0, false, 0, 0)] [closure none [writing]] []
+
+/-! ## The request's checks -/
+
+-- a node expression holding a run
+#guard sourceTermsB { req₀ with program := [⟨.undef, .ret, none⟩] }
+#guard !sourceTermsB { req₀ with program := [⟨writing, .ret, none⟩] }
+-- a client obligation changing a kind
+#guard thetaKeepB [(some .field, .keep)] && !thetaKeepB [(some .spine, .extend)]
+
+/-- A code of one node calling slot 0. -/
+private def m₂ : Code := ([.invoke (.var 0) .undef [.var 1]], [(.ret, none)])
+
+#guard framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => some [])
+-- a framed node calling a computed operand
+#guard !framedNodesAt (frameFlow) [] [] [(0, [])] ([.invoke (.readAt "f" (.var 0)) .undef []], [(.ret, none)])
+  (fun _ => some [])
+-- a framed node with no stated effect of its callee
+#guard !framedNodesAt (frameFlow) [] [] [(0, [])] m₂ (fun _ => none)
+-- a framed node outside the code
+#guard !framedNodesAt (frameFlow) [] [] [(1, [])] m₂ (fun _ => some [])
 
 end Verification.SourceClaimJson.FramedBindingControls

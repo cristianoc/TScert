@@ -82,20 +82,25 @@ end
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
-/-- **The framed claim's obligations** (the draft "Accepting a unit through
-the read-only frame", "The theorems"): what no lemma yet proves from the
-pass's check of a framed plan, at the framed nodes `F` keeping the supports
-`S` of its main graph's framed run: the returns `framedRet S` hold at the
-executions the frame's claim is about, read at their worlds
-(`FramedReturnsReachedW`, by `ret_reachedW_frame`), at some return premise
-of a throw. The main graph's five clauses of `FramedRequestSafe` follow
-from them and from the framed run's guarantee (`framedReturns_of_main`,
-`framedRun_of_returnsW`). A field leaves
-this structure in the commit that proves it from the check. -/
-structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) (F : Nat → Bool)
-    (S : Nat → List Footprints.Footprint) : Prop where
-  reached : ∃ RetE : Nat → Env → Heap → Heap → Prop,
-    FramedReturnsReachedW r (spec.frame r) F (Verification.TolerantFrames.framedRet S) RetE
+/-- **The framed claim's obligations** (the draft "Accepting a unit
+through the read-only frame", "The returns, at reached executions"): the
+premises of the returns at reached executions (`ret_reachedW_spec`) that
+are invariants of the frame's executions, which no check establishes:
+every call the claim is about runs the request's code at slots of values
+(from `EntryAt`), the checks' data sound along the frame's executions
+(`ChkSound`), the frame's starts meeting the history's invariant
+(`StartInv`), every entry fitting the flow the frame reads (`EntryFits`),
+and every location's key `none` (`NoKeys`). With them and the checks the
+pass makes, the returns hold at the executions the claim is about
+(`FramedObligations.reached`). A field leaves this structure in the
+commit that proves it. -/
+structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) : Prop where
+  vals : ∀ n (W : WorldT n) h (L : List Tm) (d : Tm),
+    (spec.frame r).Call n W h (gotoOf r.program r.start L d r.comp) → (∀ v ∈ L, isVal v = true) ∧ isVal d = true
+  chk : (spec.frame r).ChkSound
+  start : (spec.frame r).StartInv
+  fits : (spec.frame r).EntryFits spec.fflow.flow
+  keys : (spec.frame r).NoKeys
 end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass
@@ -105,11 +110,13 @@ checks"): the binding checks that read its component alone passing
 the ordinary pass (`CodesAccepted`), the read summaries their runs leave
 checked; each stated region meeting its entry conditions; its main graph,
 over the codes' table, its walk accepted at its bound and stated regions
-(`RunCall.AcceptsWalk`, its framed nodes `c.framed` keeping their
-supports), its read summaries checked; and the framed claim's obligations not yet proved from the checks,
-at the call's framed nodes. `FilePlans.passMember` refuses every framed plan,
-so no member `passGroup` accepts is accepted by this constructor until
-every obligation is proved from the checks the pass makes. -/
+(`RunCall.AcceptsWalk`) at the plan's framed nodes (`c.framed`), its read
+summaries checked; the checks that read the request (`FramedSpec.requestB`,
+each framed node's callee's stated effect read by `callEffects`); and the
+framed claim's obligations no check establishes (`FramedObligations`).
+`FilePlans.passMember` refuses every framed plan, so no member `passGroup`
+accepts is accepted by this constructor until every obligation is proved
+from the checks the pass makes. -/
 structure FramedAccepted (f : FilePlans) (r : Req f)
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : Prop where
   codes : ∃ a₀ a₁ : Answered (StoreView.graph f.F.store),
@@ -119,13 +126,13 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
         (after : Answered (StoreView.graph f.F.store)),
         MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary a₁ ∧ c.bound = mainBound r ∧
         regionOf c.regional = regionalSpec r ∧ c.AcceptsWalk after ∧
-        summariesChecked r after.summaries.toList = true ∧
-        FramedObligations r spec (Verification.TolerantFrames.framedFOf c.framed)
-          (Verification.TolerantFrames.framedSOf c.framed)
+        summariesChecked r after.summaries.toList = true ∧ c.framed = spec.framed
   regions : ∀ Φ regions, r.regional = some (Φ, regions) →
     GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true
-  component : componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm.length
+  component : componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
     spec.initOrder spec.initE spec.initK spec.family spec.file spec.fns spec.C = none
+  request : spec.requestB r (callEffects (StoreView.graph f.F.store) r) = true
+  obligations : FramedObligations r spec
 
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each

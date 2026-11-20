@@ -12,6 +12,7 @@ import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.FramedBinding
 import Verification.Source.Claims.FramedPassChecks
+import Verification.Source.Claims.FramedNodeChecks
 -- Claims/Extraction.lean coordinates source units and reconstructs graph requests.
 import Verification.Source.Claims.Extraction
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
@@ -845,6 +846,12 @@ def callEffectAt {ι : Type} [LabelStore.Labels ι] (G : NormalGraph ι) (c : Ce
     | _ => none
   | _ => none
 
+/-- **The effects the callees of a request's call nodes state** (`callEffectAt`
+at each node's claim and expression). -/
+def callEffects {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (G : NormalGraph ι) (r : SourceExtraction.SourceRequest σ ι) :
+    Nat → Option Footprints.Footprint :=
+  fun l => (r.claims[l]?).bind fun c => (r.program[l]?).bind fun n => callEffectAt G c n.expression
+
 /-- Plan `i`'s candidates at label `l` less `drop`. -/
 def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map (FunctionPlan.mapRequest fun r =>
@@ -929,7 +936,18 @@ def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos 
     | .error e => return s!"framed plan: {firstLine e}"
     | .ok run => match run.outcome with
       | .accepted =>
-        return s!"framed plan of {name}: its binding checks pass, its framed call nodes {nodes} keep only supports the frame's check passes, and its main graph's framed walk is accepted; refused: the obligation FramedObligations.reached (the framed returns at the executions the claim is about, ret_reached) is not established"
+        -- (the checks the returns at reached executions read at the request)
+        let eff := callEffects G r
+        let reqChecks : List (String × (Unit → Bool)) := [
+          ("its request's node expressions source terms (sourceTermsB)", fun _ => sourceTermsB r),
+          ("its client obligation keeping every part (thetaKeepB)", fun _ => thetaKeepB spec.theta),
+          ("its start a label of its program", fun _ => decide (r.start < r.program.length)),
+          ("its realized code's proposals at the frame's flow (realizedFlowB)", fun _ => realizedFlowB spec.fflowC r),
+          ("its framed call nodes at the frame's flow (framedNodesAt)", fun _ =>
+            framedNodesAt spec.fflowC spec.lay spec.theta spec.framed (requestCode r) eff)]
+        if let some (w, _) := reqChecks.find? (!·.2 ()) then
+          return s!"framed plan: the binding check of {w} fails"
+        return s!"framed plan of {name}: its binding checks pass, its framed call nodes {nodes} keep only supports the frame's check passes, and its main graph's framed walk is accepted; refused: the obligations FramedObligations (the slots' values at the frame's calls, ChkSound, StartInv, EntryFits, NoKeys) are not established"
       | .refused w (some (t, xs)) _ =>
         let held := match g.plans[i]? with
           | some (.ok p) => (p.parts.2.2.candidates.filter fun (q : Nat × List HeapKnowledge.IndexAtom) => q.1 == t).flatMap

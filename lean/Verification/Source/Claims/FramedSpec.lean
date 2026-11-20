@@ -53,16 +53,6 @@ def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) (comp : ComponentT
 end PassUnit
 open PassUnit (gotoOf)
 
-/-- A numbered family's sites seen from a component are numbers, so
-equality of them is decided. -/
-instance (N : NumberedFamily) (C : Nat) : DecidableEq (N.family.at C).Site :=
-  show DecidableEq {s : Nat // N.family.Runs (N.family.siteOf s) C} from inferInstance
-
-/-- A numbered family's sites seen from a component are hashed by their
-numbers. -/
-instance (N : NumberedFamily) (C : Nat) : Hashable (N.family.at C).Site :=
-  ⟨fun s => @hash Nat _ (show {s : Nat // N.family.Runs (N.family.siteOf s) C} from s).1⟩
-
 /-- **A framed plan's proposals** (the draft, "The plan"): the component
 `C`; the types a crossing reads read-only; the type outgoing values cross
 at; the realm's heap; the initialization's code and the order in which it
@@ -115,7 +105,7 @@ structure FramedSpec (ι : Type) where
   is: computed once per component and shared by its plans; `none` where
   they pass. -/
   componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes names entries
-    realm.length initOrder initE initK family file fns C }
+    realm initOrder initE initK family file fns C }
   framed : List (Nat × List Footprints.Footprint)
 
 namespace FramedSpec
@@ -127,7 +117,7 @@ abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
 /-- **The binding checks that read the component alone pass** where the
 plan's refusal of them is none (proved, by the refusal's evaluation). -/
 theorem componentRefusal_none (h : spec.componentRefusal.val = none) :
-    componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm.length
+    componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm
       spec.initOrder spec.initE spec.initK spec.family spec.file spec.fns spec.C = none :=
   spec.componentRefusal.property ▸ h
 

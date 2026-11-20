@@ -1,5 +1,6 @@
 import Verification.Source.Claims.PassUnitSafe
 import Verification.Source.Claims.PassUnitFramed
+import Verification.Source.Claims.FramedReached
 import Verification.Programs.TolerantFramesSinglePassSound
 
 /-! # The single pass's unit theorem: the headline
@@ -193,9 +194,13 @@ theorem framed_requestSafe {f : FilePlans} {r : Req f}
     {spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)}
     (hrun : RunSound (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (hkeep : RunKeepsSummaries (EquationStore.CheckedLabel f.F.equations f.F.primitive))
-    (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec) :
+    (htypes : r.types = f.F.store) (hacc : FramedAccepted f r spec)
+    (hcb : spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r)) :
     FramedRequestSafe r (spec.frame r) := by
-  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, hm, hb, hreg, hwalk, hs', ⟨RetE, hret⟩⟩, hregs, _⟩ := hacc
+  obtain ⟨⟨a₀, a₁, hcodes, hs, c, after, hm, hb, hreg, hwalk, hs', hfr⟩, hregs, hcomp, hreq, hob⟩ := hacc
+  have hret := FramedObligations.reached (by rw [spec.componentRefusal.property]; exact hcomp) hreq hob hcb
+  rw [← hfr] at hret
+  let RetE : Nat → Env → Heap → Heap → Prop := fun _ _ _ _ => True
   have hnone : ProgramCertificates.CodesSound (StoreView.graph f.F.store) (GraphCode.admits []) := by
     intro c hc; simp [GraphCode.admits] at hc
   have hentries : r.codes.zipIdx.map (·.1.entry) = r.codes.map (·.entry) := by
@@ -230,6 +235,6 @@ theorem member_safe {f : FilePlans} {j : Nat}
   | qualified name pos r q c a₀ after hplan hq _ hfp hot hfr hens hreg hcodes hm _ hregc hacc hs =>
     exact ⟨_, _, hplan, rfl, qualified_requestSafe hrun hq hfp hot hfr hens hreg hcodes hm hregc hacc hs⟩
   | framed name pos r spec hplan hacc =>
-    exact ⟨_, _, hplan, rfl, framed_requestSafe hrun hkeep (hover.framed hplan) hacc⟩
+    exact ⟨_, _, hplan, rfl, fun hcb => framed_requestSafe hrun hkeep (hover.framed hplan) hacc hcb⟩
 
 end Verification.SourceClaimJson.PassUnit

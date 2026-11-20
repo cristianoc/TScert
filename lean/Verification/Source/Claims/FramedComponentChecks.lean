@@ -1,5 +1,6 @@
 import Verification.Paper.TolerantFrames.ReadOnlyBinding
 import Verification.Source.Claims.FramedFlow
+import Verification.Source.Claims.FramedFrameFlow
 import Verification.Source.ComponentChecks
 import Verification.Paper.TolerantFrames.ReadOnlyEnterRoots
 
@@ -206,11 +207,12 @@ and request codes covered (`codesCoverB`), its allocation sites some and
 numbered canonically by the codes' bodies (`moduleBody`) from three per
 code (`allocSomeB`, `allocCanonB` in its executable form
 `allocCanonAtB`), no code collecting a rest (`noRestB`), its
-initialization in its order (`initB`) and the checks (S), (K) and (O) at
-its bodies; `none` where every one passes. -/
+initialization in its order (`initB`), the checks of the flow the frame
+reads (`frameFlowB` at the frame's sites, `frameFlowOf`) and the checks
+(S), (K) and (O) at its bodies; `none` where every one passes. -/
 def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)} (F : FFlow (markedPackage ofC O))
     (lay : List (Nat × Bool × Nat × Nat)) (codes : List Code) (names : List (String × Nat × List String))
-    (entries : List String) (realmN : Nat) (order : List String) (initE : List Tm)
+    (entries : List String) (realm : Heap) (order : List String) (initE : List Tm)
     (initK : List (Continuation × Option Target)) (family : ComponentWire.Components) (file : String)
     (fns : List (String × Span × Bool)) (C : Nat) : Option String :=
   let body := moduleBody codes
@@ -220,7 +222,8 @@ def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)
     ("its codes covered (codesCoverB)", fun _ => codesCoverB F (codes ++ codes.map body)),
     ("its allocation sites (allocB)", fun _ =>
       allocSomeB F && allocCanonAtB id (3 * lay.length) (F.codes.map fun e => body e.1) body F),
-    ("its initialization (initB)", fun _ => initB ofC realmN codes names entries order initE initK)]
+    ("its initialization (initB)", fun _ => initB ofC realm.length codes names entries order initE initK),
+    ("its flow at the frame's sites (frameFlowB)", fun _ => frameFlowB (frameFlowOf C F) lay realm initE)]
   match checks.find? (!·.2 ()) with
   | some (w, _) => some s!"framed plan: the binding check of {w} fails"
   | none => (componentFrameDiags family file fns C).head?.map fun d =>
@@ -229,24 +232,34 @@ def componentBindingRefusal {ofC : ComponentTag → Bool} {O : List (Option Nat)
 /-- **No refusal is every check passing** (proved): where
 `componentBindingRefusal` refuses nothing, the flow's check, its marks,
 the codes covered, the allocation sites some and canonical (`allocCanonB`),
-no code collecting a rest, the initialization and (S), (K) and (O) pass. -/
+no code collecting a rest, the initialization, the checks of the flow the
+frame reads and (S), (K) and (O) pass. -/
 theorem componentBindingRefusal_none {ofC : ComponentTag → Bool} {O : List (Option Nat)}
     {F : FFlow (markedPackage ofC O)} {lay : List (Nat × Bool × Nat × Nat)} {codes : List Code}
-    {names : List (String × Nat × List String)} {entries : List String} {realmN : Nat} {order : List String}
+    {names : List (String × Nat × List String)} {entries : List String} {realm : Heap} {order : List String}
     {initE : List Tm} {initK : List (Continuation × Option Target)} {family : ComponentWire.Components}
     {file : String} {fns : List (String × Span × Bool)} {C : Nat}
-    (h : componentBindingRefusal F lay codes names entries realmN order initE initK family file fns C = none) :
+    (h : componentBindingRefusal F lay codes names entries realm order initE initK family file fns C = none) :
     F.check = true ∧ F.marksB = true ∧ codesCoverB F (codes ++ codes.map (moduleBody codes)) = true ∧
       allocSomeB F = true ∧
       allocCanonB id (3 * lay.length) (F.codes.map fun e => moduleBody codes e.1) (moduleBody codes) F = true ∧
       noRestB lay = true ∧
-      initB ofC realmN codes names entries order initE initK = true ∧ componentFrameDiags family file fns C = [] := by
+      initB ofC realm.length codes names entries order initE initK = true ∧
+      frameFlowB (frameFlowOf C F) lay realm initE = true ∧ componentFrameDiags family file fns C = [] := by
   unfold componentBindingRefusal at h
+  dsimp only at h
   rw [← allocCanonAtB_eq]
-  cases h1 : F.check <;> cases h2 : F.marksB <;>
-    cases h3 : codesCoverB F (codes ++ codes.map (moduleBody codes)) <;> cases h4 : allocSomeB F <;>
-    cases h5 : allocCanonAtB id (3 * lay.length) (F.codes.map fun e => moduleBody codes e.1) (moduleBody codes) F <;>
-    cases h7 : noRestB lay <;> cases h6 : initB ofC realmN codes names entries order initE initK <;>
-    simp_all [List.find?]
+  split at h
+  · cases h
+  · rename_i hf
+    have hall := fun c hc => List.find?_eq_none.mp hf c hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq, Bool.not_eq_true',
+      Bool.not_eq_false] at hall
+    simp only [Bool.and_eq_true] at hall
+    obtain ⟨h1, h2, h3, h4, ⟨h5, h6⟩, h7, h8⟩ := hall
+    refine ⟨h2, h3, h4, h5, h6, h1, h7, h8, ?_⟩
+    cases hd : componentFrameDiags family file fns C with
+    | nil => rfl
+    | cons d ds => rw [hd] at h; simp at h
 
 end Verification.SourceClaimJson

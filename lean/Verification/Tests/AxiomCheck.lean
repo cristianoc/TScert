@@ -276,9 +276,12 @@ import Verification.Source.Claims.FramedSpec
 import Verification.Source.Claims.FramedHistory
 import Verification.Source.Claims.FramedBinding
 import Verification.Source.Claims.FramedComponentChecks
+import Verification.Source.Claims.FramedFrameFlow
+import Verification.Source.Claims.FramedNodeChecks
 import Verification.Source.Claims.FramedPassChecks
 import Verification.Source.Claims.FramedRealize
 import Verification.Source.Claims.FramedReturns
+import Verification.Source.Claims.FramedReached
 import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.RegionInference

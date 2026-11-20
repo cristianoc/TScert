@@ -1141,9 +1141,24 @@ entries' array), and (S), (K), (O) at the component's bodies
 `protocolAtLeastB` (the wire's $`\Psi_C`$ against `psiDef`, both at the
 flow's sites) and `readOnlyB`; the framed call nodes recomputed and each
 kept support passing the check at the wire's protocols; then the main
-graph walked with those nodes framed (`passMemberGraph`), settled; it
-refuses at the first that fails, and otherwise at
-`FramedObligations.reached`, which no check establishes. Each binding
+graph walked with those nodes framed (`passMemberGraph`), settled; then
+the checks the returns read at the request (`FramedSpec.requestB`,
+`FramedNodeChecks.lean`): its node expressions source terms
+(`sourceTermsB`), $`\Theta_C`$ keeping every part (`thetaKeepB`), its
+start a label of its program, `realizedFlowB` at the frame's flow, and at
+each framed node `framedNodeOkB` at the frame's flow (the call's operands
+read from slots, the node's set $`T_l`$, the closure of the operand slots'
+sets at every context and node sharing the call's continuation and
+handler, checked closed, and each kept support passing `frameCheckAt` at
+$`\Psi_c(l)=\Theta_C\sqcup\Psi_C\sqcup W(T_l)`$ there). It refuses at
+the first that fails, and otherwise at `FramedObligations`, the frame's
+invariants, which no check establishes. The component's checks include
+`frameFlowB` at the frame's flow (`FramedFrameFlow.lean`: `FFlow.check`,
+`marksB`, `tokensSomeB`, `codesLoweredB`, the closure of the capture
+sites and $`O`$ checked closed, the initialization's node expressions free
+of runs, and with the realm's values meeting `layP` and `WOk`, decided by
+`wokB`), the flow the frame reads with its tags decided (`frameFlowOf`,
+`framePkg`), equal to the frame's (`frame_transport`). Each binding
 check has a control forging its document, its flow, its initialization,
 its plan or its family (`tests/single-pass-control-inputs.mts`,
 `tests/single-pass-controls.mts`).
@@ -1178,7 +1193,11 @@ reads as `FFlow.check (remark F)`, `marksB`, `codesCoverB`, `allocSomeB`,
 component, each passing); the binding checks that read the request; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
 main graph, $`W_c`$ computed and the supports kept by the check at
 $`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
-framed run (`RunCall.AcceptsFramed`).
+framed run (`RunCall.AcceptsFramed`) at the plan's framed nodes; the
+checks at the request (`FramedAccepted.request`, `FramedSpec.requestB` at
+`callEffects`); and the frame's invariants (`FramedAccepted.obligations`,
+`FramedObligations`: the slots' values at the calls, `ChkSound`,
+`StartInv`, `EntryFits`, `NoKeys`).
 
 ## Restrictions
 
@@ -1502,6 +1521,19 @@ Lean (proved, `FramedReturns.lean`):
   expressions and of the realm's heap; `noRestB` from the component's
   binding checks (`componentBindingRefusal_none`). Its other premises are
   `ret_reachedW_frame`'s.
+- `FramedObligations.reached` (proved, `FramedReached.lean`):
+  `ret_reachedW_spec` with every premise that is a check read from the
+  pass's: the component's at the frame's flow (`frameFlowB_sound`,
+  `frameFlow_checks`), the request's (`framedNodesAt_sound`,
+  `framedNodes_frame`, `compB_sound`), $`T_l`$ and $`\Psi_c(l)`$ as the
+  check defines them (`nodeSetOf`, `nodeProtocolOf`, `nodeProtocolOf_ge`
+  giving `hle` and `hW`), `hΘ` by `thetaKeepB_sound`, the separation by
+  `classQuery_sound`, `hΦ` from the callback row
+  (`FramedSpec.CallbacksWithin` at `callEffects`); the frame's invariants
+  from `FramedObligations`. `FramedSpec.starts_checks` (proved) gives the
+  checks `ret_reachedW_public` (track C1) reads in their place: `marksB`
+  and `realizedFlowB` at the frame's flow, the start a label, the
+  initialization free of runs.
 
 With no framed node the returns hold of every frame
 (`framedReturnsReachedW_none`, proved).
@@ -1672,15 +1704,8 @@ review's `CodeClause.lean`).
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
 `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
-`startInv_public`, `ret_reachedW_spec`'s premises to be proved (`hvals`
-from `EntryAt`, `NoKeys` at the starts, the frame check's separation at
-each framed node's entry), its premises that are checks connected to the
-checks the pass runs (`FFlow.check` at `spec.fflow` from the component's
-check at `spec.checked`, `compB`, `tokensSomeB`, `codesLoweredB`,
-`atomCallB` at the framed nodes, the closure checks, `hslots` and
-`hcheck` from `framedSupportsAt`, the protocol orders, the layout
-provenance and residual invariant of the initialization and the realm),
-each field of `FramedObligations` from the check,
+`startInv_public`, the fields of `FramedObligations` (the frame's
+invariants) from the program's initial configurations,
 `ro_of_readOnlyShape`, `passMember_sound`'s
 framed branch.
 

@@ -3,6 +3,7 @@ import Verification.Source.Claims.PassUnitSafe
 import Verification.Paper.TolerantFrames.ReadOnlyTransfer
 import Verification.Paper.TolerantFrames.ReadOnlyMemberCert
 import Verification.Source.Claims.FramedRealize
+import Verification.Source.Claims.FramedNodeChecks
 
 /-! # The returns at reached executions, at their worlds
 
@@ -291,19 +292,6 @@ theorem rowAt_reads_world :
 
 /-! ## The transfer at a framed node -/
 
-/-- **An operand read from the slots**: a slot or a primitive constant,
-which the node's entry instantiates to a value. -/
-def atomB : Tm → Bool
-  | .var _ | .nul | .undef | .tru | .fls | .num _ | .str _ => true
-  | _ => false
-
-/-- **A call of operands read from the slots** (decided at each framed
-node): an invocation whose callee, receiver and arguments are slots or
-constants. -/
-def atomCallB : Tm → Bool
-  | .invoke f r args => atomB f && atomB r && args.all atomB
-  | _ => false
-
 /-- An operand read from slots of values is a value at the node's entry
 (proved). -/
 theorem atomB_inst {e : Tm} (he : atomB e = true) {L : List Tm} {d : Tm} (hv : SlotVals L d) :
@@ -407,14 +395,6 @@ theorem own_of_run [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Si
   cases ht
   rw [← hinst] at hv
   exact hroots l b₀ e L d k x hFl hb he hk hL hbt v hv
-
-/-- **The slots a call's operands read**: the slot of each operand of an
-invocation that is a slot. -/
-def atomSlots : Tm → List Nat
-  | .invoke f r args => (f :: r :: args).filterMap fun
-    | .var j => some j
-    | _ => none
-  | _ => []
 
 /-- **An operand read from slots of values meets its slot's set** (proved):
 at slots each of whose values meets its slot's set, an operand read from a

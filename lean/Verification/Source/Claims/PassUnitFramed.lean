@@ -350,17 +350,18 @@ end
 
 /-- **A member is safe at every call where its frame's obligation is met**
 (proved): a member safe under `MemberSafe` whose certified plan is a graph
-plan, or a framed plan whose frame's obligation is met, has a request safe
-at every call. -/
+plan, or a framed plan whose frame's obligation, its callback row included,
+is met, has a request safe at every call. -/
 theorem callSafe_of_member {f : FilePlans} {j : Nat} (hm : MemberSafe f j) :
     ∃ p c, f.plans[j]? = some (.ok p) ∧ p.certify = .ok c ∧
       match c with
       | .graph _ _ r => ∀ Ent, CallSafe Ent r
-      | .framed _ _ r spec => (spec.frame r).Met → CallSafe (spec.frame r).Call r := by
+      | .framed _ _ r spec => spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r) →
+        (spec.frame r).Met → CallSafe (spec.frame r).Call r := by
   obtain ⟨p, c, hp, hc, hs⟩ := hm
   refine ⟨p, c, hp, hc, ?_⟩
   cases c with
   | graph _ _ r => exact requestSafe_callSafe hs
-  | framed _ _ r spec => exact framed_callSafe hs
+  | framed _ _ r spec => exact fun hcb => framed_callSafe (hs hcb)
 
 end Verification.SourceClaimJson.PassUnit

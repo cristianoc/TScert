@@ -279,7 +279,7 @@ structure FramedComponent where
   /-- The refusal of the checks that read the component alone, with the
   evaluation it is where the component meets the restrictions. -/
   refusal : { w : Option String // restriction = none → w = componentBindingRefusal cf.flow cf.lay cf.codes
-    cf.names entries realm.length initOrder initE initK family file fns C }
+    cf.names entries realm initOrder initE initK family file fns C }
 
 /-- **A framed plan's component flow**: the component flow of `mods`
 (`componentFlow`), its allocation sites numbered by the codes' bodies
@@ -308,7 +308,7 @@ def FramedComponent.of (C : Nat) (ofC : ComponentTag → Bool) (entries : List S
   let psiDef := if restriction.isSome then [] else protocolParts cf.flow cf.lay
   -- (evaluated once per component, where it meets the restrictions)
   let refusal := if restriction.isSome then none else
-    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm.length initOrder initE initK family file fns C
+    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm initOrder initE initK family file fns C
   { C, ofC, entries, mods, family, file, fns, rows, restriction, cf, psiDef, realm, initE, initK, initOrder,
     refusal := ⟨refusal, fun h => by simp [refusal, h]⟩ }
 
@@ -318,7 +318,7 @@ at its own index; evaluated at another index; none where the component
 fails a restriction. -/
 def FramedComponent.refusalAt (fc : FramedComponent) (C : Nat) :
     Option { w : Option String // w = componentBindingRefusal fc.cf.flow fc.cf.lay fc.cf.codes fc.cf.names fc.entries
-      fc.realm.length fc.initOrder fc.initE fc.initK fc.family fc.file fc.fns C } :=
+      fc.realm fc.initOrder fc.initE fc.initK fc.family fc.file fc.fns C } :=
   match hr : fc.restriction with
   | some _ => none
   | none => some (if hC : C = fc.C then ⟨fc.refusal.val, by subst hC; exact fc.refusal.property hr⟩ else ⟨_, rfl⟩)

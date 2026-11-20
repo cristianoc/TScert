@@ -314,12 +314,15 @@ end
 /-- **A member is safe**: its plan crosses the exhaustive certification
 boundary (`FunctionPlan.certify`), and the request of the certified plan is
 safe: a graph plan's for every execution (`RequestSafe`), a framed plan's
-under its frame's client obligation (`FramedRequestSafe`). -/
+under its frame's client obligation (`FramedRequestSafe`), the obligation's
+callback row included (`FramedSpec.CallbacksWithin`: a call whose callee's
+type states an effect, `callEffects`, changes the heap within it). -/
 def MemberSafe (f : FilePlans) (i : Nat) : Prop :=
   ∃ p c, f.plans[i]? = some (.ok p) ∧ p.certify = .ok c ∧
     match c with
     | .graph _ _ r => RequestSafe r
-    | .framed _ _ r spec => FramedRequestSafe r (spec.frame r)
+    | .framed _ _ r spec =>
+      spec.CallbacksWithin r (callEffects (StoreView.graph f.F.store) r) → FramedRequestSafe r (spec.frame r)
 
 /-- **A unit is safe**: every member of its group is. -/
 def PassUnitSafe (f : FilePlans) (i : Nat) : Prop :=
