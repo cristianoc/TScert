@@ -101,9 +101,9 @@ records (Astra and Fable found none of them reopened, Fable's table).
   it reaches (`nested-capture.mjs`, `undefined`; `boxed-capture.mjs`,
   `NaN`). Closed by one closure of sites through contents and captures,
   used in the lemma, $`\Psi_C`$ and $`W_c`$ ([charges](#charges)).
-- **Stores checked at one root** (Astra 4, Fable F1, milestone 3): a store
+- **Stores checked at one root** (Astra 4, Fable F1, milestone 4): a store
   keeping $`I`$ at the written root breaks it at another root sharing the
-  support (`shared-support.mjs`, `NaN`). Stated as open for milestone 3
+  support (`shared-support.mjs`, `NaN`). Stated as open for milestone 4
   with the fix ([the guarantee route](#the-guarantee-route)).
 - **Allocation origin** (Astra 5): a flow giving an allocation the site
   `none` passes `FFlow.check`, `marksB` and `entryB` (`AstraR3.lean`,
@@ -615,7 +615,7 @@ witness, so the claim needs witnesses only at its main frame.
 
 ## The guarantee route
 
-Milestone 3. The return premise holds the kept invariants
+Milestone 4. The return premise holds the kept invariants
 ($`I_{\mathit{root}}(\rho,h_0)\Rightarrow I_{\mathit{root}}(\rho,h_1)`$,
 [the graph at framed returns](#the-graph-at-framed-returns)), discharged by
 `framed_guarantee` (to be proved) with `SupportAt.outside` and
@@ -625,7 +625,7 @@ allocation, `pathFact_alloc`), (O) covering protected released storage
 entry from `invariant-requires` (`invariant_of_entry`), and `hnew` by
 `supp_split`.
 
-**Open for milestone 3: a store checked at one root** (Astra 4, Fable F1).
+**Open for milestone 4: a store checked at one root** (Astra 4, Fable F1).
 Each store into a candidate's possible support is checked to keep the
 invariant at the root it writes (`storeKeepsInv`, renamed from
 `writeKeeps`, which names another function at the base). A store keeping
@@ -633,7 +633,7 @@ $`I`$ at its root breaks it at another root whose support holds the written
 location: `shared-support.mjs` (`NaN`: `view` shares `xs` between two
 handles, `truncate(b)` keeps $`I(b)`$ and breaks $`I(a)`$) and Astra's
 `install(a)` writing a counter `b` shares. The fix this design takes for
-milestone 3: **disjoint supports**, a check of (O) refusing a store that
+milestone 4: **disjoint supports**, a check of (O) refusing a store that
 makes a location of a candidate's support reachable from a second root of
 its handle's sites (by sites, `supportShareB`), with the invariant
 `SupportDisjoint` (each support location on the support of one root) kept
@@ -670,7 +670,7 @@ parameter.
   the entering step's alone: with fewer recorded crossings fewer locations
   are protected, so the obligation is weaker and the claim about more
   executions; milestone 2 reads protection from the entering step's
-  crossings alone. Milestone 3 records the others at their declared types.
+  crossings alone. Milestone 4 records the others at their declared types.
 - **The checks at the new crossings** (`ReadOnlyIncoming.lean`, proved).
   The base's `chkSound_of_sites`, `chkSound_of_escape` and
   `chkSound_of_flow` read `ActualCrossings T`, every crossing `.outOf`
@@ -715,9 +715,7 @@ $`0`$, and whose outside slots hold a value per depth (`approxEnv`,
 slot varying with the depth makes every unfolding different
 (`ApproxStable.lean`). Under the restriction that every outside slot holds
 an audited realm value, the same value at every depth, and with an acyclic
-name graph ranked by a height (the acceptance path admits no linked capture,
-[Restrictions](#restrictions), so every module function there has height
-`0`) (`StableLayout`: each linked slot names a
+name graph ranked by a height (`StableLayout`: each linked slot names a
 function of smaller height), a function's closure is the same at every
 depth from its height on (proved, `PassUnit.approx_stable`); a function
 with no linked slot has height `0`, one unfolding at every depth.
@@ -852,21 +850,17 @@ their consumers need:
   source (the client; no value of the realm is code) and closed values
   (`Lr` closed, `Scoped 1 client`, primitives).
 
-**A linked capture fits by no proposal** (by definition of the check of
-a node's value, `CodeChk`; the gate "No linked capture" of
-[Restrictions](#restrictions) refuses such a component first): a module function's capture slot of another
-module function names that function's signature (`sibSig`, by which its
-call is a known call), and the initialization's slot binding that
-function's closure names none, as a node's value names a signature only
-where its expression is a slot naming it, and a closure creation is no
-slot. So `initC`'s creation of a closure capturing another module
-function's closure fails its open fit (`OCapFn`), and `FFlow.check`
-refuses the initialization. A component whose module functions name no
-other module function, as P22's, is unaffected. Admitting linked captures
-reads a closure creation's value as a closure of the signature it creates
-(the rule `Fits.frameC`'s value clause, which reads the running term,
-and `CodeChk`'s), a change of the semantic rules left to a later
-milestone.
+**A linked capture fits at the creation's value** (proved, the rule
+`Fits.frameC`'s value clause at `FnTm`, and `CodeChk`'s): a module
+function's capture slot of another module function names that
+function's signature (`sibSig`, by which its call is a known call), and
+the initialization's slot binding that function's closure names it too,
+as the value of a node creating a closure of $`C`$'s code names the
+signature of the code it creates (`vfnB`, `creationIx`). So `initC`'s
+creation of a closure capturing another module function's closure meets
+its open fit (`OCapFn`). Module functions naming each other in a cycle
+are refused at their gate ([Restrictions](#restrictions)): `initC`
+creates each closure after those it names.
 
 **At P22** (measured): the component's checks pass, `initC` among the
 flow's codes, `initFlowB` among them; `initC`'s proposal returns within
@@ -1370,25 +1364,13 @@ then checked by an ordinary plan), and has a control.
   relates to its request. Refusal: "a framed plan needs a realized entry";
   control: a method whose walker fact needs the frame, refused, its
   ordinary plan's refusal at the call.
-- **No linked capture.** No module function of a framed plan's component
-  names another module function. Excluded: a capture of a module
-  function's closure by another's (a call of a sibling, a helper, two
-  functions naming each other), whose creation by `initC` fails the flow's
-  check: a closure creation's value names no signature, so the capture
-  slot naming the sibling's signature fails its open fit ("A linked
-  capture fits by no proposal" above). Refusal: "a framed plan's module
-  function X names the module function Y, a linked capture"; controls:
-  `bounds-pattern-framed-cycle-refused` (two functions naming each other)
-  and `bounds-pattern-framed-shared-code-refused` (two walkers calling a
-  helper).
-- **No closure creation.** No module function of a framed plan's
-  component creates a closure (`closureLayouts` of its code empty).
-  Excluded: an arrow or function expression anywhere in the module's
-  functions, the walker's own or another's, called or not; the flow the
-  solver proposes for such a component fails `FFlow.check` (observed on
-  every probe of both milestone-1 reviews that creates one; the cause is
-  not established). Refusal: "a framed plan's module function X creates a
-  closure"; control: `bounds-pattern-framed-closure-refused`.
+- **No cycle of names.** No module functions of a framed plan's component
+  name each other in a cycle. Excluded: two module functions whose
+  closures capture each other, which `initC`, creating each closure after
+  those it names, does not create; the note creates them as one group
+  (conj.). Refusal: "a framed plan's module function X names the module
+  function Y, which names it back, a cycle of names"; control:
+  `bounds-pattern-framed-cycle-refused`.
 - **Outside slots are audited realm values.** Every outside slot of a
   module function of a framed plan's component holds an audited realm
   value, the same at every depth: a native with a step model (P22's
@@ -1417,7 +1399,7 @@ then checked by an ordinary plan), and has a control.
   component reaches read-only, such as `{ spines: "grow" }`, for which the
   returns at reached executions read $`\Theta_C`$ within the component's
   protocol (`hΘ` of `ret_reachedW_spec`) and the frame's guarantee route
-  is milestone 3's. Refusal: "framed plan: the binding check of its
+  is milestone 4's. Refusal: "framed plan: the binding check of its
   client obligation keeping every part (thetaKeepB) fails"; control: a
   framed walker in a component whose exported type states
   `@clients { spines: "grow" }`, refused, its ordinary plan's refusal at
@@ -1477,8 +1459,10 @@ premise; `ret_reachedW` establishes it before the continuation).
 ### Verdicts that read a framed member's arrow
 
 - **The component's own linking supplies it** (a sibling slot, a unit's
-  own slot, a module binding): the framed plan of the reading unit is
-  refused at its gate (no linked capture, [Restrictions](#restrictions)).
+  own slot, a module binding): the reading unit's ordinary plan reads the
+  member's ordinary claim, which is refused, so the reading unit is
+  refused ("a unit it depends on is refused"), and its framed plan reads
+  the member's call as a known call checked by that claim.
   A module's interface does not establish a framed member
   (`establishVerdict`: its entry's `established` is null), and an
   importer of it is checked as an importer of any member its interface
@@ -1500,7 +1484,7 @@ premise; `ret_reachedW` establishes it before the continuation).
 
 The verdict line of a group with a framed member accepted lists its
 components (`"acceptedUnderClientTrust": [C]`), the pipeline's outcome
-`accepted only under client trust Θ_C (component C)`. Milestone 4 brings the
+`accepted only under client trust Θ_C (component C)`. Milestone 5 brings the
 obligation-relative arrow $`[\![T]\!]^{\Theta}`$ and its linking theorem,
 for units of the first kind.
 
@@ -1932,7 +1916,7 @@ review's `CodeClause.lean`).
 **To be proved, milestone 2**: the theorems of
 [the protected reading](#the-theorem-chain).
 
-**To be proved, milestone 3**: `framed_guarantee`, `pathFact_alloc`, `tolerant_of_storeKeepsInv` with
+**To be proved, milestone 4**: `framed_guarantee`, `pathFact_alloc`, `tolerant_of_storeKeepsInv` with
 disjoint supports (`supportShareB`, `SupportDisjoint`),
 `pathSupport_stays`, `protectedInto_of_supp`, `protectedInto_released`,
 `supp_split`, `hnew_of_paths`, `invariant_of_entry`.
@@ -2445,6 +2429,130 @@ The read-only positions are read from the family's declared shapes, part
 of the binding of the plan to the checked file (an existing row), with
 `roPositionsB_sound` proved of it.
 
+## Milestone 3: the contexts of known calls
+
+A module function that is no entry is checked at the flow's contexts of
+its known calls, as [Read-only frames](readonly-frames-note/note.tex)
+states it in (B1) and (B4), with the argument of its item "(B1), (B4) at
+known calls". The test is the note's Example "A walker that is no entry"
+(`bounds-pattern-framed-inner-walker`): `walk` is internal, and the
+export `countLines` calls it with an arrow of its own.
+
+### The existing mechanism this extends
+
+Four mechanisms, each kept, each changed at one place.
+
+1. **The flow of sites** ([Read-only frames](readonly-frames-note/note.tex)
+   §3, Theorem "Flow"; `FFlow.check_sound`). Its contexts already give a
+   code one proposal per known call site (`solveStart`, `invokeSites`).
+   Two of its rules decide inner-walker before any context is read:
+   - **A closure a node expression creates** is lowered code
+     (`Lowered`, the note's "The code of every closure created is
+     lowered"): its token in $`O`$, its code open, its capture slots
+     holding $`O`$. The check reads it at `initC`'s creation of every
+     module function whose code creates a closure (`lowB`). A proposal
+     holding the tokens of the entries alone in $`O`$ fails it at
+     `initC`'s node creating that module function's closure (observed,
+     the cause of the gate "No closure creation"): the check is right and
+     such a proposal incomplete. The solver proposes each lowered
+     closure's token in $`O`$ and its capture slots grown with $`O`$ at
+     every context (`SolveCode.lowered`); the proposal is untrusted, and
+     `FFlow.check` reads it as any other.
+   - **The value of a closure creation names the signature of its
+     code** (the note, "Signatures"). Read so, `initC`'s slot holding
+     `walk`'s closure names `walk`'s signature, and `countLines`'s
+     capture of `walk`, which names it, meets its open fit; a creation's
+     value naming no signature fails it (the cause of the gate "No linked
+     capture"). The rule `Fits.frameC` reads a node value naming
+     $`\sigma`$ as a term computing a closure of $`\sigma`$ (`FnTm`: a
+     closure of $`\sigma`$, or its creation), kept by every step
+     (`FnTm.step`), so the value it returns is one (`FnTm.fnIs`);
+     `CodeChk` and its decision `vfnB` admit a creation of $`C`$'s code
+     at its own signature, and the solver carries it (`creationIx`).
+     Module functions naming each other in a cycle stay refused: `initC`
+     creates each closure after those it names, and the note's creation
+     of a group is conj.
+2. **The framed call nodes** ((B1); `framedCallNodes`). A call is framed
+   where its callee set holds $`\circ`$ or its segment reaches outside
+   code. The note adds a callee that is a slot naming no module function's
+   signature and holding a token: a closure of $`C`$ that the call reads by
+   no specification. The code reads it as a callee naming no signature
+   (`outsideCalleeAt`) whose set holds a token: a native's slot names its
+   step model's signature, so a native call is not framed by this clause.
+   Framing more nodes is sound: the framed walk is proved for any set of
+   framed nodes whose checks pass.
+3. **The binding checks** ((B4); `FramedSpec.bindingChecks`). The open
+   entry `entryB` is read where $`f`$ is an entry or its token lies in
+   $`O`$. Where $`f`$ is no entry and its token lies outside $`O`$ (`innerB`,
+   the plan's `inner` tied to the checked file), `entryB` is not read,
+   the realized code's returns lie within $`O`$ at every context
+   (`retsInB`, a gate narrower than the note's (B4), which states none),
+   and no region is read as protected (`protAt` false): no argument of a
+   known call crosses in. (B2)'s sets and the frame's check at each framed
+   node already read every context of the code (`operandSets`,
+   `framedNodesAt`), a superset of the contexts at which $`f`$ is checked:
+   the extra context $`0`$ of a code no caller enters holds empty sets.
+4. **The calls the claim is about** ([the frame of a
+   request](#the-calls-the-claim-is-about); `FramedSpec.frame`). The
+   frame's entries are realized public calls (`PublicCall`: an entering
+   step from outside code). For a function that is no entry with its token
+   outside $`O`$, outside code holds no closure of it (Theorem "Flow"), so
+   no public call of it exists and that claim says nothing. Its frame's
+   entries are every call of its realized code a program makes
+   (`FramedSpec.Called`: a step keeping the obligation into the closure's
+   entry, from any code), from an initial configuration along steps keeping
+   $`\Theta_C`$.
+
+### The theorem
+
+`mode8Accepted_sound` is unchanged in statement. Its framed branch,
+`FramedRequestSafe r (spec.frame r)`, reads the frame, whose entries are
+`EntryAt`, now over `Called`:
+
+```math
+\mathrm{Called}(x_0,n,x,a_1) \iff \mathrm{Initial}(x_0) \wedge x_0 \to^{n} x \wedge x \to a_1 \wedge (\neg\mathit{inner} \Rightarrow \mathrm{Entering}(x,a_1))
+```
+
+with $`\to`$ a step keeping $`\Theta_C`$. At `inner` false it is
+`PublicCall`, and the frame is milestone 2's. At `inner` true it is every
+call. The proof reads the entry's fit from the program's flow at every
+reached state (`progOk_ex`, `fits_ctx`), as for a public call: the
+realized code's run fits at the context of its frame (`Fits.gotoC`),
+whatever code made the call (`entry_hole`). A public call puts the run at
+a position of outside code, so its returns lie within $`O`$
+(`enter_hole_out`); a call from $`C`$'s code puts it in a frame of $`C`$,
+and the returns lie within $`O`$ by `retsInB` (`RetsIn`). The witnesses of
+milestone 2 read the entering step's crossings (`enter_args`), at `inner`
+false; at `inner` true no region is read as protected
+(`ProtWitness.none`). The rest of `framedReturns_reached` reads the
+entry's fit and its reach alone (`Called.ex`).
+
+So the note's headline (B5) at the contexts of known calls is proved,
+under the code's gates: the verdict of $`f`$ covers every call of $`f`$'s
+code in every program the claim is about, the context of each call one of
+the flow's contexts of $`f`$'s code.
+
+### What milestone 3 trusts
+
+No trust row is added. At a framed node whose callee is a closure of
+$`C`$, the claim reads the callee's action within its stated effect
+(`CallbacksWithin`) as at any framed node: the callback row, "a function
+value at a function type meets that type", which already covered a
+framed node at a context holding $`O`$, whose callee may be a closure of
+$`C`$ given out.
+
+### Tests
+
+| Case | Outcome | Shows |
+| --- | --- | --- |
+| `bounds-pattern-framed-inner-walker` (Example "A walker that is no entry") | `walk` accepted under client trust | the visit's callee the arrow's token alone, the cursor kept |
+| `bounds-pattern-framed-known-calls` | `walk` accepted under client trust | the cursor its caller's, outside the visit's reach at the known call; exported, `walk` is refused at the visit (observed) |
+| `invalid-bounds-pattern-framed-known-calls` | negative | the arrow moves the caller's cursor; `total([1, 2])` reads past the array (`NaN` under Node) |
+| `bounds-pattern-framed-closure` | accepted under client trust | a closure a module function creates and calls |
+| `bounds-pattern-framed-shared-helper` | both walkers accepted under client trust, the helper verified | a module function naming another |
+| `bounds-pattern-unreachable-handle` | accepted under client trust | a known call of a module function after a framed visit |
+| `bounds-pattern-framed-cycle-refused` | gap | the gate on a cycle of names |
+
 ## Milestones
 
 1. **The bound route for P22** ($`G_C=\emptyset`$, `prot` false, the
@@ -2464,10 +2572,12 @@ of the binding of the plan to the checked file (an existing row), with
 2. **The protected reading of Read-only frames §4.1**, from the entering
    step's crossings ([the protected reading](#milestone-2-the-protected-reading)),
    its pieces in [commit order](#the-pieces-in-commit-order).
-3. **The guarantee route**, with disjoint supports and the remaining
+3. **The contexts of known calls** of Read-only frames (B1) and (B4)
+   ([milestone 3](#milestone-3-the-contexts-of-known-calls)).
+4. **The guarantee route**, with disjoint supports and the remaining
    incoming crossings (callback results, caught values).
-4. **The obligation-relative arrow**: framed callers and importers.
-5. **Keys**: parts at field keys (pretext's `prepared.widths`), `@clients`
+5. **The obligation-relative arrow**: framed callers and importers.
+6. **Keys**: parts at field keys (pretext's `prepared.widths`), `@clients`
    path keys, and the initialization of imports.
 
 **Milestone 1 is specified to build**: each lemma it lists has its
@@ -2509,10 +2619,10 @@ and P22's layout meets them (measured).
 - **Two module functions of one code**, `bounds-pattern-framed-shared-code`
   (positive, each walker accepted under client trust): P22's walker twice
   under two names; with a helper both call,
-  `bounds-pattern-framed-shared-code-refused` (a gap, refused at the gate
-  "No linked capture").
-- **The restrictions' gates**: `bounds-pattern-framed-cycle-refused`,
-  `bounds-pattern-framed-closure-refused` and the rows of
+  `bounds-pattern-framed-shared-helper` (positive, both walkers accepted
+  under client trust, the helper verified).
+- **The restrictions' gates**: `bounds-pattern-framed-cycle-refused` and
+  the rows of
   [SOURCE-FRAGMENT](../SOURCE-FRAGMENT.md).
 - **New cases**: `throw.mjs`'s walker (negative at the handler read) and a
   variant reading only `0 <= c.i` (positive); a wrapper calling the client,
@@ -2535,11 +2645,11 @@ and P22's layout meets them (measured).
   part.
 - **Pretext's walkers**: cursor bounds at local sites, measured by the
   probe at its own protocol (raw 8/8, complex 3/4 contexts); widths facts
-  at milestone 5; the layout functions at milestone 4.
+  at milestone 6; the layout functions at milestone 5.
 
 ## Open points for review
 
-1. **Milestone 3's disjoint supports** are a design to review.
+1. **Milestone 4's disjoint supports** are a design to review.
 
 ## Runs
 
