@@ -863,10 +863,11 @@ def firstLine (t : String) : String := (t.splitOn "\n").headD t
 
 open Verification.TolerantFrames.ReadOnly in
 /-- **A framed plan's check by the pass** (the draft, "What the pass
-checks"): the binding checks that read the component alone, evaluated
-once per component (`componentBindingRefusal`: `FFlow.check`, `marksB`,
-`codesCoverB`, `allocB`, `initB`, (S), (K) and (O)), its refusal carried by
-the plan; then those that read the request, in order: the entry's start
+checks"): the binding checks that read the component alone
+(`componentBindingRefusal`: `FFlow.check`, `marksB`, `codesCoverB`,
+`allocB`, `initB`, (S), (K) and (O)), evaluated once per component and
+shared by its plans, the plan carrying the evaluation with its value
+(`FramedSpec.componentRefusal`); then those that read the request, in order: the entry's start
 `entryB`, the request's tag `compB`, the request's code covered
 `codesCoverB`, the entry's signatures `entryFnB` at the sibling slots and
 the closure's own, `realizedFlowB`, the wire's $`\Theta_C`$ the
@@ -886,7 +887,7 @@ is never accepted here. -/
 def FilePlans.framedRefusal (f : FilePlans) (fuel i : Nat) (name : String) (pos : Span)
     (r : SourceRequest (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive))
     (spec : FramedSpec (EquationStore.CheckedLabel f.F.equations f.F.primitive)) : String := Id.run do
-  if let some w := spec.componentRefusal then return w
+  if let some w := spec.componentRefusal.val then return w
   let F := spec.checked
   let m := realizedCode r
   let entry := m.1.length - 1

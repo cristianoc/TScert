@@ -823,12 +823,14 @@ only. A component that fails a gate has no framed plan
 \status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (acyclic names, \lean{closable}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}}.
 \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
 of $\cC$'s module, each module function's code and the closures it creates, and the
-natives' step models. The solver proposes a flow of $M_\cC$
+natives' step models; a code is a term, so module functions of one code
+are one code of $M_\cC$, with one pair of sites per allocation and one
+token. The solver proposes a flow of $M_\cC$
 (Section~\ref{sec:flow}, step~(1)); the check decides it (step~(2),
-Theorem~\ref{thm:check}) and its marks (step~(3)). The initialization of
-$\cC$ allocates each module function's closure after those it names,
-then the array of the entries
-\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}; the initialization, \lean{componentInit}, decided by \lean{initB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), the plan carrying their refusal}.
+Theorem~\ref{thm:check}) and its marks (step~(3)). The initialization of $\cC$ allocates, in an order naming each
+module function once, each module function's closure after those it
+names, then the array of the entries
+\status{Lean: the module functions, each planned alone, \lean{PreparedFile.framedVerdict}; the proposal, \lean{componentFlow} (\lean{componentCodes}, \lean{solveStart}, \lean{solveLoop}, \lean{SolveStart.propose}, \lean{remark}); the checks, \lean{FFlow.check}, \lean{FFlow.marksB}; the initialization and its order, \lean{componentInit}, decided by \lean{initB}. The code plans the module functions and solves the flow once per file (\lean{framedComponentFlow}, every module function's request code beside its realized code), and runs the checks once per file (\lean{componentBindingRefusal}), each plan carrying their evaluation with its value (\lean{FramedSpec.componentRefusal})}.
 \item[(A3) Charges] The charged writes of each code of $M_\cC$ at each
 context, $\mathrm{Ch}(\{m\})$, the capture sites $\mathit{Cap}$, the
 closure $\overline{\mathit{Cap}\cup O}$ and the protocol $\Psi_\cC$
@@ -884,7 +886,7 @@ the request's
 \item[(B5) The verdict] $f$ is accepted under the client obligation of
 $\cC$ when every check of (A1)--(B4) passes and the framed walk accepts;
 otherwise the verdict is its ordinary plan's
-\status{Lean: \lean{FilePlans.passMember} at a framed plan, \lean{FilePlans.framedRefusal}, \lean{PreparedFile.framedVerdict}. The code refuses every framed plan: where every check passes and the framed walk accepts, its refusal names the obligation \lean{FramedObligations.reached}; the verdict is the ordinary plan's, its text followed by the framed plan's line}.
+\status{Lean: \lean{FilePlans.passMember} at a framed plan, \lean{FilePlans.framedRefusal}, \lean{PreparedFile.framedVerdict}; the acceptance condition, \lean{FramedAccepted}, its checks of (A2) and (A4) the field \lean{component}. The code refuses every framed plan: where every check passes and the framed walk accepts, its refusal names the obligation \lean{FramedObligations.reached}; the verdict is the ordinary plan's, its text followed by the framed plan's line}.
 \end{description}
 
 \subsection{The assumptions}\label{sec:accept-trust}
@@ -921,7 +923,7 @@ entry the heap meets $H$ and outside code holds only values meeting $O$
 location only at its active writing redex, at a site its receiver meets
 \status{Lean: \lean{capClosedB\_sound}, \lean{segClosedB\_sound}, \lean{step\_writes\_active}, \lean{write\_site}. conj.: that $\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth}.
 \item[(A4), (B4)] Each binding check gives its property
-\status{Lean: \lean{codesCoverB\_sound}, \lean{allocSomeB\_sound}, \lean{FFlow.entryB\_sound}, \lean{entryFnB\_sound}, \lean{realizedFlowB\_sound}}.
+\status{Lean: \lean{componentBindingRefusal\_none} (each check of (A2) and (A4) passes where the refusal is none), \lean{codesCoverB\_sound}, \lean{allocSomeB\_sound}, \lean{FFlow.entryB\_sound}, \lean{entryFnB\_sound}, \lean{realizedFlowB\_sound}}.
 \item[(B1), (B2)] At a framed call, the segment from the call to its
 resumption changes each location of the support within its change, so a
 kept fact holds at the resumption (the \emph{framed transfer}): the

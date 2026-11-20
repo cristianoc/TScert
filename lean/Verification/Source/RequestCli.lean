@@ -796,10 +796,10 @@ def PreparedFile.prepareFramedComponent (p : PreparedFile) :
         mods := mods ++ [m]
   let t0 ← IO.monoNanosNow
   let fc ← IO.lazyPure fun _ => SourceClaimJson.FramedComponent.of C ofC entries mods F file fns p.force
-  let _ ← IO.lazyPure fun _ => (fc.cf.flow.codes.length, fc.refusal.isSome)
+  let _ ← IO.lazyPure fun _ => (fc.cf.flow.codes.length, fc.refusal.val.isSome)
   framedComponentsPrepared.modify (· + 1)
   if (← IO.getEnv "TSCERT_FRAMED").isSome then
-    IO.eprintln s!"framed component {comp.location}: prepared once (component {(← framedComponentsPrepared.get)} of this process): module functions {mods.map (·.name)}; entries {entries}; flow solved over {fc.cf.flow.codes.length} codes in {((← IO.monoNanosNow) - t0) / 1000000} ms; its checks {fc.refusal.getD "pass"}"
+    IO.eprintln s!"framed component {comp.location}: prepared once (component {(← framedComponentsPrepared.get)} of this process): module functions {mods.map (·.name)}; entries {entries}; flow solved over {fc.cf.flow.codes.length} codes in {((← IO.monoNanosNow) - t0) / 1000000} ms; its checks {fc.refusal.val.getD "pass"}"
   return .ok fc
 
 /-- **The file's framed component, prepared once** (the draft "Accepting a

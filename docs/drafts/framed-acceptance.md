@@ -582,7 +582,9 @@ $`c_C`$) whose node expression allocates, in reverse topological order of
 the name graph, each module function's closure at its stable unfolding
 (`makeAt (.graph …)`, its linked captures the closures already allocated,
 its outside captures the natives), and returns the array of the exported
-ones. Its allocations are at canonical sites.
+ones. Its order names each module function once, by name (`initOrder`):
+two module functions of one code are two closures of that code. Its
+allocations are at canonical sites.
 
 **An initial configuration** of a program over $`C`$: the realm's heap
 $`h_R`$, holding the intrinsic objects the outside slots of $`C`$'s module
@@ -789,7 +791,10 @@ its soundness lemma (proved) and its forged flows refused in
 pipeline come with the producer's framed plans.
 
 - **codes** (`codesCoverB`, `codesCoverB_sound`): the flow holds, at its
-  entry context, a proposal for each code of $`C`$ by content: each module
+  entry context, a proposal for each code of $`C`$ by content (module
+functions of one code, arity and number of captures are one code of the
+flow, with one proposal, one site per body allocation and one closure
+token, `componentCodes`): each module
   function's realized code (the prologue's extension included) and its
   request's code (`requestCode`, the tables the claim's term runs), its
   closures' codes, the codes of its requests' codes, and `initC`. The
@@ -843,7 +848,8 @@ proposals and the claim the frame (`Plans.lean`).
 `FramedSpec ι` (`FramedSpec.lean`) holds the proposals: $`C`$, the types
 a crossing reads read-only (the member's inputs whose declared shapes are
 read-only throughout, `readOnlyInputs`), the type outgoing values cross
-at, the realm's heap, the initialization's code and the function's arity;
+at, the realm's heap, the initialization's code and its order (`initOrder`,
+the module functions by name) and the function's arity;
 and what the check reads: the component's tags, the marks of its flow's
 sites (`O`), the flow the solver proposes at those marks (`checked`, each
 module function's request code beside its realized code), each code's
@@ -852,8 +858,8 @@ describes and the checked file's functions, the component's module
 functions' codes, names, arities and slot names, its entries, the wire's
 $`\Theta_C`$ by kind (`theta`) and $`\Psi_C`$ by numbered site and kind
 (`psi`), $`\Psi_C`$ as defined at the flow's sites (`psiDef`), the
-refusal of the checks that read the component alone
-(`componentRefusal`), and each framed call node of the main graph with
+refusal of the checks that read the component alone with the evaluation
+it is (`componentRefusal`), and each framed call node of the main graph with
 the supports its frame keeps. The family is the numbered family of the one
 component $`C`$, each site marked by the flow (`oneComponent`);
 $`\Theta_C`$ is the wire's change per kind (`protocolOfKinds`); the finite
@@ -932,13 +938,17 @@ passing `frameCheckAt` at $`\Psi_c = \Psi_C \sqcup \Theta_C \sqcup W_c`$
 at every context and every node of the call's continuation and handler
 that may call outside code. `passMember`'s framed branch
 (`FilePlans.framedRefusal`) reads first the refusal of the checks that
-read the component alone, evaluated once per component
-(`componentBindingRefusal`, `FramedPassChecks.lean`): `FFlow.check`,
+read the component alone (`componentBindingRefusal`,
+`FramedComponentChecks.lean`), evaluated once per component and shared
+by its plans, each carrying the evaluation with its value
+(`FramedSpec.componentRefusal`, a value with the equation that it is
+`componentBindingRefusal` at the plan's fields): `FFlow.check`,
 `marksB`, `codesCoverB` over every module function's realized and request
 codes, `allocB` (`allocSomeB`, and `allocCanonB` at the bodies
 `moduleBody`, a module function's realized code's its request's, from
-three sites per code), `initB` (each module function's closure allocated
-once, each linked capture the slot holding the closure its name names,
+three sites per code), `initB` (in the initialization's order, which
+names each module function once, each node allocating a closure of the
+code of the function the order names there, each linked capture the slot holding the closure its name names,
 allocated earlier, every other capture a realm identity, the last node the
 entries' array), and (S), (K), (O) at the component's bodies
 (`componentFrameDiags`). Then, per request: `entryB`, `compB`,
@@ -975,9 +985,12 @@ document whose fields, entries, nodes or supports disagree with it;
 group's ordinary refusal; the verdict is the ordinary plan's.
 
 `MemberAccepted.framed`, beside `ordinary`'s premises over the request
-(its codes by the ordinary pass): `FFlow.check (remark F)`, `marksB`,
-`initB` and the binding checks; (S), (K), (O) over every body of the
-component; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
+(its codes by the ordinary pass): the checks that read the component
+alone (`FramedAccepted.component`: `componentBindingRefusal` at the
+plan's fields refuses nothing, which `componentBindingRefusal_none`
+reads as `FFlow.check (remark F)`, `marksB`, `codesCoverB`, `allocSomeB`,
+`allocCanonB`, `initB` and (S), (K), (O) over every body of the
+component, each passing); the binding checks that read the request; $`\Psi_C`$ as defined; at each framed call node $`c`$ of the
 main graph, $`W_c`$ computed and the supports kept by the check at
 $`\Psi_c`$, at $`\Phi`$ and $`\Phi^{e}`$; the main graph accepted by the
 framed run (`RunCall.AcceptsFramed`).
@@ -1382,6 +1395,9 @@ and P22's layout meets them (measured).
 - **P22**, `bounds-pattern-unreachable-field-refused` (a gap, positive at
   milestone 1, renamed with its outcome): the first check above.
 - **Kept negative**: `invalid-bounds-pattern-cursor-given`.
+- **Two module functions of one code**,
+  `bounds-pattern-framed-shared-code-refused` (a gap at P22's line): P22's
+  walker twice under two names beside a module function both call.
 - **New cases**: `throw.mjs`'s walker (negative at the handler read) and a
   variant reading only `0 <= c.i` (positive); a wrapper calling the client,
   the walker keeping its cursor (positive); a wrapper given the cursor,

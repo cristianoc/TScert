@@ -202,11 +202,16 @@ def closable (mods : List ProbeModule) : List ProbeModule :=
 /-- **A component's codes, as the flow's solver reads them**: the module
 functions of `C`'s modules (`ofC`), the natives with a step model they name
 (`hostModel?`) and the closures their codes create; each code's
-signatures, sites and entry. Code `i`'s object and array sites are `3i`
-and `3i + 1`, its closures' token `3i + 2`; each continuation and handler's
-first node allocates at its own pair past them. -/
+signatures, sites and entry. A code is a term: module functions of one
+code, arity and number of captures are one code of the flow (`reps`, the
+first of each, beside `modCodes`), its entry's slots naming a signature
+where every one of them names the same, and an entry where one of them is.
+Code `i`'s object and array sites are `3i` and `3i + 1`, its closures'
+token `3i + 2`; each continuation and handler's first node allocates at
+its own pair past them. -/
 structure ComponentCodes (ofC : ComponentTag → Bool) where
   mods : List ProbeModule
+  reps : List ProbeModule
   hosts : List (String × Code × Nat)
   closures : List (Code × Nat × Bool × Nat × Nat)
   modCodes : List (SolveCode (probePackage ofC))
@@ -228,16 +233,22 @@ def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entr
     (hosts.find? (·.1 == x)).map fun (_, c, ar) => ⟨c, ar, 0, false, 0⟩
   let sibSig (x : String) : Option FnSig :=
     ((closed.find? (·.name == x)).map ProbeModule.sig).orElse fun _ => hostSig x
-  let modCodes : List (SolveCode P) := mods.zipIdx.map fun (g, i) =>
+  -- (one code per term, arity and number of captures)
+  let same (g g' : ProbeModule) : Bool := g'.code == g.code && g'.ar == g.ar && g'.siblings.length == g.siblings.length
+  let reps := mods.foldl (fun acc g => if acc.any (same g) then acc else acc ++ [g]) []
+  let modCodes : List (SolveCode P) := reps.zipIdx.map fun (g, i) =>
+    let group := mods.filter (same g)
     let c0 := capSlot g.ar false 0
+    let seedOf (g' : ProbeModule) (j : Nat) : Option FnSig :=
+      if c0 ≤ j then (g'.siblings[j - c0]?).bind sibSig else none
     let seeds := (List.range (c0 + g.siblings.length)).map fun j =>
-      if c0 ≤ j then (g.siblings[j - c0]?).bind sibSig else none
+      if group.all fun g' => seedOf g' j == seedOf g j then seedOf g j else none
     ⟨g.code, g.ar, false, g.siblings.length, g.code.1.length - 1, seeds, alloc i, true, tok i, entryCx,
-      fun _ => alloc i, entryNames.contains g.name⟩
+      fun _ => alloc i, group.any fun g' => entryNames.contains g'.name⟩
   let hostCodes : List (SolveCode P) := hosts.zipIdx.map fun ((_, c, ar), i) =>
-    ⟨c, ar, false, 0, 0, [], alloc (i + mods.length), true, tok (i + mods.length), entryCx,
-      fun _ => alloc (i + mods.length), false⟩
-  let base' := mods.length + hosts.length
+    ⟨c, ar, false, 0, 0, [], alloc (i + reps.length), true, tok (i + reps.length), entryCx,
+      fun _ => alloc (i + reps.length), false⟩
+  let base' := reps.length + hosts.length
   let cs : List (SolveCode P) := modCodes ++ hostCodes ++ closures.zipIdx.map fun ((c, ar, rest, n, s), i) =>
     ⟨c, ar, rest, n, s, [], alloc (i + base'), true, tok (i + base'), entryCx, fun _ => alloc (i + base'), false⟩
   -- each node's allocation sites: one object site and one array site per
@@ -252,7 +263,7 @@ def componentCodes (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entr
     { c with allocAt := fun kx => match first[kx]? with
       | some l => let k := 3 * cs.length + 2 * (offs.getD i 0 + l); ⟨some k, some (k + 1)⟩
       | none => c.alloc }
-  ⟨mods, hosts, closures, modCodes, cs⟩
+  ⟨mods, reps, hosts, closures, modCodes, cs⟩
 
 /-- **The probe of a member at a component**, timed: the solver's, the
 merge's and the check's milliseconds. The component `C` is a set of modules
@@ -269,8 +280,10 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
     (specs : List FrameSpec := []) (entryNames : List String := []) : IO String := do
   let P := probePackage ofC
   let cc := componentCodes ofC mods entryNames
-  let (mods, hosts, closures, modCodes, cs) := (cc.mods, cc.hosts, cc.closures, cc.modCodes, cc.cs)
-  let entries := (mods.zip modCodes).filter fun (g, _) => entryNames.contains g.name
+  let (mods, reps, hosts, closures, modCodes, cs) := (cc.mods, cc.reps, cc.hosts, cc.closures, cc.modCodes, cc.cs)
+  -- (each entry at its code's representative, `reps`)
+  let entries := entryNames.filterMap fun x => (mods.find? (·.name == x)).bind fun g =>
+    ((reps.zip modCodes).find? fun (g', _) => g'.code == g.code).map fun (_, c) => (g, c)
   let t0 ← IO.monoNanosNow
   let s : SolveStart P ← IO.lazyPure fun _ => solveStart cs
   let _ ← IO.lazyPure fun _ => (s.fns.map fun ns => (ns.map fun x => x.size).sum).sum + s.succ.size
@@ -293,8 +306,8 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
   let t3 ← IO.monoNanosNow
   IO.eprintln s!"flow probe, check: {ok} {(t3 - t2) / 1000000} ms"
   let nodes := (cs.map fun c => c.code.1.length).sum
-  let names := mods.map (·.name) ++ hosts.map (·.1) ++ closures.map fun _ => "closure"
-  let named : List (String × Code × RequestJson.SourceMap) := mods.map fun g => (g.name, g.code, g.sm)
+  let names := reps.map (·.name) ++ hosts.map (·.1) ++ closures.map fun _ => "closure"
+  let named : List (String × Code × RequestJson.SourceMap) := reps.map fun g => (g.name, g.code, g.sm)
   -- the call site a context stands for (the first of its class): its caller and the caller's source span
   let siteOf (κ : Nat) : String :=
     if κ == entryCx then " (entry)" else
@@ -320,8 +333,9 @@ def probeProgram (ofC : ComponentTag → Bool) (member : String) (mods : List Pr
     let ctxNodes := (F.codes.map fun (m, cs) => m.1.length * cs.length).sum
     let lay := cs.map fun c => (c.ar, c.rest, c.ncaps, c.start)
     let held := (Std.HashSet.ofList (captureSites F' lay)).toList
-    let host (i : Nat) : Bool := mods.length ≤ i && i < mods.length + hosts.length
-    let frames := String.join <| specs.flatMap fun sp => match named.zipIdx.find? (·.1.1 == sp.unit) with
+    let host (i : Nat) : Bool := reps.length ≤ i && i < reps.length + hosts.length
+    let unitCode (x : String) : Option Code := (mods.find? (·.name == x)).map (·.code)
+    let frames := String.join <| specs.flatMap fun sp => match named.zipIdx.find? (some ·.1.2.1 == unitCode sp.unit) with
       | some ((_, mc, msm), ci) => match (F'.codes[ci]?).map (·.2) with
         | some cxs => cxs.flatMap fun (κ, c) =>
           s!"\nframe probe, {sp.unit}: {tag} context {κ}{siteOf κ}" :: (probeFrames F.O F' (componentProtocol F' lay) lay host c mc msm sp).map ("\n" ++ ·)

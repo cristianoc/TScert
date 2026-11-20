@@ -98,12 +98,14 @@ structure FramedObligations (r : SourceRequest σ ι) (spec : FramedSpec ι) (F 
 end
 
 /-- **A framed member as the pass accepts it** (the draft, "What the pass
-checks"): its code requests accepted in order by the ordinary pass
-(`CodesAccepted`), the read summaries their runs leave checked; each
-stated region meeting its entry conditions; its main graph, over the codes'
-table, its walk accepted at its bound and stated regions (`RunCall.AcceptsWalk`,
-its framed nodes `c.framed` keeping their supports), its read summaries
-checked; and the framed claim's obligations not yet proved from the checks,
+checks"): the binding checks that read its component alone passing
+(`componentBindingRefusal` at the plan's fields refusing nothing,
+`componentBindingRefusal_none`); its code requests accepted in order by
+the ordinary pass (`CodesAccepted`), the read summaries their runs leave
+checked; each stated region meeting its entry conditions; its main graph,
+over the codes' table, its walk accepted at its bound and stated regions
+(`RunCall.AcceptsWalk`, its framed nodes `c.framed` keeping their
+supports), its read summaries checked; and the framed claim's obligations not yet proved from the checks,
 at the call's framed nodes. `FilePlans.passMember` refuses every framed plan,
 so no member `passGroup` accepts is accepted by this constructor until
 every obligation is proved from the checks the pass makes. -/
@@ -121,6 +123,8 @@ structure FramedAccepted (f : FilePlans) (r : Req f)
           (Verification.TolerantFrames.framedSOf c.framed)
   regions : ∀ Φ regions, r.regional = some (Φ, regions) →
     GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions = true
+  component : componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm.length
+    spec.initOrder spec.initE spec.initK spec.family spec.file spec.fns spec.C = none
 
 /-- **A member as `passGroup` accepts it.** Its plan is a graph request;
 its declared effect's conditions hold; then either it is unqualified, each

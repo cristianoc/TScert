@@ -50,7 +50,7 @@ def componentFlow (ofC : ComponentTag → Bool) (mods : List ProbeModule) (entry
   let s := solveStart cc.cs
   let (st, _, _) := solveLoop s fuel s.st
   let F := s.propose st
-  let n := cc.mods.length
+  let n := cc.reps.length
   let k := cc.hosts.length
   ⟨F.O, remark F, cc.cs.map fun c => (c.ar, c.rest, c.ncaps, c.start), fun i => n ≤ i && i < n + k,
     cc.mods.map (·.code), cc.mods.map (fun g => (g.name, g.ar, g.siblings)),
@@ -162,10 +162,11 @@ def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clien
 realm value the module functions read; the initialization's code, each
 module function's closure allocated after those it names (its captures
 each named module function's closure, read at the slot binding it, or the
-realm value), then the array of the entries. Node `k`'s slots hold the
-closures nodes `0` to `k - 1` allocated, the latest first. -/
+realm value), then the array of the entries; and its order, the module functions by
+name. Node `k`'s slots hold the closures nodes `0` to `k - 1` allocated,
+the latest first. -/
 def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List String) :
-    Heap × List Tm × List (Continuation × Option Target) := Id.run do
+    Heap × List Tm × List (Continuation × Option Target) × List String := Id.run do
   let realmNames := (mods.flatMap (·.siblings)).filter (fun x => !(mods.any (·.name == x))) |>.eraseDups
   let realmValue (x : String) : Tm :=
     let loc := realmNames.idxOf x
@@ -186,7 +187,7 @@ def componentInit (tag : ComponentTag) (mods : List ProbeModule) (entries : List
       (g.siblings.map fun x => if mods.any (·.name == x) then .var (k - 1 - slotOf x) else realmValue x) .call false tag) [] []
   let exports : Tm := .arrLit (entries.map fun x => .var (order.length - 1 - slotOf x))
   return (realmNames.map fun _ => .nul, closures ++ [exports],
-    (List.range order.length).map (fun k => (.bind ⟨k + 1, none⟩, none)) ++ [(.ret, none)])
+    (List.range order.length).map (fun k => (.bind ⟨k + 1, none⟩, none)) ++ [(.ret, none)], order.map (·.name))
 
 /-- An object's fields, exactly `ks`, in any order. -/
 def exactFields (j : Json) (ks : List String) (what : String) : Except String Unit := do
@@ -267,7 +268,11 @@ structure FramedComponent where
   realm : Heap
   initE : List Tm
   initK : List (Continuation × Option Target)
-  refusal : Option String
+  initOrder : List String
+  /-- The refusal of the checks that read the component alone, with the
+  evaluation it is where the component meets the restrictions. -/
+  refusal : { w : Option String // restriction = none → w = componentBindingRefusal cf.flow cf.lay cf.codes
+    cf.names entries realm.length initOrder initE initK family file fns C }
 
 /-- **A framed plan's component flow**: the component flow of `mods`
 (`componentFlow`), its allocation sites numbered by the codes' bodies
@@ -290,13 +295,26 @@ def FramedComponent.of (C : Nat) (ofC : ComponentTag → Bool) (entries : List S
   let restriction := framedRestriction mods rows
   let cf := if restriction.isSome then componentFlow ofC [] entries "" else framedComponentFlow ofC mods entries
   let tag := (mods.head?.map (·.comp)).getD none
-  let (realm, initE, initK) := componentInit tag mods entries
+  let (realm, initE, initK, initOrder) := componentInit tag mods entries
   -- (forged where `force` asks, `forgeComponent`)
   let (cf, initE) := forgeComponent force cf initE
   let psiDef := if restriction.isSome then [] else protocolParts cf.flow cf.lay
+  -- (evaluated once per component, where it meets the restrictions)
   let refusal := if restriction.isSome then none else
-    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm.length initE initK family file fns C
-  { C, ofC, entries, mods, family, file, fns, rows, restriction, cf, psiDef, realm, initE, initK, refusal }
+    componentBindingRefusal cf.flow cf.lay cf.codes cf.names entries realm.length initOrder initE initK family file fns C
+  { C, ofC, entries, mods, family, file, fns, rows, restriction, cf, psiDef, realm, initE, initK, initOrder,
+    refusal := ⟨refusal, fun h => by simp [refusal, h]⟩ }
+
+/-- **The refusal of the checks that read the component alone, at the
+component `C`**, with the evaluation it is: the component's, computed once,
+at its own index; evaluated at another index; none where the component
+fails a restriction. -/
+def FramedComponent.refusalAt (fc : FramedComponent) (C : Nat) :
+    Option { w : Option String // w = componentBindingRefusal fc.cf.flow fc.cf.lay fc.cf.codes fc.cf.names fc.entries
+      fc.realm.length fc.initOrder fc.initE fc.initK fc.family fc.file fc.fns C } :=
+  match hr : fc.restriction with
+  | some _ => none
+  | none => some (if hC : C = fc.C then ⟨fc.refusal.val, by subst hC; exact fc.refusal.property hr⟩ else ⟨_, rfl⟩)
 
 open Verification.TolerantFrames.ReadOnly in
 /-- **The decoder of a framed plan's document**: its fields exactly those
@@ -339,11 +357,13 @@ def FramedSpec.decode {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVie
     let kept := framedSupportsAt F fc.cf.lay fc.cf.host ΨC Θ m l Φ Ss
     if kept.length != Ss.length then
       throw s!"at the document's framed call node {l}, {Ss.length - kept.length} of the supports it keeps fail the frame's check"
+  let some componentRefusal := fc.refusalAt C | throw (fc.restriction.getD "")
   return { C, readOnly := readOnlyInputs fc.family C member r.inputs, outType := [], realm := fc.realm,
-           initE := fc.initE, initK := fc.initK, arity := r.inputs.length - r.siblings.length, ofC := fc.ofC,
+           initE := fc.initE, initK := fc.initK, initOrder := fc.initOrder,
+           arity := r.inputs.length - r.siblings.length, ofC := fc.ofC,
            marks := fc.cf.O, checked := F, lay := fc.cf.lay, host := fc.cf.host, family := fc.family,
            file := fc.file, fns := fc.fns, codes := fc.cf.codes, names := fc.cf.names, entries := fc.entries,
-           theta, psi, psiDef := fc.psiDef, componentRefusal := fc.refusal, framed }
+           theta, psi, psiDef := fc.psiDef, componentRefusal, framed }
 
 /-- **A forged document** (`TSCERT_FORCE`, the controls'): `framed-doc-node`
 names a node no call frames, `framed-doc-support` keeps a support the

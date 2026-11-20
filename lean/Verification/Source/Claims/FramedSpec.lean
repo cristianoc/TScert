@@ -4,6 +4,7 @@ import Verification.Paper.TolerantFrames.ReadOnlyPublic
 import Verification.Paper.TolerantFrames.ReadOnlyFits
 import Verification.Paper.TolerantFrames.ReadOnlyFitsDecide
 import Verification.Source.Claims.FramedFlow
+import Verification.Source.Claims.FramedComponentChecks
 import Verification.Source.ComponentWire
 
 /-! # A framed plan's proposals and the frame they define
@@ -59,8 +60,9 @@ instance (N : NumberedFamily) (C : Nat) : DecidableEq (N.family.at C).Site :=
 
 /-- **A framed plan's proposals** (the draft, "The plan"): the component
 `C`; the types a crossing reads read-only; the type outgoing values cross
-at; the realm's heap; the initialization's code; the number of the
-function's parameters; and what the pass's check reads (the draft, "What
+at; the realm's heap; the initialization's code and the order in which it
+allocates the module functions' closures; the number of the function's
+parameters; and what the pass's check reads (the draft, "What
 the pass checks"): the component's tags and the marks of its flow's sites,
 the flow the solver proposes for the component's codes at those marks
 (`checked`), each code's layout, the natives' codes, the component family
@@ -70,7 +72,8 @@ functions, the component's module functions' codes, names, arities and the names
 their slots read, its entries, the wire's client obligation by kind
 (`theta`) and protocol by site and kind (`psi`), the component's protocol
 as defined (`psiDef`), the refusal of the checks that read the component
-alone (`componentRefusal`), and each framed call node
+alone with the evaluation it is (`componentRefusal`), and each framed call
+node
 of the main graph with the supports its frame keeps. The family of
 components, the client obligation and the finite flow the frame reads are
 defined from them (`FramedSpec.fam`, `FramedSpec.Θ`, `FramedSpec.fflow`). -/
@@ -81,6 +84,9 @@ structure FramedSpec (ι : Type) where
   realm : Heap
   initE : List Tm
   initK : List (Continuation × Option Target)
+  /-- The module functions in the order the initialization allocates their
+  closures, by name. -/
+  initOrder : List String
   arity : Nat
   ofC : ComponentTag → Bool
   marks : List (Option Nat)
@@ -99,10 +105,12 @@ structure FramedSpec (ι : Type) where
   part of its flow's sites, each change but `keep`, computed once per
   component. -/
   psiDef : List (Option Nat × Option Verification.Kind × Footprints.Change)
-  /-- The refusal of the binding checks that read the component alone
-  (`componentBindingRefusal`), evaluated once per component; `none` where
+  /-- The refusal of the binding checks that read the component alone,
+  with the evaluation of `componentBindingRefusal` at the plan's fields it
+  is: computed once per component and shared by its plans; `none` where
   they pass. -/
-  componentRefusal : Option String
+  componentRefusal : { w : Option String // w = componentBindingRefusal checked lay codes names entries
+    realm.length initOrder initE initK family file fns C }
   framed : List (Nat × List Footprints.Footprint)
 
 namespace FramedSpec
@@ -110,6 +118,13 @@ variable {ι : Type} (spec : FramedSpec ι)
 
 /-- Each site's mark, as the flow's `O` gives it. -/
 abbrev mark : Nat → Mark := (markedPackage spec.ofC spec.marks).mark
+
+/-- **The binding checks that read the component alone pass** where the
+plan's refusal of them is none (proved, by the refusal's evaluation). -/
+theorem componentRefusal_none (h : spec.componentRefusal.val = none) :
+    componentBindingRefusal spec.checked spec.lay spec.codes spec.names spec.entries spec.realm.length
+      spec.initOrder spec.initE spec.initK spec.family spec.file spec.fns spec.C = none :=
+  spec.componentRefusal.property ▸ h
 
 /-- **The family of a framed plan**: the one component `C`, each site of its
 code marked as the flow marks it (`oneComponent`). -/
