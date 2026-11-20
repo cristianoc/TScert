@@ -1,5 +1,6 @@
 import Verification.Source.Claims.FramedBinding
 import Verification.Paper.TolerantFrames.ReadOnlyRealize
+import Verification.Paper.TolerantFrames.ReadOnlyPending
 
 /-! # The realization of a framed plan's request
 
@@ -290,6 +291,20 @@ theorem wok_start (r : SourceRequest σ ι) (hinit : ∀ x, spec.Initial x → W
   simp only [WOk, wOks_iff, realizedCode, List.mem_append] at hg
   simp only [PassUnit.gotoOf, WOk, wOks_iff]
   exact ⟨fun e he => hg.1 e (.inl he), hg.2⟩
+
+/-- **The frame's calls are reached terms** (proved, `entry_run`): the
+term of every call the frame's claim is about is the request's run, whose
+parts the call discipline gives free of runs. -/
+theorem wfS_start (r : SourceRequest σ ι) :
+    ∀ (a : Conf × Ghost ((spec.frame r).F.at (spec.frame r).C)),
+      (spec.frame r).Call a.1.s.n a.1.s.W a.1.s.h a.1.t → (spec.frame r).start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 →
+      wfS a.1.t = true := by
+  intro a hc _
+  obtain ⟨a₂, he⟩ := hc.2
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, ht⟩ := spec.entry_run r he
+  have hw := hc.1.2.1.1
+  rw [ht] at hw ⊢
+  simpa [PassUnit.gotoOf, wf, wfS] using hw
 
 omit [Labels ι] in
 /-- **An initial configuration meets layout provenance and the residual

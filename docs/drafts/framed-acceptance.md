@@ -554,24 +554,42 @@ entry's heap and keep each invariant of $`G`$ (`ownQ`), bounded by
 `decompose_trace` is `decompose` over trace certificates, the entering
 step prepended, each own step's property read from the certificate of the
 code its call entered at the call's entry (`exec_bound_trace`,
-`callRun_trace`). Certificates are at $`\Psi_j`$. `cert_of_charges` (to be proved):
-`enterWithin` and `own` from `within_charges`, the base of the member's
-run its entered run's environment; `enterKeeps`, `tolerant` vacuous at
-$`G=\emptyset`$. Well-formedness alone does not give `enterWithin`: a
-step of outside code that evaluates a write just before a run of $`C`$ not
-yet entered, at a pending position, changes the heap and enters the call
-(`enterWrite_step`, counter-model, `ReadOnlyTransfer.lean`), and neither
-$`\Theta_C`$ (read at steps of kind `outside`) nor $`C`$'s checks bound it.
-`cert_of_charges` reads an invariant of the reached states: a run of
-$`C`$ not yet entered sits off the path only as a binding's body (the rest
-binding of `graphEntry`), so every entering step is a call of graph code
-or a binding's step, which keep the heap, and the call's run ends at its
-return. Its base values are the entered run's environment, the call's
-receiver, actuals, captures and callee; at an entry through a binding the
-fit of the entering state gives the environment its slots' sets, which
-`OpenAt` bounds from below only, so their sets within the closure of the
-capture sites and $`O`$ come from the call's values at the call of graph
-code that left the binding.
+`callRun_trace`). Certificates are at $`\Psi_j`$. Well-formedness alone
+does not bound an entering step: a step of outside code that evaluates a
+write just before a run of $`C`$ not yet entered, at a pending position,
+changes the heap and enters the call (`enterWrite_step`, counter-model,
+`ReadOnlyTransfer.lean`), and neither $`\Theta_C`$ (read at steps of kind
+`outside`) nor $`C`$'s checks bound it. The reached states meet a
+stronger invariant (`wfS`, `ReadOnlyPending.lean`): along the evaluation
+path every other position is free of runs, but a binding's body, which
+may be a run not yet entered when its head is a value, a throw of a value
+or a literal of values (the rest binding of `graphEntry`). Every step
+keeps it, and a step that changes the heap changes only the innermost
+entry of the path, at its tag (`step_wfS`, proved); it holds at the
+frame's starts, the request's run (`FramedSpec.wfS_start`, proved), so at
+every reached state (`ClientFrame.reached_wfS`, proved).
+
+`cert_of_charges` (proved, `ReadOnlyMemberCert.lean`) gives the
+certificate of every code at $`\Psi_j=\Psi_C`$ (`componentProtocol`) and
+$`G=\emptyset`$. An entering step keeps the heap (`enter_keeps_heap`), so
+`enterWithin` holds at every protocol; it pushes a run of $`C`$'s code
+in an evaluation context whose frames hold the calls active before it,
+its top segment outside $`C`$ (`enter_ctx`). While the call is active the
+state is that context around a run its hole reached (`hole_ex`: a
+context steps only where its hole steps or throws, `EvalCtx.step_hole`,
+and a value or a throw at the hole holds the context's calls,
+`ctx_val_tags`), and at one call more than the context a step of $`C`$'s
+code has every frame of the run on $`C`$'s code (`hole_runsC`), so `own`
+follows from `within_member` at the entered run, its base heap the entry's.
+Its premises besides the reached-state invariants: the closure check of
+the capture sites and $`O`$, and `hroots`, the values of each run an
+entering step pushes meeting sets within that closure. At an entry
+through a call of graph code these are the call's receiver, actuals,
+captures and callee; at an entry through a binding (the rest binding of
+`graphEntry`, entered by its `letV` step) the fit of the entering state
+gives the environment its slots' sets, which `OpenAt` bounds from below
+only, so their sets come from the call's values at the call of graph code
+that left the binding (to be proved).
 
 ## Re-entry
 
@@ -1400,10 +1418,16 @@ Lean (proved, `FramedReturns.lean`):
   `StartInv`, `Facts`, `FlowSites`, `EntryFits`, `NoKeys`, the residual
   invariant and layout provenance at the starts, `tokensSomeB`,
   `codesLoweredB`), the trace certificates at $`\Psi_j`$ with
-  $`\Theta_C\sqsubseteq\Psi_j\sqsubseteq\Psi_c(l)`$ (`cert_of_charges`),
+  $`\Theta_C\sqsubseteq\Psi_j\sqsubseteq\Psi_c(l)`$,
   the separation the frame check reads at each framed node's entry, and
   the callee's effect bounding the heap along the call (part of
   $`\Theta_C`$).
+- `ret_reachedW_of_charges`: `ret_reachedW_of_checks` at the
+  certificates `cert_of_charges` gives, $`\Psi_j=\Psi_C`$; in place of the
+  certificates it reads the reached-term invariant at the starts, the
+  closure check of the capture sites and $`O`$, `hroots`
+  ([certificates](#certificates)) and
+  $`\Theta_C\sqsubseteq\Psi_C\sqsubseteq\Psi_c(l)`$.
 
 With no framed node the returns hold of every frame
 (`framedReturnsReached_none`, proved).
@@ -1550,7 +1574,13 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 `own_of_fit`, `frame_rootsOk`, `framed_of_check`, `ret_reachedW_of_checks`
 (`FramedReturns.lean`); `within_deep`, `DeepIn.held`
 (`ReadOnlySegment.lean`); `segWithin_of_deep`, `enterWrite_step`
-(`ReadOnlyTransfer.lean`).
+(`ReadOnlyTransfer.lean`); `wfS_of_free`, `wfS_wf`, `step_wfS`
+(`ReadOnlyPending.lean`); `EvalCtx.raises_hole`, `EvalCtx.step_hole`,
+`ctx_val_tags` (`ReadOnlyEnter.lean`); `enter_keeps_heap`, `enter_ctx`,
+`hole_ex`, `hole_runsC`, `ClientFrame.reached_wfS`,
+`ClientFrame.cert_of_charges` (`ReadOnlyMemberCert.lean`);
+`FramedSpec.wfS_start` (`FramedRealize.lean`); `ret_reachedW_of_charges`
+(`FramedReturns.lean`).
 
 **Observed at the base** (to be moved into the build): `truncate_prot`,
 `truncate_uniform`; `startFix_startInv_len`, `keep_rejects`,
@@ -1560,8 +1590,8 @@ the walk at framed nodes: `keepStore_ok`, `stateHolds_keep`,
 review's `CodeClause.lean`).
 
 **To be proved, milestone 1**: `publicCall_safe`, `entryHolds_realized`,
-`cert_of_charges` (with the invariant on runs not yet entered),
-`project`, `keeps_canonical`,
+`hroots` of `cert_of_charges` (the entered run's values within the
+closure of the capture sites and $`O`$), `project`, `keeps_canonical`,
 `fits_program`, `chkSound_program`, `inv_program`, `entryFits_public`,
 `startInv_public`, `ret_reachedW`'s premises for `spec.frame r` (`hty` and `hvals` from
 `EntryAt`; `ret_reachedW_of_checks`' other premises from the check),

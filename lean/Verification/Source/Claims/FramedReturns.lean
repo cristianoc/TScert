@@ -1,6 +1,7 @@
 import Verification.Source.Claims.PassUnitFramed
 import Verification.Source.Claims.PassUnitSafe
 import Verification.Paper.TolerantFrames.ReadOnlyTransfer
+import Verification.Paper.TolerantFrames.ReadOnlyMemberCert
 
 /-! # The returns at reached executions, at their worlds
 
@@ -708,7 +709,8 @@ frame's fit and the binding checks (`own_of_fit`), the rule's premise from
 the pass's frame check (`framed_of_check`). What it reads besides the
 checks: the spec's premises (`hsrc`, `hty`, `hvals`, `ChkSound`,
 `StartInv`, the flow's facts at the frame's starts), the members' trace
-certificates at `Ψj` (`cert_of_charges`, to be proved), the separation the
+certificates at `Ψj` (`cert_of_charges` gives them at `Ψ_C`,
+`ret_reachedW_of_charges`), the separation the
 frame check reads at each framed node's entry, and the callee's effect
 bounding the heap along the call's segment (the callback's arrow, part of
 `Θ_C`). -/
@@ -767,5 +769,77 @@ theorem ret_reachedW_of_checks {σ ι : Type} [Labels ι] [StoreView σ ι] {r :
     (ClientFrame.nodeTransfer_of_transfer hc hi hcomp hatom certs hΘ hW
       (ClientFrame.own_of_fit hFa hS hE hwk hly hT htok hlow hle hcomp hatom hslots)
       (ClientFrame.framed_of_check (tv := fr.view.view) (dp := 0) hFa hS hE hK hcomp hatom hcheck hq) hΦ)
+
+/-- **The returns at reached executions, from the checks and the charges**
+(proved; `ret_reachedW_of_checks` at the members' certificates
+`cert_of_charges` gives at `Ψ_C`, the component's protocol, with no
+invariant to keep): its premises but the certificates, and in their place
+the reached-term invariant at the frame's starts (`wfS`, a run of `C` not
+yet entered only as a binding's body; `FramedSpec.wfS_start` for a framed
+plan's frame), the closure check of the capture sites and `O`, the values
+of each run an entering step pushes within that closure (`hroots`), and
+`Θ_C ⊑ Ψ_C ⊑ Ψc(l)`. -/
+theorem ret_reachedW_of_charges {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
+    {fr : ClientFrame (Ty ι)} [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Site]
+    [LawfulHashable (Option (fr.F.at fr.C).Site)]
+    {F : Nat → Bool} {S : Nat → List Footprints.Footprint}
+    (hsrc : r.program.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
+    (hty : ∀ n (W : WorldT n) h t, fr.Call n W h t → 0 < n ∧ WorldAdm W ∧ HeapOk n W h)
+    (hvals : ∀ n (W : WorldT n) h (L : List Tm) (d : Tm), fr.Call n W h (gotoOf r.program r.start L d r.comp) →
+      SlotVals L d)
+    (hc : fr.ChkSound) (hi : fr.StartInv)
+    {Fl : FFlow (fr.F.at fr.C)} {lay : List Layout}
+    (hFa : Fl.flow.Facts) (hS : fr.FlowSites Fl.flow) (hE : fr.EntryFits Fl.flow) (hK : fr.NoKeys)
+    (hwk : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → WOk a.1.t ∧ HeapW a.1.s.h)
+    (hly : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → layP (layQ Fl lay) a.1.t = true ∧ HeapLay (layQ Fl lay) a.1.s.h)
+    (htok : tokensSomeB Fl = true) (hlow : codesLoweredB Fl = true)
+    (hcomp : fr.F.ofC fr.C r.comp = true)
+    (hatom : ∀ l e, F l = true → (r.program.map (·.expression))[l]? = some e → ClientFrame.atomCallB e = true)
+    {S₀ T : Nat → Sites (fr.F.at fr.C)} {Ψc : Nat → Protocol (fr.F.at fr.C)}
+    (hT : ∀ l, F l = true → capClosedB Fl (tokenCaps Fl lay) (S₀ l) (T l) = true)
+    (hle : ∀ l, F l = true → ∀ p, (probeProtocol (flowKinds Fl) (T l) p).le (Ψc l p) = true)
+    (hslots : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
+      NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
+      ∀ j ∈ ClientFrame.atomSlots e, Sub (π.env l' j) (T l))
+    {Φ : Nat → Footprints.Footprint} {q : Nat → Footprints.SepQuery}
+    (hcheck : ∀ l e k x, F l = true → (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → ∀ c π l',
+      Fl.flow.code (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) c = some π →
+      NodeOf (r.program.map (·.expression), r.program.map fun n => (n.continuation, n.handler)) l' k x →
+      ∀ T ∈ S l, frameCheckAt (q l) (Ψc l) (Φ l) T Fl.flow.H (π.env l') noKeys (fun _ => false) = true)
+    (hq : ∀ l (b₀ : Conf × Ghost (fr.F.at fr.C)) e L d k x, F l = true → fr.Reached b₀ →
+      (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        (instantiate 0 (envOf L d) e) L d k x r.comp →
+      (q l).Sound (envOf L d) b₀.1.s.h)
+    (hst : ∀ (a : Conf × Ghost (fr.F.at fr.C)), fr.Call a.1.s.n a.1.s.W a.1.s.h a.1.t →
+      fr.start a.1.s.n a.1.s.W a.1.s.h a.1.t a.2 → wfS a.1.t = true)
+    (hTm : capClosedB Fl (tokenCaps Fl lay) (captureSites Fl lay ++ Fl.O)
+      (capClose Fl (tokenCaps Fl lay) (captureSites Fl lay ++ Fl.O)) = true)
+    (hroots : ∀ (a a₁ : Conf × Ghost (fr.F.at fr.C)), fr.Reached a → XStep fr.F fr.C none fr.Θ fr.chkConf a a₁ →
+      δ fr.F fr.C none a₁ = δ fr.F fr.C none a + 1 → ∀ (K : Tm → Tm) E Kc l L d cc, HeapObservations.EvalCtx K →
+      a₁.1.t = K (.goto E Kc l L d cc) → ∀ x ∈ vals allC true (.goto E Kc l L d cc),
+        ∃ S', VJ Fl.flow a₁.2 a₁.1.s.h.length S' x ∧
+          Sub S' (capClose Fl (tokenCaps Fl lay) (captureSites Fl lay ++ Fl.O)) ∧ layP (layQ Fl lay) x = true)
+    (hΘ : ∀ p, (fr.Θ p).le (componentProtocol Fl lay p) = true)
+    (hW : ∀ l p, (componentProtocol Fl lay p).le (Ψc l p) = true)
+    (hΦ : ∀ l (b₀ a : Conf × Ghost (fr.F.at fr.C)) m e L d k x v, F l = true → fr.Reached b₀ →
+      (r.program.map (·.expression))[l]? = some e →
+      (r.program.map fun n => (n.continuation, n.handler))[l]? = some (k, x) → SlotVals L d →
+      b₀.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        (instantiate 0 (envOf L d) e) L d k x r.comp →
+      Ex fr.KStep (fun s => Inside fr.F fr.C (r.program.map (·.expression))
+        (r.program.map fun n => (n.continuation, n.handler)) L d k x r.comp s.1.t) m b₀ a →
+      a.1.t = .frame (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler)) v L d k x
+        r.comp → isVal v = true → TolerantFrames.Action (Φ l) (envOf L d) b₀.1.s a.1.s) :
+    FramedReturnsReachedW r fr F (fun l ρ h₀ h₁ => ∀ T ∈ S l, Footprints.Supported T ρ h₀ h₁)
+      (fun _ _ _ _ => True) :=
+  ret_reachedW_of_checks hsrc hty hvals hc hi hFa hS hE hK hwk hly htok hlow hcomp hatom hT hle hslots hcheck hq
+    (fun m => ClientFrame.cert_of_charges hFa hS hE hst hwk hly hTm htok hlow hroots m) hΘ hW hΦ
 
 end Verification.SourceClaimJson.PassUnit
