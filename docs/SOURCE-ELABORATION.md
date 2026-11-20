@@ -1119,7 +1119,16 @@ and the copied writable `value` field both have type `number`.
 
 When every subclass supplies the base’s own parameter rows in order,
 the generated calls use the internal constructor directly at those rows.
+Such a call is the declaration's own instance: the declaring unit states
+the constructor at those rows, so no specialization is read, and a base
+whose bounds refer to its other parameters stays constructible.
 Specialization requires scheme bounds that can be read outside the scheme.
+The internal constructor scheme holds no static field, since static fields
+belong to the class value. The check that an explicit constructor's base
+call honours its written heritage arguments reads the calls of the
+module's initialization: a generic base and every class extending it are
+top-level, since a class declared in a block extends only `Error` or a
+class of a block.
 
 #### Prototypes
 
