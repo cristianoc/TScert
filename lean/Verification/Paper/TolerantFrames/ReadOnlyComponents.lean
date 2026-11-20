@@ -91,7 +91,7 @@ theorem nested_origin {C D : Nat} (hDC : F.nested D C) {site : Nat → Option F.
     (hg : g.site = F.restrict C site) {l : Nat} {s : F.Site} (hs : site l = some s)
     (hD : F.Runs (F.siteOf s) D) : g.origin l = some (F.mark s C) := by
   have hC : F.Runs (F.siteOf s) C := runs_mono hDC hD
-  simp only [Ghost.origin, hg, restrict, hs, dif_pos hC]
+  simp only [Ghost.origin, hg, restrict, hs, dite_eq_left hC]
   rfl
 
 /-- The order of the marks: `local ⊑ internal ⊑ exposed ⊑ released`. -/

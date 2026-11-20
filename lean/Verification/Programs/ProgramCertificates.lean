@@ -1,6 +1,8 @@
 import Verification.Programs.ProgramTyping
 -- ../Types/QualifiedGraphs.lean checks lexical instances of schemes whose binders carry resolution descriptors; without it lexical body checking has no instance comparison.
 import Verification.Types.QualifiedGraphs
+-- PointerEquality.lean gives the pointer-equality fast path at a type variable; without it the generic fast equality does not compile.
+import Verification.Semantics.PointerEquality
 
 /-! Finite program evidence checked against the declarative rules. Each node
 states its sequent explicitly. The external entry point also checks that the
@@ -17,13 +19,13 @@ structure Sequent (ι : Type) where
   type : Ty ι
   deriving DecidableEq
 
-/-- `a = b` decided at once where `a` and `b` are one object (`withPtrEq`,
+/-- `a = b` decided at once where `a` and `b` are one object (`sameObjectOr`,
 justified by the equality's reflexivity), else by `decide`. -/
 @[inline] def decideSame {α : Type} [DecidableEq α] (a b : α) : Bool :=
-  withPtrEq a b (fun _ => decide (a = b)) (fun h => by subst h; simp)
+  sameObjectOr a b (fun _ => decide (a = b)) (fun h => by subst h; simp)
 
 theorem decideSame_iff {α : Type} [DecidableEq α] (a b : α) : decideSame a b = true ↔ a = b := by
-  simp [decideSame, withPtrEq]
+  simp [decideSame, sameObjectOr]
 
 /-- Sequent equality as the compiled verifier decides it
 (`instDecidableEqSequent_eq_fast`): field by field, each answered at once
@@ -1472,7 +1474,7 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
         · have hf : ¬ LocalUsing G images j (.sub choices) [jt] codes (sums := sums) := by
             intro hp
             exact h ⟨hp.1, hp.2.1⟩
-          simp only [localCheckUsing, if_neg h, decide_eq_false hf]
+          simp only [localCheckUsing, ite_eq_right h, decide_eq_false hf]
           rfl
 
 /-- Check the evidence tree once, retaining unfinished subtype work. -/

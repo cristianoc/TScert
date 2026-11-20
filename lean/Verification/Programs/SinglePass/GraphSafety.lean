@@ -520,10 +520,10 @@ theorem graph_stepR {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {
         refine next _ (WExt_refl _) ha' (.tagBind hv) ho' (mapEnv_refs _ (push_refs htU hρU)) fun hR hp _ _ => ?_
         rcases tgt _ (fun _ _ _ _ h => by cases h) hR hp with ⟨hq, hy⟩ | ⟨hq, hn⟩
         · simp only [below] at hq
-          simp only [hq, if_true]
+          simp only [hq, ite_true]
           exact hy
         · simp only [below] at hq
-          simp only [hq, Bool.false_eq_true, if_false]
+          simp only [hq, Bool.false_eq_true, ite_false]
           exact hn
     · -- a throw: the handler's transition, or the run ends raised, where it meets `RetE`
       have tgt : ∀ st', (∀ t' ρ' k' x', st' ≠ .eval t' ρ' k' x') → RetAtG Ret RetE p h (.eval t ρ k x) st' →

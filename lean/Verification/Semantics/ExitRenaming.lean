@@ -329,7 +329,7 @@ theorem dropRenaming_agrees {k : Nat} {pre : List Tm} (hp : pre.length = k) (r r
     · cases h
       rename_i hk
       simp only [callEnv, List.getD_eq_getElem?_getD]
-      rw [if_neg (by omega), if_neg (by omega), List.getElem?_append_right (by omega), hp]
+      rw [ite_eq_right (by omega), ite_eq_right (by omega), List.getElem?_append_right (by omega), hp]
       congr 2; omega
     · cases h
   refine ⟨hb, fun i j h => ?_, rfl, rfl, rfl⟩
@@ -340,8 +340,8 @@ theorem dropRenaming_agrees {k : Nat} {pre : List Tm} (hp : pre.length = k) (r r
   · simp only [Option.map_eq_some_iff] at h
     obtain ⟨j', hj', rfl⟩ := h
     show ensuresEnv v r args (j' + 1) = ensuresEnv v r₀ (pre ++ args) i
-    simp only [ensuresEnv, if_neg (Nat.succ_ne_zero _), Nat.add_sub_cancel]
-    rw [if_neg (by assumption)]
+    simp only [ensuresEnv, ite_eq_right (Nat.succ_ne_zero _), Nat.add_sub_cancel]
+    rw [ite_eq_right (by assumption)]
     exact hb _ _ hj'
 
 /-- **The arguments of an append at the bound call**: fixed witnesses
@@ -412,7 +412,7 @@ theorem seqDrop_values {k : Nat} {s s' : TwoState} (hs : (dropRenaming k).Agrees
       simp only [List.mem_filter, List.mem_map, List.mem_range, decide_eq_true_eq] at hx
       obtain ⟨⟨j, hj, rfl⟩, hle⟩ := hx
       simp only [Function.comp]
-      exact hs.before (j + 1 + k) (j + 1) (by simp only [dropRenaming, dropBefore]; rw [if_pos (by omega)]; congr 1; omega)
+      exact hs.before (j + 1 + k) (j + 1) (by simp only [dropRenaming, dropBefore]; rw [ite_eq_left (by omega)]; congr 1; omega)
     · cases h
   | .append a b, a', h => by
     simp only [seqDrop, Option.bind_eq_bind, Option.pure_def] at h
@@ -483,8 +483,8 @@ private theorem image_eq (t : TransportSchema) (N : Nat) (b : Bool) (i : Nat) :
   simp only
   rw [TransportSchema.images_getElem]
   by_cases hi : i < N
-  · rw [if_pos hi, if_pos hi]; rfl
-  · rw [if_neg hi, if_neg hi]
+  · rw [ite_eq_left hi, ite_eq_left hi]; rfl
+  · rw [ite_eq_right hi, ite_eq_right hi]
 
 private theorem holds_trDrop {k : Nat} {t t' : TransportSchema} (ht : trDrop k t = some t') {s s' : TwoState}
     (hs : (dropRenaming k).Agrees s s') (hsh : s.Shifted) (hsh' : s'.Shifted) (N : Nat) (b : Bool) (h : Heap) :
@@ -509,7 +509,7 @@ private theorem holds_trDrop {k : Nat} {t t' : TransportSchema} (ht : trDrop k t
     let t' : TransportSchema := ⟨1, ov, t.boxed, (t.stable.filter (k < ·)).map (· - k)⟩
     have hval : ∀ (η : Env) m, Witness.value η h (.path ⟨m, []⟩) = some (η m) := fun η m => Path.read_nil rfl
     have hbef : ∀ j, 1 ≤ j → (dropRenaming k).before (j + k) = some j := by
-      intro j hj; simp only [dropRenaming, dropBefore]; rw [if_pos (by omega)]; congr 1; omega
+      intro j hj; simp only [dropRenaming, dropBefore]; rw [ite_eq_left (by omega)]; congr 1; omega
     have hlow : ∀ i, i ≤ k → rawImage t i = .path ⟨i + 1, []⟩ := by
       intro i hi; simp only [rawImage, hle i hi, hc.1]
     have hzero : rawImage t' 0 = .path ⟨0 + 1, []⟩ := by
@@ -520,7 +520,7 @@ private theorem holds_trDrop {k : Nat} {t t' : TransportSchema} (ht : trDrop k t
       | none =>
         simp only [rawImage, t', hl, (hlk j).1, Option.bind_none, hc.1]
         simp only [renameWitness, renamePath, dropAfter, dropBefore, Option.map_map]
-        rw [if_neg (by omega), if_pos (by omega)]
+        rw [ite_eq_right (by omega), ite_eq_left (by omega)]
         simp only [Option.map_some, Function.comp_apply]
         congr 3; omega
       | some w =>
@@ -546,7 +546,7 @@ private theorem holds_trDrop {k : Nat} {t t' : TransportSchema} (ht : trDrop k t
           · obtain ⟨j, rfl⟩ : ∃ j, i = j + k := ⟨i - k, by omega⟩
             have hj : 1 ≤ j := by omega
             have himg : ({ t'.instantiate N with boxed := b } : Substitution).image j = some (rawImage t' j) := by
-              rw [image_eq, if_pos (by omega), hcond j hj, if_neg hb]
+              rw [image_eq, ite_eq_left (by omega), hcond j hj, ite_eq_right hb]
             have := hy j _ himg
             rw [← value_renameWitness (hren j hj) hs.after h, this, hs.before _ _ (hbef j hj)]
       · cases hw
@@ -563,7 +563,7 @@ private theorem holds_trDrop {k : Nat} {t t' : TransportSchema} (ht : trDrop k t
           · have hj : 1 ≤ j := by omega
             have himg : ({ t.instantiate (N + k) with boxed := b } : Substitution).image (j + k) =
                 some (rawImage t (j + k)) := by
-              rw [image_eq, if_pos (by omega), ← hcond j hj, if_neg hb]
+              rw [image_eq, ite_eq_left (by omega), ← hcond j hj, ite_eq_right hb]
             have := hx (j + k) _ himg
             rw [value_renameWitness (hren j hj) hs.after h, this, hs.before _ _ (hbef j hj)]
       · cases hw

@@ -110,10 +110,10 @@ theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : Positi
     obtain ⟨claims, fr⟩ := p
     dsimp only at h
     by_cases hc : (standIns.functions.isEmpty && standIns.imports.isEmpty) = true
-    · rw [if_pos hc] at h
+    · rw [ite_eq_left hc] at h
       repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
       cases h; exact ⟨rfl, _, rfl⟩
-    · rw [if_neg hc] at h
+    · rw [ite_eq_right hc] at h
       repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
       cases h; exact ⟨rfl, _, rfl⟩
 

@@ -235,10 +235,10 @@ theorem termFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ :
   simp only [termFollows, Bool.and_eq_true, beq_iff_eq] at hf
   obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, hx⟩ := hf
   cases a
-  · simp only [Bool.false_eq_true, if_false] at hx
-    simp only [termValue, termAt, Bool.false_eq_true, if_false, PointClaims.mapEnv,
+  · simp only [Bool.false_eq_true, ite_false] at hx
+    simp only [termValue, termAt, Bool.false_eq_true, ite_false, PointClaims.mapEnv,
       hM _ _ (List.contains_iff_mem.mp hx)]
-  · simp only [if_true, beq_iff_eq] at hx
+  · simp only [ite_true, beq_iff_eq] at hx
     subst hx
     exact termValue_entry_invariant rfl
 
@@ -872,7 +872,7 @@ theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.
   · simp only [ho, Bool.false_eq_true, ite_false] at this
     obtain ⟨flds, c, oid, l, he, hlk, hv⟩ := this
     rw [hf] at hlk
-    simp only [termValue, termAt, Bool.false_eq_true, if_false, he, readPath_cons hlk hv]
+    simp only [termValue, termAt, Bool.false_eq_true, ite_false, he, readPath_cons hlk hv]
   · simp only [ho, ite_true] at this
     obtain ⟨flds, c, oid, he, hr⟩ := this
     rw [hf] at hr
@@ -880,11 +880,11 @@ theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.
     cases hlk : flds.lookup (.str f) with
     | some l =>
       rw [hlk] at hr
-      simp only [termValue, termAt, Bool.false_eq_true, if_false, he, readPath_cons hlk hr]
+      simp only [termValue, termAt, Bool.false_eq_true, ite_false, he, readPath_cons hlk hr]
     | none =>
       rw [hlk] at hr
       have hnone : readPath h (ρ g.cell) (f :: p) = none := by simp [he, readPath, hlk]
-      simp only [termValue, termAt, Bool.false_eq_true, if_false, hnone, Option.bind_none, hr.2]
+      simp only [termValue, termAt, Bool.false_eq_true, ite_false, hnone, Option.bind_none, hr.2]
       cases p with
       | nil => cases k <;> simp [readPath, kindValue, intValue, lengthOf, viewLengthOf, strLengthOf,
           Footprints.spineOf, Footprints.fieldsOf]
@@ -994,7 +994,7 @@ theorem lowerTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLink
   cases p with
   | nil => rfl
   | cons f p =>
-    simp only [lowerTerm, Bool.false_eq_true, if_false]
+    simp only [lowerTerm, Bool.false_eq_true, ite_false]
     split
     · rename_i g hg
       have hm := hr _ (List.mem_of_find?_eq_some hg)
@@ -1950,7 +1950,7 @@ theorem pathSites_read {M : Nat → List Nat} {ls : HeapLinks.Links} {ρ : Env} 
         obtain ⟨⟨⟨hal, hop⟩, hcell⟩, hfield⟩ := hc
         rw [ih g.value hm]
         have hh := hl g hg
-        simp only [hal, hop, Bool.false_eq_true, if_false] at hh
+        simp only [hal, hop, Bool.false_eq_true, ite_false] at hh
         obtain ⟨flds, c, oid, l, hobj, hlook, hv⟩ := hh
         rw [← hM _ _ hcell, hobj, readPath_cons (by rw [← hfield]; exact hlook) hv]
       · cases hm
@@ -3292,14 +3292,14 @@ theorem numEqIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : 
       cases q with
       | true =>
         have hij := SafeIntegers.numberEqual_safe hsafe hb htag
-        simp only [if_true, List.mem_cons, List.not_mem_nil, or_false] at ha
+        simp only [ite_true, List.mem_cons, List.not_mem_nil, or_false] at ha
         rcases ha with rfl | rfl
         · exact IndexFact.holdsAt_valueFact.mpr ⟨hvars 1 i false, by
             show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv]; omega⟩
         · exact IndexFact.holdsAt_valueFact.mpr ⟨hvars (-1) (-i) false, by
             show Linear.Form.eval _ _ ≤ _; simp [Linear.Form.eval, hv]; omega⟩
       | false =>
-        simp only [Bool.false_eq_true, if_false, List.mem_cons, List.not_mem_nil, or_false] at ha
+        simp only [Bool.false_eq_true, ite_false, List.mem_cons, List.not_mem_nil, or_false] at ha
         subst ha
         have hne : j ≠ i := fun he' => by
           subst he'
@@ -3624,7 +3624,7 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
       dsimp only
       by_cases hn : (G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false)) = true
-      · rw [if_pos hn]
+      · rw [ite_eq_left hn]
         have hm := BranchRefinement.tagSlice_sound (he.2 slot A hi) ho
         simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hn
         have hq := answers_sound (show Answers G _ .isNullish false from ⟨hn.1, hn.2⟩) hm
@@ -3642,7 +3642,7 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
           rcases List.mem_cons.mp hf with rfl | hf
           · exact hv
           · exact hout.2.1 f hf
-      · rw [if_neg hn]; exact hout
+      · rw [ite_eq_right hn]; exact hout
   · exact hout
 
 /-- A type's atoms answer no tag: they are primitive predicates. -/
@@ -3801,9 +3801,9 @@ theorem instantiateEvery_holds {as : List IndexAtom} {cls : List Nat} {r x k : N
         | some o =>
           cases o with
           | none =>
-            simp only [termValue, termAt, Bool.false_eq_true, if_false, hhole hli]
+            simp only [termValue, termAt, Bool.false_eq_true, ite_false, hhole hli]
             cases kind <;> cases path <;> rfl
-          | some l => simp only [hpres l hli, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false]
+          | some l => simp only [hpres l hli, Option.bind_some, termValue, termAt, Bool.false_eq_true, ite_false]
       | free t => cases ht; rfl
     · cases hc
   | ⟨.every _ [] _ _, some _, _⟩, _, hc => simp [instantiateEvery] at hc

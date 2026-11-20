@@ -74,7 +74,7 @@ selected unit, its identity and, where mode 8's check (`passGroupMode8`)
 accepts its group, the dependencies it prints. -/
 def fileVerdicts (f : FilePlans) (selection : Option (List String)) (givenLines : Std.HashMap String Json)
     (infer : Bool) (force : List String) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
-    (fuel : Nat) (compare : Bool) (debugNode repeats : Nat) (given : Option (Std.HashMap String Json))
+    (fuel : Nat) (compare : Bool) (debugNode repeats : Nat) («given» : Option (Std.HashMap String Json))
     (observe : Option String) (counting located : Bool) : Verdicts :=
   (f.fr.selected selection).map fun i => (f.fr.unitId i,
     ((f.withHeadFacts givenLines false infer).passGroupMode8 infer force keep fuel (f.fr.group i) compare debugNode

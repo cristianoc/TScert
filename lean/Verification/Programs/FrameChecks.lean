@@ -169,10 +169,10 @@ theorem Footprint.boundBelow_le (P : List Nat) (Φ : Footprint) (c : Closed) :
   | cons e Φ ih =>
     simp only [List.filter_cons, List.all_cons]
     cases hf : e.1.freshSpine P
-    · simp only [Bool.not_false, if_true, Bool.false_or]
+    · simp only [Bool.not_false, ite_true, Bool.false_or]
       rw [show e :: List.filter (fun e => !e.1.freshSpine P) Φ = [e] ++ List.filter (fun e => !e.1.freshSpine P) Φ
         from rfl, Footprint.close_append, Closed.join_le, ih]
-    · simp only [Bool.not_true, Bool.false_eq_true, if_false, Bool.true_or, Bool.true_and]
+    · simp only [Bool.not_true, Bool.false_eq_true, ite_false, Bool.true_or, Bool.true_and]
       exact ih
 
 /-- A closed footprint's entries close to itself. -/

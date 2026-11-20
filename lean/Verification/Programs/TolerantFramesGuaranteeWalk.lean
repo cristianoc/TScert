@@ -101,9 +101,9 @@ assertion of the request the written assertion at its label
 structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal : Goal ι) (inputs : List (Ty ι))
     (sep : HeapSeparation.Separation) (idx : List HeapKnowledge.IndexAtom)
     (assertions : List (Nat × HeapKnowledge.Knowledge)) (bound : Option RunBound)
-    (ensures : List HeapKnowledge.IndexFact)
+    («ensures» : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool))
-    (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
+    (w : Walk ι) («given» : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop where
   walk : ∀ ε m, NodesChecked P (marked (passPreA G w (List.range inputs.length) ε ctx stated)) (excOf G)
@@ -114,7 +114,7 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
     ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ s.h s.W
   footprint : ∀ Φ Ψ fr, bound = some (⟨Φ, Ψ⟩, fr) → ∃ dead, ∀ ε h₀,
     FootprintKept P G w (List.range inputs.length) ε ctx Φ Ψ h₀ dead fr
-  returns : ensures ≠ [] → ∀ ε m, ReturnsEnsured P G w (List.range inputs.length) ε ctx ensures m
+  returns : «ensures» ≠ [] → ∀ ε m, ReturnsEnsured P G w (List.range inputs.length) ε ctx «ensures» m
   regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
     ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀, X ε h₀ start ε.env h₀ ∧
       RegionsKeptS P G w (List.range inputs.length) ε ctx (X ε h₀) Φ regions h₀ exc
@@ -241,7 +241,7 @@ start's assertion, the traversed fields and the labelled assertions as
 structure PassWalkSoundR (G : NormalGraph ι) (P : Program) (start : Nat) (goal : Goal ι) (inputs : List (Ty ι))
     (sep : HeapSeparation.Separation) (idx : List HeapKnowledge.IndexAtom)
     (assertions : List (Nat × HeapKnowledge.Knowledge)) (bound : Option RunBound)
-    (ensures : List HeapKnowledge.IndexFact)
+    («ensures» : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool))
     (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop)
     (w : Walk ι) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop where
@@ -254,8 +254,8 @@ structure PassWalkSoundR (G : NormalGraph ι) (P : Program) (start : Nat) (goal 
   footprint : ∀ Φ Ψ fr, bound = some (⟨Φ, Ψ⟩, fr) → ∃ dead, ∀ ε h₀,
     NodesKeepR P (passPreT G w (List.range inputs.length) ε ctx) F Ret RetE (BoundX Φ h₀ dead) (BoundQ Φ h₀ fr)
       (BoundR Ψ h₀) h₀.length
-  returns : ensures ≠ [] → ∀ ε m, NodesKeepR P (passPreT G w (List.range inputs.length) ε ctx) F Ret RetE
-    (fun _ _ _ => True) (EnsuresQ ensures ε) (fun _ => True) m
+  returns : «ensures» ≠ [] → ∀ ε m, NodesKeepR P (passPreT G w (List.range inputs.length) ε ctx) F Ret RetE
+    (fun _ _ _ => True) (EnsuresQ «ensures» ε) (fun _ => True) m
   regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
     ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀, X ε h₀ start ε.env h₀ ∧
       NodesKeepR P (passPreS G w (List.range inputs.length) ε ctx regions h₀) F Ret RetE (X ε h₀)
@@ -327,7 +327,7 @@ reached at a `goto` of its label (`GotoAsserted`). -/
 structure GraphGuaranteeR (G : NormalGraph ι) (admits : MixedAssignment ι → Prop) (P : Program)
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
-    (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
+    (bound : Option RunBound) («ensures» : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool))
     (F : Nat → Bool) (Ret RetE : Nat → Env → Heap → Heap → Prop) : Prop where
   safe : ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
@@ -341,10 +341,10 @@ structure GraphGuaranteeR (G : NormalGraph ι) (admits : MixedAssignment ι → 
     SafeRet (fun _ _ => True) (excOf (reassign G η)) (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (WPost.lift fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
       (WExc.lift fun h' => Ψ ≠ .top → Ψ.Holds h h') F Ret RetE n W none h (.goto E K start L d comp)
-  ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
+  ensured : «ensures» ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
     SafeRet (fun _ _ => True) (excOf (reassign G η)) (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (WPost.lift fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d)))
+      (WPost.lift fun h' v => GraphCode.EnsuresAt «ensures» ⟨envOf L d, h⟩ h' (push v (envOf L d)))
       (fun _ _ _ => True) F Ret RetE n W none h (.goto E K start L d comp)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d comp,

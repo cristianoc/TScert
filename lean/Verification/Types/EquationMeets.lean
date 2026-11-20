@@ -59,7 +59,7 @@ theorem Equations.graph_clauses (equations : Equations) {i : Label equations.sig
     simp [NormalGraph.plain, NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, h]
   refine ⟨hp, ?_⟩
   show NormalGraph.clauses _ i = cs
-  simp only [NormalGraph.clauses, hp, if_true]
+  simp only [NormalGraph.clauses, hp, ite_true]
   simp [Equations.graph, NormalGraph.ofRowMap, h, GraphRow.union]
 
 /-- A part of a meet means what its base row says, read at the same level: a

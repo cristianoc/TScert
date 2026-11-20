@@ -54,14 +54,14 @@ theorem activeFrame_ctx {K : Tm → Tm} (hK : EvalCtx K) :
     intro cur
     obtain ⟨c', hc'⟩ := ih cur
     refine ⟨c', fun u hu => ?_⟩
-    simp only [activeFrame, hf, hr, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hf, hr, Bool.true_eq_false, ite_false]
     rw [activeArgs_at (List.getElem?_set_self hi) (set_prefix hpre) (hK.not_val hu)]
     exact hc' u hu
   | constructArg hf hi hpre hK ih =>
     intro cur
     obtain ⟨c', hc'⟩ := ih cur
     refine ⟨c', fun u hu => ?_⟩
-    simp only [activeFrame, hf, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hf, Bool.true_eq_false, ite_false]
     rw [activeArgs_at (List.getElem?_set_self hi) (set_prefix hpre) (hK.not_val hu)]
     exact hc' u hu
   | makeArg hi hpre hK ih =>
@@ -83,7 +83,7 @@ theorem activeFrame_ctx {K : Tm → Tm} (hK : EvalCtx K) :
     intro cur
     obtain ⟨c', hc'⟩ := ih cur
     refine ⟨c', fun u hu => ?_⟩
-    simp only [activeFrame, hK.not_val hu, *, if_true, if_false, Bool.true_eq_false]
+    simp only [activeFrame, hK.not_val hu, *, ite_true, ite_false, Bool.true_eq_false]
 
 /-- **The innermost frame inside a term is the whole term's** (proved,
 `activeFrame_ctx`, `activeFrame_innermost`): where the term's active frame

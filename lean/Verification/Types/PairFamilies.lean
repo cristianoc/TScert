@@ -164,7 +164,7 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
   · rename_i r s s' hs hs'
     obtain ⟨hpi, hpj, hlen, hnp, hnq, hkinds, hbnd, hfresh, hord, hcov⟩ := hc
     rw [qDenoteWithArgs_unfold] at hv ⊢
-    simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
+    simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, ite_false] at hv ⊢
     refine ⟨sameShape_construct hord ▸ hv.1, fun q hq As hl _hal hb => ?_⟩
     have hall := hv.2 q hq
     have hre : ReassignSound G η R q := fun i s As hs =>
@@ -220,7 +220,7 @@ theorem scheme_covers_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAss
   · rename_i s s' hs hs'
     obtain ⟨hpi, hpj, hbs, hbnd, hord, hcov⟩ := hc
     rw [qDenoteWithArgs_unfold] at hv ⊢
-    simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, if_false] at hv ⊢
+    simp only [qLayerWithArgs, hpi, hpj, hs, hs', Bool.false_eq_true, ite_false] at hv ⊢
     refine ⟨sameShape_construct hord ▸ hv.1, fun q hq As hl _hal hb => ?_⟩
     have hall := hv.2 q hq
     have hre : ReassignSound G η R q := fun i s As hs =>

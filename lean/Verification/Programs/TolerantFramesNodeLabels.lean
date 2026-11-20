@@ -76,7 +76,7 @@ theorem byLabel_of_nodup {α : Type} {n : Nat} :
     rw [byLabel_cons]
     rcases List.mem_cons.mp hm with he | hm'
     · cases he
-      rw [if_pos hl]
+      rw [ite_eq_left hl]
       simp [Array.set!, hsz, hl]
     · have hne : l ≠ l' := fun he => hnd'.1 (by subst he; exact List.mem_map.mpr ⟨_, hm', rfl⟩)
       have ih := byLabel_of_nodup hnd'.2 hm' hl
@@ -124,10 +124,10 @@ theorem setup_labels {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target
   have hb : ((c.assertions.map (·.1)).eraseDups.length != c.assertions.length) = true := by simp [hne]
   unfold SinglePass.setup at h
   by_cases hcl : (c.claims.toArray.size != c.P.toArray.size) = true
-  · rw [if_pos hcl] at h
+  · rw [ite_eq_left hcl] at h
     cases h
-  · rw [if_neg hcl] at h
-    simp only [hb, if_true] at h
+  · rw [ite_eq_right hcl] at h
+    simp only [hb, ite_true] at h
     repeat' split at h
     all_goals cases h
 

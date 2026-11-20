@@ -294,7 +294,7 @@ theorem exitsPushOk_of (hw : ExitsWidth ι) : ExitsPushOk ι := by
     split at hx
     · rename_i hh
       rcases List.mem_cons.mp hx with rfl | hx
-      · rw [hth, hsf, if_pos (ofNode_handler he hh)]; exact Nat.lt_succ_self _
+      · rw [hth, hsf, ite_eq_left (ofNode_handler he hh)]; exact Nat.lt_succ_self _
       · exact hlt x (bE.1 x hx)
     · split at hx
       · rcases List.mem_cons.mp hx with rfl | hx

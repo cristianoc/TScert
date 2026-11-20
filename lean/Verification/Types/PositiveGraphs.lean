@@ -977,9 +977,9 @@ theorem graphArguments_adm (G : NormalGraph ι) (η : MixedAssignment ι)
   obtain ⟨i, hi, h⟩ := h
   refine ⟨i, hi, ?_⟩
   by_cases hp : G.listParam i = true
-  · simp only [hp, if_true] at h ⊢
+  · simp only [hp, ite_true] at h ⊢
     exact (selectParameter_adm _ (η.2 i).1).transfer h j hj U hx
-  · simp only [hp, if_false, Bool.false_eq_true] at h ⊢
+  · simp only [hp, ite_false, Bool.false_eq_true] at h ⊢
     obtain ⟨c, hc, h⟩ := h
     refine ⟨c, hc, ?_⟩
     cases c <;> try exact h.elim
@@ -1004,9 +1004,9 @@ theorem graphArguments_valid (G : NormalGraph ι) (η : MixedAssignment ι)
   · intro n W vs h
     obtain ⟨i, hi, h⟩ := h
     by_cases hp : G.listParam i = true
-    · simp only [hp, if_true] at h
+    · simp only [hp, ite_true] at h
       exact (η.2 i).2 n W (.inr vs) h.2.1
-    · simp only [hp, if_false, Bool.false_eq_true] at h
+    · simp only [hp, ite_false, Bool.false_eq_true] at h
       obtain ⟨c, hc, h⟩ := h
       cases c <;> try exact h.elim
       rename_i a bs
@@ -1393,7 +1393,7 @@ theorem partSem_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι
     intro k hk W v
     unfold partSemWithArgs
     by_cases hp : G.params i = true
-    · simp only [hp, if_true]; exact I.value_congr i _ _ m (h i) k hk W v
+    · simp only [hp, ite_true]; exact I.value_congr i _ _ m (h i) k hk W v
     · simp only [hp]
       cases hq : G.schemes i with
       | none =>
@@ -1607,7 +1607,7 @@ theorem mixedMeaning_noArguments_of (G : NormalGraph ι) (η : MixedAssignment �
   by_cases hp : G.listParam i = true
   · rcases NormalGraph.listParam_iff.mp hp with hp | hp <;> simp only [hp, beq_iff_eq] at hk <;>
       subst hk <;> simp at hval
-  · simp only [hp, if_false, Bool.false_eq_true] at hv
+  · simp only [hp, ite_false, Bool.false_eq_true] at hv
     obtain ⟨c, hc, hv⟩ := hv
     have hplain := NormalGraph.plain_of_clauses hc
     have hparts := NormalGraph.plain_iff.mp hplain
@@ -1653,13 +1653,13 @@ theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S 
       | some k =>
         cases k <;> simp [hp] at hk
         have hpar : G.params i = true := by simp [NormalGraph.params, hp]
-        simp only [hpar, if_true] at hv
+        simp only [hpar, ite_true] at hv
         change selectParameter (G.parameterKinds i) (η.1 i) n W (.inl v) at hv
         rw [hp] at hv
         refine Packable_mono ?_ (hv.2.2 rfl)
         intro m U vs ⟨hvs, hl⟩
         refine ⟨⟨i, hi, ?_⟩, hl⟩
-        simp only [NormalGraph.listParam, hp, beq_self_eq_true, Bool.or_true, if_true]
+        simp only [NormalGraph.listParam, hp, beq_self_eq_true, Bool.or_true, ite_true]
         exact ⟨⟨_, rfl, rfl, hl⟩, hvs, trivial⟩
       | none =>
         cases hq : G.schemes i with

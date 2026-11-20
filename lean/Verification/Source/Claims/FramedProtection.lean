@@ -55,19 +55,19 @@ theorem activeFrame_pathAt {K : Tm → Tm} (hK : EvalCtx K) :
     intro cur
     obtain ⟨c', hc', hP⟩ := ih cur
     refine ⟨c', fun u hu => ?_, hP.keep ⟨fun s => .invoke f r (args.set i s), fun t ht => ?_⟩⟩
-    · simp only [activeFrame, hf, hr, Bool.true_eq_false, if_false]
+    · simp only [activeFrame, hf, hr, Bool.true_eq_false, ite_false]
       rw [activeArgs_at (List.getElem?_set_self hi) (set_prefix hpre) (hK.not_val hu)]
       exact hc' u hu
-    · simp only [path, hf, hr, Bool.true_eq_false, if_false]
+    · simp only [path, hf, hr, Bool.true_eq_false, ite_false]
       rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @constructArg K₀ f args i hf hi hpre hK ih =>
     intro cur
     obtain ⟨c', hc', hP⟩ := ih cur
     refine ⟨c', fun u hu => ?_, hP.keep ⟨fun s => .construct f (args.set i s), fun t ht => ?_⟩⟩
-    · simp only [activeFrame, hf, Bool.true_eq_false, if_false]
+    · simp only [activeFrame, hf, Bool.true_eq_false, ite_false]
       rw [activeArgs_at (List.getElem?_set_self hi) (set_prefix hpre) (hK.not_val hu)]
       exact hc' u hu
-    · simp only [path, hf, Bool.true_eq_false, if_false]
+    · simp only [path, hf, Bool.true_eq_false, ite_false]
       rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @makeArg K₀ cc ns inits i hi hpre hK ih =>
     intro cur
@@ -93,9 +93,9 @@ theorem activeFrame_pathAt {K : Tm → Tm} (hK : EvalCtx K) :
     obtain ⟨c', hc', hP⟩ := ih cur
     refine ⟨c', fun u hu => ?_, hP.keep ⟨?_, fun t ht => ?_⟩⟩
     rotate_left 2
-    · simp only [path, hK.not_val ht, *, if_true, if_false, Bool.true_eq_false]
+    · simp only [path, hK.not_val ht, *, ite_true, ite_false, Bool.true_eq_false]
       rfl
-    · simp only [activeFrame, hK.not_val hu, *, if_true, if_false, Bool.true_eq_false]
+    · simp only [activeFrame, hK.not_val hu, *, ite_true, ite_false, Bool.true_eq_false]
 
 /-- **An entering step is a call of graph code from outside code**
 (proved, as `entry_roots` decomposes it): where a step from a term free of
@@ -131,13 +131,13 @@ theorem enter_call {F : Family} {C : Nat} {h h' : Heap} {t t' : Tm} (hs : Step h
       u = .invoke f r args → activeFrame none t = (c', u) := by
     intro f r args hf hr ha hu'
     rw [hat, hc' u hnu, hu']
-    simp only [activeFrame, hf, hr, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hf, hr, Bool.true_eq_false, ite_false]
     exact activeArgs_vals ha
   have hactC : ∀ f args, isVal f = true → (∀ a ∈ args, isVal a = true) →
       u = .construct f args → activeFrame none t = (c', u) := by
     intro f args hf ha hu'
     rw [hat, hc' u hnu, hu']
-    simp only [activeFrame, hf, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hf, Bool.true_eq_false, ite_false]
     exact activeArgs_vals ha
   generalize eg : Tm.goto E Kc l L d cc = gt at hu
   generalize eh₀ : h = h₀ at hu
@@ -364,7 +364,7 @@ theorem enter_args (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) (hF 
         entered none a₁.1.t = some (realizedCode r) ∧
         depthC spec.F spec.C none a₁.1.t = depthC spec.F spec.C none x.1.t + 1 := ⟨htag, hentered, hdep⟩
     unfold FramedSpec.entryXs
-    rw [if_pos hcond, hred]
+    rw [ite_eq_left hcond, hred]
     have hmem : (⟨.into, spec.entryTy r j, envOf L d j⟩ : Crossing spec.view.view) ∈
         (args.take spec.arity).mapIdx fun j v => (⟨.into, spec.entryTy r j, v⟩ : Crossing spec.view.view) := by
       refine List.mem_mapIdx.mpr ⟨j, by simp; omega, ?_⟩
@@ -445,7 +445,7 @@ theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) 
   -- The history after the entering step: the call's set pushed, then the crossings.
   have hstep : stepKind (spec.core r).F (spec.core r).C none x.1.t a₁.1.t = .enter := by
     unfold stepKind
-    rw [if_neg (fun h => by have := h.2; omega), if_pos (by omega)]
+    rw [ite_eq_right (fun h => by have := h.2; omega), ite_eq_left (by omega)]
   have ha₁ : a₁.2 = Ghost.crosses spec.view.view a₁.1.s.h (spec.chk r x.1.s.h x.1.t a₁.1.s.h a₁.1.t).xs
       ((x.2.alloc x.1.s.h.length (spec.chk r x.1.s.h x.1.t a₁.1.s.h a₁.1.t).site).enter) := by
     rw [hk.2.1]
@@ -466,7 +466,7 @@ theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) 
   -- The crossing's marks: no local or internal location is reached.
   have hok := hp.crossOk _ hxs ℓ (show Reaches _ a₁.1.s.h _ ℓ by rw [hh₁, ← hh]; exact hreach)
   have hmid : (midOf (spec.progFrame r).chkConf x.1 a₁.1 x.2).origin ℓ = x.2.origin ℓ := by
-    simp only [midOf, Ghost.origin, Ghost.alloc, hxlt, if_true]
+    simp only [midOf, Ghost.origin, Ghost.alloc, hxlt, ite_true]
     rfl
   rw [hmid] at hok
   -- The entry type is read-only.
@@ -483,7 +483,7 @@ theorem start_protects (r : SourceRequest σ ι) (hr : noRestB spec.lay = true) 
       simpa [FramedSpec.roPos, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hjr] using hpos
     simp only [hb, Bool.not_true, Bool.false_or, List.contains_iff_mem] at this
     show spec.entryTy r j ∈ spec.readOnly
-    simp only [FramedSpec.entryTy, hpos, if_true, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hji,
+    simp only [FramedSpec.entryTy, hpos, ite_true, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hji,
       Option.getD_some]
     exact this
   have hRR : ReachRO spec.view.view (spec.F.at spec.C).ofC (spec.entryTy r j) a₁.1.s.h (envOf L d j) ℓ := by

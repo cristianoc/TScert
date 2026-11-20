@@ -240,7 +240,7 @@ theorem keepsOn_inside {I : Ghost (fr.F.at fr.C) → Heap → Tm → Prop}
       unfold stepKind at hk
       by_cases h₁ : OutsideAt fr.F fr.C none t ∧ depthC fr.F fr.C none t' = depthC fr.F fr.C none t
       · exact h₁
-      · rw [if_neg h₁] at hk
+      · rw [ite_eq_right h₁] at hk
         split at hk <;> (try split at hk) <;> cases hk
     exact absurd this.1 (hin g h t hi)
 

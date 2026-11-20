@@ -317,8 +317,8 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
   obtain ⟨kind, x, p, a⟩ := t
   cases a
   case true => exact ⟨n, termValue_entry_some rfl ht, Int.le_refl n, fun _ => rfl⟩
-  simp only [Term.support, Bool.false_eq_true, if_false] at hs
-  simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
+  simp only [Term.support, Bool.false_eq_true, ite_false] at hs
+  simp only [termValue, termAt, Bool.false_eq_true, ite_false, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨w, hw, hk⟩ := ht
   have hlast : Keeps (lastChange kind) w ∧ Selector.values.selects w = true := by
     cases kind with

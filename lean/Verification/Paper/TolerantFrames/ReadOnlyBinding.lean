@@ -89,7 +89,7 @@ theorem allocOf_some [DecidableEq P.Site] {F : FFlow P} (h : allocSomeB F = true
   | none => rw [hfc] at hm; cases hm
   | some fc =>
     have hcode : F.flow.code m entryCx = some fc.flow := by simp [FFlow.flow, hfc]
-    simp only [allocOf, hc, if_true, hcode, Option.map_some, Option.getD_some]
+    simp only [allocOf, hc, ite_true, hcode, Option.map_some, Option.getD_some]
     exact allocSomeB_sound h hfc kx
 
 /-- **A step of a covered code of `C` allocates at a site** (proved): its

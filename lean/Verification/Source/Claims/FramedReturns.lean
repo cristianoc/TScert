@@ -549,9 +549,9 @@ theorem framed_of_check {Fl : Flow (fr.F.at fr.C)} {Pe : List Tm} {Pk : List (Co
         induction xs with
         | nil => rfl
         | cons y ys ih =>
-          simp only [innermostArgs, hxs y List.mem_cons_self, Bool.true_eq_false, if_false]
+          simp only [innermostArgs, hxs y List.mem_cons_self, Bool.true_eq_false, ite_false]
           exact ih fun a ha => hxs a (List.mem_cons_of_mem _ ha)
-      simp only [innermost, hf, hr, Bool.true_eq_false, if_false]
+      simp only [innermost, hf, hr, Bool.true_eq_false, ite_false]
       exact this args ha
     rw [hbt]; simp only [innermost, hinst, hi]; rfl
   obtain ⟨-, c, π, l', hcode, hn, hfr⟩ :=

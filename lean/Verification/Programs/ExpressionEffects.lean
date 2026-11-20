@@ -252,8 +252,8 @@ theorem fieldWriteStep_post [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n W
   by_cases hcond : (decide (k < Γ.length) && match Γ[i']? with
       | some Ref => sourceField G (expand G Ref) f'
       | none => false) = true
-  case neg => rw [if_neg hcond] at hc; cases hc
-  rw [if_pos hcond] at hc
+  case neg => rw [ite_eq_right hcond] at hc; cases hc
+  rw [ite_eq_left hcond] at hc
   cases hc
   rw [HeapExpressionRules.writeSlots_eq hw] at hs ⊢
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
@@ -320,8 +320,8 @@ theorem fieldWriteStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n 
   by_cases hcond : (decide (k < Γ.length) && match Γ[i']? with
       | some Ref => sourceField G (expand G Ref) f'
       | none => false) = true
-  case neg => rw [if_neg hcond] at hc; cases hc
-  rw [if_pos hcond] at hc
+  case neg => rw [ite_eq_right hcond] at hc; cases hc
+  rw [ite_eq_left hcond] at hc
   cases hc
   rw [HeapExpressionRules.writeSlots_eq hw] at hpost ⊢
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
@@ -369,8 +369,8 @@ theorem scalarWrite_sound [DecidableEq ι] {G : NormalGraph ι} {Γ t T ρ n W h
   by_cases hcond : (decide (k < Γ.length) && match Γ[i']? with
       | some Ref => sourceField G (expand G Ref) f'
       | none => false) = true
-  case neg => rw [if_neg hcond] at hc; cases hc
-  rw [if_pos hcond] at hc
+  case neg => rw [ite_eq_right hcond] at hc; cases hc
+  rw [ite_eq_left hcond] at hc
   cases hc
   simp only [scalarWrite, hws, Bool.and_eq_true] at hw
   obtain ⟨hsk, hsc⟩ := hw
@@ -655,9 +655,9 @@ theorem selectedExits_entails (e : Evidence ι) {x : CallEffects.Exits CallEffec
       simp only [selectedEffect, Option.some.injEq] at hx he
       subst hx he
       by_cases hsp : flags.any id = true
-      · rw [if_pos hsp] at hp ⊢
+      · rw [ite_eq_left hsp] at hp ⊢
         exact hp
-      · rw [if_neg hsp] at hp ⊢
+      · rw [ite_eq_right hsp] at hp ⊢
         exact hp
     case sub =>
       cases ps with
@@ -1463,7 +1463,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
   have hfixedv : ∀ p ∈ jas.take k, isVal (instantiate 0 ρ p.term) = true :=
     fun p hp => valueOf p (by simp [List.mem_of_mem_take hp]) (hfixed0 p hp)
   rw [hany] at hparts
-  simp only [if_true] at hparts
+  simp only [ite_true] at hparts
   split at hparts
   case h_2 => exact hparts.elim
   rename_i El hel
@@ -1563,13 +1563,13 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
             obtain ⟨q', hq', rfl⟩ := List.mem_map.mp hq
             rcases q' with ⟨_ | _, p⟩
             · simp at hS
-            · simp only [if_true, Option.some.injEq] at hS
+            · simp only [ite_true, Option.some.injEq] at hS
               subst hS
               have := hpart _ hq'
-              simp only [if_true] at this
+              simp only [ite_true] at this
               have hm : p ∈ jas := List.mem_of_mem_drop (List.of_mem_zip hq').2
               have hro := hparts0 _ hq'
-              simp only [if_true] at hro
+              simp only [ite_true] at hro
               have heΓ : EnvOk G Γ ρ (n+1) W := by simpa [context p (by simp [hm])] using he
               refine ⟨meaning_adm G p.type, spreadsInto_sound this,
                 readOperand_instantiate hro (inScope p (by simp [hm])) heΓ, ?_⟩
@@ -1587,7 +1587,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
             have hm : q'.2 ∈ jas := List.mem_of_mem_drop (List.of_mem_zip hq').2
             rcases q' with ⟨_ | _, p⟩
             · have hv0 := hparts0 _ hq'
-              simp only [Bool.false_eq_true, if_false] at hv0
+              simp only [Bool.false_eq_true, ite_false] at hv0
               have hv := valueOf p (by simp [hm]) hv0
               refine ⟨hv, ?_⟩
               have hA : p.type = El := by simpa using hpart _ hq'
@@ -1658,7 +1658,7 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
       refine ⟨[], by simp, .inl rfl, ?_⟩
       simp only [List.append_nil]
       by_cases hsp : flags.any id = true
-      · rw [if_pos hsp]
+      · rw [ite_eq_left hsp]
         rcases hp with hvals | ⟨-, hops⟩
         · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inr (by simpa using hvals)) he hw hh href
         · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh href
@@ -1675,7 +1675,7 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨hact, hs⟩ := callRest_local_sound ht.1 hnos typed (fun p hm => by
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
           exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩) he hw hh href
-        rw [if_neg hsp]
+        rw [ite_eq_right hsp]
         exact hs
     case construct effect =>
       cases hsel
@@ -2011,7 +2011,7 @@ theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat
     rw [hfl] at hw; cases hw
     refine ⟨.arr (placeAt ls k h.length), ?_, ?_⟩
     · rw [List.getElem?_set_self (by simp; omega)]
-    · simp only [Footprints.Closed.at, Footprints.isArr, if_true]
+    · simp only [Footprints.Closed.at, Footprints.isArr, ite_true]
       exact .inr (.inl ⟨ls, _, rfl, rfl, fun n hd => placeAt_dense hd,
         fun x hx => (placeAt_mem hx).imp id (fun e => by omega),
         ⟨by rw [placeAt_length]; omega, fun _ => by rw [placeAt_length]; omega⟩⟩)

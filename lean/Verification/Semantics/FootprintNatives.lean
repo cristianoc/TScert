@@ -268,7 +268,7 @@ theorem Arr.unshiftMoves_up : ∀ (j : Nat) (a : Arr) (i : Nat), i < j → prese
     unfold Arr.unshiftMoves
     by_cases hij : i = j
     · subst hij
-      rw [if_pos hp, Arr.unshiftMoves_above i _ (i + 1) (by omega)]
+      rw [ite_eq_left hp, Arr.unshiftMoves_above i _ (i + 1) (by omega)]
       exact present_set_self _ _
     · apply Arr.unshiftMoves_up j _ i (by omega)
       split
@@ -339,7 +339,7 @@ theorem itemCount_ge {ls : List (Option Nat)} {n len : Nat} (hd : DensePrefix n 
         cases o with
         | none => simp [present] at h0
         | some l =>
-          simp only [List.take_succ_cons, List.filter_cons, Option.isSome_some, if_true,
+          simp only [List.take_succ_cons, List.filter_cons, Option.isSome_some, ite_true,
             List.length_cons]
           exact Nat.succ_le_succ (ih (fun i hi => by simpa [present] using hd (i + 1) (by omega)) (by omega))
 

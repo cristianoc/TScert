@@ -397,14 +397,14 @@ theorem _root_.Verification.StorageRole.slotRole_of_fitsKey {s : StorageRole} {k
     {r : Role} (hf : s.fitsKey key = true) (hc : s.concrete key v = some r) : SlotRole key (some r) := by
   unfold StorageRole.fitsKey at hf
   by_cases h1 : key = arraySpineKey
-  · rw [if_pos h1] at hf
+  · rw [ite_eq_left h1] at hf
     have hs : s = .arraySpine := by simpa using hf
     subst hs
     have hp := StorageRole.concrete_permits hc
     simp only [StorageRole.permits] at hp
     subst hp
     exact h1
-  · rw [if_neg h1] at hf
+  · rw [ite_eq_right h1] at hf
     have hs : s = .field ∨ s = .cell := by simpa using hf
     rcases hs with rfl | rfl <;>
       (simp only [StorageRole.concrete] at hc

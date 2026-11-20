@@ -274,7 +274,7 @@ theorem project_covers (S : ClassSummary) (bounded : Bool) (n : Nat) (c : Comple
     simp only [project, format, throwBounded] at hframe ⊢
     rw [show ∀ e : Effect, (e.summary n).get .exceptional = (e.summary n).exceptional from fun _ => rfl, hframe]
     by_cases ht : (bounded && N.getD .empty != Closed.top && k.le (N.getD .empty)) = true
-    · simp only [ht, if_true]
+    · simp only [ht, ite_true]
       simp only [Bool.and_eq_true] at ht
       exact Closed.post_mono ht.2 hp
     · simp only [Bool.not_eq_true] at ht

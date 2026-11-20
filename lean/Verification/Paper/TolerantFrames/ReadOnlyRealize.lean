@@ -362,12 +362,12 @@ theorem path_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c, PathCtx K c := by
   | @callArg K₀ f r args i hf hr hi hpre hK ih =>
     intro c
     refine (ih c).wrap' ⟨fun s => .invoke f r (args.set i s), fun t ht => ?_⟩
-    simp only [path, hf, hr, Bool.true_eq_false, if_false]
+    simp only [path, hf, hr, Bool.true_eq_false, ite_false]
     rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @constructArg K₀ f args i hf hi hpre hK ih =>
     intro c
     refine (ih c).wrap' ⟨fun s => .construct f (args.set i s), fun t ht => ?_⟩
-    simp only [path, hf, Bool.true_eq_false, if_false]
+    simp only [path, hf, Bool.true_eq_false, ite_false]
     rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
   | @makeArg K₀ cc ns inits i hi hpre hK ih =>
     intro c
@@ -384,7 +384,7 @@ theorem path_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c, PathCtx K c := by
     intro c
     refine (ih c).wrap' ⟨?_, fun t ht => ?_⟩
     rotate_left
-    · simp only [path, hK.not_val ht, *, if_true, if_false, Bool.true_eq_false]
+    · simp only [path, hK.not_val ht, *, ite_true, ite_false, Bool.true_eq_false]
       rfl
 
 /-- **Related runs have the same tags on their paths** (proved). -/

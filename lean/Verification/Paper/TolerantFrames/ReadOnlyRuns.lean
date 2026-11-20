@@ -297,7 +297,7 @@ theorem wfArgs_split : ∀ {xs : List Tm} {i : Nat} {a : Tm}, wfArgs xs = true �
   | b :: bs, 0, a, hw, h, _, ha => by
     simp only [List.getElem?_cons_zero, Option.some.injEq] at h
     subst h
-    simp only [wfArgs, ha, if_true, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
+    simp only [wfArgs, ha, ite_true, Bool.and_eq_true, frees_eq, List.all_eq_true] at hw
     refine ⟨hw.1, fun j x hx hj => ?_⟩
     cases j with
     | zero => exact (hj rfl).elim
@@ -427,7 +427,7 @@ theorem all_set {P : Tm → Prop} {xs : List Tm} {i : Nat} {b : Tm}
   obtain ⟨j, hj⟩ := List.getElem?_of_mem hx
   by_cases hji : j = i
   · subst hji
-    simp only [List.getElem?_set, if_true] at hj
+    simp only [List.getElem?_set, ite_true] at hj
     split at hj <;> simp_all
   · exact h j x hj hji
 

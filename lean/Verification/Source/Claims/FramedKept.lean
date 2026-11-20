@@ -41,15 +41,15 @@ theorem activeFrame_tag_ne {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen
     exact activeFrame_cong _ (by simp [activeFrame, hn, hfv]) (by simp [activeTag, path, wrap_head, hn, hfv]) (ih hlen cur)
   case callArg hfv hrv hai hpre hst ih =>
     have hn := notVal_of_step hst
-    refine activeFrame_cong _ (by simp only [activeFrame, hfv, hrv, Bool.true_eq_false, if_false]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, hfv, hrv, Bool.true_eq_false, if_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+    refine activeFrame_cong _ (by simp only [activeFrame, hfv, hrv, Bool.true_eq_false, ite_false]; exact activeArgs_at hai hpre hn)
+      (by simp only [activeTag, path, hfv, hrv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
   case constructL hst ih =>
     have hn := notVal_of_step hst
     exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
   case constructArg hfv hai hpre hst ih =>
     have hn := notVal_of_step hst
-    refine activeFrame_cong _ (by simp only [activeFrame, hfv, Bool.true_eq_false, if_false]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, hfv, Bool.true_eq_false, if_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+    refine activeFrame_cong _ (by simp only [activeFrame, hfv, Bool.true_eq_false, ite_false]; exact activeArgs_at hai hpre hn)
+      (by simp only [activeTag, path, hfv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
   case letC hst ih =>
     have hn := notVal_of_step hst
     exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
@@ -136,7 +136,7 @@ theorem activeFrame_tag_ne {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen
     simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; rfl
   case setGrow ls b _ _ v hv _ _ =>
     simp only [activeFrame, path, hv, show isVal (.arr ls) = true from rfl, show isVal (.num b) = true from rfl,
-      Bool.true_eq_false, if_false, activeTag, List.head?_cons, Option.map_some, Option.getD_some]
+      Bool.true_eq_false, ite_false, activeTag, List.head?_cons, Option.map_some, Option.getD_some]
   case lenStrThrow =>
     simp [activeFrame, path, activeTag, isVal]
   case arithThrow hb =>
@@ -189,7 +189,7 @@ theorem kept_step [DecidableEq (fr.F.at fr.C).Site] [Hashable (fr.F.at fr.C).Sit
     have hx := kstep_xstep hc hy hk
     have hrow := hx.2.2.2
     unfold StepHyp at hrow
-    rw [if_pos (kind_outside ho hd)] at hrow
+    rw [ite_eq_left (kind_outside ho hd)] at hrow
     obtain ⟨v', hv', hhold⟩ := (row_iff.mp hrow) ℓ v hprot hv
     simp only [lift, hΘ, Footprints.Change.Holds] at hhold hv'
     rw [hv', hhold, hv]

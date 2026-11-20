@@ -15,7 +15,7 @@ open Lean ProgramTyping RequestJson SourceElaboration ControlFlow PositiveGraphs
 
 /-- One step of `passGroup`'s fold. -/
 private def groupStep (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
-    (given : Option (Std.HashMap String Json)) (observe : Option String) (counting located : Bool)
+    («given» : Option (Std.HashMap String Json)) (observe : Option String) (counting located : Bool)
     (acc : List String × Option String) (i : Nat) : List String × Option String :=
   match f.passMember fuel i compare debugNode repeats given observe counting with
   | .ok m =>

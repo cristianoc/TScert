@@ -670,7 +670,7 @@ def interfaceNeeds (sc : ImportScope) : Except String (List ModuleNeed) := do
 complete module's reads. Selection changes the requested components, never
 the candidates or inputs of a component check. -/
 def requestedInterfaceNeeds (sc : ImportScope) (ast : Json) (names : Option (List String))
-    (given fixed own : List String := []) : Except String (List ModuleNeed) := do
+    («given» fixed own : List String := []) : Except String (List ModuleNeed) := do
   let roots ← importerReads sc ast names given fixed
   let mut pending := (own ++ roots.map (·.location)).eraseDups
   let mut needs : List ModuleNeed := []

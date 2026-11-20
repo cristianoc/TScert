@@ -196,7 +196,7 @@ theorem ruleAtoms_agree (hs : s.afterEnv = push u ρ) {k : Knowledge} {r : Arith
     refine forall₂_congr fun g _ => ?_
     rw [← linear_iff hs, shifted_holdsAt]
   · intro hall
-    simp only [ruleAtoms, hb, hps, hcs, hall, if_true]
+    simp only [ruleAtoms, hb, hps, hcs, hall, ite_true]
     exact conclusionAtoms_iff hs r.result cs
 
 /-- **`concatAtoms` is `stringConcat`'s conclusion.** -/

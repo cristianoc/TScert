@@ -490,7 +490,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
   have hpb : equations.graph.params b.label ≠ true := by
     simp [NormalGraph.params, equations.kind_application b]
   dsimp only [qLayerWithArgs]
-  rw [if_neg hpa, if_neg hpb, row A ha, row B hb]
+  rw [ite_eq_right hpa, ite_eq_right hpb, row A ha, row B hb]
   simp only [schemeSemWithArgs, boundedSem, lengths]
   refine and_congr Iff.rfl (forall_congr' fun q => forall_congr' fun hq => forall_congr' fun As => forall_congr' fun hlen =>
     imp_congr (equations.graph.domain.congr (make A ha) (make B hb) rfl
@@ -543,7 +543,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
       intro C hc
       cases construct
       · rfl
-      · simp only [tc, make, SchemeRow.body, if_true, Clause.map, List.map_map]
+      · simp only [tc, make, SchemeRow.body, ite_true, Clause.map, List.map_map]
         rfl
     rw [instance_body, instance_body, hbody A ha, hbody B hb]
     exact mapped_sem_agree equations.graph (assign η a.binders As) (assign θ b.binders As)

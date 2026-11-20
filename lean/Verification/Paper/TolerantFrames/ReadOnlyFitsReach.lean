@@ -97,15 +97,15 @@ theorem activeFrame_tag {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : 
     exact activeFrame_cong _ (by simp [activeFrame, hn, hfv]) (by simp [activeTag, path, wrap_head, hn, hfv]) (ih hlen cur)
   case callArg hfv hrv hai hpre hst ih =>
     have hn := notVal_of_step hst
-    refine activeFrame_cong _ (by simp only [activeFrame, hfv, hrv, Bool.true_eq_false, if_false]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, hfv, hrv, Bool.true_eq_false, if_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+    refine activeFrame_cong _ (by simp only [activeFrame, hfv, hrv, Bool.true_eq_false, ite_false]; exact activeArgs_at hai hpre hn)
+      (by simp only [activeTag, path, hfv, hrv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
   case constructL hst ih =>
     have hn := notVal_of_step hst
     exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
   case constructArg hfv hai hpre hst ih =>
     have hn := notVal_of_step hst
-    refine activeFrame_cong _ (by simp only [activeFrame, hfv, Bool.true_eq_false, if_false]; exact activeArgs_at hai hpre hn)
-      (by simp only [activeTag, path, hfv, Bool.true_eq_false, if_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
+    refine activeFrame_cong _ (by simp only [activeFrame, hfv, Bool.true_eq_false, ite_false]; exact activeArgs_at hai hpre hn)
+      (by simp only [activeTag, path, hfv, Bool.true_eq_false, ite_false, pathArgs_at _ hai hpre hn, wrap_head]) (ih hlen cur)
   case letC hst ih =>
     have hn := notVal_of_step hst
     exact activeFrame_cong _ (by simp [activeFrame, hn]) (by simp [activeTag, path, wrap_head, hn]) (ih hlen cur)
@@ -192,7 +192,7 @@ theorem activeFrame_tag {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') (hlen : 
     simp only [activeFrame, path, activeArgs_vals hvs, pathArgs_vals _ hvs, activeTag]; rfl
   case setGrow ls b _ _ v hv _ _ =>
     simp only [activeFrame, path, hv, show isVal (.arr ls) = true from rfl, show isVal (.num b) = true from rfl,
-      Bool.true_eq_false, if_false, activeTag, List.head?_cons, Option.map_some, Option.getD_some]
+      Bool.true_eq_false, ite_false, activeTag, List.head?_cons, Option.map_some, Option.getD_some]
   case lenStrThrow =>
     simp [activeFrame, path, activeTag, isVal]
   case arithThrow hb =>
@@ -229,10 +229,10 @@ theorem stepAt_site {F : Family} {C : Nat} {c : ComponentTag} {tv : TypeView} {d
       (g.alloc h.length (if stepKind F C c t t' = .outside then fun _ => none else d.site)).site := by
   unfold Ghost.stepAt
   split <;> rename_i hk
-  · rw [if_pos hk]; unfold outsideNextAt; split <;> rfl
-  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
-  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
-  · rw [if_neg (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
+  · rw [ite_eq_left hk]; unfold outsideNextAt; split <;> rfl
+  · rw [ite_eq_right (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
+  · rw [ite_eq_right (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
+  · rw [ite_eq_right (by rw [hk]; decide)]; exact (Ghost.crosses_site _ _)
 
 /-! ## The roots of outside code -/
 
@@ -349,7 +349,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact ih x hx r hr
   | makeGraphC _ _ _ _ _ hc _ _ _ _ _ _ ih =>
     intro r hr
-    simp only [vals, hc, Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false, List.nil_append, valsArgs_eq,
+    simp only [vals, hc, Bool.not_true, Bool.and_false, Bool.false_eq_true, ite_false, List.nil_append, valsArgs_eq,
       List.mem_flatMap] at hr
     obtain ⟨x, hx, hr⟩ := hr
     exact ih x hx r hr
@@ -404,7 +404,7 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
   | gotoC _ _ hc _ _ _ _ _ => intro r hr; simp [vals, hc] at hr
   | gotoOut hc hE henv _ _ =>
     intro r hr
-    simp only [vals, hc, Bool.false_eq_true, if_false, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
+    simp only [vals, hc, Bool.false_eq_true, ite_false, valsArgs_eq, List.mem_append, List.mem_flatMap] at hr
     rcases hr with (hr | ⟨x, hx, hr⟩) | hr
     · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)
     · obtain ⟨i, hi⟩ := List.getElem?_of_mem hx
@@ -414,11 +414,11 @@ theorem fits_roots {g : Ghost P} {n : Nat} :
     · exact vor_roots (vor_default henv) (fun _ => Sub.refl _) r hr
   | frameC _ _ _ hc _ _ _ _ _ _ _ _ ih =>
     intro r hr
-    simp only [vals, hc, if_true, List.nil_append, Bool.not_true] at hr
+    simp only [vals, hc, ite_true, List.nil_append, Bool.not_true] at hr
     exact ih r hr
   | frameOut hc hE henv _ _ _ ih =>
     intro r hr
-    simp only [vals, hc, Bool.false_eq_true, if_false, Bool.not_false, valsArgs_eq, List.mem_append,
+    simp only [vals, hc, Bool.false_eq_true, ite_false, Bool.not_false, valsArgs_eq, List.mem_append,
       List.mem_flatMap] at hr
     rcases hr with ((hr | ⟨x, hx, hr⟩) | hr) | hr
     · exact lowered_roots hE r (by simpa [valsArgs_eq] using hr)

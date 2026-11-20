@@ -50,7 +50,7 @@ theorem fits_elem {E : Fam} {r : Bool} {d : ArrayPresence} {n W vs} :
   · intro h
     refine ⟨by simp, by simp, fun i v A hv hA => ?_⟩
     simp only [positionFam, List.getElem?_nil, List.length_nil, Nat.sub_zero,
-      Nat.add_zero, Nat.zero_le, if_true, Option.some.injEq] at hA
+      Nat.add_zero, Nat.zero_le, ite_true, Option.some.injEq] at hA
     cases hA
     exact h v (List.mem_of_getElem? hv)
 
@@ -69,7 +69,7 @@ theorem positionFam_isSome {T : TupleF} {i : Nat}
       simp only
       rcases h with h | h
       · omega
-      · rw [if_pos (by omega)]; exact h
+      · rw [ite_eq_left (by omega)]; exact h
 
 /-- A tuple's element bound constrains the same-level argument values. -/
 theorem fits_bound {T : TupleF} {E : Fam}

@@ -56,14 +56,14 @@ theorem step_writes_active {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
     simpa [activeFrame, hn, hfv] using ih hv hne cur
   case callArg hfv hrv hai hpre hst ih =>
     have hn := notVal_of_step hst
-    simp only [activeFrame, hfv, hrv, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hfv, hrv, Bool.true_eq_false, ite_false]
     rw [activeArgs_at hai hpre hn]; exact ih hv hne cur
   case constructL hst ih =>
     have hn := notVal_of_step hst
     simpa [activeFrame, hn] using ih hv hne cur
   case constructArg hfv hai hpre hst ih =>
     have hn := notVal_of_step hst
-    simp only [activeFrame, hfv, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hfv, Bool.true_eq_false, ite_false]
     rw [activeArgs_at hai hpre hn]; exact ih hv hne cur
   case letC hst ih =>
     have hn := notVal_of_step hst
@@ -145,14 +145,14 @@ theorem step_writes_active {h h' : Heap} {t t' : Tm} (hs : Step h t h' t') :
   case writeField oid f fs c l' _ w hw hf _ =>
     by_cases he : l = l'
     · subst he
-      simp only [activeFrame, show isVal (.objAt fs c oid) = true from rfl, hw, Bool.true_eq_false, if_false]
+      simp only [activeFrame, show isVal (.objAt fs c oid) = true from rfl, hw, Bool.true_eq_false, ite_false]
       exact hf
     · exact (hne (by rw [List.getElem?_set_ne (Ne.symm he)]; exact hv)).elim
   case setPresent ls b l' _ w hw hl _ =>
     by_cases he : l = l'
     · subst he
       simp only [activeFrame, show isVal (.arr ls) = true from rfl, show isVal (.num b) = true from rfl, hw,
-        Bool.true_eq_false, if_false]
+        Bool.true_eq_false, ite_false]
       exact hl
     · exact (hne (by rw [List.getElem?_set_ne (Ne.symm he)]; exact hv)).elim
 
@@ -191,7 +191,7 @@ theorem Fits.active_aux :
         · rw [he]; exact .inr ((iha x hx cur).elim (fun he' => ⟨_, _, _, _, he' ▸ ha x hx⟩) id)
   | invokeC σ c π Sa Sr _ hfn _ _ hr ha _ _ _ _ _ ihr iha =>
     intro cur
-    simp only [activeFrame, hfn.val, Bool.true_eq_false, if_false]
+    simp only [activeFrame, hfn.val, Bool.true_eq_false, ite_false]
     split
     · exact .inr ((ihr cur).elim (fun he => ⟨_, _, _, _, he ▸ hr⟩) id)
     · rcases activeArgs_self_or (cur := cur) (t := .invoke _ _ _) _ with he | ⟨x, hx, he⟩

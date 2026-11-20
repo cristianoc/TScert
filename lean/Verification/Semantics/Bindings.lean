@@ -131,7 +131,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
       · subst i; simp [subst, push]
       · have hi : ¬ i < d + 1 := by omega
         have heq : i - d = (i - (d + 1)) + 1 := by omega
-        simp only [if_neg hi, if_neg h, heq, push]
+        simp only [ite_eq_right hi, ite_eq_right h, heq, push]
         exact (hρ _).closed d a
   case invoke f r args ihf ihr iha =>
     rw [ihf, ihr, List.map_map]

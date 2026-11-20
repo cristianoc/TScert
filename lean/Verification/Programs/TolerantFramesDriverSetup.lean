@@ -33,13 +33,13 @@ structure SetupOk (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ
     (SinglePass.loopHeads c.P.toArray c.start).1.set! c.start true else (SinglePass.loopHeads c.P.toArray c.start).1
   reached : env.reached = (SinglePass.loopHeads c.P.toArray c.start).2
   stated : env.stated = byLabel c.P.toArray.size c.assertions
-  given : ∃ counts, env.given = (SinglePass.setupGiven c.P.toArray.size c.start env.isHead env.stated
+  «given» : ∃ counts, env.given = (SinglePass.setupGiven c.P.toArray.size c.start env.isHead env.stated
     (byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)) c.entryIndices c.entrySeparation counts).1
   codes : env.codes = c.codes
   checker : env.passChecker = c.passChecker
   bound : env.bound = c.bound
   goal : env.goal = c.goal
-  ensures : env.ensures = c.ensures
+  «ensures» : env.ensures = c.ensures
   givenImplies : env.givenImplies = c.givenImplies
   givenArgs : env.givenArgs = c.givenArgs
   givenInputs : env.givenInputs = c.givenInputs
@@ -140,7 +140,7 @@ theorem setupGiven_get (n start : Nat) (isHead : Array Bool) (stated : Array (Op
         rw [ih _ (by simp [hsz]) hnd (fun y hy => hlt y (List.mem_cons_of_mem _ hy))]
         by_cases htx : t = x
         · subst htx
-          simp only [hh, and_true, List.mem_cons, true_or, if_true]
+          simp only [hh, and_true, List.mem_cons, true_or, ite_true]
           have hts : t < acc.1.size := by have := hlt t (List.mem_cons_self ..); omega
           split
           · exact absurd ‹t ∈ xs› hx
@@ -188,7 +188,7 @@ theorem SetupOk.envFacts {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G
     funext t
     simp only [envHead, passHeads, passIsHead, hs.isHead]
   have hstartHead : env.isHead[c.start]! = true := by
-    rw [hs.isHead, if_pos hlt, Array.set!_eq_setIfInBounds, getElem!_def,
+    rw [hs.isHead, ite_eq_left hlt, Array.set!_eq_setIfInBounds, getElem!_def,
       Array.getElem?_setIfInBounds_self_of_lt (by simp [SinglePass.loopHeads, SinglePass.Dfs.marks]; exact hlt)]
   have hstated : ∀ l, env.stated[l]! = passStated c l := fun l => by
     rw [hs.stated, getElem!_eq_getD_none]; rfl
@@ -196,14 +196,14 @@ theorem SetupOk.envFacts {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G
   refine envFacts_of_loopHeads hs.nodes hs.n hs.reached hhead (by rw [hs.n]; exact hlt)
     (by rw [hs.claims, hs.n]; exact hs.claimed) hs.claims (fun t ht => ?_) hs.codes hs.checker hs.bound hs.goal
     hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_ hs.merging hs.regional hs.startKept hs.framed
-  · rw [hgiven, setupGiven_get, if_neg (fun h => by rw [ht] at h; exact Bool.false_ne_true h.2)]
+  · rw [hgiven, setupGiven_get, ite_eq_right (fun h => by rw [ht] at h; exact Bool.false_ne_true h.2)]
   · refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)).getD c.start none).getD [], ?_, ?_⟩
     · have he := hs.entry
       rw [hs.givenImplies, hs.givenArgs, hs.givenInputs]
       unfold passStated
       rw [← Array.getD_eq_getD_getElem?]
       exact he
-    · rw [hgiven, setupGiven_get, if_pos ⟨hlt, hstartHead⟩, if_pos (by simp), hstated c.start,
+    · rw [hgiven, setupGiven_get, ite_eq_left ⟨hlt, hstartHead⟩, ite_eq_left (by simp), hstated c.start,
         getElem!_eq_getD_none (byLabel _ (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates)), Array.getD_eq_getD_getElem?]
       rfl
 
@@ -226,9 +226,9 @@ theorem inDeg_inner (N : Nat) (isHead : Array Bool) (t : Nat) (ht : t < N) (hh :
       rw [h2, Array.getElem?_modify]
       by_cases hx : x.label = t
       · subst hx
-        rw [if_pos rfl, Array.getElem?_eq_getElem (by omega)]
+        rw [ite_eq_left rfl, Array.getElem?_eq_getElem (by omega)]
         simp; omega
-      · rw [if_neg hx, List.map_cons, List.count_cons]
+      · rw [ite_eq_right hx, List.map_cons, List.count_cons]
         simp [hx]
     · rename_i hc
       obtain ⟨h1, h2⟩ := inDeg_inner N isHead t ht hh ts a hs
@@ -279,7 +279,7 @@ theorem inDegrees_get (nodes : Array Node) (reached isHead : Array Bool) (t : Na
         obtain ⟨h1, h2⟩ := ih _ i1
         refine ⟨h1, ?_⟩
         rw [h2, i2]
-        simp only [List.map_cons, List.sum_cons, SinglePass.nodeSucc, *, if_true]
+        simp only [List.map_cons, List.sum_cons, SinglePass.nodeSucc, *, ite_true]
         omega
       · obtain ⟨h1, h2⟩ := ih a hs
         refine ⟨h1, ?_⟩

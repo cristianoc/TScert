@@ -68,7 +68,7 @@ budget. -/
 structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → Prop) (P : Program)
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
-    (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
+    (bound : Option RunBound) («ensures» : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentSpineRegion × Bool)) : Prop where
   /-- The graph's node expressions mention no location
   (`ObjectCoherence.sourceTerm`): their references are valid in every world
@@ -85,11 +85,11 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
       (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto E K start L d comp)
-  ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
+  ensured : «ensures» ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d comp,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
     HeapObservations.SafePost (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d comp)
+      (fun h' v => GraphCode.EnsuresAt «ensures» ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d comp)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d comp,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d comp) →
@@ -138,7 +138,7 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   bound : Option RunBound
   givenImplies : Array (List (PromiseCalls.Implication ι))
   givenArgs : Array (List Nat)
-  ensures : List HeapKnowledge.IndexFact
+  «ensures» : List HeapKnowledge.IndexFact
   givenInputs : Array (List (Nat × Nat))
   entrySeparation : HeapSeparation.Separation
   observe : Option Nat

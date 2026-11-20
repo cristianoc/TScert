@@ -156,7 +156,7 @@ theorem appendSlots_values {n : Nat} {ρ : Env}
     case var i =>
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hs
       intro a ha
-      simp only [instantiateArgs, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, List.mem_cons] at ha
+      simp only [instantiateArgs, instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, List.mem_cons] at ha
       rcases ha with rfl | ha
       · exact hv i hs.1
       · exact ih hs.2 a ha
@@ -207,7 +207,7 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
           (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto]) 0
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
         rw [hb]
-        simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
+        simp only [Nat.not_lt_zero, ite_false, Nat.sub_zero]
         apply Steps.next (Step.makeFields ?_ rfl) Steps.refl
         intro v hv
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
@@ -345,7 +345,7 @@ theorem spineReaders_sound {k : Knowledge} {s x : Nat} {ρ h} (hx : x ∈ spineR
     simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.contains_iff_mem] at hc
     obtain ⟨⟨⟨hal, hopt⟩, hfld⟩, hval⟩ := hc
     have hl := hk.2.2.1 g hg
-    simp only [hal, hopt, Bool.false_eq_true, if_false] at hl
+    simp only [hal, hopt, Bool.false_eq_true, ite_false] at hl
     obtain ⟨flds, c, oid, l, hcell, hf, hl⟩ := hl
     refine ⟨l, ?_, ?_⟩
     · rw [hcell]; simp only [Footprints.spineOf, Footprints.fieldsOf]; rw [← hfld]; exact hf
@@ -544,7 +544,7 @@ def stepAtoms [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Kno
 theorem binop_bitAnd {a b u : Tm} (h : binop .bitAnd a b = some u) :
     ∃ x y, a = .num x ∧ b = .num y ∧ u = .num (arithBits .bitAnd x y) := by
   unfold binop at h
-  simp only [reduceCtorEq, if_false, Arith.relational, Bool.false_eq_true] at h
+  simp only [reduceCtorEq, ite_false, Arith.relational, Bool.false_eq_true] at h
   split at h <;> simp_all [bigintArith] <;> exact absurd h.1 (by decide)
 
 theorem binop_relational {op : Arith} {x y : UInt64} {u : Tm} (hop : op.relational = true)
@@ -552,7 +552,7 @@ theorem binop_relational {op : Arith} {x y : UInt64} {u : Tm} (hop : op.relation
   unfold binop at h
   have hne : op ≠ .eq := by rintro rfl; simp [Arith.relational] at hop
   have hnl : op ≠ .looseEq := by rintro rfl; simp [Arith.relational] at hop
-  simp only [hne, hnl, if_false, hop, if_true, relationalValue, relNumeric, Option.bind_some,
+  simp only [hne, hnl, ite_false, hop, ite_true, relationalValue, relNumeric, Option.bind_some,
     numericRelation, Option.some.injEq] at h
   exact h.symm
 
@@ -583,7 +583,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     split
     · rename_i hst
       obtain ⟨ls, hls, hmax⟩ := spineSlot_sound hst he
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hls] at hs ⊢
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hls] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_run hs)
       obtain ⟨-, rfl, rfl⟩ := hq
       intro atom ha _
@@ -596,7 +596,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     · rename_i hab
       have ha := hval a hab.1
       have hb := hval b hab.2
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hs ⊢
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run ha hb hs)
       obtain ⟨-, rfl, hu⟩ := hq
       split
@@ -620,7 +620,7 @@ theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       · -- `index-equal`
         intro atom hat hcond
         have hc := hcond 0
-        simp only [binop, if_true, Option.map_eq_some_iff] at hu
+        simp only [binop, ite_true, Option.map_eq_some_iff] at hu
         obtain ⟨r, hr, rfl⟩ := hu
         rcases List.mem_append.mp hat with hat | hat
         · split at hat
@@ -1313,7 +1313,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
   | var a =>
     simp only [linearAtoms]
     by_cases ha : a < Γ.length
-    · simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, ha, true_and, if_true] at hs ⊢
+    · simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, ha, true_and, ite_true] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (value_run (hval a ha) hs)
       obtain ⟨-, rfl, rfl⟩ := hq
       refine indexHolds_cat (indexHolds_cat ?_ ?_) (indexHolds_cat (copiedAtoms_holds hk) (pastCopies_holds hk))
@@ -1335,7 +1335,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       · exact indexHolds_nil _ _
     · have hl : typeInt G Γ a = none := by
         simp [typeInt, List.getElem?_eq_none (show Γ.length ≤ a by omega)]
-      simp only [ha, false_and, if_false, List.append_nil, hl]; exact none_case
+      simp only [ha, false_and, ite_false, List.append_nil, hl]; exact none_case
   | lenOf a =>
     cases a with
     | var s =>
@@ -1343,7 +1343,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       split
       · rename_i hst
         obtain ⟨ls, hls, hmax⟩ := spineSlot_bound hst he
-        simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hls] at hs ⊢
+        simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hls] at hs ⊢
         refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_run hs)
         obtain ⟨-, -, rfl⟩ := hq
         have hsafe : SafeIntegers.SafeInt (bitsOfNat ls.length) (ls.length : Int) :=
@@ -1362,7 +1362,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         · -- Str-Length
           rename_i hst
           obtain ⟨str, hstr⟩ := stringSlot_sound hst he
-          simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hstr] at hs ⊢
+          simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hstr] at hs ⊢
           refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (len_str_run hs)
           obtain ⟨-, rfl, rfl, hmax⟩ := hq
           have hsafe : SafeIntegers.SafeInt (bitsOfNat (utf16Units str).length) ((utf16Units str).length : Int) :=
@@ -1398,7 +1398,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
       obtain ⟨rfl, rfl, rfl, hx, hy⟩ := concatOperands_sound hc
       obtain ⟨s, hs0⟩ := stringSlot_sound hx he
       obtain ⟨t, ht0⟩ := stringSlot_sound hy he
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hs0, ht0] at hs ⊢
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hs0, ht0] at hs ⊢
       refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run rfl rfl hs)
       obtain ⟨-, -, hu⟩ := hq
       have hu' : concatString s t = some u := by simpa (config := { decide := true }) [binop, Arith.relational] using hu
@@ -1512,7 +1512,7 @@ theorem strictAnswer_sound {op : Arith} {left q : Bool} (h : strictAnswer op = s
   intro hr
   have ha := answer_sound op (if left then i else L) (if left then L else i)
   cases op <;> simp only [strictAnswer, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h <;>
-    obtain ⟨rfl, rfl⟩ := h <;> simp only [if_true, Bool.false_eq_true, if_false] at hr ha <;>
+    obtain ⟨rfl, rfl⟩ := h <;> simp only [ite_true, Bool.false_eq_true, ite_false] at hr ha <;>
     rw [hr] at ha <;> simp only [answerHolds] at ha <;> omega
 
 /-- The atoms of `i < n` with `n` a length, conditional on the answer `q` of
@@ -1598,7 +1598,7 @@ theorem lengthAtoms_holds {k : Knowledge} {Γ : List (Ty ι)} {G : NormalGraph �
   simp only [lengthAtoms] at hnil ⊢
   split
   · rename_i hab
-    simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hs ⊢
+    simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
     refine weaken (fun h' u hq => ⟨hq.1, ?_⟩) (arith_run (hval a hab.1) (hval b hab.2) hs)
     obtain ⟨-, rfl, hu⟩ := hq
     have pick : ∀ i, intSlot k.indices i = true →
@@ -1890,7 +1890,7 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
         (tyIn_sound (G.sorted G.env) (Bool.and_eq_true _ _ |>.mp htypes).2 hv).1
         (by simpa [instantiate, hb] using href)
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hb]
       apply HeapObservations.of_value_property (fun _ _ _ u _ => ?_)
       · exact Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
       · exact HeapExpressionRules.ordinaryOutput_holds hk u _
@@ -2279,7 +2279,7 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
           (.makeAt .absent [arraySpineKey, CallArguments.protoField] [.var 0, .var proto]) 0
         simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil] at hb
         rw [hb]
-        simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
+        simp only [Nat.not_lt_zero, ite_false, Nat.sub_zero]
         apply Steps.next (Step.makeFields ?_ rfl) Steps.refl
         intro v hv
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
@@ -2478,7 +2478,7 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
     rcases hre' with ⟨he, -⟩ | ⟨st', he, hst', hls'⟩
     · cases he
     · cases he
-      simp only [kindValue, lengthOf, hst, hls', hmax, if_true]
+      simp only [kindValue, lengthOf, hst, hls', hmax, ite_true]
 
 theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {a : Nat}
     {ρ n W h h'} {target : Nat} {xs : List (Option Nat)} {written : Option Nat}
@@ -2751,7 +2751,7 @@ theorem boundedWrite_spine [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       have hval : isVal (ρ v) = true := (meaning_value hv).1
       have hslt : s < h.length := (List.getElem?_eq_some_iff.mp hl).1
       have hle' : idx ≤ ls.length := by simpa using hle
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hb]
       rw [hoi] at hsafe' ⊢
       refine elementWrite_post hfl hl hval (fun cell hcell => ?_) (fun i' hi' _ => ?_) hsafe'
       · have hlt : idx < ls.length := by
@@ -2922,7 +2922,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     by_cases hcond : (!(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
         (ExpressionEffects.elemWriteStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0)) = true
-    · rw [if_pos hcond]
+    · rw [ite_eq_left hcond]
       obtain ⟨⟨-, hws⟩, hent⟩ := Bool.and_eq_true_iff.mp hcond |>.imp_left Bool.and_eq_true_iff.mp
       obtain ⟨wi, hwi⟩ := Option.isSome_iff_exists.mp hws
       have hgrow := HeapExpressionRules.stableFirst_frame he hw hh
@@ -2950,7 +2950,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
       exact compose_holds (unconditionalLinear_holds hk.2.2.2.2.2) (keptOf_sound hch hfirst)
         (StepRelation.join_holds hR (growth_holds (grownOf_sound hch hfirst))) F hF
-    · rw [if_neg hcond]
+    · rw [ite_eq_right hcond]
       exact weaken (fun _ _ _ => indexHolds_nil _ _) hst
   refine weaken (fun h' _ hq => ?_) (safePost_and hst happ)
   have hb0 := hbound h' hq.1
@@ -3096,7 +3096,7 @@ theorem boundedCells_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     simpa [Footprints.spineOf, Footprints.fieldsOf, hoi] using hst
   have hval : isVal (ρ v) = true := (meaning_value (he.2 v _ (List.getElem?_eq_getElem hvl))).1
   rw [boundedSlots_eq hslots] at hs ⊢
-  simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb, hoi] at hs ⊢
+  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hb, hoi] at hs ⊢
   exact writtenCells_sound hk hfl rfl (fun R' hR' => HeapExpressionRules.valuesAt_sound hR' he hk) hw hh
     (HeapObservations.erase hs)
 
@@ -3197,7 +3197,7 @@ theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   have hval : isVal (ρ v) = true := (meaning_value (he.2 v _ (List.getElem?_eq_getElem hvl))).1
   rw [boundedSlots_eq hslots] at hs ⊢
   have hsafe := HeapObservations.erase hs
-  simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
+  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero, hoi, hb] at hsafe ⊢
   exact writeAtoms_holds he hk hh hρ hoi hfl hl hval hsafe
 
 /-- The effect of a call extending the array spine of its receiver, the
@@ -3266,7 +3266,7 @@ theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs_eq_map, List.map_map,
       List.mem_map, Function.comp_apply] at hm
     obtain ⟨i, hi, rfl⟩ := hm
-    simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
+    simp only [Nat.not_lt_zero, ite_false, Nat.sub_zero]
     exact (meaning_value (he.2 i _ (List.getElem?_eq_getElem (hlt i hi)))).1
   have hlen : h.length ≤ h'.length := by
     cases hl : h.length with
@@ -3337,12 +3337,12 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     · split
       · exact hr.1.1.2.2.2.1
       · have hp := hr.1.2.2
-        simp only [*, Bool.false_eq_true, if_false] at hp
+        simp only [*, Bool.false_eq_true, ite_false] at hp
         exact hp.1
     · split
       · exact HeapKnowledge.indexHolds_nil _ _
       · have hp := hr.1.2.2
-        simp only [*, Bool.false_eq_true, if_false] at hp
+        simp only [*, Bool.false_eq_true, ite_false] at hp
         exact hp.2
   normal := base.normal
   normal_sound := by

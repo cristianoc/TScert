@@ -219,7 +219,7 @@ theorem passSteps_value {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
             simp only [Option.orElse, Option.some.injEq] at hc
             subst hc
             simp only [checkStepUsing, checkStepResult, hslot, CheckResult.value_orElse, checkedOutput_value_tree,
-              treeChecked_accepted ht, Bool.and_true, hm, if_true, Option.orElse]
+              treeChecked_accepted ht, Bool.and_true, hm, ite_true, Option.orElse]
           · right; right
             simp only [Option.orElse] at hc
             split at hc
@@ -347,7 +347,7 @@ theorem ordinary_select_eq {G : NormalGraph ι} {images : InstanceImageCheck G} 
   simp only [Checker.ordinary, passOrdinary, ordinaryOver, Checker.keepingStable, Checker.boundedWrites,
     Checker.indexing, Checker.emptyArrays, Checker.negatingSlots, Checker.ensuringCalls, Checker.elementCalls,
     Checker.requiringCalls, Checker.allocatingCalls, Checker.keepingOwnCalls, Checker.keepingCalls,
-    Checker.steps, passSteps, hok, if_true]
+    Checker.steps, passSteps, hok, ite_true]
 
 /-- **The pass's selected output is `passOrdinary`'s `run`**: the premise
 every step theorem of this development takes of a checker's `run`. -/
@@ -423,7 +423,7 @@ theorem passTreeCheck_ok {pc : SinglePass.PassChecker G images} {kE : HeapKnowle
     passTreeOk G images kE codes sums e = true := by
   unfold passTreeCheck at hc
   rw [hs] at hc
-  simp only [Bool.false_eq_true, if_false] at hc
+  simp only [Bool.false_eq_true, ite_false] at hc
   unfold passTreeOk
   split at hc
   · rename_i hp; rw [hp]
@@ -446,7 +446,7 @@ theorem passWholeCheck_ok {pc : SinglePass.PassChecker G images} {kE kE' : HeapK
     (hs : pc.selectChecks = false) : passTreeOk G images kE' codes sums e = true := by
   unfold passTreeCheck at hc
   rw [hs] at hc
-  simp only [Bool.false_eq_true, if_false] at hc
+  simp only [Bool.false_eq_true, ite_false] at hc
   unfold passTreeOk
   split at hc
   · rename_i hp; rw [hp]

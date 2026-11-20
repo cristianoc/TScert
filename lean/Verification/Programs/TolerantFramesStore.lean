@@ -200,7 +200,7 @@ theorem remove_absent {s : Store} (w : StoreWF s) (a : Atom) : a ∉ storeAll (s
   have hl : s.live.contains a.canon = true := by rw [hc]; exact Std.HashSet.contains_iff_mem.mpr (storeAll_live w hs)
   unfold Store.remove at h
   dsimp only at h
-  rw [if_pos hl] at h
+  rw [ite_eq_left hl] at h
   rcases List.mem_append.mp h with h | h
   · have := (Std.HashSet.mem_erase.mp (mem_keysOf.mp h)).1
     rw [hc] at this

@@ -192,7 +192,7 @@ theorem ofPass_heads (r : SinglePass.Walk ι) (heads : Nat → Bool) :
     ∀ t, heads t = true → ∀ e ∈ (ofPass r heads).incoming t,
       e = ((ofPass r heads).entry t, (ofPass r heads).implies t) := by
   intro t ht e he
-  simp only [ofPass, ht, if_true] at he
+  simp only [ofPass, ht, ite_true] at he
   split at he
   · exact List.mem_singleton.mp he
   · simp at he

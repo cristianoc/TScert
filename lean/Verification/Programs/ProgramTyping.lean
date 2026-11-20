@@ -821,14 +821,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
-      simp only [instanceTWithArgs, sigsT, hcon, Bool.false_eq_true, if_false]
+      simp only [instanceTWithArgs, sigsT, hcon, Bool.false_eq_true, ite_false]
       exact ⟨ho.1, ho.2⟩
     refine ⟨i, List.mem_singleton_self i, ?_⟩
     change qDenoteWithArgs G (mixedParameters G) (G.env, i) j U _
     rw [qDenoteWithArgs_unfold]
-    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
+    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, ite_false]
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
-    simp only [Callee, hcon, Bool.false_eq_true, if_false]
+    simp only [Callee, hcon, Bool.false_eq_true, ite_false]
     exact ⟨_, _, _, rfl, callable_of_kind hkind.1, by simpa [Scoped, vs, instantiate] using hsc⟩
   | @ctorScheme Γ Undef i s arity start E K caps comp hp hq hcon hrest hu hspec hcf hlt hcap ih =>
     obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
@@ -869,7 +869,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           intro v hv
           obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
           exact meaning_value (hcapv c hc) |>.1)
-      simp only [instanceTWithArgs, sigsT, hcon, if_true, instanceSigs,
+      simp only [instanceTWithArgs, sigsT, hcon, ite_true, instanceSigs,
         instanceRestsWithArgs, hrest, List.map_nil]
       refine ⟨?_, ?_⟩
       · have hexc : excOf (reassign G (assign G.env s.binders As)) = excOf G := rfl
@@ -883,9 +883,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     refine ⟨i, List.mem_singleton_self i, ?_⟩
     change qDenoteWithArgs G (mixedParameters G) (G.env, i) j U _
     rw [qDenoteWithArgs_unfold]
-    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
+    simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, ite_false]
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
-    simp only [Callee, hcon, if_true]
+    simp only [Callee, hcon, ite_true]
     exact ⟨_, _, _, _, _, _, _, _, _, rfl, by simpa [Scoped, vs, instantiate] using hsc⟩
   | @ctorGraph Γ F U L S arity start E K caps parts comp hr hu hnd hp hspec hrest hlt hcap hpay hfit ih ihc =>
     intro n W h ρ he hw hh href
@@ -1125,10 +1125,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
             rcases p with ⟨_ | _, A, t⟩
             · simp at hS
-            · simp only [if_true, Option.some.injEq] at hS
+            · simp only [ite_true, Option.some.injEq] at hS
               subst hS
               have := hpart _ hp'
-              simp only [if_true] at this
+              simp only [ite_true] at this
               exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
           hw hh hfF
         · intro q hq j hj U hxU hu heap hok
@@ -1402,7 +1402,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         obtain ⟨v, hv⟩ := exists_mem_zip_left hpl hp'
         refine ⟨(p, v), hv, rfl, ?_⟩
         have hns' : st.contains p.1 = false := hns
-        simp only [fam, hns', Bool.false_eq_true, if_false]
+        simp only [fam, hns', Bool.false_eq_true, ite_false]
       refine ⟨flds, oid, hobj, fun f s T hm l hl => ?_, fun f s T hm => ?_⟩
       · obtain ⟨q, hq, rfl, rfl⟩ := hfs f s T hm
         exact hown _ _ _ (mem_zip_map_zip Prod.fst (fun q => (role q, fam q)) hq) l hl
@@ -1424,7 +1424,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨flds, l, c, oid, he', hl, hw', hag⟩ := hat (p, v) hv
       refine ⟨v, flds, l, c, oid, he', hl, hw', fun i hi W' u => ?_⟩
       have := hag i hi W' u
-      simp only [fam, hc, if_true] at this
+      simp only [fam, hc, ite_true] at this
       exact this
     refine (represents_sem hr k V _).mpr ⟨⟨⟨hrecA, by simp, fun _ _ _ he => by
         cases he; exact slots_lookup_none hhostp⟩, fun f T hm => ?_,
@@ -2176,10 +2176,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
         rcases p with ⟨_ | _, A, t⟩
         · simp at hS
-        · simp only [if_true, Option.some.injEq] at hS
+        · simp only [ite_true, Option.some.injEq] at hS
           subst hS
           have := hparts _ hp'
-          simp only [if_true] at this
+          simp only [ite_true] at this
           exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
       hw hh href
       (by
@@ -2277,10 +2277,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
             rcases p with ⟨_ | _, A, t⟩
             · simp at hS
-            · simp only [if_true, Option.some.injEq] at hS
+            · simp only [ite_true, Option.some.injEq] at hS
               subst hS
               have := hpart _ hp'
-              simp only [if_true] at this
+              simp only [ite_true] at this
               exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
           hw hh (by simpa [List.map_map, Function.comp_def] using hfF)
         · intro j hj U hxU hu heap hok

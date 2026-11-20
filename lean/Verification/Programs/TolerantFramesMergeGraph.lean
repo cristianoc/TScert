@@ -100,24 +100,24 @@ incoming edge state takes it as it is; a node with several takes their merge
 incoming state has the context's width, a well-formed store and names below
 the counter, and the start names are below it; every node an edge state
 enters is visited. -/
-structure Traversed (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (given : Nat → Bool)
+structure Traversed (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) («given» : Nat → Bool)
     (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) : Prop where
   visited : ∀ t, w.incoming t ≠ [] → w.visited t
-  single : ∀ t e, given t = false → w.incoming t = [e] → w.entry t = e.1 ∧ w.implies t = e.2
-  merge : ∀ t, given t = false → 2 ≤ (w.incoming t).length →
+  single : ∀ t e, «given» t = false → w.incoming t = [e] → w.entry t = e.1 ∧ w.implies t = e.2
+  merge : ∀ t, «given» t = false → 2 ≤ (w.incoming t).length →
     w.entry t = (SinglePass.mergeState G (ctx t) ((w.incoming t).map (·.1)) (edgesIn t) (fresh t)).state ∧
     w.implies t = (SinglePass.mergeState G (ctx t) ((w.incoming t).map (·.1)) (edgesIn t) (fresh t)).implies
-  width : ∀ t, given t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t, e.1.names.length = (ctx t).length
-  wf : ∀ t, given t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t, StoreWF e.1.store
-  below : ∀ t, given t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t, StateBelow e.1 (fresh t)
-  startBelow : ∀ t, given t = false → 2 ≤ (w.incoming t).length → ∀ x ∈ startNames, x < fresh t
+  width : ∀ t, «given» t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t, e.1.names.length = (ctx t).length
+  wf : ∀ t, «given» t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t, StoreWF e.1.store
+  below : ∀ t, «given» t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t, StateBelow e.1 (fresh t)
+  startBelow : ∀ t, «given» t = false → 2 ≤ (w.incoming t).length → ∀ x ∈ startNames, x < fresh t
 
 /-- **(Named hypothesis) A head's given state holds where an edge state
 into it holds**: the head entry's theorem from the edge check
 (`HeadEstablishes`, Leg 8's interface with the edge check). -/
-def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (given : Nat → Bool)
+def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) («given» : Nat → Bool)
     (m : Nat) : Prop :=
   ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ε t ρ m s →
     StateHolds G (w.entry t) (w.implies t) startNames ε ρ m s
@@ -125,7 +125,7 @@ def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε 
 /-- **The merges' premises**: the pass's `linearNear` is its search on fuel
 (`LinearNearFuelEq`), and at each merge the joined implications it keeps
 (`joinedChecked`) hold wherever an edge state into the merge holds. -/
-def MergesSound (G : NormalGraph ι) (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
+def MergesSound (G : NormalGraph ι) (w : Walk ι) («given» : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) : Prop :=
   LinearNearFuelEq ∧ ∀ t, given t = false → 2 ≤ (w.incoming t).length →
     ∀ startNames ε m ρ (s : IndexedHeap), edgePre G w startNames ε t ρ m s →

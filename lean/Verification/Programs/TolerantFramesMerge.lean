@@ -83,7 +83,7 @@ theorem mergeEqAtoms_holds {int : Bool} {φ x : Nat} {η : Env} {h : Heap} (heq 
       obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp (hint rfl)
       have hv : ∀ y, η y = η x → HeapKnowledge.termValue ε η h (.value y) = some k := by
         intro y hy; simp [hy, hk]
-      simp only [Bool.not_true, Bool.false_eq_true, if_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
+      simp only [Bool.not_true, Bool.false_eq_true, ite_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
       rcases ha with rfl | rfl <;>
       · intro y hy _
         simp only [List.mem_singleton] at hy; subst hy

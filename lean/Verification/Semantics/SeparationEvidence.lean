@@ -56,7 +56,7 @@ theorem pathViews_read {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLi
         rw [ih g.value hm]
         have hx : ρ g.cell = ρ x := HeapLinks.aliases_eq hl hal
         have hlink := hl g hg
-        simp only [ha, ho, Bool.false_eq_true, if_false] at hlink
+        simp only [ha, ho, Bool.false_eq_true, ite_false] at hlink
         obtain ⟨flds, c, oid, l, hobj, hlook, hv⟩ := hlink
         rw [← hx, hobj]
         simp only [readPath]

@@ -352,7 +352,7 @@ theorem kstep_of_xstep {a b : Conf × Ghost (fr.F.at fr.C)} (hx : XStep fr.F fr.
   obtain ⟨hs, -, hg, hh⟩ := hx
   refine ⟨hs, hg.trans (fr.next_conf a.2 a.1 b.1).symm, ?_⟩
   refine (fr.keeps_conf a.2 (Ghost.next fr.F fr.C none fr.chkConf a.1 b.1 a.2) a.1 b.1).mpr fun ho => ?_
-  unfold StepHyp at hh; rw [if_pos ho] at hh; exact hh
+  unfold StepHyp at hh; rw [ite_eq_left ho] at hh; exact hh
 
 /-- **Every step of the paper's executions from a reached state reaches a
 state** (proved): the admissible starts of `CallOf` the frame's

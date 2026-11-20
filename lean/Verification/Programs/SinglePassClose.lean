@@ -70,9 +70,9 @@ theorem stepCheck_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (
   · unfold stepCheck
     simp only [WalkEnv.rebound]
     by_cases hg : env.grading = true
-    · simp only [hg, if_true]
+    · simp only [hg, ite_true]
     · simp only [Bool.not_eq_true] at hg
-      simp only [hg, Bool.false_eq_true, if_false]
+      simp only [hg, Bool.false_eq_true, ite_false]
 
 /-- **A step's visit does not see a bound its step admits** (proved): where
 the walk with no bound's step at `l` passes the footprint check at the
@@ -299,7 +299,7 @@ theorem driveAdmits_of_records (G : NormalGraph ι) (images : InstanceImageCheck
               (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]!
                 en.entry sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)) ∈ σf.walk.visits := by
             rw [hm, hp, hrec]
-            simp only [stepCheck, hg, if_true, pushRecord, VisitRecord.of]
+            simp only [stepCheck, hg, ite_true, pushRecord, VisitRecord.of]
             exact Array.mem_append_left _ (Array.mem_push_self)
           unfold recordsAdmit at hall
           rw [boundOk_eq_admits]
@@ -333,11 +333,11 @@ theorem setup_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool
   -- (the first two refusals decided by hand: `split`'s simplification of
   -- the whole setup exceeds its step budget there)
   by_cases h1 : (claims.toArray.size != (List.toArray P).size) = true
-  · rw [if_pos h1, if_pos h1]; rfl
-  rw [if_neg h1, if_neg h1]
+  · rw [ite_eq_left h1, ite_eq_left h1]; rfl
+  rw [ite_eq_right h1, ite_eq_right h1]
   by_cases h2 : (!P.all fun node => ObjectCoherence.sourceTerm node.expression) = true
-  · rw [if_pos h2, if_pos h2]; rfl
-  rw [if_neg h2, if_neg h2]
+  · rw [ite_eq_left h2, ite_eq_left h2]; rfl
+  rw [ite_eq_right h2, ite_eq_right h2]
   repeat' (first | rfl | split)
 
 omit [Instantiates ι] in
@@ -538,7 +538,7 @@ theorem visitStep_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) 
     intro entry sums stepK deriv
     rw [stepCheck_fst]
     unfold stepCheck
-    simp only [WalkEnv.ungraded, Bool.false_eq_true, if_false] <;> rfl
+    simp only [WalkEnv.ungraded, Bool.false_eq_true, ite_false] <;> rfl
   unfold visitStep
   simp only [stepRun_ungraded, stepYields_ungraded, returnRun_ungraded, thrownTyOf_ungraded,
     WalkState.unrecorded]
@@ -549,7 +549,7 @@ theorem visitStep_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) 
     simp only [hc]
     simp only [WalkEnv.ungraded, apply_ite (Except.map StepDone.unrecorded)]
     repeat' (first | rfl |
-      (split <;> rename_i hsplit <;> first | rw [if_pos hsplit] | rw [if_neg hsplit] | simp only [hsplit] | skip))
+      (split <;> rename_i hsplit <;> first | rw [ite_eq_left hsplit] | rw [ite_eq_right hsplit] | simp only [hsplit] | skip))
 
 
 /-- **A visit graded makes the visit ungraded** (proved): from a state with
@@ -634,11 +634,11 @@ theorem setup_graded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool 
   unfold setup
   dsimp only
   by_cases h1 : (claims.toArray.size != (List.toArray P).size) = true
-  · rw [if_pos h1, if_pos h1]; rfl
-  rw [if_neg h1, if_neg h1]
+  · rw [ite_eq_left h1, ite_eq_left h1]; rfl
+  rw [ite_eq_right h1, ite_eq_right h1]
   by_cases h2 : (!P.all fun node => ObjectCoherence.sourceTerm node.expression) = true
-  · rw [if_pos h2, if_pos h2]; rfl
-  rw [if_neg h2, if_neg h2]
+  · rw [ite_eq_left h2, ite_eq_left h2]; rfl
+  rw [ite_eq_right h2, ite_eq_right h2]
   repeat' (first | rfl | split)
 
 omit [Instantiates ι] in

@@ -23,7 +23,7 @@ theorem passUnitVerdict_safe_run
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
+    {«given» : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
@@ -45,7 +45,7 @@ theorem passUnitVerdict_sound
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
+    {«given» : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
@@ -142,7 +142,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
+    {«given» : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
@@ -180,7 +180,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i j fuel fuel' : Nat} {compare : Bool}
-    {debugNode repeats : Nat} {given : Option (Std.HashMap String Json)} {observe : Option String}
+    {debugNode repeats : Nat} {«given» : Option (Std.HashMap String Json)} {observe : Option String}
     {counting located : Bool} {deps : List String} {fc : FramedComponent} {f' : FilePlans} {shown : List String × List String}
     (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨

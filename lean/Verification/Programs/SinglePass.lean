@@ -4,6 +4,8 @@ import Verification.Programs.GraphCode
 import Verification.Programs.SinglePassStats
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Semantics.ExitSummaries
+-- PointerEquality.lean gives the pointer-equality fast path at a type variable; without it the generic fast equality does not compile.
+import Verification.Semantics.PointerEquality
 
 /-! One forward pass over a graph cut at its statement entries
 (docs/SINGLE-PASS.md): each node visited once, in a topological order
@@ -264,7 +266,7 @@ grades (`ExpressionEffects.writeGrades`, `initWriteGrades`,
 `GraphCode.selectedGrades`). -/
 structure StepGrades where
   within : List Footprints.Closed
-  throws : List Footprints.Closed
+  «throws» : List Footprints.Closed
   scope : Bool
 
 /-- **A step's local certificate**: for each exit, the exit specifications
@@ -358,7 +360,7 @@ each atom of its index facts, at the step's slots (none where an atom
 names a position the step holds no slot for), with whether it holds, each
 decided by the check acceptance uses for it. -/
 structure StatedPrecondition where
-  requires : Option (Nat × CallEffects.ElemPred × Bool) := none
+  «requires» : Option (Nat × CallEffects.ElemPred × Bool) := none
   atoms : List (Option HeapKnowledge.IndexFact × Bool) := []
 
 /-- The form of a step whose preconditions a diagnostic reads: a call, a
@@ -611,10 +613,10 @@ def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shif
 
 instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
 
-/-- `a == b`, answered at once where they are one object (`withPtrEq`,
+/-- `a == b`, answered at once where they are one object (`sameObjectOr`,
 justified by the equality's reflexivity). -/
 def same {α : Type} [BEq α] [ReflBEq α] (a b : α) : Bool :=
-  withPtrEq a b (fun _ => a == b) (fun h => by subst h; exact BEq.rfl)
+  sameObjectOr a b (fun _ => a == b) (fun h => by subst h; exact BEq.rfl)
 
 /-- A list read at indices that mostly increase: the suffix at `pos`. -/
 structure Cursor (α : Type) where
@@ -1264,21 +1266,21 @@ theorem dfsStepA_agrees (succ : Nat → List Nat) (n : Nat) (a : DfsA) (σ : Dfs
       · rw [e]; exact hb (v, w :: ws) (by rw [hσ]; simp)
       · exact hb p (by rw [hσ]; exact List.mem_cons_of_mem _ hp)
     by_cases hw : w < n
-    · simp only [hw, if_true, hs w hw]
+    · simp only [hw, ite_true, hs w hw]
       by_cases h0 : σ.state w = 0
-      · simp only [h0, if_true]
+      · simp only [h0, ite_true]
         refine ⟨rfl, hhs, by simp [hss], hh, agrees_upd n a.state σ.state w 1 hss hw hs, ?_⟩
         intro p hp
         rcases List.mem_cons.mp hp with e | hp
         · subst e; exact hw
         · exact hbs p hp
-      · simp only [h0, if_false]
+      · simp only [h0, ite_false]
         by_cases h1 : σ.state w = 1
-        · simp only [h1, if_true]
+        · simp only [h1, ite_true]
           exact ⟨rfl, by simp [hhs], hss, agrees_upd n a.heads σ.heads w true hhs hw hh, hs, hbs⟩
-        · simp only [h1, if_false]
+        · simp only [h1, ite_false]
           exact ⟨rfl, hhs, hss, hh, hs, hbs⟩
-    · simp only [hw, if_false]
+    · simp only [hw, ite_false]
       exact ⟨rfl, hhs, hss, hh, hs, hbs⟩
 
 theorem dfsLoopA_agrees (succ : Nat → List Nat) (n : Nat) :
@@ -1296,14 +1298,14 @@ theorem dfsInitA_agrees (succ : Nat → List Nat) (n start : Nat) :
     (dfsInitA succ n start).Agrees n (dfsInit succ n start) := by
   unfold dfsInitA dfsInit
   by_cases h : start < n
-  · simp only [h, if_true]
+  · simp only [h, ite_true]
     refine ⟨rfl, by simp, by simp, fun t ht => by simp [ht], ?_, fun p hp => by simp at hp; rw [hp]; exact h⟩
     intro t ht
     unfold upd
     by_cases e : t = start
     · subst e; simp [Array.set!_eq_setIfInBounds, ht]
     · rw [getElem!_set!_ne _ start t 1 e]; simp [e, ht]
-  · simp only [h, if_false]
+  · simp only [h, ite_false]
     exact ⟨rfl, by simp, by simp, fun t ht => by simp [ht], fun t ht => by simp [ht], fun p hp => by simp at hp⟩
 
 /-- `dfsStepA` returning the state it was given where the stack is empty,
@@ -1769,7 +1771,7 @@ leave it, within the promise. The refusal where one fails, the answers
 after the subtyping searches, and the postcondition query's atom count
 where it is made. -/
 def returnCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (goal : Goal ι)
-    (ensures : List HeapKnowledge.IndexFact) (c : PointClaim ι) (l : Nat) (entry : State) (store : Store)
+    («ensures» : List HeapKnowledge.IndexFact) (c : PointClaim ι) (l : Nat) (entry : State) (store : Store)
     (result start : Nat) (startNames : List Nat) (argName : Option Nat) (yields : List (PromiseCalls.Yield ι))
     (debugNode : Nat) (answers : Answered G) : Option String × Answered G × Option Nat :=
   let width := c.context.length
@@ -2451,7 +2453,7 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   n : Nat
   start : Nat
   goal : Goal ι
-  ensures : List HeapKnowledge.IndexFact
+  «ensures» : List HeapKnowledge.IndexFact
   reference : Array Knowledge
   debugNode : Nat
   bound : Option RunBound
@@ -2466,7 +2468,7 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   reached : Array Bool
   startEntered : Bool
   stated : Array (Option Knowledge)
-  given : Array (Option Knowledge)
+  «given» : Array (Option Knowledge)
   merging : Array Bool
   deadArr : Array Bool
   startNames : List Nat
@@ -2540,12 +2542,12 @@ what the setup computes from them. -/
 def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (suggestions : List (Sequent ι)) (index : KnownIndex ι) (codes : CodeEntry ι → Bool) (aliases : List (ι × ι))
     (passChecker : PassChecker G images) (undefTy : Option (Ty ι)) (nodes : Array Node)
-    (claimed : Array (PointClaim ι)) (start : Nat) (goal : Goal ι) (ensures : List HeapKnowledge.IndexFact)
+    (claimed : Array (PointClaim ι)) (start : Nat) (goal : Goal ι) («ensures» : List HeapKnowledge.IndexFact)
     (reference : Array Knowledge) (debugNode : Nat) (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
-    (stated given : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
+    (stated «given» : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
     (argName : Option Nat) (grading : Bool) (framed : List (Nat × List Footprints.Footprint)) : WalkEnv ι G images :=
   { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
     goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
@@ -2567,7 +2569,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     (bound : Option RunBound := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
-    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
+    («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := []) :
@@ -3046,7 +3048,7 @@ slots holding the inputs' entry values), each fact of the postcondition
 `ensures` at the return's pushed slots, decided alone by
 `GraphCode.returnEntails`, and those facts, an input's entry value read at
 the slot holding it. Read only where the refusal is printed. -/
-def returnFactsAt (G : NormalGraph ι) (ensures : List HeapKnowledge.IndexFact) (c : PointClaim ι) (entry : State)
+def returnFactsAt (G : NormalGraph ι) («ensures» : List HeapKnowledge.IndexFact) (c : PointClaim ι) (entry : State)
     (store : Store) (result : Nat) (startNames : List Nat) : ReturnFacts :=
   let width := c.context.length
   let tracked : GraphCode.Tracked := (GraphCode.namedInputs ensures).filterMap fun (_, q) => do
@@ -3929,7 +3931,7 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     (bound : Option RunBound := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
-    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
+    («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := []) :
@@ -3955,7 +3957,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (bound : Option RunBound := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
-    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
+    («ensures» : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) (grading : Bool := false)
     (framed : List (Nat × List Footprints.Footprint) := []) : Outcome ι × Counts × Answered G × Trace :=

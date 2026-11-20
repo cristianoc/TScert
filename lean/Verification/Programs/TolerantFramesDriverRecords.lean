@@ -50,14 +50,14 @@ theorem filter_eq_of_le {α : Type} (p q : α → Bool) :
     cases hpy : p y with
     | true =>
       have hqy := hpq y (List.mem_cons_self ..) hpy
-      simp only [List.filter_cons, hpy, hqy, if_true, List.length_cons] at hle
+      simp only [List.filter_cons, hpy, hqy, ite_true, List.length_cons] at hle
       rcases List.mem_cons.mp hx with rfl | hx
       · exact hpy
       · exact filter_eq_of_le p q l hpq' (by omega) x hx hq
     | false =>
       cases hqy : q y with
       | true =>
-        simp only [List.filter_cons, hpy, hqy, if_true, List.length_cons] at hle
+        simp only [List.filter_cons, hpy, hqy, ite_true, List.length_cons] at hle
         simp at hle
         omega
       | false =>
@@ -214,14 +214,14 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
   reachable : (env.reached.toList.filter id).length = ((List.range env.n).filter (envReached env)).length
   claimed : env.claimed.size = env.n
   claims : env.claimed = c.claims.toArray
-  given : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none
+  «given» : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none
   nodes : env.nodes = c.P.toArray
   nodeCount : env.n = c.P.length
   codes : env.codes = c.codes
   checker : env.passChecker = c.passChecker
   bound : env.bound = c.bound
   goal : env.goal = c.goal
-  ensures : env.ensures = c.ensures
+  «ensures» : env.ensures = c.ensures
   startNames : env.startNames = List.range c.inputs.length
   argName : env.argName = c.goal.slot.bind ((List.range c.inputs.length)[·]?)
   stated : ∀ l, env.stated[l]! = passStated c l
@@ -428,7 +428,7 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
     else (ofPass σ.walk (passHeads c)).entry t
   have hbase : ∀ t (h : visB σ.walk t = true) (hg : passHeads c t = false),
       base t = Classical.choose ((hset t h).entry hg) := fun t h hg => by
-    simp only [base, dif_pos (And.intro h hg)]
+    simp only [base, dite_eq_left (And.intro h hg)]
   refine ⟨fun l hl => ((hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (WalkExtends.refl _) (SumsPrefix.refl _)
     hsums).elim fun r _ => ⟨r⟩,
     ⟨base, ?_, fun t hv => ?_⟩, ?_, ?_⟩
@@ -455,9 +455,9 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
       exact ((hset t hv).below hg h2).2
   · have hv' := (ofPass_visited _ _ _).mp hv
     cases hg : passHeads c t with
-    | true => simp only [base, hg, if_true]; simp
+    | true => simp only [base, hg, ite_true]; simp
     | false =>
-      rw [if_neg (by simp), hbase t hv' hg]
+      rw [ite_eq_right (by simp), hbase t hv' hg]
       exact (Classical.choose_spec ((hset t hv').entry hg)).1
   · exact (hset c.start (hI.all_visited hE hle c.start hE.start.1 hE.start.2)).start rfl σ.walk rfl
   · intro t hg htwo
@@ -573,7 +573,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     rw [hI.degs t ht hg]
     have := le_sum_of_mem (fun s => if envReached env s && !visB σ.walk s then (exitsOf env s).count t else 0)
       (List.range env.n) l hlmem
-    simp only [hlR, hlv, Bool.not_false, Bool.and_self, if_true] at this
+    simp only [hlR, hlv, Bool.not_false, Bool.and_self, ite_true] at this
     exact this
   have hnotexit : ∀ t < env.n, envHead env t = false → deg σ t = 0 → t ∉ exitsOf env l := by
     intro t ht hg h0 hm
@@ -649,7 +649,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     have hsum := sum_drop (fun s => if envReached env s && !visB σ.walk s then (exitsOf env s).count t else 0)
       (fun s => if envReached env s && !visB σ'.walk s then (exitsOf env s).count t else 0) l
       (by simp [hF.visits]) (fun x hx => by simp only [hvis x hx]) (List.range env.n) List.nodup_range hlmem
-    simp only [hlR, hlv, Bool.not_false, Bool.and_self, if_true] at hsum
+    simp only [hlR, hlv, Bool.not_false, Bool.and_self, ite_true] at hsum
     omega
   · intro t
     obtain ⟨ns, nis, h1, h2, h3, -⟩ := hF.pushes t

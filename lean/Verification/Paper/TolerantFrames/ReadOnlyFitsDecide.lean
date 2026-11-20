@@ -1,6 +1,8 @@
 import Verification.Paper.TolerantFrames.ReadOnlyFitsCheck
 import Verification.Paper.TolerantFrames.ReadOnlyFitsEntry
 import Std.Data.HashSet.Lemmas
+-- PointerEquality.lean gives the pointer-equality fast path at a type variable; without it the generic fast equality does not compile.
+import Verification.Semantics.PointerEquality
 
 /-! # Read-only handles: deciding the checks of a finite proposal
 
@@ -140,13 +142,13 @@ theorem subPast_iff {S S' : Sites P} : subIn (pastShared S S') S' = true ↔ Sub
   exact ⟨fun h s hs => (mem_pastShared hs).elim (h s) id, fun h => Sub.trans pastShared_sub h⟩
 
 /-- **Inclusion of sets of sites**, decided: at once where both are one
-object (`withPtrEq`, the proposal sharing equal sets), else past the
+object (`sameObjectOr`, the proposal sharing equal sets), else past the
 prefix both share, by `subIn`. -/
 def subB (S S' : Sites P) : Bool :=
-  withPtrEq S S' (fun _ => subIn (pastShared S S') S') (fun h => subPast_iff.mpr (h ▸ Sub.refl S))
+  sameObjectOr S S' (fun _ => subIn (pastShared S S') S') (fun h => subPast_iff.mpr (h ▸ Sub.refl S))
 
 theorem subB_iff {S S' : Sites P} : subB S S' = true ↔ Sub S S' := by
-  rw [subB, withPtrEq, subPast_iff]
+  rw [subB, sameObjectOr, subPast_iff]
 
 instance (S S' : Sites P) : Decidable (Sub S S') := decidable_of_iff (subB S S' = true) subB_iff
 

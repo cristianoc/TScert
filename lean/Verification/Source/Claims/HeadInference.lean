@@ -876,7 +876,7 @@ def Ctx.join (a b : Ctx) : Ctx :=
 binding `x` it sets: each of its `@ensures` facts (position `0` its result,
 `p + 2` its `p`-th parameter), its result `x` and each parameter the actual
 where that is a binding (`linear_facts.ml:call_expression_facts`). -/
-def callEnsures (ensures : String → List HeapKnowledge.IndexFact) (x : String) (forced : Bool := false) :
+def callEnsures («ensures» : String → List HeapKnowledge.IndexFact) (x : String) (forced : Bool := false) :
     Expr → List Fact
   | .call _ (.var _ f) args [] _ =>
     let nameAt := fun (p : Nat) => if p == 0 then some x else if p < 2 then none else match args[p - 2]? with
@@ -894,7 +894,7 @@ def callEnsures (ensures : String → List HeapKnowledge.IndexFact) (x : String)
 arm, under what its answer of `c` states, `x` equal to a linear arm or a
 call's postcondition (`callEnsures`), the two joined
 (`linear_facts.ml:declaration`'s conditional, arm by arm). -/
-def valueArms (K : String → HeapKnowledge.Term.Kind) (ensures : String → List HeapKnowledge.IndexFact)
+def valueArms (K : String → HeapKnowledge.Term.Kind) («ensures» : String → List HeapKnowledge.IndexFact)
     (ctx : Ctx) (x : String) (forced : Bool := false) : Expr → List Fact
   | .ifBody _ c a b =>
     let arm := fun (answer : Bool) (e : Expr) =>
@@ -911,7 +911,7 @@ def valueArms (K : String → HeapKnowledge.Term.Kind) (ensures : String → Lis
 /-- The facts after an expression statement: an assignment of a linear
 value states its equality, a step restates, any other write forgets. -/
 def Ctx.effectOne (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) (e : Expr)
-    (ensures : String → List HeapKnowledge.IndexFact := fun _ => []) (falseEnsures : Bool := false) : Ctx :=
+    («ensures» : String → List HeapKnowledge.IndexFact := fun _ => []) (falseEnsures : Bool := false) : Ctx :=
   let pushed := ctx.pushed K e
   let ctx := (ctx.across (allExprs e)).add pushed
   match e with
@@ -955,7 +955,7 @@ def armsOf (x : String) : Expr → Option (Expr × Expr × Expr)
 /-- The facts after an expression statement (`Ctx.effectOne`), an assignment
 of a choice arm by arm (`armsOf`). -/
 def Ctx.effect (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) (e : Expr) (falseArms : Bool := false)
-    (ensures : String → List HeapKnowledge.IndexFact := fun _ => []) (falseEnsures : Bool := false) : Ctx :=
+    («ensures» : String → List HeapKnowledge.IndexFact := fun _ => []) (falseEnsures : Bool := false) : Ctx :=
   let x := match e with
     | .update _ _ (.var _ n) _ _ | .assign _ n _ _ => some n
     | _ => none

@@ -1131,8 +1131,8 @@ def ArithRule.numeric (r : ArithRule) (o : Arith) : Bool :=
 theorem binop_num {op : Arith} (hrel : op.relational = false) (heq : op ≠ .eq) (hloose : op ≠ .looseEq)
     {x y : UInt64} {u : Tm} (hu : binop op (.num x) (.num y) = some u) : u = .num (arithBits op x y) := by
   unfold binop at hu
-  rw [if_neg heq, if_neg hloose, hrel] at hu
-  simp only [Bool.false_eq_true, if_false, Option.some.injEq] at hu
+  rw [ite_eq_right heq, ite_eq_right hloose, hrel] at hu
+  simp only [Bool.false_eq_true, ite_false, Option.some.injEq] at hu
   exact hu.symm
 
 /-- A step of an operator on numbers alone has number operands. -/
@@ -1144,8 +1144,8 @@ theorem binop_numberOnly {op : Arith} (h : op.numberOnly = true) {a b u : Tm} (h
   have hadd : (op == .add) = false := by cases op <;> first | rfl | simp [Arith.numberOnly] at h
   have hbig : ∀ i j, bigintArith op i j = none := by intro i j; cases op <;> simp_all [Arith.numberOnly, bigintArith]
   unfold binop at hu
-  rw [if_neg heq, if_neg hloose, hrel] at hu
-  simp only [Bool.false_eq_true, if_false] at hu
+  rw [ite_eq_right heq, ite_eq_right hloose, hrel] at hu
+  simp only [Bool.false_eq_true, ite_false] at hu
   split at hu
   · exact ⟨_, _, rfl, rfl⟩
   · simp [hbig] at hu
@@ -1204,8 +1204,8 @@ theorem binop_comm_some {op : Arith} (h : op.commutes = true) {a b u : Tm} (hu :
   have hbig : ∀ i j, bigintArith op i j = bigintArith op j i := by
     intro i j; cases op <;> simp_all [Arith.commutes, bigintArith, Int.mul_comm, intXor_comm]
   unfold binop at hu ⊢
-  rw [if_neg heq, if_neg hloose, hrel] at hu ⊢
-  simp only [Bool.false_eq_true, if_false] at hu ⊢
+  rw [ite_eq_right heq, ite_eq_right hloose, hrel] at hu ⊢
+  simp only [Bool.false_eq_true, ite_false] at hu ⊢
   split at hu
   · rw [← hu, arithBits_comm hops]
   · rw [hbig]; exact hu
@@ -1314,7 +1314,7 @@ theorem strLength_sound : strLength.Sound := by
   intro a b c u v ha _ _ _ hu
   simp only [strLength, Domain.AdmitsVal] at ha hu ⊢
   obtain ⟨s, rfl, hmax, hn⟩ := ha
-  simp only [Operation.eval, if_pos hmax, Option.some.injEq] at hu
+  simp only [Operation.eval, ite_eq_left hmax, Option.some.injEq] at hu
   subst hu
   refine ⟨(utf16Units s).length, 0, ⟨_, rfl, safeInt_bitsOfNat (by simp [maxStringLength] at hmax; omega)⟩, ?_⟩
   intro F hF

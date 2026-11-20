@@ -402,9 +402,9 @@ theorem subst_scoped {a : Tm} (ha : Scoped 0 a) :
     and_imp, forall_apply_eq_imp_iff₂] at hb ⊢
   case var i =>
     by_cases hij : i = j
-    · subst hij; simp only [beq_self_eq_true, if_true]; exact ha.mono (Nat.zero_le _)
+    · subst hij; simp only [beq_self_eq_true, ite_true]; exact ha.mono (Nat.zero_le _)
     · have : (i == j) = false := by simp [hij]
-      simp only [this, Bool.false_eq_true, if_false]
+      simp only [this, Bool.false_eq_true, ite_false]
       split <;> simp only [Scoped] <;> omega
   case letE x b ihx ihb => exact ⟨ihx j d hb.1 hj, ihb (j + 1) (d + 1) hb.2 (by omega)⟩
   all_goals grind

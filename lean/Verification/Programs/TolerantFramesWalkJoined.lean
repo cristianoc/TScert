@@ -26,7 +26,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι]
 /-- **The joined implications at a target**: at a merge (no given facts,
 at least two incoming states), the implications it keeps hold at the
 environment. -/
-def joinedAt (G : NormalGraph ι) (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
+def joinedAt (G : NormalGraph ι) (w : Walk ι) («given» : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) :
     Nat → Assertion :=
   fun t ρ _ s => given t = false → 2 ≤ (w.incoming t).length →
@@ -37,18 +37,18 @@ enter** (`joinedAt`): each normal exit from the state after the step at the
 pushed environment, and the handler from the throw state, as `NodeMeaning`
 states the exits' other obligations. -/
 structure ExitsJoined (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι))
-    (given : Nat → Bool)
+    («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι) : Prop where
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
-    ExitDelivers (joinedAt G w given ctx edgesIn) G c.type c.context
+    ExitDelivers (joinedAt G w «given» ctx edgesIn) G c.type c.context
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε) ρ m t
       pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    joinedAt G w given ctx edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    joinedAt G w «given» ctx edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 omit [Hashable ι] in
 /-- **A node's meaning with its exits' joined implications** is its meaning

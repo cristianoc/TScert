@@ -435,11 +435,11 @@ theorem edgesFresh_holds {P : Tm → Prop} {facts : List (List Nat)} {F : List N
   simp only [mapEnv]
   generalize slot t.mapping i = j at hs ⊢
   cases hp : pushes k
-  · simp only [hp, Bool.false_eq_true, if_false] at hs ⊢
+  · simp only [hp, Bool.false_eq_true, ite_false] at hs ⊢
     cases j with
     | zero => exact hF 0 (by simpa [freshSlot] using hs)
     | succ j => exact hF (j + 1) (by simpa [freshSlot] using hs)
-  · simp only [hp, if_true] at hs ⊢
+  · simp only [hp, ite_true] at hs ⊢
     cases j with
     | zero => exact hout (by simpa [freshSlot] using hs)
     | succ j => exact hF j (by simpa [freshSlot] using hs)
@@ -534,7 +534,7 @@ theorem freshPositions_sound {F : List Nat} {b : Nat} {ρ : Env} {t : Tm} (hF : 
     have hget : (args.map (instantiate 0 ρ)).getD (i - 1) .undef = ρ j := by
       rw [List.getD_eq_getElem?_getD, List.getElem?_map, hj]
       simp [instantiate]
-    simp only [CallEffects.callEnv, hi0, if_false, hget]
+    simp only [CallEffects.callEnv, hi0, ite_false, hget]
     exact hF j hjF
   intro i hi
   cases t <;> simp only [freshPositions, List.not_mem_nil] at hi

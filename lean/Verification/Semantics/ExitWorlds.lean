@@ -41,8 +41,8 @@ theorem satNode.mono_exit {nodes : Array AssertionNode} {s u : IndexedHeap} (ha 
         (if _ : j < i then satNode nodes j η m u else False) := by
       intro j η m hj
       by_cases hji : j < i
-      · rw [dif_pos hji] at hj ⊢; exact ih j hji η m hj
-      · rw [dif_neg hji] at hj; exact hj.elim
+      · rw [dite_eq_left hji] at hj ⊢; exact ih j hji η m hj
+      · rw [dite_eq_right hji] at hj; exact hj.elim
     intro η m hs
     rw [satNode] at hs ⊢
     cases hn : nodes[i]? with

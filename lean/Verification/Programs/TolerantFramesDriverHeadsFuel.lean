@@ -46,17 +46,17 @@ theorem zeroWeight_upd (succ : Nat → List Nat) (st : Nat → Nat) (x b : Nat) 
     by_cases hx : k = x
     · subst hx
       have hn : ¬ (k < k ∧ st k = 0) := fun h => Nat.lt_irrefl _ h.1
-      rw [if_neg hn] at ih
-      rw [upd_self, if_neg hb]
+      rw [ite_eq_right hn] at ih
+      rw [upd_self, ite_eq_right hb]
       by_cases hz : st k = 0
-      · rw [if_pos ⟨Nat.lt_succ_self k, hz⟩, if_pos hz]; omega
-      · rw [if_neg (fun h => hz h.2), if_neg hz]; omega
+      · rw [ite_eq_left ⟨Nat.lt_succ_self k, hz⟩, ite_eq_left hz]; omega
+      · rw [ite_eq_right (fun h => hz h.2), ite_eq_right hz]; omega
     · rw [upd_ne b hx]
       have e : (if x < k + 1 ∧ st x = 0 then 2 + (succ x).length else 0) =
           (if x < k ∧ st x = 0 then 2 + (succ x).length else 0) := by
         by_cases hz : x < k ∧ st x = 0
-        · rw [if_pos hz, if_pos ⟨by have := hz.1; omega, hz.2⟩]
-        · rw [if_neg hz, if_neg (fun h => hz ⟨by have := h.1; omega, h.2⟩)]
+        · rw [ite_eq_left hz, ite_eq_left ⟨by have := hz.1; omega, hz.2⟩]
+        · rw [ite_eq_right hz, ite_eq_right (fun h => hz ⟨by have := h.1; omega, h.2⟩)]
       rw [e]
       omega
 
@@ -70,7 +70,7 @@ successors. -/
 theorem zeroWeight_zero (succ : Nat → List Nat) :
     ∀ k, zeroWeight succ (fun _ => 0) k = 2 * k + succCount succ k
   | 0 => rfl
-  | k + 1 => by simp only [zeroWeight, succCount, if_true, zeroWeight_zero succ k]; omega
+  | k + 1 => by simp only [zeroWeight, succCount, ite_true, zeroWeight_zero succ k]; omega
 
 /-- A stack with a frame weighs at least one. -/
 theorem framesWeight_pos {st : List (Nat × List Nat)} (h : st ≠ []) : 0 < framesWeight st := by
@@ -102,7 +102,7 @@ theorem dfsStep_measure {succ : Nat → List Nat} {n : Nat} {σ σ' : Dfs} (h : 
         simp only [Option.some.injEq] at h
         subst h
         have := zeroWeight_upd succ state w 1 (by decide) n
-        rw [if_pos ⟨hw, hz⟩] at this
+        rw [ite_eq_left ⟨hw, hz⟩] at this
         simp only [framesWeight, List.length_cons]
         omega
       · split at h <;>
@@ -160,7 +160,7 @@ theorem dfsInit_measure (succ : Nat → List Nat) (n start : Nat) :
   split
   · rename_i hs
     have h := zeroWeight_upd succ (fun _ => 0) start 1 (by decide) n
-    rw [if_pos ⟨hs, rfl⟩, zeroWeight_zero] at h
+    rw [ite_eq_left ⟨hs, rfl⟩, zeroWeight_zero] at h
     simp only [framesWeight]
     omega
   · simp only [framesWeight, zeroWeight_zero]

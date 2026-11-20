@@ -80,7 +80,7 @@ theorem exitTypes_checked {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd
           refine ⟨ys, rfl, rfl, .inr (.inr ?_)⟩
           by_cases hfr : foundR = true
           · exact .inl (edgeFound_of_checked ((congrArg Prod.fst hr).trans hfr))
-          · rw [if_neg hfr] at hmixed
+          · rw [ite_eq_right hfr] at hmixed
             split at hmixed
             rename_i Γm am hmix
             split at hmixed

@@ -65,11 +65,11 @@ theorem boundChecked_of_bounded {G : NormalGraph ι} {images : InstanceImageChec
   simp only [passBounded] at hb
   refine ⟨fun hd => ?_, fun hd => ?_⟩
   · rw [deadAt_toList] at hd
-    rw [if_pos hd] at hb
+    rw [ite_eq_left hd] at hb
     simp only [Bool.and_eq_true, beq_iff_eq] at hb
     exact hb
   · rw [deadAt_toList] at hd
-    rw [if_neg (by simp [hd])] at hb
+    rw [ite_eq_right (by simp [hd])] at hb
     rw [passLiveHandler_toList]
     exact hb
 

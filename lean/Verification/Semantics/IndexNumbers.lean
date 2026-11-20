@@ -53,7 +53,7 @@ theorem indexOfBits_denotes {x : UInt64} {i : Nat} (h : indexOfBits x = some i) 
   have hx := x.toNat_lt
   simp only [indexOfBits, expo_toNat, frac_toNat, sign_toNat] at h
   by_cases hz : x.toNat % 2 ^ 52 = 0 ∧ x.toNat / 2 ^ 52 % 2 ^ 11 = 0
-  · rw [if_pos (by simp [hz.1, hz.2])] at h
+  · rw [ite_eq_left (by simp [hz.1, hz.2])] at h
     cases h
     refine ⟨.inl ⟨?_, rfl⟩, by omega⟩
     have h1 := Nat.div_add_mod x.toNat (2 ^ 52)
@@ -61,7 +61,7 @@ theorem indexOfBits_denotes {x : UInt64} {i : Nat} (h : indexOfBits x = some i) 
     have : x.toNat / 2 ^ 52 / 2 ^ 11 ≤ 1 := by
       rw [Nat.div_div_eq_div_mul]; exact Nat.le_of_lt_succ (Nat.div_lt_of_lt_mul (by omega))
     rcases Nat.le_one_iff_eq_zero_or_eq_one.mp this with h3 | h3 <;> omega
-  · rw [if_neg (by simpa [Bool.and_eq_true, beq_iff_eq] using hz)] at h
+  · rw [ite_eq_right (by simpa [Bool.and_eq_true, beq_iff_eq] using hz)] at h
     split at h
     · cases h
     · rename_i hn
@@ -81,28 +81,28 @@ theorem denotes_indexOfBits {x : UInt64} {i : Nat} (hd : Denotes x i) (hi : i < 
   rcases hd with ⟨hz, rfl⟩ | ⟨hs, he1, he2, hsc⟩
   · rcases hz with hz | hz <;> simp [hz]
   · have hnz : ¬ (x.toNat % 2 ^ 52 = 0 ∧ x.toNat / 2 ^ 52 % 2 ^ 11 = 0) := by omega
-    rw [if_neg (by simpa [Bool.and_eq_true, beq_iff_eq] using hnz)]
-    rw [if_neg (by simp only [Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq, not_or]; omega)]
+    rw [ite_eq_right (by simpa [Bool.and_eq_true, beq_iff_eq] using hnz)]
+    rw [ite_eq_right (by simp only [Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq, not_or]; omega)]
     have hs' : (x.toNat % 2 ^ 52 + 2 ^ 52) * 2 ^ (x.toNat / 2 ^ 52 % 2 ^ 11 - 1) = i * 2 ^ 1074 := hsc
     rw [hs']
     have hP : 0 < 2 ^ 1074 := Nat.two_pow_pos 1074
     generalize 2 ^ 1074 = P at hP ⊢
-    rw [Nat.mul_mod_left, Nat.mul_div_cancel _ hP, if_pos (by simp [hi])]
+    rw [Nat.mul_mod_left, Nat.mul_div_cancel _ hP, ite_eq_left (by simp [hi])]
 
 /-! ## The float model of such doubles -/
 
 theorem unpackExponent_toNat (b : BitVec 64) :
     (unpackExponent (spec := Format.binary64) b).toNat = b.toNat / 2 ^ 52 % 2 ^ 11 := by
-  simp [unpackExponent, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  simp [unpackExponent, Nat.shiftRight_eq_div_pow]
 
 theorem unpackMantissa_toNat (b : BitVec 64) :
     (unpackMantissa (spec := Format.binary64) b).toNat = b.toNat % 2 ^ 52 := by
-  simp [unpackMantissa, BitVec.extractLsb_toNat]
+  simp [unpackMantissa]
 
 theorem unpackSign_toNat (b : BitVec 64) :
     (unpackSign (spec := Format.binary64) b).toNat = b.toNat / 2 ^ 63 := by
   have := b.isLt
-  simp [unpackSign, BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow]
+  simp [unpackSign, Nat.shiftRight_eq_div_pow]
   omega
 
 
@@ -125,8 +125,8 @@ theorem unpack_finitePos (b : BitVec 64) (hs : b.toNat < 2 ^ 63)
   refine ⟨by omega, ?_⟩
   have hsign : unpackSign (spec := Format.binary64) b = 0#1 := by
     rw [← BitVec.toNat_inj, unpackSign_toNat]; simp; omega
-  simp only [UnpackedFloat.unpack, hsign, Sign.ofBitVec, if_true]
-  rw [if_neg (by rw [exp_allOnes]; omega), if_neg (by rw [exp_zero]; omega)]
+  simp only [UnpackedFloat.unpack, hsign, Sign.ofBitVec, ite_true]
+  rw [ite_eq_right (by rw [exp_allOnes]; omega), ite_eq_right (by rw [exp_zero]; omega)]
   congr 1
   · rw [BitVec.toNat_append, unpackMantissa_toNat]
     have hm : b.toNat % 2 ^ 52 < 2 ^ 52 := Nat.mod_lt _ (Nat.two_pow_pos 52)
@@ -140,7 +140,7 @@ theorem unpack_zero (b : BitVec 64) (hz : b.toNat % 2 ^ 63 = 0) :
   have he : b.toNat / 2 ^ 52 % 2 ^ 11 = 0 := by omega
   have hm : b.toNat % 2 ^ 52 = 0 := by omega
   simp only [UnpackedFloat.unpack]
-  rw [if_neg (by rw [exp_allOnes]; omega), if_pos ((exp_zero b).mpr he), dif_pos ((mant_zero b).mpr hm)]
+  rw [ite_eq_right (by rw [exp_allOnes]; omega), ite_eq_left ((exp_zero b).mpr he), dite_eq_left ((mant_zero b).mpr hm)]
 
 theorem packComponents_toNat (s : Sign) (e : BitVec 11) (m : BitVec 52) :
     (packComponents .binary64 s e m).toNat = s.toBitVec.toNat * 2 ^ 63 + e.toNat * 2 ^ 52 + m.toNat := by
@@ -155,7 +155,7 @@ theorem pack_finitePos (m : Nat) (e : Int) (h : 0 < m) (hm1 : 2 ^ 52 ≤ m) (hm2
     (UnpackedFloat.pack .binary64 (.finite .positive m e h)).toNat = (e + 1075).toNat * 2 ^ 52 + (m - 2 ^ 52) := by
   have hl : m.log2 = 52 := (Nat.log2_eq_iff (by omega)).mpr ⟨hm1, hm2⟩
   simp only [UnpackedFloat.pack, hl, Format.exponentBias]
-  rw [if_neg (by simp; omega), if_pos (by simp [Format.mantissaBits])]
+  rw [ite_eq_right (by simp; omega), ite_eq_left (by simp [Format.mantissaBits])]
   rw [packComponents_toNat]
   simp [Sign.toBitVec]
   omega
@@ -271,12 +271,12 @@ theorem doubleOrder_denotes {x y : UInt64} {p q : Nat} (hx : Denotes x p) (hy : 
   have hyx := compare_denotes hy hx
   simp only [doubleOrder]
   rcases Nat.lt_trichotomy p q with h | rfl | h
-  · rw [if_pos ((float_lt_iff _ _).mpr (by rw [hxy, Nat.compare_eq_lt.mpr h])), Nat.compare_eq_lt.mpr h]
-  · rw [if_neg (by rw [float_lt_iff, hxy, Nat.compare_eq_eq.mpr rfl]; simp),
-      if_pos ((float_beq_iff _ _).mpr (by rw [hxy, Nat.compare_eq_eq.mpr rfl])), Nat.compare_eq_eq.mpr rfl]
-  · rw [if_neg (by rw [float_lt_iff, hxy, Nat.compare_eq_gt.mpr h]; simp),
-      if_neg (by rw [float_beq_iff, hxy, Nat.compare_eq_gt.mpr h]; simp),
-      if_pos ((float_lt_iff _ _).mpr (by rw [hyx, Nat.compare_eq_lt.mpr h])), Nat.compare_eq_gt.mpr h]
+  · rw [ite_eq_left ((float_lt_iff _ _).mpr (by rw [hxy, Nat.compare_eq_lt.mpr h])), Nat.compare_eq_lt.mpr h]
+  · rw [ite_eq_right (by rw [float_lt_iff, hxy, Nat.compare_eq_eq.mpr rfl]; simp),
+      ite_eq_left ((float_beq_iff _ _).mpr (by rw [hxy, Nat.compare_eq_eq.mpr rfl])), Nat.compare_eq_eq.mpr rfl]
+  · rw [ite_eq_right (by rw [float_lt_iff, hxy, Nat.compare_eq_gt.mpr h]; simp),
+      ite_eq_right (by rw [float_beq_iff, hxy, Nat.compare_eq_gt.mpr h]; simp),
+      ite_eq_left ((float_lt_iff _ _).mpr (by rw [hyx, Nat.compare_eq_lt.mpr h])), Nat.compare_eq_gt.mpr h]
 
 theorem bitsOfNat_toNat {L : Nat} (h0 : 0 < L) (hL : L < 2 ^ 53) :
     (bitsOfNat L).toNat = (1022 + (L.log2 + 1)) * 2 ^ 52 + (L * 2 ^ (53 - (L.log2 + 1)) - 2 ^ 52) ∧
@@ -292,8 +292,8 @@ theorem bitsOfNat_toNat {L : Nat} (h0 : 0 < L) (hL : L < 2 ^ 53) :
           Nat.mul_lt_mul_of_pos_right hl2 (Nat.two_pow_pos _)
       _ = 2 ^ 53 := by rw [← Nat.pow_add]; congr 1; omega
   refine ⟨?_, hlo, hhi, by omega⟩
-  simp only [bitsOfNat, if_pos hL, encodeBits]
-  rw [if_neg (by simp; omega), if_pos (by omega), if_pos (by omega)]
+  simp only [bitsOfNat, ite_eq_left hL, encodeBits]
+  rw [ite_eq_right (by simp; omega), ite_eq_left (by omega), ite_eq_left (by omega)]
   rw [UInt64.toNat_ofNat', Nat.shiftLeft_eq, Nat.shiftLeft_eq]
   have hm : L * 2 ^ (53 - (L.log2 + 1)) - 2 ^ 52 < 2 ^ 52 := by omega
   have he : 1075 - (53 - (L.log2 + 1)) = 1022 + (L.log2 + 1) := by omega
@@ -343,7 +343,7 @@ theorem strictEquals_index {x : UInt64} {v : Tm} {i : Nat} (he : strictEquals (.
   simp only [strictEquals] at he
   split at he
   · cases he
-  · rw [if_pos (by simp [isPrim])] at he
+  · rw [ite_eq_left (by simp [isPrim])] at he
     cases v <;> simp [sameValue] at he
     exact ⟨_, rfl, numberEqual_index he hi⟩
 
@@ -352,7 +352,7 @@ theorem strictEquals_index_swap {x : UInt64} {v : Tm} {i : Nat} (he : strictEqua
   simp only [strictEquals] at he
   split at he
   · cases he
-  · rw [if_pos (by simp [isPrim])] at he
+  · rw [ite_eq_left (by simp [isPrim])] at he
     cases v <;> simp [sameValue] at he
     refine ⟨_, rfl, ?_⟩
     simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at he ⊢
@@ -377,7 +377,7 @@ theorem mask_intAnd (t : Int) {M : Nat} (hM : M < 2 ^ 31) :
     exact ⟨M ^^^ (M &&& a), rfl, Nat.xor_lt_two_pow hM (Nat.lt_of_le_of_lt Nat.and_le_left hM)⟩
 
 theorem int32Bits_nat (r : Nat) : int32Bits (r : Int) = bitsOfNat r := by
-  simp only [int32Bits, if_neg (Int.not_lt.mpr (Int.natCast_nonneg r)), Int.toNat_natCast]
+  simp only [int32Bits, ite_eq_right (Int.not_lt.mpr (Int.natCast_nonneg r)), Int.toNat_natCast]
 
 /-- `x & m`, `m` a mask whose `ToInt32` is a natural below `2^31`, is an index. -/
 theorem bitAnd_index (x : UInt64) {m : UInt64} {M : Nat} (hm : toInt32 m = (M : Int)) (hM : M < 2 ^ 31) :

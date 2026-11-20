@@ -107,12 +107,12 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
     · simpa [ha] using hg
     · have hs' : Supported [(.field g'.cell g'.field, .keep)] ρ h h' := by
           simpa [FactKind.support, ha] using hs
-      simp only [ha, if_false, Bool.false_eq_true] at hg ⊢
+      simp only [ha, ite_false, Bool.false_eq_true] at hg ⊢
       by_cases ho : g'.optional = true
-      · simp only [ho, if_true] at hg ⊢
+      · simp only [ho, ite_true] at hg ⊢
         obtain ⟨flds, c, oid, hx, hr⟩ := hg
         exact ⟨flds, c, oid, hx, readGave_support (by simp [hx, fieldsOf]) hs' hr⟩
-      · simp only [ho, if_false, Bool.false_eq_true] at hg ⊢
+      · simp only [ho, ite_false, Bool.false_eq_true] at hg ⊢
         obtain ⟨flds, c, oid, l, hx, hl, hv⟩ := hg
         obtain ⟨v', hv', hk⟩ := hs' _ (List.mem_singleton_self _) l _
           (by simp [Region.mem, hx, fieldsOf, hl]) hv

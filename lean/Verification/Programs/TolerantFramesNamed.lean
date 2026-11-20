@@ -77,7 +77,7 @@ theorem atom_heapFree_supports {a : Atom} (hf : a.heapFree = true) (η : Env) :
   | link g =>
     simp only [Atom.heapFree] at hf
     have := Footprints.stableLinks_holds (ls := [g]) ha h'
-    simp only [HeapLinks.stable, List.filter_cons, hf, if_true, List.filter_nil] at this
+    simp only [HeapLinks.stable, List.filter_cons, hf, ite_true, List.filter_nil] at this
     exact this
   | index x =>
     simp only [Atom.heapFree] at hf

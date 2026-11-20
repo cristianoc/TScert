@@ -105,8 +105,8 @@ theorem TransportSchema.images_getElem (t : TransportSchema) (N i : Nat) :
       | none => .path ⟨i + t.shift, []⟩) else none := by
   simp only [TransportSchema.instantiate, List.getElem?_toArray, List.getElem?_map]
   by_cases hi : i < N
-  · rw [List.getElem?_range hi, if_pos hi]; rfl
-  · rw [List.getElem?_eq_none (by simpa using hi), if_neg hi]; rfl
+  · rw [List.getElem?_range hi, ite_eq_left hi]; rfl
+  · rw [List.getElem?_eq_none (by simpa using hi), ite_eq_right hi]; rfl
 
 private theorem holds_widen {t : TransportSchema} (ht : t.shift = 1) {N N' : Nat} (hs : t.slots ≤ N) (hN : N ≤ N')
     {target source : Env} (hsh : ∀ i, source (i + 1) = target i) (boxed : Bool) (h : Heap) :
@@ -117,7 +117,7 @@ private theorem holds_widen {t : TransportSchema} (ht : t.shift = 1) {N N' : Nat
     intro i hi
     unfold Substitution.image
     simp only
-    rw [TransportSchema.images_getElem, TransportSchema.images_getElem, if_pos hi, if_pos (by omega)]
+    rw [TransportSchema.images_getElem, TransportSchema.images_getElem, ite_eq_left hi, ite_eq_left (by omega)]
     rfl
   constructor
   · intro hθ i w hw
@@ -127,7 +127,7 @@ private theorem holds_widen {t : TransportSchema} (ht : t.shift = 1) {N N' : Nat
       rw [TransportSchema.images_getElem] at hw
       by_cases hi : i < N
       · exact hi
-      · rw [if_neg hi] at hw; cases hw
+      · rw [ite_eq_right hi] at hw; cases hw
     exact hθ i w (by rw [hwiden i hi]; exact hw)
   · intro hθ i w hw
     by_cases hi : i < N
@@ -138,10 +138,10 @@ private theorem holds_widen {t : TransportSchema} (ht : t.shift = 1) {N N' : Nat
         rw [TransportSchema.images_getElem] at hw
         by_cases hi' : i < N'
         · exact hi'
-        · rw [if_neg hi'] at hw; cases hw
+        · rw [ite_eq_right hi'] at hw; cases hw
       unfold Substitution.image at hw
       simp only at hw
-      rw [TransportSchema.images_getElem, if_pos hiN'] at hw
+      rw [TransportSchema.images_getElem, ite_eq_left hiN'] at hw
       have hl : t.overrides.lookup i = none := by
         cases hl : t.overrides.lookup i with
         | none => rfl

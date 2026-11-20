@@ -89,7 +89,7 @@ theorem consSites_insertSites (S Sx : Sites P) (j : Nat) (Γ : Nat → Option (S
     · simp [hk]
     · by_cases he : k = j
       · simp [he]
-      · simp only [hk, he, if_false]
+      · simp only [hk, he, ite_false]
         cases k with
         | zero => omega
         | succ m => simp
@@ -104,7 +104,7 @@ theorem subst_var_ins {Γ : Nat → Option (Sites P)} {j i : Nat} {Sx S' : Sites
   by_cases hij : i = j
   · subst hij
     left
-    simp only [Nat.lt_irrefl, if_false, if_true, Option.some.injEq] at h
+    simp only [Nat.lt_irrefl, ite_false, ite_true, Option.some.injEq] at h
     exact ⟨h.symm, by simp⟩
   · by_cases hlt : i < j
     · right
@@ -130,11 +130,11 @@ theorem sites_map {St : Sites P → Prop} {Fi : Sites P → Tm → Prop} (f : Tm
   refine ⟨fun y => if h : ∃ x, x ∈ xs ∧ f x = y then Ss (Classical.choose h) else Ss y, ?_, ?_⟩
   · intro y hy
     have h : ∃ x, x ∈ xs ∧ f x = y := List.mem_map.mp hy
-    simp only [h, dif_pos]
+    simp only [h, dite_eq_left]
     exact hst _ (Classical.choose_spec h).1
   · intro y hy
     have h : ∃ x, x ∈ xs ∧ f x = y := List.mem_map.mp hy
-    simp only [h, dif_pos]
+    simp only [h, dite_eq_left]
     have hs := Classical.choose_spec h
     have := hi _ hs.1
     rwa [hs.2] at this

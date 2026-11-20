@@ -36,7 +36,7 @@ theorem IncomingRecorded.mem {w : Walk ι} {t : Nat}
     {e : SinglePass.State × List (PromiseCalls.Implication ι)} (h : IncomingRecorded w t e) :
     e ∈ w.incoming t := by
   obtain ⟨a, b, heads, rfl, ht, hext, he⟩ := h
-  simpa only [ofPass, ht, Bool.false_eq_true, if_false] using hext.incoming_mem he
+  simpa only [ofPass, ht, Bool.false_eq_true, ite_false] using hext.incoming_mem he
 
 /-- A merge record in the post-exit arrays, retained by the final walk. -/
 @[nospecialize] def MergeRecorded
@@ -442,7 +442,7 @@ loop head, `headExit`'s checks (as `HeadExitChecked`) with the start names
 below the head's counter. -/
 structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (w : Walk ι)
     (startNames : List Nat) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge)
-    (given : Nat → Bool)
+    («given» : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (l : Nat) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι) (here outFresh : Bool) (TT : Ty ι)
     (x : Nat) (t : Target) : Prop where
@@ -452,18 +452,18 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
       EdgeFound G images (ctx t.label)
         (PromiseCalls.intRefine G (handlerCtx c TT) (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping).indices)
         t none (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping)
-  asserted : given t.label = false → (here || ControlFlow.unsatisfiable G [TT]) = false → ∀ req,
+  asserted : «given» t.label = false → (here || ControlFlow.unsatisfiable G [TT]) = false → ∀ req,
     stated t.label = some req →
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (assertionSource G (handlerCtx c TT) req (handlerAssertFacts G c TT entry st x req t.mapping) t.mapping none) req
       t.mapping = true
-  pushedIn : given t.label = false → IncomingRecorded w t.label (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
+  pushedIn : «given» t.label = false → IncomingRecorded w t.label (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
     (handlerStore G c TT entry st x) (w.implies l))
-  merged : given t.label = false → 2 ≤ (w.incoming t.label).length →
+  merged : «given» t.label = false → 2 ≤ (w.incoming t.label).length →
     MergeRecorded edgesIn t.label (handlerCtx c TT, atSlotsOf (x :: entry.names)
       (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
         (handlerStore G c TT entry st x) (w.implies l)).2, t.mapping)
-  head : given t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
+  head : «given» t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
     (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
     ((here || ControlFlow.unsatisfiable G [TT]) = false → ∀ y ∈ gimp, ∃ z ∈ w.implies l,

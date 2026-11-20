@@ -480,7 +480,7 @@ theorem fits_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c : ComponentTag, ∃ c'
     intro c
     obtain ⟨c', hP, hF⟩ := ih c
     refine ⟨c', hP.keep ⟨fun s => .invoke f r (args.set i s), fun t ht => ?_⟩, fun hu hfit => ?_⟩
-    · simp only [path, hf, hr, Bool.true_eq_false, if_false]
+    · simp only [path, hf, hr, Bool.true_eq_false, ite_false]
       rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -490,7 +490,7 @@ theorem fits_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c : ComponentTag, ∃ c'
     intro c
     obtain ⟨c', hP, hF⟩ := ih c
     refine ⟨c', hP.keep ⟨fun s => .construct f (args.set i s), fun t ht => ?_⟩, fun hu hfit => ?_⟩
-    · simp only [path, hf, Bool.true_eq_false, if_false]
+    · simp only [path, hf, Bool.true_eq_false, ite_false]
       rw [pathArgs_set _ (List.getElem?_eq_getElem hi) hpre (hK.not_val ht)]
     cases hfit with
     | val hv => simp [isVal] at hv
@@ -523,7 +523,7 @@ theorem fits_ctx {K : Tm → Tm} (hK : EvalCtx K) : ∀ c : ComponentTag, ∃ c'
     obtain ⟨c', hP, hF⟩ := ih c
     refine ⟨c', hP.keep ⟨?_, fun t ht => ?_⟩, fun hu hfit => ?_⟩
     rotate_left
-    · simp only [path, hK.not_val ht, *, if_true, if_false, Bool.true_eq_false]
+    · simp only [path, hK.not_val ht, *, ite_true, ite_false, Bool.true_eq_false]
       rfl
     have hn := hK.not_val hu
     cases hfit <;> first

@@ -107,7 +107,7 @@ theorem roundWithAccuracy_exact (s : Sign) {M d : Nat} {E e : Int} (hM : 0 < M) 
   have h0' : ExtendedMantissa.ofMantissaAndAccuracy M .exact = ⟨M, false, false⟩ := rfl
   simp only [roundWithAccuracy, shiftToTargetExponent, shiftToExponent, h1, h2, h3, h0, shiftRight_exact,
     hr, h6, h5, h0', Int.sub_self, Int.toNat_zero, shiftRight_zero, Int.natCast_zero, Int.add_zero]
-  rw [dif_neg (by omega)]
+  rw [dite_eq_right (by omega)]
 
 theorem canon_log2 {N : Nat} (h0 : 0 < N) (hN : N < 2 ^ 53) : (N * 2 ^ (52 - N.log2)).log2 = 52 := by
   rw [log2_mul_pow h0]; have := log2_lt53 h0 hN; omega
@@ -166,10 +166,10 @@ theorem unpack_finite (b : BitVec 64)
   have hsign : Sign.ofBitVec (unpackSign (spec := Format.binary64) b) = signOfBit (decide (2 ^ 63 ≤ b.toNat)) := by
     simp only [Sign.ofBitVec, signOfBit]
     by_cases hs : 2 ^ 63 ≤ b.toNat
-    · rw [if_neg (by rw [← BitVec.toNat_inj, unpackSign_toNat]; simp; omega)]; simp [hs]
-    · rw [if_pos (by rw [← BitVec.toNat_inj, unpackSign_toNat]; simp; omega)]; simp [hs]
+    · rw [ite_eq_right (by rw [← BitVec.toNat_inj, unpackSign_toNat]; simp; omega)]; simp [hs]
+    · rw [ite_eq_left (by rw [← BitVec.toNat_inj, unpackSign_toNat]; simp; omega)]; simp [hs]
   simp only [UnpackedFloat.unpack, hsign]
-  rw [if_neg (by rw [exp_allOnes]; omega), if_neg (by rw [exp_zero]; omega)]
+  rw [ite_eq_right (by rw [exp_allOnes]; omega), ite_eq_right (by rw [exp_zero]; omega)]
   congr 1
   · rw [BitVec.toNat_append, unpackMantissa_toNat]
     have hm : b.toNat % 2 ^ 52 < 2 ^ 52 := Nat.mod_lt _ (Nat.two_pow_pos 52)
@@ -183,7 +183,7 @@ theorem pack_finite (s : Sign) (m : Nat) (e : Int) (h : 0 < m) (hm1 : 2 ^ 52 ≤
       s.toBitVec.toNat * 2 ^ 63 + (e + 1075).toNat * 2 ^ 52 + (m - 2 ^ 52) := by
   have hl : m.log2 = 52 := (Nat.log2_eq_iff (by omega)).mpr ⟨hm1, hm2⟩
   simp only [UnpackedFloat.pack, hl, Format.exponentBias]
-  rw [if_neg (by simp; omega), if_pos (by simp [Format.mantissaBits])]
+  rw [ite_eq_right (by simp; omega), ite_eq_left (by simp [Format.mantissaBits])]
   rw [packComponents_toNat]
   simp
   omega
@@ -206,7 +206,7 @@ theorem bitsOfNat_fields {N : Nat} (h0 : 0 < N) (hN : N < 2 ^ 53) (q : Bool) :
   have ht' : t = (1023 + L) * 2 ^ 52 + (b - 2 ^ 52) + (if q then 2 ^ 63 else 0) := by
     simp only [t, ht]; omega
   rw [ht']
-  cases q <;> simp only [if_true, if_false, Bool.false_eq_true, iff_false, iff_true] <;>
+  cases q <;> simp only [ite_true, ite_false, Bool.false_eq_true, iff_false, iff_true] <;>
     refine ⟨?_, ?_, ?_, ?_⟩ <;> omega
 
 theorem finite_eq {s : Sign} {m m' : Nat} {e e' : Int} {h : 0 < m} {h' : 0 < m'} (hm : m = m') (he : e = e') :
@@ -307,9 +307,9 @@ theorem model_safe_cases {x : UInt64} {i : Int} (hx : SafeInt x i) :
 theorem signOfBit_apply (i : Int) (n : Nat) :
     (signOfBit (decide (i < 0))).apply ((i.natAbs * n : Nat) : Int) = i * n := by
   by_cases hn : i < 0
-  · simp only [hn, decide_true, signOfBit, if_true, Sign.apply]
+  · simp only [hn, decide_true, signOfBit, ite_true, Sign.apply]
     rw [Int.natCast_mul, Int.ofNat_natAbs_of_nonpos (by omega), Int.neg_mul, Int.neg_neg]
-  · simp only [hn, decide_false, signOfBit, Bool.false_eq_true, if_false, Sign.apply]
+  · simp only [hn, decide_false, signOfBit, Bool.false_eq_true, ite_false, Sign.apply]
     rw [Int.natCast_mul, Int.natAbs_of_nonneg (by omega)]
 
 /-- A canonical mantissa decreased to a smaller exponent `-K` is the integer
@@ -341,7 +341,7 @@ theorem normalize_safe {S k : Int} {K : Nat} (hS : S = k * 2 ^ K) (hk : k.natAbs
       rw [this, Int.toNat_natCast]
     rw [round_exact .negative (by omega) (by omega) hk hv]
     have := pack_canonical k (by omega) hk
-    simp only [canonical, show decide (k < 0) = true by simp [hn], signOfBit, if_true] at this
+    simp only [canonical, show decide (k < 0) = true by simp [hn], signOfBit, ite_true] at this
     exact this
   · have hS0 : S = 0 := by rw [hS]; simp
     rw [show compare S 0 = .eq from Int.compare_eq_eq.mpr hS0]
@@ -358,7 +358,7 @@ theorem normalize_safe {S k : Int} {K : Nat} (hS : S = k * 2 ^ K) (hk : k.natAbs
     rw [round_exact .positive (by omega) (by omega) hk hv]
     have := pack_canonical k (by omega) hk
     simp only [canonical, show decide (k < 0) = false by simp; omega, signOfBit, Bool.false_eq_true,
-      if_false] at this
+      ite_false] at this
     exact this
 
 theorem arithBits_add (x y : UInt64) :
@@ -490,14 +490,14 @@ theorem safeIntOfBits_sound {x : UInt64} {i : Int} (h : safeIntOfBits x = some i
   simp only [safeIntOfBits] at h
   by_cases hc : magnitudeOfBits x < 2 ^ 53 ∧
       x.toNat = (bitsOfNat (magnitudeOfBits x)).toNat + (if decide (2 ^ 63 ≤ x.toNat) then 2 ^ 63 else 0)
-  · rw [if_pos hc] at h
+  · rw [ite_eq_left hc] at h
     cases h
     by_cases hn : 2 ^ 63 ≤ x.toNat
-    · simp only [hn, decide_true, if_true] at hc ⊢
+    · simp only [hn, decide_true, ite_true] at hc ⊢
       refine ⟨by simpa using hc.1, .inr ⟨by omega, by simpa using hc.2⟩⟩
-    · simp only [hn, decide_false, Bool.false_eq_true, if_false, Nat.add_zero] at hc ⊢
+    · simp only [hn, decide_false, Bool.false_eq_true, ite_false, Nat.add_zero] at hc ⊢
       refine ⟨by simpa using hc.1, .inl ⟨by omega, by simpa using hc.2⟩⟩
-  · rw [if_neg hc] at h; cases h
+  · rw [ite_eq_right hc] at h; cases h
 
 theorem magnitudeOfBits_safe {x : UInt64} {i : Int} (hx : SafeInt x i) : magnitudeOfBits x = i.natAbs := by
   simp only [magnitudeOfBits]
@@ -505,7 +505,7 @@ theorem magnitudeOfBits_safe {x : UInt64} {i : Int} (hx : SafeInt x i) : magnitu
   rcases Nat.eq_zero_or_pos i.natAbs with h0 | h0
   · have hz : (bitsOfNat i.natAbs).toNat = 0 := by rw [h0]; exact bitsOfNat_zero
     have : x.toNat % 2 ^ 63 = 0 := by rcases hx.2 with ⟨-, he⟩ | ⟨-, he⟩ <;> omega
-    rw [if_pos this, h0]
+    rw [ite_eq_left this, h0]
   · have hq : ∃ q : Bool, x.toNat = (bitsOfNat i.natAbs).toNat + (if q then 2 ^ 63 else 0) := by
       rcases hx.2 with ⟨-, he⟩ | ⟨-, he⟩
       · exact ⟨false, by simpa using he⟩
@@ -517,7 +517,7 @@ theorem magnitudeOfBits_safe {x : UInt64} {i : Int} (hx : SafeInt x i) : magnitu
     have hmag : x.toNat % 2 ^ 63 = (bitsOfNat i.natAbs).toNat := by cases q <;> simp at hxq <;> omega
     have hne : x.toNat % 2 ^ 63 ≠ 0 := by
       rw [hmag]; obtain ⟨ht, -, -, -⟩ := bitsOfNat_toNat h0 hx.1; omega
-    rw [if_neg hne]
+    rw [ite_eq_right hne]
     have h1 : x.toNat % 2 ^ 63 / 2 ^ 52 = 1023 + i.natAbs.log2 := by omega
     have h2 : x.toNat % 2 ^ 63 % 2 ^ 52 + 2 ^ 52 = i.natAbs * 2 ^ (52 - i.natAbs.log2) := by omega
     rw [h1, h2, show 1075 - (1023 + i.natAbs.log2) = 52 - i.natAbs.log2 by omega]
@@ -531,12 +531,12 @@ theorem safeIntOfBits_complete {x : UInt64} {i : Int} (hx : SafeInt x i) : safeI
   · by_cases hz : i = 0
     · subst hz
       have h0 : x.toNat = 0 := by simpa [bitsOfNat_zero] using he
-      rw [if_pos ⟨by decide, by simp [h0, bitsOfNat_zero]⟩]; simp [h0]
+      rw [ite_eq_left ⟨by decide, by simp [h0, bitsOfNat_zero]⟩]; simp [h0]
     · have hn : ¬ 2 ^ 63 ≤ x.toNat := by omega
-      rw [if_pos ⟨hx.1, by simp [he]; omega⟩]
+      rw [ite_eq_left ⟨hx.1, by simp [he]; omega⟩]
       simp [hn]; omega
   · have hn : 2 ^ 63 ≤ x.toNat := by omega
-    rw [if_pos ⟨hx.1, by simp [he]⟩]
+    rw [ite_eq_left ⟨hx.1, by simp [he]⟩]
     simp [hn]; omega
 
 /-! ## Order and equality -/
@@ -562,7 +562,7 @@ theorem canonical_neg {i : Int} (hi : i < 0) (h : i ≠ 0) (ha : i.natAbs < 2 ^ 
   refine ⟨i.natAbs * 2 ^ (52 - i.natAbs.log2), (i.natAbs.log2 : Int) - 52, canon_pos (by omega) ha, ?_, ?_⟩
   · simp [canonical, hi, signOfBit]
   · simp only [canonical, Int.natAbs_neg, show ¬ -i < 0 by omega, decide_false, signOfBit,
-      Bool.false_eq_true, if_false]
+      Bool.false_eq_true, ite_false]
 
 theorem canonical_pos' {i : Int} (hi : 0 < i) (h : i ≠ 0) (ha : i.natAbs < 2 ^ 53) :
     ∃ m e hm, canonical i h ha = .finite .positive m e hm :=
@@ -615,12 +615,12 @@ theorem doubleOrder_safe {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : Saf
   have hyx := compare_safe hy hx
   simp only [doubleOrder]
   rcases Int.lt_trichotomy i j with h | rfl | h
-  · rw [if_pos ((float_lt_iff _ _).mpr (by rw [hxy, Int.compare_eq_lt.mpr h])), Int.compare_eq_lt.mpr h]
-  · rw [if_neg (by rw [float_lt_iff, hxy, Int.compare_eq_eq.mpr rfl]; simp),
-      if_pos ((float_beq_iff _ _).mpr (by rw [hxy, Int.compare_eq_eq.mpr rfl])), Int.compare_eq_eq.mpr rfl]
-  · rw [if_neg (by rw [float_lt_iff, hxy, Int.compare_eq_gt.mpr h]; simp),
-      if_neg (by rw [float_beq_iff, hxy, Int.compare_eq_gt.mpr h]; simp),
-      if_pos ((float_lt_iff _ _).mpr (by rw [hyx, Int.compare_eq_lt.mpr h])), Int.compare_eq_gt.mpr h]
+  · rw [ite_eq_left ((float_lt_iff _ _).mpr (by rw [hxy, Int.compare_eq_lt.mpr h])), Int.compare_eq_lt.mpr h]
+  · rw [ite_eq_right (by rw [float_lt_iff, hxy, Int.compare_eq_eq.mpr rfl]; simp),
+      ite_eq_left ((float_beq_iff _ _).mpr (by rw [hxy, Int.compare_eq_eq.mpr rfl])), Int.compare_eq_eq.mpr rfl]
+  · rw [ite_eq_right (by rw [float_lt_iff, hxy, Int.compare_eq_gt.mpr h]; simp),
+      ite_eq_right (by rw [float_beq_iff, hxy, Int.compare_eq_gt.mpr h]; simp),
+      ite_eq_left ((float_lt_iff _ _).mpr (by rw [hyx, Int.compare_eq_lt.mpr h])), Int.compare_eq_gt.mpr h]
 
 /-! ## Witnesses against JavaScript
 
@@ -650,7 +650,7 @@ theorem numberEqual_safe {x y : UInt64} {i j : Int} (hx : SafeInt x i) (hy : Saf
       have h0' := congrArg UInt64.toNat h0
       rw [IndexNumbers.magnitude_toNat] at h0'
       simp only [magnitudeOfBits, UInt64.toNat_zero] at hm h0'
-      rw [if_pos h0'] at hm
+      rw [ite_eq_left h0'] at hm
       omega
     rw [zero hx hx0, zero hy hy0]
 
@@ -727,13 +727,13 @@ theorem safeInt_int32Bits {i : Int} (hi : i.natAbs < 2 ^ 53) : SafeInt (int32Bit
   by_cases hn : i < 0
   · refine .inr ⟨by omega, ?_⟩
     have he : (-i).toNat = i.natAbs := by omega
-    simp only [int32Bits, if_pos hn, he, UInt64.toNat_or]
+    simp only [int32Bits, ite_eq_left hn, he, UInt64.toNat_or]
     have hor := Nat.two_pow_add_eq_or_of_lt hlt 1
     rw [Nat.mul_one] at hor
     rw [show (0x8000000000000000 : UInt64).toNat = 2 ^ 63 from rfl, Nat.or_comm, ← hor]
     omega
   · refine .inl ⟨by omega, ?_⟩
-    simp only [int32Bits, if_neg hn]
+    simp only [int32Bits, ite_eq_right hn]
     congr 3
     omega
 
@@ -769,15 +769,15 @@ theorem toInt32_safe {x : UInt64} {i : Int} (hx : SafeInt x i) : toInt32 x = wra
     · rw [show (-((1023 + (i.natAbs.log2 : Int)) - 1075)).toNat = 52 - i.natAbs.log2 by omega,
         Nat.mul_div_cancel _ (Nat.two_pow_pos _)]
   unfold toInt32 wrapInt32
-  simp only [expo_toNat, frac_toNat, sign_toNat, hE, he0, heInf, Bool.false_eq_true, if_false,
+  simp only [expo_toNat, frac_toNat, sign_toNat, hE, he0, heInf, Bool.false_eq_true, ite_false,
     Int.natCast_add, show ((1023 : Nat) : Int) = 1023 from rfl, h32, hmag]
   cases q
   · have hn : ¬ 2 ^ 63 ≤ x.toNat := by simp at hS; omega
-    simp only [decide_eq_true_eq, hn, if_false]
+    simp only [decide_eq_true_eq, hn, ite_false]
     have : 0 ≤ i := by simp at hq; omega
     split <;> split <;> omega
   · have hn : 2 ^ 63 ≤ x.toNat := hS.mpr rfl
-    simp only [decide_eq_true_eq, hn, if_true]
+    simp only [decide_eq_true_eq, hn, ite_true]
     have : i < 0 := hq.mp rfl
     split <;> split <;> omega
 
@@ -795,10 +795,10 @@ theorem SafeInt.expo_lt {x : UInt64} {i : Int} (hx : SafeInt x i) : x.toNat / 2 
     have hl : i.natAbs.log2 < 53 := log2_lt53 hp hx.1
     rcases hx.2 with ⟨_, he⟩ | ⟨_, he⟩
     · obtain ⟨hE, -, -, -⟩ := bitsOfNat_fields hp hx.1 false
-      simp only [Bool.false_eq_true, if_false, Nat.add_zero] at hE
+      simp only [Bool.false_eq_true, ite_false, Nat.add_zero] at hE
       rw [← he] at hE; omega
     · obtain ⟨hE, -, -, -⟩ := bitsOfNat_fields hp hx.1 true
-      simp only [if_true] at hE
+      simp only [ite_true] at hE
       rw [← he] at hE; omega
 
 /-! ## The sum `2^53`, past the safe integers -/

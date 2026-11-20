@@ -182,12 +182,12 @@ theorem Holds.lift {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
           simp_all
       simp only [Option.map_some, heapFree_shift, hc] at hi
       have hcond : ¬ (θ.boxed && !q.heapFree && !θ.stable.contains i) = true := by
-        intro hcd; rw [if_pos hcd] at hi; cases hi
-      rw [if_neg hcond, Option.some.injEq] at hi
+        intro hcd; rw [ite_eq_left hcd] at hi; cases hi
+      rw [ite_eq_right hcond, Option.some.injEq] at hi
       subst hi
       rw [Witness.value_shift]
       apply hθ i q
-      unfold image; rw [← Array.getElem?_toList, hq]; simp only [if_neg hcond]
+      unfold image; rw [← Array.getElem?_toList, hq]; simp only [ite_eq_right hcond]
 
 theorem HoldsAt.of_holds {θ : Substitution} (hst : θ.stable = []) {target source : Env}
     {s : TolerantFrames.IndexedHeap} (hθ : θ.Holds target source s.h) : θ.HoldsAt target source s :=
@@ -207,8 +207,8 @@ theorem image_box {θ : Substitution} {i : Nat} {w : Witness} (h : θ.box.image 
     rw [hw] at h
     dsimp only at h
     by_cases hc : (θ.box.boxed && !w0.heapFree && !θ.box.stable.contains i) = true
-    · rw [if_pos hc] at h; cases h
-    · rw [if_neg hc] at h; cases h
+    · rw [ite_eq_left hc] at h; cases h
+    · rw [ite_eq_right hc] at h; cases h
       refine ⟨rfl, ?_⟩
       simp only [box, Bool.true_and, Bool.and_eq_true, Bool.not_eq_true', not_and] at hc
       cases hf : w.heapFree <;> cases hs : θ.stable.contains i <;> simp_all
@@ -380,7 +380,7 @@ theorem substWitness_value (hθ : θ.Holds target source h) {w w' : Witness} (hs
         exact substPath_read hθ hp
       | literal v =>
         by_cases he : p.fields.isEmpty
-        · simp only [he, if_true, Option.some.injEq] at hs
+        · simp only [he, ite_true, Option.some.injEq] at hs
           subst hs
           have := hθ p.root _ hi
           simp only [Witness.value] at this ⊢

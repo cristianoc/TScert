@@ -1477,13 +1477,13 @@ theorem ownKept_holds {k : HeapKnowledge.Knowledge} {i : Nat} {ρ : Env} {h h' :
     cases hal : g.alias
     · simp only [hal, Bool.false_or] at ha
       cases ho : g.optional
-      · simp only [hal, ho, Bool.false_eq_true, if_false] at hh ⊢
+      · simp only [hal, ho, Bool.false_eq_true, ite_false] at hh ⊢
         obtain ⟨flds,c,oid,l,hs,hl,hv⟩ := hh
         exact ⟨flds,c,oid,l,hs,hl,hkeep l (away ha hs hl) _ hv⟩
-      · simp only [hal, ho, Bool.false_eq_true, if_false, if_true] at hh ⊢
+      · simp only [hal, ho, Bool.false_eq_true, ite_false, ite_true] at hh ⊢
         obtain ⟨flds,c,oid,hs,hr⟩ := hh
         exact ⟨flds,c,oid,hs,readGave_kept hr (fun l hl v hv => hkeep l (away ha hs hl) v hv)⟩
-    · simp only [hal, if_true] at hh ⊢
+    · simp only [hal, ite_true] at hh ⊢
       exact hh
 
 theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
@@ -1519,11 +1519,11 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         simp only [ExpressionEffects.receiverOf, instantiate] at hw'
         refine HeapKnowledge.shift_holds (ownKept_holds hk fun l hl u hu => ?_)
         refine Footprints.Footprint.keepsHeap_outside (Φ := eff.schema.normal.frame) hkeep hw' ?_ hu
-        simp only [receiverFieldsValues, Footprints.Region.mem, CallEffects.callEnv, if_pos, Bool.and_eq_false_iff]
+        simp only [receiverFieldsValues, Footprints.Region.mem, CallEffects.callEnv, ite_eq_left, Bool.and_eq_false_iff]
         left
         have hown : ∀ x, ¬ (x, l) ∈ Footprints.fieldsOf (ρ i) := by
           simpa [List.contains_iff_mem, Footprints.ownOf] using hl
-        simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
+        simp only [Nat.not_lt_zero, ite_false, Nat.sub_zero]
         cases hc' : (Footprints.fieldLocs (ρ i)).contains l
         · rfl
         · obtain ⟨⟨k, l'⟩, hkl, he⟩ := List.mem_map.mp (Footprints.fieldLocs_own (List.contains_iff_mem.mp hc'))
@@ -1650,7 +1650,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
   · rename_i p _
     by_cases hcond : (decide (claim p = j) && ExpressionEffects.selectedOperands p &&
         checkTreeUsing G images p codes sums && onlyBool G j.type) = true
-    · rw [if_pos hcond] at hc
+    · rw [ite_eq_left hcond] at hc
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
       obtain ⟨⟨⟨rfl, hops⟩, ht⟩, hbool⟩ := hcond
       cases hsel : ExpressionEffects.selectedEffect p with
@@ -1661,7 +1661,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
         | some x' =>
           simp only [hsel, hrs] at hc
           by_cases hkeep : keepsHeap eff = true
-          · rw [if_pos hkeep] at hc
+          · rw [ite_eq_left hkeep] at hc
             obtain ⟨R', hR', hpair⟩ := Option.map_eq_some_iff.mp hc
             simp only [Prod.mk.injEq] at hpair
             obtain ⟨rfl, rfl⟩ := hpair
@@ -1684,8 +1684,8 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
               rw [hterm] at hel
               simpa [ExpressionEffects.receiverOf, instantiate, push] using hel
             · exact hs.2.2.2.2.1 a ha hcond
-          · rw [if_neg hkeep] at hc; cases hc
-    · rw [if_neg hcond] at hc; cases hc
+          · rw [ite_eq_right hkeep] at hc; cases hc
+    · rw [ite_eq_right hcond] at hc; cases hc
   · cases hc
 
 /-! ### A call at a precondition on its receiver's elements
@@ -1755,7 +1755,7 @@ theorem callSlots_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots 
       obtain ⟨hl, hg⟩ := varSlots_get has ρ
       simp only [List.length_cons] at hp
       simp only [PointClaims.mapEnv, PointClaims.slot, ExpressionEffects.actualsOf, instantiate,
-        instantiateArgs_eq_map, CallEffects.callEnv, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
+        instantiateArgs_eq_map, CallEffects.callEnv, Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel,
         List.getElem?_cons_succ]
       rw [hg q (by omega)]
       simp [List.getD_eq_getElem?_getD]
@@ -1768,7 +1768,7 @@ theorem callSlots_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots 
     obtain ⟨hl, hg⟩ := varSlots_get has ρ
     simp only [List.length_cons] at hq
     simp only [PointClaims.mapEnv, PointClaims.slot, ExpressionEffects.actualsOf, instantiate,
-      instantiateArgs_eq_map, CallEffects.callEnv, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
+      instantiateArgs_eq_map, CallEffects.callEnv, Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel,
       List.getElem?_cons_succ]
     rw [hg q (by omega)]
     simp [List.getD_eq_getElem?_getD]
@@ -2152,7 +2152,7 @@ theorem ensuresAtoms_holds {eff : Effect} {t : Tm} {ρ : Env} {h' : Heap} {v : T
           subst hst
           have he := callSlots_env hs ρ p hc.1 hc.2
           simp only [PointClaims.mapEnv] at he
-          simp only [push, CallEffects.ensuresEnv, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel]
+          simp only [push, CallEffects.ensuresEnv, Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel]
           exact he
         · cases hst
     · intro a ha _
@@ -2196,7 +2196,7 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
     obtain ⟨f, args, rfl⟩ := receiverSlot_term hi
     rcases hg l v hv with hk' | ⟨hst, -⟩
     · exact hk'
-    · simp only [ExpressionEffects.receiverOf, instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hst
+    · simp only [ExpressionEffects.receiverOf, instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hst
       exact (Footprints.knowledgeQuery_sound hk hok hρ _ _ l (List.getElem?_eq_some_iff.mp hv).1 hf
         (by simp [Footprints.Region.mem, hs, Footprints.fieldsOf, hl])
         (by simpa [Footprints.Region.mem] using Footprints.spineOf_lookup hst)).elim
@@ -2285,11 +2285,11 @@ theorem actualSlot_sound {t : Tm} {p j : Nat} (h : actualSlot t p = some j) (ρ 
   simp only [CallEffects.callEnv, ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate]
   by_cases hp : p = 0
   · subst hp
-    simp only [if_true] at h ⊢
+    simp only [ite_true] at h ⊢
     cases r <;> simp only [reduceCtorEq, Option.some.injEq] at h
     subst h
     simp [instantiate]
-  · simp only [hp, if_false] at h ⊢
+  · simp only [hp, ite_false] at h ⊢
     cases ha : args[p - 1]? with
     | none => rw [ha] at h; cases h
     | some a =>
@@ -2686,7 +2686,7 @@ theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h
           simp only [Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hpush
           obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, hx⟩, hbody⟩ := hpush
           simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, instantiateArgs,
-            Nat.not_lt_zero, if_false, Nat.sub_zero] at hgrow happ hf
+            Nat.not_lt_zero, ite_false, Nat.sub_zero] at hgrow happ hf
           have hlen : (termValue ε ρ h (Term.length s)).isSome := by
             obtain ⟨w, sto, ls, n, -, -, -, hn, -⟩ := hF
             rw [hn]; rfl
@@ -2780,7 +2780,7 @@ theorem appendEntry_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge} {E :
       have happ := statesAppend_appends ha hq
       have hf := growFirst_kept hk hok hρ hgrow
       simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, Nat.not_lt_zero,
-        if_false, Nat.sub_zero] at hgrow happ
+        ite_false, Nat.sub_zero] at hgrow happ
       refine ⟨fun F hF => ?_, IndexWrites.keptOf_sound (receiverGrows_changes hgrow) hf,
         StepRelation.join_holds (IndexWrites.lengthGrowth_holds fun m hm => ?_)
           (growth_holds (IndexWrites.grownOf_sound (receiverGrows_changes hgrow) hf))⟩
@@ -2930,7 +2930,7 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
           | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some,
             CallEffects.ElementKind.intValue_convert]
           | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
-          | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false,
+          | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, ite_false,
             CallEffects.ElementKind.readPath_convert]
           | free t => rfl
         | none => simp [hG] at hwb
@@ -3006,7 +3006,7 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
         | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some,
             CallEffects.ElementKind.intValue_convert]
         | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
-        | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false,
+        | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, ite_false,
             CallEffects.ElementKind.readPath_convert]
         | free t => rfl
       | none => simp [hG] at hwb
@@ -3043,7 +3043,7 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
     obtain ⟨ek, hw⟩ := Option.isSome_iff_exists.mp hse.2
     have hx := exactWriteOf_exact hw hq
     have hc : writeChanges.Holds h h' := statesViewGrowth_changes hse.1 hq
-    simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
+    simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, ite_false,
       Nat.sub_zero] at hx
     have hi := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab)
       (p := intSlot k.indices) i
@@ -3169,14 +3169,14 @@ theorem absentAt_none {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots 
   cases he : x.atEntry
   · rw [termValue_now he, termAt_undef]
     have h0 : x.slot ≠ 0 := by rcases hne with h | h <;> simp_all
-    simp only [he, Bool.false_eq_true, if_false] at hle
-    simp only [CallEffects.ensuresEnv, h0, if_false, CallEffects.callEnv]
-    rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+    simp only [he, Bool.false_eq_true, ite_false] at hle
+    simp only [CallEffects.ensuresEnv, h0, ite_false, CallEffects.callEnv]
+    rw [ite_eq_right (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
     rfl
   · rw [termValue_atEntry he, termAt_undef]
-    simp only [he, if_true] at hle
+    simp only [he, ite_true] at hle
     simp only [CallEffects.callEnv]
-    rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+    rw [ite_eq_right (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
     rfl
 
 /-- A post's current slot past the call's positions holds `undefined` at the
@@ -3188,8 +3188,8 @@ theorem absentSlot_undef {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlo
   have hlen := callSlots_length hs ρ
   simp only [absentSlot, Bool.and_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at ha
   obtain ⟨h0, hle⟩ := ha
-  simp only [CallEffects.ensuresEnv, h0, if_false, CallEffects.callEnv]
-  rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+  simp only [CallEffects.ensuresEnv, h0, ite_false, CallEffects.callEnv]
+  rw [ite_eq_right (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
   rfl
 
 open HeapKnowledge in
@@ -3234,7 +3234,7 @@ theorem ensuresSlot_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlot
       subst hj
       have he := callSlots_env hs ρ p hc.1 hc.2
       simp only [PointClaims.mapEnv] at he
-      simp only [push, CallEffects.ensuresEnv, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel]
+      simp only [push, CallEffects.ensuresEnv, Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel]
       exact he
     · cases hj
 
@@ -3259,13 +3259,13 @@ theorem callVar_val {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t 
       cases hs'
       have henv := callSlots_env hs ρ x.slot hc.1 hc.2
       simp only [PointClaims.mapEnv] at henv
-      simp only [StepVar.val, termValue, he, if_true, Bool.false_eq_true, if_false, termAt, henv]
+      simp only [StepVar.val, termValue, he, ite_true, Bool.false_eq_true, ite_false, termAt, henv]
     · cases hs'
   · rename_i he
     have he : x.atEntry = false := by simpa using he
     obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hy
     have henv := ensuresSlot_env (v := v) (ρ := ρ) hs hs'
-    simp only [StepVar.val, termValue, he, Bool.false_eq_true, if_false, termAt, henv]
+    simp only [StepVar.val, termValue, he, Bool.false_eq_true, ite_false, termAt, henv]
 
 open HeapKnowledge in
 /-- **The relation a call's postcondition states holds of the call's step**
@@ -3302,7 +3302,7 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
           cases hs'
           have henv := callSlots_env hs ρ x.slot hc.1 hc.2
           simp only [PointClaims.mapEnv] at henv
-          simp only [StepVar.value, termValuation, termValue, he, if_true, Bool.false_eq_true, if_false, termAt, henv]
+          simp only [StepVar.value, termValuation, termValue, he, ite_true, Bool.false_eq_true, ite_false, termAt, henv]
         · cases hs'
       · rename_i he
         have he : x.atEntry = false := by simpa using he
@@ -3312,7 +3312,7 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
             termValue ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
               (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v
               (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' x := by
-          simp only [termValue, he, Bool.false_eq_true, if_false, termAt, henv]
+          simp only [termValue, he, Bool.false_eq_true, ite_false, termAt, henv]
         refine ⟨by simp only [StepVar.value, termValuation, heq], fun u hu => ?_⟩
         cases hu
         exact heq
@@ -3832,7 +3832,7 @@ theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
   · rename_i p _
     by_cases hcond : (decide (claim p = j) && ExpressionEffects.selectedOperands p &&
         checkTreeUsing G images p codes sums && onlyBool G j.type) = true
-    · rw [if_pos hcond] at hc
+    · rw [ite_eq_left hcond] at hc
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
       obtain ⟨⟨⟨rfl, hops⟩, ht⟩, -⟩ := hcond
       cases hsel : ExpressionEffects.selectedEffect p with
@@ -3846,8 +3846,8 @@ theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
           · exact post_with_type
               (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
               (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
-          · rw [if_neg hkeep] at hc; cases hc
-    · rw [if_neg hcond] at hc; cases hc
+          · rw [ite_eq_right hkeep] at hc; cases hc
+    · rw [ite_eq_right hcond] at hc; cases hc
   · cases hc
 
 /-- A call at a precondition the step's facts establish, whose selected
@@ -4023,7 +4023,7 @@ heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
     · rename_i hkeep
       exact PromiseCalls.keepsCall_keeps hkeep hcodes hsums he hw hh href
     · rename_i hkeep
-      rw [if_neg hkeep] at hn
+      rw [ite_eq_right hkeep] at hn
       exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls keeping the heap and
@@ -4053,7 +4053,7 @@ other step is `base`'s. -/
     · rename_i hfresh
       exact PromiseCalls.freshCall_keeps hfresh hcodes hsums he hw hh href
     · rename_i hfresh
-      rw [if_neg hfresh] at hn
+      rw [ite_eq_right hfresh] at hn
       exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls changing only their
@@ -4149,7 +4149,7 @@ receiver's elements are checked against the entry's atoms
     intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href hn
     split at hc
     · rename_i hreq
-      rw [if_pos hreq] at hn
+      rw [ite_eq_left hreq] at hn
       cases e with
       | ordinary p =>
         dsimp only at hn
@@ -4159,7 +4159,7 @@ receiver's elements are checked against the entry's atoms
         · exact absurd hn Footprints.Closed.top_ne_empty
       | _ => exact absurd hn Footprints.Closed.top_ne_empty
     · rename_i hreq
-      rw [if_neg hreq] at hn
+      rw [ite_eq_right hreq] at hn
       exact base.normal_sound hc hcodes hsums he hk hw hh href hn
 
 /-- A checker whose ordinary steps that are calls stating a postcondition add

@@ -48,7 +48,7 @@ def derivedOf (indices : List HeapKnowledge.IndexAtom) (links : HeapLinks.Links)
 
 open SinglePass HeapKnowledge in
 /-- `materialize`'s computation from its facts `atoms` on. -/
-def materializeFrom (st : State) (d : Nat) (given : List Nat) (atoms : List Atom) (whole : Bool) :
+def materializeFrom (st : State) (d : Nat) («given» : List Nat) (atoms : List Atom) (whole : Bool) :
     Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat :=
   let want : Std.HashSet Nat := atoms.foldl (fun acc a => a.names.foldl (·.insert ·) acc)
     (given.foldl (·.insert ·) {})

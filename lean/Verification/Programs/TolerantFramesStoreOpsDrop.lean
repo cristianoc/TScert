@@ -79,8 +79,8 @@ theorem keptAliasOf_eq {isOut : Nat → Bool} {links : HeapLinks.Links} {η : En
     refine ih _ (fun g' hg' => hl g' (List.mem_cons_of_mem _ hg')) ?_
     intro x y hxy
     by_cases ha : g.alias = true
-    · simp only [ha, if_true] at hg
-      simp only [ha, Bool.not_true, Bool.false_eq_true, if_false] at hxy
+    · simp only [ha, ite_true] at hg
+      simp only [ha, Bool.not_true, Bool.false_eq_true, ite_false] at hxy
       split at hxy
       · rw [Std.HashMap.getElem?_insert] at hxy
         split at hxy
@@ -93,7 +93,7 @@ theorem keptAliasOf_eq {isOut : Nat → Bool} {links : HeapLinks.Links} {η : En
           · exact hacc x y hxy
         · exact hacc x y hxy
     · simp only [Bool.not_eq_true] at ha
-      simp only [ha, Bool.not_false, if_true] at hxy
+      simp only [ha, Bool.not_false, ite_true] at hxy
       exact hacc x y hxy
 
 /-! ## The facts `drop` adds -/

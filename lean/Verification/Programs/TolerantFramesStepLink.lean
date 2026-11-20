@@ -235,10 +235,10 @@ macro "step_tail " tree:term ", " whole:term : tactic => `(tactic| (
   split at h
   · rename_i i x hx1 hx2
     gen_ite h as P with hP
-    rcases P with _ | _ <;> simp only [Bool.false_eq_true, if_false, if_true] at h
+    rcases P with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
     · first
         | (gen_ite h as Q with hQ
-           rcases Q with _ | _ <;> simp only [Bool.false_eq_true, if_false, if_true] at h)
+           rcases Q with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h)
         | skip
       close_errors
       gen_discr h as WV with hWV
@@ -258,10 +258,10 @@ macro "step_tail " tree:term ", " whole:term : tactic => `(tactic| (
         fun _ => ⟨rfl, rfl, rfl⟩, fun hf => absurd (hP.symm.trans hf) (by decide)⟩, rfl⟩
   · rename_i hnv
     gen_ite h as P with hP
-    rcases P with _ | _ <;> simp only [Bool.false_eq_true, if_false, if_true] at h
+    rcases P with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
     · first
         | (gen_ite h as Q with hQ
-           rcases Q with _ | _ <;> simp only [Bool.false_eq_true, if_false, if_true] at h)
+           rcases Q with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h)
         | skip
       close_errors
       gen_discr h as WV with hWV
@@ -288,10 +288,10 @@ macro "step_rest" : tactic => `(tactic| (
   rcases TV with _ | p <;> try dsimp only at h
   · step_tail (passTreeCheck_none hTV), wholeCheck_none
   · gen_ite h as B with hB
-    rcases B with _ | _ <;> simp only [Bool.false_eq_true, if_false, if_true] at h
+    rcases B with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
     · step_tail (passTreeCheck_tree hTV hB), wholeCheck_none
     · gen_ite h as C with hC
-      rcases C with _ | _ <;> simp only [Bool.false_eq_true, if_false, if_true] at h
+      rcases C with _ | _ <;> simp only [Bool.false_eq_true, ite_false, ite_true] at h
       · close_errors
       · step_tail (passTreeCheck_pre hTV hB hC), (wholeCheck_some hQ)))
 
@@ -354,7 +354,7 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
     gen_discr h as RV with hRV
     rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
     · close_errors
-    simp only [Option.isSome_none, Bool.false_eq_true, if_false] at h
+    simp only [Option.isSome_none, Bool.false_eq_true, ite_false] at h
     gen_discr h as OV with hOV
     rcases OV with _ | out <;> try dsimp only at h
     · close_errors
@@ -368,7 +368,7 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
     · close_errors
     simp only [CheckResult.map, Option.map_eq_some_iff, Prod.mk.injEq] at hRV
     obtain ⟨out, hOV, -, rfl, rfl⟩ := hRV
-    simp only [Option.isSome_some, if_true] at h
+    simp only [Option.isSome_some, ite_true] at h
     simp only [keepSummaries_self] at h
     refine ⟨.ordinary e, keepSummaries answers a0, keepSummaries answers a0, ha0, .inl rfl, ?_⟩
     step_rest

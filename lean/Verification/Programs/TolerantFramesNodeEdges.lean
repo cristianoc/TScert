@@ -61,7 +61,7 @@ theorem edgeStore_normal [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ
       (if pushed then push v ρ else ρ) m s := by
   cases pushed with
   | true =>
-    simp only [if_true, edgeStoreOf, Bool.false_eq_true, if_false]
+    simp only [ite_true, edgeStoreOf, Bool.false_eq_true, ite_false]
     cases observed with
     | some o => exact edgeStore_observed _ hS (he rfl) hobs
     | none =>
@@ -69,7 +69,7 @@ theorem edgeStore_normal [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ
       | some q => cases hpp rfl
       | none => exact hS
   | false =>
-    simp only [Bool.false_eq_true, if_false, edgeStoreOf]
+    simp only [Bool.false_eq_true, ite_false, edgeStoreOf]
     cases observed with
     | some o => cases hpo rfl
     | none =>
@@ -228,12 +228,12 @@ theorem normalTarget_of_exits {pre : Nat → Assertion} {G : NormalGraph ι} {A 
   | .bind t, _ =>
     rw [hk] at mem
     have := mem t true none none (by simp) trivial
-    simp only [if_true] at this
+    simp only [ite_true] at this
     exact this
   | .effect t, _ =>
     rw [hk] at mem
     have := mem t false none none (by simp) trivial
-    simp only [Bool.false_eq_true, if_false] at this
+    simp only [Bool.false_eq_true, ite_false] at this
     exact this
   | .branch y n, hs =>
     rw [hk] at mem

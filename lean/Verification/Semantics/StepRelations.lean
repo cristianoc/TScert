@@ -90,9 +90,9 @@ theorem Form.eval_split (v : StepVar → Int) (b : StepVar) :
     simp only [Form.coeffOf] at ih
     by_cases hx : x = b
     · subst hx
-      simp only [Form.coeffOf, Form.without, Linear.Form.eval, if_true, Int.mul_one, ih, Int.add_mul]
+      simp only [Form.coeffOf, Form.without, Linear.Form.eval, ite_true, Int.mul_one, ih, Int.add_mul]
       omega
-    · simp only [Form.coeffOf, Form.without, Linear.Form.eval, hx, if_false, Int.mul_zero, Int.zero_add, ih]
+    · simp only [Form.coeffOf, Form.without, Linear.Form.eval, hx, ite_false, Int.mul_zero, Int.zero_add, ih]
       omega
 
 /-- A form with each occurrence `(b, c)` replaced by `rest` scaled by `-c`:
@@ -110,11 +110,11 @@ theorem Form.eval_subst (v : StepVar → Int) (b : StepVar) (rest : Linear.Form 
     simp only [Form.coeffOf] at ih
     by_cases hx : x = b
     · subst hx
-      simp only [Form.subst, Linear.Form.eval_append, ih, Form.coeffOf, Linear.Form.eval, if_true,
+      simp only [Form.subst, Linear.Form.eval_append, ih, Form.coeffOf, Linear.Form.eval, ite_true,
         Linear.Form.eval_scale, Int.mul_one]
       rw [hb, Int.mul_sub, Int.add_mul, Int.neg_mul]
       omega
-    · simp only [Form.subst, Linear.Form.eval_append, ih, Form.coeffOf, Linear.Form.eval, hx, if_false,
+    · simp only [Form.subst, Linear.Form.eval_append, ih, Form.coeffOf, Linear.Form.eval, hx, ite_false,
         Int.add_zero, Int.mul_zero, Int.zero_add]
       omega
 
@@ -367,10 +367,10 @@ theorem compose_holds {kept : Term → Option Term} {before : List (Linear.Fact 
   | before _ => cases hx
   | after u =>
     by_cases hc : (definedOf kept before R).contains u = true
-    · simp only [definedAfter, hc, if_true, Option.some.injEq] at hx
+    · simp only [definedAfter, hc, ite_true, Option.some.injEq] at hx
       subst hx
       exact hdefd u (List.contains_iff_mem.mp hc)
-    · simp only [definedAfter, hc, Bool.false_eq_true, if_false, reduceCtorEq] at hx
+    · simp only [definedAfter, hc, Bool.false_eq_true, ite_false, reduceCtorEq] at hx
 
 
 /-! ## Rule Entry

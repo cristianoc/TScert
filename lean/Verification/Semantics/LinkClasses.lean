@@ -298,8 +298,8 @@ theorem closed {cs : Partition} (h : Ok (slots ls) cs) (hg : ∀ x y, same cs x 
     have := hall _ hr
     simp only [key, Prod.mk.injEq] at hk
     have hsame : same cs (anchor cs (table cs ls) g).cell g.cell = true := (same_iff h).mpr hk.1
-    simp only [step, haa, ha, hk.2, hsame, Bool.false_eq_true, if_false, Bool.not_false, beq_self_eq_true,
-      Bool.and_self, if_true] at this
+    simp only [step, haa, ha, hk.2, hsame, Bool.false_eq_true, ite_false, Bool.not_false, beq_self_eq_true,
+      Bool.and_self, ite_true] at this
     exact stays (mem_slots hm).2 (mem_slots hg).2 this
   constructor
   · intro g hg ha
@@ -307,7 +307,7 @@ theorem closed {cs : Partition} (h : Ok (slots ls) cs) (hg : ∀ x y, same cs x 
       simp only [rules, List.mem_map]
       exact ⟨g, hg, by simp [ha]⟩
     have := hall _ hr
-    simp only [step, ha, if_true] at this
+    simp only [step, ha, ite_true] at this
     exact stays (mem_slots hg).1 (mem_slots hg).2 this
   · intro g hg g' hg' ha ha' hf hs
     have hk : key cs g = key cs g' := by simp only [key, (same_iff h).mp hs, hf]

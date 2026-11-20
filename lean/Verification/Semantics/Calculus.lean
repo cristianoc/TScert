@@ -1836,7 +1836,7 @@ theorem lookup_filter_ne {α : Type} (ps : List (PropKey × α)) {k j : PropKey}
       have : (j == g) = false := by simpa using hne
       simp [List.lookup, this, ih]
     · have hgk : (g != k) = true := by simpa using hg
-      rw [List.filter_cons, if_pos hgk]
+      rw [List.filter_cons, ite_eq_left hgk]
       by_cases hj : j = g
       · subst hj; simp [List.lookup]
       · have : (j == g) = false := by simpa using hj

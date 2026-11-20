@@ -16,7 +16,7 @@ variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 structure HeadChecks (env : WalkEnv ι G I) (l : Nat) (t : Target) (tc : PointClaim ι)
     (Γ : List (Ty ι)) (names : List Nat) (store : Store) (pushed vacuous : Bool)
     (carried : List (PromiseCalls.Implication ι)) (req : HeapKnowledge.Knowledge) : Prop where
-  given : env.given[t.label]! = some req
+  «given» : env.given[t.label]! = some req
   implied : vacuous = false → ∀ x ∈ (env.givenImplies[t.label]?).getD [], ∃ y ∈ carried,
     names[PointClaims.slot t.mapping x.test]? = some y.test ∧
     names[PointClaims.slot t.mapping x.target]? = some y.target ∧
@@ -84,7 +84,7 @@ theorem exitStep_head_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι
   simp only [typed] at ht
   extract_lets freshImpl record at h
   have hh' : env.isHead[target.label]! = true := hh
-  simp only [hh', if_true] at h
+  simp only [hh', ite_true] at h
   simp only [Except.map] at h
   split at h
   · cases h
@@ -95,15 +95,15 @@ theorem exitStep_head_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered ι
   refine ⟨tc, req, htc, ?_, ?_⟩
   · intro hv
     have hv' : vacuous = false := hv
-    simp only [hv', Bool.false_eq_true, if_false] at ht
-    have hd : diff = differing Γ tc.context target.mapping := by simp only [diff, hv', Bool.false_eq_true, if_false, timedKind]
+    simp only [hv', Bool.false_eq_true, ite_false] at ht
+    have hd : diff = differing Γ tc.context target.mapping := by simp only [diff, hv', Bool.false_eq_true, ite_false, timedKind]
     rw [hd] at ht
     obtain ⟨ys, _, heq, hty⟩ := exitTypes_checked ht
     rw [heq] at hty
-    cases pushed <;> cases observed <;> simpa [hy, Γ, handler, ex, Exit.isHandler, Bool.false_eq_true, if_false, push, Exit.pushed, c,
+    cases pushed <;> cases observed <;> simpa [hy, Γ, handler, ex, Exit.isHandler, Bool.false_eq_true, ite_false, push, Exit.pushed, c,
       target, Exit.target, obs, Exit.observed, store, names, pushedNames, entry, st, width, Exit.promote,
       first, exitCtx, exitSearchFacts, exitStore, normalNames, exitWidth, Thunk.get] using hty
-  · cases pushed <;> cases observed <;> simpa [hy, Γ, handler, ex, Exit.isHandler, Bool.false_eq_true, if_false, push, Exit.pushed, c,
+  · cases pushed <;> cases observed <;> simpa [hy, Γ, handler, ex, Exit.isHandler, Bool.false_eq_true, ite_false, push, Exit.pushed, c,
       target, Exit.target, obs, Exit.observed, store, names, pushedNames, entry, st, width, Exit.promote,
       vacuous, unsatΓ, freshImpl, freshImplOf, exitCtx, exitStore, normalNames, vacuousOf] using hreq
 
@@ -151,10 +151,10 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
         t none (handlerSearchFacts G env.claimed[l]! (sd.thrownTy.getD []) en.entry sd.st sd.thrown tc.context t.mapping) := by
     intro hv
     have hv' : vacuous = false := hv
-    simp only [hv', Bool.false_eq_true, if_false] at ht
-    have hd : diff = differing Γ tc.context target.mapping := by simp only [diff, hv', Bool.false_eq_true, if_false, timedKind]
+    simp only [hv', Bool.false_eq_true, ite_false] at ht
+    have hd : diff = differing Γ tc.context target.mapping := by simp only [diff, hv', Bool.false_eq_true, ite_false, timedKind]
     rw [hd] at ht
-    simpa only [Γ, handler, ex, Exit.isHandler, if_true, names, entry, target, Exit.target, obs, Exit.observed,
+    simpa only [Γ, handler, ex, Exit.isHandler, ite_true, names, entry, target, Exit.target, obs, Exit.observed,
       store, st, pushedNames, width, c, push, Exit.pushed, Exit.promote, handlerCtx, handlerSearchFacts, handlerStore]
       using exitTypes_handler_checked ht
   refine ⟨tc, htc, htcheck, ?_⟩
@@ -167,7 +167,7 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     rename_i a3 hc
     obtain ⟨req, hreq⟩ := headExit_contract hc
     refine ⟨fun _ => ⟨req, ?_⟩, fun hn => ?_⟩
-    · simpa only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, if_true, List.append_nil,
+    · simpa only [freshImpl, handler, ex, Exit.isHandler, Bool.or_true, ite_true, List.append_nil,
         Γ, c, names, entry, target, Exit.target, store, st, pushedNames, width, push, Exit.pushed, obs,
         Exit.observed, Exit.promote, vacuous, unsatΓ, handlerCtx, handlerStore] using hreq
     · exact Bool.noConfusion (hh.symm.trans hn)
@@ -178,7 +178,7 @@ theorem exitStep_handler_checks {env : WalkEnv ι G I} {l i : Nat} {en : Entered
     refine ⟨fun ht => (hh ht).elim, fun _ hv req hr => ?_⟩
     have hv' : vacuous = false := hv
     rw [hv'] at ha
-    simpa only [Γe, Thunk.get, handler, ex, Exit.isHandler, if_true, Γ, c, names, entry, target, Exit.target,
+    simpa only [Γe, Thunk.get, handler, ex, Exit.isHandler, ite_true, Γ, c, names, entry, target, Exit.target,
       store, st, pushedNames, width, push, Exit.pushed, obs, Exit.observed, Exit.promote, handlerCtx,
       handlerAssertFacts, handlerStore] using assertionExit_checked ha hr
 
@@ -349,7 +349,7 @@ theorem exitChecks_handler_edges (s : Site c r l hl) (η : MixedAssignment ι)
       · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hi] using checks.implied
       · simpa only [he, keptDone_thrown, keptDone_thrownTy, ← hnames] using checks.inputs
       · simpa only [he, keptDone_thrown, keptDone_thrownTy] using checks.args
-      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, if_true] using checks.query
+      · simpa only [hc, he, hK, keptDone_thrown, keptDone_thrownTy, keptDone_outFresh, ← targetContext, ite_true] using checks.query
   exact checked.reassign η
 
 /-- The extracted handler checks and the step's fresh-name bound give

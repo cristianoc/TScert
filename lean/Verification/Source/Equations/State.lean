@@ -119,7 +119,7 @@ theorem nullaryOf_modify (heads : Array Draft) (h : Nat) (f : Draft → Draft) :
     split
     · next hi => subst hi; simp [nullaryOf]
     · next hi =>
-      simp only [nullaryOf, Array.getElem_ofFn, nullaryRow, Array.getElem?_modify, hi, if_false]
+      simp only [nullaryOf, Array.getElem_ofFn, nullaryRow, Array.getElem?_modify, hi, ite_false]
 
 structure State where
   /-- Execution policy; the equation document records only the types. -/

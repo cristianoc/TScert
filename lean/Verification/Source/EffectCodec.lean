@@ -205,11 +205,11 @@ theorem intOfDec_intDec (i : Int) : intOfDec (intDec i) = .ok i := by
   unfold intOfDec intDec intChars
   rw [String.toList_ofList]
   by_cases hi : i < 0
-  · simp only [hi, if_true, List.singleton_append]
+  · simp only [hi, ite_true, List.singleton_append]
     rw [natOfChars_dec]
     show Except.ok (-((i.natAbs : Nat) : Int)) = Except.ok i
     congr 1; omega
-  · simp only [hi, if_false, List.nil_append]
+  · simp only [hi, ite_false, List.nil_append]
     cases hd : decDigits i.natAbs with
     | nil => exact absurd hd (decDigits_ne_nil _)
     | cons d ds =>
@@ -394,7 +394,7 @@ theorem mapM_hexOf (ds : List Nat) (h : ∀ d ∈ ds, d < 16) : (ds.map hexChar)
 theorem bitsOf_bitsText (b : UInt64) : bitsOf (bitsText b) = .ok b := by
   unfold bitsOf bitsText
   rw [String.toList_ofList, mapM_hexOf _ (fun d hd => hexDigits_lt 16 _ d (List.mem_reverse.mp hd))]
-  simp only [List.length_reverse, hexDigits_length, List.reverse_reverse, ofHexDigits_hexDigits, if_true]
+  simp only [List.length_reverse, hexDigits_length, List.reverse_reverse, ofHexDigits_hexDigits, ite_true]
   have : b.toNat % 16 ^ 16 = b.toNat := Nat.mod_eq_of_lt (by have := b.toNat_lt; simpa using this)
   rw [this, UInt64.ofNat_toNat]
 
@@ -792,9 +792,9 @@ def termOf (j : Json) : Except String HeapKnowledge.Term :=
 @[simp] theorem termOf_termJ (t : HeapKnowledge.Term) : termOf (termJ t) = .ok t := by
   rw [Term.eta t]
   cases h : t.atEntry
-  · simp only [Term.now_atEntry, termJ, if_false, Bool.false_eq_true]
+  · simp only [Term.now_atEntry, termJ, ite_false, Bool.false_eq_true]
     simp [termOf, fields_obj] <;> try rfl
-  · simp only [Term.old_atEntry, termJ, if_true]
+  · simp only [Term.old_atEntry, termJ, ite_true]
     simp [termOf, fields_obj] <;> try rfl
 
 def stepVarJ : StepVar → Json
@@ -1400,7 +1400,7 @@ private partial def jsonValue : Parser Json := do
         Json.Parser.lookahead (· == ',') ","; skip; ws
     skip; ws
     return .arr entries
-  | _ => Json.Parser.anyCore
+  | _ => Json.Parser.anyCore Json.Parser.maxDepth
 
 /-- A complete JSON document with unique decoded member names at every depth. -/
 def parseDocument (text : String) : Except String Json := (ws *> jsonValue <* eof).run text

@@ -115,7 +115,7 @@ theorem HeapOk.categories {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W 
       | field | cell =>
         simp only [SlotRole] at hs
         obtain ⟨rfl, hs⟩ := hs
-        simp only [hs, if_false]
+        simp only [hs, ite_false]
         cases u <;> simp_all [Cat, isSourceVal, Selector.selects, Selector.values, Selector.has, contentsCategory]
       | elem | identity => simp [SlotRole] at hs
   cells s ls l u hs hl hu := by
@@ -297,7 +297,7 @@ theorem rebase_erases_spine_only (ev : RebaseEvidence) (s : Nat) (p : List Strin
   by_cases hf : ev.freshPath s p k = true
   · simp only [RebaseEvidence.freshPath, Bool.and_eq_true, beq_iff_eq] at hf
     exact hf.1
-  · simp only [rebase, hf, Bool.false_eq_true, if_false] at hk
+  · simp only [rebase, hf, Bool.false_eq_true, ite_false] at hk
     split at hk
     · cases hk
     · split at hk <;> cases hk

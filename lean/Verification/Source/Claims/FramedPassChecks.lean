@@ -103,7 +103,7 @@ def FramedSpec.arityB {σ ι : Type} [Labels ι] [StoreView σ ι] (spec : Frame
 /-- The realized code's body is the request's code (proved). -/
 theorem moduleBody_realized {σ ι : Type} [Labels ι] [StoreView σ ι] {codes : List Code}
     {r : SourceRequest σ ι} (h : realizedCode r ∈ codes) : moduleBody codes (realizedCode r) = requestCode r := by
-  simp only [moduleBody, List.contains_iff_mem.mpr h, if_true]
+  simp only [moduleBody, List.contains_iff_mem.mpr h, ite_true]
   simp [realizedCode, requestCode]
 
 end Verification.SourceClaimJson

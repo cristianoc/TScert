@@ -239,7 +239,7 @@ theorem vacuous_false {G : NormalGraph ι} {here : Bool} {A : Ty ι} {C : List (
     · exact hunsat hu
     · have hp : pushed = true := hpo rfl
       subst hp
-      simp only [if_true, List.getElem?_cons_zero, Option.any_some] at hi
+      simp only [ite_true, List.getElem?_cons_zero, Option.any_some] at hi
       exact BranchRefinement.impossible_sound hi (he.2 0 A rfl) (by simpa [ObservedOk, push] using ho)
 
 end Typed

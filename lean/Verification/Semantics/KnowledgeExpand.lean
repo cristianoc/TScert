@@ -20,7 +20,7 @@ type admits, where the type is of finitely many primitive predicates. -/
 theorem ctxOf_ok {ι : Type} {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} (he : EnvOk G Γ ρ n W) :
     CtxOk (ctxOf G Γ) ρ := by
   intro i C hC
-  simp only [ctxOf, HeapKnowledge.setsCtx, Nat.not_lt_zero, if_false, Nat.sub_zero] at hC
+  simp only [ctxOf, HeapKnowledge.setsCtx, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hC
   exact HeapKnowledge.typeSets_mem he hC
 
 section
@@ -235,7 +235,7 @@ theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
     intro ℓ hℓ
     have hle := (LinkClasses.least_le (d := a.separation.depth - 1 - ℓ)
       (l := Partitions.cls (LinkClasses.closure a.links) (a.separation.depth - 1 - ℓ))).1
-    simp only [SeparationNormal.levelRep, hℓ, if_true, LinkClasses.repIn]
+    simp only [SeparationNormal.levelRep, hℓ, ite_true, LinkClasses.repIn]
     refine ⟨by omega, ?_⟩
     have e : a.separation.depth - 1 - (a.separation.depth - 1 -
         LinkClasses.least (a.separation.depth - 1 - ℓ)

@@ -135,7 +135,7 @@ theorem outputCtx_ok {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W} (he : E
   | zero => simp [outputCtx, HeapKnowledge.setsCtx] at hC
   | succ i =>
     simp only [outputCtx, HeapKnowledge.setsCtx, Nat.add_lt_iff_lt_sub_right, Nat.succ_sub_one,
-      Nat.not_lt_zero, if_false] at hC
+      Nat.not_lt_zero, ite_false] at hC
     exact HeapKnowledge.typeSets_mem he (by simpa using hC)
 
 /-- A node's stated output follows from the output its step computes. -/
@@ -555,12 +555,12 @@ theorem sliceTable_mem [DecidableEq ι] (G : NormalGraph ι) :
     · exact hm h k' v hv
     · rw [Std.HashMap.getD_insert] at hv
       by_cases hk : (sliceKeyHash G k == h) = true
-      · rw [if_pos hk] at hv
+      · rw [ite_eq_left hk] at hv
         rcases List.mem_cons.mp hv with he | hv
         · obtain ⟨rfl, rfl⟩ := Prod.mk.inj he
           rfl
         · exact hm _ k' v hv
-      · rw [if_neg hk] at hv
+      · rw [ite_eq_right hk] at hv
         exact hm h k' v hv
 
 /-- A key's slice in a bucket. -/

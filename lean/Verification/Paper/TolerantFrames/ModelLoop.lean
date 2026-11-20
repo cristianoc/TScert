@@ -337,11 +337,11 @@ theorem num_of_intValue {v : Val} {a : Int} (h : HeapKnowledge.intValue v = some
 /-- `<` on two doubles of safe integers is the integers' order. -/
 theorem lt_binop {x y : UInt64} {a b : Int} (hx : SafeIntegers.SafeInt x a) (hy : SafeIntegers.SafeInt y b) :
     binop .lt (.num x) (.num y) = some (if a < b then .tru else .fls) := by
-  simp only [binop, reduceCtorEq, if_false, Arith.relational, if_true, relationalValue, relNumeric,
+  simp only [binop, reduceCtorEq, ite_false, Arith.relational, ite_true, relationalValue, relNumeric,
     Option.bind_some, numericRelation, SafeIntegers.doubleOrder_safe hx hy, Option.some.injEq]
   by_cases h : a < b
-  · rw [Int.compare_eq_lt.mpr h, if_pos h]; rfl
-  · rw [if_neg h]
+  · rw [Int.compare_eq_lt.mpr h, ite_eq_left h]; rfl
+  · rw [ite_eq_right h]
     rcases Int.lt_or_eq_of_le (Int.not_lt.mp h) with h' | rfl
     · rw [Int.compare_eq_gt.mpr h']; rfl
     · rw [Int.compare_eq_eq.mpr rfl]; rfl
@@ -371,7 +371,7 @@ theorem guard_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ 
       · exact .inr rfl
     · by_cases hab : a < b
       · exact hab
-      · rw [if_neg hab] at ht; cases ht
+      · rw [ite_eq_right hab] at ht; cases ht
 
 /-- **The read's local judgment**: where slot 2 holds an array of source
 values and slot 0 a number, `xs[j]` takes two steps to a source value, keeping
@@ -516,7 +516,7 @@ theorem loop_checked (m : Nat) :
     refine ⟨_, rfl, fun hr _ => ?_⟩
     refine ⟨noFam, numT, .empty, .empty, fun _ v => v = ρ 0, fun _ => True, ?_, ?_⟩
     · show SafePostExc _ _ _ _ s.n s.W s.h (instantiate 0 ρ (.var 0))
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hr ⊢
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hr ⊢
       exact SafePostExc.value (by rw [hx]; rfl) ⟨x, hx⟩ ⟨Footprints.Closed.Holds.refl _ _, rfl⟩ hr
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha _ _ hv => ?_, fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
     subst hv

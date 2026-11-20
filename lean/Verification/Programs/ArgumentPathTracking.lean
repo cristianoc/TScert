@@ -79,9 +79,9 @@ theorem checkEdges_sound {table : List (List Fact)} {facts : List Fact} {origins
   intro target ht
   have he := List.all_eq_true.mp hc target ht
   cases hk : pushes k
-  · simp only [hk, Bool.false_eq_true, if_false] at he ⊢
+  · simp only [hk, Bool.false_eq_true, ite_false] at he ⊢
     exact checkMap_sound he hs
-  · simp only [hk, if_true] at he ⊢
+  · simp only [hk, ite_true] at he ⊢
     exact checkMap_sound he (afterPush_sound hs hv)
 
 def checkHandler (table : List (List Fact)) (facts : List Fact) (handler : Option ControlFlow.Target) : Bool :=

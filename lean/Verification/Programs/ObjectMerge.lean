@@ -907,11 +907,11 @@ theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs
   rw [srcData_lookup hq]
   simp only [Src.never, Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_true] at hn
   by_cases hd : d.contains k = true
-  · rw [if_pos hd]
-  · rw [if_neg hd]
+  · rw [ite_eq_left hd]
+  · rw [ite_eq_right hd]
     rcases hn with (hd' | ⟨-, hc⟩) | ⟨hx, hi⟩
     · exact absurd hd' hd
-    · rw [if_neg (by simp [hc]), Option.map_none, Option.none_or]
+    · rw [ite_eq_right (by simp [hc]), Option.map_none, Option.none_or]
       exact spineData_lookup_none (.inl (indexKey_of_not_copied hc))
     · have hl := excludes_lookup (oid := 0) hx (fun K hK => hf.bounds K hK 0)
       rw [show (if copiedKey k = true then fs.lookup k else none) = none by split <;> simp [hl],
@@ -930,7 +930,7 @@ theorem src_sure {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)
   obtain ⟨A, hA, hw⟩ := any_named hn
   obtain ⟨l, c, hl, hcw, hag⟩ := hf.named (k, A) hA
   refine ⟨heapVal h l, ?_, heap_contract_within hok hcw hag hw⟩
-  rw [srcData_lookup hq, if_neg (by simpa using hd), if_pos hc, hl]
+  rw [srcData_lookup hq, ite_eq_right (by simpa using hd), ite_eq_left hc, hl]
   rfl
 
 theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
@@ -945,8 +945,8 @@ theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 
     rw [hv] at hv'; cases hv'; exact hm
   · rw [srcData_lookup hq] at hv
     by_cases hd : d.contains k = true
-    · rw [if_pos hd] at hv; cases hv
-    rw [if_neg hd] at hv
+    · rw [ite_eq_left hd] at hv; cases hv
+    rw [ite_eq_right hd] at hv
     have hspine : (spineData h fs).lookup k = none := by
       simp only [Bool.not_eq_true'] at hidx
       rcases hidx with hi | hs
@@ -954,7 +954,7 @@ theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 
       · exact spineData_lookup_none (.inr (excludes_lookup (oid := 0) hs (fun K hK => hf.bounds K hK 0)))
     rw [hspine, Option.or_none] at hv
     by_cases hc : copiedKey k = true
-    · rw [if_pos hc] at hv
+    · rw [ite_eq_left hc] at hv
       cases hl : fs.lookup k with
       | none => rw [hl] at hv; cases hv
       | some l =>
@@ -970,7 +970,7 @@ theorem src_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 
           simp only [Bool.and_eq_true] at hxe
           obtain ⟨c, hcw, hag⟩ := hf.indexes x hxm k l (IndexKeys.surely_admits hxe.1) hl
           exact heap_contract_within hok hcw hag hxe.2
-    · rw [if_neg hc] at hv; cases hv
+    · rw [ite_eq_right hc] at hv; cases hv
 
 /-- What the accumulator's copy gives under a key. -/
 theorem acc_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
@@ -994,7 +994,7 @@ theorem acc_sure {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)
   obtain ⟨A, hA, hw⟩ := any_named hn
   obtain ⟨l, c, hl, hcw, hag⟩ := hf.named (k, A) hA
   refine ⟨heapVal h l, ?_, heap_contract_within hok hcw hag hw⟩
-  rw [ownAll_lookup hp, if_pos hk, hl]
+  rw [ownAll_lookup hp, ite_eq_left hk, hl]
   rfl
 
 theorem acc_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1)}
@@ -1007,7 +1007,7 @@ theorem acc_within {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 
   · rw [acc_never hf hp hn] at hv; cases hv
   · obtain ⟨v', hv', hm⟩ := acc_sure hf hok hp hsure
     rw [hv] at hv'; cases hv'; exact hm
-  · rw [ownAll_lookup hp, if_pos hk] at hv
+  · rw [ownAll_lookup hp, ite_eq_left hk] at hv
     cases hl : fs.lookup k with
     | none => rw [hl] at hv; cases hv
     | some l =>
@@ -1034,7 +1034,7 @@ theorem acc_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
   have hmay := IndexKeys.may_of_admits hk
   rw [ownAll_lookup hp] at hv
   by_cases hs : (k != arraySpineKey) = true
-  · rw [if_pos hs] at hv
+  · rw [ite_eq_left hs] at hv
     cases hl : fs.lookup k with
     | none => rw [hl] at hv; cases hv
     | some l =>
@@ -1068,7 +1068,7 @@ theorem acc_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
         · simp [h1] at hs
         · exact typed (.inl h1)
         · exact typed (.inr h1)
-  · rw [if_neg hs] at hv; cases hv
+  · rw [ite_eq_right hs] at hv; cases hv
 
 /-- The spine key is a string key: a string index constrains it. -/
 theorem strings_admit_spine : IndexKeys.strings.Admits arraySpineKey := trivial
@@ -1084,18 +1084,18 @@ theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT 
   have hmay := IndexKeys.may_of_admits hk
   rw [srcData_lookup hq] at hv
   by_cases hd : d.contains k = true
-  · rw [if_pos hd] at hv; cases hv
-  rw [if_neg hd] at hv
+  · rw [ite_eq_left hd] at hv; cases hv
+  rw [ite_eq_right hd] at hv
   simp only [Src.classWithinPlain] at hc
   by_cases hsym : K = .symbols
   · subst hsym
     cases k with
     | str s => exact absurd hk (by simp [IndexKeys.Admits])
     | sym i =>
-      rw [if_neg (by simp [copiedKey]), Option.map_none, Option.none_or,
+      rw [ite_eq_right (by simp [copiedKey]), Option.map_none, Option.none_or,
         spineData_lookup_none (.inl rfl)] at hv
       cases hv
-  · rw [if_neg (by simpa using hsym)] at hc
+  · rw [ite_eq_right (by simpa using hsym)] at hc
     simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true,
       Bool.not_eq_true', List.any_eq_true, beq_iff_eq] at hc
     obtain ⟨⟨⟨hspine, hnamed⟩, hopt⟩, hroute⟩ := hc
@@ -1115,7 +1115,7 @@ theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT 
           | _ => rfl
     rw [hnone, Option.or_none] at hv
     by_cases hcp : copiedKey k = true
-    · rw [if_pos hcp] at hv
+    · rw [ite_eq_left hcp] at hv
       cases hl : fs.lookup k with
       | none => rw [hl] at hv; cases hv
       | some l =>
@@ -1152,7 +1152,7 @@ theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT 
           · rw [hcp] at h1; cases h1
           · exact typed (.inl h1)
           · exact typed (.inr h1)
-    · rw [if_neg hcp] at hv; cases hv
+    · rw [ite_eq_right hcp] at hv; cases hv
 
 /-- What the source gives under a key its class admits, at every level the
 allocation it is copied into is judged at: by `classWithinPlain`, or, for an
@@ -1366,29 +1366,29 @@ theorem sides_obj {G : NormalGraph ι} {d : List PropKey} {oa ob : Obj ι} {p : 
   bound K hK k v hv hamong hspine := by
     rw [srcData_lookup hq] at hv
     by_cases hd : d.contains k = true
-    · rw [if_pos hd] at hv; cases hv
-    rw [if_neg hd] at hv
+    · rw [ite_eq_left hd] at hv; cases hv
+    rw [ite_eq_right hd] at hv
     have hs : fb.lookup arraySpineKey = none := ownKeysT_lookup (hfb.bounds K hK 0) hspine
     rw [spineData_lookup_none (.inr hs), Option.or_none] at hv
     by_cases hc : copiedKey k = true
-    · rw [if_pos hc] at hv
+    · rw [ite_eq_left hc] at hv
       cases hl : fb.lookup k with
       | none => rw [hl] at hv; cases hv
       | some l => exact ⟨hc, by simpa using hd, ownKeysT_admits (hfb.bounds K hK 0) hl⟩
-    · rw [if_neg hc] at hv; cases hv
+    · rw [ite_eq_right hc] at hv; cases hv
   boundA K hK k v hv := by
     rw [ownAll_lookup hp] at hv
     by_cases hk : (k != arraySpineKey) = true
-    · rw [if_pos hk] at hv
+    · rw [ite_eq_left hk] at hv
       cases hl : fa.lookup k with
       | none => rw [hl] at hv; cases hv
       | some l => exact ⟨by simpa using hk, ownKeysT_admits (hfa.bounds K hK 0) hl⟩
-    · rw [if_neg hk] at hv; cases hv
+    · rw [ite_eq_right hk] at hv; cases hv
   proto := by
     rw [srcData_lookup hq]
     split
     · rfl
-    · rw [if_neg (by simp [proto_not_copied]), Option.map_none, Option.none_or]
+    · rw [ite_eq_right (by simp [proto_not_copied]), Option.map_none, Option.none_or]
       exact spineData_lookup_none (.inl proto_not_index)
   classA _ _ hc _ _ hk hv := acc_class hfa hok hp hc hk hv
   classB _ _ hc _ _ hk hv := src_class hfb hok hq hc hk hv
@@ -1409,11 +1409,11 @@ theorem sides_prim {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Na
   boundA K hK k v hv := by
     rw [ownAll_lookup hp] at hv
     by_cases hk : (k != arraySpineKey) = true
-    · rw [if_pos hk] at hv
+    · rw [ite_eq_left hk] at hv
       cases hl : fa.lookup k with
       | none => rw [hl] at hv; cases hv
       | some l => exact ⟨by simpa using hk, ownKeysT_admits (hfa.bounds K hK 0) hl⟩
-    · rw [if_neg hk] at hv; cases hv
+    · rw [ite_eq_right hk] at hv; cases hv
   proto := rfl
   classA _ _ hc _ _ hk hv := acc_class hfa hok hp hc hk hv
   classB _ _ _ _ _ _ hv := by simp [List.lookup] at hv
@@ -1454,11 +1454,11 @@ theorem sides_str {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {p : Nat
   boundA K hK k v hv := by
     rw [ownAll_lookup hp] at hv
     by_cases hk : (k != arraySpineKey) = true
-    · rw [if_pos hk] at hv
+    · rw [ite_eq_left hk] at hv
       cases hl : fa.lookup k with
       | none => rw [hl] at hv; cases hv
       | some l => exact ⟨by simpa using hk, ownKeysT_admits (hfa.bounds K hK 0) hl⟩
-    · rw [if_neg hk] at hv; cases hv
+    · rw [ite_eq_right hk] at hv; cases hv
   proto := by
     cases hv : ((firstKeys (stringData s)).filter fun e => !d.contains e.1).lookup CallArguments.protoField with
     | none => rfl
@@ -1851,7 +1851,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
             obtain ⟨hz, hzf⟩ := Classical.choose_spec hex
             have hfam : entryFam G (Stored.views fs) os ix (f, v) = meaning G (Classical.choose hex).2 := by
               simp only [entryFam, hT, hf]
-              rw [dif_pos hex]
+              rw [dite_eq_left hex]
             refine ⟨fun y hy hyf i hi U' u => ?_, fun i hi U' u hc => ?_⟩
             · rw [hag i hi U' u, hfam, hov _ hz y (List.mem_append_right _ hy) f hzf hyf]
             · rw [hag i hi U' u, hfam, hov _ hz x hx f hzf hxf] at hc; exact hc

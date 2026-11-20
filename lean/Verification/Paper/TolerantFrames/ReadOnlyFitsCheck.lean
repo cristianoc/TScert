@@ -137,8 +137,8 @@ theorem OVOr.inst {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) {d : Nat} {�
     {S : Sites P} {u : Tm} (h : OVOr τ d Γ S u) : VOr (VJ Fl g n) Γ S (instantiate d ρ u) := by
   rcases h with hp | ⟨j, S', rfl, hj, hΓ, hs⟩ | ⟨j, rfl, hj, hs⟩
   · rw [instantiate_prim hp]; exact .inl (VJ.prim hp)
-  · simp only [instantiate, if_pos hj]; exact .inr ⟨j, S', rfl, hΓ, hs⟩
-  · simp only [instantiate, if_neg (by omega : ¬ j < d)]; exact .inl ((hρ _).sub hs)
+  · simp only [instantiate, ite_eq_left hj]; exact .inr ⟨j, S', rfl, hΓ, hs⟩
+  · simp only [instantiate, ite_eq_right (by omega : ¬ j < d)]; exact .inl ((hρ _).sub hs)
 
 /-- **The signatures an open closure creation names, instantiated**
 (proved): a capture naming a signature is a slot holding a closure of it. -/
@@ -150,7 +150,7 @@ theorem OCapFn.inst {ρ : Env} (hφ : ∀ i σ, φ i = some σ → FnIs P σ (ρ
   refine ⟨j, rfl, ?_⟩
   rcases hc with ⟨v, hv, hd, hφv⟩ | ⟨rfl, rfl⟩
   · refine .inl ⟨instantiate d ρ (.var v), by simp [List.getElem?_map, hv], ?_⟩
-    simp only [instantiate, if_neg (by omega : ¬ v < d)]
+    simp only [instantiate, ite_eq_right (by omega : ¬ v < d)]
     exact hφ _ σ hφv
   · exact .inr ⟨by simp, by simp⟩
 
@@ -170,14 +170,14 @@ theorem ofits_sound {ρ : Env} (hρ : ∀ i, VJ Fl g n (τ i) (ρ i)) (hφ : ∀
   | @arr d _ _ _ _ ls hl ho =>
     have he : instantiate d ρ (.arr ls) = .arr ls := by simp [instantiate]
     rw [he]; exact .val rfl (VJ.arr fun l hl' => by have := hl _ hl'; simp at this) ho
-  | bvar hi hΓ hs ho => simp only [instantiate, if_pos hi]; exact .var hΓ hs ho
+  | bvar hi hΓ hs ho => simp only [instantiate, ite_eq_left hi]; exact .var hΓ hs ho
   | @fvar d _ _ _ _ i hi hs ho =>
-    simp only [instantiate, if_neg (by omega : ¬ i < d)]; exact .val (hρ _).val ((hρ _).sub hs) ho
+    simp only [instantiate, ite_eq_right (by omega : ¬ i < d)]; exact .val (hρ _).val ((hρ _).sub hs) ho
   | invoke _ _ _ hO ha ho hSf hout ihf ihr iha =>
     simp only [instantiate, instantiateArgs_eq_map]
     exact .invoke ihf ihr (fun x hx => by obtain ⟨y, hy, rfl⟩ := mem_inst hx; exact iha y hy) hO ha ho hSf hout
   | @invokeC d _ _ _ _ j _ args σ c π Sa Sr hof hj hφj hcode hself _ _ hat hpar hrest hO ho ihr iha =>
-    simp only [instantiate, instantiateArgs_eq_map, if_neg (by omega : ¬ j < d)]
+    simp only [instantiate, instantiateArgs_eq_map, ite_eq_right (by omega : ¬ j < d)]
     refine .invokeC σ c π Sa Sr hof (hφ _ σ hφj) hcode ((hρ _).sub hself) ihr (fun i x hx => ?_) (fun x hx => ?_)
       hpar hrest hO ho
     · simp only [List.getElem?_map, Option.map_eq_some_iff] at hx

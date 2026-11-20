@@ -204,9 +204,9 @@ theorem ExitSchema.forgetActuals_frame (q : ExitSchema) :
   show FrameActualsIndependent (if effectScoped 1 q.frame then q.frame else topEffect) ∧
     ActionIncluded q.frame (if effectScoped 1 q.frame then q.frame else topEffect)
   by_cases hsc : effectScoped 1 q.frame = true
-  · rw [if_pos hsc]
+  · rw [ite_eq_left hsc]
     exact ⟨frameActualsIndependent_of_scoped hsc, fun _ _ _ h => h⟩
-  · rw [if_neg hsc]
+  · rw [ite_eq_right hsc]
     exact ⟨frameActualsIndependent_top, actionIncluded_top _⟩
 
 /-- **Forgetting the actuals of an exit is consequence**

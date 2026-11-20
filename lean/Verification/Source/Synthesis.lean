@@ -1017,7 +1017,7 @@ def joinFast : Option Env → Option Env → Option Env
     simp only [join, joinFast, lookupTable_get, withPtrEq]
     by_cases h : a.decl = b.decl
     · have hd := decl_join_self a.decl
-      simp only [h, decide_true, if_true] at hd ⊢
+      simp only [h, decide_true, ite_true] at hd ⊢
       rw [hd, List.append_nil]
     · simp [h]
 

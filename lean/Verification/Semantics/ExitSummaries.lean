@@ -119,7 +119,7 @@ private theorem actualWitnesses_values (r : Tm) (args : List Tm) (h : Heap) :
       rw [← List.drop_drop, hd]; rfl
     simp only [List.length_cons, List.range'_succ, List.map_cons, List.mapM_cons]
     rw [ih (k + 1) hrest]
-    simp only [Witness.value, Path.read, HeapKnowledge.readPath, callEnv, Nat.add_one_ne_zero, if_false,
+    simp only [Witness.value, Path.read, HeapKnowledge.readPath, callEnv, Nat.add_one_ne_zero, ite_false,
       Nat.add_sub_cancel, ha]
     rfl
 
@@ -277,7 +277,7 @@ theorem Effect.ofClosed_schema (c : Footprints.Closed) (bounded : Bool) :
 `c` and the spine regions `regions` at `any`, a fresh result where `fresh`
 and the index facts `ensures` of the result and the call's positions; on a
 throw the same frame where `bounded`, `⊤` otherwise. -/
-def Exits.ofStated (c : Footprints.Closed) (bounded fresh : Bool) (ensures : List HeapKnowledge.IndexFact)
+def Exits.ofStated (c : Footprints.Closed) (bounded fresh : Bool) («ensures» : List HeapKnowledge.IndexFact)
     (regions : List Footprints.ArgumentSpineRegion) : Exits ExitSchema :=
   let frame := c.fp ++ regions.map regionEntry
   ⟨⟨frame, (if fresh then [.operation (.freshSpine 0)] else []) ++
@@ -287,7 +287,7 @@ def Exits.ofStated (c : Footprints.Closed) (bounded fresh : Bool) (ensures : Lis
 /-- **An effect a declaration states** (`Exits.ofStated`), with its promise
 and its precondition `pre`. -/
 def Effect.ofStated (c : Footprints.Closed) (promise : Option TypePromise) (bounded fresh : Bool)
-    (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentSpineRegion) : Effect :=
+    (pre «ensures» : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentSpineRegion) : Effect :=
   ⟨Exits.ofStated c bounded fresh ensures regions, promise, none, pre⟩
 
 /-- **A frame with its class entries those of `c`**: `c`'s class entries,

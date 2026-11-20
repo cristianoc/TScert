@@ -89,7 +89,7 @@ theorem returnWithin_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     cases w0 with
     | true => exact .inl rfl
     | false =>
-      simp only [Bool.false_eq_true, if_false] at h
+      simp only [Bool.false_eq_true, ite_false] at h
       cases hr : refined[p]? with
       | none =>
         rw [hr] at h

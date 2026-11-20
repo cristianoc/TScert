@@ -48,7 +48,7 @@ locations it may change, read at the entry's environment, and the
 postconditions it states. -/
 structure ExitSpec where
   frame : Footprint
-  ensures : List Formula
+  «ensures» : List Formula
   deriving DecidableEq
 
 /-- **The meaning of an exit specification**: the transition is an action of
@@ -213,7 +213,7 @@ frame, read at the call's entry, and its postconditions over the call's
 values. -/
 structure ExitSchema where
   frame : Footprint
-  ensures : List FormulaSchema
+  «ensures» : List FormulaSchema
   deriving DecidableEq, Repr
 
 /-- Whether an exit schema references no arena node. -/

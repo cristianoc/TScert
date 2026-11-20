@@ -86,7 +86,7 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
         · rename_i hc
           simp only [Bool.not_false, Bool.and_true, Bool.and_eq_true, beq_iff_eq] at hc
           obtain ⟨rfl, rfl⟩ := hc
-          simp only [termValue, termAt, Bool.false_eq_true, if_false, guardReads_path hl hm hw, Option.bind_some, hk]
+          simp only [termValue, termAt, Bool.false_eq_true, ite_false, guardReads_path hl hm hw, Option.bind_some, hk]
         · exact hn
     obtain ⟨F', hF'⟩ := Linear.Fact.mapVars_some g' F
     show (IndexFact.linear ((F.mapVars fun t => some (g' t)).getD F)).HoldsAt ε ρ h
@@ -128,7 +128,7 @@ theorem lowerGuards_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ : Env
     · obtain ⟨⟨c, g, v⟩, hr, hrb⟩ := List.mem_filterMap.mp hb
       cases hcg : (c == s && g == f)
       · simp [hcg] at hrb
-      · simp only [hcg, if_true, Option.some.injEq] at hrb
+      · simp only [hcg, ite_true, Option.some.injEq] at hrb
         subst hrb
         simp only [Bool.and_eq_true, beq_iff_eq] at hcg
         obtain ⟨rfl, rfl⟩ := hcg
@@ -161,8 +161,8 @@ theorem check_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h)
 theorem mem_ite_nil {α : Type} {c : Prop} [Decidable c] {l : List α} {x : α}
     (h : x ∈ (if c then [] else l)) : x ∈ l := by
   by_cases hc : c
-  · rw [if_pos hc] at h; cases h
-  · rwa [if_neg hc] at h
+  · rw [ite_eq_left hc] at h; cases h
+  · rwa [ite_eq_right hc] at h
 
 section Path
 variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}

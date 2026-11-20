@@ -777,7 +777,7 @@ theorem activeArgs_at {cur : Option FrameKey} {t a : Tm} :
     simp [activeArgs, hn]
   | b :: bs, i + 1, h, hpre, hn => by
     have hb : isVal b = true := hpre 0 (Nat.zero_lt_succ _) b rfl
-    simp only [activeArgs, hb, Bool.true_eq_false, if_false]
+    simp only [activeArgs, hb, Bool.true_eq_false, ite_false]
     exact activeArgs_at (by simpa using h) (fun j hj v hv => hpre (j + 1) (by omega) v (by simpa using hv)) hn
 
 /-- The elements of a list with one replaced (proved). -/
@@ -810,15 +810,15 @@ theorem sites_set {St : Sites P → Prop} {Fi Fi' : Sites P → Tm → Prop} {Ss
   constructor
   · intro x hx
     by_cases he : x = a'
-    · simp only [he, if_true]; exact hst a hm
-    · simp only [he, if_false]
+    · simp only [he, ite_true]; exact hst a hm
+    · simp only [he, ite_false]
       rcases mem_set_cases hx with hx | hx
       · exact hst x hx
       · exact absurd hx he
   · intro x hx
     by_cases he : x = a'
-    · simp only [he, if_true]; exact ha'
-    · simp only [he, if_false]
+    · simp only [he, ite_true]; exact ha'
+    · simp only [he, ite_false]
       rcases mem_set_cases hx with hx | hx
       · exact hlift _ _ (hi x hx)
       · exact absurd hx he
@@ -1055,13 +1055,13 @@ theorem HeapInv.set_same {h : Heap} {w : Nat} {u : Val} {sf : Nat → Option P.S
 theorem stepSite_setElem {cur : Option FrameKey} {ls : List (Option Nat)} {b : UInt64} {v : Tm}
     (hv : isVal v = true) : stepSite Fl cur (.setElem (.arr ls) (.num b) v) = (allocOf Fl cur).arr := by
   simp only [stepSite, activeFrame, hv, show isVal (.arr ls) = true from rfl, show isVal (.num b) = true from rfl,
-    Bool.true_eq_false, if_false]
+    Bool.true_eq_false, ite_false]
 
 theorem activeArgs_vals {cur : Option FrameKey} {t : Tm} :
     ∀ {xs : List Tm}, (∀ v ∈ xs, isVal v = true) → activeArgs cur t xs = (cur, t)
   | [], _ => by simp [activeArgs]
   | x :: xs, h => by
-    simp only [activeArgs, h x (List.mem_cons_self ..), Bool.true_eq_false, if_false]
+    simp only [activeArgs, h x (List.mem_cons_self ..), Bool.true_eq_false, ite_false]
     exact activeArgs_vals fun v hv => h v (List.mem_cons_of_mem _ hv)
 
 theorem stepSite_makeAt {cur : Option FrameKey} {c : CallCode} {ns : List PropKey} {vs : List Tm}
@@ -1196,7 +1196,7 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
   refine VJ.obj (closed_graph fun x hx => (hcaps x hx).closed) hfs
     (fun l hl => by simp [HeapKnowledge.descriptorSpine] at hl) ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · intro x hx l hl
-    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
+    simp only [codeVals, hc, Bool.false_eq_true, ite_false, List.mem_append] at hx
     rcases hx with hx | hx
     · exact ⟨(hE x hx).below l hl, (hE x hx).sites l hl⟩
     · simp only [valsArgs_eq, List.mem_flatMap] at hx
@@ -1216,7 +1216,7 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
     cases he
     exact hlow
   · intro x hx l hl
-    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
+    simp only [codeVals, hc, Bool.false_eq_true, ite_false, List.mem_append] at hx
     rcases hx with hx | hx
     · exact absurd hl (hnlE x hx l)
     · simp only [valsArgs_eq, List.mem_flatMap] at hx
@@ -1227,7 +1227,7 @@ theorem VJ.graphOut {S : Sites P} {fs : List (PropKey × Nat)} {ar : Nat} {E : L
     cases he
     exact ⟨fun hc' => (by rw [hc] at hc'; cases hc'), fun _ => hnone⟩
   · intro x hx
-    simp only [codeVals, hc, Bool.false_eq_true, if_false, List.mem_append] at hx
+    simp only [codeVals, hc, Bool.false_eq_true, ite_false, List.mem_append] at hx
     rcases hx with hx | hx
     · exact (hE x hx).fns
     · simp only [valsArgs_eq, List.mem_flatMap] at hx

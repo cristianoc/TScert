@@ -365,7 +365,7 @@ structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   start : r.start = c.start
   goal : r.goal = c.goal
   indices : r.entryIndices = GraphCode.codeEntryIndices c
-  ensures : r.ensures = c.row.effect.schema.normal.facts
+  «ensures» : r.ensures = c.row.effect.schema.normal.facts
   bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
 
 omit [Labels ι] [StoreView σ ι] in
@@ -531,7 +531,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
     cases hot : r.onThrow
     · simp [hot] at ht
-    · simp only [hot, if_true] at ht ⊢
+    · simp only [hot, ite_true] at ht ⊢
       exact hq hot
   · intro hne η n W h L d he hgo
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
@@ -595,7 +595,7 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   indices : ∀ (L : List Tm) (recv : Tm) h,
     HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
     HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
-  ensures : c.row.effect.schema.normal.facts.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
+  «ensures» : c.row.effect.schema.normal.facts.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
   bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
 
 end
