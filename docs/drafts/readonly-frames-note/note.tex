@@ -563,7 +563,7 @@ Every step keeps the term typed and the heap meeting $H$, by induction on
 the step; a step of outside code stores only what its roots reach or what
 it allocates, outside storage, so (F4) keeps both. At an entry every
 location is of site $\circ\in O$, and every slot is supplied
-\status{Lean: \lean{fits\_step}, \lean{sites\_outside}, \lean{fits\_roots}, \lean{ClientFrame.fitsAt\_reached}, \lean{ClientFrame.sitesSound\_of\_fits}, with premises \lean{Flow.Facts}, \lean{ClientFrame.FlowSites} and \lean{ClientFrame.EntryFits}; the entry, \lean{ClientFrame.entryFits} from \lean{EntryShape}, \lean{EntryVal}, \lean{GivenOut}. conj.: that an entry's closures were given out, from the earlier entries checked against the same flow}.
+\status{Lean: \lean{fits\_step}, \lean{sites\_outside}, \lean{fits\_roots}, \lean{ClientFrame.fitsAt\_reached}, \lean{ClientFrame.sitesSound\_of\_fits}, with premises \lean{Flow.Facts}, \lean{ClientFrame.FlowSites} and \lean{ClientFrame.EntryFits}; the entry, \lean{ClientFrame.entryFits} from \lean{EntryShape}, \lean{EntryVal}, \lean{GivenOut}; that an entry's closures were given out, along a program from its initialization, \lean{FramedSpec.progOk\_initial}, \lean{FramedSpec.entryFits} (Section~\ref{sec:accept-proof}, (A2))}.
 \end{proof}
 
 \paragraph{The algorithm.} Three steps give and check a flow.
@@ -672,7 +672,7 @@ $\Psi_c=\Psi_\cC\sqcup\Theta_\cC\sqcup W_c$. At \code{visit(c.i)} of
 Example~\ref{ex:rocursor} the cursor's site is in no capture slot and in no row of $H$, so it is
 outside $L(c)$ and outside $\overline{\mathit{Cap}\cup O}$, and both
 $\Psi_\cC$ and $W_c$ keep it
-\status{Lean: \lean{writesT}, \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, \lean{segCodes}, \lean{callReach}, \lean{depthCharges}, \lean{probeProtocol}; each closure decided, \lean{capClosedB\_sound}, \lean{segClosedB\_sound}; a step changes an old location only at its active writing redex, \lean{step\_writes\_active}, whose receiver's site is in a set it meets, \lean{write\_site}. conj.: that $\Psi_\cC$ bounds the members and $W_c$ the steps of $\cC$'s code at the caller's depth during the call, from a run changing a local location only where its site is in the reach of the call that started it}.
+\status{Lean: \lean{writesT}, \lean{codeWrites}, \lean{flowWrites}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, \lean{segCodes}, \lean{callReach}, \lean{depthCharges}, \lean{probeProtocol}; each closure decided, \lean{capClosedB\_sound}, \lean{segClosedB\_sound}; a step changes an old location only at its active writing redex, \lean{step\_writes\_active}, whose receiver's site is in a set it meets, \lean{write\_site}; that $\Psi_\cC$ bounds the members and the depth charges the steps of $\cC$'s code at the caller's depth during the call, at the node's protocol of Section~\ref{sec:accept-alg}'s (B2), \lean{within\_depth}, \lean{within\_member}, \lean{ClientFrame.cert\_of\_charges} (Section~\ref{sec:accept-proof}, (A3))}.
 
 \noindent
 At a call node $l$, a region $r$ of a support has the sites
@@ -766,8 +766,10 @@ Two more examples show the two calls.
 6 & \code{~~return s; \}}\\
 \end{tabular}
 \end{center}
-\emph{Accepted}, as Example~\ref{ex:rocursor}. The slot of \code{walk}
-that holds \code{next} names its signature, so \code{next(c)} on line 5 is
+\emph{Kept by the flow}, as Example~\ref{ex:rocursor}, and \emph{refused by
+the acceptance algorithm}: its gate (A1) admits no module function naming
+another (Section~\ref{sec:accept-alg}), and \code{walk} names \code{next}.
+In the flow, the slot of \code{walk} that holds \code{next} names its signature, so \code{next(c)} on line 5 is
 a call in: \code{c} meets \code{next}'s entry slot, and the call's value
 meets \code{next}'s return set. No closure of \code{next} reaches outside
 code, so its token is outside $O$, its entry is not open, and its slots
@@ -814,14 +816,23 @@ the call's protocol $\Psi_c$.
 
 \paragraph{Per component, once.} For a component $\cC$:
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[(A1) Gates] $\cC$ is a single module; every slot of a module
+\item[(A1) Gates] $\cC$ is a single module; every module function of
+it has closure code (it declares no \code{this}) and collects no rest;
+every export is a module function; every slot of a module
 function of $\cC$ that names no module function of $\cC$ holds a realm
 intrinsic, a native with a step model or an intrinsic object of the
-realm (\code{[[Array.prototype]]}), so the module imports no value but
-these; the graph of the names the module functions read is acyclic; and
-every \code{@clients} row of an exported type states a change per class
-only. A component that fails a gate has no framed plan
-\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (acyclic names, \lean{closable}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks. The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}}.
+realm (\code{[[Array.prototype]]}), each decided by its name, so the
+module imports no value but these; no module function names another module function (a linked
+capture) or creates a closure; every \code{@clients} row of an exported
+type states a change per class only, and every row keeps every part, so
+$\Theta_\cC$ is $\keep$ at every part. A component that fails a gate has
+no framed plan. The flow's check refuses the initialization of a
+component with a linked capture (a closure creation's value names no
+signature, so the capture's open fit fails) and refuses the flow of a
+component whose code creates a closure (observed on every such probe; the
+cause is not established), so the gates state as restrictions what the
+check would refuse
+\status{Lean: \lean{PreparedFile.prepareFramedComponent} (one module: the outermost component's kind; no imported value but \code{\%\ldots\%} and \code{[[\ldots]]}; each a located refusal); \lean{framedRestriction} (no module function naming another; no module function creating a closure, \lean{closureLayouts}; each slot an audited realm value, \lean{hostModel?}, \lean{intrinsicName}; class rows, \lean{clientsByKindB}; every module function with closure code and every export a module function); no code collecting a rest, \lean{noRestB}, the first of \lean{componentBindingRefusal}'s checks; every row keeping every part, \lean{thetaKeepB}, among the checks after the walk (\lean{FramedSpec.requestB}). The code runs them once per file, in \lean{FramedComponent.of}, kept in \lean{PreparedFile.framed}}.
 \item[(A2) The flow of sites] The codes $M_\cC$ are the module functions
 of $\cC$'s module, each module function's code and the closures it creates, and the
 natives' step models; a code is a term, so module functions of one code
@@ -836,7 +847,8 @@ names, then the array of the entries
 context, $\mathrm{Ch}(\{m\})$, the capture sites $\mathit{Cap}$, the
 closure $\overline{\mathit{Cap}\cup O}$ and the protocol $\Psi_\cC$
 (Section~\ref{sec:flowro}, ``Charges''); the client row $\Theta_\cC$,
-the join of the \code{@clients} rows per kind
+the join of the \code{@clients} rows per kind, which (A1) admits at
+$\keep$ alone
 \status{Lean: \lean{codeKinds}, \lean{flowKinds}, \lean{probeProtocol}, \lean{captureSites}, \lean{capClose}, \lean{componentProtocol}, built once per file as \lean{componentIndex} and tabled at the flow's sites (\lean{protocolParts}); \lean{rowsTheta}. The wire states $\Psi_\cC$ and $\Theta_\cC$, checked per unit by \lean{protocolAtLeastB} and \lean{clientsB}; the code computes each closure by iteration (\lean{capClose}) and runs its check \lean{capClosedB} at the closure of the capture sites and $O$ (\lean{frameFlowB}) and at each framed node's set (\lean{framedNodeOkB})}.
 \item[(A4) Binding checks that read no unit] The flow holds a proposal at
 context $0$ for each module function's code, and every allocation site
@@ -897,7 +909,8 @@ code's proposals at body labels are the request's; and (B2) at every
 framed node
 \status{Lean: \lean{framedDocument}, \lean{FramedSpec.decode}, \lean{FFlow.withCode}; before the walk \lean{FramedSpec.bindingChecks} (\lean{FFlow.entryB}, \lean{codesCoverB} at \lean{requestCode}, \lean{entryFnB}, \lean{clientsB}, \lean{protocolAtLeastB}, \lean{readOnlyB}, \lean{framedCallNodes}), run by \lean{FilePlans.framedChecks}, decided as \lean{FramedSpec.bindingB}; after the walk \lean{FramedSpec.requestB} (\lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow). The producer forms the document after (B2) and (B3)'s observation, and \lean{FilePlans.framedRun} runs the walk (B3), settled with no fallback (\lean{FilePlans.framedSettle})}.
 \item[(B5) The verdict] $f$ is accepted under the client obligation of
-$\cC$ when every check of (A1)--(B4) passes and the framed walk accepts;
+$\cC$ when its request is unqualified, every check of (A1)--(B4) passes
+and the framed walk accepts;
 otherwise the verdict is its ordinary plan's
 \status{Lean: \lean{FilePlans.passMember} at a framed plan, \lean{FilePlans.framedRun}, \lean{PreparedFile.framedVerdict}, the verdict line naming $\cC$ (\lean{FilePlans.clientComponents}); the acceptance condition, \lean{FramedAccepted}, its checks of (A2) and (A4) the field \lean{component}, the checks of (B4) before the walk the field \lean{binding}, those after it the field \lean{request} (\lean{FramedSpec.requestB}: \lean{compB}, \lean{sourceTermsB}, \lean{thetaKeepB}, the start, \lean{realizedFlowB} and \lean{framedNodesAt} at the frame's flow), the premises on the initial configurations read from the component's checks (\lean{FramedSpec.initialFits}, \lean{FramedSpec.initialEntry}). Where every check passes and the framed walk accepts, the unit is accepted under client trust at $\cC$; otherwise the verdict is the ordinary plan's, its text followed by the framed plan's line}.
 \end{description}
@@ -910,12 +923,22 @@ outside code enters $\cC$ only through its interface at the declared
 types, keeps $\Theta_\cC$ at each of its steps on $R_\cC$, passes function
 values that meet their arrow types, and runs typed configurations.
 \item[The client row] $\Theta_\cC$ is the protocol of the \code{@clients}
-rows, a change per class; a type with no row is read-only, $\keep$.
+rows, a change per class; a type with no row is read-only, $\keep$. The
+acceptance admits rows keeping every part (A1), so $\Theta_\cC$ is
+$\keep$ at every part.
 \item[The callback row] A call at a framed node of $f$'s request code, a call whose callee may be a value of outside code, whose callee's type states an effect, changes the heap within it from its entry to its return with a value, its calls of $\cC$ included \status{assumed, a part of $\Theta_\cC$: \lean{FramedSpec.CallbacksWithin}, a premise of \lean{MemberSafe}'s framed branch}.\par
 \item[The binding to the file] The plan's realm, initialization, flow, family and request are those of the checked file: the front end and the producer build them from the file's fragment and declaration document, and the theorem reads them from the plan \status{executable, unproved, the front end's trust: \lean{PreparedFile.prepareFramedComponent}, \lean{FramedComponent.of}, \lean{componentInit}, \lean{framedComponentFlow}, \lean{FramedSpec.decode}. Proved from the checks: the frame's $\Theta_\cC$ is the family's \code{@clients} rows' (\lean{FramedSpec.theta\_rows}), its read-only types $f$'s declared read-only parameters (\lean{FramedSpec.readOnly\_declared}), its framed nodes the flow's (\lean{FramedSpec.framed\_nodes}), its entry an entry of the checked flow (\lean{FramedSpec.entry\_checked}), its tag $\cC$ (\lean{compB\_sound})}.\par
 \item[The natives] Each native's step model describes the native, and the
 realm's intrinsic objects behave as standard
 \status{assumed: \lean{hostModel?}}.
+\item[The scope] A program the claim is about starts from a heap holding
+one location per realm value $\cC$'s module functions read, with the
+initialization run in front of a client of lowered outside source that
+holds no located value and reads one variable, the exports. Its client
+reaches the exports, what it allocates and the calculus's operations; a
+client calling a native (\code{xs.push}, \code{Math}, a \code{Map}, a
+method of a realm object) runs no program the claim is about
+\status{a stated limit, proved of the definition: \lean{FramedSpec.Initial}, \lean{componentInit}, \lean{LoweredSrc}, \lean{FramedSpec.initial\_lowered}}.
 \end{description}
 \noindent
 The proposals (the flow, the framed nodes, the kept supports, the

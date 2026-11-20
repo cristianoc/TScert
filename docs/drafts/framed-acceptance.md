@@ -462,11 +462,15 @@ proof:
 
 ### An exceptional return
 
-At an exceptional return the transfer reads $`\Phi^{e}`$, $`\top`$ where the
-callee states no exceptional bound
-([exceptional footprints](../SOURCE-ELABORATION.md#exceptional-footprints)):
-in `throw.mjs` the fact `c.i < xs.length` is lost at the handler and
-`0 <= c.i` kept. $`\mathrm{Ch}`$ charges a write at both exits.
+A framed node's kept facts are added at its normal exit alone
+(`SinglePass.keptStep`, `keptDone_thrown`): its handler reads the store
+the call's step leaves, with no fact kept, whatever the callee states of
+its exceptional exit, and the claim's return premise at an exceptional
+return is `True` (`framed_requestSafe`'s `RetE`). So a read in the handler
+that needs a fact over the cursor is refused, `0 <= c.i` included
+(observed: the reviews' `s14_throw_exit_onthrow`, `t6`, `k1`, each safe
+and refused; `u29`, unsafe under Node, refused). $`\mathrm{Ch}`$ charges
+a write at both exits.
 
 ### A call of the component's own code
 
@@ -717,7 +721,9 @@ $`0`$, and whose outside slots hold a value per depth (`approxEnv`,
 slot varying with the depth makes every unfolding different
 (`ApproxStable.lean`). Under the restriction that every outside slot holds
 an audited realm value, the same value at every depth, and with an acyclic
-name graph ranked by a height (`StableLayout`: each linked slot names a
+name graph ranked by a height (the acceptance path admits no linked capture,
+[Restrictions](#restrictions), so every module function there has height
+`0`) (`StableLayout`: each linked slot names a
 function of smaller height), a function's closure is the same at every
 depth from its height on (proved, `PassUnit.approx_stable`); a function
 with no linked slot has height `0`, one unfolding at every depth.
@@ -740,6 +746,20 @@ identities ([the initialization in the flow](#the-initialization-in-the-flow)), 
 source of outside code (`LoweredSrc`, holding no closure,
 `loweredSrc_no_closure`) scoped at one binder (`Scoped 1 client`, its
 variable `0` the exports' array; the whole `letE` is `Scoped 0`).
+
+**The scope of the claim** (a stated limit; proved of the definition,
+`FramedSpec.Initial`, `initial_lowered`): the realm's heap holds one
+location per realm value $`C`$'s module functions read (`componentInit`:
+for P22, `%ElementAt%` and `[[Array.prototype]]`, an object with no
+field), and the client holds no located value (`LoweredSrc`) and reads
+one variable, the exports. So a program the framed claim is about reaches
+the exports, what its client allocates, and the calculus's operations
+(element reads and writes, lengths, arithmetic, literals, calls of the
+exports' and its own closures). A client calling a native (`xs.push`,
+`Math.max`, a `Map`, any method of a realm object) runs no program the
+claim is about: covering it takes an initial heap holding the whole
+audited realm, each native with its step model or contract, bound for the
+client.
 
 **P22's layout** (measured, `layout.py` on P22's `fragment.json`, and the
 module code the flow probe reads): one function, `walk`; no module
@@ -838,9 +858,9 @@ their consumers need:
   source (the client; no value of the realm is code) and closed values
   (`Lr` closed, `Scoped 1 client`, primitives).
 
-**A linked capture fits by no proposal** (measured, at
-`bounds-pattern-framed-shared-code-refused`; by definition of the check of
-a node's value, `CodeChk`): a module function's capture slot of another
+**A linked capture fits by no proposal** (by definition of the check of
+a node's value, `CodeChk`; the gate "No linked capture" of
+[Restrictions](#restrictions) refuses such a component first): a module function's capture slot of another
 module function names that function's signature (`sibSig`, by which its
 call is a known call), and the initialization's slot binding that
 function's closure names none, as a node's value names a signature only
@@ -1356,16 +1376,36 @@ then checked by an ordinary plan), and has a control.
   relates to its request. Refusal: "a framed plan needs a realized entry";
   control: a method whose walker fact needs the frame, refused, its
   ordinary plan's refusal at the call.
-- **Acyclic module names.** A framed plan's component has an acyclic name
-  graph among its module functions. Excluded: two module functions naming
-  each other, whose closures have no finite initialization at the base.
-  Control: a framed walker in a module with two mutually naming functions,
-  refused.
+- **No linked capture.** No module function of a framed plan's component
+  names another module function. Excluded: a capture of a module
+  function's closure by another's (a call of a sibling, a helper, two
+  functions naming each other), whose creation by `initC` fails the flow's
+  check: a closure creation's value names no signature, so the capture
+  slot naming the sibling's signature fails its open fit ("A linked
+  capture fits by no proposal" above). Refusal: "a framed plan's module
+  function X names the module function Y, a linked capture"; controls:
+  `bounds-pattern-framed-cycle-refused` (two functions naming each other)
+  and `bounds-pattern-framed-shared-code-refused` (two walkers calling a
+  helper).
+- **No closure creation.** No module function of a framed plan's
+  component creates a closure (`closureLayouts` of its code empty).
+  Excluded: an arrow or function expression anywhere in the module's
+  functions, the walker's own or another's, called or not; the flow the
+  solver proposes for such a component fails `FFlow.check` (observed on
+  every probe of both milestone-1 reviews that creates one; the cause is
+  not established). Refusal: "a framed plan's module function X creates a
+  closure"; control: `bounds-pattern-framed-closure-refused`.
 - **Outside slots are audited realm values.** Every outside slot of a
   module function of a framed plan's component holds an audited realm
   value, the same at every depth: a native with a step model (P22's
   `%ElementAt%`) or an intrinsic object of the realm's heap (P22's
-  `[[Array.prototype]]`). Excluded: an import of another module's value, a module
+  `[[Array.prototype]]`). Both are decided by name: a native with a step
+  model is a name `hostModel?` maps to a code, today `%ElementAt%` alone;
+  an intrinsic object is a slot name of the form `[[…]]`
+  (`intrinsicName`), modelled as an object with no field
+  (`realmValueAt`), the import gate admitting a name starting with `%` or
+  bracketed (`prepareFramedComponent`). The decision is the audit's list
+  of realm values, by their names. Excluded: an import of another module's value, a module
   constant or cell, a host value, whose unfolding varies with the depth
   (`ApproxStable.lean`) and which `initC` does not initialize. Control: a
   framed walker whose module imports a function of another module, or
@@ -1443,9 +1483,15 @@ premise; `ret_reachedW` establishes it before the continuation).
 ### Verdicts that read a framed member's arrow
 
 - **The component's own linking supplies it** (a sibling slot, a unit's
-  own slot, a module binding): refused at that read, located there
-  (`dependent.mjs`'s `total`, a recursive walker); importers refused by
-  `establishVerdict`.
+  own slot, a module binding): the framed plan of the reading unit is
+  refused at its gate (no linked capture, [Restrictions](#restrictions)).
+  A module's interface does not establish a framed member
+  (`establishVerdict`: its entry's `established` is null), and an
+  importer of it is checked as an importer of any member its interface
+  does not establish: verified at the member's declared type, its line
+  naming no dependency on it (observed: the first review's importer of a
+  framed walker and of a walker refused outright, both verified with
+  `depends: []`).
 - **An input supplies it** (`apply.mjs`'s `apply(f, h, visit)`): the
   ordinary verdict is conditional on its inputs meeting their types
   (`EntryHolds`). The caller row is restated with a reading in the
@@ -1915,7 +1961,18 @@ disjoint supports (`supportShareB`, `SupportDisjoint`),
 - the request's entry contracts at a public call (the existing rows on
   exported preconditions and handle parameters);
 - a native's step model performs its model's steps, where the flow reads
-  one.
+  one;
+- the binding of the plan to the checked file (executable, unproved, the
+  front end's trust): `PreparedFile.prepareFramedComponent`,
+  `FramedComponent.of`, `componentInit`, `framedComponentFlow` and
+  `FramedSpec.decode` build the plan's realm, initialization, flow and
+  family from the file's fragment and declaration document. Proved of the
+  checks the plan carries: its $`\Theta_C`$ is the family's `@clients`
+  rows' (`FramedSpec.theta_rows`), its read-only types the member's
+  declared read-only parameters (`FramedSpec.readOnly_declared`), its
+  framed nodes the flow's (`FramedSpec.framed_nodes`), its entry the
+  checked flow's (`FramedSpec.entry_checked`) and its tag $`C`$
+  (`compB_sound`).
 
 ## Milestones
 
@@ -1975,9 +2032,14 @@ and P22's layout meets them (measured).
 - **P22**, `bounds-pattern-unreachable-field` (positive, accepted under
   client trust): the first check above.
 - **Kept negative**: `invalid-bounds-pattern-cursor-given`.
-- **Two module functions of one code**,
-  `bounds-pattern-framed-shared-code-refused` (a gap at P22's line): P22's
-  walker twice under two names beside a module function both call.
+- **Two module functions of one code**, `bounds-pattern-framed-shared-code`
+  (positive, each walker accepted under client trust): P22's walker twice
+  under two names; with a helper both call,
+  `bounds-pattern-framed-shared-code-refused` (a gap, refused at the gate
+  "No linked capture").
+- **The restrictions' gates**: `bounds-pattern-framed-cycle-refused`,
+  `bounds-pattern-framed-closure-refused` and the rows of
+  [SOURCE-FRAGMENT](../SOURCE-FRAGMENT.md).
 - **New cases**: `throw.mjs`'s walker (negative at the handler read) and a
   variant reading only `0 <= c.i` (positive); a wrapper calling the client,
   the walker keeping its cursor (positive); a wrapper given the cursor,

@@ -143,8 +143,8 @@ def intrinsicName (x : String) : Bool := x.startsWith "[[" && x.endsWith "]]"
 
 /-- **The restrictions of a framed plan's component** (the draft,
 "Restrictions"), over its module functions `mods` and the `@clients` rows
-of its exported types: no two module functions naming each other; every
-outside slot of a module function an audited realm value (a native with a
+of its exported types: no module function naming another (a linked
+capture); no module function creating a closure; every outside slot of a module function an audited realm value (a native with a
 step model, `hostModel?`, or an intrinsic object); the rows stating class
 keys only (`clientsByKindB`); every module function of the module with
 closure code (`unplanned` lists those without) and every entry a module
@@ -153,8 +153,11 @@ plan's member is moreover a realized module function
 (`FilePlans.framedPlan`). -/
 def framedRestriction (mods : List ProbeModule) (rows : List ComponentWire.Clients) (entries unplanned : List String) :
     Option String :=
-  if (closable mods).length != mods.length then
-    some "a framed plan's component has module functions naming each other"
+  let named := mods.findSome? fun g => (g.siblings.find? fun x => mods.any (·.name == x)).map (g.name, ·)
+  if let some (g, x) := named then
+    some s!"a framed plan's module function {g} names the module function {x}, a linked capture"
+  else if let some g := mods.find? fun g => !(g.code.1.flatMap (closureLayouts fun _ => true)).isEmpty then
+    some s!"a framed plan's module function {g.name} creates a closure"
   else
   -- (a slot of the module's own, a cell or a constant, named before a
   -- native's)

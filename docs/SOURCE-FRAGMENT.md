@@ -318,13 +318,20 @@ representation does not state it; the paths are in
 
 A refused unit whose code may call outside code is checked again by a
 framed plan ([framed acceptance](drafts/framed-acceptance.md#restrictions)),
-which reads its component's code whole. Each row below refuses the framed
-plan, located at the unit; the unit's verdict is its ordinary plan's.
+which reads its component's code whole. A framed plan's claim is about
+programs whose client is lowered outside source reaching the component's
+exports, what the client allocates and the calculus's operations, from a
+heap holding the realm values the component reads; a client calling a
+native (`xs.push`, `Math`, a `Map`, a method of a realm object) is outside
+it ([the scope of the claim](drafts/framed-acceptance.md#initialization)).
+Each row below refuses the framed plan, located at the unit; the unit's
+verdict is its ordinary plan's.
 
 | Construct | Obstacle | Owner | Cases |
 | --- | --- | --- | --- |
 | A framed unit that is not a module function of its module (a method, a class's code, the initialization) | Its entering step relates to no realized code of its request | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-method-refused` |
-| Module functions naming each other in a framed unit's component | Their closures have no finite initialization | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cycle-refused` |
+| A module function of a framed unit's component naming another module function (a linked capture) | The initialization's creation of a closure capturing another's fails the flow's check: a closure creation's value names no signature | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cycle-refused`, `bounds-pattern-framed-shared-code-refused` |
+| A module function of a framed unit's component creating a closure, called or not | The flow proposed for the component fails its check (observed; cause not established) | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-closure-refused` |
 | A module function of a framed unit's component reading a module cell or constant, a native with no step model, or another module's value | Its slot's contents vary with the depth of calls and the component's initialization does not set them | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-cell-refused` |
 | A framed unit whose outermost component is a package | Its component's code is beyond the checked file's | [restrictions](drafts/framed-acceptance.md#restrictions) | — |
 | A `@clients` row changing storage, at any key, in a framed unit's component | The returns at reached executions read the client obligation within the component's protocol at every part, which a change of outside code's breaks | [restrictions](drafts/framed-acceptance.md#restrictions) | `bounds-pattern-framed-clients-change-refused` |

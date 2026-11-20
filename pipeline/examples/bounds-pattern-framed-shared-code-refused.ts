@@ -1,12 +1,9 @@
 // P22's walker (bounds-pattern-unreachable-field) twice, under two
-// names, beside a module function both call.
-//
-// A code of the component is a term: `walk` and `walkAgain` have the same
-// code, so they are one code of the component's flow of sites, with one
-// pair of allocation sites per allocation and one closure token, and the
-// initialization allocates a closure of that code for each of them, each
-// capturing `total`'s closure. Each walker keeps `c.i < xs.length` across
-// the call `visit(c.i)` as P22's does.
+// names, beside a module function both call. No module function of a
+// framed plan's component names another (docs/drafts/framed-acceptance.md,
+// "Restrictions"): each walker's capture of `total` is a linked capture,
+// so each walker's framed plan is refused at that gate, and its ordinary
+// plan is refused at the read after the visit.
 type Visitor = (w: number) => Modifies<{ values: "any"; spines: "grow" }, void>;
 type Cursor = { i: number };
 
