@@ -2787,6 +2787,7 @@ export const cases: Case[] = [
     /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'front' is not established by its body/),
   { ...positive("stated-extend-value-import", "an imported function stating `spines: \"extend\"`, which its module's run certifies: the closed footprint `{value: any, spine: extend}` crosses the declaration document, and `i < xs.length` holds after the call"),
     project: "pipeline/imports-project" },
+  positive("stated-scalar-field-write", "a write of a number to a field of type `number` is within `values: \"scalar\"`: its old and new contents are neither objects nor spines"),
   negative("invalid-stated-grow-pops", "a body that pops is not within `spines: \"grow\"`: the spine gets shorter (run under Node: `get([5], 0)` returns `undefined`)",
     /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'drop' is not established by its body/),
   negative("invalid-stated-grow-upper-bound", "a call stated `spines: \"grow\"` keeps no upper bound of a length: `xs.length <= ys.length` is lost and `ys[n - 1]` is refused (run under Node: `last([], [])` returns `undefined`)", /source expression obligation at \[489,498\): evidence search failed: no derivation of its node-typing claim/),
